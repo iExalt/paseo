@@ -1,15 +1,10 @@
-# Configurable workspace notifications roadmap
+# Configurable notifications roadmap
 
-Scope revision pending: the confirmed plan now includes a daemon-wide reply regex denylist.
-This roadmap covers the previously confirmed workspace-only scope. Reconcile it
-to revised Tier 1; do not start execution from this stale scope.
-
-Tier 2 confirmed by the user on 2026-10-04 after reviewer acceptance.
-The [confirmed plan](CONFIGURABLE_NOTIFICATIONS.md)
-owns scope and decisions. No feature work or runtime probe has started. The
-[execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) is confirmed and defines
-the threads to open. Planning confirmation does not authorize implementation or
-runtime probes.
+The original Tier 2 was confirmed on 2026-10-04. This revision incorporates the
+daemon-wide reply denylist from the [confirmed plan](CONFIGURABLE_NOTIFICATIONS.md)
+and was confirmed by the user after review on 2026-10-04. The [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md)
+still needs the corresponding revision. No feature work or runtime probe has
+started; planning confirmation does not authorize either.
 
 ## Progress and ordering
 
@@ -53,10 +48,13 @@ unexpected paid requirements return to the user. Never copy production agent sta
 ## Phase summary
 
 - **Establish contracts and feasibility:** pin source and check costs (S1), prove
-  isolated Android relay/push connectivity (S2). **Gate: G1.**
+  completion-text and bounded-regex feasibility (S1), then isolated Android
+  relay/push connectivity (S2). **Gate: G1.**
 - **Deliver automation first:** durable policy and delivery semantics (S3), then
-  creation/update/read parity through CLI/MCP (S4). **Gate: G2.**
-- **Add user controls:** shared menu, synchronized state, and desktop proof (S5).
+  workspace creation/update/read and daemon rule get/set/clear through CLI/MCP
+  (S4). **Gate: G2.**
+- **Add user controls:** shared workspace menu, host rule editor, synchronized
+  state, and desktop proof (S5).
   **Gate: G3.** Android menu proof remains deferred.
 - **Prove and hand off:** package the feature revision (S6), observe real phone
   controls (S7), clean up and record limits (S8). **Gate: G4.** No production cutover.
@@ -68,13 +66,22 @@ unexpected paid requirements return to the user. Never copy production agent sta
       revision. Turn the confirmed contract into a small policy table and select the
       cheapest existing suites for each invariant. Establish the stable timing record
       and reviewed budgets described below before feature edits.
+      Resolve M1.3 by tracing a completion-bound, complete retained text source,
+      selecting a bounded regex engine and finite limits, and identifying host
+      persistence, authority, capability, and control surfaces. Temporary isolated
+      probes may inform this investigation; do not ship filtering code in S1.
   - **Needs:** confirmed plan and execution-phase approval.
   - **Proof:** source-path inventory, policy table, and baseline receipt with exact
     commands, revision, environment, timings, budgets, and any tests that launch
     isolated runtimes. Missing baseline or launch authority leaves those checks open.
-  - **Ticks:** M1.1; W1.
+    Separately record accepted M1.3 evidence: stale/next-turn/truncated subjects
+    cannot suppress, engine syntax/flags/limits are explicit, and host mutation
+    authority supports the required automation. Missing feasibility leaves S1 open.
+  - **Ticks:** M1.1 and M1.3; W1; contract portion of W6.
   - **Human:** at execution approval, authorize the named isolated test processes
     needed by selected checks; no production actions. Planning approval is insufficient.
+    If host authority cannot support automation without changing the agreed scope,
+    return that concrete conflict to the user before dependent implementation.
 
 - [ ] **S2 — Prove the existing phone can use the test host.** Configure a new home,
       identity, endpoint, and relay connection. Pair the installed Android app as an
@@ -92,38 +99,61 @@ unexpected paid requirements return to the user. Never copy production agent sta
     under the selected ordering. Reassess after the setup allowance rather than
     substituting a weaker phone proof.
 
-- [ ] **S3 — Persist and enforce workspace policy.** Add optional wire fields and
+- [ ] **S3 — Persist and enforce notification policies.** Add optional wire fields and
       capability negotiation, durable workspace policy, shared creation ordering,
       runtime mutation, descriptor publication, and agent/terminal delivery gating.
       Preserve attention, pending permissions, and non-notifying source events.
-  - **Needs:** accepted S1. S2 is not a prerequisite.
+      Review two increments independently: workspace enforcement, then daemon-wide
+      filtering with completion-bound subjects and bounded regex evaluation.
+      Persist an empty-default host rule list with atomic runtime replacement and
+      readback; match only finished replies, with workspace mute taking precedence.
+  - **Needs:** accepted S1, including M1.3 and the stable baseline. S2 is not a prerequisite.
   - **Proof:** fast policy matrix plus minimal registry/provisioning/delivery
     integration for persisted state, restart recovery in isolation, same-directory
     workspace independence, idempotency, failed writes, and unsupported-host errors.
     Reuse existing authorization classification; no provider-auth checks.
-  - **Ticks:** M2.1–M2.2; W2. Timing review is part of acceptance.
+    Filter unit proofs cover missing/ambiguous/truncated subjects, streaming text,
+    significant suffixes, stale/next-turn races, flags/invalid patterns/limits, and
+    non-finished bypass. Minimal integration proves durable host state, failed-write
+    atomicity, two-workspace global coverage, separate-daemon isolation, capability
+    gating, and retained observation/attention/subscription behavior.
+  - **Ticks:** M2.1–M2.2; enforcement portion of M2.4; W2 and part of W6.
+    M2.4 remains open until S4. Timing review is part of each increment's acceptance.
 
 - [ ] **S4 — Complete CLI and MCP parity.** Connect creation flags/fields, runtime
       update, and effective-policy readback through the real CLI and MCP adapters.
       Cover both local and worktree provisioning; reject unsupported policy changes
       before creating an incorrectly unmuted workspace.
+      Add host-targeted rule get/set/clear through both adapters, using structured
+      source/flags input and authoritative readback. Workspace creation must not
+      mutate the daemon-wide denylist.
   - **Needs:** accepted S3.
   - **Proof:** targeted adapter tests plus a minimal isolated automation journey
     showing CLI-created and MCP-created quiet workspaces before work starts,
     runtime changes, readback, and failure propagation. Do not repeat the policy
     matrix here. The policy governs future decisions with no unmute replay.
-  - **Ticks:** M2.3; W3; G2 with S3.
+    Include daemon rule set/read/clear, invalid-save retention, unsupported-feature
+    errors, correct host authority mapping, and a regex escaping round trip. Rule
+    changes affect future decisions without restart, replay, or retraction.
+  - **Ticks:** M2.3 and M2.4 with S3; W3 and automation portion of W6; G2 with S3.
 
 - [ ] **S5 — Implement and prove desktop user control.** Extend the shared workspace
       context/button menu with authoritative current state and mute/unmute actions.
       Reflect CLI/MCP changes without reconnecting; expose failed saves and unsupported
       daemon state. Keep the implementation cross-platform.
+      Add a host-settings rule editor with explicit save/clear, syntax feedback,
+      and visible external updates when local edits are unsaved. Clearly identify
+      the selected daemon and the all-workspaces scope.
   - **Needs:** accepted S4/G2.
   - **Proof:** one focused desktop journey through menu change, automation readback,
     external update, and failed-save feedback; verify desktop/browser notification
     controls separately from Android's remote-push path. Preserve production app
     isolation. Run targeted changed tests and review timing changes.
-  - **Ticks:** M3.1–M3.2; W4; G3.
+    In the same desktop session, prove host-rule edit/save/clear, invalid/failed-save
+    retention, automation synchronization, and unsaved-edit conflict feedback.
+    Bracket a filtered completion with nonmatching and rule-cleared local notification
+    controls, independently of workspace mute. Detailed regex matrices stay offline.
+  - **Ticks:** M3.1–M3.3; W4 and UI portion of W6; G3.
   - **Human:** at phase approval, authorize the isolated desktop/browser launch;
     any OS notification permission prompt requiring a person is handled before
     the demonstration. Android menu evidence is not required or claimed.
@@ -140,13 +170,17 @@ unexpected paid requirements return to the user. Never copy production agent sta
       isolated feature host using S6's revision. The installed Android app connects
       over relay/mobile data. Prove retained state, then remote push suppression and
       runtime unmute with positive controls before and after the muted trial.
+      In an otherwise unmuted workspace, prove daemon-wide regex suppression with
+      nonmatching and rule-cleared positive controls in that same phone session.
   - **Needs:** accepted S2, S3, S4, S5 and S6; phone session arranged.
-  - **Proof:** follow the plan's five-part phone gate. Observe real positive arrival,
+  - **Proof:** follow the plan's six-part phone gate. Observe real positive arrival,
     record muted source events and a bounded silence window, and establish that
     all relevant clients are outside the 180-second presence window or disconnected.
     Sample both agent and terminal paths; never use agent errors as positive controls.
     A failed positive control leaves the gate open. No mobile app rebuild/replacement.
-  - **Ticks:** M4.1; device proof portion of W5.
+    Retain matching completion/attention evidence, verify the rule is on the isolated
+    host, and use identical eligible presence conditions for regex controls.
+  - **Ticks:** M4.1; device proof portions of W5 and W6.
   - **Human:** at the named phone session, select the test host, turn Wi-Fi off,
     background the app when requested, and report arrivals. This step waits for
     observations; no silent assumption that a missing response means no notification.
@@ -159,7 +193,9 @@ unexpected paid requirements return to the user. Never copy production agent sta
   - **Proof:** test process/resource cleanup verified, production identity unchanged,
     all G1–G4 evidence linked to the feature revision, and explicit limits: no Android
     menu proof, production deployment, or overseer integration. Failed gates stay open.
-  - **Ticks:** M4.3; completes W5 and G4 only when all prior proof passes.
+    Verify no rule or settings mutation escaped the isolated test daemon. Remove
+    test-only rule configuration with the test state; preserve production policy.
+  - **Ticks:** M4.3; completes W5, W6, and G4 only when all prior proof passes.
   - **Human:** remove the test host from the phone when prompted; keep the production
     pairing. Afterward no human action remains in this campaign.
 
@@ -171,6 +207,10 @@ notification suites, and CLI workspace suites. S1 selects the exact affected fil
 this is a candidate list, not an instruction to run all of them each increment.
 Keep detailed policy cases at the fast unit layer. Integration covers boundaries;
 one desktop journey and the real-phone gate cover behavior unavailable below them.
+S1 adds completion-text and regex-engine candidates to that inventory. Benchmark
+bounded worst-case pattern/subject combinations in isolated probes before adopting
+the engine; retain only distinct regression invariants in existing appropriate
+suites. Measure any added dependency/setup cost separately from routine runtime.
 
 Routine verification uses `mise exec -- npx vitest run <changed-file> --bail=1`
 from its owning workspace, then the required root npm lint and typecheck scripts.
@@ -197,21 +237,29 @@ with small fixtures, and include latency review in every step's acceptance.
 
 ## Human interventions and scheduling
 
-| Step     | Kind                 | Action and timing                                                                                          | Status                                                       |
-| -------- | -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| S1/S2/S5 | Execution approval   | Approve named isolated test processes and external-service use before their phase starts; never production | Future execution gate                                        |
-| S2       | Phone presence       | Pair additional test host and observe relay/mobile-data positive control                                   | Arrange during execution; offline work may proceed meanwhile |
-| S5       | OS prompt, if needed | Grant test desktop/browser notification permission before local notification proof                         | Conditional                                                  |
-| S7       | Phone presence       | Observe muted/unmuted trials on existing Android app                                                       | Required final session                                       |
-| S8       | Manual cleanup       | Remove only test pairing from phone                                                                        | End of final session, or after failed probe                  |
+| Step     | Kind                       | Action and timing                                                                                          | Status                                                           |
+| -------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| S1/S2/S5 | Execution approval         | Approve named isolated test processes and external-service use before their phase starts; never production | Future execution gate                                            |
+| S1       | Conditional scope decision | Resolve any concrete host-authority conflict that prevents required CLI/MCP control before S3              | Only if the existing model cannot support the confirmed contract |
+| S2       | Phone presence             | Pair additional test host and observe relay/mobile-data positive control                                   | Arrange during execution; offline work may proceed meanwhile     |
+| S5       | OS prompt, if needed       | Grant test desktop/browser notification permission before local notification proof                         | Conditional                                                      |
+| S7       | Phone presence             | Observe workspace mute and reply-filter controls on existing Android app                                   | Required final session                                           |
+| S8       | Manual cleanup             | Remove only test pairing from phone                                                                        | End of final session, or after failed probe                      |
 
-The sequencing decision and Tier 2 are confirmed. No exact
+The sequencing decision remains confirmed. No exact
 appointment is needed during planning: the execution script makes these waits
 explicit and groups approvals so autonomous work can proceed between phone sessions.
 Desktop and Android menu scope, relay route, and production exclusions are already
 settled in the plan and are not reopened here.
 
-The continuous reviewer accepted the final roadmap with no unresolved material
-findings. Its dependency and coverage review confirmed that offline progress does
-not bypass phone feasibility or the final real-device gate. The user confirmed this tier on 2026-10-04 and requested the execution script.
-The roadmap is published to the personal fork; no implementation was authorized.
+The prior workspace-only roadmap was reviewed, confirmed, and published on
+2026-10-04. This regex revision keeps the eight-step dependency graph and resource
+boundaries, adds M1.3 before enforcement, and distributes W6 across S1/S3/S4/S5/S7/S8.
+It adds no Android build, app replacement, or separate phone session. Reassess the
+initial phone-session estimate if added controls or presence waits need more time;
+do not reduce positive controls to fit it. No implementation is authorized.
+
+- [x] Map revised Tier 1 scope and gates into the existing steps.
+- [x] Review the revised roadmap; no unresolved material findings.
+- [x] Confirm revised Tier 2 with the user.
+- [ ] Revise and confirm the execution script after publishing this roadmap.
