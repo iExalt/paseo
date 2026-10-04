@@ -27,7 +27,8 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/architecture.md](docs/architecture.md)                         | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
 | [docs/agent-lifecycle.md](docs/agent-lifecycle.md)                   | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
 | [docs/CUSTOMIZABLE_NOTIFICATIONS.md](docs/CUSTOMIZABLE_NOTIFICATIONS.md) | Earlier per-agent notification proposal and local build evidence                                                               |
-| [docs/CONFIGURABLE_NOTIFICATIONS.md](docs/CONFIGURABLE_NOTIFICATIONS.md) | Workspace notification planning: user controls, CLI, MCP, and unresolved scope                                                 |
+| [docs/CONFIGURABLE_NOTIFICATIONS.md](docs/CONFIGURABLE_NOTIFICATIONS.md) | Confirmed workspace notification plan: user controls, CLI, MCP, and verification scope |
+| [docs/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md](docs/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) | Notification steps, dependencies, proof gates, and timing budgets; tick completed steps and plan boxes in the same commit |
 | [docs/data-model.md](docs/data-model.md)                             | File-based JSON persistence, Zod schemas, atomic writes, no migrations                                                         |
 | [docs/glossary.md](docs/glossary.md)                                 | Authoritative terminology — UI label wins, no synonyms                                                                         |
 | [docs/coding-standards.md](docs/coding-standards.md)                 | Type hygiene, error handling, state design, React patterns, file organization                                                  |
@@ -160,23 +161,23 @@ The app runs on iOS, Android, web (browser), and web (Electron desktop). Code is
 
 ### The four gates
 
-| Gate                       | Type      | When to use                                                                                                                 |
-| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `isWeb`                    | constant  | DOM APIs — `document`, `window`, `<div>`, `addEventListener`, `ResizeObserver`. This is the **exception**, not the default. |
-| `isNative`                 | constant  | Native-only APIs — Haptics, `StatusBar.currentHeight`, push tokens, camera/scanner, `expo-av`.                              |
-| `getIsElectron()`          | cached fn | Desktop wrapper features — file dialogs, titlebar drag region, daemon management, app updates, dock badges.                 |
-| `useIsCompactFormFactor()` | hook      | Layout decisions — sidebar overlay vs pinned, modal vs full screen, single-panel vs split. From `@/constants/layout`.       |
+| Gate | Type | When to use |
+| --- | --- | --- |
+| `isWeb` | constant | DOM APIs — `document`, `window`, `<div>`, `addEventListener`, `ResizeObserver`. This is the **exception**, not the default. |
+| `isNative` | constant | Native-only APIs — Haptics, `StatusBar.currentHeight`, push tokens, camera/scanner, `expo-av`. |
+| `getIsElectron()` | cached fn | Desktop wrapper features — file dialogs, titlebar drag region, daemon management, app updates, dock badges. |
+| `useIsCompactFormFactor()` | hook | Layout decisions — sidebar overlay vs pinned, modal vs full screen, single-panel vs split. From `@/constants/layout`. |
 
 ### Decision matrix
 
-| I need to...                                                   | Use                                                                       |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Access DOM (`document`, `window`, `<div>`, `addEventListener`) | `if (isWeb)`                                                              |
-| Use a native-only API (Haptics, push tokens, camera)           | `if (isNative)`                                                           |
-| Use an Electron bridge (file dialog, titlebar, updates)        | `if (getIsElectron())`                                                    |
-| Switch layout between phone and tablet/desktop                 | `useIsCompactFormFactor()`                                                |
-| Show something on hover, always-visible on native              | `isHovered \|\| isNative \|\| isCompact` (hover only works on web)        |
-| Gate to iOS or Android specifically                            | `Platform.OS === "ios"` / `Platform.OS === "android"` (rare, keep inline) |
+| I need to... | Use |
+| --- | --- |
+| Access DOM (`document`, `window`, `<div>`, `addEventListener`) | `if (isWeb)` |
+| Use a native-only API (Haptics, push tokens, camera) | `if (isNative)` |
+| Use an Electron bridge (file dialog, titlebar, updates) | `if (getIsElectron())` |
+| Switch layout between phone and tablet/desktop | `useIsCompactFormFactor()` |
+| Show something on hover, always-visible on native | `isHovered \ | \ | isNative \ | \ | isCompact` (hover only works on web) |
+| Gate to iOS or Android specifically | `Platform.OS === "ios"` / `Platform.OS === "android"` (rare, keep inline) |
 
 ### Rules
 
