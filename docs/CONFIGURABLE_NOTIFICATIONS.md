@@ -462,7 +462,7 @@ The prior acceptance below applies to the workspace-only snapshot, not this delt
 - [x] Record daemon-wide, finished-only, empty-default answers.
 - [x] Obtain reviewer acceptance of revised Tier 1.
 - [x] Obtain user confirmation of revised Tier 1.
-- [ ] Propagate the confirmed delta into the roadmap, review and confirm Tier 2.
+- [x] Propagate the confirmed delta into the roadmap, review and confirm Tier 2.
 - [ ] Propagate the confirmed roadmap into the script, review and confirm Tier 3.
 
 The continuous reviewer checked the first question round and identified separate
