@@ -3,7 +3,9 @@
 Tier 2 confirmed by the user on 2026-10-04 after reviewer acceptance.
 The [confirmed plan](CONFIGURABLE_NOTIFICATIONS.md)
 owns scope and decisions. No feature work or runtime probe has started. The
-execution script is the next planning tier; this confirmation does not authorize implementation or runtime probes.
+[execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) is confirmed and defines
+the threads to open. Planning confirmation does not authorize implementation or
+runtime probes.
 
 ## Progress and ordering
 
@@ -200,8 +202,8 @@ with small fixtures, and include latency review in every step's acceptance.
 | S8       | Manual cleanup       | Remove only test pairing from phone                                                                        | End of final session, or after failed probe                  |
 
 The sequencing decision and Tier 2 are confirmed. No exact
-appointment is needed during planning: the execution script will make these waits
-explicit and group approvals so autonomous work can proceed between phone sessions.
+appointment is needed during planning: the execution script makes these waits
+explicit and groups approvals so autonomous work can proceed between phone sessions.
 Desktop and Android menu scope, relay route, and production exclusions are already
 settled in the plan and are not reopened here.
 
