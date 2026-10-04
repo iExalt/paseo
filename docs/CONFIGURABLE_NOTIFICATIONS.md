@@ -2,8 +2,9 @@
 
 Tier 1 confirmed by the user on 2026-10-04 after reviewer acceptance. The
 confirmation authorizes deriving the roadmap, not implementation, app launches,
-or deployment. The [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) is confirmed; the execution
-script is the next planning tier.
+or deployment. The [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) and
+[execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) are also confirmed.
+All three tiers are planning artifacts; execution approval remains separate.
 
 ## Summary
 
@@ -359,6 +360,7 @@ review nor confirmation is implementation or runtime proof.
 - [x] Finish milestone gates and obtain reviewer acceptance of Tier 1.
 - [x] Confirm Tier 1 with the user before deriving the roadmap.
 - [x] Confirm the roadmap before deriving the execution script.
+- [x] Confirm the execution script for publication, planning only.
 
 Publish confirmed planning tiers to the personal fork, `iExalt/paseo`, never
 upstream. Unconfirmed roadmap/script drafts remain local until their tier is
