@@ -2,8 +2,9 @@
 
 The original Tier 2 was confirmed on 2026-10-04. This revision incorporates the
 daemon-wide reply denylist from the [confirmed plan](CONFIGURABLE_NOTIFICATIONS.md)
-and was confirmed by the user after review on 2026-10-04. The [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md)
-still needs the corresponding revision. No feature work or runtime probe has
+and was confirmed by the user after review on 2026-10-04. The corresponding
+[execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) revision is also confirmed.
+No feature work or runtime probe has
 started; planning confirmation does not authorize either.
 
 ## Progress and ordering
@@ -262,4 +263,4 @@ do not reduce positive controls to fit it. No implementation is authorized.
 - [x] Map revised Tier 1 scope and gates into the existing steps.
 - [x] Review the revised roadmap; no unresolved material findings.
 - [x] Confirm revised Tier 2 with the user.
-- [ ] Revise and confirm the execution script after publishing this roadmap.
+- [x] Revise and confirm the execution script after publishing this roadmap.
