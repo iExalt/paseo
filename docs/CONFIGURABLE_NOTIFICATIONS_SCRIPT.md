@@ -1,5 +1,9 @@
 # Configurable workspace notifications execution script
 
+Scope revision pending: the confirmed plan now includes a daemon-wide reply regex denylist.
+Thread proposals are on hold until the revised plan, roadmap, and script are
+reviewed and confirmed. The entries below retain the earlier confirmed scope.
+
 Five threads deliver the [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) through
 G4. The feature path is T1 → T3 → T4 → T5; T2 provides phone-connectivity evidence
 and can run whenever the phone is available after T1. The [plan](CONFIGURABLE_NOTIFICATIONS.md)

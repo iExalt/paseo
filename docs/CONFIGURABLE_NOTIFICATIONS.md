@@ -1,10 +1,12 @@
-# Configurable workspace notifications
+# Configurable notifications
 
 Tier 1 confirmed by the user on 2026-10-04 after reviewer acceptance. The
 confirmation authorizes deriving the roadmap, not implementation, app launches,
 or deployment. The [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) and
 [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) are also confirmed.
 All three tiers are planning artifacts; execution approval remains separate.
+The user confirmed the reviewer-accepted daemon-wide regex extension on 2026-10-04.
+The roadmap and script require corresponding revisions before proposing execution.
 
 ## Summary
 
@@ -15,6 +17,9 @@ All three tiers are planning artifacts; execution approval remains separate.
   Previously agreed muting covers banners and push, including permission prompts.
 - Build on current `main` in a personal fork. Do not submit this upstream.
 - Cover agent and terminal attention with one shared policy across devices.
+- Add an empty-by-default daemon-wide regex denylist for completed assistant
+  replies. Matching replies suppress banners and push across all workspaces while
+  keeping messages, attention, and observation events.
 - Verify the desktop menu and existing Android app push over relay/mobile data.
   Defer Android menu verification while keeping implementation cross-platform.
 - Finish with a built and verified feature, including real-phone evidence.
@@ -31,6 +36,11 @@ creation time/runtime through the CLI tools as well as the MCP.”
 MCP before any work starts; inspect the persisted policy, change it while work is
 running, and observe that the menu and other connected clients reflect it.
 An otherwise identical unmuted workspace remains eligible to notify.
+
+**Scope extension (the user, 2026-10-04):** Claude periodically emits replies such
+as “No news.” that the user does not want to trigger notifications. Use shared
+daemon-wide rules, limited to completed assistant replies, with no rules enabled
+by default. This extends notification filtering without restoring per-agent policy.
 
 Constraints carried forward from the conversation:
 
@@ -69,10 +79,10 @@ document remains the history and build-evidence record.
 
 ### 2.2 Repository and runtime evidence
 
-Grounding inspected local `main` at `4869214bc`; `origin` still points to
-`getpaseo/paseo`. The checkout contains uncommitted documentation and the Mise
-configuration replacement from the prior task. No personal remote has been
-configured in this checkout. GitHub fork existence was not queried.
+Initial grounding inspected local `main` at `4869214bc`. Planning was subsequently
+published on `docs/configurable-notifications`: `origin` now points to
+`iExalt/paseo`, and `upstream` to `getpaseo/paseo`. The Mise configuration replacement
+and Android tool declarations remain unrelated uncommitted work; preserve them.
 
 Both npm and Nix macOS packages built successfully; see the earlier plan's build
 receipts. Neither was run. Installed 0.10.2 and live overseer runs come from the
@@ -127,14 +137,19 @@ Additional decisions:
 | D9  | Defaults and temporal behavior | **Agreed (the user, 2026-10-04):** existing/new workspaces notify by default; changes govern future delivery decisions; unmute does not replay past events.           |
 | D10 | Android menu proof             | **Decided (the user, 2026-10-04):** desktop menu proof and existing-app Android push tests; defer Android menu proof. Cross-platform implementation remains required. |
 | D11 | Phone connection route         | **Decided (the user, 2026-10-04):** relay/mobile data, matching remote use, against the isolated test host.                                                           |
+| D12 | Regex scope                    | **Decided (the user, 2026-10-04):** daemon-wide denylist shared across all workspaces and devices connected to that daemon.                                           |
+| D13 | Regex event coverage           | **Decided (the user, 2026-10-04):** completed assistant replies only; suppress both notification delivery paths, retaining messages and attention.                    |
+| D14 | Regex defaults                 | **Decided (the user, 2026-10-04):** empty by default; configure the optional case-insensitive whole-reply “No news.” rule where wanted.                               |
 
-The product-scope decision frontier is closed. The design below was accepted with
-Tier 1 confirmation. Runtime feasibility remains an explicit implementation probe,
-not a claimed result.
+The original workspace decisions remain confirmed. D12–D14 settle the new scope;
+§4.3's control surfaces and matching contract were accepted with revised Tier 1.
+Completion-text provenance and regex-engine feasibility remain an
+explicit early implementation investigation, not a claimed result.
 
 ## 4. Design constraints
 
-These constraints were accepted with Tier 1; API names remain adaptable to repository conventions.
+The workspace constraints were accepted with Tier 1; API names remain adaptable
+to repository conventions. The confirmed regex extension is specified in §4.3.
 
 1. Persist a typed workspace policy, exposed in workspace descriptors and automation
    summaries. Default existing workspaces to current notification behavior.
@@ -211,6 +226,69 @@ on the phone. Test pairing/removal and switching to mobile data need named human
 steps in the roadmap. No Android debug installation is needed for this campaign. If isolation cannot be established, stop that probe and
 report the missing prerequisite. Never restart production to unblock testing.
 
+### 4.3 Daemon-wide reply denylist
+
+Persist one rule list per daemon home, shared by its connected clients and applied
+to every workspace and provider. An empty or absent list preserves existing
+behavior. This is a host setting, not a workspace default, a creation argument, or
+a per-workspace override. Workspace `off` always suppresses delivery; workspace
+`on` remains subject to the denylist and existing eligibility rules. The denylist
+cannot force notifications on or bypass internal/delegated-agent suppression.
+
+Rules contain regex source and explicit flags. Any matching rule suppresses a
+`finished` notification on both delivery paths. Permission/question, error, and
+terminal events never consult this list; workspace mute still governs them.
+Do not filter transcript storage, pending permissions, observation events, or
+agent-to-agent completion subscriptions. Existing error-notification behavior stays.
+
+Match the retained final assistant-text segment associated with the completion
+being notified, joining streaming chunks in order, before notification-preview
+formatting or truncation. Do not match titles, tools, previous turns, or an entire
+conversation. Preserve Markdown, case, and whitespace; normalization belongs in an
+explicit pattern or flag. Regex search semantics apply; anchors express whole-reply
+matching. The optional example is source `^\s*No news\.\s*$` with flag `i`.
+It must not suppress `No news. A decision is needed.`. No built-in Claude rule
+or provider-specific behavior is introduced.
+
+**Verified hazard:** `websocket-server.ts` currently awaits
+`getLastAssistantMessage(agentId)` before building the notification preview.
+The accessor in `agent-manager.ts` searches live/durable history without a turn
+constraint; the preview builder in `packages/protocol/src/agent-attention-notification.ts`
+strips formatting and truncates text. Reusing either result blindly can match an
+older reply, a later turn, or a prefix whose omitted suffix matters. Timeline
+storage also bounds content, so “before preview truncation” does not imply an
+unlimited full transcript.
+
+**Open, settled by M1.3:** establish a completion-bound text source and distinguish
+complete retained text from missing, ambiguous, or truncated content. If the filter
+cannot establish that subject, preserve existing notification eligibility. Do not
+suppress based on an old message or a truncated prefix. Snapshot the subject with
+its completion identity so asynchronous delivery cannot switch to a later turn.
+
+Use a regex engine with bounded execution behavior, preferably a linear-time
+RE2-compatible subset. M1.3 selects the engine, supported flags, and finite rule
+count/pattern/subject limits before feature implementation. Reject unsupported
+syntax, invalid flags, and oversized configurations atomically, keeping prior
+rules. Do not run unrestricted user-supplied JavaScript regexes on the daemon
+event loop. Excessive or unavailable subject text must preserve notification
+eligibility, with a diagnostic reason that does not log message contents.
+
+| Surface            | Proposed behavior                                                                                                                                                                                                                                                           |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Host settings UI   | A cross-platform editor under the selected host's notification settings; add/remove/edit rules, show validation, and explicitly save or clear the list. State that rules affect every workspace on this host.                                                               |
+| CLI                | Host-targeted get/set/clear commands, with structured JSON input/readback so regex escaping survives shell transport. Names follow existing configuration commands.                                                                                                         |
+| MCP                | Host-settings read and mutation tools with the same structured rule list, errors, and authoritative readback; workspace creation must not mutate global settings.                                                                                                           |
+| Wire and authority | Optional capability for reply filtering, distinct from workspace mute, pure optional wire fields and dotted RPCs. Reuse host-configuration authority; workspace-management authority alone must not grant global mutation. M1.3 identifies the existing permission mapping. |
+
+Successful updates persist atomically, survive restart, apply without restart, and
+publish current state to connected settings clients. Invalid or failed saves leave
+the old list authoritative. Concurrent whole-list replacements follow committed
+server order; the editor exposes an external update rather than silently overwriting
+unsaved edits. Read the current policy at the delivery decision after asynchronous
+subject retrieval. Changes affect future decisions only, with no replay or retraction.
+An old client still receives the same non-notifying source events; new controls
+must report unsupported hosts before sending a mutation.
+
 ## 5. Work areas to turn into milestones
 
 - **W1 — Contract:** settle the policy table, identity boundary, and wire/readback
@@ -223,6 +301,8 @@ report the missing prerequisite. Never restart production to unblock testing.
   and synchronization with CLI/MCP changes.
 - **W5 — Proof and delivery:** targeted tests, isolated demonstrations if authorized,
   and packaging. Exclude production deployment and overseer integration per D7.
+- **W6 — Reply filtering:** completion-bound matching, bounded regex evaluation,
+  durable daemon policy, host UI and CLI/MCP parity, and real delivery proof.
 
 ### M1 — Contract and safe validation route
 
@@ -230,9 +310,14 @@ report the missing prerequisite. Never restart production to unblock testing.
       source coverage, identity, and feature negotiation agreed.
 - [ ] **M1.2 Validation feasibility:** identify the isolated host/client setup and
       phone pairing route without replacing or stopping production.
+- [ ] **M1.3 Filter contract:** prove completion-text provenance and completeness;
+      select regex engine/limits, host persistence/authority, capability, and
+      UI/CLI/MCP read/write contract. Resolve §4.3's open investigation before
+      implementing filtering; do not substitute the current latest-message getter.
 - **G1:** review the policy truth table and create/update/readback contract and
   establish a viable Android validation route. A blocker leaves G1 open. During implementation,
   allow an initial 30-minute setup probe before reassessing missing prerequisites.
+  The revised gate also requires M1.3's accepted filtering contract.
 
 ### M2 — Durable policy and automation parity
 
@@ -242,8 +327,13 @@ report the missing prerequisite. Never restart production to unblock testing.
       honor workspace policy while observation events and attention survive.
 - [ ] **M2.3 CLI/MCP parity:** create, update, and readback demonstrate the same
       behavior and clear errors for unsupported hosts or failed writes.
+- [ ] **M2.4 Daemon denylist:** durable get/set/clear and CLI/MCP parity; completion
+      matching suppresses both delivery paths without altering state. Invalid rules,
+      missing/truncated/stale text, and non-finished reasons preserve the specified
+      behavior; workspace mute takes precedence.
 - **G2:** targeted tests prove those contracts, same-directory workspace isolation,
-  restored policy, and unchanged unmuted behavior. No full local suite.
+  restored workspace and daemon policy, and unchanged behavior with an empty
+  denylist. Include M2.4's filter invariants. No full local suite.
 
 ### M3 — User controls
 
@@ -251,15 +341,20 @@ report the missing prerequisite. Never restart production to unblock testing.
       sidebar context/button menu, with pending and failure feedback.
 - [ ] **M3.2 Synchronization:** CLI/MCP changes update connected UI state, and UI
       changes are visible to automation without reconnecting.
+- [ ] **M3.3 Host filter editor:** users can edit/save/clear the daemon-wide rules,
+      see validation and save failures, and observe CLI/MCP changes across clients.
 - **G3:** desktop menu demonstration and UI/CLI/MCP synchronization; errors leave
   the authoritative state visible. Old-daemon gating is explicit. Android menu
-  verification is deferred under D10 and is not a condition for this gate.
+  verification is deferred under D10 and is not a condition for this gate. Include
+  a desktop demonstration of the host filter editor and its synchronization.
 
 ### M4 — Real-device proof and handoff
 
 - [ ] **M4.1 Device delivery:** desktop/browser local notifications and Android remote
       push controls prove muted/unmuted behavior over relay/mobile data on the existing
       Android app.
+      Include a matching completion suppressed by the global rule in an otherwise
+      unmuted workspace, plus nonmatching and rule-cleared positive controls.
 - [ ] **M4.2 Build and record:** both macOS packaging paths pass for the feature
       revision; required checks pass and the proof states platform limitations.
 - [ ] **M4.3 Cleanup:** remove only test hosts/pairings and temporary test resources
@@ -280,6 +375,14 @@ and real delivery controls. Do not repeat the full policy matrix in browsers.
 Same-directory sibling workspaces must remain independent. Muted and unmuted
 controls must share the same client-presence conditions, so focus suppression
 cannot masquerade as policy enforcement. Prove observation state is retained.
+
+Put regex syntax/flags, empty/any-match behavior, streaming assembly, significant
+suffixes, stale/next-turn races, missing/truncated text, limits, and precedence in
+the cheapest reliable tests. Use integration tests for completion identity,
+durability, authority mapping, invalid-write atomicity, and UI/CLI/MCP contracts.
+Do not add provider credential/authentication tests. Prove a global rule affects
+two distinct workspaces on one daemon and cannot affect a separate daemon home.
+Keep detailed matrices out of device tests.
 
 ### Phone delivery and required proof
 
@@ -314,6 +417,11 @@ The required real-device gate must include:
 5. Record actual phone arrival for positive controls. Expo HTTP/ticket acceptance
    alone cannot prove phone delivery. Failure to deliver a control blocks the mute
    conclusion; silence is not a passing test by itself.
+6. In an unmuted workspace, configure the optional “No news.” rule on the isolated
+   daemon. Bracket a matching completion with observed nonmatching/rule-cleared
+   controls on desktop and Android. Retain the matching message and attention
+   evidence; absence of a push alone is insufficient. Reuse the same phone session
+   and presence checks rather than duplicating the full reason matrix.
 
 Detailed reason matrices stay in unit tests; this gate samples the real path.
 An installed old phone app can prove server-side suppression, but cannot prove a
@@ -344,6 +452,18 @@ step without moving required evidence into optional checks. Never run the full
 local suite; follow [testing](testing.md) and the repository's targeted-test rule.
 
 ## 7. Review and next action
+
+**Confirmed revision:** D12–D14 record the user's regex decisions. §4.3, W6,
+M1.3/M2.4/M3.3 and the extended device gate passed continuous review with no material
+findings. The user confirmed revised Tier 1 on 2026-10-04 and requested the roadmap.
+The prior acceptance below applies to the workspace-only snapshot, not this delta.
+
+- [x] Ground notification text and ask regex scope/default decisions.
+- [x] Record daemon-wide, finished-only, empty-default answers.
+- [x] Obtain reviewer acceptance of revised Tier 1.
+- [x] Obtain user confirmation of revised Tier 1.
+- [ ] Propagate the confirmed delta into the roadmap, review and confirm Tier 2.
+- [ ] Propagate the confirmed roadmap into the script, review and confirm Tier 3.
 
 The continuous reviewer checked the first question round and identified separate
 MCP creation paths, same-directory workspace identity, observation-event retention,
