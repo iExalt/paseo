@@ -1,5 +1,9 @@
 # Configurable workspace notifications roadmap
 
+Scope revision pending: the confirmed plan now includes a daemon-wide reply regex denylist.
+This roadmap covers the previously confirmed workspace-only scope. Reconcile it
+to revised Tier 1; do not start execution from this stale scope.
+
 Tier 2 confirmed by the user on 2026-10-04 after reviewer acceptance.
 The [confirmed plan](CONFIGURABLE_NOTIFICATIONS.md)
 owns scope and decisions. No feature work or runtime probe has started. The
