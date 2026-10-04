@@ -6,7 +6,8 @@ or deployment. The [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) and
 [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) are also confirmed.
 All three tiers are planning artifacts; execution approval remains separate.
 The user confirmed the reviewer-accepted daemon-wide regex extension on 2026-10-04.
-The roadmap and script require corresponding revisions before proposing execution.
+The corresponding roadmap and script revisions are also confirmed. Planning is
+complete; execution requires a separately approved phase proposal.
 
 ## Summary
 
@@ -463,7 +464,7 @@ The prior acceptance below applies to the workspace-only snapshot, not this delt
 - [x] Obtain reviewer acceptance of revised Tier 1.
 - [x] Obtain user confirmation of revised Tier 1.
 - [x] Propagate the confirmed delta into the roadmap, review and confirm Tier 2.
-- [ ] Propagate the confirmed roadmap into the script, review and confirm Tier 3.
+- [x] Propagate the confirmed roadmap into the script, review and confirm Tier 3.
 
 The continuous reviewer checked the first question round and identified separate
 MCP creation paths, same-directory workspace identity, observation-event retention,

@@ -1,14 +1,14 @@
-# Configurable workspace notifications execution script
+# Configurable notifications execution script
 
-Scope revision pending: the confirmed plan now includes a daemon-wide reply regex denylist.
-Thread proposals are on hold until the revised plan, roadmap, and script are
-reviewed and confirmed. The entries below retain the earlier confirmed scope.
+This revision incorporates daemon-wide reply filtering from confirmed Tiers 1–2.
+The user confirmed this reviewer-accepted revision on 2026-10-04 for publication
+only. T1 is ready to propose; execution and launches remain unapproved.
 
 Five threads deliver the [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) through
 G4. The feature path is T1 → T3 → T4 → T5; T2 provides phone-connectivity evidence
 and can run whenever the phone is available after T1. The [plan](CONFIGURABLE_NOTIFICATIONS.md)
-owns scope. Tier 3 was confirmed by the user on 2026-10-04 after reviewer
-acceptance. Publication completes planning; execution remains unapproved.
+owns scope. The workspace-only Tier 3 was confirmed on 2026-10-04; this revision
+keeps its dependencies and extends the chunks and proofs below.
 
 ## Rules and current state
 
@@ -44,11 +44,11 @@ acceptance. Publication completes planning; execution remains unapproved.
   completion, mark it done here, record deviations affecting others, and update
   newly ready threads. Never mark a deferred proof as passed.
 
-Planning and both baseline macOS builds are complete; the apps were never launched.
+Both baseline macOS builds are complete; the apps were never launched.
 No feature step S1–S8 is complete and no test host is running from this campaign.
-The confirmed tiers are published on `iExalt/paseo` branch
+Confirmed planning tiers are published on `iExalt/paseo` branch
 `docs/configurable-notifications`. The local `.mise.toml` → `mise.toml` replacement
-is pre-existing uncommitted work: preserve it and record its effect on the baseline;
+and Android tool declarations are pre-existing uncommitted work: preserve them and record their effect on the baseline;
 do not silently include it in a feature commit. Verify current Git state at startup.
 
 ## Dependencies and human participation
@@ -65,12 +65,13 @@ It records whichever accepted source revision is current; it proves connectivity
 not final-feature behavior. T5 repeats the required device proof on the final revision.
 T2 joins the critical path if phone availability delays T5.
 
-| When                                  | Human action                                                                                                 |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Before each thread's work             | Approve its phase proposal and exact isolated launch scope, where applicable                                 |
-| T2 phone session                      | Pair the additional test host, disable Wi-Fi, and observe an unmuted remote push on the existing Android app |
-| T4 desktop demonstration, if prompted | Grant the isolated desktop/browser notification permission                                                   |
-| T5 final phone session                | Observe positive/muted/unmuted trials over mobile data, then remove only the test pairing                    |
+| When                                         | Human action                                                                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Before each thread's work                    | Approve its phase proposal and exact isolated launch scope, where applicable                                 |
+| T1, only if investigation exposes a conflict | Decide how to resolve a host-authority restriction that prevents required automation before T3               |
+| T2 phone session                             | Pair the additional test host, disable Wi-Fi, and observe an unmuted remote push on the existing Android app |
+| T4 desktop demonstration, if prompted        | Grant the isolated desktop/browser notification permission                                                   |
+| T5 final phone session                       | Observe workspace mute and reply-filter controls over mobile data, then remove only the test pairing         |
 
 No appointment is fixed by this script. T2 and T5 proposals arrange availability;
 do not guess a deadline or treat silence as a phone observation. No paid services
@@ -78,7 +79,7 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 
 ## T1 — Contract and stable check baseline: S1
 
-**State:** ready to propose; Tier 3 confirmed, execution not approved.
+**State:** ready to propose; revised Tier 3 confirmed, execution not approved.
 
 ```text
 /keep-me-in-the-loop Run T1 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
@@ -86,13 +87,21 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 
 - **Depends on:** no execution thread; Tier 3 must be confirmed. Not alongside any other thread.
 - **Human:** at approval, authorize the enumerated isolated test-process launches
-  needed for the baseline. None after approval unless setup exposes a new blocker.
+  needed for the baseline and temporary feasibility probes. If existing host
+  authority cannot support the confirmed CLI/MCP contract, return the concrete
+  conflict for a scope decision before dependent implementation. Otherwise none
+  after approval unless setup exposes a new blocker.
 - **Chunks:** (1) pin revision, inspect paths/dirty work, establish status and contract
-  inventory; (2) measure selected existing checks under fixed conditions and have
+  inventory; (2) resolve M1.3: completion-bound complete text, bounded regex engine,
+  flags/limits, host persistence/authority and capability contract; (3) measure
+  selected existing checks under fixed conditions and have
   author/reviewer accept the stable timing baseline and budgets.
 - **Live:** only explicitly approved local test runtimes; no phone or relay; clean up
-  each runtime before handing off. No feature edits before the baseline is captured.
-- **Done when:** S1/M1.1 accepted with exact commands and timing evidence. G1 remains
+  each runtime before handing off. Regex investigation probes remain temporary;
+  no shipped feature edits in T1. Separate setup cost from routine-check runtime.
+- **Done when:** S1/M1.1/M1.3 accepted with feasibility, exact commands and timing
+  evidence. Missing subject provenance or bounded-engine proof leaves T1 open.
+  Both feasibility and the stable baseline must pass before T3. G1 remains
   open until T2. Mark T2 and T3 ready; the status recommends whichever is available.
 
 ## T2 — Isolated Android connectivity: S2
@@ -110,7 +119,9 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
   control, the user selects the test host and observes delivery over mobile data.
   A phone wait pauses only T2; release the checkout using the rules above.
 - **Chunks:** (1) review launch configuration and establish isolated identity/home/
-  endpoint; (2) pair, verify state and real unmuted push; (3) stop test processes
+  endpoint; (2) pair, verify state and real unmuted push with workspace notifications
+  on and an empty denylist (or original unfiltered behavior on a pre-feature revision);
+  (3) stop test processes
   and record retained test home/pairing for T5, or clean up after failure.
 - **Live:** one test daemon/relay identity plus existing Android app; no replacement
   or production-state copy. Reassess after the initial 30-minute setup allowance.
@@ -126,18 +137,25 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 /keep-me-in-the-loop Run T3 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
 ```
 
-- **Depends on:** after T1 for accepted contract/baseline; not alongside any other
+- **Depends on:** after T1 for accepted M1.3 filtering contract and stable baseline; not alongside any other
   execution thread. Do not wait for T2 if the phone session is unavailable.
 - **Human:** at approval, authorize scoped feature implementation and named isolated
   CLI/MCP/test-daemon verification; no phone participation or GUI launch needed.
   None after approval unless scope, access, or safety assumptions change.
-- **Chunks:** (1) persisted policy, optional wire contract, shared provisioning and
-  runtime mutation; (2) agent/terminal delivery suppression retaining state/events;
-  (3) CLI/MCP create/update/readback parity and minimal adapter journeys.
+- **Chunks:** (1) persisted workspace policy, optional wire contract, shared provisioning
+  and runtime mutation; (2) workspace agent/terminal delivery suppression retaining
+  state/events; (3) durable host denylist and bounded matching of completion-bound
+  text, independent capability and host authority, with workspace mute precedence;
+  (4) CLI/MCP workspace create/update/read and host rule get/set/clear parity with
+  minimal adapter journeys. Review workspace enforcement and global filtering as
+  separate increments; M2.4 closes only after enforcement and adapter proofs pass.
 - **Live:** local disposable test homes only; clean up before handoff. Record check
   timings against T1, repair regressions within the changing chunk.
 - **Done when:** S3–S4/G2 accepted and published, including same-directory workspace
-  isolation, creation ordering, failures, and unsupported-host behavior. Phone
+  isolation, creation ordering, failures, and unsupported-host behavior. Include
+  regex escaping, invalid-save retention, stale/missing/truncated/next-turn subjects,
+  global two-workspace coverage and separate-daemon isolation, at the cheapest
+  reliable layers. Preserve completion subscriptions as well as UI attention. Phone
   suppression remains unverified until T5. Mark T4 ready.
 
 ## T4 — Desktop user control and feature builds: S5–S6
@@ -155,12 +173,17 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
   arrange it before the demonstration; affected notification proof waits on it.
   No Android install or menu proof.
 - **Chunks:** (1) shared cross-platform workspace menu and synchronized state;
-  (2) desktop success/failure/unsupported-host and notification demonstrations;
-  (3) sequential npm/Nix packaging and artifact provenance for the feature revision.
+  (2) cross-platform host rule editor with explicit save/clear, validation and
+  unsaved-edit/external-update handling; (3) desktop UI/CLI/MCP synchronization,
+  failed-save/unsupported-host and notification demonstrations for both policies;
+  (4) sequential npm/Nix packaging and artifact provenance for the feature revision.
+  Filter proof uses an unmuted workspace and nonmatching/rule-cleared positive
+  controls around a matching completion. Do not repeat the regex matrix in the UI.
 - **Live:** isolated desktop settings/daemon and disposable workspaces; prevent
   built-in takeover and updates. Stop test processes; packaging smoke hooks stay
   disabled. Preserve the built artifacts, not running applications.
-- **Done when:** S5/G3 and S6 accepted and published with required checks/timings.
+- **Done when:** S5/G3, including M3.3 host controls, and S6 accepted and published
+  with required checks/timings.
   Mark T5 ready only if T2 is also done; otherwise recommend T2 next.
 
 ## T5 — Final Android proof and cleanup: S7–S8
@@ -178,14 +201,17 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
   Mid-run, select test host, disable Wi-Fi, background the app as needed, and report
   actual arrivals. At cleanup, remove only the test host from the phone. The proof
   waits for these observations; after cleanup no human action remains in this scope.
-- **Chunks:** (1) verify final revision and execute the plan's phone gate: eligible
+- **Chunks:** (1) verify final revision and execute the plan's six-part phone gate: eligible
   positive controls around muted events plus runtime unmute, sampling agent and
-  terminal paths with attention retained; (2) stop/remove test resources, verify
-  production unchanged, and publish concise evidence and limitations.
+  terminal paths with attention retained, then regex-filter a matching completion
+  in an unmuted workspace with nonmatching and rule-cleared positive controls;
+  (2) stop/remove test resources and test-only rule configuration, verify production
+  and its settings unchanged, and publish concise evidence and limitations.
 - **Live:** retained test identity/home if still valid; otherwise repeat the approved
   pairing process. Allow roughly 15 minutes initially for guided checks, then
-  reassess delays without weakening proof. Positive-control failure blocks success.
-- **Done when:** S7–S8/G4 accepted, all other gates closed, test cleanup verified,
+  reassess extra controls and presence delays without weakening proof or duplicating
+  the full offline matrix. Positive-control failure blocks success.
+- **Done when:** S7–S8/G4 and W6 accepted, all other gates closed, test cleanup verified,
   and status distinguishes built/verified from deployed. On failure, perform cleanup
   and record open gates; do not mark the campaign complete.
 
@@ -199,12 +225,23 @@ choice for this campaign; it must enforce the ownership and handoff rules above.
 This does not authorize changing the overseer skill. Manual use of the prompts
 is equally supported.
 
-The continuous reviewer accepted the script with no unresolved material findings.
-The review confirmed step/gate coverage, safe phone-wait handoff, sequential
-ownership, and explicit launch authority. The user confirmed Tier 3 on 2026-10-04
-and authorized publication only. No execution thread has started.
+The original script passed review for step/gate coverage, safe phone-wait handoff,
+sequential ownership, and explicit launch authority. The user confirmed it on
+2026-10-04 for publication only. This revision retains those boundaries and passed
+review with no unresolved material findings. The user confirmed it for publication only.
+No execution thread has started.
+
+- [x] Derive revised chunks from the confirmed regex roadmap.
+- [x] Obtain reviewer acceptance of revised Tier 3.
+- [x] Obtain user confirmation of revised Tier 3.
+- [x] Finalize the confirmed script for publication; leave execution approval separate.
 
 - 2026-10-04: derived from confirmed Tiers 1–2; five threads preserve independent
   phone scheduling with sequential checkout ownership and mandatory final proof.
 
 - 2026-10-04: user confirmed Tier 3 for publication, planning only.
+
+- 2026-10-04: drafted regex extension in the same five threads; M1.3 blocks T3,
+  host controls join T3/T4, and final filter proof joins the existing T5 phone session.
+
+- 2026-10-04: user confirmed the regex-extended Tier 3 for publication, planning only.
