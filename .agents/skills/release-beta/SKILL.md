@@ -6,4 +6,4 @@ user-invocable: true
 
 # Release beta
 
-Follow the **Beta flow** and **Beta release** completion checklist in `docs/release.md` end-to-end.
+Follow the **Beta flow** and **Beta release** completion checklist in `docs/upstream/release.md` end-to-end.
