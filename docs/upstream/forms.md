@@ -76,7 +76,7 @@ complete`), keyed off the opened snapshot's serverId. Waiting for data is a
 - Copy is opt-in and rare. No hint/subtext unless the maintainer approved the
   exact string; validation errors are the exception. State a fact (like the
   timezone) once — never in a preview line AND a helper line.
-- `useUnistyles` is banned (see docs/unistyles.md); lint enforces.
+- `useUnistyles` is banned (see docs/upstream/unistyles.md); lint enforces.
 
 ## Settings rows
 
