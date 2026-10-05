@@ -67,16 +67,15 @@ or archive semantics, and unrelated OS/app-update notifications.
 
 ### 2.1 Earlier direction
 
-The [earlier per-agent plan](CUSTOMIZABLE_NOTIFICATIONS.md) records the initial
-overseer use case: quiet top-level workers, with the overseer and `Question: …`
+The earlier per-agent proposal addressed quiet top-level workers, with the overseer and `Question: …`
 threads still eligible to notify. The user chose all-notification suppression
 with attention state preserved, current `main`, and fork-only delivery.
 No notification feature was implemented.
 
 **Changed (the user, 2026-10-04):** the requested primary configuration boundary
 is now the workspace, with UI, CLI, and MCP surfaces. The user confirmed workspace-only settings in D4, replacing the unimplemented
-per-agent proposal. This document owns the new workspace design; the earlier
-document remains the history and build-evidence record.
+per-agent proposal. This document owns the workspace design and retained build
+evidence. The superseded proposal remains in Git history at `2f5619217`.
 
 ### 2.2 Repository and runtime evidence
 
@@ -85,9 +84,24 @@ published on `docs/configurable-notifications`: `origin` now points to
 `iExalt/paseo`, and `upstream` to `getpaseo/paseo`. The Mise configuration replacement
 and Android tool declarations remain unrelated uncommitted work; preserve them.
 
-Both npm and Nix macOS packages built successfully; see the earlier plan's build
-receipts. Neither was run. Installed 0.10.2 and live overseer runs come from the
-handoff, not a fresh runtime inventory. Recheck them before any future cutover.
+Historical build receipts from `4869214bc`, with local documentation and Mise
+configuration changes, record successful unsigned macOS packages without a
+notification patch. Artifact metadata was inspected; neither app, bundled CLI,
+nor daemon was launched. These receipts establish packaging feasibility only.
+
+| Route                  | Artifact                                       | Recorded result                                          |
+| ---------------------- | ---------------------------------------------- | -------------------------------------------------------- |
+| npm / electron-builder | `packages/desktop/release/mac-arm64/Paseo.app` | Success; 535 MB, version 0.11.0-beta.3, macOS 13 minimum |
+| Nix                    | `result/Applications/Paseo.app`                | Success; 470 MB, version 0.11.0-beta.3, macOS 13 minimum |
+
+Both build tasks used `PASEO_DESKTOP_SMOKE=0` to prevent the packaged-app smoke
+hook from launching outputs. The npm build ran outside the sandbox because Expo
+writes settings under `~/.expo`; logs were retained locally in
+`.dev/build-validation`. See [development](upstream/development.md#nix-desktop-package)
+for the Nix build route.
+
+Installed 0.10.2 and live overseer runs come from the handoff, not a fresh runtime
+inventory. Recheck them before any future cutover.
 
 Verified source constraints:
 
@@ -222,10 +236,27 @@ the test desktop environment. Check the launch configuration before executing it
 the previous packaged-app no-launch restriction is lifted only for an explicitly
 approved isolated validation phase, not by this planning document.
 
+Earlier source inspection found two deployment traps: disabling desktop daemon
+management stops its running daemon, and `--publish never` prevents build-time
+publication without disabling runtime automatic updates. The inspected publisher
+targeted `getpaseo/paseo` and automatic downloads were enabled. Recheck those
+behaviors on the chosen revision before launching a fork desktop.
+
 Do not change notification permissions, erase data, or replace the production app
 on the phone. Test pairing/removal and switching to mobile data need named human
 steps in the roadmap. No Android debug installation is needed for this campaign. If isolation cannot be established, stop that probe and
 report the missing prerequisite. Never restart production to unblock testing.
+
+Production cutover and overseer integration remain deferred under D7. The later
+deployment plan must identify exact process targets, startup ownership, and
+rollback commands before requesting interruption. Inspect idle overseers for
+background work, and perform the switch from a session independent of the daemon
+being replaced. Never run two daemons against the production home. Back up durable
+state and desktop settings consistently; preserve identity, pairings, relay, and
+credentials. Verify desktop relaunch and update behavior cannot replace the fork.
+Rollback must repeat the live-work check and account for newer writes before
+restoring any backup; never overwrite new agent history automatically. Active
+turns and provider-owned background work are not guaranteed to survive a restart.
 
 ### 4.3 Daemon-wide reply denylist
 
