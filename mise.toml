@@ -1,3 +1,7 @@
+[tools]
+java = "21"
+android-sdk = "21.0"
+
 [vars]
 android_sdk_version = '{{ read_file(path=".tool-versions") | split(pat="android-sdk") | last | trim | split(pat="\n") | first | trim }}'
 
@@ -8,3 +12,13 @@ _.path = [
   "{{ env.HOME }}/.local/share/mise/installs/android-sdk/{{ vars.android_sdk_version }}/platform-tools",
   "{{ env.HOME }}/.local/share/mise/installs/android-sdk/{{ vars.android_sdk_version }}/emulator",
 ]
+
+[tasks."build:macos:npm"]
+description = "Build an unsigned macOS app without launching or publishing it"
+run = "npm run build:desktop -- --mac --dir --publish never --config.mac.identity=null --config.mac.hardenedRuntime=false --config.mac.notarize=false"
+env = { CSC_IDENTITY_AUTO_DISCOVERY = "false", PASEO_DESKTOP_SMOKE = "0" }
+
+[tasks."build:macos:nix"]
+description = "Build the Nix macOS desktop app without launching it"
+run = "nix build .#desktop"
+env = { PASEO_DESKTOP_SMOKE = "0" }
