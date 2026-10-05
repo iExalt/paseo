@@ -26,5 +26,5 @@ USER root
 RUN npm install -g @openai/codex @anthropic-ai/claude-code
 ```
 
-See [docs/docker.md](../docs/docker.md) for Compose, reverse proxy, security,
+See [docs/upstream/docker.md](../docs/upstream/docker.md) for Compose, reverse proxy, security,
 agent auth, and troubleshooting notes.
