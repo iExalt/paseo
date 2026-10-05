@@ -77,8 +77,8 @@ Source inspection established:
   from its own workspace package. The built checkout CLI is a candidate launcher;
   source inspection does not prove that deployment works.
 
-See [development](development.md), [protocol compatibility](protocol-compatibility.md),
-and [agent lifecycle](agent-lifecycle.md) for the owning conventions.
+See [development](upstream/development.md), [protocol compatibility](upstream/protocol-compatibility.md),
+and [agent lifecycle](upstream/agent-lifecycle.md) for the owning conventions.
 
 The main uncertainty is whether the installed desktop can use the isolated fork
 daemon while its existing daemon continues to manage live runs. No runtime probe
@@ -175,7 +175,7 @@ owning declarations before diagnosing cross-package errors. Use npm formatting
 scripts and `npm run format` before committing. Use conventional commits without
 attribution trailers. Never run the full local suite; use fork CI for broader
 checks. Report checks exceeding a minute and avoid redundant reruns. Follow
-[testing](testing.md) and [QA](qa.md).
+[testing](upstream/testing.md) and [QA](upstream/qa.md).
 
 ## macOS app build option
 
@@ -193,7 +193,7 @@ not yet a replacement for the external-daemon probe.
   `packages/desktop/release`.
 - `.github/workflows/desktop-release.yml` builds both arm64 and x64 with Node 22.
   Its signed/notarized release path requires Apple signing and notarization secrets.
-- [Development](development.md#nix-desktop-package) documents `nix build .#desktop`.
+- [Development](upstream/development.md#nix-desktop-package) documents `nix build .#desktop`.
   `nix/desktop-package.nix` includes an unsigned macOS path with signing,
   hardened runtime, and notarization disabled, yielding
   `result/Applications/Paseo.app` and a launcher.

@@ -164,7 +164,7 @@ function ProviderGlyph({
  * a muted secondary line (model · cadence · next run), a StatusBadge, and the
  * kebab menu that owns every row action. Tapping the row opens the editor.
  *
- * Hover lives on the outer plain View (docs/hover.md): the inner Pressable owns
+ * Hover lives on the outer plain View (docs/upstream/hover.md): the inner Pressable owns
  * press, the nested kebab Pressable never fights it, and the row background
  * highlights without reflow.
  */

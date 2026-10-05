@@ -53,8 +53,8 @@ Constraints carried forward from the conversation:
   generated bundles out of commits. No upstream issue or PR.
 - Preserve protocol compatibility. Optional wire fields, explicit capability
   gating for a new client feature, pure schemas, and dotted new RPC names follow
-  [protocol compatibility](protocol-compatibility.md) and
-  [RPC namespacing](rpc-namespacing.md).
+  [protocol compatibility](upstream/protocol-compatibility.md) and
+  [RPC namespacing](upstream/rpc-namespacing.md).
 
 Ranked preference already supplied: creation-time and runtime automation access
 is essential, not a follow-up after the UI. The contract and scope below were accepted with Tier 1 confirmation.
@@ -93,16 +93,16 @@ Verified source constraints:
 
 | Subject         | Evidence and implication                                                                                                                                                                                              |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity        | [Glossary](glossary.md): a workspace belongs to one project; sibling workspaces can share a directory. Key policy by workspace ID, not project or `cwd`.                                                              |
+| Identity        | [Glossary](upstream/glossary.md): a workspace belongs to one project; sibling workspaces can share a directory. Key policy by workspace ID, not project or `cwd`.                                                     |
 | Persistence     | `packages/server/src/server/workspace-registry.ts` owns workspace records and updates. Its labels are a string array, unlike agent key/value labels. Do not assume the old label implementation transfers unchanged.  |
 | Creation        | `packages/protocol/src/messages.ts` defines `WorkspaceCreateRequestSchema`. `session.ts` provisions before creating the initial agent. Creation policy must enter the provisioning transaction, not a later mutation. |
 | MCP creation    | `packages/server/src/server/agent/tools/paseo-tools.ts` calls directory/worktree creation paths directly. Changing only the WebSocket creation handler leaves MCP uncovered.                                          |
 | CLI             | `packages/cli/src/commands/workspace/index.ts` exposes create/list/rename/archive/setup. Notification updates and readback need explicit API and command design.                                                      |
-| User menus      | `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx` shares item rendering between context and button menus. Use that shared surface for right-click and touch access; follow [menus](menus.md).          |
+| User menus      | `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx` shares item rendering between context and button menus. Use that shared surface for right-click and touch access; follow [menus](upstream/menus.md). |
 | Delivery        | `packages/server/src/server/websocket-server.ts` has separate agent and terminal attention broadcasts. Both carry non-notifying observation events. Preserve those events while suppressing user-facing delivery.     |
 | Client behavior | `packages/app/src/contexts/session-context.tsx` inspects `shouldNotify` for agent and terminal attention.                                                                                                             |
 | Attention       | Manager completion/error handling sets attention before delivery. Pending permissions do not force the unread attention flag. Preserve both existing behaviors.                                                       |
-| Authority       | [Permissions](permissions.md) classifies workspace management independently from protocol names. New mutation paths must use the existing authority model.                                                            |
+| Authority       | [Permissions](upstream/permissions.md) classifies workspace management independently from protocol names. New mutation paths must use the existing authority model.                                                   |
 
 ## 3. Decision ledger and current frontier
 
@@ -441,7 +441,7 @@ the gate.
 Use the installed Android app for the push gate; no mobile rebuild, debug app
 installation, or upstream signing credentials are planned. Confirm the installed
 variant supports push before the early connectivity probe. The F-Droid variant
-excludes push support ([Android docs](android.md)) and cannot establish this gate.
+excludes push support ([Android docs](upstream/android.md)) and cannot establish this gate.
 If the installed variant or relay connection cannot support a positive control,
 report the blocker and revisit the validation route without replacing the app.
 
@@ -450,7 +450,7 @@ must schedule an early measurement on the pinned baseline with fixed machine,
 cache, and concurrency conditions, then set a reviewed budget. Previous build
 durations are not a test-suite baseline. Maintain latency in each implementation
 step without moving required evidence into optional checks. Never run the full
-local suite; follow [testing](testing.md) and the repository's targeted-test rule.
+local suite; follow [testing](upstream/testing.md) and the repository's targeted-test rule.
 
 ## 7. Review and next action
 
