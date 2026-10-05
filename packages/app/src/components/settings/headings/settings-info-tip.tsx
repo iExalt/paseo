@@ -20,7 +20,7 @@ interface SettingsInfoTipProps {
 /**
  * The one way a settings group or section explains itself: an info icon on the
  * header that opens a tooltip. Never a paragraph under the header — see
- * docs/design.md §7.
+ * docs/upstream/design.md §7.
  */
 export function SettingsInfoTip({ title, info, testID }: SettingsInfoTipProps) {
   const { t } = useTranslation();

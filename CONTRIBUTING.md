@@ -12,7 +12,7 @@ The goal is a low floor and a high ceiling: a polished default experience that i
 
 The core continues to evolve through improvements to the shared experience. Specialized workflows and integrations belong in the extension ecosystem. Product, design, architecture, and workflow decisions remain with the maintainer.
 
-Read the [product philosophy](docs/product.md) for the reasoning behind these choices and how Paseo develops.
+Read the [product philosophy](docs/upstream/product.md) for the reasoning behind these choices and how Paseo develops.
 
 ## Build a plugin
 
@@ -68,7 +68,7 @@ If you choose to submit a PR, these are the basics to cover.
 - **Demonstrated demand.** Link a discussion with concrete examples of other users needing the workflow. A feature for a small, specialized use case belongs in a plugin.
 - **Value across workflows.** The feature should improve how existing capabilities work together and benefit a broad set of users. A reusable improvement is more valuable than an isolated control for one task.
 - **A coherent design across platforms and providers.** Shared capabilities should work across platforms and providers wherever applicable. Do not reshape a shared abstraction around one provider while leaving the others unsupported or inconsistent.
-- **A finished experience.** Follow the [design guidelines](docs/design.md). The feature must look and feel right in Paseo, including loading states, layout stability, and interaction performance. PRs with janky or rushed interfaces will be closed. Design judgment remains with the maintainer.
+- **A finished experience.** Follow the [design guidelines](docs/upstream/design.md). The feature must look and feel right in Paseo, including loading states, layout stability, and interaction performance. PRs with janky or rushed interfaces will be closed. Design judgment remains with the maintainer.
 
 ### Keep the scope small
 
@@ -85,7 +85,7 @@ Explain the problem and link the relevant bug report or discussion. Include:
 - A recording for interactive UI changes, or before-and-after screenshots for static changes.
 - The platforms you tested and any affected platforms you could not test.
 
-The [QA guide](docs/qa.md) explains the expected evidence and available tooling.
+The [QA guide](docs/upstream/qa.md) explains the expected evidence and available tooling.
 
 Using an agent is welcome. Sending it to implement a change and submitting its output without trying the result yourself does not meet this bar.
 

@@ -6,4 +6,4 @@ user-invocable: true
 
 # Release stable
 
-Follow the applicable flow and the **Stable release (or promotion)** completion checklist in `docs/release.md` end-to-end.
+Follow the applicable flow and the **Stable release (or promotion)** completion checklist in `docs/upstream/release.md` end-to-end.

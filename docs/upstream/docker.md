@@ -4,7 +4,7 @@ Paseo publishes a container image for running the daemon on a server, VM, NAS,
 or homelab box. The image also serves the bundled browser web UI, so one
 container gives you both the daemon API and a self-hosted UI.
 
-The image source lives in [`docker/`](../docker/).
+The image source lives in [`docker/`](../../docker/).
 
 ## How it works
 
@@ -46,7 +46,7 @@ daemon connection in the web UI or another Paseo client.
 
 ## Docker Compose
 
-Use [`docker/docker-compose.example.yml`](../docker/docker-compose.example.yml):
+Use [`docker/docker-compose.example.yml`](../../docker/docker-compose.example.yml):
 
 ```bash
 cp docker/docker-compose.example.yml docker-compose.yml
@@ -98,7 +98,7 @@ first-run directory setup, then drops the daemon and launched agents to the
 non-root `paseo` user.
 
 An example child image is in
-[`docker/Dockerfile.agents.example`](../docker/Dockerfile.agents.example).
+[`docker/Dockerfile.agents.example`](../../docker/Dockerfile.agents.example).
 
 You can also mount credentials from the host or run agent login once inside the
 container:
@@ -187,7 +187,7 @@ IPs and `localhost` are allowed by default.
 - The bundled web UI static files are public on the daemon origin. The daemon
   API and WebSocket remain protected by password auth when configured.
 
-See [SECURITY.md](../SECURITY.md) for the daemon trust model.
+See [SECURITY.md](../../SECURITY.md) for the daemon trust model.
 
 ## Building Locally
 
