@@ -20,7 +20,7 @@ Fetch [https://paseo.sh/llms.txt](https://paseo.sh/llms.txt) first. Select and f
 Use the deployed docs when they disagree with this skill. Do not send the user away to read them instead of completing the work.
 
 In the Paseo repository, use `public-docs/plugins/reference.md` for the checkout's API, including
-unreleased changes. Use `docs/plugins.md` for maintainer guidance. Complete contracts belong in the
+unreleased changes. Use `docs/upstream/plugins.md` for maintainer guidance. Complete contracts belong in the
 public docs; this skill indexes the references and examples.
 
 ## What a plugin can contribute
