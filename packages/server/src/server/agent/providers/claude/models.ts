@@ -166,7 +166,7 @@ const CLAUDE_PLACEHOLDER_MODEL_IDS = new Set(["<synthetic>"]);
  * gateway prefix are the same model), but falls back to the raw string when the manifest does
  * not know it. The fallback matters: Claude Code is an Anthropic-compatible client, so subagents
  * routinely report models that are not Anthropic's — Z.AI GLM ids via `ANTHROPIC_BASE_URL`
- * (docs/custom-providers.md) among them. Manifest-only resolution would blank the model for
+ * (docs/upstream/custom-providers.md) among them. Manifest-only resolution would blank the model for
  * exactly those users.
  *
  * A `[1m]` suffix is preserved where it names its own manifest entry. Models such as Fable 5

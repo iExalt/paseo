@@ -357,7 +357,7 @@ export function QuestionFormCard({ permission, onRespond, isResponding }: Questi
 
       // Single-select: an option and a custom answer replace each other, as in Claude Code.
       // Multi-select keeps both. The editing surface owns its text and never replays state
-      // (docs/forms.md), so clearing state alone would leave stale text on screen that
+      // (docs/upstream/forms.md), so clearing state alone would leave stale text on screen that
       // submit ignores; clear the surface explicitly.
       if (!multiSelect && otherTexts[qIndex]) {
         setOtherTexts((prev) => {

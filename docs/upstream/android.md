@@ -227,4 +227,4 @@ npx eas build:view <build-id>
 
 The Play Console (Internal testing → Production tracks) is the final confirmation that the binary reached the store.
 
-See [docs/release.md](release.md) for the full mobile-build babysitting flow.
+See [docs/upstream/release.md](release.md) for the full mobile-build babysitting flow.

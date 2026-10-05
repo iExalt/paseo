@@ -19,61 +19,63 @@ This is an npm workspace monorepo:
 
 `docs/` is the source of truth for system-level and process-level knowledge. **"The docs", "check the docs", or "check the X docs" always mean this directory — not the web.** Look here before fetching anything online; the docs capture gotchas and conventions you cannot derive from the code or external sources.
 
+Fork-specific plans and notes live at the top level of `docs/`. Paseo's bundled documentation and evidence live in `docs/upstream/`.
+
 At the start of non-trivial work, list `docs/` and skim anything relevant to the task.
 
 | Doc                                                                                      | What's in it                                                                                                                   |
 | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| [docs/product.md](docs/product.md)                                                       | What Paseo is, who it's for, where it's going                                                                                  |
-| [docs/architecture.md](docs/architecture.md)                                             | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
-| [docs/agent-lifecycle.md](docs/agent-lifecycle.md)                                       | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
+| [docs/upstream/product.md](docs/upstream/product.md)                                     | What Paseo is, who it's for, where it's going                                                                                  |
+| [docs/upstream/architecture.md](docs/upstream/architecture.md)                           | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
+| [docs/upstream/agent-lifecycle.md](docs/upstream/agent-lifecycle.md)                     | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
 | [docs/CUSTOMIZABLE_NOTIFICATIONS.md](docs/CUSTOMIZABLE_NOTIFICATIONS.md)                 | Earlier per-agent notification proposal and local build evidence                                                               |
 | [docs/CONFIGURABLE_NOTIFICATIONS.md](docs/CONFIGURABLE_NOTIFICATIONS.md)                 | Confirmed workspace notification plan: user controls, CLI, MCP, and verification scope                                         |
 | [docs/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md](docs/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) | Notification steps, dependencies, proof gates, and timing budgets; tick completed steps and plan boxes in the same commit      |
 | [docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md](docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md)   | Notification execution threads, literal prompts, dependencies, and human approval boundaries                                   |
-| [docs/data-model.md](docs/data-model.md)                                                 | File-based JSON persistence, Zod schemas, atomic writes, no migrations                                                         |
-| [docs/glossary.md](docs/glossary.md)                                                     | Authoritative terminology — UI label wins, no synonyms                                                                         |
-| [docs/coding-standards.md](docs/coding-standards.md)                                     | Type hygiene, error handling, state design, React patterns, file organization                                                  |
-| [docs/design.md](docs/design.md)                                                         | Design system — tokens, buttons, hierarchy, density, alignment rails, states, what's forbidden                                 |
-| [docs/forms.md](docs/forms.md)                                                           | Form architecture — non-React form model, form kit, load-state gating; the schedule form is the golden example                 |
-| [docs/hover.md](docs/hover.md)                                                           | Hover — the canonical pattern (plain View + onPointerEnter/Leave, separate inner Pressable) and the three ways agents break it |
-| [docs/unistyles.md](docs/unistyles.md)                                                   | Unistyles gotchas — `useUnistyles()` is forbidden, alternatives in order                                                       |
-| [docs/floating-panels.md](docs/floating-panels.md)                                       | Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash      |
-| [docs/menus.md](docs/menus.md)                                                           | The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu                               |
-| [docs/expo-router.md](docs/expo-router.md)                                               | Expo Router route ownership, startup restore, and native blank-screen gotchas                                                  |
-| [docs/file-icons.md](docs/file-icons.md)                                                 | Material icon theme integration for the file explorer                                                                          |
-| [docs/providers.md](docs/providers.md)                                                   | Adding a new agent provider end-to-end                                                                                         |
-| [docs/forge-providers.md](docs/forge-providers.md)                                       | Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers                                  |
-| [docs/custom-providers.md](docs/custom-providers.md)                                     | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries                                              |
-| [docs/plugins.md](docs/plugins.md)                                                       | Local plugin manifest, directory source config, RPCs, native surfaces, and attachment sources                                  |
-| [docs/service-proxy.md](docs/service-proxy.md)                                           | Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config                                      |
-| [docs/development.md](docs/development.md)                                               | Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP                                                     |
-| [docs/rpc-namespacing.md](docs/rpc-namespacing.md)                                       | WebSocket RPC naming convention — dotted namespaces and `.request`/`.response` pairs                                           |
-| [docs/protocol-compatibility.md](docs/protocol-compatibility.md)                         | Why app/daemon versions drift, protocol vs feature contract, capability gating, COMPAT tagging                                 |
-| [docs/protocol-validation.md](docs/protocol-validation.md)                               | zod-aot generated inbound WebSocket validation, patched compiler regressions, schema-purity rules                              |
-| [docs/permissions.md](docs/permissions.md)                                               | Semantic daemon permissions, principals, credentials, pairing invitations, and Hub authority                                   |
-| [docs/terminal-performance.md](docs/terminal-performance.md)                             | Terminal latency pipeline, coalescing/backpressure invariants, benchmark + perf spec usage                                     |
-| [docs/agent-stream-performance.md](docs/agent-stream-performance.md)                     | Assistant text pipeline — coalescing window, paced reveal, why arrival lumps are smoothed at render                            |
-| [docs/file-observation.md](docs/file-observation.md)                                     | Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison                                     |
-| [docs/testing.md](docs/testing.md)                                                       | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
-| [docs/qa.md](docs/qa.md)                                                                 | QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof                                      |
-| [docs/mobile-testing.md](docs/mobile-testing.md)                                         | Maestro and mobile test workflows                                                                                              |
-| [docs/mobile-panels.md](docs/mobile-panels.md)                                           | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
-| [docs/explorer-sidebar.md](docs/explorer-sidebar.md)                                     | Explorer sidebar and ordinary side-pane host contracts, lifecycle, placement, and routing preferences                          |
-| [docs/ad-hoc-daemon-testing.md](docs/ad-hoc-daemon-testing.md)                           | Isolated in-process daemon test harness                                                                                        |
-| [docs/browser-capture-harness.md](docs/browser-capture-harness.md)                       | Real-Electron browser screenshot harness and compositor-surface gotcha                                                         |
-| [docs/android.md](docs/android.md)                                                       | App variants, local/cloud builds, EAS workflows, version codes, F-Droid source builds and store metadata                       |
-| [docs/docker.md](docs/docker.md)                                                         | Running the daemon and bundled web UI in Docker, volumes, agent images, security                                               |
-| [docs/release.md](docs/release.md)                                                       | Release playbook, draft releases, completion checklist                                                                         |
-| [docs/terminal-activity.md](docs/terminal-activity.md)                                   | Terminal activity indicators — source-agnostic tracker, agent hook reporting, adding a new hook provider                       |
+| [docs/upstream/data-model.md](docs/upstream/data-model.md)                               | File-based JSON persistence, Zod schemas, atomic writes, no migrations                                                         |
+| [docs/upstream/glossary.md](docs/upstream/glossary.md)                                   | Authoritative terminology — UI label wins, no synonyms                                                                         |
+| [docs/upstream/coding-standards.md](docs/upstream/coding-standards.md)                   | Type hygiene, error handling, state design, React patterns, file organization                                                  |
+| [docs/upstream/design.md](docs/upstream/design.md)                                       | Design system — tokens, buttons, hierarchy, density, alignment rails, states, what's forbidden                                 |
+| [docs/upstream/forms.md](docs/upstream/forms.md)                                         | Form architecture — non-React form model, form kit, load-state gating; the schedule form is the golden example                 |
+| [docs/upstream/hover.md](docs/upstream/hover.md)                                         | Hover — the canonical pattern (plain View + onPointerEnter/Leave, separate inner Pressable) and the three ways agents break it |
+| [docs/upstream/unistyles.md](docs/upstream/unistyles.md)                                 | Unistyles gotchas — `useUnistyles()` is forbidden, alternatives in order                                                       |
+| [docs/upstream/floating-panels.md](docs/upstream/floating-panels.md)                     | Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash      |
+| [docs/upstream/menus.md](docs/upstream/menus.md)                                         | The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu                               |
+| [docs/upstream/expo-router.md](docs/upstream/expo-router.md)                             | Expo Router route ownership, startup restore, and native blank-screen gotchas                                                  |
+| [docs/upstream/file-icons.md](docs/upstream/file-icons.md)                               | Material icon theme integration for the file explorer                                                                          |
+| [docs/upstream/providers.md](docs/upstream/providers.md)                                 | Adding a new agent provider end-to-end                                                                                         |
+| [docs/upstream/forge-providers.md](docs/upstream/forge-providers.md)                     | Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers                                  |
+| [docs/upstream/custom-providers.md](docs/upstream/custom-providers.md)                   | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries                                              |
+| [docs/upstream/plugins.md](docs/upstream/plugins.md)                                     | Local plugin manifest, directory source config, RPCs, native surfaces, and attachment sources                                  |
+| [docs/upstream/service-proxy.md](docs/upstream/service-proxy.md)                         | Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config                                      |
+| [docs/upstream/development.md](docs/upstream/development.md)                             | Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP                                                     |
+| [docs/upstream/rpc-namespacing.md](docs/upstream/rpc-namespacing.md)                     | WebSocket RPC naming convention — dotted namespaces and `.request`/`.response` pairs                                           |
+| [docs/upstream/protocol-compatibility.md](docs/upstream/protocol-compatibility.md)       | Why app/daemon versions drift, protocol vs feature contract, capability gating, COMPAT tagging                                 |
+| [docs/upstream/protocol-validation.md](docs/upstream/protocol-validation.md)             | zod-aot generated inbound WebSocket validation, patched compiler regressions, schema-purity rules                              |
+| [docs/upstream/permissions.md](docs/upstream/permissions.md)                             | Semantic daemon permissions, principals, credentials, pairing invitations, and Hub authority                                   |
+| [docs/upstream/terminal-performance.md](docs/upstream/terminal-performance.md)           | Terminal latency pipeline, coalescing/backpressure invariants, benchmark + perf spec usage                                     |
+| [docs/upstream/agent-stream-performance.md](docs/upstream/agent-stream-performance.md)   | Assistant text pipeline — coalescing window, paced reveal, why arrival lumps are smoothed at render                            |
+| [docs/upstream/file-observation.md](docs/upstream/file-observation.md)                   | Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison                                     |
+| [docs/upstream/testing.md](docs/upstream/testing.md)                                     | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
+| [docs/upstream/qa.md](docs/upstream/qa.md)                                               | QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof                                      |
+| [docs/upstream/mobile-testing.md](docs/upstream/mobile-testing.md)                       | Maestro and mobile test workflows                                                                                              |
+| [docs/upstream/mobile-panels.md](docs/upstream/mobile-panels.md)                         | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
+| [docs/upstream/explorer-sidebar.md](docs/upstream/explorer-sidebar.md)                   | Explorer sidebar and ordinary side-pane host contracts, lifecycle, placement, and routing preferences                          |
+| [docs/upstream/ad-hoc-daemon-testing.md](docs/upstream/ad-hoc-daemon-testing.md)         | Isolated in-process daemon test harness                                                                                        |
+| [docs/upstream/browser-capture-harness.md](docs/upstream/browser-capture-harness.md)     | Real-Electron browser screenshot harness and compositor-surface gotcha                                                         |
+| [docs/upstream/android.md](docs/upstream/android.md)                                     | App variants, local/cloud builds, EAS workflows, version codes, F-Droid source builds and store metadata                       |
+| [docs/upstream/docker.md](docs/upstream/docker.md)                                       | Running the daemon and bundled web UI in Docker, volumes, agent images, security                                               |
+| [docs/upstream/release.md](docs/upstream/release.md)                                     | Release playbook, draft releases, completion checklist                                                                         |
+| [docs/upstream/terminal-activity.md](docs/upstream/terminal-activity.md)                 | Terminal activity indicators — source-agnostic tracker, agent hook reporting, adding a new hook provider                       |
 | [SECURITY.md](SECURITY.md)                                                               | Relay threat model, E2E encryption, DNS rebinding, agent auth                                                                  |
 | [public-docs/hub/security.md](public-docs/hub/security.md)                               | Public Hub guide — trust boundaries, untrusted triggers, provider controls, and output authority                               |
 
 ### Writing docs
 
-- **Integrate, don't append.** Find the doc that owns the subject and rewrite the part that is now wrong. The standard failure is finishing a task and adding a paragraph to the bottom of the closest-looking doc; ten tasks later the doc is a pile of paragraphs in discovery order. `docs/custom-providers.md` is what that looks like.
+- **Integrate, don't append.** Find the doc that owns the subject and rewrite the part that is now wrong. The standard failure is finishing a task and adding a paragraph to the bottom of the closest-looking doc; ten tasks later the doc is a pile of paragraphs in discovery order. `docs/upstream/custom-providers.md` is what that looks like.
 - **Don't document logic.** Prose that restates code drifts from the code and loses. Write down what the code can't tell you: why something is shaped the way it is, the gotcha that cost an afternoon, conventions nothing enforces, constraints that span packages or versions. If a reader could get it in two minutes by opening the file, cut it.
 - **One fact, one doc.** Every other mention is a link. If you are about to write the same paragraph in two docs, one of them is a link.
-- **Respect the layers.** `CONTRIBUTING.md` and this file name things and link out. Activity docs like `docs/qa.md` and `docs/testing.md` set the bar for a kind of work. Subject docs like `docs/unistyles.md` own one thing completely. A layer never re-explains the one below it.
+- **Respect the layers.** `CONTRIBUTING.md` and this file name things and link out. Activity docs like `docs/upstream/qa.md` and `docs/upstream/testing.md` set the bar for a kind of work. Subject docs like `docs/upstream/unistyles.md` own one thing completely. A layer never re-explains the one below it.
 - **One subject per doc.** If the subject doesn't fit in a sentence, split the doc. A section per provider, vendor, or platform is a table plus one worked example.
 - **Delete.** Obsolete sections go. Prefer a `packages/app/src/thing.ts:120` reference over a pasted block.
 - **New doc?** Add a row to the table above and link it from the docs that should send readers there.
@@ -108,13 +110,13 @@ npm run format:check                 # Check formatting without writing
 
 Repo dev commands use checkout-local state by default. In this checkout, `PASEO_HOME` resolves to `.dev/paseo-home`, and `npm run cli -- ...` targets that same dev home automatically. The packaged desktop app and production-style daemon keep using `~/.paseo` on port `6767`.
 
-See [docs/development.md](docs/development.md) for full setup, build sync requirements, and debugging.
+See [docs/upstream/development.md](docs/upstream/development.md) for full setup, build sync requirements, and debugging.
 
 ## Release branches
 
 When the user says "this goes to next", create or
 retarget the PR to `next` and preserve that destination through delivery. Follow
-[release branch discipline](docs/release.md#release-branch-discipline) for creating
+[release branch discipline](docs/upstream/release.md#release-branch-discipline) for creating
 and updating `next`, integrating it after a release, and releasing a hotfix from a tag.
 
 ## Critical rules
@@ -122,7 +124,7 @@ and updating `next`, integrating it after a release, and releasing a hotfix from
 - **NEVER restart the main Paseo daemon on port 6767 without permission** — it manages all running agents. If you're an agent, restarting it kills your own process.
 - **NEVER assume a timeout means the service needs restarting** — timeouts can be transient.
 - **NEVER add auth checks to tests** — agent providers handle their own auth.
-- **Before changing app routes, startup routing, remembered workspace restore, or active workspace selection, read [docs/expo-router.md](docs/expo-router.md).**
+- **Before changing app routes, startup routing, remembered workspace restore, or active workspace selection, read [docs/upstream/expo-router.md](docs/upstream/expo-router.md).**
 - **NEVER run the full test suite locally.** The test suites are heavy and will freeze the machine, especially if multiple agents run them in parallel. Rules:
   - Run only the specific test file you changed: `npx vitest run <file> --bail=1`
   - Never run `npm run test` for an entire workspace unless explicitly asked.
@@ -139,11 +141,11 @@ and updating `next`, integrating it after a release, and releasing a hotfix from
 - **Always use npm scripts for linting and formatting.** Do not run tools directly with `npx eslint`, `npx oxfmt`, `npx oxlint`, or package-local binaries. For targeted checks, pass file paths through the npm script:
   - `npm run lint -- packages/app/src/components/message.tsx`
   - `npm run format:files -- CLAUDE.md packages/app/src/components/message.tsx`
-- **The protocol stays backward-compatible. Features don't have to.** Read [docs/protocol-compatibility.md](docs/protocol-compatibility.md) before touching `packages/protocol`. The short version:
+- **The protocol stays backward-compatible. Features don't have to.** Read [docs/upstream/protocol-compatibility.md](docs/upstream/protocol-compatibility.md) before touching `packages/protocol`. The short version:
   - **Protocol contract (always):** an old client parses messages from a new daemon, and a new daemon parses messages from an old client. New fields are optional; never narrow, never remove, never require. Wire schemas stay pure — no `.transform()`, `.catch()`, or `.preprocess()`.
   - **Feature contract (per-feature):** gate the capability once on `server_info.features.*`, then run the feature or tell the user to update the host. No fallback paths, no defensive branches.
   - **Every shim is tagged.** `// COMPAT(name): added in vX, remove after <date>` at the site that has to be deleted. `rg "COMPAT\("` is the cleanup backlog; untagged back-compat is permanent by accident.
-  - **New RPCs use dotted namespaces with direction suffixes.** Follow [docs/rpc-namespacing.md](docs/rpc-namespacing.md): `domain.provider.operation.request` pairs with `domain.provider.operation.response`. Existing flat RPC names will migrate over time; don't add new ones.
+  - **New RPCs use dotted namespaces with direction suffixes.** Follow [docs/upstream/rpc-namespacing.md](docs/upstream/rpc-namespacing.md): `domain.provider.operation.request` pairs with `domain.provider.operation.response`. Existing flat RPC names will migrate over time; don't add new ones.
 
 ## Platform gating
 
