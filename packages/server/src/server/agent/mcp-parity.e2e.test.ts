@@ -3,7 +3,7 @@ import path from "node:path";
 import { execSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { experimental_createMCPClient } from "ai";
+import { createMCPClient, type CallToolResult } from "@ai-sdk/mcp";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 
@@ -17,11 +17,7 @@ interface StructuredContent {
   [key: string]: unknown;
 }
 
-interface McpToolResult {
-  structuredContent?: StructuredContent;
-  content?: Array<{ structuredContent?: StructuredContent } | StructuredContent>;
-  isError?: boolean;
-}
+type McpToolResult = CallToolResult;
 
 interface McpClient {
   callTool: (input: { name: string; args?: StructuredContent }) => Promise<McpToolResult>;
@@ -65,25 +61,27 @@ function buildExpectedAgentMcpUrl(params: { host: string; port: number; agentId:
 }
 
 function getStructuredContent(result: McpToolResult): StructuredContent | null {
-  if (result.structuredContent && typeof result.structuredContent === "object") {
-    return result.structuredContent;
+  const structuredContent = result.structuredContent;
+  if (structuredContent && typeof structuredContent === "object") {
+    return structuredContent as StructuredContent;
   }
-  const content = result.content?.[0];
+  const content =
+    "content" in result && Array.isArray(result.content) ? result.content[0] : undefined;
   if (content && typeof content === "object" && "structuredContent" in content) {
-    if (content.structuredContent) {
-      return content.structuredContent;
-    }
+    const nested = content.structuredContent;
+    if (nested && typeof nested === "object") return nested as StructuredContent;
   }
   if (content && typeof content === "object") {
-    return content;
+    return content as StructuredContent;
   }
   return null;
 }
 
 async function createMcpClient(url: string): Promise<McpClient> {
   const transport = new StreamableHTTPClientTransport(new URL(url));
-  const rawClient = await experimental_createMCPClient({ transport });
-  const boundCallTool: McpClient["callTool"] = Reflect.get(rawClient, "callTool").bind(rawClient);
+  const rawClient = await createMCPClient({ transport });
+  const boundCallTool: McpClient["callTool"] = (input) =>
+    rawClient.callTool({ name: input.name, arguments: input.args ?? Object.create(null) });
   return { callTool: boundCallTool, close: () => rawClient.close() };
 }
 
@@ -92,7 +90,7 @@ async function callToolStructured(
   name: string,
   args?: StructuredContent,
 ): Promise<StructuredContent> {
-  const result = await client.callTool({ name, args: args ?? {} });
+  const result = await client.callTool({ name, args: args ?? Object.create(null) });
   const payload = getStructuredContent(result);
   if (!payload) {
     throw new Error(`${name} returned no structured payload`);
@@ -108,7 +106,8 @@ async function expectToolError(
 ): Promise<void> {
   const result = await client.callTool({ name, args });
   expect(result.isError).toBe(true);
-  const contentItem = result.content?.[0];
+  const contentItem =
+    "content" in result && Array.isArray(result.content) ? result.content[0] : undefined;
   const contentText: string | undefined =
     contentItem != null && typeof contentItem === "object"
       ? Reflect.get(contentItem, "text")
@@ -343,7 +342,9 @@ describe("Suite A: Core Fixes", () => {
     let agentId: string | null = null;
     try {
       const listenTarget = daemonHandle.daemon.getListenTarget();
-      expect(listenTarget?.type).toBe("tcp");
+      if (listenTarget?.type !== "tcp") {
+        throw new Error("Expected daemon listen target to use TCP");
+      }
       const cwd = await makeCwd("manager-direct-agent-cwd");
 
       const snapshot = await daemonHandle.daemon.agentManager.createAgent(
@@ -359,8 +360,8 @@ describe("Suite A: Core Fixes", () => {
       agentId = snapshot.id;
 
       const expectedUrl = buildExpectedAgentMcpUrl({
-        host: listenTarget!.host,
-        port: listenTarget!.port,
+        host: listenTarget.host,
+        port: listenTarget.port,
         agentId,
       });
 

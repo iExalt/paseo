@@ -2,7 +2,7 @@
   lib,
   stdenv,
   buildNpmPackage,
-  nodejs_22,
+  nodejs_26,
   python3,
   makeWrapper,
   autoPatchelfHook,
@@ -57,7 +57,7 @@ buildNpmPackage {
       && baseName != "release";
   };
 
-  nodejs = nodejs_22;
+  nodejs = nodejs_26;
   inherit (paseo) npmDeps;
 
   # Prevent onnxruntime-node's install script from running during automatic
@@ -90,6 +90,9 @@ buildNpmPackage {
 
   buildPhase = ''
     runHook preBuild
+
+    # Apply repository patches without enabling unrelated install scripts.
+    PATH="$PWD/node_modules/.bin:$PATH" node scripts/postinstall-patches.mjs
 
     # Native deps (terminal emulation; libuv-linked on Linux)
     npm rebuild node-pty

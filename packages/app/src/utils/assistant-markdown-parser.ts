@@ -1,8 +1,8 @@
-import type MarkdownIt from "markdown-it";
+import type { MarkdownIt as MarkdownItType } from "markdown-it";
 import { createMarkdownParser } from "@/utils/markdown-parser";
 import { enableStreamingMarkdown } from "@/utils/streaming-markdown";
 
-export function createAssistantMarkdownParser({ streaming = false } = {}): MarkdownIt {
+export function createAssistantMarkdownParser({ streaming = false } = {}): MarkdownItType {
   const parser = createMarkdownParser({ linkify: true });
   const defaultValidateLink = parser.validateLink.bind(parser);
 

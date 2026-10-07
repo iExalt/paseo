@@ -54,6 +54,17 @@ function pruneNodePty(nodeModules, platform, arch) {
   const prebuilds = path.join(nodeModules, "node-pty", "prebuilds");
   pruneChildrenExcept(prebuilds, new Set([`${platform}-${arch}`]));
 
+  if (platform === "darwin") {
+    const packageRoot = path.join(nodeModules, "node-pty");
+    for (const nativeDir of ["build/Release", "build/Debug", `prebuilds/darwin-${arch}`]) {
+      const helper = path.join(packageRoot, nativeDir, "spawn-helper");
+      if (fs.existsSync(helper)) {
+        // Repair the registry archive's mode before immutable Nix installation.
+        fs.chmodSync(helper, fs.statSync(helper).mode | 0o111);
+      }
+    }
+  }
+
   if (platform !== "win32") {
     rmSafe(path.join(nodeModules, "node-pty", "third_party"));
   }

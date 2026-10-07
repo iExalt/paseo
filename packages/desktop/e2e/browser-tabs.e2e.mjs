@@ -9,7 +9,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { experimental_createMCPClient } from "ai";
+import { createMCPClient } from "@ai-sdk/mcp";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { chromium } from "playwright";
 import { runAppearanceFontSizeRegression } from "./appearance-font-size.electron.mjs";
@@ -239,7 +239,7 @@ function mcpPayload(result, command) {
 }
 
 async function callBrowserTool(client, name, args = {}) {
-  return mcpPayload(await client.callTool({ name, args }), name);
+  return mcpPayload(await client.callTool({ name, arguments: args }), name);
 }
 
 async function waitForGuestSelector(client, browserId) {
@@ -276,11 +276,11 @@ async function createCallerAgent(daemonPort, workspaceId = workspaceIds[0]) {
   const transport = new StreamableHTTPClientTransport(
     new URL(`http://127.0.0.1:${daemonPort}/mcp/agents`),
   );
-  const client = await experimental_createMCPClient({ transport });
+  const client = await createMCPClient({ transport });
   try {
     const response = await client.callTool({
       name: "create_agent",
-      args: {
+      arguments: {
         relationship: { kind: "detached" },
         workspace: { kind: "existing", workspaceId },
         title: "Browser desktop browser E2E caller",
@@ -528,7 +528,10 @@ async function verifyHiddenBrowserScreenshots({
       browserId,
       function: "() => { document.body.style.background = 'rgb(0,255,0)'; }",
     });
-    const response = await client.callTool({ name: "browser_screenshot", args: { browserId } });
+    const response = await client.callTool({
+      name: "browser_screenshot",
+      arguments: { browserId },
+    });
     mcpPayload(response, "browser_screenshot");
     const screenshot = response.content.find((item) => item.type === "image");
     assert(screenshot, "browser_screenshot returned no image");
@@ -1226,7 +1229,7 @@ async function main() {
         `http://127.0.0.1:${daemonPort}/mcp/agents?callerAgentId=${encodeURIComponent(callerAgentId)}`,
       ),
     );
-    client = await experimental_createMCPClient({ transport });
+    client = await createMCPClient({ transport });
     const report = await runRegression({
       page,
       client,

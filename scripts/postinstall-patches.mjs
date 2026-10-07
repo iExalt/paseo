@@ -1,12 +1,14 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, relative } from "node:path";
+import { resolveOpenCodePatchTarget } from "./postinstall-patches-target.mjs";
 
 // In CI we often install a single workspace (e.g. server/relay/website). Only apply patches
 // when the patched dependency is actually present.
 // `cwd` is where patch-package must run from. Packages that npm does not hoist to the
 // workspace root live in their workspace's own node_modules, and patch-package resolves
 // the patch's node_modules/... paths relative to its working directory.
+const openCodePatchTarget = resolveOpenCodePatchTarget(existsSync);
 const patchedPackages = [
   {
     nodeModulesPath: "node_modules/react-native-markdown-display",
@@ -34,11 +36,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
   },
-  {
-    nodeModulesPath: "packages/server/node_modules/@opencode-ai/sdk",
-    patchPrefix: "@opencode-ai+sdk+",
-    cwd: "packages/server",
-  },
+  ...(openCodePatchTarget ? [openCodePatchTarget] : []),
 ];
 
 const installedPackages = patchedPackages.filter(({ nodeModulesPath }) =>

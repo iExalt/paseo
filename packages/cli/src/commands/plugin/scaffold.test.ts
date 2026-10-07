@@ -1,4 +1,5 @@
 import { exec, execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -10,7 +11,16 @@ import { scaffoldPluginDirectory } from "./scaffold.js";
 const directories: string[] = [];
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
-const tscPath = createRequire(import.meta.url).resolve("typescript/bin/tsc");
+const nativeCompilerPackagePath = createRequire(import.meta.url).resolve(
+  "@typescript/native/package.json",
+);
+const nativeCompilerPackage = JSON.parse(readFileSync(nativeCompilerPackagePath, "utf8")) as {
+  bin: { tsc: string };
+};
+const tscPath = path.resolve(
+  path.dirname(nativeCompilerPackagePath),
+  nativeCompilerPackage.bin.tsc,
+);
 
 async function typecheckPlugin(directory: string): Promise<void> {
   const configPath = path.join(directory, "tsconfig.json");

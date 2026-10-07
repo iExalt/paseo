@@ -28,7 +28,7 @@ import {
   useContext,
 } from "react";
 import type { ComponentType, ReactNode } from "react";
-import type MarkdownIt from "markdown-it";
+import type { MarkdownIt as MarkdownItType } from "markdown-it";
 import { type ASTNode, type RenderRules } from "react-native-markdown-display";
 import MaskedView from "@react-native-masked-view/masked-view";
 import {
@@ -89,7 +89,6 @@ import {
   type AssistantFileLinkSource,
   AssistantMarkdownCodeLink,
   AssistantMarkdownLink,
-  type InlinePathTarget,
   useAssistantFileLinkActions,
   useAssistantLinkPress,
 } from "@/assistant-file-links";
@@ -938,7 +937,7 @@ function AssistantMarkdownImage({
   );
 }
 
-function getInlineCodeAutoLinkUrl(markdownParser: MarkdownIt, content: string): string | null {
+function getInlineCodeAutoLinkUrl(markdownParser: MarkdownItType, content: string): string | null {
   const trimmed = content.trim();
   if (!trimmed) {
     return null;
@@ -1392,7 +1391,7 @@ function AssistantMessageBlockContainer({
 interface MemoizedMarkdownBlockProps {
   text: string;
   rules: RenderRules;
-  parser: MarkdownIt;
+  parser: MarkdownItType;
   onLinkPress: (url: string) => boolean;
 }
 

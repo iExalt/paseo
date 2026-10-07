@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_IMAGE=node:22-bookworm-slim
+ARG NODE_IMAGE=node:26.10.0-trixie-slim@sha256:899ac4c751888623eda5a4f367cee435d5a3ca277ce866d101fa99b80562d420
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS source-pack
 
 ARG PASEO_VERSION

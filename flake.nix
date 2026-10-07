@@ -3,12 +3,15 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    # Unstable no longer supports Intel macOS; retain its supported stable lane.
+    nixpkgs-darwin.url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin";
   };
 
   outputs =
     {
       self,
       nixpkgs,
+      nixpkgs-darwin,
     }:
     let
       supportedSystems = [
@@ -18,7 +21,10 @@
         "aarch64-darwin"
       ];
       forAllSystems = nixpkgs.lib.genAttrs supportedSystems;
-      pkgsFor = system: import nixpkgs { inherit system; };
+      pkgsFor = system: import (if system == "x86_64-darwin" then nixpkgs-darwin else nixpkgs) {
+        inherit system;
+        overlays = [ (final: prev: import ./nix/runtime-overrides.nix { inherit final prev; }) ];
+      };
     in
     {
       packages = forAllSystems (
@@ -61,7 +67,7 @@
         {
           default = pkgs.mkShell {
             packages = [
-              pkgs.nodejs_22
+              pkgs.nodejs_26
               pkgs.python3
             ];
           };

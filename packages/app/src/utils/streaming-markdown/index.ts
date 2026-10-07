@@ -1,10 +1,9 @@
-import type MarkdownIt from "markdown-it";
-import type StateInline from "markdown-it/lib/rules_inline/state_inline.mjs";
+import type { MarkdownIt as MarkdownItType, StateInline } from "markdown-it";
 
 const STREAMING_TAIL = Symbol("streaming markdown tail");
 
 /** Adds provisional inline formatting without changing the source or literal code blocks. */
-export function enableStreamingMarkdown(parser: MarkdownIt): void {
+export function enableStreamingMarkdown(parser: MarkdownItType): void {
   parser.core.ruler.at("inline", (state) => {
     const tail = state.tokens.findLast((token) => token.nesting !== -1);
     for (const token of state.tokens) {
