@@ -4,7 +4,7 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { describe, expect, test } from "vitest";
-import { experimental_createMCPClient } from "ai";
+import { createMCPClient, type CallToolResult } from "@ai-sdk/mcp";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import pino from "pino";
 
@@ -25,11 +25,7 @@ interface StructuredContent {
   [key: string]: unknown;
 }
 
-interface McpToolResult {
-  structuredContent?: StructuredContent;
-  content?: Array<{ structuredContent?: StructuredContent } | StructuredContent>;
-  isError?: boolean;
-}
+type McpToolResult = CallToolResult;
 
 interface McpClient {
   callTool: (input: { name: string; args?: StructuredContent }) => Promise<McpToolResult>;
@@ -66,15 +62,18 @@ async function getAvailablePort(): Promise<number> {
 }
 
 function getStructuredContent(result: McpToolResult): StructuredContent | null {
-  if (result.structuredContent && typeof result.structuredContent === "object") {
-    return result.structuredContent;
+  const structuredContent = result.structuredContent;
+  if (structuredContent && typeof structuredContent === "object") {
+    return structuredContent as StructuredContent;
   }
-  const content = result.content?.[0];
+  const content =
+    "content" in result && Array.isArray(result.content) ? result.content[0] : undefined;
   if (content && typeof content === "object" && "structuredContent" in content) {
-    if (content.structuredContent) return content.structuredContent;
+    const nested = content.structuredContent;
+    if (nested && typeof nested === "object") return nested as StructuredContent;
   }
   if (content && typeof content === "object") {
-    return content;
+    return content as StructuredContent;
   }
   return null;
 }
@@ -84,8 +83,9 @@ async function createMcpClient(url: string, authToken?: string): Promise<McpClie
     new URL(url),
     authToken ? { requestInit: { headers: { Authorization: `Bearer ${authToken}` } } } : undefined,
   );
-  const rawClient = await experimental_createMCPClient({ transport });
-  const boundCallTool: McpClient["callTool"] = Reflect.get(rawClient, "callTool").bind(rawClient);
+  const rawClient = await createMCPClient({ transport });
+  const boundCallTool: McpClient["callTool"] = (input) =>
+    rawClient.callTool({ name: input.name, arguments: input.args ?? Object.create(null) });
   return { callTool: boundCallTool, close: () => rawClient.close() };
 }
 
@@ -145,7 +145,8 @@ async function createLocalWorkspace(client: McpClient, cwd: string): Promise<Wor
     args: { isolation: "local", path: cwd },
   });
   if (result.isError) {
-    const content = result.content?.[0];
+    const content =
+      "content" in result && Array.isArray(result.content) ? result.content[0] : undefined;
     return { error: content && "text" in content ? content.text : undefined };
   }
   return { workspaceId: getStructuredContent(result)?.workspaceId };

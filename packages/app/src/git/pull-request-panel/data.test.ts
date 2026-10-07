@@ -20,7 +20,7 @@ import {
 } from "./data";
 
 type CheckoutPrStatus = NonNullable<CheckoutPrStatusResponse["payload"]["status"]>;
-type PullRequestTimeline = PullRequestTimelineResponse["payload"];
+type PullRequestTimeline = NonNullable<PullRequestTimelineResponse["payload"]>;
 
 const githubStatus: CheckoutPrStatus["github"] = {
   mergeStateStatus: null,

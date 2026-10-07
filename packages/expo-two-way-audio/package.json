@@ -25,20 +25,31 @@
     "test": "expo-module test",
     "format": "oxfmt --check .",
     "format:fix": "oxfmt .",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "expo-module": "expo-module",
     "open:ios": "xed examples/basic-usage/ios",
     "open:android": "open -a \"Android Studio\" examples/basic-usage/android"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",
-    "@types/react": "^18.0.25",
-    "expo-module-scripts": "^5.0.8",
-    "expo-modules-core": "^2.0.4"
+    "@types/react": "~19.2.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "expo-module-scripts": "^56.0.3",
+    "expo-modules-core": "57.0.21",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-worklets": "0.10.1",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
   },
   "peerDependencies": {
     "expo": "*",
     "react": "*",
     "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "expo": {
+      "optional": true
+    }
   }
 }

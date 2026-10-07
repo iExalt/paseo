@@ -7238,6 +7238,13 @@ test("uses modern usage RPC when both capabilities are advertised", async () => 
   mock.triggerMessage(
     wrapSessionMessage({
       type: "usage.list_reports.update",
+      payload: undefined,
+    }),
+  );
+  expect(updates).toEqual([]);
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "usage.list_reports.update",
       payload: { requestId: "foreign", report },
     }),
   );

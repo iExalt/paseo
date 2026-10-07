@@ -34,18 +34,18 @@
     "build": "npm run build --workspace=@getpaseo/protocol && npm run build --workspace=@getpaseo/relay && tsc -p tsconfig.json --incremental false",
     "build:clean": "npm run clean && npm run build",
     "prepack": "npm run build:clean",
-    "typecheck": "tsgo --noEmit",
-    "typecheck:examples": "tsgo -p tsconfig.examples.json --noEmit",
+    "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc -p tsconfig.examples.json --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@getpaseo/protocol": "0.11.0",
     "@getpaseo/relay": "0.11.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/node": "^20.9.0",
-    "typescript": "^5.2.2",
-    "vitest": "^4.1.6"
+    "@types/node": "^26.6.4",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.3"
   }
 }
