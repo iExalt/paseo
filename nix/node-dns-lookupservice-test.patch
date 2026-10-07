@@ -1,0 +1,25 @@
+--- a/test/parallel/test-dns-lookupService-promises.js
++++ b/test/parallel/test-dns-lookupService-promises.js
+@@ -1,8 +1,22 @@
++// Flags: --expose-internals
+ 'use strict';
+ 
+ const common = require('../common');
+ 
+ const assert = require('assert');
++const { internalBinding } = require('internal/test/binding');
++const cares = internalBinding('cares_wrap');
++const { UV_EAI_NONAME } = internalBinding('uv');
++const getnameinfo = cares.getnameinfo;
++// Darwin's sandbox resolver can return a hostname for the reserved address.
++// Inject the asynchronous DNS error while preserving the localhost lookup.
++cares.getnameinfo = (request, address, port) => {
++  if (address === '192.0.2.1') {
++    process.nextTick(() => request.oncomplete(UV_EAI_NONAME));
++    return 0;
++  }
++  return getnameinfo(request, address, port);
++};
+ const dnsPromises = require('dns').promises;
+ 
+ dnsPromises.lookupService('127.0.0.1', 22).then(common.mustCall((result) => {

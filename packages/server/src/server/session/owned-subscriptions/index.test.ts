@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { SessionDelivery } from "./index.js";
+import { isReply } from "./replies.js";
 
 function retainedPromiseBytes(cycles: number): number {
   const fixture = fileURLToPath(new URL("./test-utils/memory-repro.ts", import.meta.url));
@@ -14,6 +15,13 @@ function retainedPromiseBytes(cycles: number): number {
   );
   return Number(output);
 }
+
+test("messages without payloads cannot correlate as replies", () => {
+  const request = { type: "ping", requestId: "request-1" } as const;
+  const malformed = { type: "pong", payload: undefined } as never;
+
+  expect(isReply(request, malformed)).toBe(false);
+});
 
 test("closed deliveries do not increase memory used by unrelated promises", () => {
   const control = retainedPromiseBytes(0);
