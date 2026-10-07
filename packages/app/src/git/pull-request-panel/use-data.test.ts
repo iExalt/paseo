@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   CheckoutPrStatusResponse,
   PullRequestTimelineResponse,
@@ -14,8 +14,14 @@ import {
   unsupportedTimelineKey,
 } from "./use-data";
 
+vi.mock("@/git/use-pr-status-query", () => ({ useCheckoutPrStatusQuery: vi.fn() }));
+vi.mock("@/runtime/host-runtime", () => ({
+  useHostRuntimeClient: vi.fn(),
+  useHostRuntimeIsConnected: vi.fn(),
+}));
+
 type CheckoutPrStatus = NonNullable<CheckoutPrStatusResponse["payload"]["status"]>;
-type PullRequestTimelinePayload = PullRequestTimelineResponse["payload"];
+type PullRequestTimelinePayload = NonNullable<PullRequestTimelineResponse["payload"]>;
 type PullRequestTimelineInput = Parameters<PrPaneTimelineClient["pullRequestTimeline"]>[0];
 
 const githubStatus: CheckoutPrStatus["github"] = {
@@ -248,6 +254,32 @@ describe("fetchPrPaneTimelinePage", () => {
     });
 
     expect(result).toBe(payload);
+  });
+
+  it("normalizes an absent daemon payload to the protocol's empty timeline defaults", async () => {
+    const client: PrPaneTimelineClient = {
+      pullRequestTimeline: async () => undefined,
+    };
+
+    await expect(
+      fetchPrPaneTimelinePage({
+        client,
+        registry: createInMemoryUnsupportedTimelineRegistry(),
+        serverId: "host",
+        cwd: "/repo",
+        prNumber: 42,
+        repoOwner: "getpaseo",
+        repoName: "paseo",
+      }),
+    ).resolves.toEqual({
+      cwd: "/repo",
+      prNumber: 42,
+      items: [],
+      truncated: false,
+      error: null,
+      requestId: "",
+      githubFeaturesEnabled: true,
+    });
   });
 
   it("records the tuple in the registry when the daemon rejects the request as unsupported", async () => {

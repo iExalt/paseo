@@ -1,4 +1,4 @@
-import type { NativeStackNavigationOptions } from "@react-navigation/native-stack";
+import type { NativeStackNavigationOptions } from "expo-router";
 import { Stack } from "expo-router";
 import { isValidElement, type ReactElement, type ReactNode, useCallback, useMemo } from "react";
 import { withUnistyles } from "react-native-unistyles";

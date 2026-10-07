@@ -558,7 +558,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
       };
     },
     disconnect() {
-      process.disconnect();
+      process.disconnect?.();
     },
   };
   process.on("message", (raw) => {

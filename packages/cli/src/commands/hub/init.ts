@@ -13,6 +13,7 @@ import {
   spinner,
   text,
 } from "@clack/prompts";
+import { runValidation } from "@clack/core";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { link, lstat, mkdir, rename, rm, writeFile } from "node:fs/promises";
@@ -721,12 +722,7 @@ async function requiredText(
 ): Promise<string> {
   const request = {
     ...options,
-    validate(value: string | undefined) {
-      const input = value ?? "";
-      const customError = options.validate?.(input);
-      if (customError !== undefined) return customError;
-      return input.trim().length === 0 ? "A value is required" : undefined;
-    },
+    validate: (value: string | undefined) => validateRequiredText(value, options.validate),
   };
   const answer =
     environment.prompts === undefined
@@ -734,6 +730,16 @@ async function requiredText(
       : await environment.prompts.text(request);
   if (isCancel(answer)) throw new HubInitCancelledError("Hub init cancelled.");
   return answer.trim();
+}
+
+export async function validateRequiredText(
+  value: string | undefined,
+  customValidate?: Parameters<typeof text>[0]["validate"],
+): Promise<string | Error | undefined> {
+  const input = value ?? "";
+  const customError = customValidate ? await runValidation(customValidate, input) : undefined;
+  if (customError !== undefined) return customError;
+  return input.trim().length === 0 ? "A value is required" : undefined;
 }
 
 async function requiredConfirm(

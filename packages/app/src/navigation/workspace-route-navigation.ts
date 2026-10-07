@@ -1,9 +1,6 @@
-import type {
-  NavigationAction,
-  NavigationContainerRef,
-  NavigationContainerRefWithCurrent,
-} from "@react-navigation/native";
+import type { NavigationAction } from "@react-navigation/native";
 import { router, type Href } from "expo-router";
+import type { useNavigationContainerRef } from "expo-router";
 import {
   encodeWorkspaceIdForPathSegment,
   getHostWorkspaceOpenParamFromPathname,
@@ -12,6 +9,8 @@ import {
 
 const ROOT_HOST_ROUTE_NAME = "h/[serverId]";
 const HOST_WORKSPACE_ROUTE_NAME = "workspace/[workspaceId]/index";
+export type RootNavigationRef = ReturnType<typeof useNavigationContainerRef>;
+type RootNavigation = NonNullable<RootNavigationRef["current"]>;
 
 interface NavigateToHostWorkspaceRouteDeps {
   dismissTo(route: string): void;
@@ -21,13 +20,10 @@ const defaultNavigateToHostWorkspaceRouteDeps: NavigateToHostWorkspaceRouteDeps 
   dismissTo: (route) => router.dismissTo(route as Href),
 };
 
-let rootNavigationRef: NavigationContainerRefWithCurrent<ReactNavigation.RootParamList> | null =
-  null;
+let rootNavigationRef: RootNavigationRef | null = null;
 let pendingIntent: { route: string; deps: NavigateToHostWorkspaceRouteDeps } | null = null;
 
-export function registerWorkspaceRouteNavigationRef(
-  ref: NavigationContainerRefWithCurrent<ReactNavigation.RootParamList>,
-): () => void {
+export function registerWorkspaceRouteNavigationRef(ref: RootNavigationRef): () => void {
   rootNavigationRef = ref;
   const unsubscribe = ref.addListener("ready", flushPendingIntent);
   flushPendingIntent();
@@ -103,10 +99,7 @@ function findStackWithMountedRouteName(
   return null;
 }
 
-function dispatchHostWorkspacePopTo(
-  route: string,
-  navigation: NavigationContainerRef<ReactNavigation.RootParamList>,
-): boolean {
+function dispatchHostWorkspacePopTo(route: string, navigation: RootNavigation): boolean {
   const selection = parseHostWorkspaceRouteFromPathname(route);
   if (!selection) {
     return false;

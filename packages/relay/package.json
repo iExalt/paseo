@@ -30,19 +30,19 @@
     "build": "tsc -p tsconfig.json --incremental false",
     "build:clean": "npm run clean && npm run build",
     "prepack": "npm run build:clean",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
     "base64-js": "^1.5.1",
     "tweetnacl": "^1.0.3",
-    "ws": "^8.14.2"
+    "ws": "^8.22.0"
   },
   "devDependencies": {
-    "@types/node": "^20.9.0",
-    "@types/ws": "^8.5.8",
-    "typescript": "^5.2.2",
-    "vitest": "^4.1.6"
+    "@types/node": "^26.6.4",
+    "@types/ws": "^8.18.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.3"
   }
 }

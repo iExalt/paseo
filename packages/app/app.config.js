@@ -171,6 +171,9 @@ export default {
       [
         "expo-build-properties",
         {
+          ios: {
+            deploymentTarget: "16.4",
+          },
           android: {
             minSdkVersion: 29,
             kotlinVersion: "2.1.20",

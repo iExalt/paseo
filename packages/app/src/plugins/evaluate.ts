@@ -462,6 +462,8 @@ export function runPluginClientBundle(
     if (name === "zod") return Zod;
     throw new Error(`Module "${name}" is not available in plugin client code`);
   };
+  // Plugin bundles are executable code; evaluation is part of the plugin contract.
+  // oxlint-disable-next-line no-eval -- Plugin bundles are executable code by contract.
   const evaluate: (source: string) => unknown = globalThis.eval;
   const factory = evaluate(bundle);
   if (typeof factory !== "function")
