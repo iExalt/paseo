@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { NavigationContainerRefWithCurrent } from "@react-navigation/native";
 import {
   navigateToHostWorkspaceRoute,
   registerWorkspaceRouteNavigationRef,
+  type RootNavigationRef,
 } from "./workspace-route-navigation";
 
 function createNavigationRef(rootState: unknown, options: { ready?: boolean } = {}) {
@@ -21,7 +21,7 @@ function createNavigationRef(rootState: unknown, options: { ready?: boolean } = 
   const navigationRef = {
     ...navigation,
     current: navigation,
-  } as unknown as NavigationContainerRefWithCurrent<ReactNavigation.RootParamList>;
+  } as unknown as RootNavigationRef;
 
   return {
     navigationRef,

@@ -2,7 +2,7 @@
   lib,
   stdenv,
   buildNpmPackage,
-  nodejs_22,
+  nodejs_26,
   python3,
   makeWrapper,
   autoPatchelfHook,
@@ -61,7 +61,7 @@ buildNpmPackage rec {
       && baseName != ".DS_Store";
   };
 
-  nodejs = nodejs_22;
+  nodejs = nodejs_26;
 
   # Default hash lives in nix/npm-deps.hash (see arg default above).
   # CI auto-updates that file when package-lock.json changes (see .github/workflows/).
@@ -89,6 +89,9 @@ buildNpmPackage rec {
 
   buildPhase = ''
     runHook preBuild
+
+    # Apply repository patches without enabling unrelated install scripts.
+    PATH="$PWD/node_modules/.bin:$PATH" node scripts/postinstall-patches.mjs
 
     # Rebuild only node-pty (native addon for terminal emulation). The sherpa
     # speech runtime ships prebuilt platform packages and is copied into the
