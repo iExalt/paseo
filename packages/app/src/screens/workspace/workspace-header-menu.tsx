@@ -26,6 +26,7 @@ import {
   resolveTerminalProfiles,
 } from "@getpaseo/protocol/terminal-profiles";
 import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
+import { WorkspaceNotificationsMenuItem } from "@/workspace-notifications/menu-item";
 import type { Theme } from "@/styles/theme";
 import {
   useWorkspaceScriptsMenuPages,
@@ -75,6 +76,8 @@ const COMPACT_HEADER_BUTTON_HIT_SLOP = { top: 8, bottom: 8 } as const;
  * from the same callbacks, so the two surfaces can't drift.
  */
 export interface WorkspaceHeaderWorkspaceActions {
+  serverId: string;
+  workspaceId: string;
   currentBranchName: string | null;
   showWorkspaceSetup: boolean;
   importAgentDisabled: boolean;
@@ -86,6 +89,8 @@ export interface WorkspaceHeaderWorkspaceActions {
 }
 
 function WorkspaceHeaderWorkspaceActionItems({
+  serverId,
+  workspaceId,
   currentBranchName,
   showWorkspaceSetup,
   importAgentDisabled,
@@ -98,6 +103,11 @@ function WorkspaceHeaderWorkspaceActionItems({
   const { t } = useTranslation();
   return (
     <>
+      <WorkspaceNotificationsMenuItem
+        serverId={serverId}
+        workspaceId={workspaceId}
+        testID="workspace-header-notifications"
+      />
       <DropdownMenuItem
         testID="workspace-header-copy-path"
         leading={MENU_COPY_ICON}
