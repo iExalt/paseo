@@ -5,15 +5,15 @@ daemon-wide reply denylist from the [confirmed plan](CONFIGURABLE_NOTIFICATIONS.
 and was confirmed by the user after review on 2026-10-04. The corresponding
 [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) revision is also confirmed.
 The user later authorized implementation in the requested sibling worktree. T1/S1
-and S3 are complete within their focused local verification gates. CLI/MCP parity,
-user controls, and device/build acceptance remain open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
+and S3–S4/G2 are complete within their focused local verification gates. User
+controls and device/build acceptance remain open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 ## Progress and ordering
 
 | Outcome                             | Steps | Done | Exit |
 | ----------------------------------- | ----- | ---- | ---- |
 | Contract and validation feasibility | S1–S2 | 1/2  | G1   |
-| Durable policy and automation       | S3–S4 | 1/2  | G2   |
+| Durable policy and automation       | S3–S4 | 2/2  | G2   |
 | User controls                       | S5    | 0/1  | G3   |
 | Device proof and handoff            | S6–S8 | 0/3  | G4   |
 
@@ -128,7 +128,7 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
   - **Ticks:** M2.1–M2.2; enforcement portion of M2.4; W2 and part of W6.
     M2.4 remains open until S4. Timing review is part of each increment's acceptance.
 
-- [ ] **S4 — Complete CLI and MCP parity.** Connect creation flags/fields, runtime
+- [x] **S4 — Complete CLI and MCP parity.** Connect creation flags/fields, runtime
       update, and effective-policy readback through the real CLI and MCP adapters.
       Cover both local and worktree provisioning; reject unsupported policy changes
       before creating an incorrectly unmuted workspace.
