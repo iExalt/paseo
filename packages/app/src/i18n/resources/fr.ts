@@ -2577,6 +2577,33 @@ export const fr: TranslationResources = {
           save: "Enregistrer",
           saving: "Enregistrement…",
         },
+        replyRules: {
+          title: "Règles de notification des réponses",
+          scope: "S’applique à tous les espaces de travail de {{host}}.",
+          help: "Recherche RE2 sans normalisation du texte. Utilisez des ancres pour cibler toute la réponse. Jusqu’à 8 règles, 256 unités UTF-16 par motif et 16 384 par sujet. Les indicateurs i, m et u sont uniques ; Unicode est activé s’ils sont omis.",
+          source: "Motif",
+          flags: "Indicateurs",
+          add: "Ajouter une règle",
+          remove: "Supprimer la règle",
+          save: "Enregistrer les règles",
+          saving: "Enregistrement…",
+          clear: "Effacer toutes les règles",
+          loading: "Chargement des règles enregistrées…",
+          empty: "Aucune règle de réponse enregistrée.",
+          unsupported: "Mettez cet hôte à jour pour gérer les règles de notification des réponses.",
+          disconnected:
+            "Connectez-vous à cet hôte pour gérer les règles de notification des réponses.",
+          readError:
+            "Impossible de lire les règles enregistrées : {{error}}. En cas d’erreur d’accès, vérifiez l’autorisation daemon.read.",
+          writeError:
+            "Impossible d’enregistrer les règles : {{error}}. En cas d’erreur d’accès, vérifiez l’autorisation daemon.manage.",
+          conflict:
+            "Les règles de cet hôte ont changé pendant votre modification. Recharger les règles enregistrées supprimera votre brouillon ; le conserver vous permettra de remplacer volontairement les règles les plus récentes lors du prochain enregistrement.",
+          awaitingAuthority: "Enregistré. En attente de la confirmation des règles par cet hôte...",
+          reload: "Recharger les règles enregistrées",
+          keep: "Conserver le brouillon",
+          retry: "Réessayer",
+        },
       },
       agents: {
         unavailable: "Connectez-vous à cet hôte pour gérer les agents",

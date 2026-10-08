@@ -2559,6 +2559,32 @@ export const ptBR: TranslationResources = {
           save: "Salvar",
           saving: "Salvando...",
         },
+        replyRules: {
+          title: "Regras de notificação de respostas",
+          scope: "Aplica-se a todos os espaços de trabalho em {{host}}.",
+          help: "Correspondência de busca RE2 sem normalizar o texto. Use âncoras para exigir a resposta inteira. Até 8 regras, 256 unidades UTF-16 por padrão e 16.384 por assunto. As flags i, m e u não podem se repetir; Unicode é ativado quando omitido.",
+          source: "Padrão",
+          flags: "Flags",
+          add: "Adicionar regra",
+          remove: "Remover regra",
+          save: "Salvar regras",
+          saving: "Salvando...",
+          clear: "Limpar todas as regras",
+          loading: "Carregando regras salvas...",
+          empty: "Nenhuma regra de resposta salva.",
+          unsupported: "Atualize este host para gerenciar regras de notificação de respostas.",
+          disconnected: "Conecte-se a este host para gerenciar regras de notificação de respostas.",
+          readError:
+            "Não foi possível ler as regras salvas: {{error}}. Se for um erro de acesso, verifique a permissão daemon.read.",
+          writeError:
+            "Não foi possível salvar as regras: {{error}}. Se for um erro de acesso, verifique a permissão daemon.manage.",
+          conflict:
+            "As regras deste host mudaram durante a edição. Recarregar as regras salvas descarta seu rascunho; mantê-lo permite substituir intencionalmente as regras mais recentes no próximo salvamento.",
+          awaitingAuthority: "Salvo. Aguardando este host confirmar as regras atualizadas...",
+          reload: "Recarregar regras salvas",
+          keep: "Manter rascunho",
+          retry: "Tentar novamente",
+        },
       },
       agents: {
         unavailable: "Conecte-se a este host para gerenciar agentes",

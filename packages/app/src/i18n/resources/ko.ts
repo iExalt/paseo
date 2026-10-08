@@ -2532,6 +2532,32 @@ export const ko: TranslationResources = {
           save: "저장",
           saving: "저장하는 중...",
         },
+        replyRules: {
+          title: "답변 알림 규칙",
+          scope: "{{host}}의 모든 작업 공간에 적용됩니다.",
+          help: "텍스트를 정규화하지 않고 RE2 검색 방식으로 일치시킵니다. 답변 전체를 검사하려면 앵커를 사용하세요. 최대 8개 규칙, 패턴당 256 UTF-16 코드 단위, 대상당 16,384입니다. i, m, u 플래그는 중복될 수 없으며 생략하면 Unicode가 활성화됩니다.",
+          source: "패턴",
+          flags: "플래그",
+          add: "규칙 추가",
+          remove: "규칙 삭제",
+          save: "규칙 저장",
+          saving: "저장하는 중...",
+          clear: "모든 규칙 지우기",
+          loading: "저장된 규칙을 불러오는 중...",
+          empty: "저장된 답변 규칙이 없습니다.",
+          unsupported: "답변 알림 규칙을 관리하려면 이 호스트를 업데이트하세요.",
+          disconnected: "답변 알림 규칙을 관리하려면 이 호스트에 연결하세요.",
+          readError:
+            "저장된 규칙을 읽을 수 없습니다: {{error}}. 접근 오류라면 daemon.read 권한을 확인하세요.",
+          writeError:
+            "규칙을 저장할 수 없습니다: {{error}}. 접근 오류라면 daemon.manage 권한을 확인하세요.",
+          conflict:
+            "편집하는 동안 이 호스트의 규칙이 변경되었습니다. 저장된 규칙을 다시 불러오면 초안이 사라집니다. 초안을 유지하면 다음 저장 시 최신 규칙을 의도적으로 덮어쓸 수 있습니다.",
+          awaitingAuthority: "저장했습니다. 이 호스트가 규칙 변경을 확인하는 중입니다...",
+          reload: "저장된 규칙 다시 불러오기",
+          keep: "초안 유지",
+          retry: "다시 시도",
+        },
       },
       agents: {
         unavailable: "에이전트를 관리하려면 이 호스트에 연결하세요",
