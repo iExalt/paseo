@@ -9,6 +9,7 @@ import {
   MutableDaemonConfigPatchSchema,
 } from "@getpaseo/protocol/messages";
 import type { AgentSkillSelection } from "@getpaseo/protocol/messages";
+import { ReplyRuleMatcher, type ReplyRule } from "./agent/reply-rule-matcher.js";
 
 export type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@getpaseo/protocol/messages";
 
@@ -31,6 +32,7 @@ interface SupportedMutableConfigPatch {
   skills?: MutableDaemonConfig["skills"];
   pluginsEnabled?: boolean;
   plugins?: MutableDaemonConfig["plugins"];
+  replyRules?: ReplyRule[];
 }
 
 interface LoggerLike {
@@ -190,6 +192,7 @@ const RELOADABLE_PATHS = [
   "agents.metadataGeneration",
   "agents.skills.selection",
   "pluginsEnabled",
+  "replyRules",
 ] as const;
 
 const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
@@ -214,6 +217,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.metadataGeneration", "metadataGeneration"],
   ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
+  ["replyRules", "replyRules"],
 ]);
 
 function pathBelongsTo(path: string, owner: string): boolean {
@@ -290,7 +294,12 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.agentProfiles !== undefined ? { agentProfiles: patch.agentProfiles } : {}),
     ...(patch.pluginsEnabled !== undefined ? { pluginsEnabled: patch.pluginsEnabled } : {}),
     ...(patch.plugins !== undefined ? { plugins: patch.plugins } : {}),
+    ...(patch.replyRules !== undefined ? { replyRules: patch.replyRules } : {}),
   };
+}
+
+function freezeReplyRules(rules: readonly ReplyRule[]): ReplyRule[] {
+  return Object.freeze(rules.map((rule) => Object.freeze({ ...rule }))) as unknown as ReplyRule[];
 }
 
 export function applyMutableProviderConfigToOverrides(
@@ -333,6 +342,7 @@ export class DaemonConfigStore {
   private readonly reloadSource: DaemonConfigReloadSource | undefined;
   private readonly startupPersisted: PersistedConfig;
   private lastKnownPersisted: PersistedConfig;
+  private replyRuleMatcher: ReplyRuleMatcher;
 
   constructor(
     paseoHome: string,
@@ -346,18 +356,34 @@ export class DaemonConfigStore {
   ) {
     this.paseoHome = paseoHome;
     this.logger = getLogger(logger);
+    this.startupPersisted = options.startupPersisted ?? loadPersistedConfig(paseoHome, this.logger);
+    this.lastKnownPersisted = this.startupPersisted;
+    const replyRules = freezeReplyRules(
+      this.startupPersisted.replyRules ?? initial.replyRules ?? [],
+    );
+    this.replyRuleMatcher = ReplyRuleMatcher.compile(replyRules);
     this.current = MutableDaemonConfigSchema.parse({
       ...initial,
       relay: initial.relay ?? { enabled: true },
+      replyRules,
     });
+    this.current.replyRules = replyRules;
     this.relayEnabledMutable = options.relayEnabledMutable ?? true;
     this.reloadSource = options.reloadSource;
-    this.startupPersisted = options.startupPersisted ?? loadPersistedConfig(paseoHome, this.logger);
-    this.lastKnownPersisted = this.startupPersisted;
   }
 
   public get(): MutableDaemonConfig {
     return this.current;
+  }
+
+  public getReplyRules(): readonly ReplyRule[] {
+    return this.current.replyRules ?? [];
+  }
+
+  public matchesReplyRules(
+    subject: import("./agent/completion-subject-collector.js").CompletionSubject | undefined,
+  ): boolean {
+    return this.replyRuleMatcher.matches(subject);
   }
 
   public patch(partial: MutableDaemonConfigPatch): MutableDaemonConfig {
@@ -388,6 +414,10 @@ export class DaemonConfigStore {
         removedProviders,
       ),
     );
+    const nextReplyRules = freezeReplyRules(parsedPatch.replyRules ?? next.replyRules ?? []);
+    next.replyRules = nextReplyRules;
+    const nextReplyRuleMatcher =
+      parsedPatch.replyRules !== undefined ? ReplyRuleMatcher.compile(nextReplyRules) : undefined;
 
     const configChanged = !isEqualValue(this.current, next);
 
@@ -405,7 +435,7 @@ export class DaemonConfigStore {
     }
 
     try {
-      this.applyReplacement(next, { removedProviders });
+      this.applyReplacement(next, { removedProviders }, nextReplyRuleMatcher);
       this.lastKnownPersisted = knownNext;
     } catch (error) {
       savePersistedConfig(this.paseoHome, persistedBeforePatch, this.logger);
@@ -427,7 +457,11 @@ export class DaemonConfigStore {
     const desired = MutableDaemonConfigSchema.parse({
       ...resolved.mutable,
       plugins: this.current.plugins,
+      replyRules: persisted.replyRules ?? [],
     });
+    const desiredReplyRules = freezeReplyRules(desired.replyRules ?? []);
+    desired.replyRules = desiredReplyRules;
+    const desiredReplyRuleMatcher = ReplyRuleMatcher.compile(desiredReplyRules);
     const changedSinceLastApply = diffPaths(this.lastKnownPersisted, persisted);
     const overrideControlledPaths = compactOwnedPaths(
       changedSinceLastApply.filter((path) =>
@@ -460,7 +494,7 @@ export class DaemonConfigStore {
     const removedProviders = Object.keys(this.current.providers).filter(
       (provider) => !(provider in desired.providers),
     );
-    this.applyReplacement(desired, { removedProviders });
+    this.applyReplacement(desired, { removedProviders }, desiredReplyRuleMatcher);
     this.lastKnownPersisted = persisted;
 
     return {
@@ -473,6 +507,7 @@ export class DaemonConfigStore {
   private applyReplacement(
     next: MutableDaemonConfig,
     changeDetails: DaemonConfigChangeDetails,
+    nextReplyRuleMatcher?: ReplyRuleMatcher,
   ): void {
     const changedFieldPaths = Array.from(this.fieldChangeHandlers.keys()).filter((path) => {
       return !isEqualValue(getValueAtPath(this.current, path), getValueAtPath(next, path));
@@ -480,9 +515,17 @@ export class DaemonConfigStore {
     if (isEqualValue(this.current, next) && changeDetails.removedProviders.length === 0) return;
 
     const previous = this.current;
+    const previousReplyRuleMatcher = this.replyRuleMatcher;
     const appliedFieldChanges: AppliedFieldChange[] = [];
     const applyRollbacks: ConfigApplyRollback[] = [];
     this.current = next;
+    if (!isEqualValue(previous.replyRules, next.replyRules)) {
+      if (!nextReplyRuleMatcher) {
+        this.current = previous;
+        throw new Error("Reply rules must be compiled before applying daemon config");
+      }
+      this.replyRuleMatcher = nextReplyRuleMatcher;
+    }
     try {
       for (const path of changedFieldPaths) {
         const handlers = this.fieldChangeHandlers.get(path);
@@ -501,6 +544,7 @@ export class DaemonConfigStore {
       }
     } catch (error) {
       this.current = previous;
+      this.replyRuleMatcher = previousReplyRuleMatcher;
       const rollbackErrors: unknown[] = [];
       for (const rollback of applyRollbacks.toReversed()) {
         try {
@@ -602,6 +646,7 @@ function mergeMutablePatchIntoPersistedConfig(params: {
     ...persisted,
     ...(patch.pluginsEnabled !== undefined ? { pluginsEnabled: patch.pluginsEnabled } : {}),
     ...(patch.plugins !== undefined ? { plugins: patch.plugins } : {}),
+    ...(patch.replyRules !== undefined ? { replyRules: patch.replyRules } : {}),
     ...(daemon ? { daemon } : { daemon: undefined }),
     ...(agents ? { agents } : { agents: undefined }),
   } as PersistedConfig;
