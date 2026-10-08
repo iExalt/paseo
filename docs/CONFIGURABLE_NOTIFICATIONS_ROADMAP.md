@@ -4,14 +4,15 @@ The original Tier 2 was confirmed on 2026-10-04. This revision incorporates the
 daemon-wide reply denylist from the [confirmed plan](CONFIGURABLE_NOTIFICATIONS.md)
 and was confirmed by the user after review on 2026-10-04. The corresponding
 [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) revision is also confirmed.
-No feature work or runtime probe has
-started; planning confirmation does not authorize either.
+The user later authorized implementation in the requested sibling worktree. T1/S1
+is now complete as a documentation, source-trace, feasibility, and baseline gate;
+feature implementation has not started. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 ## Progress and ordering
 
 | Outcome                             | Steps | Done | Exit |
 | ----------------------------------- | ----- | ---- | ---- |
-| Contract and validation feasibility | S1–S2 | 0/2  | G1   |
+| Contract and validation feasibility | S1–S2 | 1/2  | G1   |
 | Durable policy and automation       | S3–S4 | 0/2  | G2   |
 | User controls                       | S5    | 0/1  | G3   |
 | Device proof and handoff            | S6–S8 | 0/3  | G4   |
@@ -19,19 +20,19 @@ started; planning confirmation does not authorize either.
 Dependency graph, selected by the user on 2026-10-04:
 
 ```text
-S1 ──> S2 ────────────────────────┐
- └───> S3 ──> S4 ──> S5 ──> S6 ──┴──> S7 ──> S8
+S1 ──> S3 ──> S4 ──> S5 ──> S6 ──┐
+ └───> S2 ────────────────────────┴──> S7 ──> S8
 ```
 
-**Decided (the user, 2026-10-04):** allow offline work while phone validation is
-arranged. S3 needs accepted S1, not S2. G1 still requires S1 and S2;
-the plan's gates describe outcomes rather than mandatory chronological barriers.
-Final acceptance requires every gate regardless of which finishes first.
+**Current order (the user, 2026-10-07):** finish automated work first: T1, T3,
+then T4; schedule phone work afterward as T2 then T5. S3 needs accepted S1, not S2.
+T2 remains a prerequisite for T5, not for T3 or T4. G1 still requires both S1 and
+S2. Final acceptance requires every gate regardless of which finishes first.
 
 Each step ends in its proof, normally a few scoped commits. Check it off here and
 its **Ticks** boxes in the plan in the same commit, with a concise evidence receipt.
-Use this checkout; do not introduce parallel worktrees. Independent readiness
-allows scheduling around the phone, not concurrent edits or competing heavy builds.
+Use the explicitly requested sibling worktree. Independent readiness allows
+scheduling around the phone, not concurrent edits or competing heavy builds.
 
 ## Live runs
 
@@ -62,7 +63,7 @@ unexpected paid requirements return to the user. Never copy production agent sta
 
 ## Steps
 
-- [ ] **S1 — Pin the contract and verification baseline.** Inventory the creation,
+- [x] **S1 — Pin the contract and verification baseline.** Inventory the creation,
       update, notification, descriptor, and permission paths against a fixed source
       revision. Turn the confirmed contract into a small policy table and select the
       cheapest existing suites for each invariant. Establish the stable timing record
@@ -83,6 +84,12 @@ unexpected paid requirements return to the user. Never copy production agent sta
     needed by selected checks; no production actions. Planning approval is insufficient.
     If host authority cannot support automation without changing the agreed scope,
     return that concrete conflict to the user before dependent implementation.
+
+**T1 receipt:** the source inventory, accepted fail-open lifecycle/authority
+contract, actual RE2 feasibility probe, and fixed measured baseline close this
+feasibility gate. The [status](CONFIGURABLE_NOTIFICATIONS_STATUS.md) and plan retain
+the evidence and budgets. S3 still must implement and test the collector and
+delivery behavior; T1 does not claim those feature proofs or any live/device proof.
 
 - [ ] **S2 — Prove the existing phone can use the test host.** Configure a new home,
       identity, endpoint, and relay connection. Pair the installed Android app as an
@@ -221,46 +228,54 @@ test suite. Any broader evidence belongs to an explicit fork-CI gate, not an opt
 replacement for required targeted checks. Review fork workflow side effects before
 pushing feature commits; no release tags or app publication.
 
-S1 records baseline timings on the pinned pre-feature revision with fixed machine,
-Node version, worker count, cache state, and no overlapping builds. Separate build
-setup cost from test runtime. Author and reviewer accept budgets from those measured
-results; until recorded, this is an open S1 requirement, not an invented numeric
-baseline. Keep that baseline fixed across implementation. Use required runs for
-comparison and repeat only to resolve uncertainty.
+The fixed baseline was measured on clean `4ea125b83` in the macOS arm64 sibling
+worktree with Node 26.11, copied dependencies/output, one Vitest worker, and no
+overlapping builds. Do not repeat it without a specific comparability gap.
 
-Proposed investigation trigger: both more than 20% and more than 5 seconds above
-the comparable baseline, or material cumulative growth even below either threshold.
-This trigger is not permission for smaller regressions. Repair confirmed growth
-within the changing step, or justify necessary added cost without weakening proof.
+| Check                | Result                                  | Accepted budget | Growth trigger |
+| -------------------- | --------------------------------------- | --------------- | -------------- |
+| Focused server tests | 92 passed; Vitest 7.49 s, wall 10.183 s | ≤15 s           | >15.183 s      |
+| Root typecheck       | 27.508 s                                | ≤33 s           | >33.010 s      |
+| Root lint            | 13.768 s                                | ≤19 s           | >18.768 s      |
+
+A budget breach triggers investigation. Separately, investigate growth that is
+both more than 20% and more than 5 s above the fixed baseline, and material
+cumulative growth. These thresholds do not permit regressions below them. Repair
+confirmed growth within the changing step, or justify necessary added cost without
+weakening proof.
 Do not reset the baseline, increase concurrency, or remove required checks to conceal
 growth. Report any routine check taking over a minute. Retain only distinct tests
 with small fixtures, and include latency review in every step's acceptance.
 
 ## Human interventions and scheduling
 
-| Step     | Kind                       | Action and timing                                                                                          | Status                                                           |
-| -------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| S1/S2/S5 | Execution approval         | Approve named isolated test processes and external-service use before their phase starts; never production | Future execution gate                                            |
-| S1       | Conditional scope decision | Resolve any concrete host-authority conflict that prevents required CLI/MCP control before S3              | Only if the existing model cannot support the confirmed contract |
-| S2       | Phone presence             | Pair additional test host and observe relay/mobile-data positive control                                   | Arrange during execution; offline work may proceed meanwhile     |
-| S5       | OS prompt, if needed       | Grant test desktop/browser notification permission before local notification proof                         | Conditional                                                      |
-| S7       | Phone presence             | Observe workspace mute and reply-filter controls on existing Android app                                   | Required final session                                           |
-| S8       | Manual cleanup             | Remove only test pairing from phone                                                                        | End of final session, or after failed probe                      |
+| Step  | Kind                       | Action and timing                                                                                          | Status                                                       |
+| ----- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
+| S2/S5 | Execution approval         | Approve named isolated test processes and external-service use before their phase starts; never production | Future execution gate                                        |
+| S1    | Conditional scope decision | Resolve a host-authority conflict only if implementation exposes one                                       | No conflict identified in T1                                 |
+| S2    | Phone presence             | Pair additional test host and observe relay/mobile-data positive control                                   | Arrange during execution; offline work may proceed meanwhile |
+| S5    | OS prompt, if needed       | Grant test desktop/browser notification permission before local notification proof                         | Conditional                                                  |
+| S7    | Phone presence             | Observe workspace mute and reply-filter controls on existing Android app                                   | Required final session                                       |
+| S8    | Manual cleanup             | Remove only test pairing from phone                                                                        | End of final session, or after failed probe                  |
 
-The sequencing decision remains confirmed. No exact
-appointment is needed during planning: the execution script makes these waits
-explicit and groups approvals so autonomous work can proceed between phone sessions.
-Desktop and Android menu scope, relay route, and production exclusions are already
-settled in the plan and are not reopened here.
+The scheduling decision is updated in the execution script. T1/S1 is complete;
+automated T3 and T4 precede the T2/T5 phone sessions. No exact appointment is set.
+Desktop and Android menu scope, relay route, and production exclusions remain as
+settled in the plan.
 
 The prior workspace-only roadmap was reviewed, confirmed, and published on
 2026-10-04. This regex revision keeps the eight-step dependency graph and resource
 boundaries, adds M1.3 before enforcement, and distributes W6 across S1/S3/S4/S5/S7/S8.
 It adds no Android build, app replacement, or separate phone session. Reassess the
 initial phone-session estimate if added controls or presence waits need more time;
-do not reduce positive controls to fit it. No implementation is authorized.
+do not reduce positive controls to fit it. Implementation is authorized in the
+requested sibling worktree; future live/device gates remain separate.
 
 - [x] Map revised Tier 1 scope and gates into the existing steps.
 - [x] Review the revised roadmap; no unresolved material findings.
 - [x] Confirm revised Tier 2 with the user.
 - [x] Revise and confirm the execution script after publishing this roadmap.
+
+- 2026-10-08 UTC (2026-10-07 EDT): T1/S1 closed with accepted M1.3 feasibility
+  and fixed baseline. User order is T1 → T3 → T4 → T2 → T5; T2 is still required
+  before T5, but not before T3 or T4.

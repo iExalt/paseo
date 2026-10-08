@@ -1,23 +1,24 @@
 # Configurable notifications execution script
 
 This revision incorporates daemon-wide reply filtering from confirmed Tiers 1–2.
-The user confirmed this reviewer-accepted revision on 2026-10-04 for publication
-only. T1 is ready to propose; execution and launches remain unapproved.
+The user confirmed the original planning revision on 2026-10-04 and later
+authorized implementation in the requested sibling worktree. T1/S1 is complete;
+feature implementation remains ahead. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 Five threads deliver the [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) through
-G4. The feature path is T1 → T3 → T4 → T5; T2 provides phone-connectivity evidence
-and can run whenever the phone is available after T1. The [plan](CONFIGURABLE_NOTIFICATIONS.md)
+G4. The current order is T1 → T3 → T4 → T2 → T5. T2 remains a prerequisite for
+T5, but not for T3 or T4. The [plan](CONFIGURABLE_NOTIFICATIONS.md)
 owns scope. The workspace-only Tier 3 was confirmed on 2026-10-04; this revision
 keeps its dependencies and extends the chunks and proofs below.
 
 ## Rules and current state
 
 - Each thread is one `/keep-me-in-the-loop` phase with a continuous reviewer and
-  approval of its concrete chunks before execution. Script confirmation alone
-  does not authorize implementation or runtime launches. Phase approval includes
-  scoped commits and pushes to the personal fork after checks and review.
-- **All execution threads are mutually exclusive.** Work in this checkout;
-  no parallel worktrees, edits, tests, builds, or test daemons from these threads.
+  concrete chunk reviews. Implementation is authorized in the requested sibling
+  worktree; future live launches remain subject to their named gates. Commit and
+  push only after checks and lead review.
+- **All execution threads are mutually exclusive.** Work in the requested sibling
+  worktree; no parallel edits, tests, builds, or test daemons from these threads.
   This overrides the skill template's parallel-thread default. The next thread
   acquires ownership only after the current one finishes or safely pauses.
 - A phone wait must not hold the checkout indefinitely. Before yielding, stop
@@ -26,16 +27,15 @@ keeps its dependencies and extends the chunks and proofs below.
   and checking the current revision. Never interrupt an active operation to hand off.
   The successor preserves recorded uncommitted work without treating it as accepted
   source; resumed phone probes revalidate the accepted revision and isolation.
-- At execution approval, name every permitted isolated CLI, test daemon, and app
-  launch. Until then the previous no-built-binaries/no-app-launch constraint holds.
+- Name every permitted isolated CLI, test daemon, and app launch at its gate.
   Never use production `~/.paseo`, port 6767, desktop settings, existing provider
   sessions, or app replacement. No production restart, deployment, release tags,
   upstream submission, or overseer skill changes.
 - Use the roadmap's verification pyramid, stable timing baseline, and budget.
   Keep policy matrices at the cheapest reliable layer; run required checks, never
   the full local suite. Do not substitute build success for device proof.
-- T1 creates one `docs/CONFIGURABLE_NOTIFICATIONS_STATUS.md` using
-  `maintain-project-status`. Each completed chunk reconciles it, roadmap ticks,
+- The shared status document is
+  `docs/CONFIGURABLE_NOTIFICATIONS_STATUS.md`. Each completed chunk reconciles it, roadmap ticks,
   and plan boxes in the same scoped commit. Keep a few decisive receipts inline;
   logs and test state stay ignored. Point its next-action section at ready threads
   below instead of maintaining a second ordering.
@@ -44,26 +44,23 @@ keeps its dependencies and extends the chunks and proofs below.
   completion, mark it done here, record deviations affecting others, and update
   newly ready threads. Never mark a deferred proof as passed.
 
-Both baseline macOS builds are complete; the apps were never launched.
-No feature step S1–S8 is complete and no test host is running from this campaign.
-Confirmed planning tiers are published on `iExalt/paseo` branch
-`docs/configurable-notifications`. The local `.mise.toml` → `mise.toml` replacement
-and Android tool declarations are pre-existing uncommitted work: preserve them and record their effect on the baseline;
-do not silently include it in a feature commit. Verify current Git state at startup.
+Historical macOS packaging receipts are documented in the plan; neither packaged
+app was launched. T1/S1 is the only completed feature-plan step, and no test host
+is running. The clean implementation base is `4ea125b83` in the requested sibling
+worktree; older planning-branch and local Mise receipts are historical and do not
+describe this checkout.
 
 ## Dependencies and human participation
 
 ```text
-T1 ──> T2 ──────────┐
- └───> T3 ──> T4 ──┴──> T5
+T1 ──> T3 ──> T4 ──┐
+ └───> T2 ──────────┴──> T5
 ```
 
-The arrows mean required completed outcomes, not concurrency. T2 and T3 become
-ready together after T1, but run one at a time. Prefer T2 when the phone is
-available; otherwise run T3, then T4. T2 may run between T3/T4 or just before T5.
-It records whichever accepted source revision is current; it proves connectivity,
-not final-feature behavior. T5 repeats the required device proof on the final revision.
-T2 joins the critical path if phone availability delays T5.
+The arrows mean required completed outcomes, not concurrency. Follow the user's
+current order: complete automated T3 and T4 before scheduling phone sessions for
+T2 and T5. T2 proves connectivity, not final-feature behavior; T5 repeats the
+required device proof on the final revision. T2 is on T5's critical path.
 
 | When                                         | Human action                                                                                                 |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
@@ -79,30 +76,29 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 
 ## T1 — Contract and stable check baseline: S1
 
-**State:** ready to propose; revised Tier 3 confirmed, execution not approved.
+**State:** complete. M1.1, M1.3 feasibility, S1, and T1 are recorded in the plan,
+roadmap, and status. Feature implementation and G1 remain open.
 
 ```text
 /keep-me-in-the-loop Run T1 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
 ```
 
-- **Depends on:** no execution thread; Tier 3 must be confirmed. Not alongside any other thread.
-- **Human:** at approval, authorize the enumerated isolated test-process launches
-  needed for the baseline and temporary feasibility probes. If existing host
-  authority cannot support the confirmed CLI/MCP contract, return the concrete
-  conflict for a scope decision before dependent implementation. Otherwise none
-  after approval unless setup exposes a new blocker.
-- **Chunks:** (1) pin revision, inspect paths/dirty work, establish status and contract
-  inventory; (2) resolve M1.3: completion-bound complete text, bounded regex engine,
-  flags/limits, host persistence/authority and capability contract; (3) measure
-  selected existing checks under fixed conditions and have
-  author/reviewer accept the stable timing baseline and budgets.
+- **Depends on:** none. Completed before T3.
+- **Human:** T1 required no live process. Its source investigation and bounded
+  temporary feasibility probe are complete; no host-authority conflict remains
+  to resolve. Future runtime/device processes need their named gates.
+- **Chunks:** completed: (1) pin revision and contract inventory; (2) record the
+  M1.3 source-grounded design, bounded RE2 engine, limits, and current host
+  persistence/authority seams; (3) measure selected checks under fixed conditions
+  and record reviewer-accepted budgets. Exact future persistence/capability names
+  and implementation remain open.
 - **Live:** only explicitly approved local test runtimes; no phone or relay; clean up
   each runtime before handing off. Regex investigation probes remain temporary;
   no shipped feature edits in T1. Separate setup cost from routine-check runtime.
-- **Done when:** S1/M1.1/M1.3 accepted with feasibility, exact commands and timing
-  evidence. Missing subject provenance or bounded-engine proof leaves T1 open.
-  Both feasibility and the stable baseline must pass before T3. G1 remains
-  open until T2. Mark T2 and T3 ready; the status recommends whichever is available.
+- **Done:** source-traced completion-bound design and RE2 feasibility recorded;
+  fixed baseline and reviewer-accepted budgets recorded. No collector, immutable
+  subject, feature code, or runtime delivery proof exists. S3 lifecycle tests remain
+  mandatory. G1 remains open until T2. T3 is next; T2 follows T4.
 
 ## T2 — Isolated Android connectivity: S2
 
@@ -131,7 +127,7 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 
 ## T3 — Durable policy and automation parity: S3–S4
 
-**State:** waiting on T1; T2 is not a prerequisite.
+**State:** next after completed T1; T2 is not a prerequisite.
 
 ```text
 /keep-me-in-the-loop Run T3 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
@@ -139,9 +135,9 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 
 - **Depends on:** after T1 for accepted M1.3 filtering contract and stable baseline; not alongside any other
   execution thread. Do not wait for T2 if the phone session is unavailable.
-- **Human:** at approval, authorize scoped feature implementation and named isolated
-  CLI/MCP/test-daemon verification; no phone participation or GUI launch needed.
-  None after approval unless scope, access, or safety assumptions change.
+- **Human:** implementation is authorized in the requested sibling worktree. Name
+  isolated CLI/MCP/test-daemon launches at their verification gate; no phone
+  participation or GUI launch is needed for T3.
 - **Chunks:** (1) persisted workspace policy, optional wire contract, shared provisioning
   and runtime mutation; (2) workspace agent/terminal delivery suppression retaining
   state/events; (3) durable host denylist and bounded matching of completion-bound
@@ -160,7 +156,7 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 
 ## T4 — Desktop user control and feature builds: S5–S6
 
-**State:** waiting on T3.
+**State:** follows T3/G2.
 
 ```text
 /keep-me-in-the-loop Run T4 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
@@ -218,18 +214,16 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 ## Deferred and revision history
 
 Android menu verification, production deployment, and overseer integration require
-separate planning. No roadmap step is otherwise deferred or omitted. An `overseer`
-may launch ready threads one at a time in distinct Paseo workspaces using local
-isolation and this same checkout. This script overrides its usual worker-worktree
-choice for this campaign; it must enforce the ownership and handoff rules above.
-This does not authorize changing the overseer skill. Manual use of the prompts
-is equally supported.
+separate planning. No roadmap step is otherwise deferred or omitted. This campaign
+runs outside Paseo, using native work-item leads and pilots in the requested
+sibling worktree. The literal prompts describe phase boundaries; execution does
+not require Paseo's advanced tools or an overseer change.
 
 The original script passed review for step/gate coverage, safe phone-wait handoff,
 sequential ownership, and explicit launch authority. The user confirmed it on
-2026-10-04 for publication only. This revision retains those boundaries and passed
-review with no unresolved material findings. The user confirmed it for publication only.
-No execution thread has started.
+2026-10-04 for publication only. The user later authorized implementation in the
+requested sibling worktree. Current reviewer acceptance covers T1/S1 design and
+baseline only; later live/device gates remain open.
 
 - [x] Derive revised chunks from the confirmed regex roadmap.
 - [x] Obtain reviewer acceptance of revised Tier 3.
@@ -245,3 +239,7 @@ No execution thread has started.
   host controls join T3/T4, and final filter proof joins the existing T5 phone session.
 
 - 2026-10-04: user confirmed the regex-extended Tier 3 for publication, planning only.
+
+- 2026-10-08 UTC (2026-10-07 EDT): recorded T1/S1 completion and the user's
+  automated-first order T1 → T3 → T4 → T2 → T5. M1.3 remains a design and feasibility
+  result; implementation and phone proof remain open.
