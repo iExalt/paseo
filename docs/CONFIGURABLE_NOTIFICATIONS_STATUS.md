@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 15:03 UTC (2026-10-08 11:03 EDT)
+Last updated: 2026-10-08 15:25 UTC (2026-10-08 11:25 EDT)
 
 ## Purpose
 
@@ -16,9 +16,9 @@ evidence and the next gates; it is not a second implementation checklist.
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
 | Current phase                | T1–T5 complete; all G1–G4 gates accepted                                                             |
 | Overall state                | M1–M4 and S1–S8 complete within the stated verification boundaries                                   |
-| Immediate focus              | Approved campaign complete; deferred work needs a separate scope                                     |
+| Immediate focus              | Merged into `dev`; rebuilt desktop artifacts available for user testing                              |
 | Product or release readiness | Desktop/browser and Android remote-push proof accepted; no deployment claim                          |
-| Worktree state               | Feature proof at `56aa90c89`; closure verification complete; all test runtimes stopped               |
+| Worktree state               | Accepted feature fast-forwarded into `dev` at `6b4995811`; all test runtimes stopped                 |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -39,7 +39,26 @@ filtered and unfiltered mock completions at the browser Notification API. This i
 not by itself proof of operating-system notification arrival. The later authorized
 headed run now has both human arrival confirmation and native banner logs. The accepted design does not
 establish that a provider never truncates its internal response. S3c lifecycle
-tests and desktop/browser OS arrival are accepted; phone gates remain required.
+tests, desktop/browser OS arrival, and Android phone gates are accepted.
+
+### Current dev artifacts
+
+The user-requested rebuild used clean merged source `6b4995811` in the main
+checkout. Strict installation took 18.3 s, preserved the accepted lock, and
+applied all eight patches. The npm desktop build passed in 2:20.83; its unsigned
+app is `.dev/configurable-notifications/dev-rebuild/npm/mac-arm64/Paseo.app`
+(507 MB, version/build `0.11.0`). The sequential Nix build passed in 3:26.81
+with four cores and one job, reusing cached toolchains. Its 477 MB app is
+`.dev/configurable-notifications/dev-rebuild/nix-result/Applications/Paseo.app`;
+the task-owned indirect GC root retains store output
+`/nix/store/81x7bsbkgx4iaxrpa15ddz3pqy8xrjq1-paseo-desktop-0.11.0`.
+Nix reports version `0.11.0`, build `0.11.5778` from this Git source. Static
+inspection confirmed the notification-rule and workspace-update CLI code,
+bundled CLI version `0.11.0`, RE2 WASM, arm64 native modules, and executable
+helpers. Logs remain in the ignored `dev-rebuild` directory. These artifacts
+were not launched or installed; `/Applications/Paseo.app` remains version
+`0.10.3`. Prior feature-worktree artifacts remain protected. A later status-only
+commit does not change the recorded build-source identity.
 
 ## Accomplishments with evidence
 
