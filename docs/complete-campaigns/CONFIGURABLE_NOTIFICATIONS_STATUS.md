@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 15:25 UTC (2026-10-08 11:25 EDT)
+Archived complete: 2026-10-08 19:38 UTC (2026-10-08 15:38 EDT)
 
 ## Purpose
 
@@ -16,9 +16,9 @@ evidence and the next gates; it is not a second implementation checklist.
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
 | Current phase                | T1–T5 complete; all G1–G4 gates accepted                                                             |
 | Overall state                | M1–M4 and S1–S8 complete within the stated verification boundaries                                   |
-| Immediate focus              | Merged into `dev`; rebuilt desktop and standalone Android artifacts available for user testing       |
+| Immediate focus              | Campaign closed and archived; automated updates is the next planning topic                           |
 | Product or release readiness | Desktop/browser and Android remote-push proof accepted; no deployment claim                          |
-| Worktree state               | Accepted feature fast-forwarded into `dev` at `6b4995811`; all test runtimes stopped                 |
+| Worktree state               | Feature merged into `dev`; icon follow-up at `4fcdd22c9`; sibling worktree removed at closeout       |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -56,9 +56,10 @@ Nix reports version `0.11.0`, build `0.11.5778` from this Git source. Static
 inspection confirmed the notification-rule and workspace-update CLI code,
 bundled CLI version `0.11.0`, RE2 WASM, arm64 native modules, and executable
 helpers. Logs remain in the ignored `dev-rebuild` directory. These artifacts
-were not launched or installed; `/Applications/Paseo.app` remains version
-`0.10.3`. Prior feature-worktree artifacts remain protected. A later status-only
-commit does not change the recorded build-source identity.
+were not launched during build verification. Subsequently, the user authorized
+upstream app removal and reported installing the fork's macOS and Android apps.
+That report is not an automated installed-app verification. The artifacts predate
+the menu icon follow-up; no rebuild was requested for campaign closeout.
 
 The standalone Android build used source `8bf821fea` and is available at
 `.dev/configurable-notifications/android/Paseo-Debug-arm64-v0.11.0.apk` (140,344,227
@@ -69,10 +70,30 @@ certificate, non-debuggable, and contains only arm64 libraries. The SDK 36
 `zipalign -P 16` check passed. The one-worker release build took 8:55.92; cold
 setup exceeded the initial 15–45 minute estimate because of native API and patch
 compatibility fixes, and total setup time was not captured. See the
-[standalone Android build recipe](upstream/android.md#standalone-local-apk). No matching Firebase
+[standalone Android build recipe](../upstream/android.md#standalone-local-apk). No matching Firebase
 configuration was present, so this APK has no configured push registration;
-Expo push credentials were not queried. The APK was not installed or launched;
-the earlier Play Store phone proof remains a separate result.
+Expo push credentials were not queried. The user subsequently reported installing
+the APK; the earlier Play Store phone proof remains a separate result. Firebase
+and Expo setup for this fork is separate follow-up work, not a passed delivery gate
+for this APK.
+
+### Closeout and retained evidence
+
+The mute action now uses the existing bell with a bottom-left-to-top-right slash;
+unmute uses a plain bell. The unchanged icon delta passed three rendered menu
+tests (3.209 s wall), typecheck (12.743 s), and lint (1.438 s). The amendment's
+required hooks also passed, with typecheck at 31.15 s within the fixed 33 s budget.
+Review accepted the icon change; native visual inspection and rebuilt apps are
+not claimed.
+
+Before removing the clean sibling worktree, its historical `s5c` and `s6`
+artifacts were moved into the main checkout at
+`.dev/configurable-notifications/archived-worktree/`. Earlier receipts below use
+their original worktree-relative paths. The relocated `s6/nix-result` was
+registered as an indirect GC root; the newer `dev-rebuild` and Android artifacts
+remain in place. These ignored local files are not durable committed evidence;
+the concise results below remain the campaign record. The feature branch is
+retained; only its worktree and disposable generated dependencies were removed.
 
 ## Accomplishments with evidence
 
@@ -240,6 +261,9 @@ and test-only cleanup recorded. Evidence: receipts above and the progress log.
 
 The campaign is complete, with no remaining work in the approved scope. Any
 deferred work needs a separate scope. The user's automated-first order was preserved.
+The next campaign will plan automated updates: Nix-managed macOS installation,
+Android APKs, and GitHub Releases hosting. No update implementation or release
+infrastructure was added during this closeout.
 
 ## Explicitly deferred
 
