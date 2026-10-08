@@ -148,28 +148,8 @@ function installNotificationRecorder(useOsProofRecorder: boolean): void {
     trial.textContent = "Notification OS proof is preparing";
     const observationNote = document.createElement("div");
     observationNote.textContent =
-      "API calls are not OS delivery proof; observe the macOS banner or Notification Center.";
-    const permissionButton = document.createElement("button");
-    permissionButton.dataset.testid = "os-proof-request-permission";
-    permissionButton.type = "button";
-    permissionButton.textContent =
-      "Click to request browser notification permission; grant it for this proof";
-    Object.assign(permissionButton.style, { pointerEvents: "auto", marginTop: "6px" });
-    permissionButton.addEventListener("click", () => {
-      permissionButton.disabled = true;
-      void nativeNotification
-        .requestPermission()
-        .then((permission) => {
-          permissionButton.textContent = `Notification permission: ${permission}`;
-          return permission;
-        })
-        .catch((error: unknown) => {
-          permissionButton.disabled = false;
-          permissionButton.textContent = `Permission request failed: ${String(error)}`;
-          return undefined;
-        });
-    });
-    panel.append(trial, observationNote, permissionButton);
+      "The test grants this site permission only. macOS notification authorization is separate; observe the banner or Notification Center.";
+    panel.append(trial, observationNote);
     const attachPanel = () => document.body.append(panel);
     if (document.body) attachPanel();
     else document.addEventListener("DOMContentLoaded", attachPanel, { once: true });
@@ -227,6 +207,10 @@ const osProofBaseTest = baseSupportTest.extend({
       headless: false,
     });
     try {
+      await context.grantPermissions(["notifications"], { origin: baseURL });
+      console.log(
+        `[notification OS proof] Browser-site notification permission granted for ${baseURL}; macOS authorization is unchanged.`,
+      );
       await provide(context.pages()[0] ?? (await context.newPage()));
     } finally {
       await context.close();
@@ -405,14 +389,6 @@ test.describe("configurable notifications journey", () => {
       await page.goto(buildHostWorkspaceRoute(serverId, workspaceId), { waitUntil: "commit" });
       await expect(page.getByTestId("workspace-header-menu-trigger")).toBeVisible();
       if (notificationOsProof) {
-        const permissionButton = page.getByTestId("os-proof-request-permission");
-        await expect(permissionButton).toBeVisible();
-        console.log(
-          "[notification OS proof] Click the visible permission button and grant Chrome/macOS access within 2 minutes; this test never clicks it or grants permission.",
-        );
-        await page.waitForFunction(() => window.Notification?.permission !== "default", undefined, {
-          timeout: 120_000,
-        });
         const permission = await page.evaluate(
           () => window.Notification?.permission ?? "unsupported",
         );
