@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 UTC (2026-10-07 EDT)
+Last updated: 2026-10-08 04:23 UTC (2026-10-08 00:23 EDT)
 
 ## Purpose
 
@@ -14,11 +14,11 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T1/S1, T3/S3–S4/G2, and S5a–S5b accepted; S5c combined journey next                                  |
-| Overall state                | M2.1–M2.4 complete; combined desktop proof, M1.2/S2, and G1 remain open                              |
-| Immediate focus              | S5c isolated browser journey and S6 feature builds                                                   |
-| Product or release readiness | Workspace and host-rule adapters have focused local verification; phone delivery remains open        |
-| Worktree state               | S5b source and focused checks accepted for scoped publication                                        |
+| Current phase                | S5c isolated automated journey verified; OS-human notification proof remains open                    |
+| Overall state                | M2.1–M2.4 complete; OS notification proof, M1.2/S2, and G1 remain open                               |
+| Immediate focus              | Prepare S6 packages after accepted S5c automation; review the isolated OS-human launch boundary      |
+| Product or release readiness | CLI/MCP/UI flows have headless local verification; OS arrival and phone delivery remain open         |
+| Worktree state               | S5c accepted for publication; SDK compatibility fix is committed separately as `07db5751b`           |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -33,9 +33,12 @@ completion subject; workspace mute takes precedence and other attention reasons
 are unchanged. S4a adds workspace CLI/MCP create, update, and effective-policy
 list adapters. S4b adds host-targeted rule get/set/clear and permission-scoped
 MCP adapters with review acceptance. S5a's shared workspace menu is accepted.
-The S5b host-rule editor is accepted; the combined desktop journey remains open. The
-accepted design does not establish that a provider never truncates its internal response. Later
-lifecycle tests and phone/desktop gates remain required.
+The S5b host-rule editor is accepted. The S5c isolated browser journey now verifies
+workspace and host-rule changes through the UI, CLI, and owner MCP client, plus
+filtered and unfiltered mock completions at the browser Notification API. This is
+not proof of operating-system notification arrival. The accepted design does not
+establish that a provider never truncates its internal response. S3c lifecycle
+tests are accepted; human desktop OS-arrival and phone gates remain required.
 
 ## Accomplishments with evidence
 
@@ -186,7 +189,7 @@ a prerequisite for T5 only.
 | Risk or decision             | Evidence or uncertainty                                                                                     | Consequence                                   | Mitigation or next evidence                                                                                            | Owner          |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
 | Completion subject lifecycle | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally | A truncated provider reply could match a rule | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
-| Host settings controls       | S5b editor and focused checks are accepted; browser journey remains deferred to S5c                         | Combined app behavior remains unverified      | Verify combined host settings flow in S5c                                                                              | T4             |
+| Host settings controls       | S5c headless journey verifies UI, CLI, MCP, and browser Notification API behavior; OS arrival is unverified | OS permission/display may differ from the API | Agree the isolated OS-human demonstration boundary without a Notification stub                                         | T4             |
 | Phone/relay availability     | No phone positive control has been run                                                                      | G1 and final device proof remain open         | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
 
 ## Progress log
@@ -373,3 +376,30 @@ a prerequisite for T5 only.
   11.285 s, 1.457 s, and 0.605 s. No app export, browser, Metro, provider, relay,
   phone, or production process was started. S5b is accepted; S5/G3 remains
   incomplete and S5c/S6 gates remain open.
+
+### 2026-10-08 04:17 UTC (2026-10-08 00:17 EDT)
+
+- The isolated S5c headless journey passed (1 test, 10.2 s in Playwright; 18.8 s
+  total command time including Metro/daemon setup and teardown). Metro's web bundle
+  took 1.039 s. The same session verified workspace policy through the menu, CLI
+  list, and owner MCP list; saved and invalid rules; external-update conflict and
+  reload; and four real mock completions. A source-only observer retained all four
+  finished events with notifications disabled. The browser Notification API calls
+  were exactly `Unrelated answer` and, after clearing rules, `No news.`; workspace
+  mute and a matching rule each suppressed their eligible completion. The matching
+  suppression had a bounded 400 ms settling window before the exact call list was
+  asserted. The screenshot is `.dev/configurable-notifications/s5c/reply-rules.png`.
+- App typecheck passed in 3.313 s; changed-spec lint, formatting, and diff checks
+  passed. The worker daemon and Metro stopped, the temporary worker home was
+  removed, and no task-owned listener remained. A persistent React `uniProps` DOM
+  warning did not prevent rendering or journey completion.
+- Browser startup exposed a source-grounded Expo Router 57 navigation-context
+  mismatch: nine runtime `useNavigation`, `useIsFocused`, and `useFocusEffect`
+  imports now use Expo Router's public exports. This compatibility repair is
+  committed separately as `07db5751b` and is not an untouched-main runtime proof.
+  No native desktop app, actual OS notification, provider, relay, phone, or
+  production state was used. S5/G3 still needs the isolated human OS-arrival
+  demonstration; S6 feature builds remain outstanding. Build preparation will now
+  precede that human session to follow the automated-first order and provide an
+  identified feature artifact. S5/G3, S6 final acceptance, and T4 stay open until
+  the original live proof passes.
