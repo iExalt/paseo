@@ -1,9 +1,6 @@
 import { RE2 } from "re2-wasm";
 
-import {
-  COMPLETION_SUBJECT_MAX_LENGTH,
-  type CompletionSubject,
-} from "./completion-subject-collector.js";
+import { COMPLETION_SUBJECT_MAX_LENGTH, type CompletionSubject } from "./completion-subject.js";
 
 export const REPLY_RULE_MAX_COUNT = 8;
 export const REPLY_RULE_MAX_PATTERN_LENGTH = 256;

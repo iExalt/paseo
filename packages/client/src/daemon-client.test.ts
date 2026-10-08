@@ -1940,6 +1940,67 @@ test("sends and parses daemon config reload", async () => {
   });
 });
 
+test("gates daemon reply-rule RPCs and round-trips the complete list", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connectPromise = client.connect();
+  mock.triggerOpen();
+  await connectPromise;
+
+  await expect(client.getDaemonNotificationRules()).rejects.toThrow(
+    "Update the host to manage daemon-wide notification rules.",
+  );
+  expect(mock.sent).toEqual([]);
+
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "status",
+      payload: {
+        status: "server_info",
+        serverId: "srv_rules",
+        hostname: null,
+        version: null,
+        features: { replyRuleFiltering: true },
+      },
+    }),
+  );
+
+  const rules = [{ source: "^No news\\.$", flags: "i" }];
+  const getPromise = client.getDaemonNotificationRules("rules-get");
+  expect(parseSentFrame(mock.sent.at(-1))).toEqual({
+    type: "daemon.notifications.rules.get.request",
+    requestId: "rules-get",
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "daemon.notifications.rules.get.response",
+      payload: { requestId: "rules-get", replyRules: rules },
+    }),
+  );
+  await expect(getPromise).resolves.toEqual({ requestId: "rules-get", replyRules: rules });
+
+  const setPromise = client.setDaemonNotificationRules(rules, "rules-set");
+  expect(parseSentFrame(mock.sent.at(-1))).toEqual({
+    type: "daemon.notifications.rules.set.request",
+    requestId: "rules-set",
+    replyRules: rules,
+  });
+  mock.triggerMessage(
+    wrapSessionMessage({
+      type: "daemon.notifications.rules.set.response",
+      payload: { requestId: "rules-set", replyRules: rules },
+    }),
+  );
+  await expect(setPromise).resolves.toEqual({ requestId: "rules-set", replyRules: rules });
+});
+
 test("gets a structured plugin log snapshot", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({
