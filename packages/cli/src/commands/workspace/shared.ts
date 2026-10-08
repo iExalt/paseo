@@ -8,6 +8,7 @@ export interface WorkspaceRow {
   isolation: "local" | "worktree";
   cwd: string;
   background: boolean;
+  notifications: "on" | "off";
 }
 
 export const workspaceSchema: OutputSchema<WorkspaceRow> = {
@@ -18,6 +19,7 @@ export const workspaceSchema: OutputSchema<WorkspaceRow> = {
     { header: "NAME", field: "name", width: 22 },
     { header: "ISOLATION", field: "isolation", width: 10 },
     { header: "CWD", field: "cwd", width: 42 },
+    { header: "NOTIFICATIONS", field: "notifications", width: 13 },
   ],
 };
 
@@ -38,5 +40,6 @@ export function toWorkspaceRow(workspace: WorkspaceDescriptorPayload): Workspace
     isolation: workspace.workspaceKind === "worktree" ? "worktree" : "local",
     cwd: workspace.workspaceDirectory,
     background: workspace.background === true,
+    notifications: workspace.notifications ?? "on",
   };
 }
