@@ -409,16 +409,22 @@ must report unsupported hosts before sending a mutation.
 
 ### M3 — User controls
 
-- [ ] **M3.1 Shared menu:** current policy and mute/unmute actions work from the
+- [x] **M3.1 Shared menu:** current policy and mute/unmute actions work from the
       sidebar context/button menu, with pending and failure feedback.
-- [ ] **M3.2 Synchronization:** CLI/MCP changes update connected UI state, and UI
+- [x] **M3.2 Synchronization:** CLI/MCP changes update connected UI state, and UI
       changes are visible to automation without reconnecting.
-- [ ] **M3.3 Host filter editor:** users can edit/save/clear the daemon-wide rules,
+- [x] **M3.3 Host filter editor:** users can edit/save/clear the daemon-wide rules,
       see validation and save failures, and observe CLI/MCP changes across clients.
 - **G3:** desktop menu demonstration and UI/CLI/MCP synchronization; errors leave
   the authoritative state visible. Old-daemon gating is explicit. Android menu
   verification is deferred under D10 and is not a condition for this gate. Include
   a desktop demonstration of the host filter editor and its synchronization.
+
+G3 is accepted: the isolated browser journey and lower-layer checks prove the
+controls and synchronization; the user confirmed both OS positives arrived and
+the workspace-muted/rule-filtered trials stayed silent on 2026-10-08. Native
+logs separately record both banners. Android delivery and menu proof are not
+claimed; M4.1 remains open for its phone portion.
 
 ### M4 — Real-device proof and handoff
 
