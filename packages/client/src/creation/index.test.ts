@@ -50,7 +50,7 @@ const agent: AgentSnapshotPayload = {
   labels: {},
 };
 
-function fixture(modern: boolean) {
+function fixture(modern: boolean, workspaceNotifications = true) {
   const requests: Array<{ kind: string; input: Record<string, unknown> }> = [];
   const legacy: Array<{ kind: string; input: unknown }> = [];
   let resolve!: (result: CreationResult) => void;
@@ -58,7 +58,11 @@ function fixture(modern: boolean) {
     resolve = done;
   });
   const client = new CreationClient({
-    supports: (feature) => (feature === "creationLifecycle" ? modern : true),
+    supports: (feature) => {
+      if (feature === "creationLifecycle") return modern;
+      if (feature === "workspaceNotifications") return workspaceNotifications;
+      return true;
+    },
     requestId: () => "generated-key",
     request: async (kind, input) => {
       requests.push({ kind, input });
@@ -134,6 +138,23 @@ test("duplicate client submissions join one complete intent and cumulative updat
   expect(await duplicate).toEqual(await first);
   expect(f.legacy).toEqual([]);
   f.client.close();
+});
+
+test("rejects an explicit workspace policy before any unsupported-host creation path", async () => {
+  const f = fixture(false, false);
+  await expect(f.client.createWorkspace({ ...f.input, notifications: "off" })).rejects.toThrow(
+    "Update the host to manage workspace notifications.",
+  );
+  expect(f.requests).toEqual([]);
+  expect(f.legacy).toEqual([]);
+});
+
+test("sends an explicit workspace policy through a capable creation boundary", async () => {
+  const f = fixture(true, true);
+  const pending = f.client.createWorkspace({ ...f.input, notifications: "off" });
+  expect(f.requests[0]?.input).toMatchObject({ notifications: "off" });
+  f.resolve({ error: null, workspace, requestId: "intent-one" });
+  await expect(pending).resolves.toMatchObject({ error: null, workspace });
 });
 
 test("legacy adaptation keeps workspace, agent and initial prompt sequencing inside the client", async () => {

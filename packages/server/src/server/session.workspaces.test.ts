@@ -8226,6 +8226,128 @@ test("workspace.title.set.request stores the title and emits an updated descript
   });
 });
 
+test("workspace.notifications.set.request persists before acknowledging and emits the descriptor", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const session = asTestSession(
+    createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) }),
+  );
+  const project = createPersistedProjectRecord({
+    projectId: "proj-1",
+    rootPath: REPO_CWD,
+    kind: "git",
+    displayName: "acme/repo",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-1",
+    projectId: project.projectId,
+    cwd: REPO_CWD,
+    kind: "local_checkout",
+    displayName: "main",
+    title: "Retained workspace title",
+    labels: ["owner=payments"],
+    notifications: "on",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const projects = new Map([[project.projectId, project]]);
+  const workspaces = new Map([[workspace.workspaceId, workspace]]);
+  session.projectRegistry.get = async (id: string) => projects.get(id) ?? null;
+  session.projectRegistry.list = async () => Array.from(projects.values());
+  session.workspaceRegistry.list = async () => Array.from(workspaces.values());
+  session.workspaceRegistry.get = async (id: string) => workspaces.get(id) ?? null;
+  session.workspaceRegistry.update = async (id, updater) => {
+    const existing = workspaces.get(id);
+    if (!existing) return null;
+    const updated = updater(existing);
+    workspaces.set(id, updated);
+    return updated;
+  };
+
+  await session.handleMessage({
+    type: "fetch_workspaces_request",
+    requestId: "sub-workspaces",
+    subscribe: { subscriptionId: "sub-workspaces" },
+  });
+  emitted.length = 0;
+
+  await session.handleMessage({
+    type: "workspace.notifications.set.request",
+    workspaceId: workspace.workspaceId,
+    notifications: "off",
+    requestId: "req-notifications-1",
+  });
+
+  const response = findByType(emitted, "workspace.notifications.set.response");
+  expect(response?.payload).toEqual({
+    requestId: "req-notifications-1",
+    workspaceId: workspace.workspaceId,
+    accepted: true,
+    notifications: "off",
+    error: null,
+  });
+  expect(workspaces.get(workspace.workspaceId)).toMatchObject({
+    notifications: "off",
+    title: "Retained workspace title",
+    labels: ["owner=payments"],
+  });
+  expect(findByType(emitted, "workspace_update")?.payload).toMatchObject({
+    kind: "upsert",
+    workspace: { id: workspace.workspaceId, notifications: "off" },
+  });
+});
+
+test("workspace.notifications.set.request rejects failed persistence without changing policy", async () => {
+  const emitted: SessionOutboundMessage[] = [];
+  const session = asTestSession(
+    createSessionForWorkspaceTests({ onMessage: (message) => emitted.push(message) }),
+  );
+  const project = createPersistedProjectRecord({
+    projectId: "proj-1",
+    rootPath: REPO_CWD,
+    kind: "git",
+    displayName: "acme/repo",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "ws-1",
+    projectId: project.projectId,
+    cwd: REPO_CWD,
+    kind: "local_checkout",
+    displayName: "main",
+    notifications: "on",
+    createdAt: "2026-03-01T12:00:00.000Z",
+    updatedAt: "2026-03-01T12:00:00.000Z",
+  });
+  const workspaces = new Map([[workspace.workspaceId, workspace]]);
+  session.projectRegistry.get = async (id: string) => (id === project.projectId ? project : null);
+  session.projectRegistry.list = async () => [project];
+  session.workspaceRegistry.list = async () => Array.from(workspaces.values());
+  session.workspaceRegistry.get = async (id: string) => workspaces.get(id) ?? null;
+  session.workspaceRegistry.update = async () => {
+    throw new Error("disk write failed");
+  };
+
+  await session.handleMessage({
+    type: "workspace.notifications.set.request",
+    workspaceId: workspace.workspaceId,
+    notifications: "off",
+    requestId: "req-notifications-write-failure",
+  });
+
+  expect(findByType(emitted, "workspace.notifications.set.response")?.payload).toEqual({
+    requestId: "req-notifications-write-failure",
+    workspaceId: workspace.workspaceId,
+    accepted: false,
+    notifications: null,
+    error: "disk write failed",
+  });
+  expect(workspaces.get(workspace.workspaceId)?.notifications).toBe("on");
+  expect(filterByType(emitted, "workspace_update")).toEqual([]);
+});
+
 test("workspace.pin.set.request stores the pin timestamp and emits an updated descriptor", async () => {
   const emitted: SessionOutboundMessage[] = [];
   const session = asTestSession(
@@ -9019,6 +9141,7 @@ test("workspace.create worktree source checks out a GitHub PR from githubPrNumbe
         githubPrNumber: fixture.prNumber,
         worktreeSlug: "review-pr-workspace",
       },
+      notifications: "off",
     });
 
     const response = findByType(emitted, "workspace.create.response");
@@ -9026,6 +9149,7 @@ test("workspace.create worktree source checks out a GitHub PR from githubPrNumbe
     expect(response?.payload.workspace).toMatchObject({
       workspaceDirectory: expect.any(String),
       gitRuntime: { currentBranch: fixture.headRef },
+      notifications: "off",
     });
     const workspaceDirectory = response?.payload.workspace?.workspaceDirectory as string;
     expect(readCurrentBranch(workspaceDirectory)).toBe(fixture.headRef);

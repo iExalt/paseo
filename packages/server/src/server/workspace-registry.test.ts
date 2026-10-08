@@ -1,6 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 
 import { beforeEach, afterEach, describe, expect, test } from "vitest";
 
@@ -79,6 +79,80 @@ describe("workspace registries", () => {
 
   afterEach(() => {
     rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  test("defaults legacy records to on and persists policy independently by workspace ID", async () => {
+    const filePath = path.join(tmpDir, "projects", "legacy-workspaces.json");
+    const legacyRecord = createPersistedWorkspaceRecord({
+      workspaceId: "workspace-a",
+      projectId: "project-one",
+      cwd: "/tmp/shared",
+      kind: "directory",
+      displayName: "shared",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    });
+    const legacyOnDiskRecord = Object.fromEntries(
+      Object.entries(legacyRecord).filter(([key]) => key !== "notifications"),
+    );
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, JSON.stringify([legacyOnDiskRecord]));
+
+    const registry = new FileBackedWorkspaceRegistry(filePath, logger);
+    await registry.initialize();
+    expect((await registry.get("workspace-a"))?.notifications).toBe("on");
+
+    const sameDirectoryWorkspace = createPersistedWorkspaceRecord({
+      ...legacyRecord,
+      workspaceId: "workspace-b",
+      notifications: "on",
+    });
+    await registry.upsert(sameDirectoryWorkspace);
+    await registry.update("workspace-a", (workspace) => ({
+      ...workspace,
+      notifications: "off",
+      updatedAt: "2026-03-02T00:00:00.000Z",
+    }));
+
+    const reloaded = new FileBackedWorkspaceRegistry(filePath, logger);
+    await reloaded.initialize();
+    expect(await reloaded.get("workspace-a")).toMatchObject({ notifications: "off" });
+    expect(await reloaded.get("workspace-b")).toMatchObject({ notifications: "on" });
+  });
+
+  test("keeps the prior notification policy when the durable write fails", async () => {
+    let failWrites = false;
+    const registry = new FileBackedWorkspaceRegistry(
+      path.join(tmpDir, "projects", "failed-write-workspaces.json"),
+      logger,
+      {
+        writeRecords: async (filePath, records) => {
+          if (failWrites) throw new Error("disk unavailable");
+          await writeJsonFileAtomic(filePath, records);
+        },
+      },
+    );
+    const workspace = createPersistedWorkspaceRecord({
+      workspaceId: "workspace-a",
+      projectId: "project-one",
+      cwd: "/tmp/shared",
+      kind: "directory",
+      displayName: "shared",
+      notifications: "on",
+      createdAt: "2026-03-01T00:00:00.000Z",
+      updatedAt: "2026-03-01T00:00:00.000Z",
+    });
+    await registry.upsert(workspace);
+    failWrites = true;
+
+    await expect(
+      registry.update(workspace.workspaceId, (current) => ({
+        ...current,
+        notifications: "off",
+        updatedAt: "2026-03-02T00:00:00.000Z",
+      })),
+    ).rejects.toThrow("disk unavailable");
+    expect(await registry.get(workspace.workspaceId)).toMatchObject({ notifications: "on" });
   });
 
   test("creates, updates, archives, deletes, and lists project records", async () => {

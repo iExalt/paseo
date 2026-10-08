@@ -1227,9 +1227,14 @@ describe("create_agent MCP tool", () => {
       | { kind: "branch-off"; worktreeSlug?: string; branchName?: string; baseBranch?: string }
       | { kind: "checkout-branch"; branch: string }
       | { kind: "checkout-pr"; githubPrNumber: number },
+    notifications?: "on" | "off",
   ) => ({
     relationship: { kind: "detached" as const },
-    workspace: { kind: "create" as const, source: { kind: "worktree" as const, cwd, target } },
+    workspace: {
+      kind: "create" as const,
+      source: { kind: "worktree" as const, cwd, target },
+      ...(notifications ? { notifications } : {}),
+    },
   });
   const subagentCurrentWorkspace = (cwd?: string) => ({
     relationship: { kind: "subagent" as const },
@@ -1284,6 +1289,46 @@ describe("create_agent MCP tool", () => {
       initialPrompt: "test",
     });
     expect(ok.success).toBe(true);
+  });
+
+  it("applies a notification policy when top-level create_agent mints its workspace", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    spies.agentManager.createAgent.mockResolvedValue({
+      id: "top-level-agent",
+      provider: "codex",
+      cwd: existingCwd,
+      workspaceId: "workspace-created",
+      lifecycle: "idle",
+      currentModeId: null,
+      availableModes: [],
+      config: { title: "New workspace agent" },
+    } as ManagedAgent);
+    const persistWorkspaceForCreate = vi.fn(async () => "workspace-created");
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      ensureWorkspaceForCreate: persistWorkspaceForCreate,
+      workspaceNotificationsEnabled: true,
+      logger,
+    });
+
+    await registeredTool(server, "create_agent").handler({
+      title: "New workspace agent",
+      provider: "codex/gpt-5.4",
+      initialPrompt: "Start work",
+      background: true,
+      notifications: "off",
+    });
+
+    expect(persistWorkspaceForCreate).toHaveBeenCalledWith(
+      process.cwd(),
+      { prompt: "Start work" },
+      { notifications: "off" },
+    );
+    expect(persistWorkspaceForCreate.mock.invocationCallOrder[0]).toBeLessThan(
+      spies.agentManager.createAgent.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
+    );
   });
 
   it("requires initialPrompt", async () => {
@@ -1493,6 +1538,129 @@ describe("create_agent MCP tool", () => {
       undefined,
       { workspaceId: "wks_existing" },
     );
+  });
+
+  it("rejects a create-only notification policy before attaching an agent to an existing workspace", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const listActiveWorkspaces = vi.fn(async () => [
+      { workspaceId: "wks_existing", cwd: existingCwd, kind: "worktree" as const },
+    ]);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      listActiveWorkspaces,
+      workspaceNotificationsEnabled: true,
+      logger,
+    });
+    const tool = registeredTool(server, "create_agent");
+    const placement = detachedExistingWorkspace("wks_existing");
+
+    await expect(
+      tool.handler({
+        ...placement,
+        workspace: { ...placement.workspace, notifications: "off" },
+        title: "Existing workspace",
+        provider: "codex/gpt-5.4",
+        initialPrompt: "Do work",
+      }),
+    ).rejects.toThrow();
+
+    expect(listActiveWorkspaces).not.toHaveBeenCalled();
+    expect(spies.agentManager.createAgent).not.toHaveBeenCalled();
+  });
+
+  it("rejects explicit workspace notification policies before creation side effects by default", async () => {
+    const { agentManager, agentStorage, spies } = createTestDeps();
+    const createDirectoryWorkspace = vi.fn();
+    const ensureWorkspaceForCreateSpy = vi.fn();
+    const listActiveWorkspaces = vi.fn();
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      createDirectoryWorkspace,
+      ensureWorkspaceForCreate: ensureWorkspaceForCreateSpy,
+      listActiveWorkspaces,
+      logger,
+    });
+    const unsupported = /Workspace notification policies are not supported by this server/;
+    const createAgent = registeredTool(server, "create_agent");
+
+    await expect(
+      registeredTool(server, "create_workspace").handler({
+        isolation: "local",
+        path: "/path/that/does/not/exist",
+        notifications: "off",
+      }),
+    ).rejects.toThrow(unsupported);
+    await expect(
+      createAgent.handler({
+        title: "New workspace agent",
+        provider: "codex/gpt-5.4",
+        initialPrompt: "Start work",
+        background: true,
+        notifications: "off",
+      }),
+    ).rejects.toThrow(unsupported);
+    await expect(
+      createAgent.handler({
+        ...detachedDirectoryWorkspace("/path/that/does/not/exist"),
+        workspace: {
+          ...detachedDirectoryWorkspace("/path/that/does/not/exist").workspace,
+          notifications: "off",
+        },
+        title: "Nested workspace agent",
+        provider: "codex/gpt-5.4",
+        initialPrompt: "Start work",
+        background: true,
+      }),
+    ).rejects.toThrow(unsupported);
+
+    const scopedServer = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      callerAgentId: "caller-agent",
+      ensureWorkspaceForCreate: ensureWorkspaceForCreateSpy,
+      listActiveWorkspaces,
+      logger,
+    });
+    const scopedCreateAgent = registeredTool(scopedServer, "create_agent");
+    await expect(
+      scopedCreateAgent.handler({
+        relationship: { kind: "subagent" },
+        workspace: {
+          kind: "create",
+          notifications: "off",
+          source: { kind: "directory", path: "/path/that/does/not/exist" },
+        },
+        title: "Child workspace agent",
+        provider: "codex/gpt-5.4",
+        initialPrompt: "Start work",
+      }),
+    ).rejects.toThrow(unsupported);
+    // This nested field is unknown to the existing-workspace branch and would be stripped by
+    // schema parsing, so the raw-input capability check must run before parsing.
+    await expect(
+      scopedCreateAgent.handler({
+        relationship: { kind: "subagent" },
+        workspace: {
+          kind: "existing",
+          workspaceId: "wks-existing",
+          notifications: "off",
+        },
+        title: "Existing workspace agent",
+        provider: "codex/gpt-5.4",
+        initialPrompt: "Start work",
+      }),
+    ).rejects.toThrow(unsupported);
+
+    expect(createDirectoryWorkspace).not.toHaveBeenCalled();
+    expect(ensureWorkspaceForCreateSpy).not.toHaveBeenCalled();
+    expect(listActiveWorkspaces).not.toHaveBeenCalled();
+    expect(spies.agentManager.getAgent).not.toHaveBeenCalled();
+    expect(spies.agentManager.createAgent).not.toHaveBeenCalled();
   });
 
   it("accepts provider features and passes them through createAgent", async () => {
@@ -2557,6 +2725,7 @@ describe("create_agent MCP tool", () => {
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       createPaseoWorktree,
+      workspaceNotificationsEnabled: true,
       workspaceGitService: workspaceGitService as unknown as Pick<
         WorkspaceGitService,
         "getSnapshot" | "listWorktrees"
@@ -2565,10 +2734,14 @@ describe("create_agent MCP tool", () => {
     });
     const tool = registeredTool(server, "create_agent");
     await tool.handler({
-      ...detachedWorktreeWorkspace(REPO_CWD, {
-        kind: "checkout-pr",
-        githubPrNumber: 123,
-      }),
+      ...detachedWorktreeWorkspace(
+        REPO_CWD,
+        {
+          kind: "checkout-pr",
+          githubPrNumber: 123,
+        },
+        "off",
+      ),
       title: "PR agent",
       provider: "codex/gpt-5.4",
       initialPrompt: "Rename this PR branch from prompt",
@@ -2578,10 +2751,14 @@ describe("create_agent MCP tool", () => {
       expect.objectContaining({
         githubPrNumber: 123,
         firstAgentContext: { prompt: "Rename this PR branch from prompt" },
+        notifications: "off",
       }),
       expect.objectContaining({
         setupContinuation: expect.objectContaining({ kind: "agent" }),
       }),
+    );
+    expect(createPaseoWorktree.mock.invocationCallOrder[0]).toBeLessThan(
+      spies.agentManager.createAgent.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY,
     );
     expect(startedAgentSetupIds).toEqual(["agent-pr-worktree"]);
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
@@ -2698,6 +2875,7 @@ describe("create_agent MCP tool", () => {
         list: async () => [project],
       },
       createPaseoWorktree,
+      workspaceNotificationsEnabled: true,
       logger,
     });
 
@@ -2706,6 +2884,7 @@ describe("create_agent MCP tool", () => {
       projectId: project.projectId,
       worktreeSlug: "project-worktree",
       title: "Project workspace",
+      notifications: "off",
     });
 
     expect(response.structuredContent.workspaceId).toBe("ws-project-source");
@@ -2714,8 +2893,56 @@ describe("create_agent MCP tool", () => {
         cwd: REPO_CWD,
         projectId: project.projectId,
         title: "Project workspace",
+        notifications: "off",
       }),
     ]);
+  });
+
+  it("passes a local workspace notification policy into shared provisioning", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const createDirectoryWorkspace = vi.fn(
+      async (
+        _cwd: string,
+        _title: string | null | undefined,
+        _projectId: string | undefined,
+        notifications: "on" | "off" | undefined,
+      ) =>
+        createPersistedWorkspaceRecord({
+          workspaceId: "ws-local-policy",
+          projectId: "project-local",
+          cwd: process.cwd(),
+          kind: "directory",
+          displayName: "repo",
+          notifications,
+          createdAt: "2026-07-18T00:00:00.000Z",
+          updatedAt: "2026-07-18T00:00:00.000Z",
+        }),
+    );
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      createDirectoryWorkspace,
+      workspaceNotificationsEnabled: true,
+      logger,
+    });
+
+    const response = await registeredTool(server, "create_workspace").handler({
+      isolation: "local",
+      path: process.cwd(),
+      notifications: "off",
+    });
+
+    expect(createDirectoryWorkspace).toHaveBeenCalledWith(
+      process.cwd(),
+      undefined,
+      undefined,
+      "off",
+    );
+    expect(response.structuredContent).toMatchObject({
+      workspaceId: "ws-local-policy",
+      notifications: "off",
+    });
   });
 
   it("preserves branch checkout and pull request checkout workspace modes", async () => {

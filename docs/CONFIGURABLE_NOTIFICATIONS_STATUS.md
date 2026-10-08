@@ -13,17 +13,19 @@ evidence and the next gates; it is not a second implementation checklist.
 
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Baseline                     | Clean `feat/configurable-notifications` at `4ea125b83`, macOS arm64, Node 26.11                      |
-| Current phase                | T1/S1 complete; feature implementation not started                                                   |
-| Overall state                | Contract, M1.3 feasibility, and baseline are accepted; G1 remains open pending phone connectivity S2 |
-| Immediate focus              | T3/S3–S4 automated policy and automation implementation                                              |
-| Product or release readiness | No feature is implemented, packaged, deployed, or runtime-verified                                   |
-| Worktree state               | Documentation-only T1 reconciliation; no feature source or config changes                            |
+| Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
+| Current phase                | T1/S1 complete; S3a durable workspace policy implemented                                             |
+| Overall state                | S3 remains open; delivery enforcement, M1.2/S2, and G1 are not complete                              |
+| Immediate focus              | S3b agent and terminal delivery enforcement                                                          |
+| Product or release readiness | Workspace policy storage exists; notification suppression is not implemented or runtime-verified     |
+| Worktree state               | S3a source and focused tests accepted for scoped publication                                         |
 
-The T1 result closes planning and feasibility questions only. There is no shipped
-collector or immutable completion subject. The accepted design does not establish
-that a provider never truncates its internal response. Later lifecycle tests and
-phone/desktop gates remain required.
+The T1 result closes planning and feasibility questions only. S3a adds durable
+workspace policy storage and mutation as a prerequisite; it does not suppress
+notification delivery, and the server does not advertise the workspace policy
+capability before S3b. There is still no shipped collector or immutable completion
+subject. The accepted design does not establish that a provider never truncates
+its internal response. Later lifecycle tests and phone/desktop gates remain required.
 
 ## Accomplishments with evidence
 
@@ -48,9 +50,12 @@ Evidence state: verified.
   unsupported, duplicate, or malformed flags atomically. Invalid saves retain
   prior rules; an incomplete subject fails open. Matching performs no text
   normalization.
-- Current persistence seam is strict `PersistedConfigSchema` plus
+- The global-rule persistence seam remains strict `PersistedConfigSchema` plus
   `DaemonConfigStore`, with validated private-config persistence and live
-  apply/rollback. Exact new field and capability names remain unselected.
+  apply/rollback. S3a separately adds the durable workspace field
+  `notifications: "on" | "off"`; the optional
+  `workspaceNotifications` capability remains absent from the real server until
+  delivery suppression is implemented.
 - Host reads require `daemon.read`; mutations require `daemon.manage`. Use an
   explicit host authorization context. Workspace-only permissions and the shared
   agent token do not grant global mutation. The current no-password session
@@ -82,8 +87,19 @@ Observed RE2 sample timings are feasibility evidence, not a hard latency bound.
 
 - M1.2 and S2/G1 remain open until an isolated test host produces a user-observed
   positive push on the existing Android app over mobile data.
-- The collector, immutable subject, persistence fields, capability, workspace
-  controls, and CLI/MCP changes have not been implemented.
+- S3a workspace policy storage and mutation are implemented, verified, and
+  review-accepted. The server capability
+  remains unadvertised and delivery is unchanged until S3b is implemented and
+  accepted. The production MCP host also keeps workspace policy requests
+  disabled by default and rejects explicit create options before parsing or
+  creation side effects; capable test fixtures exercise the internal forwarding
+  path.
+- The original creation disconnect fixture fails on both this worktree and the
+  untouched `4ea125b83` baseline at the same `prompts === 1` assertion (actual 7).
+  The baseline run took 17.39 s in Vitest and 19.551 s wall time, so this is a
+  reproduced baseline limitation rather than an S3a regression.
+- The collector, immutable subject, global filter, CLI controls, and end-user
+  workspace controls have not been implemented.
 - No desktop, phone, relay, daemon, or provider was launched for T1. Production
   state and deployment remain excluded.
 - T2 is required before T5, but not before automated T3 or T4.
@@ -112,9 +128,10 @@ implied.
 
 ### I1 — Durable policy and automation parity
 
-Workflow status: next.
+Workflow status: in progress.
 
-Evidence state: designed.
+Evidence state: S3a implementation and focused verification review-accepted;
+delivery enforcement remains open.
 
 Decision owner: approved plan.
 
@@ -122,15 +139,18 @@ Exit-condition owner: I1.
 
 Dependencies: I0 evidence; T2 is not a prerequisite.
 
-Deliverables: workspace policy persistence/enforcement and daemon-wide reply
-filtering, followed by CLI/MCP create, update, and readback parity.
+Deliverables: workspace policy persistence, delivery enforcement, and daemon-wide
+reply filtering, followed by CLI/MCP create, update, and readback parity.
 
 Exit conditions: focused tests preserve attention and source events; completion
 subjects are immutable, matching-turn, complete retained live segments; host
 authority and invalid-save behavior match the contract; required automation
 operations have parity.
 
-Evidence: none yet.
+Evidence: S3a protocol, registry, provisioning, runtime mutation, and MCP creation
+paths are implemented and review-accepted. Focused gates pass, with the
+creation disconnect baseline limitation above. No delivery
+suppression is claimed.
 
 ## Recommended next sequence
 
@@ -160,6 +180,22 @@ a prerequisite for T5 only.
 | Phone/relay availability     | No phone positive control has been run                                                                                           | G1 and final device proof remain open                         | Run T2 after automated work, then T5 against the final revision                                                                   | User and T2/T5 |
 
 ## Progress log
+
+### 2026-10-08 01:04 UTC (2026-10-07 21:04 EDT)
+
+- Implemented the S3a durable `notifications: "on" | "off"` workspace policy,
+  optional backward-compatible wire fields, workspace create propagation, MCP
+  creation propagation, and a runtime mutation RPC. The real server leaves
+  `workspaceNotifications` unadvertised until S3b delivery enforcement.
+- Focused S3a tests, root typecheck, lint, formatting, and generated protocol
+  validation pass. The strengthened raw-wire test confirms an off workspace is
+  persisted before its first descriptor while the real server leaves the
+  capability unadvertised. MCP creation rejects explicit policy by default
+  before parsing or side effects. The original creation disconnect assertion is
+  a reproduced baseline limitation. S3 overall, delivery behavior, G1, phone
+  proof, and production deployment remain open.
+- Lead and navigator accepted the S3a snapshot. Final server build took 16.636 s;
+  root typecheck, lint, and formatting took 17.354 s, 1.264 s, and 1.919 s.
 
 ### 2026-10-08 UTC (2026-10-07 EDT)
 
