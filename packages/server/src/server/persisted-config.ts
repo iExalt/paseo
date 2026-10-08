@@ -14,6 +14,8 @@ import { AgentProfileSchema, AgentSkillSelectionSchema } from "@getpaseo/protoco
 import { PluginIdSchema, PluginSourceSchema } from "@getpaseo/protocol/plugin-config";
 import { TerminalProfileSchema } from "@getpaseo/protocol/terminal-profile";
 import { PaseoServicePortAllocationSchema } from "@getpaseo/protocol/paseo-config-schema";
+import { ReplyRuleSchema } from "@getpaseo/protocol/messages";
+import { ReplyRuleMatcher } from "./agent/reply-rule-matcher.js";
 
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
@@ -310,6 +312,7 @@ export const PersistedConfigSchema = z
     pluginRegistries: PluginRegistriesSchema.optional(),
     pluginsEnabled: z.boolean().optional(),
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
+    replyRules: z.array(ReplyRuleSchema).optional(),
     worktrees: WorktreesConfigSchema.optional(),
     agents: z
       .object({
@@ -562,6 +565,13 @@ export function savePersistedConfig(
       .map((i) => `  - ${i.path.join(".")}: ${i.message}`)
       .join("\n");
     throw new Error(`[Config] Invalid config to save:\n${issues}`);
+  }
+
+  try {
+    ReplyRuleMatcher.compile(result.data.replyRules ?? []);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`[Config] Invalid reply rules: ${message}`, { cause: error });
   }
 
   try {

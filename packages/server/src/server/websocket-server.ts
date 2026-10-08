@@ -8,8 +8,11 @@ import { join } from "path";
 import { getHostName } from "./host-name.js";
 import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
-import type { AgentManager, AgentMetricsSnapshot } from "./agent/agent-manager.js";
-import type { CompletionSubject } from "./agent/completion-subject-collector.js";
+import type { AgentManager, AgentMetricsSnapshot, ManagedAgent } from "./agent/agent-manager.js";
+import {
+  COMPLETION_SUBJECT_MAX_LENGTH,
+  type CompletionSubject,
+} from "./agent/completion-subject-collector.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
@@ -1790,6 +1793,7 @@ export class VoiceAssistantWebSocketServer {
       ...(this.serverCapabilities ? { capabilities: this.serverCapabilities } : {}),
       features: {
         usageSources: true,
+        replyRuleFiltering: true,
         ownedSubscriptions: true,
         agentRequestReceipts: true,
         workspaceRequestReceipts: true,
@@ -1958,14 +1962,20 @@ export class VoiceAssistantWebSocketServer {
     };
   }
 
-  private createDaemonConfigChangedMessage(config: MutableDaemonConfig): WSOutboundMessage {
-    return wrapSessionMessage({
+  private createDaemonConfigChangedMessage(
+    config: MutableDaemonConfig,
+    includeReplyRules: boolean,
+  ): SessionOutboundMessage {
+    const visibleConfig = includeReplyRules
+      ? config
+      : (({ replyRules: _replyRules, ...legacyConfig }) => legacyConfig)(config);
+    return {
       type: "status",
       payload: {
         status: "daemon_config_changed",
-        config,
+        config: visibleConfig,
       },
-    });
+    };
   }
 
   private broadcastCapabilitiesUpdate(): void {
@@ -1984,7 +1994,18 @@ export class VoiceAssistantWebSocketServer {
   }
 
   private broadcastDaemonConfigChanged(config: MutableDaemonConfig): void {
-    this.broadcast(this.createDaemonConfigChangedMessage(config));
+    for (const connection of new Set(this.sessions.values())) {
+      for (const ws of connection.sockets) {
+        if (!connection.session.wantsSourceEvent(ws, "status.daemon_config_changed")) continue;
+        connection.session.publishToSource(
+          ws,
+          this.createDaemonConfigChangedMessage(
+            config,
+            connection.session.supportsForSource(CLIENT_CAPS.replyRuleNotifications, ws),
+          ),
+        );
+      }
+    }
   }
 
   private bindSocketHandlers(ws: WebSocketLike): void {
@@ -2573,6 +2594,58 @@ export class VoiceAssistantWebSocketServer {
     };
   }
 
+  private shouldSuppressReplyRuleNotification(params: {
+    reason: "finished" | "error" | "permission";
+    workspaceNotificationsEnabled: boolean;
+    completionSubject?: CompletionSubject;
+  }): boolean {
+    if (!params.workspaceNotificationsEnabled || params.reason !== "finished") return false;
+    const replyRules = this.daemonConfigStore.getReplyRules();
+    if (replyRules.length === 0) return false;
+
+    const subject = params.completionSubject;
+    let failOpenReason: string | undefined;
+    if (!subject) {
+      failOpenReason = "missing_subject";
+    } else if (subject.completeness !== "complete") {
+      failOpenReason = "incomplete_subject";
+    } else if (subject.text.length > COMPLETION_SUBJECT_MAX_LENGTH) {
+      failOpenReason = "oversize_subject";
+    }
+
+    if (failOpenReason) {
+      this.logger.info(
+        {
+          event: "reply_rule_match_fail_open",
+          reason: failOpenReason,
+          ruleCount: replyRules.length,
+          ...(subject ? { subjectLength: subject.text.length } : {}),
+        },
+        "Reply-rule evaluation failed open",
+      );
+      return false;
+    }
+
+    return this.daemonConfigStore.matchesReplyRules(subject);
+  }
+
+  private async collectAgentAttentionClients(
+    subscriptionAgent: ManagedAgent,
+  ): Promise<Array<{ ws: WebSocketLike; state: ClientPresenceState }>> {
+    const clientEntries: Array<{ ws: WebSocketLike; state: ClientPresenceState }> = [];
+    for (const [ws, connection] of this.sessions) {
+      const subscribed = connection.session.delivery.isModern(ws)
+        ? connection.session.wantsSourceEvent(ws, "agent_attention_required")
+        : await connection.session.subscribesToAgent(subscriptionAgent, ws);
+      if (!subscribed) continue;
+      clientEntries.push({
+        ws,
+        state: this.getClientActivityState(connection.session, ws),
+      });
+    }
+    return clientEntries;
+  }
+
   private async broadcastAgentAttention(params: {
     agentId: string;
     provider: AgentProvider;
@@ -2585,23 +2658,7 @@ export class VoiceAssistantWebSocketServer {
       return;
     }
     const subscriptionAgent = { ...agent, workspaceId };
-    const clientEntries: Array<{
-      ws: WebSocketLike;
-      state: ClientPresenceState;
-    }> = [];
-
-    for (const [ws, connection] of this.sessions) {
-      if (
-        connection.session.delivery.isModern(ws)
-          ? !connection.session.wantsSourceEvent(ws, "agent_attention_required")
-          : !(await connection.session.subscribesToAgent(subscriptionAgent, ws))
-      )
-        continue;
-      clientEntries.push({
-        ws,
-        state: this.getClientActivityState(connection.session, ws),
-      });
-    }
+    const clientEntries = await this.collectAgentAttentionClients(subscriptionAgent);
 
     const notificationEntries = clientEntries.filter(({ ws }) =>
       this.sessions.get(ws)?.session.wantsSourceNotification(ws, "agent_attention_required"),
@@ -2611,6 +2668,11 @@ export class VoiceAssistantWebSocketServer {
     const assistantMessage = await this.agentManager.getLastAssistantMessage(params.agentId);
     const workspace = await this.workspaceRegistry.get(workspaceId);
     const workspaceNotificationsEnabled = workspace?.notifications !== "off";
+    const replyRuleMatched = this.shouldSuppressReplyRuleNotification({
+      reason: params.reason,
+      workspaceNotificationsEnabled,
+      completionSubject: params.completionSubject,
+    });
     const notification = buildAgentAttentionNotificationPayload({
       reason: params.reason,
       serverId: this.serverId,
@@ -2627,7 +2689,7 @@ export class VoiceAssistantWebSocketServer {
       nowMs,
     });
 
-    if (workspaceNotificationsEnabled && plan.shouldPush) {
+    if (workspaceNotificationsEnabled && !replyRuleMatched && plan.shouldPush) {
       void this.pushNotificationSender.send(notification).catch((err) => {
         this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
       });
@@ -2636,6 +2698,7 @@ export class VoiceAssistantWebSocketServer {
     for (const { ws } of clientEntries) {
       const shouldNotify =
         workspaceNotificationsEnabled &&
+        !replyRuleMatched &&
         plan.inAppRecipientIndex !== null &&
         notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
       const timestamp = new Date().toISOString();

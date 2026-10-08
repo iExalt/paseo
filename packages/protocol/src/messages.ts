@@ -171,6 +171,14 @@ const MutableRelayConfigSchema = z
   })
   .passthrough();
 
+export const ReplyRuleSchema = z
+  .object({
+    source: z.string(),
+    flags: z.string(),
+  })
+  .strict();
+export type ReplyRule = z.infer<typeof ReplyRuleSchema>;
+
 export const MutableDaemonConfigSchema = z
   .object({
     // COMPAT(relayConfig): added in v0.2.6, remove after 2027-01-31 when old daemons are unsupported.
@@ -208,6 +216,7 @@ export const MutableDaemonConfigSchema = z
     skills: z.object({ selection: AgentSkillSelectionSchema.optional() }).strict().optional(),
     pluginsEnabled: z.boolean().optional(),
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
+    replyRules: z.array(ReplyRuleSchema).optional(),
   })
   .passthrough();
 
@@ -228,6 +237,7 @@ export const MutableDaemonConfigPatchSchema = z
     agentProfiles: z.array(AgentProfileSchema).optional(),
     pluginsEnabled: z.boolean().optional(),
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
+    replyRules: z.array(ReplyRuleSchema).optional(),
   })
   .partial()
   .passthrough();
@@ -1634,6 +1644,17 @@ export const SetDaemonConfigRequestMessageSchema = z.object({
   type: z.literal("set_daemon_config_request"),
   requestId: z.string(),
   config: MutableDaemonConfigPatchSchema,
+});
+
+export const DaemonNotificationRulesGetRequestSchema = z.object({
+  type: z.literal("daemon.notifications.rules.get.request"),
+  requestId: z.string(),
+});
+
+export const DaemonNotificationRulesSetRequestSchema = z.object({
+  type: z.literal("daemon.notifications.rules.set.request"),
+  requestId: z.string(),
+  replyRules: z.array(ReplyRuleSchema),
 });
 
 export const ReadProjectConfigRequestMessageSchema = z.object({
@@ -3258,6 +3279,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   DaemonGetStatusRequestSchema,
   DaemonGetPairingOfferRequestSchema,
   DaemonConfigReloadRequestSchema,
+  DaemonNotificationRulesGetRequestSchema,
+  DaemonNotificationRulesSetRequestSchema,
   HubManagementDaemonConnectRequestSchema,
   HubManagementDaemonGetStatusRequestSchema,
   HubManagementDaemonDisconnectRequestSchema,
@@ -3619,6 +3642,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(workspaceNotifications): added before delivery support; advertise only once
         // workspace notification suppression is implemented.
         workspaceNotifications: z.boolean().optional(),
+        replyRuleFiltering: z.boolean().optional(),
         // COMPAT(workspaceSetupRun): added in v0.8.0, remove gate after 2027-09-02.
         workspaceSetupRun: z.boolean().optional(),
         // COMPAT(workspaceTerminals): added in v0.8.0, remove gate after 2027-09-05.
@@ -5016,6 +5040,22 @@ export const GetDaemonConfigResponseMessageSchema = z.object({
       config: MutableDaemonConfigSchema,
     })
     .passthrough(),
+});
+
+export const DaemonNotificationRulesGetResponseSchema = z.object({
+  type: z.literal("daemon.notifications.rules.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    replyRules: z.array(ReplyRuleSchema),
+  }),
+});
+
+export const DaemonNotificationRulesSetResponseSchema = z.object({
+  type: z.literal("daemon.notifications.rules.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    replyRules: z.array(ReplyRuleSchema),
+  }),
 });
 
 export const DaemonGetStatusResponseSchema = z.object({
@@ -6974,6 +7014,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   DaemonGetStatusResponseSchema,
   DaemonGetPairingOfferResponseSchema,
   DaemonConfigReloadResponseSchema,
+  DaemonNotificationRulesGetResponseSchema,
+  DaemonNotificationRulesSetResponseSchema,
   HubManagementDaemonConnectResponseSchema,
   HubManagementDaemonGetStatusResponseSchema,
   HubManagementDaemonDisconnectResponseSchema,
@@ -7585,6 +7627,7 @@ export const WSHelloMessageSchema = z.object({
     .object({
       voice: z.boolean().optional(),
       [CLIENT_CAPS.helloRejection]: z.boolean().optional(),
+      [CLIENT_CAPS.replyRuleNotifications]: z.boolean().optional(),
       pushNotifications: z.boolean().optional(),
       [CLIENT_CAPS.explicitEventSubscriptions]: z.boolean().optional(),
       [CLIENT_CAPS.allProviders]: z.boolean().optional(),

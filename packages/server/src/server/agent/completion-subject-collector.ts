@@ -1,12 +1,7 @@
 import type { AgentTimelineItem } from "./agent-sdk-types.js";
+import { COMPLETION_SUBJECT_MAX_LENGTH, type CompletionSubject } from "./completion-subject.js";
 
-export const COMPLETION_SUBJECT_MAX_LENGTH = 16_384;
-
-export interface CompletionSubject {
-  readonly turnId: string;
-  readonly text: string;
-  readonly completeness: "complete" | "incomplete";
-}
+export { COMPLETION_SUBJECT_MAX_LENGTH, type CompletionSubject } from "./completion-subject.js";
 
 interface AssistantSegment {
   text: string;
