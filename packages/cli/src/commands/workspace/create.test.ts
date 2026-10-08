@@ -1,7 +1,47 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { buildWorkspaceSource } from "./create.js";
 
+const createWorkspace = vi.fn(async () => ({
+  workspace: {
+    id: "ws-created",
+    projectDisplayName: "Paseo",
+    name: "feature",
+    workspaceDirectory: "/repo/worktree",
+    workspaceKind: "worktree",
+    notifications: "off" as const,
+  },
+}));
+const close = vi.fn(async () => undefined);
+
+vi.mock("../../utils/client.js", () => ({
+  connectToDaemon: vi.fn(async () => ({ createWorkspace, close })),
+  getDaemonHost: vi.fn(() => "ws://127.0.0.1:6767"),
+}));
+
+import { runCreateCommand } from "./create.js";
+
 describe("workspace create source", () => {
+  it("passes the notification policy in the workspace creation request and result", async () => {
+    const result = await runCreateCommand(
+      {
+        daemonTarget: { kind: "instance", home: "/tmp/workspace-create-test" },
+        isolation: "worktree",
+        path: "/repo",
+        notifications: "off",
+      },
+      {} as never,
+    );
+
+    expect(createWorkspace).toHaveBeenCalledWith({
+      source: { kind: "worktree", cwd: "/repo", action: "branch-off" },
+      notifications: "off",
+    });
+    expect(result.data).toMatchObject({ workspaceId: "ws-created", notifications: "off" });
+    expect(close).toHaveBeenCalledOnce();
+    createWorkspace.mockClear();
+    close.mockClear();
+  });
+
   it("maps local isolation to a directory workspace", () => {
     expect(
       buildWorkspaceSource({ isolation: "local", path: "/tmp/project", project: "project-1" }),

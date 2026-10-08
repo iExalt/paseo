@@ -8,6 +8,7 @@ export interface WorkspaceCreateOptions extends CommandOptions {
   path?: string;
   project?: string;
   title?: string;
+  notifications?: "on" | "off";
   mode?: string;
   worktreeSlug?: string;
   newBranch?: string;
@@ -147,6 +148,7 @@ export async function runCreateCommand(
     const payload = await client.createWorkspace({
       source: buildWorkspaceSource(options),
       ...(options.title ? { title: options.title } : {}),
+      ...(options.notifications ? { notifications: options.notifications } : {}),
     });
     if (!payload.workspace) {
       throw new Error(payload.error ?? "Workspace creation failed");

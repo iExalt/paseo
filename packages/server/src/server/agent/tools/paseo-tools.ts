@@ -118,6 +118,10 @@ export interface PaseoToolHostDependencies {
   archiveWorkspaceRecord?: ArchiveDependencies["archiveWorkspaceRecord"];
   emitWorkspaceUpdatesForWorkspaceIds?: ArchiveDependencies["emitWorkspaceUpdatesForWorkspaceIds"];
   workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "list" | "upsert">;
+  updateWorkspaceNotifications?: (
+    workspaceId: string,
+    notifications: "on" | "off",
+  ) => Promise<PersistedWorkspaceRecord | null>;
   projectRegistry?: Pick<ProjectRegistry, "get" | "list">;
   createDirectoryWorkspace?: (
     cwd: string,
@@ -634,6 +638,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       if (
         !workspaceNotificationsEnabled &&
         ((name === "create_workspace" && hasOwnFieldInValue(input, "notifications")) ||
+          (name === "set_workspace_notifications" && hasOwnFieldInValue(input, "notifications")) ||
           (name === "create_agent" && hasWorkspaceNotificationPolicy(input)))
       ) {
         throw new Error("Workspace notification policies are not supported by this server.");
@@ -1407,6 +1412,41 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       return {
         content: [],
         structuredContent: ensureValidJson({ workspaces }),
+      };
+    },
+  );
+
+  registerTool(
+    "set_workspace_notifications",
+    {
+      title: "Set workspace notifications",
+      description: "Set the persisted notification policy for a workspace.",
+      inputSchema: {
+        workspaceId: z.string().min(1),
+        notifications: WorkspaceNotificationsSchema,
+      },
+      outputSchema: {
+        workspaceId: z.string(),
+        notifications: WorkspaceNotificationsSchema,
+      },
+    },
+    async ({ workspaceId, notifications }) => {
+      if (!workspaceNotificationsEnabled) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
+      if (!options.updateWorkspaceNotifications) {
+        throw new Error("Workspace notification updates are not configured");
+      }
+      const workspace = await options.updateWorkspaceNotifications(workspaceId, notifications);
+      if (!workspace) {
+        throw new Error(`Workspace not found: ${workspaceId}`);
+      }
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          workspaceId,
+          notifications: workspace.notifications ?? "on",
+        }),
       };
     },
   );
