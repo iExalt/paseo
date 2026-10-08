@@ -1,5 +1,11 @@
 # Configurable notifications
 
+**Complete and archived.** M1–M4, S1–S8, T1–T5, and G1–G4 are accepted.
+The feature and menu icon follow-up are on `dev`; the implementation worktree
+has been removed. The constraints and execution instructions below record the
+approved campaign. See the final status for subsequent user installation reports,
+retained artifacts, and limits of the local Android build.
+
 The user has authorized implementation of this confirmed plan in the explicitly
 requested sibling worktree. Implementation, automation parity, browser OS proof,
 and macOS builds are accepted. Isolated Android connectivity, final device
@@ -52,8 +58,8 @@ Execution boundaries carried forward from the conversation:
   keep raw logs and generated bundles out of commits. No upstream issue or PR.
 - Preserve protocol compatibility. Optional wire fields, explicit capability
   gating for a new client feature, pure schemas, and dotted new RPC names follow
-  [protocol compatibility](upstream/protocol-compatibility.md) and
-  [RPC namespacing](upstream/rpc-namespacing.md).
+  [protocol compatibility](../upstream/protocol-compatibility.md) and
+  [RPC namespacing](../upstream/rpc-namespacing.md).
 
 Ranked preference already supplied: creation-time and runtime automation access
 is essential, not a follow-up after the UI. The contract and scope below were accepted with Tier 1 confirmation.
@@ -96,7 +102,7 @@ nor daemon was launched. These receipts establish packaging feasibility only.
 Both build tasks used `PASEO_DESKTOP_SMOKE=0` to prevent the packaged-app smoke
 hook from launching outputs. The npm build ran outside the sandbox because Expo
 writes settings under `~/.expo`; logs were retained locally in
-`.dev/build-validation`. See [development](upstream/development.md#nix-desktop-package)
+`.dev/build-validation`. See [development](../upstream/development.md#nix-desktop-package)
 for the Nix build route.
 
 Installed 0.10.2 and live overseer runs come from the handoff, not a fresh runtime
@@ -104,18 +110,18 @@ inventory. Recheck them before any future cutover.
 
 Verified source constraints:
 
-| Subject         | Evidence and implication                                                                                                                                                                                              |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Identity        | [Glossary](upstream/glossary.md): a workspace belongs to one project; sibling workspaces can share a directory. Key policy by workspace ID, not project or `cwd`.                                                     |
-| Persistence     | `packages/server/src/server/workspace-registry.ts` owns workspace records and updates. Its labels are a string array, unlike agent key/value labels. Do not assume the old label implementation transfers unchanged.  |
-| Creation        | `packages/protocol/src/messages.ts` defines `WorkspaceCreateRequestSchema`. `session.ts` provisions before creating the initial agent. Creation policy must enter the provisioning transaction, not a later mutation. |
-| MCP creation    | `packages/server/src/server/agent/tools/paseo-tools.ts` calls directory/worktree creation paths directly. Changing only the WebSocket creation handler leaves MCP uncovered.                                          |
-| CLI             | `packages/cli/src/commands/workspace/index.ts` exposes create/list/rename/archive/setup. Notification updates and readback need explicit API and command design.                                                      |
-| User menus      | `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx` shares item rendering between context and button menus. Use that shared surface for right-click and touch access; follow [menus](upstream/menus.md). |
-| Delivery        | `packages/server/src/server/websocket-server.ts` has separate agent and terminal attention broadcasts. Both carry non-notifying observation events. Preserve those events while suppressing user-facing delivery.     |
-| Client behavior | `packages/app/src/contexts/session-context.tsx` inspects `shouldNotify` for agent and terminal attention.                                                                                                             |
-| Attention       | Manager completion/error handling sets attention before delivery. Pending permissions do not force the unread attention flag. Preserve both existing behaviors.                                                       |
-| Authority       | [Permissions](upstream/permissions.md) classifies workspace management independently from protocol names. New mutation paths must use the existing authority model.                                                   |
+| Subject         | Evidence and implication                                                                                                                                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Identity        | [Glossary](../upstream/glossary.md): a workspace belongs to one project; sibling workspaces can share a directory. Key policy by workspace ID, not project or `cwd`.                                                     |
+| Persistence     | `packages/server/src/server/workspace-registry.ts` owns workspace records and updates. Its labels are a string array, unlike agent key/value labels. Do not assume the old label implementation transfers unchanged.     |
+| Creation        | `packages/protocol/src/messages.ts` defines `WorkspaceCreateRequestSchema`. `session.ts` provisions before creating the initial agent. Creation policy must enter the provisioning transaction, not a later mutation.    |
+| MCP creation    | `packages/server/src/server/agent/tools/paseo-tools.ts` calls directory/worktree creation paths directly. Changing only the WebSocket creation handler leaves MCP uncovered.                                             |
+| CLI             | `packages/cli/src/commands/workspace/index.ts` exposes create/list/rename/archive/setup. Notification updates and readback need explicit API and command design.                                                         |
+| User menus      | `packages/app/src/components/sidebar/sidebar-workspace-menu.tsx` shares item rendering between context and button menus. Use that shared surface for right-click and touch access; follow [menus](../upstream/menus.md). |
+| Delivery        | `packages/server/src/server/websocket-server.ts` has separate agent and terminal attention broadcasts. Both carry non-notifying observation events. Preserve those events while suppressing user-facing delivery.        |
+| Client behavior | `packages/app/src/contexts/session-context.tsx` inspects `shouldNotify` for agent and terminal attention.                                                                                                                |
+| Attention       | Manager completion/error handling sets attention before delivery. Pending permissions do not force the unread attention flag. Preserve both existing behaviors.                                                          |
+| Authority       | [Permissions](../upstream/permissions.md) classifies workspace management independently from protocol names. New mutation paths must use the existing authority model.                                                   |
 
 ## 3. Decision ledger and current frontier
 
@@ -156,9 +162,9 @@ Additional decisions:
 | D14 | Regex defaults                 | **Decided (the user, 2026-10-04):** empty by default; configure the optional case-insensitive whole-reply “No news.” rule where wanted.                               |
 
 The original workspace decisions remain confirmed. D12–D14 settle the new scope.
-T1/S1 has now closed the M1.3 feasibility design and measured the fixed check
-baseline. The filter collector is not implemented; S3 must prove its lifecycle
-handling with regression tests before the enforcement milestone can pass.
+T1/S1 closed the M1.3 feasibility design and measured the fixed check baseline.
+At T1, the filter collector was not implemented. S3 subsequently implemented and
+verified its lifecycle handling; the final status owns completion evidence.
 
 ## 4. Design constraints
 
@@ -281,18 +287,18 @@ matching. The optional example is source `^\s*No news\.\s*$` with flag `i`.
 It must not suppress `No news. A decision is needed.`. No built-in Claude rule
 or provider-specific behavior is introduced.
 
-**Source-grounded hazard:** [AgentManager.handleStreamEvent](../packages/server/src/server/agent/agent-manager.ts#L4174)
-assigns managed turn identity before the [stream coalescer](../packages/server/src/server/agent/agent-stream-coalescer.ts#L44)
+**Source-grounded hazard:** [AgentManager.handleStreamEvent](../../packages/server/src/server/agent/agent-manager.ts#L4174)
+assigns managed turn identity before the [stream coalescer](../../packages/server/src/server/agent/agent-stream-coalescer.ts#L44)
 can merge chunks. A matching terminal flushes buffered items, but
-[finalizeForegroundTurn](../packages/server/src/server/agent/agent-manager.ts#L2606)
+[finalizeForegroundTurn](../../packages/server/src/server/agent/agent-manager.ts#L2606)
 clears the active turn before `emitState` triggers the running-to-idle attention
 callback. That callback carries agent ID, provider, and reason only. The WebSocket
-path then asynchronously calls [getLastAssistantMessage](../packages/server/src/server/agent/agent-manager.ts#L3208),
+path then asynchronously calls [getLastAssistantMessage](../../packages/server/src/server/agent/agent-manager.ts#L3208),
 which selects live/durable text without a completion identity. The notification
-preview in [agent-attention-notification.ts](../packages/protocol/src/agent-attention-notification.ts)
+preview in [agent-attention-notification.ts](../../packages/protocol/src/agent-attention-notification.ts)
 normalizes and truncates its display text. Neither path is a safe rule subject.
 
-**M1.3 feasibility design, verified; collector not implemented:** initialize a
+**M1.3 design at T1, before the later verified S3 implementation:** initialize a
 bounded collector at the manager-owned foreground turn boundary. After event
 content limiting and turn-identity assignment, observe live assistant-message
 chunks before coalescing. Keep only the latest assistant segment for that turn;
@@ -337,14 +343,15 @@ was rejected as too costly; the smaller accepted limits retain bounded input.
 | Wire and authority | Optional capability for reply filtering, distinct from workspace mute, pure optional wire fields and dotted RPCs. Reuse host-configuration authority; workspace-management authority alone must not grant global mutation. M1.3 identifies the existing permission mapping. |
 
 The existing persistence seam is the strict
-[`PersistedConfigSchema`](../packages/server/src/server/persisted-config.ts#L227)
-and [`DaemonConfigStore`](../packages/server/src/server/daemon-config-store.ts#L311),
+[`PersistedConfigSchema`](../../packages/server/src/server/persisted-config.ts#L227)
+and [`DaemonConfigStore`](../../packages/server/src/server/daemon-config-store.ts#L311),
 which validate and save the private daemon config atomically and support live
 apply/rollback. Exact
-field names and capability keys remain unselected until implementation. Host
+field names and capability keys were unselected at T1; the final status records
+the implemented `replyRules` field and capability negotiation. Host
 reads require `daemon.read`; host mutations require `daemon.manage`. Use an
 explicit host-authorization context: workspace-only permissions and a shared
-agent token do not grant global mutation. [`resolveSessionAdmission`](../packages/server/src/server/session-admission-auth.ts#L11) currently
+agent token do not grant global mutation. [`resolveSessionAdmission`](../../packages/server/src/server/session-admission-auth.ts#L11) currently
 grants owner permissions when password auth is disabled, so it must not be used
 as an implicit host-level authorization shortcut. Check the shared agent token
 first in both password modes. Host operations default to no authority; grant
@@ -382,10 +389,10 @@ must report unsupported hosts before sending a mutation.
 - [x] **M1.2 Validation feasibility:** identify the isolated host/client setup and
       phone pairing route without replacing or stopping production.
 - [x] **M1.3 Filter feasibility and contract:** source trace and bounded-engine
-      probe support the accepted completion-bound design in §4.3. The collector,
-      immutable subject, persistence field, and capability are not implemented or
-      selected. S3 must add lifecycle and counterexample tests before enforcement;
-      do not substitute the current latest-message getter.
+      probe support the accepted completion-bound design in §4.3. T1 established
+      feasibility only; S3 later implemented the collector, immutable subject,
+      persistence field, capability, and lifecycle/counterexample tests. The final
+      status records that verification; the latest-message getter is not used.
 - **G1:** review the policy truth table and create/update/readback contract and
   establish a viable Android validation route. A blocker leaves G1 open. During implementation,
   allow an initial 30-minute setup probe before reassessing missing prerequisites.
@@ -520,7 +527,7 @@ or baseline reset.
 Use the installed Android app for the push gate; no mobile rebuild, debug app
 installation, or upstream signing credentials are planned. Confirm the installed
 variant supports push before the early connectivity probe. The F-Droid variant
-excludes push support ([Android docs](upstream/android.md)) and cannot establish this gate.
+excludes push support ([Android docs](../upstream/android.md)) and cannot establish this gate.
 If the installed variant or relay connection cannot support a positive control,
 report the blocker and revisit the validation route without replacing the app.
 
@@ -542,7 +549,7 @@ and concurrency conditions. These thresholds do not permit regressions below the
 Do not increase concurrency or remove required checks to hide growth. Maintain
 latency in each implementation step without moving required evidence into optional
 checks.
-Never run the full local suite; follow [testing](upstream/testing.md) and the
+Never run the full local suite; follow [testing](../upstream/testing.md) and the
 repository's targeted-test rule.
 
 ## 7. Review and next action

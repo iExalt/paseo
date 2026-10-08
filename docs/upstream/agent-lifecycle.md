@@ -52,8 +52,8 @@ Accepting new work after an ambiguous interruption would create a split-brain se
 
 ## Relationships
 
-For the proposed notification settings and their relationship to agent attention,
-see the [workspace notifications plan](../CONFIGURABLE_NOTIFICATIONS.md).
+For workspace notification settings and their relationship to agent attention,
+see the [workspace notifications plan](../complete-campaigns/CONFIGURABLE_NOTIFICATIONS.md).
 
 Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and always stamps `paseo.parent-agent-id`, pointing back at the caller. Omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.
 
