@@ -12,6 +12,11 @@ import { asInternals, createStub } from "./test-utils/class-mocks.js";
 import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
 import type { PushNotificationSender, PushPayload } from "./push/index.js";
 import type { WorkspaceAutoName } from "./workspace-auto-name.js";
+import {
+  createPersistedWorkspaceRecord,
+  type PersistedWorkspaceRecord,
+  type WorkspaceRegistry,
+} from "./workspace-registry.js";
 
 const WORKSPACE_ID = "workspace-1";
 
@@ -82,7 +87,10 @@ class RecordingPushNotificationSender implements PushNotificationSender {
   }
 }
 
-function createServer(agentManagerOverrides?: Record<string, unknown>) {
+function createServer(
+  agentManagerOverrides?: Record<string, unknown>,
+  workspaceRegistry?: WorkspaceRegistry,
+) {
   const pushNotifications = new RecordingPushNotificationSender();
   const agentManager = {
     subscribe: vi.fn(() => () => {}),
@@ -124,7 +132,7 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
     "1.2.3-test",
     undefined,
     undefined,
-    undefined,
+    workspaceRegistry,
     createStub<ScheduleService>({}),
     createStub<CheckoutDiffManager>({
       subscribe: vi.fn(),
@@ -170,13 +178,22 @@ function createSessionWithActivity(
     appVisible: boolean;
     appVisibilityChangedAt?: Date;
   } | null,
-  subscribed = true,
+  options: {
+    subscribed?: boolean;
+    modern?: boolean;
+    subscribe?: (agent: { workspaceId?: string }) => Promise<boolean>;
+  } = {},
 ) {
   return {
     getClientActivity: vi.fn(() => activity),
     supports: () => false,
     supportsForSource: () => false,
-    subscribesToAgent: vi.fn(async () => subscribed),
+    subscribesToAgent: vi.fn(
+      (agent: { workspaceId?: string }) =>
+        options.subscribe?.(agent) ?? Promise.resolve(options.subscribed ?? true),
+    ),
+    wantsSourceEvent: vi.fn(() => true),
+    publishToSource: vi.fn(),
   };
 }
 
@@ -189,15 +206,15 @@ function connectClient(
     appVisible: boolean;
     appVisibilityChangedAt?: Date;
   } | null,
-  options: { subscribed?: boolean } = {},
+  options: { subscribed?: boolean; modern?: boolean } = {},
 ) {
   const ws = createOpenSocket();
   const delivery = new SessionDelivery(() => {});
-  delivery.attach(ws, false);
+  delivery.attach(ws, options.modern === true);
   asInternals<WebSocketServerInternals>(server).sessions.set(ws, {
     kind: "trusted",
     session: {
-      ...createSessionWithActivity(activity, options.subscribed ?? true),
+      ...createSessionWithActivity(activity, options),
       delivery,
       wantsSourceNotification: () => true,
     },
@@ -208,6 +225,20 @@ function connectClient(
     externalDisconnectCleanupTimeout: null,
   });
   return ws;
+}
+
+function readModernAttentionPayload(server: VoiceAssistantWebSocketServer, ws: object) {
+  const connection = asInternals<{ sessions: Map<unknown, unknown> }>(server).sessions.get(ws) as
+    | { session: { publishToSource: ReturnType<typeof vi.fn> } }
+    | undefined;
+  const message = connection?.session.publishToSource.mock.calls[0]?.[1] as
+    | {
+        type: string;
+        payload: { shouldNotify: boolean; notification: { data: { workspaceId: string } } };
+      }
+    | undefined;
+  expect(message?.type).toBe("agent_attention_required");
+  return message?.payload;
 }
 
 function readAttentionRequiredMessage(ws: ReturnType<typeof createOpenSocket>) {
@@ -308,6 +339,32 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(getLastAssistantMessage).toHaveBeenCalledWith("agent-2");
   });
 
+  it("does not send a muted push when no client is present", async () => {
+    const workspace = createPersistedWorkspaceRecord({
+      workspaceId: WORKSPACE_ID,
+      projectId: "project-1",
+      cwd: "/tmp/shared-workspace",
+      kind: "directory",
+      displayName: "Project",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      notifications: "off",
+    });
+    const workspaceRegistry = createStub<WorkspaceRegistry>({
+      get: vi.fn(async (workspaceId) => (workspaceId === WORKSPACE_ID ? workspace : null)),
+    });
+    const { server, pushNotifications } = createServer(undefined, workspaceRegistry);
+
+    await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention.call(server, {
+      agentId: "agent-1",
+      provider: "claude",
+      reason: "finished",
+    });
+
+    expect(workspaceRegistry.get).toHaveBeenCalledWith(WORKSPACE_ID);
+    expect(pushNotifications.sent).toEqual([]);
+  });
+
   it("routes a hidden stale focused browser tab's notification to the present Electron web client", async () => {
     const { server, pushNotifications } = createServer();
     const nowMs = Date.now();
@@ -362,4 +419,88 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(readAttentionRequiredMessage(ws).shouldNotify).toBe(false);
     expect(pushNotifications.sent).toEqual([]);
   });
+
+  it.each(["finished", "permission"] as const)(
+    "reads current workspace mute after assistant lookup for %s attention and preserves source events",
+    async (reason) => {
+      let resolveAssistantMessage: (message: string | null) => void = () => undefined;
+      const assistantMessage = new Promise<string | null>((resolve) => {
+        resolveAssistantMessage = resolve;
+      });
+      const agent = { workspaceId: WORKSPACE_ID, pendingPermissions: new Map() };
+      const workspace = createPersistedWorkspaceRecord({
+        workspaceId: WORKSPACE_ID,
+        projectId: "project-1",
+        cwd: "/tmp/shared-workspace",
+        kind: "directory",
+        displayName: "Project",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        notifications: "on",
+      });
+      const workspaces = new Map<string, PersistedWorkspaceRecord>([[WORKSPACE_ID, workspace]]);
+      const workspaceRegistry = createStub<WorkspaceRegistry>({
+        get: vi.fn(async (workspaceId) => workspaces.get(workspaceId) ?? null),
+      });
+      const getLastAssistantMessage = vi.fn(() => assistantMessage);
+      const { server, pushNotifications } = createServer(
+        {
+          getAgent: vi.fn(() => agent),
+          getLastAssistantMessage,
+        },
+        workspaceRegistry,
+      );
+      const activity = {
+        deviceType: "web" as const,
+        focusedAgentId: null,
+        lastActivityAt: new Date(),
+        appVisible: false,
+      };
+      let resolveSubscription: (subscribed: boolean) => void = () => undefined;
+      const subscription = new Promise<boolean>((resolve) => {
+        resolveSubscription = resolve;
+      });
+      const routedWorkspaceIds: Array<string | undefined> = [];
+      const legacyWs = connectClient(server, activity, {
+        subscribe: async (routedAgent) => {
+          routedWorkspaceIds.push(routedAgent.workspaceId);
+          return subscription;
+        },
+      });
+      const secondLegacyWs = connectClient(server, activity, {
+        subscribe: async (routedAgent) => {
+          routedWorkspaceIds.push(routedAgent.workspaceId);
+          return true;
+        },
+      });
+      const modernWs = connectClient(server, activity, { modern: true });
+      const broadcast = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention;
+      const pendingBroadcast = broadcast.call(server, {
+        agentId: "agent-1",
+        provider: "claude",
+        reason,
+      });
+
+      await vi.waitFor(() => expect(routedWorkspaceIds).toHaveLength(1));
+      agent.workspaceId = "workspace-on";
+      resolveSubscription(true);
+      await vi.waitFor(() => expect(getLastAssistantMessage).toHaveBeenCalledWith("agent-1"));
+      // Recipient routing and the payload use the captured identity; policy is read at decision time.
+      workspaces.set(WORKSPACE_ID, { ...workspace, notifications: "off" });
+      resolveAssistantMessage("Done.");
+      await pendingBroadcast;
+
+      expect(workspaceRegistry.get).toHaveBeenCalledWith(WORKSPACE_ID);
+      expect(pushNotifications.sent).toEqual([]);
+      const legacyPayload = readAttentionRequiredMessage(legacyWs);
+      const secondLegacyPayload = readAttentionRequiredMessage(secondLegacyWs);
+      const modernPayload = readModernAttentionPayload(server, modernWs);
+      expect(routedWorkspaceIds).toEqual([WORKSPACE_ID, WORKSPACE_ID]);
+      expect(legacyPayload.shouldNotify).toBe(false);
+      expect(legacyPayload.notification.data.workspaceId).toBe(WORKSPACE_ID);
+      expect(secondLegacyPayload.notification.data.workspaceId).toBe(WORKSPACE_ID);
+      expect(modernPayload?.shouldNotify).toBe(false);
+      expect(modernPayload?.notification.data.workspaceId).toBe(WORKSPACE_ID);
+    },
+  );
 });
