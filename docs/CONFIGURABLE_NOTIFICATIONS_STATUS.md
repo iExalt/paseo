@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 13:56 UTC (2026-10-08 09:56 EDT)
+Last updated: 2026-10-08 15:03 UTC (2026-10-08 11:03 EDT)
 
 ## Purpose
 
@@ -14,11 +14,11 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T4 complete: S5/G3 browser OS proof and S6 package builds accepted                                   |
-| Overall state                | M2.1–M2.4, M3.1–M3.3, and M4.2 complete; M1.2/S2, G1, and phone/G4 remain open                       |
-| Immediate focus              | Arrange the T2 phone-connectivity session, then T5 after T2 acceptance                               |
-| Product or release readiness | Desktop/browser controls and actual OS delivery verified; phone delivery remains open                |
-| Worktree state               | Origin-grant test change and T4 closure ready for scoped publication; artifacts retained             |
+| Current phase                | T1–T5 complete; all G1–G4 gates accepted                                                             |
+| Overall state                | M1–M4 and S1–S8 complete within the stated verification boundaries                                   |
+| Immediate focus              | Approved campaign complete; deferred work needs a separate scope                                     |
+| Product or release readiness | Desktop/browser and Android remote-push proof accepted; no deployment claim                          |
+| Worktree state               | Feature proof at `56aa90c89`; closure verification complete; all test runtimes stopped               |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -96,29 +96,52 @@ both more than 20% and more than 5 s above the fixed baseline, plus material
 cumulative growth. These triggers are not permission for regressions below them.
 Observed RE2 sample timings are feasibility evidence, not a hard latency bound.
 
+### Android relay and push proof
+
+Evidence state: verified. T2/T5 and S2/S7/S8 are accepted. Feature source was `56aa90c89`.
+The existing Play Store app reported version 0.10.3. The user paired only the new
+test identity `srv_VImuSexE_IaZ`, confirmed mobile data with Wi-Fi off, and kept
+Paseo backgrounded. One phone token was registered; its value and pairing URI are
+not retained in Git.
+
+- T2's unfiltered push dispatched at 14:25:59 UTC (10:25:59 EDT); the user observed
+  its actual synthetic reply. The owned daemon stopped before T5 restarted.
+- T5 retained six agent-finished and two terminal-finished events. The workspace-off
+  agent/terminal interval had no dispatch; matching `No news.` under the anchored
+  rule also retained attention without dispatch. Each silence window was at least
+  15 seconds. The user confirmed workspace-muted and matching-rule silence and the agent positive
+  controls: `Unrelated answer`, `After runtime unmute`, same-rule `Unrelated answer`,
+  then rule-cleared `No news.`.
+- The final terminal's token-gated running and idle reports returned HTTP 204;
+  its finished event dispatched at 14:53:44.853 UTC (10:53:44.853 EDT), body
+  `T5 terminal route diagnostic`. The user confirmed actual phone arrival;
+  the later confirmation time does not measure delivery latency.
+- Presence was established from active-session disconnect evidence; the source-only
+  observer used `notifications:false`. T2 additionally waited a full 180-second
+  window. Reconnection paused the final controls until eligibility was verified again.
+- Terminal setup exceeded the planned guided-session allowance. An early child
+  report returned 403 before terminal registration; waiting for the create
+  acknowledgment established readiness before reporting activity. This was a
+  disposable fixture correction, with no product source change or baseline reset.
+- The user confirmed removal of only the added test pairing. Observer and daemon
+  tree exit were independently checked, with no listener on the owned port 64432.
+  The private home, tokens, QR, workspaces, and disposable probe files under
+  `.dev/configurable-notifications/android-t2/run.JFA2Ji/` were removed; the parent
+  test directory is also absent. Raw runtime output is not committed. All
+  daemon/client commands targeted the test home and port; production state was
+  not copied or mutated. S6 artifacts and its Nix GC root remain protected.
+
 ## Current boundary
 
-- M1.2 and S2/G1 remain open until an isolated test host produces a user-observed
-  positive push on the existing Android app over mobile data.
-- S3a workspace policy storage and mutation are implemented, verified, and
-  review-accepted. S3b enforces the stored policy for agent and terminal
-  attention delivery, preserving attention/source events with
-  `shouldNotify: false` while muted. S3c implements the collector and immutable
-  completion subject. S3d implements bounded host-rule persistence and finished
-  notification filtering, with focused tests and review acceptance. S4 CLI/MCP
-  adapters are accepted; end-user workspace controls remain open.
+- All planned gates are accepted within their recorded proof scope. Android menu
+  verification, production deployment, and overseer integration remain excluded.
 - The original creation disconnect fixture fails on both this worktree and the
   untouched `4ea125b83` baseline at the same `prompts === 1` assertion (actual 7).
   The baseline run took 17.39 s in Vitest and 19.551 s wall time, so this is a
   reproduced baseline limitation rather than an S3a regression.
-- S3c implements the collector and immutable callback subject, with focused
-  foreground/autonomous lifecycle tests. S3d implements the bounded host-rule
-  persistence and finished-notification filter, with focused storage, RPC,
-  authorization, config-publication, and notification tests and review acceptance.
-  CLI/MCP adapters are accepted; end-user workspace controls remain open.
-- No desktop, phone, relay, daemon, or provider was launched for T1. Production
-  state and deployment remain excluded.
-- T2 is required before T5, but not before automated T3 or T4.
+- The collector proves the complete retained live segment, not that a provider
+  never silently truncated its internal answer. Missing, ambiguous, declared-truncated,
+  or oversized subjects fail open.
 
 ## Intermediate goals
 
@@ -147,7 +170,7 @@ implied.
 Workflow status: complete.
 
 Evidence state: S3–S4 implementation and focused verification review-accepted;
-M2.1–M2.4/G2 and T3 complete. Live delivery and user-control gates remain open.
+M2.1–M2.4/G2 and T3 complete. I2 owns the separately accepted live/UI gates.
 
 Decision owner: approved plan.
 
@@ -169,27 +192,33 @@ and review-accepted. Focused gates pass, with the creation disconnect baseline
 limitation above. S4a workspace CLI/MCP parity is implemented and review-accepted;
 S4b host-rule CLI/MCP adapters and explicit host authority are review-accepted.
 
+### I2 — User controls, real delivery, and cleanup
+
+Workflow status: complete. Evidence state: verified.
+
+Decision owner: approved plan and named live-session authorization.
+Exit-condition owner: I2. Dependencies: I0 and I1.
+
+Exit conditions: M1.2/S2/G1, S5–S8/G3–G4, M3–M4, and W5/W6 accepted;
+actual desktop and Android positives, silence/source controls, build proof,
+and test-only cleanup recorded. Evidence: receipts above and the progress log.
+
 ## Recommended next sequence
 
-1. T2: arrange and run the isolated phone-connectivity positive control.
-2. T5: verify the final feature revision on the phone and clean up test resources.
-
-This automated-first order is the user's current scheduling decision. T2 remains
-a prerequisite for T5 only.
+The campaign is complete, with no remaining work in the approved scope. Any
+deferred work needs a separate scope. The user's automated-first order was preserved.
 
 ## Explicitly deferred
 
-- **Phone connectivity proof (T2):** scheduled after automated T3 and T4.
-- **Final phone proof and cleanup (T5):** depends on both T2 and T4.
+- **Android menu proof:** excluded by D10; the installed app proved server-side push.
 - **Production deployment and overseer integration:** outside this campaign.
 
 ## Active risks and decisions
 
-| Risk or decision               | Evidence or uncertainty                                                                                                         | Consequence                                        | Mitigation or next evidence                                                                                            | Owner          |
-| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Completion subject lifecycle   | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally                     | A truncated provider reply could match a rule      | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
-| Native notification permission | Browser origin permission and macOS app authorization are separate; the final run has native banner logs and human confirmation | A fresh profile does not reset macOS authorization | Keep this distinction explicit for future isolated runs; test automation never changes macOS notification settings     | Future tests   |
-| Phone/relay availability       | No phone positive control has been run                                                                                          | G1 and final device proof remain open              | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
+| Risk or decision               | Evidence or uncertainty                                                                                                         | Consequence                                        | Mitigation or next evidence                                                                                            | Owner        |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------ |
+| Completion subject lifecycle   | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally                     | A truncated provider reply could match a rule      | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3           |
+| Native notification permission | Browser origin permission and macOS app authorization are separate; the final run has native banner logs and human confirmation | A fresh profile does not reset macOS authorization | Keep this distinction explicit for future isolated runs; test automation never changes macOS notification settings     | Future tests |
 
 ## Progress log
 
