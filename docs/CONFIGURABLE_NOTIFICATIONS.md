@@ -1,11 +1,11 @@
 # Configurable notifications
 
 The user has authorized implementation of this confirmed plan in the explicitly
-requested sibling worktree. T1/S1 is complete: the workspace contract, M1.3
-feasibility design, and fixed check baseline are recorded below and in the
-[shared status](CONFIGURABLE_NOTIFICATIONS_STATUS.md). Feature implementation is
-still ahead. Desktop, phone, relay, and daemon launches remain separate named
-gates; production state and deployment are excluded.
+requested sibling worktree. Implementation, automation parity, browser OS proof,
+and macOS builds are accepted. Isolated Android connectivity, final device
+controls, and cleanup are also accepted. The
+[shared status](CONFIGURABLE_NOTIFICATIONS_STATUS.md) owns current evidence.
+Production state and deployment are excluded.
 
 ## Summary
 
@@ -379,7 +379,7 @@ must report unsupported hosts before sending a mutation.
 
 - [x] **M1.1 Policy contract:** binary workspace policy, stable defaults, no replay,
       source coverage, identity, and feature negotiation agreed.
-- [ ] **M1.2 Validation feasibility:** identify the isolated host/client setup and
+- [x] **M1.2 Validation feasibility:** identify the isolated host/client setup and
       phone pairing route without replacing or stopping production.
 - [x] **M1.3 Filter feasibility and contract:** source trace and bounded-engine
       probe support the accepted completion-bound design in §4.3. The collector,
@@ -423,25 +423,28 @@ must report unsupported hosts before sending a mutation.
 G3 is accepted: the isolated browser journey and lower-layer checks prove the
 controls and synchronization; the user confirmed both OS positives arrived and
 the workspace-muted/rule-filtered trials stayed silent on 2026-10-08. Native
-logs separately record both banners. Android delivery and menu proof are not
-claimed; M4.1 remains open for its phone portion.
+logs separately record both banners. M4.1 also has accepted Android delivery
+evidence; Android menu proof remains excluded under D10.
 
 ### M4 — Real-device proof and handoff
 
-- [ ] **M4.1 Device delivery:** desktop/browser local notifications and Android remote
+- [x] **M4.1 Device delivery:** desktop/browser local notifications and Android remote
       push controls prove muted/unmuted behavior over relay/mobile data on the existing
       Android app.
       Include a matching completion suppressed by the global rule in an otherwise
       unmuted workspace, plus nonmatching and rule-cleared positive controls.
 - [x] **M4.2 Build and record:** both macOS packaging paths pass for the feature
       revision; required checks pass and the proof states platform limitations.
-- [ ] **M4.3 Cleanup:** remove only test hosts/pairings and temporary test resources
+- [x] **M4.3 Cleanup:** remove only test hosts/pairings and temporary test resources
       after preserving concise evidence, with production unchanged.
 - **G4:** actual phone-positive controls bracket muted trials; source-event evidence
   proves the muted events occurred. Record build revision, checks, and receipts.
   No claim of deployment, production readiness validation, or overseer integration.
 
-The roadmap will map these boxes to explicit dependencies, proof, and human actions.
+G1–G4 and W5/W6 are accepted within the stated platform boundaries. The
+[status receipt](CONFIGURABLE_NOTIFICATIONS_STATUS.md#android-relay-and-push-proof)
+records actual Android arrivals, retained source events, silence controls, and
+test-state cleanup separately from the package-build evidence.
 
 ## 6. Verification and runtime cost
 
@@ -507,13 +510,12 @@ new phone menu. Android menu verification is explicitly deferred under D10;
 revisit it before claiming native menu behavior is verified or making a separate
 Android UI release. Do not claim all-platform UI coverage from this campaign.
 
-This is a future gated validation session: it needs explicit authorization to
-launch the isolated test host/app, use Expo's external service, and ask the user
-to pair/observe the phone. The earlier no-launch constraint remains in force now.
-Propose a guided phone session after automated checks, with an early connectivity
-probe before final UI work. Allow roughly 15 minutes for the guided checks, then
-reassess if setup or OS delivery delays extend it; elapsed time alone never passes
-the gate.
+The user authorized and completed this isolated relay/Expo session on 2026-10-08,
+after automated work. Any future repeat needs its own named launch scope. Allow
+roughly 15 minutes for guided checks, then reassess if setup or delivery delays
+extend them; elapsed time alone never passes the gate. This session exceeded that
+allowance during disposable terminal-fixture diagnosis, with no weakened proof
+or baseline reset.
 
 Use the installed Android app for the push gate; no mobile rebuild, debug app
 installation, or upstream signing credentials are planned. Confirm the installed
@@ -549,8 +551,9 @@ repository's targeted-test rule.
 M1.3/M2.4/M3.3 and the extended device gate passed continuous review with no material
 findings. The user confirmed revised Tier 1 on 2026-10-04 and requested the roadmap.
 The reviewer has accepted the current M1.3 feasibility design and fixed baseline.
-This documentation reconciliation records that acceptance; it does not claim
-implementation or runtime delivery proof.
+That planning acceptance is separate from implementation and runtime proof.
+The [status](CONFIGURABLE_NOTIFICATIONS_STATUS.md) now records the accepted
+implementation, desktop and Android delivery, builds, and cleanup.
 
 - [x] Ground notification text and ask regex scope/default decisions.
 - [x] Record daemon-wide, finished-only, empty-default answers.
