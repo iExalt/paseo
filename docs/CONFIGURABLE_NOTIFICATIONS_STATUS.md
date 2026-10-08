@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 13:43 UTC (2026-10-08 09:43 EDT)
+Last updated: 2026-10-08 13:56 UTC (2026-10-08 09:56 EDT)
 
 ## Purpose
 
@@ -14,11 +14,11 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | S5c automation and S6 package builds verified; human OS notification proof remains open              |
-| Overall state                | M2.1–M2.4 complete; OS notification proof, M1.2/S2, and G1 remain open                               |
-| Immediate focus              | Human enablement of test-browser macOS notifications, then a separately authorized OS-proof repeat   |
-| Product or release readiness | CLI/MCP/UI flows have headless local verification; OS arrival and phone delivery remain open         |
-| Worktree state               | Preparation published as `e85c155ce`; two isolated runs completed and cleaned up                     |
+| Current phase                | T4 complete: S5/G3 browser OS proof and S6 package builds accepted                                   |
+| Overall state                | M2.1–M2.4, M3.1–M3.3, and M4.2 complete; M1.2/S2, G1, and phone/G4 remain open                       |
+| Immediate focus              | Arrange the T2 phone-connectivity session, then T5 after T2 acceptance                               |
+| Product or release readiness | Desktop/browser controls and actual OS delivery verified; phone delivery remains open                |
+| Worktree state               | Origin-grant test change and T4 closure ready for scoped publication; artifacts retained             |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -36,9 +36,10 @@ MCP adapters with review acceptance. S5a's shared workspace menu is accepted.
 The S5b host-rule editor is accepted. The S5c isolated browser journey now verifies
 workspace and host-rule changes through the UI, CLI, and owner MCP client, plus
 filtered and unfiltered mock completions at the browser Notification API. This is
-not proof of operating-system notification arrival. The accepted design does not
+not by itself proof of operating-system notification arrival. The later authorized
+headed run now has both human arrival confirmation and native banner logs. The accepted design does not
 establish that a provider never truncates its internal response. S3c lifecycle
-tests are accepted; human desktop OS-arrival and phone gates remain required.
+tests and desktop/browser OS arrival are accepted; phone gates remain required.
 
 ## Accomplishments with evidence
 
@@ -170,9 +171,8 @@ S4b host-rule CLI/MCP adapters and explicit host authority are review-accepted.
 
 ## Recommended next sequence
 
-1. T4: finish the isolated human OS notification proof; controls and package builds are verified.
-2. T2: arrange and run the isolated phone-connectivity positive control.
-3. T5: verify the final feature revision on the phone and clean up test resources.
+1. T2: arrange and run the isolated phone-connectivity positive control.
+2. T5: verify the final feature revision on the phone and clean up test resources.
 
 This automated-first order is the user's current scheduling decision. T2 remains
 a prerequisite for T5 only.
@@ -181,16 +181,15 @@ a prerequisite for T5 only.
 
 - **Phone connectivity proof (T2):** scheduled after automated T3 and T4.
 - **Final phone proof and cleanup (T5):** depends on both T2 and T4.
-- **Desktop runtime proof (T4):** depends on T3 and its named isolated launch gate.
 - **Production deployment and overseer integration:** outside this campaign.
 
 ## Active risks and decisions
 
-| Risk or decision             | Evidence or uncertainty                                                                                     | Consequence                                   | Mitigation or next evidence                                                                                            | Owner          |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Completion subject lifecycle | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally | A truncated provider reply could match a rule | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
-| Host settings controls       | S5c headless journey verifies UI, CLI, MCP, and browser Notification API behavior; OS arrival is unverified | OS permission/display may differ from the API | Agree the isolated OS-human demonstration boundary without a Notification stub                                         | T4             |
-| Phone/relay availability     | No phone positive control has been run                                                                      | G1 and final device proof remain open         | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
+| Risk or decision               | Evidence or uncertainty                                                                                                         | Consequence                                        | Mitigation or next evidence                                                                                            | Owner          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Completion subject lifecycle   | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally                     | A truncated provider reply could match a rule      | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
+| Native notification permission | Browser origin permission and macOS app authorization are separate; the final run has native banner logs and human confirmation | A fresh profile does not reset macOS authorization | Keep this distinction explicit for future isolated runs; test automation never changes macOS notification settings     | Future tests   |
+| Phone/relay availability       | No phone positive control has been run                                                                                          | G1 and final device proof remain open              | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
 
 ## Progress log
 
@@ -465,3 +464,25 @@ a prerequisite for T5 only.
 - Settings were not changed. The next step is manual macOS Allow Notifications
   for Google Chrome for Testing, followed by a separately authorized repeat.
   OS arrival, S5/G3, final S6/T4 acceptance, and phone gates remain open.
+
+### 2026-10-08 13:56 UTC (2026-10-08 09:56 EDT)
+
+- At the user's request, OS mode now grants notification permission only for its
+  disposable loopback origin through Playwright. The real native constructor is
+  unchanged; the manual site button/wait is removed. macOS authorization remains
+  separate and was enabled by the user, not the test. App typecheck, targeted
+  lint/format, and the authorized headed journey passed; no package rebuild ran.
+- The run was 13:52:58–13:54:07 UTC (09:52:58–09:54:07 EDT), case 56.3 s,
+  Playwright total 1.1 min. The user confirmed both positive notifications arrived
+  and the workspace-muted/rule-filtered middle trials were silent. Scoped native
+  logs independently record `displaying as banner` at 13:53:26.559 UTC
+  (09:53:26.559 EDT) and 13:53:56.815 UTC (09:53:56.815 EDT), with
+  `canDisplayWhileCenterIsClosed: true` for `com.google.chrome.for.testing`.
+  Only those two delivery/presentation records appeared for the run; no middle
+  delivery appeared in the scoped query. Logs support presentation; the user's
+  confirmation supplies the actual arrival observation.
+- Cleanup was independently verified: no listeners on owned ports 60111/60203
+  and the disposable profile/home root was absent. M3.1–M3.3, S5/G3, final S6,
+  and T4 are accepted. M4.1 remains open for Android; no phone/relay session,
+  production app launch, deployment, or overseer integration occurred. Arrange
+  T2 next and T5 after its positive control is accepted.

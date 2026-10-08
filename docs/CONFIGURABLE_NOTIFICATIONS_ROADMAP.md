@@ -6,7 +6,8 @@ and was confirmed by the user after review on 2026-10-04. The corresponding
 [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) revision is also confirmed.
 The user later authorized implementation in the requested sibling worktree. T1/S1
 and S3–S4/G2 are complete within their focused local verification gates. User
-controls and device/build acceptance remain open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
+controls/G3 and feature builds/S6 are accepted; phone/device acceptance remains
+open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 ## Progress and ordering
 
@@ -14,8 +15,8 @@ controls and device/build acceptance remain open. See the [current status](CONFI
 | ----------------------------------- | ----- | ---- | ---- |
 | Contract and validation feasibility | S1–S2 | 1/2  | G1   |
 | Durable policy and automation       | S3–S4 | 2/2  | G2   |
-| User controls                       | S5    | 0/1  | G3   |
-| Device proof and handoff            | S6–S8 | 0/3  | G4   |
+| User controls                       | S5    | 1/1  | G3   |
+| Device proof and handoff            | S6–S8 | 1/3  | G4   |
 
 Dependency graph, selected by the user on 2026-10-04:
 
@@ -150,7 +151,7 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
     changes affect future decisions without restart, replay, or retraction.
   - **Ticks:** M2.3 and M2.4 with S3; W3 and automation portion of W6; G2 with S3.
 
-- [ ] **S5 — Implement and prove desktop user control.** Extend the shared workspace
+- [x] **S5 — Implement and prove desktop user control.** Extend the shared workspace
       context/button menu with authoritative current state and mute/unmute actions.
       Reflect CLI/MCP changes without reconnecting; expose failed saves and unsupported
       daemon state. Keep the implementation cross-platform.
@@ -170,8 +171,11 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
   - **Human:** at phase approval, authorize the isolated desktop/browser launch;
     any OS notification permission prompt requiring a person is handled before
     the demonstration. Android menu evidence is not required or claimed.
+  - **Receipt:** the user confirmed the isolated browser's first/fourth OS
+    notifications arrived and the workspace-muted/rule-filtered trials were
+    silent. Scoped macOS logs record both banners; G3 and M3.1–M3.3 are accepted.
 
-- [ ] **S6 — Build the feature revision.** Run the npm and Nix macOS build tasks
+- [x] **S6 — Build the feature revision.** Run the npm and Nix macOS build tasks
       sequentially with packaged-app smoke launching disabled. Record source revision
       and artifact identity; review existing fork CI results where available.
   - **Needs:** build preparation may follow accepted S5c automated proof; builds
@@ -181,7 +185,8 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
   - **Ticks:** M4.2; part of W5.
   - **Build receipt:** npm and Nix arm64 packages passed for `2cd1ee978` plus the
     refreshed RE2 dependency hash; M4.2 is complete. See the status receipt for
-    artifact identity and timing limits. S6 final acceptance still awaits S5/G3.
+    artifact identity and timing limits. S5/G3's browser OS proof now closes S6
+    final acceptance; later test/docs-only preparation did not require rebuilding.
 
 - [ ] **S7 — Prove muted/unmuted behavior on the actual phone.** Start the approved
       isolated feature host using S6's revision. The installed Android app connects
