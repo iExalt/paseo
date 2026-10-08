@@ -78,7 +78,7 @@ async function fixture() {
   const input: CreationInput = {
     kind: "workspace",
     key: "submit-one",
-    request: { source: "/project", prompt: "Start once" },
+    request: { source: "/project", prompt: "Start once", notifications: "off" },
     workspaceId: workspace.id,
     agentId: agent.id,
     hasAgent: true,
@@ -172,6 +172,12 @@ test("conflicting intents and resource IDs cannot start more work", async () => 
   await expect(f.service.create({ ...f.input, request: { prompt: "changed" } })).rejects.toThrow(
     "workspace_request_key_conflict",
   );
+  await expect(
+    f.service.create({
+      ...f.input,
+      request: { ...f.input.request, notifications: "on" },
+    }),
+  ).rejects.toThrow("workspace_request_key_conflict");
   await expect(f.service.create({ ...f.input, key: "another-intent" })).rejects.toThrow(
     "workspace_id_conflict",
   );

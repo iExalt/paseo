@@ -184,6 +184,28 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+test("workspace notification mutation requires the advertised host capability", async () => {
+  let transportsCreated = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "workspace-notifications-capability",
+    transportFactory: () => {
+      transportsCreated++;
+      return createMockTransport().transport;
+    },
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+
+  await expect(client.setWorkspaceNotifications("ws-1", "off")).rejects.toThrow(
+    "Update the host to manage workspace notifications.",
+  );
+  await expect(client.createPaseoWorktree({ cwd: "/repo", notifications: "off" })).rejects.toThrow(
+    "Update the host to set workspace notifications during creation.",
+  );
+  expect(transportsCreated).toBe(0);
+});
+
 test("traces WebSocket frames, message types, and JSON parse duration", async () => {
   const mock = createMockTransport();
   const recorder = createTraceRecorder();

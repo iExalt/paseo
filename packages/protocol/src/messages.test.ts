@@ -90,6 +90,46 @@ describe("workspace descriptor message compatibility", () => {
     expect(parsed.payload.entries[0]?.project).toBeUndefined();
   });
 
+  test("keeps notification policy optional on old descriptors and typed on new RPCs", () => {
+    const oldDescriptor = SessionOutboundMessageSchema.parse(
+      fetchWorkspacesResponse(workspaceDescriptor()),
+    );
+    expect(oldDescriptor.type).toBe("fetch_workspaces_response");
+    if (oldDescriptor.type !== "fetch_workspaces_response") {
+      throw new Error("Expected fetch_workspaces_response");
+    }
+    expect(oldDescriptor.payload.entries[0]?.notifications).toBeUndefined();
+
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "workspace.create.request",
+        source: { kind: "directory", path: "/repo" },
+        notifications: "off",
+        requestId: "create-1",
+      }),
+    ).toMatchObject({ notifications: "off" });
+    expect(
+      SessionInboundMessageSchema.safeParse({
+        type: "workspace.notifications.set.request",
+        workspaceId: "ws-1",
+        notifications: "muted",
+        requestId: "set-1",
+      }).success,
+    ).toBe(false);
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "workspace.notifications.set.response",
+        payload: {
+          requestId: "set-1",
+          workspaceId: "ws-1",
+          accepted: true,
+          notifications: "off",
+          error: null,
+        },
+      }),
+    ).toMatchObject({ payload: { notifications: "off" } });
+  });
+
   test("new-shaped fetch_workspaces_response with project placement parses", () => {
     const parsed = SessionOutboundMessageSchema.parse(
       fetchWorkspacesResponse(
