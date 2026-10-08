@@ -1,11 +1,12 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
+import { chromium, devices, expect, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile } from "node:fs/promises";
+import { access, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { expect, test as baseTest } from "../support/fixtures";
+import { test as baseSupportTest } from "../support/fixtures";
 import { getE2EDaemonPort } from "../support/helpers/daemon-port";
 import { createTempGitRepo } from "../support/helpers/workspace";
 import {
@@ -15,11 +16,236 @@ import {
 import { getServerId } from "../support/helpers/server-id";
 
 const paseoCli = path.resolve(process.cwd(), "../cli/bin/paseo");
+const notificationOsProof = process.env.PASEO_NOTIFICATION_OS_PROOF === "1";
 
-const test = baseTest.extend({
+function getNotificationOsProofPaths(): {
+  profilePath: string;
+  proofRoot: string;
+  runName: string;
+} {
+  const profilePath = process.env.PASEO_NOTIFICATION_OS_PROFILE;
+  if (!profilePath) {
+    throw new Error("PASEO_NOTIFICATION_OS_PROFILE must name a fresh disposable browser profile");
+  }
+
+  const repoRoot = path.resolve(process.cwd(), "../..");
+  const proofRoot = path.join(repoRoot, ".dev/configurable-notifications");
+  const resolvedProfile = path.resolve(profilePath);
+  const relativeProfile = path.relative(proofRoot, resolvedProfile).split(path.sep);
+  if (
+    relativeProfile.length !== 2 ||
+    !relativeProfile[0]?.startsWith("os-proof.") ||
+    relativeProfile[1] !== "browser-profile"
+  ) {
+    throw new Error(
+      `The notification proof profile must be a fresh browser-profile under ${proofRoot}/os-proof.*`,
+    );
+  }
+  return { profilePath: resolvedProfile, proofRoot, runName: relativeProfile[0] };
+}
+
+function validateNotificationOsHome(
+  paseoHome: string,
+  paths: { proofRoot: string; runName: string },
+  homeStage: "root" | "worker",
+): void {
+  const relativeHome = path.relative(paths.proofRoot, path.resolve(paseoHome)).split(path.sep);
+  const isExpectedHome =
+    homeStage === "root"
+      ? relativeHome.length === 2 && relativeHome[1] === "paseo-home"
+      : relativeHome.length === 3 &&
+        relativeHome[1] === "paseo-home" &&
+        /^worker-\d+$/u.test(relativeHome[2] ?? "");
+  if (relativeHome[0] !== paths.runName || !isExpectedHome) {
+    throw new Error(
+      `E2E_PASEO_HOME must be the task-owned ${homeStage} home beside the browser profile`,
+    );
+  }
+}
+
+function validateNotificationOsEnvironment(homeStage: "root" | "worker"): void {
+  if (process.env.E2E_FORK_PASEO_HOME_FROM?.trim()) {
+    throw new Error(
+      "The OS proof must not fork settings or provider metadata from another Paseo home",
+    );
+  }
+  if (homeStage === "root") {
+    if (process.env.E2E_WORKERS !== "1") {
+      throw new Error("The OS proof requires E2E_WORKERS=1 for its single disposable home");
+    }
+    if (process.env.PASEO_HOME?.trim() || process.env.PASEO_HOST?.trim()) {
+      throw new Error("Unset production Paseo home/host variables before starting the OS proof");
+    }
+  }
+}
+
+async function requireFreshNotificationOsProfile(homeStage: "root" | "worker"): Promise<string> {
+  const paths = getNotificationOsProofPaths();
+  const paseoHome = process.env.E2E_PASEO_HOME;
+  if (!paseoHome) {
+    throw new Error(
+      "E2E_PASEO_HOME must point to the task-owned disposable notification proof home",
+    );
+  }
+  validateNotificationOsHome(paseoHome, paths, homeStage);
+  validateNotificationOsEnvironment(homeStage);
+  let profileExists = false;
+  try {
+    await access(paths.profilePath);
+    profileExists = true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  if (profileExists) {
+    throw new Error("The notification proof browser profile must not exist before this run");
+  }
+  return paths.profilePath;
+}
+
+function installNotificationRecorder(useOsProofRecorder: boolean): void {
+  const calls: Array<{ title: string; body: string }> = [];
+  Object.defineProperty(window, "__paseoNotificationCalls", { value: calls });
+
+  if (useOsProofRecorder) {
+    const nativeNotification = window.Notification;
+    if (!nativeNotification) throw new Error("This browser does not support notifications");
+
+    const recordedNotification = new Proxy(nativeNotification, {
+      construct(target, args) {
+        const [title, options] = args as [string, NotificationOptions?];
+        calls.push({ title, body: options?.body ?? "" });
+        return Reflect.construct(target, args, target);
+      },
+      get(target, property) {
+        if (property === "requestPermission") return target.requestPermission.bind(target);
+        return Reflect.get(target, property, target);
+      },
+    });
+    Object.defineProperty(window, "Notification", {
+      configurable: true,
+      value: recordedNotification,
+    });
+
+    const panel = document.createElement("section");
+    panel.dataset.testid = "os-proof-panel";
+    Object.assign(panel.style, {
+      position: "fixed",
+      right: "12px",
+      bottom: "12px",
+      zIndex: "2147483647",
+      maxWidth: "360px",
+      padding: "10px 12px",
+      border: "2px solid #444",
+      borderRadius: "8px",
+      background: "#fff",
+      color: "#111",
+      boxShadow: "0 2px 12px #0004",
+      font: "13px/1.4 system-ui, sans-serif",
+      pointerEvents: "none",
+    });
+    const trial = document.createElement("div");
+    trial.dataset.testid = "os-proof-trial";
+    trial.textContent = "Notification OS proof is preparing";
+    const observationNote = document.createElement("div");
+    observationNote.textContent =
+      "API calls are not OS delivery proof; observe the macOS banner or Notification Center.";
+    const permissionButton = document.createElement("button");
+    permissionButton.dataset.testid = "os-proof-request-permission";
+    permissionButton.type = "button";
+    permissionButton.textContent =
+      "Click to request browser notification permission; grant it for this proof";
+    Object.assign(permissionButton.style, { pointerEvents: "auto", marginTop: "6px" });
+    permissionButton.addEventListener("click", () => {
+      permissionButton.disabled = true;
+      void nativeNotification
+        .requestPermission()
+        .then((permission) => {
+          permissionButton.textContent = `Notification permission: ${permission}`;
+          return permission;
+        })
+        .catch((error: unknown) => {
+          permissionButton.disabled = false;
+          permissionButton.textContent = `Permission request failed: ${String(error)}`;
+          return undefined;
+        });
+    });
+    panel.append(trial, observationNote, permissionButton);
+    const attachPanel = () => document.body.append(panel);
+    if (document.body) attachPanel();
+    else document.addEventListener("DOMContentLoaded", attachPanel, { once: true });
+    Object.defineProperty(window, "__paseoSetNotificationTrial", {
+      value: (label: string) => {
+        trial.textContent = label;
+      },
+    });
+    return;
+  }
+
+  class TestNotification {
+    static permission = "granted";
+    static requestPermission = async () => "granted";
+    constructor(title: string, options?: { body?: string }) {
+      calls.push({ title, body: options?.body ?? "" });
+    }
+    addEventListener() {}
+  }
+  Object.defineProperty(window, "Notification", {
+    configurable: true,
+    value: TestNotification,
+  });
+}
+
+async function showNotificationTrial(page: Page, label: string): Promise<void> {
+  if (!notificationOsProof) return;
+  console.log(`[notification OS proof] ${label}`);
+  await page.evaluate((nextLabel) => {
+    const target = window as Window & {
+      __paseoSetNotificationTrial?: (value: string) => void;
+    };
+    target.__paseoSetNotificationTrial?.(nextLabel);
+  }, label);
+}
+
+const osProofBaseTest = baseSupportTest.extend({
+  page: async (
+    // oxlint-disable-next-line no-empty-pattern -- Playwright requires destructuring for fixture dependency discovery.
+    {},
+    provide,
+  ) => {
+    const profilePath = await requireFreshNotificationOsProfile("worker");
+    const metroPort = process.env.E2E_METRO_PORT;
+    if (!metroPort) throw new Error("E2E_METRO_PORT must be set by Playwright global setup");
+    const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${metroPort}`;
+    const parsedBaseURL = new URL(baseURL);
+    if (parsedBaseURL.hostname !== "localhost" || parsedBaseURL.port !== metroPort) {
+      throw new Error("The OS proof browser must use the isolated loopback Metro URL");
+    }
+
+    const context = await chromium.launchPersistentContext(profilePath, {
+      ...devices["Desktop Chrome"],
+      baseURL,
+      headless: false,
+    });
+    try {
+      await provide(context.pages()[0] ?? (await context.newPage()));
+    } finally {
+      await context.close();
+    }
+  },
+});
+
+const selectedBaseTest = notificationOsProof ? osProofBaseTest : baseSupportTest;
+
+const test = selectedBaseTest.extend({
   e2eDaemonConfig: [
     // oxlint-disable-next-line no-empty-pattern -- Playwright requires destructuring for fixture dependency discovery.
     async ({}, use) => {
+      if (notificationOsProof) {
+        const paseoHomeRoot = process.env.E2E_PASEO_HOME;
+        if (!paseoHomeRoot) throw new Error("E2E_PASEO_HOME is required for the OS proof");
+        await requireFreshNotificationOsProfile("root");
+        await mkdir(path.join(paseoHomeRoot, "worker-0"), { recursive: true });
+      }
       const manifestUrl = pathToFileURL(
         path.resolve(process.cwd(), "../protocol/dist/provider-manifest.js"),
       ).href;
@@ -83,7 +309,7 @@ async function removeCreatedWorkspaceProject(
 }
 
 test.describe("configurable notifications journey", () => {
-  test.describe.configure({ timeout: 120_000 });
+  test.describe.configure({ timeout: notificationOsProof ? 300_000 : 120_000 });
 
   test("keeps workspace and reply rules authoritative across CLI, MCP, and live turns", async ({
     page,
@@ -120,22 +346,7 @@ test.describe("configurable notifications journey", () => {
     let createdProjectId: string | undefined;
 
     try {
-      await page.addInitScript(() => {
-        const calls: Array<{ title: string; body: string }> = [];
-        Object.defineProperty(window, "__paseoNotificationCalls", { value: calls });
-        class TestNotification {
-          static permission = "granted";
-          static requestPermission = async () => "granted";
-          constructor(title: string, options?: { body?: string }) {
-            calls.push({ title, body: options?.body ?? "" });
-          }
-          addEventListener() {}
-        }
-        Object.defineProperty(window, "Notification", {
-          configurable: true,
-          value: TestNotification,
-        });
-      });
+      await page.addInitScript(installNotificationRecorder, notificationOsProof);
 
       const credentialPath = path.join(process.env.E2E_PASEO_HOME ?? "", "local-credential");
       const localCredential = (await readFile(credentialPath, "utf8")).trim();
@@ -193,6 +404,22 @@ test.describe("configurable notifications journey", () => {
       const serverId = getServerId();
       await page.goto(buildHostWorkspaceRoute(serverId, workspaceId), { waitUntil: "commit" });
       await expect(page.getByTestId("workspace-header-menu-trigger")).toBeVisible();
+      if (notificationOsProof) {
+        const permissionButton = page.getByTestId("os-proof-request-permission");
+        await expect(permissionButton).toBeVisible();
+        console.log(
+          "[notification OS proof] Click the visible permission button and grant Chrome/macOS access within 2 minutes; this test never clicks it or grants permission.",
+        );
+        await page.waitForFunction(() => window.Notification?.permission !== "default", undefined, {
+          timeout: 120_000,
+        });
+        const permission = await page.evaluate(
+          () => window.Notification?.permission ?? "unsupported",
+        );
+        if (permission !== "granted") {
+          throw new Error(`Notification permission is '${permission}', expected 'granted'`);
+        }
+      }
       await page.getByTestId("workspace-header-menu-trigger").click();
       const workspacePolicyItem = page.getByTestId("workspace-header-notifications");
       await expect(workspacePolicyItem).toContainText("Unmute notifications");
@@ -323,7 +550,9 @@ test.describe("configurable notifications journey", () => {
         prompt: string,
         expectedBody: string,
         expectedNotifications: Array<{ title: string; body: string }>,
+        trialLabel: string,
       ) => {
+        await showNotificationTrial(page, trialLabel);
         // Attention is an edge-triggered unread state; clear the previous trial so each
         // completion exercises the same finished transition without changing focus.
         await attentionClient.clearAgentAttention(agent.id);
@@ -338,14 +567,17 @@ test.describe("configurable notifications journey", () => {
         }
         // The finished source event arrives after the server's notification decision.
         // Give the browser event handler a bounded window before asserting no extra call.
-        await page.waitForTimeout(400);
+        await page.waitForTimeout(notificationOsProof ? 10_000 : 400);
         expect(await notificationCalls()).toEqual(expectedNotifications);
       };
 
       expect(await readWorkspaceNotifications(e2eWorkerClient, workspaceId)).toBe("on");
-      await turn("Send a non-matching completion", "Unrelated answer", [
-        { title: "Agent finished", body: "Unrelated answer" },
-      ]);
+      await turn(
+        "Send a non-matching completion",
+        "Unrelated answer",
+        [{ title: "Agent finished", body: "Unrelated answer" }],
+        "Trial 1/4: notification expected — workspace on, no rule match, reply: Unrelated answer",
+      );
 
       const workspaceOff = await mcp.callTool({
         name: "set_workspace_notifications",
@@ -353,9 +585,12 @@ test.describe("configurable notifications journey", () => {
       });
       expect(workspaceOff.structuredContent).toEqual({ workspaceId, notifications: "off" });
       expect(await readWorkspaceNotifications(e2eWorkerClient, workspaceId)).toBe("off");
-      await turn("Send a muted completion", "Muted completion", [
-        { title: "Agent finished", body: "Unrelated answer" },
-      ]);
+      await turn(
+        "Send a muted completion",
+        "Muted completion",
+        [{ title: "Agent finished", body: "Unrelated answer" }],
+        "Trial 2/4: suppressed — workspace off, reply: Muted completion",
+      );
 
       const workspaceOn = await mcp.callTool({
         name: "set_workspace_notifications",
@@ -363,18 +598,26 @@ test.describe("configurable notifications journey", () => {
       });
       expect(workspaceOn.structuredContent).toEqual({ workspaceId, notifications: "on" });
       expect(await readWorkspaceNotifications(e2eWorkerClient, workspaceId)).toBe("on");
-      await turn("Send a matching completion", "No news.", [
-        { title: "Agent finished", body: "Unrelated answer" },
-      ]);
+      await turn(
+        "Send a matching completion",
+        "No news.",
+        [{ title: "Agent finished", body: "Unrelated answer" }],
+        "Trial 3/4: suppressed — matching reply rule, reply: No news.",
+      );
       const clearForDelivery = await mcp.callTool({
         name: "clear_daemon_notification_rules",
         arguments: {},
       });
       expect(clearForDelivery.structuredContent).toEqual({ replyRules: [] });
-      await turn("Send the cleared-rule completion", "No news.", [
-        { title: "Agent finished", body: "Unrelated answer" },
-        { title: "Agent finished", body: "No news." },
-      ]);
+      await turn(
+        "Send the cleared-rule completion",
+        "No news.",
+        [
+          { title: "Agent finished", body: "Unrelated answer" },
+          { title: "Agent finished", body: "No news." },
+        ],
+        "Trial 4/4: notification expected — rules cleared, reply: No news.",
+      );
 
       await testInfo.attach("notification-evidence", {
         body: JSON.stringify(
