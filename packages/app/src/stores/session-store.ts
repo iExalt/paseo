@@ -130,6 +130,7 @@ export interface WorkspaceDescriptor {
   background?: boolean;
   name: string;
   title?: string | null;
+  notifications?: NonNullable<WorkspaceDescriptorPayload["notifications"]>;
   pinnedAt?: string | null;
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
@@ -175,6 +176,7 @@ export function normalizeWorkspaceDescriptor(
     parentWorkspaceId: payload.parentWorkspaceId,
     name: payload.name,
     title: payload.title ?? null,
+    notifications: payload.notifications ?? "on",
     pinnedAt: payload.pinnedAt ?? null,
     // COMPAT(workspaceLabels): old daemons omit assignments.
     labels: payload.labels ?? [],
