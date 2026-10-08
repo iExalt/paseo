@@ -158,9 +158,9 @@ and isolated CLI/MCP transport journeys. Phone delivery remains unverified until
 
 ## T4 — Desktop user control and feature builds: S5–S6
 
-**State:** S5a–S5c automated controls and journey accepted; S6 package-build
-subproof and M4.2 accepted. Human OS notification proof and final S5/G3/S6
-acceptance remain open.
+**State:** complete. S5/G3 and S6 are accepted, including actual browser OS
+delivery confirmed by the user and supported by native logs. No phone session
+has started; arrange T2 next, then T5 after T2 acceptance.
 
 ```text
 /keep-me-in-the-loop Run T4 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
@@ -192,24 +192,26 @@ acceptance remain open.
 
 ### Browser OS proof — repeat requires separate approval
 
-The opt-in mode below ran twice with authorization. Browser/API checks passed,
-but the user reported no actual arrivals on the repeat. Read-only macOS logs
-reported `authorizationStatus: Denied` for `com.google.chrome.for.testing` and
-`canDisplayWhileCenterIsClosed: false`; Focus suppression was absent. Settings
-were not changed. Manually allow macOS notifications for Google Chrome for
-Testing before a separately authorized repeat; S5/G3 and T4 remain open.
+Two earlier runs passed browser/API checks but native permission was denied.
+After the user enabled Google Chrome for Testing's macOS notifications, the
+authorized retry passed with origin permission granted automatically. The user
+confirmed both positives arrived and the middle trials stayed silent. Native
+logs separately record both as banners with display allowed. S5/G3 and T4 are
+accepted; another run would require separate approval. The test did not change
+macOS settings.
 
-The mode preserves the real browser
-Notification API, asks the person to click its permission button, and shows the
-same four completion trials for ten seconds each: positive, workspace-muted,
-rule-filtered, and rule-cleared positive. Permission has a two-minute bound; the
-test has a five-minute bound. API calls remain separate from the person's report
-of actual banners or Notification Center arrival.
+The user has authorized automatically granting notification permission for the
+disposable test origin. This browser permission does not enable macOS
+notifications: native authorization remains user-controlled. The mode preserves
+the real Notification API and shows the same four completion trials for ten
+seconds each: positive, workspace-muted, rule-filtered, and rule-cleared positive.
+The test has a five-minute bound. API calls remain separate from the person's
+report of actual banners or Notification Center arrival.
 
 The disposable profile isolates site data. macOS notification permission may be
 shared across profiles using Google Chrome for Testing's
 `com.google.chrome.for.testing` identity. Approval must cover that browser's
-permission prompt; no production Paseo app permission or settings are changed.
+native permission; no production Paseo app permission or settings are changed.
 The fixture uses only its fake-provider daemon, disables provider/metadata work
 and relay, and uses dynamic loopback ports. No packaged app launches or desktop
 daemon/update controls are involved.
