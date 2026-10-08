@@ -29,6 +29,11 @@ then T4; schedule phone work afterward as T2 then T5. S3 needs accepted S1, not 
 T2 remains a prerequisite for T5, not for T3 or T4. G1 still requires both S1 and
 S2. Final acceptance requires every gate regardless of which finishes first.
 
+**Build preparation split (2026-10-08):** after accepted S5c automated proof,
+prepare S6 packages before the human OS notification session. This honors the
+automated-first order and gives that session an identified feature artifact.
+S5/G3, S6 final acceptance, and T4 remain open until the original live proof passes.
+
 Each step ends in its proof, normally a few scoped commits. Check it off here and
 its **Ticks** boxes in the plan in the same commit, with a concise evidence receipt.
 Use the explicitly requested sibling worktree. Independent readiness allows
@@ -169,7 +174,8 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
 - [ ] **S6 — Build the feature revision.** Run the npm and Nix macOS build tasks
       sequentially with packaged-app smoke launching disabled. Record source revision
       and artifact identity; review existing fork CI results where available.
-  - **Needs:** accepted S5/G3; builds include accepted S3–S4.
+  - **Needs:** build preparation may follow accepted S5c automated proof; builds
+    include accepted S3–S4. Final acceptance still requires accepted S5/G3.
   - **Proof:** both builds succeed, required checks pass, and artifact metadata
     matches the feature revision. Builds alone do not prove notification behavior.
   - **Ticks:** M4.2; part of W5.
