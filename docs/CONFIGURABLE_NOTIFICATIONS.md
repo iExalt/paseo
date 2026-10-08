@@ -427,7 +427,7 @@ must report unsupported hosts before sending a mutation.
       Android app.
       Include a matching completion suppressed by the global rule in an otherwise
       unmuted workspace, plus nonmatching and rule-cleared positive controls.
-- [ ] **M4.2 Build and record:** both macOS packaging paths pass for the feature
+- [x] **M4.2 Build and record:** both macOS packaging paths pass for the feature
       revision; required checks pass and the proof states platform limitations.
 - [ ] **M4.3 Cleanup:** remove only test hosts/pairings and temporary test resources
       after preserving concise evidence, with production unchanged.
