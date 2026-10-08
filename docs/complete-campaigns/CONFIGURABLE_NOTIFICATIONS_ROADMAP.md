@@ -1,5 +1,8 @@
 # Configurable notifications roadmap
 
+**Complete and archived.** All steps and exit gates below are accepted. Execution
+instructions and ordering are historical; no human intervention remains pending.
+
 The original Tier 2 was confirmed on 2026-10-04. This revision incorporates the
 daemon-wide reply denylist from the [confirmed plan](CONFIGURABLE_NOTIFICATIONS.md)
 and was confirmed by the user after review on 2026-10-04. The corresponding
@@ -264,17 +267,16 @@ with small fixtures, and include latency review in every step's acceptance.
 
 ## Human interventions and scheduling
 
-| Step  | Kind                       | Action and timing                                                                                          | Status                                                       |
-| ----- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| S2/S5 | Execution approval         | Approve named isolated test processes and external-service use before their phase starts; never production | Future execution gate                                        |
-| S1    | Conditional scope decision | Resolve a host-authority conflict only if implementation exposes one                                       | No conflict identified in T1                                 |
-| S2    | Phone presence             | Pair additional test host and observe relay/mobile-data positive control                                   | Arrange during execution; offline work may proceed meanwhile |
-| S5    | OS prompt, if needed       | Grant test desktop/browser notification permission before local notification proof                         | Conditional                                                  |
-| S7    | Phone presence             | Observe workspace mute and reply-filter controls on existing Android app                                   | Required final session                                       |
-| S8    | Manual cleanup             | Remove only test pairing from phone                                                                        | End of final session, or after failed probe                  |
+| Step  | Kind                       | Action and timing                                                                                          | Status                                      |
+| ----- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| S2/S5 | Execution approval         | Approve named isolated test processes and external-service use before their phase starts; never production | Completed for the recorded isolated runs    |
+| S1    | Conditional scope decision | Resolve a host-authority conflict only if implementation exposes one                                       | No conflict identified in T1                |
+| S2    | Phone presence             | Pair additional test host and observe relay/mobile-data positive control                                   | Completed; actual arrival confirmed         |
+| S5    | OS prompt, if needed       | Grant test desktop/browser notification permission before local notification proof                         | Completed by user; actual banners confirmed |
+| S7    | Phone presence             | Observe workspace mute and reply-filter controls on existing Android app                                   | Completed on Play Store app                 |
+| S8    | Manual cleanup             | Remove only test pairing from phone                                                                        | Completed; user confirmed removal           |
 
-The scheduling decision is updated in the execution script. T1/S1 is complete;
-automated T3 and T4 precede the T2/T5 phone sessions. No exact appointment is set.
+All scheduled work is complete. Automated T3 and T4 preceded the T2/T5 phone sessions.
 Desktop and Android menu scope, relay route, and production exclusions remain as
 settled in the plan.
 

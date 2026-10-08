@@ -3,8 +3,9 @@
 This revision incorporates daemon-wide reply filtering from confirmed Tiers 1–2.
 The user confirmed the original planning revision on 2026-10-04 and later
 authorized implementation in the requested sibling worktree. T1/S1 and T3/S3–S4/G2
-are complete within focused local verification; user controls and live delivery
-gates remain open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
+are complete, as are T4, T2, and T5. All G1–G4 gates are accepted within their
+recorded scope. This script is archived execution history, not an active launch
+instruction. See the [final status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 Five threads deliver the [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) through
 G4. The current order is T1 → T3 → T4 → T2 → T5. T2 remains a prerequisite for
@@ -36,7 +37,7 @@ keeps its dependencies and extends the chunks and proofs below.
   Keep policy matrices at the cheapest reliable layer; run required checks, never
   the full local suite. Do not substitute build success for device proof.
 - The shared status document is
-  `docs/CONFIGURABLE_NOTIFICATIONS_STATUS.md`. Each completed chunk reconciles it, roadmap ticks,
+  `docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_STATUS.md`. Each completed chunk reconciles it, roadmap ticks,
   and plan boxes in the same scoped commit. Keep a few decisive receipts inline;
   logs and test state stay ignored. Point its next-action section at ready threads
   below instead of maintaining a second ordering.
@@ -81,7 +82,7 @@ are authorized. Unexpected access, cost, or isolation requirements return to the
 roadmap, and status. Later phases accepted implementation and G1.
 
 ```text
-/keep-me-in-the-loop Run T1 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
+/keep-me-in-the-loop Run T1 in docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
 ```
 
 - **Depends on:** none. Completed before T3.
@@ -108,7 +109,7 @@ data. Its daemon was stopped before T5 restarted the same private identity. See
 the [status receipt](CONFIGURABLE_NOTIFICATIONS_STATUS.md#android-relay-and-push-proof).
 
 ```text
-/keep-me-in-the-loop Run T2 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
+/keep-me-in-the-loop Run T2 in docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
 ```
 
 - **Depends on:** after T1 for contract, source inventory, and approved baseline;
@@ -134,7 +135,7 @@ the [status receipt](CONFIGURABLE_NOTIFICATIONS_STATUS.md#android-relay-and-push
 and isolated CLI/MCP transport journeys. T5 separately accepted phone delivery.
 
 ```text
-/keep-me-in-the-loop Run T3 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
+/keep-me-in-the-loop Run T3 in docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
 ```
 
 - **Depends on:** after T1 for accepted M1.3 filtering contract and stable baseline; not alongside any other
@@ -165,7 +166,7 @@ delivery confirmed by the user and supported by native logs. T2 and T5 subsequen
 accepted phone delivery and cleanup.
 
 ```text
-/keep-me-in-the-loop Run T4 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
+/keep-me-in-the-loop Run T4 in docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
 ```
 
 - **Depends on:** after T3/G2 for policy and automation APIs; not alongside any other
@@ -250,7 +251,7 @@ pairing; owned runtime state is removed and all processes are stopped. See the
 [status receipt](CONFIGURABLE_NOTIFICATIONS_STATUS.md#android-relay-and-push-proof).
 
 ```text
-/keep-me-in-the-loop Run T5 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
+/keep-me-in-the-loop Run T5 in docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
 ```
 
 - **Depends on:** after T2 for viable pairing/relay path and T4 for accepted final

@@ -19,7 +19,7 @@ This is an npm workspace monorepo:
 
 `docs/` is the source of truth for system-level and process-level knowledge. **"The docs", "check the docs", or "check the X docs" always mean this directory — not the web.** Look here before fetching anything online; the docs capture gotchas and conventions you cannot derive from the code or external sources.
 
-Fork-specific plans and notes live at the top level of `docs/`. Paseo's bundled documentation and evidence live in `docs/upstream/`.
+Active fork-specific plans and notes live at the top level of `docs/`; completed campaigns live in `docs/complete-campaigns/`. Paseo's bundled documentation and evidence live in `docs/upstream/`.
 
 At the start of non-trivial work, list `docs/` and skim anything relevant to the task.
 
@@ -28,9 +28,6 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/upstream/product.md](docs/upstream/product.md)                                   | What Paseo is, who it's for, where it's going                                                                                  |
 | [docs/upstream/architecture.md](docs/upstream/architecture.md)                         | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
 | [docs/upstream/agent-lifecycle.md](docs/upstream/agent-lifecycle.md)                   | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
-| [docs/CONFIGURABLE_NOTIFICATIONS.md](docs/CONFIGURABLE_NOTIFICATIONS.md) | Confirmed workspace notification plan: user controls, CLI, MCP, and verification scope |
-| [docs/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md](docs/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) | Notification steps, dependencies, proof gates, and timing budgets; tick completed steps and plan boxes in the same commit |
-| [docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md](docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) | Notification execution threads, literal prompts, dependencies, and human approval boundaries |
 | [docs/upstream/data-model.md](docs/upstream/data-model.md)                             | File-based JSON persistence, Zod schemas, atomic writes, no migrations                                                         |
 | [docs/upstream/glossary.md](docs/upstream/glossary.md)                                 | Authoritative terminology — UI label wins, no synonyms                                                                         |
 | [docs/upstream/coding-standards.md](docs/upstream/coding-standards.md)                 | Type hygiene, error handling, state design, React patterns, file organization                                                  |
@@ -63,7 +60,10 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/agent-stream-disclosure.md](docs/agent-stream-disclosure.md)   | Expand/collapse in the chat timeline — hold contract, native anchor sequence, frame spacing, render-window cost                |
 | [docs/markdown-renderer.md](docs/markdown-renderer.md)               | Shared Markdown engine, native selection, links, images and library constraints                                                |
 | [docs/native-text-selection.md](docs/native-text-selection.md)       | Native diagram grouping, selection boundaries and leading inline image limitations                                             |
-| [docs/CONFIGURABLE_NOTIFICATIONS_STATUS.md](docs/CONFIGURABLE_NOTIFICATIONS_STATUS.md)   | Current notification evidence, accepted baseline and budgets, open gates, and next execution boundary                          |
+| [docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS.md](docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS.md)                 | Confirmed workspace notification plan: user controls, CLI, MCP, and verification scope                                         |
+| [docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md](docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) | Notification steps, dependencies, proof gates, and timing budgets; tick completed steps and plan boxes in the same commit      |
+| [docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md](docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md)   | Notification execution threads, literal prompts, dependencies, and human approval boundaries                                   |
+| [docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_STATUS.md](docs/complete-campaigns/CONFIGURABLE_NOTIFICATIONS_STATUS.md)   | Completed campaign evidence, accepted baseline and budgets, retained artifacts, and verification limits                        |
 | [docs/upstream/file-observation.md](docs/upstream/file-observation.md)                 | Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison                                     |
 | [docs/upstream/testing.md](docs/upstream/testing.md)                                   | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
 | [docs/upstream/qa.md](docs/upstream/qa.md)                                             | QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof                                      |
