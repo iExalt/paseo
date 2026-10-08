@@ -158,7 +158,8 @@ and isolated CLI/MCP transport journeys. Phone delivery remains unverified until
 
 ## T4 — Desktop user control and feature builds: S5–S6
 
-**State:** ready after accepted T3/G2; S5a shared workspace controls are active.
+**State:** S5a–S5c automated controls and journey accepted; S6 build preparation
+is next. Human OS notification proof and final S5/G3/S6 acceptance remain open.
 
 ```text
 /keep-me-in-the-loop Run T4 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
@@ -175,6 +176,10 @@ and isolated CLI/MCP transport journeys. Phone delivery remains unverified until
   unsaved-edit/external-update handling; (3) desktop UI/CLI/MCP synchronization,
   failed-save/unsupported-host and notification demonstrations for both policies;
   (4) sequential npm/Nix packaging and artifact provenance for the feature revision.
+  Build preparation in (4) now precedes the human OS-arrival portion of (3),
+  following the user's automated-first order. This supplies an identified feature
+  artifact for the isolated demonstration; it does not waive that demonstration
+  or complete S5/G3, S6, or T4.
   Filter proof uses an unmuted workspace and nonmatching/rule-cleared positive
   controls around a matching completion. Do not repeat the regex matrix in the UI.
 - **Live:** isolated desktop settings/daemon and disposable workspaces; prevent
