@@ -27,6 +27,12 @@ test("configuration edits validate before writing and preserve unrelated setting
     editPersistedConfig(home, "daemon.listen", { value: "127.0.0.1:12345" });
     editPersistedConfig(home, "features.webUi.enabled", { value: true });
     const before = await readFile(path.join(home, "config.json"), "utf8");
+    expect(() =>
+      editPersistedConfig(home, "replyRules", {
+        value: [{ source: "(", flags: "i" }],
+      }),
+    ).toThrow(/Invalid reply rules/);
+    expect(await readFile(path.join(home, "config.json"), "utf8")).toBe(before);
     expect(() => editPersistedConfig(home, "features.webUi.enabled", { value: "true" })).toThrow();
     expect(() =>
       editPersistedConfig(home, "daemon", { value: { auth: { password: "plaintext" } } }),
