@@ -1296,6 +1296,10 @@ export const ko: TranslationResources = {
         hideFromSidebar: "사이드바에서 숨기기",
         archiving: "보관하는 중...",
         hiding: "숨기는 중...",
+        muteNotifications: "알림 끄기",
+        unmuteNotifications: "알림 켜기",
+        updatingNotifications: "알림 업데이트 중...",
+        updateHostForNotifications: "알림을 관리하려면 호스트를 업데이트하세요.",
       },
       confirmations: {
         hideTitle: "워크스페이스를 숨길까요?",

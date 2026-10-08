@@ -1307,6 +1307,10 @@ export const ru: TranslationResources = {
         hideFromSidebar: "Скрыть на боковой панели",
         archiving: "Архивирование...",
         hiding: "Скрытие...",
+        muteNotifications: "Отключить уведомления",
+        unmuteNotifications: "Включить уведомления",
+        updatingNotifications: "Обновление уведомлений...",
+        updateHostForNotifications: "Обновите этот хост, чтобы управлять уведомлениями.",
       },
       confirmations: {
         hideTitle: "Скрыть рабочее пространство?",

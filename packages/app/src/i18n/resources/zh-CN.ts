@@ -1279,6 +1279,10 @@ export const zhCN: TranslationResources = {
         hideFromSidebar: "从侧边栏隐藏",
         archiving: "正在归档...",
         hiding: "正在隐藏...",
+        muteNotifications: "静音通知",
+        unmuteNotifications: "取消通知静音",
+        updatingNotifications: "正在更新通知...",
+        updateHostForNotifications: "更新此主机以管理通知。",
       },
       confirmations: {
         hideTitle: "隐藏 workspace？",

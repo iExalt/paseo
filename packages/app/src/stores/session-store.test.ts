@@ -450,6 +450,30 @@ describe("message submission ordering", () => {
 });
 
 describe("normalizeWorkspaceDescriptor", () => {
+  it("defaults omitted notification policy to on and preserves explicit off", () => {
+    const base = {
+      id: "notifications-workspace",
+      projectId: "project",
+      projectDisplayName: "Project",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git" as const,
+      workspaceKind: "checkout" as const,
+      name: "main",
+      status: "done" as const,
+      activityAt: null,
+      statusEnteredAt: null,
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    };
+
+    expect(normalizeWorkspaceDescriptor(base).notifications).toBe("on");
+    expect(normalizeWorkspaceDescriptor({ ...base, notifications: "off" }).notifications).toBe(
+      "off",
+    );
+  });
+
   it("normalizes workspace scripts and invalid activity timestamps", () => {
     const scripts = [
       {
