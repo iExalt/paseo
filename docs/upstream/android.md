@@ -99,6 +99,38 @@ npx cross-env APP_VARIANT=production expo run:android --variant=release
 rm -rf android
 ```
 
+### Standalone local APK
+
+Build a release APK with the `development` identity to install alongside the
+Play Store app. It is named **Paseo Debug** (`sh.paseo.debug`), uses the generated
+project's local debug signing key, and bundles JavaScript for standalone use.
+For a Samsung Galaxy S24 Ultra, select the `arm64-v8a` ABI:
+
+```bash
+mise exec -- npm run build:app-deps
+mise exec -- npm --prefix packages/app run build:terminal-webview
+cd packages/app
+mise exec -- env APP_VARIANT=development CI=1 npx expo prebuild --platform android --no-install
+cd android
+mise exec -- env APP_VARIANT=development JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED \
+  ./gradlew :app:assembleRelease --no-daemon --max-workers=1 \
+  -Dorg.gradle.parallel=false -PreactNativeArchitectures=arm64-v8a
+```
+
+The APK is `packages/app/android/app/build/outputs/apk/release/app-release.apk`.
+The command produces an artifact without installing or launching it. The scoped
+Java 25 native-access flag lets Prefab's JNA library load without a warning that
+the current Android Gradle plugin misclassifies as a build error. It does not
+change the machine's Java configuration.
+
+The normal camera and notification modules remain included. Push requires a
+Firebase Android client for `sh.paseo.debug`, the matching
+`GOOGLE_SERVICES_FILE_DEBUG` configuration, and FCM credentials in the configured
+Expo project. Without these, push-token registration fails and the APK is suitable
+for UI testing. The variants share the `paseo://` scheme; select Paseo Debug when
+opening a pairing link, or paste it inside that app. Its app data and pairings are
+separate from the Play Store installation.
+
 ## Running on an emulator against a worktree daemon
 
 `npm run android` builds and installs the dev client, but two connections have to reach your Mac from inside the emulator — Metro (the JS bundle) and the Paseo daemon — and **the emulator does not share the host's loopback**: `localhost` inside the emulator is the emulator itself. Reach the host at `10.0.2.2` (the standard AVD's host alias) for both:
@@ -195,7 +227,11 @@ Beta releases are an explicit no-op: they do not create or rewrite F-Droid chang
 
 ### React version lockstep
 
-Keep `react` and `react-dom` pinned to the React version embedded by the current `react-native` release. React Native `0.81.x` embeds `react-native-renderer` `19.1.0`, so `packages/app` must use React `19.1.0`. Bumping React to a newer patch can build successfully but crash at JS startup on Android with `Incompatible React versions`, leaving the app on the native splash screen.
+Keep `react` and `react-dom` pinned to the React version embedded by the current
+`react-native` release. The accepted Expo 57 cohort uses React Native `0.86.3`
+and React `19.2.3`. A renderer mismatch can build successfully but crash at JS
+startup on Android with `Incompatible React versions`, leaving the app on the
+native splash screen.
 
 ## Screenshots
 
