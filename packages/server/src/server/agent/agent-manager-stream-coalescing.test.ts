@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
-import { AgentManager, type AgentManagerEvent } from "./agent-manager.js";
+import {
+  AgentManager,
+  type AgentAttentionCallback,
+  type AgentManagerEvent,
+} from "./agent-manager.js";
 import { AGENT_STREAM_COALESCE_DEFAULT_WINDOW_MS } from "./agent-stream-coalescer.js";
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
 import { projectTimelineRows } from "./timeline-projection.js";
@@ -239,6 +243,7 @@ interface Harness {
   manager: AgentManager;
   client: TestAgentClient;
   events: AgentManagerEvent[];
+  attentions: Parameters<AgentAttentionCallback>[0][];
   workdir: string;
   cleanup: () => void;
 }
@@ -246,10 +251,12 @@ interface Harness {
 function createHarness(options?: { provider?: AgentProvider }): Harness {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stream-coalescing-"));
   const client = new TestAgentClient(options?.provider ?? "codex");
+  const attentions: Parameters<AgentAttentionCallback>[0][] = [];
   const manager = new AgentManager({
     clients: { [client.provider]: client },
     idFactory: createIdFactory(),
     logger: createTestLogger(),
+    onAgentAttention: (params) => attentions.push(params),
   });
   const events: AgentManagerEvent[] = [];
   manager.subscribe((event) => events.push(event), { replayState: false });
@@ -258,6 +265,7 @@ function createHarness(options?: { provider?: AgentProvider }): Harness {
     manager,
     client,
     events,
+    attentions,
     workdir,
     cleanup: () => rmSync(workdir, { recursive: true, force: true }),
   };
@@ -390,11 +398,218 @@ async function waitForSessionEventQueue(): Promise<void> {
   }
 }
 
+async function drainStream(stream: AsyncGenerator<AgentStreamEvent>): Promise<void> {
+  for await (const _event of stream) {
+    // Drain the accepted run so its foreground lock is released before another starts.
+  }
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
 
 describe("target coalesced behavior", () => {
+  test("captures only the successful foreground turn's live completion subject", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId, session } = await createManagedSession(harness);
+
+      const successfulRun = harness.manager.streamAgent(agentId, "first prompt");
+      await expect(successfulRun.next()).resolves.toMatchObject({
+        done: false,
+        value: { type: "turn_started", turnId: "turn-1" },
+      });
+      session.pushEvent(assistant("original ", "codex", "turn-1"));
+      session.pushEvent(assistant("reply", "codex", "turn-1"));
+      session.pushEvent(terminalEvent("turn_completed", "turn-1"));
+      await waitForSessionEventQueue();
+      await drainStream(successfulRun);
+
+      const originalSubject = harness.attentions[0]?.completionSubject;
+      expect(harness.attentions).toEqual([
+        {
+          agentId,
+          provider: "codex",
+          reason: "finished",
+          completionSubject: {
+            turnId: "turn-1",
+            text: "original reply",
+            completeness: "complete",
+          },
+        },
+      ]);
+      expect(Object.isFrozen(originalSubject)).toBe(true);
+      await harness.manager.clearAgentAttention(agentId);
+
+      const failedRun = harness.manager.streamAgent(agentId, "second prompt");
+      await expect(failedRun.next()).resolves.toMatchObject({
+        done: false,
+        value: { type: "turn_started", turnId: "turn-2" },
+      });
+      session.pushEvent(assistant("failed partial", "codex", "turn-2"));
+      session.pushEvent(terminalEvent("turn_failed", "turn-2"));
+      await waitForSessionEventQueue();
+      await drainStream(failedRun);
+
+      expect(harness.attentions).toEqual([
+        {
+          agentId,
+          provider: "codex",
+          reason: "finished",
+          completionSubject: {
+            turnId: "turn-1",
+            text: "original reply",
+            completeness: "complete",
+          },
+        },
+        { agentId, provider: "codex", reason: "error" },
+      ]);
+      expect(harness.attentions[1]).not.toHaveProperty("completionSubject");
+      expect(originalSubject).toEqual({
+        turnId: "turn-1",
+        text: "original reply",
+        completeness: "complete",
+      });
+      await harness.manager.clearAgentAttention(agentId);
+
+      const canceledRun = harness.manager.streamAgent(agentId, "third prompt");
+      await expect(canceledRun.next()).resolves.toMatchObject({
+        done: false,
+        value: { type: "turn_started", turnId: "turn-3" },
+      });
+      session.pushEvent(assistant("canceled partial", "codex", "turn-3"));
+      session.pushEvent(terminalEvent("turn_canceled", "turn-3"));
+      await waitForSessionEventQueue();
+      await drainStream(canceledRun);
+
+      expect(harness.attentions[2]).toEqual({
+        agentId,
+        provider: "codex",
+        reason: "finished",
+      });
+      expect(harness.attentions[2]).not.toHaveProperty("completionSubject");
+      expect(originalSubject).toEqual({
+        turnId: "turn-1",
+        text: "original reply",
+        completeness: "complete",
+      });
+      await harness.manager.clearAgentAttention(agentId);
+
+      const nextSuccessfulRun = harness.manager.streamAgent(agentId, "fourth prompt");
+      await expect(nextSuccessfulRun.next()).resolves.toMatchObject({
+        done: false,
+        value: { type: "turn_started", turnId: "turn-4" },
+      });
+      session.pushEvent(assistant("current ", "codex", "turn-4"));
+      session.pushEvent(assistant("reply", "codex", "turn-4"));
+      session.pushEvent(terminalEvent("turn_completed", "turn-3"));
+      session.pushEvent(terminalEvent("turn_completed", "turn-4"));
+      await waitForSessionEventQueue();
+      await drainStream(nextSuccessfulRun);
+
+      expect(harness.attentions).toEqual([
+        {
+          agentId,
+          provider: "codex",
+          reason: "finished",
+          completionSubject: {
+            turnId: "turn-1",
+            text: "original reply",
+            completeness: "complete",
+          },
+        },
+        { agentId, provider: "codex", reason: "error" },
+        { agentId, provider: "codex", reason: "finished" },
+        {
+          agentId,
+          provider: "codex",
+          reason: "finished",
+          completionSubject: {
+            turnId: "turn-4",
+            text: "current reply",
+            completeness: "complete",
+          },
+        },
+      ]);
+      expect(Object.isFrozen(harness.attentions[4]?.completionSubject)).toBe(true);
+      expect(originalSubject).toEqual({
+        turnId: "turn-1",
+        text: "original reply",
+        completeness: "complete",
+      });
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  test("captures clean autonomous replies without including hydrated history", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId, session } = await createManagedSession(harness);
+      session.setHistory([assistant("old history", "codex", "old-turn")]);
+      await harness.manager.hydrateTimelineFromProvider(agentId, { force: true });
+      session.pushEvent(assistant("unscoped ambient text"));
+      await waitForSessionEventQueue();
+
+      session.pushEvent({ type: "turn_started", provider: "codex", turnId: "auto-1" });
+      session.pushEvent(assistant("periodic ", "codex", "auto-1"));
+      session.pushEvent(assistant("reply", "codex", "auto-1"));
+      session.pushEvent(terminalEvent("turn_completed", "auto-1"));
+      await waitForSessionEventQueue();
+
+      expect(harness.attentions).toEqual([
+        {
+          agentId,
+          provider: "codex",
+          reason: "finished",
+          completionSubject: {
+            turnId: "auto-1",
+            text: "periodic reply",
+            completeness: "complete",
+          },
+        },
+      ]);
+
+      await harness.manager.clearAgentAttention(agentId);
+      session.pushEvent({ type: "turn_started", provider: "codex", turnId: "auto-2" });
+      session.pushEvent(assistant("next reply", "codex", "auto-2"));
+      session.pushEvent(terminalEvent("turn_completed", "auto-1"));
+      session.pushEvent(terminalEvent("turn_completed", "auto-2"));
+      await waitForSessionEventQueue();
+
+      expect(harness.attentions[1]).toEqual({
+        agentId,
+        provider: "codex",
+        reason: "finished",
+        completionSubject: {
+          turnId: "auto-2",
+          text: "next reply",
+          completeness: "complete",
+        },
+      });
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  test("does not establish a subject for an overlapping autonomous turn", async () => {
+    const harness = createHarness();
+    try {
+      const { agentId, session } = await createManagedSession(harness);
+      session.pushEvent({ type: "turn_started", provider: "codex", turnId: "auto-old" });
+      session.pushEvent(assistant("ambiguous", "codex", "auto-old"));
+      session.pushEvent({ type: "turn_started", provider: "codex", turnId: "auto-new" });
+      session.pushEvent(assistant("also ambiguous", "codex", "auto-new"));
+      session.pushEvent(terminalEvent("turn_completed", "auto-old"));
+      session.pushEvent(terminalEvent("turn_completed", "auto-new"));
+      await waitForSessionEventQueue();
+
+      expect(harness.attentions).toEqual([{ agentId, provider: "codex", reason: "finished" }]);
+    } finally {
+      harness.cleanup();
+    }
+  });
+
   test("bounds tool output before persisting and streaming it", async () => {
     const harness = createHarness();
     try {

@@ -80,6 +80,10 @@ import {
 import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { isSystemInjectedEnvelope } from "./agent-prompt.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
+import {
+  CompletionSubjectCollector,
+  type CompletionSubject,
+} from "./completion-subject-collector.js";
 import { stripInternalPaseoMcpServer, withRuntimePaseoMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
@@ -277,6 +281,7 @@ export type AgentAttentionCallback = (params: {
   agentId: string;
   provider: AgentProvider;
   reason: "finished" | "error" | "permission";
+  completionSubject?: CompletionSubject;
 }) => void;
 
 export type AgentArchivedCallback = (agentId: string) => Promise<void> | void;
@@ -389,6 +394,11 @@ interface StreamEventFlags {
 }
 
 type ActiveTurnTerminalDisposition = "closed_current" | "stale" | "untracked";
+
+interface ActiveCompletionSubjectCollector {
+  turnId: string;
+  collector: CompletionSubjectCollector;
+}
 
 interface HandleStreamEventOptions {
   fromHistory?: boolean;
@@ -722,6 +732,10 @@ export class AgentManager {
   private readonly agents = new Map<string, LiveManagedAgent>();
   private readonly timelineStore = new InMemoryAgentTimelineStore();
   private readonly providerSubagents = new ProviderSubagentStore();
+  private readonly completionSubjectCollectors = new Map<
+    string,
+    ActiveCompletionSubjectCollector
+  >();
   private readonly agentsAwaitingInitialSnapshotPersist = new Set<string>();
   private readonly sessionEventTails = new Map<string, Promise<void>>();
   private readonly steerEventBarriers = new Map<string, SteerEventBarrier>();
@@ -2527,6 +2541,7 @@ export class AgentManager {
       pendingRun.start = { status: "started", turnId };
       agent.activeForegroundTurnId = turnId;
       this.openActiveTurn(agent, turnId, turnStartedAt);
+      this.beginCompletionSubjectCollection(agent.id, turnId);
       agent.lifecycle = "running";
       this.touchUpdatedAt(agent);
       // AgentManager owns the accepted-turn boundary. Publish liveness before the canonical
@@ -2603,7 +2618,11 @@ export class AgentManager {
     return streamForwarder;
   }
 
-  private finalizeForegroundTurn(agent: ActiveManagedAgent, turnId?: string): void {
+  private finalizeForegroundTurn(
+    agent: ActiveManagedAgent,
+    turnId?: string,
+    completionSubject?: CompletionSubject,
+  ): void {
     const mutableAgent = agent;
     if (turnId) {
       this.runs.rememberFinalizedTurn(mutableAgent, turnId);
@@ -2643,13 +2662,78 @@ export class AgentManager {
     );
     if (!shouldHoldBusyForReplacement) {
       this.touchUpdatedAt(mutableAgent);
-      this.emitState(mutableAgent);
+      this.emitState(mutableAgent, { completionSubject });
     }
   }
 
   private openActiveTurn(agent: ActiveManagedAgent, turnId: string, startedAt: Date): void {
     agent.activeTurnId = turnId;
     agent.activeTurnStartedAt = startedAt;
+  }
+
+  private beginCompletionSubjectCollection(agentId: string, turnId: string): void {
+    this.completionSubjectCollectors.set(agentId, {
+      turnId,
+      collector: new CompletionSubjectCollector(turnId),
+    });
+  }
+
+  private observeCompletionSubject(
+    agentId: string,
+    turnId: string | undefined,
+    item: AgentTimelineItem,
+  ): void {
+    const active = this.completionSubjectCollectors.get(agentId);
+    if (!active) return;
+    if (turnId === undefined) {
+      active.collector.invalidate();
+      return;
+    }
+    active.collector.observe(turnId, item);
+  }
+
+  private observeCompletionSubjectFromEvent(
+    agentId: string,
+    turnId: string | undefined,
+    event: AgentStreamEvent,
+  ): void {
+    if (event.type === "timeline") {
+      this.observeCompletionSubject(agentId, turnId, event.item);
+    }
+  }
+
+  private takeCompletionSubject(
+    agentId: string,
+    turnId: string | undefined,
+  ): CompletionSubject | undefined {
+    if (!turnId) return undefined;
+    const active = this.completionSubjectCollectors.get(agentId);
+    if (!active || active.turnId !== turnId) return undefined;
+    this.completionSubjectCollectors.delete(agentId);
+    return active.collector.seal();
+  }
+
+  private clearCompletionSubjectCollection(agentId: string, turnId: string | undefined): void {
+    if (!turnId) return;
+    if (this.completionSubjectCollectors.get(agentId)?.turnId === turnId) {
+      this.completionSubjectCollectors.delete(agentId);
+    }
+  }
+
+  private resolveCompletionSubjectForTerminal(params: {
+    agentId: string;
+    event: AgentStreamEvent;
+    turnId: string | undefined;
+    disposition: ActiveTurnTerminalDisposition;
+    fromHistory: boolean;
+  }): CompletionSubject | undefined {
+    const { agentId, event, turnId, disposition, fromHistory } = params;
+    if (disposition === "stale") return undefined;
+    if (event.type === "turn_completed" && disposition === "closed_current" && !fromHistory) {
+      return this.takeCompletionSubject(agentId, turnId);
+    }
+    this.clearCompletionSubjectCollection(agentId, turnId);
+    return undefined;
   }
 
   private applyActiveTurnTerminal(
@@ -3698,6 +3782,7 @@ export class AgentManager {
     cancelReason: string,
   ): ManagedAgentClosed {
     this.agentStreamCoalescer.flushAndDiscard(agent.id);
+    this.completionSubjectCollectors.delete(agent.id);
     this.agents.delete(agent.id);
     this.previousStatuses.delete(agent.id);
     if (agent.unsubscribeSession) {
@@ -4180,6 +4265,7 @@ export class AgentManager {
     const identified = attachManagedTurnIdentity(agent, event, options?.fromHistory === true);
     event = identified.event;
     const eventTurnId = identified.turnId;
+    const activeTurnIdBeforeEvent = agent.activeTurnId;
     const isForegroundEvent = agent.activeForegroundTurnId === eventTurnId;
     this.traceHandleStreamEventStart(agent, event, eventTurnId, isForegroundEvent);
     if (
@@ -4193,6 +4279,7 @@ export class AgentManager {
     // Only update timestamp for live events, not history replay
     if (!options?.fromHistory) {
       this.touchUpdatedAt(agent);
+      this.observeCompletionSubjectFromEvent(agent.id, eventTurnId, event);
       if (this.agentStreamCoalescer.handle(agent.id, event)) {
         this.traceCoalescerBuffered(agent, event, eventTurnId);
         return false;
@@ -4201,12 +4288,20 @@ export class AgentManager {
     }
 
     let terminalDisposition: ActiveTurnTerminalDisposition = "untracked";
+    let completionSubject: CompletionSubject | undefined;
     if (isTurnTerminalEvent(event)) {
       terminalDisposition = this.applyActiveTurnTerminal(
         agent,
         eventTurnId,
         options?.fromHistory === true,
       );
+      completionSubject = this.resolveCompletionSubjectForTerminal({
+        agentId: agent.id,
+        event,
+        turnId: eventTurnId,
+        disposition: terminalDisposition,
+        fromHistory: options?.fromHistory === true,
+      });
     }
 
     const flags: StreamEventFlags = { shouldDispatchEvent: true, shouldNotifyWaiters: true };
@@ -4218,6 +4313,9 @@ export class AgentManager {
       isForegroundEvent,
       eventTurnId,
       terminalDisposition,
+      completionSubject,
+      activeTurnIdBeforeEvent,
+      fromHistory: options?.fromHistory === true,
       flags,
     });
     if (dispatchPromise) {
@@ -4228,7 +4326,7 @@ export class AgentManager {
       if (isTurnTerminalEvent(event)) {
         this.runs.settleTerminalRun(agent.id, eventTurnId);
         if (isForegroundEvent) {
-          this.finalizeForegroundTurn(agent, eventTurnId);
+          this.finalizeForegroundTurn(agent, eventTurnId, completionSubject);
         }
       }
 
@@ -4309,10 +4407,23 @@ export class AgentManager {
     isForegroundEvent: boolean;
     eventTurnId: string | undefined;
     terminalDisposition: ActiveTurnTerminalDisposition;
+    completionSubject: CompletionSubject | undefined;
+    activeTurnIdBeforeEvent: string | null;
+    fromHistory: boolean;
     flags: StreamEventFlags;
   }): Promise<void> | undefined {
-    const { agent, event, options, isForegroundEvent, eventTurnId, terminalDisposition, flags } =
-      params;
+    const {
+      agent,
+      event,
+      options,
+      isForegroundEvent,
+      eventTurnId,
+      terminalDisposition,
+      completionSubject,
+      activeTurnIdBeforeEvent,
+      fromHistory,
+      flags,
+    } = params;
     switch (event.type) {
       case "thread_started":
         this.onStreamThreadStarted(agent);
@@ -4362,6 +4473,7 @@ export class AgentManager {
           eventTurnId,
           isForegroundEvent,
           terminalDisposition,
+          completionSubject,
         });
         return undefined;
       case "turn_failed":
@@ -4384,7 +4496,14 @@ export class AgentManager {
         });
         return undefined;
       case "turn_started":
-        this.onStreamTurnStarted({ agent, eventTurnId, isForegroundEvent, flags });
+        this.onStreamTurnStarted({
+          agent,
+          eventTurnId,
+          isForegroundEvent,
+          activeTurnIdBeforeEvent,
+          fromHistory,
+          flags,
+        });
         return undefined;
       case "permission_requested":
         this.onStreamPermissionRequested(agent, event);
@@ -4463,8 +4582,10 @@ export class AgentManager {
     eventTurnId: string | undefined;
     isForegroundEvent: boolean;
     terminalDisposition: ActiveTurnTerminalDisposition;
+    completionSubject?: CompletionSubject;
   }): void {
-    const { agent, event, eventTurnId, isForegroundEvent, terminalDisposition } = params;
+    const { agent, event, eventTurnId, isForegroundEvent, terminalDisposition, completionSubject } =
+      params;
     this.logger.trace(
       {
         agentId: agent.id,
@@ -4491,7 +4612,7 @@ export class AgentManager {
       !agent.pendingReplacement
     ) {
       (agent as ActiveManagedAgent).lifecycle = "idle";
-      this.emitState(agent);
+      this.emitState(agent, { completionSubject });
     }
     void this.refreshRuntimeInfo(agent);
   }
@@ -4577,9 +4698,12 @@ export class AgentManager {
     agent: ActiveManagedAgent;
     eventTurnId: string | undefined;
     isForegroundEvent: boolean;
+    activeTurnIdBeforeEvent: string | null;
+    fromHistory: boolean;
     flags: StreamEventFlags;
   }): void {
-    const { agent, eventTurnId, isForegroundEvent, flags } = params;
+    const { agent, eventTurnId, isForegroundEvent, activeTurnIdBeforeEvent, fromHistory, flags } =
+      params;
     this.logger.trace(
       {
         agentId: agent.id,
@@ -4600,6 +4724,13 @@ export class AgentManager {
       flags.shouldDispatchEvent = false;
       flags.shouldNotifyWaiters = false;
       return;
+    }
+    if (!fromHistory && eventTurnId) {
+      if (activeTurnIdBeforeEvent === null) {
+        this.beginCompletionSubjectCollection(agent.id, eventTurnId);
+      } else if (activeTurnIdBeforeEvent !== eventTurnId) {
+        this.clearCompletionSubjectCollection(agent.id, activeTurnIdBeforeEvent);
+      }
     }
     this.runs.trackAutonomousRun(agent.id, eventTurnId ?? null);
     if (eventTurnId) {
@@ -4810,9 +4941,12 @@ export class AgentManager {
     return row;
   }
 
-  private emitState(agent: ManagedAgent, options?: { persist?: boolean }): void {
+  private emitState(
+    agent: ManagedAgent,
+    options?: { persist?: boolean; completionSubject?: CompletionSubject },
+  ): void {
     // Keep attention as an edge-triggered unread signal, not a level signal.
-    this.checkAndSetAttention(agent);
+    this.checkAndSetAttention(agent, options?.completionSubject);
     if (options?.persist !== false) {
       this.enqueueBackgroundPersist(agent);
     }
@@ -4845,7 +4979,7 @@ export class AgentManager {
     }
   }
 
-  private checkAndSetAttention(agent: ManagedAgent): void {
+  private checkAndSetAttention(agent: ManagedAgent, completionSubject?: CompletionSubject): void {
     const previousStatus = this.previousStatuses.get(agent.id);
     const currentStatus = agent.lifecycle;
 
@@ -4869,7 +5003,7 @@ export class AgentManager {
         attentionReason: "finished",
         attentionTimestamp: new Date(),
       };
-      this.broadcastAgentAttention(agent, "finished");
+      this.broadcastAgentAttention(agent, "finished", completionSubject);
       return;
     }
 
@@ -4985,6 +5119,7 @@ export class AgentManager {
   private broadcastAgentAttention(
     agent: ManagedAgent,
     reason: "finished" | "error" | "permission",
+    completionSubject?: CompletionSubject,
   ): void {
     if (isDelegatedAgent(agent)) {
       return;
@@ -4994,6 +5129,7 @@ export class AgentManager {
       agentId: agent.id,
       provider: agent.provider,
       reason,
+      ...(completionSubject ? { completionSubject } : {}),
     });
   }
 
