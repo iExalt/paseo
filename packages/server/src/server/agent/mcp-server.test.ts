@@ -40,6 +40,7 @@ import {
   type ProjectRegistry,
   type WorkspaceRegistry,
 } from "../workspace-registry.js";
+import { updateWorkspaceNotifications } from "../workspace-notifications.js";
 import type {
   CreateScheduleInput,
   StoredSchedule,
@@ -1317,7 +1318,6 @@ describe("create_agent MCP tool", () => {
       title: "New workspace agent",
       provider: "codex/gpt-5.4",
       initialPrompt: "Start work",
-      background: true,
       notifications: "off",
     });
 
@@ -2859,6 +2859,7 @@ describe("create_agent MCP tool", () => {
           kind: "worktree",
           displayName: "project-worktree",
           title: input.title ?? null,
+          notifications: input.notifications,
           createdAt: "2026-07-18T00:00:00.000Z",
           updatedAt: "2026-07-18T00:00:00.000Z",
         }),
@@ -2887,7 +2888,10 @@ describe("create_agent MCP tool", () => {
       notifications: "off",
     });
 
-    expect(response.structuredContent.workspaceId).toBe("ws-project-source");
+    expect(response.structuredContent).toMatchObject({
+      workspaceId: "ws-project-source",
+      notifications: "off",
+    });
     expect(receivedInputs).toEqual([
       expect.objectContaining({
         cwd: REPO_CWD,
@@ -2905,7 +2909,7 @@ describe("create_agent MCP tool", () => {
         _cwd: string,
         _title: string | null | undefined,
         _projectId: string | undefined,
-        notifications: "on" | "off" | undefined,
+        context: { notifications?: "on" | "off" } | undefined,
       ) =>
         createPersistedWorkspaceRecord({
           workspaceId: "ws-local-policy",
@@ -2913,7 +2917,7 @@ describe("create_agent MCP tool", () => {
           cwd: process.cwd(),
           kind: "directory",
           displayName: "repo",
-          notifications,
+          notifications: context?.notifications,
           createdAt: "2026-07-18T00:00:00.000Z",
           updatedAt: "2026-07-18T00:00:00.000Z",
         }),
@@ -2937,7 +2941,7 @@ describe("create_agent MCP tool", () => {
       process.cwd(),
       undefined,
       undefined,
-      "off",
+      expect.objectContaining({ notifications: "off" }),
     );
     expect(response.structuredContent).toMatchObject({
       workspaceId: "ws-local-policy",
@@ -3306,7 +3310,11 @@ describe("create_agent MCP tool", () => {
     const response = await tool.handler({});
 
     expect(response.structuredContent.workspaces).toEqual([
-      expect.objectContaining({ workspaceId: "ws-feature", isolation: "worktree" }),
+      expect.objectContaining({
+        workspaceId: "ws-feature",
+        isolation: "worktree",
+        notifications: "on",
+      }),
     ]);
   });
 
@@ -3349,6 +3357,118 @@ describe("create_agent MCP tool", () => {
 
     const listed = await registeredTool(server, "list_workspaces").handler({});
     expect(listed.structuredContent.workspaces).toEqual([]);
+  });
+
+  it("sets and reads back a durable workspace notification policy", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const workspace = createPersistedWorkspaceRecord({
+      workspaceId: "ws-notifications",
+      projectId: "project-1",
+      cwd: "/tmp/paseo/workspace-notifications",
+      kind: "directory",
+      displayName: "notifications",
+      createdAt: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:00.000Z",
+    });
+    let current = workspace;
+    const emittedWorkspaceIds: string[][] = [];
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      workspaceRegistry: {
+        get: async (workspaceId) => (workspaceId === current.workspaceId ? current : null),
+        list: async () => [current],
+        upsert: async () => undefined,
+      },
+      updateWorkspaceNotifications: async (workspaceId, notifications) => {
+        const updated = await updateWorkspaceNotifications(
+          {
+            update: async (id, updater) => {
+              if (id !== current.workspaceId || id !== workspaceId) return null;
+              current = updater(current);
+              return current;
+            },
+          },
+          workspaceId,
+          notifications,
+        );
+        if (updated) emittedWorkspaceIds.push([workspaceId]);
+        return updated;
+      },
+      emitWorkspaceUpdatesForWorkspaceIds: async (workspaceIds) => {
+        emittedWorkspaceIds.push(Array.from(workspaceIds));
+      },
+      workspaceNotificationsEnabled: true,
+      logger,
+    });
+
+    const tool = registeredTool(server, "set_workspace_notifications");
+    const off = await invokeToolWithParsedInput(tool, {
+      workspaceId: workspace.workspaceId,
+      notifications: "off",
+    });
+    const on = await invokeToolWithParsedInput(tool, {
+      workspaceId: workspace.workspaceId,
+      notifications: "on",
+    });
+    const listed = await registeredTool(server, "list_workspaces").handler({});
+
+    expect(off.structuredContent).toEqual({
+      workspaceId: workspace.workspaceId,
+      notifications: "off",
+    });
+    expect(on.structuredContent).toEqual({
+      workspaceId: workspace.workspaceId,
+      notifications: "on",
+    });
+    expect(listed.structuredContent.workspaces).toEqual([
+      expect.objectContaining({ workspaceId: workspace.workspaceId, notifications: "on" }),
+    ]);
+    expect(emittedWorkspaceIds).toEqual([[workspace.workspaceId], [workspace.workspaceId]]);
+  });
+
+  it("rejects workspace notification mutation before callback on an unsupported host", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const update = vi.fn(async () => null);
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      updateWorkspaceNotifications: update,
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "set_workspace_notifications").handler({
+        workspaceId: "ws-1",
+        notifications: "off",
+      }),
+    ).rejects.toThrow("not supported by this server");
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("propagates workspace notification persistence failures", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    const update = vi.fn(async () => {
+      throw new Error("workspace registry write failed");
+    });
+    const server = await createAgentMcpServer({
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      updateWorkspaceNotifications: update,
+      workspaceNotificationsEnabled: true,
+      logger,
+    });
+
+    await expect(
+      registeredTool(server, "set_workspace_notifications").handler({
+        workspaceId: "ws-1",
+        notifications: "off",
+      }),
+    ).rejects.toThrow("workspace registry write failed");
+    expect(update).toHaveBeenCalledWith("ws-1", "off");
   });
 
   it("accepts custom provider IDs in create_agent input validation", async () => {

@@ -263,6 +263,7 @@ import {
 import { archiveByScope, type ActiveWorkspaceRef } from "./workspace-archive-service.js";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { SessionAuthorization, type DaemonPermission } from "./authorization/index.js";
+import { updateWorkspaceNotifications } from "./workspace-notifications.js";
 
 function resolveWorkspaceSetupRuntime(
   runtime: WorkspaceSetupRuntime | undefined,
@@ -3930,11 +3931,11 @@ export class Session {
 
     let updated: PersistedWorkspaceRecord | null;
     try {
-      updated = await this.workspaceRegistry.update(workspaceId, (existing) => ({
-        ...existing,
+      updated = await updateWorkspaceNotifications(
+        this.workspaceRegistry,
+        workspaceId,
         notifications,
-        updatedAt: new Date().toISOString(),
-      }));
+      );
     } catch (error) {
       this.sessionLogger.error(
         { err: error, workspaceId, requestId },
