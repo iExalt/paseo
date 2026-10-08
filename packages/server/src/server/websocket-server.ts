@@ -79,6 +79,7 @@ import {
 } from "@getpaseo/protocol/agent-attention-notification";
 import { createGitHubService } from "../services/github-service.js";
 import type { ForgeService } from "../services/forge-service.js";
+import { WORKSPACE_NOTIFICATIONS_ENABLED } from "./workspace-notifications.js";
 import {
   extractHttpBearerToken,
   extractWsBearerProtocol,
@@ -1801,6 +1802,7 @@ export class VoiceAssistantWebSocketServer {
         directorySync: true,
         // COMPAT(workspaceLabels): added in v0.5.0, remove after 2027-08-14.
         ...(this.workspaceLabelService ? { workspaceLabels: true } : {}),
+        ...(WORKSPACE_NOTIFICATIONS_ENABLED ? { workspaceNotifications: true } : {}),
         // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
         workspaceSetupRun: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
@@ -2580,9 +2582,11 @@ export class VoiceAssistantWebSocketServer {
     reason: "finished" | "error" | "permission";
   }): Promise<void> {
     const agent = this.agentManager.getAgent(params.agentId);
-    if (!agent?.workspaceId) {
+    const workspaceId = agent?.workspaceId;
+    if (!workspaceId) {
       return;
     }
+    const subscriptionAgent = { ...agent, workspaceId };
     const clientEntries: Array<{
       ws: WebSocketLike;
       state: ClientPresenceState;
@@ -2592,7 +2596,7 @@ export class VoiceAssistantWebSocketServer {
       if (
         connection.session.delivery.isModern(ws)
           ? !connection.session.wantsSourceEvent(ws, "agent_attention_required")
-          : !(await connection.session.subscribesToAgent(agent, ws))
+          : !(await connection.session.subscribesToAgent(subscriptionAgent, ws))
       )
         continue;
       clientEntries.push({
@@ -2607,10 +2611,12 @@ export class VoiceAssistantWebSocketServer {
     const allStates = notificationEntries.map((e) => e.state);
     const nowMs = Date.now();
     const assistantMessage = await this.agentManager.getLastAssistantMessage(params.agentId);
+    const workspace = await this.workspaceRegistry.get(workspaceId);
+    const workspaceNotificationsEnabled = workspace?.notifications !== "off";
     const notification = buildAgentAttentionNotificationPayload({
       reason: params.reason,
       serverId: this.serverId,
-      workspaceId: agent.workspaceId,
+      workspaceId,
       agentId: params.agentId,
       assistantMessage,
       permissionRequest: findLatestPermissionRequest(agent.pendingPermissions),
@@ -2623,7 +2629,7 @@ export class VoiceAssistantWebSocketServer {
       nowMs,
     });
 
-    if (plan.shouldPush) {
+    if (workspaceNotificationsEnabled && plan.shouldPush) {
       void this.pushNotificationSender.send(notification).catch((err) => {
         this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
       });
@@ -2631,6 +2637,7 @@ export class VoiceAssistantWebSocketServer {
 
     for (const { ws } of clientEntries) {
       const shouldNotify =
+        workspaceNotificationsEnabled &&
         plan.inAppRecipientIndex !== null &&
         notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
       const timestamp = new Date().toISOString();
@@ -2679,6 +2686,7 @@ export class VoiceAssistantWebSocketServer {
     terminalName: string;
     reason: TerminalAttentionReason;
   }): Promise<void> {
+    const workspaceId = params.workspaceId;
     const clientEntries: Array<{
       ws: WebSocketLike;
       state: ClientPresenceState;
@@ -2691,7 +2699,7 @@ export class VoiceAssistantWebSocketServer {
           : !(await connection.session.subscribesToTerminalDirectory(
               {
                 cwd: params.cwd,
-                ...(params.workspaceId ? { workspaceId: params.workspaceId } : {}),
+                ...(workspaceId ? { workspaceId } : {}),
               },
               ws,
             ))
@@ -2709,7 +2717,8 @@ export class VoiceAssistantWebSocketServer {
     );
     const allStates = notificationEntries.map((e) => e.state);
     const nowMs = Date.now();
-    const workspaceId = params.workspaceId;
+    const workspace = workspaceId ? await this.workspaceRegistry.get(workspaceId) : null;
+    const workspaceNotificationsEnabled = workspace?.notifications !== "off";
 
     const plan = computeNotificationPlan({
       allStates,
@@ -2721,7 +2730,7 @@ export class VoiceAssistantWebSocketServer {
     const title = terminalAttentionTitle(params.reason);
     const body = params.terminalName;
 
-    if (plan.shouldPush) {
+    if (workspaceNotificationsEnabled && plan.shouldPush) {
       void this.pushNotificationSender
         .send({
           title,
@@ -2743,6 +2752,7 @@ export class VoiceAssistantWebSocketServer {
 
     for (const { ws } of clientEntries) {
       const shouldNotify =
+        workspaceNotificationsEnabled &&
         plan.inAppRecipientIndex !== null &&
         notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
       const message = wrapSessionMessage({

@@ -14,18 +14,18 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T1/S1 complete; S3a durable workspace policy implemented                                             |
-| Overall state                | S3 remains open; delivery enforcement, M1.2/S2, and G1 are not complete                              |
-| Immediate focus              | S3b agent and terminal delivery enforcement                                                          |
-| Product or release readiness | Workspace policy storage exists; notification suppression is not implemented or runtime-verified     |
-| Worktree state               | S3a source and focused tests accepted for scoped publication                                         |
+| Current phase                | T1/S1 complete; S3a policy storage and S3b agent/terminal enforcement implemented                    |
+| Overall state                | S3 remains open; S3c, M1.2/S2, and G1 are not complete                                               |
+| Immediate focus              | S3c completion subjects and bounded matcher                                                          |
+| Product or release readiness | Server suppression is verified in focused fixtures; user controls and phone delivery remain open     |
+| Worktree state               | S3b source and focused tests accepted for scoped publication                                         |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
-workspace policy storage and mutation as a prerequisite; it does not suppress
-notification delivery, and the server does not advertise the workspace policy
-capability before S3b. There is still no shipped collector or immutable completion
-subject. The accepted design does not establish that a provider never truncates
-its internal response. Later lifecycle tests and phone/desktop gates remain required.
+workspace policy storage and mutation; S3b now enforces that policy for agent and
+terminal attention delivery and advertises the capability. Regex filtering and
+the immutable completion subject remain unimplemented in S3c. The accepted design
+does not establish that a provider never truncates its internal response. Later
+lifecycle tests and phone/desktop gates remain required.
 
 ## Accomplishments with evidence
 
@@ -88,12 +88,11 @@ Observed RE2 sample timings are feasibility evidence, not a hard latency bound.
 - M1.2 and S2/G1 remain open until an isolated test host produces a user-observed
   positive push on the existing Android app over mobile data.
 - S3a workspace policy storage and mutation are implemented, verified, and
-  review-accepted. The server capability
-  remains unadvertised and delivery is unchanged until S3b is implemented and
-  accepted. The production MCP host also keeps workspace policy requests
-  disabled by default and rejects explicit create options before parsing or
-  creation side effects; capable test fixtures exercise the internal forwarding
-  path.
+  review-accepted. S3b enforces the stored policy for agent and terminal
+  attention delivery, preserving attention/source events with
+  `shouldNotify: false` while muted. The shared production readiness setting
+  enables both MCP policy support and the `workspaceNotifications` capability.
+  S3c filtering and its immutable completion subject remain open.
 - The original creation disconnect fixture fails on both this worktree and the
   untouched `4ea125b83` baseline at the same `prompts === 1` assertion (actual 7).
   The baseline run took 17.39 s in Vitest and 19.551 s wall time, so this is a
@@ -196,6 +195,25 @@ a prerequisite for T5 only.
   proof, and production deployment remain open.
 - Lead and navigator accepted the S3a snapshot. Final server build took 16.636 s;
   root typecheck, lint, and formatting took 17.354 s, 1.264 s, and 1.919 s.
+
+### 2026-10-08 01:21 UTC (2026-10-07 21:21 EDT)
+
+- Implemented S3b policy checks after asynchronous recipient/text lookups, using
+  the captured workspace ID for both lookup and event payload. Muted workspaces
+  suppress push and set `shouldNotify: false` without dropping legacy or modern
+  attention events. Missing records retain the enabled behavior.
+- Agent and terminal fixtures cover decision-time policy changes, distinct
+  workspace IDs sharing a directory, muted and enabled push behavior, and
+  modern/legacy delivery. The raw-wire creation and initial `server_info`
+  capability tests pass with support enabled.
+- Changed notification tests: 21 passed in 2.50 s. Targeted loopback tests:
+  2 passed in 6.60 s; the first sandboxed attempt was blocked by listener
+  permissions and was rerun outside the sandbox. Final server build took 15.381 s;
+  root typecheck 18.695 s and lint 14.474 s. After the routing snapshot follow-up,
+  server typecheck passed in 3.261 s; changed-file lint, formatting, and diff
+  checks pass.
+- Lead and navigator accepted S3b at 01:25 UTC (21:25 EDT). S3c filtering, user-facing controls, phone
+  positive control, G1, and production deployment remain open.
 
 ### 2026-10-08 UTC (2026-10-07 EDT)
 

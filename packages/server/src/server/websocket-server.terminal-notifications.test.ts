@@ -111,6 +111,9 @@ function workspaceRecord(overrides?: Partial<PersistedWorkspaceRecord>): Persist
 function createWorkspaceRegistry(records: PersistedWorkspaceRecord[]): WorkspaceRegistry {
   return createStub<WorkspaceRegistry>({
     list: vi.fn(async () => records),
+    get: vi.fn(
+      async (workspaceId) => records.find((record) => record.workspaceId === workspaceId) ?? null,
+    ),
   });
 }
 
@@ -193,17 +196,33 @@ function createOpenSocket() {
   };
 }
 
-function connectClient(server: VoiceAssistantWebSocketServer, subscribed = true) {
+function connectClient(
+  server: VoiceAssistantWebSocketServer,
+  subscribed = true,
+  options: {
+    modern?: boolean;
+    subscribe?: () => Promise<boolean>;
+    activity?: {
+      deviceType: "web";
+      focusedAgentId: string | null;
+      focusedTerminalId: string | null;
+      lastActivityAt: Date;
+      appVisible: boolean;
+    };
+  } = {},
+) {
   const ws = createOpenSocket();
   const delivery = new SessionDelivery(() => {});
-  delivery.attach(ws, false);
+  delivery.attach(ws, options.modern === true);
   asInternals<{ sessions: Map<unknown, unknown> }>(server).sessions.set(ws, {
     kind: "trusted",
     session: {
       delivery,
       wantsSourceNotification: () => true,
-      getClientActivity: vi.fn(() => null),
-      subscribesToTerminalDirectory: vi.fn(async () => subscribed),
+      getClientActivity: vi.fn(() => options.activity ?? null),
+      wantsSourceEvent: vi.fn(() => true),
+      publishToSource: vi.fn(),
+      subscribesToTerminalDirectory: vi.fn(options.subscribe ?? (async () => subscribed)),
     },
     clientId: "client-test",
     appVersion: null,
@@ -244,6 +263,22 @@ function readTerminalAttentionMessage(ws: ReturnType<typeof createOpenSocket>) {
   const [payload] = terminalMessages;
   if (!payload) throw new Error("Expected terminal attention message");
   return payload;
+}
+
+function readModernTerminalAttentionMessage(
+  server: VoiceAssistantWebSocketServer,
+  ws: object,
+  index = 0,
+): TerminalAttentionPayload {
+  const connection = asInternals<{ sessions: Map<unknown, unknown> }>(server).sessions.get(ws) as
+    | { session: { publishToSource: ReturnType<typeof vi.fn> } }
+    | undefined;
+  const message = connection?.session.publishToSource.mock.calls[index]?.[1] as
+    | { type: string; payload: TerminalAttentionPayload }
+    | undefined;
+  expect(message?.type).toBe("terminal_attention_required");
+  if (!message) throw new Error("Expected modern terminal attention message");
+  return message.payload;
 }
 
 function expectNoTerminalAttentionMessage(ws: ReturnType<typeof createOpenSocket>) {
@@ -390,6 +425,98 @@ describe("VoiceAssistantWebSocketServer terminal attention notifications", () =>
     await flushAsync();
 
     expect(readTerminalAttentionMessage(ws).workspaceId).toBe("ws-1");
+  });
+
+  it("reads policy by the event workspace ID after recipient lookup, independent of cwd", async () => {
+    const { manager, emit } = createTerminalManager();
+    const records = new Map([
+      ["ws-off", workspaceRecord({ workspaceId: "ws-off", notifications: "on" })],
+      ["ws-on", workspaceRecord({ workspaceId: "ws-on", notifications: "on" })],
+    ]);
+    const workspaceRegistry = createStub<WorkspaceRegistry>({
+      get: vi.fn(async (workspaceId) => records.get(workspaceId) ?? null),
+    });
+    const { server, pushNotifications } = createServer(manager, workspaceRegistry);
+    let resolveSubscription: (subscribed: boolean) => void = () => undefined;
+    const subscription = new Promise<boolean>((resolve) => {
+      resolveSubscription = resolve;
+    });
+    const legacyWs = connectClient(server, true, {
+      subscribe: () => subscription,
+      activity: {
+        deviceType: "web",
+        focusedAgentId: null,
+        focusedTerminalId: null,
+        lastActivityAt: new Date(),
+        appVisible: false,
+      },
+    });
+    const modernWs = connectClient(server, true, { modern: true });
+
+    emit(
+      transition({
+        previousState: "working",
+        previousChangedAt: 1000,
+        state: "idle",
+        changedAt: 11001,
+        workspaceId: "ws-off",
+      }),
+    );
+    const legacyConnection = asInternals<{ sessions: Map<unknown, unknown> }>(server).sessions.get(
+      legacyWs,
+    ) as { session: { subscribesToTerminalDirectory: ReturnType<typeof vi.fn> } };
+    await vi.waitFor(() =>
+      expect(legacyConnection.session.subscribesToTerminalDirectory).toHaveBeenCalled(),
+    );
+    records.set("ws-off", { ...records.get("ws-off")!, notifications: "off" });
+    resolveSubscription(true);
+    await flushAsync();
+
+    expect(sentTerminalAttentionMessages(legacyWs)[0]?.shouldNotify).toBe(false);
+    expect(sentTerminalAttentionMessages(legacyWs)[0]?.workspaceId).toBe("ws-off");
+    expect(readModernTerminalAttentionMessage(server, modernWs, 0).shouldNotify).toBe(false);
+    expect(readModernTerminalAttentionMessage(server, modernWs, 0).workspaceId).toBe("ws-off");
+    expect(pushNotifications.sent).toEqual([]);
+
+    emit(
+      transition({
+        previousState: "working",
+        previousChangedAt: 1000,
+        state: "idle",
+        changedAt: 11001,
+        workspaceId: "ws-on",
+      }),
+    );
+    await flushAsync();
+
+    expect(sentTerminalAttentionMessages(legacyWs)[1]?.shouldNotify).toBe(true);
+    expect(sentTerminalAttentionMessages(legacyWs)[1]?.workspaceId).toBe("ws-on");
+    expect(readModernTerminalAttentionMessage(server, modernWs, 1).shouldNotify).toBe(false);
+    expect(readModernTerminalAttentionMessage(server, modernWs, 1).workspaceId).toBe("ws-on");
+    expect(pushNotifications.sent).toEqual([]);
+    expect(workspaceRegistry.get).toHaveBeenNthCalledWith(1, "ws-off");
+    expect(workspaceRegistry.get).toHaveBeenNthCalledWith(2, "ws-on");
+  });
+
+  it("does not send a muted push when no client is present", async () => {
+    const { manager, emit } = createTerminalManager();
+    const workspace = workspaceRecord({ workspaceId: "ws-muted", notifications: "off" });
+    const workspaceRegistry = createWorkspaceRegistry([workspace]);
+    const { pushNotifications } = createServer(manager, workspaceRegistry);
+
+    emit(
+      transition({
+        previousState: "working",
+        previousChangedAt: 1000,
+        state: "idle",
+        changedAt: 11001,
+        workspaceId: "ws-muted",
+      }),
+    );
+    await flushAsync();
+
+    expect(workspaceRegistry.get).toHaveBeenCalledWith("ws-muted");
+    expect(pushNotifications.sent).toEqual([]);
   });
 
   it("does not broadcast on working -> working (no transition to idle)", async () => {
