@@ -1,13 +1,11 @@
 # Configurable notifications
 
-Tier 1 confirmed by the user on 2026-10-04 after reviewer acceptance. The
-confirmation authorizes deriving the roadmap, not implementation, app launches,
-or deployment. The [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) and
-[execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) are also confirmed.
-All three tiers are planning artifacts; execution approval remains separate.
-The user confirmed the reviewer-accepted daemon-wide regex extension on 2026-10-04.
-The corresponding roadmap and script revisions are also confirmed. Planning is
-complete; execution requires a separately approved phase proposal.
+The user has authorized implementation of this confirmed plan in the explicitly
+requested sibling worktree. T1/S1 is complete: the workspace contract, M1.3
+feasibility design, and fixed check baseline are recorded below and in the
+[shared status](CONFIGURABLE_NOTIFICATIONS_STATUS.md). Feature implementation is
+still ahead. Desktop, phone, relay, and daemon launches remain separate named
+gates; production state and deployment are excluded.
 
 ## Summary
 
@@ -16,7 +14,9 @@ complete; execution requires a separately approved phase proposal.
   change it at runtime, and read it back through automation interfaces.
 - Preserve attention indicators, pending permissions, and agent-to-agent events.
   Previously agreed muting covers banners and push, including permission prompts.
-- Build on current `main` in a personal fork. Do not submit this upstream.
+- Build on branch `feat/configurable-notifications` from the clean baseline
+  `4ea125b83` in the requested sibling worktree. Keep changes in the personal fork;
+  do not submit upstream.
 - Cover agent and terminal attention with one shared policy across devices.
 - Add an empty-by-default daemon-wide regex denylist for completed assistant
   replies. Matching replies suppress banners and push across all workspaces while
@@ -43,14 +43,13 @@ as “No news.” that the user does not want to trigger notifications. Use shar
 daemon-wide rules, limited to completed assistant replies, with no rules enabled
 by default. This extends notification filtering without restoring per-agent policy.
 
-Constraints carried forward from the conversation:
+Execution boundaries carried forward from the conversation:
 
-- Planning only until implementation is requested. No production daemon restart
-  without explicit approval; protect existing overseer runs.
-- The prior build authorization prohibited launching built apps, bundled CLIs, or
-  daemons. Those builds passed; no runtime probe is authorized by this plan edit.
-- Keep work in this checkout, preserve unrelated changes, and keep raw logs and
-  generated bundles out of commits. No upstream issue or PR.
+- T1/S1 was documentation and evidence only. Later work follows the approved
+  sequence; each live launch still needs its named gate. No production daemon
+  restart, app replacement, deployment, or overseer change is authorized.
+- Keep work in the requested sibling worktree, preserve unrelated changes, and
+  keep raw logs and generated bundles out of commits. No upstream issue or PR.
 - Preserve protocol compatibility. Optional wire fields, explicit capability
   gating for a new client feature, pure schemas, and dotted new RPC names follow
   [protocol compatibility](upstream/protocol-compatibility.md) and
@@ -79,10 +78,10 @@ evidence. The superseded proposal remains in Git history at `2f5619217`.
 
 ### 2.2 Repository and runtime evidence
 
-Initial grounding inspected local `main` at `4869214bc`. Planning was subsequently
-published on `docs/configurable-notifications`: `origin` now points to
-`iExalt/paseo`, and `upstream` to `getpaseo/paseo`. The Mise configuration replacement
-and Android tool declarations remain unrelated uncommitted work; preserve them.
+The implementation baseline is clean `feat/configurable-notifications` at
+`4ea125b83` in the requested sibling worktree. The earlier planning checkout at
+`4869214bc` and its uncommitted Mise/Android tool declarations are historical
+receipts from a different tree; they are not part of this baseline.
 
 Historical build receipts from `4869214bc`, with local documentation and Mise
 configuration changes, record successful unsigned macOS packages without a
@@ -127,7 +126,7 @@ what must settle it; Verified refers to inspected evidence rather than approval.
 | --- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | D1  | UI and automation parity      | **Decided (the user, 2026-10-04):** users can change workspace settings; CLI and MCP must support creation and runtime control. Right-click placement is a suggestion. |
 | D2  | Mute semantics                | **Decided (prior conversation):** suppress banners and push, including permission/question alerts, while preserving attention/pending state.                           |
-| D3  | Baseline and publication      | **Decided (prior conversation):** current `main`, personal fork only, no upstream submission. Pin the implementation revision when work starts.                        |
+| D3  | Baseline and publication      | **Decided (current execution):** requested sibling worktree, branch `feat/configurable-notifications` from `4ea125b83`, personal fork only, no upstream submission.    |
 | D4  | Workspace versus agent policy | **Decided (the user, 2026-10-04):** workspace-only settings; drop the unimplemented per-agent override proposal.                                                       |
 | D5  | Event sources                 | **Decided (the user, 2026-10-04):** agent and terminal attention notifications.                                                                                        |
 | D6  | Device scope                  | **Decided (the user, 2026-10-04):** one daemon-owned workspace policy shared across devices.                                                                           |
@@ -156,10 +155,10 @@ Additional decisions:
 | D13 | Regex event coverage           | **Decided (the user, 2026-10-04):** completed assistant replies only; suppress both notification delivery paths, retaining messages and attention.                    |
 | D14 | Regex defaults                 | **Decided (the user, 2026-10-04):** empty by default; configure the optional case-insensitive whole-reply “No news.” rule where wanted.                               |
 
-The original workspace decisions remain confirmed. D12–D14 settle the new scope;
-§4.3's control surfaces and matching contract were accepted with revised Tier 1.
-Completion-text provenance and regex-engine feasibility remain an
-explicit early implementation investigation, not a claimed result.
+The original workspace decisions remain confirmed. D12–D14 settle the new scope.
+T1/S1 has now closed the M1.3 feasibility design and measured the fixed check
+baseline. The filter collector is not implemented; S3 must prove its lifecycle
+handling with regression tests before the enforcement milestone can pass.
 
 ## 4. Design constraints
 
@@ -282,28 +281,53 @@ matching. The optional example is source `^\s*No news\.\s*$` with flag `i`.
 It must not suppress `No news. A decision is needed.`. No built-in Claude rule
 or provider-specific behavior is introduced.
 
-**Verified hazard:** `websocket-server.ts` currently awaits
-`getLastAssistantMessage(agentId)` before building the notification preview.
-The accessor in `agent-manager.ts` searches live/durable history without a turn
-constraint; the preview builder in `packages/protocol/src/agent-attention-notification.ts`
-strips formatting and truncates text. Reusing either result blindly can match an
-older reply, a later turn, or a prefix whose omitted suffix matters. Timeline
-storage also bounds content, so “before preview truncation” does not imply an
-unlimited full transcript.
+**Source-grounded hazard:** [AgentManager.handleStreamEvent](../packages/server/src/server/agent/agent-manager.ts#L4174)
+assigns managed turn identity before the [stream coalescer](../packages/server/src/server/agent/agent-stream-coalescer.ts#L44)
+can merge chunks. A matching terminal flushes buffered items, but
+[finalizeForegroundTurn](../packages/server/src/server/agent/agent-manager.ts#L2606)
+clears the active turn before `emitState` triggers the running-to-idle attention
+callback. That callback carries agent ID, provider, and reason only. The WebSocket
+path then asynchronously calls [getLastAssistantMessage](../packages/server/src/server/agent/agent-manager.ts#L3208),
+which selects live/durable text without a completion identity. The notification
+preview in [agent-attention-notification.ts](../packages/protocol/src/agent-attention-notification.ts)
+normalizes and truncates its display text. Neither path is a safe rule subject.
 
-**Open, settled by M1.3:** establish a completion-bound text source and distinguish
-complete retained text from missing, ambiguous, or truncated content. If the filter
-cannot establish that subject, preserve existing notification eligibility. Do not
-suppress based on an old message or a truncated prefix. Snapshot the subject with
-its completion identity so asynchronous delivery cannot switch to a later turn.
+**M1.3 feasibility design, verified; collector not implemented:** initialize a
+bounded collector at the manager-owned foreground turn boundary. After event
+content limiting and turn-identity assignment, observe live assistant-message
+chunks before coalescing. Keep only the latest assistant segment for that turn;
+join compatible adjacent chunks, reset on an explicit message-ID change, and do
+not join across tool or reasoning items. Those events break adjacency without
+erasing the latest segment; a later assistant chunk begins the next segment. Seal
+an immutable `{ turnId, text,
+completeness }` snapshot only for the matching successful `turn_completed`, before
+foreground finalization clears the active ID. Pass that snapshot to the attention
+and delivery decision. Never query history or fall back to the latest message.
+Missing turn start, history replay, unknown identity, ambiguous segment boundaries,
+declared or unestablished truncation, cancellation/failure, stale terminal events,
+or collector overflow is ineligible for suppression. Overflow remains incomplete
+for that segment even if later chunks fit; only a
+genuinely new assistant segment resets it. The collector defines
+completeness as all normalized live chunks observed for the matching identity from
+turn start, within the subject cap; it does not claim a provider never internally
+truncates an answer. No generalized provider matrix is required absent a concrete
+counterexample. S3 must add focused lifecycle/counterexample tests before enforcement.
 
-Use a regex engine with bounded execution behavior, preferably a linear-time
-RE2-compatible subset. M1.3 selects the engine, supported flags, and finite rule
-count/pattern/subject limits before feature implementation. Reject unsupported
-syntax, invalid flags, and oversized configurations atomically, keeping prior
-rules. Do not run unrestricted user-supplied JavaScript regexes on the daemon
-event loop. Excessive or unavailable subject text must preserve notification
-eligibility, with a diagnostic reason that does not log message contents.
+Use `re2-wasm@1.0.2` (Google RE2) with Unicode mode fixed by the engine; accept
+only `i`, `m`, and `u` flags, treating `u` as implicit when omitted and rejecting
+other, duplicate, or malformed flags. Matching uses search semantics; anchors
+express whole-reply matching. Limit a replacement to 8 rules, 256 UTF-16 code
+units per pattern, and 16,384 UTF-16 code units per subject. Compile and validate
+the entire replacement before persistence. Invalid configuration fails the save
+and retains the previous rules; a missing, ambiguous, or overflowed subject fails
+open for that delivery. Temporary adversarial probes accepted the 8/256/16,384
+sample in 2.35 ms compile and 18.27 ms match; these are observed sample timings,
+not hard latency bounds.
+The tested syntax rejects lookaround, backreferences, and malformed expressions;
+anchored case/whitespace, significant suffix, astral-character, and multiline
+cases passed. Package load took 44.5 ms separately. An initial 16-rule,
+1,024-unit pattern, 65,536-unit subject candidate took 650–661 ms to match and
+was rejected as too costly; the smaller accepted limits retain bounded input.
 
 | Surface            | Proposed behavior                                                                                                                                                                                                                                                           |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -311,6 +335,21 @@ eligibility, with a diagnostic reason that does not log message contents.
 | CLI                | Host-targeted get/set/clear commands, with structured JSON input/readback so regex escaping survives shell transport. Names follow existing configuration commands.                                                                                                         |
 | MCP                | Host-settings read and mutation tools with the same structured rule list, errors, and authoritative readback; workspace creation must not mutate global settings.                                                                                                           |
 | Wire and authority | Optional capability for reply filtering, distinct from workspace mute, pure optional wire fields and dotted RPCs. Reuse host-configuration authority; workspace-management authority alone must not grant global mutation. M1.3 identifies the existing permission mapping. |
+
+The existing persistence seam is the strict
+[`PersistedConfigSchema`](../packages/server/src/server/persisted-config.ts#L227)
+and [`DaemonConfigStore`](../packages/server/src/server/daemon-config-store.ts#L311),
+which validate and save the private daemon config atomically and support live
+apply/rollback. Exact
+field names and capability keys remain unselected until implementation. Host
+reads require `daemon.read`; host mutations require `daemon.manage`. Use an
+explicit host-authorization context: workspace-only permissions and a shared
+agent token do not grant global mutation. [`resolveSessionAdmission`](../packages/server/src/server/session-admission-auth.ts#L11) currently
+grants owner permissions when password auth is disabled, so it must not be used
+as an implicit host-level authorization shortcut. Check the shared agent token
+first in both password modes. Host operations default to no authority; grant
+host permissions only through a verified local-owner credential or configured
+password. Existing workspace tools keep their current authority.
 
 Successful updates persist atomically, survive restart, apply without restart, and
 publish current state to connected settings clients. Invalid or failed saves leave
@@ -338,14 +377,15 @@ must report unsupported hosts before sending a mutation.
 
 ### M1 — Contract and safe validation route
 
-- [ ] **M1.1 Policy contract:** binary workspace policy, stable defaults, no replay,
+- [x] **M1.1 Policy contract:** binary workspace policy, stable defaults, no replay,
       source coverage, identity, and feature negotiation agreed.
 - [ ] **M1.2 Validation feasibility:** identify the isolated host/client setup and
       phone pairing route without replacing or stopping production.
-- [ ] **M1.3 Filter contract:** prove completion-text provenance and completeness;
-      select regex engine/limits, host persistence/authority, capability, and
-      UI/CLI/MCP read/write contract. Resolve §4.3's open investigation before
-      implementing filtering; do not substitute the current latest-message getter.
+- [x] **M1.3 Filter feasibility and contract:** source trace and bounded-engine
+      probe support the accepted completion-bound design in §4.3. The collector,
+      immutable subject, persistence field, and capability are not implemented or
+      selected. S3 must add lifecycle and counterexample tests before enforcement;
+      do not substitute the current latest-message getter.
 - **G1:** review the policy truth table and create/update/readback contract and
   establish a viable Android validation route. A blocker leaves G1 open. During implementation,
   allow an initial 30-minute setup probe before reassessing missing prerequisites.
@@ -476,19 +516,35 @@ excludes push support ([Android docs](upstream/android.md)) and cannot establish
 If the installed variant or relay connection cannot support a positive control,
 report the blocker and revisit the validation route without replacing the app.
 
-No accepted numeric routine-test budget was found during grounding. The roadmap
-must schedule an early measurement on the pinned baseline with fixed machine,
-cache, and concurrency conditions, then set a reviewed budget. Previous build
-durations are not a test-suite baseline. Maintain latency in each implementation
-step without moving required evidence into optional checks. Never run the full
-local suite; follow [testing](upstream/testing.md) and the repository's targeted-test rule.
+The fixed pre-feature baseline was measured on clean `4ea125b83` in the sibling
+worktree (macOS arm64, Node 26.11, copied dependencies/output, one Vitest worker,
+no overlapping builds). Previous build durations are not a test-suite baseline.
+
+| Check                   | Command and result                                                                                                                                                                                                                                                                                                                                                                                        | Investigation threshold |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| Focused server baseline | From `packages/server`: `time mise exec -- npx vitest run src/server/agent-attention-policy.test.ts src/server/workspace-registry.test.ts src/server/session/workspace-provisioning/workspace-provisioning-service.test.ts src/server/websocket-server.notifications.test.ts src/server/websocket-server.terminal-notifications.test.ts --bail=1 --maxWorkers=1`; 92 passed, Vitest 7.49 s, wall 10.183 s | >15.183 s               |
+| Root typecheck          | `time mise exec -- npm run typecheck`; wall 27.508 s                                                                                                                                                                                                                                                                                                                                                      | >33.010 s               |
+| Root lint               | `time mise exec -- npm run lint`; wall 13.768 s                                                                                                                                                                                                                                                                                                                                                           | >18.768 s               |
+
+The accepted practical budgets are at most 15 s for focused tests, 33 s for
+typecheck, and 19 s for lint. A budget breach triggers investigation. Separately,
+investigate growth that is both more than 20% and more than 5 s above the fixed
+baseline, as well as material cumulative growth. Compare the same machine, cache,
+and concurrency conditions. These thresholds do not permit regressions below them.
+Do not increase concurrency or remove required checks to hide growth. Maintain
+latency in each implementation step without moving required evidence into optional
+checks.
+Never run the full local suite; follow [testing](upstream/testing.md) and the
+repository's targeted-test rule.
 
 ## 7. Review and next action
 
 **Confirmed revision:** D12–D14 record the user's regex decisions. §4.3, W6,
 M1.3/M2.4/M3.3 and the extended device gate passed continuous review with no material
 findings. The user confirmed revised Tier 1 on 2026-10-04 and requested the roadmap.
-The prior acceptance below applies to the workspace-only snapshot, not this delta.
+The reviewer has accepted the current M1.3 feasibility design and fixed baseline.
+This documentation reconciliation records that acceptance; it does not claim
+implementation or runtime delivery proof.
 
 - [x] Ground notification text and ask regex scope/default decisions.
 - [x] Record daemon-wide, finished-only, empty-default answers.
@@ -514,7 +570,11 @@ review nor confirmation is implementation or runtime proof.
 - [x] Confirm the roadmap before deriving the execution script.
 - [x] Confirm the execution script for publication, planning only.
 
-Publish confirmed planning tiers to the personal fork, `iExalt/paseo`, never
-upstream. Unconfirmed roadmap/script drafts remain local until their tier is
-reviewed and confirmed. Keep feature implementation and production deployment
-outside planning publication.
+- 2026-10-08 UTC (2026-10-07 EDT): recorded T1/S1 completion, source-grounded
+  M1.3 feasibility, fixed check baselines and accepted budgets. Implementation,
+  immutable completion subjects, and G1 remain open.
+
+The earlier plan, roadmap, and script were published to the personal fork,
+`iExalt/paseo`, never upstream. This T1 reconciliation records the reviewed
+contract and baseline; publication is scoped to these four documentation files
+on the personal-fork feature branch. Production deployment remains outside this campaign.
