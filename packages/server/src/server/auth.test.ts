@@ -10,6 +10,7 @@ import {
   hashDaemonPassword,
   isAgentMcpRequestAuthorized,
   isBearerTokenValidAsync,
+  resolveAgentMcpRequestAdmission,
   shouldBypassBearerAuth,
 } from "./auth.js";
 import { resolveSessionAdmission } from "./session-admission-auth.js";
@@ -78,6 +79,74 @@ describe("daemon bearer validator", () => {
 
 describe("agent MCP request authorizer", () => {
   const CAPABILITY_TOKEN = "cap-token-abc123";
+
+  test("keeps passwordless anonymous access but grants it no host permissions", async () => {
+    await expect(
+      resolveAgentMcpRequestAdmission({
+        password: undefined,
+        capabilityToken: CAPABILITY_TOKEN,
+        localCredential: "local-owner-token",
+        authorizationHeader: "Bearer wrong-token",
+      }),
+    ).resolves.toEqual({ kind: "anonymous", permissions: [] });
+  });
+
+  test("classifies the injected token first and never grants it owner permissions", async () => {
+    const noPassword = await resolveAgentMcpRequestAdmission({
+      password: undefined,
+      capabilityToken: CAPABILITY_TOKEN,
+      localCredential: CAPABILITY_TOKEN,
+      authorizationHeader: `Bearer ${CAPABILITY_TOKEN}`,
+    });
+    const withPassword = await resolveAgentMcpRequestAdmission({
+      password: CORRECT_PASSWORD_HASH,
+      capabilityToken: CAPABILITY_TOKEN,
+      localCredential: CAPABILITY_TOKEN,
+      authorizationHeader: `Bearer ${CAPABILITY_TOKEN}`,
+    });
+
+    expect(noPassword).toEqual({ kind: "agent-capability", permissions: [] });
+    expect(withPassword).toEqual({ kind: "agent-capability", permissions: [] });
+  });
+
+  test("grants owner permissions only for a valid local credential or daemon password", async () => {
+    const localOwnerWithoutPassword = await resolveAgentMcpRequestAdmission({
+      password: undefined,
+      capabilityToken: CAPABILITY_TOKEN,
+      localCredential: "local-owner-token",
+      authorizationHeader: "Bearer local-owner-token",
+    });
+    const localOwner = await resolveAgentMcpRequestAdmission({
+      password: CORRECT_PASSWORD_HASH,
+      capabilityToken: CAPABILITY_TOKEN,
+      localCredential: "local-owner-token",
+      authorizationHeader: "Bearer local-owner-token",
+    });
+    const passwordOwner = await resolveAgentMcpRequestAdmission({
+      password: CORRECT_PASSWORD_HASH,
+      capabilityToken: CAPABILITY_TOKEN,
+      localCredential: "local-owner-token",
+      authorizationHeader: "Bearer correct-password",
+    });
+
+    expect(localOwnerWithoutPassword).toMatchObject({ kind: "local-owner" });
+    expect(localOwnerWithoutPassword.permissions).toContain("daemon.manage");
+    expect(localOwner).toMatchObject({ kind: "local-owner" });
+    expect(localOwner.permissions).toContain("daemon.manage");
+    expect(passwordOwner).toMatchObject({ kind: "password-owner" });
+    expect(passwordOwner.permissions).toContain("daemon.read");
+  });
+
+  test("rejects invalid credentials when a daemon password is configured", async () => {
+    await expect(
+      resolveAgentMcpRequestAdmission({
+        password: CORRECT_PASSWORD_HASH,
+        capabilityToken: CAPABILITY_TOKEN,
+        localCredential: "local-owner-token",
+        authorizationHeader: "Bearer wrong-token",
+      }),
+    ).resolves.toEqual({ kind: "rejected", permissions: [] });
+  });
 
   test("allows any request when no daemon password is configured", async () => {
     expect(
