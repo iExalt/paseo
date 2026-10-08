@@ -1019,6 +1019,8 @@ function WorkspaceHeaderTitleBar({
       <View style={styles.compactHeaderMenuCluster}>
         {isMobile ? (
           <WorkspaceHeaderMenuMobile
+            serverId={normalizedServerId}
+            workspaceId={normalizedWorkspaceId}
             normalizedServerId={normalizedServerId}
             currentBranchName={currentBranchName}
             showWorkspaceSetup={showWorkspaceSetup}
@@ -1037,6 +1039,8 @@ function WorkspaceHeaderTitleBar({
           />
         ) : (
           <WorkspaceHeaderMenuDesktop
+            serverId={normalizedServerId}
+            workspaceId={normalizedWorkspaceId}
             currentBranchName={currentBranchName}
             showWorkspaceSetup={showWorkspaceSetup}
             importAgentDisabled={importAgentDisabled}

@@ -1291,6 +1291,10 @@ export const ar: TranslationResources = {
         hideFromSidebar: "إخفاء من الشريط الجانبي",
         archiving: "أرشفة...",
         hiding: "إخفاء...",
+        muteNotifications: "كتم الإشعارات",
+        unmuteNotifications: "إلغاء كتم الإشعارات",
+        updatingNotifications: "جارٍ تحديث الإشعارات...",
+        updateHostForNotifications: "حدّث هذا المضيف لإدارة الإشعارات.",
       },
       confirmations: {
         hideTitle: "إخفاء مساحة العمل؟",

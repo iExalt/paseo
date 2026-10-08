@@ -1305,6 +1305,10 @@ export const ja: TranslationResources = {
         hideFromSidebar: "サイドバーから非表示",
         archiving: "アーカイブ中...",
         hiding: "非表示にしています...",
+        muteNotifications: "通知をミュート",
+        unmuteNotifications: "通知のミュートを解除",
+        updatingNotifications: "通知を更新中...",
+        updateHostForNotifications: "通知を管理するにはホストを更新してください。",
       },
       confirmations: {
         hideTitle: "ワークスペースを非表示にしますか？",

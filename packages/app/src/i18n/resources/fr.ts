@@ -1319,6 +1319,10 @@ export const fr: TranslationResources = {
         hideFromSidebar: "Masquer de la barre latérale",
         archiving: "Archivage…",
         hiding: "Masquage…",
+        muteNotifications: "Désactiver les notifications",
+        unmuteNotifications: "Activer les notifications",
+        updatingNotifications: "Mise à jour des notifications…",
+        updateHostForNotifications: "Mettez à jour cet hôte pour gérer les notifications.",
       },
       confirmations: {
         hideTitle: "Masquer l’espace de travail ?",

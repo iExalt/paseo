@@ -1299,6 +1299,10 @@ export const en = {
         hideFromSidebar: "Hide from sidebar",
         archiving: "Archiving...",
         hiding: "Hiding...",
+        muteNotifications: "Mute notifications",
+        unmuteNotifications: "Unmute notifications",
+        updatingNotifications: "Updating notifications...",
+        updateHostForNotifications: "Update this host to manage notifications.",
       },
       confirmations: {
         hideTitle: "Hide workspace?",

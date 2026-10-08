@@ -32,6 +32,38 @@ function workspace(id: string, projectId = "project"): WorkspaceDescriptorPayloa
   };
 }
 
+it("applies live workspace notification updates without reconnecting", () => {
+  const serverId = "workspace-notification-replica";
+  const store = useSessionStore.getState();
+  store.initializeSession(serverId, null as unknown as DaemonClient);
+  const replica = new WorkspaceDirectoryReplica(serverId);
+  const initial = workspace("workspace");
+  replica.commitSnapshot(
+    {
+      workspaces: new Map([[initial.id, normalizeWorkspaceDescriptor(initial)]]),
+      projects: new Map(),
+    },
+    [],
+  );
+
+  replica.applyDelta({
+    kind: "upsert",
+    workspace: { ...initial, notifications: "off" },
+  });
+  expect(
+    useSessionStore.getState().sessions[serverId]?.workspaces.get(initial.id)?.notifications,
+  ).toBe("off");
+
+  replica.applyDelta({
+    kind: "upsert",
+    workspace: { ...initial, notifications: "on" },
+  });
+  expect(
+    useSessionStore.getState().sessions[serverId]?.workspaces.get(initial.id)?.notifications,
+  ).toBe("on");
+  store.clearSession(serverId);
+});
+
 it("commits workspace and project-parent state with filtered removals", () => {
   const serverId = "workspace-replica";
   const store = useSessionStore.getState();

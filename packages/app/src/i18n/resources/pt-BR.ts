@@ -1317,6 +1317,10 @@ export const ptBR: TranslationResources = {
         hideFromSidebar: "Ocultar da barra lateral",
         archiving: "Arquivando...",
         hiding: "Ocultando...",
+        muteNotifications: "Silenciar notificações",
+        unmuteNotifications: "Ativar notificações",
+        updatingNotifications: "Atualizando notificações...",
+        updateHostForNotifications: "Atualize este host para gerenciar as notificações.",
       },
       confirmations: {
         hideTitle: "Ocultar workspace?",
