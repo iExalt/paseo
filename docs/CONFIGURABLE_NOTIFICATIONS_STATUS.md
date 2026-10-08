@@ -14,17 +14,24 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T1/S1 and S3a/b accepted; S3c subject provenance and bounded matcher implemented                     |
-| Overall state                | S3 remains open; S3d host-rule integration, M1.2/S2, and G1 are not complete                         |
-| Immediate focus              | S3d atomic host rules and delivery integration                                                       |
-| Product or release readiness | Server suppression is verified in focused fixtures; user controls and phone delivery remain open     |
-| Worktree state               | S3c source and focused tests accepted for scoped publication                                         |
+| Current phase                | T1/S1 and S3 accepted; S4a workspace CLI/MCP parity active                                           |
+| Overall state                | M2.1/M2.2 complete; M2.4/G2, CLI/MCP parity, M1.2/S2, and G1 remain open                             |
+| Immediate focus              | Implement workspace CLI/MCP create, update, and effective-policy readback                            |
+| Product or release readiness | Focused server suppression is verified; CLI/MCP controls and phone delivery remain open              |
+| Worktree state               | S3d source and focused checks accepted for scoped publication                                        |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
 terminal attention delivery and advertises the capability. S3c now collects a
-turn-scoped completion subject and provides a bounded RE2 matcher, but does not
-persist or apply host rules to notification delivery. The accepted design
+turn-scoped completion subject and provides a bounded RE2 matcher. S3d adds an
+empty-by-default daemon-home `replyRules` list, validates and compiles the whole
+candidate before persistence, and swaps the runtime matcher with the persisted
+config transaction. Only opted-in current clients receive rules in the existing
+authorized config-change event. Finished notifications consult the current
+matcher after asynchronous lookups and use only the explicit immutable
+completion subject; workspace mute takes precedence and other attention reasons
+are unchanged. CLI/MCP adapters and user-facing controls are not included. The
+accepted design
 does not establish that a provider never truncates its internal response. Later
 lifecycle tests and phone/desktop gates remain required.
 
@@ -51,12 +58,11 @@ Evidence state: verified.
   unsupported, duplicate, or malformed flags atomically. Invalid saves retain
   prior rules; an incomplete subject fails open. Matching performs no text
   normalization.
-- The global-rule persistence seam remains strict `PersistedConfigSchema` plus
-  `DaemonConfigStore`, with validated private-config persistence and live
-  apply/rollback. S3a separately adds the durable workspace field
-  `notifications: "on" | "off"`; the optional
-  `workspaceNotifications` capability remains absent from the real server until
-  delivery suppression is implemented.
+- Global `replyRules` use strict `PersistedConfigSchema` plus
+  `DaemonConfigStore`, with whole-list RE2 validation before private-config
+  persistence and transactional runtime matcher replacement. S3a separately
+  adds the durable workspace field `notifications: "on" | "off"`; the real
+  server advertises `workspaceNotifications` only after S3b delivery enforcement.
 - Host reads require `daemon.read`; mutations require `daemon.manage`. Use an
   explicit host authorization context. Workspace-only permissions and the shared
   agent token do not grant global mutation. The current no-password session
@@ -91,16 +97,19 @@ Observed RE2 sample timings are feasibility evidence, not a hard latency bound.
 - S3a workspace policy storage and mutation are implemented, verified, and
   review-accepted. S3b enforces the stored policy for agent and terminal
   attention delivery, preserving attention/source events with
-  `shouldNotify: false` while muted. The shared production readiness setting
-  enables both MCP policy support and the `workspaceNotifications` capability.
-  S3c filtering and its immutable completion subject remain open.
+  `shouldNotify: false` while muted. S3c implements the collector and immutable
+  completion subject. S3d implements bounded host-rule persistence and finished
+  notification filtering, with focused tests and review acceptance. CLI/MCP
+  adapters and end-user workspace controls remain open.
 - The original creation disconnect fixture fails on both this worktree and the
   untouched `4ea125b83` baseline at the same `prompts === 1` assertion (actual 7).
   The baseline run took 17.39 s in Vitest and 19.551 s wall time, so this is a
   reproduced baseline limitation rather than an S3a regression.
 - S3c implements the collector and immutable callback subject, with focused
-  foreground/autonomous lifecycle tests. The global filter, host-rule
-  persistence, CLI controls, and end-user workspace controls remain open.
+  foreground/autonomous lifecycle tests. S3d implements the bounded host-rule
+  persistence and finished-notification filter, with focused storage, RPC,
+  authorization, config-publication, and notification tests and review acceptance.
+  CLI/MCP adapters and end-user workspace controls remain open.
 - No desktop, phone, relay, daemon, or provider was launched for T1. Production
   state and deployment remain excluded.
 - T2 is required before T5, but not before automated T3 or T4.
@@ -131,8 +140,8 @@ implied.
 
 Workflow status: in progress.
 
-Evidence state: S3a implementation and focused verification review-accepted;
-delivery enforcement remains open.
+Evidence state: S3 implementation and focused verification review-accepted;
+M2.1/M2.2 complete. M2.4/G2 remain open until S4 automation parity is accepted.
 
 Decision owner: approved plan.
 
@@ -148,19 +157,17 @@ subjects are immutable, matching-turn, complete retained live segments; host
 authority and invalid-save behavior match the contract; required automation
 operations have parity.
 
-Evidence: S3a protocol, registry, provisioning, runtime mutation, and MCP creation
-paths are implemented and review-accepted. Focused gates pass, with the
-creation disconnect baseline limitation above. No delivery
-suppression is claimed.
+Evidence: S3 protocol, registry, provisioning, runtime mutation, delivery gating,
+completion subjects, and bounded host-rule persistence/filtering are implemented
+and review-accepted. Focused gates pass, with the creation disconnect baseline
+limitation above. CLI/MCP adapter parity remains open.
 
 ## Recommended next sequence
 
-1. T3/S3: implement durable workspace policy, delivery enforcement, and the
-   bounded daemon-wide filter with focused lifecycle tests.
-2. T3/S4: implement and verify CLI/MCP parity for workspace and host settings.
-3. T4: implement user controls, desktop proof, and feature builds.
-4. T2: arrange and run the isolated phone-connectivity positive control.
-5. T5: verify the final feature revision on the phone and clean up test resources.
+1. T3/S4: implement and verify CLI/MCP parity for workspace and host settings.
+2. T4: implement user controls, desktop proof, and feature builds.
+3. T2: arrange and run the isolated phone-connectivity positive control.
+4. T5: verify the final feature revision on the phone and clean up test resources.
 
 This automated-first order is the user's current scheduling decision. T2 remains
 a prerequisite for T5 only.
@@ -174,11 +181,11 @@ a prerequisite for T5 only.
 
 ## Active risks and decisions
 
-| Risk or decision             | Evidence or uncertainty                                                                                                          | Consequence                                                   | Mitigation or next evidence                                                                                                       | Owner          |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Completion subject lifecycle | The current notification path reads latest text asynchronously after the foreground turn is cleared; no immutable subject exists | A stale or partial reply could suppress a later notification  | Implement pre-coalescer collection and explicit successful-turn snapshot; add S3 race, missing-start, overflow, and failure tests | T3             |
-| Host authorization           | No-password session admission grants owner permissions; shared agent tokens are not host-level credentials                       | Global settings could be exposed to a workspace-scoped client | Use explicit host authorization and test anonymous/shared-token denial plus authorized local/password cases                       | T3             |
-| Phone/relay availability     | No phone positive control has been run                                                                                           | G1 and final device proof remain open                         | Run T2 after automated work, then T5 against the final revision                                                                   | User and T2/T5 |
+| Risk or decision             | Evidence or uncertainty                                                                                                           | Consequence                                   | Mitigation or next evidence                                                                                            | Owner          |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Completion subject lifecycle | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally                       | A truncated provider reply could match a rule | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
+| Host settings adapters       | RPCs require `daemon.read`/`daemon.manage`; workspace permissions do not grant them; user-facing adapters are not implemented yet | Users cannot manage rules through CLI/MCP yet | Add capability-gated CLI/MCP read, write, and readback paths in S4                                                     | T3             |
+| Phone/relay availability     | No phone positive control has been run                                                                                            | G1 and final device proof remain open         | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
 
 ## Progress log
 
@@ -241,6 +248,40 @@ a prerequisite for T5 only.
 - Lead and navigator accepted S3c at 01:46 UTC (21:46 EDT). Final server build
   passed in 9.984 s. The new runtime dependency requires the final Nix npm hash
   refresh and packaging verification in S6.
-- S3 overall, global rule
-  persistence/filtering, CLI and workspace controls, S2, G1, phone proof, and
-  production deployment remain open.
+- S3 overall, CLI and workspace controls, S2, G1, phone proof, and production
+  deployment remain open.
+
+### 2026-10-08 02:06 UTC (2026-10-07 22:06 EDT)
+
+- Implemented S3d daemon-home `replyRules` persistence, whole-list RE2
+  validation before config writes, transactional runtime matcher replacement,
+  daemon.read/manage RPCs, and opted-in current-client config publication.
+- Finished notifications consult the current matcher after asynchronous
+  recipient/text lookups, using only the explicit completion subject. A match
+  suppresses local and push delivery while preserving attention events; workspace
+  mute has precedence, and other attention reasons do not consult reply rules.
+- Focused storage, persisted-edit, authorization, collector, matcher, and
+  notification gates passed (73 tests in 10.991 s wall); final notification
+  routing and named Session RPC checks passed (16 and 1 tests). The client RPC
+  test passed (1 test). `npm run build:server` passed in 16.464 s, root
+  typecheck in 17.968 s, root lint in 12.042 s, and root format check in 0.942 s.
+  The build required a dependency-free completion-subject type module so the
+  scripts compiler does not pull in the agent timeline store and its unrelated
+  ES2023 `findLast` use. A broad `session.test.ts` invocation was interrupted
+  after 1:27 without test output; the new Session RPC case passed separately.
+- S3d is awaiting lead review. S3 overall, CLI/MCP settings parity, user
+  controls, S2, G1, phone proof, and production deployment remain open.
+
+### 2026-10-08 02:12 UTC (2026-10-07 22:12 EDT)
+
+- The reload receipt now classifies `replyRules` as applied and verifies the
+  matcher after reload. An injected atomic-writer failure retains the
+  prior config bytes, runtime rules, and matcher. The local notification fixture
+  confirms rules apply to two workspace IDs sharing one directory.
+- The fixed five-file command passed 106 tests in 3.48 s Vitest time and
+  4.002 s wall, within the 15 s budget and below the fixed 10.183 s baseline.
+  Final `build:server`, root typecheck, lint, and format check passed in 9.678 s,
+  11.446 s, 1.371 s, and 0.626 s respectively. `git diff --check` is clean.
+- Lead and navigator accepted S3d at 02:14 UTC (22:14 EDT), closing S3 and
+  M2.1/M2.2 within focused local verification. M2.4/G2, CLI/MCP settings parity,
+  end-user controls, S2, G1, phone proof, and production deployment remain open.
