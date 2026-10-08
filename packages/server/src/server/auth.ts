@@ -1,6 +1,6 @@
 import { compare, hashSync } from "bcryptjs";
-import { timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
+import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import { matchesLocalCredential } from "./local-credential.js";
 
 export const DAEMON_PASSWORD_BCRYPT_COST = 12;
@@ -138,18 +138,60 @@ export async function isAgentMcpRequestAuthorized(input: {
   capabilityToken: string | null;
   authorizationHeader: string | undefined;
 }): Promise<boolean> {
-  if (!input.password) {
-    return true;
-  }
-  const token = extractHttpBearerToken(input.authorizationHeader);
-  if (input.capabilityToken !== null && token !== null) {
-    // Constant-time compare; length-guard first because timingSafeEqual throws
-    // on differing buffer lengths.
-    const provided = Buffer.from(token);
-    const expected = Buffer.from(input.capabilityToken);
-    if (provided.length === expected.length && timingSafeEqual(provided, expected)) {
-      return true;
+  const admission = await resolveAgentMcpRequestAdmission({
+    password: input.password,
+    capabilityToken: input.capabilityToken,
+    localCredential: null,
+    authorizationHeader: input.authorizationHeader,
+  });
+  return admission.kind !== "rejected";
+}
+
+export type AgentMcpRequestAdmission =
+  | { kind: "agent-capability" | "anonymous"; permissions: readonly [] }
+  | {
+      kind: "local-owner" | "password-owner";
+      permissions: readonly DaemonPermission[];
     }
+  | { kind: "rejected"; permissions: readonly [] };
+
+/**
+ * Classifies /mcp/agents credentials separately from session admission. The
+ * injected agent capability authenticates control-plane access but never grants
+ * daemon host permissions. Anonymous access remains available without a daemon
+ * password, also without host permissions.
+ */
+export async function resolveAgentMcpRequestAdmission(input: {
+  password: string | undefined;
+  capabilityToken: string | null;
+  localCredential: string | null;
+  authorizationHeader: string | undefined;
+}): Promise<AgentMcpRequestAdmission> {
+  const token = extractHttpBearerToken(input.authorizationHeader);
+
+  // The injected per-run token authenticates an agent before any owner
+  // credential checks, in both password modes, and never implies host access.
+  if (
+    input.capabilityToken !== null &&
+    token !== null &&
+    matchesLocalCredential(input.capabilityToken, token)
+  ) {
+    return { kind: "agent-capability", permissions: [] };
   }
-  return isBearerTokenValidAsync({ password: input.password, token });
+
+  if (
+    input.localCredential !== null &&
+    token !== null &&
+    matchesLocalCredential(input.localCredential, token)
+  ) {
+    return { kind: "local-owner", permissions: OWNER_PERMISSIONS };
+  }
+
+  if (input.password) {
+    return (await isBearerTokenValidAsync({ password: input.password, token }))
+      ? { kind: "password-owner", permissions: OWNER_PERMISSIONS }
+      : { kind: "rejected", permissions: [] };
+  }
+
+  return { kind: "anonymous", permissions: [] };
 }
