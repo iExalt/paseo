@@ -5,15 +5,15 @@ daemon-wide reply denylist from the [confirmed plan](CONFIGURABLE_NOTIFICATIONS.
 and was confirmed by the user after review on 2026-10-04. The corresponding
 [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) revision is also confirmed.
 The user later authorized implementation in the requested sibling worktree. T1/S1
-is now complete as a documentation, source-trace, feasibility, and baseline gate;
-feature implementation has not started. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
+and S3 are complete within their focused local verification gates. CLI/MCP parity,
+user controls, and device/build acceptance remain open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 ## Progress and ordering
 
 | Outcome                             | Steps | Done | Exit |
 | ----------------------------------- | ----- | ---- | ---- |
 | Contract and validation feasibility | S1–S2 | 1/2  | G1   |
-| Durable policy and automation       | S3–S4 | 0/2  | G2   |
+| Durable policy and automation       | S3–S4 | 1/2  | G2   |
 | User controls                       | S5    | 0/1  | G3   |
 | Device proof and handoff            | S6–S8 | 0/3  | G4   |
 
@@ -107,7 +107,7 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
     under the selected ordering. Reassess after the setup allowance rather than
     substituting a weaker phone proof.
 
-- [ ] **S3 — Persist and enforce notification policies.** Add optional wire fields and
+- [x] **S3 — Persist and enforce notification policies.** Add optional wire fields and
       capability negotiation, durable workspace policy, shared creation ordering,
       runtime mutation, descriptor publication, and agent/terminal delivery gating.
       Preserve attention, pending permissions, and non-notifying source events.
