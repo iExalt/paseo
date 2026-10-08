@@ -2661,6 +2661,32 @@ export const en = {
           save: "Save",
           saving: "Saving...",
         },
+        replyRules: {
+          title: "Reply notification rules",
+          scope: "Applies to every workspace on {{host}}.",
+          help: "RE2 search matching; text is not normalized. Use anchors for whole replies. Up to 8 rules, 256 UTF-16 code units per pattern, and 16,384 per subject. Flags are unique i, m, or u; Unicode is enabled when omitted.",
+          source: "Pattern",
+          flags: "Flags",
+          add: "Add rule",
+          remove: "Remove rule",
+          save: "Save rules",
+          saving: "Saving...",
+          clear: "Clear all rules",
+          loading: "Loading saved rules...",
+          empty: "No reply rules are saved.",
+          unsupported: "Update this host to manage reply notification rules.",
+          disconnected: "Connect to this host to manage reply notification rules.",
+          readError:
+            "Could not read saved rules: {{error}}. If this is an access error, verify daemon.read permission.",
+          writeError:
+            "Could not save rules: {{error}}. If this is an access error, verify daemon.manage permission.",
+          conflict:
+            "These rules changed on this host while you were editing. Reload saved rules to discard your draft, or keep your draft to intentionally overwrite the latest rules on your next save.",
+          awaitingAuthority: "Saved. Waiting for this host to confirm the updated rules...",
+          reload: "Reload saved rules",
+          keep: "Keep draft",
+          retry: "Retry",
+        },
       },
       agents: {
         unavailable: "Connect to this host to manage agents",

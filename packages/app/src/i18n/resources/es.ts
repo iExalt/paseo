@@ -2590,6 +2590,35 @@ export const es: TranslationResources = {
           save: "Guardar",
           saving: "Guardando...",
         },
+        replyRules: {
+          title: "Reglas de notificación de respuestas",
+          scope: "Se aplica a todos los espacios de trabajo de {{host}}.",
+          help: "Coincidencia de búsqueda RE2 sin normalizar el texto. Usa anclas para exigir la respuesta completa. Hasta 8 reglas, 256 unidades UTF-16 por patrón y 16.384 por asunto. Las marcas i, m y u son únicas; Unicode se activa si se omiten.",
+          source: "Patrón",
+          flags: "Marcas",
+          add: "Agregar regla",
+          remove: "Eliminar regla",
+          save: "Guardar reglas",
+          saving: "Guardando...",
+          clear: "Borrar todas las reglas",
+          loading: "Cargando reglas guardadas...",
+          empty: "No hay reglas de respuesta guardadas.",
+          unsupported:
+            "Actualiza este host para administrar las reglas de notificación de respuestas.",
+          disconnected:
+            "Conéctate a este host para administrar las reglas de notificación de respuestas.",
+          readError:
+            "No se pudieron leer las reglas guardadas: {{error}}. Si es un error de acceso, verifica el permiso daemon.read.",
+          writeError:
+            "No se pudieron guardar las reglas: {{error}}. Si es un error de acceso, verifica el permiso daemon.manage.",
+          conflict:
+            "Las reglas de este host cambiaron mientras editabas. Recargar las reglas guardadas descartará tu borrador; conservarlo te permitirá sobrescribir intencionalmente las reglas más recientes al guardar.",
+          awaitingAuthority:
+            "Guardado. Esperando que este host confirme las reglas actualizadas...",
+          reload: "Recargar reglas guardadas",
+          keep: "Conservar borrador",
+          retry: "Reintentar",
+        },
       },
       agents: {
         unavailable: "Connect to this host to manage agents",
