@@ -126,11 +126,19 @@ describe("workspace notification menu item", () => {
     expect(screen.getByTestId("header-notifications").getAttribute("aria-checked")).toBe("true");
     expect(screen.getByTestId("sidebar-notifications").getAttribute("aria-checked")).toBe("true");
     expect(screen.getAllByText("sidebar.workspace.actions.unmuteNotifications")).toHaveLength(2);
+    expect(screen.getByTestId("header-notifications-bell")).toBeTruthy();
+    expect(screen.getByTestId("sidebar-notifications-bell")).toBeTruthy();
+    expect(screen.queryByTestId("header-notifications-slash")).toBeNull();
+    expect(screen.queryByTestId("sidebar-notifications-slash")).toBeNull();
 
     act(() => {
       useSessionStore.getState().mergeWorkspaces(serverId, [workspace("on")]);
     });
     expect(screen.getAllByText("sidebar.workspace.actions.muteNotifications")).toHaveLength(2);
+    expect(screen.getByTestId("header-notifications-bell")).toBeTruthy();
+    expect(screen.getByTestId("sidebar-notifications-bell")).toBeTruthy();
+    expect(screen.getByTestId("header-notifications-slash")).toBeTruthy();
+    expect(screen.getByTestId("sidebar-notifications-slash")).toBeTruthy();
   });
 
   it("shares pending state and does not let a delayed ACK overwrite a live descriptor", async () => {
