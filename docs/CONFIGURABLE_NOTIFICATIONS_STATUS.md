@@ -11,14 +11,14 @@ evidence and the next gates; it is not a second implementation checklist.
 
 ## Current snapshot
 
-| Field                        | Status                                                                                               |
-| ---------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T1/S1 and S3 accepted; S4a workspace CLI/MCP parity active                                           |
-| Overall state                | M2.1/M2.2 complete; M2.4/G2, CLI/MCP parity, M1.2/S2, and G1 remain open                             |
-| Immediate focus              | Implement workspace CLI/MCP create, update, and effective-policy readback                            |
-| Product or release readiness | Focused server suppression is verified; CLI/MCP controls and phone delivery remain open              |
-| Worktree state               | S3d source and focused checks accepted for scoped publication                                        |
+| Field                        | Status                                                                                                       |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e`         |
+| Current phase                | T1/S1, S3, and S4a accepted; S4b host-rule CLI/MCP parity active                                             |
+| Overall state                | M2.1/M2.2 complete; M2.4/G2, host-rule adapters, M1.2/S2, and G1 remain open                                 |
+| Immediate focus              | Implement host-targeted rule get/set/clear and explicit MCP host authority                                   |
+| Product or release readiness | Workspace CLI/MCP changes have focused local verification; host-rule adapters and phone delivery remain open |
+| Worktree state               | S4a source and focused checks accepted for scoped publication                                                |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -30,9 +30,9 @@ config transaction. Only opted-in current clients receive rules in the existing
 authorized config-change event. Finished notifications consult the current
 matcher after asynchronous lookups and use only the explicit immutable
 completion subject; workspace mute takes precedence and other attention reasons
-are unchanged. CLI/MCP adapters and user-facing controls are not included. The
-accepted design
-does not establish that a provider never truncates its internal response. Later
+are unchanged. S4a adds workspace CLI/MCP create, update, and effective-policy
+list adapters; host-rule adapters and user-facing controls remain open. The
+accepted design does not establish that a provider never truncates its internal response. Later
 lifecycle tests and phone/desktop gates remain required.
 
 ## Accomplishments with evidence
@@ -160,11 +160,12 @@ operations have parity.
 Evidence: S3 protocol, registry, provisioning, runtime mutation, delivery gating,
 completion subjects, and bounded host-rule persistence/filtering are implemented
 and review-accepted. Focused gates pass, with the creation disconnect baseline
-limitation above. CLI/MCP adapter parity remains open.
+limitation above. S4a workspace CLI/MCP parity is implemented and review-accepted;
+host-rule adapters remain open.
 
 ## Recommended next sequence
 
-1. T3/S4: implement and verify CLI/MCP parity for workspace and host settings.
+1. T3/S4: implement host-rule adapters and explicit MCP host authority (S4b).
 2. T4: implement user controls, desktop proof, and feature builds.
 3. T2: arrange and run the isolated phone-connectivity positive control.
 4. T5: verify the final feature revision on the phone and clean up test resources.
@@ -285,3 +286,20 @@ a prerequisite for T5 only.
 - Lead and navigator accepted S3d at 02:14 UTC (22:14 EDT), closing S3 and
   M2.1/M2.2 within focused local verification. M2.4/G2, CLI/MCP settings parity,
   end-user controls, S2, G1, phone proof, and production deployment remain open.
+
+### 2026-10-08 02:28 UTC (2026-10-07 22:28 EDT)
+
+- Lead and navigator accepted S4a workspace CLI/MCP adapters at 02:31 UTC
+  (22:31 EDT). CLI
+  command-handler tests exercise valid create and update flag forwarding; the
+  invalid-enum test is parser-only. The isolated journey uses real CLI daemon
+  transport and an authenticated in-process MCP HTTP client against a disposable
+  daemon with fake agent clients. It verifies local/worktree CLI creation, durable
+  update/readback, and MCP create/set/list; it does not launch an app or provider.
+- Focused CLI, MCP, Session, and journey tests passed (15, 6, 2, and 1 tests),
+  followed by the valid registration case (1 test in 1.03 s wall). The journey
+  passed in 7.88 s. Server build, root typecheck, lint, and formatting passed in
+  9.97 s, 11.75 s, 1.33 s, and 0.67 s respectively; diff checks passed. The
+  journey required an outside-sandbox rerun after loopback binding was denied in
+  the sandbox. Host-rule adapters, S4b, M2.4/G2, end-user controls, S2, G1, phone
+  proof, and production deployment remain open.

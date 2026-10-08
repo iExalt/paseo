@@ -20,7 +20,10 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { Logger } from "pino";
 import { z } from "zod";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
-import { WORKSPACE_NOTIFICATIONS_ENABLED } from "./workspace-notifications.js";
+import {
+  updateWorkspaceNotifications,
+  WORKSPACE_NOTIFICATIONS_ENABLED,
+} from "./workspace-notifications.js";
 
 export type ListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -1546,6 +1549,24 @@ export async function createPaseoDaemon(
     archiveWorkspaceRecord: archiveWorkspaceRecordExternal,
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
+    updateWorkspaceNotifications: async (workspaceId, notifications) => {
+      const workspace = await updateWorkspaceNotifications(
+        workspaceRegistry,
+        workspaceId,
+        notifications,
+      );
+      if (workspace) {
+        try {
+          await emitWorkspaceUpdatesExternal([workspaceId]);
+        } catch (error) {
+          logger.warn(
+            { err: error, workspaceId },
+            "Failed to publish workspace descriptor after notification policy update",
+          );
+        }
+      }
+      return workspace;
+    },
     projectRegistry,
     createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
