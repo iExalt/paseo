@@ -190,6 +190,47 @@ acceptance remain open.
   with required checks/timings.
   Mark T5 ready only if T2 is also done; otherwise recommend T2 next.
 
+### Prepared browser OS proof — execution still requires approval
+
+The opt-in mode below is prepared but has not run. It preserves the real browser
+Notification API, asks the person to click its permission button, and shows the
+same four completion trials for ten seconds each: positive, workspace-muted,
+rule-filtered, and rule-cleared positive. Permission has a two-minute bound; the
+test has a five-minute bound. API calls remain separate from the person's report
+of actual banners or Notification Center arrival.
+
+The disposable profile isolates site data. macOS notification permission may be
+shared across profiles using Google Chrome for Testing's
+`com.google.chrome.for.testing` identity. Approval must cover that browser's
+permission prompt; no production Paseo app permission or settings are changed.
+The fixture uses only its fake-provider daemon, disables provider/metadata work
+and relay, and uses dynamic loopback ports. No packaged app launches or desktop
+daemon/update controls are involved.
+
+After approval, use this exact recipe from the app workspace. The exit trap
+removes only the newly created profile/home; workspace, browser, worker daemon,
+and Metro teardown remain in the existing harness.
+
+```sh
+(
+set -eu
+cd /Users/clliaw/Projects/paseo/configurable-notifications/packages/app
+notification_proof_root=$(mktemp -d "/Users/clliaw/Projects/paseo/configurable-notifications/.dev/configurable-notifications/os-proof.XXXXXX")
+trap 'rm -rf -- "$notification_proof_root"' EXIT
+mkdir -p "$notification_proof_root/paseo-home"
+mise exec -- env -u PASEO_HOME -u PASEO_HOST \
+  -u ANTHROPIC_API_KEY -u OPENAI_API_KEY -u GOOGLE_API_KEY -u GEMINI_API_KEY \
+  -u OPENROUTER_API_KEY -u XAI_API_KEY -u GROQ_API_KEY \
+  PASEO_NOTIFICATION_OS_PROOF=1 \
+  PASEO_NOTIFICATION_OS_PROFILE="$notification_proof_root/browser-profile" \
+  E2E_PASEO_HOME="$notification_proof_root/paseo-home" \
+  E2E_FORK_PASEO_HOME_FROM='' E2E_KEEP_PASEO_HOME=0 E2E_WORKERS=1 BROWSER=none \
+  npm run test:e2e -- --project=browser --headed --workers=1 --retries=0 \
+  e2e/browser/configurable-notifications.spec.ts \
+  --grep 'keeps workspace and reply rules authoritative across CLI, MCP, and live turns'
+)
+```
+
 ## T5 — Final Android proof and cleanup: S7–S8
 
 **State:** waiting on T2 and T4; concrete commands refined from their evidence.
