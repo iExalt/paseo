@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useFocusEffect } from "expo-router";
 import { Switch } from "@/components/ui/switch";
 import { useCliInstall } from "@/desktop/hooks/use-install-status";
 import { SettingsCard, SettingsRow, SettingsSection } from "@/components/settings";
