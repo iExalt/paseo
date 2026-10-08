@@ -1,8 +1,9 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
+import * as privateFiles from "./private-files.js";
 import { DaemonConfigStore, applyMutableProviderConfigToOverrides } from "./daemon-config-store.js";
 import { loadPersistedConfig } from "./persisted-config.js";
 import type { PersistedConfig } from "./persisted-config.js";
@@ -96,6 +97,142 @@ describe("DaemonConfigStore", () => {
     for (const dir of tempDirs) {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  test("persists a validated immutable rule list before publishing runtime state", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+    const otherPaseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(otherPaseoHome);
+    const store = new DaemonConfigStore(paseoHome, {
+      relay: { enabled: false },
+      mcp: { injectIntoAgents: false },
+      browserTools: { enabled: false },
+      providers: {},
+      metadataGeneration: { providers: [] },
+      autoArchiveAfterMerge: false,
+      enableTerminalAgentHooks: false,
+      appendSystemPrompt: "",
+    });
+    const published: unknown[] = [];
+    store.onChange((config) => {
+      published.push({
+        replyRules: config.replyRules,
+        persisted: loadPersistedConfig(paseoHome).replyRules,
+        matches: store.matchesReplyRules({
+          turnId: "turn-1",
+          text: "No news.",
+          completeness: "complete",
+        }),
+      });
+    });
+    const rules = [{ source: "^No news\\.$", flags: "i" }];
+
+    store.patch({ replyRules: rules });
+
+    const otherStore = new DaemonConfigStore(otherPaseoHome, {
+      relay: { enabled: false },
+      mcp: { injectIntoAgents: false },
+      browserTools: { enabled: false },
+      providers: {},
+      metadataGeneration: { providers: [] },
+      autoArchiveAfterMerge: false,
+      enableTerminalAgentHooks: false,
+      appendSystemPrompt: "",
+    });
+    const restartedStore = new DaemonConfigStore(paseoHome, {
+      relay: { enabled: false },
+      mcp: { injectIntoAgents: false },
+      browserTools: { enabled: false },
+      providers: {},
+      metadataGeneration: { providers: [] },
+      autoArchiveAfterMerge: false,
+      enableTerminalAgentHooks: false,
+      appendSystemPrompt: "",
+    });
+
+    expect(store.getReplyRules()).toEqual(rules);
+    expect(otherStore.getReplyRules()).toEqual([]);
+    expect(restartedStore.getReplyRules()).toEqual(rules);
+    expect(
+      restartedStore.matchesReplyRules({
+        turnId: "turn-1",
+        text: "No news.",
+        completeness: "complete",
+      }),
+    ).toBe(true);
+    expect(Object.isFrozen(store.getReplyRules())).toBe(true);
+    expect(Object.isFrozen(store.getReplyRules()[0])).toBe(true);
+    expect(loadPersistedConfig(paseoHome).replyRules).toEqual(rules);
+    expect(published).toEqual([{ replyRules: rules, persisted: rules, matches: true }]);
+  });
+
+  test("invalid rules and failed live apply retain the prior durable and runtime list", () => {
+    const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
+    tempDirs.push(paseoHome);
+    const store = new DaemonConfigStore(paseoHome, {
+      relay: { enabled: false },
+      mcp: { injectIntoAgents: false },
+      browserTools: { enabled: false },
+      providers: {},
+      metadataGeneration: { providers: [] },
+      autoArchiveAfterMerge: false,
+      enableTerminalAgentHooks: false,
+      appendSystemPrompt: "",
+    });
+    const originalRules = [{ source: "^original$", flags: "" }];
+    store.patch({ replyRules: originalRules });
+    const published: unknown[] = [];
+    store.onChange((config) => published.push(config.replyRules));
+
+    expect(() => store.patch({ replyRules: [{ source: "(", flags: "" }] })).toThrow(
+      /Invalid regular expression|invalid/i,
+    );
+    expect(store.getReplyRules()).toEqual(originalRules);
+    expect(loadPersistedConfig(paseoHome).replyRules).toEqual(originalRules);
+
+    const configPath = path.join(paseoHome, "config.json");
+    const persistedBytes = readFileSync(configPath, "utf8");
+    vi.spyOn(privateFiles, "writePrivateFileAtomicSync").mockImplementationOnce(() => {
+      throw new Error("injected I/O failure");
+    });
+    expect(() => store.patch({ replyRules: [{ source: "^save-failure$", flags: "" }] })).toThrow(
+      /\[Config\] Failed to write .*injected I\/O failure/,
+    );
+    expect(readFileSync(configPath, "utf8")).toBe(persistedBytes);
+    expect(store.getReplyRules()).toEqual(originalRules);
+    expect(
+      store.matchesReplyRules({
+        turnId: "turn-1",
+        text: "original",
+        completeness: "complete",
+      }),
+    ).toBe(true);
+    expect(published).toEqual([]);
+    expect(loadPersistedConfig(paseoHome).replyRules).toEqual(originalRules);
+
+    const unsubscribeFailure = store.onApply((next, previous) => {
+      if (next.replyRules?.[0]?.source === "^replacement$") {
+        throw new Error("live rule owner failed");
+      }
+      return () => {
+        expect(previous).toBeDefined();
+      };
+    });
+    expect(() => store.patch({ replyRules: [{ source: "^replacement$", flags: "" }] })).toThrow(
+      "live rule owner failed",
+    );
+    unsubscribeFailure();
+
+    expect(store.getReplyRules()).toEqual(originalRules);
+    expect(loadPersistedConfig(paseoHome).replyRules).toEqual(originalRules);
+    expect(
+      store.matchesReplyRules({ turnId: "turn-1", text: "original", completeness: "complete" }),
+    ).toBe(true);
+    expect(
+      store.matchesReplyRules({ turnId: "turn-1", text: "replacement", completeness: "complete" }),
+    ).toBe(false);
+    expect(published).toEqual([]);
   });
 
   test("patch persists relay state and emits its field change", () => {
@@ -963,6 +1100,7 @@ describe("DaemonConfigStore reload", () => {
     const { paseoHome, store, persisted } = createReloadableStore();
     writeConfig(paseoHome, {
       ...persisted,
+      replyRules: [{ source: "^No news\\.$", flags: "i" }],
       daemon: {
         ...persisted.daemon,
         listen: "127.0.0.1:7777",
@@ -976,12 +1114,20 @@ describe("DaemonConfigStore reload", () => {
         "daemon.browserTools.enabled",
         "daemon.git.maxProcessConcurrency",
         "daemon.git.maxProcessesPerSecond",
+        "replyRules",
       ],
       restartRequiredPaths: ["daemon.listen"],
       overrideControlledPaths: [],
     });
     expect(store.get().browserTools.enabled).toBe(true);
     expect(store.get().git).toEqual({ maxProcessesPerSecond: 12, maxProcessConcurrency: 3 });
+    expect(
+      store.matchesReplyRules({
+        turnId: "reload-turn",
+        text: "No news.",
+        completeness: "complete",
+      }),
+    ).toBe(true);
   });
 
   test("applies the global plugin switch in both directions", () => {
