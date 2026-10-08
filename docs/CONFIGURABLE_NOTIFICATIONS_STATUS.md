@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 04:54 UTC (2026-10-08 00:54 EDT)
+Last updated: 2026-10-08 13:43 UTC (2026-10-08 09:43 EDT)
 
 ## Purpose
 
@@ -16,9 +16,9 @@ evidence and the next gates; it is not a second implementation checklist.
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
 | Current phase                | S5c automation and S6 package builds verified; human OS notification proof remains open              |
 | Overall state                | M2.1–M2.4 complete; OS notification proof, M1.2/S2, and G1 remain open                               |
-| Immediate focus              | Arrange the authorized human OS-proof session using the prepared opt-in browser route                |
+| Immediate focus              | Human enablement of test-browser macOS notifications, then a separately authorized OS-proof repeat   |
 | Product or release readiness | CLI/MCP/UI flows have headless local verification; OS arrival and phone delivery remain open         |
-| Worktree state               | S6 build subproof published as `82548f0cc`; test/docs-only OS-proof preparation accepted             |
+| Worktree state               | Preparation published as `e85c155ce`; two isolated runs completed and cleaned up                     |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -447,3 +447,21 @@ a prerequisite for T5 only.
   test/docs-only changes after the identified package source; no package rebuild,
   headed browser, actual Notification API trial, or permission action ran.
   S5/G3, final S6/T4, and phone gates remain open.
+
+### 2026-10-08 13:43 UTC (2026-10-08 09:43 EDT)
+
+- Two authorized headed runs passed browser/API checks; the first human result
+  was unsure, and the user reported no actual notifications on the repeat.
+  Both owned profiles/homes were removed and their exact daemon/Metro ports had
+  no listeners afterward. No production app or phone/relay work ran.
+- Read-only macOS logs confirm two positive requests per run for
+  `com.google.chrome.for.testing`: first at 13:33:01.855 and 13:33:31.978 UTC
+  (09:33:01.855 and 09:33:31.978 EDT), then at 13:36:10.930 and 13:36:41.038 UTC
+  (09:36:10.930 and 09:36:41.038 EDT). Native settings reported
+  `authorizationStatus: Denied`; Notification Center reported
+  `canDisplayWhileCenterIsClosed: false`. Focus suppression was absent.
+  The browser's origin-level `granted` state did not establish native permission;
+  the harness does not record its initial value or the user's button click.
+- Settings were not changed. The next step is manual macOS Allow Notifications
+  for Google Chrome for Testing, followed by a separately authorized repeat.
+  OS arrival, S5/G3, final S6/T4 acceptance, and phone gates remain open.
