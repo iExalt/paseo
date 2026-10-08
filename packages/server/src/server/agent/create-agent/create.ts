@@ -52,7 +52,7 @@ export interface CreateAgentCommandDependencies {
 export type EnsureWorkspaceForCreate = (
   cwd: string,
   firstAgentContext?: FirstAgentContext,
-  context?: { background?: boolean; callerWorkspaceId?: string },
+  context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
 ) => Promise<string>;
 
 export interface CreateAgentFromSessionInput {
@@ -84,6 +84,7 @@ export interface CreateAgentFromMcpInput {
   config?: Partial<AgentSessionConfig>;
   cwd?: string;
   workspaceId?: string;
+  notifications?: "on" | "off";
   thinking?: string;
   providerOptions?: ProviderOptions;
   labels?: Record<string, string>;
@@ -116,6 +117,7 @@ export interface CreateAgentFromMcpInput {
     refName?: string;
     action?: "branch-off" | "checkout";
     githubPrNumber?: number;
+    notifications?: "on" | "off";
   };
 }
 
@@ -324,6 +326,7 @@ async function resolveMcpCreateAgent(
           resolvedCwd,
           input.initialPrompt ?? "",
           workspaceIntent,
+          input.notifications,
         ),
       ),
       cwd: resolvedCwd,
@@ -440,11 +443,12 @@ async function ensureWorkspaceForMcpCreate(
   cwd: string,
   initialPrompt: string,
   workspaceIntent: McpWorkspaceIntent,
+  notifications?: "on" | "off",
 ): Promise<string | undefined> {
   if (!dependencies.ensureWorkspaceForCreate) {
     return undefined;
   }
-  return dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt }, workspaceIntent);
+  return dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt }, { ...workspaceIntent, notifications });
 }
 
 async function sendInitialPrompt(
@@ -573,6 +577,7 @@ async function resolveMcpCwd(params: {
       refName: worktree.refName,
       action: worktree.action,
       githubPrNumber: worktree.githubPrNumber,
+      notifications: worktree.notifications,
       firstAgentContext: { prompt: params.initialPrompt },
 
       paseoHome: dependencies.paseoHome,

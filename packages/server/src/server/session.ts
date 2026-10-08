@@ -3356,6 +3356,12 @@ export class Session {
         return this.handleProjectRemoveRequest(msg);
       case "workspace.title.set.request":
         return this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId);
+      case "workspace.notifications.set.request":
+        return this.handleWorkspaceNotificationsSetRequest(
+          msg.workspaceId,
+          msg.notifications,
+          msg.requestId,
+        );
       case "workspace.pin.set.request":
         return this.handleWorkspacePinSetRequest(msg.workspaceId, msg.pinned, msg.requestId);
       case "workspace.base_branch.set.request":
@@ -4382,6 +4388,57 @@ export class Session {
         },
       });
       emitResponse(false, null, getErrorMessageOr(error, "Failed to pin workspace"));
+    }
+  }
+
+  private async handleWorkspaceNotificationsSetRequest(
+    workspaceId: string,
+    notifications: "on" | "off",
+    requestId: string,
+  ): Promise<void> {
+    const emitResponse = (
+      accepted: boolean,
+      resolvedNotifications: "on" | "off" | null,
+      error: string | null,
+    ) => {
+      this.emit({
+        type: "workspace.notifications.set.response",
+        payload: { requestId, workspaceId, accepted, notifications: resolvedNotifications, error },
+      });
+    };
+
+    let updated: PersistedWorkspaceRecord | null;
+    try {
+      updated = await this.workspaceRegistry.update(workspaceId, (existing) => ({
+        ...existing,
+        notifications,
+        updatedAt: new Date().toISOString(),
+      }));
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, workspaceId, requestId },
+        "session: workspace.notifications.set.request error",
+      );
+      emitResponse(
+        false,
+        null,
+        getErrorMessageOr(error, "Failed to update workspace notifications"),
+      );
+      return;
+    }
+    if (!updated) {
+      emitResponse(false, null, "Workspace not found");
+      return;
+    }
+
+    emitResponse(true, updated.notifications, null);
+    try {
+      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, workspaceId, requestId },
+        "session: workspace.notifications.set.request committed but descriptor broadcast failed",
+      );
     }
   }
 
@@ -6113,6 +6170,7 @@ export class Session {
       workspaceKind: workspace.kind,
       name: resolveWorkspaceDisplayName(workspace),
       title: workspace.title,
+      notifications: workspace.notifications,
       pinnedAt: workspace.pinnedAt,
       ...(workspace.labels && workspace.labels.length > 0 ? { labels: workspace.labels } : {}),
       metadata: workspace.metadata,
@@ -6213,6 +6271,7 @@ export class Session {
         derivedDisplayName: result.worktree.branchName || result.workspace.displayName,
       }),
       title: result.workspace.title,
+      notifications: result.workspace.notifications,
       pinnedAt: result.workspace.pinnedAt,
       ...(result.workspace.labels && result.workspace.labels.length > 0
         ? { labels: result.workspace.labels }
@@ -7346,6 +7405,7 @@ export class Session {
         workspaceId,
         metadata: request.metadata,
         ...(await this.workspaceBackgroundIntent(request.background, request.callerAgentId)),
+        notifications: request.notifications,
       },
     );
     await this.syncWorkspaceGitObserverForWorkspace(workspace);
@@ -7410,6 +7470,7 @@ export class Session {
         title: request.title,
         metadata: request.metadata,
         ...(await this.workspaceBackgroundIntent(request.background, request.callerAgentId)),
+        notifications: request.notifications,
       },
       source.baseBranch
         ? { resolveDefaultBranch: async () => source.baseBranch as string }

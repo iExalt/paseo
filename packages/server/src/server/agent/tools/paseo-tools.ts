@@ -16,7 +16,11 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
-import { ActiveTurnBehaviorSchema, AgentProfileSchema } from "@getpaseo/protocol/messages";
+import {
+  ActiveTurnBehaviorSchema,
+  AgentProfileSchema,
+  WorkspaceNotificationsSchema,
+} from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import {
@@ -145,17 +149,19 @@ export interface PaseoToolHostDependencies {
     cwd: string,
     title?: string | null,
     projectId?: string,
-    context?: { background?: boolean; callerWorkspaceId?: string },
+    context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
   ) => Promise<PersistedWorkspaceRecord>;
   workspaceScripts?: Pick<WorkspaceScriptsService, "list" | "launch" | "stop">;
   markWorkspaceArchiving?: ArchiveDependencies["markWorkspaceArchiving"];
   clearWorkspaceArchiving?: ArchiveDependencies["clearWorkspaceArchiving"];
   createPaseoWorktree?: CreatePaseoWorktreeWorkflowFn;
+  /** Whether workspace notification policy can be requested before creation. */
+  workspaceNotificationsEnabled?: boolean;
   // Mints a fresh directory workspace for a cwd and returns its id.
   ensureWorkspaceForCreate?: (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
-    context?: { background?: boolean; callerWorkspaceId?: string },
+    context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
   ) => Promise<string>;
   browserToolsEnabled?: boolean;
   browserToolsBroker?: BrowserToolsBroker | null;
@@ -197,6 +203,7 @@ const WorkspaceAutomationSummarySchema = z.object({
   kind: z.enum(["directory", "local_checkout", "worktree"]),
   title: z.string().nullable(),
   background: z.boolean().optional(),
+  notifications: WorkspaceNotificationsSchema,
 });
 
 function toWorkspaceAutomationSummary(workspace: PersistedWorkspaceRecord) {
@@ -209,6 +216,7 @@ function toWorkspaceAutomationSummary(workspace: PersistedWorkspaceRecord) {
     title: workspace.title,
     background: workspace.background,
     parentWorkspaceId: workspace.parentWorkspaceId,
+    notifications: workspace.notifications,
   };
 }
 
@@ -639,6 +647,7 @@ function createToolCatalog(
     resolveCallerContext,
     logger,
   } = options;
+  const workspaceNotificationsEnabled = options.workspaceNotificationsEnabled === true;
   const childLogger = logger.child({ module: "agent", component: "paseo-tool-catalog" });
   const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
 
@@ -827,6 +836,13 @@ function createToolCatalog(
       const tool = tools.get(name);
       if (!tool) {
         throw new PaseoToolInputError(`Paseo tool not found: ${name}`);
+      }
+      if (
+        !workspaceNotificationsEnabled &&
+        ((name === "create_workspace" && hasOwnFieldInValue(input, "notifications")) ||
+          (name === "create_agent" && hasWorkspaceNotificationPolicy(input)))
+      ) {
+        throw new Error("Workspace notification policies are not supported by this server.");
       }
       return tool.handler(await parseToolInput(tool, input), context);
     },
@@ -1167,6 +1183,9 @@ function createToolCatalog(
     z
       .object({
         kind: z.literal("create"),
+        notifications: WorkspaceNotificationsSchema.optional().describe(
+          "Policy for the new workspace. Omit to use the default.",
+        ),
         source: z.discriminatedUnion("kind", [
           z
             .object({
@@ -1225,6 +1244,9 @@ function createToolCatalog(
       .describe(
         "Existing workspace id. Agent-scoped calls default to the caller workspace; top-level calls create a new local workspace when omitted.",
       ),
+    notifications: WorkspaceNotificationsSchema.optional().describe(
+      "Policy for a newly created workspace. Omit to use the default.",
+    ),
   };
   const agentToAgentInputSchema = {
     ...canonicalCreateAgentFields,
@@ -1415,6 +1437,7 @@ function createToolCatalog(
           .describe(
             "True hides the workspace from default lists and the sidebar while its contents remain durable and accessible; omit background to inherit your own visibility (true when you or your current workspace are background, false without a caller), and override it only when the user explicitly asks.",
           ),
+        notifications: WorkspaceNotificationsSchema.optional(),
         mode: z
           .enum(["branch-off", "checkout-branch", "checkout-pr"])
           .optional()
@@ -1448,20 +1471,25 @@ function createToolCatalog(
       },
       outputSchema: WorkspaceAutomationSummarySchema.shape,
     },
-    async ({
-      isolation,
-      path,
-      projectId,
-      title,
-      background,
-      mode,
-      worktreeSlug,
-      branchName,
-      baseBranch,
-      branch,
-      prNumber,
-      forge,
-    }) => {
+    async (input) => {
+      const {
+        isolation,
+        path,
+        projectId,
+        title,
+        background,
+        mode,
+        worktreeSlug,
+        branchName,
+        baseBranch,
+        branch,
+        prNumber,
+        forge,
+        notifications,
+      } = input;
+      if (!workspaceNotificationsEnabled && hasOwnField(input, "notifications")) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
       let workspace: PersistedWorkspaceRecord;
       if (isolation === "local") {
         const cwd = resolveScopedCwd(path, { required: true });
@@ -1487,7 +1515,7 @@ function createToolCatalog(
           cwd,
           title,
           projectId,
-          workspaceBackgroundIntent(background),
+          { ...workspaceBackgroundIntent(background), notifications },
         );
       } else {
         let cwd =
@@ -1520,6 +1548,7 @@ function createToolCatalog(
             ...worktreeTarget,
             ...(title ? { title } : {}),
             ...workspaceBackgroundIntent(background),
+            ...(notifications ? { notifications } : {}),
           },
         );
         if (!result.ok) {
@@ -1621,6 +1650,9 @@ function createToolCatalog(
       },
     },
     async (args: unknown) => {
+      if (!workspaceNotificationsEnabled && hasWorkspaceNotificationPolicy(args)) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
       const resolvedArgs = await resolveCreateAgentToolArgs(args);
       const { parsedArgs } = resolvedArgs;
       let notifyOnFinish: boolean;
@@ -1667,6 +1699,7 @@ function createToolCatalog(
           notifyOnFinish,
           background: parsedArgs.background,
           detached: resolvedArgs.detached,
+          notifications: resolvedArgs.notifications,
           callerAgentId,
           callerContext,
         },
@@ -1702,6 +1735,7 @@ function createToolCatalog(
         detached: boolean;
         cwd: string | undefined;
         workspaceId: string | undefined;
+        notifications?: "on" | "off";
       }
     | {
         kind: "top-level";
@@ -1709,6 +1743,7 @@ function createToolCatalog(
         detached: boolean;
         cwd: string | undefined;
         workspaceId: string | undefined;
+        notifications?: "on" | "off";
       };
 
   async function resolveCreateAgentToolArgs(args: unknown): Promise<ResolvedCreateAgentToolArgs> {
@@ -1752,6 +1787,11 @@ function createToolCatalog(
         };
       }
       const parsed = parseToolArguments(agentToAgentCreateAgentArgsSchema, args);
+      if (parsed.notifications !== undefined) {
+        throw new PaseoToolInputError(
+          "Workspace notifications can only be set when creating a workspace.",
+        );
+      }
       const { cwd, workspaceId } = await resolveCanonicalCreateAgentWorkspace(parsed.workspaceId, {
         prompt: parsed.initialPrompt,
       });
@@ -1791,6 +1831,7 @@ function createToolCatalog(
     const { cwd, workspaceId } = await resolveCanonicalCreateAgentWorkspace(
       parsedArgs.workspaceId,
       { prompt: parsedArgs.initialPrompt },
+      parsedArgs.notifications,
     );
     return {
       kind: "top-level",
@@ -1798,6 +1839,7 @@ function createToolCatalog(
       detached: false,
       cwd,
       workspaceId,
+      notifications: parsedArgs.notifications,
     };
   }
 
@@ -1818,13 +1860,43 @@ function createToolCatalog(
     ].some((key) => input[key] !== undefined);
   }
 
+  function hasWorkspaceNotificationPolicy(args: unknown): boolean {
+    if (!args || typeof args !== "object") {
+      return false;
+    }
+    const input = args as Record<string, unknown>;
+    if (hasOwnField(input, "notifications")) {
+      return true;
+    }
+    return (
+      input.workspace !== null &&
+      typeof input.workspace === "object" &&
+      hasOwnFieldInValue(input.workspace, "notifications")
+    );
+  }
+
+  function hasOwnFieldInValue(input: unknown, field: string): boolean {
+    if (input === null || typeof input !== "object") {
+      return false;
+    }
+    return Object.prototype.hasOwnProperty.call(input, field);
+  }
+
+  function hasOwnField(input: object, field: string): boolean {
+    return hasOwnFieldInValue(input, field);
+  }
+
   async function resolveCanonicalCreateAgentWorkspace(
     workspaceId?: string,
     firstAgentContext?: FirstAgentContext,
+    notifications?: "on" | "off",
   ): Promise<{
     cwd: string | undefined;
     workspaceId: string;
   }> {
+    if (notifications !== undefined && (workspaceId || callerAgentId)) {
+      throw new Error("Workspace notifications can only be set when creating a workspace.");
+    }
     if (workspaceId) {
       const resolved = await resolveCreateAgentWorkspace(
         { kind: "existing", workspaceId },
@@ -1842,7 +1914,7 @@ function createToolCatalog(
         workspaceId: await options.ensureWorkspaceForCreate(
           cwd,
           firstAgentContext,
-          workspaceBackgroundIntent(undefined),
+          { ...workspaceBackgroundIntent(undefined), notifications: notifications },
         ),
       };
     }
@@ -1950,7 +2022,7 @@ function createToolCatalog(
         workspaceId: await options.ensureWorkspaceForCreate(
           cwd,
           firstAgentContext,
-          workspaceBackgroundIntent(undefined),
+          { ...workspaceBackgroundIntent(undefined), notifications: workspace.notifications },
         ),
       };
     }
