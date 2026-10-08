@@ -190,9 +190,16 @@ acceptance remain open.
   with required checks/timings.
   Mark T5 ready only if T2 is also done; otherwise recommend T2 next.
 
-### Prepared browser OS proof — execution still requires approval
+### Browser OS proof — repeat requires separate approval
 
-The opt-in mode below is prepared but has not run. It preserves the real browser
+The opt-in mode below ran twice with authorization. Browser/API checks passed,
+but the user reported no actual arrivals on the repeat. Read-only macOS logs
+reported `authorizationStatus: Denied` for `com.google.chrome.for.testing` and
+`canDisplayWhileCenterIsClosed: false`; Focus suppression was absent. Settings
+were not changed. Manually allow macOS notifications for Google Chrome for
+Testing before a separately authorized repeat; S5/G3 and T4 remain open.
+
+The mode preserves the real browser
 Notification API, asks the person to click its permission button, and shows the
 same four completion trials for ten seconds each: positive, workspace-muted,
 rule-filtered, and rule-cleared positive. Permission has a two-minute bound; the
