@@ -14,11 +14,11 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T1/S1 and T3/S3–S4/G2 accepted; S5a shared workspace controls active                                 |
-| Overall state                | M2.1–M2.4 complete; user controls, build/device proof, M1.2/S2, and G1 remain open                   |
-| Immediate focus              | Shared workspace menu, authoritative state, and notification-policy mutation                         |
+| Current phase                | T1/S1, T3/S3–S4/G2, and S5a accepted; S5b host-rule editor active                                    |
+| Overall state                | M2.1–M2.4 complete; host-rule editor, combined desktop proof, M1.2/S2, and G1 remain open            |
+| Immediate focus              | Host-rule settings editor, authoritative updates, and draft/save feedback                            |
 | Product or release readiness | Workspace and host-rule adapters have focused local verification; phone delivery remains open        |
-| Worktree state               | S4b source and focused checks accepted for scoped publication                                        |
+| Worktree state               | S5a source and focused checks accepted for scoped publication                                        |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -32,8 +32,8 @@ matcher after asynchronous lookups and use only the explicit immutable
 completion subject; workspace mute takes precedence and other attention reasons
 are unchanged. S4a adds workspace CLI/MCP create, update, and effective-policy
 list adapters. S4b adds host-targeted rule get/set/clear and permission-scoped
-MCP adapters with review acceptance. User-facing controls remain
-open. The
+MCP adapters with review acceptance. The S5a workspace menu implementation is
+under review; the host-rule editor and combined desktop journey remain open. The
 accepted design does not establish that a provider never truncates its internal response. Later
 lifecycle tests and phone/desktop gates remain required.
 
@@ -274,6 +274,20 @@ a prerequisite for T5 only.
 - S3d is awaiting lead review. S3 overall, CLI/MCP settings parity, user
   controls, S2, G1, phone proof, and production deployment remain open.
 
+### 2026-10-08 03:10 UTC (2026-10-07 23:10 EDT)
+
+- Implemented the shared workspace notification menu row in workspace header and
+  sidebar context/dropdown menus. Legacy descriptors normalize to `on`; live
+  descriptor updates drive the displayed state. A shared pending coordinator
+  disables both surfaces during one RPC, and the ACK never writes descriptor
+  state. Failures show the existing toast and retain the authoritative value;
+  unsupported hosts show an explanation and cannot invoke the RPC.
+- The focused store, replica, and rendered menu tests passed (32 tests in 2.88 s);
+  translation-resource tests passed (39 tests in 0.62 s). Root typecheck, lint,
+  and format check passed in 11.28 s, 7.12 s, and 0.93 s. No browser, Metro,
+  desktop, or device journey ran; S5a awaits lead review, and S5c owns the
+  combined browser proof.
+
 ### 2026-10-08 02:12 UTC (2026-10-07 22:12 EDT)
 
 - The reload receipt now classifies `replyRules` as applied and verifies the
@@ -324,3 +338,19 @@ a prerequisite for T5 only.
   typecheck, root lint, and root format check passed in 10.09 s, 11.67 s, 1.53 s,
   and 0.62 s. No app, provider, relay, or production entrypoint was launched. T4,
   T2, T5, and G1 remain open.
+
+### 2026-10-08 03:13 UTC (2026-10-07 23:13 EDT)
+
+- Lead and navigator accepted S5a shared workspace menu/state. Header and
+  sidebar context/button menus reuse the existing menu engine, read normalized
+  authoritative descriptors, and share pending state by host and workspace ID.
+  Mutation ACKs never patch descriptors. Failure shows an error and retains
+  policy; unsupported hosts have a disabled, explained control.
+- Focused store, replica, and rendered-menu checks passed (32 tests in 2.88 s);
+  translation checks passed (39 tests in 0.62 s). The final rendered checks
+  passed (3 tests in 1.97 s), proving competing selections issue one RPC, delayed
+  ACKs cannot rewind live state, and failed writes permit retry. Root typecheck,
+  lint, and formatting passed in 11.28 s, 7.12 s, and 0.55 s; diff checks passed.
+- S5/G3 remains incomplete. The host editor, combined browser proof, feature
+  builds, desktop/device delivery, S2/G1, and phone gates remain open. No browser,
+  Metro, headed app, device, or real OS notification was started for S5a.
