@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 04:39 UTC (2026-10-08 00:39 EDT)
+Last updated: 2026-10-08 04:54 UTC (2026-10-08 00:54 EDT)
 
 ## Purpose
 
@@ -16,9 +16,9 @@ evidence and the next gates; it is not a second implementation checklist.
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
 | Current phase                | S5c automation and S6 package builds verified; human OS notification proof remains open              |
 | Overall state                | M2.1–M2.4 complete; OS notification proof, M1.2/S2, and G1 remain open                               |
-| Immediate focus              | Prepare the concrete opt-in browser OS-proof route without launching it                              |
+| Immediate focus              | Arrange the authorized human OS-proof session using the prepared opt-in browser route                |
 | Product or release readiness | CLI/MCP/UI flows have headless local verification; OS arrival and phone delivery remain open         |
-| Worktree state               | S5c published as `2cd1ee978`; final Nix hash and build receipt are ready for review                  |
+| Worktree state               | S6 build subproof published as `82548f0cc`; test/docs-only OS-proof preparation accepted             |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -428,3 +428,22 @@ a prerequisite for T5 only.
   and phone gates remain open. The next browser proof will use a disposable
   profile and real Notification API; its browser-level macOS permission scope
   must be authorized before launch.
+
+### 2026-10-08 04:54 UTC (2026-10-08 00:54 EDT)
+
+- The opt-in browser OS-proof mode and exact launch recipe are accepted for
+  preparation only. The existing script records the disposable profile/home,
+  pre-start validation, production environment scrub, real Notification API,
+  user-click permission button, two-minute permission bound, and ten-second
+  spacing for the same four completion trials. The five-minute test remains
+  unexecuted in that mode; actual OS arrival is still a human gate.
+- The exact comparable default headless command passed: case 10.1 s, Playwright
+  total 18.6 s, shell wall 19.01 s, against the unchanged accepted 10.2 s/18.8 s
+  journey. Metro warmed in 3.02 s and the isolated daemon was ready 2.07 s after
+  runner start; both stopped afterward. The earlier explicit-home run's 44.2 s
+  was total setup-inclusive time, initially conflated with its 11.1 s case;
+  it is not a comparable baseline. No material latency regression was found.
+- App typecheck, changed-file lint, format, and diff checks passed. These are
+  test/docs-only changes after the identified package source; no package rebuild,
+  headed browser, actual Notification API trial, or permission action ran.
+  S5/G3, final S6/T4, and phone gates remain open.
