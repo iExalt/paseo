@@ -183,7 +183,7 @@ test("raw capable creation persists notifications off before the first descripto
       serverInfo?.type === "status" && serverInfo.payload.status === "server_info"
         ? serverInfo.payload.features.workspaceNotifications
         : undefined,
-    ).toBeUndefined();
+    ).toBe(true);
 
     const response = await peer.request({
       type: "workspace.create.request",

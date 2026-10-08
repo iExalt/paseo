@@ -11,6 +11,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { Logger } from "pino";
 import { z } from "zod";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
+import { WORKSPACE_NOTIFICATIONS_ENABLED } from "./workspace-notifications.js";
 
 export type ListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -1436,8 +1437,7 @@ export async function createPaseoDaemon(
     clearWorkspaceArchiving: clearWorkspaceArchivingExternal,
     ensureWorkspaceForCreate: createAgentCommandDependencies.ensureWorkspaceForCreate,
     createPaseoWorktree: createAgentCommandDependencies.createPaseoWorktree,
-    // Keep policy options unavailable until S3b enforces delivery and advertises the capability.
-    workspaceNotificationsEnabled: false,
+    workspaceNotificationsEnabled: WORKSPACE_NOTIFICATIONS_ENABLED,
     browserToolsEnabled: browserToolsPolicy.isEnabled(),
     browserToolsBroker,
     paseoToolPolicy:
