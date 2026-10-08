@@ -6,17 +6,18 @@ and was confirmed by the user after review on 2026-10-04. The corresponding
 [execution script](CONFIGURABLE_NOTIFICATIONS_SCRIPT.md) revision is also confirmed.
 The user later authorized implementation in the requested sibling worktree. T1/S1
 and S3–S4/G2 are complete within their focused local verification gates. User
-controls/G3 and feature builds/S6 are accepted; phone/device acceptance remains
-open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
+controls/G3, feature builds/S6, phone connectivity/S2, and final device proof and
+cleanup/S7–S8 are accepted. See the
+[current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 ## Progress and ordering
 
 | Outcome                             | Steps | Done | Exit |
 | ----------------------------------- | ----- | ---- | ---- |
-| Contract and validation feasibility | S1–S2 | 1/2  | G1   |
+| Contract and validation feasibility | S1–S2 | 2/2  | G1   |
 | Durable policy and automation       | S3–S4 | 2/2  | G2   |
 | User controls                       | S5    | 1/1  | G3   |
-| Device proof and handoff            | S6–S8 | 1/3  | G4   |
+| Device proof and handoff            | S6–S8 | 3/3  | G4   |
 
 Dependency graph, selected by the user on 2026-10-04:
 
@@ -33,7 +34,7 @@ S2. Final acceptance requires every gate regardless of which finishes first.
 **Build preparation split (2026-10-08):** after accepted S5c automated proof,
 prepare S6 packages before the human OS notification session. This honors the
 automated-first order and gives that session an identified feature artifact.
-S5/G3, S6 final acceptance, and T4 remain open until the original live proof passes.
+The original live proof subsequently passed; S5/G3, S6, and T4 are accepted.
 
 Each step ends in its proof, normally a few scoped commits. Check it off here and
 its **Ticks** boxes in the plan in the same commit, with a concise evidence receipt.
@@ -97,7 +98,7 @@ feasibility gate. The [status](CONFIGURABLE_NOTIFICATIONS_STATUS.md) and plan re
 the evidence and budgets. S3 still must implement and test the collector and
 delivery behavior; T1 does not claim those feature proofs or any live/device proof.
 
-- [ ] **S2 — Prove the existing phone can use the test host.** Configure a new home,
+- [x] **S2 — Prove the existing phone can use the test host.** Configure a new home,
       identity, endpoint, and relay connection. Pair the installed Android app as an
       additional host, verify server identity/state with Wi-Fi off, and observe an
       eligible unmuted remote push. Inspect launch configuration before running it.
@@ -188,7 +189,7 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
     artifact identity and timing limits. S5/G3's browser OS proof now closes S6
     final acceptance; later test/docs-only preparation did not require rebuilding.
 
-- [ ] **S7 — Prove muted/unmuted behavior on the actual phone.** Start the approved
+- [x] **S7 — Prove muted/unmuted behavior on the actual phone.** Start the approved
       isolated feature host using S6's revision. The installed Android app connects
       over relay/mobile data. Prove retained state, then remote push suppression and
       runtime unmute with positive controls before and after the muted trial.
@@ -207,7 +208,7 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
     background the app when requested, and report arrivals. This step waits for
     observations; no silent assumption that a missing response means no notification.
 
-- [ ] **S8 — Clean up and hand off the verified feature.** Stop only test processes,
+- [x] **S8 — Clean up and hand off the verified feature.** Stop only test processes,
       remove test-host subscriptions/pairings and temporary runtime state, and retain
       build artifacts and concise proof receipts. Reconcile roadmap and plan status.
   - **Needs:** S7 completed or stopped with a recorded failure; final acceptance
