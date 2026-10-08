@@ -18,6 +18,7 @@ import type { AgentManager } from "../agent-manager.js";
 import {
   ActiveTurnBehaviorSchema,
   AgentProfileSchema,
+  ReplyRuleSchema,
   WorkspaceNotificationsSchema,
 } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
@@ -118,6 +119,7 @@ import {
 } from "./types.js";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
+import { SessionAuthorization } from "../../authorization/index.js";
 
 export interface PaseoToolHostDependencies {
   agentMessages?: () => AgentMessageDelivery;
@@ -130,7 +132,11 @@ export interface PaseoToolHostDependencies {
   getDaemonTcpPort?: () => number | null;
   scheduleService?: ScheduleService | null;
   providerSnapshotManager: ProviderSnapshotManager;
-  daemonConfigStore?: Pick<DaemonConfigStore, "get">;
+  daemonConfigStore?: Pick<DaemonConfigStore, "get" | "getReplyRules" | "patch">;
+  /** Host permissions are supplied only by an authenticated daemon HTTP MCP request. */
+  hostAuthorization?: SessionAuthorization;
+  /** Whether this host implements daemon-wide reply-rule filtering. */
+  replyRuleFilteringEnabled?: boolean;
   github?: ForgeService;
   workspaceGitService?: Pick<
     WorkspaceGitService,
@@ -646,6 +652,19 @@ function createToolCatalog(
     resolveCallerContext,
     logger,
   } = options;
+  const hostAuthorization = options.hostAuthorization ?? new SessionAuthorization([]);
+  const replyRuleFilteringEnabled = options.replyRuleFilteringEnabled === true;
+  const requireHostPermission = (permission: "daemon.read" | "daemon.manage") => {
+    if (!hostAuthorization.allowsPermission(permission)) {
+      throw new Error(`This operation requires ${permission} host permission.`);
+    }
+  };
+  const requireReplyRuleFilteringSupport = () => {
+    if (!replyRuleFilteringEnabled || !daemonConfigStore) {
+      throw new Error("Update the host to manage daemon-wide notification rules.");
+    }
+    return daemonConfigStore;
+  };
   const workspaceNotificationsEnabled = options.workspaceNotificationsEnabled === true;
   const childLogger = logger.child({ module: "agent", component: "paseo-tool-catalog" });
   const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
@@ -1570,6 +1589,63 @@ function createToolCatalog(
       return {
         content: [],
         structuredContent: ensureValidJson({ workspaces }),
+      };
+    },
+  );
+
+  registerTool(
+    "get_daemon_notification_rules",
+    {
+      title: "Get daemon notification rules",
+      description: "Read the daemon-wide reply filtering rules.",
+      inputSchema: {},
+      outputSchema: { replyRules: z.array(ReplyRuleSchema) },
+    },
+    async () => {
+      requireHostPermission("daemon.read");
+      const store = requireReplyRuleFilteringSupport();
+      const replyRules = store.getReplyRules();
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ replyRules: [...replyRules] }),
+      };
+    },
+  );
+
+  registerTool(
+    "set_daemon_notification_rules",
+    {
+      title: "Set daemon notification rules",
+      description: "Replace the daemon-wide reply filtering rules.",
+      inputSchema: { replyRules: z.array(ReplyRuleSchema) },
+      outputSchema: { replyRules: z.array(ReplyRuleSchema) },
+    },
+    async ({ replyRules }) => {
+      requireHostPermission("daemon.manage");
+      const store = requireReplyRuleFilteringSupport();
+      store.patch({ replyRules });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ replyRules: [...store.getReplyRules()] }),
+      };
+    },
+  );
+
+  registerTool(
+    "clear_daemon_notification_rules",
+    {
+      title: "Clear daemon notification rules",
+      description: "Remove every daemon-wide reply filtering rule.",
+      inputSchema: {},
+      outputSchema: { replyRules: z.array(ReplyRuleSchema) },
+    },
+    async () => {
+      requireHostPermission("daemon.manage");
+      const store = requireReplyRuleFilteringSupport();
+      store.patch({ replyRules: [] });
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ replyRules: [...store.getReplyRules()] }),
       };
     },
   );

@@ -2,8 +2,9 @@
 
 This revision incorporates daemon-wide reply filtering from confirmed Tiers 1–2.
 The user confirmed the original planning revision on 2026-10-04 and later
-authorized implementation in the requested sibling worktree. T1/S1 is complete;
-feature implementation remains ahead. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
+authorized implementation in the requested sibling worktree. T1/S1 and T3/S3–S4/G2
+are complete within focused local verification; user controls and live delivery
+gates remain open. See the [current status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
 
 Five threads deliver the [roadmap](CONFIGURABLE_NOTIFICATIONS_ROADMAP.md) through
 G4. The current order is T1 → T3 → T4 → T2 → T5. T2 remains a prerequisite for
@@ -45,8 +46,8 @@ keeps its dependencies and extends the chunks and proofs below.
   newly ready threads. Never mark a deferred proof as passed.
 
 Historical macOS packaging receipts are documented in the plan; neither packaged
-app was launched. T1/S1 is the only completed feature-plan step, and no test host
-is running. The clean implementation base is `4ea125b83` in the requested sibling
+app was launched. T1/S1 and T3/S3–S4/G2 are accepted, and no test host is running.
+The clean implementation base is `4ea125b83` in the requested sibling
 worktree; older planning-branch and local Mise receipts are historical and do not
 describe this checkout.
 
@@ -127,7 +128,8 @@ roadmap, and status. Feature implementation and G1 remain open.
 
 ## T3 — Durable policy and automation parity: S3–S4
 
-**State:** next after completed T1; T2 is not a prerequisite.
+**State:** complete. S3–S4/G2 and M2.1–M2.4 accepted through focused local tests
+and isolated CLI/MCP transport journeys. Phone delivery remains unverified until T5.
 
 ```text
 /keep-me-in-the-loop Run T3 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
@@ -156,7 +158,7 @@ roadmap, and status. Feature implementation and G1 remain open.
 
 ## T4 — Desktop user control and feature builds: S5–S6
 
-**State:** follows T3/G2.
+**State:** ready after accepted T3/G2; S5a shared workspace controls are active.
 
 ```text
 /keep-me-in-the-loop Run T4 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.
