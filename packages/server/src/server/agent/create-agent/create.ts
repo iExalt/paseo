@@ -454,7 +454,9 @@ async function ensureWorkspaceForMcpCreate(
   if (!dependencies.ensureWorkspaceForCreate) {
     return undefined;
   }
-  return dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt }, { notifications });
+  return notifications === undefined
+    ? dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt })
+    : dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt }, { notifications });
 }
 
 async function sendInitialPrompt(

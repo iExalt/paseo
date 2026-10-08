@@ -69,6 +69,7 @@ import type { BrowserToolsBroker, BrowserToolsExecuteInput } from "../browser-to
 import type { BrowserToolsResponsePayload } from "../browser-tools/errors.js";
 import { readPaseoWorktreeMetadata } from "../../utils/worktree-metadata.js";
 import { createWorkspaceProvisioningService } from "../session/workspace-provisioning/workspace-provisioning-service.js";
+import { SessionAuthorization } from "../authorization/index.js";
 
 const REPO_CWD = resolvePath("/tmp/repo");
 const TARGET_CWD = resolvePath("/tmp/target");
@@ -2876,6 +2877,13 @@ describe("create_agent MCP tool", () => {
 
   it("passes a local workspace notification policy into shared provisioning", async () => {
     const { agentManager, agentStorage } = createTestDeps();
+    const replyRules = [{ source: "^keep$", flags: "u" }];
+    const patchDaemonConfig = vi.fn();
+    const daemonConfigStore = {
+      get: vi.fn(() => ({ replyRules })),
+      getReplyRules: vi.fn(() => replyRules),
+      patch: patchDaemonConfig,
+    } as unknown as DaemonConfigStore;
     const createDirectoryWorkspace = vi.fn(
       async (
         _cwd: string,
@@ -2899,6 +2907,7 @@ describe("create_agent MCP tool", () => {
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
       createDirectoryWorkspace,
+      daemonConfigStore,
       workspaceNotificationsEnabled: true,
       logger,
     });
@@ -2919,6 +2928,8 @@ describe("create_agent MCP tool", () => {
       workspaceId: "ws-local-policy",
       notifications: "off",
     });
+    expect(patchDaemonConfig).not.toHaveBeenCalled();
+    expect(daemonConfigStore.getReplyRules()).toEqual(replyRules);
   });
 
   it("preserves branch checkout and pull request checkout workspace modes", async () => {
@@ -3400,6 +3411,85 @@ describe("create_agent MCP tool", () => {
       }),
     ).rejects.toThrow("workspace registry write failed");
     expect(update).toHaveBeenCalledWith("ws-1", "off");
+  });
+
+  it("authorizes daemon notification rules by host permission and capability", async () => {
+    const { agentManager, agentStorage } = createTestDeps();
+    let replyRules: Array<{ source: string; flags: string }> = [];
+    const patch = vi.fn((value: { replyRules: Array<{ source: string; flags: string }> }) => {
+      replyRules = value.replyRules;
+      return {};
+    });
+    const getReplyRules = vi.fn(() => replyRules);
+    const daemonConfigStore = {
+      get: vi.fn(() => ({})),
+      getReplyRules,
+      patch,
+    } as unknown as DaemonConfigStore;
+    const base = {
+      agentManager,
+      agentStorage,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      daemonConfigStore,
+      replyRuleFilteringEnabled: true,
+      logger,
+    };
+    const anonymousServer = await createAgentMcpServer(base);
+
+    await expect(
+      registeredTool(anonymousServer, "get_daemon_notification_rules").handler({}),
+    ).rejects.toThrow("daemon.read");
+    await expect(
+      registeredTool(anonymousServer, "set_daemon_notification_rules").handler({
+        replyRules: [{ source: "^private$", flags: "u" }],
+      }),
+    ).rejects.toThrow("daemon.manage");
+    expect(getReplyRules).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+
+    const readerServer = await createAgentMcpServer({
+      ...base,
+      hostAuthorization: new SessionAuthorization(["daemon.read"]),
+    });
+    await expect(
+      registeredTool(readerServer, "get_daemon_notification_rules").handler({}),
+    ).resolves.toMatchObject({ structuredContent: { replyRules: [] } });
+    await expect(
+      registeredTool(readerServer, "clear_daemon_notification_rules").handler({}),
+    ).rejects.toThrow("daemon.manage");
+    expect(patch).not.toHaveBeenCalled();
+
+    const managerServer = await createAgentMcpServer({
+      ...base,
+      hostAuthorization: new SessionAuthorization(["daemon.manage"]),
+    });
+    const set = await invokeToolWithParsedInput(
+      registeredTool(managerServer, "set_daemon_notification_rules"),
+      { replyRules: [{ source: "^No news\\.$", flags: "u" }] },
+    );
+    const cleared = await registeredTool(managerServer, "clear_daemon_notification_rules").handler(
+      {},
+    );
+    expect(set.structuredContent).toEqual({
+      replyRules: [{ source: "^No news\\.$", flags: "u" }],
+    });
+    expect(cleared.structuredContent).toEqual({ replyRules: [] });
+    expect(patch).toHaveBeenNthCalledWith(1, {
+      replyRules: [{ source: "^No news\\.$", flags: "u" }],
+    });
+    expect(patch).toHaveBeenNthCalledWith(2, { replyRules: [] });
+
+    const unsupportedServer = await createAgentMcpServer({
+      ...base,
+      hostAuthorization: new SessionAuthorization(["daemon.manage"]),
+      replyRuleFilteringEnabled: false,
+    });
+    await expect(
+      registeredTool(unsupportedServer, "set_daemon_notification_rules").handler({
+        replyRules: [],
+      }),
+    ).rejects.toThrow("Update the host");
+    expect(patch).toHaveBeenCalledTimes(2);
   });
 
   it("accepts custom provider IDs in create_agent input validation", async () => {
