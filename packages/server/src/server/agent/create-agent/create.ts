@@ -51,6 +51,7 @@ export interface CreateAgentCommandDependencies {
 export type EnsureWorkspaceForCreate = (
   cwd: string,
   firstAgentContext?: FirstAgentContext,
+  options?: { notifications?: "on" | "off" },
 ) => Promise<string>;
 
 export interface CreateAgentFromSessionInput {
@@ -86,6 +87,7 @@ export interface CreateAgentFromMcpInput {
   config?: Partial<AgentSessionConfig>;
   cwd?: string;
   workspaceId?: string;
+  notifications?: "on" | "off";
   thinking?: string;
   features?: Record<string, unknown>;
   labels?: Record<string, string>;
@@ -116,6 +118,7 @@ export interface CreateAgentFromMcpInput {
     refName?: string;
     action?: "branch-off" | "checkout";
     githubPrNumber?: number;
+    notifications?: "on" | "off";
   };
 }
 
@@ -333,7 +336,12 @@ async function resolveMcpCreateAgent(
     resolveWorkspace: async (workspaceId) => ({ workspaceId, cwd: resolvedCwd }),
     createWorkspace: async () => ({
       workspaceId: requireResolvedWorkspaceId(
-        await ensureWorkspaceForMcpCreate(dependencies, resolvedCwd, input.initialPrompt ?? ""),
+        await ensureWorkspaceForMcpCreate(
+          dependencies,
+          resolvedCwd,
+          input.initialPrompt ?? "",
+          input.notifications,
+        ),
       ),
       cwd: resolvedCwd,
     }),
@@ -441,11 +449,12 @@ async function ensureWorkspaceForMcpCreate(
   dependencies: CreateAgentCommandDependencies,
   cwd: string,
   initialPrompt: string,
+  notifications?: "on" | "off",
 ): Promise<string | undefined> {
   if (!dependencies.ensureWorkspaceForCreate) {
     return undefined;
   }
-  return dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt });
+  return dependencies.ensureWorkspaceForCreate(cwd, { prompt: initialPrompt }, { notifications });
 }
 
 async function sendInitialPrompt(
@@ -545,6 +554,7 @@ async function resolveMcpCwd(params: {
       refName: worktree.refName,
       action: worktree.action,
       githubPrNumber: worktree.githubPrNumber,
+      notifications: worktree.notifications,
       firstAgentContext: { prompt: params.initialPrompt },
       runSetup: false,
       paseoHome: dependencies.paseoHome,

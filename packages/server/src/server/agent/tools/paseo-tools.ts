@@ -5,7 +5,7 @@ import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
-import { AgentProfileSchema } from "@getpaseo/protocol/messages";
+import { AgentProfileSchema, WorkspaceNotificationsSchema } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
   AgentFeatureSchema,
@@ -123,15 +123,19 @@ export interface PaseoToolHostDependencies {
     cwd: string,
     title?: string | null,
     projectId?: string,
+    notifications?: "on" | "off",
   ) => Promise<PersistedWorkspaceRecord>;
   workspaceScripts?: Pick<WorkspaceScriptsService, "list" | "launch" | "stop">;
   markWorkspaceArchiving?: ArchiveDependencies["markWorkspaceArchiving"];
   clearWorkspaceArchiving?: ArchiveDependencies["clearWorkspaceArchiving"];
   createPaseoWorktree?: CreatePaseoWorktreeWorkflowFn;
+  /** Whether workspace notification policy can be requested before creation. */
+  workspaceNotificationsEnabled?: boolean;
   // Mints a fresh directory workspace for a cwd and returns its id.
   ensureWorkspaceForCreate?: (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
+    options?: { notifications?: "on" | "off" },
   ) => Promise<string>;
   browserToolsEnabled?: boolean;
   browserToolsBroker?: BrowserToolsBroker | null;
@@ -189,6 +193,7 @@ const WorkspaceAutomationSummarySchema = z.object({
   isolation: z.enum(["local", "worktree"]),
   kind: z.enum(["directory", "local_checkout", "worktree"]),
   title: z.string().nullable(),
+  notifications: WorkspaceNotificationsSchema,
 });
 
 function toWorkspaceAutomationSummary(workspace: PersistedWorkspaceRecord) {
@@ -199,6 +204,7 @@ function toWorkspaceAutomationSummary(workspace: PersistedWorkspaceRecord) {
     isolation: workspace.kind === "worktree" ? ("worktree" as const) : ("local" as const),
     kind: workspace.kind,
     title: workspace.title,
+    notifications: workspace.notifications,
   };
 }
 
@@ -574,6 +580,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     resolveCallerContext,
     logger,
   } = options;
+  const workspaceNotificationsEnabled = options.workspaceNotificationsEnabled === true;
   const childLogger = logger.child({ module: "agent", component: "paseo-tool-catalog" });
   const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
 
@@ -623,6 +630,13 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       const tool = tools.get(name);
       if (!tool) {
         throw new Error(`Paseo tool not found: ${name}`);
+      }
+      if (
+        !workspaceNotificationsEnabled &&
+        ((name === "create_workspace" && hasOwnFieldInValue(input, "notifications")) ||
+          (name === "create_agent" && hasWorkspaceNotificationPolicy(input)))
+      ) {
+        throw new Error("Workspace notification policies are not supported by this server.");
       }
       return tool.handler(await parseToolInput(tool, input), context);
     },
@@ -972,6 +986,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     z
       .object({
         kind: z.literal("create"),
+        notifications: WorkspaceNotificationsSchema.optional().describe(
+          "Policy for the new workspace. Omit to use the default.",
+        ),
         source: z.discriminatedUnion("kind", [
           z
             .object({
@@ -1034,6 +1051,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       .describe(
         "Existing workspace id. Agent-scoped calls default to the caller workspace; top-level calls create a new local workspace when omitted.",
       ),
+    notifications: WorkspaceNotificationsSchema.optional().describe(
+      "Policy for a newly created workspace. Omit to use the default.",
+    ),
   };
   const agentToAgentInputSchema = {
     ...canonicalCreateAgentFields,
@@ -1249,6 +1269,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           ),
         projectId: z.string().optional().describe("Existing project id to own the workspace."),
         title: z.string().trim().min(1).optional(),
+        notifications: WorkspaceNotificationsSchema.optional(),
         mode: z
           .enum(["branch-off", "checkout-branch", "checkout-pr"])
           .optional()
@@ -1282,19 +1303,24 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
       outputSchema: WorkspaceAutomationSummarySchema.shape,
     },
-    async ({
-      isolation,
-      path,
-      projectId,
-      title,
-      mode,
-      worktreeSlug,
-      branchName,
-      baseBranch,
-      branch,
-      prNumber,
-      forge,
-    }) => {
+    async (input) => {
+      const {
+        isolation,
+        path,
+        projectId,
+        title,
+        mode,
+        worktreeSlug,
+        branchName,
+        baseBranch,
+        branch,
+        prNumber,
+        forge,
+        notifications,
+      } = input;
+      if (!workspaceNotificationsEnabled && hasOwnField(input, "notifications")) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
       let workspace: PersistedWorkspaceRecord;
       if (isolation === "local") {
         const cwd = resolveScopedCwd(path, { required: true });
@@ -1316,7 +1342,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         if (!options.createDirectoryWorkspace) {
           throw new Error("Workspace provisioning is not configured");
         }
-        workspace = await options.createDirectoryWorkspace(cwd, title, projectId);
+        workspace = await options.createDirectoryWorkspace(cwd, title, projectId, notifications);
       } else {
         let cwd =
           path !== undefined || !projectId ? resolveScopedCwd(path, { required: true }) : null;
@@ -1347,6 +1373,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
             ...(worktreeSlug ? { worktreeSlug } : {}),
             ...worktreeTarget,
             ...(title ? { title } : {}),
+            ...(notifications ? { notifications } : {}),
           },
         );
         if (!result.ok) {
@@ -1448,6 +1475,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async (args: unknown) => {
+      if (!workspaceNotificationsEnabled && hasWorkspaceNotificationPolicy(args)) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
       const resolvedArgs = await resolveCreateAgentToolArgs(args);
       const { parsedArgs, worktree } = resolvedArgs;
       let requestedBackground: boolean;
@@ -1494,6 +1524,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           background: requestedBackground,
           notifyOnFinish,
           detached: resolvedArgs.detached,
+          notifications: resolvedArgs.notifications,
           callerAgentId,
           callerContext,
           worktree,
@@ -1564,6 +1595,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         cwd: string | undefined;
         workspaceId: string | undefined;
         worktree: CreateAgentFromMcpInput["worktree"];
+        notifications?: "on" | "off";
       }
     | {
         kind: "top-level";
@@ -1572,6 +1604,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         cwd: string | undefined;
         workspaceId: string | undefined;
         worktree: CreateAgentFromMcpInput["worktree"];
+        notifications?: "on" | "off";
       };
 
   async function resolveCreateAgentToolArgs(args: unknown): Promise<ResolvedCreateAgentToolArgs> {
@@ -1593,6 +1626,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         };
       }
       const parsed = agentToAgentCreateAgentArgsSchema.parse(args);
+      if (parsed.notifications !== undefined) {
+        throw new Error("Workspace notifications can only be set when creating a workspace.");
+      }
       const { cwd, workspaceId } = await resolveCanonicalCreateAgentWorkspace(parsed.workspaceId, {
         prompt: parsed.initialPrompt,
       });
@@ -1633,6 +1669,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     const { cwd, workspaceId } = await resolveCanonicalCreateAgentWorkspace(
       parsedArgs.workspaceId,
       { prompt: parsedArgs.initialPrompt },
+      parsedArgs.notifications,
     );
     return {
       kind: "top-level",
@@ -1641,6 +1678,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       cwd,
       workspaceId,
       worktree: undefined,
+      notifications: parsedArgs.notifications,
     };
   }
 
@@ -1661,13 +1699,43 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     ].some((key) => input[key] !== undefined);
   }
 
+  function hasWorkspaceNotificationPolicy(args: unknown): boolean {
+    if (!args || typeof args !== "object") {
+      return false;
+    }
+    const input = args as Record<string, unknown>;
+    if (hasOwnField(input, "notifications")) {
+      return true;
+    }
+    return (
+      input.workspace !== null &&
+      typeof input.workspace === "object" &&
+      hasOwnFieldInValue(input.workspace, "notifications")
+    );
+  }
+
+  function hasOwnFieldInValue(input: unknown, field: string): boolean {
+    if (input === null || typeof input !== "object") {
+      return false;
+    }
+    return Object.prototype.hasOwnProperty.call(input, field);
+  }
+
+  function hasOwnField(input: object, field: string): boolean {
+    return hasOwnFieldInValue(input, field);
+  }
+
   async function resolveCanonicalCreateAgentWorkspace(
     workspaceId?: string,
     firstAgentContext?: FirstAgentContext,
+    notifications?: "on" | "off",
   ): Promise<{
     cwd: string | undefined;
     workspaceId: string;
   }> {
+    if (notifications !== undefined && (workspaceId || callerAgentId)) {
+      throw new Error("Workspace notifications can only be set when creating a workspace.");
+    }
     if (workspaceId) {
       const resolved = await resolveCreateAgentWorkspace(
         { kind: "existing", workspaceId },
@@ -1682,7 +1750,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       const cwd = process.cwd();
       return {
         cwd,
-        workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext),
+        workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext, {
+          notifications,
+        }),
       };
     }
     const caller = resolveCallerAgent();
@@ -1850,7 +1920,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       }
       return {
         cwd,
-        workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext),
+        workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext, {
+          notifications: workspace.notifications,
+        }),
         worktree: undefined,
       };
     }
@@ -1859,7 +1931,12 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     return {
       cwd,
       workspaceId: undefined,
-      worktree: resolveCreateAgentWorktree(workspace.source.target),
+      worktree: {
+        ...resolveCreateAgentWorktree(workspace.source.target),
+        ...(workspace.notifications !== undefined
+          ? { notifications: workspace.notifications }
+          : {}),
+      },
     };
   }
 

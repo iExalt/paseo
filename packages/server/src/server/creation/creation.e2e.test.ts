@@ -87,7 +87,11 @@ test("creation progresses before agent readiness and continues after the disconn
     });
     void first.catch(() => undefined);
     const snapshot = await ready.promise;
-    expect(snapshot).toMatchObject({ workspaceId, agentId, phase: "workspace_ready" });
+    expect(snapshot).toMatchObject({
+      workspaceId,
+      agentId,
+      phase: "workspace_ready",
+    });
     expect((await observer.fetchAgents()).entries).toHaveLength(0);
     expect(
       observerMessages.filter((message) => message.type === "workspace.create.update"),
@@ -151,6 +155,7 @@ async function connectCreationPeer(port: number) {
     .toBe(true);
   return {
     close: () => socket.close(),
+    messages: () => frames,
     request: async (
       message: z.input<typeof SessionInboundMessageSchema> & { requestId: string },
     ) => {
@@ -165,6 +170,56 @@ async function connectCreationPeer(port: number) {
     },
   };
 }
+
+test("raw capable creation persists notifications off before the first descriptor", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "creation-notifications-"));
+  const daemon = await createTestPaseoDaemon();
+  const peer = await connectCreationPeer(daemon.port);
+  try {
+    const serverInfo = peer
+      .messages()
+      .find((message) => message.type === "status" && message.payload.status === "server_info");
+    expect(
+      serverInfo?.type === "status" && serverInfo.payload.status === "server_info"
+        ? serverInfo.payload.features.workspaceNotifications
+        : undefined,
+    ).toBeUndefined();
+
+    const response = await peer.request({
+      type: "workspace.create.request",
+      requestId: "workspace-notifications-off",
+      source: { kind: "directory", path: directory },
+      idempotencyKey: "workspace-notifications-off",
+      notifications: "off",
+      subscribe: true,
+    });
+
+    expect(response.type).toBe("workspace.create.response");
+    if (response.type !== "workspace.create.response") {
+      throw new Error("Expected a workspace creation response");
+    }
+    expect(response.payload.error).toBeNull();
+    expect(response.payload.workspace?.notifications).toBe("off");
+    const firstWorkspaceUpdate = () =>
+      peer
+        .messages()
+        .find(
+          (message): message is Extract<SessionOutboundMessage, { type: "workspace_update" }> =>
+            message.type === "workspace_update" &&
+            message.payload.kind === "upsert" &&
+            message.payload.workspace.id === response.payload.workspace?.id,
+        );
+    await expect.poll(firstWorkspaceUpdate).toBeDefined();
+    expect(firstWorkspaceUpdate()?.payload).toMatchObject({
+      kind: "upsert",
+      workspace: { notifications: "off" },
+    });
+  } finally {
+    peer.close();
+    await daemon.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+}, 60000);
 
 test.each([false, true])(
   "workspace identity does not depend on subscribing (first subscribe=%s)",

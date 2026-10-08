@@ -469,6 +469,7 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
 export interface CreateWorkspaceRequestOptions {
   source: WorkspaceCreateRequest["source"];
   title?: string;
+  notifications?: WorkspaceCreateRequest["notifications"];
   idempotencyKey?: string;
   workspaceId?: string;
   agent?: Omit<
@@ -490,6 +491,7 @@ export interface CreatePaseoWorktreeInput extends Pick<
   | "action"
   | "checkoutSource"
   | "githubPrNumber"
+  | "notifications"
 > {}
 
 type CheckoutStatusPayload = CheckoutStatusResponse["payload"];
@@ -3100,6 +3102,29 @@ export class DaemonClient {
     return { pinnedAt: payload.pinnedAt };
   }
 
+  async setWorkspaceNotifications(
+    workspaceId: string,
+    notifications: "on" | "off",
+    requestId?: string,
+  ): Promise<{ notifications: "on" | "off" }> {
+    if (this.lastServerInfoMessage?.features?.workspaceNotifications !== true) {
+      throw new Error("Update the host to manage workspace notifications.");
+    }
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"workspace.notifications.set.response">({
+        requestId,
+        message: {
+          type: "workspace.notifications.set.request",
+          workspaceId,
+          notifications,
+        },
+      });
+    if (!payload.accepted || payload.notifications === null) {
+      throw new Error(payload.error ?? "setWorkspaceNotifications rejected");
+    }
+    return { notifications: payload.notifications };
+  }
+
   async inspectWorkspaceRecovery(
     workspaceId: string,
     requestId?: string,
@@ -4530,6 +4555,12 @@ export class DaemonClient {
     input: CreatePaseoWorktreeInput,
     requestId?: string,
   ): Promise<CreatePaseoWorktreePayload> {
+    if (
+      input.notifications !== undefined &&
+      this.lastServerInfoMessage?.features?.workspaceNotifications !== true
+    ) {
+      throw new Error("Update the host to set workspace notifications during creation.");
+    }
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: {
@@ -4544,6 +4575,7 @@ export class DaemonClient {
         ...(input.action !== undefined ? { action: input.action } : {}),
         ...(input.checkoutSource !== undefined ? { checkoutSource: input.checkoutSource } : {}),
         ...(input.githubPrNumber !== undefined ? { githubPrNumber: input.githubPrNumber } : {}),
+        ...(input.notifications !== undefined ? { notifications: input.notifications } : {}),
       },
       responseType: "create_paseo_worktree_response",
     });
@@ -4585,6 +4617,7 @@ export class DaemonClient {
           ? { idempotencyKey: input.idempotencyKey }
           : {}),
         ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.notifications !== undefined ? { notifications: input.notifications } : {}),
         ...(input.firstAgentContext !== undefined
           ? { firstAgentContext: input.firstAgentContext }
           : {}),

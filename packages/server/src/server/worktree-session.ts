@@ -539,6 +539,7 @@ export async function handleCreatePaseoWorktreeRequest(
         action: request.action,
         checkoutSource: request.checkoutSource,
         githubPrNumber: request.githubPrNumber,
+        notifications: request.notifications,
       },
     );
 

@@ -48,6 +48,7 @@ export interface CreateWorktreeWorkspaceInput {
   branch: string | null;
   baseBranch: string | null;
   title: string | null;
+  notifications?: "on" | "off";
   expectsInitialAgent?: boolean;
   untrustedSource?: UntrustedWorkspaceSource;
 }
@@ -63,7 +64,11 @@ export interface WorkspaceProvisioningService {
     cwd: string,
     title?: string | null,
     projectId?: string,
-    context?: { expectsInitialAgent?: boolean; workspaceId?: string },
+    context?: {
+      expectsInitialAgent?: boolean;
+      workspaceId?: string;
+      notifications?: "on" | "off";
+    },
   ): Promise<PersistedWorkspaceRecord>;
   createWorkspaceForWorktree(
     input: CreateWorktreeWorkspaceInput,
@@ -219,7 +224,11 @@ export function createWorkspaceProvisioningService(deps: {
     cwd: string,
     title?: string | null,
     projectId?: string,
-    context?: { expectsInitialAgent?: boolean; workspaceId?: string },
+    context?: {
+      expectsInitialAgent?: boolean;
+      workspaceId?: string;
+      notifications?: "on" | "off";
+    },
   ): Promise<PersistedWorkspaceRecord> {
     const normalizedCwd = resolve(cwd);
     const checkout = await workspaceGitService.getCheckout(normalizedCwd);
@@ -235,6 +244,7 @@ export function createWorkspaceProvisioningService(deps: {
       title: title?.trim() || null,
       createdAt: timestamp,
       updatedAt: timestamp,
+      notifications: context?.notifications,
     });
     await workspaceRegistry.upsert(workspace, context);
     deps.lifecycle?.emit("workspace.created", { workspace: describeHookWorkspace(workspace) });
@@ -268,6 +278,7 @@ export function createWorkspaceProvisioningService(deps: {
       title: input.title,
       createdAt: timestamp,
       updatedAt: timestamp,
+      notifications: input.notifications,
       ...(input.untrustedSource ? { untrustedSource: input.untrustedSource } : {}),
     });
     await workspaceRegistry.upsert(workspace, {

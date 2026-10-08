@@ -512,10 +512,14 @@ test("createWorkspaceForDirectory always mints a fresh workspace even when one a
   const repo = path.join(tmpDir, "repo");
   gitRoots.add(repo);
 
-  const first = await provisioning.createWorkspaceForDirectory(repo);
+  const first = await provisioning.createWorkspaceForDirectory(repo, null, undefined, {
+    notifications: "off",
+  });
   const second = await provisioning.createWorkspaceForDirectory(repo);
 
   expect(second.workspaceId).not.toBe(first.workspaceId);
+  expect(first.notifications).toBe("off");
+  expect(second.notifications).toBe("on");
   expect(await workspaceRegistry.list()).toHaveLength(2);
 });
 
