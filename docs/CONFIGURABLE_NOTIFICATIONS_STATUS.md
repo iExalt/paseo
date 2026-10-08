@@ -11,14 +11,14 @@ evidence and the next gates; it is not a second implementation checklist.
 
 ## Current snapshot
 
-| Field                        | Status                                                                                                       |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e`         |
-| Current phase                | T1/S1, S3, and S4a accepted; S4b host-rule CLI/MCP parity active                                             |
-| Overall state                | M2.1/M2.2 complete; M2.4/G2, host-rule adapters, M1.2/S2, and G1 remain open                                 |
-| Immediate focus              | Implement host-targeted rule get/set/clear and explicit MCP host authority                                   |
-| Product or release readiness | Workspace CLI/MCP changes have focused local verification; host-rule adapters and phone delivery remain open |
-| Worktree state               | S4a source and focused checks accepted for scoped publication                                                |
+| Field                        | Status                                                                                               |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
+| Current phase                | T1/S1 and T3/S3–S4/G2 accepted; S5a shared workspace controls active                                 |
+| Overall state                | M2.1–M2.4 complete; user controls, build/device proof, M1.2/S2, and G1 remain open                   |
+| Immediate focus              | Shared workspace menu, authoritative state, and notification-policy mutation                         |
+| Product or release readiness | Workspace and host-rule adapters have focused local verification; phone delivery remains open        |
+| Worktree state               | S4b source and focused checks accepted for scoped publication                                        |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -31,7 +31,9 @@ authorized config-change event. Finished notifications consult the current
 matcher after asynchronous lookups and use only the explicit immutable
 completion subject; workspace mute takes precedence and other attention reasons
 are unchanged. S4a adds workspace CLI/MCP create, update, and effective-policy
-list adapters; host-rule adapters and user-facing controls remain open. The
+list adapters. S4b adds host-targeted rule get/set/clear and permission-scoped
+MCP adapters with review acceptance. User-facing controls remain
+open. The
 accepted design does not establish that a provider never truncates its internal response. Later
 lifecycle tests and phone/desktop gates remain required.
 
@@ -99,8 +101,8 @@ Observed RE2 sample timings are feasibility evidence, not a hard latency bound.
   attention delivery, preserving attention/source events with
   `shouldNotify: false` while muted. S3c implements the collector and immutable
   completion subject. S3d implements bounded host-rule persistence and finished
-  notification filtering, with focused tests and review acceptance. CLI/MCP
-  adapters and end-user workspace controls remain open.
+  notification filtering, with focused tests and review acceptance. S4 CLI/MCP
+  adapters are accepted; end-user workspace controls remain open.
 - The original creation disconnect fixture fails on both this worktree and the
   untouched `4ea125b83` baseline at the same `prompts === 1` assertion (actual 7).
   The baseline run took 17.39 s in Vitest and 19.551 s wall time, so this is a
@@ -109,7 +111,7 @@ Observed RE2 sample timings are feasibility evidence, not a hard latency bound.
   foreground/autonomous lifecycle tests. S3d implements the bounded host-rule
   persistence and finished-notification filter, with focused storage, RPC,
   authorization, config-publication, and notification tests and review acceptance.
-  CLI/MCP adapters and end-user workspace controls remain open.
+  CLI/MCP adapters are accepted; end-user workspace controls remain open.
 - No desktop, phone, relay, daemon, or provider was launched for T1. Production
   state and deployment remain excluded.
 - T2 is required before T5, but not before automated T3 or T4.
@@ -138,10 +140,10 @@ implied.
 
 ### I1 — Durable policy and automation parity
 
-Workflow status: in progress.
+Workflow status: complete.
 
-Evidence state: S3 implementation and focused verification review-accepted;
-M2.1/M2.2 complete. M2.4/G2 remain open until S4 automation parity is accepted.
+Evidence state: S3–S4 implementation and focused verification review-accepted;
+M2.1–M2.4/G2 and T3 complete. Live delivery and user-control gates remain open.
 
 Decision owner: approved plan.
 
@@ -161,14 +163,13 @@ Evidence: S3 protocol, registry, provisioning, runtime mutation, delivery gating
 completion subjects, and bounded host-rule persistence/filtering are implemented
 and review-accepted. Focused gates pass, with the creation disconnect baseline
 limitation above. S4a workspace CLI/MCP parity is implemented and review-accepted;
-host-rule adapters remain open.
+S4b host-rule CLI/MCP adapters and explicit host authority are review-accepted.
 
 ## Recommended next sequence
 
-1. T3/S4: implement host-rule adapters and explicit MCP host authority (S4b).
-2. T4: implement user controls, desktop proof, and feature builds.
-3. T2: arrange and run the isolated phone-connectivity positive control.
-4. T5: verify the final feature revision on the phone and clean up test resources.
+1. T4: implement user controls, desktop proof, and feature builds.
+2. T2: arrange and run the isolated phone-connectivity positive control.
+3. T5: verify the final feature revision on the phone and clean up test resources.
 
 This automated-first order is the user's current scheduling decision. T2 remains
 a prerequisite for T5 only.
@@ -182,11 +183,11 @@ a prerequisite for T5 only.
 
 ## Active risks and decisions
 
-| Risk or decision             | Evidence or uncertainty                                                                                                           | Consequence                                   | Mitigation or next evidence                                                                                            | Owner          |
-| ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
-| Completion subject lifecycle | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally                       | A truncated provider reply could match a rule | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
-| Host settings adapters       | RPCs require `daemon.read`/`daemon.manage`; workspace permissions do not grant them; user-facing adapters are not implemented yet | Users cannot manage rules through CLI/MCP yet | Add capability-gated CLI/MCP read, write, and readback paths in S4                                                     | T3             |
-| Phone/relay availability     | No phone positive control has been run                                                                                            | G1 and final device proof remain open         | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
+| Risk or decision             | Evidence or uncertainty                                                                                     | Consequence                                   | Mitigation or next evidence                                                                                            | Owner          |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
+| Completion subject lifecycle | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally | A truncated provider reply could match a rule | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
+| Host settings controls       | CLI/MCP adapters and explicit host authority are accepted; the shared host editor is not implemented yet    | UI rule editing remains unavailable           | Add validated whole-list editing and connected-client synchronization in S5b                                           | T4             |
+| Phone/relay availability     | No phone positive control has been run                                                                      | G1 and final device proof remain open         | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
 
 ## Progress log
 
@@ -303,3 +304,23 @@ a prerequisite for T5 only.
   journey required an outside-sandbox rerun after loopback binding was denied in
   the sandbox. Host-rule adapters, S4b, M2.4/G2, end-user controls, S2, G1, phone
   proof, and production deployment remain open.
+
+### 2026-10-08 02:47 UTC (2026-10-07 22:47 EDT)
+
+- Lead and navigator accepted S4b at 02:49 UTC (22:49 EDT), closing S4,
+  M2.3/M2.4/G2, and T3 within focused local verification. The CLI exposes
+  daemon notification-rule get/set/clear through the existing host-targeted RPC;
+  MCP reads require `daemon.read`, mutations require `daemon.manage`, and only
+  the HTTP request's verified local-owner or daemon-password authorization gets
+  those permissions. Anonymous and injected agent-capability requests retain
+  workspace MCP admission but have no host permissions; direct provider catalogs
+  also default to no host permissions.
+- Focused auth/MCP tests passed (148 tests); the final token-priority and
+  workspace-create/global-rule-isolation cases also passed individually. CLI
+  registration, escaped JSON, malformed-input, and unsupported-host checks
+  passed. The disposable real-transport journey passed (1 test, 7.06 s wall),
+  verifying escaped rule set/readback, invalid-candidate retention, and
+  anonymous/token denial versus local-owner MCP get/set/clear. Server build, root
+  typecheck, root lint, and root format check passed in 10.09 s, 11.67 s, 1.53 s,
+  and 0.62 s. No app, provider, relay, or production entrypoint was launched. T4,
+  T2, T5, and G1 remain open.
