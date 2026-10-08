@@ -209,9 +209,10 @@ import { withTimeout } from "../utils/promise-timeout.js";
 import { isHostnameAllowed, type HostnamesConfig } from "./hostnames.js";
 import {
   createRequireBearerMiddleware,
-  isAgentMcpRequestAuthorized,
+  resolveAgentMcpRequestAdmission,
   type DaemonAuthConfig,
 } from "./auth.js";
+import { SessionAuthorization } from "./authorization/index.js";
 import { deleteLocalCredential, writeLocalCredential } from "./local-credential.js";
 import { createWebUiMiddleware } from "./web-ui.js";
 import { WorkspaceAutoName } from "./workspace-auto-name.js";
@@ -1391,6 +1392,7 @@ export async function createPaseoDaemon(
 
   const createAgentToolHostDependencies = (
     runtime: PaseoToolRuntimeContext,
+    hostAuthorization?: SessionAuthorization,
   ): PaseoToolHostDependencies => ({
     agentManager,
     agentStorage,
@@ -1399,6 +1401,9 @@ export async function createPaseoDaemon(
     scheduleService,
     providerSnapshotManager,
     daemonConfigStore,
+    ...(hostAuthorization ? { hostAuthorization } : {}),
+    replyRuleFilteringEnabled:
+      hostAuthorization !== undefined && typeof daemonConfigStore.getReplyRules === "function",
     github,
     workspaceGitService,
     findWorkspaceIdForCwd: findWorkspaceIdForCwdExternal,
@@ -1487,14 +1492,20 @@ export async function createPaseoDaemon(
   {
     const agentMcpRoute = "/mcp/agents";
 
-    const createAgentMcpSession = async (callerAgentId?: string) => {
+    const createAgentMcpSession = async (
+      callerAgentId: string | undefined,
+      hostAuthorization: SessionAuthorization,
+    ) => {
       const agentMcpServer = await createAgentMcpServer(
-        createAgentToolHostDependencies({
-          callerAgentId,
-          paseoToolPolicy: callerAgentId
-            ? agentManager.getPaseoToolPolicy(callerAgentId)
-            : undefined,
-        }),
+        createAgentToolHostDependencies(
+          {
+            callerAgentId,
+            paseoToolPolicy: callerAgentId
+              ? agentManager.getPaseoToolPolicy(callerAgentId)
+              : undefined,
+          },
+          hostAuthorization,
+        ),
       );
 
       // Stateless mode: each HTTP request builds a fresh server + transport that is
@@ -1530,13 +1541,13 @@ export async function createPaseoDaemon(
       // authenticates here using the injected capability token (or a valid
       // daemon password). Without this, a password-protected daemon would be
       // wide open on its agent control plane.
-      if (
-        !(await isAgentMcpRequestAuthorized({
-          password: config.auth?.password,
-          capabilityToken: agentMcpAuthToken,
-          authorizationHeader: req.header("authorization"),
-        }))
-      ) {
+      const admission = await resolveAgentMcpRequestAdmission({
+        password: config.auth?.password,
+        capabilityToken: agentMcpAuthToken,
+        localCredential,
+        authorizationHeader: req.header("authorization"),
+      });
+      if (admission.kind === "rejected") {
         res.status(401).json({ error: "Unauthorized" });
         return;
       }
@@ -1574,7 +1585,10 @@ export async function createPaseoDaemon(
         } else if (Array.isArray(callerAgentIdRaw) && typeof callerAgentIdRaw[0] === "string") {
           callerAgentId = callerAgentIdRaw[0];
         }
-        const { server, transport } = await createAgentMcpSession(callerAgentId);
+        const { server, transport } = await createAgentMcpSession(
+          callerAgentId,
+          new SessionAuthorization(admission.permissions),
+        );
         res.on("close", () => {
           void transport.close();
           void server.close();

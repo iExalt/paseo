@@ -397,9 +397,9 @@ must report unsupported hosts before sending a mutation.
       before work starts; retries and updates preserve unrelated state.
 - [x] **M2.2 Delivery enforcement:** agent and terminal user-facing notifications
       honor workspace policy while observation events and attention survive.
-- [ ] **M2.3 CLI/MCP parity:** create, update, and readback demonstrate the same
+- [x] **M2.3 CLI/MCP parity:** create, update, and readback demonstrate the same
       behavior and clear errors for unsupported hosts or failed writes.
-- [ ] **M2.4 Daemon denylist:** durable get/set/clear and CLI/MCP parity; completion
+- [x] **M2.4 Daemon denylist:** durable get/set/clear and CLI/MCP parity; completion
       matching suppresses both delivery paths without altering state. Invalid rules,
       missing/truncated/stale text, and non-finished reasons preserve the specified
       behavior; workspace mute takes precedence.
