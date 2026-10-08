@@ -179,6 +179,9 @@ delivery behavior; T1 does not claim those feature proofs or any live/device pro
   - **Proof:** both builds succeed, required checks pass, and artifact metadata
     matches the feature revision. Builds alone do not prove notification behavior.
   - **Ticks:** M4.2; part of W5.
+  - **Build receipt:** npm and Nix arm64 packages passed for `2cd1ee978` plus the
+    refreshed RE2 dependency hash; M4.2 is complete. See the status receipt for
+    artifact identity and timing limits. S6 final acceptance still awaits S5/G3.
 
 - [ ] **S7 — Prove muted/unmuted behavior on the actual phone.** Start the approved
       isolated feature host using S6's revision. The installed Android app connects

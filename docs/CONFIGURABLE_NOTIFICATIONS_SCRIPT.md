@@ -158,8 +158,9 @@ and isolated CLI/MCP transport journeys. Phone delivery remains unverified until
 
 ## T4 — Desktop user control and feature builds: S5–S6
 
-**State:** S5a–S5c automated controls and journey accepted; S6 build preparation
-is next. Human OS notification proof and final S5/G3/S6 acceptance remain open.
+**State:** S5a–S5c automated controls and journey accepted; S6 package-build
+subproof and M4.2 accepted. Human OS notification proof and final S5/G3/S6
+acceptance remain open.
 
 ```text
 /keep-me-in-the-loop Run T4 in docs/CONFIGURABLE_NOTIFICATIONS_SCRIPT.md. Read its rules, dependencies, Human entry, and chunks before proposing the phase. On completion, update the script, roadmap, plan, and shared status; record deviations affecting later threads.

@@ -1,6 +1,6 @@
 # Configurable notifications status
 
-Last updated: 2026-10-08 04:23 UTC (2026-10-08 00:23 EDT)
+Last updated: 2026-10-08 04:39 UTC (2026-10-08 00:39 EDT)
 
 ## Purpose
 
@@ -14,11 +14,11 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | S5c isolated automated journey verified; OS-human notification proof remains open                    |
+| Current phase                | S5c automation and S6 package builds verified; human OS notification proof remains open              |
 | Overall state                | M2.1–M2.4 complete; OS notification proof, M1.2/S2, and G1 remain open                               |
-| Immediate focus              | Prepare S6 packages after accepted S5c automation; review the isolated OS-human launch boundary      |
+| Immediate focus              | Prepare the concrete opt-in browser OS-proof route without launching it                              |
 | Product or release readiness | CLI/MCP/UI flows have headless local verification; OS arrival and phone delivery remain open         |
-| Worktree state               | S5c accepted for publication; SDK compatibility fix is committed separately as `07db5751b`           |
+| Worktree state               | S5c published as `2cd1ee978`; final Nix hash and build receipt are ready for review                  |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -170,7 +170,7 @@ S4b host-rule CLI/MCP adapters and explicit host authority are review-accepted.
 
 ## Recommended next sequence
 
-1. T4: implement user controls, desktop proof, and feature builds.
+1. T4: finish the isolated human OS notification proof; controls and package builds are verified.
 2. T2: arrange and run the isolated phone-connectivity positive control.
 3. T5: verify the final feature revision on the phone and clean up test resources.
 
@@ -403,3 +403,28 @@ a prerequisite for T5 only.
   precede that human session to follow the automated-first order and provide an
   identified feature artifact. S5/G3, S6 final acceptance, and T4 stay open until
   the original live proof passes.
+
+### 2026-10-08 04:39 UTC (2026-10-08 00:39 EDT)
+
+- M4.2's package-build subproof is accepted. Source was `2cd1ee978` plus the final
+  Nix dependency hash `sha256-XTbk9VwrCHqjbHqvX5xTYPCw6ewCJ4R+M2+bALkrOos=`.
+  Hash refresh took 53 s and changed only `nix/npm-deps.hash`; the lock stayed
+  unchanged. The tracked-source snapshot and full identity receipt are retained
+  under `.dev/configurable-notifications/s6/`.
+- Unsigned npm macOS directory packaging passed in about 2 min 15 s; Expo export
+  took 30.0 s. The 491 MB artifact is `s6/npm/mac-arm64/Paseo.app` under that
+  evidence directory. Signing, notarization, publishing, and smoke launching were
+  disabled. npm stdout was not retained as a separate log.
+- Nix passed at one job and four cores, reusing cached Node/Electron. The output
+  is `/nix/store/ws1zv706wxaccnvhp44d5l9gyamljmyp-paseo-desktop-0.11.0` (477 MB),
+  retained through the task-owned indirect GC root `s6/nix-result`. Phase timings
+  were dependency closure 55 s, install 24 s, patches 40 s, Expo 51.3 s, and
+  desktop build 76 s; total shell wall time was not captured. The actual Nix log
+  is retained. The snapshot lacks Git metadata, so Nix uses its existing zero
+  revision-count fallback; npm/Nix metadata equality is not claimed.
+- All eight patches applied. Static inspection found the native helpers and
+  RE2 JavaScript/WASM in both packages; no app launched. No fork CI runs were
+  available for the branch. Human OS arrival, S5/G3, final S6/T4 acceptance,
+  and phone gates remain open. The next browser proof will use a disposable
+  profile and real Notification API; its browser-level macOS permission scope
+  must be authorized before launch.
