@@ -14,11 +14,11 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T1/S1, T3/S3–S4/G2, and S5a accepted; S5b host-rule editor active                                    |
-| Overall state                | M2.1–M2.4 complete; host-rule editor, combined desktop proof, M1.2/S2, and G1 remain open            |
-| Immediate focus              | Host-rule settings editor, authoritative updates, and draft/save feedback                            |
+| Current phase                | T1/S1, T3/S3–S4/G2, and S5a–S5b accepted; S5c combined journey next                                  |
+| Overall state                | M2.1–M2.4 complete; combined desktop proof, M1.2/S2, and G1 remain open                              |
+| Immediate focus              | S5c isolated browser journey and S6 feature builds                                                   |
 | Product or release readiness | Workspace and host-rule adapters have focused local verification; phone delivery remains open        |
-| Worktree state               | S5a source and focused checks accepted for scoped publication                                        |
+| Worktree state               | S5b source and focused checks accepted for scoped publication                                        |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
@@ -32,8 +32,8 @@ matcher after asynchronous lookups and use only the explicit immutable
 completion subject; workspace mute takes precedence and other attention reasons
 are unchanged. S4a adds workspace CLI/MCP create, update, and effective-policy
 list adapters. S4b adds host-targeted rule get/set/clear and permission-scoped
-MCP adapters with review acceptance. The S5a workspace menu implementation is
-under review; the host-rule editor and combined desktop journey remain open. The
+MCP adapters with review acceptance. S5a's shared workspace menu is accepted.
+The S5b host-rule editor is accepted; the combined desktop journey remains open. The
 accepted design does not establish that a provider never truncates its internal response. Later
 lifecycle tests and phone/desktop gates remain required.
 
@@ -186,7 +186,7 @@ a prerequisite for T5 only.
 | Risk or decision             | Evidence or uncertainty                                                                                     | Consequence                                   | Mitigation or next evidence                                                                                            | Owner          |
 | ---------------------------- | ----------------------------------------------------------------------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------- |
 | Completion subject lifecycle | The collector covers observed live chunks, but cannot prove a provider did not silently truncate internally | A truncated provider reply could match a rule | Match only the complete retained live segment; missing, ambiguous, declared-truncated, or oversized subjects fail open | T3             |
-| Host settings controls       | CLI/MCP adapters and explicit host authority are accepted; the shared host editor is not implemented yet    | UI rule editing remains unavailable           | Add validated whole-list editing and connected-client synchronization in S5b                                           | T4             |
+| Host settings controls       | S5b editor and focused checks are accepted; browser journey remains deferred to S5c                         | Combined app behavior remains unverified      | Verify combined host settings flow in S5c                                                                              | T4             |
 | Phone/relay availability     | No phone positive control has been run                                                                      | G1 and final device proof remain open         | Run T2 after automated work, then T5 against the final revision                                                        | User and T2/T5 |
 
 ## Progress log
@@ -354,3 +354,22 @@ a prerequisite for T5 only.
 - S5/G3 remains incomplete. The host editor, combined browser proof, feature
   builds, desktop/device delivery, S2/G1, and phone gates remain open. No browser,
   Metro, headed app, device, or real OS notification was started for S5a.
+
+### 2026-10-08 03:38 UTC (2026-10-07 23:38 EDT)
+
+- Implemented the S5b daemon-wide rule editor in the shared Host Agents settings
+  surface. It subscribes to authorized current-client config events before the
+  initial read, ignores a late read success or failure after a newer event, and
+  treats the event stream as authoritative; mutation ACKs never replace saved
+  state. Unchanged config events do not disturb dirty drafts. Dirty drafts remain
+  intact on external updates and failed saves, with explicit reload/keep conflict
+  choices and host-epoch isolation. The editor explains read/write permission
+  context, filtering support, scope, RE2 syntax, flags, and limits in all supported
+  locales.
+- Focused editor/model/translation checks passed (52 tests, 2.32 s). They cover
+  unchanged-config events, same-client disconnect/reconnect with late read
+  completion, selected-host isolation, pending authoritative confirmation, and
+  source input preservation. Root typecheck, lint, and format check passed in
+  11.285 s, 1.457 s, and 0.605 s. No app export, browser, Metro, provider, relay,
+  phone, or production process was started. S5b is accepted; S5/G3 remains
+  incomplete and S5c/S6 gates remain open.
