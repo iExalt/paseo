@@ -1,14 +1,50 @@
-import { useCallback } from "react";
+import { createElement, useCallback } from "react";
+import { View } from "react-native";
+import { Bell, Slash } from "lucide-react-native";
+import { withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/contexts/toast-context";
 import { useHostFeature } from "@/runtime/host-features";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
+import type { Theme } from "@/styles/theme";
 import {
   claimWorkspaceNotificationMutation,
   useWorkspaceNotificationMutationPending,
 } from "./pending";
+
+const ThemedBell = withUnistyles(Bell);
+const ThemedSlash = withUnistyles(Slash);
+
+const mutedIconMapping = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+
+const iconContainerStyle = { width: 14, height: 14, position: "relative" as const };
+const slashOverlayStyle = {
+  position: "absolute" as const,
+  top: 0,
+  right: 0,
+  bottom: 0,
+  left: 0,
+};
+
+function WorkspaceNotificationIcon({ muted, testID }: { muted: boolean; testID: string }) {
+  return (
+    <View testID={`${testID}-icon`} style={iconContainerStyle}>
+      <ThemedBell
+        testID={`${testID}-bell`}
+        size={14}
+        strokeWidth={1.5}
+        uniProps={mutedIconMapping}
+      />
+      {muted ? (
+        <View testID={`${testID}-slash`} pointerEvents="none" style={slashOverlayStyle}>
+          <ThemedSlash size={14} strokeWidth={1.5} uniProps={mutedIconMapping} />
+        </View>
+      ) : null}
+    </View>
+  );
+}
 
 export interface WorkspaceNotificationsMenuItemProps {
   serverId: string;
@@ -63,8 +99,16 @@ export function WorkspaceNotificationsMenuItem({
     description: supported ? undefined : t("sidebar.workspace.actions.updateHostForNotifications"),
     onSelect: handleSelect,
   };
+  const leading = createElement(WorkspaceNotificationIcon, {
+    muted: notifications === "on",
+    testID,
+  });
 
   // ContextMenuItem is the same shared menu-engine MenuItem re-export. The dropdown alias works
   // under either existing menu root and avoids introducing a second row implementation.
-  return <DropdownMenuItem {...itemProps}>{label}</DropdownMenuItem>;
+  return (
+    <DropdownMenuItem {...itemProps} leading={leading}>
+      {label}
+    </DropdownMenuItem>
+  );
 }

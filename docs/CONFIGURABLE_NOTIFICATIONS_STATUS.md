@@ -16,7 +16,7 @@ evidence and the next gates; it is not a second implementation checklist.
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
 | Current phase                | T1–T5 complete; all G1–G4 gates accepted                                                             |
 | Overall state                | M1–M4 and S1–S8 complete within the stated verification boundaries                                   |
-| Immediate focus              | Merged into `dev`; rebuilt desktop artifacts available for user testing                              |
+| Immediate focus              | Merged into `dev`; rebuilt desktop and standalone Android artifacts available for user testing       |
 | Product or release readiness | Desktop/browser and Android remote-push proof accepted; no deployment claim                          |
 | Worktree state               | Accepted feature fast-forwarded into `dev` at `6b4995811`; all test runtimes stopped                 |
 
@@ -59,6 +59,20 @@ helpers. Logs remain in the ignored `dev-rebuild` directory. These artifacts
 were not launched or installed; `/Applications/Paseo.app` remains version
 `0.10.3`. Prior feature-worktree artifacts remain protected. A later status-only
 commit does not change the recorded build-source identity.
+
+The standalone Android build used source `8bf821fea` and is available at
+`.dev/configurable-notifications/android/Paseo-Debug-arm64-v0.11.0.apk` (140,344,227
+bytes; SHA-256 `a2e05deb24d776c3bacab4a1047096afe4b706370cd5f677e0d6ecc694a7848a`). It
+is a self-contained Hermes APK for `sh.paseo.debug`, version `0.11.0` / code
+`11000`, min SDK 29 and target SDK 36, signed with the local Android Debug
+certificate, non-debuggable, and contains only arm64 libraries. The SDK 36
+`zipalign -P 16` check passed. The one-worker release build took 8:55.92; cold
+setup exceeded the initial 15–45 minute estimate because of native API and patch
+compatibility fixes, and total setup time was not captured. See the
+[standalone Android build recipe](upstream/android.md#standalone-local-apk). No matching Firebase
+configuration was present, so this APK has no configured push registration;
+Expo push credentials were not queried. The APK was not installed or launched;
+the earlier Play Store phone proof remains a separate result.
 
 ## Accomplishments with evidence
 

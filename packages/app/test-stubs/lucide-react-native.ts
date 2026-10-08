@@ -1,12 +1,16 @@
-import type { ComponentType } from "react";
+import { createElement, type ComponentType } from "react";
 
 export type LucideIcon = ComponentType<{
   size?: number;
   color?: string;
+  strokeWidth?: number;
+  testID?: string;
   uniProps?: unknown;
 }>;
 
 const StubIcon: LucideIcon = () => null;
+const TestableStubIcon: LucideIcon = ({ testID }) =>
+  testID ? createElement("span", { "data-testid": testID }) : null;
 
 export const Activity = StubIcon;
 export const AlertTriangle = StubIcon;
@@ -21,6 +25,7 @@ export const AudioLines = StubIcon;
 export const Blocks = StubIcon;
 export const Bot = StubIcon;
 export const Brain = StubIcon;
+export const Bell = TestableStubIcon;
 export const Check = StubIcon;
 export const CheckCircle = StubIcon;
 export const CheckCircle2 = StubIcon;
@@ -95,6 +100,7 @@ export const ShieldAlert = StubIcon;
 export const ShieldCheck = StubIcon;
 export const ShieldOff = StubIcon;
 export const ShieldQuestionMark = StubIcon;
+export const Slash = StubIcon;
 export const Smartphone = StubIcon;
 export const Split = StubIcon;
 export const Square = StubIcon;
