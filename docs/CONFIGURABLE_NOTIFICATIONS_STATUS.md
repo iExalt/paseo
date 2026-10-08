@@ -14,16 +14,17 @@ evidence and the next gates; it is not a second implementation checklist.
 | Field                        | Status                                                                                               |
 | ---------------------------- | ---------------------------------------------------------------------------------------------------- |
 | Baseline                     | Fixed T1 baseline `4ea125b83`, macOS arm64, Node 26.11; current branch includes T1 commit `de83523e` |
-| Current phase                | T1/S1 complete; S3a policy storage and S3b agent/terminal enforcement implemented                    |
-| Overall state                | S3 remains open; S3c, M1.2/S2, and G1 are not complete                                               |
-| Immediate focus              | S3c completion subjects and bounded matcher                                                          |
+| Current phase                | T1/S1 and S3a/b accepted; S3c subject provenance and bounded matcher implemented                     |
+| Overall state                | S3 remains open; S3d host-rule integration, M1.2/S2, and G1 are not complete                         |
+| Immediate focus              | S3d atomic host rules and delivery integration                                                       |
 | Product or release readiness | Server suppression is verified in focused fixtures; user controls and phone delivery remain open     |
-| Worktree state               | S3b source and focused tests accepted for scoped publication                                         |
+| Worktree state               | S3c source and focused tests accepted for scoped publication                                         |
 
 The T1 result closes planning and feasibility questions only. S3a adds durable
 workspace policy storage and mutation; S3b now enforces that policy for agent and
-terminal attention delivery and advertises the capability. Regex filtering and
-the immutable completion subject remain unimplemented in S3c. The accepted design
+terminal attention delivery and advertises the capability. S3c now collects a
+turn-scoped completion subject and provides a bounded RE2 matcher, but does not
+persist or apply host rules to notification delivery. The accepted design
 does not establish that a provider never truncates its internal response. Later
 lifecycle tests and phone/desktop gates remain required.
 
@@ -97,8 +98,9 @@ Observed RE2 sample timings are feasibility evidence, not a hard latency bound.
   untouched `4ea125b83` baseline at the same `prompts === 1` assertion (actual 7).
   The baseline run took 17.39 s in Vitest and 19.551 s wall time, so this is a
   reproduced baseline limitation rather than an S3a regression.
-- The collector, immutable subject, global filter, CLI controls, and end-user
-  workspace controls have not been implemented.
+- S3c implements the collector and immutable callback subject, with focused
+  foreground/autonomous lifecycle tests. The global filter, host-rule
+  persistence, CLI controls, and end-user workspace controls remain open.
 - No desktop, phone, relay, daemon, or provider was launched for T1. Production
   state and deployment remain excluded.
 - T2 is required before T5, but not before automated T3 or T4.
@@ -222,3 +224,23 @@ a prerequisite for T5 only.
 - Marked M1.1/M1.3/S1/T1 complete as contract and feasibility outcomes only.
 - Updated the current sequence to T1 → T3 → T4 → T2 → T5. Implementation,
   G1, device proof, and production deployment remain open.
+
+### 2026-10-08 01:39 UTC (2026-10-07 21:39 EDT)
+
+- Implemented S3c pre-coalescer collection for clean foreground and autonomous
+  turns, immutable successful-completion callback subjects, and a pure bounded
+  `re2-wasm@1.0.2` matcher. No global rules are persisted or applied to delivery.
+- Collector, matcher, and existing stream-coalescing tests passed: 39 tests in
+  0.681 s. `npm run build:server`, root typecheck, and root lint passed. Formatting
+  and the changed-file format check passed.
+- The affected eight-file gate passed 138 tests in 7.821 s wall time against
+  the fixed 10.183 s baseline, within the unchanged 15 s budget. Later focused
+  lifecycle/ambiguity regression checks passed 37 tests in 1.242 s. A mismatched
+  live timeline identity makes the whole turn ineligible, even after a later
+  segment reset; stale terminals cannot clear a newer collector.
+- Lead and navigator accepted S3c at 01:46 UTC (21:46 EDT). Final server build
+  passed in 9.984 s. The new runtime dependency requires the final Nix npm hash
+  refresh and packaging verification in S6.
+- S3 overall, global rule
+  persistence/filtering, CLI and workspace controls, S2, G1, phone proof, and
+  production deployment remain open.
