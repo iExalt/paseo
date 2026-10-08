@@ -393,9 +393,9 @@ must report unsupported hosts before sending a mutation.
 
 ### M2 — Durable policy and automation parity
 
-- [ ] **M2.1 Persistence and creation:** local/worktree creation applies policy
+- [x] **M2.1 Persistence and creation:** local/worktree creation applies policy
       before work starts; retries and updates preserve unrelated state.
-- [ ] **M2.2 Delivery enforcement:** agent and terminal user-facing notifications
+- [x] **M2.2 Delivery enforcement:** agent and terminal user-facing notifications
       honor workspace policy while observation events and attention survive.
 - [ ] **M2.3 CLI/MCP parity:** create, update, and readback demonstrate the same
       behavior and clear errors for unsupported hosts or failed writes.

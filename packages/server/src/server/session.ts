@@ -3,6 +3,7 @@ import type { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { BrowserAutomationHostCapabilitySchema } from "@getpaseo/protocol/browser-automation/capabilities";
 import type {
   SessionEventSubscription,
+  MutableDaemonConfig,
   UsageReportEntry,
   ProviderUsage,
 } from "@getpaseo/protocol/messages";
@@ -421,6 +422,33 @@ class SessionRequestError extends Error {
   ) {
     super(message);
     this.name = "SessionRequestError";
+  }
+}
+
+type AgentConfigUpdateMessage = Extract<
+  SessionInboundMessage,
+  {
+    type:
+      | "set_agent_mode_request"
+      | "set_agent_model_request"
+      | "set_agent_feature_request"
+      | "set_agent_thinking_request"
+      | "agent.config.apply.request";
+  }
+>;
+
+function isAgentConfigUpdateMessage(
+  message: SessionInboundMessage,
+): message is AgentConfigUpdateMessage {
+  switch (message.type) {
+    case "set_agent_mode_request":
+    case "set_agent_model_request":
+    case "set_agent_feature_request":
+    case "set_agent_thinking_request":
+    case "agent.config.apply.request":
+      return true;
+    default:
+      return false;
   }
 }
 
@@ -2188,6 +2216,14 @@ export class Session {
     return this.authorization.listPermissions();
   }
 
+  private getDaemonConfigForCurrentClient(
+    config: MutableDaemonConfig = this.daemonConfigStore.get(),
+  ): MutableDaemonConfig {
+    if (this.supports(CLIENT_CAPS.replyRuleNotifications)) return config;
+    const { replyRules: _replyRules, ...legacyConfig } = config;
+    return legacyConfig as MutableDaemonConfig;
+  }
+
   public allowsInbound(message: SessionInboundMessage): boolean {
     return this.authorization.allowsInbound(message);
   }
@@ -2760,21 +2796,21 @@ export class Session {
   }
 
   private dispatchAgentConfigMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (isAgentConfigUpdateMessage(msg)) return this.dispatchAgentConfigUpdateMessage(msg);
+
+    if (
+      msg.type === "daemon.notifications.rules.get.request" ||
+      msg.type === "daemon.notifications.rules.set.request"
+    ) {
+      this.dispatchDaemonNotificationRulesMessage(msg);
+      return undefined;
+    }
+
     switch (msg.type) {
-      case "set_agent_mode_request":
-        return this.agentConfigSession.handleSetAgentModeRequest(msg);
-      case "set_agent_model_request":
-        return this.agentConfigSession.handleSetAgentModelRequest(msg);
-      case "set_agent_feature_request":
-        return this.agentConfigSession.handleSetAgentFeatureRequest(msg);
-      case "set_agent_thinking_request":
-        return this.agentConfigSession.handleSetAgentThinkingRequest(msg);
-      case "agent.config.apply.request":
-        return this.agentConfigSession.handleAgentConfigApplyRequest(msg);
       case "get_daemon_config_request":
         this.emit({
           type: "get_daemon_config_response",
-          payload: { requestId: msg.requestId, config: this.daemonConfigStore.get() },
+          payload: { requestId: msg.requestId, config: this.getDaemonConfigForCurrentClient() },
         });
         return undefined;
       case "daemon.get_status.request":
@@ -2798,7 +2834,7 @@ export class Session {
           type: "set_daemon_config_response",
           payload: {
             requestId: msg.requestId,
-            config: this.daemonConfigStore.patch(msg.config),
+            config: this.getDaemonConfigForCurrentClient(this.daemonConfigStore.patch(msg.config)),
           },
         });
         return undefined;
@@ -2809,6 +2845,50 @@ export class Session {
       default:
         return undefined;
     }
+  }
+
+  private dispatchAgentConfigUpdateMessage(msg: AgentConfigUpdateMessage): Promise<void> {
+    switch (msg.type) {
+      case "set_agent_mode_request":
+        return this.agentConfigSession.handleSetAgentModeRequest(msg);
+      case "set_agent_model_request":
+        return this.agentConfigSession.handleSetAgentModelRequest(msg);
+      case "set_agent_feature_request":
+        return this.agentConfigSession.handleSetAgentFeatureRequest(msg);
+      case "set_agent_thinking_request":
+        return this.agentConfigSession.handleSetAgentThinkingRequest(msg);
+      case "agent.config.apply.request":
+        return this.agentConfigSession.handleAgentConfigApplyRequest(msg);
+    }
+  }
+
+  private dispatchDaemonNotificationRulesMessage(
+    msg: Extract<
+      SessionInboundMessage,
+      {
+        type: "daemon.notifications.rules.get.request" | "daemon.notifications.rules.set.request";
+      }
+    >,
+  ): void {
+    if (msg.type === "daemon.notifications.rules.set.request") {
+      this.daemonConfigStore.patch({ replyRules: msg.replyRules });
+      this.emit({
+        type: "daemon.notifications.rules.set.response",
+        payload: {
+          requestId: msg.requestId,
+          replyRules: [...this.daemonConfigStore.getReplyRules()],
+        },
+      });
+      return;
+    }
+
+    this.emit({
+      type: "daemon.notifications.rules.get.response",
+      payload: {
+        requestId: msg.requestId,
+        replyRules: [...this.daemonConfigStore.getReplyRules()],
+      },
+    });
   }
 
   // eslint-disable-next-line complexity

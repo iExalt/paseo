@@ -127,6 +127,7 @@ import type {
   AgentSkillSelection,
   AgentSkillsStatus,
   AgentSkillsSaveResult,
+  ReplyRule,
 } from "@getpaseo/protocol/messages";
 import type {
   AgentPermissionRequest,
@@ -5121,6 +5122,30 @@ export class DaemonClient {
     });
   }
 
+  async getDaemonNotificationRules(requestId?: string): Promise<{
+    requestId: string;
+    replyRules: ReplyRule[];
+  }> {
+    this.requireReplyRuleFilteringSupport();
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "daemon.notifications.rules.get.request" },
+      responseType: "daemon.notifications.rules.get.response",
+    });
+  }
+
+  async setDaemonNotificationRules(
+    replyRules: ReplyRule[],
+    requestId?: string,
+  ): Promise<{ requestId: string; replyRules: ReplyRule[] }> {
+    this.requireReplyRuleFilteringSupport();
+    return this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "daemon.notifications.rules.set.request", replyRules },
+      responseType: "daemon.notifications.rules.set.response",
+    });
+  }
+
   async getDaemonStatus(options?: DaemonStatusOptions): Promise<DaemonStatusPayload> {
     if (!this.lastServerInfoMessage) throw new DaemonConnectionError("Transport not connected");
     if (this.lastServerInfoMessage?.features?.daemonStatusRpc !== true) {
@@ -6225,6 +6250,12 @@ export class DaemonClient {
     // COMPAT(daemonConfigReload): added in v0.4.0, remove gate after 2027-02-14.
     if (this.lastServerInfoMessage?.features?.daemonConfigReload !== true) {
       throw new Error("Update the host to reload daemon configuration.");
+    }
+  }
+
+  private requireReplyRuleFilteringSupport(): void {
+    if (this.lastServerInfoMessage?.features?.replyRuleFiltering !== true) {
+      throw new Error("Update the host to manage daemon-wide notification rules.");
     }
   }
 
