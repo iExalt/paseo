@@ -1,0 +1,3 @@
+creation_rules:
+  - path_regex: ^secrets/firebase/.*\.sops\.json$
+    age: age1hns8wlx7x3squpkfv030vgnwfrgpmm4w4nqvct2n5n9wptqmasqs3rgvue
