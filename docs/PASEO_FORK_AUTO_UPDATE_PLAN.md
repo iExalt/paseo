@@ -21,18 +21,18 @@ smallest useful evidence, choose a route, then authorize a bounded next item.
 
 ## Decisions and boundaries
 
-| Topic                  | State and consequence                                                                                                                                                                                                        |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Required targets       | Decided: macOS `aarch64-darwin` desktop and Android `arm64-v8a` APK. A macOS-only pipeline is incomplete.                                                                                                                    |
-| Mac distribution       | Decided: Nix; no Apple Developer membership or signed/notarized Electron updater. Real macOS launch behavior still needs proof.                                                                                              |
-| Hosting                | Decided: GitHub Releases; Wasabi is not needed for this route.                                                                                                                                                               |
-| Closure transport      | Preferred, not finalized: archive a signed file binary cache; retain a conventional signed substituter as the alternative.                                                                                                   |
-| Android key            | Decided: new ECDSA P-256 private key, unencrypted at the user's request, in private `iExalt/keychain` as `android-signing`; X.509 PEM certificate as `android-signing.pub`. Ed25519 is not supported for APK signing.        |
-| Android migration      | Decided: separate `sh.paseo.iexalt` app with the new signer; retain `sh.paseo.debug` during settings transfer and fresh pairing. The transfer bridge is not implemented or device-verified.                                  |
-| Release cadence        | Decided: automatic paired builds from `dev`, with explicit promotion of selected revisions. Promoted releases must bind immutable artifacts to one revision.                                                                 |
-| Mac installation owner | Decided: dedicated Paseo Nix profile owns app generations; Home Manager may provide a stable launcher. HM must not also pin the app version.                                                                                 |
-| Update interaction     | No disruptive automatic restarts. Check/download cadence and explicit activation UX remain open.                                                                                                                             |
-| Scope authority        | The user authorized the campaign, the initial bounded closure probe, and one additional 45-minute seeded CI attempt. Execute assigned components; actual app transitions and production restarts require separate authority. |
+| Topic                  | State and consequence                                                                                                                                                                                                                 |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Required targets       | Decided: macOS `aarch64-darwin` desktop and Android `arm64-v8a` APK. A macOS-only pipeline is incomplete.                                                                                                                             |
+| Mac distribution       | Decided: Nix; no Apple Developer membership or signed/notarized Electron updater. Real macOS launch behavior still needs proof.                                                                                                       |
+| Hosting                | Decided: GitHub Releases; Wasabi is not needed for this route.                                                                                                                                                                        |
+| Closure transport      | Preferred, not finalized: archive a signed file binary cache; retain a conventional signed substituter as the alternative.                                                                                                            |
+| Android key            | Decided: new ECDSA P-256 private key, unencrypted at the user's request, in private `iExalt/keychain` as `android-signing`; X.509 PEM certificate as `android-signing.pub`. Ed25519 is not supported for APK signing.                 |
+| Android migration      | Decided: separate `sh.paseo.iexalt` app with the new signer; retain `sh.paseo.debug` during settings transfer and fresh pairing. The transfer bridge is not implemented or device-verified.                                           |
+| Release cadence        | Decided: automatic paired builds from `dev`, with explicit promotion of selected revisions. Promoted releases must bind immutable artifacts to one revision.                                                                          |
+| Mac installation owner | Decided: dedicated Paseo Nix profile owns app generations; Home Manager may provide a stable launcher. HM must not also pin the app version.                                                                                          |
+| Update interaction     | No disruptive automatic restarts. Check/download cadence and explicit activation UX remain open.                                                                                                                                      |
+| Scope authority        | The user authorized the campaign, the initial bounded closure probe, and two separately bounded 45-minute seeded CI attempts. Execute assigned components; actual app transitions and production restarts require separate authority. |
 
 Do not restart the production daemon on port 6767. Treat desktop activation and
 daemon activation separately. Preserve the original Android debug key and APK
@@ -263,6 +263,26 @@ the seed. Missing required local outputs are a blocker, not permission for a loc
 dependency build. This experiment does not claim that every dependency was built
 in canonical CI.
 
+The single seeded [CI attempt](https://github.com/iExalt/paseo/actions/runs/37963272142)
+used revision `580da1779385adebff15ec3df249cecc88f7a009` and failed after 49 seconds
+at 17:02:07 UTC (1:02:07 PM EDT). Downloaded seed asset size and SHA-256 matched
+the reviewed pins. BSD tar had included 146 AppleDouble `._*` sidecars of 163 bytes
+each: extraction produced 289 files / 68,855,898 bytes instead of the signed cache's
+143 / 68,832,100. Local extraction reproduced the exact 23,798-byte difference.
+The cache count guard rejected this before Nix import, signature verification,
+canonical parity, build, or export. The correction below preserves signed NAR contents.
+The probe-specific GitHub secret was deleted and verified absent, local private
+material was already removed, and diagnostic extraction was cleaned up.
+
+The user authorized one correction and retry with a fresh 45-minute cap. Setup
+started at 17:09:43 UTC (1:09:43 PM EDT); the hard stop is 17:54:43 UTC
+(1:54:43 PM EDT) on 2026-10-09. Local preflight validated every tar member before
+excluding only basenames beginning `._`; the resulting 143 files / 68,832,100 bytes
+matched every original cache file's size and SHA-256. The immutable seed and its old
+public signing pin remain unchanged; final closure export uses a separate new
+one-use key. New tar creation disables macOS copyfile metadata, while both import
+paths retain strict path/type checks and the narrow metadata filter.
+
 Firebase client and admin credentials are stored as binary SOPS envelopes under
 `secrets/firebase/`; exact-byte decryption was verified before removing the two
 original Downloads files. The user's replacement client config was likewise
@@ -273,9 +293,27 @@ decrypted client path and an expected public project ID, and rejects missing or
 invalid files and mismatched project/package metadata. Seven focused tests, scoped
 lint, a synthetic Expo config projection, and missing/unreadable/invalid JSON smoke
 checks passed. These source changes remain uncommitted. Read-only EAS project info
-confirmed `@iexalt/paseo`, project `3a777534-569c-47e5-81ad-1a4e47d5127c`;
-remote FCM V1 credential setup was not invoked. Native builds, Expo delivery
-credential configuration, and actual fork-device delivery remain unverified.
+confirmed `@iexalt/paseo`, project `3a777534-569c-47e5-81ad-1a4e47d5127c`.
+Native builds and actual fork-device delivery remain unverified.
+
+The required root formatting, lint, and typecheck gates passed for these source
+changes. The serial typecheck took 24.91 seconds versus the retained 14.2-second
+baseline. A read-only host snapshot showed load 10.31 and recording/window processes
+using substantial CPU; this run does not establish comparable idle-host latency.
+Keep the baseline and compare the next required run under comparable conditions.
+
+The user subsequently authorized notification-only Expo onboarding. A minimal
+`fork` EAS profile selects `APP_VARIANT=fork`; explicit Android code and protected
+Firebase build inputs are supplied in the credential command's environment.
+Authentication and project info confirmed account `iexalt` and the expected Expo
+project; the interactive flow resolved `sh.paseo.iexalt`. After source review and
+an evidence-based retry of the same FCM V1 flow, the CLI offered an existing Expo
+account credential matching the verified Firebase project. It was reused, and EAS
+confirmed FCM V1 assignment to `sh.paseo.iexalt`; the post-assignment metadata
+showed the matching project. No new service-account key was uploaded or generated,
+and no keystore or submission credential was assigned. Protected temporary files
+were removed and their absence verified. This proves remote delivery-credential
+association, not notification permission, token registration, or S24 delivery.
 
 ## Proposed installation contract
 
@@ -356,14 +394,16 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Authorize the bounded probe and verify local signed closure transport.
 - [x] Implement and verify the Android fork identity/version-code source contract.
 - [x] Encrypt and verify Firebase credentials, including the replacement fork client config.
+- [x] Wire the fork Firebase build input and associate its matching Expo FCM V1 credential.
 - [ ] Complete canonical CI/fresh-host closure proof and record the route decision.
-- [ ] Wire the fork Firebase build input and prove Expo delivery on the S24.
+- [ ] Prove notification permission, token registration, and Expo delivery on the S24.
 - [ ] Implement paired builds and complete-release promotion.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
-Next campaign action: run the approved single seeded CI attempt within its
-45-minute allowance and implement the independently authorized Firebase app wiring.
+Next campaign action: finish the approved corrected seed probe and the independently
+assigned native Android build component. Produce and test the fork app through the
+native GitHub build lane under its assigned acceptance boundary.
 Platform updater implementation and actual transitions still need
 their assigned acceptance boundaries. Reconsider the route if
 fresh-store import needs weakened verification or compilation, standard runners
