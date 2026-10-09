@@ -17,7 +17,7 @@ concurrency:
 jobs:
   build-and-export:
     runs-on: macos-14
-    timeout-minutes: 55
+    timeout-minutes: 30
     permissions:
       contents: write
     outputs:
@@ -49,13 +49,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NIX_PROBE_SIGNING_KEY: ${{ secrets.PASEO_NIX_PROBE_SIGNING_KEY }}
-          NIX_PROBE_PUBLIC_KEY: paseo-nix-ci-probe-2026-10:DxN4uGfrWw+/vGbGHjtRuow2bNOzJHzPHZvKEtk72nA=
+          NIX_PROBE_PUBLIC_KEY: paseo-nix-seed-20261009-164633:HKUIBntJ2BXdOwsTH8Z/ou1oO5sEXIUsU6ZiGuhWN54=
         run: bash .github/scripts/nix-closure-probe.sh build-and-export
 
   verify-import:
     needs: build-and-export
     runs-on: macos-14
-    timeout-minutes: 20
+    timeout-minutes: 8
     permissions:
       contents: read
     steps:
@@ -83,5 +83,5 @@ jobs:
           EXPECTED_ARCHIVE_BYTES: ${{ needs.build-and-export.outputs.archive_bytes }}
           EXPECTED_CACHE_BYTES: ${{ needs.build-and-export.outputs.cache_bytes }}
           EXPECTED_CACHE_FILE_COUNT: ${{ needs.build-and-export.outputs.cache_file_count }}
-          NIX_PROBE_PUBLIC_KEY: paseo-nix-ci-probe-2026-10:DxN4uGfrWw+/vGbGHjtRuow2bNOzJHzPHZvKEtk72nA=
+          NIX_PROBE_PUBLIC_KEY: paseo-nix-seed-20261009-164633:HKUIBntJ2BXdOwsTH8Z/ou1oO5sEXIUsU6ZiGuhWN54=
         run: bash .github/scripts/nix-closure-probe.sh verify-import
