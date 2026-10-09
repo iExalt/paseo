@@ -167,8 +167,16 @@ jobs:
           test "$ANDROID_CERT_SHA256" = "$APPROVED_ANDROID_CERT_SHA256"
           test -n "$ANDROID_ARTIFACT_ID" && test -n "$ANDROID_ARTIFACT_DIGEST"
           test -n "$MACOS_ARTIFACT_ID" && test -n "$MACOS_ARTIFACT_DIGEST"
-          test "$ANDROID_ARTIFACT_NAME" = "paseo-iexalt-${ANDROID_VERSION_CODE}-${SOURCE_SHA}-attempt-${GITHUB_RUN_ATTEMPT}"
-          test "$MACOS_ARTIFACT_NAME" = "paseo-nix-closure-${SOURCE_SHA}-${RELEASE_SEQUENCE}-attempt-${GITHUB_RUN_ATTEMPT}"
+          android_artifact_attempt="${ANDROID_ARTIFACT_NAME##*-attempt-}"
+          macos_artifact_attempt="${MACOS_ARTIFACT_NAME##*-attempt-}"
+          for lane_attempt in "$android_artifact_attempt" "$macos_artifact_attempt"; do
+            [[ "$lane_attempt" =~ ^[1-9][0-9]*$ ]] \
+              || { echo "Invalid platform artifact attempt." >&2; exit 1; }
+            (( lane_attempt <= GITHUB_RUN_ATTEMPT )) \
+              || { echo "Platform artifact attempt is newer than the selected run." >&2; exit 1; }
+          done
+          test "$ANDROID_ARTIFACT_NAME" = "paseo-iexalt-${ANDROID_VERSION_CODE}-${SOURCE_SHA}-attempt-${android_artifact_attempt}"
+          test "$MACOS_ARTIFACT_NAME" = "paseo-nix-closure-${SOURCE_SHA}-${RELEASE_SEQUENCE}-attempt-${macos_artifact_attempt}"
 
           android_dir="$RUNNER_TEMP/paired-android"
           macos_dir="$RUNNER_TEMP/paired-macos"
@@ -185,7 +193,7 @@ jobs:
 
           jq -e \
             --arg sourceSha "$SOURCE_SHA" --arg releaseSequence "$RELEASE_SEQUENCE" \
-            --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$android_artifact_attempt" \
             --arg packageId "$ANDROID_PACKAGE_ID" --arg versionCode "$ANDROID_VERSION_CODE" \
             --arg certSha "$APPROVED_ANDROID_CERT_SHA256" --arg apkSha "$ANDROID_APK_SHA256" \
             '.sourceSha == $sourceSha and .releaseSequence == $releaseSequence
@@ -211,20 +219,24 @@ jobs:
             --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
             --arg androidArtifactName "$ANDROID_ARTIFACT_NAME" --arg androidArtifactId "$ANDROID_ARTIFACT_ID" \
             --arg androidArtifactDigest "$ANDROID_ARTIFACT_DIGEST" --arg androidApkSha256 "$ANDROID_APK_SHA256" \
+            --arg androidArtifactRunAttempt "$android_artifact_attempt" \
             --arg androidMetadataSha256 "$ANDROID_METADATA_SHA256" --arg androidPackageId "$ANDROID_PACKAGE_ID" \
             --arg androidVersionCode "$ANDROID_VERSION_CODE" --arg androidCertificateSha256 "$ANDROID_CERT_SHA256" \
             --arg macosArtifactName "$MACOS_ARTIFACT_NAME" --arg macosArtifactId "$MACOS_ARTIFACT_ID" \
             --arg macosArtifactDigest "$MACOS_ARTIFACT_DIGEST" --arg macosManifestSha256 "$MACOS_MANIFEST_SHA256" \
+            --arg macosArtifactRunAttempt "$macos_artifact_attempt" \
             --arg macosArchiveSha256 "$MACOS_ARCHIVE_SHA256" --arg macosLockHash "$MACOS_LOCK_HASH" \
             --arg macosOutputPath "$MACOS_OUTPUT_PATH" --arg macosManifestPath "$MACOS_MANIFEST_PATH" \
             '{schemaVersion: 1, status: "candidate", sourceSha: $sourceSha,
               releaseSequence: $releaseSequence, runId: $runId, runAttempt: $runAttempt,
               android: {artifactName: $androidArtifactName, artifactId: $androidArtifactId,
-                artifactDigest: $androidArtifactDigest, apkSha256: $androidApkSha256,
+                artifactDigest: $androidArtifactDigest, artifactRunAttempt: $androidArtifactRunAttempt,
+                apkSha256: $androidApkSha256,
                 metadataSha256: $androidMetadataSha256, packageId: $androidPackageId,
                 versionCode: $androidVersionCode, signingCertificateSha256: $androidCertificateSha256},
               macOS: {artifactName: $macosArtifactName, artifactId: $macosArtifactId,
-                artifactDigest: $macosArtifactDigest, manifestSha256: $macosManifestSha256,
+                artifactDigest: $macosArtifactDigest, artifactRunAttempt: $macosArtifactRunAttempt,
+                manifestSha256: $macosManifestSha256,
                 archiveSha256: $macosArchiveSha256, lockHash: $macosLockHash,
                 outputPath: $macosOutputPath, manifestPath: $macosManifestPath,
                 system: "aarch64-darwin", provenance: "local-ci-build",

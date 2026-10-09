@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { relative as relativePath } from "node:path";
 import test from "node:test";
@@ -9,6 +10,7 @@ const dockerWorkflowPath = new URL(".github/workflows/docker.yml", repoRoot);
 const nixWorkflowPath = new URL(".github/workflows/nix.yml", repoRoot);
 const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
 const forkBuildsWorkflowPath = new URL(".github/workflows/fork-builds.yml", repoRoot);
+const deployWebsiteWorkflowPath = new URL(".github/workflows/deploy-website.yml", repoRoot);
 const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
 const desktopPackagePath = new URL("packages/desktop/package.json", repoRoot);
@@ -408,5 +410,47 @@ test("fork candidate orchestration shares one identity and only completes after 
   assert.match(
     macosHelper,
     /paseo-nix-closure-\$source_sha-\$release_sequence-attempt-\$\{GITHUB_RUN_ATTEMPT/,
+  );
+});
+
+test("paired candidate retries retain successful lane attempts without accepting future artifacts", () => {
+  const source = readFileSync(forkBuildsWorkflowPath, "utf8");
+  const start = source.indexOf("          android_artifact_attempt=");
+  const end = source.indexOf("          android_dir=", start);
+  assert.ok(start >= 0 && end > start);
+  const validation = `set -euo pipefail\n${source
+    .slice(start, end)
+    .split("\n")
+    .map((line) => line.slice(10))
+    .join("\n")}`;
+  const sha = "a".repeat(40);
+  for (const [androidAttempt, macosAttempt, accepted] of [
+    ["1", "2", true],
+    ["2", "1", true],
+    ["3", "2", false],
+    ["1", "3", false],
+    ["0", "2", false],
+  ]) {
+    const result = spawnSync("/bin/bash", ["-c", validation], {
+      env: {
+        SOURCE_SHA: sha,
+        RELEASE_SEQUENCE: "200001",
+        ANDROID_VERSION_CODE: "200001",
+        GITHUB_RUN_ATTEMPT: "2",
+        ANDROID_ARTIFACT_NAME: `paseo-iexalt-200001-${sha}-attempt-${androidAttempt}`,
+        MACOS_ARTIFACT_NAME: `paseo-nix-closure-${sha}-200001-attempt-${macosAttempt}`,
+      },
+    });
+    assert.equal(result.status === 0, accepted, `${androidAttempt}/${macosAttempt}`);
+  }
+});
+
+test("fork release publication cannot trigger the upstream website deployment", () => {
+  const source = readFileSync(deployWebsiteWorkflowPath, "utf8");
+  assert.match(source, /release:\s*\n\s+types:\s*\[published\]/);
+  assert.match(source, /if:\s*\$\{\{\s*github\.repository == 'getpaseo\/paseo'/);
+  assert.match(
+    source,
+    /github\.event_name != 'release'\s*\|\|\s*\(!github\.event\.release\.prerelease && !github\.event\.release\.draft\)/,
   );
 });
