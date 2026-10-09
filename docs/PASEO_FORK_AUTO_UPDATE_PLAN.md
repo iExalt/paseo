@@ -1,7 +1,7 @@
 # Paseo fork automated builds and updates
 
-Status: campaign authorized; local closure transport verified, canonical CI and
-device delivery pending. Updated 2026-10-09.
+Status: paired canonical CI and authenticated release publication verified;
+actual Mac and Android installation, transfer, and recovery pending. Updated 2026-10-09.
 
 ## Outcome and first deliverable
 
@@ -21,21 +21,22 @@ smallest useful evidence, choose a route, then authorize a bounded next item.
 
 ## Decisions and boundaries
 
-| Topic                  | State and consequence                                                                                                                                                                                                                 |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Required targets       | Decided: macOS `aarch64-darwin` desktop and Android `arm64-v8a` APK. A macOS-only pipeline is incomplete.                                                                                                                             |
-| Mac distribution       | Decided: Nix; no Apple Developer membership or signed/notarized Electron updater. Real macOS launch behavior still needs proof.                                                                                                       |
-| Hosting                | Decided: GitHub Releases; Wasabi is not needed for this route.                                                                                                                                                                        |
-| Closure transport      | Preferred, not finalized: archive a signed file binary cache; retain a conventional signed substituter as the alternative.                                                                                                            |
-| Android key            | Decided: new ECDSA P-256 private key, unencrypted at the user's request, in private `iExalt/keychain` as `android-signing`; X.509 PEM certificate as `android-signing.pub`. Ed25519 is not supported for APK signing.                 |
-| Android migration      | Decided: separate `sh.paseo.iexalt` app with the new signer; retain `sh.paseo.debug` during settings transfer and fresh pairing. The transfer bridge is not implemented or device-verified.                                           |
-| Release cadence        | Decided: automatic paired builds from `dev`, with explicit promotion of selected revisions. Promoted releases must bind immutable artifacts to one revision.                                                                          |
-| Mac installation owner | Decided: dedicated Paseo Nix profile owns app generations; Home Manager may provide a stable launcher. HM must not also pin the app version.                                                                                          |
-| Update interaction     | No disruptive automatic restarts. Check/download cadence and explicit activation UX remain open.                                                                                                                                      |
-| Scope authority        | The user authorized the campaign, the initial bounded closure probe, and two separately bounded 45-minute seeded CI attempts. Execute assigned components; actual app transitions and production restarts require separate authority. |
+| Topic                  | State and consequence                                                                                                                                                                                                                            |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Required targets       | Decided: macOS `aarch64-darwin` desktop and Android `arm64-v8a` APK. A macOS-only pipeline is incomplete.                                                                                                                                        |
+| Mac distribution       | Decided: Nix; no Apple Developer membership or signed/notarized Electron updater. Real macOS launch behavior still needs proof.                                                                                                                  |
+| Hosting                | Decided: GitHub Releases; Wasabi is not needed for this route.                                                                                                                                                                                   |
+| Closure transport      | Decided: GitHub Release assets containing an archived signed file binary cache; canonical CI and fresh-store import passed. Actual user-store activation remains pending.                                                                        |
+| Android key            | Decided: new ECDSA P-256 private key, unencrypted at the user's request, in private `iExalt/keychain` as `android-signing`; X.509 PEM certificate as `android-signing.pub`. Ed25519 is not supported for APK signing.                            |
+| Android migration      | Decided: separate `sh.paseo.iexalt` app with the new signer and fresh pairing. The user uninstalled Debug before transfer; its migration gate is unavailable without a retained backup. Verify the new fork's settings through future updates.   |
+| Release cadence        | Decided: automatic paired builds from `dev`, with explicit promotion of selected revisions. Promoted releases must bind immutable artifacts to one revision.                                                                                     |
+| Mac installation owner | Decided: dedicated Paseo Nix profile owns app generations; Home Manager may provide a stable launcher. HM must not also pin the app version.                                                                                                     |
+| Update interaction     | Decided: explicit check/stage/activation controls; Android system installer confirmation and manual Mac restart. No disruptive automatic restarts.                                                                                               |
+| Scope authority        | The user authorized the campaign, selected release publication, separate fork installation, and full Mac transition with production daemon restart after verified backups. Execute assigned components and preserve cold-backup/installer gates. |
 
-Do not restart the production daemon on port 6767. Treat desktop activation and
-daemon activation separately. Preserve the original Android debug key and APK
+Restart the production daemon on port 6767 only within the explicitly approved
+Mac transition after backup verification. Treat desktop activation and daemon
+activation separately. Preserve the original Android debug key and APK
 for migration investigation. The user added Firebase/Expo delivery to the campaign:
 use native GitHub builds, configure the fork's Firebase client through a controlled
 decrypted build input, and prove notification permission, token registration, and
@@ -692,8 +693,14 @@ sidecar without extracting or publishing it. Before another prepare, an offline
 audit of the actual downloaded candidate and lane files passed all identities,
 hashes, and checksums. The user authorized explicit promotion of candidate
 `200005` and the full Mac transition after recoverable backups, including the
-production daemon maintenance window. Publication still requires the final
-prepared receipt review; no app or host transition has occurred.
+production daemon maintenance window. The final prepared receipt passed review,
+and the selected release is now public:
+[candidate 200005](https://github.com/iExalt/paseo/releases/tag/paseo-fork-v0.11.0-r200005-385be0adbf127e1de542c7b5ba9cca4303bcb389).
+Its six published assets retain the reviewed identities and byte digests. Both
+actual consumer verification paths accepted the independently downloaded manifest
+and detached signature with their pinned key. The manifest SHA-256 is
+`a509d01032dde25a6cbc34fe9410ec19d2e72605500cd622c3ded395e4a397bb`.
+No app or host transition has occurred.
 
 ## Later milestones and acceptance gates
 
@@ -724,8 +731,10 @@ data compatibility for that recovery build.
 Human participation: provision scoped CI credentials and Nix trust; confirm
 Android installation prompts; approve any eventual production app/daemon
 transition. Installation ownership, release promotion, and Android identity are
-decided, and the bounded probe is authorized. Automate device observation where
-possible. No present permission extends to a production restart.
+decided. The user explicitly authorized the full Mac transition and production
+daemon restart after verified recoverable backups, and the separate fork's initial
+phone installation. Automate device observation where possible; retain the human
+Android installer confirmation and the final cold-backup gate before Mac launch.
 
 ## Economical verification
 
@@ -761,12 +770,13 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Integrate and test Nix ownership and managed update controls in Electron source.
 - [x] Implement preference-only Android transfer with a recoverable import journal and startup gate.
 - [x] Produce both verified CI artifacts from one immutable paired candidate.
-- [ ] Publish and verify its authenticated complete release.
+- [x] Publish and verify its authenticated complete release.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
-The user confirmed preference-only migration: drafts and attachments remain in
-Debug. The source bridge is an explicit `APP_VARIANT=development`
+The earlier preference-only migration design left drafts and attachments in
+Debug; the subsequent user uninstall made that device transfer unavailable.
+The optional source bridge is an explicit `APP_VARIANT=development`
 `PASEO_PREFS_MIGRATION_BRIDGE=1` build of `sh.paseo.debug`, code 11001, using the
 existing Debug signer. It exports allowlisted settings through the Android share
 sheet; the fork previews selected sections and requires confirmation before
@@ -784,22 +794,68 @@ only new migration types; after correction, the app-only typecheck passed in
 3.51 seconds and other workspace results were reused. No full local suite or APK
 build was run.
 
-The connected S24 Ultra is authorized for read-only inventory. It runs API 36 and
-Debug 0.11.0/code 11000 with the preserved Debug certificate; the fork is absent.
-No app installation, permission change, or settings read occurred.
+The connected S24 Ultra initially ran API 36 and
+Debug 0.11.0/code 11000 with the preserved Debug certificate; the fork was absent.
+The user confirmed the Android system installer, and the installed fork matches
+the public release's bytes, signer, code 200005, and ARM64 identity. Its own-app
+screen rendered the normal welcome/pairing interface. Pairing, notification
+permission, token registration, and delivery remain pending. Debug's bridge
+upgrade was not performed. At 21:54 UTC (5:54 PM EDT), Debug was absent from
+user 0; the 20:43 UTC (4:43 PM EDT) inventory had found it installed. The user
+confirmed uninstalling Debug. Without a retained settings backup, its original
+preference-transfer gate is unavailable. The bridge artifact task is retired;
+the optional source utility remains. Future device gates must preserve the new
+fork's settings and pairing through updates, rather than claim old Debug transfer.
+
+Private preliminary backups retain the full Electron userData and `~/.paseo`,
+including all unique state and models, plus the exact root Nix custom config.
+Archive extraction and representative comparisons passed; six extracted SQLite
+databases passed `quick_check`. The live app profile stayed byte-stable, and only
+`daemon.log` appended during the daemon-state capture. This is preliminary
+recoverability evidence: the running databases still require a final cold backup
+after graceful app/daemon quiescence, before launching the new app. The old
+`/Applications/Paseo.app` remains intact.
+
+The user completed the approved root Nix public-key append and daemon reload;
+readback preserves root-only trusted users and signature enforcement. Real staging
+exposed an unescaped `Application Support` file-cache URI. The reviewed bootstrap
+source now uses `pathToFileURL`, with its focused argument regression passing.
+Published 200005's bundled CLI retains this defect and must be replaced by a
+future CI-built release; its immutable assets are unchanged. Staging then reached
+signature enforcement during copy and stopped on untrusted paths. The daemon
+reload and root signature were verified; the 69-path closure has 65 stock-cache
+signatures, the durable fork signature on its root, and three pre-existing Node
+paths without local signatures. Their cache signatures use the earlier seed key.
+The correction must sign every exported path with the durable key and merge valid
+cache signatures for existing consumer paths, proved with an isolated store and
+only the durable public key. That source correction is reviewed: its real
+111,400-byte input-addressed fixture starts unsigned, imports only the ephemeral
+new signature, accepts that key, and rejects the other key in 1.12 seconds. The
+producer runs this required gate after importing its pinned Node runtime. Seven
+fast updater unit cases passed in 104 ms; scoped lint, formatting, shell syntax,
+ShellCheck, and diff checks passed. The next CI candidate will carry the correction
+and URI fix; release 200005 will remain unchanged. A partial root import occurred,
+but no staging profile, app activation, shutdown, or production daemon restart
+occurred.
 
 After the latest Hermes growth, the user authorized one build with a task-owned
 16 GiB swapfile and a 60-minute Android job cap. The workflow requires measured
 24 GiB free before allocation and 8 GiB remaining afterwards, preserves existing
 swap, and always attempts cleanup. It retains the file if active-state verification
 or `swapoff` fails. This changes runner resources without changing Hermes
-optimization or app behavior; runner capacity and completion still need CI proof.
+optimization or app behavior. The selected paired run passed with this resource
+configuration and verified swap cleanup.
 
-Next campaign action: finish the reviewed promotion receipt and publish the
-explicitly selected complete candidate, then exercise the approved Mac transition
-after recoverable backups. Canonical full-closure and signed APK CI proofs have
-passed. The Debug bridge artifact and actual Android installation/transfer gates
-remain pending.
+Next campaign action: build one paired candidate containing the reviewed
+full-closure signature/import correction and URI fix. Use that corrected
+release as the managed Mac baseline before the approved transition and final cold
+backup. Canonical CI, authenticated publication, and the fork's initial phone
+installation/launch have passed. Fresh fork pairing, notification delivery, and
+actual update/recovery gates remain pending; the old Debug transfer gate is
+unavailable after the confirmed uninstall.
+Automatic phone pairing is authorized, but the first explicit-app intent met the
+phone's credential lock. No lock/security setting was changed; a human unlock is
+required before the automated app flow can continue.
 Standalone closure probe runs are stopped.
 Platform updater implementation and actual transitions still need
 their assigned acceptance boundaries. Reconsider the route if

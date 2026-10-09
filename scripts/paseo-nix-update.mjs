@@ -882,6 +882,22 @@ function nixOptions() {
   ];
 }
 
+export function localCacheCopyArgs(cachePath, outputPath) {
+  return ["copy", "--from", pathToFileURL(cachePath).href, ...nixOptions(), outputPath];
+}
+
+export function localCacheCopySignaturesArgs(cachePath, outputPath) {
+  return [
+    "store",
+    "copy-sigs",
+    "--substituter",
+    pathToFileURL(cachePath).href,
+    "--recursive",
+    ...nixOptions(),
+    outputPath,
+  ];
+}
+
 async function assertFreeSpace(archiveBytes, closureBytes) {
   const { statfs } = await import("node:fs/promises");
   const disk = await statfs(DATA_ROOT);
@@ -937,7 +953,8 @@ async function stageVerifiedRelease(verified) {
       maxBytes: manifest.macOS.closureArchive.bytes,
     });
     const extraction = await extractNixCacheTar(archivePath, cachePath);
-    nix(["copy", "--from", `file://${cachePath}`, ...nixOptions(), manifest.macOS.outputPath]);
+    nix(localCacheCopyArgs(cachePath, manifest.macOS.outputPath));
+    nix(localCacheCopySignaturesArgs(cachePath, manifest.macOS.outputPath));
     await verifyImportedClosure(manifest, nixManifestBytes);
     const receipt = await persistReceipt(verified, nixManifestBytes);
     setProfile(STAGING_PROFILE, manifest.macOS.outputPath);
