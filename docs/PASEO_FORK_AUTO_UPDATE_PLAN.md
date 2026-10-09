@@ -1,6 +1,7 @@
 # Paseo fork automated builds and updates
 
-Status: draft plan; implementation is not authorized. Updated 2026-10-09.
+Status: campaign authorized; local closure transport verified, canonical CI and
+device delivery pending. Updated 2026-10-09.
 
 ## Outcome and first deliverable
 
@@ -27,11 +28,11 @@ smallest useful evidence, choose a route, then authorize a bounded next item.
 | Hosting                | Decided: GitHub Releases; Wasabi is not needed for this route.                                                                                                                                                        |
 | Closure transport      | Preferred, not finalized: archive a signed file binary cache; retain a conventional signed substituter as the alternative.                                                                                            |
 | Android key            | Decided: new ECDSA P-256 private key, unencrypted at the user's request, in private `iExalt/keychain` as `android-signing`; X.509 PEM certificate as `android-signing.pub`. Ed25519 is not supported for APK signing. |
-| Android migration      | Open: application ID and migration from `sh.paseo.debug`. A new key does not establish a seamless update path.                                                                                                        |
-| Release cadence        | Open: automatic builds and release promotion are separate choices. Proposed: build `dev`, promote selected immutable fork tags.                                                                                       |
-| Mac installation owner | Open: dedicated Paseo profile versus Home Manager-pinned package. Proposed: dedicated profile; HM provides stable integration only.                                                                                   |
+| Android migration      | Decided: separate `sh.paseo.iexalt` app with the new signer; retain `sh.paseo.debug` during settings transfer and fresh pairing. The transfer bridge is not implemented or device-verified.                           |
+| Release cadence        | Decided: automatic paired builds from `dev`, with explicit promotion of selected revisions. Promoted releases must bind immutable artifacts to one revision.                                                          |
+| Mac installation owner | Decided: dedicated Paseo Nix profile owns app generations; Home Manager may provide a stable launcher. HM must not also pin the app version.                                                                          |
 | Update interaction     | No disruptive automatic restarts. Check/download cadence and explicit activation UX remain open.                                                                                                                      |
-| Scope authority        | Planning and requested key creation/storage only. No workflow dispatch, installation, production restart, or campaign implementation.                                                                                 |
+| Scope authority        | The user authorized the campaign and bounded two-hour closure probe. Execute assigned components; actual app transitions and production restarts require separate authority.                                          |
 
 Do not restart the production daemon on port 6767. Treat desktop activation and
 daemon activation separately. Preserve the original Android debug key and APK
@@ -103,13 +104,22 @@ and the signed probe were removed. No installation or existing-key change occurr
 The pair is published in private `iExalt/keychain` commit
 `93bf183eb47f2f7a540ffc6ed97e1122e4c1e35d`; the remote branch was verified to match.
 
-Recommended trust baseline: a dedicated fork application ID with the new private
-signer and an explicit settings-transfer/re-pairing flow. Retaining the current
-ID requires a separately proven migration; replacing the certificate alone fails
-ordinary upgrade compatibility. Investigate signing lineage only if it materially
-improves migration: the publicly shared old private key cannot establish exclusive
-publisher trust. Do not uninstall the existing app before recoverable data has
-been identified and the user has chosen the transition.
+Use the chosen `sh.paseo.iexalt` application ID and private signer. Preserve the
+existing app until settings transfer and fresh pairing pass. Source discovery found
+no existing user-facing export/import workflow. A private, one-time bridge build
+can keep `sh.paseo.debug` and its original signer, with a code above `11000`, to
+export allowlisted preferences for explicit import into the new app. The old
+signer is publicly shared and must not become the fork's release identity. Bridge
+source compatibility and the actual transfer round trip remain unverified.
+
+Preserve app preferences and local workspace/sidebar/layout choices, filtering
+references to matching daemon identities after pairing. Exclude credentials,
+passwords, client identity, push tokens, and regenerable caches. Host registry
+schemas contain passwords, so do not transfer the whole registry. Drafts, review
+comments, and their attachments need an explicit content-transfer decision.
+Daemon-owned work stays on the daemon; new-app notification permissions and push
+registration require device verification. Do not uninstall the existing app before
+the actual transition is authorized and preservation succeeds.
 
 ## Bounded closure feasibility probe
 
@@ -123,7 +133,8 @@ one clean canonical CI revision on a standard Apple Silicon runner. Export with
 binary-cache directory. NARs may already be compressed; measure actual archive
 size rather than assuming double compression helps.
 
-**Proposed allowance:** one focused two-hour investigation, not yet authorized.
+**Authorized allowance:** one focused two-hour investigation, with a 45-minute
+local transport component before the canonical CI component.
 Record setup, build, export, download, import, and analysis time separately.
 Reassess after the local transport measurement and first clean-runner attempt,
 or earlier if a new subsystem or paid runner becomes necessary. Do not turn a
@@ -146,6 +157,69 @@ complexity dominate, compare a conventional signed cache with explicit storage
 costs. Do not silently split assets or introduce another service. Signatures
 authenticate store objects; separately authenticate the manifest binding revision,
 channel, sequence, architecture, hashes, and output paths.
+
+### Verified local transport result
+
+The retained output's 69-path closure exported to a file binary cache using an
+ephemeral per-copy `secret-key` setting. This signed outgoing cache entries without
+changing signatures in the shared source store. The source output remained unsigned.
+An archive of that cache imported into an empty rooted local store with
+`require-sigs=true`, only the ephemeral public key trusted, and empty builders and
+substituters. Recursive `nix store verify --sigs-needed 1` passed; all imported
+logical paths and NAR hashes matched the cache.
+
+| Measurement                                 |                Local result |
+| ------------------------------------------- | --------------------------: |
+| Complete closure / root NAR bytes           |   793,652,024 / 498,939,280 |
+| Binary-cache files / archive asset bytes    |   160,612,698 / 160,657,108 |
+| Export / archive / extraction               |  134.95 s / 2.78 s / 0.46 s |
+| Import / recursive verification             |           10.06 s / 10.18 s |
+| Imported store / retained stages allocation | 798,356 KiB / 1,327,656 KiB |
+
+Measurements used Determinate Nix 3.19.0 / Nix 2.34.6 and default xz-compressed
+NARs. The gzip archive added 44,410 bytes over cache contents; plain tar remains
+a reasonable alternative. Allocation is a staged local measurement, not a measured
+OS-wide peak. This archive is about 153 MiB; first staging also needs space for
+the extracted cache and imported closure. Later-update download cost is unmeasured.
+
+A separate 2-path SQLite/zlib fixture rejected an unknown trusted key and a missing
+dependency. Recompressing a NAR after changing one regular-file payload byte kept
+valid XZ data but failed import with a hash mismatch. Ephemeral private keys and
+disposable caches/stores were removed; raw probe logs are not committed.
+
+This verifies local archive transport, signature enforcement, closure completeness,
+and content integrity. The rooted destination retained logical `/nix/store/...`
+identities with separate physical files/state; macOS cannot execute programs in
+that chroot store. It does not prove canonical source identity, a fresh host's
+system-store import, GitHub download, runner headroom, app launch, or activation.
+The next probe must build one clean canonical `aarch64-darwin` revision with
+committed inputs, transport its signed closure, and verify that exact output on a
+separate supported Nix host with builder fallback disabled.
+
+### Canonical CI probe boundary
+
+The probe workflow runs only for changes to its workflow/helper on `dev`; it does
+not use upstream release tags. It builds the immutable event revision on standard
+`macos-14` ARM64 runners with Nix 2.34.7. Before building, it requires equal
+derivation and output paths from the clean Git checkout and the same revision
+through GitHub's source-archive transport. Electron's numeric build version now
+uses the package's semantic-version core; revision count no longer changes the
+derivation. The manifest records the full source revision and lock hash separately.
+
+The producer exports a signed cache and uploads its tar archive to a draft
+`nix-closure-probe-<revision>` GitHub Release. A separate runner downloads that
+asset and imports the exact producer-pinned paths into an isolated rooted store
+with builders and substituters disabled. Its public trust pin lives in the reviewed
+workflow; the private one-use key lives only in the probe-specific repository
+secret and a temporary signing file. Remove that secret and file after the probe,
+including failure. Never upload a private signing key as an artifact.
+
+The content-addressed manifest is pinned by trusted producer-job outputs. That
+same-run provenance and Nix content-hash verification bind its bytes across the
+Release download; ordinary runtime paths require the pinned Nix signature.
+This does not establish standalone release-manifest authentication for an updater.
+The first clean CI attempt remains pending, including cold duration, disk headroom,
+actual Release transport, and verification on the separate runner.
 
 ## Proposed installation contract
 
@@ -195,11 +269,11 @@ artifacts. Android recovery should rebuild known-good source with a higher code
 and the durable signer; ordinary installer downgrade is not assumed. Validate
 data compatibility for that recovery build.
 
-Human participation: choose installation ownership, release promotion, and
-Android migration; provision scoped CI credentials and Nix trust; approve the
-bounded probe; confirm Android installation prompts; approve any eventual
-production app/daemon transition. Automate device observation where possible.
-No present permission extends to a production restart.
+Human participation: provision scoped CI credentials and Nix trust; confirm
+Android installation prompts; approve any eventual production app/daemon
+transition. Installation ownership, release promotion, and Android identity are
+decided, and the bounded probe is authorized. Automate device observation where
+possible. No present permission extends to a production restart.
 
 ## Economical verification
 
@@ -222,14 +296,16 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Identify shared debug key and select ECDSA P-256 without password protection.
 - [x] Create and validate the new Android signing material.
 - [x] Publish the validated pair to the private keychain repository.
-- [ ] Settle Android migration, Mac ownership, and release promotion choices.
-- [ ] Authorize and run the bounded closure probe; record the route decision.
+- [x] Settle Android migration, Mac ownership, and release promotion choices.
+- [x] Authorize the bounded probe and verify local signed closure transport.
+- [ ] Complete canonical CI/fresh-host closure proof and record the route decision.
 - [ ] Implement paired builds and complete-release promotion.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
-Next campaign action: decide the open product choices and authorize the closure
-probe. This document does not authorize implementation. Reconsider the route if
+Next campaign action: run the canonical CI/fresh-host component of the authorized
+closure probe. Platform updater implementation and actual transitions still need
+their assigned acceptance boundaries. Reconsider the route if
 fresh-store import needs weakened verification or compilation, standard runners
 cannot build within resource limits, Android migration cannot preserve required
 state, or the probe exceeds its agreed effort without resolving the question.
