@@ -266,7 +266,7 @@ test("paired candidate and lane files match the producer metadata shapes", async
       android: {
         artifactName: `paseo-iexalt-${expected.sequence}-${expected.sourceSha}-attempt-1`,
         artifactId: ids.android,
-        artifactDigest: `sha256:${digests.android}`,
+        artifactDigest: digests.android,
         artifactRunAttempt: "1",
         apkSha256: androidHash,
         metadataSha256: androidMetadataHash,
@@ -277,7 +277,7 @@ test("paired candidate and lane files match the producer metadata shapes", async
       macOS: {
         artifactName: `paseo-nix-closure-${expected.sourceSha}-${expected.sequence}-attempt-1`,
         artifactId: ids.macos,
-        artifactDigest: `sha256:${digests.macos}`,
+        artifactDigest: digests.macos,
         artifactRunAttempt: "1",
         manifestSha256: macManifestHash,
         archiveSha256: macArchiveHash,
@@ -290,6 +290,34 @@ test("paired candidate and lane files match the producer metadata shapes", async
       },
     };
     assert.doesNotThrow(() => validateCandidate(candidate, expected, ids, digests));
+    assert.doesNotThrow(() =>
+      validateCandidate(
+        {
+          ...candidate,
+          android: { ...candidate.android, artifactDigest: `sha256:${digests.android}` },
+          macOS: { ...candidate.macOS, artifactDigest: `sha256:${digests.macos}` },
+        },
+        expected,
+        ids,
+        digests,
+      ),
+    );
+    assert.doesNotThrow(() =>
+      validateCandidate(candidate, expected, ids, {
+        android: `sha256:${digests.android}`,
+        macos: `sha256:${digests.macos}`,
+      }),
+    );
+    assert.throws(
+      () =>
+        validateCandidate(
+          { ...candidate, android: { ...candidate.android, artifactDigest: "bad-digest" } },
+          expected,
+          ids,
+          { ...digests, android: "bad-digest" },
+        ),
+      /artifact identity does not match/,
+    );
     assert.equal(candidate.laneAttempts.android, 1);
     assert.equal(candidate.laneAttempts.macos, 1);
     assert.throws(

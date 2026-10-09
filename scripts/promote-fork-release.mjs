@@ -28,6 +28,18 @@ function fail(message) {
   throw new Error(message);
 }
 
+function normalizeSha256Digest(value) {
+  if (typeof value !== "string") return null;
+  const digest = value.startsWith("sha256:") ? value.slice("sha256:".length) : value;
+  return /^[a-f0-9]{64}$/.test(digest) ? digest : null;
+}
+
+function matchesSha256Digest(actualValue, expectedValue) {
+  const actualDigest = normalizeSha256Digest(actualValue);
+  const expectedDigest = normalizeSha256Digest(expectedValue);
+  return actualDigest !== null && expectedDigest !== null && actualDigest === expectedDigest;
+}
+
 function parseArguments(argv) {
   const [command, ...rest] = argv;
   if (command !== "prepare" && command !== "publish") {
@@ -228,7 +240,7 @@ function verifyArtifactMetadata(artifact, id, runId, sourceSha, expectedName) {
   if (!Number.isSafeInteger(artifact.size_in_bytes) || artifact.size_in_bytes <= 0) {
     fail(`Artifact ${id} has an invalid size.`);
   }
-  if (typeof artifact.digest !== "string" || !/^sha256:[a-f0-9]{64}$/.test(artifact.digest)) {
+  if (!normalizeSha256Digest(artifact.digest)) {
     fail(`Artifact ${id} has no verifiable SHA-256 digest.`);
   }
 }
@@ -256,10 +268,7 @@ async function downloadArtifact(token, artifact, destination) {
     createWriteStream(destination, { flags: "wx", mode: 0o600 }),
   );
   const actualDigest = hash.digest("hex");
-  if (
-    bytes !== artifact.size_in_bytes ||
-    actualDigest !== artifact.digest.slice("sha256:".length)
-  ) {
+  if (bytes !== artifact.size_in_bytes || actualDigest !== normalizeSha256Digest(artifact.digest)) {
     fail(`Downloaded artifact ${artifact.id} differs from GitHub's size or digest.`);
   }
   return { bytes, sha256: actualDigest };
@@ -339,7 +348,7 @@ export function validateCandidate(candidate, expected, ids, digests) {
     );
     if (
       String(value.artifactId) !== ids[sourceLane] ||
-      value.artifactDigest !== `sha256:${digests[sourceLane]}` ||
+      !matchesSha256Digest(value.artifactDigest, digests[sourceLane]) ||
       value.sourceSha !== undefined
     ) {
       fail(`Paired candidate ${lane} artifact identity does not match the selected artifact.`);
@@ -613,8 +622,7 @@ async function fetchSelectedArtifacts(token, args, identity, destination) {
       artifacts[lane].expired ||
       !Number.isSafeInteger(artifacts[lane].size_in_bytes) ||
       artifacts[lane].size_in_bytes <= 0 ||
-      typeof artifacts[lane].digest !== "string" ||
-      !/^sha256:[a-f0-9]{64}$/.test(artifacts[lane].digest)
+      !normalizeSha256Digest(artifacts[lane].digest)
     ) {
       fail(`Platform artifact ${id} is not a valid artifact from the selected source.`);
     }
@@ -622,7 +630,7 @@ async function fetchSelectedArtifacts(token, args, identity, destination) {
   const digestMap = Object.fromEntries(
     Object.entries(artifacts).map(([lane, artifact]) => [
       lane,
-      artifact.digest.slice("sha256:".length),
+      normalizeSha256Digest(artifact.digest),
     ]),
   );
   const zipPaths = {};
