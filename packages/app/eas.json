@@ -31,6 +31,11 @@
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease -x lint -x lintVitalAnalyzeRelease -x lintVitalRelease -x generateReleaseLintModel -x generateReleaseLintVitalModel"
       }
+    },
+    "fork": {
+      "env": {
+        "APP_VARIANT": "fork"
+      }
     }
   },
   "submit": {

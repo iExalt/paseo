@@ -7,6 +7,7 @@ const repoRoot = new URL("../", import.meta.url);
 const ciWorkflowPath = new URL(".github/workflows/ci.yml", repoRoot);
 const dockerWorkflowPath = new URL(".github/workflows/docker.yml", repoRoot);
 const nixWorkflowPath = new URL(".github/workflows/nix.yml", repoRoot);
+const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
 const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
 const desktopPackagePath = new URL("packages/desktop/package.json", repoRoot);
@@ -302,4 +303,52 @@ test("desktop packaging smokes main pushes and only the pull requests that touch
   for (const action of ["actions/checkout", "actions/setup-node", "actions/upload-artifact"]) {
     assert.match(source, new RegExp(`${action}@[0-9a-f]{40} # v\\d+\\.\\d+\\.\\d+`));
   }
+});
+
+test("fork Android APK signing is limited to trusted dev pushes and isolated from app scripts", () => {
+  const source = readFileSync(forkAndroidWorkflowPath, "utf8");
+  const trigger = source.split("jobs:", 1)[0];
+  const jobs = jobBlocks(source);
+  const build = jobs.get("build")?.join("\n") ?? "";
+  const sign = jobs.get("sign")?.join("\n") ?? "";
+  const paths = trigger.match(/paths:\s*\n((?:\s+- "[^"]+"\n?)+)/)?.[1] ?? "";
+
+  assert.match(trigger, /push:\s*\n\s+branches:\s*\n\s+- dev/);
+  assert.match(paths, /\.github\/workflows\/fork-android-apk\.yml/);
+  assert.match(paths, /packages\/app\/\*\*/);
+  assert.match(paths, /package-lock\.json/);
+  assert.doesNotMatch(paths, /docs|secrets|\.sops/);
+  assert.doesNotMatch(trigger, /pull_request|workflow_dispatch/);
+  assert.match(source, /github\.repository == 'iExalt\/paseo'/);
+  assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
+  assert.match(source, /github\.actor == 'iExalt'/);
+  assert.match(build, /PASEO_FORK_GOOGLE_SERVICES_JSON/);
+  assert.match(build, /FIREBASE_PROJECT_ID_FORK: paseo-18157/);
+  assert.doesNotMatch(build, /PASEO_FORK_SIGNING_(?:KEY|CERT)/);
+  assert.match(build, /apkanalyzer="\$ANDROID_HOME\/cmdline-tools\/latest\/bin\/apkanalyzer"/);
+  assert.match(build, /Firebase client config failed validation/);
+  assert.doesNotMatch(sign, /actions\/checkout|npm |gradlew/);
+  assert.match(sign, /apkanalyzer="\$android_home\/cmdline-tools\/latest\/bin\/apkanalyzer"/);
+  assert.match(sign, /PASEO_FORK_SIGNING_KEY_PKCS8_PEM/);
+  assert.match(sign, /PASEO_FORK_SIGNING_CERT_PEM/);
+  assert.match(sign, /permissions:\s*\{\}/);
+  assert.match(sign, /sha256sum .*build-metadata\.json/);
+  assert.match(sign, /openssl pkcs8 -topk8 -nocrypt .* -outform DER/);
+  assert.match(sign, /test "\$signer_count" -eq 1/);
+  assert.match(sign, /test "\$VERSION_CODE" -le 2100000000/);
+  assert.match(sign, /signingRunAttempt/);
+  assert.match(sign, /retention-days: 7/);
+
+  const buildStepOrder = [
+    build.indexOf("name: Generate fork Android project"),
+    build.indexOf("name: Assemble arm64 release candidate"),
+    build.indexOf("name: Verify and package release candidate"),
+    build.indexOf("name: Remove decrypted Firebase client config"),
+  ];
+  assert.ok(buildStepOrder.every((index) => index >= 0));
+  assert.deepEqual(
+    buildStepOrder,
+    [...buildStepOrder].sort((left, right) => left - right),
+  );
+  assert.match(build, /name: Remove decrypted Firebase client config\n\s+if: always\(\)/);
 });

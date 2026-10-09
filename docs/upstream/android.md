@@ -4,12 +4,27 @@
 
 Controlled by `APP_VARIANT` in `packages/app/app.config.js` (vanilla Expo, no custom Gradle plugin):
 
-| Variant       | App name    | Package ID       |
-| ------------- | ----------- | ---------------- |
-| `production`  | Paseo       | `sh.paseo`       |
-| `development` | Paseo Debug | `sh.paseo.debug` |
+| Variant       | App name     | Package ID        |
+| ------------- | ------------ | ----------------- |
+| `production`  | Paseo        | `sh.paseo`        |
+| `development` | Paseo Debug  | `sh.paseo.debug`  |
+| `fork`        | Paseo iExalt | `sh.paseo.iexalt` |
 
-EAS profiles: `development`, `production`, and `production-apk` in `packages/app/eas.json`.
+The fork variant keeps the iOS bundle identifier at `sh.paseo`. A fork Android
+build selects `APP_VARIANT=fork` and must set `PASEO_ANDROID_VERSION_CODE` to an
+explicit canonical positive integer from 1 through 2,100,000,000; the fork fails
+configuration if it is missing or invalid. Production and development continue
+deriving their Android version codes from the package version.
+
+The `fork` profile in `packages/app/eas.json` exists for interactive Android
+credential management so EAS resolves the fork application identifier. It sets
+`APP_VARIANT=fork`; the credential command also needs the fork version code and
+Firebase client path/project ID in its process environment. Although declared
+under `build` for the EAS CLI, this profile is solely for interactive credential
+management and is not ready for EAS builds.
+
+Profiles in `packages/app/eas.json`: `development`, `production`,
+`production-apk`, and `fork`.
 
 `development` uses Android `debug`.
 
@@ -123,6 +138,10 @@ Java 25 native-access flag lets Prefab's JNA library load without a warning that
 the current Android Gradle plugin misclassifies as a build error. It does not
 change the machine's Java configuration.
 
+The generated Gradle release build currently uses the debug keystore. The
+fork workflow below replaces that signature in a separate job and verifies the
+approved certificate before publishing its artifact.
+
 The normal camera and notification modules remain included. Push requires a
 Firebase Android client for `sh.paseo.debug`, the matching
 `GOOGLE_SERVICES_FILE_DEBUG` configuration, and FCM credentials in the configured
@@ -139,6 +158,44 @@ key outside the repository and upload it to that Expo project's FCM V1
 credentials for `sh.paseo.debug`. It is not the APK signing key and must never be
 bundled into the app. Preserve `android/app/debug.keystore` when rebuilding an
 installed local APK; use the non-clean prebuild command above.
+
+The `fork` variant has separate Firebase wiring. It requires an absolute
+`GOOGLE_SERVICES_FILE_FORK` path to a decrypted client config and
+`FIREBASE_PROJECT_ID_FORK` set to the expected public Firebase project ID. App
+config rejects missing/unreadable JSON, a project ID mismatch, or a client that
+does not name `sh.paseo.iexalt`. Decrypt the SOPS file to a mode-0600 temporary
+path outside the repository and remove it after the build; see
+[`secrets/firebase/README.md`](../../secrets/firebase/README.md).
+
+Expo project `@iexalt/paseo` is ID `3a777534-569c-47e5-81ad-1a4e47d5127c`.
+Its FCM V1 service-account credential must be assigned to Android app
+`sh.paseo.iexalt` separately from the client config. The service-account key
+must remain server-side and must never be bundled into the app.
+
+## Trusted-dev fork APK
+
+`.github/workflows/fork-android-apk.yml` builds a standalone arm64 APK on
+build-relevant pushes to `dev` by `iExalt` in `iExalt/paseo`. It checks out the
+immutable event SHA, sets the Android version code to
+`100000 + GITHUB_RUN_NUMBER`, and verifies the package, ABI, version code, and
+non-debuggable manifest before signing. Reruns of one workflow keep the same
+version code. The final metadata records the source SHA, build run ID/number/
+attempt, and signing run ID/attempt; artifact names include the signing
+attempt, including when a failed signer job is rerun against the same candidate.
+The signing job has no
+checkout and verifies the approved fork certificate before uploading the final
+APK, `SHA256SUMS`, and build metadata. The unsigned candidate expires after one
+day and must not be distributed; the final artifact expires after seven days.
+
+The workflow requires repository secrets `PASEO_FORK_GOOGLE_SERVICES_JSON`,
+`PASEO_FORK_SIGNING_KEY_PKCS8_PEM`, and `PASEO_FORK_SIGNING_CERT_PEM`. The build
+job validates the client config against the pinned `paseo-18157` project and
+`sh.paseo.iexalt`; it never receives signing material. The separate signer job
+receives only the PKCS#8 key and certificate, not the Firebase Admin SDK key.
+The Admin SDK key stays server-side for Expo FCM V1. This workflow creates a
+candidate artifact only; promotion, publication, and install/device validation
+are separate steps. Any future promotion must select an exact source SHA and
+run attempt and reject version codes at or below the last published fork code.
 
 ## Running on an emulator against a worktree daemon
 
