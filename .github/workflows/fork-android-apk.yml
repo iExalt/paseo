@@ -53,7 +53,7 @@ jobs:
     if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
     name: Build fork arm64 APK
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     permissions:
       contents: read
       packages: read
@@ -180,7 +180,7 @@ jobs:
           echo "ANDROID_HOME=$android_home" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$android_home" >> "$GITHUB_ENV"
 
-      - name: Record Android build budget
+      - name: Record Android build budget and provision runner swap
         shell: bash
         run: |
           set -euo pipefail
@@ -192,6 +192,7 @@ jobs:
             find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d -print | sort
           fi
           df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
+          bash "$GITHUB_WORKSPACE/scripts/runner-swap.sh" enable
 
       - name: Assemble arm64 release candidate
         shell: bash
@@ -209,6 +210,12 @@ jobs:
             -PreactNativeArchitectures=arm64-v8a
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
           df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
+
+      - name: Disable and remove task-owned Android swap
+        if: always()
+        timeout-minutes: 3
+        shell: bash
+        run: bash "$GITHUB_WORKSPACE/scripts/runner-swap.sh" cleanup
 
       - name: Verify and package release candidate
         id: candidate

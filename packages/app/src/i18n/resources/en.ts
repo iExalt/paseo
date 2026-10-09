@@ -2326,6 +2326,38 @@ export const en = {
       },
     },
     about: {
+      preferenceTransfer: {
+        title: "Transfer preferences",
+        description:
+          "Export or import selected settings as a plain JSON file. The file may include your personal workspace paths.",
+        exportDisclosure:
+          "The export is plain JSON and can include personal workspace paths. Review it before sharing.",
+        export: "Export",
+        import: "Import",
+        exportTitle: "Share Paseo preferences",
+        sourceLabel: "Paseo on Android",
+        tooLarge: "This preferences file exceeds the 256 KiB limit.",
+        shareUnavailable: "Sharing is not available on this device.",
+        preview: "Preferences from {{source}}",
+        daemonMatch:
+          "{{matched}} matching daemons; {{skipped}} unmatched daemon entries will be skipped.",
+        personalPaths: "The file contains {{count}} personal workspace paths.",
+        exclusions:
+          "Passwords, daemon connections, client identity, push tokens, drafts, attachments, and agent sessions are never transferred.",
+        sourceWins:
+          "After you confirm, selected sections replace those preferences on this device. Other sections stay unchanged.",
+        confirm: "Replace selected preferences",
+        sections: {
+          appearance: "Appearance and app behavior",
+          defaults: "Provider and model defaults",
+          changes: "Changes view",
+          editor: "Preferred editor",
+          shortcuts: "Keyboard shortcuts",
+          sidebar: "Sidebar and service routes",
+          panel: "Panel and file display",
+          workspace: "Workspace layout and selected files",
+        },
+      },
       title: "About",
       appVersion: "App version",
       whatsNewHint: "Release notes for every version",

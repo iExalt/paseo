@@ -617,8 +617,8 @@ A pending activation references a verified signed receipt and survives a
 durable-state failure for retry.
 Non-help commands serialize with an exclusive private lock. After a crash, remove
 a stale lock only after confirming no updater command is running. Six focused
-tests, scoped lint/format/syntax checks, and Nix expression parsing passed. Actual
-CI packaging, real promoted-release consumption, user-store import/activation,
+tests, scoped lint/format/syntax checks, and Nix expression parsing passed.
+Real promoted-release consumption, user-store import/activation,
 and Mac launch proof remain pending.
 
 Electron integration now marks the Darwin app resources with the Nix ownership
@@ -638,8 +638,32 @@ only the affected app and desktop workspace typechecks were rerun and passed.
 Other workspace results remain valid. Keep the accepted 14.2-second baseline;
 this failed aggregate run does not establish a new baseline. The affected rendered
 UI and CLI tests passed, along with ownership/bridge tests and the emitted-marker
-regression. No production app was launched or activated. The next paired build
-must verify actual packaging and the Kotlin repair together before promotion.
+regression. No production app was launched or activated. Actual Android native
+compilation and a complete paired candidate remain required before promotion.
+
+The integrated revision `41a5325d34f80a4f11194769d8e30ff56958e67a` was pushed at
+20:15:23 UTC (4:15:23 PM EDT). Paired run
+[37985740284](https://github.com/iExalt/paseo/actions/runs/37985740284), attempt 1,
+used shared sequence `200004`. The Mac build passed in 6m29s, including the new
+CLI and ownership-marker packaging. Its producer uploaded artifact `11643731453`
+(160,781,391 bytes; GitHub digest
+`3b175ceab6e1816579f38cedb3d85ab53efffe48e24a9e4829ed83194288cf06`). A separate
+fresh runner passed signed import/verification at 20:29:27–20:29:47 UTC
+(4:29:27–4:29:47 PM EDT). This proves CI packaging and transport; real promoted
+release consumption, user-store activation, and Mac launch remain unverified.
+Android assemble was again cancelled at 20:34:58 UTC (4:34:58 PM EDT), after
+18m04s of Gradle and 19m28s overall, before the 30-minute job limit. The structured
+annotation reports only “The operation was canceled”; it establishes neither
+OOM nor a compiler failure. Signing and complete-candidate checks were skipped,
+so no APK or paired release candidate exists. Stop further blind builds; compare
+the existing bounded heartbeat/exit evidence before choosing the next remedy.
+That permitted evidence records Hermes at 1,461,664 KiB RSS with 9,488,801,792
+bytes available at 20:33:57 UTC (4:33:57 PM EDT), then 13,463,484 KiB RSS
+(13,786,607,616 bytes) with only 393,822,208 bytes available at 20:34:57 UTC
+(4:34:57 PM EDT). The wrapper forwarded TERM and exited 143; its child also
+exited 143. The one-worker/in-process change did not bound Hermes memory.
+This is severe contemporaneous memory pressure, not proof of an OOM kill or
+the cancellation initiator. No cgroup OOM counters were emitted.
 
 ## Later milestones and acceptance gates
 
@@ -705,12 +729,44 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Implement and test the Android fork update interface source contract.
 - [x] Implement and test the Mac managed Nix CLI source and isolated profile lifecycle.
 - [x] Integrate and test Nix ownership and managed update controls in Electron source.
+- [x] Implement preference-only Android transfer with a recoverable import journal and startup gate.
 - [ ] Produce both verified CI artifacts and exercise complete-release promotion.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
-Next campaign action: apply the reviewed Android resource constraints and use
-one paired build to test memory pressure and the new updater's native module.
+The user confirmed preference-only migration: drafts and attachments remain in
+Debug. The source bridge is an explicit `APP_VARIANT=development`
+`PASEO_PREFS_MIGRATION_BRIDGE=1` build of `sh.paseo.debug`, code 11001, using the
+existing Debug signer. It exports allowlisted settings through the Android share
+sheet; the fork previews selected sections and requires confirmation before
+replacement. Files can contain personal paths. Credential registries, client
+identities, push tokens, arbitrary plugin values, and volatile agent/session state
+are excluded. Imports retain before-images and recover before store hydration.
+Bridge packaging, installation, and transfer of real device settings remain
+unverified and require the later transition gate.
+The focused migration tests passed (13 cases in 2.42 seconds); a subsequent
+cleanup-failure regression passed with the affected four-case UI suite in 1.25
+seconds. Runner lifecycle/workflow tests passed (16 cases in 1.08 seconds), with
+ShellCheck and actionlint. Repository format and lint passed. The serial aggregate
+typecheck took 13.36 seconds against the accepted 14.2-second baseline and found
+only new migration types; after correction, the app-only typecheck passed in
+3.51 seconds and other workspace results were reused. No full local suite or APK
+build was run.
+
+The connected S24 Ultra is authorized for read-only inventory. It runs API 36 and
+Debug 0.11.0/code 11000 with the preserved Debug certificate; the fork is absent.
+No app installation, permission change, or settings read occurred.
+
+After the latest Hermes growth, the user authorized one build with a task-owned
+16 GiB swapfile and a 60-minute Android job cap. The workflow requires measured
+24 GiB free before allocation and 8 GiB remaining afterwards, preserves existing
+swap, and always attempts cleanup. It retains the file if active-state verification
+or `swapoff` fails. This changes runner resources without changing Hermes
+optimization or app behavior; runner capacity and completion still need CI proof.
+
+Next campaign action: publish the reviewed preference transfer and runner resource
+changes together, then use one paired build to test memory pressure and native
+packaging.
 Canonical full-closure proof has passed; signed APK proof remains pending.
 Promotion waits for both real verified artifacts from one candidate revision.
 Standalone closure probe runs are stopped.
