@@ -8,6 +8,7 @@ const ciWorkflowPath = new URL(".github/workflows/ci.yml", repoRoot);
 const dockerWorkflowPath = new URL(".github/workflows/docker.yml", repoRoot);
 const nixWorkflowPath = new URL(".github/workflows/nix.yml", repoRoot);
 const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
+const forkBuildsWorkflowPath = new URL(".github/workflows/fork-builds.yml", repoRoot);
 const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
 const desktopPackagePath = new URL("packages/desktop/package.json", repoRoot);
@@ -305,23 +306,26 @@ test("desktop packaging smokes main pushes and only the pull requests that touch
   }
 });
 
-test("fork Android APK signing is limited to trusted dev pushes and isolated from app scripts", () => {
+test("fork Android APK workflow is a trusted reusable lane with explicit release identity", () => {
   const source = readFileSync(forkAndroidWorkflowPath, "utf8");
   const trigger = source.split("jobs:", 1)[0];
-  const jobs = jobBlocks(source);
+  const jobs = jobBlocks(source.split("jobs:", 2)[1] ?? "");
   const build = jobs.get("build")?.join("\n") ?? "";
   const sign = jobs.get("sign")?.join("\n") ?? "";
-  const paths = trigger.match(/paths:\s*\n((?:\s+- "[^"]+"\n?)+)/)?.[1] ?? "";
 
-  assert.match(trigger, /push:\s*\n\s+branches:\s*\n\s+- dev/);
-  assert.match(paths, /\.github\/workflows\/fork-android-apk\.yml/);
-  assert.match(paths, /packages\/app\/\*\*/);
-  assert.match(paths, /package-lock\.json/);
-  assert.doesNotMatch(paths, /docs|secrets|\.sops/);
-  assert.doesNotMatch(trigger, /pull_request|workflow_dispatch/);
+  assert.match(trigger, /workflow_call:/);
+  assert.match(trigger, /source_sha:[\s\S]*?required: true[\s\S]*?type: string/);
+  assert.match(trigger, /release_sequence:[\s\S]*?required: true[\s\S]*?type: string/);
+  assert.match(trigger, /PASEO_FORK_GOOGLE_SERVICES_JSON:[\s\S]*?required: true/);
+  assert.match(trigger, /PASEO_FORK_SIGNING_KEY_PKCS8_PEM:[\s\S]*?required: true/);
+  assert.match(trigger, /PASEO_FORK_SIGNING_CERT_PEM:[\s\S]*?required: true/);
+  assert.doesNotMatch(trigger, /push:|workflow_dispatch:/);
   assert.match(source, /github\.repository == 'iExalt\/paseo'/);
   assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
   assert.match(source, /github\.actor == 'iExalt'/);
+  assert.match(build, /ref: \$\{\{ inputs\.source_sha \}\}/);
+  assert.match(build, /getRequiredAndroidVersionCode\(process\.env\.RELEASE_SEQUENCE\)/);
+  assert.doesNotMatch(build, /getForkAndroidVersionCodeFromRunNumber|GITHUB_RUN_NUMBER\)\)/);
   assert.match(build, /PASEO_FORK_GOOGLE_SERVICES_JSON/);
   assert.match(build, /FIREBASE_PROJECT_ID_FORK: paseo-18157/);
   assert.doesNotMatch(build, /PASEO_FORK_SIGNING_(?:KEY|CERT)/);
@@ -336,8 +340,13 @@ test("fork Android APK signing is limited to trusted dev pushes and isolated fro
   assert.match(sign, /openssl pkcs8 -topk8 -nocrypt .* -outform DER/);
   assert.match(sign, /test "\$signer_count" -eq 1/);
   assert.match(sign, /test "\$VERSION_CODE" -le 2100000000/);
+  assert.match(sign, /test "\$\(jq -r \.releaseSequence "\$metadata"\)" = "\$RELEASE_SEQUENCE"/);
+  assert.match(sign, /apkSha256/);
   assert.match(sign, /signingRunAttempt/);
   assert.match(sign, /retention-days: 7/);
+  assert.match(sign, /artifact-ids: \$\{\{ needs\.build\.outputs\.artifact_id \}\}/);
+  assert.match(sign, /steps\.upload-final\.outputs\.artifact-digest/);
+  assert.match(sign, /verified=true/);
 
   const buildStepOrder = [
     build.indexOf("name: Generate fork Android project"),
@@ -351,4 +360,53 @@ test("fork Android APK signing is limited to trusted dev pushes and isolated fro
     [...buildStepOrder].sort((left, right) => left - right),
   );
   assert.match(build, /name: Remove decrypted Firebase client config\n\s+if: always\(\)/);
+});
+
+test("fork candidate orchestration shares one identity and only completes after both verified lanes", () => {
+  const source = readFileSync(forkBuildsWorkflowPath, "utf8");
+  const trigger = source.split("jobs:", 1)[0];
+  const jobs = jobBlocks(source.split("jobs:", 2)[1] ?? "");
+  const identity = jobs.get("identity")?.join("\n") ?? "";
+  const macos = jobs.get("build-macos")?.join("\n") ?? "";
+  const android = jobs.get("build-android")?.join("\n") ?? "";
+  const candidate = jobs.get("candidate-complete")?.join("\n") ?? "";
+
+  assert.match(trigger, /push:[\s\S]*?branches: \[dev\]/);
+  assert.match(
+    trigger,
+    /paths:[\s\S]*?flake\.lock[\s\S]*?nix\/\*\*[\s\S]*?packages\/desktop\/\*\*/,
+  );
+  assert.doesNotMatch(trigger, /paths-ignore:|docs\/\*\*/);
+  assert.doesNotMatch(trigger, /pull_request:|workflow_dispatch:/);
+  assert.match(source, /github\.repository == 'iExalt\/paseo'/);
+  assert.match(source, /github\.actor == 'iExalt'/);
+  assert.match(identity, /release_sequence=\$\(\(200000 \+ GITHUB_RUN_NUMBER\)\)/);
+  assert.match(identity, /source_sha=\$GITHUB_SHA/);
+  assert.match(macos, /uses: \.\/\.github\/workflows\/macos-closure\.yml/);
+  assert.match(android, /uses: \.\/\.github\/workflows\/fork-android-apk\.yml/);
+  assert.match(macos, /source_sha: \$\{\{ needs\.identity\.outputs\.source_sha \}\}/);
+  assert.match(android, /release_sequence: \$\{\{ needs\.identity\.outputs\.release_sequence \}\}/);
+  assert.match(candidate, /needs: \[identity, build-macos, build-android\]/);
+  assert.match(candidate, /ANDROID_VERIFIED: \$\{\{ needs\.build-android\.outputs\.verified \}\}/);
+  assert.match(candidate, /MACOS_VERIFIED: \$\{\{ needs\.build-macos\.outputs\.verified \}\}/);
+  assert.match(candidate, /artifact-ids: \$\{\{ needs\.build-android\.outputs\.artifact_id \}\}/);
+  assert.match(candidate, /artifact-ids: \$\{\{ needs\.build-macos\.outputs\.artifact_id \}\}/);
+  assert.match(candidate, /ANDROID_APK_SHA256/);
+  assert.match(candidate, /MACOS_MANIFEST_SHA256/);
+  assert.match(candidate, /signingCertificateSha256/);
+  assert.match(candidate, /\.signingRunId == \$runId/);
+  assert.match(candidate, /\.signingRunAttempt == \$runAttempt/);
+  assert.match(candidate, /\.runAttempt \| type == "string"/);
+  assert.doesNotMatch(candidate, /\.runAttempt == \$runAttempt/);
+  assert.match(candidate, /paired-candidate\.json/);
+  assert.doesNotMatch(source, /gh release (?:create|upload)|workflow_dispatch/);
+
+  const macosHelper = readFileSync(
+    new URL(".github/scripts/nix-release-closure.sh", repoRoot),
+    "utf8",
+  );
+  assert.match(
+    macosHelper,
+    /paseo-nix-closure-\$source_sha-\$release_sequence-attempt-\$\{GITHUB_RUN_ATTEMPT/,
+  );
 });

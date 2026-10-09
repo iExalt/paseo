@@ -1,0 +1,192 @@
+name: macOS Nix closure
+
+on:
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Immutable commit SHA to build.
+        required: true
+        type: string
+      release_sequence:
+        description: Canonical positive integer identifying this release attempt.
+        required: true
+        type: string
+    secrets:
+      PASEO_NIX_RELEASE_SIGNING_KEY:
+        description: Scoped Nix store signing key; exposed only to the export/sign step.
+        required: true
+    outputs:
+      source_sha:
+        description: Immutable source SHA verified by the producer and consumer.
+        value: ${{ jobs.build-and-export.outputs.source_sha }}
+      release_sequence:
+        description: Canonical release sequence verified by the producer and consumer.
+        value: ${{ jobs.build-and-export.outputs.release_sequence }}
+      lock_hash:
+        description: SHA-256 of the source flake.lock.
+        value: ${{ jobs.build-and-export.outputs.lock_hash }}
+      output_path:
+        description: Nix store output path for the desktop closure.
+        value: ${{ jobs.build-and-export.outputs.output_path }}
+      manifest_path:
+        description: Producer-pinned content-addressed closure manifest path.
+        value: ${{ jobs.build-and-export.outputs.manifest_path }}
+      manifest_sha256:
+        description: SHA-256 of the public closure metadata artifact.
+        value: ${{ jobs.build-and-export.outputs.manifest_sha256 }}
+      artifact_name:
+        description: Name of the signed closure artifact.
+        value: ${{ jobs.build-and-export.outputs.artifact_name }}
+      archive_sha256:
+        description: SHA-256 of the signed binary-cache archive.
+        value: ${{ jobs.build-and-export.outputs.archive_sha256 }}
+      artifact_id:
+        description: GitHub Actions artifact ID for downstream packaging.
+        value: ${{ jobs.build-and-export.outputs.artifact_id }}
+      artifact_digest:
+        description: GitHub Actions artifact digest for downstream validation.
+        value: ${{ jobs.build-and-export.outputs.artifact_digest }}
+      verified:
+        description: Whether the fresh-runner import and signature verification passed.
+        value: ${{ jobs.verify-import.outputs.verified }}
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: macos-nix-closure-${{ inputs.source_sha }}-${{ inputs.release_sequence }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-export:
+    name: Build and sign macOS closure
+    if: ${{ github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' }}
+    runs-on: macos-14
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source_sha: ${{ steps.prepare.outputs.source_sha }}
+      release_sequence: ${{ steps.prepare.outputs.release_sequence }}
+      lock_hash: ${{ steps.prepare.outputs.lock_hash }}
+      output_path: ${{ steps.prepare.outputs.output_path }}
+      manifest_path: ${{ steps.build.outputs.manifest_path }}
+      manifest_sha256: ${{ steps.export.outputs.manifest_sha256 }}
+      artifact_name: ${{ steps.export.outputs.artifact_name }}
+      archive_name: ${{ steps.export.outputs.archive_name }}
+      archive_bytes: ${{ steps.export.outputs.archive_bytes }}
+      archive_sha256: ${{ steps.export.outputs.archive_sha256 }}
+      cache_bytes: ${{ steps.export.outputs.cache_bytes }}
+      cache_file_count: ${{ steps.export.outputs.cache_file_count }}
+      artifact_id: ${{ steps.upload.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Import the pinned Node seed and verify source identity
+        id: prepare
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+        run: bash .github/scripts/nix-release-closure.sh prepare
+
+      - name: Build the macOS desktop output
+        id: build
+        timeout-minutes: 60
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+        run: bash .github/scripts/nix-release-closure.sh build
+
+      - name: Sign and export the closure
+        id: export
+        timeout-minutes: 10
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
+          NIX_RELEASE_PUBLIC_KEY: paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8=
+        run: bash .github/scripts/nix-release-closure.sh export-signed-closure
+
+      - name: Remove temporary Nix signing key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
+
+      - name: Upload public closure and metadata artifact
+        id: upload
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.export.outputs.artifact_name }}
+          path: ${{ runner.temp }}/paseo-nix-release-artifact/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+  verify-import:
+    name: Verify closure on a fresh runner
+    needs: build-and-export
+    if: ${{ github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' }}
+    runs-on: macos-14
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      verified: ${{ steps.verify.outputs.verified }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          artifact-ids: ${{ needs.build-and-export.outputs.artifact_id }}
+          path: ${{ runner.temp }}/paseo-nix-release-artifact
+          merge-multiple: true
+
+      - name: Import and verify signed closure
+        id: verify
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          EXPECTED_SOURCE_SHA: ${{ needs.build-and-export.outputs.source_sha }}
+          EXPECTED_RELEASE_SEQUENCE: ${{ needs.build-and-export.outputs.release_sequence }}
+          EXPECTED_LOCK_HASH: ${{ needs.build-and-export.outputs.lock_hash }}
+          EXPECTED_OUTPUT_PATH: ${{ needs.build-and-export.outputs.output_path }}
+          EXPECTED_MANIFEST_PATH: ${{ needs.build-and-export.outputs.manifest_path }}
+          EXPECTED_MANIFEST_SHA256: ${{ needs.build-and-export.outputs.manifest_sha256 }}
+          EXPECTED_ARTIFACT_NAME: ${{ needs.build-and-export.outputs.artifact_name }}
+          EXPECTED_ARCHIVE_NAME: ${{ needs.build-and-export.outputs.archive_name }}
+          EXPECTED_ARCHIVE_BYTES: ${{ needs.build-and-export.outputs.archive_bytes }}
+          EXPECTED_ARCHIVE_SHA256: ${{ needs.build-and-export.outputs.archive_sha256 }}
+          EXPECTED_CACHE_BYTES: ${{ needs.build-and-export.outputs.cache_bytes }}
+          EXPECTED_CACHE_FILE_COUNT: ${{ needs.build-and-export.outputs.cache_file_count }}
+          NIX_RELEASE_PUBLIC_KEY: paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8=
+          ARTIFACT_DIR: ${{ runner.temp }}/paseo-nix-release-artifact
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_SOURCE_SHA" == "$SOURCE_SHA" ]] || { echo "::error::Producer source SHA differs from the requested source."; exit 1; }
+          [[ "$EXPECTED_RELEASE_SEQUENCE" == "$RELEASE_SEQUENCE" ]] || { echo "::error::Producer release sequence differs from the requested sequence."; exit 1; }
+          bash .github/scripts/nix-release-closure.sh verify-import
+          echo "verified=true" >> "$GITHUB_OUTPUT"
