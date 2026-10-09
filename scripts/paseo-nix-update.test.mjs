@@ -1,6 +1,18 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  access,
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
@@ -10,6 +22,8 @@ import {
   chooseHighestVerifiedStableRelease,
   extractNixCacheTar,
   finishPendingActivation,
+  localCacheCopyArgs,
+  localCacheCopySignaturesArgs,
   validateNixClosureManifest,
   verifyReleaseManifestBytes,
   withOperationLock,
@@ -25,11 +39,25 @@ async function temporaryDirectory() {
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories
-      .splice(0)
-      .map((directory) => rm(directory, { recursive: true, force: true })),
+    temporaryDirectories.splice(0).map(async (directory) => {
+      await makeTemporaryTreeWritable(directory);
+      await rm(directory, { recursive: true, force: true });
+    }),
   );
 });
+
+async function makeTemporaryTreeWritable(path) {
+  const entry = await lstat(path).catch(() => null);
+  if (!entry || entry.isSymbolicLink()) return;
+  if (entry.isDirectory()) {
+    await chmod(path, (entry.mode & 0o7777) | 0o700);
+    for (const child of await readdir(path)) {
+      await makeTemporaryTreeWritable(join(path, child));
+    }
+    return;
+  }
+  await chmod(path, (entry.mode & 0o7777) | 0o600);
+}
 
 function signedManifest(sequence = 42) {
   const { privateKey, publicKey } = generateKeyPairSync("ed25519");
@@ -97,7 +125,231 @@ function tarFile(name, contents, type = "0") {
   return Buffer.concat([tarHeader(name, bytes.length, type), bytes, padding]);
 }
 
+function runNix(args, { allowFailure = false, input, store } = {}) {
+  const commandArgs = store && store !== "default" ? ["--store", store, ...args] : args;
+  const result = spawnSync("nix", commandArgs, {
+    encoding: "utf8",
+    input,
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+  });
+  if (result.error) {
+    throw result.error;
+  }
+  if (result.status !== 0 && !allowFailure) {
+    throw new Error(`Nix fixture command failed (${result.status}): ${result.stderr.trim()}`);
+  }
+  return { stdout: result.stdout.trim(), stderr: result.stderr.trim(), status: result.status };
+}
+
+function fixtureLocalStore(parent, name) {
+  return `local?root=${join(parent, `${name}-root`)}&state=${join(parent, `${name}-state`)}&require-sigs=false`;
+}
+
 describe("Paseo Nix updater verification", () => {
+  it("encodes Application Support paths in the local Nix cache source URL", () => {
+    const args = localCacheCopyArgs(
+      "/Users/test/Library/Application Support/Paseo/nix-update/download/cache",
+      `/nix/store/${"c".repeat(32)}-paseo-desktop-1.2.3`,
+    );
+    assert.equal(
+      args[2],
+      "file:///Users/test/Library/Application%20Support/Paseo/nix-update/download/cache",
+    );
+    assert.equal(args[0], "copy");
+    assert.equal(args[1], "--from");
+
+    const signatureArgs = localCacheCopySignaturesArgs(
+      "/Users/test/Library/Application Support/Paseo/nix-update/download/cache",
+      `/nix/store/${"c".repeat(32)}-paseo-desktop-1.2.3`,
+    );
+    assert.deepEqual(signatureArgs.slice(0, 4), [
+      "store",
+      "copy-sigs",
+      "--substituter",
+      "file:///Users/test/Library/Application%20Support/Paseo/nix-update/download/cache",
+    ]);
+    assert.ok(signatureArgs.includes("--recursive"));
+  });
+
+  it(
+    "copies only the pinned cache signature onto an already-present input-addressed path",
+    { skip: process.env.PASEO_NIX_SIGNATURE_FIXTURE !== "1" },
+    async () => {
+      const directory = await mkdtemp(
+        join(
+          process.platform === "darwin" ? "/private/tmp" : tmpdir(),
+          "paseo-nix-copy-sigs-test-",
+        ),
+      );
+      temporaryDirectories.push(directory);
+      const sourceStore = fixtureLocalStore(directory, "source");
+      const destinationStore = fixtureLocalStore(directory, "destination");
+      const cache = join(directory, "cache");
+      const unsignedCache = join(directory, "unsigned-cache");
+      const oldKeyPath = join(directory, "old.key");
+      const newKeyPath = join(directory, "new.key");
+      await mkdir(cache);
+
+      const oldKey = runNix(["key", "generate-secret", "--key-name", "fixture-old"]).stdout;
+      const newKey = runNix(["key", "generate-secret", "--key-name", "fixture-new"]).stdout;
+      await writeFile(oldKeyPath, `${oldKey}\n`, { mode: 0o600 });
+      await writeFile(newKeyPath, `${newKey}\n`, { mode: 0o600 });
+      await chmod(oldKeyPath, 0o600);
+      await chmod(newKeyPath, 0o600);
+      const oldPublic = runNix(["key", "convert-secret-to-public"], { input: oldKey }).stdout;
+      const newPublic = runNix(["key", "convert-secret-to-public"], { input: newKey }).stdout;
+
+      const fixtureRoot = process.env.PASEO_NIX_SIGNATURE_FIXTURE_ROOT;
+      assert.ok(fixtureRoot, "the real isolated fixture needs an already-imported closure root");
+      const fixtureStore = process.env.PASEO_NIX_SIGNATURE_FIXTURE_STORE;
+      assert.ok(fixtureStore, "the real isolated fixture requires the imported verification store");
+      const closure = JSON.parse(
+        runNix(["path-info", "--json", "--recursive", fixtureRoot], { store: fixtureStore }).stdout,
+      );
+      const candidates = Object.entries(closure)
+        .filter(([, info]) => info.ca === null && info.references.length === 0)
+        .sort((left, right) => left[1].narSize - right[1].narSize);
+      assert.ok(candidates.length > 0, "the imported closure must contain an input-addressed leaf");
+      const [outputPath] = candidates[0];
+
+      runNix(
+        [
+          "copy",
+          "--to",
+          sourceStore,
+          "--option",
+          "builders",
+          "",
+          "--option",
+          "substituters",
+          "",
+          outputPath,
+        ],
+        { store: fixtureStore },
+      );
+      const sourceInfo = JSON.parse(
+        runNix(["path-info", "--json", outputPath], { store: sourceStore }).stdout,
+      )[outputPath];
+      assert.equal(sourceInfo.ca, null, "the fixture must exercise input-addressed paths");
+
+      runNix(["store", "sign", "--key-file", newKeyPath, outputPath], { store: sourceStore });
+      runNix(
+        [
+          "copy",
+          "--to",
+          `file://${cache}?secret-key=${newKeyPath}`,
+          "--option",
+          "builders",
+          "",
+          "--option",
+          "substituters",
+          "",
+          outputPath,
+        ],
+        { store: sourceStore },
+      );
+      const hashPart = outputPath.split("/").at(-1).slice(0, 32);
+      const narinfoPath = join(cache, `${hashPart}.narinfo`);
+      const narinfo = await readFile(narinfoPath, "utf8");
+      assert.match(narinfo, /^Sig: fixture-new:/m);
+      const onlyNewSignature = narinfo
+        .split("\n")
+        .filter((line) => !line.startsWith("Sig:") || line.startsWith("Sig: fixture-new:"))
+        .join("\n");
+      await writeFile(narinfoPath, onlyNewSignature);
+      await cp(cache, unsignedCache, { recursive: true });
+      await writeFile(
+        join(unsignedCache, `${hashPart}.narinfo`),
+        onlyNewSignature
+          .split("\n")
+          .filter((line) => !line.startsWith("Sig:"))
+          .join("\n"),
+      );
+      const signedFiles = await readdir(cache);
+      assert.equal(signedFiles.filter((name) => name.endsWith(".narinfo")).length, 1);
+
+      runNix([
+        "copy",
+        "--from",
+        `file://${unsignedCache}`,
+        "--to",
+        destinationStore,
+        "--option",
+        "builders",
+        "",
+        "--option",
+        "substituters",
+        "",
+        "--option",
+        "require-sigs",
+        "false",
+        outputPath,
+      ]);
+      const unsigned = JSON.parse(
+        runNix(["path-info", "--json", outputPath], { store: destinationStore }).stdout,
+      )[outputPath];
+      assert.equal(
+        unsigned.ca,
+        null,
+        "the fixture must exercise signature-required input-addressed paths",
+      );
+      assert.deepEqual(
+        unsigned.signatures,
+        [],
+        "an unsigned archive import must leave the path unsigned",
+      );
+
+      runNix([
+        "store",
+        "copy-sigs",
+        "--store",
+        destinationStore,
+        "--substituter",
+        `file://${cache}`,
+        "--recursive",
+        "--option",
+        "builders",
+        "",
+        "--option",
+        "substituters",
+        "",
+        "--option",
+        "require-sigs",
+        "true",
+        "--option",
+        "trusted-public-keys",
+        newPublic,
+        outputPath,
+      ]);
+      const after = JSON.parse(
+        runNix(["path-info", "--json", outputPath], { store: destinationStore }).stdout,
+      )[outputPath];
+      assert.deepEqual(
+        after.signatures.map((signature) => signature.split(":")[0]),
+        ["fixture-new"],
+      );
+
+      const verifyArgs = [
+        "store",
+        "verify",
+        "--store",
+        destinationStore,
+        "--sigs-needed",
+        "1",
+        "--no-contents",
+        "--option",
+        "require-sigs",
+        "true",
+        "--option",
+        "trusted-public-keys",
+      ];
+      const rejected = runNix([...verifyArgs, oldPublic, outputPath], { allowFailure: true });
+      assert.notEqual(rejected.status, 0, "a different key must not verify the copied signature");
+      assert.match(rejected.stderr, /signature|trusted|public key|key/i);
+      assert.equal(runNix([...verifyArgs, newPublic, outputPath]).status, 0);
+    },
+  );
+
   it("verifies detached Ed25519 bytes before trusting the release schema", () => {
     const fixture = signedManifest();
     assert.deepEqual(
