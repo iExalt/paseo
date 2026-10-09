@@ -2,7 +2,32 @@
 set -euo pipefail
 
 readonly desktop_attr=".#packages.aarch64-darwin.desktop"
-readonly probe_key_name="paseo-nix-ci-probe-2026-10"
+readonly probe_key_name="paseo-nix-seed-20261009-164633"
+readonly seed_release_tag="nix-closure-probe-seed-20261009-164633"
+readonly seed_archive_name="paseo-nix-node-seed-fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6.tar"
+readonly seed_archive_sha256="fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6"
+readonly seed_archive_bytes="69248000"
+readonly seed_manifest_name="paseo-nix-node-seed-manifest-e56d4559861824682c1a85f3871919ab23deb6a520912b4daa8ad021b2b576c6.json"
+readonly seed_manifest_sha256="e56d4559861824682c1a85f3871919ab23deb6a520912b4daa8ad021b2b576c6"
+readonly seed_manifest_path="/nix/store/1wih4vhhsxkvmjnn8043xk13nhdp1d5r-paseo-nix-seed-manifest-119dda15072d5af0f4083a23eaf411587f621f95.json"
+readonly seed_source_sha="119dda15072d5af0f4083a23eaf411587f621f95"
+readonly seed_lock_hash="2e8911706b05e02f12256848cd3c14482e88f99a65401cee3ded4aa761db3ee3"
+readonly seed_cache_bytes="68832100"
+readonly seed_cache_file_count="143"
+readonly seed_node_roots=(
+  "/nix/store/3vd5kgvc7l4hcg5mlr21f09inywmfnd6-nodejs-slim-26.11.0"
+  "/nix/store/w9a1j4q81r51fc2z2fgadh8z61ndyyay-nodejs-slim-26.11.0-dev"
+  "/nix/store/1fql7h7fk180qd6w2mq53yb2lq62bck3-nodejs-slim-26.11.0-libv8"
+  "/nix/store/kcnpxkgv8kmdmdk0bcfip9i4w2lzwrfi-nodejs-slim-26.11.0-npm"
+  "/nix/store/bgcnlqy8rr1g3hcrvrkfwbqz329wwh6n-nodejs-26.11.0"
+)
+readonly seed_node_derivers=(
+  "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv"
+  "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv"
+  "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv"
+  "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv"
+  "/nix/store/z8xk2h5gf7l5y60h0kmx3vpz617n4s3r-nodejs-26.11.0.drv"
+)
 readonly min_free_kib=2500000
 
 fail() {
@@ -43,6 +68,106 @@ check_free_disk() {
   done
 }
 
+import_seeded_node() {
+  local seed_dir archive_file manifest_file cache_dir extracted_bytes extracted_file_count
+  local seed_closure_json imported_closure_json seed_output actual_deriver
+  local index nix_bin
+
+  [[ "${GITHUB_REPOSITORY:-}" == "iExalt/paseo" ]] \
+    || fail "Refusing to access release assets for unexpected repository: ${GITHUB_REPOSITORY:-unset}."
+  [[ -n "${NIX_PROBE_PUBLIC_KEY:-}" && "$NIX_PROBE_PUBLIC_KEY" == "$probe_key_name":* ]] \
+    || fail "The reviewed seed public-key pin is absent or has the wrong key name."
+  nix_bin="$(command -v nix)"
+
+  seed_dir="$RUNNER_TEMP/paseo-nix-seed-download"
+  archive_file="$seed_dir/$seed_archive_name"
+  manifest_file="$seed_dir/$seed_manifest_name"
+  cache_dir="$RUNNER_TEMP/paseo-nix-seed-cache"
+  mkdir -p "$seed_dir" "$cache_dir"
+  gh release download "$seed_release_tag" --repo "$GITHUB_REPOSITORY" \
+    --pattern "$seed_archive_name" --pattern "$seed_manifest_name" --dir "$seed_dir"
+  [[ -s "$archive_file" && -s "$manifest_file" ]] || fail "The immutable Node seed assets are missing."
+  [[ "$(stat -f%z "$archive_file")" == "$seed_archive_bytes" ]] || fail "Node seed archive size differs from its source pin."
+  [[ "$(shasum -a 256 "$archive_file" | awk '{print $1}')" == "$seed_archive_sha256" ]] \
+    || fail "Node seed archive hash differs from its source pin."
+  [[ "$(shasum -a 256 "$manifest_file" | awk '{print $1}')" == "$seed_manifest_sha256" ]] \
+    || fail "Node seed manifest hash differs from its source pin."
+  [[ "$(shasum -a 256 flake.lock | awk '{print $1}')" == "$seed_lock_hash" ]] \
+    || fail "Current source flake.lock differs from the Node seed's pinned lock."
+  jq -e \
+    --arg sourceSha "$seed_source_sha" \
+    --arg lockHash "$seed_lock_hash" \
+    --arg signingKey "$NIX_PROBE_PUBLIC_KEY" \
+    --argjson roots "$(printf '%s\n' "${seed_node_roots[@]}" | jq -R . | jq -s .)" \
+    '.schemaVersion == 1 and .provenance == "local-built-dependency"
+      and .sourceSha == $sourceSha and .lockHash == $lockHash
+      and .sourceRevCount == 5787 and .signingKey == $signingKey
+      and .system == "aarch64-darwin"
+      and .roots == $roots' \
+    "$manifest_file" >/dev/null || fail "Node seed manifest differs from its reviewed source pins."
+  [[ "$(jq -er '.closure | length' "$manifest_file")" == 70 ]] \
+    || fail "Node seed manifest closure size differs from its source pin."
+  jq -e \
+    'any(.closure[]; .path == "/nix/store/3vd5kgvc7l4hcg5mlr21f09inywmfnd6-nodejs-slim-26.11.0" and .deriver == "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv" and .narHash == "sha256-AC3iz3Jjnpc5jGN1jwft5ogAszXy7YSmF4hs3xi2nQA=")
+      and any(.closure[]; .path == "/nix/store/w9a1j4q81r51fc2z2fgadh8z61ndyyay-nodejs-slim-26.11.0-dev" and .deriver == "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv" and .narHash == "sha256-rZZS+1V2SKzWTAKasyFgPQEyTOddt0C3Ieb8yHWpt2Q=")
+      and any(.closure[]; .path == "/nix/store/1fql7h7fk180qd6w2mq53yb2lq62bck3-nodejs-slim-26.11.0-libv8" and .deriver == "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv" and .narHash == "sha256-8cf1TLvf3ehT6lJMKBPlOl3OquQ7fm7PYY2H6AKughQ=")
+      and any(.closure[]; .path == "/nix/store/kcnpxkgv8kmdmdk0bcfip9i4w2lzwrfi-nodejs-slim-26.11.0-npm" and .deriver == "/nix/store/w4zdrzgs19rzd4wjyldrrhyk1j6nf0mr-nodejs-slim-26.11.0.drv" and .narHash == "sha256-OKOSWU0annub9kcVdENroo/rgcc+uiVdfOWAej7ezVs=")
+      and any(.closure[]; .path == "/nix/store/bgcnlqy8rr1g3hcrvrkfwbqz329wwh6n-nodejs-26.11.0" and .deriver == "/nix/store/z8xk2h5gf7l5y60h0kmx3vpz617n4s3r-nodejs-26.11.0.drv" and .narHash == "sha256-uyQhBVFDXISzATUgHJyjDDk3TqMtAwhVN2sV0c1jAAk=")' \
+    "$manifest_file" >/dev/null || fail "Node seed manifest output paths or NAR hashes differ from their source pins."
+
+  tar -tf "$archive_file" >/dev/null || fail "Node seed archive is not a readable tar archive."
+  python3 - "$archive_file" "$cache_dir" <<'PY'
+import pathlib
+import sys
+import tarfile
+
+archive_path = pathlib.Path(sys.argv[1])
+destination = pathlib.Path(sys.argv[2])
+with tarfile.open(archive_path, "r:") as archive:
+    members = archive.getmembers()
+    if not members:
+        raise SystemExit("Nix seed cache archive is empty")
+    for member in members:
+        path = pathlib.PurePosixPath(member.name)
+        if path.is_absolute() or ".." in path.parts or not (member.isfile() or member.isdir()):
+            raise SystemExit(f"Unsafe Nix seed archive member: {member.name!r}")
+    archive.extractall(destination, members=members)
+PY
+  extracted_bytes="$(find "$cache_dir" -type f -exec stat -f%z {} \; | awk '{sum += $1} END {print sum + 0}')"
+  extracted_file_count="$(find "$cache_dir" -type f | wc -l | tr -d ' ')"
+  [[ "$extracted_bytes" == "$seed_cache_bytes" && "$extracted_file_count" == "$seed_cache_file_count" ]] \
+    || fail "Extracted Node seed cache size or file count differs from its manifest pin."
+
+  sudo "$nix_bin" copy --from "file://$cache_dir" \
+    --option builders '' --option substituters '' --option require-sigs true \
+    --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    "${seed_node_roots[@]}" "$seed_manifest_path"
+  sudo "$nix_bin" store copy-sigs --substituter "file://$cache_dir" --recursive \
+    --option builders '' --option substituters '' --option require-sigs true \
+    --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    "${seed_node_roots[@]}" "$seed_manifest_path"
+  sudo "$nix_bin" store verify --recursive --sigs-needed 1 \
+    --option builders '' --option substituters '' --option require-sigs true \
+    --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    "${seed_node_roots[@]}" "$seed_manifest_path"
+  for index in "${!seed_node_roots[@]}"; do
+    actual_deriver="$(nix path-info --derivation "${seed_node_roots[$index]}")"
+    [[ "$actual_deriver" == "${seed_node_derivers[$index]}" ]] \
+      || fail "Seeded output ${seed_node_roots[$index]} has deriver $actual_deriver, expected ${seed_node_derivers[$index]}."
+  done
+  nix store cat "$seed_manifest_path" > "$RUNNER_TEMP/paseo-nix-seed-imported-manifest.json"
+  cmp -s "$manifest_file" "$RUNNER_TEMP/paseo-nix-seed-imported-manifest.json" \
+    || fail "Imported Node seed manifest content differs from the independently pinned asset."
+  seed_closure_json="$(jq -cS '.closure | map({path, narHash, narSize}) | sort_by(.path)' "$manifest_file")"
+  imported_closure_json="$(nix path-info --json --recursive --option builders '' \
+    --option substituters '' --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    "${seed_node_roots[@]}" | jq -cS 'to_entries | map({path: .key, narHash: .value.narHash, narSize: .value.narSize}) | sort_by(.path)')"
+  [[ "$seed_closure_json" == "$imported_closure_json" ]] \
+    || fail "Imported Node seed closure differs from the independently pinned path/NAR manifest."
+  seed_output="${seed_node_roots[0]}"
+  echo "::notice::Imported locally-built Node 26.11 seed ($seed_output) with signature verification; this seed is not claimed as CI-built. Manifest: $seed_manifest_path"
+}
+
 build_and_export() {
   local source_sha source_rev_count lock_hash lock_hash_checkout
   local checkout_drv checkout_output archive_drv archive_output package_version build_version
@@ -51,10 +176,11 @@ build_and_export() {
   local parity_started build_started export_started archive_started upload_started
   local parity_seconds build_seconds export_seconds archive_seconds upload_seconds
   local prebuild_store_free_kib prebuild_temp_free_kib preexport_store_free_kib preexport_temp_free_kib
-  local bundle_plist bundle_build_version
+  local bundle_plist bundle_build_version node_drv nodejs_drv
 
   [[ "${GITHUB_EVENT_NAME:-}" == push ]] || fail "This probe only runs for a dev push."
   [[ "${GITHUB_REF:-}" == refs/heads/dev ]] || fail "This probe only runs on dev."
+  [[ "${GITHUB_REPOSITORY:-}" == "iExalt/paseo" ]] || fail "Refusing to publish from unexpected repository: ${GITHUB_REPOSITORY:-unset}."
   require_arm64_darwin
 
   source_sha="$(git rev-parse HEAD)"
@@ -64,6 +190,10 @@ build_and_export() {
   lock_hash="$(shasum -a 256 flake.lock | awk '{print $1}')"
   lock_hash_checkout="$(git show HEAD:flake.lock | shasum -a 256 | awk '{print $1}')"
   [[ "$lock_hash" == "$lock_hash_checkout" ]] || fail "flake.lock differs from the triggering commit."
+  [[ "$lock_hash" == "$seed_lock_hash" ]] || fail "Canonical checkout flake.lock differs from the pinned Node seed lock."
+  [[ -n "${NIX_PROBE_SIGNING_KEY:-}" ]] || fail "The Nix closure probe signing secret is unavailable."
+
+  import_seeded_node
 
   # Evaluate the same immutable source through a Git checkout and GitHub's
   # archive transport. The desktop derivation must not depend on revCount.
@@ -77,6 +207,12 @@ build_and_export() {
     || fail "Checkout and source archive drvPath differ: $checkout_drv != $archive_drv."
   [[ "$checkout_output" == "$archive_output" ]] \
     || fail "Checkout and source archive output paths differ: $checkout_output != $archive_output."
+  node_drv="$(nix eval --raw --no-update-lock-file --impure --expr 'let flake = builtins.getFlake (toString ./.); pkgs = import flake.inputs.nixpkgs { system = "aarch64-darwin"; overlays = [ (final: prev: import ./nix/runtime-overrides.nix { inherit final prev; }) ]; }; in pkgs.nodejs-slim_26.drvPath')"
+  [[ "$node_drv" == "${seed_node_derivers[0]}" ]] \
+    || fail "Canonical checkout Node derivation differs from the pinned seed: $node_drv."
+  nodejs_drv="$(nix eval --raw --no-update-lock-file --impure --expr 'let flake = builtins.getFlake (toString ./.); pkgs = import flake.inputs.nixpkgs { system = "aarch64-darwin"; overlays = [ (final: prev: import ./nix/runtime-overrides.nix { inherit final prev; }) ]; }; in pkgs.nodejs_26.drvPath')"
+  [[ "$nodejs_drv" == "${seed_node_derivers[4]}" ]] \
+    || fail "Canonical checkout Node wrapper derivation differs from the pinned seed: $nodejs_drv."
   parity_seconds="$(( $(date +%s) - parity_started ))"
 
   package_version="$(jq -er '.version' package.json)"
@@ -102,7 +238,7 @@ build_and_export() {
   check_free_disk /nix/store "$RUNNER_TEMP"
 
   closure_json="$(nix path-info --json --recursive "$output_path" \
-    | jq -cS 'map({path, narHash, narSize}) | sort_by(.path)')"
+    | jq -cS 'to_entries | map({path: .key, narHash: .value.narHash, narSize: .value.narSize}) | sort_by(.path)')"
   manifest_file="$RUNNER_TEMP/paseo-nix-closure-manifest.json"
   jq -nS \
     --arg sourceSha "$source_sha" \
@@ -128,7 +264,6 @@ build_and_export() {
   release_tag="nix-closure-probe-$source_sha"
   asset_name="paseo-nix-closure-$source_sha.tar"
 
-  [[ -n "${NIX_PROBE_SIGNING_KEY:-}" ]] || fail "The Nix closure probe signing secret is unavailable."
   umask 077
   printf '%s\n' "$NIX_PROBE_SIGNING_KEY" > "$key_file"
   chmod 600 "$key_file"
@@ -155,7 +290,7 @@ build_and_export() {
   archive_seconds="$(( $(date +%s) - archive_started ))"
 
   upload_started="$(date +%s)"
-  gh release create "$release_tag" "$archive_file" \
+  gh release create "$release_tag" "$archive_file" --repo "$GITHUB_REPOSITORY" \
     --draft \
     --target "$source_sha" \
     --title "Nix closure probe $source_sha" \
@@ -200,6 +335,7 @@ verify_import() {
 
   require_arm64_darwin
   [[ "$(git rev-parse HEAD)" == "${EXPECTED_SOURCE_SHA:?}" ]] || fail "Verifier checkout SHA mismatch."
+  [[ "${GITHUB_REPOSITORY:-}" == "iExalt/paseo" ]] || fail "Refusing to download from unexpected repository: ${GITHUB_REPOSITORY:-unset}."
   [[ "$EXPECTED_SOURCE_SHA" == "${GITHUB_SHA:?}" ]] || fail "Expected SHA differs from the workflow event SHA."
   current_sha="$(git rev-parse HEAD)"
   current_rev_count="$(git rev-list --count HEAD)"
@@ -231,7 +367,7 @@ verify_import() {
   manifest_file="$RUNNER_TEMP/paseo-nix-closure-manifest.json"
   mkdir -p "$download_dir" "$cache_dir"
   download_started="$(date +%s)"
-  gh release download "$release_tag" --pattern "$asset_name" --dir "$download_dir"
+  gh release download "$release_tag" --repo "$GITHUB_REPOSITORY" --pattern "$asset_name" --dir "$download_dir"
   download_seconds="$(( $(date +%s) - download_started ))"
   [[ -s "$archive_file" ]] || fail "The expected GitHub Release asset was not downloaded."
   archive_bytes="$(stat -f%z "$archive_file")"
@@ -310,7 +446,7 @@ PY
   closure_json="$(nix path-info --store "$destination_store" --json --recursive \
     --option builders '' --option substituters '' --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
     "$EXPECTED_OUTPUT_PATH" \
-    | jq -cS 'map({path, narHash, narSize}) | sort_by(.path)')"
+    | jq -cS 'to_entries | map({path: .key, narHash: .value.narHash, narSize: .value.narSize}) | sort_by(.path)')"
   jq -e --argjson imported "$closure_json" \
     '.closure == $imported' "$manifest_file" >/dev/null \
     || fail "Imported closure path/NAR metadata differs from the producer-pinned manifest."
