@@ -16,7 +16,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -441,6 +441,12 @@ function manifestIdentity(manifest) {
   return `${manifest.sourceSha}-${manifest.releaseSequence}`;
 }
 
+export function assertReceiptIdentity(directory, manifest) {
+  if (basename(directory) !== manifestIdentity(manifest)) {
+    fail("Signed release receipt identity differs from its directory name.");
+  }
+}
+
 async function ensureDataRoot() {
   await mkdir(join(DATA_ROOT, "receipts"), { recursive: true, mode: 0o700 });
   const root = await lstat(DATA_ROOT);
@@ -534,6 +540,7 @@ async function loadReceipt(directory) {
     readFile(join(directory, "nix-closure-manifest.json")),
   ]);
   const manifest = verifyReleaseManifestBytes(manifestBytes, signatureBytes);
+  assertReceiptIdentity(directory, manifest);
   if (
     nixManifestBytes.length !== manifest.macOS.closureManifest.bytes ||
     createHash("sha256").update(nixManifestBytes).digest("hex") !==
@@ -565,14 +572,120 @@ export async function finishPendingActivation(pending, adapters) {
   await adapters.clearPending();
 }
 
-export async function applyProfileActivation(identity, outputPath, adapters) {
-  await adapters.writePending({ identity, outputPath });
-  await adapters.setProfile(outputPath);
-  if ((await adapters.activeOutputPath()) !== outputPath) {
-    fail("Nix profile activation did not select the verified Paseo output.");
+export function commitMetadataIdentity(state, { generation, identity, outputPath, sequence }) {
+  if (sequence <= (state.highWaterSequence ?? 0)) {
+    fail("Release sequence must advance beyond the activated high-water mark.");
   }
-  await adapters.writeHighWater({ identity, outputPath });
-  await adapters.clearPending();
+  const generations = state.generations.map((entry) => ({
+    ...entry,
+    identities: [...entry.identities],
+  }));
+  const entry = generations.find((candidate) => candidate.generation === generation);
+  if (!entry || entry.outputPath !== outputPath) {
+    fail("Release identity does not match the active Nix profile generation.");
+  }
+  if (!entry.identities.includes(identity)) entry.identities.push(identity);
+  return {
+    ...state,
+    highWaterIdentity:
+      !state.highWaterIdentity || sequence > state.highWaterSequence
+        ? identity
+        : state.highWaterIdentity,
+    highWaterSequence: Math.max(state.highWaterSequence ?? 0, sequence),
+    generations,
+  };
+}
+
+export function applyMetadataIntent(state, pending, sequence) {
+  const entry = state.generations.find(
+    (candidate) => candidate.generation === pending.fromGeneration,
+  );
+  if (!entry || entry.outputPath !== pending.targetOutputPath) {
+    fail("Metadata intent does not match the recorded Nix generation.");
+  }
+  const identities = [...entry.identities];
+  const currentIdentity = identities.at(-1) ?? null;
+  if (currentIdentity === pending.targetIdentity) return state;
+  if (currentIdentity !== pending.fromIdentity) {
+    fail("Metadata intent no longer matches the active signed release identity.");
+  }
+  if (pending.kind === "metadata-activate") {
+    return commitMetadataIdentity(state, {
+      generation: pending.fromGeneration,
+      identity: pending.targetIdentity,
+      outputPath: pending.targetOutputPath,
+      sequence,
+    });
+  }
+  if (
+    pending.kind !== "metadata-rollback" ||
+    identities.length < 2 ||
+    identities.at(-2) !== pending.targetIdentity
+  ) {
+    fail("Metadata rollback intent does not match the recorded identity history.");
+  }
+  identities.pop();
+  return {
+    ...state,
+    generations: state.generations.map((candidate) =>
+      candidate.generation === pending.fromGeneration ? { ...candidate, identities } : candidate,
+    ),
+  };
+}
+
+export function selectMappedGeneration(state, generation, outputPath) {
+  const mapping = state.generations.find((entry) => entry.generation === generation);
+  if (!mapping || mapping.outputPath !== outputPath || !mapping.identities.at(-1)) {
+    fail("Nix profile generation has no exact signed release mapping.");
+  }
+  return mapping;
+}
+
+export function selectLegacyReceiptIdentity(receipts, outputPath, preferredIdentity = null) {
+  const matches = receipts.filter((receipt) => receipt.outputPath === outputPath);
+  const preferred = matches.find((receipt) => receipt.identity === preferredIdentity);
+  if (preferred) return preferred.identity;
+  if (matches.length > 1) {
+    fail("More than one signed release matches this Nix output; refusing to guess its identity.");
+  }
+  return matches[0]?.identity ?? null;
+}
+
+export function highestReleaseIdentity(candidates) {
+  if (candidates.length === 0) return null;
+  const highestSequence = Math.max(...candidates.map((candidate) => candidate.sequence));
+  const highest = new Set(
+    candidates
+      .filter((candidate) => candidate.sequence === highestSequence)
+      .map((candidate) => candidate.identity),
+  );
+  if (highest.size !== 1) fail("Two signed releases share the highest activated sequence.");
+  return { identity: [...highest][0], sequence: highestSequence };
+}
+
+export function recoverNativeIntent(pending, current) {
+  const observed = current ?? { generation: null, outputPath: null };
+  if (
+    observed.generation === pending.fromGeneration &&
+    observed.outputPath === pending.fromOutputPath
+  ) {
+    return "unchanged";
+  }
+  if (
+    pending.kind === "native-activate" &&
+    observed.generation !== pending.fromGeneration &&
+    observed.outputPath === pending.targetOutputPath
+  ) {
+    return "switched";
+  }
+  if (
+    pending.kind === "native-rollback" &&
+    observed.generation === pending.targetGeneration &&
+    observed.outputPath === pending.targetOutputPath
+  ) {
+    return "switched";
+  }
+  fail("The managed profile changed during an interrupted update; manual recovery is required.");
 }
 
 function isNixClosureEntry(entry) {
@@ -991,7 +1104,70 @@ async function activeOutputPath(profilePath = ACTIVE_PROFILE) {
   return outputPath;
 }
 
-async function loadHighWater() {
+function validReleaseIdentity(identity) {
+  return typeof identity === "string" && /^[a-f0-9]{40}-[1-9][0-9]*$/.test(identity);
+}
+
+export function parseProfileGenerations(output) {
+  const generations = [];
+  const seen = new Set();
+  for (const line of output.split(/\r?\n/)) {
+    const match = line.match(
+      /^\s*\*?\s*(\d+)\s+\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}(?:\s+\(current\))?\s*$/,
+    );
+    if (!match) continue;
+    const generation = Number(match[1]);
+    if (seen.has(generation)) fail("Nix returned a duplicate profile generation.");
+    seen.add(generation);
+    generations.push({
+      generation,
+      current: line.includes("(current)") || /^\s*\*/.test(line),
+    });
+  }
+  if (generations.some(({ generation }) => !Number.isSafeInteger(generation) || generation < 1)) {
+    fail("Nix returned an invalid managed profile generation.");
+  }
+  return generations;
+}
+
+async function profileGenerations() {
+  const activePath = await activeOutputPath();
+  if (!activePath) return [];
+  const output = nixEnv(["--list-generations", "--profile", ACTIVE_PROFILE], {
+    capture: true,
+  }).stdout;
+  const generations = parseProfileGenerations(output);
+  const current = generations.filter((entry) => entry.current);
+  if (generations.length === 0 || current.length !== 1) {
+    fail("Could not identify the current managed Nix profile generation.");
+  }
+  const withOutputs = [];
+  for (const entry of generations) {
+    const generationLink = `${ACTIVE_PROFILE}-${entry.generation}-link`;
+    let outputPath;
+    try {
+      if (!(await lstat(generationLink)).isSymbolicLink()) {
+        fail(`Managed Nix profile generation ${entry.generation} is not a profile symlink.`);
+      }
+      outputPath = await realpath(generationLink);
+    } catch (error) {
+      if (error?.code === "ENOENT") {
+        fail(`Managed Nix profile generation ${entry.generation} has no generation link.`);
+      }
+      throw error;
+    }
+    if (!/^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(outputPath)) {
+      fail(`Managed Nix profile generation ${entry.generation} is not a direct Paseo output.`);
+    }
+    withOutputs.push({ ...entry, outputPath });
+  }
+  if (withOutputs.find((entry) => entry.current)?.outputPath !== activePath) {
+    fail("Nix current-generation metadata differs from the active profile symlink.");
+  }
+  return withOutputs;
+}
+
+async function loadLegacyHighWater() {
   let value;
   try {
     value = JSON.parse(await readFile(join(DATA_ROOT, "high-water.json"), "utf8"));
@@ -1001,11 +1177,7 @@ async function loadHighWater() {
     }
     throw error;
   }
-  if (
-    typeof value.identity !== "string" ||
-    !/^[a-f0-9]{40}-[1-9][0-9]*$/.test(value.identity) ||
-    typeof value.outputPath !== "string"
-  ) {
+  if (!validReleaseIdentity(value.identity) || typeof value.outputPath !== "string") {
     fail("Paseo updater high-water record is invalid.");
   }
   const receipt = await loadReceipt(join(DATA_ROOT, "receipts", value.identity));
@@ -1018,24 +1190,432 @@ async function loadHighWater() {
   return { ...value, manifest: receipt.manifest };
 }
 
-async function writeHighWater({ identity, outputPath }) {
-  const receipt = await loadReceipt(join(DATA_ROOT, "receipts", identity));
-  const manifest = receipt.manifest;
-  if (manifest.macOS.outputPath !== outputPath) {
-    fail("Cannot advance high-water state from an unmatched release receipt.");
+function validateProfileStateHeader(state) {
+  if (
+    state?.schemaVersion !== 1 ||
+    !Array.isArray(state.generations) ||
+    !Number.isSafeInteger(state.highWaterSequence) ||
+    state.highWaterSequence < 0 ||
+    (state.highWaterIdentity !== null && !validReleaseIdentity(state.highWaterIdentity)) ||
+    (state.highWaterIdentity === null && state.highWaterSequence !== 0) ||
+    (state.highWaterIdentity !== null && state.highWaterSequence === 0) ||
+    (state.legacyHighWaterIdentity !== null && !validReleaseIdentity(state.legacyHighWaterIdentity))
+  ) {
+    fail("Paseo updater profile identity state is invalid.");
   }
-  const current = await loadHighWater();
-  if (current && manifest.releaseSequence < current.manifest.releaseSequence) {
-    fail("Paseo updater high-water sequence cannot decrease.");
+}
+
+function validateProfileState(state) {
+  validateProfileStateHeader(state);
+  const seen = new Set();
+  for (const entry of state.generations) {
+    if (
+      !Number.isSafeInteger(entry.generation) ||
+      entry.generation < 1 ||
+      seen.has(entry.generation) ||
+      typeof entry.outputPath !== "string" ||
+      !/^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(entry.outputPath) ||
+      !Array.isArray(entry.identities) ||
+      entry.identities.some((identity) => !validReleaseIdentity(identity)) ||
+      new Set(entry.identities).size !== entry.identities.length
+    ) {
+      fail("Paseo updater profile generation mapping is invalid.");
+    }
+    seen.add(entry.generation);
+  }
+  return state;
+}
+
+async function loadProfileStateFile() {
+  let state;
+  try {
+    state = JSON.parse(await readFile(join(DATA_ROOT, "profile-state.json"), "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  validateProfileState(state);
+  let highestMappedSequence = 0;
+  for (const entry of state.generations) {
+    let previousSequence = 0;
+    for (const identity of entry.identities) {
+      const receipt = await loadReceipt(join(DATA_ROOT, "receipts", identity));
+      if (receipt.manifest.macOS.outputPath !== entry.outputPath) {
+        fail("A profile generation mapping differs from its signed release receipt.");
+      }
+      if (receipt.manifest.releaseSequence <= previousSequence) {
+        fail("A profile generation identity history is not in increasing release order.");
+      }
+      previousSequence = receipt.manifest.releaseSequence;
+      highestMappedSequence = Math.max(highestMappedSequence, previousSequence);
+    }
+  }
+  const highWater = await highWaterForState(state);
+  if (
+    highestMappedSequence > state.highWaterSequence ||
+    (highWater && highWater.manifest.releaseSequence !== state.highWaterSequence)
+  ) {
+    fail("Paseo updater state does not preserve the highest mapped release sequence.");
+  }
+  if (state.legacyHighWaterIdentity) {
+    const legacy = await loadReceipt(join(DATA_ROOT, "receipts", state.legacyHighWaterIdentity));
+    if (legacy.manifest.releaseSequence > state.highWaterSequence) {
+      fail("Migrated updater state is below its recorded legacy high-water mark.");
+    }
+  }
+  return state;
+}
+
+async function receiptsForOutput(outputPath) {
+  const receiptsRoot = join(DATA_ROOT, "receipts");
+  let entries;
+  try {
+    entries = await readdir(receiptsRoot, { withFileTypes: true });
+  } catch (error) {
+    if (error?.code === "ENOENT") return [];
+    throw error;
+  }
+  const receipts = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !validReleaseIdentity(entry.name)) continue;
+    const receipt = await loadReceipt(join(receiptsRoot, entry.name));
+    if (receipt.manifest.macOS.outputPath === outputPath) receipts.push(receipt);
+  }
+  return receipts;
+}
+
+async function uniqueReceiptForOutput(outputPath, preferredIdentity = null) {
+  const matches = await receiptsForOutput(outputPath);
+  const identity = selectLegacyReceiptIdentity(
+    matches.map((receipt) => ({
+      identity: manifestIdentity(receipt.manifest),
+      outputPath: receipt.manifest.macOS.outputPath,
+    })),
+    outputPath,
+    preferredIdentity,
+  );
+  return identity
+    ? matches.find((receipt) => manifestIdentity(receipt.manifest) === identity)
+    : null;
+}
+
+async function writeProfileState(state) {
+  await writeJson(join(DATA_ROOT, "profile-state.json"), state);
+}
+
+async function initialGenerationMappings(generations, legacy) {
+  const mappings = [];
+  for (const entry of generations) {
+    const preferred =
+      entry.current && legacy?.outputPath === entry.outputPath ? legacy.identity : null;
+    const receipt = await uniqueReceiptForOutput(entry.outputPath, preferred);
+    mappings.push({
+      generation: entry.generation,
+      outputPath: entry.outputPath,
+      identities: receipt ? [manifestIdentity(receipt.manifest)] : [],
+    });
+  }
+  return mappings;
+}
+
+async function initialHighWater(mappings, legacy) {
+  const candidates = [];
+  for (const mapping of mappings) {
+    for (const identity of mapping.identities) {
+      const receipt = await loadReceipt(join(DATA_ROOT, "receipts", identity));
+      candidates.push({ identity, sequence: receipt.manifest.releaseSequence });
+    }
+  }
+  if (legacy) {
+    candidates.push({ identity: legacy.identity, sequence: legacy.manifest.releaseSequence });
+  }
+  return highestReleaseIdentity(candidates);
+}
+
+async function initialProfileState(generations, current, legacy) {
+  const mappings = await initialGenerationMappings(generations, legacy);
+  const active = current && mappings.find((entry) => entry.generation === current.generation);
+  const activeIdentity = active?.identities.at(-1) ?? null;
+  if (current && !activeIdentity) {
+    fail("The current Nix generation has no uniquely matching signed release receipt.");
+  }
+  const highWater = await initialHighWater(mappings, legacy);
+  const state = {
+    schemaVersion: 1,
+    highWaterIdentity: highWater?.identity ?? activeIdentity,
+    highWaterSequence: highWater?.sequence ?? 0,
+    legacyHighWaterIdentity: legacy?.identity ?? null,
+    generations: mappings,
+  };
+  return state;
+}
+
+function assertLegacyHighWaterAdvance(state, legacy) {
+  if (
+    legacy.manifest.releaseSequence < state.highWaterSequence ||
+    (legacy.manifest.releaseSequence === state.highWaterSequence &&
+      legacy.identity !== state.highWaterIdentity)
+  ) {
+    fail("The legacy updater high-water mark decreased or conflicted; refusing to continue.");
+  }
+}
+
+async function reconcileLegacyHighWaterChange(state, current, legacy) {
+  if (!current || !legacy || legacy.outputPath !== current.outputPath) {
+    fail(
+      "The legacy updater changed after migration; inspect the active profile before continuing.",
+    );
+  }
+  const receipt = await uniqueReceiptForOutput(current.outputPath, legacy.identity);
+  if (!receipt || manifestIdentity(receipt.manifest) !== legacy.identity) {
+    fail(
+      "The legacy updater changed to an ambiguous profile identity; manual recovery is required.",
+    );
+  }
+  let mapping = state.generations.find((entry) => entry.generation === current.generation);
+  if (mapping && mapping.outputPath !== current.outputPath) {
+    fail(
+      "The active Nix generation differs from its recorded output; manual recovery is required.",
+    );
+  }
+  if (!mapping) {
+    mapping = { generation: current.generation, outputPath: current.outputPath, identities: [] };
+    state.generations.push(mapping);
+  }
+  if (!mapping.identities.includes(legacy.identity)) mapping.identities.push(legacy.identity);
+  assertLegacyHighWaterAdvance(state, legacy);
+  state.highWaterIdentity = legacy.identity;
+  state.highWaterSequence = legacy.manifest.releaseSequence;
+  state.legacyHighWaterIdentity = legacy.identity;
+  await writeProfileState(state);
+}
+
+async function reconcileUnmappedCurrentGeneration(state, current, legacy) {
+  if (!legacy || legacy.outputPath !== current.outputPath) {
+    fail(
+      "The active Nix generation was changed outside this updater; manual recovery is required.",
+    );
+  }
+  const receipt = await uniqueReceiptForOutput(current.outputPath, legacy.identity);
+  if (!receipt || manifestIdentity(receipt.manifest) !== legacy.identity) {
+    fail("The active Nix generation has no unique signed receipt; manual recovery is required.");
+  }
+  assertLegacyHighWaterAdvance(state, legacy);
+  state.generations.push({
+    generation: current.generation,
+    outputPath: current.outputPath,
+    identities: [legacy.identity],
+  });
+  state.highWaterIdentity = legacy.identity;
+  state.highWaterSequence = legacy.manifest.releaseSequence;
+  state.legacyHighWaterIdentity = legacy.identity;
+  await writeProfileState(state);
+}
+
+async function loadProfileState() {
+  const generations = await profileGenerations();
+  const current = generations.find((entry) => entry.current) ?? null;
+  const legacy = await loadLegacyHighWater();
+  const state = await loadProfileStateFile();
+  if (!state) {
+    const initialized = await initialProfileState(generations, current, legacy);
+    await writeProfileState(initialized);
+    return { state: initialized, current };
+  }
+  if (legacy?.identity !== (state.legacyHighWaterIdentity ?? null)) {
+    await reconcileLegacyHighWaterChange(state, current, legacy);
+  }
+  if (current) {
+    const mapping = state.generations.find((entry) => entry.generation === current.generation);
+    if (mapping && mapping.outputPath !== current.outputPath) {
+      fail(
+        "The active Nix generation differs from its recorded output; manual recovery is required.",
+      );
+    }
+    if (!mapping) await reconcileUnmappedCurrentGeneration(state, current, legacy);
+  }
+  return { state, current };
+}
+
+async function highWaterForState(state) {
+  if (!state.highWaterIdentity) return null;
+  const receipt = await loadReceipt(join(DATA_ROOT, "receipts", state.highWaterIdentity));
+  if (receipt.manifest.releaseSequence !== state.highWaterSequence) {
+    fail("Paseo updater high-water sequence differs from its signed release receipt.");
+  }
+  return { identity: state.highWaterIdentity, manifest: receipt.manifest };
+}
+
+async function commitProfileState(state) {
+  await highWaterForState(state);
+  await writeProfileState(state);
+}
+
+async function reconcileLegacyPending(pending, pendingPath) {
+  if (!validReleaseIdentity(pending.identity) || typeof pending.outputPath !== "string") {
+    fail("Pending activation record is invalid.");
+  }
+  await finishPendingActivation(pending, {
+    loadReceipt: (identity) => loadReceipt(join(DATA_ROOT, "receipts", identity)),
+    activeOutputPath: () => activeOutputPath(),
+    writeHighWater: async ({ identity, outputPath }) => {
+      const legacy = await loadLegacyHighWater();
+      const receipt = await loadReceipt(join(DATA_ROOT, "receipts", identity));
+      if (receipt.manifest.macOS.outputPath !== outputPath) {
+        fail("Pending legacy activation differs from its signed release receipt.");
+      }
+      if (legacy && receipt.manifest.releaseSequence < legacy.manifest.releaseSequence) {
+        fail("Pending legacy activation would decrease the high-water mark.");
+      }
+      await writeJson(join(DATA_ROOT, "high-water.json"), { identity, outputPath });
+    },
+    clearPending: () => rm(pendingPath, { force: true }),
+  });
+}
+
+function hasValidPendingGeneration(pending) {
+  if (
+    pending.fromGeneration !== null &&
+    (!Number.isSafeInteger(pending.fromGeneration) || pending.fromGeneration < 1)
+  ) {
+    return false;
+  }
+  if (pending.kind.startsWith("metadata-")) {
+    return (
+      Number.isSafeInteger(pending.fromGeneration) && validReleaseIdentity(pending.fromIdentity)
+    );
+  }
+  const validTargetGeneration =
+    pending.kind === "native-activate"
+      ? pending.targetGeneration === undefined ||
+        (Number.isSafeInteger(pending.targetGeneration) && pending.targetGeneration >= 1)
+      : Number.isSafeInteger(pending.targetGeneration) && pending.targetGeneration >= 1;
+  const validGenerationOrder =
+    pending.kind !== "native-rollback" ||
+    (Number.isSafeInteger(pending.fromGeneration) &&
+      pending.targetGeneration < pending.fromGeneration);
+  const validFromProfile =
+    pending.fromGeneration === null
+      ? pending.fromOutputPath === null && pending.fromIdentity === null
+      : typeof pending.fromOutputPath === "string" &&
+        /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(pending.fromOutputPath) &&
+        validReleaseIdentity(pending.fromIdentity);
+  return validTargetGeneration && validGenerationOrder && validFromProfile;
+}
+
+function validatePendingProfileOperation(pending) {
+  const kinds = ["metadata-activate", "metadata-rollback", "native-activate", "native-rollback"];
+  if (
+    pending.schemaVersion !== 1 ||
+    !kinds.includes(pending.kind) ||
+    !validReleaseIdentity(pending.targetIdentity) ||
+    typeof pending.targetOutputPath !== "string" ||
+    !/^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(pending.targetOutputPath) ||
+    !hasValidPendingGeneration(pending)
+  ) {
+    fail("Pending profile operation has invalid generation or output metadata.");
+  }
+}
+
+async function reconcileMetadataIntent(pending, target, pendingPath) {
+  const { state, current } = await loadProfileState();
+  if (!current || current.generation !== pending.fromGeneration) {
+    fail("The profile changed during an interrupted metadata update; manual recovery is required.");
+  }
+  const mapping = selectMappedGeneration(state, current.generation, current.outputPath);
+  if (current.outputPath !== pending.targetOutputPath) {
+    fail("The profile identity changed during an interrupted metadata update.");
+  }
+  if (mapping.identities.at(-1) !== pending.targetIdentity) {
+    const updated = applyMetadataIntent(state, pending, target.manifest.releaseSequence);
+    await commitProfileState(updated);
+  }
+  await rm(pendingPath, { force: true });
+}
+
+function validateUnchangedNativeIntent(state, pending) {
+  if (pending.fromGeneration === null) {
+    if (state.generations.length > 0) {
+      fail("The initial profile activation intent conflicts with existing generation state.");
+    }
+    return;
+  }
+  const from = state.generations.find((entry) => entry.generation === pending.fromGeneration);
+  if (
+    !from ||
+    from.outputPath !== pending.fromOutputPath ||
+    (from.identities.at(-1) ?? null) !== (pending.fromIdentity ?? null)
+  ) {
+    fail("The unchanged profile no longer matches the recorded signed identity.");
+  }
+}
+
+function stateAfterNativeIntent(state, pending, current, target) {
+  const existing = state.generations.find((entry) => entry.generation === current.generation);
+  if (existing && existing.outputPath !== current.outputPath) {
+    fail("The target Nix generation conflicts with its signed release mapping.");
   }
   if (
-    current &&
-    manifest.releaseSequence === current.manifest.releaseSequence &&
-    current.identity !== identity
+    pending.kind === "native-activate" &&
+    existing?.identities.at(-1) === pending.targetIdentity &&
+    state.highWaterIdentity === pending.targetIdentity &&
+    state.highWaterSequence === target.manifest.releaseSequence
   ) {
-    fail("Two signed releases share the current high-water sequence.");
+    return state;
   }
-  await writeJson(join(DATA_ROOT, "high-water.json"), { identity, outputPath });
+  if (
+    pending.kind === "native-rollback" &&
+    existing?.identities.at(-1) !== pending.targetIdentity
+  ) {
+    fail("The rolled-back generation does not match its previously recorded signed identity.");
+  }
+  if (
+    pending.kind === "native-activate" &&
+    target.manifest.releaseSequence <= state.highWaterSequence
+  ) {
+    fail("Interrupted activation would not advance the signed release high-water mark.");
+  }
+  const identities = existing?.identities ?? [];
+  if (identities.at(-1) !== pending.targetIdentity) identities.push(pending.targetIdentity);
+  const updated = {
+    ...state,
+    generations: [
+      ...state.generations.filter((entry) => entry.generation !== current.generation),
+      { generation: current.generation, outputPath: current.outputPath, identities },
+    ],
+  };
+  if (pending.kind === "native-activate") {
+    updated.highWaterIdentity = pending.targetIdentity;
+    updated.highWaterSequence = target.manifest.releaseSequence;
+  }
+  return updated;
+}
+
+export async function commitRecoveredNativeIntent(pending, current, target, adapters) {
+  const state = await adapters.loadState();
+  const updated = stateAfterNativeIntent(state, pending, current, target);
+  await adapters.commitState(updated);
+  await adapters.clearPending();
+}
+
+async function reconcileNativeIntent(pending, target, pendingPath) {
+  const state = await loadProfileStateFile();
+  const generations = await profileGenerations();
+  const current = generations.find((entry) => entry.current) ?? null;
+  if (!state)
+    fail("An interrupted native update has no identity state; manual recovery is required.");
+  const outcome = recoverNativeIntent(pending, current);
+  if (outcome === "unchanged") {
+    validateUnchangedNativeIntent(state, pending);
+    await rm(pendingPath, { force: true });
+    return;
+  }
+  if (!current) fail("The managed profile disappeared after a recorded native switch.");
+  await commitRecoveredNativeIntent(pending, current, target, {
+    loadState: async () => state,
+    commitState: commitProfileState,
+    clearPending: () => rm(pendingPath, { force: true }),
+  });
 }
 
 async function reconcilePendingActivation() {
@@ -1044,56 +1624,35 @@ async function reconcilePendingActivation() {
   try {
     pending = JSON.parse(await readFile(pendingPath, "utf8"));
   } catch (error) {
-    if (error?.code === "ENOENT") {
-      return;
-    }
+    if (error?.code === "ENOENT") return;
     throw error;
   }
-  if (
-    typeof pending.identity !== "string" ||
-    !/^[a-f0-9]{40}-[1-9][0-9]*$/.test(pending.identity)
-  ) {
-    fail("Pending activation record is invalid.");
+  if (!pending.schemaVersion) {
+    await reconcileLegacyPending(pending, pendingPath);
+    return;
   }
-  await finishPendingActivation(pending, {
-    loadReceipt: (identity) => loadReceipt(join(DATA_ROOT, "receipts", identity)),
-    activeOutputPath: () => activeOutputPath(),
-    writeHighWater,
-    clearPending: () => rm(pendingPath, { force: true }),
-  });
-}
-
-async function receiptForOutput(outputPath) {
-  const receiptsRoot = join(DATA_ROOT, "receipts");
-  let entries;
-  try {
-    entries = await readdir(receiptsRoot, { withFileTypes: true });
-  } catch (error) {
-    if (error?.code === "ENOENT") {
-      return null;
-    }
-    throw error;
+  validatePendingProfileOperation(pending);
+  const target = await loadReceipt(join(DATA_ROOT, "receipts", pending.targetIdentity));
+  if (target.manifest.macOS.outputPath !== pending.targetOutputPath) {
+    fail("Pending profile identity differs from its signed release receipt.");
   }
-  for (const entry of entries) {
-    if (!entry.isDirectory() || !/^[a-f0-9]{40}-[1-9][0-9]*$/.test(entry.name)) {
-      continue;
-    }
-    const receipt = await loadReceipt(join(receiptsRoot, entry.name));
-    if (receipt.manifest.macOS.outputPath === outputPath) {
-      return receipt;
-    }
+  if (pending.kind.startsWith("metadata-")) {
+    await reconcileMetadataIntent(pending, target, pendingPath);
+  } else {
+    await reconcileNativeIntent(pending, target, pendingPath);
   }
-  return null;
 }
 
 async function currentReceipt() {
   await reconcilePendingActivation();
-  const outputPath = await activeOutputPath();
-  if (!outputPath) {
-    return { outputPath: null, receipt: null };
+  const { state, current } = await loadProfileState();
+  if (!current) {
+    return { outputPath: null, receipt: null, generation: null, state };
   }
-  const receipt = await receiptForOutput(outputPath);
-  return { outputPath, receipt };
+  const mapping = selectMappedGeneration(state, current.generation, current.outputPath);
+  const identity = mapping.identities.at(-1);
+  const receipt = await loadReceipt(join(DATA_ROOT, "receipts", identity));
+  return { outputPath: current.outputPath, receipt, generation: current.generation, state };
 }
 
 function releaseSummary(receipt) {
@@ -1136,12 +1695,8 @@ async function printCheck({ stage = false } = {}) {
   const releases = await listStableReleases();
   const latest = await chooseHighestVerifiedStableRelease(releases);
   await ensureDataRoot();
-  const { outputPath, receipt } = await currentReceipt();
-  let highWater = await loadHighWater();
-  if (!highWater && receipt && stage) {
-    await writeHighWater({ identity: manifestIdentity(receipt.manifest), outputPath });
-    highWater = await loadHighWater();
-  }
+  const { outputPath, receipt, state } = await currentReceipt();
+  const highWater = await highWaterForState(state);
   const currentSequence = receipt?.manifest.releaseSequence ?? 0;
   const highestSequence = highWater?.manifest.releaseSequence ?? currentSequence;
   if (!stage) {
@@ -1225,28 +1780,82 @@ async function activateStagedRelease() {
     fail("Staged release output path differs from the signed manifest.");
   }
   await verifyImportedClosure(manifest, receipt.nixManifestBytes);
-  const { outputPath: currentPath, receipt: current } = await currentReceipt();
+  const { outputPath: currentPath, receipt: current, generation, state } = await currentReceipt();
   if (currentPath && !current) {
     fail(
       "The existing managed profile has no matching signed release receipt; refusing to replace it.",
     );
   }
-  let highWater = await loadHighWater();
-  if (!highWater && current) {
-    await writeHighWater({ identity: manifestIdentity(current.manifest), outputPath: currentPath });
-    highWater = await loadHighWater();
-  }
+  const highWater = await highWaterForState(state);
   assertAboveHighWater(manifest, highWater);
   if (currentPath === manifest.macOS.outputPath) {
-    fail("The staged output is already active.");
+    if (!current || !generation) fail("The active Nix output has no verified release identity.");
+    const targetIdentity = manifestIdentity(manifest);
+    const fromIdentity = manifestIdentity(current.manifest);
+    const pendingPath = join(DATA_ROOT, "pending-activation.json");
+    await writeJson(pendingPath, {
+      schemaVersion: 1,
+      kind: "metadata-activate",
+      fromGeneration: generation,
+      fromIdentity,
+      targetIdentity,
+      targetOutputPath: manifest.macOS.outputPath,
+    });
+    const updated = commitMetadataIdentity(state, {
+      generation,
+      identity: targetIdentity,
+      outputPath: manifest.macOS.outputPath,
+      sequence: manifest.releaseSequence,
+    });
+    await commitProfileState(updated);
+    await rm(pendingPath, { force: true });
+    await rm(join(DATA_ROOT, "staged.json"), { force: true });
+    emitResult(
+      {
+        action: "activate",
+        active: releaseSummary(receipt),
+        staged: null,
+        highWaterSequence: manifest.releaseSequence,
+        binaryChanged: false,
+        message:
+          "Release identity advanced without changing the Nix profile or any running process.",
+      },
+      `Activated release identity ${manifest.releaseTag} without changing the app binary. Any already-running Paseo process was left untouched.`,
+    );
+    return;
   }
-  await applyProfileActivation(manifestIdentity(manifest), manifest.macOS.outputPath, {
-    writePending: (pending) => writeJson(join(DATA_ROOT, "pending-activation.json"), pending),
-    setProfile: (outputPath) => setProfile(ACTIVE_PROFILE, outputPath),
-    activeOutputPath: () => activeOutputPath(),
-    writeHighWater,
-    clearPending: () => rm(join(DATA_ROOT, "pending-activation.json"), { force: true }),
+  const pendingPath = join(DATA_ROOT, "pending-activation.json");
+  await writeJson(pendingPath, {
+    schemaVersion: 1,
+    kind: "native-activate",
+    fromGeneration: generation,
+    fromOutputPath: currentPath,
+    fromIdentity: current ? manifestIdentity(current.manifest) : null,
+    targetIdentity: manifestIdentity(manifest),
+    targetOutputPath: manifest.macOS.outputPath,
   });
+  setProfile(ACTIVE_PROFILE, manifest.macOS.outputPath);
+  const afterGenerations = await profileGenerations();
+  const after = afterGenerations.find((entry) => entry.current);
+  if (!after || after.generation === generation || after.outputPath !== manifest.macOS.outputPath) {
+    fail("Nix profile activation did not select the exact expected generation and signed output.");
+  }
+  const existingTargetGeneration = state.generations.find(
+    (entry) => entry.generation === after.generation,
+  );
+  if (existingTargetGeneration && existingTargetGeneration.outputPath !== after.outputPath) {
+    fail("Nix selected a generation that conflicts with its signed release mapping.");
+  }
+  const identities = existingTargetGeneration?.identities ?? [];
+  if (identities.at(-1) !== manifestIdentity(manifest)) identities.push(manifestIdentity(manifest));
+  state.generations = [
+    ...state.generations.filter((entry) => entry.generation !== after.generation),
+    { generation: after.generation, outputPath: after.outputPath, identities },
+  ];
+  state.highWaterIdentity = manifestIdentity(manifest);
+  state.highWaterSequence = manifest.releaseSequence;
+  await commitProfileState(state);
+  await rm(pendingPath, { force: true });
   await rm(join(DATA_ROOT, "staged.json"), { force: true });
   const active = releaseSummary(receipt);
   emitResult(
@@ -1264,8 +1873,8 @@ async function activateStagedRelease() {
 async function printStatus() {
   assertMacArm();
   await ensureDataRoot();
-  const { outputPath, receipt } = await currentReceipt();
-  const highWater = await loadHighWater();
+  const { outputPath, receipt, state } = await currentReceipt();
+  const highWater = await highWaterForState(state);
   const staged = await stagedReceipt(receipt);
   if (!outputPath) {
     emitResult(
@@ -1308,38 +1917,88 @@ async function rollbackProfile() {
   assertMacArm();
   await ensureDataRoot();
   await reconcilePendingActivation();
-  const before = await activeOutputPath();
-  if (!before) {
+  const { outputPath: before, generation, receipt, state } = await currentReceipt();
+  if (!before || !generation || !receipt) {
     fail("There is no managed Paseo profile to roll back.");
   }
+  const mapping = selectMappedGeneration(state, generation, before);
+  if (mapping.identities.at(-1) !== manifestIdentity(receipt.manifest)) {
+    fail("The active Nix generation does not have an exact signed identity mapping.");
+  }
+  const highWater = await highWaterForState(state);
+  if (mapping.identities.length > 1) {
+    const targetIdentity = mapping.identities.at(-2);
+    const target = await loadReceipt(join(DATA_ROOT, "receipts", targetIdentity));
+    const pendingPath = join(DATA_ROOT, "pending-activation.json");
+    await writeJson(pendingPath, {
+      schemaVersion: 1,
+      kind: "metadata-rollback",
+      fromGeneration: generation,
+      fromIdentity: manifestIdentity(receipt.manifest),
+      targetIdentity,
+      targetOutputPath: before,
+    });
+    mapping.identities.pop();
+    await commitProfileState(state);
+    await rm(pendingPath, { force: true });
+    emitResult(
+      {
+        action: "rollback",
+        active: releaseSummary(target),
+        highWaterSequence: highWater?.manifest.releaseSequence ?? 0,
+        binaryChanged: false,
+        message: "Release identity rolled back; the Nix binary generation did not change.",
+      },
+      `Rolled back release identity to ${target.manifest.releaseTag}; the Nix binary did not change.`,
+    );
+    return;
+  }
+
+  const generations = await profileGenerations();
+  const ordered = [...generations].sort((left, right) => left.generation - right.generation);
+  const currentIndex = ordered.findIndex((entry) => entry.generation === generation);
+  const previous = ordered[currentIndex - 1];
+  if (!previous) fail("There is no previous Nix profile generation.");
+  const targetMapping = state.generations.find((entry) => entry.generation === previous.generation);
+  const targetIdentity = targetMapping?.identities.at(-1);
+  if (!targetMapping || targetMapping.outputPath !== previous.outputPath || !targetIdentity) {
+    fail("The previous Nix generation has no exact signed release mapping; refusing rollback.");
+  }
+  const target = await loadReceipt(join(DATA_ROOT, "receipts", targetIdentity));
+  if (target.manifest.macOS.outputPath !== previous.outputPath) {
+    fail("The previous Nix generation mapping differs from its signed release receipt.");
+  }
+  const pendingPath = join(DATA_ROOT, "pending-activation.json");
+  await writeJson(pendingPath, {
+    schemaVersion: 1,
+    kind: "native-rollback",
+    fromGeneration: generation,
+    fromOutputPath: before,
+    fromIdentity: manifestIdentity(receipt.manifest),
+    targetGeneration: previous.generation,
+    targetIdentity,
+    targetOutputPath: previous.outputPath,
+  });
   nixEnv(["--rollback", "--profile", ACTIVE_PROFILE]);
-  const after = await activeOutputPath();
-  if (after === before) {
-    fail("Nix profile rollback did not change the active generation.");
+  const afterGenerations = await profileGenerations();
+  const after = afterGenerations.find((entry) => entry.current);
+  if (
+    !after ||
+    after.generation !== previous.generation ||
+    after.outputPath !== previous.outputPath
+  ) {
+    fail("Nix profile rollback did not select the exact verified prior generation.");
   }
-  const receipt = await receiptForOutput(after);
-  const active = releaseSummary(receipt);
-  if (receipt) {
-    emitResult(
-      {
-        action: "rollback",
-        active,
-        highWaterSequence:
-          (await loadHighWater())?.manifest.releaseSequence ?? receipt.manifest.releaseSequence,
-      },
-      `Rolled back to ${receipt.manifest.releaseTag}.`,
-    );
-  } else {
-    emitResult(
-      {
-        action: "rollback",
-        active: null,
-        highWaterSequence: (await loadHighWater())?.manifest.releaseSequence ?? 0,
-        message: "No signed Paseo release receipt was recorded for the prior generation.",
-      },
-      `Rolled back to prior Nix generation ${after}; no signed Paseo release receipt was recorded for it.`,
-    );
-  }
+  await rm(pendingPath, { force: true });
+  emitResult(
+    {
+      action: "rollback",
+      active: releaseSummary(target),
+      highWaterSequence: highWater?.manifest.releaseSequence ?? 0,
+      binaryChanged: true,
+    },
+    `Rolled back the binary profile to ${target.manifest.releaseTag}.`,
+  );
 }
 
 function printHelp() {
