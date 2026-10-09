@@ -2,7 +2,8 @@
 set -euo pipefail
 
 readonly desktop_attr=".#packages.aarch64-darwin.desktop"
-readonly probe_key_name="paseo-nix-seed-20261009-164633"
+readonly probe_key_name="paseo-nix-full-probe-20261009-170943"
+readonly seed_public_key="paseo-nix-seed-20261009-164633:HKUIBntJ2BXdOwsTH8Z/ou1oO5sEXIUsU6ZiGuhWN54="
 readonly seed_release_tag="nix-closure-probe-seed-20261009-164633"
 readonly seed_archive_name="paseo-nix-node-seed-fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6.tar"
 readonly seed_archive_sha256="fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6"
@@ -71,13 +72,14 @@ check_free_disk() {
 import_seeded_node() {
   local seed_dir archive_file manifest_file cache_dir extracted_bytes extracted_file_count
   local seed_closure_json imported_closure_json seed_output actual_deriver
-  local index nix_bin
+  local index nix_bin seed_started
 
   [[ "${GITHUB_REPOSITORY:-}" == "iExalt/paseo" ]] \
     || fail "Refusing to access release assets for unexpected repository: ${GITHUB_REPOSITORY:-unset}."
-  [[ -n "${NIX_PROBE_PUBLIC_KEY:-}" && "$NIX_PROBE_PUBLIC_KEY" == "$probe_key_name":* ]] \
+  [[ -n "$seed_public_key" && "$seed_public_key" == "paseo-nix-seed-20261009-164633":* ]] \
     || fail "The reviewed seed public-key pin is absent or has the wrong key name."
   nix_bin="$(command -v nix)"
+  seed_started="$(date +%s)"
 
   seed_dir="$RUNNER_TEMP/paseo-nix-seed-download"
   archive_file="$seed_dir/$seed_archive_name"
@@ -97,7 +99,7 @@ import_seeded_node() {
   jq -e \
     --arg sourceSha "$seed_source_sha" \
     --arg lockHash "$seed_lock_hash" \
-    --arg signingKey "$NIX_PROBE_PUBLIC_KEY" \
+    --arg signingKey "$seed_public_key" \
     --argjson roots "$(printf '%s\n' "${seed_node_roots[@]}" | jq -R . | jq -s .)" \
     '.schemaVersion == 1 and .provenance == "local-built-dependency"
       and .sourceSha == $sourceSha and .lockHash == $lockHash
@@ -131,24 +133,26 @@ with tarfile.open(archive_path, "r:") as archive:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts or not (member.isfile() or member.isdir()):
             raise SystemExit(f"Unsafe Nix seed archive member: {member.name!r}")
-    archive.extractall(destination, members=members)
+    cache_members = [member for member in members if not pathlib.PurePosixPath(member.name).name.startswith("._")]
+    archive.extractall(destination, members=cache_members)
 PY
   extracted_bytes="$(find "$cache_dir" -type f -exec stat -f%z {} \; | awk '{sum += $1} END {print sum + 0}')"
   extracted_file_count="$(find "$cache_dir" -type f | wc -l | tr -d ' ')"
   [[ "$extracted_bytes" == "$seed_cache_bytes" && "$extracted_file_count" == "$seed_cache_file_count" ]] \
     || fail "Extracted Node seed cache size or file count differs from its manifest pin."
 
-  sudo "$nix_bin" copy --from "file://$cache_dir" \
+  sudo "$nix_bin" --extra-experimental-features nix-command copy --from "file://$cache_dir" \
     --option builders '' --option substituters '' --option require-sigs true \
-    --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    --option trusted-public-keys "$seed_public_key" \
     "${seed_node_roots[@]}" "$seed_manifest_path"
-  sudo "$nix_bin" store copy-sigs --substituter "file://$cache_dir" --recursive \
+  sudo "$nix_bin" --extra-experimental-features nix-command store copy-sigs \
+    --substituter "file://$cache_dir" --recursive \
     --option builders '' --option substituters '' --option require-sigs true \
-    --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    --option trusted-public-keys "$seed_public_key" \
     "${seed_node_roots[@]}" "$seed_manifest_path"
-  sudo "$nix_bin" store verify --recursive --sigs-needed 1 \
+  sudo "$nix_bin" --extra-experimental-features nix-command store verify --recursive --sigs-needed 1 \
     --option builders '' --option substituters '' --option require-sigs true \
-    --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    --option trusted-public-keys "$seed_public_key" \
     "${seed_node_roots[@]}" "$seed_manifest_path"
   for index in "${!seed_node_roots[@]}"; do
     actual_deriver="$(nix path-info --derivation "${seed_node_roots[$index]}")"
@@ -160,11 +164,12 @@ PY
     || fail "Imported Node seed manifest content differs from the independently pinned asset."
   seed_closure_json="$(jq -cS '.closure | map({path, narHash, narSize}) | sort_by(.path)' "$manifest_file")"
   imported_closure_json="$(nix path-info --json --recursive --option builders '' \
-    --option substituters '' --option trusted-public-keys "$NIX_PROBE_PUBLIC_KEY" \
+    --option substituters '' --option trusted-public-keys "$seed_public_key" \
     "${seed_node_roots[@]}" | jq -cS 'to_entries | map({path: .key, narHash: .value.narHash, narSize: .value.narSize}) | sort_by(.path)')"
   [[ "$seed_closure_json" == "$imported_closure_json" ]] \
     || fail "Imported Node seed closure differs from the independently pinned path/NAR manifest."
   seed_output="${seed_node_roots[0]}"
+  seed_import_seconds="$(( $(date +%s) - seed_started ))"
   echo "::notice::Imported locally-built Node 26.11 seed ($seed_output) with signature verification; this seed is not claimed as CI-built. Manifest: $seed_manifest_path"
 }
 
@@ -176,7 +181,7 @@ build_and_export() {
   local parity_started build_started export_started archive_started upload_started
   local parity_seconds build_seconds export_seconds archive_seconds upload_seconds
   local prebuild_store_free_kib prebuild_temp_free_kib preexport_store_free_kib preexport_temp_free_kib
-  local bundle_plist bundle_build_version node_drv nodejs_drv
+  local bundle_plist bundle_build_version node_drv nodejs_drv seed_import_seconds probe_started_utc
 
   [[ "${GITHUB_EVENT_NAME:-}" == push ]] || fail "This probe only runs for a dev push."
   [[ "${GITHUB_REF:-}" == refs/heads/dev ]] || fail "This probe only runs on dev."
@@ -224,6 +229,17 @@ build_and_export() {
   prebuild_store_free_kib="$(free_disk_kib /nix/store)"
   prebuild_temp_free_kib="$(free_disk_kib "$RUNNER_TEMP")"
   check_free_disk /nix/store "$RUNNER_TEMP"
+  probe_started_utc="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  {
+    echo "### Bounded CI probe build checkpoint"
+    echo "- Checkpoint UTC: $probe_started_utc"
+    echo "- Immutable source SHA: \`$source_sha\`; flake.lock SHA-256: \`$lock_hash\`"
+    echo "- Seed import/signature verification passed in ${seed_import_seconds}s for the reviewed local-built Node dependency."
+    echo "- Checkout/archive metadata parity passed in ${parity_seconds}s: drvPath \`$checkout_drv\`; output \`$checkout_output\`."
+    echo "- Free disk at build start (store/temp): $prebuild_store_free_kib / $prebuild_temp_free_kib KiB."
+    echo "- Starting clean desktop build now; remote builders are disabled."
+  } >> "$GITHUB_STEP_SUMMARY"
+  echo "::notice::Starting bounded desktop build at $probe_started_utc for $source_sha after seed verification and checkout/archive parity; remote builders are disabled."
   build_started="$(date +%s)"
   output_path="$(nix build --no-link --print-out-paths --no-update-lock-file \
     --option builders '' "$desktop_attr")"
@@ -285,7 +301,7 @@ build_and_export() {
   cache_file_bytes="$(find "$cache_dir" -type f -exec stat -f%z {} \; | awk '{sum += $1} END {print sum + 0}')"
   [[ "$cache_file_count" -gt 0 && "$cache_file_bytes" -gt 0 ]] || fail "The exported binary cache is empty."
   archive_started="$(date +%s)"
-  tar -cf "$archive_file" -C "$cache_dir" .
+  COPYFILE_DISABLE=1 tar -cf "$archive_file" -C "$cache_dir" .
   tar_size="$(stat -f%z "$archive_file")"
   archive_seconds="$(( $(date +%s) - archive_started ))"
 
@@ -389,7 +405,8 @@ with tarfile.open(archive_path, "r:") as archive:
         path = pathlib.PurePosixPath(member.name)
         if path.is_absolute() or ".." in path.parts or not (member.isfile() or member.isdir()):
             raise SystemExit(f"Unsafe cache archive member: {member.name!r}")
-    archive.extractall(destination, members=members)
+    cache_members = [member for member in members if not pathlib.PurePosixPath(member.name).name.startswith("._")]
+    archive.extractall(destination, members=cache_members)
 PY
   extraction_seconds="$(( $(date +%s) - extraction_started ))"
 
