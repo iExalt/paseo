@@ -335,7 +335,7 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.match(build, /PASEO_FORK_GOOGLE_SERVICES_JSON/);
   assert.match(
     build,
-    /bash "\$GITHUB_WORKSPACE\/scripts\/gradle-resource-watch\.sh" -- \\\s*\n\s+env JAVA_TOOL_OPTIONS=.*\.\/gradlew :app:assembleRelease \\\s*\n\s+--no-daemon --max-workers=2 -Dorg\.gradle\.parallel=false/,
+    /bash "\$GITHUB_WORKSPACE\/scripts\/gradle-resource-watch\.sh" -- \\\s*\n\s+env JAVA_TOOL_OPTIONS=.*\.\/gradlew :app:assembleRelease \\\s*\n\s+--no-daemon --max-workers=1 -Dorg\.gradle\.parallel=false \\\s*\n\s+-Pkotlin\.compiler\.execution\.strategy=in-process/,
   );
   assert.match(build, /FIREBASE_PROJECT_ID_FORK: paseo-18157/);
   assert.doesNotMatch(build, /PASEO_FORK_SIGNING_(?:KEY|CERT)/);
