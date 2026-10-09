@@ -27,6 +27,15 @@ import {
   type AppReleaseChannel,
 } from "../features/auto-updater.js";
 import {
+  createNixUpdaterCommandRunner,
+  NIX_UPDATE_COMMANDS,
+  type NixUpdateCommand,
+} from "../features/nix-managed-updater.js";
+import {
+  resolveDesktopInstallation,
+  type DesktopInstallation,
+} from "../features/nix-managed-install.js";
+import {
   getBundledCliShimPath,
   getCliInstallStatus,
   installCli,
@@ -398,8 +407,17 @@ async function resolveRequestedReleaseChannel(
 // IPC registration
 // ---------------------------------------------------------------------------
 
-export function createDaemonCommandHandlers(): Record<string, DesktopCommandHandler> {
-  return {
+export function createDaemonCommandHandlers(
+  input: {
+    installation?: DesktopInstallation;
+    runNixUpdate?: (command: NixUpdateCommand) => Promise<unknown>;
+  } = {},
+): Record<string, DesktopCommandHandler> {
+  const installation = input.installation ?? resolveDesktopInstallation(process.resourcesPath);
+  const runNixUpdate =
+    input.runNixUpdate ??
+    createNixUpdaterCommandRunner({ installation, runningVersion: app.getVersion() });
+  const handlers: Record<string, DesktopCommandHandler> = {
     ...createDesktopSettingsCommandHandlers({ settingsStore: getDesktopSettingsStore() }),
     desktop_get_runtime_info: () => ({
       appVersion: resolveDesktopAppVersion(),
@@ -450,6 +468,9 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
       if (sessionId) closeLocalTransportSession(sessionId);
     },
     check_app_update: async (args) => {
+      if (installation.mode !== "electron") {
+        throw new Error("Electron updates are disabled for Nix-managed desktop installations.");
+      }
       const currentVersion = resolveDesktopAppVersion();
       return checkForAppUpdate({
         currentVersion,
@@ -458,6 +479,9 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
       });
     },
     install_app_update: async (args) => {
+      if (installation.mode !== "electron") {
+        throw new Error("Electron updates are disabled for Nix-managed desktop installations.");
+      }
       const currentVersion = resolveDesktopAppVersion();
       return downloadAndInstallUpdate(
         { currentVersion, releaseChannel: await resolveRequestedReleaseChannel(args) },
@@ -472,10 +496,16 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     read_legacy_skill_selection: () => readLegacySkillSelection(),
     delete_legacy_skill_selection: () => deleteLegacySkillSelection(),
   };
+  if (installation.mode !== "electron") {
+    for (const command of NIX_UPDATE_COMMANDS) {
+      handlers[`nix_update_${command}`] = () => runNixUpdate(command);
+    }
+  }
+  return handlers;
 }
 
-export function registerDaemonManager(): void {
-  const handlers = createDaemonCommandHandlers();
+export function registerDaemonManager(installation?: DesktopInstallation): void {
+  const handlers = createDaemonCommandHandlers({ installation });
 
   ipcMain.handle(
     "paseo:invoke",

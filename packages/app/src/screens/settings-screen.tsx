@@ -87,6 +87,8 @@ import { DesktopNotificationsSection } from "@/desktop/components/desktop-notifi
 import { BrowserDataSection } from "@/desktop/browser/settings/browser-data-section";
 import { IntegrationsSection } from "@/desktop/components/integrations-section";
 import { isElectronRuntime } from "@/desktop/host";
+import { NixDesktopAppUpdateRow } from "@/desktop/updates/nix-desktop-app-update-row";
+import { isNixManagedDesktopInstallation } from "@/desktop/updates/desktop-updates";
 import { useDesktopAppUpdater } from "@/desktop/updates/use-desktop-app-updater";
 import { ForkAndroidUpdateRow } from "@/android/fork-updates/about-row";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
@@ -448,9 +450,21 @@ interface AboutSectionProps {
   appVersion: string | null;
   appVersionText: string;
   isDesktopApp: boolean;
+  isNixManagedApp: boolean;
 }
 
-function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSectionProps) {
+function renderAboutDesktopUpdateRow(isNixManagedApp: boolean, isDesktopApp: boolean): ReactNode {
+  if (isNixManagedApp) return <NixDesktopAppUpdateRow />;
+  if (isDesktopApp) return <DesktopAppUpdateRow />;
+  return null;
+}
+
+function AboutSection({
+  appVersion,
+  appVersionText,
+  isDesktopApp,
+  isNixManagedApp,
+}: AboutSectionProps) {
   const { t } = useTranslation();
   return (
     <>
@@ -464,7 +478,7 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
             <Text style={styles.aboutValue}>{appVersionText}</Text>
           </View>
           <WhatsNewRow />
-          {isDesktopApp ? <DesktopAppUpdateRow /> : null}
+          {renderAboutDesktopUpdateRow(isNixManagedApp, isDesktopApp)}
           <ForkAndroidUpdateRow />
         </View>
       </SettingsSection>
@@ -1092,6 +1106,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   const [playbackTestResult, setPlaybackTestResult] = useState<string | null>(null);
   const lastOpenedAddHostIntentRef = useRef<string | null>(null);
   const isDesktopApp = isElectronRuntime();
+  const isNixManagedApp = isNixManagedDesktopInstallation();
   const appVersion = resolveAppVersion();
   const appVersionText = formatVersionWithPrefix(appVersion);
   const isCompactLayout = useIsCompactFormFactor();
@@ -1380,6 +1395,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
               appVersion={appVersion}
               appVersionText={appVersionText}
               isDesktopApp={isDesktopApp}
+              isNixManagedApp={isNixManagedApp}
             />
           );
         default:
