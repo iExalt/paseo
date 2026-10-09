@@ -8,6 +8,7 @@ const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
 const { getNativeReleaseVersion } = require("./native-release-version");
+const { resolveAppVariant, validateForkGoogleServicesConfig } = require("./app-variant");
 const appVariant = process.env.APP_VARIANT ?? "production";
 const isFdroidBuild = process.env.PASEO_FDROID_BUILD === "1";
 const isProfileBuild = process.env.PASEO_PROFILE_BUILD === "1";
@@ -66,10 +67,34 @@ function resolveSecretFile(params) {
   return undefined;
 }
 
-const variants = {
+function resolveForkGoogleServicesFile() {
+  const configuredPath = process.env.GOOGLE_SERVICES_FILE_FORK?.trim();
+  if (!configuredPath || !path.isAbsolute(configuredPath)) {
+    throw new Error(
+      "APP_VARIANT=fork requires GOOGLE_SERVICES_FILE_FORK to name an absolute decrypted JSON path.",
+    );
+  }
+
+  const expectedProjectId = process.env.FIREBASE_PROJECT_ID_FORK?.trim();
+  if (!expectedProjectId) {
+    throw new Error("APP_VARIANT=fork requires FIREBASE_PROJECT_ID_FORK.");
+  }
+
+  let config;
+  try {
+    config = JSON.parse(fs.readFileSync(configuredPath, "utf8"));
+  } catch {
+    throw new Error(
+      "GOOGLE_SERVICES_FILE_FORK must point to a readable Firebase Android JSON file.",
+    );
+  }
+
+  validateForkGoogleServicesConfig(config, expectedProjectId);
+  return configuredPath;
+}
+
+const firebaseVariants = {
   production: {
-    name: "Paseo",
-    packageId: "sh.paseo",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_PROD",
       fallbackRelativePath: "./.secrets/google-services.prod.json",
@@ -80,8 +105,6 @@ const variants = {
     }),
   },
   development: {
-    name: "Paseo Debug",
-    packageId: "sh.paseo.debug",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_DEBUG",
       fallbackRelativePath: "./.secrets/google-services.debug.json",
@@ -93,12 +116,20 @@ const variants = {
   },
 };
 
-const variant = variants[appVariant] ?? variants.production;
 const nativeReleaseVersion = getNativeReleaseVersion(pkg.version);
+const variantIdentity = resolveAppVariant(
+  appVariant,
+  nativeReleaseVersion.androidVersionCode,
+  process.env.PASEO_ANDROID_VERSION_CODE,
+);
+const variant =
+  appVariant === "fork"
+    ? { googleServicesFile: resolveForkGoogleServicesFile() }
+    : (firebaseVariants[appVariant] ?? firebaseVariants.production);
 
 export default {
   expo: {
-    name: variant.name,
+    name: variantIdentity.name,
     slug: "paseo",
     version: nativeReleaseVersion.appVersion,
     orientation: "portrait",
@@ -112,7 +143,7 @@ export default {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
       },
-      bundleIdentifier: variant.packageId,
+      bundleIdentifier: variantIdentity.iosBundleIdentifier,
       ...(variant.googleServiceInfoPlist
         ? { googleServicesFile: variant.googleServiceInfoPlist }
         : {}),
@@ -129,8 +160,8 @@ export default {
       // Allow HTTP connections for local network hosts (required for release builds)
       usesCleartextTraffic: true,
       permissions: buildProfile.androidPermissions,
-      package: variant.packageId,
-      versionCode: nativeReleaseVersion.androidVersionCode,
+      package: variantIdentity.androidPackage,
+      versionCode: variantIdentity.androidVersionCode,
       ...(variant.googleServicesFile ? { googleServicesFile: variant.googleServicesFile } : {}),
     },
     web: {

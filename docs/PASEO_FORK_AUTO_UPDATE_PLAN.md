@@ -283,16 +283,36 @@ public signing pin remain unchanged; final closure export uses a separate new
 one-use key. New tar creation disables macOS copyfile metadata, while both import
 paths retain strict path/type checks and the narrow metadata filter.
 
+The corrected [CI run](https://github.com/iExalt/paseo/actions/runs/37965411965)
+used `762280fc1b473eb7187ca0fd1f7741d9e9374ade` and ended after 48 seconds at
+17:20:04 UTC (1:20:04 PM EDT). Asset hashes and the filtered file/byte counts
+passed. Fresh standard macOS CI imported 71 paths from the seed and completed
+recursive signature/NAR verification before an extra `path-info --derivation`
+assertion failed: runtime closures contain output paths without requiring their
+derivation objects. That assertion was an erroneous gate added during review;
+canonical source evaluation remains the correct derivation-identity check.
+The source correction removes only that imported-store assertion while retaining
+the pinned manifest, output/hash/signature checks, evaluated expected Node derivations,
+and checkout/archive derivation/output equality. It is held uncommitted for an
+integrated workflow publication that disables or removes the standalone probe.
+
+The user accepted fresh CI seed import as additional feasibility evidence and
+stopped standalone probe attempts. The GitHub probe secret was removed and verified
+absent; local private material had already been removed. No canonical application
+build, full-closure Release export, or separate fresh-runner full-closure verification
+has completed. Continue the route provisionally; those gates remain required in
+the paired pipeline, and actual Mac launch remains a later gate.
+
 Firebase client and admin credentials are stored as binary SOPS envelopes under
 `secrets/firebase/`; exact-byte decryption was verified before removing the two
 original Downloads files. The user's replacement client config was likewise
 encrypted and verified before removing that exact redownload. Safe metadata checks
 confirmed a `sh.paseo.iexalt` client and matching nonempty client/admin project IDs.
-Fork Firebase app wiring is implemented locally: configuration requires an absolute
+Fork Firebase app wiring is implemented: configuration requires an absolute
 decrypted client path and an expected public project ID, and rejects missing or
-invalid files and mismatched project/package metadata. Seven focused tests, scoped
+invalid files and mismatched project/package metadata. Eight focused tests, scoped
 lint, a synthetic Expo config projection, and missing/unreadable/invalid JSON smoke
-checks passed. These source changes remain uncommitted. Read-only EAS project info
+checks passed. Read-only EAS project info
 confirmed `@iexalt/paseo`, project `3a777534-569c-47e5-81ad-1a4e47d5127c`.
 Native builds and actual fork-device delivery remain unverified.
 
@@ -301,6 +321,17 @@ changes. The serial typecheck took 24.91 seconds versus the retained 14.2-second
 baseline. A read-only host snapshot showed load 10.31 and recording/window processes
 using substantial CPU; this run does not establish comparable idle-host latency.
 Keep the baseline and compare the next required run under comparable conditions.
+The next required serial batch passed lint (26.99 seconds), formatting (1.34 seconds),
+and typecheck (21.23 seconds); the typecheck baseline remains unchanged.
+
+The native Android workflow is implemented for trusted `iExalt` pushes to `dev`.
+It builds only arm64 on Ubuntu 24.04, uses code `100000 + GITHUB_RUN_NUMBER`,
+and passes the candidate to a separate checkout-free signing job. Ten workflow
+contract tests passed. Three absent-only repository secrets were provisioned for
+the matching fork Firebase client and durable PKCS#8 signer/certificate; the client
+project/package and approved certificate fingerprint were verified before upload.
+The Firebase Admin SDK and age private key are excluded. Actual native build,
+final artifact, and device proof remain pending.
 
 The user subsequently authorized notification-only Expo onboarding. A minimal
 `fork` EAS profile selects `APP_VARIANT=fork`; explicit Android code and protected
@@ -401,9 +432,9 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
-Next campaign action: finish the approved corrected seed probe and the independently
-assigned native Android build component. Produce and test the fork app through the
-native GitHub build lane under its assigned acceptance boundary.
+Next campaign action: complete the independently assigned native Android build
+component, then unify the build workflows and finish canonical full-closure proof
+in the paired pipeline. Standalone closure probe runs are stopped.
 Platform updater implementation and actual transitions still need
 their assigned acceptance boundaries. Reconsider the route if
 fresh-store import needs weakened verification or compilation, standard runners
