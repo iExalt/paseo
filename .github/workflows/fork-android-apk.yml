@@ -1,0 +1,355 @@
+name: Fork Android APK
+
+on:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/fork-android-apk.yml"
+      - "mise.toml"
+      - ".tool-versions"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "tsconfig.base.json"
+      - "patches/**"
+      - "plugins/**"
+      - "packages/app/**"
+      - "packages/client/**"
+      - "packages/expo-two-way-audio/**"
+      - "packages/highlight/**"
+      - "packages/plugin/**"
+      - "packages/protocol/**"
+      - "scripts/build-terminal-webview-html.mjs"
+      - "scripts/npm-retry.mjs"
+      - "scripts/postinstall-patches.mjs"
+
+concurrency:
+  group: fork-android-apk-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  build:
+    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    name: Build fork arm64 APK
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      artifact_name: ${{ steps.candidate.outputs.artifact_name }}
+      version_code: ${{ steps.version.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Verify clean immutable dev commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REPOSITORY" = "iExalt/paseo"
+          test "$GITHUB_REF" = "refs/heads/dev"
+          test "$GITHUB_ACTOR" = "iExalt"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Check runner disk budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          df -h "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          available_kb="$(df -Pk "$RUNNER_TEMP" | awk 'NR == 2 { print $4 }')"
+          minimum_kb=$((8 * 1024 * 1024))
+          if (( available_kb < minimum_kb )); then
+            echo "Fork APK build needs at least 8 GiB free on the runner." >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+          registry-url: https://npm.pkg.github.com
+          scope: "@boudra"
+
+      - name: Install JavaScript dependencies
+        run: node scripts/npm-retry.mjs ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build app dependencies
+        run: npm run build:app-deps
+
+      - name: Build terminal WebView assets
+        run: npm --prefix packages/app run build:terminal-webview
+
+      - name: Resolve fork Android version code
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version_code="$(node -e 'process.stdout.write(String(require("./packages/app/native-release-version").getForkAndroidVersionCodeFromRunNumber(process.env.GITHUB_RUN_NUMBER)))')"
+          echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
+          echo "PASEO_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+
+      - name: Prepare protected Firebase client config
+        shell: bash
+        env:
+          PASEO_FORK_GOOGLE_SERVICES_JSON: ${{ secrets.PASEO_FORK_GOOGLE_SERVICES_JSON }}
+          FIREBASE_PROJECT_ID_FORK: paseo-18157
+        run: |
+          set -euo pipefail
+          umask 077
+          test -n "$PASEO_FORK_GOOGLE_SERVICES_JSON"
+          firebase_file="$RUNNER_TEMP/paseo-fork-google-services.json"
+          printf '%s' "$PASEO_FORK_GOOGLE_SERVICES_JSON" > "$firebase_file"
+          chmod 600 "$firebase_file"
+          project_id="$(node - "$firebase_file" "$FIREBASE_PROJECT_ID_FORK" <<'NODE'
+          const fs = require("node:fs");
+          const { validateForkGoogleServicesConfig } = require("./packages/app/app-variant");
+          try {
+            const config = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+            const expectedProjectId = process.argv[3];
+            validateForkGoogleServicesConfig(config, expectedProjectId);
+            process.stdout.write(expectedProjectId);
+          } catch {
+            console.error("Firebase client config failed validation.");
+            process.exitCode = 1;
+          }
+          NODE
+          )"
+          {
+            echo "APP_VARIANT=fork"
+            echo "GOOGLE_SERVICES_FILE_FORK=$firebase_file"
+            echo "FIREBASE_PROJECT_ID_FORK=$project_id"
+          } >> "$GITHUB_ENV"
+
+      - name: Generate fork Android project
+        working-directory: packages/app
+        run: npx expo prebuild --platform android --no-install --non-interactive
+
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "25.0.4"
+          cache: gradle
+          cache-dependency-path: packages/app/android/gradle/wrapper/gradle-wrapper.properties
+
+      - name: Install pinned Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}"
+          sdkmanager="$android_home/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          set +o pipefail
+          yes | "$sdkmanager" --licenses >/dev/null
+          set -o pipefail
+          "$sdkmanager" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_HOME=$android_home" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$android_home" >> "$GITHUB_ENV"
+
+      - name: Record Android build budget
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          "$sdkmanager" --version
+          "$sdkmanager" --list_installed | awk '/platform-tools|platforms;android-36|build-tools;36.0.0/ { print }'
+          if [[ -d "$ANDROID_HOME/ndk" ]]; then
+            find "$ANDROID_HOME/ndk" -mindepth 1 -maxdepth 1 -type d -print | sort
+          fi
+          df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
+
+      - name: Assemble arm64 release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          wrapper="packages/app/android/gradle/wrapper/gradle-wrapper.properties"
+          grep -qF 'gradle-9.3.1-bin.zip' "$wrapper"
+          started_at=$SECONDS
+          cd packages/app/android
+          JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew --version
+          JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew :app:assembleRelease \
+            --no-daemon --max-workers=2 -Dorg.gradle.parallel=false \
+            -PreactNativeArchitectures=arm64-v8a
+          echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
+          df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
+
+      - name: Verify and package release candidate
+        id: candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate="packages/app/android/app/build/outputs/apk/release/app-release.apk"
+          test -f "$candidate"
+          apkanalyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test -x "$apkanalyzer"
+          package_id="$("$apkanalyzer" manifest application-id "$candidate")"
+          version_code="$("$apkanalyzer" manifest version-code "$candidate")"
+          debuggable="$("$apkanalyzer" manifest debuggable "$candidate")"
+          test "$package_id" = "sh.paseo.iexalt"
+          test "$version_code" = "${{ steps.version.outputs.version_code }}"
+          test "$debuggable" = "false"
+          abis="$(unzip -Z1 "$candidate" | awk -F/ '$1 == "lib" && NF >= 3 { print $2 }' | sort -u)"
+          test "$abis" = "arm64-v8a"
+
+          candidate_dir="$RUNNER_TEMP/fork-apk-candidate"
+          mkdir -p "$candidate_dir"
+          cp "$candidate" "$candidate_dir/paseo-iexalt-fork.apk"
+          jq -n \
+            --arg sourceSha "$GITHUB_SHA" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runNumber "$GITHUB_RUN_NUMBER" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg packageId "$package_id" \
+            --arg versionCode "$version_code" \
+            --arg abi "$abis" \
+            '{sourceSha: $sourceSha, runId: $runId, runNumber: $runNumber, runAttempt: $runAttempt, packageId: $packageId, versionCode: $versionCode, abi: $abi}' \
+            > "$candidate_dir/build-metadata.json"
+          artifact_name="paseo-iexalt-candidate-${version_code}-${GITHUB_SHA:0:12}-attempt-${GITHUB_RUN_ATTEMPT}"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "Candidate APK verified for package $package_id, code $version_code, ABI $abis."
+
+      - name: Remove decrypted Firebase client config
+        if: always()
+        shell: bash
+        run: |
+          rm -f \
+            "$RUNNER_TEMP/paseo-fork-google-services.json" \
+            "$GITHUB_WORKSPACE/packages/app/android/app/google-services.json"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.candidate.outputs.artifact_name }}
+          path: ${{ runner.temp }}/fork-apk-candidate/
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    needs: build
+    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    name: Sign and publish fork APK artifact
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions: {}
+    steps:
+      - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        with:
+          distribution: temurin
+          java-version: "25.0.4"
+
+      - name: Install pinned Android SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}"
+          sdkmanager="$android_home/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$sdkmanager"
+          set +o pipefail
+          yes | "$sdkmanager" --licenses >/dev/null
+          set -o pipefail
+          "$sdkmanager" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_HOME=$android_home" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$android_home" >> "$GITHUB_ENV"
+
+      - name: Record signing tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          java -version
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --version
+          df -h "$ANDROID_HOME" "$RUNNER_TEMP"
+
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: ${{ runner.temp }}/fork-apk-candidate
+
+      - name: Sign and verify with the approved fork certificate
+        id: signed
+        shell: bash
+        env:
+          PASEO_FORK_SIGNING_KEY_PKCS8_PEM: ${{ secrets.PASEO_FORK_SIGNING_KEY_PKCS8_PEM }}
+          PASEO_FORK_SIGNING_CERT_PEM: ${{ secrets.PASEO_FORK_SIGNING_CERT_PEM }}
+          VERSION_CODE: ${{ needs.build.outputs.version_code }}
+          APPROVED_CERT_SHA256: 943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$VERSION_CODE" =~ ^[1-9][0-9]*$ ]]
+          test "$VERSION_CODE" -le 2100000000
+          test -n "$PASEO_FORK_SIGNING_KEY_PKCS8_PEM"
+          test -n "$PASEO_FORK_SIGNING_CERT_PEM"
+          key_pem_file="$RUNNER_TEMP/fork-signing-key.pk8.pem"
+          key_file="$RUNNER_TEMP/fork-signing-key.pk8.der"
+          cert_file="$RUNNER_TEMP/fork-signing-cert.pem"
+          printf '%s' "$PASEO_FORK_SIGNING_KEY_PKCS8_PEM" > "$key_pem_file"
+          printf '%s' "$PASEO_FORK_SIGNING_CERT_PEM" > "$cert_file"
+          chmod 600 "$key_pem_file" "$cert_file"
+          openssl pkcs8 -topk8 -nocrypt -in "$key_pem_file" -outform DER -out "$key_file"
+          chmod 600 "$key_file"
+          openssl pkey -inform DER -in "$key_file" -noout
+          cert_digest="$(openssl x509 -in "$cert_file" -noout -fingerprint -sha256 | sed 's/^[^=]*=//' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$cert_digest" = "$APPROVED_CERT_SHA256"
+          key_public_digest="$(openssl pkey -inform DER -in "$key_file" -pubout -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
+          cert_public_digest="$(openssl x509 -in "$cert_file" -pubkey -noout | openssl pkey -pubin -outform DER 2>/dev/null | sha256sum | cut -d' ' -f1)"
+          test "$key_public_digest" = "$cert_public_digest"
+
+          candidate="$RUNNER_TEMP/fork-apk-candidate/paseo-iexalt-fork.apk"
+          metadata="$RUNNER_TEMP/fork-apk-candidate/build-metadata.json"
+          test "$(jq -r .sourceSha "$metadata")" = "$GITHUB_SHA"
+          test "$(jq -r .versionCode "$metadata")" = "$VERSION_CODE"
+          test "$(jq -r .packageId "$metadata")" = "sh.paseo.iexalt"
+          test "$(jq -r .abi "$metadata")" = "arm64-v8a"
+          test "$(jq -r .runId "$metadata")" = "$GITHUB_RUN_ID"
+
+          android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}"
+          apksigner="$android_home/build-tools/36.0.0/apksigner"
+          apkanalyzer="$android_home/cmdline-tools/latest/bin/apkanalyzer"
+          test -x "$apksigner"
+          test -x "$apkanalyzer"
+
+          final_dir="$RUNNER_TEMP/fork-apk-final"
+          mkdir -p "$final_dir"
+          final_apk="$final_dir/paseo-iexalt-fork-${VERSION_CODE}.apk"
+          "$apksigner" sign --key "$key_file" --cert "$cert_file" --out "$final_apk" "$candidate"
+          "$apksigner" verify --verbose "$final_apk"
+          certificate_report="$("$apksigner" verify --print-certs "$final_apk")"
+          signer_count="$(printf '%s\n' "$certificate_report" | sed -n 's/^Signer #[0-9][0-9]* certificate SHA-256 digest: .*/x/p' | wc -l | tr -d ' ')"
+          test "$signer_count" -eq 1
+          verified_digest="$(printf '%s\n' "$certificate_report" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test "$verified_digest" = "$APPROVED_CERT_SHA256"
+          test "$("$apkanalyzer" manifest application-id "$final_apk")" = "sh.paseo.iexalt"
+          test "$("$apkanalyzer" manifest version-code "$final_apk")" = "$VERSION_CODE"
+          test "$("$apkanalyzer" manifest debuggable "$final_apk")" = "false"
+          final_abis="$(unzip -Z1 "$final_apk" | awk -F/ '$1 == "lib" && NF >= 3 { print $2 }' | sort -u)"
+          test "$final_abis" = "arm64-v8a"
+
+          jq \
+            --arg signingRunId "$GITHUB_RUN_ID" \
+            --arg signingRunAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg signingCertificateSha256 "$verified_digest" \
+            '. + {signingRunId: $signingRunId, signingRunAttempt: $signingRunAttempt, signingCertificateSha256: $signingCertificateSha256}' "$metadata" \
+            > "$final_dir/build-metadata.json"
+          (cd "$final_dir" && sha256sum "$(basename "$final_apk")" build-metadata.json > SHA256SUMS)
+          echo "final_dir=$final_dir" >> "$GITHUB_OUTPUT"
+          echo "Fork APK signed and verified against the approved certificate."
+
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: rm -f "$RUNNER_TEMP/fork-signing-key.pk8.pem" "$RUNNER_TEMP/fork-signing-key.pk8.der" "$RUNNER_TEMP/fork-signing-cert.pem"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: paseo-iexalt-${{ needs.build.outputs.version_code }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          path: ${{ steps.signed.outputs.final_dir }}/
+          if-no-files-found: error
+          retention-days: 7
