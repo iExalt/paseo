@@ -333,6 +333,43 @@ project/package and approved certificate fingerprint were verified before upload
 The Firebase Admin SDK and age private key are excluded. Actual native build,
 final artifact, and device proof remain pending.
 
+The first standalone Android CI run at `a5fa7f93bfc513db5e16dcac1f9e0b93e7705f95`
+([run 37968851061](https://github.com/iExalt/paseo/actions/runs/37968851061))
+ended at 18:08:15 UTC (2:08:15 PM EDT), after 19m53s, with only
+`The operation was canceled` during Gradle. The job's timeout was 30 minutes,
+there was no step timeout, and concurrency cancellation was disabled.
+Kotlin compilation and Metro bundling had progressed; 81 GB remained free after
+SDK setup. No source error, OOM, process exit code, or cancelling actor was
+reported. The cause is unknown; no arbitrary source repair or replay was made,
+and the signer never ran.
+
+The canonical Mac build lane is implemented locally as the callable
+`macos-closure.yml` workflow and `nix-release-closure.sh` helper. It replaces the
+standalone push-triggered probe and uses the fixed, explicitly local-built Node
+seed. A distinct durable Nix key is preserved in the private Keychain repository
+and provisioned as `PASEO_NIX_RELEASE_SIGNING_KEY`; the public pin is fixed
+in source and the secret reaches only the export/sign step. The producer allows
+60 minutes for building within a 90-minute job; a separate 20-minute verifier
+imports the exact artifact into a rooted store with builders and substituters
+disabled. Source/lock/derivation/output identity and closure NAR metadata remain
+required. Bash, ShellCheck, actionlint, sequence-boundary checks, and cheap archive
+fixtures passed, including rejecting unsafe AppleDouble members before filtering.
+This callable lane has not been invoked; full canonical build proof remains pending.
+Producer-pinned manifest hashes prove same-run transport, not independent release
+authentication, and a rooted-store import does not prove application launch.
+
+The paired BUILD entry point is implemented locally in `fork-builds.yml`.
+Build-relevant trusted `dev` pushes pass one immutable source SHA and
+`200000 + GITHUB_RUN_NUMBER` sequence/code to both callable lanes. Attempt-specific
+artifacts retain retry identity; paired completion downloads exact artifact IDs,
+checks trusted content hashes and platform metadata, and emits only a candidate
+manifest. Eleven workflow contracts and a focused retry-metadata fixture passed.
+The new paired revision still requires its first integrated run; no release is
+promoted and independent release-manifest authentication remains pending.
+The required serial pre-publication batch passed lint (19.53 seconds), formatting
+(0.87 seconds), and typecheck (19.91 seconds); the retained 14.2-second typecheck
+baseline is unchanged.
+
 The user subsequently authorized notification-only Expo onboarding. A minimal
 `fork` EAS profile selects `APP_VARIANT=fork`; explicit Android code and protected
 Firebase build inputs are supplied in the credential command's environment.

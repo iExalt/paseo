@@ -1,28 +1,46 @@
 name: Fork Android APK
 
 on:
-  push:
-    branches:
-      - dev
-    paths:
-      - ".github/workflows/fork-android-apk.yml"
-      - "mise.toml"
-      - ".tool-versions"
-      - "package.json"
-      - "package-lock.json"
-      - "tsconfig.json"
-      - "tsconfig.base.json"
-      - "patches/**"
-      - "plugins/**"
-      - "packages/app/**"
-      - "packages/client/**"
-      - "packages/expo-two-way-audio/**"
-      - "packages/highlight/**"
-      - "packages/plugin/**"
-      - "packages/protocol/**"
-      - "scripts/build-terminal-webview-html.mjs"
-      - "scripts/npm-retry.mjs"
-      - "scripts/postinstall-patches.mjs"
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Immutable commit SHA shared by the paired build lanes.
+        required: true
+        type: string
+      release_sequence:
+        description: Canonical positive Android version code shared by both lanes.
+        required: true
+        type: string
+    secrets:
+      PASEO_FORK_GOOGLE_SERVICES_JSON:
+        required: true
+      PASEO_FORK_SIGNING_KEY_PKCS8_PEM:
+        required: true
+      PASEO_FORK_SIGNING_CERT_PEM:
+        required: true
+    outputs:
+      source_sha:
+        value: ${{ jobs.sign.outputs.source_sha }}
+      release_sequence:
+        value: ${{ jobs.sign.outputs.release_sequence }}
+      version_code:
+        value: ${{ jobs.sign.outputs.version_code }}
+      package_id:
+        value: ${{ jobs.sign.outputs.package_id }}
+      signing_certificate_sha256:
+        value: ${{ jobs.sign.outputs.signing_certificate_sha256 }}
+      apk_sha256:
+        value: ${{ jobs.sign.outputs.apk_sha256 }}
+      metadata_sha256:
+        value: ${{ jobs.sign.outputs.metadata_sha256 }}
+      artifact_name:
+        value: ${{ jobs.sign.outputs.artifact_name }}
+      artifact_id:
+        value: ${{ jobs.sign.outputs.artifact_id }}
+      artifact_digest:
+        value: ${{ jobs.sign.outputs.artifact_digest }}
+      verified:
+        value: ${{ jobs.sign.outputs.verified }}
 
 concurrency:
   group: fork-android-apk-${{ github.ref }}
@@ -41,20 +59,26 @@ jobs:
       packages: read
     outputs:
       artifact_name: ${{ steps.candidate.outputs.artifact_name }}
+      artifact_id: ${{ steps.upload-candidate.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload-candidate.outputs.artifact-digest }}
       version_code: ${{ steps.version.outputs.version_code }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ inputs.source_sha }}
 
       - name: Verify clean immutable dev commit
         shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "iExalt/paseo"
           test "$GITHUB_REF" = "refs/heads/dev"
           test "$GITHUB_ACTOR" = "iExalt"
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain)"
 
       - name: Check runner disk budget
@@ -91,9 +115,11 @@ jobs:
       - name: Resolve fork Android version code
         id: version
         shell: bash
+        env:
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
         run: |
           set -euo pipefail
-          version_code="$(node -e 'process.stdout.write(String(require("./packages/app/native-release-version").getForkAndroidVersionCodeFromRunNumber(process.env.GITHUB_RUN_NUMBER)))')"
+          version_code="$(node -e 'process.stdout.write(String(require("./packages/app/native-release-version").getRequiredAndroidVersionCode(process.env.RELEASE_SEQUENCE)))')"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "PASEO_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
 
@@ -185,6 +211,9 @@ jobs:
       - name: Verify and package release candidate
         id: candidate
         shell: bash
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
         run: |
           set -euo pipefail
           candidate="packages/app/android/app/build/outputs/apk/release/app-release.apk"
@@ -204,16 +233,17 @@ jobs:
           mkdir -p "$candidate_dir"
           cp "$candidate" "$candidate_dir/paseo-iexalt-fork.apk"
           jq -n \
-            --arg sourceSha "$GITHUB_SHA" \
+            --arg sourceSha "$SOURCE_SHA" \
             --arg runId "$GITHUB_RUN_ID" \
             --arg runNumber "$GITHUB_RUN_NUMBER" \
             --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            --arg releaseSequence "$RELEASE_SEQUENCE" \
             --arg packageId "$package_id" \
             --arg versionCode "$version_code" \
             --arg abi "$abis" \
-            '{sourceSha: $sourceSha, runId: $runId, runNumber: $runNumber, runAttempt: $runAttempt, packageId: $packageId, versionCode: $versionCode, abi: $abi}' \
+            '{sourceSha: $sourceSha, runId: $runId, runNumber: $runNumber, runAttempt: $runAttempt, releaseSequence: $releaseSequence, packageId: $packageId, versionCode: $versionCode, abi: $abi}' \
             > "$candidate_dir/build-metadata.json"
-          artifact_name="paseo-iexalt-candidate-${version_code}-${GITHUB_SHA:0:12}-attempt-${GITHUB_RUN_ATTEMPT}"
+          artifact_name="paseo-iexalt-candidate-${version_code}-${SOURCE_SHA}-attempt-${GITHUB_RUN_ATTEMPT}"
           echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
           echo "Candidate APK verified for package $package_id, code $version_code, ABI $abis."
 
@@ -226,6 +256,7 @@ jobs:
             "$GITHUB_WORKSPACE/packages/app/android/app/google-services.json"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload-candidate
         with:
           name: ${{ steps.candidate.outputs.artifact_name }}
           path: ${{ runner.temp }}/fork-apk-candidate/
@@ -239,6 +270,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions: {}
+    outputs:
+      source_sha: ${{ steps.signed.outputs.source_sha }}
+      release_sequence: ${{ steps.signed.outputs.release_sequence }}
+      version_code: ${{ steps.signed.outputs.version_code }}
+      package_id: ${{ steps.signed.outputs.package_id }}
+      signing_certificate_sha256: ${{ steps.signed.outputs.signing_certificate_sha256 }}
+      apk_sha256: ${{ steps.signed.outputs.apk_sha256 }}
+      metadata_sha256: ${{ steps.signed.outputs.metadata_sha256 }}
+      artifact_name: ${{ steps.signed.outputs.artifact_name }}
+      artifact_id: ${{ steps.upload-final.outputs.artifact-id }}
+      artifact_digest: ${{ steps.upload-final.outputs.artifact-digest }}
+      verified: ${{ steps.signed.outputs.verified }}
     steps:
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
@@ -269,8 +312,9 @@ jobs:
 
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          name: ${{ needs.build.outputs.artifact_name }}
+          artifact-ids: ${{ needs.build.outputs.artifact_id }}
           path: ${{ runner.temp }}/fork-apk-candidate
+          merge-multiple: true
 
       - name: Sign and verify with the approved fork certificate
         id: signed
@@ -279,6 +323,8 @@ jobs:
           PASEO_FORK_SIGNING_KEY_PKCS8_PEM: ${{ secrets.PASEO_FORK_SIGNING_KEY_PKCS8_PEM }}
           PASEO_FORK_SIGNING_CERT_PEM: ${{ secrets.PASEO_FORK_SIGNING_CERT_PEM }}
           VERSION_CODE: ${{ needs.build.outputs.version_code }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
           APPROVED_CERT_SHA256: 943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459
         run: |
           set -euo pipefail
@@ -304,11 +350,16 @@ jobs:
 
           candidate="$RUNNER_TEMP/fork-apk-candidate/paseo-iexalt-fork.apk"
           metadata="$RUNNER_TEMP/fork-apk-candidate/build-metadata.json"
-          test "$(jq -r .sourceSha "$metadata")" = "$GITHUB_SHA"
+          test "$GITHUB_SHA" = "$SOURCE_SHA"
+          test "$(jq -r .sourceSha "$metadata")" = "$SOURCE_SHA"
+          test "$(jq -r .releaseSequence "$metadata")" = "$RELEASE_SEQUENCE"
           test "$(jq -r .versionCode "$metadata")" = "$VERSION_CODE"
           test "$(jq -r .packageId "$metadata")" = "sh.paseo.iexalt"
           test "$(jq -r .abi "$metadata")" = "arm64-v8a"
           test "$(jq -r .runId "$metadata")" = "$GITHUB_RUN_ID"
+          builder_attempt="$(jq -er '.runAttempt' "$metadata")"
+          [[ "$builder_attempt" =~ ^[1-9][0-9]*$ ]]
+          (( builder_attempt <= GITHUB_RUN_ATTEMPT ))
 
           android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}"
           apksigner="$android_home/build-tools/36.0.0/apksigner"
@@ -336,9 +387,24 @@ jobs:
             --arg signingRunId "$GITHUB_RUN_ID" \
             --arg signingRunAttempt "$GITHUB_RUN_ATTEMPT" \
             --arg signingCertificateSha256 "$verified_digest" \
-            '. + {signingRunId: $signingRunId, signingRunAttempt: $signingRunAttempt, signingCertificateSha256: $signingCertificateSha256}' "$metadata" \
-            > "$final_dir/build-metadata.json"
+            --arg apkSha256 "$(sha256sum "$final_apk" | cut -d' ' -f1)" \
+            '. + {signingRunId: $signingRunId, signingRunAttempt: $signingRunAttempt, signingCertificateSha256: $signingCertificateSha256, apkSha256: $apkSha256}' \
+            "$metadata" > "$final_dir/build-metadata.json"
           (cd "$final_dir" && sha256sum "$(basename "$final_apk")" build-metadata.json > SHA256SUMS)
+          apk_sha256="$(sha256sum "$final_apk" | cut -d' ' -f1)"
+          metadata_sha256="$(sha256sum "$final_dir/build-metadata.json" | cut -d' ' -f1)"
+          artifact_name="paseo-iexalt-${VERSION_CODE}-${SOURCE_SHA}-attempt-${GITHUB_RUN_ATTEMPT}"
+          {
+            echo "source_sha=$SOURCE_SHA"
+            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "version_code=$VERSION_CODE"
+            echo "package_id=sh.paseo.iexalt"
+            echo "signing_certificate_sha256=$verified_digest"
+            echo "apk_sha256=$apk_sha256"
+            echo "metadata_sha256=$metadata_sha256"
+            echo "artifact_name=$artifact_name"
+            echo "verified=true"
+          } >> "$GITHUB_OUTPUT"
           echo "final_dir=$final_dir" >> "$GITHUB_OUTPUT"
           echo "Fork APK signed and verified against the approved certificate."
 
@@ -348,8 +414,9 @@ jobs:
         run: rm -f "$RUNNER_TEMP/fork-signing-key.pk8.pem" "$RUNNER_TEMP/fork-signing-key.pk8.der" "$RUNNER_TEMP/fork-signing-cert.pem"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        id: upload-final
         with:
-          name: paseo-iexalt-${{ needs.build.outputs.version_code }}-${{ github.sha }}-attempt-${{ github.run_attempt }}
+          name: ${{ steps.signed.outputs.artifact_name }}
           path: ${{ steps.signed.outputs.final_dir }}/
           if-no-files-found: error
           retention-days: 7
