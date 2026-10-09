@@ -2249,6 +2249,30 @@ export const ja: TranslationResources = {
         alertTitle: "エラー",
         alertMessage: "更新確認ダイアログを開けません。",
       },
+      nixUpdates: {
+        label: "Nix 管理の更新",
+        running: "実行中のアプリ: {{version}}",
+        active: "プロファイルのバージョン: {{version}}（シーケンス {{sequence}}）",
+        staged: "準備済みバージョン: {{version}}（シーケンス {{sequence}}）",
+        latest: "最新の署名済みバージョン: {{version}}（シーケンス {{sequence}}）",
+        ready: "必要なときに署名済み更新を確認できます。",
+        invalidMarker: "この Nix インストールを検証できませんでした。",
+        restartRequired:
+          "有効なプロファイルのバージョンを使うには Paseo を手動で再起動してください。",
+        check: "確認",
+        stage: "準備",
+        activate: "有効化",
+        rollback: "ロールバック",
+        checkingInProgress: "署名済みリリースを確認中…",
+        stagingInProgress: "更新をダウンロードして検証中…",
+        activatingInProgress: "選択したプロファイル世代を有効化中…",
+        rollbackInProgress: "プロファイル世代をロールバック中…",
+        activateConfirmTitle: "Nix 更新を有効化",
+        activateConfirmMessage: "更新は次回の手動再起動後に有効になります。",
+        rollbackConfirmTitle: "Nix 更新をロールバック",
+        rollbackConfirmMessage:
+          "前のプロファイル世代が有効になります。使用するには手動で再起動してください。",
+      },
     },
     appearance: {
       theme: {

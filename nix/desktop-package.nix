@@ -217,6 +217,9 @@ buildNpmPackage {
       fi
       mkdir -p "$out/Applications"
       cp -R "$app" "$out/Applications/Paseo.app"
+      printf '{"schemaVersion":1,"managedBy":"nix","packageVersion":"%s","buildVersion":"%s"}\n' \
+        "$version" ${lib.escapeShellArg buildVersion} \
+        > "$out/Applications/Paseo.app/Contents/Resources/paseo-nix-managed.json"
       ln -s ../Applications/Paseo.app/Contents/MacOS/Paseo "$out/bin/paseo-desktop"
 
       # Keep the signed updater and its portable release contract beside the

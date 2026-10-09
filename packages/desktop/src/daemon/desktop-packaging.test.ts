@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import {
   chmodSync,
   copyFileSync,
@@ -9,9 +9,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { resolveDesktopInstallation } from "../features/nix-managed-install.js";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
@@ -77,6 +78,48 @@ describe("desktop packaging", () => {
     const config = readFileSync(join(packageRoot, "electron-builder.yml"), "utf8");
 
     expect(config).toContain('minimumSystemVersion: "13.0.0"');
+  });
+
+  it("publishes Electron update feeds from the fork release owner", () => {
+    const config = readFileSync(join(packageRoot, "electron-builder.yml"), "utf8");
+
+    expect(config).toContain("publish:\n  provider: github\n  owner: iExalt\n  repo: paseo");
+  });
+
+  it("formats the Nix marker as one valid resource file using the packaged values", () => {
+    const nixPackage = readFileSync(
+      join(packageRoot, "..", "..", "nix", "desktop-package.nix"),
+      "utf8",
+    );
+    const format = nixPackage.match(
+      /printf '([^']*)'\s*\\\s*"\$version" \$\{lib\.escapeShellArg buildVersion\}/,
+    )?.[1];
+    expect(format).toBeDefined();
+
+    const markerBytes = Buffer.from(
+      execFileSync("printf", [format!, "0.11.0", "1.2.3.4"], { encoding: "utf8" }),
+    );
+    const marker = JSON.parse(markerBytes.toString("utf8"));
+    const outputPath = `/nix/store/${"a".repeat(32)}-paseo-desktop-${marker.packageVersion}`;
+    const resourcesPath = `${outputPath}/Applications/Paseo.app/Contents/Resources`;
+    const cliPath = `${outputPath}/bin/paseo-nix-update`;
+    const installation = resolveDesktopInstallation(resourcesPath, {
+      readFileSync: () => markerBytes,
+      realpathSync: (filePath) =>
+        filePath === resolve(resourcesPath, "../../../..") ? outputPath : filePath,
+      statSync: (filePath) => ({ isFile: () => filePath === cliPath }),
+    });
+
+    expect(installation).toMatchObject({
+      mode: "nix",
+      outputPath,
+      marker: {
+        schemaVersion: 1,
+        managedBy: "nix",
+        packageVersion: "0.11.0",
+        buildVersion: "1.2.3.4",
+      },
+    });
   });
 
   it("unpacks server zsh shell integration files for external shells", () => {
