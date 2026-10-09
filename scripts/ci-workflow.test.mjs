@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { readFileSync, readdirSync } from "node:fs";
-import { relative as relativePath } from "node:path";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join, relative as relativePath } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
@@ -14,6 +25,7 @@ const forkBuildsWorkflowPath = new URL(".github/workflows/fork-builds.yml", repo
 const gradleResourceWatchPath = fileURLToPath(
   new URL("scripts/gradle-resource-watch.sh", repoRoot),
 );
+const runnerSwapPath = fileURLToPath(new URL("scripts/runner-swap.sh", repoRoot));
 const deployWebsiteWorkflowPath = new URL(".github/workflows/deploy-website.yml", repoRoot);
 const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
@@ -468,6 +480,7 @@ test("fork Android resource watcher is paired and preserves child exit and signa
   const pairedWorkflow = readFileSync(forkBuildsWorkflowPath, "utf8");
   assert.match(source, /interval_seconds=60/);
   assert.match(source, /free -b/);
+  assert.match(source, /swap_total_bytes=%s swap_used_bytes=%s swap_free_bytes=%s/);
   assert.match(source, /df -Pk/);
   assert.match(source, /\/sys\/fs\/cgroup\/memory\.events/);
   assert.match(source, /oom_group_kill/);
@@ -560,5 +573,175 @@ test("fork Android resource watcher is paired and preserves child exit and signa
     assert.match(output, new RegExp(`gradle_child_exit_code=${signalCase.wrapperStatus}`));
     assert.match(output, /gradle_heartbeat_sampler_exit_code=0/);
     assert.match(output, new RegExp(`gradle_wrapper_exit_code=${signalCase.wrapperStatus}`));
+  }
+});
+
+test("fork Android swap is provisioned after SDK setup and always cleaned before packaging", () => {
+  const source = readFileSync(forkAndroidWorkflowPath, "utf8");
+  const sdkSetup = source.indexOf("- name: Install pinned Android SDK packages");
+  const swapSetup = source.indexOf('bash "$GITHUB_WORKSPACE/scripts/runner-swap.sh" enable');
+  const assemble = source.indexOf("- name: Assemble arm64 release candidate");
+  const swapCleanup = source.indexOf("- name: Disable and remove task-owned Android swap");
+  const verify = source.indexOf("- name: Verify and package release candidate");
+
+  assert.match(source, /timeout-minutes: 60/);
+  assert.ok(sdkSetup >= 0 && sdkSetup < swapSetup);
+  assert.ok(swapSetup < assemble && assemble < swapCleanup && swapCleanup < verify);
+  assert.match(
+    source.slice(swapCleanup, verify),
+    /if: always\(\)[\s\S]*?timeout-minutes: 3[\s\S]*?runner-swap\.sh" cleanup/,
+  );
+});
+
+test("fork Android swap lifecycle is bounded and never unlinks active swap", () => {
+  const fixtureDirectory = mkdtempSync(join(tmpdir(), "paseo-runner-swap-"));
+  const fakeBin = join(fixtureDirectory, "bin");
+  const activeSwapFile = join(fixtureDirectory, "active-swap");
+  const dfCountFile = join(fixtureDirectory, "df-count");
+  const runnerTemp = join(fixtureDirectory, "runner-temp");
+  const swapFile = join(runnerTemp, "paseo-fork-gradle.swap");
+  const ownerDirectory = join(runnerTemp, "paseo-fork-gradle-swap-owner");
+  mkdirSync(fakeBin);
+  mkdirSync(runnerTemp);
+
+  const fakeCommands = {
+    df: `#!/bin/sh
+count=0
+if [ -f "$DF_COUNT_FILE" ]; then read -r count < "$DF_COUNT_FILE"; fi
+count=$((count + 1))
+printf '%s\\n' "$count" > "$DF_COUNT_FILE"
+if [ "$count" -eq 1 ]; then available="$DF_BEFORE_KB"; else available="$DF_AFTER_KB"; fi
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/fake 100000000 1 %s 1%% %s\\n' "$available" "$1"
+`,
+    fallocate: `#!/bin/sh
+test "$1" = -l
+truncate -s "$2" "$3"
+`,
+    sudo: `#!/bin/sh
+case "$1" in
+  mkswap) exit 0 ;;
+  swapon) printf '%s\\n' "$2" > "$ACTIVE_SWAP_FILE" ;;
+  swapoff)
+    if [ "$FAIL_SWAPOFF" = 1 ]; then exit 1; fi
+    : > "$ACTIVE_SWAP_FILE"
+    ;;
+  *) exit 2 ;;
+esac
+`,
+    swapon: `#!/bin/sh
+if [ "$FAIL_SWAPON_QUERY" = 1 ]; then exit 1; fi
+if [ -f "$ACTIVE_SWAP_FILE" ]; then cat "$ACTIVE_SWAP_FILE"; fi
+`,
+  };
+  for (const [name, source] of Object.entries(fakeCommands)) {
+    const file = join(fakeBin, name);
+    writeFileSync(file, source);
+    chmodSync(file, 0o700);
+  }
+
+  const baseEnvironment = {
+    ...process.env,
+    PATH: `${fakeBin}:${process.env.PATH ?? "/usr/bin:/bin"}`,
+    GITHUB_ACTIONS: "true",
+    RUNNER_OS: "Linux",
+    GITHUB_REPOSITORY: "iExalt/paseo",
+    GITHUB_REF: "refs/heads/dev",
+    GITHUB_ACTOR: "iExalt",
+    RUNNER_TEMP: runnerTemp,
+    ACTIVE_SWAP_FILE: activeSwapFile,
+    DF_COUNT_FILE: dfCountFile,
+    DF_BEFORE_KB: String(24 * 1024 * 1024),
+    DF_AFTER_KB: String(8 * 1024 * 1024 - 1),
+    FAIL_SWAPOFF: "0",
+    FAIL_SWAPON_QUERY: "0",
+  };
+
+  try {
+    const untrustedContext = spawnSync("bash", [runnerSwapPath, "enable"], {
+      encoding: "utf8",
+      env: { ...baseEnvironment, GITHUB_ACTOR: "other-user" },
+      timeout: 5000,
+    });
+    assert.equal(untrustedContext.status, 1);
+    assert.equal(existsSync(ownerDirectory), false);
+    assert.equal(existsSync(swapFile), false);
+
+    writeFileSync(swapFile, "pre-existing runner file");
+    const existingPath = spawnSync("bash", [runnerSwapPath, "enable"], {
+      encoding: "utf8",
+      env: baseEnvironment,
+      timeout: 5000,
+    });
+    assert.equal(existingPath.status, 1);
+    assert.equal(readFileSync(swapFile, "utf8"), "pre-existing runner file");
+    const unownedCleanup = spawnSync("bash", [runnerSwapPath, "cleanup"], {
+      encoding: "utf8",
+      env: baseEnvironment,
+      timeout: 5000,
+    });
+    assert.equal(unownedCleanup.status, 0);
+    assert.equal(readFileSync(swapFile, "utf8"), "pre-existing runner file");
+    rmSync(swapFile);
+
+    const lowSpace = spawnSync("bash", [runnerSwapPath, "enable"], {
+      encoding: "utf8",
+      env: { ...baseEnvironment, DF_BEFORE_KB: String(24 * 1024 * 1024 - 1) },
+      timeout: 5000,
+    });
+    assert.equal(lowSpace.status, 1);
+    assert.equal(existsSync(ownerDirectory), false);
+    assert.equal(existsSync(swapFile), false);
+
+    writeFileSync(dfCountFile, "0");
+    const insufficientHeadroom = spawnSync("bash", [runnerSwapPath, "enable"], {
+      encoding: "utf8",
+      env: baseEnvironment,
+      timeout: 5000,
+    });
+    assert.equal(insufficientHeadroom.status, 1);
+    assert.equal(existsSync(ownerDirectory), false);
+    assert.equal(existsSync(swapFile), false);
+    assert.equal(readFileSync(activeSwapFile, "utf8"), "");
+
+    writeFileSync(dfCountFile, "0");
+    const enabled = spawnSync("bash", [runnerSwapPath, "enable"], {
+      encoding: "utf8",
+      env: { ...baseEnvironment, DF_AFTER_KB: String(8 * 1024 * 1024) },
+      timeout: 5000,
+    });
+    assert.equal(enabled.status, 0, enabled.stderr);
+    assert.equal(statSync(swapFile).size, 16 * 1024 * 1024 * 1024);
+    assert.equal(statSync(swapFile).mode & 0o777, 0o600);
+    assert.equal(readFileSync(activeSwapFile, "utf8").trim(), swapFile);
+
+    const unverified = spawnSync("bash", [runnerSwapPath, "cleanup"], {
+      encoding: "utf8",
+      env: { ...baseEnvironment, FAIL_SWAPON_QUERY: "1" },
+      timeout: 5000,
+    });
+    assert.equal(unverified.status, 1);
+    assert.equal(existsSync(swapFile), true);
+    assert.equal(readFileSync(activeSwapFile, "utf8").trim(), swapFile);
+
+    const retained = spawnSync("bash", [runnerSwapPath, "cleanup"], {
+      encoding: "utf8",
+      env: { ...baseEnvironment, FAIL_SWAPOFF: "1" },
+      timeout: 5000,
+    });
+    assert.equal(retained.status, 1);
+    assert.equal(existsSync(swapFile), true);
+    assert.equal(readFileSync(activeSwapFile, "utf8").trim(), swapFile);
+
+    const cleaned = spawnSync("bash", [runnerSwapPath, "cleanup"], {
+      encoding: "utf8",
+      env: baseEnvironment,
+      timeout: 5000,
+    });
+    assert.equal(cleaned.status, 0, cleaned.stderr);
+    assert.equal(existsSync(swapFile), false);
+    assert.equal(existsSync(ownerDirectory), false);
+    assert.equal(readFileSync(activeSwapFile, "utf8"), "");
+  } finally {
+    rmSync(fixtureDirectory, { recursive: true, force: true });
   }
 });
