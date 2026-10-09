@@ -92,7 +92,7 @@ validate_identity() {
 
 import_seeded_node() {
   local seed_dir archive_file manifest_file cache_dir extracted_bytes extracted_file_count
-  local seed_closure_json imported_closure_json nix_bin
+  local seed_closure_json imported_closure_json nix_bin node_bin
 
   [[ -n "$seed_public_key" && "$seed_public_key" == "paseo-nix-seed-20261009-164633":* ]] \
     || fail "The reviewed seed public-key pin is absent or has the wrong key name."
@@ -175,6 +175,14 @@ PY
     "${seed_node_roots[@]}" | jq -cS 'to_entries | map({path: .key, narHash: .value.narHash, narSize: .value.narSize}) | sort_by(.path)')"
   [[ "$seed_closure_json" == "$imported_closure_json" ]] \
     || fail "Imported Node seed closure differs from the independently pinned path/NAR manifest."
+
+  node_bin="${seed_node_roots[4]}/bin/node"
+  [[ -x "$node_bin" ]] || fail "The imported Node seed lacks its pinned Node 26 runtime."
+  PASEO_NIX_SIGNATURE_FIXTURE=1 \
+    PASEO_NIX_SIGNATURE_FIXTURE_ROOT="${seed_node_roots[4]}" \
+    PASEO_NIX_SIGNATURE_FIXTURE_STORE=default \
+    "$node_bin" --test --test-name-pattern='copies only the pinned cache signature' \
+      scripts/paseo-nix-update.test.mjs
 }
 
 prepare() {
@@ -239,6 +247,7 @@ prepare() {
     echo "### Nix closure build checkpoint"
     echo "- Source SHA: \`$source_sha\`; release sequence: $release_sequence; flake.lock SHA-256: \`$lock_hash\`."
     echo "- Imported and signature-verified the reviewed local-built Node 26.11 seed in ${seed_seconds}s."
+    echo "- Isolated Nix signature-copy fixture passed for an input-addressed path; only the ephemeral fixture key verified."
     echo "- Checkout/archive derivation and output paths match in ${parity_seconds}s: \`$checkout_drv\` / \`$checkout_output\`."
     echo "- Free disk before build (store/temp): $prebuild_store_free_kib / $prebuild_temp_free_kib KiB."
     echo "- Seed provenance is local-built; this lane does not claim CI-built Node dependencies."
@@ -363,6 +372,10 @@ export_signed_closure() {
   unset NIX_RELEASE_SIGNING_KEY
   [[ "$(nix key convert-secret-to-public < "$key_file")" == "$NIX_RELEASE_PUBLIC_KEY" ]] \
     || fail "The scoped signing secret does not match the reviewed Nix public-key pin."
+  # Existing store paths may have signatures from their original cache only.
+  # Add this release key to every runtime reference before exporting so a
+  # fresh store can verify the full closure with the single pinned key.
+  nix store sign --key-file "$key_file" --recursive "$output_path" "$manifest_path"
   export_started="$(date +%s)"
   nix copy --to "file://$cache_dir?secret-key=$key_file" --option builders '' "$output_path" "$manifest_path"
   export_seconds="$(( $(date +%s) - export_started ))"
@@ -503,6 +516,9 @@ PY
   nix copy --from "file://$cache_dir" --to "$destination_store" \
     --option builders '' --option substituters '' --option require-sigs true \
     --option trusted-public-keys "$NIX_RELEASE_PUBLIC_KEY" "$expected_output" "$expected_manifest"
+  nix store copy-sigs --store "$destination_store" --substituter "file://$cache_dir" \
+    --recursive --option builders '' --option substituters '' --option require-sigs true \
+    --option trusted-public-keys "$NIX_RELEASE_PUBLIC_KEY" "$expected_output"
   import_seconds="$(( $(date +%s) - import_started ))"
   verify_started="$(date +%s)"
   nix store verify --store "$destination_store" --recursive --sigs-needed 1 \
