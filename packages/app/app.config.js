@@ -159,7 +159,10 @@ export default {
       softwareKeyboardLayoutMode: "resize",
       // Allow HTTP connections for local network hosts (required for release builds)
       usesCleartextTraffic: true,
-      permissions: buildProfile.androidPermissions,
+      permissions: [
+        ...buildProfile.androidPermissions,
+        ...(appVariant === "fork" ? ["REQUEST_INSTALL_PACKAGES"] : []),
+      ],
       package: variantIdentity.androidPackage,
       versionCode: variantIdentity.androidVersionCode,
       ...(variant.googleServicesFile ? { googleServicesFile: variant.googleServicesFile } : {}),
@@ -224,6 +227,7 @@ export default {
     extra: {
       fdroidBuild: isFdroidBuild,
       profileBuild: isProfileBuild,
+      forkUpdatesEnabled: appVariant === "fork",
       router: {},
       eas: {
         projectId: "3a777534-569c-47e5-81ad-1a4e47d5127c",
