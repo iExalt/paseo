@@ -358,17 +358,81 @@ This callable lane has not been invoked; full canonical build proof remains pend
 Producer-pinned manifest hashes prove same-run transport, not independent release
 authentication, and a rooted-store import does not prove application launch.
 
-The paired BUILD entry point is implemented locally in `fork-builds.yml`.
+The first paired run
+([37971783372](https://github.com/iExalt/paseo/actions/runs/37971783372),
+`03f9654109b82023e2bd0682381023a7fb9793b8`, sequence 200001) exposed a seed
+transport prerequisite: the existing seed Release was still a draft and could
+not be fetched with the lane's read-only token. It failed before a desktop build.
+The unchanged dependency cache Release is now a published prerelease, excluded
+from latest-app promotion; target, both asset sizes/digests, and anonymous HTTP
+200 tag visibility were verified. Its local-built provenance and signing pins
+are unchanged. Application release discovery must exclude this seed namespace
+and prereleases. Android then ended at 18:33:54 UTC (2:33:54 PM EDT): its
+assemble step was cancelled after 18m10s, before the 30-minute job cap. Logs
+again report only cancellation, with no initiator, timeout, Gradle failure, OOM,
+or disk-full evidence. Signing and artifact verification did not run. The two
+similar cancellations require bounded diagnosis before another build; no rerun
+has been made.
+
+The paired BUILD entry point is published in `fork-builds.yml` at
+`03f9654109b82023e2bd0682381023a7fb9793b8`.
 Build-relevant trusted `dev` pushes pass one immutable source SHA and
 `200000 + GITHUB_RUN_NUMBER` sequence/code to both callable lanes. Attempt-specific
 artifacts retain retry identity; paired completion downloads exact artifact IDs,
 checks trusted content hashes and platform metadata, and emits only a candidate
-manifest. Eleven workflow contracts and a focused retry-metadata fixture passed.
-The new paired revision still requires its first integrated run; no release is
-promoted and independent release-manifest authentication remains pending.
+manifest. A reviewed follow-up records each lane's artifact attempt and permits
+an earlier successful lane when the other is retried, while retaining the same
+source, sequence, and exact artifact IDs. Thirteen workflow contracts passed,
+including mixed-attempt and upstream-only website deployment guards. The first
+integrated run failed as recorded above; full paired artifact proof remains pending.
 The required serial pre-publication batch passed lint (19.53 seconds), formatting
 (0.87 seconds), and typecheck (19.91 seconds); the retained 14.2-second typecheck
 baseline is unchanged.
+
+Complete-release promotion is implemented as a local, explicit CLI in
+`scripts/promote-fork-release.mjs`, with a portable manifest contract in
+`packages/protocol/src/release-manifest.ts`. `prepare` validates a selected
+successful paired run, immutable source, lane attempts, artifact IDs, GitHub
+digests, and both platforms' metadata and file hashes. `publish` revalidates
+those inputs, signs the manifest, atomically claims its tag, and verifies the
+draft's exact assets before publication. Existing tags/releases are rejected;
+ambiguous partial publication preserves its claim for manual recovery rather
+than overwriting assets. Authenticated prior fork releases must have lower
+sequence and Android code; dependency caches and prereleases are excluded.
+Promotion operations must be serialized: the final prior-release check is not
+a repository-wide atomic publication lock.
+
+A distinct Ed25519 manifest key is preserved in the private Keychain repository
+as `paseo-release-manifest-ed25519.pem` and `.pem.pub`, with private mode 0600.
+Only its public pin and key ID `paseo-release-manifest-1` are retained here;
+no manifest-signing GitHub secret is needed. Existing TweetNaCl verifies Node
+Ed25519 signatures, providing a feasible Android verifier without assuming
+native Ed25519 availability on every supported API level. Eight fast promotion
+tests and four protocol tests cover signature tampering/wrong keys, producer-shaped
+metadata, incomplete/mismatched targets, monotonicity, collisions, and rollback
+references. These are source/fixture proofs; no complete candidate was prepared
+and no application release was promoted. Publishing a fork release cannot
+deploy the upstream website.
+
+From a reviewed checkout, prepare the selected candidate with explicit IDs:
+
+```sh
+mise exec -- node scripts/promote-fork-release.mjs prepare \
+  --run-id RUN_ID --attempt ATTEMPT --source-sha FULL_SHA \
+  --candidate-artifact-id CANDIDATE_ID --macos-artifact-id MACOS_ID \
+  --android-artifact-id ANDROID_ID
+```
+
+Review the resulting receipt under `.dev/fork-auto-update/promotions/` before
+invoking the separate publication operation:
+
+```sh
+mise exec -- node scripts/promote-fork-release.mjs publish \
+  --receipt .dev/fork-auto-update/promotions/run-RUN_ID-attempt-ATTEMPT/promotion-receipt.json \
+  --private-key-file /Users/clliaw/Projects/Keychain/paseo-release-manifest-ed25519.pem
+```
+
+These commands have not been run against a complete candidate.
 
 The user subsequently authorized notification-only Expo onboarding. A minimal
 `fork` EAS profile selects `APP_VARIANT=fork`; explicit Android code and protected
@@ -465,13 +529,15 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Wire the fork Firebase build input and associate its matching Expo FCM V1 credential.
 - [ ] Complete canonical CI/fresh-host closure proof and record the route decision.
 - [ ] Prove notification permission, token registration, and Expo delivery on the S24.
-- [ ] Implement paired builds and complete-release promotion.
+- [x] Implement paired build and explicit complete-release promotion source contracts.
+- [ ] Produce both verified CI artifacts and exercise complete-release promotion.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
-Next campaign action: complete the independently assigned native Android build
-component, then unify the build workflows and finish canonical full-closure proof
-in the paired pipeline. Standalone closure probe runs are stopped.
+Next campaign action: diagnose the repeated Android cancellation, then use the
+reviewed integrated revision to finish canonical full-closure and signed APK
+proof in the paired pipeline. Promotion waits for both real verified artifacts.
+Standalone closure probe runs are stopped.
 Platform updater implementation and actual transitions still need
 their assigned acceptance boundaries. Reconsider the route if
 fresh-store import needs weakened verification or compilation, standard runners
