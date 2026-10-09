@@ -2190,6 +2190,7 @@ export const zhCN: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "关于",
       appVersion: "应用版本",
       whatsNewHint: "每个版本的发布说明",
