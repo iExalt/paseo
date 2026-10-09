@@ -2483,6 +2483,7 @@ export const fr: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "À propos",
       appVersion: "Version de l’application",
       whatsNewHint: "Les nouveautés de chaque version",

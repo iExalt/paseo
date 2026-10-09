@@ -2450,6 +2450,7 @@ export const ja: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "アプリ情報",
       appVersion: "アプリバージョン",
       whatsNewHint: "各バージョンのリリースノート",
