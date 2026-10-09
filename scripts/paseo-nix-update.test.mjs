@@ -18,12 +18,20 @@ import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
 import { serializePaseoReleaseManifest } from "../packages/protocol/src/release-manifest.ts";
 import {
+  assertReceiptIdentity,
   assertAboveHighWater,
+  applyMetadataIntent,
   chooseHighestVerifiedStableRelease,
+  commitRecoveredNativeIntent,
   extractNixCacheTar,
   finishPendingActivation,
+  highestReleaseIdentity,
   localCacheCopyArgs,
   localCacheCopySignaturesArgs,
+  parseProfileGenerations,
+  recoverNativeIntent,
+  selectLegacyReceiptIdentity,
+  selectMappedGeneration,
   validateNixClosureManifest,
   verifyReleaseManifestBytes,
   withOperationLock,
@@ -442,6 +450,16 @@ describe("Paseo Nix updater verification", () => {
     );
   });
 
+  it("rejects a valid signed receipt stored under another release identity", () => {
+    const { manifest } = signedManifest(42);
+    const identity = `${manifest.sourceSha}-${manifest.releaseSequence}`;
+    assert.doesNotThrow(() => assertReceiptIdentity(`/receipts/${identity}`, manifest));
+    assert.throws(
+      () => assertReceiptIdentity(`/receipts/${"b".repeat(40)}-43`, manifest),
+      /differs from its directory name/i,
+    );
+  });
+
   it("selects the highest verified stable sequence and ignores unsigned higher tags", async () => {
     const release = (sequence) => ({
       tag_name: `paseo-fork-v1.2.3-r${sequence}-${"a".repeat(40)}`,
@@ -490,6 +508,212 @@ describe("Paseo Nix updater verification", () => {
     storageFailed = false;
     await finishPendingActivation(pending, adapters);
     assert.equal(pendingCleared, true);
+  });
+
+  it("tracks same-root release identity changes without changing the Nix generation", () => {
+    const outputPath = `/nix/store/${"c".repeat(32)}-paseo-desktop-1.2.3`;
+    const identityB = `${"a".repeat(40)}-42`;
+    const identityC = `${"b".repeat(40)}-43`;
+    const initial = {
+      schemaVersion: 1,
+      highWaterIdentity: identityB,
+      highWaterSequence: 42,
+      legacyHighWaterIdentity: identityB,
+      generations: [{ generation: 7, outputPath, identities: [identityB] }],
+    };
+    const activation = {
+      kind: "metadata-activate",
+      fromGeneration: 7,
+      fromIdentity: identityB,
+      targetIdentity: identityC,
+      targetOutputPath: outputPath,
+    };
+
+    // A crash before the atomic state rename leaves the original identity intact.
+    assert.equal(initial.generations[0].identities.at(-1), identityB);
+    const activeC = applyMetadataIntent(initial, activation, 43);
+    assert.equal(activeC.generations[0].generation, 7);
+    assert.deepEqual(activeC.generations[0].identities, [identityB, identityC]);
+    assert.equal(activeC.highWaterIdentity, identityC);
+    assert.equal(activeC.highWaterSequence, 43);
+    // A crash after the rename makes recovery idempotently clear the journal.
+    assert.equal(applyMetadataIntent(activeC, activation, 43), activeC);
+
+    const rollback = {
+      kind: "metadata-rollback",
+      fromGeneration: 7,
+      fromIdentity: identityC,
+      targetIdentity: identityB,
+      targetOutputPath: outputPath,
+    };
+    const activeB = applyMetadataIntent(activeC, rollback, 43);
+    assert.deepEqual(activeB.generations[0].identities, [identityB]);
+    assert.equal(activeB.highWaterIdentity, identityC);
+    assert.equal(activeB.highWaterSequence, 43);
+    assert.equal(applyMetadataIntent(activeB, rollback, 43), activeB);
+  });
+
+  it("recovers native activation by signed output and native rollback by exact generation", () => {
+    const pending = {
+      kind: "native-activate",
+      fromGeneration: 7,
+      fromOutputPath: `/nix/store/${"a".repeat(32)}-paseo-desktop-1`,
+      targetOutputPath: `/nix/store/${"b".repeat(32)}-paseo-desktop-2`,
+    };
+    assert.equal(
+      recoverNativeIntent(pending, { generation: 7, outputPath: pending.fromOutputPath }),
+      "unchanged",
+    );
+    assert.equal(
+      recoverNativeIntent(pending, { generation: 8, outputPath: pending.targetOutputPath }),
+      "switched",
+    );
+    const rollback = { ...pending, kind: "native-rollback", targetGeneration: 6 };
+    assert.equal(
+      recoverNativeIntent(rollback, { generation: 6, outputPath: pending.targetOutputPath }),
+      "switched",
+    );
+    assert.equal(
+      recoverNativeIntent({ ...pending, fromGeneration: null, fromOutputPath: null }, null),
+      "unchanged",
+    );
+    assert.throws(
+      () =>
+        recoverNativeIntent(pending, {
+          generation: 9,
+          outputPath: `/nix/store/${"c".repeat(32)}-paseo-desktop-3`,
+        }),
+      /manual recovery/i,
+    );
+  });
+
+  it("commits a reused Nix generation once and retries cleanup after atomic-state success", async () => {
+    const outputA = `/nix/store/${"a".repeat(32)}-paseo-desktop-a`;
+    const outputB = `/nix/store/${"b".repeat(32)}-paseo-desktop-b`;
+    const identityB = `${"b".repeat(40)}-20`;
+    const identityC = `${"c".repeat(40)}-21`;
+    const target = { manifest: { releaseSequence: 21 } };
+    const pending = {
+      kind: "native-activate",
+      fromGeneration: 7,
+      fromOutputPath: outputA,
+      fromIdentity: `${"a".repeat(40)}-19`,
+      targetIdentity: identityC,
+      targetOutputPath: outputB,
+    };
+    const current = { generation: 8, outputPath: outputB };
+    let state = {
+      schemaVersion: 1,
+      highWaterIdentity: identityB,
+      highWaterSequence: 20,
+      generations: [
+        { generation: 7, outputPath: outputA, identities: [`${"a".repeat(40)}-19`] },
+        { generation: 8, outputPath: outputB, identities: [identityB] },
+      ],
+    };
+    let pendingExists = true;
+    let failCleanup = true;
+    const adapters = {
+      async loadState() {
+        return state;
+      },
+      async commitState(next) {
+        state = next;
+      },
+      async clearPending() {
+        if (failCleanup) {
+          failCleanup = false;
+          throw new Error("simulated journal cleanup failure");
+        }
+        pendingExists = false;
+      },
+    };
+
+    await assert.rejects(
+      commitRecoveredNativeIntent(pending, current, target, adapters),
+      /journal cleanup failure/,
+    );
+    assert.equal(pendingExists, true);
+    assert.equal(state.highWaterIdentity, identityC);
+    assert.equal(state.highWaterSequence, 21);
+    assert.deepEqual(state.generations[1], {
+      generation: 8,
+      outputPath: outputB,
+      identities: [identityB, identityC],
+    });
+    assert.equal(state.generations.length, 2);
+
+    await commitRecoveredNativeIntent(pending, current, target, adapters);
+    assert.equal(pendingExists, false);
+    assert.equal(state.highWaterIdentity, identityC);
+    assert.equal(state.highWaterSequence, 21);
+    assert.equal(state.generations.length, 2);
+    assert.deepEqual(state.generations[1].identities, [identityB, identityC]);
+  });
+
+  it("resolves rollback receipts by generation and rejects ambiguous legacy roots", () => {
+    const rootA = `/nix/store/${"a".repeat(32)}-paseo-desktop-a`;
+    const rootB = `/nix/store/${"b".repeat(32)}-paseo-desktop-b`;
+    const idA = `${"a".repeat(40)}-41`;
+    const idB = `${"b".repeat(40)}-42`;
+    const state = {
+      generations: [
+        { generation: 8, outputPath: rootB, identities: [idB] },
+        { generation: 7, outputPath: rootA, identities: [idA] },
+      ],
+    };
+    assert.equal(selectMappedGeneration(state, 7, rootA).identities.at(-1), idA);
+    assert.throws(() => selectMappedGeneration(state, 7, rootB), /exact signed release mapping/i);
+    assert.equal(selectLegacyReceiptIdentity([{ identity: idA, outputPath: rootA }], rootA), idA);
+    assert.equal(
+      selectLegacyReceiptIdentity(
+        [
+          { identity: idA, outputPath: rootA },
+          { identity: idB, outputPath: rootA },
+        ],
+        rootA,
+        idB,
+      ),
+      idB,
+    );
+    assert.throws(
+      () =>
+        selectLegacyReceiptIdentity(
+          [
+            { identity: idA, outputPath: rootA },
+            { identity: idB, outputPath: rootA },
+          ],
+          rootA,
+        ),
+      /refusing to guess/i,
+    );
+    assert.deepEqual(
+      highestReleaseIdentity([
+        { identity: idA, sequence: 41 },
+        { identity: idB, sequence: 42 },
+      ]),
+      { identity: idB, sequence: 42 },
+    );
+    assert.throws(
+      () =>
+        highestReleaseIdentity([
+          { identity: idA, sequence: 42 },
+          { identity: idB, sequence: 42 },
+        ]),
+      /share the highest activated sequence/i,
+    );
+  });
+
+  it("parses current Nix generation output without inferring identity from output order", () => {
+    assert.deepEqual(
+      parseProfileGenerations(
+        "   3   2026-10-08 14:15:16\n *  4   2026-10-09 09:10:11 (current)\n",
+      ),
+      [
+        { generation: 3, current: false },
+        { generation: 4, current: true },
+      ],
+    );
   });
 
   it("extracts regular cache members, ignores validated AppleDouble sidecars, and rejects unsafe types/paths", async () => {
