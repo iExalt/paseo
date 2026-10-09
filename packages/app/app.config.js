@@ -8,11 +8,19 @@ const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
 const { getNativeReleaseVersion } = require("./native-release-version");
-const { resolveAppVariant, validateForkGoogleServicesConfig } = require("./app-variant");
+const {
+  resolveAppVariant,
+  resolvePreferencesMigrationBridge,
+  validateForkGoogleServicesConfig,
+} = require("./app-variant");
 const appVariant = process.env.APP_VARIANT ?? "production";
 const isFdroidBuild = process.env.PASEO_FDROID_BUILD === "1";
 const isWatchdogBuild = process.env.PASEO_WATCHDOG_BUILD === "1";
 const isProfileBuild = process.env.PASEO_PROFILE_BUILD === "1";
+const isPreferencesMigrationBridge = resolvePreferencesMigrationBridge(
+  appVariant,
+  process.env.PASEO_PREFS_MIGRATION_BRIDGE === "1",
+);
 
 const buildProfile = isFdroidBuild
   ? {
@@ -165,7 +173,7 @@ export default {
         ...(appVariant === "fork" ? ["REQUEST_INSTALL_PACKAGES"] : []),
       ],
       package: variantIdentity.androidPackage,
-      versionCode: variantIdentity.androidVersionCode,
+      versionCode: isPreferencesMigrationBridge ? 11001 : variantIdentity.androidVersionCode,
       ...(variant.googleServicesFile ? { googleServicesFile: variant.googleServicesFile } : {}),
     },
     web: {
@@ -233,6 +241,8 @@ export default {
       diagnosticRevision: process.env.PASEO_DIAGNOSTIC_REVISION,
       diagnosticBuildTime: process.env.PASEO_DIAGNOSTIC_BUILD_TIME,
       forkUpdatesEnabled: appVariant === "fork",
+      preferencesMigrationBridge: isPreferencesMigrationBridge,
+      preferencesMigrationReceiver: appVariant === "fork",
       router: {},
       eas: {
         projectId: "3a777534-569c-47e5-81ad-1a4e47d5127c",
