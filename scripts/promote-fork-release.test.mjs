@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
   assertDigestMatches,
   assertPromotionTagAvailable,
+  extractExpectedZip,
   isPublishedPromotionRelease,
   parseLaneArtifactAttempt,
   validateCandidate,
@@ -236,7 +238,7 @@ test("paired candidate and lane files match the producer metadata shapes", async
         archive: {
           name: "paseo-nix-node-seed-fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6.tar",
           sha256: "fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6",
-          bytes: 69248000,
+          bytes: "69248000",
         },
         manifest: {
           name: "paseo-nix-node-seed-manifest-e56d4559861824682c1a85f3871919ab23deb6a520912b4daa8ad021b2b576c6.json",
@@ -380,6 +382,54 @@ test("paired candidate and lane files match the producer metadata shapes", async
     await assert.rejects(
       validateLaneFiles(paths, candidate, expected),
       /macOS closure archive or manifest differs/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("Android artifact accepts only its exact unextracted APK signature sidecar", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "paseo-promotion-zip-contract-"));
+  const required = ["paseo-iexalt-fork-200005.apk", "build-metadata.json", "SHA256SUMS"];
+  const optional = ["paseo-iexalt-fork-200005.apk.idsig"];
+
+  async function makeZip(label, names) {
+    const source = join(directory, `${label}-source`);
+    const archive = join(directory, `${label}.zip`);
+    await mkdir(source);
+    await Promise.all(names.map((name) => writeFile(join(source, name), `fixture:${name}`)));
+    execFileSync("zip", ["-q", archive, ...names], { cwd: source });
+    return archive;
+  }
+
+  try {
+    const exactSidecarZip = await makeZip("exact-sidecar", [...required, ...optional]);
+    const extracted = join(directory, "extracted");
+    await mkdir(extracted);
+    await extractExpectedZip(exactSidecarZip, extracted, required, optional);
+    for (const name of required) {
+      assert.equal(await readFile(join(extracted, name), "utf8"), `fixture:${name}`);
+    }
+    await assert.rejects(readFile(join(extracted, optional[0])), { code: "ENOENT" });
+
+    const missingRequiredZip = await makeZip("missing-required", required.slice(0, -1));
+    await assert.rejects(
+      extractExpectedZip(missingRequiredZip, join(directory, "missing-output"), required, optional),
+      /unexpected or unsafe entries/,
+    );
+
+    const unexpectedSidecarZip = await makeZip("unexpected-sidecar", [
+      ...required,
+      "paseo-iexalt-fork-200005.apk.other.idsig",
+    ]);
+    await assert.rejects(
+      extractExpectedZip(
+        unexpectedSidecarZip,
+        join(directory, "unexpected-output"),
+        required,
+        optional,
+      ),
+      /unexpected or unsafe entries/,
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
