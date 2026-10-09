@@ -72,7 +72,8 @@ buildNpmPackage {
       autoPatchelfHook
       makeWrapper
       copyDesktopItems
-    ];
+    ]
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [makeWrapper];
 
   buildInputs = lib.optionals stdenv.hostPlatform.isLinux [
     libuv
@@ -217,6 +218,17 @@ buildNpmPackage {
       mkdir -p "$out/Applications"
       cp -R "$app" "$out/Applications/Paseo.app"
       ln -s ../Applications/Paseo.app/Contents/MacOS/Paseo "$out/bin/paseo-desktop"
+
+      # Keep the signed updater and its portable release contract beside the
+      # desktop output. The wrapper pins the Node runtime from this closure, so
+      # the active and previous profile generations both retain a usable CLI.
+      updater_root="$out/libexec/paseo-nix-update"
+      mkdir -p "$updater_root/scripts" "$updater_root/packages/protocol/src"
+      cp scripts/paseo-nix-update.mjs "$updater_root/scripts/"
+      cp packages/protocol/src/release-manifest.ts "$updater_root/packages/protocol/src/"
+      printf '%s\n' '{ "type": "module" }' > "$updater_root/package.json"
+      makeWrapper ${nodejs_26}/bin/node "$out/bin/paseo-nix-update" \
+        --add-flags "$updater_root/scripts/paseo-nix-update.mjs"
     ''}
 
     runHook postInstall

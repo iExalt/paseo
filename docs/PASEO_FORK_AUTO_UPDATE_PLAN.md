@@ -509,8 +509,10 @@ Installer cancellation and permission failure retain a retryable verified APK.
 Pure release tests, mocked persistence tests, and a rendered Settings-row journey
 cover the source contract; actual autolinking resolution discovers the module.
 Kotlin compilation, real GitHub release consumption, installer behavior, and
-S24 notification/device proof remain pending. The current CI revision excludes
-this updater increment.
+S24 notification/device proof remain pending. The updater source was published
+in `9c77c42d6dec3d64a17423b4d474bd2745fde461`; paired run
+[`37980068459`](https://github.com/iExalt/paseo/actions/runs/37980068459) tests it
+with the reviewed resource constraints at `ab8b4367749551b01f97e5ce2c0fb8e867dc3f95`.
 Ten updater cases passed across the focused runs, with the existing i18n gate
 also passing. The final serial repository batch passed lint (10.84 seconds),
 formatting (1.32 seconds), and typecheck (13.50 seconds), against the retained
@@ -529,7 +531,7 @@ and no keystore or submission credential was assigned. Protected temporary files
 were removed and their absence verified. This proves remote delivery-credential
 association, not notification permission, token registration, or S24 delivery.
 
-## Proposed installation contract
+## Installation contract and managed CLI
 
 Expose check, stage, activate, status, and rollback operations; final command
 names are implementation details. Stage downloads and verifies all required data
@@ -537,11 +539,9 @@ before changing the active generation. Import known store paths directly; do not
 run a source build as a hidden fallback. Reject wrong platforms, malformed paths,
 unsafe archive entries, stale release sequences, and partial manifests.
 
-A dedicated profile would own the app version and retain active and previous
-generations as GC roots. Home Manager may install the updater and stable launcher
-integration, but must not also pin the app version. The alternative is full HM
-ownership: download/import first, then update its pin and switch HM. Do not mix
-these ownership models. Determine Nix daemon trust configuration during bootstrap;
+A dedicated profile owns the app version and retains its generations as GC
+roots. Home Manager may provide an optional stable launcher, but must not also
+pin the app version. Determine Nix daemon trust configuration during bootstrap;
 do not disable `require-sigs` or grant broad trusted-user privileges as a shortcut.
 
 Activation must preserve launch identity and settings paths, retain the old app
@@ -550,6 +550,54 @@ running generation rooted until its processes exit. Nix installations expose
 their update method and never contact or offer upstream Electron updates.
 Rollback includes data compatibility or a tested backup/restore contract;
 switching the executable alone does not roll back settings migrations.
+
+The managed CLI source is implemented in `scripts/paseo-nix-update.mjs` and
+packaged on Darwin as `$out/bin/paseo-nix-update`, with its own pinned Node 26
+runtime and the shared release contract in the signed closure. Initial bootstrap
+invokes this absolute path from a verified CI output; subsequent use may invoke
+the dedicated profile's `bin/paseo-nix-update`:
+
+```sh
+PASEO_UPDATER="<verified-output>/bin/paseo-nix-update"
+"$PASEO_UPDATER" check
+"$PASEO_UPDATER" stage
+"$PASEO_UPDATER" activate
+"$PASEO_UPDATER" status
+"$PASEO_UPDATER" rollback
+```
+
+The profile and private updater state live under
+`~/Library/Application Support/Paseo/nix-update/`. Stage verifies the independent
+Ed25519 release pin, archive/metadata size and SHA-256, safe streaming extraction,
+and recursive Nix signatures plus exact closure paths/NAR hashes/sizes. The
+per-command Nix public pin is
+`paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8=`.
+An administrator may need to append that exact public key to the daemon's
+`extra-trusted-public-keys` during a later approved bootstrap, preserving existing
+keys. No trust configuration has been changed.
+
+The isolated two-existing-output fixture proved that `nix-env --set` creates a
+profile generation linked directly to the exact store output, retains the prior
+generation, and rolls back to it. No user-environment derivation was needed;
+builders, substitutes, and local builds are disabled. All generations remain
+rooted, including any running version; no automatic GC or process restart occurs.
+Rollback does not restore app data. If the packaged updater breaks, Nix itself
+provides independent executable rollback:
+
+```sh
+mise exec -- nix-env --rollback --profile \
+  "$HOME/Library/Application Support/Paseo/nix-update/profile"
+```
+
+The highest activated sequence survives rollback; staging requires a higher
+sequence, so rollback does not immediately offer reactivation of the same release.
+A pending activation references a verified signed receipt and survives a
+durable-state failure for retry.
+Non-help commands serialize with an exclusive private lock. After a crash, remove
+a stale lock only after confirming no updater command is running. Six focused
+tests, scoped lint/format/syntax checks, and Nix expression parsing passed. Actual
+CI packaging, real promoted-release consumption, user-store import/activation,
+Electron ownership/UI integration, and Mac launch proof remain pending.
 
 ## Later milestones and acceptance gates
 
@@ -613,6 +661,8 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [ ] Prove notification permission, token registration, and Expo delivery on the S24.
 - [x] Implement paired build and explicit complete-release promotion source contracts.
 - [x] Implement and test the Android fork update interface source contract.
+- [x] Implement and test the Mac managed Nix CLI source and isolated profile lifecycle.
+- [ ] Integrate Nix ownership and managed update controls into Electron.
 - [ ] Produce both verified CI artifacts and exercise complete-release promotion.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
