@@ -386,6 +386,34 @@ If another run yields only an undifferentiated cancellation, stop Android CI
 retries and investigate external cancellation/runner causes rather than adding
 more wrappers.
 
+The instrumented paired run
+([37975774756](https://github.com/iExalt/paseo/actions/runs/37975774756),
+`86fea77e907e81e0694fc47b749196a140ecbca1`, sequence 200002) passed the
+canonical Mac build and fresh-runner closure verification. The pinned local-built
+Node seed imported successfully; the desktop build ran from 18:50:14 to 18:58:18
+UTC (2:50:14–2:58:18 PM EDT), about 8m04s. The producer finished at 19:02:30
+UTC (3:02:30 PM EDT), about 14m17s total, and the separate verifier passed at
+19:03:41 UTC (3:03:41 PM EDT), about 1m03s. This establishes the signed closure
+route through GitHub-hosted assets for canonical CI build and fresh rooted-store
+import, with explicit local dependency-cache provenance. The complete closure
+travelled as an Actions artifact; only the dependency seed has been fetched from
+a published Release so far. Select signed closure Release assets for future
+delivery, with complete-release publication still pending.
+Actual user-Mac store import and app launch remain unverified;
+the rooted-store verifier cannot execute the logical system-store paths.
+The Mac Actions artifact is `11638718757`, 160,757,839 bytes, with GitHub ZIP
+digest `sha256:ae08406be0b69bd4adf1287abc7c31393339d6480a29497ea42cf28ebb855523`.
+Android assemble was cancelled again at 19:09:38 UTC (3:09:38 PM EDT), after
+19m18s, and the job ended at 19:09:41 UTC (3:09:41 PM EDT). Twenty resource
+samples were captured. The last, at 19:09:25 UTC (3:09:25 PM EDT), showed
+16.77 GB total memory, 16.33 GB used, and 438 MB available; `hermesc` used
+9.47 GB RSS alongside two Java processes at 2.59 and 2.54 GB RSS. The wrapper
+captured TERM and child/wrapper exit 143, with clean sampler shutdown. Cgroup
+OOM counters were unavailable. This is evidence of severe memory pressure
+coincident with cancellation, not proof of an OOM kill or its initiator.
+Signing and paired completion were skipped. Stop blind Android retries and
+diagnose Hermes/bundle and JVM memory inputs before proposing another build.
+
 The paired BUILD entry point is published in `fork-builds.yml` at
 `03f9654109b82023e2bd0682381023a7fb9793b8`.
 Build-relevant trusted `dev` pushes pass one immutable source SHA and
@@ -445,6 +473,32 @@ mise exec -- node scripts/promote-fork-release.mjs publish \
 ```
 
 These commands have not been run against a complete candidate.
+
+The Android fork updater source is implemented in the existing Settings About
+area. Manual actions check promoted stable fork releases, verify detached Ed25519
+metadata against the protocol's independent public pin, download the ARM64 APK,
+and open Android's installer after explicit confirmation and source permission.
+The local Expo module streams a bounded HTTPS download through approved GitHub
+hosts, checks exact size/SHA-256/package/version/single signer, and rechecks the
+staged file before launch. It uses Expo FileSystem's existing private FileProvider
+and adds `REQUEST_INSTALL_PACKAGES` only to the fork variant. APK bytes are never
+buffered in JavaScript; byte progress is visible.
+
+Signed staged metadata and the private APK survive restart. A small pending
+receipt covers process death or receipt-promotion failure after atomic file
+replacement; restore verifies both metadata and file before offering offline
+installer retry. The installed sequence is recorded only after Android reports
+the exact signed candidate code, including a new process after upgrade.
+Installer cancellation and permission failure retain a retryable verified APK.
+Pure release tests, mocked persistence tests, and a rendered Settings-row journey
+cover the source contract; actual autolinking resolution discovers the module.
+Kotlin compilation, real GitHub release consumption, installer behavior, and
+S24 notification/device proof remain pending. The current CI revision excludes
+this updater increment.
+Ten updater cases passed across the focused runs, with the existing i18n gate
+also passing. The final serial repository batch passed lint (10.84 seconds),
+formatting (1.32 seconds), and typecheck (13.50 seconds), against the retained
+14.2-second typecheck baseline. No full local suite or native APK build was run.
 
 The user subsequently authorized notification-only Expo onboarding. A minimal
 `fork` EAS profile selects `APP_VARIANT=fork`; explicit Android code and protected
@@ -539,9 +593,10 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Implement and verify the Android fork identity/version-code source contract.
 - [x] Encrypt and verify Firebase credentials, including the replacement fork client config.
 - [x] Wire the fork Firebase build input and associate its matching Expo FCM V1 credential.
-- [ ] Complete canonical CI/fresh-host closure proof and record the route decision.
+- [x] Complete canonical CI/fresh rooted-store closure proof and select signed closure assets.
 - [ ] Prove notification permission, token registration, and Expo delivery on the S24.
 - [x] Implement paired build and explicit complete-release promotion source contracts.
+- [x] Implement and test the Android fork update interface source contract.
 - [ ] Produce both verified CI artifacts and exercise complete-release promotion.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.

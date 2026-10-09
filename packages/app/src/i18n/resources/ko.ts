@@ -2213,6 +2213,7 @@ export const ko: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "정보",
       appVersion: "앱 버전",
       whatsNewHint: "모든 버전의 릴리스 노트",
