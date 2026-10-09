@@ -665,6 +665,36 @@ exited 143. The one-worker/in-process change did not bound Hermes memory.
 This is severe contemporaneous memory pressure, not proof of an OOM kill or
 the cancellation initiator. No cgroup OOM counters were emitted.
 
+Paired run [37989881874](https://github.com/iExalt/paseo/actions/runs/37989881874)
+passed at 21:25:01 UTC (5:25:01 PM EDT) for immutable source
+`385be0adbf127e1de542c7b5ba9cca4303bcb389`, attempt 1, shared sequence/code
+`200005`. The Mac build took 7m48s; the separate fresh runner imported and
+verified its signed closure in 19 seconds. Mac artifact `11644648746` is
+160,783,951 bytes, with GitHub artifact digest
+`e14386b6e38b765683be062a6a4912527d5c6332d4b3b684841e0e6a6132115c`.
+Android assemble passed in 28m08s, including the updater native module and
+preference receiver. The task-owned swap cleanup passed; its last safe sample
+showed 9,708,441,600 bytes available RAM and 1,827,794,944 bytes used swap.
+The separate signing job produced artifact `11646280827` (53,725,273 bytes;
+GitHub digest `3934cc3e4aef7d2660c72a52044c87428c7049286e6072df5ecbe0056b9b5352`).
+Its APK digest is
+`f39d5f49f855505e70faad2ba35425bb1ee4b7cfbc2e48d185c3a28d7ffb7040`;
+verified identity is `sh.paseo.iexalt`, code `200005`, arm64-v8a, non-debuggable,
+with the approved fork signing certificate. Complete-candidate artifact
+`11645952229` binds both verified lane outputs. These are CI proofs; installation,
+preference transfer, notifications, and actual updater/rollback journeys remain
+separate device gates.
+
+Promotion preparation exposed two producer-contract mismatches: prefixed versus
+bare artifact digests, and the signer-generated APK `.idsig` sidecar. The tool
+now validates and normalizes both digest forms and accepts only the exact optional
+sidecar without extracting or publishing it. Before another prepare, an offline
+audit of the actual downloaded candidate and lane files passed all identities,
+hashes, and checksums. The user authorized explicit promotion of candidate
+`200005` and the full Mac transition after recoverable backups, including the
+production daemon maintenance window. Publication still requires the final
+prepared receipt review; no app or host transition has occurred.
+
 ## Later milestones and acceptance gates
 
 | Milestone                | Observable acceptance                                                                                                                                                                                                                 |
@@ -730,7 +760,8 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Implement and test the Mac managed Nix CLI source and isolated profile lifecycle.
 - [x] Integrate and test Nix ownership and managed update controls in Electron source.
 - [x] Implement preference-only Android transfer with a recoverable import journal and startup gate.
-- [ ] Produce both verified CI artifacts and exercise complete-release promotion.
+- [x] Produce both verified CI artifacts from one immutable paired candidate.
+- [ ] Publish and verify its authenticated complete release.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
@@ -764,11 +795,11 @@ swap, and always attempts cleanup. It retains the file if active-state verificat
 or `swapoff` fails. This changes runner resources without changing Hermes
 optimization or app behavior; runner capacity and completion still need CI proof.
 
-Next campaign action: publish the reviewed preference transfer and runner resource
-changes together, then use one paired build to test memory pressure and native
-packaging.
-Canonical full-closure proof has passed; signed APK proof remains pending.
-Promotion waits for both real verified artifacts from one candidate revision.
+Next campaign action: finish the reviewed promotion receipt and publish the
+explicitly selected complete candidate, then exercise the approved Mac transition
+after recoverable backups. Canonical full-closure and signed APK CI proofs have
+passed. The Debug bridge artifact and actual Android installation/transfer gates
+remain pending.
 Standalone closure probe runs are stopped.
 Platform updater implementation and actual transitions still need
 their assigned acceptance boundaries. Reconsider the route if
