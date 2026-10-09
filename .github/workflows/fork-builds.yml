@@ -30,6 +30,7 @@ on:
       - "packages/server/**"
       - "scripts/build-daemon-web-ui.mjs"
       - "scripts/build-terminal-webview-html.mjs"
+      - "scripts/gradle-resource-watch.sh"
       - "scripts/npm-retry.mjs"
       - "scripts/postinstall-patches.mjs"
       - "scripts/trace-daemon.mjs"
