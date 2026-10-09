@@ -54,4 +54,15 @@ function validateForkGoogleServicesConfig(config, expectedProjectId) {
   return true;
 }
 
-module.exports = { resolveAppVariant, validateForkGoogleServicesConfig };
+function resolvePreferencesMigrationBridge(appVariant, enabled) {
+  if (enabled && appVariant !== "development") {
+    throw new Error("PASEO_PREFS_MIGRATION_BRIDGE=1 is valid only with APP_VARIANT=development.");
+  }
+  return appVariant === "development" && enabled;
+}
+
+module.exports = {
+  resolveAppVariant,
+  resolvePreferencesMigrationBridge,
+  validateForkGoogleServicesConfig,
+};
