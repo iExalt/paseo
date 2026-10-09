@@ -32,6 +32,7 @@ on:
       - "scripts/build-terminal-webview-html.mjs"
       - "scripts/gradle-resource-watch.sh"
       - "scripts/npm-retry.mjs"
+      - "scripts/paseo-nix-update.mjs"
       - "scripts/postinstall-patches.mjs"
       - "scripts/trace-daemon.mjs"
       - "tsconfig.base.json"

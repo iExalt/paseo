@@ -763,7 +763,7 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Encrypt and verify Firebase credentials, including the replacement fork client config.
 - [x] Wire the fork Firebase build input and associate its matching Expo FCM V1 credential.
 - [x] Complete canonical CI/fresh rooted-store closure proof and select signed closure assets.
-- [ ] Prove notification permission, token registration, and Expo delivery on the S24.
+- [x] Prove notification permission, token registration, and Expo delivery on the S24.
 - [x] Implement paired build and explicit complete-release promotion source contracts.
 - [x] Implement and test the Android fork update interface source contract.
 - [x] Implement and test the Mac managed Nix CLI source and isolated profile lifecycle.
@@ -771,6 +771,9 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Implement preference-only Android transfer with a recoverable import journal and startup gate.
 - [x] Produce both verified CI artifacts from one immutable paired candidate.
 - [x] Publish and verify its authenticated complete release.
+- [x] Activate the backed-up managed Mac installation and verify its daemon and native terminal.
+- [x] Pass the S24's A-to-B in-app update, installer cancellation/retry, and settings/connection preservation.
+- [x] Implement and test distinct signed release identity and native Nix generation handling.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
@@ -798,8 +801,15 @@ The connected S24 Ultra initially ran API 36 and
 Debug 0.11.0/code 11000 with the preserved Debug certificate; the fork was absent.
 The user confirmed the Android system installer, and the installed fork matches
 the public release's bytes, signer, code 200005, and ARM64 identity. Its own-app
-screen rendered the normal welcome/pairing interface. Pairing, notification
-permission, token registration, and delivery remain pending. Debug's bridge
+screen rendered the normal welcome/pairing interface. Automatic pairing then
+succeeded through the app's Paste Link and Connect controls. The normal Android
+notification prompt was accepted, and the daemon acknowledged the fresh
+registration at 22:40:48 UTC (6:40:48 PM EDT). One direct Expo test targeted only
+that registration, returned an `ok` ticket, appeared on the phone, and opened the
+fork when tapped. This proves Expo-to-fork delivery, rather than agent-attention
+policy. The ticket ID was not retained, so no receipt query was performed. The
+visible app baseline is Theme = System, with notification permission granted;
+screen timeout is restored to 300000 ms and stay-awake remains 0. Debug's bridge
 upgrade was not performed. At 21:54 UTC (5:54 PM EDT), Debug was absent from
 user 0; the 20:43 UTC (4:43 PM EDT) inventory had found it installed. The user
 confirmed uninstalling Debug. Without a retained settings backup, its original
@@ -812,9 +822,15 @@ including all unique state and models, plus the exact root Nix custom config.
 Archive extraction and representative comparisons passed; six extracted SQLite
 databases passed `quick_check`. The live app profile stayed byte-stable, and only
 `daemon.log` appended during the daemon-state capture. This is preliminary
-recoverability evidence: the running databases still require a final cold backup
-after graceful app/daemon quiescence, before launching the new app. The old
-`/Applications/Paseo.app` remains intact.
+recoverability evidence. The approved graceful app quit and daemon shutdown
+subsequently left zero app/daemon processes, listeners, and open state handles.
+The separate final cold backup includes the new phone registration, preserves
+112 userData files and 1530 daemon-home files with exact source/extraction parity,
+and passes six extracted SQLite checks. Direct restored-file byte comparisons
+also passed for selected settings and identities. No LevelDB semantic checker
+was run; its recovery evidence is the quiescent byte-identical archive. Original
+and current root Nix configs are both retained. The old `/Applications/Paseo.app`
+remains intact.
 
 The user completed the approved root Nix public-key append and daemon reload;
 readback preserves root-only trusted users and signature enforcement. Real staging
@@ -833,8 +849,8 @@ only the durable public key. That source correction is reviewed: its real
 new signature, accepts that key, and rejects the other key in 1.12 seconds. The
 producer runs this required gate after importing its pinned Node runtime. Seven
 fast updater unit cases passed in 104 ms; scoped lint, formatting, shell syntax,
-ShellCheck, and diff checks passed. The next CI candidate will carry the correction
-and URI fix; release 200005 will remain unchanged. A partial root import occurred,
+ShellCheck, and diff checks passed. Candidate 200006 carries the correction
+and URI fix; release 200005 remains unchanged. A partial root import occurred,
 but no staging profile, app activation, shutdown, or production daemon restart
 occurred.
 
@@ -846,16 +862,63 @@ or `swapoff` fails. This changes runner resources without changing Hermes
 optimization or app behavior. The selected paired run passed with this resource
 configuration and verified swap cleanup.
 
-Next campaign action: build one paired candidate containing the reviewed
-full-closure signature/import correction and URI fix. Use that corrected
-release as the managed Mac baseline before the approved transition and final cold
-backup. Canonical CI, authenticated publication, and the fork's initial phone
-installation/launch have passed. Fresh fork pairing, notification delivery, and
-actual update/recovery gates remain pending; the old Debug transfer gate is
-unavailable after the confirmed uninstall.
-Automatic phone pairing is authorized, but the first explicit-app intent met the
-phone's credential lock. No lock/security setting was changed; a human unlock is
-required before the automated app flow can continue.
+The corrected paired run
+[37999220097](https://github.com/iExalt/paseo/actions/runs/37999220097) passed from
+22:26:25 to 22:49:52 UTC (6:26:25 to 6:49:52 PM EDT): Android build 22m31s,
+signer 32s, Mac producer 9m17s, and fresh verification 1m9s. Both artifacts bind
+source `390532322bf21ec5c243608f58cf63cb851ef664` and sequence/code 200006.
+The Mac verifier accepted all 69 runtime paths under the durable key alone.
+After explicit user selection,
+[release 200006](https://github.com/iExalt/paseo/releases/tag/paseo-fork-v0.11.0-r200006-390532322bf21ec5c243608f58cf63cb851ef664)
+was published and independently verified through both actual manifest consumers.
+Its six public asset sizes and digests match the prepared files; the APK SHA-256
+is `28803d5977a982918050cb699689bd9dc8a18489c0532f38215daf52326fc8c8`
+and closure archive SHA-256 is
+`b2f91d181f59f5ea85dbc31cf6f330236179b16d903eae75a6e3dd1bd9705536`.
+Local-built Node seed provenance remains explicit.
+
+Actual Mac staging imported release 200006 through the unprivileged Nix daemon;
+all 69 paths contain the durable signature and match the signed NAR hashes/sizes.
+After cold-backup acceptance, activation selected the dedicated profile and an
+absent-only `~/Applications/Paseo.app` link. The exact release store executable
+is running with the Nix marker, packaged updater CLI, and reachable production
+daemon. Selected settings, daemon identities, and fresh phone registration remain
+equal to the cold baseline. One temporary terminal produced the expected literal
+output and was removed. About-row visual observation is blocked by macOS
+assistive-access permission; no permission was changed.
+
+The S24's in-app updater downloaded and staged B, then opened the system installer.
+Cancelling once retained code 200005 and the staged download; retrying the same
+stage installed code 200006 with the pinned signing certificate. Theme = System,
+notification permission, and a positive connected-host indicator persisted without
+re-pairing. The app's install-source permission returned to its original off state;
+`screen_off_timeout=300000` and `stay_on_while_plugged_in=0` were restored and read back.
+
+The reviewed updater source now separates signed release identity from the native
+Nix generation. Its atomic local state records receipt identities and the highest
+activated sequence; every receipt is independently signature-verified and bound
+to its exact identity and output. The local mapping is not itself cryptographically
+authenticated. Same-root activation and explicit metadata rollback leave the binary
+generation unchanged, and rollback never lowers the sequence high-water mark.
+Native rollback validates the mapped target before switching. Interrupted operations
+recover an exact completed switch or leave an unchanged profile retryable; an
+unexpected profile fails closed. Legacy migration precedes new receipt storage and
+rejects ambiguous identities. A harmless two-output profile fixture confirmed that
+Nix reuses a retained generation after rollback; activation uses the observed
+generation rather than predicting its number. Thirteen focused tests passed with
+the existing opt-in signature fixture skipped; formatting, lint, and diff checks
+passed. Canonical CI packaging of this correction remains pending.
+
+Next campaign action: build a candidate containing this
+actual packaged CLI correction, then explicitly select it for promotion before
+testing managed Mac update and native-generation rollback. The packaged script is
+a derivation input; a sequence-only metadata change remains outside the derivation.
+Same-root metadata changes will not count as binary rollback proof. Android forward
+recovery must use a higher code with the same package and signer, with signed
+`rollbackOf` identifying the selected known-good published release; cancellation
+and retry alone do not prove recovery. No recovery candidate has been built or
+promoted. The old Debug transfer gate is unavailable after the confirmed uninstall.
+No lock/security setting was disabled during phone automation.
 Standalone closure probe runs are stopped.
 Platform updater implementation and actual transitions still need
 their assigned acceptance boundaries. Reconsider the route if
