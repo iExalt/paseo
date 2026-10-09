@@ -274,24 +274,29 @@ async function downloadArtifact(token, artifact, destination) {
   return { bytes, sha256: actualDigest };
 }
 
-async function extractExpectedZip(zipPath, destination, expectedFiles) {
+export async function extractExpectedZip(zipPath, destination, expectedFiles, optionalFiles = []) {
   const names = execFileSync("unzip", ["-Z1", zipPath], { encoding: "utf8" })
     .split(/\r?\n/)
     .filter(Boolean);
+  const allowedFiles = new Set([...expectedFiles, ...optionalFiles]);
   if (
-    names.length !== expectedFiles.length ||
     new Set(names).size !== names.length ||
+    expectedFiles.some((name) => !names.includes(name)) ||
     names.some(
       (name) =>
-        !expectedFiles.includes(name) ||
+        !allowedFiles.has(name) ||
         name.startsWith("/") ||
         name.includes("\\") ||
-        name.split("/").includes(".."),
+        name.split("/").includes("..") ||
+        name.includes("/"),
     )
   ) {
     fail("Artifact ZIP contains unexpected or unsafe entries.");
   }
-  execFileSync("unzip", ["-qq", "-n", zipPath, "-d", destination], { stdio: "ignore" });
+  // Optional APK v4 signatures are accepted as producer output but never staged or released.
+  execFileSync("unzip", ["-qq", "-n", zipPath, ...expectedFiles, "-d", destination], {
+    stdio: "ignore",
+  });
   for (const name of expectedFiles) {
     const path = join(destination, name);
     const info = await lstat(path);
@@ -667,11 +672,12 @@ async function fetchSelectedArtifacts(token, args, identity, destination) {
   );
   const androidApkName = `paseo-iexalt-fork-${identity.sequence}.apk`;
   candidate.macOS.archiveName = `${candidate.macOS.artifactName}.tar`;
-  await extractExpectedZip(zipPaths.android, extracted.android, [
-    androidApkName,
-    "build-metadata.json",
-    "SHA256SUMS",
-  ]);
+  await extractExpectedZip(
+    zipPaths.android,
+    extracted.android,
+    [androidApkName, "build-metadata.json", "SHA256SUMS"],
+    [`${androidApkName}.idsig`],
+  );
   await extractExpectedZip(zipPaths.macos, extracted.macos, [
     candidate.macOS.archiveName,
     "manifest.json",
