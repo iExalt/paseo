@@ -131,6 +131,15 @@ for UI testing. The variants share the `paseo://` scheme; select Paseo Debug whe
 opening a pairing link, or paste it inside that app. Its app data and pairings are
 separate from the Play Store installation.
 
+This fork uses the Expo project `@iexalt/paseo`. For local push-enabled builds,
+place the Firebase Android configuration for `sh.paseo.debug` at
+`packages/app/.secrets/google-services.debug.json` (already ignored), or set
+`GOOGLE_SERVICES_FILE_DEBUG`. Keep the separate Firebase service-account private
+key outside the repository and upload it to that Expo project's FCM V1
+credentials for `sh.paseo.debug`. It is not the APK signing key and must never be
+bundled into the app. Preserve `android/app/debug.keystore` when rebuilding an
+installed local APK; use the non-clean prebuild command above.
+
 ## Running on an emulator against a worktree daemon
 
 `npm run android` builds and installs the dev client, but two connections have to reach your Mac from inside the emulator — Metro (the JS bundle) and the Paseo daemon — and **the emulator does not share the host's loopback**: `localhost` inside the emulator is the emulator itself. Reach the host at `10.0.2.2` (the standard AVD's host alias) for both:
