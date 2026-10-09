@@ -208,7 +208,7 @@ class PaseoForkUpdatesModule : Module() {
     expectedCertificateSha256: String,
   ): String {
     part.delete()
-    try {
+    return try {
       val connection = openAllowedConnection(sourceUrl)
       try {
         require(connection.responseCode == HttpURLConnection.HTTP_OK) {
