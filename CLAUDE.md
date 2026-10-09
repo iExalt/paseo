@@ -21,9 +21,10 @@ This is an npm workspace monorepo:
 
 Active fork-specific plans and notes live at the top level of `docs/`; completed campaigns live in `docs/complete-campaigns/`. Paseo's bundled documentation and evidence live in `docs/upstream/`.
 
-The draft [fork automated-update plan](docs/PASEO_FORK_AUTO_UPDATE_PLAN.md) records
+The [fork automated-update plan](docs/PASEO_FORK_AUTO_UPDATE_PLAN.md) records
 the macOS Nix and Android APK delivery decisions, feasibility probe, and device
-acceptance gates. Implementation remains pending its open decisions.
+acceptance gates. The campaign is authorized; local closure transport is verified,
+and canonical CI and device delivery remain pending.
 
 At the start of non-trivial work, list `docs/` and skim anything relevant to the task.
 
