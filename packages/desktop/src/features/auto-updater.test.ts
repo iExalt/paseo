@@ -4,7 +4,7 @@ import path from "node:path";
 import { UUID } from "builder-util-runtime";
 import { describe, expect, it, vi } from "vitest";
 
-const { autoUpdaterMock } = vi.hoisted(() => {
+const { autoUpdaterMock, electronAutoUpdaterMock } = vi.hoisted(() => {
   const handlers = new Map<string, (value: unknown) => void>();
   return {
     autoUpdaterMock: {
@@ -22,10 +22,12 @@ const { autoUpdaterMock } = vi.hoisted(() => {
       }),
       quitAndInstall: vi.fn(),
     },
+    electronAutoUpdaterMock: { on: vi.fn() },
   };
 });
 
 vi.mock("electron", () => ({
+  autoUpdater: electronAutoUpdaterMock,
   app: {
     getPath: vi.fn(),
     isPackaged: true,
@@ -39,12 +41,52 @@ vi.mock("electron-updater", () => ({
 import {
   bucketFromStagingUserId,
   checkForAppUpdate,
+  createElectronAutoUpdaterLoader,
   createAppUpdateLifecycleLogger,
+  assertElectronAutoUpdaterEnabled,
+  registerBeforeQuitForUpdate,
   resolveStagingUserId,
   rolloutManifestSchema,
   shouldAdmitToRollout,
   shouldInstallAppUpdateOnQuit,
 } from "./auto-updater";
+
+describe("electron updater loading", () => {
+  it("registers the built-in Electron quit event without loading electron-updater", async () => {
+    const handler = vi.fn();
+
+    await registerBeforeQuitForUpdate(handler);
+
+    expect(electronAutoUpdaterMock.on).toHaveBeenCalledWith("before-quit-for-update", handler);
+  });
+
+  it.each(["nix", "nix-invalid"] as const)(
+    "blocks direct update-service access in %s mode",
+    (mode) => {
+      expect(() => assertElectronAutoUpdaterEnabled(mode)).toThrow("disabled for Nix-managed");
+    },
+  );
+
+  it.each(["nix", "nix-invalid"] as const)(
+    "never loads electron-updater in %s mode",
+    async (mode) => {
+      const load = vi.fn(async () => autoUpdaterMock);
+      const loadUpdater = createElectronAutoUpdaterLoader({ mode, load });
+
+      await expect(loadUpdater()).rejects.toThrow("disabled for Nix-managed");
+      expect(load).not.toHaveBeenCalled();
+    },
+  );
+
+  it("loads the Electron updater once in Electron mode", async () => {
+    const load = vi.fn(async () => autoUpdaterMock);
+    const loadUpdater = createElectronAutoUpdaterLoader({ mode: "electron", load });
+
+    await expect(loadUpdater()).resolves.toBe(autoUpdaterMock);
+    await expect(loadUpdater()).resolves.toBe(autoUpdaterMock);
+    expect(load).toHaveBeenCalledOnce();
+  });
+});
 
 describe("checkForAppUpdate", () => {
   it("treats an unpublished channel manifest as an unavailable update", async () => {

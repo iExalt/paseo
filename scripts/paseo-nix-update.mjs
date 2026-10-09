@@ -50,6 +50,7 @@ const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_REDIRECTS = 5;
 const PUBLIC_KEY_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+let JSON_OUTPUT = false;
 
 function fail(message) {
   throw new Error(message);
@@ -59,6 +60,18 @@ class InvalidReleaseError extends Error {}
 
 function invalidRelease(message) {
   throw new InvalidReleaseError(message);
+}
+
+function emitResult(result, message) {
+  process.stdout.write(
+    JSON_OUTPUT ? `${JSON.stringify({ ok: true, ...result })}\n` : `${message}\n`,
+  );
+}
+
+function nixOutputMode(capture) {
+  if (capture) return ["ignore", "pipe", "pipe"];
+  if (JSON_OUTPUT) return ["ignore", "ignore", "inherit"];
+  return "inherit";
 }
 
 function assertMacArm() {
@@ -360,7 +373,7 @@ function nix(args, { capture = false, allowFailure = false } = {}) {
   const result = spawnSync("nix", args, {
     cwd: ROOT,
     encoding: capture ? "utf8" : undefined,
-    stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
+    stdio: nixOutputMode(capture),
   });
   if (result.error) {
     fail(`Could not run nix ${args[0]}: ${result.error.message}`);
@@ -376,7 +389,7 @@ function nixEnv(args, { capture = false, allowFailure = false } = {}) {
   const result = spawnSync("nix-env", args, {
     cwd: ROOT,
     encoding: capture ? "utf8" : undefined,
-    stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit",
+    stdio: nixOutputMode(capture),
   });
   if (result.error) {
     fail(`Could not run nix-env: ${result.error.message}`);
@@ -1066,6 +1079,41 @@ async function currentReceipt() {
   return { outputPath, receipt };
 }
 
+function releaseSummary(receipt) {
+  if (!receipt) return null;
+  const { manifest } = receipt;
+  return {
+    releaseTag: manifest.releaseTag,
+    packageVersion: manifest.packageVersion,
+    releaseSequence: manifest.releaseSequence,
+    outputPath: manifest.macOS.outputPath,
+  };
+}
+
+async function stagedReceipt(activeReceipt) {
+  let staged;
+  try {
+    staged = JSON.parse(await readFile(join(DATA_ROOT, "staged.json"), "utf8"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+  if (typeof staged.identity !== "string" || !/^[a-f0-9]{40}-[1-9][0-9]*$/.test(staged.identity)) {
+    fail("Staged release record is invalid.");
+  }
+  const receipt = await loadReceipt(join(DATA_ROOT, "receipts", staged.identity));
+  if (staged.outputPath !== receipt.manifest.macOS.outputPath) {
+    fail("Staged release output path differs from the signed manifest.");
+  }
+  if (
+    activeReceipt &&
+    manifestIdentity(receipt.manifest) === manifestIdentity(activeReceipt.manifest)
+  ) {
+    return null;
+  }
+  return releaseSummary(receipt);
+}
+
 async function printCheck({ stage = false } = {}) {
   assertMacArm();
   const releases = await listStableReleases();
@@ -1080,26 +1128,25 @@ async function printCheck({ stage = false } = {}) {
   const currentSequence = receipt?.manifest.releaseSequence ?? 0;
   const highestSequence = highWater?.manifest.releaseSequence ?? currentSequence;
   if (!stage) {
-    process.stdout.write(
-      `${latest.manifest.releaseTag} ${latest.manifest.packageVersion} (sequence ${latest.manifest.releaseSequence})\n`,
+    const message = checkStatusMessage({
+      outputPath,
+      receipt,
+      currentSequence,
+      highestSequence,
+      latestSequence: latest.manifest.releaseSequence,
+    });
+    emitResult(
+      {
+        action: "check",
+        latest: releaseSummary({ manifest: latest.manifest }),
+        active: releaseSummary(receipt),
+        staged: await stagedReceipt(receipt),
+        highWaterSequence: highestSequence,
+        canStage: latest.manifest.releaseSequence > highestSequence && !(outputPath && !receipt),
+        message,
+      },
+      `${latest.manifest.releaseTag} ${latest.manifest.packageVersion} (sequence ${latest.manifest.releaseSequence})\n${message}`,
     );
-    if (outputPath && !receipt) {
-      process.stdout.write(
-        `Managed profile points to ${outputPath}; its signed release receipt is unknown.\n`,
-      );
-    } else if (latest.manifest.releaseSequence <= highestSequence) {
-      if (receipt && currentSequence < highestSequence) {
-        process.stdout.write(
-          `The managed profile is rolled back to sequence ${currentSequence}; sequence ${highestSequence} was already activated. The candidate cannot be staged because it does not exceed the high-water mark.\n`,
-        );
-      } else {
-        process.stdout.write(
-          "The managed profile is current or newer; no higher sequence can be staged.\n",
-        );
-      }
-    } else {
-      process.stdout.write("A newer verified stable fork release is available.\n");
-    }
     return;
   }
   if (stage && outputPath && !receipt) {
@@ -1113,9 +1160,38 @@ async function printCheck({ stage = false } = {}) {
     );
   }
   await stageVerifiedRelease(latest);
-  process.stdout.write(
-    `Staged ${latest.manifest.releaseTag}; the active app profile was not changed.\n`,
+  const staged = releaseSummary({ manifest: latest.manifest });
+  emitResult(
+    {
+      action: "stage",
+      latest: staged,
+      active: releaseSummary(receipt),
+      staged,
+      highWaterSequence: highestSequence,
+      canStage: false,
+      message: "The active app profile was not changed.",
+    },
+    `Staged ${latest.manifest.releaseTag}; the active app profile was not changed.`,
   );
+}
+
+function checkStatusMessage({
+  outputPath,
+  receipt,
+  currentSequence,
+  highestSequence,
+  latestSequence,
+}) {
+  if (outputPath && !receipt) {
+    return "Managed profile points to an output without a matching signed release receipt.";
+  }
+  if (latestSequence > highestSequence) {
+    return "A newer verified stable fork release is available.";
+  }
+  if (receipt && currentSequence < highestSequence) {
+    return `The managed profile is rolled back to sequence ${currentSequence}; sequence ${highestSequence} was already activated. The candidate cannot be staged because it does not exceed the high-water mark.`;
+  }
+  return "The managed profile is current or newer; no higher sequence can be staged.";
 }
 
 async function activateStagedRelease() {
@@ -1154,8 +1230,17 @@ async function activateStagedRelease() {
     writeHighWater,
     clearPending: () => rm(join(DATA_ROOT, "pending-activation.json"), { force: true }),
   });
-  process.stdout.write(
-    `Activated ${manifest.releaseTag}. Any already-running Paseo process was left untouched.\n`,
+  await rm(join(DATA_ROOT, "staged.json"), { force: true });
+  const active = releaseSummary(receipt);
+  emitResult(
+    {
+      action: "activate",
+      active,
+      staged: null,
+      highWaterSequence: manifest.releaseSequence,
+      message: "Any already-running Paseo process was left untouched.",
+    },
+    `Activated ${manifest.releaseTag}. Any already-running Paseo process was left untouched.`,
   );
 }
 
@@ -1163,17 +1248,42 @@ async function printStatus() {
   assertMacArm();
   await ensureDataRoot();
   const { outputPath, receipt } = await currentReceipt();
+  const highWater = await loadHighWater();
+  const staged = await stagedReceipt(receipt);
   if (!outputPath) {
-    process.stdout.write("No managed Paseo profile is active.\n");
+    emitResult(
+      {
+        action: "status",
+        active: null,
+        staged,
+        highWaterSequence: highWater?.manifest.releaseSequence ?? 0,
+      },
+      "No managed Paseo profile is active.",
+    );
     return;
   }
   if (!receipt) {
-    process.stdout.write(`Managed profile contains an unrecognized output: ${outputPath}\n`);
+    emitResult(
+      {
+        action: "status",
+        active: null,
+        staged,
+        highWaterSequence: highWater?.manifest.releaseSequence ?? 0,
+        message: `Managed profile contains an unrecognized output: ${outputPath}`,
+      },
+      `Managed profile contains an unrecognized output: ${outputPath}`,
+    );
     return;
   }
-  let highWater = await loadHighWater();
-  process.stdout.write(
-    `Active ${receipt.manifest.releaseTag} ${receipt.manifest.packageVersion} (sequence ${receipt.manifest.releaseSequence})\nHighest activated sequence ${highWater?.manifest.releaseSequence ?? receipt.manifest.releaseSequence}\n${outputPath}\n`,
+  const active = releaseSummary(receipt);
+  emitResult(
+    {
+      action: "status",
+      active,
+      staged,
+      highWaterSequence: highWater?.manifest.releaseSequence ?? receipt.manifest.releaseSequence,
+    },
+    `Active ${receipt.manifest.releaseTag} ${receipt.manifest.packageVersion} (sequence ${receipt.manifest.releaseSequence})\nHighest activated sequence ${highWater?.manifest.releaseSequence ?? receipt.manifest.releaseSequence}\n${outputPath}`,
   );
 }
 
@@ -1191,11 +1301,26 @@ async function rollbackProfile() {
     fail("Nix profile rollback did not change the active generation.");
   }
   const receipt = await receiptForOutput(after);
+  const active = releaseSummary(receipt);
   if (receipt) {
-    process.stdout.write(`Rolled back to ${receipt.manifest.releaseTag}.\n`);
+    emitResult(
+      {
+        action: "rollback",
+        active,
+        highWaterSequence:
+          (await loadHighWater())?.manifest.releaseSequence ?? receipt.manifest.releaseSequence,
+      },
+      `Rolled back to ${receipt.manifest.releaseTag}.`,
+    );
   } else {
-    process.stdout.write(
-      `Rolled back to prior Nix generation ${after}; no signed Paseo release receipt was recorded for it.\n`,
+    emitResult(
+      {
+        action: "rollback",
+        active: null,
+        highWaterSequence: (await loadHighWater())?.manifest.releaseSequence ?? 0,
+        message: "No signed Paseo release receipt was recorded for the prior generation.",
+      },
+      `Rolled back to prior Nix generation ${after}; no signed Paseo release receipt was recorded for it.`,
     );
   }
 }
@@ -1209,6 +1334,7 @@ function printHelp() {
       "  activate  Atomically select the staged output in Paseo's dedicated Nix profile.",
       "  status    Show the active managed profile generation.",
       "  rollback  Switch to the previous Nix profile generation.",
+      "  --json    Write one structured result to stdout.",
       "",
       "Supported only on Apple Silicon macOS. No app or daemon is restarted.",
     ].join("\n"),
@@ -1217,11 +1343,15 @@ function printHelp() {
 
 export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
   const [command = "help", ...rest] = argv;
+  JSON_OUTPUT = rest.includes("--json");
   if (
-    rest.length ||
+    rest.length > 1 ||
+    (rest.length === 1 && rest[0] !== "--json") ||
     !["help", "--help", "check", "stage", "activate", "status", "rollback"].includes(command)
   ) {
-    fail("Expected exactly one command: check, stage, activate, status, rollback, or --help.");
+    fail(
+      "Expected one command and an optional --json flag: check, stage, activate, status, rollback, or --help.",
+    );
   }
   if (command === "help" || command === "--help") {
     printHelp();
@@ -1246,9 +1376,12 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   runPaseoNixUpdate().catch((error) => {
-    process.stderr.write(
-      `${error instanceof Error ? error.message : "Paseo Nix update failed."}\n`,
-    );
+    const message = error instanceof Error ? error.message : "Paseo Nix update failed.";
+    if (JSON_OUTPUT) {
+      process.stdout.write(`${JSON.stringify({ ok: false, error: message })}\n`);
+    } else {
+      process.stderr.write(`${message}\n`);
+    }
     process.exitCode = 1;
   });
 }

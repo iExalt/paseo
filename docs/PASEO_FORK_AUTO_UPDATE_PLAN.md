@@ -430,6 +430,28 @@ compiler concurrency and a possible extra daemon without changing Hermes
 optimization. The second captured JVM has not been identified conclusively.
 Heartbeat evidence from one next paired build will test this hypothesis.
 
+Follow-up paired run
+[`37980068459`](https://github.com/iExalt/paseo/actions/runs/37980068459) used
+`ab8b4367749551b01f97e5ce2c0fb8e867dc3f95`. Android reached the new module's
+Kotlin compilation and failed at 19:45:08 UTC (3:45:08 PM EDT), after 17m53s,
+with `PaseoForkUpdatesModule.kt:266:3 Missing return statement`. The child and
+wrapper exited 1. The final captured sample at 19:44:19 UTC (3:44:19 PM EDT)
+showed 5.73 GB used and 11.04 GB available; Java RSS was about 4.27 GB plus
+289 MB, and Hermes was absent from the captured final top-five process samples.
+This failure was source compilation rather than cancellation. The resource
+change progressed beyond the earlier failure pattern, without proving all peak
+memory behavior. The one-line repair returns the existing `try` expression;
+native compilation remains a required next-build gate. Firebase plaintext
+cleanup passed; no signed APK or complete candidate was produced.
+
+The Mac build failed on the changed lockfile's fixed dependency hash. Its Nix
+derivation specified `sha256-XTbk9VwrCHqjbHqvX5xTYPCw6ewCJ4R+M2+bALkrOos=` and
+reported `sha256-tPxju2sUyUt1jE2cQ7CXUyglfvqD+VtMP7PAQwLzRjA=`. The reviewed
+`nix/npm-deps.hash` correction uses that attested result; the lockfile remains
+unchanged from this CI revision. Narrow streamed error excerpts resolved both
+diagnoses. Batch these repairs after Electron integration is accepted before
+the next paired build; no standalone probe or blind retry is needed.
+
 The paired BUILD entry point is published in `fork-builds.yml` at
 `03f9654109b82023e2bd0682381023a7fb9793b8`.
 Build-relevant trusted `dev` pushes pass one immutable source SHA and
@@ -597,7 +619,27 @@ Non-help commands serialize with an exclusive private lock. After a crash, remov
 a stale lock only after confirming no updater command is running. Six focused
 tests, scoped lint/format/syntax checks, and Nix expression parsing passed. Actual
 CI packaging, real promoted-release consumption, user-store import/activation,
-Electron ownership/UI integration, and Mac launch proof remain pending.
+and Mac launch proof remain pending.
+
+Electron integration now marks the Darwin app resources with the Nix ownership
+contract and resolves the fixed updater CLI from that same immutable store output.
+Missing CLI or malformed/copied markers fail closed. Nix mode blocks direct
+Electron update APIs, catalog requests, updater imports, and update-on-quit;
+unmarked desktop builds keep their existing behavior, with the fork release owner.
+About exposes check, stage, explicit confirmed activation, and rollback through
+fixed IPC commands, with bounded child output and no shell interpolation. It shows
+running, active profile, and staged versions separately; activation leaves the app
+and daemon running, and tells the user when a manual restart is needed. Tests cover
+the emitted packaging marker, ownership gate, fixed CLI arguments/errors, and the
+rendered controls. Required formatting passed (0.71 seconds) and full repository
+lint passed after bounded refactoring (1.28 seconds). The initial serial workspace
+typecheck took 16.43 seconds and found four integration errors; after correction,
+only the affected app and desktop workspace typechecks were rerun and passed.
+Other workspace results remain valid. Keep the accepted 14.2-second baseline;
+this failed aggregate run does not establish a new baseline. The affected rendered
+UI and CLI tests passed, along with ownership/bridge tests and the emitted-marker
+regression. No production app was launched or activated. The next paired build
+must verify actual packaging and the Kotlin repair together before promotion.
 
 ## Later milestones and acceptance gates
 
@@ -662,7 +704,7 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Implement paired build and explicit complete-release promotion source contracts.
 - [x] Implement and test the Android fork update interface source contract.
 - [x] Implement and test the Mac managed Nix CLI source and isolated profile lifecycle.
-- [ ] Integrate Nix ownership and managed update controls into Electron.
+- [x] Integrate and test Nix ownership and managed update controls in Electron source.
 - [ ] Produce both verified CI artifacts and exercise complete-release promotion.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
