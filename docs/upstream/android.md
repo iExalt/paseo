@@ -174,10 +174,14 @@ must remain server-side and must never be bundled into the app.
 
 ## Trusted-dev fork APK
 
-`.github/workflows/fork-android-apk.yml` builds a standalone arm64 APK on
-build-relevant pushes to `dev` by `iExalt` in `iExalt/paseo`. It checks out the
-immutable event SHA, sets the Android version code to
-`100000 + GITHUB_RUN_NUMBER`, and verifies the package, ABI, version code, and
+`.github/workflows/fork-builds.yml` starts paired builds on build-relevant pushes
+to `dev` by `iExalt` in `iExalt/paseo`. It calls the reusable
+`fork-android-apk.yml` lane with the same immutable source SHA and release sequence
+as the Mac lane. The caller assigns `200000 + GITHUB_RUN_NUMBER` as the Android
+code and shared sequence; the floor keeps this new workflow above the initial
+standalone candidate's code 100001. Preserve this caller's counter identity or
+explicitly raise the floor when replacing it. The Android lane verifies package,
+ABI, version code, and
 non-debuggable manifest before signing. Reruns of one workflow keep the same
 version code. The final metadata records the source SHA, build run ID/number/
 attempt, and signing run ID/attempt; artifact names include the signing
@@ -193,7 +197,8 @@ job validates the client config against the pinned `paseo-18157` project and
 `sh.paseo.iexalt`; it never receives signing material. The separate signer job
 receives only the PKCS#8 key and certificate, not the Firebase Admin SDK key.
 The Admin SDK key stays server-side for Expo FCM V1. This workflow creates a
-candidate artifact only; promotion, publication, and install/device validation
+candidate artifact only. The paired completion job checks both platform artifacts
+and writes a normalized candidate manifest; promotion, publication, and install/device validation
 are separate steps. Any future promotion must select an exact source SHA and
 run attempt and reject version codes at or below the last published fork code.
 
