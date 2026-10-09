@@ -2575,6 +2575,7 @@ export const ar: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "عن",
       appVersion: "نسخة التطبيق",
       whatsNewHint: "ملاحظات الإصدار لكل نسخة",

@@ -2595,6 +2595,7 @@ export const es: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "Acerca de",
       appVersion: "Versión de la aplicación",
       whatsNewHint: "Notas de versión de cada release",

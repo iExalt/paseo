@@ -2582,6 +2582,7 @@ export const ru: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "О приложении",
       appVersion: "Версия приложения",
       whatsNewHint: "Заметки о выпуске для каждой версии",

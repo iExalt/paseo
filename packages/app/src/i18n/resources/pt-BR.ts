@@ -2577,6 +2577,7 @@ export const ptBR: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "Sobre",
       appVersion: "Versão do app",
       whatsNewHint: "Notas de versão de cada release",
