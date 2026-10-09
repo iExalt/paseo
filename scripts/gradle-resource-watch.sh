@@ -38,7 +38,10 @@ resource_snapshot() {
   printf 'gradle_heartbeat_utc=%s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
   if command -v free >/dev/null 2>&1; then
-    free -b 2>/dev/null | awk 'NR == 2 { printf "memory_total_bytes=%s memory_used_bytes=%s memory_available_bytes=%s\n", $2, $3, $7 }' || true
+    free -b 2>/dev/null | awk '
+      NR == 2 { printf "memory_total_bytes=%s memory_used_bytes=%s memory_available_bytes=%s\n", $2, $3, $7 }
+      NR == 3 { printf "swap_total_bytes=%s swap_used_bytes=%s swap_free_bytes=%s\n", $2, $3, $4 }
+    ' || true
   else
     printf 'memory_summary=unavailable\n'
   fi
