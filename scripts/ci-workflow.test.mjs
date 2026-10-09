@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
 import { relative as relativePath } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 const repoRoot = new URL("../", import.meta.url);
 const ciWorkflowPath = new URL(".github/workflows/ci.yml", repoRoot);
@@ -10,6 +11,9 @@ const dockerWorkflowPath = new URL(".github/workflows/docker.yml", repoRoot);
 const nixWorkflowPath = new URL(".github/workflows/nix.yml", repoRoot);
 const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
 const forkBuildsWorkflowPath = new URL(".github/workflows/fork-builds.yml", repoRoot);
+const gradleResourceWatchPath = fileURLToPath(
+  new URL("scripts/gradle-resource-watch.sh", repoRoot),
+);
 const deployWebsiteWorkflowPath = new URL(".github/workflows/deploy-website.yml", repoRoot);
 const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
@@ -329,6 +333,10 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.match(build, /getRequiredAndroidVersionCode\(process\.env\.RELEASE_SEQUENCE\)/);
   assert.doesNotMatch(build, /getForkAndroidVersionCodeFromRunNumber|GITHUB_RUN_NUMBER\)\)/);
   assert.match(build, /PASEO_FORK_GOOGLE_SERVICES_JSON/);
+  assert.match(
+    build,
+    /bash "\$GITHUB_WORKSPACE\/scripts\/gradle-resource-watch\.sh" -- \\\s*\n\s+env JAVA_TOOL_OPTIONS=.*\.\/gradlew :app:assembleRelease \\\s*\n\s+--no-daemon --max-workers=2 -Dorg\.gradle\.parallel=false/,
+  );
   assert.match(build, /FIREBASE_PROJECT_ID_FORK: paseo-18157/);
   assert.doesNotMatch(build, /PASEO_FORK_SIGNING_(?:KEY|CERT)/);
   assert.match(build, /apkanalyzer="\$ANDROID_HOME\/cmdline-tools\/latest\/bin\/apkanalyzer"/);
@@ -453,4 +461,104 @@ test("fork release publication cannot trigger the upstream website deployment", 
     source,
     /github\.event_name != 'release'\s*\|\|\s*\(!github\.event\.release\.prerelease && !github\.event\.release\.draft\)/,
   );
+});
+
+test("fork Android resource watcher is paired and preserves child exit and signal status", async () => {
+  const source = readFileSync(gradleResourceWatchPath, "utf8");
+  const pairedWorkflow = readFileSync(forkBuildsWorkflowPath, "utf8");
+  assert.match(source, /interval_seconds=60/);
+  assert.match(source, /free -b/);
+  assert.match(source, /df -Pk/);
+  assert.match(source, /\/sys\/fs\/cgroup\/memory\.events/);
+  assert.match(source, /oom_group_kill/);
+  assert.match(source, /ps -Ao rss=,%cpu=,comm=/);
+  assert.doesNotMatch(source, /ps[^\n]*(?:args|command=|cmdline)/);
+  assert.match(pairedWorkflow, /"scripts\/gradle-resource-watch\.sh"/);
+
+  for (const [exitCode, expectedStatus] of [
+    [0, 0],
+    [23, 23],
+  ]) {
+    const result = spawnSync(
+      "bash",
+      [gradleResourceWatchPath, "--", "bash", "-c", `exit ${exitCode}`],
+      { encoding: "utf8", timeout: 5000 },
+    );
+    assert.equal(result.status, expectedStatus);
+    assert.match(result.stdout, /gradle_heartbeat_utc=/);
+    assert.match(result.stdout, new RegExp(`gradle_child_exit_code=${expectedStatus}`));
+    assert.match(result.stdout, new RegExp(`gradle_wrapper_exit_code=${expectedStatus}`));
+    assert.match(result.stdout, /gradle_heartbeat_sampler_exit_code=0/);
+  }
+
+  const signalCases = [
+    {
+      signal: "SIGTERM",
+      name: "TERM",
+      nodeSignal: "SIGTERM",
+      childHandler: true,
+      childStatus: 37,
+      wrapperStatus: 37,
+    },
+    {
+      signal: "SIGINT",
+      name: "INT",
+      nodeSignal: "SIGINT",
+      childHandler: true,
+      childStatus: 38,
+      wrapperStatus: 38,
+    },
+    {
+      signal: "SIGTERM",
+      name: "TERM",
+      nodeSignal: "SIGTERM",
+      childHandler: false,
+      wrapperStatus: 143,
+    },
+  ];
+  for (const signalCase of signalCases) {
+    const childCode = [
+      signalCase.childHandler
+        ? `process.on("${signalCase.nodeSignal}", () => process.exit(${signalCase.childStatus}));`
+        : "",
+      'process.stdout.write("fake_child_ready\\n");',
+      "setInterval(() => {}, 1000);",
+    ].join(" ");
+    const child = spawn(
+      "bash",
+      [gradleResourceWatchPath, "--interval-seconds", "1", "--", "node", "-e", childCode],
+      { detached: true, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] },
+    );
+    let output = "";
+    let signalSent = false;
+    child.stdout.setEncoding("utf8");
+    const result = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {}
+        reject(new Error(`resource watcher did not exit after ${signalCase.name}`));
+      }, 5000);
+      child.stdout.on("data", (chunk) => {
+        output += chunk;
+        if (!signalSent && output.includes("fake_child_ready")) {
+          signalSent = true;
+          child.kill(signalCase.signal);
+        }
+      });
+      child.once("error", (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+      child.once("exit", (code, signal) => {
+        clearTimeout(timeout);
+        resolve({ code, signal });
+      });
+    });
+    assert.deepEqual(result, { code: signalCase.wrapperStatus, signal: null });
+    assert.match(output, new RegExp(`gradle_wrapper_signal=${signalCase.name}`));
+    assert.match(output, new RegExp(`gradle_child_exit_code=${signalCase.wrapperStatus}`));
+    assert.match(output, /gradle_heartbeat_sampler_exit_code=0/);
+    assert.match(output, new RegExp(`gradle_wrapper_exit_code=${signalCase.wrapperStatus}`));
+  }
 });
