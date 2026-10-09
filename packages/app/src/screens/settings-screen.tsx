@@ -93,6 +93,8 @@ import { NixDesktopAppUpdateRow } from "@/desktop/updates/nix-desktop-app-update
 import { isNixManagedDesktopInstallation } from "@/desktop/updates/desktop-updates";
 import { useDesktopAppUpdater } from "@/desktop/updates/use-desktop-app-updater";
 import { ForkAndroidUpdateRow } from "@/android/fork-updates/about-row";
+import { preferencesMigrationMode } from "@/android/preferences-migration/mode";
+import { PreferencesTransferRow } from "@/android/preferences-migration/preferences-transfer-row";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { resolveAppVersion } from "@/utils/app-version";
 import { openChangelog } from "@/changelog";
@@ -454,6 +456,8 @@ interface AboutSectionProps {
   appVersionText: string;
   isDesktopApp: boolean;
   isNixManagedApp: boolean;
+  preferencesTransferMode: "bridge" | "receiver" | null;
+  daemonIds: readonly string[];
 }
 
 function renderAboutDesktopUpdateRow(isNixManagedApp: boolean, isDesktopApp: boolean): ReactNode {
@@ -467,6 +471,8 @@ function AboutSection({
   appVersionText,
   isDesktopApp,
   isNixManagedApp,
+  preferencesTransferMode,
+  daemonIds,
 }: AboutSectionProps) {
   const { t } = useTranslation();
   return (
@@ -483,6 +489,9 @@ function AboutSection({
           <WhatsNewRow />
           {renderAboutDesktopUpdateRow(isNixManagedApp, isDesktopApp)}
           <ForkAndroidUpdateRow />
+          {preferencesTransferMode ? (
+            <PreferencesTransferRow mode={preferencesTransferMode} daemonIds={daemonIds} />
+          ) : null}
         </View>
       </SettingsSection>
       <ConnectedHostsSection clientVersion={appVersion} />
@@ -1121,6 +1130,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   const lastOpenedAddHostIntentRef = useRef<string | null>(null);
   const isDesktopApp = isElectronRuntime();
   const isNixManagedApp = isNixManagedDesktopInstallation();
+  const preferencesTransferMode = preferencesMigrationMode();
   const appVersion = resolveAppVersion();
   const appVersionText = formatVersionWithPrefix(appVersion);
   const isCompactLayout = useIsCompactFormFactor();
@@ -1388,6 +1398,8 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
               appVersionText={appVersionText}
               isDesktopApp={isDesktopApp}
               isNixManagedApp={isNixManagedApp}
+              preferencesTransferMode={preferencesTransferMode}
+              daemonIds={hosts.map((host) => host.serverId)}
             />
           );
         default:
