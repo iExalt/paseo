@@ -374,6 +374,18 @@ or disk-full evidence. Signing and artifact verification did not run. The two
 similar cancellations require bounded diagnosis before another build; no rerun
 has been made.
 
+The next approved paired run adds a bounded Gradle resource wrapper without
+changing the two-worker command or 30-minute Android job budget. It records
+once-per-minute UTC memory/disk/process-name snapshots and readable cgroup OOM
+counters, then preserves actual child exit and INT/TERM statuses. No arguments
+or environment values are logged. One fast regression covers success, failure,
+signal forwarding, and sampler cleanup; all fourteen workflow tests, Bash syntax,
+ShellCheck, actionlint, and scoped lint/format checks passed. The prior serial
+repository checks remain valid for unchanged application/TypeScript sources.
+If another run yields only an undifferentiated cancellation, stop Android CI
+retries and investigate external cancellation/runner causes rather than adding
+more wrappers.
+
 The paired BUILD entry point is published in `fork-builds.yml` at
 `03f9654109b82023e2bd0682381023a7fb9793b8`.
 Build-relevant trusted `dev` pushes pass one immutable source SHA and

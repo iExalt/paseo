@@ -202,7 +202,8 @@ jobs:
           started_at=$SECONDS
           cd packages/app/android
           JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew --version
-          JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew :app:assembleRelease \
+          bash "$GITHUB_WORKSPACE/scripts/gradle-resource-watch.sh" -- \
+            env JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew :app:assembleRelease \
             --no-daemon --max-workers=2 -Dorg.gradle.parallel=false \
             -PreactNativeArchitectures=arm64-v8a
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
