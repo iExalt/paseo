@@ -407,12 +407,28 @@ Android assemble was cancelled again at 19:09:38 UTC (3:09:38 PM EDT), after
 19m18s, and the job ended at 19:09:41 UTC (3:09:41 PM EDT). Twenty resource
 samples were captured. The last, at 19:09:25 UTC (3:09:25 PM EDT), showed
 16.77 GB total memory, 16.33 GB used, and 438 MB available; `hermesc` used
-9.47 GB RSS alongside two Java processes at 2.59 and 2.54 GB RSS. The wrapper
+9.70 GB RSS alongside two Java processes at 2.66 and 2.60 GB RSS (converted
+from the `ps` KiB values). The wrapper
 captured TERM and child/wrapper exit 143, with clean sampler shutdown. Cgroup
 OOM counters were unavailable. This is evidence of severe memory pressure
 coincident with cancellation, not proof of an OOM kill or its initiator.
 Signing and paired completion were skipped. Stop blind Android retries and
 diagnose Hermes/bundle and JVM memory inputs before proposing another build.
+Read-only diagnosis found default Hermes optimization (`-O` plus source maps),
+a 4096 MiB Gradle heap with 1024 MiB metaspace, and no explicit Kotlin daemon
+heap limit. The retained `8bf821fea` standalone release used one Gradle worker
+and completed in 8:55.92. Its bundle was 27,000,924 bytes; the current ignored
+local bundle lacks matching CI revision provenance, so it does not establish
+bundle growth. A one-worker constraint is a candidate based on that recipe,
+not a verified memory fix. No additional build was run for this diagnosis.
+The next build restores `--max-workers=1` and passes
+`-Pkotlin.compiler.execution.strategy=in-process`, keeping parallel execution
+disabled and the existing Gradle heap unchanged. The exact cached Kotlin Gradle
+plugin 2.1.20 recognizes that property; [Kotlin documents the accepted value](https://kotlinlang.org/docs/compiler-execution-strategy.html)
+and its loss of incremental compilation. The build is clean, and this constrains
+compiler concurrency and a possible extra daemon without changing Hermes
+optimization. The second captured JVM has not been identified conclusively.
+Heartbeat evidence from one next paired build will test this hypothesis.
 
 The paired BUILD entry point is published in `fork-builds.yml` at
 `03f9654109b82023e2bd0682381023a7fb9793b8`.
@@ -601,9 +617,10 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [ ] Implement platform update interfaces and recovery.
 - [ ] Pass actual-device CI artifact install/update/recovery gates.
 
-Next campaign action: diagnose the repeated Android cancellation, then use the
-reviewed integrated revision to finish canonical full-closure and signed APK
-proof in the paired pipeline. Promotion waits for both real verified artifacts.
+Next campaign action: apply the reviewed Android resource constraints and use
+one paired build to test memory pressure and the new updater's native module.
+Canonical full-closure proof has passed; signed APK proof remains pending.
+Promotion waits for both real verified artifacts from one candidate revision.
 Standalone closure probe runs are stopped.
 Platform updater implementation and actual transitions still need
 their assigned acceptance boundaries. Reconsider the route if
