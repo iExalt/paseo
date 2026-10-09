@@ -1,4 +1,5 @@
 const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/;
+const maxAndroidVersionCode = 2_100_000_000;
 const stableIosBuildSlot = 999;
 const FDROID_ABI_VERSION_CODE_SUFFIXES = {
   "armeabi-v7a": 1,
@@ -48,6 +49,32 @@ function getNativeReleaseVersion(version) {
   };
 }
 
+function getRequiredAndroidVersionCode(value) {
+  if (typeof value !== "string" || !/^[1-9]\d*$/.test(value)) {
+    throw new Error(
+      "PASEO_ANDROID_VERSION_CODE must be a canonical positive integer from 1 to 2100000000",
+    );
+  }
+
+  const versionCode = Number(value);
+  if (!Number.isSafeInteger(versionCode) || versionCode > maxAndroidVersionCode) {
+    throw new Error(
+      "PASEO_ANDROID_VERSION_CODE must be a canonical positive integer from 1 to 2100000000",
+    );
+  }
+
+  return versionCode;
+}
+
+function getForkAndroidVersionCodeFromRunNumber(runNumber) {
+  const versionCode = 100_000 + getRequiredAndroidVersionCode(runNumber);
+  if (versionCode > maxAndroidVersionCode) {
+    throw new Error("GitHub run number is too large for PASEO_ANDROID_VERSION_CODE");
+  }
+
+  return versionCode;
+}
+
 function getFdroidVersionCodes(version) {
   const { androidVersionCode } = getNativeReleaseVersion(version);
   return Object.entries(FDROID_ABI_VERSION_CODE_SUFFIXES).map(([abi, suffix]) => ({
@@ -59,5 +86,7 @@ function getFdroidVersionCodes(version) {
 module.exports = {
   FDROID_ABI_VERSION_CODE_SUFFIXES,
   getFdroidVersionCodes,
+  getForkAndroidVersionCodeFromRunNumber,
   getNativeReleaseVersion,
+  getRequiredAndroidVersionCode,
 };
