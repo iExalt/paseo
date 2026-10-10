@@ -12,9 +12,10 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative as relativePath } from "node:path";
+import { join, matchesGlob, relative as relativePath } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { load } from "js-yaml";
 
 const repoRoot = new URL("../", import.meta.url);
 
@@ -321,6 +322,28 @@ test("fork candidate orchestration shares one identity and only completes after 
   );
   assert.doesNotMatch(trigger, /paths-ignore:|docs\/\*\*/);
   assert.doesNotMatch(trigger, /pull_request:|workflow_dispatch:/);
+  const paths = load(source).on.push.paths;
+  const matches = (file) =>
+    paths.reduce(
+      (included, pattern) =>
+        matchesGlob(file, pattern.replace(/^!/, "")) ? !pattern.startsWith("!") : included,
+      false,
+    );
+  for (const file of [
+    ".github/workflows/fork-builds.yml",
+    "packages/client/src/daemon-client.test.ts",
+    "packages/relay/src/e2e.test.ts",
+  ])
+    assert.equal(matches(file), false, file);
+  for (const file of [
+    "packages/client/src/daemon-client.ts",
+    "packages/client/src/connection.test.ts",
+    "packages/relay/src/index.ts",
+    "plugins/vitest.config.ts",
+    ".github/workflows/fork-android-apk.yml",
+    "flake.lock",
+  ])
+    assert.equal(matches(file), true, file);
   assert.match(source, /github\.repository == 'iExalt\/paseo'/);
   assert.match(source, /github\.actor == 'iExalt'/);
   assert.match(identity, /release_sequence=\$\(\(200000 \+ GITHUB_RUN_NUMBER\)\)/);
