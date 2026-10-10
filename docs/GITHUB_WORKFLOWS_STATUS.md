@@ -9,7 +9,7 @@
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
 - A1 active; G0/G1 are not complete. The Linux ARM64 dependency probe passed;
-  Windows and Android runtime feasibility remain pending. No routine baseline
+  Windows and Android runtime repairs are active. No routine baseline
   exists. Reviewed probe code and semver contracts are published on the work branch.
 
 ## Outcome gates
@@ -33,10 +33,18 @@ probe code passed review; native evidence remains open, so A1 is not accepted.
   or updaters; that is C. Android's mandatory integer remains internal.
 - Native Windows ARM64 is unresolved: locked `sherpa-onnx-node@1.13.8` lists
   Windows x64/ia32 native packages but no Windows ARM64 package. Linux ARM64
-  is listed. Package presence is not a runtime proof.
+  is listed. The hosted Windows probe hit its 15-minute cap during dependency
+  installation, before runtime checks; this is not a demonstrated runtime failure.
+  Independently, package/loader review confirms the stock locked distribution
+  cannot provide native ARM64 local speech without a custom binding. A request
+  for a focused binding-build trial received expanded user approval: take the time
+  needed within free standard-runner limits. Full platform functionality is retained.
 - Actual Android shipped-ABI execution remains unresolved. The hosted ARM64
   kernel lacks exposed KVM but enables modular Android Binder, with the matching
-  extra-modules package available. One bounded Redroid container trial is designed;
+  extra-modules package available. The first Android 16 trial verified APK identity
+  but failed boot with repeated SurfaceFlinger aborts. A pinned ashmem-only kernel
+  module repair is designed based on upstream's corrected diagnosis; no rendering
+  assertions are patched or bypassed. Its ARM64 result remains unproven;
   no local emulator or physical-device operation is authorized or running.
 - A2's controlled dev-event proof uses a discovered `.mise/tasks/ci/routine`
   file task, avoiding `mise.toml`, which triggers existing packaging. Before
@@ -45,7 +53,9 @@ probe code passed review; native evidence remains open, so A1 is not accepted.
   trigger until step 9; no temporary workflow disablement is needed.
 - Bot PR credentials are not proven. Existing repository secret names contain
   signing/configuration secrets but no dedicated release-please credential;
-  never treat secret names as proof of usable material.
+  never treat secret names as proof of usable material. The selected App-token
+  event route, signed V2 interface and trusted draft-asset transport are recorded
+  in plan section 4; credential/event and draft API proofs remain G4/G5.
 
 ## Performance and storage contract
 
@@ -80,7 +90,7 @@ or reset the baseline to conceal growth.
 
 - [x] Verify the revised semver contract and reconcile all three planning tiers.
 - [ ] Reconcile bounded native probes; return unsupported requirements for
-      explicit resolution. Linux dependency proof passed; Windows/Android pending.
+      explicit resolution. Linux passed; Windows binding and Android ashmem repairs active.
 - [ ] Close G0, then establish A2's shared routine command and live baseline.
 - [ ] Close A3 with exact-tested-tree, failed-check and branch-movement fixtures.
 
@@ -95,8 +105,15 @@ roadmap. Do not mark A1 complete while native feasibility is unresolved.
 - 2026-10-10: Published `510974a2` and `dd08d506` after review. The
   [native trial](https://github.com/iExalt/paseo/actions/runs/38079931018)
   passed real PTY output, recursive watcher events and sherpa native buffer calls
-  on `ubuntu-24.04-arm`/Node26.11.0; locked install took 50 seconds. Windows is
-  still installing dependencies. The
+  on `ubuntu-24.04-arm`/Node26.11.0; locked install took 50 seconds. Windows reached
+  the 15-minute job cap during `npm ci`; no native probe ran there. The
   [Android prerequisite inventory](https://github.com/iExalt/paseo/actions/runs/38080289694)
   established the Binder module route, not Android runtime correctness. Local
   targeted checks and all-workspace typecheck passed; broad tests remain GitHub-only.
+- The [first Android runtime trial](https://github.com/iExalt/paseo/actions/runs/38080667758)
+  verified signed APK bytes, certificate and ABI, then stopped at the five-minute
+  boot deadline with `output buffer not gpu writeable` SurfaceFlinger aborts;
+  the app was not installed or executed. Cleanup removed the owned container.
+  Upstream's [corrected report](https://github.com/remote-android/redroid-doc/issues/934#issuecomment-5178199895)
+  attributes the analogous failure to missing ashmem, superseding its initial
+  graphics diagnosis; applying that repair to this ARM64 runner remains a hypothesis.
