@@ -1,0 +1,57 @@
+{
+  "name": "@getpaseo/client",
+  "version": "0.11.2",
+  "description": "Paseo client SDK package",
+  "files": [
+    "dist",
+    "!dist/**/*.map",
+    "README.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./internal/daemon-client": {
+      "types": "./dist/daemon-client.d.ts",
+      "default": "./dist/daemon-client.js"
+    },
+    "./internal/daemon-client-transport-types": {
+      "types": "./dist/daemon-client-transport-types.d.ts",
+      "default": "./dist/daemon-client-transport-types.js"
+    },
+    "./internal/daemon-client-websocket-transport": {
+      "types": "./dist/daemon-client-websocket-transport.d.ts",
+      "default": "./dist/daemon-client-websocket-transport.js"
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "clean": "node ../../scripts/clean-package-dist.mjs",
+    "build": "npm run build --workspace=@getpaseo/protocol && npm run build --workspace=@getpaseo/relay && tsc -p tsconfig.json --incremental false",
+    "build:clean": "npm run clean && npm run build",
+    "prepack": "npm run build:clean",
+    "typecheck": "tsc --noEmit",
+    "typecheck:examples": "tsc -p tsconfig.examples.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+<<<<<<<
+    "@getpaseo/protocol": "0.11.0",
+    "@getpaseo/relay": "0.11.0",
+    "zod": "^4.6.5"
+=======
+    "@getpaseo/protocol": "0.11.2",
+    "@getpaseo/relay": "0.11.2",
+    "zod": "^4.4.3"
+>>>>>>>
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^5.0.3"
+  }
+}
