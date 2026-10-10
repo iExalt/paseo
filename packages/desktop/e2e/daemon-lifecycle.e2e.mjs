@@ -1,7 +1,8 @@
 import { verifyAttachedDaemonControls } from "./daemon-lifecycle-renderer.electron.mjs";
+import { removeOwnedTree } from "./remove-owned-tree.mjs";
 import { once } from "node:events";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, writeFile, readFile, rm, readdir, copyFile } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, readFile, readdir, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import net from "node:net";
@@ -208,6 +209,6 @@ try {
   for (const name of await readdir(root))
     if (name.endsWith(".png") || name === "metro.log")
       await copyFile(path.join(root, name), path.join(artifacts, name));
-  await rm(root, { recursive: true, force: true });
+  await removeOwnedTree(root);
   console.log(`Lifecycle artifacts: ${artifacts}`);
 }
