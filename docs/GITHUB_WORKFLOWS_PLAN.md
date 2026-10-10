@@ -239,6 +239,9 @@ The G0 metadata contract is a signed V2 document containing `schemaVersion: 2`,
 the existing `keyId`, `repository: iExalt/paseo`,
 `lineage: iExalt/paseo:semver-v1`, canonical `version`, full `sourceSha` and
 `upstreamBase` commits, final `releaseTag: v<version>`, and `artifacts`.
+`upstreamBase` records the captured upstream revision actually incorporated into
+the candidate, not the current mutable upstream tip. Fork semver remains
+authoritative when an upstream rebase changes package versions.
 Each artifact has a unique `(platform, arch, kind)` cell, unique leaf filename,
 byte count and SHA-256. Kind-specific metadata includes Android ABI, package ID,
 derived versionCode and certificate SHA-256; Nix entries include system, output
@@ -317,10 +320,11 @@ state; installer success alone is insufficient.
 
 ## 6. Milestones and gates
 
-- [ ] **G0: Resolve feasibility contracts.** Gate: concrete semver/Android encoding and
+- [x] **G0: Resolve feasibility contracts.** Gate: concrete semver/Android encoding and
       metadata interface, bot event route, zero-cost transport, and native-architecture
       proof strategy are recorded. Remaining unsupported requirements are reported
       for a decision, not represented as green. Initial version is selected.
+      Verified contracts and native run receipts: [A1 status](GITHUB_WORKFLOWS_STATUS.md).
 - [ ] **G1: Establish shared routine CI.** Gate: real PR/dev events and rebased
       candidate use one entrypoint; injected failure blocks rebase publication;
       measured command/baseline/budget are accepted, stable checks are visible.
