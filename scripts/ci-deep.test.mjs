@@ -6,6 +6,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { chmod, lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
+import { removeOwnedTree } from "../packages/desktop/e2e/remove-owned-tree.mjs";
 import { load } from "js-yaml";
 import { deepCommands, runDeep, validateDeepSource } from "../.github/scripts/ci-deep.mjs";
 import {
@@ -13,6 +15,28 @@ import {
   ownedProcesses,
   verifyDeepCleanup,
 } from "../.github/scripts/deep-cleanup.mjs";
+
+test("owned temp cleanup removes read-only directories without following external symlinks", async () => {
+  const fixture = mkdtempSync(join(tmpdir(), "paseo-cleanup-"));
+  const owned = join(fixture, "owned");
+  const external = join(fixture, "external");
+  try {
+    await mkdir(join(owned, "readonly"), { recursive: true });
+    await mkdir(external);
+    await writeFile(join(external, "keep"), "unchanged");
+    await writeFile(join(owned, "readonly", "remove"), "temporary");
+    await symlink(external, join(owned, "external"), "dir");
+    await chmod(external, 0o500);
+    await chmod(join(owned, "readonly"), 0o500);
+    await chmod(owned, 0o500);
+    await removeOwnedTree(owned);
+    await assert.rejects(lstat(owned), { code: "ENOENT" });
+    assert.equal((await lstat(external)).mode & 0o777, 0o500);
+    assert.equal(await readFile(join(external, "keep"), "utf8"), "unchanged");
+  } finally {
+    await removeOwnedTree(fixture);
+  }
+});
 
 test("elevated cleanup is hosted-only, PID-only and fails closed", () => {
   const owner = randomUUID();
