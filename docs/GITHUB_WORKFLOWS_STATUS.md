@@ -41,7 +41,10 @@ probe code passed review; native evidence remains open, so A1 is not accepted.
   needed within free standard-runner limits. Full platform functionality is retained.
   The custom ARM64 binding now compiles, but its first runtime trial resolved
   ONNX Runtime 1.17.1 while requiring API28; the pinned archive contains 1.28.2.
-  A process-local Node/DLL layout repair is pending, with no system DLL changes.
+  Copying Node beside the DLLs did not resolve the mismatch. Source inspection
+  found the upstream wrapper prefers the compiler-output addon over the assembled
+  runtime. Removing that temporary build directory and asserting the loaded addon
+  path is the next repair; no system DLL changes are involved.
 - Actual Android shipped-ABI startup is verified on a hosted ARM64 runner using
   distro Binder and a pinned ashmem compatibility module. The repaired trial
   booted Android 16, installed the signed ARM64 APK and retained its foreground
