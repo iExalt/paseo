@@ -39,6 +39,9 @@ jobs:
       - name: Verify rebase workflow and Git resolution behavior
         run: node --test .github/scripts/rebase-dev.test.mjs scripts/sync-upstream-workflow.test.mjs
 
+      - name: Build server stack for workspace declarations
+        run: npm run build:server
+
       - name: Typecheck all packages
         run: npm run typecheck
 
