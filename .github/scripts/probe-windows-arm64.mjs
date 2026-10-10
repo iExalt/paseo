@@ -39,11 +39,19 @@ function assertArm64PE(filename) {
 async function exercise(directory) {
   const require = createRequire(join(directory, "package.json"));
   const sherpa = require("./runtime/sherpa-onnx.js");
-  assert.equal(sherpa.onnxruntimeVersion, "1.28.2");
   const nativeModules = process.report
     .getReport()
     .sharedObjects.filter((name) => /onnxruntime|sherpa/i.test(name));
   console.log("Loaded native modules:", nativeModules);
+  const loadedAddons = Object.keys(require.cache).filter((name) =>
+    /sherpa-onnx\.node$/i.test(name),
+  );
+  console.log("Loaded binding:", loadedAddons);
+  assert.deepEqual(
+    loadedAddons.map((name) => name.toLowerCase()),
+    [join(directory, "runtime/sherpa-onnx.node").toLowerCase()],
+  );
+  assert.equal(sherpa.onnxruntimeVersion, "1.28.2");
   for (const filename of nativeModules.filter((name) => /onnxruntime\.dll$/i.test(name))) {
     assert.equal(filename.toLowerCase(), join(directory, "runtime/onnxruntime.dll").toLowerCase());
   }
@@ -219,6 +227,9 @@ if (process.argv[2] === "exercise") {
       cpSync(join(coreDirectory, "lib", filename), join(runtime, filename));
     }
     assertArm64PE(join(runtime, "sherpa-onnx.node"));
+    // The upstream wrapper prefers ../build/Release over its local addon.
+    // Exercise only the assembled runtime, not the DLL-less compiler output.
+    rmSync(build, { recursive: true });
     for (const filename of readdirSync(join(directory, "pty/package/prebuilds/win32-arm64")).filter(
       (name) => name.endsWith(".node"),
     ))
