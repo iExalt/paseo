@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { hashDaemonPassword } from "@getpaseo/server/auth";
+import { savePersistedConfig } from "@getpaseo/server/configuration";
 import { startDaemonInstance, readDaemonInstance } from "@getpaseo/server/daemon-control";
 import { expect, test } from "vitest";
 import { connectToDaemon } from "../../utils/client.js";
@@ -86,15 +87,14 @@ async function fixture() {
     return status;
   }
   async function configure(home: string, listen: string) {
-    for (const [field, value] of [
-      ["daemon.listen", listen],
-      ["daemon.relay.enabled", "false"],
-      ["features.webUi.enabled", "false"],
-      ["features.dictation.enabled", "false"],
-      ["features.voiceMode.enabled", "false"],
-    ]) {
-      await ok(["daemon", "config", "set", field!, value!, "--home", home]);
-    }
+    savePersistedConfig(home, {
+      daemon: { listen, relay: { enabled: false } },
+      features: {
+        webUi: { enabled: false },
+        dictation: { enabled: false },
+        voiceMode: { enabled: false },
+      },
+    });
   }
   async function close() {
     for (const [home, captured] of owned) {
