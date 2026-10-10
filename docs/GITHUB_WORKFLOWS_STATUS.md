@@ -8,20 +8,20 @@
   operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
-- A1 active; G0/G1 are not complete. Linux ARM64 dependency and hosted Android
-  ARM64 APK runtime probes passed; Windows runtime repair is active. No routine baseline
-  exists. Reviewed probe code and semver contracts are published on the work branch.
+- A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
+  probes and hosted Android ARM64 APK startup passed. No routine baseline exists;
+  A2 is next. Reviewed probe code and semver contracts are published on the work branch.
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence  | Depends on | Exit and owner                                               |
-| ----------------------------------------- | ------------------ | ---------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | active / designed  | none       | G0, author with user decisions                               |
-| A2: measured routine verification         | planned / designed | A1         | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | planned / designed | A2         | G1 including atomic publication failure fixtures, author     |
+| Goal                                      | Status / evidence   | Depends on | Exit and owner                                               |
+| ----------------------------------------- | ------------------- | ---------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified | none       | G0, author with user decisions                               |
+| A2: measured routine verification         | next / designed     | A1         | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | planned / designed  | A2         | G1 including atomic publication failure fixtures, author     |
 
-Reviewer design agreement covers these three chunks. The semver helper and bounded
-probe code passed review; native evidence remains open, so A1 is not accepted.
+Reviewer design agreement covers these three chunks. A1 closes feasibility and
+interface decisions only; it does not establish package or release correctness.
 
 ## Decisions and current boundary
 
@@ -31,22 +31,13 @@ probe code passed review; native evidence remains open, so A1 is not accepted.
 - `scripts/fork-version.mjs` implements a stable-version comparator and a
   deterministic Android versionCode encoding. It is not yet wired to packages
   or updaters; that is C. Android's mandatory integer remains internal.
-- Native Windows ARM64 is unresolved: locked `sherpa-onnx-node@1.13.8` lists
-  Windows x64/ia32 native packages but no Windows ARM64 package. Linux ARM64
-  is listed. The hosted Windows probe hit its 15-minute cap during dependency
-  installation, before runtime checks; this is not a demonstrated runtime failure.
-  Independently, package/loader review confirms the stock locked distribution
-  cannot provide native ARM64 local speech without a custom binding. A request
-  for a focused binding-build trial received expanded user approval: take the time
-  needed within free standard-runner limits. Full platform functionality is retained.
-  The custom ARM64 binding now compiles, but its first runtime trial resolved
-  ONNX Runtime 1.17.1 while requiring API28; the pinned archive contains 1.28.2.
-  Copying Node beside the DLLs did not resolve the mismatch. Source inspection
-  found the upstream wrapper prefers the compiler-output addon over the assembled
-  runtime. Removing that directory selected the intended addon and ONNX Runtime
-  1.28.2; the trial then stopped on equivalent Windows namespaced-path spelling
-  in the diagnostic assertion. Normalize both paths before comparison; native
-  behavior checks remain pending. No system DLL changes are involved.
+- Native Windows ARM64 feasibility is verified using a custom binding built from
+  pinned `sherpa-onnx@1.13.8` sources and upstream ARM64 core libraries. The locked
+  npm distribution lacks that binding. B must integrate the assembled addon,
+  matching ONNX Runtime DLLs and Node layout; keeping compiler output beside the
+  wrapper selects an unintended loader fallback. Native buffer calls, real Silero
+  VAD inference, PTY output and recursive watching passed. STT/TTS model journeys,
+  packaged Electron integration and clean lifecycle/upgrade proof remain G3.
 - Actual Android shipped-ABI startup is verified on a hosted ARM64 runner using
   distro Binder and a pinned ashmem compatibility module. The repaired trial
   booted Android 16, installed the signed ARM64 APK and retained its foreground
@@ -96,13 +87,13 @@ or reset the baseline to conceal growth.
 ## Next sequence and deferred gates
 
 - [x] Verify the revised semver contract and reconcile all three planning tiers.
-- [ ] Reconcile bounded native probes; return unsupported requirements for
-      explicit resolution. Linux and Android passed; Windows binding runtime repair active.
-- [ ] Close G0, then establish A2's shared routine command and live baseline.
+- [x] Reconcile bounded native probes and close G0; all selected architectures
+      retain a feasible native route, with package proof assigned to G3.
+- [ ] Establish A2's shared routine command and live baseline.
 - [ ] Close A3 with exact-tested-tree, failed-check and branch-movement fixtures.
 
-Remote event, full-package and device proofs remain B/C/D as assigned in the
-roadmap. Do not mark A1 complete while native feasibility is unresolved.
+Real routine PR/dev events remain A2; bot events, full-package and device proofs
+remain B/C/D as assigned in the roadmap.
 
 ## Progress log
 
@@ -131,3 +122,9 @@ roadmap. Do not mark A1 complete while native feasibility is unresolved.
   The [focused Windows trial](https://github.com/iExalt/paseo/actions/runs/38081538703)
   built the native binding, then exposed the ONNX Runtime version mismatch before
   the required native behavior assertions. Its package gate remains open.
+- The [Windows runtime trial](https://github.com/iExalt/paseo/actions/runs/38082403349)
+  at `268e5f8df` passed custom ARM64 binding, ONNX Runtime 1.28.2 from the assembled
+  runtime directory, real VAD inference, terminal output and recursive watching.
+  A nonfatal `AttachConsole` diagnostic followed cleanup of the already-exited
+  PTY; clean lifecycle behavior still needs G3. Together with Linux at `510974a2`
+  and Android at `def29fde5`, this closes G0 feasibility, not full-package proof.
