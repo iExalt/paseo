@@ -6,7 +6,6 @@ on:
     paths:
       - ".github/scripts/nix-release-closure.sh"
       - ".github/workflows/fork-android-apk.yml"
-      - ".github/workflows/fork-builds.yml"
       - ".github/workflows/macos-closure.yml"
       - ".npmrc"
       - ".tool-versions"
@@ -37,6 +36,9 @@ on:
       - "scripts/trace-daemon.mjs"
       - "tsconfig.base.json"
       - "tsconfig.json"
+      # Temporary Phase A baseline exceptions; remove with the step 9 coordinator.
+      - "!packages/client/src/daemon-client.test.ts"
+      - "!packages/relay/src/e2e.test.ts"
 
 permissions:
   contents: read
