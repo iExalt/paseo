@@ -13,7 +13,7 @@ Firebase project ID as build environment variables:
 umask 077
 google_services_file=$(mktemp "${RUNNER_TEMP:-/private/tmp}/paseo-google-services.XXXXXX")
 trap 'rm -f "$google_services_file"' EXIT
-SOPS_AGE_KEY_CMD=/Users/clliaw/Projects/analogsea-kubernetes-engine/scripts/age-key.sh \
+SOPS_AGE_KEY_CMD=/Users/clliaw/dev/Projects/analogsea-kubernetes-engine/scripts/age-key.sh \
   mise x sops@3.13.1 -- sops --decrypt --input-type json --output-type binary \
   --output "$google_services_file" \
   secrets/firebase/google-services.sops.json
