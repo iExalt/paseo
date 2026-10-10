@@ -1,0 +1,73 @@
+name: Upstream Sync
+
+on:
+  schedule:
+    - cron: "23 7 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Fast-forward upstream mirror
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            try {
+              const owner = 'iExalt';
+              const repo = 'paseo';
+              const destination = 'upstream/main';
+
+              const { data: destinationBranch } = await github.rest.repos.getBranch({
+                owner,
+                repo,
+                branch: destination,
+              });
+              const { data: sourceBranch } = await github.rest.repos.getBranch({
+                owner: 'getpaseo',
+                repo: 'paseo',
+                branch: 'main',
+              });
+
+              const destinationSha = destinationBranch.commit.sha;
+              const sourceSha = sourceBranch.commit.sha;
+
+              if (destinationSha === sourceSha) {
+                core.info(`upstream/main already matches getpaseo/paseo:main at ${sourceSha}`);
+                return;
+              }
+
+              const { data: comparison } = await github.rest.repos.compareCommitsWithBasehead({
+                owner,
+                repo,
+                basehead: `iExalt:${destinationSha}...getpaseo:${sourceSha}`,
+              });
+
+              if (comparison.status !== 'ahead') {
+                throw new Error(
+                  `Refusing to update upstream/main: source comparison status is ${comparison.status}`,
+                );
+              }
+
+              await github.rest.git.updateRef({
+                owner,
+                repo,
+                ref: 'heads/upstream/main',
+                sha: sourceSha,
+                force: false,
+              });
+              core.info(`Fast-forwarded upstream/main from ${destinationSha} to ${sourceSha}`);
+            } catch (error) {
+              core.setFailed(error.message);
+            }
