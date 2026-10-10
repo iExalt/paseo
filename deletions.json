@@ -1,0 +1,11 @@
+[
+  {
+    "upstream": "7868f5caf6515543a81ffc58fe941e15e917dcf9",
+    "commit": "4ea125b833181ac0882e344571b0bdbfe8556b42",
+    "path": "patches/react-native-uitextview+2.7.1.patch",
+    "stages": [
+      { "mode": "100644", "oid": "f64f09ebc741be449c3d154b202d3ce3686fb1ed", "stage": 1 },
+      { "mode": "100644", "oid": "43ca6100860aee0c0b73d101de0f0577f5c27396", "stage": 3 }
+    ]
+  }
+]
