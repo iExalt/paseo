@@ -12,12 +12,15 @@ import {
   helperTests,
   packageTests,
   planCommands,
+  planLane,
+  planMatrix,
+  lanes,
   root,
   selectChecks,
   vitestHelpers,
 } from "../.github/scripts/ci-routine.mjs";
 
-const filters = load(readFileSync(join(root, ".github/ci-paths.yml"), "utf8"));
+const filters = JSON.parse(readFileSync(join(root, ".github/ci-paths.json"), "utf8"));
 const workflow = load(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"));
 
 test("routing includes dependent contracts and fails toward full checks for unknown/config paths", () => {
@@ -178,6 +181,83 @@ test("new Node test files require an explicit routine or G3 classification", () 
   }
 });
 
+test("parallel lanes partition every selected check, with only declared prerequisites duplicated", () => {
+  for (const files of [
+    null,
+    [],
+    ["docs/guide.md"],
+    ["packages/app/src/a.ts"],
+    ["packages/server/src/a.ts"],
+    ["packages/client/src/a.ts"],
+  ]) {
+    const selection = selectChecks(files, filters);
+    const complete = planCommands(selection);
+    const matrix = planMatrix(selection);
+    assert.equal(new Set(matrix.lane).size, matrix.lane.length);
+    assert.ok(matrix.lane.includes("quality"));
+    const seen = [];
+    for (const lane of lanes) {
+      const commands = planLane(selection, lane);
+      assert.equal(matrix.lane.includes(lane), commands.length > 0);
+      for (const step of commands) {
+        if (step.name === "workspace declarations" && lane !== "quality") continue;
+        if (step.name === "server units") {
+          assert.equal(step.args.at(-1), `--shard=${lane.at(-1)}/3`);
+          assert.deepEqual(
+            step.args.slice(0, -1),
+            complete.find((item) => item.name === step.name).args,
+          );
+        } else
+          assert.deepEqual(
+            step,
+            complete.find((item) => item.name === step.name),
+          );
+        if (step.name !== "server units" || lane === "server-1") seen.push(step.name);
+      }
+    }
+    assert.deepEqual(seen.sort(), complete.map((step) => step.name).sort());
+    assert.deepEqual(
+      matrix.lane.filter((lane) => lane.startsWith("server-")),
+      selection.domains.includes("server") ? ["server-1", "server-2", "server-3"] : [],
+    );
+  }
+  assert.throws(() => planLane(selectChecks(null, filters), "unknown"));
+});
+
+test("matrix planning works in a checkout without installed dependencies", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "paseo-ci-plan-"));
+  try {
+    mkdirSync(join(fixture, ".github/scripts"), { recursive: true });
+    for (const file of [".github/scripts/ci-routine.mjs", ".github/ci-paths.json"]) {
+      writeFileSync(join(fixture, file), readFileSync(join(root, file)));
+    }
+    const result = spawnSync(process.execPath, [".github/scripts/ci-routine.mjs", "--matrix"], {
+      cwd: fixture,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { lane: lanes });
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("hosted planner propagates failure before emitting a matrix", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "paseo-ci-output-"));
+  const output = join(fixture, "output");
+  writeFileSync(output, "");
+  try {
+    const script = workflow.jobs.plan.steps.find((step) => step.id === "plan").run;
+    const result = spawnSync("bash", ["-e", "-c", `node() { return 7; }\n${script}`], {
+      env: { ...process.env, EVENT_NAME: "push", GITHUB_OUTPUT: output },
+    });
+    assert.equal(result.status, 7);
+    assert.equal(readFileSync(output, "utf8"), "");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
 test("execution propagates a failing check and never reaches later commands", () => {
   const commands = [
     { name: "first", command: "test", args: [] },
@@ -238,14 +318,19 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   assert.deepEqual(workflow.on.push.branches, ["dev"]);
   assert.ok(Object.hasOwn(workflow.on, "pull_request"));
   assert.equal(workflow.jobs.required.if, "always()");
-  assert.equal(workflow.jobs.required.needs, "routine");
+  assert.deepEqual(workflow.jobs.required.needs, ["plan", "routine"]);
   const gate = workflow.jobs.required.steps[0].run;
-  for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
-    const status = spawnSync("bash", ["-c", gate], {
-      env: { ...process.env, RESULT: result },
-    }).status;
-    assert.equal(status === 0, result === "success");
+  for (const plan of ["success", "failure", "cancelled", "skipped", ""]) {
+    for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
+      const status = spawnSync("bash", ["-c", gate], {
+        env: { ...process.env, RESULT: result, PLAN_RESULT: plan },
+      }).status;
+      assert.equal(status === 0, result === "success" && plan === "success");
+    }
   }
+  assert.equal(workflow.jobs.routine.strategy["fail-fast"], false);
+  assert.equal(workflow.jobs.routine.strategy["max-parallel"], lanes.length);
+  assert.ok(!workflow.jobs.plan.steps.some((step) => step.run?.includes("npm ci")));
   const steps = workflow.jobs.routine.steps;
   assert.ok(!steps.some((step) => step.uses?.startsWith("actions/cache")));
   const setup = steps.find((step) => step.name === "Configure pinned npm installation");

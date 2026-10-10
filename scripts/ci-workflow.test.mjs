@@ -42,7 +42,7 @@ const gradleResourceWatchPath = fileURLToPath(
   new URL("scripts/gradle-resource-watch.sh", repoRoot),
 );
 const runnerSwapPath = fileURLToPath(new URL("scripts/runner-swap.sh", repoRoot));
-const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
+const filtersPath = new URL(".github/ci-paths.json", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
 const desktopPackagePath = new URL("packages/desktop/package.json", repoRoot);
 
@@ -63,20 +63,7 @@ function jobBlocks(source) {
 }
 
 function loadFilters(path) {
-  const filters = {};
-  let currentFilter;
-
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    const filterMatch = /^([a-z_]+):\s*$/.exec(line);
-    if (filterMatch) {
-      currentFilter = filterMatch[1];
-      filters[currentFilter] = [];
-      continue;
-    }
-    const patternMatch = /^  - "([^"]+)"\s*$/.exec(line);
-    if (currentFilter && patternMatch) filters[currentFilter].push(patternMatch[1]);
-  }
-  return filters;
+  return JSON.parse(readFileSync(path, "utf8"));
 }
 
 function filesUnder(relativeDirectory, predicate) {
@@ -102,7 +89,7 @@ test("server builds exclude test utilities at every domain depth", () => {
 test("PR routing declares stable behavior ownership", () => {
   const filters = loadFilters(filtersPath);
   assert.deepEqual(filters, {
-    routing: [".github/ci-paths.yml"],
+    routing: [".github/ci-paths.json"],
     workspace: [
       "mise.toml",
       ".mise/tasks/**",
