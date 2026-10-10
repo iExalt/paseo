@@ -1,6 +1,6 @@
 # GitHub workflows roadmap
 
-Status: **Phase A approved and active, 2026-10-10; no implementation steps complete**.
+Status: **Phase A approved and active, 2026-10-10; step 1 / G0 complete**.
 Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
@@ -13,7 +13,7 @@ through `maintain-project-status`; do not create per-run committed reports.
 
 | Phase                       | Steps | Completed | Exit   |
 | --------------------------- | ----- | --------- | ------ |
-| A Foundations               | 1–3   | 0         | G0, G1 |
+| A Foundations               | 1–3   | 1         | G0, G1 |
 | B Verification and packages | 4–6   | 0         | G2, G3 |
 | C Release preparation       | 7–8   | 0         | G4     |
 | D Integration and delivery  | 9–11  | 0         | G5, G6 |
@@ -62,7 +62,7 @@ explicitly required before publication, even if absent from routine CI.
 
 ## Steps
 
-- [ ] **1. Resolve feasibility and candidate interfaces.** Run plan S1 and S3
+- [x] **1. Resolve feasibility and candidate interfaces.** Run plan S1 and S3
       within the approved phase bounds; verify zero-cost storage/transport and token
       event strategy before live probes. Define candidate SHA, independent fork
       version, upstream base, deterministic Android versionCode, artifact matrix and
@@ -74,6 +74,10 @@ explicitly required before publication, even if absent from routine CI.
     representative proof per unknown lane, or a recorded blocker requiring
     explicit scope resolution. Free-only execution controls verified.
   - Ticks: G0; W1.
+  - Evidence: [A1 native receipts and contracts](GITHUB_WORKFLOWS_STATUS.md);
+    Windows requires the custom ARM64 binding and colocated DLL layout; hosted
+    Android requires the pinned ashmem module and software-rendered container.
+    Full candidate packages and lifecycle/upgrade checks remain G3.
   - Human: before probes, supply any unavailable billing/access evidence; after
     S1, preserve the selected 0.1.0/manual-migration route. Unsupported
     requirements pause affected work while independent investigation continues.
