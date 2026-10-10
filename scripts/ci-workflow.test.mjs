@@ -17,40 +17,29 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = new URL("../", import.meta.url);
-const ciWorkflowPath = new URL(".github/workflows/ci.yml", repoRoot);
-const dockerWorkflowPath = new URL(".github/workflows/docker.yml", repoRoot);
-const nixWorkflowPath = new URL(".github/workflows/nix.yml", repoRoot);
+
+test("only fork-owned workflows are installed", () => {
+  const workflows = readdirSync(new URL(".github/workflows/", repoRoot))
+    .filter((name) => /\.ya?ml$/.test(name))
+    .sort();
+  assert.deepEqual(workflows, [
+    "fork-android-apk.yml",
+    "fork-builds.yml",
+    "macos-closure.yml",
+    "rebase-dev.yml",
+    "upstream-sync.yml",
+  ]);
+});
+
 const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
 const forkBuildsWorkflowPath = new URL(".github/workflows/fork-builds.yml", repoRoot);
 const gradleResourceWatchPath = fileURLToPath(
   new URL("scripts/gradle-resource-watch.sh", repoRoot),
 );
 const runnerSwapPath = fileURLToPath(new URL("scripts/runner-swap.sh", repoRoot));
-const deployWebsiteWorkflowPath = new URL(".github/workflows/deploy-website.yml", repoRoot);
 const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
 const desktopPackagePath = new URL("packages/desktop/package.json", repoRoot);
-
-const gatedCiJobs = new Map([
-  ["format", { name: "format", contract: "format" }],
-  ["lint", { name: "lint", contract: "quality" }],
-  ["typecheck", { name: "typecheck", contract: "quality" }],
-  ["server-tests-ubuntu", { name: "server-tests (ubuntu-latest)", contracts: ["server", "hub"] }],
-  ["server-tests-windows", { name: "server-tests (windows-latest)", contracts: ["server", "hub"] }],
-  ["server-tests-macos", { name: "server-tests (macos-14, file observation)", contract: "server" }],
-  ["desktop-tests-ubuntu", { name: "desktop-tests (ubuntu-latest)", contract: "desktop" }],
-  ["desktop-tests-windows", { name: "desktop-tests (windows-latest)", contract: "desktop" }],
-  ["app-tests", { name: "app-tests", contract: "app" }],
-  ["sdk-tests", { name: "sdk-tests", contract: "sdk" }],
-  ["playwright-1", { name: "playwright (shard 1/4)", contract: "browser" }],
-  ["playwright-2", { name: "playwright (shard 2/4)", contract: "browser" }],
-  ["playwright-3", { name: "playwright (shard 3/4)", contract: "browser" }],
-  ["playwright-4", { name: "playwright (shard 4/4)", contract: "browser" }],
-  ["relay-tests", { name: "relay-tests", contract: "relay" }],
-  ["cli-tests-1", { name: "cli-tests (shard 1/3)", contract: "cli" }],
-  ["cli-tests-2", { name: "cli-tests (shard 2/3)", contract: "cli" }],
-  ["cli-tests-3", { name: "cli-tests (shard 3/3)", contract: "cli" }],
-]);
 
 function jobBlocks(source) {
   const jobs = new Map();
@@ -98,57 +87,6 @@ function filesUnder(relativeDirectory, predicate) {
     .filter(predicate)
     .sort();
 }
-
-test("gated checks are statically named jobs with real job-level gating", () => {
-  const workflowSource = readFileSync(ciWorkflowPath, "utf8");
-  const jobs = jobBlocks(workflowSource);
-  const trigger = workflowSource.split("jobs:", 1)[0];
-
-  assert.match(trigger, /^\s+merge_group:\s*$/m);
-  assert.doesNotMatch(workflowSource, /strategy:\s*\n\s+matrix:/);
-  assert.doesNotMatch(workflowSource, /RUN_TESTS|Skip unaffected|No .* changes detected/);
-
-  for (const [jobId, expected] of gatedCiJobs) {
-    const job = jobs.get(jobId)?.join("\n");
-    assert.ok(job, `missing static job ${jobId}`);
-    assert.match(job, new RegExp(`^    name: ${expected.name.replace(/[()]/g, "\\$&")}$`, "m"));
-    assert.match(job, /needs\.changes\.outputs\.full != 'false'/);
-    for (const contract of expected.contracts ?? [expected.contract]) {
-      assert.match(job, new RegExp(`needs\\.changes\\.outputs\\.${contract} != 'false'`));
-    }
-  }
-});
-
-test("change gating allows superseded workflow runs to cancel", () => {
-  for (const workflowPath of [ciWorkflowPath, dockerWorkflowPath, nixWorkflowPath]) {
-    const source = readFileSync(workflowPath, "utf8");
-    assert.doesNotMatch(
-      source,
-      /\$\{\{\s*always\(\)/,
-      "always() keeps jobs alive after concurrency cancellation; use !cancelled() for fail-open gating",
-    );
-  }
-});
-
-test("focused contracts stay inside existing required checks", () => {
-  const jobs = jobBlocks(readFileSync(ciWorkflowPath, "utf8"));
-  const changes = jobs.get("changes")?.join("\n") ?? "";
-  const server = jobs.get("server-tests-ubuntu")?.join("\n") ?? "";
-  const desktop = jobs.get("desktop-tests-ubuntu")?.join("\n") ?? "";
-
-  assert.match(changes, /scripts\/daemon-launch-contract\.test\.mjs/);
-  assert.doesNotMatch(changes, /Install dependencies|npm run build/);
-
-  assert.match(server, /test:hub-cli-contract/);
-  assert.match(server, /npm run test --workspace=@getpaseo\/server/);
-  assert.ok(!jobs.has("hub-cli-contract"));
-
-  assert.match(desktop, /test:e2e:renderer/);
-  assert.match(desktop, /test:e2e:browser-tabs/);
-  assert.match(desktop, /npm run test --workspace=@getpaseo\/desktop/);
-  assert.ok(!jobs.has("desktop-browser-bridge"));
-  assert.ok(!jobs.has("playwright-desktop"));
-});
 
 test("server builds exclude test utilities at every domain depth", () => {
   const tsconfig = JSON.parse(readFileSync(serverTsconfigPath, "utf8"));
@@ -302,28 +240,6 @@ test("browser and desktop tests have exclusive, directory-owned suites", () => {
   ]);
 });
 
-test("packaging runs on main without allocating pull-request runners", () => {
-  for (const workflowPath of [dockerWorkflowPath, nixWorkflowPath]) {
-    const source = readFileSync(workflowPath, "utf8");
-    const trigger = source.split("jobs:", 1)[0];
-    assert.match(trigger, /push:\s*\n\s+branches: \[main\]/);
-    assert.doesNotMatch(trigger, /pull_request/);
-    assert.doesNotMatch(source, /dorny\/paths-filter/);
-  }
-});
-
-test("desktop packaging smokes main pushes and only the pull requests that touch packaging", () => {
-  const source = readFileSync(new URL(".github/workflows/desktop-packages.yml", repoRoot), "utf8");
-  const trigger = source.split("jobs:", 1)[0];
-  assert.match(trigger, /push:\s*\n\s+branches: \[main\]/);
-  assert.match(trigger, /pull_request:\s*\n\s+branches: \[main\]\s*\n\s+paths:/);
-  assert.match(trigger, /- "packages\/desktop\/\*\*"/);
-  assert.doesNotMatch(source, /dorny\/paths-filter/);
-  for (const action of ["actions/checkout", "actions/setup-node", "actions/upload-artifact"]) {
-    assert.match(source, new RegExp(`${action}@[0-9a-f]{40} # v\\d+\\.\\d+\\.\\d+`));
-  }
-});
-
 test("fork Android APK workflow is a trusted reusable lane with explicit release identity", () => {
   const source = readFileSync(forkAndroidWorkflowPath, "utf8");
   const trigger = source.split("jobs:", 1)[0];
@@ -463,16 +379,6 @@ test("paired candidate retries retain successful lane attempts without accepting
     });
     assert.equal(result.status === 0, accepted, `${androidAttempt}/${macosAttempt}`);
   }
-});
-
-test("fork release publication cannot trigger the upstream website deployment", () => {
-  const source = readFileSync(deployWebsiteWorkflowPath, "utf8");
-  assert.match(source, /release:\s*\n\s+types:\s*\[published\]/);
-  assert.match(source, /if:\s*\$\{\{\s*github\.repository == 'getpaseo\/paseo'/);
-  assert.match(
-    source,
-    /github\.event_name != 'release'\s*\|\|\s*\(!github\.event\.release\.prerelease && !github\.event\.release\.draft\)/,
-  );
 });
 
 test("fork Android resource watcher is paired and preserves child exit and signal status", async () => {
