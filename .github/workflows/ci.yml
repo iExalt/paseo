@@ -22,7 +22,6 @@ jobs:
       CI: "true"
       LEFTHOOK: "0"
       MISE_TASK_RUN_AUTO_INSTALL: "false"
-      npm_config_cache: ${{ runner.temp }}/npm-cache
       npm_config_audit: "false"
       npm_config_fund: "false"
     steps:
@@ -33,11 +32,13 @@ jobs:
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
-          install_args: node@26.11.0
+          install_args: node@26.11.0 actionlint@1.7.12
           cache: false
       - name: Identify pinned npm download cache
         id: cache-key
-        run: node .github/scripts/ci-cache.mjs key
+        run: |
+          echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+          node .github/scripts/ci-cache.mjs key
       - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         id: cache
         with:
