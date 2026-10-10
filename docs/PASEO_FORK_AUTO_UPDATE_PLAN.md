@@ -597,19 +597,22 @@ per-command Nix public pin is
 `paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8=`.
 An administrator may need to append that exact public key to the daemon's
 `extra-trusted-public-keys` during a later approved bootstrap, preserving existing
-keys. No trust configuration has been changed.
+keys. The approved bootstrap appended this public key and reloaded the daemon;
+readback retained signature enforcement and root-only trusted users.
 
 The isolated two-existing-output fixture proved that `nix-env --set` creates a
 profile generation linked directly to the exact store output, retains the prior
 generation, and rolls back to it. No user-environment derivation was needed;
 builders, substitutes, and local builds are disabled. All generations remain
 rooted, including any running version; no automatic GC or process restart occurs.
-Rollback does not restore app data. If the packaged updater breaks, Nix itself
-provides independent executable rollback:
+Rollback does not restore app data. Use the retained C helper for mapped rollback
+and status, including after the active profile returns to B:
 
 ```sh
-mise exec -- nix-env --rollback --profile \
-  "$HOME/Library/Application Support/Paseo/nix-update/profile"
+PASEO_UPDATER=/nix/store/60qjh1c1i9pv588xckd0pxhizxm98hbg-paseo-desktop-0.11.0/bin/paseo-nix-update
+"$PASEO_UPDATER" status
+# When C is active, validates B's signed receipt before the native rollback:
+"$PASEO_UPDATER" rollback
 ```
 
 The highest activated sequence survives rollback; staging requires a higher
@@ -619,8 +622,9 @@ durable-state failure for retry.
 Non-help commands serialize with an exclusive private lock. After a crash, remove
 a stale lock only after confirming no updater command is running. Six focused
 tests, scoped lint/format/syntax checks, and Nix expression parsing passed.
-Real promoted-release consumption, user-store import/activation,
-and Mac launch proof remain pending.
+Real promoted-release consumption, unprivileged user-store import/activation,
+managed launch, and offline binary rollback have passed below. A direct native
+profile switch is not a supported workaround for updater receipt invariants.
 
 Electron integration now marks the Darwin app resources with the Nix ownership
 contract and resolves the fixed updater CLI from that same immutable store output.
@@ -700,7 +704,7 @@ Its six published assets retain the reviewed identities and byte digests. Both
 actual consumer verification paths accepted the independently downloaded manifest
 and detached signature with their pinned key. The manifest SHA-256 is
 `a509d01032dde25a6cbc34fe9410ec19d2e72605500cd622c3ded395e4a397bb`.
-No app or host transition has occurred.
+Later releases and actual host/device transitions are recorded below.
 
 ## Later milestones and acceptance gates
 
@@ -774,8 +778,11 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Activate the backed-up managed Mac installation and verify its daemon and native terminal.
 - [x] Pass the S24's A-to-B in-app update, installer cancellation/retry, and settings/connection preservation.
 - [x] Implement and test distinct signed release identity and native Nix generation handling.
-- [ ] Implement platform update interfaces and recovery.
-- [ ] Pass actual-device CI artifact install/update/recovery gates.
+- [x] Implement platform update interfaces and tested signed recovery state handling.
+- [x] Pass managed Mac B-to-C launch and offline binary rollback to usable B.
+- [x] Pass S24 B-to-C in-app higher-code recovery with installed-byte, theme, and permission preservation.
+- [x] Acknowledge the S24's live saved connection after C recovery without re-pairing.
+- [x] Pass actual-device CI artifact install/update/recovery gates, with visual/reactivation limitations below.
 
 The earlier preference-only migration design left drafts and attachments in
 Debug; the subsequent user uninstall made that device transfer unavailable.
@@ -787,7 +794,7 @@ replacement. Files can contain personal paths. Credential registries, client
 identities, push tokens, arbitrary plugin values, and volatile agent/session state
 are excluded. Imports retain before-images and recover before store hydration.
 Bridge packaging, installation, and transfer of real device settings remain
-unverified and require the later transition gate.
+unverified; that device task is retired after the user uninstalled Debug.
 The focused migration tests passed (13 cases in 2.42 seconds); a subsequent
 cleanup-failure regression passed with the affected four-case UI suite in 1.25
 seconds. Runner lifecycle/workflow tests passed (16 cases in 1.08 seconds), with
@@ -907,21 +914,82 @@ rejects ambiguous identities. A harmless two-output profile fixture confirmed th
 Nix reuses a retained generation after rollback; activation uses the observed
 generation rather than predicting its number. Thirteen focused tests passed with
 the existing opt-in signature fixture skipped; formatting, lint, and diff checks
-passed. Canonical CI packaging of this correction remains pending.
+passed. The correction is committed as
+`9948430607b1e09fee11a702af9bcedce4d52135`.
 
-Next campaign action: build a candidate containing this
-actual packaged CLI correction, then explicitly select it for promotion before
-testing managed Mac update and native-generation rollback. The packaged script is
+Paired candidate 200007 passed
+[run 38007082250](https://github.com/iExalt/paseo/actions/runs/38007082250), attempt 1,
+from 00:00:03 to 00:17:41 UTC on October 10 (8:00:03 to 8:17:41 PM EDT on October 9).
+The Mac producer took 15m17s and fresh verification 1m00s; Android build took
+16m40s and signing 28s. Its prepared receipt selects authenticated release 200006
+as `rollbackOf`. The Mac output
+`/nix/store/60qjh1c1i9pv588xckd0pxhizxm98hbg-paseo-desktop-0.11.0`
+differs from B, with 69 signed runtime paths. Android retains the package, signer,
+and application source from B with increasing code 200007. After explicit user
+selection, [C was published](https://github.com/iExalt/paseo/releases/tag/paseo-fork-v0.11.0-r200007-9948430607b1e09fee11a702af9bcedce4d52135)
+and independently verified through both pinned manifest consumers, including its
+exact signed `rollbackOf` reference to B. All six public asset sizes/digests match
+the staged files; APK SHA-256 is
+`8f790e3e45e1f1fd25fc118b430cd050d5c2779d9befb858462077fbcbdf134d`
+and closure archive SHA-256 is
+`d09d45f49a0231f2929d4cf002053db39771fa3d4115bbce1d4822b43aecc119`.
+Actual Mac staging verified C through the unprivileged daemon without compilation.
+Refreshed preliminary and final quiescent backup deltas preserve all changed unique
+state over the retained full backup; extraction comparisons and six SQLite checks
+passed before launch. Activation selected native generation 2/C, and the exact C
+store executable launched with the production daemon. Selected settings and five
+daemon identity/pairing/client/push files stayed equal; one window geometry field,
+`state.x`, changed while the other five fields and field set remained equal.
+
+The retained C helper then performed a real offline rollback to generation 1/B
+under a process sandbox denying outbound IP connections while permitting the local
+Nix daemon Unix socket. It validated B's signed receipt, reported a binary change,
+and kept high-water 200007. The running C process and daemon remained alive until
+the separately authorized graceful restart. A refreshed cold backup again passed
+extraction and SQLite checks before the exact B executable relaunched. B's daemon
+returned HTTP 200 from its supported status endpoint. B's status-only helper left
+the atomic mapping unchanged; both helpers report active B200006, high-water
+C200007, no staged release, and no pending operation. Both native roots remain
+retained. This proves binary rollback and launch/state preservation; it does not
+claim data-schema rollback or the blocked About visual observation.
+
+Current Mac: usable B with latest C retained. The supported commands cannot
+reactivate that exact highest sequence after rollback: stage rejects sequences at
+or below high-water, and the prior stage is consumed. Use the retained C helper for
+status; avoid B's mutating updater commands and do not bypass mapping with a manual
+profile switch. Explicit reactivation needs a separately reviewed implementation;
+a future higher-sequence release can follow the ordinary stage/activate path.
+The packaged script is
 a derivation input; a sequence-only metadata change remains outside the derivation.
 Same-root metadata changes will not count as binary rollback proof. Android forward
 recovery must use a higher code with the same package and signer, with signed
 `rollbackOf` identifying the selected known-good published release; cancellation
-and retry alone do not prove recovery. No recovery candidate has been built or
-promoted. The old Debug transfer gate is unavailable after the confirmed uninstall.
+and retry alone do not prove recovery. The S24 completed B-to-C through in-app
+Check, verified Download, Install, and Android's standard Update confirmation.
+The installed APK is exactly 140,620,645 bytes with the public C SHA-256 above,
+binding it to the CI-verified signing certificate. Actual package metadata reports
+`sh.paseo.iexalt`, code 200007, ARM64, and no debuggable flag. Theme = System and
+notification permission remain unchanged. Saved connection rows are visible, but
+the welcome view did not show a positive live acknowledgement. No re-pair or
+data clearing was performed. One source-informed normal selection of the sole
+saved Mac connection reached the open-project/workspace view, consistent with the
+route for a host without a restorable workspace. About showed the Connected hosts
+heading, but neither a daemon-version row nor an Offline label was observable.
+That About observation remains inconclusive. In the already-inspected host-picker
+image from the same post-C attempt, the sole saved Mac host displayed a small
+circular green status dot, distinct from a selection checkmark. Source review binds
+that dot to runtime `online`, which requires the client's completed
+`HELLO_SERVER_INFO` handshake and rejects authentication failures. This proves live
+reconnection without re-pairing; saved rows or registered notification tokens alone
+would not. Screen timeout 300000 ms, charging stay-awake 0, and the fork's
+install-source permission off were restored and read back after both phone tests.
+Temporary UI captures were removed; the visual observation is first-hand evidence,
+not a retained screenshot. Final device state is Mac B200006 and phone C200007.
+The old Debug transfer gate is unavailable after the confirmed uninstall.
 No lock/security setting was disabled during phone automation.
 Standalone closure probe runs are stopped.
-Platform updater implementation and actual transitions still need
-their assigned acceptance boundaries. Reconsider the route if
+Remaining actual-device gates retain their assigned acceptance boundaries.
+Reconsider the route if
 fresh-store import needs weakened verification or compilation, standard runners
 cannot build within resource limits, Android migration cannot preserve required
 state, or the probe exceeds its agreed effort without resolving the question.
