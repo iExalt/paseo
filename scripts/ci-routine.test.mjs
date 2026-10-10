@@ -112,6 +112,15 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   assert.equal(commands.filter((step) => step.args.includes("build:server")).length, 1);
   const app = commands.find((step) => step.name === "app units");
   assert.ok(app.args.includes("unit"));
+  const cli = commands.find((step) => step.name === "cli units");
+  assert.ok(cli.args.includes("**/*.e2e.test.ts"));
+  const desktop = commands.find((step) => step.name === "desktop units");
+  assert.ok(desktop.args.includes("scripts/after-pack.test.mjs"));
+  assert.ok(
+    commands
+      .find((step) => step.name === "workflow and helper contracts")
+      .args.includes("packages/desktop/scripts/after-pack.test.mjs"),
+  );
   assert.ok(
     !commands.some(
       (step) => step.args.includes("test:local") || step.args.includes("test:browser"),

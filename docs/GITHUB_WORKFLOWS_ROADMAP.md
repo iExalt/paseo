@@ -114,6 +114,10 @@ explicitly required before publication, even if absent from routine CI.
     emulator-only results explicitly; actual release-please event proof is step 8.
     Run the local relay E2EE journey with `FORCE_RELAY_E2E=1`; routine Node 26
     collection skips its three cases and does not establish relay runtime proof.
+    Build the CLI and execute `packages/cli/src/commands/daemon/lifecycle.e2e.test.ts`
+    explicitly; routine CLI units exclude E2E files.
+    Verify installed provider executables report their versions; routine Claude
+    version resolution uses a deterministic command fixture, not a machine installation.
   - Ticks: G2; W4.
 
 - [ ] **5. Preserve Mac/Android candidate packages.** Adapt existing reusable
