@@ -47,8 +47,10 @@ set of end-to-end journeys at release gates. Existing suite names do not establi
 their fidelity; audit tests that hide integration or network work in unit suites.
 
 Baseline: the measured `63315404a` cold/warm pair is recorded in
-[project status](GITHUB_WORKFLOWS_STATUS.md); acceptance of the proposed 15-minute
-ceiling remains pending. Step 2 records one cold and one warm
+[project status](GITHUB_WORKFLOWS_STATUS.md). The user rejected 15 minutes and
+requires the complete blocking PR gate in under five minutes, with two minutes
+preferred; parallel optimization is authorized, with total runner work reported.
+Step 2 records one cold and one warm
 required run with fixed runner label, tool versions, CPU/concurrency, dependency
 cache state, source revision, setup/build/test timings and total wall time. Derive
 a low-latency budget from those observations and seek user agreement before
