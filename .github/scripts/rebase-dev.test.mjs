@@ -388,10 +388,10 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
     (step) => step.name === "Publish backup and rebased dev atomically",
   );
   const rebaseIndex = steps.indexOf(rebaseStep);
-  const cacheIndex = steps.findIndex((step) => step.id === "cache-key");
+  const setupIndex = steps.findIndex((step) => step.name === "Configure pinned npm installation");
   const installIndex = steps.findIndex((step) => step.run === "time npm ci --prefer-offline");
   const validateIndex = steps.findIndex((step) => step.id === "validate");
-  assert.ok(rebaseIndex < cacheIndex && cacheIndex < installIndex);
+  assert.ok(rebaseIndex < setupIndex && setupIndex < installIndex);
   assert.ok(installIndex < validateIndex && validateIndex < publishIndex);
   assert.equal(steps[validateIndex].run, "node .github/scripts/rebase-dev.mjs validate");
   assert.equal(steps[publishIndex].env.TESTED_SHA, "${{ steps.validate.outputs.tested-sha }}");
@@ -401,7 +401,7 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   for (const [index, step] of steps.entries()) {
     if (index !== rebaseIndex) assert.equal(step.env?.PASEO_REBASE_SSH_SIGNING_KEY, undefined);
     if (index !== publishIndex) assert.equal(step.env?.GH_TOKEN, undefined);
-    assert.doesNotMatch(step.uses ?? "", /actions\/(?:cache\/save|upload-artifact)/);
+    assert.doesNotMatch(step.uses ?? "", /actions\/(?:cache|upload-artifact)/);
     assert.doesNotMatch(step.run ?? "", /npm run (?:build:server|typecheck|test)/);
   }
   assert.match(steps[publishIndex].run, /::add-mask::/);
