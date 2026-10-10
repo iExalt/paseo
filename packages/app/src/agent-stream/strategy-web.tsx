@@ -10,7 +10,6 @@ import React, {
 import {
   defaultRangeExtractor,
   observeElementOffset,
-  measureElement as measureVirtualElement,
   useVirtualizer,
   type Range as VirtualRange,
   type Virtualizer,
@@ -566,7 +565,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       "[data-history-row-id][data-index]",
     ) ?? []) {
       const index = Number(element.dataset.index);
-      const height = measureVirtualElement(element, undefined, rowVirtualizer);
+      // Read committed layout; TanStack's measureElement without an entry reuses cached sizes.
+      const height = element.offsetHeight;
       if (rowVirtualizer.measurementsCache[index]?.size === height) continue;
       rowVirtualizer.resizeItem(index, height);
       resized = true;

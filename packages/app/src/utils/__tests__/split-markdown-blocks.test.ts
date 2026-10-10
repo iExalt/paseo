@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { splitMarkdownBlocks } from "../split-markdown-blocks";
+import { createMarkdownParser } from "../markdown-parser";
 
 describe("splitMarkdownBlocks", () => {
   it("returns a single block for a single paragraph", () => {
@@ -98,13 +99,20 @@ describe("splitMarkdownBlocks", () => {
     ]);
   });
 
-  it("recognizes every destination the renderer accepts, including escaped spaces", () => {
-    expect(splitMarkdownBlocks("See [docs].\n\n[docs]: docs\\ folder/readme")).toEqual([
-      "See [docs].\n\n[docs]: docs\\ folder/readme",
-    ]);
-    expect(splitMarkdownBlocks("See [docs].\n\n[docs]: <docs folder/readme> 'Title'")).toEqual([
-      "See [docs].\n\n[docs]: <docs folder/readme> 'Title'",
-    ]);
+  it("folds angle-bracket destinations containing spaces accepted by the renderer", () => {
+    const source = "See [docs].\n\n[docs]: <docs folder/readme> 'Title'";
+    expect(createMarkdownParser({ linkify: false }).render(source)).toContain(
+      'href="docs%20folder/readme"',
+    );
+    expect(splitMarkdownBlocks(source)).toEqual([source]);
+  });
+
+  it("keeps escaped-space destinations as prose, matching the renderer", () => {
+    const source = "See [docs].\n\n[docs]: docs\\ folder/readme";
+    expect(createMarkdownParser({ linkify: false }).render(source)).toBe(
+      "<p>See [docs].</p>\n<p>[docs]: docs\\ folder/readme</p>\n",
+    );
+    expect(splitMarkdownBlocks(source)).toEqual(["See [docs].", "[docs]: docs\\ folder/readme"]);
   });
 
   it("leaves a definition-only message as its own block", () => {
