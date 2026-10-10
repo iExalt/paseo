@@ -131,10 +131,18 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   const docs = planCommands(selectChecks(["docs/GITHUB_WORKFLOWS_PLAN.md"], filters));
   assert.deepEqual(
     docs.map((step) => step.name),
-    ["format", "workflow and helper contracts"],
+    ["format", "workflow expressions", "workflow and helper contracts"],
   );
-  assert.ok(!docs[1].args.includes(helperTests[0]));
-  assert.ok(commands[1].args.includes(helperTests[0]));
+  assert.ok(
+    !docs
+      .find((step) => step.name === "workflow and helper contracts")
+      .args.includes(helperTests[0]),
+  );
+  assert.ok(
+    commands
+      .find((step) => step.name === "workflow and helper contracts")
+      .args.includes(helperTests[0]),
+  );
 });
 
 test("new Node test files require an explicit routine or G3 classification", () => {
