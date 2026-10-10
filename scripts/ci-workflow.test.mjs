@@ -23,6 +23,7 @@ test("only fork-owned workflows are installed", () => {
     .filter((name) => /\.ya?ml$/.test(name))
     .sort();
   assert.deepEqual(workflows, [
+    "android-arm64-feasibility.yml",
     "fork-android-apk.yml",
     "fork-builds.yml",
     "macos-closure.yml",
