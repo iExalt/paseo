@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, matchesGlob, relative as relativePath } from "node:path";
+import { join, relative as relativePath } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { load } from "js-yaml";
@@ -315,37 +315,11 @@ test("fork candidate orchestration shares one identity and only completes after 
   const android = jobs.get("build-android")?.join("\n") ?? "";
   const candidate = jobs.get("candidate-complete")?.join("\n") ?? "";
 
-  assert.match(trigger, /push:[\s\S]*?branches: \[dev\]/);
-  assert.match(
-    trigger,
-    /paths:[\s\S]*?flake\.lock[\s\S]*?nix\/\*\*[\s\S]*?packages\/desktop\/\*\*/,
-  );
-  assert.doesNotMatch(trigger, /paths-ignore:|docs\/\*\*/);
-  assert.doesNotMatch(trigger, /pull_request:|workflow_dispatch:/);
-  const paths = load(source).on.push.paths;
-  const matches = (file) =>
-    paths.reduce(
-      (included, pattern) =>
-        matchesGlob(file, pattern.replace(/^!/, "")) ? !pattern.startsWith("!") : included,
-      false,
-    );
-  for (const file of [
-    ".github/workflows/fork-builds.yml",
-    "packages/client/src/daemon-client.test.ts",
-    "packages/relay/src/e2e.test.ts",
-  ])
-    assert.equal(matches(file), false, file);
-  for (const file of [
-    "packages/client/src/daemon-client.ts",
-    "packages/client/src/connection.test.ts",
-    "packages/relay/src/index.ts",
-    "plugins/vitest.config.ts",
-    ".github/workflows/fork-android-apk.yml",
-    "flake.lock",
-  ])
-    assert.equal(matches(file), true, file);
+  assert.deepEqual(load(source).on, { workflow_dispatch: null });
+  assert.doesNotMatch(trigger, /paths:|paths-ignore:/);
   assert.match(source, /github\.repository == 'iExalt\/paseo'/);
   assert.match(source, /github\.actor == 'iExalt'/);
+  assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
   assert.match(identity, /release_sequence=\$\(\(200000 \+ GITHUB_RUN_NUMBER\)\)/);
   assert.match(identity, /source_sha=\$GITHUB_SHA/);
   assert.match(macos, /uses: \.\/\.github\/workflows\/macos-closure\.yml/);
@@ -365,7 +339,7 @@ test("fork candidate orchestration shares one identity and only completes after 
   assert.match(candidate, /\.runAttempt \| type == "string"/);
   assert.doesNotMatch(candidate, /\.runAttempt == \$runAttempt/);
   assert.match(candidate, /paired-candidate\.json/);
-  assert.doesNotMatch(source, /gh release (?:create|upload)|workflow_dispatch/);
+  assert.doesNotMatch(source, /gh release (?:create|upload)/);
 
   const macosHelper = readFileSync(
     new URL(".github/scripts/nix-release-closure.sh", repoRoot),
@@ -411,7 +385,6 @@ test("paired candidate retries retain successful lane attempts without accepting
 
 test("fork Android resource watcher is paired and preserves child exit and signal status", async () => {
   const source = readFileSync(gradleResourceWatchPath, "utf8");
-  const pairedWorkflow = readFileSync(forkBuildsWorkflowPath, "utf8");
   assert.match(source, /interval_seconds=60/);
   assert.match(source, /free -b/);
   assert.match(source, /swap_total_bytes=%s swap_used_bytes=%s swap_free_bytes=%s/);
@@ -420,7 +393,6 @@ test("fork Android resource watcher is paired and preserves child exit and signa
   assert.match(source, /oom_group_kill/);
   assert.match(source, /ps -Ao rss=,%cpu=,comm=/);
   assert.doesNotMatch(source, /ps[^\n]*(?:args|command=|cmdline)/);
-  assert.match(pairedWorkflow, /"scripts\/gradle-resource-watch\.sh"/);
 
   for (const [exitCode, expectedStatus] of [
     [0, 0],
