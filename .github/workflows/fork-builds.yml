@@ -1,44 +1,7 @@
 name: Fork release candidate builds
 
 on:
-  push:
-    branches: [dev]
-    paths:
-      - ".github/scripts/nix-release-closure.sh"
-      - ".github/workflows/fork-android-apk.yml"
-      - ".github/workflows/macos-closure.yml"
-      - ".npmrc"
-      - ".tool-versions"
-      - "flake.lock"
-      - "flake.nix"
-      - "mise.toml"
-      - "nix/**"
-      - "package.json"
-      - "package-lock.json"
-      - "patches/**"
-      - "plugins/**"
-      - "packages/app/**"
-      - "packages/cli/**"
-      - "packages/client/**"
-      - "packages/desktop/**"
-      - "packages/expo-two-way-audio/**"
-      - "packages/highlight/**"
-      - "packages/plugin/**"
-      - "packages/protocol/**"
-      - "packages/relay/**"
-      - "packages/server/**"
-      - "scripts/build-daemon-web-ui.mjs"
-      - "scripts/build-terminal-webview-html.mjs"
-      - "scripts/gradle-resource-watch.sh"
-      - "scripts/npm-retry.mjs"
-      - "scripts/paseo-nix-update.mjs"
-      - "scripts/postinstall-patches.mjs"
-      - "scripts/trace-daemon.mjs"
-      - "tsconfig.base.json"
-      - "tsconfig.json"
-      # Temporary Phase A baseline exceptions; remove with the step 9 coordinator.
-      - "!packages/client/src/daemon-client.test.ts"
-      - "!packages/relay/src/e2e.test.ts"
+  workflow_dispatch:
 
 permissions:
   contents: read
