@@ -22,6 +22,7 @@ const UPSTREAM_REF = "refs/heads/upstream/main";
 const CACHE_PREFIX = "resolutions/";
 const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
+const DELETIONS_PATH = "deletions.json";
 const SIGNING_EMAIL = "clliaw@nvidia.com";
 const SIGNING_PUBLIC_KEY =
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEScQeKzAdwWjNsrJ7xQNq2BAKGSkXP6FPbBD7PZrM9J";
@@ -63,7 +64,9 @@ async function gitObject(repositoryPath, type, oid) {
     return result.stdout;
   } catch (error) {
     const stderr = Buffer.isBuffer(error.stderr) ? error.stderr.toString("utf8") : error.stderr;
-    throw new Error(`git cat-file ${type} ${oid} failed: ${(stderr ?? error.message).trim()}`);
+    throw new Error(`git cat-file ${type} ${oid} failed: ${(stderr ?? error.message).trim()}`, {
+      cause: error,
+    });
   }
 }
 
@@ -155,9 +158,17 @@ export async function importResolutions(repositoryPath, resolutionSha) {
     throw new Error(`Unsupported resolution schema in ${SCHEMA_PATH}`);
   }
 
+  const deletions = entries.find((entry) => entry.path === DELETIONS_PATH);
+  if (deletions) {
+    if (deletions.mode !== "100644")
+      throw new Error("Unsupported path or file mode: deletions.json");
+    parseDeletionResolutions(await gitChecked(repositoryPath, ["cat-file", "blob", deletions.oid]));
+  }
+  const cacheEntries = entries.filter(
+    (entry) => ![SCHEMA_PATH, DELETIONS_PATH].includes(entry.path),
+  );
   const pairs = new Map();
-  for (const entry of entries) {
-    if (entry.path === SCHEMA_PATH) continue;
+  for (const entry of cacheEntries) {
     const match = /^resolutions\/([0-9a-f]{40})\/(preimage|postimage)(\.\d+)?$/.exec(entry.path);
     if (!match || entry.mode !== "100644") {
       throw new Error(`Unsupported path or file mode in resolution branch: ${entry.path}`);
@@ -178,8 +189,7 @@ export async function importResolutions(repositoryPath, resolutionSha) {
     ? cacheRoot.trim()
     : join(repositoryPath, cacheRoot.trim());
   await mkdir(resolvedCacheRoot, { recursive: true });
-  for (const entry of entries) {
-    if (entry.path === SCHEMA_PATH) continue;
+  for (const entry of cacheEntries) {
     const relative = entry.path.slice(CACHE_PREFIX.length);
     const destination = join(resolvedCacheRoot, relative);
     await mkdir(dirname(destination), { recursive: true });
@@ -187,6 +197,71 @@ export async function importResolutions(repositoryPath, resolutionSha) {
     await writeFile(destination, content, { flag: "wx", mode: 0o600 });
   }
   return pairs.size;
+}
+
+export function parseDeletionResolutions(text) {
+  const records = JSON.parse(text);
+  if (!Array.isArray(records)) throw new Error("Deletion resolutions must be an array");
+  const keys = new Set();
+  for (const record of records) {
+    if (
+      !record ||
+      Object.keys(record).sort().join() !== "commit,path,stages,upstream" ||
+      !/^[0-9a-f]{40}$/.test(record.commit) ||
+      !/^[0-9a-f]{40}$/.test(record.upstream) ||
+      typeof record.path !== "string" ||
+      !record.path
+        .split("/")
+        .every(
+          (part) =>
+            /^[A-Za-z0-9_@+.-]+$/.test(part) && ![".", "..", ".git"].includes(part.toLowerCase()),
+        ) ||
+      !Array.isArray(record.stages) ||
+      record.stages.length !== 2 ||
+      record.stages[0]?.stage !== 1 ||
+      ![2, 3].includes(record.stages[1]?.stage) ||
+      record.stages.some(
+        (entry) =>
+          !entry ||
+          Object.keys(entry).sort().join() !== "mode,oid,stage" ||
+          entry.mode !== "100644" ||
+          !/^[0-9a-f]{40}$/.test(entry.oid),
+      )
+    )
+      throw new Error("Invalid exact deletion resolution");
+    const key = `${record.upstream}:${record.commit}:${record.path}`;
+    if (keys.has(key)) throw new Error("Duplicate deletion resolution");
+    keys.add(key);
+  }
+  return records;
+}
+
+async function loadDeletionResolutions(repositoryPath, resolutionSha) {
+  const entry = await gitChecked(repositoryPath, ["ls-tree", resolutionSha, "--", DELETIONS_PATH]);
+  if (!entry) return [];
+  return parseDeletionResolutions(
+    await gitChecked(repositoryPath, ["show", `${resolutionSha}:${DELETIONS_PATH}`]),
+  );
+}
+
+async function applyDeletionResolutions(repositoryPath, records, upstream) {
+  const commit = (await gitChecked(repositoryPath, ["rev-parse", "REBASE_HEAD"])).trim();
+  const matching = records.filter(
+    (record) => record.commit === commit && record.upstream === upstream,
+  );
+  const pending = [];
+  for (const record of matching) {
+    const actual = await gitChecked(repositoryPath, ["ls-files", "-u", "-z", "--", record.path]);
+    const expected = record.stages
+      .map(({ mode, oid, stage }) => `${mode} ${oid} ${stage}\t${record.path}\0`)
+      .join("");
+    if (actual !== expected) throw new Error(`Deletion resolution index mismatch: ${record.path}`);
+    pending.push(record.path);
+  }
+  for (const path of pending) {
+    await gitChecked(repositoryPath, ["rm", "--", path]);
+  }
+  return pending.length;
 }
 
 async function unmergedPaths(repositoryPath) {
@@ -207,24 +282,28 @@ async function rebaseProgress(repositoryPath) {
   return `${head}:${current.code === 0 ? current.stdout.trim() : "none"}:${staged}:${unmerged}`;
 }
 
-function isReusableRerereStop(result, paths, indexPaths) {
+function isReusableRerereStop(result, paths, indexPaths, deletions = 0) {
   const diagnostics = `${result.stdout}\n${result.stderr}`;
   const reusedRecords = diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? [];
   return (
     result.code !== 0 &&
     /CONFLICT \(/.test(diagnostics) &&
     /could not apply [0-9a-f]+/.test(diagnostics) &&
-    reusedRecords.length > 0 &&
+    (reusedRecords.length > 0 || deletions > 0) &&
     paths.length === 0 &&
     indexPaths.length > 0
   );
 }
 
-async function continueKnownResolutions(repositoryPath, firstResult, maxContinuations) {
+async function continueKnownResolutions(
+  repositoryPath,
+  firstResult,
+  maxContinuations,
+  deletionRecords = [],
+  upstream,
+) {
   let result = firstResult;
   for (let attempt = 0; attempt < maxContinuations; attempt += 1) {
-    const conflicts = await unmergedPaths(repositoryPath);
-    const staged = await stagedPaths(repositoryPath);
     const state = await git(repositoryPath, ["rev-parse", "-q", "--verify", "REBASE_HEAD"]);
     const gitDir = (
       await gitChecked(repositoryPath, ["rev-parse", "--git-path", "rebase-merge"])
@@ -236,7 +315,21 @@ async function continueKnownResolutions(repositoryPath, firstResult, maxContinua
         () => false,
       ),
     );
-    if (state.code !== 0 || !directoryExists || !isReusableRerereStop(result, conflicts, staged)) {
+    const conflictStop =
+      result.code !== 0 &&
+      /CONFLICT \(/.test(`${result.stdout}\n${result.stderr}`) &&
+      /could not apply [0-9a-f]+/.test(`${result.stdout}\n${result.stderr}`);
+    const deletions =
+      state.code === 0 && directoryExists && conflictStop
+        ? await applyDeletionResolutions(repositoryPath, deletionRecords, upstream)
+        : 0;
+    const conflicts = await unmergedPaths(repositoryPath);
+    const staged = await stagedPaths(repositoryPath);
+    if (
+      state.code !== 0 ||
+      !directoryExists ||
+      !isReusableRerereStop(result, conflicts, staged, deletions)
+    ) {
       throw new Error(
         `Rebase stopped without a safely reusable completed resolution:\n${result.stdout}\n${result.stderr}`,
       );
@@ -562,6 +655,23 @@ async function writeExportFile(path, contents) {
   }
 }
 
+async function readResolutionVariants(idDirectory, id) {
+  const variants = new Map();
+  for (const entry of await readdir(idDirectory, { withFileTypes: true })) {
+    const match = /^(preimage|postimage)(\.\d+)?$/.exec(entry.name);
+    if (!match) continue;
+    if (entry.isSymbolicLink() || !entry.isFile()) {
+      throw new Error(`Rerere variant is not a regular file: ${id}/${entry.name}`);
+    }
+    const [, side, suffix = ""] = match;
+    const pair = variants.get(suffix) ?? {};
+    if (pair[side]) throw new Error(`Duplicate rerere variant: ${id}/${entry.name}`);
+    pair[side] = await readFile(join(idDirectory, entry.name));
+    variants.set(suffix, pair);
+  }
+  return variants;
+}
+
 export async function exportResolutions({ repositoryPath, destinationPath } = {}) {
   if (!repositoryPath || !destinationPath) {
     throw new Error("repositoryPath and destinationPath are required");
@@ -575,7 +685,7 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
   }
   const destinationAbsolute = resolve(destinationPath);
   const destinationStat = await lstat(destinationAbsolute);
-  if (!destinationStat.isDirectory() || destinationStat.isSymbolicLink()) {
+  if (!destinationStat.isDirectory()) {
     throw new Error("Export destination must be a real directory");
   }
   const cacheRootText = await gitChecked(repositoryPath, ["rev-parse", "--git-path", "rr-cache"]);
@@ -598,20 +708,7 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
       throw new Error(`Rerere ID entry is not a regular directory: ${idEntry.name}`);
     }
     const idDirectory = join(cacheRoot, idEntry.name);
-    const variants = new Map();
-    for (const fileEntry of await readdir(idDirectory, { withFileTypes: true })) {
-      const match = /^(preimage|postimage)(\.\d+)?$/.exec(fileEntry.name);
-      if (!match) continue;
-      if (fileEntry.isSymbolicLink() || !fileEntry.isFile()) {
-        throw new Error(`Rerere variant is not a regular file: ${idEntry.name}/${fileEntry.name}`);
-      }
-      const [, side, suffix = ""] = match;
-      const pair = variants.get(suffix) ?? {};
-      if (pair[side])
-        throw new Error(`Duplicate rerere variant: ${idEntry.name}/${fileEntry.name}`);
-      pair[side] = await readFile(join(idDirectory, fileEntry.name));
-      variants.set(suffix, pair);
-    }
+    const variants = await readResolutionVariants(idDirectory, idEntry.name);
     for (const [suffix, pair] of variants) {
       // Unfinished rerere records lack one side; export completed pairs only.
       if (pair.preimage && pair.postimage) {
@@ -649,6 +746,7 @@ export async function rebaseDev({
   if (!repositoryPath) throw new Error("repositoryPath is required");
   let snapshots = {};
   try {
+    if (signingKey && !signingKey.endsWith("\n")) signingKey += "\n";
     await validateSigningKey(signingKey, publicKey);
     const status = await gitChecked(repositoryPath, ["status", "--porcelain"]);
     if (status) throw new Error("Refusing to rebase a worktree with local changes");
@@ -664,6 +762,7 @@ export async function rebaseDev({
       snapshots.dev,
     );
     await importResolutions(repositoryPath, snapshots.resolutions);
+    const deletionRecords = await loadDeletionResolutions(repositoryPath, snapshots.resolutions);
     await gitChecked(repositoryPath, ["checkout", "--detach", snapshots.dev]);
     const rebaseResult = await git(repositoryPath, [
       "-c",
@@ -682,7 +781,13 @@ export async function rebaseDev({
       snapshots.upstream,
     ]);
     if (rebaseResult.code !== 0) {
-      await continueKnownResolutions(repositoryPath, rebaseResult, maxContinuations);
+      await continueKnownResolutions(
+        repositoryPath,
+        rebaseResult,
+        maxContinuations,
+        deletionRecords,
+        snapshots.upstream,
+      );
     }
     const signedCommits = await signRebasedCommits(
       repositoryPath,

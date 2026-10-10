@@ -16,7 +16,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { exportResolutions, importResolutions, publishRebase, rebaseDev } from "./rebase-dev.mjs";
+import {
+  exportResolutions,
+  importResolutions,
+  parseDeletionResolutions,
+  publishRebase,
+  rebaseDev,
+} from "./rebase-dev.mjs";
 
 const yaml = createRequire(import.meta.url)("js-yaml");
 process.env.GIT_CONFIG_GLOBAL = "/dev/null";
@@ -116,18 +122,24 @@ function initRepo(path) {
 
 async function makeFixture(
   name,
-  { unknown = false, adaptedContext = false, initiallyEmpty = false, newlyEmpty = false } = {},
+  {
+    unknown = false,
+    adaptedContext = false,
+    initiallyEmpty = false,
+    newlyEmpty = false,
+    deletion = false,
+  } = {},
 ) {
   const directory = join(root, name);
   const remote = join(directory, "origin.git");
   const seed = join(directory, "seed");
   const recorder = join(directory, "recorder");
-  const resolver = join(directory, "resolver");
   mkdirSync(directory, { recursive: true });
   git(directory, "init", "--bare", remote);
 
   initRepo(seed);
   writeFileSync(join(seed, "shared.txt"), content());
+  if (deletion) writeFileSync(join(seed, "old.patch"), content());
   commit(seed, "base");
   git(seed, "remote", "add", "origin", remote);
   git(seed, "push", "origin", "HEAD:refs/heads/dev");
@@ -135,6 +147,7 @@ async function makeFixture(
 
   git(seed, "checkout", "-b", "upstream/main");
   writeFileSync(join(seed, "shared.txt"), content({ target: "upstream target" }));
+  if (deletion) git(seed, "rm", "old.patch");
   commit(seed, "upstream target edit");
   git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
   let upstreamSha = git(seed, "rev-parse", "HEAD");
@@ -157,6 +170,10 @@ async function makeFixture(
     );
   }
   writeFileSync(join(seed, "shared.txt"), content({ target: "dev target" }));
+  if (deletion) {
+    git(seed, "mv", "old.patch", "renamed.patch");
+    writeFileSync(join(seed, "renamed.patch"), content({ target: "updated patch" }));
+  }
   commit(
     seed,
     "dev target edit\n\nconflicting replay body\nwith second line\n",
@@ -221,6 +238,17 @@ async function makeFixture(
     },
   );
   assert.notEqual(initialRebase.status, 0, "fixture must record a real rebase conflict");
+  let deletionRecord;
+  if (deletion) {
+    const stages = git(recorder, "ls-files", "-u", "--", "renamed.patch")
+      .split("\n")
+      .map((line) => {
+        const [mode, oid, stage] = line.split(/\s+/);
+        return { mode, oid, stage: Number(stage) };
+      });
+    deletionRecord = { upstream: upstreamSha, commit: devSha, path: "renamed.patch", stages };
+    git(recorder, "rm", "renamed.patch");
+  }
   const resolution = content({ target: "resolved target" });
   writeFileSync(join(recorder, "shared.txt"), resolution);
   git(recorder, "add", "shared.txt");
@@ -245,6 +273,8 @@ async function makeFixture(
   assert.ok(exportedPairs > 0, "export helper should preserve the completed rerere pair");
   assert.equal(existsSync(join(resolverPath, "resolutions", activeId)), false);
   assert.equal(existsSync(join(resolverPath, "resolutions", id, "thisimage")), false);
+  if (deletionRecord)
+    writeFileSync(join(resolverPath, "deletions.json"), JSON.stringify([deletionRecord]) + "\n");
   commit(resolverPath, "seed completed rerere resolution");
   git(resolverPath, "remote", "add", "origin", remote);
   git(resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
@@ -275,8 +305,60 @@ async function makeFixture(
     );
     git(seed, "push", "origin", "HEAD:refs/heads/dev");
   }
-  return { directory, remote, devSha, upstreamSha, resolverPath, recorder, id };
+  return { directory, remote, devSha, upstreamSha, resolverPath, recorder, id, deletionRecord };
 }
+
+test("exact rename/delete resolutions replay and mismatched blobs fail closed", async () => {
+  const fixture = await makeFixture("deletion", { deletion: true });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  assert.equal(existsSync(join(clone, "renamed.patch")), false);
+  assert.equal(git(clone, "ls-files", "-u"), "");
+
+  const record = structuredClone(fixture.deletionRecord);
+  record.stages[1].oid = "a".repeat(40);
+  writeFileSync(join(fixture.resolverPath, "deletions.json"), JSON.stringify([record]));
+  commit(fixture.resolverPath, "chore: record mismatched deletion fixture");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+  const rejected = join(fixture.directory, "mismatch");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, rejected);
+  const beforeRefs = git(rejected, "ls-remote", "--refs", "origin");
+  await assert.rejects(
+    rebaseDev({ repositoryPath: rejected, ...signingOptions }),
+    /index mismatch/,
+  );
+  assert.equal(existsSync(join(rejected, "renamed.patch")), true);
+  assert.match(git(rejected, "ls-files", "-u"), /renamed.patch/);
+  assert.equal(git(rejected, "ls-remote", "--refs", "origin"), beforeRefs);
+});
+
+test("deletion records reject unsafe paths, modes, duplicate keys and non-deletion stages", () => {
+  const record = {
+    upstream: "a".repeat(40),
+    commit: "b".repeat(40),
+    path: "patches/example.patch",
+    stages: [
+      { mode: "100644", oid: "c".repeat(40), stage: 1 },
+      { mode: "100644", oid: "d".repeat(40), stage: 3 },
+    ],
+  };
+  assert.deepEqual(parseDeletionResolutions(JSON.stringify([record])), [record]);
+  for (const path of ["../file", "/file", ".git/config", "a/../file", "a\nfile", "a\\file"]) {
+    assert.throws(() => parseDeletionResolutions(JSON.stringify([{ ...record, path }])), /Invalid/);
+  }
+  for (const stages of [
+    [],
+    [...record.stages, { ...record.stages[1], stage: 2 }],
+    record.stages.map((stage) => ({ ...stage, mode: "120000" })),
+  ]) {
+    assert.throws(
+      () => parseDeletionResolutions(JSON.stringify([{ ...record, stages }])),
+      /Invalid/,
+    );
+  }
+  assert.throws(() => parseDeletionResolutions(JSON.stringify([record, record])), /Duplicate/);
+});
 
 test("workflow is manual, actor/repository/ref guarded, and gates publication on validation", () => {
   const workflow = yaml.load(
@@ -303,6 +385,11 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   );
   assert.ok(publishIndex > steps.findIndex((step) => step.name === "Typecheck all packages"));
   assert.ok(publishIndex > steps.findIndex((step) => step.name === "Run protocol tests"));
+  const buildIndex = steps.findIndex((step) => step.run === "npm run build:server");
+  assert.ok(
+    buildIndex >= 0 &&
+      buildIndex < steps.findIndex((step) => step.name === "Typecheck all packages"),
+  );
   assert.match(steps[publishIndex].run, /rebase-dev\.mjs publish/);
   const helper = readFileSync(new URL("./rebase-dev.mjs", import.meta.url), "utf8");
   assert.match(helper, /--reapply-cherry-picks/);
@@ -347,7 +434,7 @@ test("resolution export and import preserve arbitrary Git blob bytes", async () 
   );
 });
 
-test("known rerere resolution is imported and resumes while preserving adapted context", async (t) => {
+test("known rerere resolution is imported and resumes while preserving adapted context", async () => {
   const fixture = await makeFixture("known", { adaptedContext: true, initiallyEmpty: true });
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
@@ -363,7 +450,11 @@ test("known rerere resolution is imported and resumes while preserving adapted c
   );
   assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
 
-  const snapshots = await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const snapshots = await rebaseDev({
+    repositoryPath: clone,
+    ...signingOptions,
+    signingKey: testSigningKey.trimEnd(),
+  });
 
   assert.equal(snapshots.dev, fixture.devSha);
   assert.equal(snapshots.upstream, fixture.upstreamSha);
@@ -435,7 +526,7 @@ test("known rerere resolution is imported and resumes while preserving adapted c
   assert.ok(snapshots.signedCommits > 0);
 });
 
-test("unknown conflict stops without publishing any refs", async (t) => {
+test("unknown conflict stops without publishing any refs", async () => {
   const fixture = await makeFixture("unknown", { unknown: true });
   const clone = join(fixture.directory, "checkout");
   const diagnostics = join(fixture.directory, "diagnostics.txt");
@@ -455,7 +546,7 @@ test("unknown conflict stops without publishing any refs", async (t) => {
   assert.match(diagnosticText, /diff --cc shared\.txt/);
 });
 
-test("a newly empty replay stops with rebase state intact", async (t) => {
+test("a newly empty replay stops with rebase state intact", async () => {
   const fixture = await makeFixture("newly-empty", { newlyEmpty: true });
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
@@ -471,7 +562,7 @@ test("a newly empty replay stops with rebase state intact", async (t) => {
   assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
 });
 
-test("schema-only resolution branch imports and leaves an unknown conflict diagnosable", async (t) => {
+test("schema-only resolution branch imports and leaves an unknown conflict diagnosable", async () => {
   const fixture = await makeFixture("schema-only");
   git(fixture.resolverPath, "rm", "-r", "resolutions");
   commit(fixture.resolverPath, "initialize empty resolution cache");
@@ -490,7 +581,7 @@ test("schema-only resolution branch imports and leaves an unknown conflict diagn
   assert.notEqual(git(clone, "ls-files", "-u"), "");
 });
 
-test("export and import refuse symlinked rerere variants", async (t) => {
+test("export and import refuse symlinked rerere variants", async () => {
   const fixture = await makeFixture("symlink");
   const sourceVariant = join(fixture.recorder, ".git", "rr-cache", fixture.id, "preimage");
   const savedVariant = `${sourceVariant}.saved`;
@@ -524,7 +615,7 @@ test("export and import refuse symlinked rerere variants", async (t) => {
   assert.equal(existsSync(join(clone, ".git", "rr-cache", fixture.id)), false);
 });
 
-test("atomic publication saves captured dev and rejects a stale dev lease", async (t) => {
+test("atomic publication saves captured dev and rejects a stale dev lease", async () => {
   const fixture = await makeFixture("publish");
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
