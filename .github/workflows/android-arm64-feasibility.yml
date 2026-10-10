@@ -1,0 +1,48 @@
+name: Android ARM64 host prerequisites (bounded Phase A probe)
+
+on:
+  push:
+    branches: [ci/github-workflows]
+    paths: [.github/workflows/android-arm64-feasibility.yml]
+
+permissions: {}
+
+jobs:
+  prerequisites:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 3
+    steps:
+      - name: Inspect acceleration and Android container prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = aarch64
+          uname -a
+          if test -c /dev/kvm; then
+            ls -l /dev/kvm
+            if test -r /dev/kvm && test -w /dev/kvm; then
+              echo 'KVM device accessible; actual virtualization untested.'
+            else
+              echo 'KVM device present but current user lacks access.'
+            fi
+          else
+            echo 'No KVM character device exposed.'
+          fi
+          for device in /dev/binder /dev/hwbinder /dev/vndbinder /dev/binderfs /dev/ashmem; do
+            if test -e "$device"; then ls -ld "$device"; else echo "Absent: $device"; fi
+          done
+          if test -r /proc/config.gz; then
+            zcat /proc/config.gz | grep -E 'CONFIG_(ANDROID_BINDER|ASHMEM|KVM)' || true
+          elif test -r "/boot/config-$(uname -r)"; then
+            grep -E 'CONFIG_(ANDROID_BINDER|ASHMEM|KVM)' "/boot/config-$(uname -r)" || true
+          else
+            echo 'Kernel configuration unavailable; support unknown.'
+          fi
+          grep -E 'binder|ashmem' /proc/filesystems /proc/misc || true
+          modinfo binder_linux || true
+          if test -d "/lib/modules/$(uname -r)"; then
+            find "/lib/modules/$(uname -r)" -iname '*binder*' -print
+          fi
+          apt-cache policy "linux-modules-extra-$(uname -r)" || true
+          echo 'Inventory only: no runtime boot, APK execution, module installation, cache writes or artifact uploads.' >> "$GITHUB_STEP_SUMMARY"
