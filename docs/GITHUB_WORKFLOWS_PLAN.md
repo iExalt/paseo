@@ -194,11 +194,16 @@ keep all workspace/native/version consumers consistent. Establish behavior for
 upstream rebases, non-ancestor previous release SHAs, upstream version edits,
 failed candidates, and repeat release-please invocations.
 
-Release-please's PR-creation credential must actually trigger PR workflows.
-Prefer a narrowly scoped GitHub App installation token; a scoped PAT is an
-alternative if existing access makes it simpler. Credential creation may need
-the user; no token values enter docs or logs. Repository workflow approval and
-permissions must be tested with an actual bot-created PR, not assumed.
+Release-please uses a GitHub App installation token scoped to this repository:
+contents and pull-request write, plus issues write for release labels. Pin the
+expected App identity in trusted configuration and validate it alongside PR
+base/head repository, branch and merge SHA; labels alone are insufficient.
+Use `skip-github-release: true` so release-please only maintains the release PR.
+Credential provisioning and an actual bot-created PR event are step 8/G4 proofs;
+no usable credential is claimed now and no token enters docs or logs. Routine
+read-only PR checks and rebase's direct command do not depend on bot credentials
+or follow-on events from `GITHUB_TOKEN`
+([release-please event behavior](https://github.com/googleapis/release-please-action)).
 
 Default release-please behavior may create a public release immediately. Use
 draft/release separation or a compatible coordinator adapter so only the final
@@ -230,6 +235,34 @@ Manual Mac migration must account for old updater receipts and recovery state;
 changing a comparator alone does not migrate those records. Device actions wait
 for explicit user presence/authorization.
 
+The G0 metadata contract is a signed V2 document containing `schemaVersion: 2`,
+the existing `keyId`, `repository: iExalt/paseo`,
+`lineage: iExalt/paseo:semver-v1`, canonical `version`, full `sourceSha` and
+`upstreamBase` commits, final `releaseTag: v<version>`, and `artifacts`.
+Each artifact has a unique `(platform, arch, kind)` cell, unique leaf filename,
+byte count and SHA-256. Kind-specific metadata includes Android ABI, package ID,
+derived versionCode and certificate SHA-256; Nix entries include system, output
+store path and authenticated closure-manifest reference. Nix closure signatures
+remain independently required. Other installer kinds use the signed inventory's
+hash and their matching install/runtime proof.
+
+Require exactly the matrix in section 1: one macOS ARM64 Nix desktop closure,
+one Android ARM64 APK, Linux x64/ARM64 Nix daemon, Nix desktop, DEB, RPM and
+AppImage, and Windows x64/ARM64 NSIS. Reject unknown, duplicate or absent cells
+and filenames. The detached Ed25519 signature covers the exact manifest bytes
+with the existing independently pinned key; never reserialize before verifying.
+Final signed metadata names the final tag, not a temporary draft. Producer
+run/attempt and draft transport receipts remain separate provenance, never
+release ordering. Exact JSON validation and malicious-input fixtures belong to C/D.
+
+The publisher serializes trusted publication, rereads the highest published
+version of this explicit fork lineage immediately before publishing, and rejects
+stale versions or a tag bound to another source. Rebasing cannot reset that
+high-water mark merely because an earlier release is no longer an ancestor.
+Same-version completion is idempotent only for identical source and verified
+bytes. On 2026-10-10, remote tag and release lookups for `v0.1.0` both returned
+404; recheck before publication. Concurrency, retries and rebase fixtures remain D.
+
 ### 4.3 Zero-cost operation and test fidelity
 
 Only standard runners in the public repository are allowed. Before any CI probe,
@@ -238,14 +271,27 @@ hard no-overage mechanism. Short retention alone cannot establish zero cost.
 If free capacity or enforcement cannot be proved, skip optional uploads/cache
 writes or stop the affected run; never purchase capacity automatically.
 
-Evaluate GitHub release assets for large trusted candidate transport rather
-than assuming Actions artifact allowance can hold every Nix closure. Respect
-current asset limits, bound draft lifetime, scope cleanup to campaign-owned
-drafts, and never delete published releases or shared cache indiscriminately.
-Untrusted PR evidence stays read-only/within verified free storage; PR code never
-gets a release write token. Logs and compact job summaries are the first evidence
-channel. Failed-run diagnostics retain bounded screenshots/traces where free
-capacity allows. Preserve necessary evidence through an approved zero-cost path.
+Use GitHub draft-release assets for large trusted candidate transport. Each
+campaign-owned draft identity binds version and full source SHA; attempt-specific
+asset names are immutable. A replacement source requires a new draft identity
+after the earlier candidate stops. Only trusted candidate jobs receive a scoped
+`contents: write` token. Remove only inactive, campaign-owned drafts older than
+seven days after proving ownership and inactivity; never published releases.
+Live draft/upload/failure proofs remain later B/C/D gates.
+
+GitHub currently permits up to 1,000 assets per release, each strictly below
+2 GiB, without a total release-size or bandwidth quota
+([release limits](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases)).
+Fail before upload if an asset exceeds the bound; an oversized required closure
+is a G3 blocker to resolve, not permission to omit it or invent an unverified
+split format. Drafts are transport, not private storage.
+
+Routine and untrusted PR evidence uses logs/job summaries, with npm download
+caches under the enforced 10 GB repository ceiling. PR code receives no release
+write token and cannot save a trusted cache. Actions artifact uploads stay
+disabled until free allowance and hard no-overage evidence are established;
+retention alone is insufficient. Deep screenshot/trace evidence must use a
+verified free path before its gate can pass.
 
 Maintain the testing pyramid by cost as well as count. Run shared logic tests
 once where OS independent; use native platforms for process, watcher, terminal,
