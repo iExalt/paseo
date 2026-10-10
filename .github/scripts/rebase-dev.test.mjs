@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
   symlinkSync,
   unlinkSync,
@@ -14,6 +16,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import {
@@ -22,6 +25,7 @@ import {
   parseDeletionResolutions,
   publishRebase,
   rebaseDev,
+  validateRebase,
 } from "./rebase-dev.mjs";
 
 const yaml = createRequire(import.meta.url)("js-yaml");
@@ -383,13 +387,32 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   const publishIndex = steps.findIndex(
     (step) => step.name === "Publish backup and rebased dev atomically",
   );
-  assert.ok(publishIndex > steps.findIndex((step) => step.name === "Typecheck all packages"));
-  assert.ok(publishIndex > steps.findIndex((step) => step.name === "Run protocol tests"));
-  const buildIndex = steps.findIndex((step) => step.run === "npm run build:server");
-  assert.ok(
-    buildIndex >= 0 &&
-      buildIndex < steps.findIndex((step) => step.name === "Typecheck all packages"),
+  const rebaseIndex = steps.indexOf(rebaseStep);
+  const cacheIndex = steps.findIndex((step) => step.id === "cache-key");
+  const installIndex = steps.findIndex((step) => step.run === "time npm ci --prefer-offline");
+  const validateIndex = steps.findIndex((step) => step.id === "validate");
+  assert.ok(rebaseIndex < cacheIndex && cacheIndex < installIndex);
+  assert.ok(installIndex < validateIndex && validateIndex < publishIndex);
+  assert.equal(steps[validateIndex].run, "node .github/scripts/rebase-dev.mjs validate");
+  assert.equal(steps[publishIndex].env.TESTED_SHA, "${{ steps.validate.outputs.tested-sha }}");
+  assert.equal(steps[publishIndex].env.GH_TOKEN, "${{ github.token }}");
+  assert.equal(steps[0].with["persist-credentials"], false);
+  assert.equal(workflow.jobs.rebase["runs-on"], "ubuntu-24.04");
+  for (const [index, step] of steps.entries()) {
+    if (index !== rebaseIndex) assert.equal(step.env?.PASEO_REBASE_SSH_SIGNING_KEY, undefined);
+    if (index !== publishIndex) assert.equal(step.env?.GH_TOKEN, undefined);
+    assert.doesNotMatch(step.uses ?? "", /actions\/(?:cache\/save|upload-artifact)/);
+    assert.doesNotMatch(step.run ?? "", /npm run (?:build:server|typecheck|test)/);
+  }
+  assert.match(steps[publishIndex].run, /::add-mask::/);
+  assert.match(steps[publishIndex].run, /GIT_CONFIG_COUNT=1/);
+  assert.match(
+    steps[publishIndex].run,
+    /GIT_CONFIG_KEY_0=http\.https:\/\/github\.com\/\.extraheader/,
   );
+  const diagnostics = steps.at(-1);
+  assert.equal(diagnostics.if, "failure()");
+  assert.match(diagnostics.run, /head -c 16000/);
   assert.match(steps[publishIndex].run, /rebase-dev\.mjs publish/);
   const helper = readFileSync(new URL("./rebase-dev.mjs", import.meta.url), "utf8");
   assert.match(helper, /--reapply-cherry-picks/);
@@ -621,9 +644,28 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
   await rebaseDev({ repositoryPath: clone, ...signingOptions });
 
+  await assert.rejects(
+    validateRebase({
+      repositoryPath: clone,
+      runChecks: async () => {
+        throw new Error("fixture check failed");
+      },
+    }),
+    /fixture check failed/,
+  );
+  assert.equal(git(fixture.remote, "rev-parse", "refs/heads/dev"), fixture.devSha);
+  assert.equal(git(clone, "ls-remote", "--refs", "origin", "refs/heads/backup/rebase-dev/*"), "");
+  const testedSha = await validateRebase({ repositoryPath: clone, runChecks: async () => {} });
+  writeFileSync(join(clone, "unexpected.txt"), "untracked input");
+  await assert.rejects(
+    publishRebase({ repositoryPath: clone, devSha: fixture.devSha, testedSha, runId: "90000" }),
+    /clean tracked and nonignored/,
+  );
+  unlinkSync(join(clone, "unexpected.txt"));
   const first = await publishRebase({
     repositoryPath: clone,
     devSha: fixture.devSha,
+    testedSha,
     runId: "90001",
     runAttempt: "1",
   });
@@ -632,11 +674,16 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
 
   writeFileSync(join(clone, "after-publish.txt"), "make the second push non-empty\n");
   commit(clone, "local unpublished change");
+  await assert.rejects(
+    publishRebase({ repositoryPath: clone, devSha: fixture.devSha, testedSha, runId: "90002" }),
+    /HEAD differs/,
+  );
 
   await assert.rejects(
     publishRebase({
       repositoryPath: clone,
       devSha: fixture.devSha,
+      testedSha: git(clone, "rev-parse", "HEAD"),
       runId: "90002",
       runAttempt: "1",
     }),
@@ -647,4 +694,94 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
     git(clone, "ls-remote", "--refs", "origin", "refs/heads/backup/rebase-dev/90002-1"),
     "",
   );
+});
+
+test("validation CLI binds the shared command to a clean tested SHA", async () => {
+  const repositoryPath = join(root, "validation-checkout");
+  const bin = join(root, "validation-bin");
+  initRepo(repositoryPath);
+  mkdirSync(bin);
+  writeFileSync(join(repositoryPath, "tracked.txt"), "original\n");
+  writeFileSync(join(repositoryPath, ".gitignore"), ".env*\n.dev.vars*\nnode_modules/\n");
+  writeFileSync(join(repositoryPath, ".env.example"), "EXAMPLE=1\n");
+  git(repositoryPath, "add", "-f", ".env.example");
+  commit(repositoryPath, "validation fixture");
+  const originalSha = git(repositoryPath, "rev-parse", "HEAD");
+  const invocation = join(root, "validation-invocation.json");
+  const output = join(root, "validation-output.txt");
+  const fakeMise = join(bin, "mise");
+  writeFileSync(
+    fakeMise,
+    `#!/usr/bin/env node
+const fs = require("node:fs");
+const cp = require("node:child_process");
+fs.writeFileSync(process.env.FIXTURE_INVOCATION, JSON.stringify({ args: process.argv.slice(2), cwd: process.cwd(), sha: cp.execFileSync("git", ["rev-parse", "HEAD"], {encoding:"utf8"}).trim() }));
+if (process.env.FIXTURE_MODE === "fail") process.exit(17);
+if (process.env.FIXTURE_MODE === "dirty") fs.writeFileSync("tracked.txt", "changed");
+if (process.env.FIXTURE_MODE === "override") fs.writeFileSync(".env.local", "LOCAL=1");
+if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "moved"]);
+`,
+  );
+  chmodSync(fakeMise, 0o755);
+  const invoke = (mode = "success") => {
+    rmSync(output, { force: true });
+    rmSync(invocation, { force: true });
+    return spawnSync(
+      process.execPath,
+      [fileURLToPath(new URL("./rebase-dev.mjs", import.meta.url)), "validate"],
+      {
+        cwd: repositoryPath,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          GITHUB_OUTPUT: output,
+          FIXTURE_INVOCATION: invocation,
+          FIXTURE_MODE: mode,
+        },
+      },
+    );
+  };
+  assert.equal(invoke().status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(invocation, "utf8")), {
+    args: ["run", "--skip-tools", "ci:routine"],
+    cwd: realpathSync(repositoryPath),
+    sha: originalSha,
+  });
+  assert.equal(readFileSync(output, "utf8"), `tested-sha=${originalSha}\n`);
+  for (const [mode, error] of [
+    ["fail", /Routine verification failed \(17\)/],
+    ["dirty", /clean tracked/],
+    ["override", /Local environment override/],
+    ["move", /HEAD differs/],
+  ]) {
+    const result = invoke(mode);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, error);
+    assert.equal(existsSync(output), false);
+    git(repositoryPath, "reset", "--hard", originalSha);
+    rmSync(join(repositoryPath, ".env.local"), { force: true });
+  }
+  writeFileSync(join(repositoryPath, "tracked.txt"), "changed before checking");
+  assert.match(invoke().stderr, /clean tracked/);
+  assert.equal(existsSync(invocation), false);
+  git(repositoryPath, "reset", "--hard", originalSha);
+  writeFileSync(join(repositoryPath, "untracked.txt"), "input");
+  assert.match(invoke().stderr, /clean tracked/);
+  assert.equal(existsSync(invocation), false);
+  unlinkSync(join(repositoryPath, "untracked.txt"));
+  for (const [directory, name] of [
+    ["", ".env.local"],
+    ["packages/server", ".env"],
+    ["plugins", ".dev.vars"],
+  ]) {
+    const location = join(repositoryPath, directory);
+    mkdirSync(location, { recursive: true });
+    const override = join(location, name);
+    writeFileSync(override, "LOCAL=1\n");
+    assert.match(invoke().stderr, /Local environment override/);
+    assert.equal(existsSync(invocation), false);
+    assert.equal(existsSync(override), true);
+    unlinkSync(override);
+  }
 });

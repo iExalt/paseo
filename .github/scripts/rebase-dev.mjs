@@ -9,9 +9,9 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative as relativePath, resolve } from "node:path";
 import { promisify } from "node:util";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
@@ -809,18 +809,87 @@ export async function rebaseDev({
   }
 }
 
+async function checkedTree(repositoryPath, expectedSha) {
+  const sha = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
+  if (expectedSha !== undefined && sha !== expectedSha)
+    throw new Error("HEAD differs from the tested SHA");
+  const status = await gitChecked(repositoryPath, [
+    "status",
+    "--porcelain=v1",
+    "-z",
+    "--untracked-files=all",
+  ]);
+  if (status) throw new Error("Validation requires a clean tracked and nonignored working tree");
+
+  // Fresh hosted checkouts may generate ignored build outputs, but must not load
+  // local environment overrides. This is not an audit of every possible ignored input.
+  const roots = [repositoryPath, join(repositoryPath, "plugins")];
+  const packages = join(repositoryPath, "packages");
+  const entries = await readdir(packages, { withFileTypes: true }).catch((error) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  for (const entry of entries) {
+    if (entry.isDirectory()) roots.push(join(packages, entry.name));
+  }
+  for (const root of roots) {
+    const names = await readdir(root).catch((error) => {
+      if (error.code === "ENOENT") return [];
+      throw error;
+    });
+    for (const name of names.filter((candidate) =>
+      /^(?:\.env(?:\..*)?|\.dev\.vars(?:\..*)?)$/.test(candidate),
+    )) {
+      const override = join(root, name);
+      const tracked = await git(repositoryPath, [
+        "--literal-pathspecs",
+        "ls-files",
+        "--error-unmatch",
+        "--",
+        relativePath(repositoryPath, override),
+      ]);
+      if (tracked.code !== 0)
+        throw new Error(`Local environment override is unsupported: ${override}`);
+    }
+  }
+  return sha;
+}
+
+function runRoutine(repositoryPath) {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn("mise", ["run", "--skip-tools", "ci:routine"], {
+      cwd: repositoryPath,
+      stdio: "inherit",
+    });
+    child.once("error", reject);
+    child.once("exit", (code, signal) => {
+      if (code === 0) resolveRun();
+      else reject(new Error(`Routine verification failed (${signal ?? code})`));
+    });
+  });
+}
+
+export async function validateRebase({ repositoryPath, runChecks = runRoutine }) {
+  const testedSha = await checkedTree(repositoryPath);
+  await runChecks(repositoryPath);
+  await checkedTree(repositoryPath, testedSha);
+  return testedSha;
+}
+
 export async function publishRebase({
   repositoryPath,
   remote = "origin",
   devSha,
+  testedSha,
   runId,
   runAttempt = "1",
 }) {
   if (!/^[0-9a-f]{40}$/.test(devSha ?? "")) throw new Error("A captured dev SHA is required");
+  if (!/^[0-9a-f]{40}$/.test(testedSha ?? "")) throw new Error("A tested SHA is required");
   if (!/^\d+$/.test(runId ?? "") || !/^\d+$/.test(runAttempt))
     throw new Error("Run id and attempt must be numeric");
   const backupRef = `refs/heads/backup/rebase-dev/${runId}-${runAttempt}`;
-  const rewritten = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
+  const rewritten = await checkedTree(repositoryPath, testedSha);
   const command = await git(repositoryPath, [
     "push",
     "--atomic",
@@ -853,6 +922,7 @@ async function main() {
       const result = await publishRebase({
         repositoryPath,
         devSha: process.env.DEV_SHA,
+        testedSha: process.env.TESTED_SHA,
         runId: process.env.RUN_ID,
         runAttempt: process.env.RUN_ATTEMPT,
       });
@@ -870,6 +940,13 @@ async function main() {
       );
       throw error;
     }
+    return;
+  }
+  if (process.argv[2] === "validate") {
+    const testedSha = await validateRebase({ repositoryPath });
+    if (process.env.GITHUB_OUTPUT)
+      await appendFile(process.env.GITHUB_OUTPUT, `tested-sha=${testedSha}\n`);
+    console.log(`Routine verification passed for ${testedSha}`);
     return;
   }
   const signingKey = process.env.PASEO_REBASE_SSH_SIGNING_KEY;
