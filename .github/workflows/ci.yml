@@ -1,0 +1,79 @@
+name: Routine CI
+
+on:
+  pull_request:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: read
+
+# Preserve every dev SHA; immutable same-key cache-save races are harmless.
+concurrency:
+  group: routine-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  routine:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      npm_config_cache: ${{ runner.temp }}/npm-cache
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Identify pinned npm download cache
+        id: cache-key
+        run: node .github/scripts/ci-cache.mjs key
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        id: cache
+        with:
+          path: ${{ runner.temp }}/npm-cache/_cacache
+          key: ${{ steps.cache-key.outputs.key }}
+          restore-keys: ${{ steps.cache-key.outputs.prefix }}
+      - name: Install locked dependencies once
+        run: time npm ci --prefer-offline
+      - name: Verify the checked-out source
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            mise run --skip-tools ci:routine --changed-from "$PR_BASE_SHA"
+          else
+            mise run --skip-tools ci:routine
+          fi
+      - name: Bound cache storage after successful verification
+        id: cache-size
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        run: node .github/scripts/ci-cache.mjs size
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: steps.cache-size.outputs.save == 'true' && steps.cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/npm-cache/_cacache
+          key: ${{ steps.cache-key.outputs.key }}
+
+  required:
+    name: Routine CI required
+    if: always()
+    needs: routine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require complete routine success
+        env:
+          RESULT: ${{ needs.routine.result }}
+        run: test "$RESULT" = success

@@ -10,15 +10,16 @@
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
 - A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
   probes and hosted Android ARM64 APK startup passed. No routine baseline exists;
-  A2 is next. Reviewed probe code and semver contracts are published on the work branch.
+  A2 implementation is active. Reviewed probe code and semver contracts are published
+  on the work branch; routine CI is not yet published or verified on GitHub.
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence   | Depends on | Exit and owner                                               |
-| ----------------------------------------- | ------------------- | ---------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified | none       | G0, author with user decisions                               |
-| A2: measured routine verification         | next / designed     | A1         | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | planned / designed  | A2         | G1 including atomic publication failure fixtures, author     |
+| Goal                                      | Status / evidence    | Depends on | Exit and owner                                               |
+| ----------------------------------------- | -------------------- | ---------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified  | none       | G0, author with user decisions                               |
+| A2: measured routine verification         | active / implemented | A1         | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | planned / designed   | A2         | G1 including atomic publication failure fixtures, author     |
 
 Reviewer design agreement covers these three chunks. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -83,6 +84,27 @@ on the same standard Linux runner/toolchain/concurrency and proposes a ceiling
 for user acceptance. Keep setup/build/test timings separate; broad suites run
 on GitHub, targeted changed-file tests locally. Do not trade away required proof
 or reset the baseline to conceal growth.
+
+The shared entrypoint is `mise run --skip-tools ci:routine` after `npm ci`;
+`--skip-tools` avoids installing unrelated Android/Java/Rust tools. With no
+arguments it runs the complete routine gate for dev and rebased candidates.
+PRs pass `--changed-from <captured-base-sha>`; full Git diffs include both sides
+of renames, ownership expands to dependent consumers, and unknown paths run all
+checks. `--plan` prints the selected commands without executing them.
+
+Routine code runs include cheap Node helper tests, units and focused integrations.
+The real Antigravity prompt case is explicitly excluded because paid-provider
+tests are outside this campaign. G3 must execute `builtin-plugins-dist.test.mjs`,
+`trace-daemon-dist.test.mjs`, the Nix signature fixture and macOS reactivation
+fixture; a green Linux routine run does not prove these package contracts.
+Critical browser/Electron/Android journeys and CLI lifecycle remain required B gates.
+
+Routine caches contain only npm downloads, with immutable keys for pinned
+OS/architecture/Node/npm/lockfile. Only successful trusted dev pushes save.
+Concurrent dev runs retain every source SHA; same-key cache reservations may
+race harmlessly. The provisional per-entry save cap is 2 GiB of raw file bytes,
+distinct from compressed cache size and the enforced 10 GB repository ceiling.
+Cache misses still execute all selected checks; no Actions artifacts are uploaded.
 
 ## Next sequence and deferred gates
 

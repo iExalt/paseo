@@ -40,7 +40,7 @@ or modify their installations without explicit authorization.
 
 ## A. Establish contracts and shared routine CI — steps 1–3
 
-**State:** approved; A1 / G0 complete, A2 next, G1 pending.
+**State:** approved; A1 / G0 complete, A2 active, G1 pending.
 
 ```text
 Use $keep-me-in-the-loop to run thread A in docs/GITHUB_WORKFLOWS_SCRIPT.md.
