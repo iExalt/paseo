@@ -118,6 +118,8 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   assert.ok(cli.args.includes("**/*.e2e.test.ts"));
   const desktop = commands.find((step) => step.name === "desktop units");
   assert.ok(desktop.args.includes("scripts/after-pack.test.mjs"));
+  assert.ok(desktop.args.includes("e2e/**"));
+  assert.ok(desktop.args.includes("vitest"));
   assert.ok(
     commands
       .find((step) => step.name === "workflow and helper contracts")
@@ -200,6 +202,11 @@ test("parallel lanes partition every selected check, with only declared prerequi
       const commands = planLane(selection, lane);
       assert.equal(matrix.lane.includes(lane), commands.length > 0);
       for (const step of commands) {
+        if (step.name === "app dependencies") {
+          assert.equal(lane, "app");
+          assert.deepEqual(step.args, ["run", "build:app-deps"]);
+          continue;
+        }
         if (step.name === "workspace declarations" && lane !== "quality") continue;
         if (step.name === "server units") {
           assert.equal(step.args.at(-1), `--shard=${lane.at(-1)}/3`);
@@ -253,6 +260,48 @@ test("hosted planner propagates failure before emitting a matrix", () => {
     });
     assert.equal(result.status, 7);
     assert.equal(readFileSync(output, "utf8"), "");
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
+});
+
+test("latency gate rejects overruns and missing API evidence for the current attempt", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "paseo-ci-latency-"));
+  try {
+    const script = workflow.jobs.required.steps.find(
+      (step) => step.name === "Enforce complete routine latency",
+    ).run;
+    assert.match(script, /attempts\/\$GITHUB_RUN_ATTEMPT\/jobs/);
+    assert.match(script, /--paginate/);
+    assert.match(script, /timeout 20s/);
+    assert.match(script, /select\(\.name == "plan"\)/);
+    const valid = "2026-10-10T22:48:04Z";
+    for (const [elapsed, apiStatus, stamp, pass] of [
+      [299, 0, valid, true],
+      [300, 0, valid, false],
+      [-1, 0, valid, false],
+      [1, 7, valid, false],
+      [1, 0, "null", false],
+      [1, 0, "", false],
+      [1, 0, "invalid-date", false],
+      [1, 0, "2026-99-10T22:48:04Z", false],
+      [1, 0, `${valid}\n${valid}`, false],
+    ]) {
+      const mock = `timeout() { test "$API_STATUS" = 0 || return "$API_STATUS"; printf '%s' "$STAMP"; }\ndate() { if [[ "$*" == *'-d'* ]]; then test "$STAMP" != 2026-99-10T22:48:04Z || return 1; echo 1000; else echo "$NOW"; fi; }\n`;
+      const result = spawnSync("bash", ["-e", "-c", mock + script], {
+        env: {
+          ...process.env,
+          API_STATUS: String(apiStatus),
+          STAMP: stamp,
+          NOW: String(1000 + elapsed),
+          GITHUB_REPOSITORY: "iExalt/paseo",
+          GITHUB_RUN_ID: "123",
+          GITHUB_RUN_ATTEMPT: "2",
+          GITHUB_STEP_SUMMARY: join(fixture, "summary"),
+        },
+      });
+      assert.equal(result.status === 0, pass, `${elapsed}/${apiStatus}/${stamp}`);
+    }
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
