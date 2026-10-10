@@ -1,11 +1,11 @@
 # Paseo fork automated builds and updates
 
-Status: paired canonical CI, authenticated release publication, and actual Mac/Android
-install, update, recovery, and the Mac managed-update About view verified. Retained
-Mac reactivation is verified through the source CLI and delivered as a published
-packaged command in 200008; that release has not been installed on the user devices.
+Status: complete on release 200008.
+Mac profile, running app, and production daemon are aligned; S24 runs the same release.
+The shipped helper passed rollback and explicit high-water reactivation, and both
+in-app update checks report current. No new build or promotion was needed.
 The old Debug preference transfer is unavailable after uninstall.
-Updated 2026-10-10 UTC (October 9 EDT).
+Updated 2026-10-10 UTC (October 10 EDT).
 
 ## Outcome and first deliverable
 
@@ -86,8 +86,8 @@ branch is `main`. Existing configuration and receipts establish:
   app. These are separate facts.
 
 Existing build provenance, timings, and artifact locations are in the
-[completed notification status](complete-campaigns/CONFIGURABLE_NOTIFICATIONS_STATUS.md).
-The existing standalone recipe is in [Android documentation](upstream/android.md).
+[completed notification status](CONFIGURABLE_NOTIFICATIONS_STATUS.md).
+The existing standalone recipe is in [Android documentation](../upstream/android.md).
 
 ## Key storage and migration
 
@@ -117,7 +117,7 @@ Use the chosen `sh.paseo.iexalt` application ID and private signer. Preserve the
 existing app until settings transfer and fresh pairing pass. The fork identity
 and required explicit version-code contract are implemented and verified by unit
 and Expo configuration checks in the uncommitted tree; native APK building and
-new-key signing remain unverified. See [Android variants](upstream/android.md#app-variants).
+new-key signing remain unverified. See [Android variants](../upstream/android.md#app-variants).
 Source discovery found
 no existing user-facing export/import workflow. A private, one-time bridge build
 can keep `sh.paseo.debug` and its original signer, with a code above `11000`, to
@@ -609,18 +609,31 @@ profile generation linked directly to the exact store output, retains the prior
 generation, and rolls back to it. No user-environment derivation was needed;
 builders, substitutes, and local builds are disabled. All generations remain
 rooted, including any running version; no automatic GC or process restart occurs.
-Rollback does not restore app data. Use the retained C helper for mapped rollback
-and status, including after the active profile returns to B:
+Rollback does not restore app data. Retain the absolute 200008 helper path before
+rolling back: older releases' helpers lack explicit reactivation. Use the same
+packaged helper for the entire recovery cycle:
 
 ```sh
-PASEO_UPDATER=/nix/store/60qjh1c1i9pv588xckd0pxhizxm98hbg-paseo-desktop-0.11.0/bin/paseo-nix-update
+PASEO_UPDATER=/nix/store/c7vyd08mccxlzkh9g7kcxskrjcq9njyd-paseo-desktop-0.11.0/bin/paseo-nix-update
+"$PASEO_UPDATER" --help
 "$PASEO_UPDATER" status
-# When C is active, validates B's signed receipt before the native rollback:
+# Select the previous retained binary after validating its signed receipt.
 "$PASEO_UPDATER" rollback
+# Explicitly return to the highest previously activated, retained release.
+"$PASEO_UPDATER" reactivate-high-water --json
+"$PASEO_UPDATER" status --json
 ```
 
-The highest activated sequence survives rollback; staging requires a higher
-sequence, so rollback does not immediately offer reactivation of the same release.
+The highest activated sequence survives rollback. Ordinary stage/activate requires
+a higher sequence; `reactivate-high-water` explicitly selects the verified retained
+high-water receipt and its native generation without lowering replay protection.
+It requires a distinct retained binary generation and no staged competitor. The
+verified cycle is 200008/generation 3 → 200007/generation 2 → 200008/generation 3.
+Confirm active sequence 200008, high-water 200008, and `staged: null`; the private
+state directory must have no `pending-activation.json` or `staged.json` record.
+Do not use manual `nix-env` switching. These commands do not restart processes.
+Coordinate a graceful app/production-daemon restart separately to run the selected
+binary, retaining a verified cold backup before launch. Never restart Codex for this.
 A pending activation references a verified signed receipt and survives a
 durable-state failure for retry.
 Non-help commands serialize with an exclusive private lock. After a crash, remove
@@ -629,6 +642,14 @@ tests, scoped lint/format/syntax checks, and Nix expression parsing passed.
 Real promoted-release consumption, unprivileged user-store import/activation,
 managed launch, and offline binary rollback have passed below. A direct native
 profile switch is not a supported workaround for updater receipt invariants.
+
+For routine updates, open in-app Settings → About on either device. Android uses
+Check → Download → Install, then Android's Update confirmation. Grant install-source
+permission when prompted; it can be turned off again afterwards. The app fetches and
+verifies its own APK; no USB connection, ADB, or Mac transfer is required. macOS uses
+Check → Stage → Activate, followed by a coordinated manual app/daemon restart when
+convenient. Stage and Activate leave running processes untouched. Recovery reactivation
+is CLI-only; a rollback deliberately does not make the same release an ordinary update.
 
 Electron integration now marks the Darwin app resources with the Nix ownership
 contract and resolves the fixed updater CLI from that same immutable store output.
@@ -791,6 +812,70 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Reactivate retained Mac C through the source CLI without restarting the running B app or daemon.
 - [x] Verify the Mac in-app managed-update About rows and controls.
 - [x] Deliver the reactivation command in a verified packaged release.
+- [x] Recheck clean `dev`/remote HEAD and current Mac/S24 state for release 200008 closeout.
+- [x] Stage signed release 200008 through the retained packaged Mac helper.
+- [x] Prove rollback and explicit reactivation with the shipped 200008 helper, preserving mappings and high-water.
+- [x] Align the running Mac app/production daemon with 200008 after fresh restart approval.
+- [x] Update S24 through its own download/installer flow to 200008 and verify artifact, settings, and live pairing.
+- [x] Verify in-app update readiness on both final installations and document packaged recovery.
+- [x] Complete device acceptance and record the recovery runbook for scoped documentation publication.
+
+### Release 200008 closeout evidence
+
+On October 10, starting at 14:51 UTC (10:51 AM EDT), clean `dev` and `origin/dev`
+both matched `f52c2b3e1a4077e759ca6902eb8ec646ccb51efb`. Live device inspection
+confirmed the handoff state before any changes. The retained 200007 packaged helper
+downloaded and verified 200008 through the normal signed stage path. The retained
+200008 helper's own `--help` confirmed its recovery interface before use.
+
+That shipped helper activated generation 3/200008, rolled back to generation 2/200007,
+and explicitly reactivated generation 3/200008. Both recovery operations reported a
+binary change; `profile-state.json` stayed byte-identical across rollback/reactivation,
+including signed identities, all three native mappings, and high-water 200008.
+No staged or pending transaction remained. The running B app and daemon stayed
+unchanged throughout this profile-only cycle. This is packaged-helper/device proof;
+the earlier 17 passing updater tests and source-CLI exercise are separate, reused evidence.
+
+After fresh user approval, the app quit and the bundled CLI stopped its remaining
+supervisor without force. No old app, supervisor, daemon, or port 6767 listener remained.
+The final quiescent private recovery delta preserves 63 changed files over the retained
+full backup and accepted delta; extracted hashes matched, both changed SQLite databases
+passed `quick_check`, and all live files still matched the cold inventories before launch.
+The earlier capture made before supervisor shutdown is not cold-backup proof.
+The original application and all previous private backups remain preserved.
+
+At 14:57 UTC (10:57 AM EDT), the stable launcher ran the exact 200008 store executable;
+the daemon's open executable/archive paths also bound it to that output, and `/api/health`
+passed. Desktop settings, Electron Preferences/Local State, and five selected daemon
+configuration/identity/client/push files matched the cold baseline. Phone reconnection
+provided an additional live pairing check. No Codex restart occurred.
+
+The S24 used Check → Download → Install → Android Update. Installed package
+`sh.paseo.iexalt`, code 200008, is 140,620,645 bytes with the public APK SHA-256
+recorded below, reusing the prior public-artifact and signing-certificate verification.
+Theme = System, notification permission, saved workspace, and live connected-host
+version persisted without re-pairing or data clearing. About reports the fork is up to
+date. Install-source permission was restored to deny; timeout 300000 ms and charging
+stay-awake 0 were unchanged and read back. No Mac-to-phone APK transfer was used.
+
+The user manually opened Mac About after automation selected an empty content pane.
+Fresh PID/window ownership and a window-scoped capture then confirmed the 200008 rows.
+A real click on Check displayed signed latest sequence 200008 and the current-profile
+message, with Stage/Activate disabled because no higher release exists. Source/interface
+tests and prior managed-update proof are reused for those controls; no artificial new
+release was published to repeat them. Both final update paths are ready for future signed
+promotions, with Android installer confirmation and Mac manual restart still required.
+Task-owned temporary captures were removed after inspection; the user's screenshot is
+preserved. Native-terminal and offline rollback proofs from earlier releases are reused.
+
+Closeout formatting, repository lint, and all-workspace typecheck passed through mise;
+no test suite or build was repeated. Typecheck took 19.16 seconds versus the retained
+14.2-second baseline while Microsoft Defender used about seven CPU cores. Formatting
+took 6.3 seconds initially and 0.56 seconds on the required final formatting pass.
+These loaded-machine timings do not replace the accepted baseline;
+the change adds documentation only and no routine-check work.
+
+### Earlier implementation and acceptance evidence
 
 The earlier preference-only migration design left drafts and attachments in
 Debug; the subsequent user uninstall made that device transfer unavailable.
@@ -961,8 +1046,8 @@ C200007, no staged release, and no pending operation. Both native roots remain
 retained. This proves binary rollback and launch/state preservation; it does not
 claim data-schema rollback or the blocked About visual observation.
 
-Current Mac: B200006 app and daemon remain running; the dedicated profile now
-selects retained C200007 at native generation 2, with B at generation 1 retained.
+At the earlier source-CLI checkpoint, B200006 app and daemon remained running; the dedicated profile
+selected retained C200007 at native generation 2, with B at generation 1 retained.
 Ordinary stage/activate still reject sequences at or below high-water. The reviewed
 source CLI now provides parameterless `reactivate-high-water`: it selects only the
 independently verified highest activated receipt, requires a lower signed active
@@ -983,10 +1068,9 @@ passed with one existing opt-in signature fixture skipped; scoped format/lint pa
 and the required typecheck took 12.33 seconds against the retained 14.2-second baseline.
 No disruptive restart or data-schema rollback was attempted.
 
-The published B/C helpers do not include this reactivation command. Use the retained
-C helper for status and supported rollback; avoid B's mutating updater commands and
-manual profile switches. Release 200008 provides the packaged CLI command; desktop
-controls remain unchanged.
+The published B/C helpers do not include this reactivation command. The current
+recovery runbook above uses the retained 200008 helper, including after rollback;
+avoid B's mutating updater commands and manual profile switches.
 
 Candidate 200008 passed [paired run 38014322071](https://github.com/iExalt/paseo/actions/runs/38014322071),
 attempt 1, for source `5619b7d7ee1e55b322028e8b7818aa1a8f752a0a`, from
@@ -1046,12 +1130,12 @@ reconnection without re-pairing; saved rows or registered notification tokens al
 would not. Screen timeout 300000 ms, charging stay-awake 0, and the fork's
 install-source permission off were restored and read back after both phone tests.
 Temporary UI captures were removed; the visual observation is first-hand evidence,
-not a retained screenshot. Current device state is running Mac B200006 with selected
+not a retained screenshot. At that checkpoint, device state was running Mac B200006 with selected
 profile C200007, and phone C200007.
 The old Debug transfer gate is unavailable after the confirmed uninstall.
 No lock/security setting was disabled during phone automation.
 Standalone closure probe runs are stopped.
-Remaining actual-device gates retain their assigned acceptance boundaries.
+Release 200008 closeout above completes the remaining actual-device gates.
 Reconsider the route if
 fresh-store import needs weakened verification or compilation, standard runners
 cannot build within resource limits, Android migration cannot preserve required
