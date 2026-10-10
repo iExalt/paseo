@@ -12,7 +12,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 
 assert.equal(process.env.GITHUB_ACTIONS, "true");
@@ -53,7 +53,10 @@ async function exercise(directory) {
   );
   assert.equal(sherpa.onnxruntimeVersion, "1.28.2");
   for (const filename of nativeModules.filter((name) => /onnxruntime\.dll$/i.test(name))) {
-    assert.equal(filename.toLowerCase(), join(directory, "runtime/onnxruntime.dll").toLowerCase());
+    assert.equal(
+      win32.toNamespacedPath(filename).toLowerCase(),
+      win32.toNamespacedPath(join(directory, "runtime/onnxruntime.dll")).toLowerCase(),
+    );
   }
   const buffer = new sherpa.CircularBuffer(8);
   buffer.push(new Float32Array([1, 2]));
