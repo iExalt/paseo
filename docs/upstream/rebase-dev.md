@@ -4,6 +4,8 @@ The `Rebase dev onto upstream mirror` workflow is a manual recovery tool for the
 
 The workflow does not publish a partial rebase. Unknown conflicts, newly empty commits, failed tests, branch movement, a missing ref, or a failed atomic push stop the run. A failed run uploads its starting SHAs and Git status as an artifact. Reused `rerere` resolutions can still leave the rebase paused; the workflow continues only a merge-backend conflict stop where Git's C-locale output explicitly reports that it staged a previous resolution, the index has no unmerged entries, and the rebase makes progress. All other stops require a new manual resolution.
 
+Every replayed commit keeps its original author and committer names, email addresses, timestamps and timezones, and exact message bytes. The workflow rebuilds the commits with their rebased trees and parents, signs each one with the dedicated SSH key in `PASEO_REBASE_SSH_SIGNING_KEY`, and verifies each signature against the pinned public key before tests or publication. The temporary private-key file is removed before dependency installation. Replays fail closed if history contains merges, commit mapping changes, metadata cannot be represented exactly, or a committer email is not the verified `clliaw@nvidia.com` account. GitHub has accepted this registered signing key for commits with that committer email.
+
 ## Resolution branch format
 
 The `rebase-resolutions` branch may start with only `schema.json`; that is a valid empty cache, and unknown conflicts still stop with diagnostics. The file must contain these exact UTF-8 bytes:
