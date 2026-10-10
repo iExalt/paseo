@@ -1,0 +1,42 @@
+name: Native feasibility (bounded Phase A probe)
+
+on:
+  push:
+    branches: [ci/github-workflows]
+    paths:
+      - .github/workflows/native-feasibility.yml
+      - .github/scripts/probe-native-runtime.mjs
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-feasibility
+  cancel-in-progress: false
+
+jobs:
+  native:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04-arm, windows-11-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.0"
+          architecture: arm64
+          package-manager-cache: false
+      - name: Install locked dependencies without lifecycle side effects
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Exercise native dependencies
+        run: node .github/scripts/probe-native-runtime.mjs
+      - name: Record proof boundary
+        if: always()
+        shell: bash
+        run: echo 'One native dependency probe; no cache writes, artifact uploads, signing, package proof or publication.' >> "$GITHUB_STEP_SUMMARY"

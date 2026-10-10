@@ -1,9 +1,9 @@
 # GitHub workflows execution script
 
 **Four serial threads take the fork from its current workflows to a verified
-GitHub release. None is approved for execution yet.**
+GitHub release. Phase A is approved; later phases await their entry gates.**
 
-Status: **confirmed by the user, 2026-10-10; implementation not approved**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
+Status: **Phase A approved and active, 2026-10-10**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
 decisions and the [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) for step proofs. This
 script adds thread boundaries, dependencies and literal starting prompts.
 
@@ -26,9 +26,9 @@ flowchart LR
 ```
 
 This is the critical path; no independent thread is presently scheduled.
-Thread A is eligible for phase approval; B/C/D wait on their
-predecessors. No workflow implementation or live trial has occurred during
-planning. The source starting point is recorded in the plan; refresh Git and
+Thread A runs in the requested sibling worktree on `ci/github-workflows`;
+B/C/D wait on their predecessors and phase approval. Current implementation
+and evidence are in [project status](GITHUB_WORKFLOWS_STATUS.md). Refresh Git and
 live state before each phase. Preserve unrelated edits, installed state,
 signing identities and published releases.
 
@@ -40,7 +40,7 @@ or modify their installations without explicit authorization.
 
 ## A. Establish contracts and shared routine CI — steps 1–3
 
-**State:** ready for phase approval; not approved for execution.
+**State:** approved; A1 active, G0/G1 pending.
 
 ```text
 Use $keep-me-in-the-loop to run thread A in docs/GITHUB_WORKFLOWS_SCRIPT.md.
@@ -51,12 +51,12 @@ deviation that changes later threads.
 
 - **Depends on:** none; not alongside B/C/D because they require A's contracts
   and share the active checkout.
-- **Chunks:** (1) feasibility/version/sequence/native-proof and zero-cost
+- **Chunks:** (1) feasibility/semver/Android-encoding/native-proof and zero-cost
   contracts; (2) shared routine CI and measured baseline; (3) rebase reuse and
   upstream-sync regression proof.
 - **Human:** at approval authorize bounded probes and test workflow changes;
-  before affected probes supply inaccessible billing/access evidence; after S1
-  choose initial fork version/migration route; after S2 accept numeric latency
+  before affected probes supply inaccessible billing/access evidence; initial
+  0.1.0 and clean-break manual migration are selected; after S2 accept numeric latency
   ceiling. Pause only dependent work while these decisions wait.
 - **Live:** standard free runners only after storage/no-overage checks. One
   representative attempt per unresolved native lane and one cold/warm routine
@@ -112,7 +112,7 @@ Keep releases unpublished. Mark C done with G4 evidence and record deviations.
   installed clients and public release history. Reconcile only campaign-owned
   test PRs/drafts after verification.
 - **Done when:** G4 passes; bot PR really triggers routine/deep checks, fork
-  semver and old-client compatibility proofs hold, no premature public release.
+  semver and manual-migration fixture proofs hold, no premature public release.
 
 ## D. Enforce and demonstrate complete release delivery — steps 9–11
 
@@ -145,7 +145,7 @@ Mark D done only after G5/G6 and record the user's final acceptance.
 ## When a human is needed
 
 No calendar appointments are assumed. Each thread starts with phase approval.
-A additionally needs initial-version selection and measured-budget agreement;
+A additionally needs measured-budget agreement; initial 0.1.0 is selected;
 B/C may need free signing/bot access; D needs first-publication selection,
 personal-device presence and final acceptance. Move access work before thread
 start wherever possible. An unresolved item blocks its dependent action only.
@@ -155,6 +155,11 @@ start wherever possible. An unresolved item blocks its dependent action only.
 Windows/AppImage automatic updates are stretch after G6 and separate approval.
 Paid publisher verification, iOS/Intel Mac, extra package formats and paid provider
 tests remain excluded. No required roadmap step is outside these four threads.
+
+- 2026-10-10, execution amendment: Phase A approved in the requested sibling
+  worktree with performance and 10 GB cache constraints. Initial fork version
+  selected as 0.1.0, semver-only upgrade ordering, clean break/manual migration;
+  this supersedes the earlier numeric sequence and legacy-bridge proposal.
 
 - 2026-10-10: the user confirmed all three tiers for commit and push. Thread A
   is ready for phase approval; implementation remains unapproved.

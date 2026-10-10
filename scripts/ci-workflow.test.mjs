@@ -26,6 +26,7 @@ test("only fork-owned workflows are installed", () => {
     "fork-android-apk.yml",
     "fork-builds.yml",
     "macos-closure.yml",
+    "native-feasibility.yml",
     "rebase-dev.yml",
     "upstream-sync.yml",
   ]);
