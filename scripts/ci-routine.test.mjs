@@ -16,7 +16,6 @@ import {
   selectChecks,
   vitestHelpers,
 } from "../.github/scripts/ci-routine.mjs";
-import { directoryBytes, maySave, rawLimit } from "../.github/scripts/ci-cache.mjs";
 
 const filters = load(readFileSync(join(root, ".github/ci-paths.yml"), "utf8"));
 const workflow = load(readFileSync(join(root, ".github/workflows/ci.yml"), "utf8"));
@@ -235,33 +234,7 @@ test("real mise file task resolves the repository from a package and forwards ar
   assert.notEqual(invalid.status, 0);
 });
 
-test("cache saves require trusted dev context and stay within the raw per-entry bound", () => {
-  const env = {
-    GITHUB_EVENT_NAME: "push",
-    GITHUB_REPOSITORY: "iExalt/paseo",
-    GITHUB_REF: "refs/heads/dev",
-  };
-  assert.equal(maySave(env, rawLimit), true);
-  for (const bytes of [0, -1, rawLimit + 1, NaN]) assert.equal(maySave(env, bytes), false);
-  for (const delta of [
-    { GITHUB_EVENT_NAME: "pull_request" },
-    { GITHUB_REPOSITORY: "fork/paseo" },
-    { GITHUB_REF: "refs/heads/other" },
-  ]) {
-    assert.equal(maySave({ ...env, ...delta }, 10), false);
-  }
-  const fixture = mkdtempSync(join(tmpdir(), "paseo-cache-size-"));
-  try {
-    mkdirSync(join(fixture, "nested"));
-    writeFileSync(join(fixture, "a"), "123");
-    writeFileSync(join(fixture, "nested/b"), "45");
-    assert.equal(directoryBytes(fixture), 5);
-  } finally {
-    rmSync(fixture, { recursive: true, force: true });
-  }
-});
-
-test("workflow aggregate rejects every incomplete result and cache writes follow successful checks", () => {
+test("workflow aggregate rejects every incomplete result without ineffective cache transfers", () => {
   assert.deepEqual(workflow.on.push.branches, ["dev"]);
   assert.ok(Object.hasOwn(workflow.on, "pull_request"));
   assert.equal(workflow.jobs.required.if, "always()");
@@ -274,11 +247,11 @@ test("workflow aggregate rejects every incomplete result and cache writes follow
     assert.equal(status === 0, result === "success");
   }
   const steps = workflow.jobs.routine.steps;
-  const save = steps.findIndex((step) => step.uses?.startsWith("actions/cache/save@"));
-  const verify = steps.findIndex((step) => step.name === "Verify the checked-out source");
-  assert.ok(save > verify);
-  assert.match(steps[save].if, /cache-size.outputs.save == 'true'/);
-  assert.doesNotMatch(steps[save].if, /always|failure/);
+  assert.ok(!steps.some((step) => step.uses?.startsWith("actions/cache")));
+  const setup = steps.find((step) => step.name === "Configure pinned npm installation");
+  assert.match(setup.run, /npm_config_cache=\$RUNNER_TEMP\/npm-cache/);
+  assert.match(setup.run, /v26\.11\.0/);
+  assert.match(setup.run, /11\.20\.0/);
   assert.ok(!steps.some((step) => step.uses?.includes("upload-artifact")));
   assert.equal(steps.find((step) => step.uses?.startsWith("jdx/mise-action@")).with.cache, false);
 });
