@@ -86,7 +86,7 @@ explicitly required before publication, even if absent from routine CI.
     S1, preserve the selected 0.1.0/manual-migration route. Unsupported
     requirements pause affected work while independent investigation continues.
 
-- [ ] **2. Establish shared routine CI and its baseline.** Implement entrypoint,
+- [x] **2. Establish shared routine CI and its baseline.** Implement entrypoint,
       PR/dev triggers, least privilege, cancellation, stable aggregate checks and
       tested change routing. Reconcile workflow inventory tests with the new design.
       Measure S2 and remove avoidable duplicate installation/build/test work.
@@ -97,7 +97,7 @@ explicitly required before publication, even if absent from routine CI.
   - Human: after baseline, accept numeric runtime ceiling or choose a scope
     tradeoff; this is not permission to silently remove correctness checks.
 
-- [ ] **3. Integrate rebase and preserve upstream sync.** Remove duplicated
+- [x] **3. Integrate rebase and preserve upstream sync.** Remove duplicated
       rebase validation commands in favor of step 2's direct shared entrypoint on
       the rebased tree. Retain Git-resolution regression tests in routine CI, key
       cleanup, metadata/signature rules, backup, atomic push and exact lease.
