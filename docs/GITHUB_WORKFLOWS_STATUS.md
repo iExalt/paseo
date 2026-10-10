@@ -8,8 +8,8 @@
   operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
-- A1 active; G0/G1 are not complete. The Linux ARM64 dependency probe passed;
-  Windows and Android runtime repairs are active. No routine baseline
+- A1 active; G0/G1 are not complete. Linux ARM64 dependency and hosted Android
+  ARM64 APK runtime probes passed; Windows runtime repair is active. No routine baseline
   exists. Reviewed probe code and semver contracts are published on the work branch.
 
 ## Outcome gates
@@ -39,13 +39,15 @@ probe code passed review; native evidence remains open, so A1 is not accepted.
   cannot provide native ARM64 local speech without a custom binding. A request
   for a focused binding-build trial received expanded user approval: take the time
   needed within free standard-runner limits. Full platform functionality is retained.
-- Actual Android shipped-ABI execution remains unresolved. The hosted ARM64
-  kernel lacks exposed KVM but enables modular Android Binder, with the matching
-  extra-modules package available. The first Android 16 trial verified APK identity
-  but failed boot with repeated SurfaceFlinger aborts. A pinned ashmem-only kernel
-  module repair is designed based on upstream's corrected diagnosis; no rendering
-  assertions are patched or bypassed. Its ARM64 result remains unproven;
-  no local emulator or physical-device operation is authorized or running.
+  The custom ARM64 binding now compiles, but its first runtime trial resolved
+  ONNX Runtime 1.17.1 while requiring API28; the pinned archive contains 1.28.2.
+  A process-local Node/DLL layout repair is pending, with no system DLL changes.
+- Actual Android shipped-ABI startup is verified on a hosted ARM64 runner using
+  distro Binder and a pinned ashmem compatibility module. The repaired trial
+  booted Android 16, installed the signed ARM64 APK and retained its foreground
+  process for 30 seconds. This proves container startup; hardware, GPU and
+  Bluetooth fidelity and the full candidate G3 gate remain unproven. No local
+  emulator or physical-device operation is authorized or running.
 - A2's controlled dev-event proof uses a discovered `.mise/tasks/ci/routine`
   file task, avoiding `mise.toml`, which triggers existing packaging. Before
   integration, prove the complete cumulative diff does not match the old packaging
@@ -90,7 +92,7 @@ or reset the baseline to conceal growth.
 
 - [x] Verify the revised semver contract and reconcile all three planning tiers.
 - [ ] Reconcile bounded native probes; return unsupported requirements for
-      explicit resolution. Linux passed; Windows binding and Android ashmem repairs active.
+      explicit resolution. Linux and Android passed; Windows binding runtime repair active.
 - [ ] Close G0, then establish A2's shared routine command and live baseline.
 - [ ] Close A3 with exact-tested-tree, failed-check and branch-movement fixtures.
 
@@ -116,4 +118,11 @@ roadmap. Do not mark A1 complete while native feasibility is unresolved.
   the app was not installed or executed. Cleanup removed the owned container.
   Upstream's [corrected report](https://github.com/remote-android/redroid-doc/issues/934#issuecomment-5178199895)
   attributes the analogous failure to missing ashmem, superseding its initial
-  graphics diagnosis; applying that repair to this ARM64 runner remains a hypothesis.
+  graphics diagnosis; the following trial tested that repair on this ARM64 runner.
+- The [repaired Android trial](https://github.com/iExalt/paseo/actions/runs/38081538748)
+  at `def29fde5` passed kernel-module load, boot, APK verification/install and
+  sustained app startup. Bluetooth HAL crashes were visible, but no app crash;
+  this proves container feasibility, not Bluetooth/GPU/hardware fidelity or G3.
+  The [focused Windows trial](https://github.com/iExalt/paseo/actions/runs/38081538703)
+  built the native binding, then exposed the ONNX Runtime version mismatch before
+  the required native behavior assertions. Its package gate remains open.
