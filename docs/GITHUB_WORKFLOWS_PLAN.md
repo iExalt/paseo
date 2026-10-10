@@ -1,6 +1,6 @@
 # GitHub workflows plan
 
-Status: **Phase A approved, 2026-10-10; implementation active**.
+Status: **Phase A complete; Phase B approved and active, 2026-10-10**.
 
 Current evidence and remaining gates: [project status](GITHUB_WORKFLOWS_STATUS.md).
 
@@ -17,8 +17,8 @@ their exact merged candidate commits get deeper verification again, packaging,
 and package smoke tests. Publish to GitHub Releases only after the entire
 required matrix succeeds for the candidate revision.
 
-The user approved Phase A in a sibling worktree, including reviewed commits and
-pushes, a test PR and bounded free probes. Later phases, public releases and
+The user approved Phases A and B in a sibling worktree, including reviewed commits and
+pushes, safe test PRs and bounded free verification. Phases C/D, public releases and
 personal-device changes retain their explicit approval gates. CI performance
 and the repository's 10 GB cache ceiling are requirements.
 

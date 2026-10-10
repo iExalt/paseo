@@ -24,7 +24,7 @@ Active fork-specific plans and notes live at the top level of `docs/`; completed
 The confirmed [GitHub workflows plan](docs/GITHUB_WORKFLOWS_PLAN.md),
 [roadmap](docs/GITHUB_WORKFLOWS_ROADMAP.md), and
 [execution script](docs/GITHUB_WORKFLOWS_SCRIPT.md) describe the new fork CI and
-release campaign. [Project status](docs/GITHUB_WORKFLOWS_STATUS.md) records Phase A
+release campaign. [Project status](docs/GITHUB_WORKFLOWS_STATUS.md) records phase
 approval and current evidence; later phases retain their approval gates. When executing a
 confirmed roadmap, tick each completed step and its plan gate in the same commit
 with the required evidence.
