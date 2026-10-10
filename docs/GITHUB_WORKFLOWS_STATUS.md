@@ -55,6 +55,10 @@ interface decisions only; it does not establish package or release correctness.
   remove these workarounds when obsolete, no later than step 9. Any additional
   packaging-sensitive baseline repairs need a consolidated integration amendment.
   No workflow is disabled, and production paths retain their packaging triggers.
+- Baseline repair now includes production import-boundary fixes, not only test
+  fixtures. The user is deciding whether to make legacy packaging manual-only
+  until step 9 and remove the temporary path exceptions. Dev integration remains
+  pending; no signing or packaging run has been dispatched.
 - Bot PR credentials are not proven. Existing repository secret names contain
   signing/configuration secrets but no dedicated release-please credential;
   never treat secret names as proof of usable material. The selected App-token
@@ -170,3 +174,10 @@ remain B/C/D as assigned in the roadmap.
   Wrangler no longer exports its private CLI path. The test now resolves the
   executable through exported package metadata; targeted collection succeeds,
   its three runtime cases remain skipped on Node 26, and relay typecheck passes.
+- The [broader routine trial](https://github.com/iExalt/paseo/actions/runs/38084411293)
+  passed client, relay and plugin checks, then exposed ten failures in seven server
+  test files. Server units took 232.95 seconds at two workers; no complete baseline
+  exists. Repairs preserve the import-boundary assertions, separate shared schemas
+  from wire messages, correct stale fixtures, and remove dependence on a locally
+  installed Claude binary. Desktop Node contracts remain under Node; CLI lifecycle
+  and installed-provider compatibility have explicit B gates.

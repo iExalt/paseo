@@ -749,6 +749,7 @@ describe("WorkspaceReconciliationService", () => {
       kind: "directory",
       displayName: "orphan",
       background: false,
+      notifications: "on",
       title: null,
       pinnedAt: null,
       branch: null,

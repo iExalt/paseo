@@ -245,7 +245,11 @@ describe("CursorACPAgentClient session start", () => {
               configOptions: session.configOptions,
             }),
             // cursor-agent switches the model without returning refreshed config options.
-            unstable_setSessionModel: vi.fn().mockResolvedValue(undefined),
+            request: vi.fn(async (method, params) => {
+              expect(method).toBe("session/set_model");
+              expect(params).toEqual({ sessionId: "session-1", modelId: config.model });
+              return undefined;
+            }),
             setSessionConfigOption:
               session.setSessionConfigOption ??
               vi.fn().mockResolvedValue({ configOptions: session.configOptions }),

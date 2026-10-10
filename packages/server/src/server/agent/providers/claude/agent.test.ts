@@ -571,8 +571,20 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
 describe("ClaudeAgentClient binary resolution", () => {
   const logger = createTestLogger();
 
-  test("resolves the installed Claude Code version", async () => {
-    await expect(resolveClaudeCodeVersion()).resolves.toMatch(/^\d+\.\d+\.\d+$/);
+  test("resolves the Claude Code version from the configured command", async () => {
+    await expect(
+      resolveClaudeCodeVersion({
+        command: {
+          mode: "replace",
+          argv: [
+            process.execPath,
+            "-e",
+            'if (process.argv[1] !== "--version") process.exit(1); console.log("2.1.0 (Claude Code)")',
+            "--",
+          ],
+        },
+      }),
+    ).resolves.toBe("2.1.0");
   });
 
   test("loads user, project, and local Claude settings", async () => {
