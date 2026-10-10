@@ -1,6 +1,8 @@
 # GitHub workflows plan
 
-Status: **confirmed by the user, 2026-10-10; implementation not approved**.
+Status: **Phase A approved, 2026-10-10; implementation active**.
+
+Current evidence and remaining gates: [project status](GITHUB_WORKFLOWS_STATUS.md).
 
 This is the decision ledger for a clean-slate fork CI and release campaign. The
 [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) and [script](GITHUB_WORKFLOWS_SCRIPT.md)
@@ -15,10 +17,17 @@ their exact merged candidate commits get deeper verification again, packaging,
 and package smoke tests. Publish to GitHub Releases only after the entire
 required matrix succeeds for the candidate revision.
 
-This request authorizes planning and read-only investigation. It does not
-authorize creating workflows, branches, credentials, releases, or expensive
-experiments. The user confirmed all three reviewed tiers for commit and push
-on 2026-10-10; implementation has its own execution boundary.
+The user approved Phase A in a sibling worktree, including reviewed commits and
+pushes, a test PR and bounded free probes. Later phases, public releases and
+personal-device changes retain their explicit approval gates. CI performance
+and the repository's 10 GB cache ceiling are requirements.
+
+**Revised by the user during A1:** start the fork at **0.1.0**, order upgrades
+solely by fork semver, and make a **clean break with manual migration**. Remove
+the independent numeric release sequence and automatic legacy-client bridge.
+Android retains its mandatory internal versionCode as a deterministic semver
+encoding, not a second release identity. Preserve application IDs, signing
+identities, installed user data and recovery assets during manual migration.
 
 ## 1. North star and scope
 
@@ -120,7 +129,7 @@ were made by the user on 2026-10-10.
 | D10 | CI must be free; prioritize low routine latency                                          | Decided; no paid compute, storage overage, provider APIs, device farms, or publisher credentials                                            |
 | D11 | Preserve existing cryptographic signatures, exclude Apple/Windows publisher verification | Decided after the user clarified that paid publisher credentials are what they lack; configured secret names are verified, usability is not |
 | D12 | Rebase automation uses new routine CI directly                                           | Decided; one entrypoint, evaluated against the rebased candidate before publication                                                         |
-| D13 | Initial fork version and compatibility bridge                                            | Open; S1 produces concrete migration choices; user confirms initial visible version before activation                                       |
+| D13 | Initial fork version and migration                                                       | Decided during A1: 0.1.0, clean break, manual migration, semver-only upgrade ordering                                                       |
 | D14 | Numeric runtime budget                                                                   | Open; S2 records comparable baseline and proposed ceiling; user confirms before suite expansion                                             |
 | D15 | Execution grouping                                                                       | Agreed; four serial threads, script in docs; current checkout by default, no parallel worktrees without user request                        |
 
@@ -155,7 +164,7 @@ row. Keep orchestration thin and shared behavior directly callable.
 | Routine CI            | All PRs and every `dev` push; local/rebase entrypoint              | Format, lint, types, unit suites, focused integration; stable aggregate result                                      |
 | Deep verification     | Authenticated release-please PR updates and exact merged candidate | Critical browser, Electron, native Android journeys and deeper integration                                          |
 | Release-please        | Trusted `dev` changes                                              | One maintained fork release PR with version, manifest, lockfile, and changelog updates; no premature public release |
-| Candidate coordinator | Recognized merged release PR, explicit same-candidate retry        | Pin SHA/version/sequence; invoke routine, deep, packaging; collect required results                                 |
+| Candidate coordinator | Recognized merged release PR, explicit same-candidate retry        | Pin SHA/fork semver; invoke routine, deep, packaging; collect required results                                      |
 | Mac packaging         | Candidate identity                                                 | Nix closure signatures, clean import, app/daemon smoke                                                              |
 | Android packaging     | Candidate identity                                                 | Production APK, original certificate, monotonic versionCode, native ABI and manifest checks                         |
 | Linux packaging       | Candidate identity and x64/ARM64                                   | Nix daemon/desktop and DEB/RPM/AppImage build and runtime/install smoke on each native architecture                 |
@@ -196,19 +205,30 @@ draft/release separation or a compatible coordinator adapter so only the final
 verified publisher makes a release public. Rehearse the selected mechanism,
 including tag creation, discovery of previous releases, and reruns.
 
-Independent fork semver does not replace Android's numeric upgrade sequence.
-The current coordinator uses `200000 + GITHUB_RUN_NUMBER`; workflow replacement
-can reset that counter. Allocate identity once, beyond current published
-manifests and installed-version evidence; preserve it across retries and prevent
-concurrent allocation or out-of-order publication from downgrading the feed.
+Fork stable semver is the only upgrade ordering and release identity. Use
+canonical `v0.1.0` tags and a new signed manifest schema with explicit fork
+lineage, source SHA, upstream base and the complete artifact inventory. Legacy
+`paseo-fork-*` tags and exact-key V1 manifests remain historical recovery assets;
+new clients must not compare their upstream-derived versions against fork semver.
+There is no compatibility release or alias. Installed clients move to 0.1.0
+through the explicitly approved manual migration gate in G6.
 
-Old clients require the existing tag and exact manifest shape. A transition may
-need a compatibility release, dual metadata, or a legacy alias. S1 selects and
-proves the route before package interfaces change. Keep existing signatures,
-application IDs, state directories, Nix trust and rollback/recovery behavior.
-Do not add fields to an exact-key schema and assume old clients accept them.
-Keep new platform inventory separate or explicitly versioned. No real device
-updates during planning; activation tests require the user's presence/approval.
+Android requires an integer versionCode. For stable `major.minor.patch`, use
+`200000 + major * 1000000 + minor * 1000 + patch`, with minor/patch below 1000
+and result at most 2100000000. The fixed offset makes 0.1.0's code 201000 exceed
+the currently published 200008, allowing same-certificate manual installation
+without uninstalling data. Recheck the installed floor before G6. Reject beta,
+build metadata and out-of-range versions rather than introducing collisions.
+No run number, persistent counter or failed-candidate reservation is involved.
+
+Retries retain semver, source SHA and immutable attempt artifacts. An unpublished
+replacement source gets a distinct draft identity after the earlier candidate
+is stopped; do not overwrite its receipts. A published version is immutable:
+changed bytes require the next semver. The publisher rejects stale versions.
+Keep signing identities, application IDs, state directories and Nix trust.
+Manual Mac migration must account for old updater receipts and recovery state;
+changing a comparator alone does not migrate those records. Device actions wait
+for explicit user presence/authorization.
 
 ### 4.3 Zero-cost operation and test fidelity
 
@@ -238,20 +258,20 @@ state; installer success alone is insufficient.
 
 ## 5. Work items
 
-| ID  | Required work                                                                          | Milestone |
-| --- | -------------------------------------------------------------------------------------- | --------- |
-| W1  | Version, sequence, updater, bot-event, ARM64 and zero-cost feasibility contracts       | G0        |
-| W2  | Shared routine command, stable checks, baseline and runtime budget                     | G1        |
-| W3  | Rebase consumes W2 before atomic publish; upstream sync retained and tested            | G1        |
-| W4  | Deep browser/Electron/native Android journeys and platform integration                 | G2        |
-| W5  | All selected package formats/architectures, fresh install/import/manual upgrade proofs | G3        |
-| W6  | Independent semver, compatibility bridge, release-please config and PR event chain     | G4        |
-| W7  | Exact-SHA coordinator, complete matrix, retries, drafts and publication gates          | G5        |
-| W8  | First release, installed-client migration/recovery proof, runbooks and cleanup         | G6        |
+| ID  | Required work                                                                                    | Milestone |
+| --- | ------------------------------------------------------------------------------------------------ | --------- |
+| W1  | Semver, Android encoding, manual migration, bot-event, ARM64 and zero-cost feasibility contracts | G0        |
+| W2  | Shared routine command, stable checks, baseline and runtime budget                               | G1        |
+| W3  | Rebase consumes W2 before atomic publish; upstream sync retained and tested                      | G1        |
+| W4  | Deep browser/Electron/native Android journeys and platform integration                           | G2        |
+| W5  | All selected package formats/architectures, fresh install/import/manual upgrade proofs           | G3        |
+| W6  | Independent semver, new signed manifest/updater, release-please config and PR event chain        | G4        |
+| W7  | Exact-SHA coordinator, complete matrix, retries, drafts and publication gates                    | G5        |
+| W8  | First release, installed-client migration/recovery proof, runbooks and cleanup                   | G6        |
 
 ## 6. Milestones and gates
 
-- [ ] **G0: Resolve feasibility contracts.** Gate: concrete version/sequence and
+- [ ] **G0: Resolve feasibility contracts.** Gate: concrete semver/Android encoding and
       metadata interface, bot event route, zero-cost transport, and native-architecture
       proof strategy are recorded. Remaining unsupported requirements are reported
       for a decision, not represented as green. Initial version is selected.
@@ -269,13 +289,13 @@ state; installer success alone is insufficient.
       remain unchanged. Actual shipped-ABI proof is accounted for.
 - [ ] **G4: Prepare compatible releases automatically.** Gate: a real bot-created
       release PR triggers required checks; independent semver, workspace versions,
-      sequence and old-client migration fixtures pass; no public release is created.
+      new-client semver ordering and manual-migration fixtures pass; no public release is created.
 - [ ] **G5: Enforce complete publication.** Gate: a missing/failed platform,
       stale SHA, wrong signature, partial upload, concurrent or retried attempt cannot
       publish. The all-green same-SHA rehearsal succeeds without making assets public.
 - [ ] **G6: Deliver and operate the first release.** Gate: explicit publication
       authorization, complete GH assets, download verification, and actual legacy
-      Mac/Android update/state/recovery evidence; all selected platform proofs,
+      Mac/Android manual migration/state/recovery evidence; all selected platform proofs,
       routine latency and zero-cost controls recorded; user accepts final result.
 
 ## 7. Spikes and open decisions
@@ -283,18 +303,18 @@ state; installer success alone is insufficient.
 Allowances below are proposals for phase approval, not permission to run them
 now. Stop at the reassessment point and report a falsified assumption honestly.
 
-| Spike                 | Workload and allowance                                                                                                                                           | Success/failure and decision                                                                                                                           |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| S1 Version/identity   | One offline fixture history spanning a legacy release, upstream rebase, two fork releases and a failed/retried candidate; one implementation session             | Demonstrates bootstrap, monotonic sequence, old-client transition and repeatability; user chooses initial fork version from concrete migration options |
-| S2 Baseline           | One required cold and one warm routine run on pinned standard Linux runner; record setup/build/tests and concurrency                                             | Establish stable baseline and proposed low-latency ceiling; user settles ceiling before adding coverage                                                |
-| S3 Native feasibility | One representative install/build/runtime probe per previously unproved Linux/Windows ARM64 lane and Android shipped-ABI path; one attempt per lane, then analyze | Working dependency/package proof or precise blocker; no blind retry campaign or architecture omission                                                  |
-| S4 Bot/publication    | One isolated bot PR and one draft-only candidate rehearsal after zero-cost/access gates                                                                          | PR events fire; merge SHA selected; incomplete matrix stays unpublished; credentials and draft behavior verified                                       |
+| Spike                 | Workload and allowance                                                                                                                                           | Success/failure and decision                                                                                                                  |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1 Version/identity   | Offline stable-semver and Android-encoding boundary fixtures; source/retry/rebase invariants specified for C/D                                                   | 0.1.0 clean break selected; encoding has no collisions, fork ordering excludes legacy lineage; full migration/coordinator fixtures remain C/D |
+| S2 Baseline           | One required cold and one warm routine run on pinned standard Linux runner; record setup/build/tests and concurrency                                             | Establish stable baseline and proposed low-latency ceiling; user settles ceiling before adding coverage                                       |
+| S3 Native feasibility | One representative install/build/runtime probe per previously unproved Linux/Windows ARM64 lane and Android shipped-ABI path; one attempt per lane, then analyze | Working dependency/package proof or precise blocker; no blind retry campaign or architecture omission                                         |
+| S4 Bot/publication    | One isolated bot PR and one draft-only candidate rehearsal after zero-cost/access gates                                                                          | PR events fire; merge SHA selected; incomplete matrix stays unpublished; credentials and draft behavior verified                              |
 
 Draft releases are a publication boundary, not a secret-storage mechanism.
 Candidate artifacts must contain no credentials or private runtime state.
 
-Initial fork version, measured latency ceiling, and technical spike results remain
-Open with these owners and gates. First-version choice belongs to the user;
+Initial fork version and clean-break migration are settled by the user. Measured
+latency ceiling and technical spike results remain open with these gates;
 implementation mechanics belong to the agent/reviewer. Credential access and any
 unavoidable physical-device proof are explicit human interventions. There is no
 requirement for the user to be continuously present during implementation.

@@ -1,6 +1,7 @@
 # GitHub workflows roadmap
 
-Status: **confirmed by the user, 2026-10-10; no implementation steps complete**.
+Status: **Phase A approved and active, 2026-10-10; no implementation steps complete**.
+Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
 When a step passes, tick it and its plan gate in the same scoped commit with a
@@ -64,16 +65,17 @@ explicitly required before publication, even if absent from routine CI.
 - [ ] **1. Resolve feasibility and candidate interfaces.** Run plan S1 and S3
       within the approved phase bounds; verify zero-cost storage/transport and token
       event strategy before live probes. Define candidate SHA, independent fork
-      version, upstream base, monotonic sequence, artifact matrix and compatibility
-      metadata. Select initial version with the user. Inspect native dependencies
+      version, upstream base, deterministic Android versionCode, artifact matrix and
+      new signed metadata. Initial version is 0.1.0 with manual migration. Inspect native dependencies
       and exact ARM64 Android runtime proof. No new workflow-number identity source.
   - Needs: nothing; phase authorization for probes.
-  - Proof: fixture history including rebase/failed candidate/retry; one native
+  - Proof: stable semver/Android-encoding boundary fixtures and explicit source/retry/rebase
+    contracts (full coordinator fixtures in steps 7–10); one native
     representative proof per unknown lane, or a recorded blocker requiring
     explicit scope resolution. Free-only execution controls verified.
   - Ticks: G0; W1.
   - Human: before probes, supply any unavailable billing/access evidence; after
-    S1, choose the initial visible fork version and migration route. Unsupported
+    S1, preserve the selected 0.1.0/manual-migration route. Unsupported
     requirements pause affected work while independent investigation continues.
 
 - [ ] **2. Establish shared routine CI and its baseline.** Implement entrypoint,
@@ -135,12 +137,12 @@ explicitly required before publication, even if absent from routine CI.
   - Ticks: G3 after 5 and 6; W5 remainder.
 
 - [ ] **7. Implement independent versioning and updater transition.** Apply
-      step 1's settled interface, initial version and bridge. Synchronize workspace,
-      lockfile/native/manifest consumers. Preserve old-client discovery and signatures;
-      distinguish upstream version from fork version and native release sequence.
+      step 1's settled interface and initial 0.1.0 version. Synchronize workspace,
+      lockfile/native/new-manifest consumers. Preserve signing identities;
+      gate new-client upgrades by fork semver and exclude the legacy lineage.
   - Needs: 1, 5, 6; complete candidate artifacts available for compatibility tests.
-  - Proof: old and new updater fixtures accept intended transition and reject
-    tampering/downgrades; rebase and sequence-reset regressions pass. Recovery
+  - Proof: new updater fixtures reject tampering/downgrades and legacy-lineage
+    confusion; rebase, deterministic Android encoding and manual-migration fixtures pass. Recovery
     retains usable previous release. Actual installed-device proof remains step 11.
   - Ticks: W6 migration portion; contributes to G4.
 
@@ -179,7 +181,7 @@ explicitly required before publication, even if absent from routine CI.
 
 - [ ] **11. Publish first approved release and hand off operation.** Publish
       the reviewed candidate without rebuilding different bytes. Verify downloads
-      and actual old Mac/Android update, state preservation and recovery. Document
+      and actual manual Mac/Android migration, state preservation and recovery. Document
       release retries, branch-rebase interactions, version overrides, manual package
       upgrades, cost controls and routine baseline. Remove only owned abandoned
       drafts/probes; preserve releases, installed state and historical recovery assets.
@@ -201,14 +203,14 @@ when evidence changes a contract. Stretch Windows/AppImage updates are excluded.
 
 ## Human interventions
 
-| Point              | Kind                   | User action                                                                            | Boundary                                                          |
-| ------------------ | ---------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
-| Each script thread | Approval               | Approve its bounded chunks and live operations                                         | Before execution; planning confirmation is not execution approval |
-| Step 1             | Access/decision        | Supply unavailable zero-cost evidence; choose initial version after migration proposal | Before affected live probes/implementation                        |
-| Step 2             | Decision               | Accept measured runtime ceiling                                                        | Before suite expansion                                            |
-| Steps 5/8          | Access                 | Provision missing signing/bot access, using existing free identities                   | Before signing or bot event rehearsal                             |
-| Steps 5/11         | Presence               | Device installation/update/restart if required for native proof                        | At named test; no surprise disruption                             |
-| Step 11            | Publication/acceptance | Select first real candidate, authorize publication, accept final gate                  | Before publication and after delivery proof                       |
+| Point              | Kind                   | User action                                                                   | Boundary                                                          |
+| ------------------ | ---------------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Each script thread | Approval               | Approve its bounded chunks and live operations                                | Before execution; planning confirmation is not execution approval |
+| Step 1             | Access/decision        | Supply unavailable zero-cost evidence; initial 0.1.0/manual migration settled | Before affected live probes/implementation                        |
+| Step 2             | Decision               | Accept measured runtime ceiling                                               | Before suite expansion                                            |
+| Steps 5/8          | Access                 | Provision missing signing/bot access, using existing free identities          | Before signing or bot event rehearsal                             |
+| Steps 5/11         | Presence               | Device installation/update/restart if required for native proof               | At named test; no surprise disruption                             |
+| Step 11            | Publication/acceptance | Select first real candidate, authorize publication, accept final gate         | Before publication and after delivery proof                       |
 
 No paid operation is offered as an automatic fallback. A requirement that cannot
 be met for free returns as a feasibility finding and scope decision.
