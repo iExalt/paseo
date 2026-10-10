@@ -1,6 +1,6 @@
 # GitHub workflows roadmap
 
-Status: **Phase A approved and active, 2026-10-10; step 1 / G0 complete**.
+Status: **Phase A / G0–G1 complete; Phase B approved and active, 2026-10-10**.
 Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
@@ -13,7 +13,7 @@ through `maintain-project-status`; do not create per-run committed reports.
 
 | Phase                       | Steps | Completed | Exit   |
 | --------------------------- | ----- | --------- | ------ |
-| A Foundations               | 1–3   | 1         | G0, G1 |
+| A Foundations               | 1–3   | 3         | G0, G1 |
 | B Verification and packages | 4–6   | 0         | G2, G3 |
 | C Release preparation       | 7–8   | 0         | G4     |
 | D Integration and delivery  | 9–11  | 0         | G5, G6 |
@@ -27,6 +27,12 @@ through `maintain-project-status`; do not create per-run committed reports.
 | First release and devices | 11    | GH release plus user's existing Mac/Android installations                                | Explicit publication and device action authorization; preserve releases and recovery assets |
 
 ## Phase summaries
+
+- [ ] **Performance stretch across all phases:** review every CI workflow and
+      reusable lane, preserve comparable timing receipts, and optimize measured
+      bottlenecks without weakening proof or exceeding free limits. Use required
+      runs; future C/D lanes remain unmeasured until their approved gates. The
+      ordinary PR requirement stays under five minutes, with two minutes preferred.
 
 - **A:** settle migration/storage/ABI contracts (1), establish measured routine
   CI (2), and reuse it for rebase publication (3). Exit: G0/G1.
