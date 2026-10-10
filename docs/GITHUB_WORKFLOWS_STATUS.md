@@ -11,8 +11,8 @@
 - A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
   probes and hosted Android ARM64 APK startup passed. No routine baseline exists;
   A2 implementation is active. Reviewed probe code and semver contracts are published
-  on the work branch. Routine CI is published and has rejected a real PR failure;
-  successful PR/dev runs and cache measurements remain outstanding.
+  on the work branch. Routine CI has rejected a real PR failure and passed a full
+  PR run; successful dev runs and cache measurements remain outstanding.
 
 ## Outcome gates
 
@@ -20,10 +20,12 @@
 | ----------------------------------------- | -------------------- | ---------- | ------------------------------------------------------------ |
 | A1: feasible candidate and cost contracts | complete / verified  | none       | G0, author with user decisions                               |
 | A2: measured routine verification         | active / implemented | A1         | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | planned / designed   | A2         | G1 including atomic publication failure fixtures, author     |
+| A3: exact rebased-tree verification       | active / implemented | A2         | G1 including atomic publication failure fixtures, author     |
 
 Reviewer design agreement covers these three chunks. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
+A3's bounded implementation and fixture review proceeded while A2's hosted proof
+was pending; A3 closure still depends on A2's successful runs and accepted budget.
 
 ## Decisions and current boundary
 
@@ -46,19 +48,14 @@ interface decisions only; it does not establish package or release correctness.
   process for 30 seconds. This proves container startup; hardware, GPU and
   Bluetooth fidelity and the full candidate G3 gate remain unproven. No local
   emulator or physical-device operation is authorized or running.
-- A2's controlled dev-event proof uses a discovered `.mise/tasks/ci/routine`
-  file task, avoiding `mise.toml`, which triggers existing packaging. Before
-  integration, prove the complete cumulative diff does not match the old packaging
-  filters, recheck remote movement, and inspect resulting events. Necessary client
-  and relay test repairs match those filters. The user approved temporary exact
-  exclusions for those two files and removal of the coordinator's self-trigger;
-  remove these workarounds when obsolete, no later than step 9. Any additional
-  packaging-sensitive baseline repairs need a consolidated integration amendment.
-  No workflow is disabled, and production paths retain their packaging triggers.
-- Baseline repair now includes production import-boundary fixes, not only test
-  fixtures. The user is deciding whether to make legacy packaging manual-only
-  until step 9 and remove the temporary path exceptions. Dev integration remains
-  pending; no signing or packaging run has been dispatched.
+- The user approved manual-only legacy packaging until step 9's candidate
+  coordinator. Ordinary dev pushes stop producing Mac/Android candidates; the
+  temporary test-path exceptions are removed. Manual packaging retains the
+  trusted `dev`/`iExalt` guards. `dev` is the repository's default branch, so the
+  dispatch definition becomes available there after integration; no dispatch or
+  signing operation is authorized by this CI trial. Before integration, recheck
+  remote movement and audit resulting events. Baseline repairs include production
+  import-boundary fixes as well as test fixtures.
 - Bot PR credentials are not proven. Existing repository secret names contain
   signing/configuration secrets but no dedicated release-please credential;
   never treat secret names as proof of usable material. The selected App-token
@@ -116,6 +113,18 @@ Concurrent dev runs retain every source SHA; same-key cache reservations may
 race harmlessly. The provisional per-entry save cap is 2 GiB of raw file bytes,
 distinct from compressed cache size and the enforced 10 GB repository ceiling.
 Cache misses still execute all selected checks; no Actions artifacts are uploaded.
+
+The reviewed rebase workflow uses the same complete routine command after rebasing
+and installing the captured lockfile. Validation requires a clean tracked tree,
+rejects untracked environment overrides, and checks the commit again after tests.
+Publication requires that exact tested SHA and retains the atomic backup/dev lease.
+CLI fixtures prove that failed checks, tree mutation and ignored environment
+overrides produce no tested-SHA output; Git fixtures reject branch movement and
+stale leases without publishing a backup. These are fresh-checkout assumptions,
+not an audit of every ignored build output. The workflow restores npm downloads
+without saving caches, removes signing material before dependency execution,
+exposes push credentials only during publication, and records bounded diagnostics
+without artifact uploads. No production rebase has been dispatched.
 
 ## Next sequence and deferred gates
 
@@ -181,3 +190,13 @@ remain B/C/D as assigned in the roadmap.
   from wire messages, correct stale fixtures, and remove dependence on a locally
   installed Claude binary. Desktop Node contracts remain under Node; CLI lifecycle
   and installed-provider compatibility have explicit B gates.
+- The [complete PR trial](https://github.com/iExalt/paseo/actions/runs/38085275889)
+  passed at head `26665aef0` (tested merge `842cc2666`), including the required
+  aggregate. Routine job wall time was 12m48s on `ubuntu-24.04`, Node26.11.0,
+  two unit workers and one integration worker: cold npm install 62.56s,
+  declarations 19.35s, types 26.58s, server units 315.52s and app units 147.02s.
+  Server time exceeded the prior failed run's 232.95s, with the largest differences
+  in unchanged subprocess-heavy suites. The same-SHA dev cold/warm pair must
+  resolve that variability before accepting a baseline or numeric ceiling.
+  Reviewed A3 fixtures and workflow wiring now share this routine gate; no live
+  production rebase is needed for step 3's isolated publication proof.
