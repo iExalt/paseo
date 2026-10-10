@@ -1,13 +1,13 @@
 import { AgentMessageSchema } from "./agent-message.js";
 import { PluginRegistryIdentitySchema } from "./plugin-registry.js";
-import { AgentProfileSchema, AgentSkillSelectionSchema } from "./agent-profile.js";
+import { AgentSkillSelectionSchema } from "./agent-profile.js";
 export {
   AgentProfileSchema,
   AgentSkillSelectionSchema,
   type AgentProfile,
   type AgentSkillSelection,
 } from "./agent-profile.js";
-import { PluginIdSchema, PluginRequirementsSchema, PluginSourceSchema } from "./plugin-config.js";
+import { PluginIdSchema, PluginRequirementsSchema } from "./plugin-config.js";
 export {
   PluginIdSchema,
   PluginRequirementsSchema,
@@ -16,15 +16,15 @@ export {
   type PluginRequirements,
   type PluginSource,
 } from "./plugin-config.js";
-import { TerminalProfileSchema } from "./terminal-profile.js";
 export { TerminalProfileSchema, type TerminalProfile } from "./terminal-profile.js";
+import { ReplyRuleSchema } from "./reply-rule.js";
+export { ReplyRuleSchema, type ReplyRule } from "./reply-rule.js";
 import { z } from "zod";
 import { TerminalActivitySchema } from "./terminal-activity.js";
 import { CLIENT_CAPS } from "./client-capabilities.js";
 import { AGENT_LIFECYCLE_STATUSES } from "./agent-lifecycle.js";
 import { MAX_EXPLICIT_AGENT_TITLE_CHARS } from "./agent-title-limits.js";
 import { AgentProviderSchema } from "./provider-manifest.js";
-import { ProviderPaseoToolsPolicySchema } from "./provider-config.js";
 import { TOOL_CALL_ICON_NAMES } from "./agent-types.js";
 import { WORKSPACE_LABEL_COLORS } from "./workspace-labels.js";
 import {
@@ -115,135 +115,23 @@ export {
 // Mutable daemon config schemas (shared between server store and client)
 // ---------------------------------------------------------------------------
 
-export const DAEMON_PERMISSIONS = [
-  "daemon.read",
-  "daemon.manage",
-  "tunnel.manage",
-  "access.manage",
-  "workspace.read",
-  "workspace.write",
-  "workspace.manage",
-  "automation.manage",
-  "hub.execute",
-] as const;
-export const DaemonPermissionSchema = z.enum(DAEMON_PERMISSIONS);
-export type DaemonPermission = z.infer<typeof DaemonPermissionSchema>;
+import { DaemonPermissionSchema } from "./daemon-permissions.js";
+export {
+  DAEMON_PERMISSIONS,
+  DaemonPermissionSchema,
+  type DaemonPermission,
+} from "./daemon-permissions.js";
 
-const MutableDaemonProviderModelSchema = z
-  .object({
-    id: z.string().min(1),
-    label: z.string().min(1),
-    description: z.string().optional(),
-    isDefault: z.boolean().optional(),
-  })
-  .passthrough();
-
-const MutableDaemonProviderConfigSchema = z
-  .object({
-    paseoTools: ProviderPaseoToolsPolicySchema.optional(),
-    enabled: z.boolean().optional(),
-    additionalModels: z.array(MutableDaemonProviderModelSchema).optional(),
-  })
-  .passthrough();
-
-const MutableStructuredGenerationProviderSchema = z
-  .object({
-    provider: z.string().min(1),
-    model: z.string().min(1).optional(),
-    thinkingOptionId: z.string().min(1).optional(),
-  })
-  .passthrough();
-
-const MutableMetadataGenerationConfigSchema = z
-  .object({
-    providers: z.array(MutableStructuredGenerationProviderSchema).default([]),
-  })
-  .passthrough();
-
-const MutableBrowserToolsConfigSchema = z
-  .object({
-    enabled: z.boolean().default(false),
-  })
-  .passthrough();
-const MutableRelayConfigSchema = z
-  .object({
-    enabled: z.boolean(),
-  })
-  .passthrough();
-
-export const ReplyRuleSchema = z
-  .object({
-    source: z.string(),
-    flags: z.string(),
-  })
-  .strict();
-export type ReplyRule = z.infer<typeof ReplyRuleSchema>;
-
-export const MutableDaemonConfigSchema = z
-  .object({
-    // COMPAT(relayConfig): added in v0.2.6, remove after 2027-01-31 when old daemons are unsupported.
-    relay: MutableRelayConfigSchema.optional(),
-    mcp: z
-      .object({
-        enabled: z.boolean().optional(),
-        injectIntoAgents: z.boolean(),
-      })
-      .passthrough(),
-    hostnames: z.union([z.literal(true), z.array(z.string())]).optional(),
-    cors: z
-      .object({
-        allowedOrigins: z.array(z.string()),
-      })
-      .passthrough()
-      .optional(),
-    trustedProxies: z.union([z.literal(true), z.array(z.string())]).optional(),
-    git: z
-      .object({
-        maxProcessesPerSecond: z.number().int().positive(),
-        maxProcessConcurrency: z.number().int().positive(),
-      })
-      .optional(),
-    app: z.object({ baseUrl: z.string() }).optional(),
-    catalogRefreshTimeoutMs: z.number().int().positive().optional(),
-    browserTools: MutableBrowserToolsConfigSchema.default({ enabled: false }),
-    providers: z.record(z.string(), MutableDaemonProviderConfigSchema).default({}),
-    metadataGeneration: MutableMetadataGenerationConfigSchema.default({ providers: [] }),
-    autoArchiveAfterMerge: z.boolean().default(false),
-    enableTerminalAgentHooks: z.boolean().default(false),
-    appendSystemPrompt: z.string().default(""),
-    terminalProfiles: z.array(TerminalProfileSchema).optional(),
-    agentProfiles: z.array(AgentProfileSchema).optional(),
-    skills: z.object({ selection: AgentSkillSelectionSchema.optional() }).strict().optional(),
-    pluginsEnabled: z.boolean().optional(),
-    plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
-    replyRules: z.array(ReplyRuleSchema).optional(),
-  })
-  .passthrough();
-
-export const MutableDaemonConfigPatchSchema = z
-  .object({
-    relay: MutableRelayConfigSchema.partial().optional(),
-    mcp: z.object({ injectIntoAgents: z.boolean().optional() }).passthrough().optional(),
-    browserTools: MutableBrowserToolsConfigSchema.partial().optional(),
-    providers: z
-      .record(z.string(), MutableDaemonProviderConfigSchema.partial().passthrough())
-      .optional(),
-    removeProviders: z.array(z.string().min(1)).optional(),
-    metadataGeneration: MutableMetadataGenerationConfigSchema.partial().optional(),
-    autoArchiveAfterMerge: z.boolean().optional(),
-    enableTerminalAgentHooks: z.boolean().optional(),
-    appendSystemPrompt: z.string().optional(),
-    terminalProfiles: z.array(TerminalProfileSchema).optional(),
-    agentProfiles: z.array(AgentProfileSchema).optional(),
-    pluginsEnabled: z.boolean().optional(),
-    plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
-    replyRules: z.array(ReplyRuleSchema).optional(),
-  })
-  .partial()
-  .passthrough();
-
-export type MutableDaemonConfig = z.infer<typeof MutableDaemonConfigSchema>;
-export type MutableDaemonConfigPatch = z.infer<typeof MutableDaemonConfigPatchSchema>;
+import {
+  MutableDaemonConfigSchema,
+  MutableDaemonConfigPatchSchema,
+} from "./mutable-daemon-config.js";
+export {
+  MutableDaemonConfigSchema,
+  MutableDaemonConfigPatchSchema,
+  type MutableDaemonConfig,
+  type MutableDaemonConfigPatch,
+} from "./mutable-daemon-config.js";
 import type {
   AgentCapabilityFlags,
   AgentModelDefinition,
