@@ -144,7 +144,18 @@ export function planCommands(selection, cwd = root) {
     unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
   if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"]);
   if (selection.domains.includes("desktop"))
-    unit("desktop", "test", ["--exclude", "scripts/after-pack.test.mjs"]);
+    add("desktop units", "npm", [
+      "exec",
+      "--workspace=@getpaseo/desktop",
+      "--",
+      "vitest",
+      "run",
+      "--exclude",
+      "e2e/**",
+      "--exclude",
+      "scripts/after-pack.test.mjs",
+      "--maxWorkers=2",
+    ]);
   if (selection.domains.includes("server")) {
     const integration = (name, files, args = []) =>
       add(name, "npm", [
@@ -219,7 +230,9 @@ export function planLane(selection, lane, cwd = root) {
   );
   // Each hosted job is a fresh checkout; generated workspace declarations are
   // prerequisites, not artifacts trusted from a different job or commit.
-  if (lane !== "quality")
+  if (lane === "app")
+    commands.unshift({ name: "app dependencies", command: "npm", args: ["run", "build:app-deps"] });
+  else if (lane !== "quality")
     commands.unshift(complete.find((step) => step.name === "workspace declarations"));
   return commands;
 }

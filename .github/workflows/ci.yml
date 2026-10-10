@@ -47,8 +47,7 @@ jobs:
     needs: plan
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private
     runs-on: ubuntu-24.04
-    # Temporary hang bound while measuring the under-five-minute end-to-end target.
-    timeout-minutes: 10
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       max-parallel: 7
@@ -90,6 +89,9 @@ jobs:
 
   required:
     name: Routine CI required
+    permissions:
+      actions: read
+      contents: read
     if: always()
     needs: [plan, routine]
     runs-on: ubuntu-24.04
@@ -100,3 +102,18 @@ jobs:
           RESULT: ${{ needs.routine.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
         run: test "$PLAN_RESULT" = success && test "$RESULT" = success
+      - name: Enforce complete routine latency
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          started="$(timeout 20s gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name == "plan") | .started_at')"
+          if ! [[ "$started" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]; then
+            echo "Missing, ambiguous or malformed planner timestamp" >&2
+            exit 1
+          fi
+          start_seconds="$(date -u -d "$started" +%s)"
+          elapsed=$(( $(date -u +%s) - start_seconds ))
+          echo "Routine critical path: ${elapsed}s (budget <300s; initial queue excluded, job scheduling included)." >> "$GITHUB_STEP_SUMMARY"
+          test "$elapsed" -ge 0 && test "$elapsed" -lt 300
