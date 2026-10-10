@@ -40,7 +40,8 @@ or modify their installations without explicit authorization.
 
 ## A. Establish contracts and shared routine CI — steps 1–3
 
-**State:** approved; A1 / G0 complete, A2 active, G1 pending.
+**State:** complete; G0/G1 verified at `72300136d`. PR/dev routine gates finish
+in 4m15s/4m18s; two-minute stretch remains unmet. See status for runner costs.
 
 ```text
 Use $keep-me-in-the-loop to run thread A in docs/GITHUB_WORKFLOWS_SCRIPT.md.
@@ -68,7 +69,7 @@ deviation that changes later threads.
 
 ## B. Verify journeys and every package — steps 4–6
 
-**State:** provisional; waits on A.
+**State:** ready for phase approval; A is complete, B implementation has not started.
 
 ```text
 Use $keep-me-in-the-loop to run thread B in docs/GITHUB_WORKFLOWS_SCRIPT.md.
