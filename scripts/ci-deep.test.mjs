@@ -8,7 +8,51 @@ import { join } from "node:path";
 import test from "node:test";
 import { load } from "js-yaml";
 import { deepCommands, runDeep, validateDeepSource } from "../.github/scripts/ci-deep.mjs";
-import { ownedProcesses, verifyDeepCleanup } from "../.github/scripts/deep-cleanup.mjs";
+import {
+  elevatedOwnedProcesses,
+  ownedProcesses,
+  verifyDeepCleanup,
+} from "../.github/scripts/deep-cleanup.mjs";
+
+test("elevated cleanup is hosted-only, PID-only and fails closed", () => {
+  const owner = randomUUID();
+  const env = { GITHUB_ACTIONS: "true", RUNNER_ENVIRONMENT: "github-hosted" };
+  const run = (command, args, options) => {
+    assert.equal(command, "sudo");
+    assert.ok(args.includes(process.execPath));
+    assert.deepEqual(args.slice(-3), ["--scan", "1001", owner]);
+    assert.equal(options.timeout, 5_000);
+    assert.equal(options.maxBuffer, 16 * 1024);
+    return "[123]";
+  };
+  assert.deepEqual(elevatedOwnedProcesses(owner, { env, uid: 1001, run }), [123]);
+  for (const invalid of [
+    {},
+    { GITHUB_ACTIONS: "true" },
+    { ...env, RUNNER_ENVIRONMENT: "self-hosted" },
+  ]) {
+    assert.throws(
+      () => elevatedOwnedProcesses(owner, { env: invalid, uid: 1001, run }),
+      /GitHub-hosted only/,
+    );
+  }
+  assert.throws(() => elevatedOwnedProcesses(owner, { env, uid: -1, run }), /Invalid original UID/);
+  assert.throws(() => elevatedOwnedProcesses("-".repeat(36), { env, uid: 1001, run }));
+  for (const output of ["not json", "{}", "[0]", "[1,1]", '["123"]']) {
+    assert.throws(() => elevatedOwnedProcesses(owner, { env, uid: 1001, run: () => output }));
+  }
+  assert.throws(
+    () =>
+      elevatedOwnedProcesses(owner, {
+        env,
+        uid: 1001,
+        run: () => {
+          throw new Error("sudo denied");
+        },
+      }),
+    /sudo denied/,
+  );
+});
 
 test(
   "cleanup detects a marked child and clears after its owned fixture exits",
