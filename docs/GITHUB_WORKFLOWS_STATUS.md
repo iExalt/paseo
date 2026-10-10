@@ -91,8 +91,8 @@ treated as controlled before/after measurements.
 | Linux/Windows native feasibility                   | Scoped work-branch push; Ubuntu ARM64 / Windows ARM64 | `38079931018` at `510974a2`: Linux 1m07s; Windows cancelled at 15m15s during install             | 15m; diagnostic only, Windows replaced by focused binding proof             |
 | Android ARM64 feasibility                          | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                          |
 | Windows ARM64 binding feasibility                  | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                   |
-| Deep checks                                       | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                          | 15m per lane; reduce repeated setup subprocesses, preserve journeys         |
-| Linux/Windows packages                            | Approved B implementation pending                     | Unmeasured                                                                                       | Set bounded initial trials; measure required runs and optimize proven waste |
+| Deep checks                                        | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                           | 15m per lane; reduce repeated setup subprocesses, preserve journeys         |
+| Linux/Windows packages                             | Approved B implementation pending                     | Unmeasured                                                                                       | Set bounded initial trials; measure required runs and optimize proven waste |
 | Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                  |
 
 All current workflow files and callable lanes are represented. GitHub also lists
@@ -338,10 +338,16 @@ Candidate retention is one day, with APK transfers capped at 512 MiB and the Nix
 archive at 2 GiB; quota rejection fails the gate. Package execution remains pending
 reviewed exact-dev integration and current routine success.
 
-The next required deep run also measures a reviewed fixture optimization: direct
-validated configuration writes replace five setup-only CLI invocations per home.
-Actual CLI mutation assertions, lifecycle cases and worker count are unchanged;
-this is not yet a measured speedup.
+The [optimized integration lane](https://github.com/iExalt/paseo/actions/runs/38096508135)
+at `18510758c` passed unchanged lifecycle cases, relay/provider checks and all process
+cleanup checks. Direct validated configuration writes replace five setup-only CLI
+invocations per home; real CLI mutation assertions remain. Lifecycle orchestration
+fell from 206.23s to 130.55s with the same one worker, and integration from 5m15s to
+3m40s. The observed 37% lifecycle reduction is not a controlled host comparison;
+the removed setup subprocesses establish avoided work without weakening coverage.
+Reviewer accepted this proof; no separate benchmark is needed. That SHA's routine
+behavior lanes passed but quality rejected two misaligned status-table rows, so
+exact-source routine closure remains pending the formatting repair.
 
 The user-confirmed $0 Actions budget with Stop usage enabled clears bounded B
 artifact uploads; retention alone is not the no-overage proof. Same-job build/install/runtime proofs can proceed within B approval without
