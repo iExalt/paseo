@@ -1,0 +1,72 @@
+name: Deep verification
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  workflow_call:
+    inputs:
+      source_sha:
+        description: Full candidate SHA, matching the caller commit.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  browser:
+    if: >-
+      github.repository == 'iExalt/paseo' && !github.event.repository.private &&
+      ((github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == 'iExalt/paseo' &&
+        github.event.pull_request.head.repo.owner.login == 'iExalt' &&
+        github.event.pull_request.head.ref == 'ci/github-workflows' &&
+        contains(github.event.pull_request.labels.*.name, 'ci:deep')) ||
+       (inputs.source_sha == github.sha && github.actor == 'iExalt' &&
+        (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/ci/github-workflows')))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+      SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.source_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Validate exact source and isolated configuration
+        run: node .github/scripts/ci-deep.mjs browser "$SOURCE_SHA" --plan
+      - name: Install locked dependencies
+        run: |
+          test "$(node --version)" = v26.11.0
+          test "$(npm --version)" = 11.20.0
+          time npm ci --cache "$RUNNER_TEMP/npm-cache"
+      - name: Exercise browser to daemon terminal journey
+        run: node .github/scripts/ci-deep.mjs browser "$SOURCE_SHA"
+      - name: Bound retained diagnostics
+        id: diagnostics
+        if: ${{ !cancelled() }}
+        run: |
+          test -d .dev/github-workflows/deep/browser
+          bytes="$(du -sb .dev/github-workflows/deep/browser | cut -f1)"
+          test "$bytes" -le 26214400
+      - name: Retain screenshot and trace for review
+        if: ${{ !cancelled() && steps.diagnostics.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deep-browser-${{ env.SOURCE_SHA }}-${{ github.run_attempt }}
+          path: .dev/github-workflows/deep/browser/
+          if-no-files-found: error
+          retention-days: 1

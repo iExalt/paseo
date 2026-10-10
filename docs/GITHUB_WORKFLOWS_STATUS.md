@@ -6,7 +6,7 @@
   `paseo-github-workflows`, branch `ci/github-workflows`.
 - Reviewed implementation `72300136d` is integrated on `dev`; PRs #1–#3 merged
   by fast-forward after their final-source routine checks passed.
-- Authority: Phase A approved; phases B–D and personal-device/public-release
+- Authority: Phase B approved on 2026-10-10; phases C–D and personal-device/public-release
   operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
@@ -21,13 +21,17 @@
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence   | Depends on | Exit and owner                                               |
-| ----------------------------------------- | ------------------- | ---------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified | none       | G0, author with user decisions                               |
-| A2: measured routine verification         | complete / verified | A1         | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | complete / verified | A2         | G1 including atomic publication failure fixtures, author     |
+| Goal                                      | Status / evidence   | Depends on                    | Exit and owner                                               |
+| ----------------------------------------- | ------------------- | ----------------------------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified | none                          | G0, author with user decisions                               |
+| A2: measured routine verification         | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | complete / verified | A2                            | G1 including atomic publication failure fixtures, author     |
+| B1: deep journeys and safe PR routing     | active / designed   | A1–A3; B2 for Android closure | G2, author                                                   |
+| B2: Mac/Android candidate preservation    | planned / designed  | A1–A3                         | Mac/Android portion of G3, author                            |
+| B3: Linux package matrix                  | planned / designed  | B2                            | Linux portion of G3, author                                  |
+| B4: Windows package matrix                | planned / designed  | B2, B3                        | Remaining G3 and phase integration, author                   |
 
-Reviewer design agreement covers these three chunks. A1 closes feasibility and
+Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase
 gate remains complete and uses its existing 45-minute whole-job bound. The user's
@@ -70,6 +74,34 @@ under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
 
 ## Performance and storage contract
 
+The all-CI stretch goal is approved. Inventory below uses existing job/step API
+receipts, not new benchmark dispatches. Durations exclude initial queue; summed
+runner time counts parallel work. Failed/cancelled samples are not successful
+baselines. These historical inputs differ from current code and must not be
+treated as controlled before/after measurements.
+
+| Workflow / callable lane                           | Trigger and runner                                    | Observed timing and largest cost                                                                 | Current deadline / optimization gate                                        |
+| -------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Routine CI                                         | PR/dev; Ubuntu x64, seven lanes                       | PR 4m15s / dev 4m18s; runner work 20m18s / 20m37s at `72300136d`                                 | Complete gate <5m; 2m stretch, reduce setup duplication and expensive tests |
+| Legacy candidate coordinator                       | Manual; Ubuntu x64 with parallel Mac/Android children | `38071895947` at `d04260338`: 23m41s critical path, 37m04s runner work, initial queue 3s         | Identity job lacks explicit timeout; cross-check 10m; replacement in D      |
+| macOS closure build / fresh import                 | Reusable; macos-14 ARM64                              | Same run: build/sign/export 12m24s, fresh import 1m08s; Nix build 6m, export 4m26s, transfers 9s | 90m / 20m; B2 inspect compression/export before increasing parallelism      |
+| Android APK build / signing                        | Reusable; Ubuntu x64 builds ARM64                     | Same run: build 22m55s, sign 20s; Gradle 20m11s, npm 1m27s, transfers 10s                        | 60m / 10m; B2 inspect Gradle cache effectiveness and resource pressure      |
+| Rebase dev                                         | Manual; Ubuntu x64                                    | Old `38070392394` at `e399ee213`: 2m16s, install 53s; predates the complete routine gate         | 45m; current full-gate timing unmeasured, retain exact-tested-tree boundary |
+| Upstream sync                                      | Schedule/manual; Ubuntu                               | `38063683920` at `585037fd8`: 3s job, 4s initial queue                                           | 5m; no measured bottleneck                                                  |
+| Linux/Windows native feasibility                   | Scoped work-branch push; Ubuntu ARM64 / Windows ARM64 | `38079931018` at `510974a2`: Linux 1m07s; Windows cancelled at 15m15s during install             | 15m; diagnostic only, Windows replaced by focused binding proof             |
+| Android ARM64 feasibility                          | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                          |
+| Windows ARM64 binding feasibility                  | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                   |
+| Deep checks and Linux/Windows packages             | Approved B implementation pending                     | Unmeasured                                                                                       | Set bounded initial trials; measure required runs and optimize proven waste |
+| Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                  |
+
+All current workflow files and callable lanes are represented. GitHub also lists
+deleted Nix/cache probes as active historical workflow records; they have no
+current trigger definition and are not recurring optimization targets. Historical
+packaging cache-hit state and CPU model are not established by job timestamps;
+inspect logs when validating B2's cache/resource hypothesis. Preserve A's accepted
+comparison anchor below. Record setup/build/test/package/transfer splits and
+tool/cache/concurrency conditions from each required B run before claiming gains.
+
 Read-only GitHub API inspection on 2026-10-10 found a public repository, standard
 workflow permissions set to read, and cache `max_cache_size_gb: 10`. Cache usage
 was **4,109,654,256 bytes** across two npm download caches (about 0.83 GB each)
@@ -83,13 +115,21 @@ after its exact key, dev ref and size were rechecked. Usage returned to
 **4,109,654,256 bytes** across the three original entries; their IDs and sizes
 were preserved, and the API still reports a 10 GB ceiling.
 
+On Phase B entry the user confirmed an account **$0 Actions budget with Stop
+usage enabled**. This is user-confirmed billing-control evidence, not an API
+observation: the budget API lookup returned 404. API checks confirm a public
+repository, Pro plan, 10 GB cache ceiling and 22 current artifacts totaling
+1,551,694,906 bytes. The first browser trial may upload at most 25 MiB with one-day
+retention; storage rejection fails its retained-evidence gate. No unrelated
+artifacts are deleted to make room.
+
 The cache setting is an enforced ceiling. GitHub documents that cache overage
 is charged only when the configured limit exceeds the included 10 GB
 ([billing](https://docs.github.com/en/billing/concepts/product-billing/github-actions)).
 Keep this limit unchanged. Initial native probes use standard public runners,
-logs/job summaries only, and no cache/artifact writes. Artifact allowance and
-hard no-overage evidence remain required before an upload-producing operation;
-zero net historical billing does not establish those controls.
+logs/job summaries only, and no cache/artifact writes. The confirmed stop-spending
+control permits bounded B uploads; zero net historical billing alone would not
+establish this control.
 
 Routine and rebase verification use isolated npm download directories without
 Actions cache transfers: the controlled comparison below found no net benefit.
@@ -219,10 +259,23 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-G1 is complete. Phase B remains unapproved: deep journeys and safe-PR routing,
+G1 is complete. Phase B is approved: deep journeys and safe-PR routing,
 Mac/Android candidate preservation, Linux package matrix, then Windows package
 matrix. Preserve routine latency; deeper gates do not join ordinary PR blocking
 work. Bot events and installed-user migration remain C/D.
+
+Approved execution checklist:
+
+- [ ] B1: bounded deterministic browser journey and broken-fixture proof, then
+      Electron, relay, CLI and installed-provider contracts; Android closure
+      depends on B2's same-SHA rebuilt APK.
+- [ ] B2: preserve Mac/Android candidate identities and signatures; prove fresh
+      import/install and meaningful disposable-state upgrades.
+- [ ] B3: verify Linux x64/ARM64 Nix, DEB, RPM and AppImage journeys.
+- [ ] B4: verify Windows x64/ARM64 NSIS, speech and PTY lifecycle, then G2/G3 integration.
+- [ ] Stretch: inventory every workflow/lane's timing and optimize avoidable work
+      using existing receipts and required runs; preserve the routine baseline,
+      account for parallel runner work, and retain unmeasured future gates.
 
 Before B uploads, verify an actual free/no-overage path; retention alone is not
 proof. Same-job build/install/runtime proofs can proceed within B approval without
