@@ -39,6 +39,14 @@ function assertArm64PE(filename) {
 async function exercise(directory) {
   const require = createRequire(join(directory, "package.json"));
   const sherpa = require("./runtime/sherpa-onnx.js");
+  assert.equal(sherpa.onnxruntimeVersion, "1.28.2");
+  const nativeModules = process.report
+    .getReport()
+    .sharedObjects.filter((name) => /onnxruntime|sherpa/i.test(name));
+  console.log("Loaded native modules:", nativeModules);
+  for (const filename of nativeModules.filter((name) => /onnxruntime\.dll$/i.test(name))) {
+    assert.equal(filename.toLowerCase(), join(directory, "runtime/onnxruntime.dll").toLowerCase());
+  }
   const buffer = new sherpa.CircularBuffer(8);
   buffer.push(new Float32Array([1, 2]));
   assert.deepEqual([...buffer.get(0, 2)], [1, 2]);
@@ -221,7 +229,12 @@ if (process.argv[2] === "exercise") {
     run(process.execPath, [join(directory, "pty/package/scripts/post-install.js")], {
       cwd: join(directory, "pty/package"),
     });
-    run(process.execPath, [script, "exercise", directory], {
+    // Application-directory DLL lookup precedes system directories and PATH.
+    // Keep the trusted Node copy beside the pinned DLLs; never modify system DLLs.
+    const runtimeNode = join(runtime, "node.exe");
+    cpSync(process.execPath, runtimeNode);
+    assertArm64PE(runtimeNode);
+    run(runtimeNode, [script, "exercise", directory], {
       timeout: 60_000,
       env: { ...process.env, PATH: `${runtime};${process.env.PATH}` },
     });
