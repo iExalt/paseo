@@ -14,6 +14,7 @@ export const coreTests = [
   ".github/scripts/rebase-dev.test.mjs",
 ];
 export const helperTests = [
+  "packages/desktop/scripts/after-pack.test.mjs",
   "scripts/daemon-launch-contract.test.mjs",
   "scripts/is-main-module.test.mjs",
   "scripts/paseo-nix-update.test.mjs",
@@ -140,9 +141,11 @@ export function planCommands(selection, cwd = root) {
     unit("builtin-plugins");
     unit("server", "test:unit");
   }
-  if (selection.domains.includes("cli")) unit("cli", "test:unit");
+  if (selection.domains.includes("cli"))
+    unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
   if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"]);
-  if (selection.domains.includes("desktop")) unit("desktop");
+  if (selection.domains.includes("desktop"))
+    unit("desktop", "test", ["--exclude", "scripts/after-pack.test.mjs"]);
   if (selection.domains.includes("server")) {
     const integration = (name, files, args = []) =>
       add(name, "npm", [
