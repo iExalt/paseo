@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { compareForkVersions, forkAndroidVersionCode } from "./fork-version.mjs";
 import {
   computeNextReleaseVersion,
   getReleaseInfoFromSourceTag,
@@ -50,4 +51,37 @@ test("emits beta release info from tags", () => {
 
 test("rejects non-beta prerelease versions", () => {
   assert.throws(() => parseReleaseVersion("0.1.60-canary.1"), /Expected beta prerelease versions/);
+});
+
+test("fork stable semver orders Android codes across component boundaries", () => {
+  assert.equal(forkAndroidVersionCode("0.1.0"), 201000);
+  for (const [before, after] of [
+    ["0.1.0", "0.1.1"],
+    ["0.1.999", "0.2.0"],
+    ["0.999.999", "1.0.0"],
+  ]) {
+    assert.equal(compareForkVersions(before, after), -1);
+    assert.equal(compareForkVersions(after, before), 1);
+    assert.ok(forkAndroidVersionCode(before) < forkAndroidVersionCode(after));
+  }
+  assert.equal(compareForkVersions("0.1.0", "0.1.0"), 0);
+});
+
+test("fork Android encoding rejects ambiguous versions and collisions", () => {
+  for (const value of [
+    "01.1.0",
+    "0.01.0",
+    "0.1.00",
+    "0.1.0-beta.1",
+    "0.1.0+build",
+    " 0.1.0",
+    "0.1000.0",
+    "0.1.1000",
+    "9007199254740992.0.0",
+    null,
+  ]) {
+    assert.throws(() => forkAndroidVersionCode(value));
+  }
+  assert.equal(forkAndroidVersionCode("2099.800.0"), 2_100_000_000);
+  assert.throws(() => forkAndroidVersionCode("2099.800.1"), /versionCode range/);
 });
