@@ -1,9 +1,9 @@
 # GitHub workflows execution script
 
 **Four serial threads take the fork from its current workflows to a verified
-GitHub release. Phase A is approved; later phases await their entry gates.**
+GitHub release. Phase A is complete; Phase B is approved.**
 
-Status: **Phase A approved and active, 2026-10-10**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
+Status: **Phase B approved and active, 2026-10-10**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
 decisions and the [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) for step proofs. This
 script adds thread boundaries, dependencies and literal starting prompts.
 
@@ -27,7 +27,7 @@ flowchart LR
 
 This is the critical path; no independent thread is presently scheduled.
 Thread A runs in the requested sibling worktree on `ci/github-workflows`;
-B/C/D wait on their predecessors and phase approval. Current implementation
+B continues in that worktree; C/D wait on their predecessors and phase approval. Current implementation
 and evidence are in [project status](GITHUB_WORKFLOWS_STATUS.md). Refresh Git and
 live state before each phase. Preserve unrelated edits, installed state,
 signing identities and published releases.
@@ -69,7 +69,9 @@ deviation that changes later threads.
 
 ## B. Verify journeys and every package — steps 4–6
 
-**State:** ready for phase approval; A is complete, B implementation has not started.
+**State:** approved and active; A is complete. Start with bounded browser journeys
+and safe opt-in routing, then the remaining deep and package proofs. Review and
+optimize all CI times as a stretch goal alongside required verification.
 
 ```text
 Use $keep-me-in-the-loop to run thread B in docs/GITHUB_WORKFLOWS_SCRIPT.md.
@@ -86,8 +88,11 @@ contracts. Mark B done only after G2/G3 proofs, and record deviations affecting 
   at approval settle explicit device-test authority/presence if A found it
   unavoidable. Never substitute an emulator's different ABI without disclosure.
   Otherwise none after approval unless a feasibility assumption fails.
-- **Live:** native standard runners, one candidate matrix; disposable installation
-  state, no public releases. Existing personal devices only if explicitly approved.
+- **Live:** native standard runners and disposable installation state, no public
+  releases or personal devices. Define initial trial cells and deadlines before
+  dispatch, diagnose failures before retrying, and verify a free/no-overage path
+  before uploads. Same-job build/install proofs may proceed without uploads;
+  cross-job draft Release transport still needs explicit authority.
 - **Done when:** G2/G3 pass, including every format/architecture, disposable-state
   upgrades, signatures and true shipped-ABI evidence. Real bot-PR routing is C;
   actual installed legacy-client migration remains D.

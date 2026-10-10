@@ -396,6 +396,15 @@ acceptance criteria while considering alternatives.
 
 ## 9. Rejected approaches and stretch scope
 
+- **CI performance stretch:** review and optimize all workflow and reusable-lane
+  times, including deep verification, packaging, rebase, sync and publication.
+  Use existing receipts and required runs first; track critical path, queue time,
+  summed runner work and setup/build/test/transfer costs under comparable inputs.
+  Remove duplicate work and parallelize independent checks while preserving every
+  proof and the 10 GB cache ceiling. The routine PR gate remains under five
+  minutes, with two minutes preferred; this does not impose a five-minute limit
+  on native packaging. Record unmeasured lanes explicitly and measure them at
+  their approved phase gate, without launching releases merely to benchmark them.
 - A separate `release` branch and automatic promotion PRs: replaced by D1.
 - Reusing every upstream workflow: the user removed them to design from outcomes.
 - Assuming successful packaging replaces behavioral tests: rejected; both gates
