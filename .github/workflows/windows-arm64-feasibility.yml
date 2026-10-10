@@ -1,0 +1,37 @@
+name: Windows ARM64 custom binding feasibility
+
+on:
+  push:
+    branches: [ci/github-workflows]
+    paths:
+      - .github/workflows/windows-arm64-feasibility.yml
+      - .github/scripts/probe-windows-arm64.mjs
+      - .github/scripts/windows-arm64-binding/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-arm64-feasibility
+  cancel-in-progress: false
+
+jobs:
+  binding:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1
+    runs-on: windows-11-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.0"
+          architecture: arm64
+          package-manager-cache: false
+      - name: Build and execute native binding with focused dependencies
+        run: node .github/scripts/probe-windows-arm64.mjs
+      - name: Record proof boundary
+        if: always()
+        shell: bash
+        run: echo 'Custom ARM64 binding, VAD, PTY and watcher feasibility only; package integration remains G3. No cache, artifact upload or signing.' >> "$GITHUB_STEP_SUMMARY"

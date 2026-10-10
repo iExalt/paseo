@@ -5,10 +5,14 @@ test "${GITHUB_ACTIONS:-}" = true
 test "${RUNNER_ENVIRONMENT:-}" = github-hosted
 test "$(uname -m)" = aarch64
 probe_dir=$(mktemp -d "${RUNNER_TEMP:?}/paseo-arm64.XXXXXX")
+ashmem_loaded=0
 cleanup() {
+  timeout 10 adb -s 127.0.0.1:5555 shell getprop sys.use_memfd 2>&1 || true
+  timeout 10 adb -s 127.0.0.1:5555 shell getprop ro.boot.use_memfd 2>&1 || true
   timeout 10 adb -s 127.0.0.1:5555 logcat -d -b crash -t 100 2>&1 || true
   docker logs --tail 60 paseo-arm64-probe 2>&1 || true
   docker rm -f paseo-arm64-probe >/dev/null 2>&1 || true
+  if [[ "$ashmem_loaded" == 1 ]]; then sudo rmmod ashmem_linux || true; fi
   adb disconnect 127.0.0.1:5555 >/dev/null 2>&1 || true
   sudo rm -rf -- "$probe_dir"
 }
@@ -16,8 +20,27 @@ trap cleanup EXIT
 
 # Disposable GitHub host only; never a developer machine or physical device.
 sudo apt-get update -qq
-sudo apt-get install -y --no-install-recommends "linux-modules-extra-$(uname -r)" adb apksigner aapt
+sudo apt-get install -y --no-install-recommends "linux-modules-extra-$(uname -r)" "linux-headers-$(uname -r)" gcc-14 make adb apksigner aapt
 sudo modprobe binder_linux devices=binder,hwbinder,vndbinder
+
+# Stock Android 16 can still require ashmem for gralloc despite the memfd flag.
+# Pin the proposed kernel compatibility repair; never install its unrelated Binder module.
+# https://github.com/remote-android/redroid-modules/pull/23
+test ! -d /sys/module/ashmem_linux
+grep -q '^CONFIG_KPROBES=y$' "/boot/config-$(uname -r)"
+module_revision=f55e1e7515a6dd5f8e0f9569ea79148c08f60816
+curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+  --max-time 60 --max-filesize 10000000 \
+  "https://codeload.github.com/remote-android/redroid-modules/tar.gz/$module_revision" -o "$probe_dir/modules.tar.gz"
+echo "3bcc9c4084ddb8422e0865f648541f398569411c95f6de99b251f02e73b1776b  $probe_dir/modules.tar.gz" | sha256sum --check
+tar -xzf "$probe_dir/modules.tar.gz" -C "$probe_dir" "redroid-modules-$module_revision/ashmem"
+ashmem_source="$probe_dir/redroid-modules-$module_revision/ashmem"
+timeout 120 make -C "/lib/modules/$(uname -r)/build" M="$ashmem_source" CC=gcc-14 -j2 modules
+test "$(modinfo -F vermagic "$ashmem_source/ashmem_linux.ko" | cut -d ' ' -f1)" = "$(uname -r)"
+sudo insmod "$ashmem_source/ashmem_linux.ko"
+ashmem_loaded=1
+test -c /dev/ashmem
+echo 'PASS: matching-kernel ashmem module loaded without changing host security policy.'
 
 release_base=https://github.com/iExalt/paseo/releases/download/paseo-fork-v0.11.0-r200008-5619b7d7ee1e55b322028e8b7818aa1a8f752a0a
 for asset in paseo-release-manifest.json paseo-release-manifest.sig paseo-android-arm64.apk; do
