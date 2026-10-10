@@ -7,7 +7,7 @@ import { ProviderOverrideSchema } from "./agent/provider-launch-config.js";
 import {
   MutableDaemonConfigSchema,
   MutableDaemonConfigPatchSchema,
-} from "@getpaseo/protocol/messages";
+} from "@getpaseo/protocol/mutable-daemon-config";
 import type { AgentSkillSelection } from "@getpaseo/protocol/messages";
 import { ReplyRuleMatcher, type ReplyRule } from "./agent/reply-rule-matcher.js";
 
