@@ -3,7 +3,6 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { matchesGlob, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { load } from "js-yaml";
 
 export const root = fileURLToPath(new URL("../../", import.meta.url));
 export const coreTests = [
@@ -184,6 +183,51 @@ export function planCommands(selection, cwd = root) {
   return commands;
 }
 
+export const lanes = [
+  "quality",
+  "workspaces",
+  "app",
+  "server-1",
+  "server-2",
+  "server-3",
+  "integration",
+];
+
+function commandLane(step) {
+  if (step.name === "server units") return "server";
+  if (step.name === "app units") return "app";
+  if (step.name.endsWith(" units")) return "workspaces";
+  if (
+    ["focused server integration", "worktree autoarchive", "versioned OpenCode runtime"].includes(
+      step.name,
+    )
+  )
+    return "integration";
+  return "quality";
+}
+
+export function planLane(selection, lane, cwd = root) {
+  assert.ok(lanes.includes(lane), `Unknown routine lane: ${lane}`);
+  const group = lane.startsWith("server-") ? "server" : lane;
+  const complete = planCommands(selection, cwd);
+  const selected = complete.filter((step) => commandLane(step) === group);
+  if (!selected.length) return [];
+  const commands = selected.map((step) =>
+    group === "server"
+      ? Object.assign({}, step, { args: [...step.args, `--shard=${lane.at(-1)}/3`] })
+      : step,
+  );
+  // Each hosted job is a fresh checkout; generated workspace declarations are
+  // prerequisites, not artifacts trusted from a different job or commit.
+  if (lane !== "quality")
+    commands.unshift(complete.find((step) => step.name === "workspace declarations"));
+  return commands;
+}
+
+export function planMatrix(selection) {
+  return { lane: lanes.filter((lane) => planLane(selection, lane).length > 0) };
+}
+
 export function executeCommands(
   commands,
   run = (command, args) =>
@@ -209,15 +253,30 @@ export function executeCommands(
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const args = process.argv.slice(2);
   const planOnly = args.includes("--plan");
-  const filtered = args.filter((arg) => arg !== "--plan");
+  const matrixOnly = args.includes("--matrix");
+  const laneIndex = args.indexOf("--lane");
+  const lane = laneIndex === -1 ? null : args[laneIndex + 1];
+  if (laneIndex !== -1) assert.ok(lanes.includes(lane), "Invalid routine lane");
+  const filtered = args.filter(
+    (arg, index) =>
+      arg !== "--plan" &&
+      arg !== "--matrix" &&
+      index !== laneIndex &&
+      (laneIndex === -1 || index !== laneIndex + 1),
+  );
   assert.ok(
     filtered.length === 0 || (filtered.length === 2 && filtered[0] === "--changed-from"),
-    "Usage: ci:routine [--plan] [--changed-from <full-sha>]",
+    "Usage: ci:routine [--plan | --matrix] [--lane <lane>] [--changed-from <full-sha>]",
   );
-  const filters = load(readFileSync(new URL("../ci-paths.yml", import.meta.url), "utf8"));
+  assert.ok(
+    !matrixOnly || (!planOnly && lane === null),
+    "Matrix cannot be combined with plan or lane",
+  );
+  const filters = JSON.parse(readFileSync(new URL("../ci-paths.json", import.meta.url), "utf8"));
   const selection = selectChecks(filtered.length ? changedFiles(filtered[1]) : null, filters);
-  const commands = planCommands(selection);
-  if (planOnly) console.log(JSON.stringify({ selection, commands }, null, 2));
+  const commands = lane === null ? planCommands(selection) : planLane(selection, lane);
+  if (matrixOnly) console.log(JSON.stringify(planMatrix(selection)));
+  else if (planOnly) console.log(JSON.stringify({ selection, commands }, null, 2));
   else {
     console.log(
       `Routine source: ${execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()}`,
