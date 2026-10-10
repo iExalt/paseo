@@ -4,18 +4,18 @@
 
 - Baseline: `f48cc61be6457f2d90f3acb79551f4e1b27fe8a7`; sibling
   `paseo-github-workflows`, branch `ci/github-workflows`.
-- Reviewed implementation `63315404a` is integrated on `dev`; PR #1 merged by
-  fast-forward after its final-source routine check passed.
+- Reviewed implementation `4f278588e` is integrated on `dev`; PRs #1 and #2 merged
+  by fast-forward after their final-source routine checks passed.
 - Authority: Phase A approved; phases B–D and personal-device/public-release
   operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
 - A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
   probes and hosted Android ARM64 APK startup passed. The routine baseline is measured;
-  ceiling acceptance and final cache-removal verification remain pending. Reviewed probe code and semver contracts are published
+  ceiling acceptance remains pending. Reviewed probe code and semver contracts are published
   on the work branch. Routine CI has rejected a real PR failure and passed a full
   PR run and both same-SHA cold/warm dev runs. A controlled comparison found no
-  net npm-cache gain; its removal awaits final-source live verification.
+  net npm-cache gain; its removal passed final-source PR and dev verification.
   Acceptance of the proposed runtime ceiling remains outstanding.
 
 ## Outcome gates
@@ -73,9 +73,13 @@ workflow permissions set to read, and cache `max_cache_size_gb: 10`. Cache usage
 was **4,109,654,256 bytes** across two npm download caches (about 0.83 GB each)
 and one Gradle cache (2.45 GB). Artifact storage is separate: 24 artifacts,
 1,656,704,773 bytes. Do not delete unrelated caches or artifacts.
-After the first successful routine save, usage is **5,511,004,413 bytes** across
-four entries; the new npm cache occupies 1,401,350,157 compressed bytes from
+After the first successful routine save, usage was **5,511,004,413 bytes** across
+four entries; the trial npm cache occupied 1,401,350,157 compressed bytes from
 1,611,004,773 raw bytes, below the 2 GiB raw entry cap. The 10 GB ceiling is unchanged.
+After integrating cache removal, the trial entry `8779695022` was deleted only
+after its exact key, dev ref and size were rechecked. Usage returned to
+**4,109,654,256 bytes** across the three original entries; their IDs and sizes
+were preserved, and the API still reports a 10 GB ceiling.
 
 The cache setting is an enforced ceiling. GitHub documents that cache overage
 is charged only when the configured limit exceeds the included 10 GB
@@ -172,11 +176,13 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Verify the revised semver contract and reconcile all three planning tiers.
 - [x] Reconcile bounded native probes and close G0; all selected architectures
       retain a feasible native route, with package proof assigned to G3.
-- [ ] Establish A2's shared routine command and live baseline.
-- [ ] Close A3 with exact-tested-tree, failed-check and branch-movement fixtures.
+- [ ] Close A2 after user acceptance and enforcement of the numeric runtime ceiling;
+      shared command, real failure/success events and baseline are verified.
+- [ ] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
+      fixtures and shared workflow wiring are verified.
 
-Real routine PR/dev events remain A2; bot events, full-package and device proofs
-remain B/C/D as assigned in the roadmap.
+Only the runtime-ceiling decision and its enforcement remain for G1. Bot events,
+full-package and device proofs remain B/C/D as assigned in the roadmap.
 
 ## Progress log
 
@@ -256,3 +262,14 @@ remain B/C/D as assigned in the roadmap.
   close to the comparable slower final PR's 70.37s uncached install. The subsequent
   controlled install-only comparison above found no net gain and justified removing
   routine/rebase cache transfers without changing required checks.
+- The cache-free [final-source PR trial](https://github.com/iExalt/paseo/actions/runs/38089332689)
+  passed at `4f278588e` in 12m50s, with a separate 2s aggregate: npm install 69.31s,
+  server units 315.68s and app units 145.94s, consistent with the slower baseline.
+  Following final integration review and fresh remote/event checks, `dev`
+  fast-forwarded at 22:06:46 UTC (18:06:46 EDT) and PR #2 merged. Only routine CI
+  was emitted by the push. The [final dev trial](https://github.com/iExalt/paseo/actions/runs/38090182199)
+  passed in 13m02s with a separate 3s aggregate, ending at 22:19:57 UTC
+  (18:19:57 EDT). No cache transfer or packaging operation ran. The trial cache
+  was removed after exact metadata verification; unrelated entries and the 10 GB
+  ceiling remain unchanged. Numeric-ceiling acceptance and enforcement are the
+  remaining G1 closure gate; no later phase has started.
