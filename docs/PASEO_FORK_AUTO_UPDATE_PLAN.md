@@ -1,9 +1,10 @@
 # Paseo fork automated builds and updates
 
 Status: paired canonical CI, authenticated release publication, and actual Mac/Android
-install, update, and recovery verified. Retained Mac reactivation is verified through
-the source CLI; packaged availability and the Mac managed-update About view remain
-unverified. The old Debug preference transfer is unavailable after uninstall.
+install, update, recovery, and the Mac managed-update About view verified. Retained
+Mac reactivation is verified through the source CLI and delivered as a published
+packaged command in 200008; that release has not been installed on the user devices.
+The old Debug preference transfer is unavailable after uninstall.
 Updated 2026-10-10 UTC (October 9 EDT).
 
 ## Outcome and first deliverable
@@ -785,11 +786,11 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Pass managed Mac B-to-C launch and offline binary rollback to usable B.
 - [x] Pass S24 B-to-C in-app higher-code recovery with installed-byte, theme, and permission preservation.
 - [x] Acknowledge the S24's live saved connection after C recovery without re-pairing.
-- [x] Pass actual-device CI artifact install/update/recovery gates, with visual and packaged-reactivation limitations below.
+- [x] Pass actual-device CI artifact install/update/recovery gates, with packaged-reactivation limitations below.
 - [x] Implement and test explicit retained high-water reactivation with signed recovery and unchanged replay protection.
 - [x] Reactivate retained Mac C through the source CLI without restarting the running B app or daemon.
-- [ ] Verify the Mac in-app managed-update About rows and controls.
-- [ ] Deliver the reactivation command in a verified packaged release.
+- [x] Verify the Mac in-app managed-update About rows and controls.
+- [x] Deliver the reactivation command in a verified packaged release.
 
 The earlier preference-only migration design left drafts and attachments in
 Debug; the subsequent user uninstall made that device transfer unavailable.
@@ -982,14 +983,44 @@ passed with one existing opt-in signature fixture skipped; scoped format/lint pa
 and the required typecheck took 12.33 seconds against the retained 14.2-second baseline.
 No disruptive restart or data-schema rollback was attempted.
 
-This reactivation command is available in source only; the published B/C helpers
-and desktop controls do not include it. Use the retained C helper for status and
-supported rollback; avoid B's mutating updater commands and manual profile switches.
-A future verified packaged release is required to deliver the new command normally.
-Existing macOS accessibility and capture permissions now work. Native About showed
-0.11.0, but bounded navigation did not reach the in-app managed-update About screen;
-its running/active/staged rows and update controls remain visually unverified. All
-temporary UI captures were removed, and no additional permission or restart occurred.
+The published B/C helpers do not include this reactivation command. Use the retained
+C helper for status and supported rollback; avoid B's mutating updater commands and
+manual profile switches. Release 200008 provides the packaged CLI command; desktop
+controls remain unchanged.
+
+Candidate 200008 passed [paired run 38014322071](https://github.com/iExalt/paseo/actions/runs/38014322071),
+attempt 1, for source `5619b7d7ee1e55b322028e8b7818aa1a8f752a0a`, from
+01:44:16 to 02:04:25 UTC October 10 (9:44:16 to 10:04:25 PM EDT October 9).
+Mac build/export and fresh verification took 13m27s/55s; Android build/signing took
+19m06s/36s. Trusted promotion preparation accepted both immutable artifact identities,
+code 200008, the pinned Android signer, unchanged lock, and explicit local Node seed
+provenance. Its distinct Mac root is
+`/nix/store/c7vyd08mccxlzkh9g7kcxskrjcq9njyd-paseo-desktop-0.11.0`, with 69 paths.
+Inspection of only that root NAR matched its manifest hash and size; the packaged
+CLI matched the committed source byte-for-byte, and its wrapper invokes the pinned
+Node 26.11.0 in the closure. This verifies payload inclusion; signature enforcement
+remains the fresh-runner CI proof. After explicit publication-only user selection,
+[release 200008](https://github.com/iExalt/paseo/releases/tag/paseo-fork-v0.11.0-r200008-5619b7d7ee1e55b322028e8b7818aa1a8f752a0a)
+was published as stable release 408533793. Both actual consumer signature paths
+accepted its public manifest, and all six public asset sizes/digests match the
+reviewed uploads. APK SHA-256 is
+`e9cbbb89ee57df467ed7b3c497bf50fcf420892977757141fab1cd908b5b85ba`;
+closure archive SHA-256 is
+`bcecfd7b6c15ad03b042a3728b08cd3676f8289ecacec1717e171381fff4430d`.
+No user-store import, update, or restart occurred: fresh process metadata still
+identifies the B app and daemon, the profile still selects C/generation 2, and no
+phone commands were run. Packaged reactivation is published and payload-verified;
+its real-device operation remains the earlier source-CLI proof, not a 200008 install.
+
+After the user opened in-app Settings → About, a single window-scoped capture showed
+`Nix-managed updates`, running app `v0.11.0`, active profile sequence `200007`, no
+staged release, manual-restart guidance, and Check/Stage/Activate/Roll back controls.
+No upstream Electron update offer appeared. Fresh executable/bundle and window-owner
+metadata bind the capture to the running B app; the running row itself exposes only
+version, not release identity. No Latest row was shown before an explicit Check,
+which was not performed. Automation could not foreground the app; the user opened
+this view before capture.
+No process restart or update action occurred, and temporary captures were removed.
 The packaged script is
 a derivation input; a sequence-only metadata change remains outside the derivation.
 Same-root metadata changes will not count as binary rollback proof. Android forward
