@@ -11,7 +11,8 @@
 - A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
   probes and hosted Android ARM64 APK startup passed. No routine baseline exists;
   A2 implementation is active. Reviewed probe code and semver contracts are published
-  on the work branch; routine CI is not yet published or verified on GitHub.
+  on the work branch. Routine CI is published and has rejected a real PR failure;
+  successful PR/dev runs and cache measurements remain outstanding.
 
 ## Outcome gates
 
@@ -48,8 +49,9 @@ interface decisions only; it does not establish package or release correctness.
 - A2's controlled dev-event proof uses a discovered `.mise/tasks/ci/routine`
   file task, avoiding `mise.toml`, which triggers existing packaging. Before
   integration, prove the complete cumulative diff does not match the old packaging
-  filters, recheck remote movement, and inspect resulting events. Preserve the old
-  trigger until step 9; no temporary workflow disablement is needed.
+  filters, recheck remote movement, and inspect resulting events. Necessary client
+  and relay test repairs now match those filters. A narrow trigger amendment is awaiting
+  user approval; dev integration is pending that decision. No workflow is disabled.
 - Bot PR credentials are not proven. Existing repository secret names contain
   signing/configuration secrets but no dedicated release-please credential;
   never treat secret names as proof of usable material. The selected App-token
@@ -97,7 +99,9 @@ The real Antigravity prompt case is explicitly excluded because paid-provider
 tests are outside this campaign. G3 must execute `builtin-plugins-dist.test.mjs`,
 `trace-daemon-dist.test.mjs`, the Nix signature fixture and macOS reactivation
 fixture; a green Linux routine run does not prove these package contracts.
-Critical browser/Electron/Android journeys and CLI lifecycle remain required B gates.
+Critical browser/Electron/Android journeys, CLI lifecycle and the local relay E2EE
+journey with `FORCE_RELAY_E2E=1` remain required B gates. The relay suite deliberately
+skips runtime checks on Node 26; successful collection is not its runtime proof.
 
 Routine caches contain only npm downloads, with immutable keys for pinned
 OS/architecture/Node/npm/lockfile. Only successful trusted dev pushes save.
@@ -150,3 +154,16 @@ remain B/C/D as assigned in the roadmap.
   A nonfatal `AttachConsole` diagnostic followed cleanup of the already-exited
   PTY; clean lifecycle behavior still needs G3. Together with Linux at `510974a2`
   and Android at `def29fde5`, this closes G0 feasibility, not full-package proof.
+- The [first routine PR trial](https://github.com/iExalt/paseo/actions/runs/38083227517)
+  at `6e823602c` failed on a stale client capability expectation; its required
+  aggregate also failed. This observed failure replaces the proposed synthetic
+  PR failure trial; A3's injected publication failure and G2's broken journey
+  remain required. Cold dependency installation took 73 seconds; the run
+  stopped before all checks, so it is not a routine latency baseline. The one-line
+  fixture repair in `e72419f3e` passed its targeted local test, client typecheck,
+  lint and formatting. Successful live verification remains pending.
+- The [next PR trial](https://github.com/iExalt/paseo/actions/runs/38083743209)
+  passed the repaired client suite, then failed collecting relay E2E because
+  Wrangler no longer exports its private CLI path. The test now resolves the
+  executable through exported package metadata; targeted collection succeeds,
+  its three runtime cases remain skipped on Node 26, and relay typecheck passes.

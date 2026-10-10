@@ -112,6 +112,8 @@ explicitly required before publication, even if absent from routine CI.
   - Proof: positive journey assertions and intentional broken-fixture failure;
     headless runtime, cleanup and trace review; no live model API charges. Label
     emulator-only results explicitly; actual release-please event proof is step 8.
+    Run the local relay E2EE journey with `FORCE_RELAY_E2E=1`; routine Node 26
+    collection skips its three cases and does not establish relay runtime proof.
   - Ticks: G2; W4.
 
 - [ ] **5. Preserve Mac/Android candidate packages.** Adapt existing reusable
