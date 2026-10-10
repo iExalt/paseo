@@ -30,6 +30,7 @@ test("only fork-owned workflows are installed", () => {
     "native-feasibility.yml",
     "rebase-dev.yml",
     "upstream-sync.yml",
+    "windows-arm64-feasibility.yml",
   ]);
 });
 
