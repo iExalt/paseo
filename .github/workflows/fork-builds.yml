@@ -17,11 +17,16 @@ jobs:
     name: Pin paired build identity
     if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     outputs:
       source_sha: ${{ steps.identity.outputs.source_sha }}
-      release_sequence: ${{ steps.identity.outputs.release_sequence }}
+      fork_version: ${{ steps.identity.outputs.fork_version }}
+      version_code: ${{ steps.identity.outputs.version_code }}
     steps:
-      - name: Validate caller and allocate release sequence
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Validate caller and source version
         id: identity
         shell: bash
         run: |
@@ -30,15 +35,7 @@ jobs:
           test "$GITHUB_REF" = "refs/heads/dev"
           test "$GITHUB_ACTOR" = "iExalt"
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
-          [[ "$GITHUB_RUN_NUMBER" =~ ^[1-9][0-9]*$ ]]
-          if (( GITHUB_RUN_NUMBER > 2099800000 )); then
-            echo "Caller run number exceeds the Android version-code budget." >&2
-            exit 1
-          fi
-          release_sequence=$((200000 + GITHUB_RUN_NUMBER))
-          (( release_sequence <= 2100000000 ))
-          echo "source_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
-          echo "release_sequence=$release_sequence" >> "$GITHUB_OUTPUT"
+          node .github/scripts/candidate-identity.mjs "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
   build-macos:
     name: Build and verify macOS closure
@@ -46,7 +43,7 @@ jobs:
     uses: ./.github/workflows/macos-closure.yml
     with:
       source_sha: ${{ needs.identity.outputs.source_sha }}
-      release_sequence: ${{ needs.identity.outputs.release_sequence }}
+      fork_version: ${{ needs.identity.outputs.fork_version }}
     secrets:
       PASEO_NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
 
@@ -56,7 +53,7 @@ jobs:
     uses: ./.github/workflows/fork-android-apk.yml
     with:
       source_sha: ${{ needs.identity.outputs.source_sha }}
-      release_sequence: ${{ needs.identity.outputs.release_sequence }}
+      fork_version: ${{ needs.identity.outputs.fork_version }}
     secrets:
       PASEO_FORK_GOOGLE_SERVICES_JSON: ${{ secrets.PASEO_FORK_GOOGLE_SERVICES_JSON }}
       PASEO_FORK_SIGNING_KEY_PKCS8_PEM: ${{ secrets.PASEO_FORK_SIGNING_KEY_PKCS8_PEM }}
@@ -93,10 +90,11 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ needs.identity.outputs.source_sha }}
-          RELEASE_SEQUENCE: ${{ needs.identity.outputs.release_sequence }}
+          FORK_VERSION: ${{ needs.identity.outputs.fork_version }}
+          EXPECTED_VERSION_CODE: ${{ needs.identity.outputs.version_code }}
           ANDROID_VERIFIED: ${{ needs.build-android.outputs.verified }}
           ANDROID_SOURCE_SHA: ${{ needs.build-android.outputs.source_sha }}
-          ANDROID_RELEASE_SEQUENCE: ${{ needs.build-android.outputs.release_sequence }}
+          ANDROID_FORK_VERSION: ${{ needs.build-android.outputs.fork_version }}
           ANDROID_VERSION_CODE: ${{ needs.build-android.outputs.version_code }}
           ANDROID_PACKAGE_ID: ${{ needs.build-android.outputs.package_id }}
           ANDROID_CERT_SHA256: ${{ needs.build-android.outputs.signing_certificate_sha256 }}
@@ -107,7 +105,7 @@ jobs:
           ANDROID_ARTIFACT_DIGEST: ${{ needs.build-android.outputs.artifact_digest }}
           MACOS_VERIFIED: ${{ needs.build-macos.outputs.verified }}
           MACOS_SOURCE_SHA: ${{ needs.build-macos.outputs.source_sha }}
-          MACOS_RELEASE_SEQUENCE: ${{ needs.build-macos.outputs.release_sequence }}
+          MACOS_FORK_VERSION: ${{ needs.build-macos.outputs.fork_version }}
           MACOS_LOCK_HASH: ${{ needs.build-macos.outputs.lock_hash }}
           MACOS_OUTPUT_PATH: ${{ needs.build-macos.outputs.output_path }}
           MACOS_MANIFEST_PATH: ${{ needs.build-macos.outputs.manifest_path }}
@@ -127,9 +125,9 @@ jobs:
           test "$MACOS_VERIFIED" = true
           test "$ANDROID_SOURCE_SHA" = "$SOURCE_SHA"
           test "$MACOS_SOURCE_SHA" = "$SOURCE_SHA"
-          test "$ANDROID_RELEASE_SEQUENCE" = "$RELEASE_SEQUENCE"
-          test "$MACOS_RELEASE_SEQUENCE" = "$RELEASE_SEQUENCE"
-          test "$ANDROID_VERSION_CODE" = "$RELEASE_SEQUENCE"
+          test "$ANDROID_FORK_VERSION" = "$FORK_VERSION"
+          test "$MACOS_FORK_VERSION" = "$FORK_VERSION"
+          test "$ANDROID_VERSION_CODE" = "$EXPECTED_VERSION_CODE"
           test "$ANDROID_PACKAGE_ID" = sh.paseo.iexalt
           test "$ANDROID_CERT_SHA256" = "$APPROVED_ANDROID_CERT_SHA256"
           test -n "$ANDROID_ARTIFACT_ID" && test -n "$ANDROID_ARTIFACT_DIGEST"
@@ -143,7 +141,7 @@ jobs:
               || { echo "Platform artifact attempt is newer than the selected run." >&2; exit 1; }
           done
           test "$ANDROID_ARTIFACT_NAME" = "paseo-iexalt-${ANDROID_VERSION_CODE}-${SOURCE_SHA}-attempt-${android_artifact_attempt}"
-          test "$MACOS_ARTIFACT_NAME" = "paseo-nix-closure-${SOURCE_SHA}-${RELEASE_SEQUENCE}-attempt-${macos_artifact_attempt}"
+          test "$MACOS_ARTIFACT_NAME" = "paseo-nix-closure-${SOURCE_SHA}-${FORK_VERSION}-attempt-${macos_artifact_attempt}"
 
           android_dir="$RUNNER_TEMP/paired-android"
           macos_dir="$RUNNER_TEMP/paired-macos"
@@ -159,11 +157,13 @@ jobs:
           test "$(sha256sum "$macos_manifest" | cut -d' ' -f1)" = "$MACOS_MANIFEST_SHA256"
 
           jq -e \
-            --arg sourceSha "$SOURCE_SHA" --arg releaseSequence "$RELEASE_SEQUENCE" \
+            --arg sourceSha "$SOURCE_SHA" --arg forkVersion "$FORK_VERSION" \
             --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$android_artifact_attempt" \
             --arg packageId "$ANDROID_PACKAGE_ID" --arg versionCode "$ANDROID_VERSION_CODE" \
             --arg certSha "$APPROVED_ANDROID_CERT_SHA256" --arg apkSha "$ANDROID_APK_SHA256" \
-            '.sourceSha == $sourceSha and .releaseSequence == $releaseSequence
+            '.kind == "paseo-verification-candidate" and .schemaVersion == 2
+              and .platform == "android-arm64" and (has("releaseSequence") | not)
+              and .sourceSha == $sourceSha and .forkVersion == $forkVersion
               and .runId == $runId and .signingRunId == $runId
               and (.runAttempt | type == "string" and test("^[1-9][0-9]*$") and tonumber <= ($runAttempt | tonumber))
               and .signingRunAttempt == $runAttempt
@@ -171,9 +171,11 @@ jobs:
               and .signingCertificateSha256 == $certSha and .apkSha256 == $apkSha
               and .abi == "arm64-v8a"' "$android_metadata" >/dev/null
           jq -e \
-            --arg sourceSha "$SOURCE_SHA" --arg releaseSequence "$RELEASE_SEQUENCE" \
+            --arg sourceSha "$SOURCE_SHA" --arg forkVersion "$FORK_VERSION" \
             --arg lockHash "$MACOS_LOCK_HASH" --arg outputPath "$MACOS_OUTPUT_PATH" \
-            '.sourceSha == $sourceSha and (.releaseSequence | tostring) == $releaseSequence
+            '.kind == "paseo-verification-candidate" and .schemaVersion == 2
+              and .platform == "macos-arm64" and (has("releaseSequence") | not)
+              and .sourceSha == $sourceSha and .forkVersion == $forkVersion
               and .lockHash == $lockHash and .system == "aarch64-darwin"
               and .outputPath == $outputPath and .provenance == "local-ci-build"
               and .nodeSeed.provenance == "local-built-dependency"
@@ -182,7 +184,7 @@ jobs:
           paired_dir="$RUNNER_TEMP/paired-candidate"
           mkdir -p "$paired_dir"
           jq -nS \
-            --arg sourceSha "$SOURCE_SHA" --argjson releaseSequence "$RELEASE_SEQUENCE" \
+            --arg sourceSha "$SOURCE_SHA" --arg forkVersion "$FORK_VERSION" \
             --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
             --arg androidArtifactName "$ANDROID_ARTIFACT_NAME" --arg androidArtifactId "$ANDROID_ARTIFACT_ID" \
             --arg androidArtifactDigest "$ANDROID_ARTIFACT_DIGEST" --arg androidApkSha256 "$ANDROID_APK_SHA256" \
@@ -194,8 +196,8 @@ jobs:
             --arg macosArtifactRunAttempt "$macos_artifact_attempt" \
             --arg macosArchiveSha256 "$MACOS_ARCHIVE_SHA256" --arg macosLockHash "$MACOS_LOCK_HASH" \
             --arg macosOutputPath "$MACOS_OUTPUT_PATH" --arg macosManifestPath "$MACOS_MANIFEST_PATH" \
-            '{schemaVersion: 1, status: "candidate", sourceSha: $sourceSha,
-              releaseSequence: $releaseSequence, runId: $runId, runAttempt: $runAttempt,
+            '{kind: "paseo-verification-candidate", schemaVersion: 2, status: "candidate", sourceSha: $sourceSha,
+              forkVersion: $forkVersion, runId: $runId, runAttempt: $runAttempt,
               android: {artifactName: $androidArtifactName, artifactId: $androidArtifactId,
                 artifactDigest: $androidArtifactDigest, artifactRunAttempt: $androidArtifactRunAttempt,
                 apkSha256: $androidApkSha256,
@@ -211,13 +213,13 @@ jobs:
             > "$paired_dir/paired-candidate.json"
           (cd "$paired_dir" && sha256sum paired-candidate.json > SHA256SUMS)
           echo "manifest_sha256=$(sha256sum "$paired_dir/paired-candidate.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-          echo "Candidate complete: both lane outputs match SHA, sequence, signing/package metadata, and artifact pins." >> "$GITHUB_STEP_SUMMARY"
+          echo "Verification candidate complete: both lanes match SHA, source semver, signing/package metadata, and artifact pins; this is not a published release." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload normalized paired candidate manifest
         id: upload-manifest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: paseo-paired-candidate-${{ needs.identity.outputs.release_sequence }}-${{ needs.identity.outputs.source_sha }}-attempt-${{ github.run_attempt }}
+          name: paseo-paired-candidate-${{ needs.identity.outputs.fork_version }}-${{ needs.identity.outputs.source_sha }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/paired-candidate/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
