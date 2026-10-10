@@ -8,7 +8,7 @@ on:
 permissions:
   contents: read
 
-# Preserve every dev SHA; immutable same-key cache-save races are harmless.
+# Preserve verification of every dev SHA.
 concurrency:
   group: routine-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -34,17 +34,11 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0 actionlint@1.7.12
           cache: false
-      - name: Identify pinned npm download cache
-        id: cache-key
+      - name: Configure pinned npm installation
         run: |
+          test "$(node --version)" = v26.11.0
+          test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
-          node .github/scripts/ci-cache.mjs key
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        id: cache
-        with:
-          path: ${{ runner.temp }}/npm-cache/_cacache
-          key: ${{ steps.cache-key.outputs.key }}
-          restore-keys: ${{ steps.cache-key.outputs.prefix }}
       - name: Install locked dependencies once
         run: time npm ci --prefer-offline
       - name: Verify the checked-out source
@@ -57,15 +51,6 @@ jobs:
           else
             mise run --skip-tools ci:routine
           fi
-      - name: Bound cache storage after successful verification
-        id: cache-size
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        run: node .github/scripts/ci-cache.mjs size
-      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        if: steps.cache-size.outputs.save == 'true' && steps.cache.outputs.cache-hit != 'true'
-        with:
-          path: ${{ runner.temp }}/npm-cache/_cacache
-          key: ${{ steps.cache-key.outputs.key }}
 
   required:
     name: Routine CI required

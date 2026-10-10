@@ -4,15 +4,19 @@
 
 - Baseline: `f48cc61be6457f2d90f3acb79551f4e1b27fe8a7`; sibling
   `paseo-github-workflows`, branch `ci/github-workflows`.
+- Reviewed implementation `63315404a` is integrated on `dev`; PR #1 merged by
+  fast-forward after its final-source routine check passed.
 - Authority: Phase A approved; phases B–D and personal-device/public-release
   operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
 - A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
-  probes and hosted Android ARM64 APK startup passed. No routine baseline exists;
-  A2 implementation is active. Reviewed probe code and semver contracts are published
+  probes and hosted Android ARM64 APK startup passed. The routine baseline is measured;
+  ceiling acceptance and final cache-removal verification remain pending. Reviewed probe code and semver contracts are published
   on the work branch. Routine CI has rejected a real PR failure and passed a full
-  PR run; successful dev runs and cache measurements remain outstanding.
+  PR run and both same-SHA cold/warm dev runs. A controlled comparison found no
+  net npm-cache gain; its removal awaits final-source live verification.
+  Acceptance of the proposed runtime ceiling remains outstanding.
 
 ## Outcome gates
 
@@ -52,9 +56,9 @@ was pending; A3 closure still depends on A2's successful runs and accepted budge
   coordinator. Ordinary dev pushes stop producing Mac/Android candidates; the
   temporary test-path exceptions are removed. Manual packaging retains the
   trusted `dev`/`iExalt` guards. `dev` is the repository's default branch, so the
-  dispatch definition becomes available there after integration; no dispatch or
-  signing operation is authorized by this CI trial. Before integration, recheck
-  remote movement and audit resulting events. Baseline repairs include production
+  dispatch definition is now available there after integration; no dispatch or
+  signing operation is authorized by this CI trial. The integration audit found
+  only routine CI triggered by the dev push. Baseline repairs include production
   import-boundary fixes as well as test fixtures.
 - Bot PR credentials are not proven. Existing repository secret names contain
   signing/configuration secrets but no dedicated release-please credential;
@@ -69,6 +73,9 @@ workflow permissions set to read, and cache `max_cache_size_gb: 10`. Cache usage
 was **4,109,654,256 bytes** across two npm download caches (about 0.83 GB each)
 and one Gradle cache (2.45 GB). Artifact storage is separate: 24 artifacts,
 1,656,704,773 bytes. Do not delete unrelated caches or artifacts.
+After the first successful routine save, usage is **5,511,004,413 bytes** across
+four entries; the new npm cache occupies 1,401,350,157 compressed bytes from
+1,611,004,773 raw bytes, below the 2 GiB raw entry cap. The 10 GB ceiling is unchanged.
 
 The cache setting is an enforced ceiling. GitHub documents that cache overage
 is charged only when the configured limit exceeds the included 10 GB
@@ -78,18 +85,54 @@ logs/job summaries only, and no cache/artifact writes. Artifact allowance and
 hard no-overage evidence remain required before an upload-producing operation;
 zero net historical billing does not establish those controls.
 
-For routine CI, prefer one npm download cache per OS/architecture/lockfile,
-shared where useful with packaging. Avoid SHA-per-run keys, dependency caches
-duplicated by job, `node_modules` archives and Nix store caches competing with
-Gradle inside 10 GB. Restore dependencies only; trusted signing must not consume
-untrusted cached build products. Cache misses must work. Measure whether restore
-and save time actually improve total latency before expanding cache scope.
+Routine and rebase verification use isolated npm download directories without
+Actions cache transfers: the controlled comparison below found no net benefit.
+Existing packaging caches remain unchanged. Future caches must demonstrate useful
+savings including transfer costs; prefer one immutable dependency cache per
+OS/architecture/toolchain/lockfile over SHA-per-run or duplicate entries. Avoid
+`node_modules` archives and Nix store caches competing with Gradle inside 10 GB.
+Trusted signing must not consume untrusted cached build products, and misses must
+still run every required check.
 
-The routine baseline and budget are **unknown**. A2 records one cold/warm pair
-on the same standard Linux runner/toolchain/concurrency and proposes a ceiling
-for user acceptance. Keep setup/build/test timings separate; broad suites run
-on GitHub, targeted changed-file tests locally. Do not trade away required proof
-or reset the baseline to conceal growth.
+The measured baseline candidate is `63315404a`, run `38087084460`, attempts 1/2,
+on standard public `ubuntu-24.04` x64 runners with Node26.11.0/npm11.20.0,
+two unit workers and one integration worker. Queue time is excluded; the separate
+required aggregate took 2s cold and 4s warm. Physical CPU models were not captured
+for these runs, so the following is a hosted-pool baseline, not a same-machine
+cache speed comparison.
+
+| Measurement            |  Cold / attempt 1 |                  Warm / attempt 2 |
+| ---------------------- | ----------------: | --------------------------------: |
+| Routine job wall time  |             9m15s |                            12m55s |
+| Cache state            |              miss |                     exact-key hit |
+| Cache restore          | 0.20s miss lookup |                         about 11s |
+| Locked npm install     |            42.98s |                            59.49s |
+| Workspace declarations |            12.13s |                            19.61s |
+| Workspace typechecks   |            17.52s |                            28.22s |
+| Server units           |           236.81s |                           321.81s |
+| App units              |            91.63s |                           149.01s |
+| Cache save             |             5.70s | skipped: exact key already exists |
+
+The proposed full routine-job ceiling is **15 minutes**, pending user acceptance.
+This includes checkout/tools/cache/install, excludes queue time and the separate
+aggregate. Rebase validation would have its own 15-minute command deadline within
+the existing 45-minute whole-rebase job; its preparation is outside that command
+deadline. Until accepted, existing workflow deadlines remain unchanged.
+Keep this source and pair as the comparison anchor; investigate material or
+cumulative growth even below the ceiling, without adding workers or weakening
+required gates. Broad suites run on GitHub; targeted changed-file tests run locally.
+
+The warm run was slower across unrelated build/test stages as well as installation;
+it does not establish that caching accelerates CI. The
+[same-host install comparison](https://github.com/iExalt/paseo/actions/runs/38088702487)
+used the same `63315404a` source on one four-vCPU AMD EPYC 7763 runner,
+Ubuntu image `20261004.327.1`, with fresh cold caches and independent copies of
+the restored seed, in cold/warm/warm/cold order. Cold installs took 71.265/74.965s;
+warm installs took 65.196/67.621s plus the real 8s restore cost. Mean deployed cost
+was 73.115s cold versus 74.409s warm, excluding the probe-only seed-copy overhead.
+Postinstall caches were isolated per pass. With no demonstrated net gain, routine
+and rebase Actions caches are removed, along with the unused helper/tests and
+temporary probe. This experiment added no permanent coverage or cache/artifact writes.
 
 The shared entrypoint is `mise run --skip-tools ci:routine` after `npm ci`;
 `--skip-tools` avoids installing unrelated Android/Java/Rust tools. With no
@@ -107,12 +150,10 @@ Critical browser/Electron/Android journeys, CLI lifecycle and the local relay E2
 journey with `FORCE_RELAY_E2E=1` remain required B gates. The relay suite deliberately
 skips runtime checks on Node 26; successful collection is not its runtime proof.
 
-Routine caches contain only npm downloads, with immutable keys for pinned
-OS/architecture/Node/npm/lockfile. Only successful trusted dev pushes save.
-Concurrent dev runs retain every source SHA; same-key cache reservations may
-race harmlessly. The provisional per-entry save cap is 2 GiB of raw file bytes,
-distinct from compressed cache size and the enforced 10 GB repository ceiling.
-Cache misses still execute all selected checks; no Actions artifacts are uploaded.
+Concurrent dev runs retain verification of every source SHA. Routine verification
+uploads no Actions artifacts and now performs no Actions cache reads or writes.
+The original trial's 2 GiB raw save cap and immutable key contract describe the
+measured experiment, not active cache plumbing.
 
 The reviewed rebase workflow uses the same complete routine command after rebasing
 and installing the captured lockfile. Validation requires a clean tracked tree,
@@ -121,8 +162,8 @@ Publication requires that exact tested SHA and retains the atomic backup/dev lea
 CLI fixtures prove that failed checks, tree mutation and ignored environment
 overrides produce no tested-SHA output; Git fixtures reject branch movement and
 stale leases without publishing a backup. These are fresh-checkout assumptions,
-not an audit of every ignored build output. The workflow restores npm downloads
-without saving caches, removes signing material before dependency execution,
+not an audit of every ignored build output. The workflow transfers no Actions
+caches, removes signing material before dependency execution,
 exposes push credentials only during publication, and records bounded diagnostics
 without artifact uploads. No production rebase has been dispatched.
 
@@ -200,3 +241,18 @@ remain B/C/D as assigned in the roadmap.
   resolve that variability before accepting a baseline or numeric ceiling.
   Reviewed A3 fixtures and workflow wiring now share this routine gate; no live
   production rebase is needed for step 3's isolated publication proof.
+- The [final-source PR trial](https://github.com/iExalt/paseo/actions/runs/38086191830)
+  passed at `63315404a` in 12m49s (server units 320.83s). After a fresh remote and
+  complete workflow-event audit, `dev` fast-forwarded to that SHA and PR #1 merged.
+  The [cold dev trial](https://github.com/iExalt/paseo/actions/runs/38087084460/attempts/1)
+  passed in 9m15s: cache miss, npm install 42.98s, declarations 12.13s, types 17.52s,
+  server units 236.81s and app units 91.63s. At the same SHA as the final PR, server
+  time returned close to the earlier 232.95s result, so no stable regression is established; the
+  specific source of hosted variation is unproven. The conditional extra timing
+  probe was not needed or dispatched. The successful trusted cache save took 5.70s;
+  [attempt 2](https://github.com/iExalt/paseo/actions/runs/38087084460/attempts/2)
+  also passed, in 12m55s, with an exact cache hit and no duplicate save. The cache
+  benefit was unresolved because restore plus install took about 70.5s,
+  close to the comparable slower final PR's 70.37s uncached install. The subsequent
+  controlled install-only comparison above found no net gain and justified removing
+  routine/rebase cache transfers without changing required checks.
