@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn, spawnSync } from "node:child_process";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
   chmodSync,
   existsSync,
@@ -16,8 +16,46 @@ import { join, relative as relativePath } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { load } from "js-yaml";
+import { candidateIdentity } from "../.github/scripts/candidate-identity.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
+
+test("candidate identity binds semver and Android encoding to a clean exact source", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "paseo-candidate-"));
+  const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
+  try {
+    git("init", "--quiet");
+    writeFileSync(join(cwd, "package.json"), JSON.stringify({ version: "0.1.0" }));
+    git("add", "package.json");
+    git(
+      "-c",
+      "user.name=Test",
+      "-c",
+      "user.email=test@example.invalid",
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "core.hooksPath=/dev/null",
+      "commit",
+      "--quiet",
+      "-m",
+      "test: fixture",
+    );
+    const sha = git("rev-parse", "HEAD");
+    assert.deepEqual(candidateIdentity(sha, undefined, cwd), {
+      source_sha: sha,
+      fork_version: "0.1.0",
+      version_code: 201000,
+    });
+    assert.throws(() => candidateIdentity(sha, "0.11.2", cwd), /differs from source/);
+    assert.throws(() => candidateIdentity("f".repeat(40), "0.1.0", cwd), /differs from checkout/);
+    assert.throws(() => candidateIdentity("short", "0.1.0", cwd), /full SHA/);
+    writeFileSync(join(cwd, "untracked"), "dirty");
+    assert.throws(() => candidateIdentity(sha, "0.1.0", cwd), /must be clean/);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
 
 test("only fork-owned workflows are installed", () => {
   const workflows = readdirSync(new URL(".github/workflows/", repoRoot))
@@ -243,7 +281,7 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
 
   assert.match(trigger, /workflow_call:/);
   assert.match(trigger, /source_sha:[\s\S]*?required: true[\s\S]*?type: string/);
-  assert.match(trigger, /release_sequence:[\s\S]*?required: true[\s\S]*?type: string/);
+  assert.match(trigger, /fork_version:[\s\S]*?required: true[\s\S]*?type: string/);
   assert.match(trigger, /PASEO_FORK_GOOGLE_SERVICES_JSON:[\s\S]*?required: true/);
   assert.match(trigger, /PASEO_FORK_SIGNING_KEY_PKCS8_PEM:[\s\S]*?required: true/);
   assert.match(trigger, /PASEO_FORK_SIGNING_CERT_PEM:[\s\S]*?required: true/);
@@ -252,7 +290,7 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
   assert.match(source, /github\.actor == 'iExalt'/);
   assert.match(build, /ref: \$\{\{ inputs\.source_sha \}\}/);
-  assert.match(build, /getRequiredAndroidVersionCode\(process\.env\.RELEASE_SEQUENCE\)/);
+  assert.match(build, /candidate-identity\.mjs "\$SOURCE_SHA" "\$FORK_VERSION"/);
   assert.doesNotMatch(build, /getForkAndroidVersionCodeFromRunNumber|GITHUB_RUN_NUMBER\)\)/);
   assert.match(build, /PASEO_FORK_GOOGLE_SERVICES_JSON/);
   assert.match(
@@ -272,10 +310,10 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.match(sign, /openssl pkcs8 -topk8 -nocrypt .* -outform DER/);
   assert.match(sign, /test "\$signer_count" -eq 1/);
   assert.match(sign, /test "\$VERSION_CODE" -le 2100000000/);
-  assert.match(sign, /test "\$\(jq -r \.releaseSequence "\$metadata"\)" = "\$RELEASE_SEQUENCE"/);
+  assert.match(sign, /test "\$\(jq -r \.forkVersion "\$metadata"\)" = "\$FORK_VERSION"/);
   assert.match(sign, /apkSha256/);
   assert.match(sign, /signingRunAttempt/);
-  assert.match(sign, /retention-days: 7/);
+  assert.match(sign, /retention-days: 1/);
   assert.match(sign, /artifact-ids: \$\{\{ needs\.build\.outputs\.artifact_id \}\}/);
   assert.match(sign, /steps\.upload-final\.outputs\.artifact-digest/);
   assert.match(sign, /verified=true/);
@@ -308,12 +346,12 @@ test("fork candidate orchestration shares one identity and only completes after 
   assert.match(source, /github\.repository == 'iExalt\/paseo'/);
   assert.match(source, /github\.actor == 'iExalt'/);
   assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
-  assert.match(identity, /release_sequence=\$\(\(200000 \+ GITHUB_RUN_NUMBER\)\)/);
-  assert.match(identity, /source_sha=\$GITHUB_SHA/);
+  assert.match(identity, /candidate-identity\.mjs "\$GITHUB_SHA"/);
+  assert.doesNotMatch(identity, /GITHUB_RUN_NUMBER/);
   assert.match(macos, /uses: \.\/\.github\/workflows\/macos-closure\.yml/);
   assert.match(android, /uses: \.\/\.github\/workflows\/fork-android-apk\.yml/);
   assert.match(macos, /source_sha: \$\{\{ needs\.identity\.outputs\.source_sha \}\}/);
-  assert.match(android, /release_sequence: \$\{\{ needs\.identity\.outputs\.release_sequence \}\}/);
+  assert.match(android, /fork_version: \$\{\{ needs\.identity\.outputs\.fork_version \}\}/);
   assert.match(candidate, /needs: \[identity, build-macos, build-android\]/);
   assert.match(candidate, /ANDROID_VERIFIED: \$\{\{ needs\.build-android\.outputs\.verified \}\}/);
   assert.match(candidate, /MACOS_VERIFIED: \$\{\{ needs\.build-macos\.outputs\.verified \}\}/);
@@ -335,8 +373,98 @@ test("fork candidate orchestration shares one identity and only completes after 
   );
   assert.match(
     macosHelper,
-    /paseo-nix-closure-\$source_sha-\$release_sequence-attempt-\$\{GITHUB_RUN_ATTEMPT/,
+    /paseo-nix-closure-\$source_sha-\$fork_version-attempt-\$\{GITHUB_RUN_ATTEMPT/,
   );
+});
+
+test("candidate metadata rejects old, mixed, wrong-version and wrong-source inventories", () => {
+  const source = readFileSync(forkBuildsWorkflowPath, "utf8");
+  const start = source.indexOf("          jq -e ");
+  const end = source.indexOf("          paired_dir=", start);
+  assert.ok(start >= 0 && end > start);
+  const script = `set -eu\n${source
+    .slice(start, end)
+    .split("\n")
+    .map((line) => line.slice(10))
+    .join("\n")}`;
+  const directory = mkdtempSync(join(tmpdir(), "paseo-metadata-"));
+  const sha = "a".repeat(40);
+  const android = {
+    kind: "paseo-verification-candidate",
+    schemaVersion: 2,
+    platform: "android-arm64",
+    sourceSha: sha,
+    forkVersion: "0.1.0",
+    runId: "1",
+    signingRunId: "1",
+    runAttempt: "1",
+    signingRunAttempt: "1",
+    packageId: "sh.paseo.iexalt",
+    versionCode: "201000",
+    signingCertificateSha256: "c".repeat(64),
+    apkSha256: "d".repeat(64),
+    abi: "arm64-v8a",
+  };
+  const macos = {
+    kind: "paseo-verification-candidate",
+    schemaVersion: 2,
+    platform: "macos-arm64",
+    sourceSha: sha,
+    forkVersion: "0.1.0",
+    lockHash: "b".repeat(64),
+    system: "aarch64-darwin",
+    outputPath: "/nix/store/test",
+    provenance: "local-ci-build",
+    nodeSeed: { provenance: "local-built-dependency" },
+    closure: [{ path: "/nix/store/test" }],
+  };
+  try {
+    for (const [lane, delta, accepted] of [
+      ["android", {}, true],
+      ...["android", "macos"].flatMap((target) => [
+        [target, { kind: "published-release" }, false],
+        [target, { schemaVersion: 1 }, false],
+        [target, { releaseSequence: 200001 }, false],
+        [target, { forkVersion: "0.2.0" }, false],
+        [target, { sourceSha: "f".repeat(40) }, false],
+        [target, { platform: "windows-arm64" }, false],
+      ]),
+      ["android", { apkSha256: "e".repeat(64) }, false],
+    ]) {
+      writeFileSync(
+        join(directory, "android.json"),
+        JSON.stringify({ ...android, ...(lane === "android" ? delta : {}) }),
+      );
+      writeFileSync(
+        join(directory, "macos.json"),
+        JSON.stringify({ ...macos, ...(lane === "macos" ? delta : {}) }),
+      );
+      const result = spawnSync("/bin/bash", ["-c", script], {
+        env: {
+          PATH: process.env.PATH,
+          SOURCE_SHA: sha,
+          FORK_VERSION: "0.1.0",
+          GITHUB_RUN_ID: "1",
+          android_artifact_attempt: "1",
+          ANDROID_PACKAGE_ID: android.packageId,
+          ANDROID_VERSION_CODE: android.versionCode,
+          APPROVED_ANDROID_CERT_SHA256: android.signingCertificateSha256,
+          ANDROID_APK_SHA256: android.apkSha256,
+          MACOS_LOCK_HASH: macos.lockHash,
+          MACOS_OUTPUT_PATH: macos.outputPath,
+          android_metadata: join(directory, "android.json"),
+          macos_manifest: join(directory, "macos.json"),
+        },
+      });
+      assert.equal(
+        result.status === 0,
+        accepted,
+        `${lane} ${JSON.stringify(delta)}: ${result.stderr}`,
+      );
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("paired candidate retries retain successful lane attempts without accepting future artifacts", () => {
@@ -360,11 +488,11 @@ test("paired candidate retries retain successful lane attempts without accepting
     const result = spawnSync("/bin/bash", ["-c", validation], {
       env: {
         SOURCE_SHA: sha,
-        RELEASE_SEQUENCE: "200001",
+        FORK_VERSION: "0.1.0",
         ANDROID_VERSION_CODE: "200001",
         GITHUB_RUN_ATTEMPT: "2",
         ANDROID_ARTIFACT_NAME: `paseo-iexalt-200001-${sha}-attempt-${androidAttempt}`,
-        MACOS_ARTIFACT_NAME: `paseo-nix-closure-${sha}-200001-attempt-${macosAttempt}`,
+        MACOS_ARTIFACT_NAME: `paseo-nix-closure-${sha}-0.1.0-attempt-${macosAttempt}`,
       },
     });
     assert.equal(result.status === 0, accepted, `${androidAttempt}/${macosAttempt}`);
