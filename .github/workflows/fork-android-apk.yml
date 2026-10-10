@@ -7,8 +7,8 @@ on:
         description: Immutable commit SHA shared by the paired build lanes.
         required: true
         type: string
-      release_sequence:
-        description: Canonical positive Android version code shared by both lanes.
+      fork_version:
+        description: Canonical source semver shared by both lanes.
         required: true
         type: string
     secrets:
@@ -21,8 +21,8 @@ on:
     outputs:
       source_sha:
         value: ${{ jobs.sign.outputs.source_sha }}
-      release_sequence:
-        value: ${{ jobs.sign.outputs.release_sequence }}
+      fork_version:
+        value: ${{ jobs.sign.outputs.fork_version }}
       version_code:
         value: ${{ jobs.sign.outputs.version_code }}
       package_id:
@@ -116,10 +116,12 @@ jobs:
         id: version
         shell: bash
         env:
-          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          FORK_VERSION: ${{ inputs.fork_version }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
         run: |
           set -euo pipefail
-          version_code="$(node -e 'process.stdout.write(String(require("./packages/app/native-release-version").getRequiredAndroidVersionCode(process.env.RELEASE_SEQUENCE)))')"
+          identity="$(node .github/scripts/candidate-identity.mjs "$SOURCE_SHA" "$FORK_VERSION")"
+          version_code="$(printf '%s\n' "$identity" | sed -n 's/^version_code=//p')"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "PASEO_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
 
@@ -222,11 +224,12 @@ jobs:
         shell: bash
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          FORK_VERSION: ${{ inputs.fork_version }}
         run: |
           set -euo pipefail
           candidate="packages/app/android/app/build/outputs/apk/release/app-release.apk"
           test -f "$candidate"
+          test "$(stat -c%s "$candidate")" -le 536870912
           apkanalyzer="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
           test -x "$apkanalyzer"
           package_id="$("$apkanalyzer" manifest application-id "$candidate")"
@@ -234,6 +237,7 @@ jobs:
           debuggable="$("$apkanalyzer" manifest debuggable "$candidate")"
           test "$package_id" = "sh.paseo.iexalt"
           test "$version_code" = "${{ steps.version.outputs.version_code }}"
+          test "$("$apkanalyzer" manifest version-name "$candidate")" = "$FORK_VERSION"
           test "$debuggable" = "false"
           abis="$(unzip -Z1 "$candidate" | awk -F/ '$1 == "lib" && NF >= 3 { print $2 }' | sort -u)"
           test "$abis" = "arm64-v8a"
@@ -246,11 +250,11 @@ jobs:
             --arg runId "$GITHUB_RUN_ID" \
             --arg runNumber "$GITHUB_RUN_NUMBER" \
             --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
-            --arg releaseSequence "$RELEASE_SEQUENCE" \
+            --arg forkVersion "$FORK_VERSION" \
             --arg packageId "$package_id" \
             --arg versionCode "$version_code" \
             --arg abi "$abis" \
-            '{sourceSha: $sourceSha, runId: $runId, runNumber: $runNumber, runAttempt: $runAttempt, releaseSequence: $releaseSequence, packageId: $packageId, versionCode: $versionCode, abi: $abi}' \
+            '{kind: "paseo-verification-candidate", schemaVersion: 2, platform: "android-arm64", sourceSha: $sourceSha, runId: $runId, runNumber: $runNumber, runAttempt: $runAttempt, forkVersion: $forkVersion, packageId: $packageId, versionCode: $versionCode, abi: $abi}' \
             > "$candidate_dir/build-metadata.json"
           artifact_name="paseo-iexalt-candidate-${version_code}-${SOURCE_SHA}-attempt-${GITHUB_RUN_ATTEMPT}"
           echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
@@ -281,7 +285,7 @@ jobs:
     permissions: {}
     outputs:
       source_sha: ${{ steps.signed.outputs.source_sha }}
-      release_sequence: ${{ steps.signed.outputs.release_sequence }}
+      fork_version: ${{ steps.signed.outputs.fork_version }}
       version_code: ${{ steps.signed.outputs.version_code }}
       package_id: ${{ steps.signed.outputs.package_id }}
       signing_certificate_sha256: ${{ steps.signed.outputs.signing_certificate_sha256 }}
@@ -333,7 +337,7 @@ jobs:
           PASEO_FORK_SIGNING_CERT_PEM: ${{ secrets.PASEO_FORK_SIGNING_CERT_PEM }}
           VERSION_CODE: ${{ needs.build.outputs.version_code }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          FORK_VERSION: ${{ inputs.fork_version }}
           APPROVED_CERT_SHA256: 943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459
         run: |
           set -euo pipefail
@@ -360,8 +364,9 @@ jobs:
           candidate="$RUNNER_TEMP/fork-apk-candidate/paseo-iexalt-fork.apk"
           metadata="$RUNNER_TEMP/fork-apk-candidate/build-metadata.json"
           test "$GITHUB_SHA" = "$SOURCE_SHA"
+          jq -e '.kind == "paseo-verification-candidate" and .schemaVersion == 2 and .platform == "android-arm64" and (has("releaseSequence") | not)' "$metadata" >/dev/null
           test "$(jq -r .sourceSha "$metadata")" = "$SOURCE_SHA"
-          test "$(jq -r .releaseSequence "$metadata")" = "$RELEASE_SEQUENCE"
+          test "$(jq -r .forkVersion "$metadata")" = "$FORK_VERSION"
           test "$(jq -r .versionCode "$metadata")" = "$VERSION_CODE"
           test "$(jq -r .packageId "$metadata")" = "sh.paseo.iexalt"
           test "$(jq -r .abi "$metadata")" = "arm64-v8a"
@@ -380,6 +385,7 @@ jobs:
           mkdir -p "$final_dir"
           final_apk="$final_dir/paseo-iexalt-fork-${VERSION_CODE}.apk"
           "$apksigner" sign --key "$key_file" --cert "$cert_file" --out "$final_apk" "$candidate"
+          test "$(stat -c%s "$final_apk")" -le 536870912
           "$apksigner" verify --verbose "$final_apk"
           certificate_report="$("$apksigner" verify --print-certs "$final_apk")"
           signer_count="$(printf '%s\n' "$certificate_report" | sed -n 's/^Signer #[0-9][0-9]* certificate SHA-256 digest: .*/x/p' | wc -l | tr -d ' ')"
@@ -388,6 +394,7 @@ jobs:
           test "$verified_digest" = "$APPROVED_CERT_SHA256"
           test "$("$apkanalyzer" manifest application-id "$final_apk")" = "sh.paseo.iexalt"
           test "$("$apkanalyzer" manifest version-code "$final_apk")" = "$VERSION_CODE"
+          test "$("$apkanalyzer" manifest version-name "$final_apk")" = "$FORK_VERSION"
           test "$("$apkanalyzer" manifest debuggable "$final_apk")" = "false"
           final_abis="$(unzip -Z1 "$final_apk" | awk -F/ '$1 == "lib" && NF >= 3 { print $2 }' | sort -u)"
           test "$final_abis" = "arm64-v8a"
@@ -405,7 +412,7 @@ jobs:
           artifact_name="paseo-iexalt-${VERSION_CODE}-${SOURCE_SHA}-attempt-${GITHUB_RUN_ATTEMPT}"
           {
             echo "source_sha=$SOURCE_SHA"
-            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "fork_version=$FORK_VERSION"
             echo "version_code=$VERSION_CODE"
             echo "package_id=sh.paseo.iexalt"
             echo "signing_certificate_sha256=$verified_digest"
@@ -428,4 +435,4 @@ jobs:
           name: ${{ steps.signed.outputs.artifact_name }}
           path: ${{ steps.signed.outputs.final_dir }}/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1

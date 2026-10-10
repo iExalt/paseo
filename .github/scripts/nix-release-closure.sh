@@ -71,15 +71,11 @@ require_arm64_darwin() {
 }
 
 validate_identity() {
-  local source_sha release_sequence
+  local source_sha fork_version
   source_sha="${SOURCE_SHA:?The immutable source SHA input is required.}"
-  release_sequence="${RELEASE_SEQUENCE:?The release sequence input is required.}"
+  fork_version="${FORK_VERSION:?The fork version input is required.}"
   [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || fail "Source SHA must be 40 lowercase hexadecimal characters."
-  [[ "$release_sequence" =~ ^[1-9][0-9]*$ ]] || fail "Release sequence must be a canonical positive integer."
-  if [[ "${#release_sequence}" -gt 16 ]] \
-    || [[ "${#release_sequence}" -eq 16 && "$release_sequence" -gt 9007199254740991 ]]; then
-    fail "Release sequence exceeds the largest exactly representable JSON integer."
-  fi
+  node .github/scripts/candidate-identity.mjs "$source_sha" "$fork_version" >/dev/null
   [[ "${GITHUB_REPOSITORY:-}" == "iExalt/paseo" ]] \
     || fail "Refusing to run for unexpected repository: ${GITHUB_REPOSITORY:-unset}."
   [[ "${GITHUB_REF:-}" == "refs/heads/dev" ]] || fail "The Nix closure lane only accepts a dev-branch caller."
@@ -186,13 +182,13 @@ PY
 }
 
 prepare() {
-  local source_sha release_sequence lock_hash lock_hash_checkout checkout_drv checkout_output
+  local source_sha fork_version lock_hash lock_hash_checkout checkout_drv checkout_output
   local archive_drv archive_output node_drv nodejs_drv package_version build_version started seed_seconds parity_seconds
   local prebuild_store_free_kib prebuild_temp_free_kib
 
   validate_identity
   source_sha="$SOURCE_SHA"
-  release_sequence="$RELEASE_SEQUENCE"
+  fork_version="$FORK_VERSION"
   lock_hash="$(shasum -a 256 flake.lock | awk '{print $1}')"
   lock_hash_checkout="$(git show HEAD:flake.lock | shasum -a 256 | awk '{print $1}')"
   [[ "$lock_hash" == "$lock_hash_checkout" ]] || fail "flake.lock differs from the triggering commit."
@@ -225,14 +221,14 @@ prepare() {
   check_free_disk /nix/store "$RUNNER_TEMP"
 
   jq -nS \
-    --arg sourceSha "$source_sha" --argjson releaseSequence "$release_sequence" \
+    --arg sourceSha "$source_sha" --arg forkVersion "$fork_version" \
     --arg lockHash "$lock_hash" --arg system aarch64-darwin --arg attr "$desktop_attr" \
     --arg packageVersion "$package_version" --arg buildVersion "$build_version" \
     --arg derivationPath "$checkout_drv" --arg outputPath "$checkout_output" \
     --argjson seedImportSeconds "$seed_seconds" --argjson paritySeconds "$parity_seconds" \
     --argjson prebuildStoreFreeKiB "$prebuild_store_free_kib" \
     --argjson prebuildTempFreeKiB "$prebuild_temp_free_kib" \
-    '{sourceSha: $sourceSha, releaseSequence: $releaseSequence, lockHash: $lockHash,
+    '{sourceSha: $sourceSha, forkVersion: $forkVersion, lockHash: $lockHash,
       system: $system, attr: $attr, packageVersion: $packageVersion, buildVersion: $buildVersion,
       derivationPath: $derivationPath, outputPath: $outputPath,
       seedImportSeconds: $seedImportSeconds, paritySeconds: $paritySeconds,
@@ -240,12 +236,12 @@ prepare() {
     > "$state_file"
 
   write_output source_sha "$source_sha"
-  write_output release_sequence "$release_sequence"
+  write_output fork_version "$fork_version"
   write_output lock_hash "$lock_hash"
   write_output output_path "$checkout_output"
   {
     echo "### Nix closure build checkpoint"
-    echo "- Source SHA: \`$source_sha\`; release sequence: $release_sequence; flake.lock SHA-256: \`$lock_hash\`."
+    echo "- Source SHA: \`$source_sha\`; fork version: $fork_version; flake.lock SHA-256: \`$lock_hash\`."
     echo "- Imported and signature-verified the reviewed local-built Node 26.11 seed in ${seed_seconds}s."
     echo "- Isolated Nix signature-copy fixture passed for an input-addressed path; only the ephemeral fixture key verified."
     echo "- Checkout/archive derivation and output paths match in ${parity_seconds}s: \`$checkout_drv\` / \`$checkout_output\`."
@@ -255,13 +251,13 @@ prepare() {
 }
 
 build() {
-  local source_sha release_sequence lock_hash output_path derivation_path package_version build_version
+  local source_sha fork_version lock_hash output_path derivation_path package_version build_version
   local build_started build_seconds bundle_plist bundle_build_version closure_json manifest_file manifest_path
   local prebuild_store_free_kib prebuild_temp_free_kib
 
   [[ -s "$state_file" ]] || fail "Prepared Nix build state is missing."
   source_sha="$(jq -er '.sourceSha' "$state_file")"
-  release_sequence="$(jq -er '.releaseSequence' "$state_file")"
+  fork_version="$(jq -er '.forkVersion' "$state_file")"
   lock_hash="$(jq -er '.lockHash' "$state_file")"
   output_path="$(jq -er '.outputPath' "$state_file")"
   derivation_path="$(jq -er '.derivationPath' "$state_file")"
@@ -269,7 +265,7 @@ build() {
   build_version="$(jq -er '.buildVersion' "$state_file")"
   prebuild_store_free_kib="$(jq -er '.prebuildStoreFreeKiB' "$state_file")"
   prebuild_temp_free_kib="$(jq -er '.prebuildTempFreeKiB' "$state_file")"
-  [[ "$source_sha" == "$SOURCE_SHA" && "$release_sequence" == "$RELEASE_SEQUENCE" ]] \
+  [[ "$source_sha" == "$SOURCE_SHA" && "$fork_version" == "$FORK_VERSION" ]] \
     || fail "Prepared build state does not match the requested immutable identity."
   [[ "$(git rev-parse HEAD)" == "$source_sha" && "$(shasum -a 256 flake.lock | awk '{print $1}')" == "$lock_hash" ]] \
     || fail "Source or lock changed after preparation."
@@ -288,7 +284,7 @@ build() {
 
   manifest_file="$RUNNER_TEMP/paseo-nix-closure-manifest.json"
   jq -nS \
-    --arg sourceSha "$source_sha" --argjson releaseSequence "$release_sequence" \
+    --arg sourceSha "$source_sha" --arg forkVersion "$fork_version" \
     --arg lockHash "$lock_hash" --arg system aarch64-darwin --arg attr "$desktop_attr" \
     --arg packageVersion "$package_version" --arg buildVersion "$build_version" \
     --arg derivationPath "$derivation_path" --arg outputPath "$output_path" \
@@ -300,7 +296,7 @@ build() {
     --argjson seedSourceRevCount "$seed_source_rev_count" \
     --argjson seedRoots "$(printf '%s\n' "${seed_node_roots[@]}" | jq -R . | jq -s .)" \
     --argjson closure "$closure_json" \
-    '{schemaVersion: 1, sourceSha: $sourceSha, releaseSequence: $releaseSequence,
+    '{kind: "paseo-verification-candidate", schemaVersion: 2, platform: "macos-arm64", sourceSha: $sourceSha, forkVersion: $forkVersion,
       lockHash: $lockHash, system: $system, attr: $attr,
       packageVersion: $packageVersion, buildVersion: $buildVersion,
       derivationPath: $derivationPath, outputPath: $outputPath,
@@ -312,7 +308,7 @@ build() {
         keyId: "paseo-nix-seed-20261009-164633", signingKey: $seedSigningKey,
         roots: $seedRoots}, closure: $closure}' \
     > "$manifest_file"
-  manifest_path="$(nix store add --mode flat --name "paseo-nix-closure-manifest-$source_sha-$release_sequence.json" "$manifest_file")"
+  manifest_path="$(nix store add --mode flat --name "paseo-nix-closure-manifest-$source_sha-$fork_version.json" "$manifest_file")"
   jq --arg manifestPath "$manifest_path" --arg manifestFile "$manifest_file" \
     --argjson buildSeconds "$build_seconds" --arg bundleBuildVersion "$bundle_build_version" \
     '. + {manifestPath: $manifestPath, manifestFile: $manifestFile,
@@ -332,7 +328,7 @@ build() {
 }
 
 export_signed_closure() {
-  local source_sha release_sequence output_path manifest_path manifest_file package_version build_version
+  local source_sha fork_version output_path manifest_path manifest_file package_version build_version
   local key_file cache_dir artifact_dir archive_file asset_name artifact_name cache_file_bytes cache_file_count archive_bytes archive_sha256 manifest_sha256
   local export_started export_seconds archive_started archive_seconds store_free_kib temp_free_kib
 
@@ -340,20 +336,20 @@ export_signed_closure() {
   [[ "${NIX_RELEASE_PUBLIC_KEY:-}" == "$release_public_key" ]] || fail "The reviewed Nix release public key differs from its source pin."
   [[ -s "$state_file" ]] || fail "Built closure state is missing."
   source_sha="$(jq -er '.sourceSha' "$state_file")"
-  release_sequence="$(jq -er '.releaseSequence' "$state_file")"
+  fork_version="$(jq -er '.forkVersion' "$state_file")"
   output_path="$(jq -er '.outputPath' "$state_file")"
   manifest_path="$(jq -er '.manifestPath' "$state_file")"
   manifest_file="$(jq -er '.manifestFile' "$state_file")"
   package_version="$(jq -er '.packageVersion' "$state_file")"
   build_version="$(jq -er '.buildVersion' "$state_file")"
-  [[ "$source_sha" == "$SOURCE_SHA" && "$release_sequence" == "$RELEASE_SEQUENCE" ]] \
+  [[ "$source_sha" == "$SOURCE_SHA" && "$fork_version" == "$FORK_VERSION" ]] \
     || fail "Built closure state does not match the requested immutable identity."
   [[ "$(shasum -a 256 flake.lock | awk '{print $1}')" == "$(jq -er '.lockHash' "$state_file")" ]] \
     || fail "flake.lock changed before signing/export."
   [[ "$(nix store cat "$manifest_path" | shasum -a 256 | awk '{print $1}')" == "$(shasum -a 256 "$manifest_file" | awk '{print $1}')" ]] \
     || fail "Content-addressed manifest in the store differs from the build receipt."
 
-  artifact_name="paseo-nix-closure-$source_sha-$release_sequence-attempt-${GITHUB_RUN_ATTEMPT:?}"
+  artifact_name="paseo-nix-closure-$source_sha-$fork_version-attempt-${GITHUB_RUN_ATTEMPT:?}"
   asset_name="$artifact_name.tar"
   cache_dir="$RUNNER_TEMP/paseo-nix-release-cache"
   artifact_dir="$RUNNER_TEMP/paseo-nix-release-artifact"
@@ -390,6 +386,7 @@ export_signed_closure() {
   COPYFILE_DISABLE=1 tar -cf "$archive_file" -C "$cache_dir" .
   archive_seconds="$(( $(date +%s) - archive_started ))"
   archive_bytes="$(stat -f%z "$archive_file")"
+  [[ "$archive_bytes" -le 2147483648 ]] || fail "Verification archive exceeds the 2 GiB transfer bound."
   archive_sha256="$(shasum -a 256 "$archive_file" | awk '{print $1}')"
   manifest_sha256="$(shasum -a 256 "$artifact_dir/manifest.json" | awk '{print $1}')"
   (cd "$artifact_dir" && shasum -a 256 "$asset_name" manifest.json > SHA256SUMS)
@@ -402,7 +399,7 @@ export_signed_closure() {
   write_output manifest_sha256 "$manifest_sha256"
   {
     echo "### Signed Nix closure artifact"
-    echo "- Artifact: \`$artifact_name\`; source: \`$source_sha\`; release sequence: $release_sequence."
+    echo "- Artifact: \`$artifact_name\`; source: \`$source_sha\`; fork version: $fork_version."
     echo "- Binary cache: $cache_file_count regular files / $cache_file_bytes bytes; tar: $archive_bytes bytes."
     echo "- Export/signing: ${export_seconds}s; tar creation: ${archive_seconds}s."
     echo "- Free disk before export (store/temp): $store_free_kib / $temp_free_kib KiB."
@@ -412,14 +409,14 @@ export_signed_closure() {
 }
 
 verify_import() {
-  local source_sha release_sequence expected_manifest_sha expected_archive_sha expected_output expected_manifest expected_lock
+  local source_sha fork_version expected_manifest_sha expected_archive_sha expected_output expected_manifest expected_lock
   local package_version build_version artifact_name archive_name artifact_dir archive_file cache_dir
   local manifest_file store_root state_root destination_store archive_bytes extracted_bytes extracted_file_count
   local extraction_started extraction_seconds import_started import_seconds verify_started verify_seconds closure_json
 
   validate_identity
   source_sha="$SOURCE_SHA"
-  release_sequence="$RELEASE_SEQUENCE"
+  fork_version="$FORK_VERSION"
   expected_manifest_sha="${EXPECTED_MANIFEST_SHA256:?Expected manifest digest is required.}"
   expected_archive_sha="${EXPECTED_ARCHIVE_SHA256:?Expected archive digest is required.}"
   expected_output="${EXPECTED_OUTPUT_PATH:?Expected output path is required.}"
@@ -431,7 +428,7 @@ verify_import() {
     || fail "Producer supplied non-canonical Nix store paths."
   [[ "$(shasum -a 256 flake.lock | awk '{print $1}')" == "$expected_lock" ]] \
     || fail "Verifier flake.lock hash differs from producer output."
-  [[ "$artifact_name" == "paseo-nix-closure-$source_sha-$release_sequence-attempt-${GITHUB_RUN_ATTEMPT:?}" \
+  [[ "$artifact_name" == "paseo-nix-closure-$source_sha-$fork_version-attempt-${GITHUB_RUN_ATTEMPT:?}" \
     && "$archive_name" == "$artifact_name.tar" ]] || fail "Artifact name does not match the immutable build identity."
   [[ "${NIX_RELEASE_PUBLIC_KEY:-}" == "$release_public_key" ]] || fail "The reviewed Nix release public key differs from its source pin."
   check_free_disk /nix/store "$RUNNER_TEMP"
@@ -484,7 +481,7 @@ PY
   package_version="$(jq -er '.version' package.json)"
   build_version="$(jq -er '.version | capture("^(?<core>[0-9]+\\.[0-9]+\\.[0-9]+)").core' package.json)"
   jq -e \
-    --arg sourceSha "$source_sha" --arg releaseSequence "$release_sequence" \
+    --arg sourceSha "$source_sha" --arg forkVersion "$fork_version" \
     --arg lockHash "$expected_lock" --arg outputPath "$expected_output" \
     --arg packageVersion "$package_version" --arg buildVersion "$build_version" \
     --arg seedSourceSha "$seed_source_sha" --arg seedLockHash "$seed_lock_hash" \
@@ -493,8 +490,9 @@ PY
     --arg seedManifestSha256 "$seed_manifest_sha256" --arg seedKeyId "paseo-nix-seed-20261009-164633" \
     --arg seedSigningKey "$seed_public_key" --argjson seedSourceRevCount "$seed_source_rev_count" \
     --argjson seedRoots "$(printf '%s\n' "${seed_node_roots[@]}" | jq -R . | jq -s .)" \
-    '.schemaVersion == 1 and .sourceSha == $sourceSha
-      and (.releaseSequence | tostring) == $releaseSequence and .lockHash == $lockHash
+    '.kind == "paseo-verification-candidate" and .schemaVersion == 2
+      and .platform == "macos-arm64" and (has("releaseSequence") | not) and .sourceSha == $sourceSha
+      and (.forkVersion | tostring) == $forkVersion and .lockHash == $lockHash
       and .system == "aarch64-darwin" and .attr == ".#packages.aarch64-darwin.desktop"
       and .packageVersion == $packageVersion and .buildVersion == $buildVersion
       and .outputPath == $outputPath and .provenance == "local-ci-build"
@@ -536,7 +534,7 @@ PY
 
   {
     echo "### Fresh-runner Nix closure verification"
-    echo "- Source SHA: \`$source_sha\`; release sequence: $release_sequence; flake.lock SHA-256: \`$expected_lock\`."
+    echo "- Source SHA: \`$source_sha\`; fork version: $fork_version; flake.lock SHA-256: \`$expected_lock\`."
     echo "- Downloaded artifact manifest matched producer job SHA-256: \`$expected_manifest_sha\`."
     echo "- Imported exact output \`$expected_output\` into a separate rooted store with builders/substituters disabled."
     echo "- Extraction: ${extraction_seconds}s; import: ${import_seconds}s; signature and closure verification: ${verify_seconds}s."
