@@ -4,32 +4,34 @@
 
 - Baseline: `f48cc61be6457f2d90f3acb79551f4e1b27fe8a7`; sibling
   `paseo-github-workflows`, branch `ci/github-workflows`.
-- Reviewed implementation `4f278588e` is integrated on `dev`; PRs #1 and #2 merged
+- Reviewed implementation `72300136d` is integrated on `dev`; PRs #1–#3 merged
   by fast-forward after their final-source routine checks passed.
 - Authority: Phase A approved; phases B–D and personal-device/public-release
   operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
-- A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
+- Phase A / G0–G1 complete. Linux and Windows ARM64 native dependency
   probes and hosted Android ARM64 APK startup passed. The routine baseline is measured;
   the user requires an under-five-minute PR gate, with two minutes preferred. Reviewed probe code and semver contracts are published
   on the work branch. Routine CI has rejected a real PR failure and passed a full
   PR run and both same-SHA cold/warm dev runs. A controlled comparison found no
   net npm-cache gain; its removal passed final-source PR and dev verification.
-  Parallel optimization and live verification against that target are active.
+  Final PR/dev verification passed in 4m15s/4m18s; the two-minute stretch remains
+  unmet. Initial queue adds 3s to each. Required checks are preserved.
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence    | Depends on | Exit and owner                                               |
-| ----------------------------------------- | -------------------- | ---------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified  | none       | G0, author with user decisions                               |
-| A2: measured routine verification         | active / implemented | A1         | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | active / implemented | A2         | G1 including atomic publication failure fixtures, author     |
+| Goal                                      | Status / evidence   | Depends on | Exit and owner                                               |
+| ----------------------------------------- | ------------------- | ---------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified | none       | G0, author with user decisions                               |
+| A2: measured routine verification         | complete / verified | A1         | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | complete / verified | A2         | G1 including atomic publication failure fixtures, author     |
 
 Reviewer design agreement covers these three chunks. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
-A3's bounded implementation and fixture review proceeded while A2's hosted proof
-was pending; A3 closure still depends on A2's successful runs and accepted budget.
+A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase
+gate remains complete and uses its existing 45-minute whole-job bound. The user's
+under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
 
 ## Decisions and current boundary
 
@@ -132,7 +134,7 @@ versus 13m05s for the prior serial dev run including its aggregate; repeated
 install/build prerequisites account for much of that cost. The three server
 shards took 74/82/143s of test execution and app units took 139s. This is one
 observed under-five-minute result, with 21s headroom; two minutes remains unmet.
-The next trial removes desktop's unnecessary Electron binary installer and uses
+The final implementation removes desktop's unnecessary Electron binary installer and uses
 the app's own dependency build instead of compiling server/CLI there. The
 five-minute lane timeout bounds hangs. The required aggregate also reads the
 current attempt's job timestamps with read-only Actions permission and fails if
@@ -145,6 +147,22 @@ cumulative growth even below the ceiling, explicitly accounting for parallelism 
 required gates. Broad suites run on GitHub; targeted changed-file tests run locally.
 The actual Electron install/runtime and package journeys remain mandatory B/G3
 gates; the routine desktop lane only runs existing mocked/unit contracts.
+
+Final exact-source receipts at `72300136d`:
+
+| Run                                                             | Complete gate | Initial queue | Event to completion | Summed runner work |
+| --------------------------------------------------------------- | ------------: | ------------: | ------------------: | -----------------: |
+| [PR](https://github.com/iExalt/paseo/actions/runs/38093356616)  |         4m15s |            3s |               4m18s |             20m18s |
+| [Dev](https://github.com/iExalt/paseo/actions/runs/38093673761) |         4m18s |            3s |               4m21s |             20m37s |
+
+Both required aggregates passed their live timing check; these durations include
+the remaining job cleanup. Dev ran from 23:03:23–23:07:41 UTC
+(19:03:23–19:07:41 EDT). Compared with the prior serial 13m05s including aggregate,
+wall time fell about 67%, while summed runner work increased about 58% on dev.
+Standard free runners, two workers per unit suite across up to seven concurrent
+lanes, and zero new Actions cache or
+artifact writes preserve the cost boundary. Host variation affects comparisons;
+the original `63315404a` pair remains the baseline, not silently replaced here.
 
 The warm run was slower across unrelated build/test stages as well as installation;
 it does not establish that caching accelerates CI. The
@@ -196,13 +214,26 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Verify the revised semver contract and reconcile all three planning tiers.
 - [x] Reconcile bounded native probes and close G0; all selected architectures
       retain a feasible native route, with package proof assigned to G3.
-- [ ] Close A2 after parallel optimization and live proof of the under-five-minute
+- [x] Close A2 after parallel optimization and live proof of the under-five-minute
       PR gate; preserve required checks and account for total runner work.
-- [ ] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
+- [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-Routine latency optimization and verification remain for G1. Bot events,
-full-package and device proofs remain B/C/D as assigned in the roadmap.
+G1 is complete. Phase B remains unapproved: deep journeys and safe-PR routing,
+Mac/Android candidate preservation, Linux package matrix, then Windows package
+matrix. Preserve routine latency; deeper gates do not join ordinary PR blocking
+work. Bot events and installed-user migration remain C/D.
+
+Before B uploads, verify an actual free/no-overage path; retention alone is not
+proof. Same-job build/install/runtime proofs can proceed within B approval without
+uploads. Cross-job draft Release transport needs explicit B authority and immutable
+candidate/asset bounds. Retained UI screenshots/traces must have a verified free
+transport. Android deep closure depends on B2's rebuilt same-SHA APK, not the
+legacy feasibility APK. Missing signing access blocks dependent proofs only.
+Each initial native trial needs a job deadline and explicit matrix cells, followed
+by diagnosis before retries; no paid runners, personal devices or public releases
+are included by default. Windows proof includes STT/TTS and PTY lifecycle beyond
+A1's VAD smoke. Disposable upgrades must preserve meaningful state.
 
 ## Progress log
 
