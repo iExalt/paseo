@@ -77,7 +77,7 @@ test.describe("New workspace: launching a terminal", () => {
 
     await test.step("the workspace opens with a terminal tab, and the profile received the prompt", async () => {
       await expectWorkspaceOpensWithTerminalTab(page);
-      await expectTerminalOutputContains(page, "captured: deliberately wrong CI fixture");
+      await expectTerminalOutputContains(page, "captured: fix the flaky test");
     });
 
     await test.step("a profile without the sentinel is read-only and shows the resolved command", async () => {
