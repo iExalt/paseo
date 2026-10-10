@@ -56,11 +56,13 @@ deviation that changes later threads.
   upstream-sync regression proof.
 - **Human:** at approval authorize bounded probes and test workflow changes;
   before affected probes supply inaccessible billing/access evidence; initial
-  0.1.0 and clean-break manual migration are selected; after S2 accept numeric latency
-  ceiling. Pause only dependent work while these decisions wait.
+  0.1.0 and clean-break manual migration are selected. The user requires routine
+  PR CI under five minutes, with two minutes preferred, and authorizes aggressive
+  parallel optimization while preserving checks and accounting for runner work.
 - **Live:** standard free runners only after storage/no-overage checks. One
   representative attempt per unresolved native lane and one cold/warm routine
-  pair, then analyze. No release or production rebase publication.
+  pair, then analyze; reviewed optimization trials may validate the latency target.
+  No release or production rebase publication.
 - **Done when:** G0/G1 pass. Native feasibility blockers are resolved or brought
   back for explicit scope revision; they are not silently deferred into B.
 
