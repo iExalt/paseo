@@ -46,7 +46,9 @@ reliable layer, selected OS-specific contracts on native runners, and a small
 set of end-to-end journeys at release gates. Existing suite names do not establish
 their fidelity; audit tests that hide integration or network work in unit suites.
 
-Baseline: currently **unknown**, not zero. Step 2 records one cold and one warm
+Baseline: the measured `63315404a` cold/warm pair is recorded in
+[project status](GITHUB_WORKFLOWS_STATUS.md); acceptance of the proposed 15-minute
+ceiling remains pending. Step 2 records one cold and one warm
 required run with fixed runner label, tool versions, CPU/concurrency, dependency
 cache state, source revision, setup/build/test timings and total wall time. Derive
 a low-latency budget from those observations and seek user agreement before

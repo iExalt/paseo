@@ -292,9 +292,11 @@ Fail before upload if an asset exceeds the bound; an oversized required closure
 is a G3 blocker to resolve, not permission to omit it or invent an unverified
 split format. Drafts are transport, not private storage.
 
-Routine and untrusted PR evidence uses logs/job summaries, with npm download
-caches under the enforced 10 GB repository ceiling. PR code receives no release
-write token and cannot save a trusted cache. Actions artifact uploads stay
+Routine and untrusted PR evidence uses logs/job summaries. Phase A's controlled
+comparison found no net npm-cache benefit, so routine/rebase use isolated local
+download directories without Actions cache transfers. Existing packaging caches
+remain under the enforced 10 GB repository ceiling; future caches require measured
+net savings. PR code receives no release write token or trusted cache-save path. Actions artifact uploads stay
 disabled until free allowance and hard no-overage evidence are established;
 retention alone is insufficient. Deep screenshot/trace evidence must use a
 verified free path before its gate can pass.
