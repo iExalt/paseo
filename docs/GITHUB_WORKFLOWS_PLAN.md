@@ -359,6 +359,15 @@ now. Stop at the reassessment point and report a falsified assumption honestly.
 Draft releases are a publication boundary, not a secret-storage mechanism.
 Candidate artifacts must contain no credentials or private runtime state.
 
+S3 approval amendment, 2026-10-10: after the Windows installation timeout and
+missing ARM64 speech binding, the user authorized taking the time needed within
+free-tier runner limits. Preserve full platform scope and perform evidence-based
+native repairs on standard public runners; keep each trial bounded and reassess
+its result, rather than repeatedly extending a failed command. The focused
+Windows binding trial starts with a 30-minute cap; the Android shared-memory
+repair retains the 15-minute cap. Paid runners and local-device operations remain
+outside this authority. Later-phase approval boundaries remain unchanged.
+
 Initial fork version and clean-break migration are settled by the user. Measured
 latency ceiling and technical spike results remain open with these gates;
 implementation mechanics belong to the agent/reviewer. Credential access and any
