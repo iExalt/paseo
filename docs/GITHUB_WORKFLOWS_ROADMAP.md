@@ -122,8 +122,8 @@ explicitly required before publication, even if absent from routine CI.
 
 - [ ] **5. Preserve Mac/Android candidate packages.** Adapt existing reusable
       lanes to the candidate interface. Preserve keys, production identities,
-      monotonic codes, closure verification and fresh-store import. Remove ordinary
-      dev-push packaging only when the replacement coordinator is ready in step 9.
+      monotonic codes, closure verification and fresh-store import. Phase A's
+      approved amendment makes legacy packaging manual-only until step 9.
   - Needs: 1, 2; uses step 1 contract, not unimplemented step 7 behavior.
   - Proof: same-candidate closure and APK, independent digest/signature checks,
     clean import and actual shipped-ABI runtime/install evidence, plus disposable
@@ -173,8 +173,8 @@ explicitly required before publication, even if absent from routine CI.
       deep and package lanes to recognized merged release PRs; remove old redundant
       trigger. Await full matrix and metadata, bind all results to SHA/identity,
       handle retries/concurrency and prevent out-of-order feed regression.
-      Remove Phase A's temporary test-path exclusions and self-trigger workaround
-      when obsolete, no later than this coordinator replacement.
+      Replace Phase A's manual-only legacy trigger with candidate coordination;
+      the temporary test-path exclusions were removed during Phase A.
   - Needs: 3, 4, 5, 6, 7, 8.
   - Proof: exact SHA flows end-to-end; ordinary dev pushes never publish or run
     release packaging inadvertently; partial candidates cannot pass aggregate;

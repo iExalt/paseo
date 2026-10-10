@@ -147,9 +147,12 @@ package installation/import, and matrix completeness pass. Exercise failures,
 partial uploads, reruns, stale candidates, and concurrent candidates. Never
 overwrite an already published immutable release to repair a failed attempt.
 
-The existing `fork-builds.yml` currently builds on relevant ordinary `dev`
-pushes. The campaign must deliberately migrate that trigger to release-candidate
-packaging, preserving monotonic identity across workflow renames and reruns.
+Phase A's approved amendment makes legacy `fork-builds.yml` manual-only while
+routine CI is established. Ordinary `dev` pushes stop producing Mac/Android
+candidates during this interval; manual runs retain the trusted dev/actor guards.
+The temporary test-path exclusions are removed. Step 9 replaces this manual
+trigger with release-candidate coordination, preserving monotonic identity across
+workflow renames and reruns.
 Retain and audit upstream sync and manual rebase workflows; they must not bypass
 the new CI or cause recursive releases. Rebased history and release-please's
 last-release discovery need explicit regression/rehearsal cases.
