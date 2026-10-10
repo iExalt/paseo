@@ -330,9 +330,12 @@ state; installer success alone is insufficient.
       proof strategy are recorded. Remaining unsupported requirements are reported
       for a decision, not represented as green. Initial version is selected.
       Verified contracts and native run receipts: [A1 status](GITHUB_WORKFLOWS_STATUS.md).
-- [ ] **G1: Establish shared routine CI.** Gate: real PR/dev events and rebased
+- [x] **G1: Establish shared routine CI.** Gate: real PR/dev events and rebased
       candidate use one entrypoint; injected failure blocks rebase publication;
       measured command/baseline/budget are accepted, stable checks are visible.
+      Verified at `72300136d`: complete PR/dev gates 4m15s/4m18s; live timing
+      enforcement and atomic rebase fixtures pass. Two-minute stretch unmet;
+      runner-work tradeoff and receipts are in [status](GITHUB_WORKFLOWS_STATUS.md).
 - [ ] **G2: Verify critical journeys.** Gate: selected deep checks run on a safe
       test PR and are callable by exact SHA; G4 proves real release-please PR routing.
       Deterministic fixtures, assertions,
