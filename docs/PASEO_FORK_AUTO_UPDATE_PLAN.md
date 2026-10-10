@@ -1,7 +1,10 @@
 # Paseo fork automated builds and updates
 
-Status: paired canonical CI and authenticated release publication verified;
-actual Mac and Android installation, transfer, and recovery pending. Updated 2026-10-09.
+Status: paired canonical CI, authenticated release publication, and actual Mac/Android
+install, update, and recovery verified. Retained Mac reactivation is verified through
+the source CLI; packaged availability and the Mac managed-update About view remain
+unverified. The old Debug preference transfer is unavailable after uninstall.
+Updated 2026-10-10 UTC (October 9 EDT).
 
 ## Outcome and first deliverable
 
@@ -24,9 +27,9 @@ smallest useful evidence, choose a route, then authorize a bounded next item.
 | Topic                  | State and consequence                                                                                                                                                                                                                            |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Required targets       | Decided: macOS `aarch64-darwin` desktop and Android `arm64-v8a` APK. A macOS-only pipeline is incomplete.                                                                                                                                        |
-| Mac distribution       | Decided: Nix; no Apple Developer membership or signed/notarized Electron updater. Real macOS launch behavior still needs proof.                                                                                                                  |
+| Mac distribution       | Decided: Nix; no Apple Developer membership or signed/notarized Electron updater. Real managed Mac launch and offline binary rollback passed.                                                                                                    |
 | Hosting                | Decided: GitHub Releases; Wasabi is not needed for this route.                                                                                                                                                                                   |
-| Closure transport      | Decided: GitHub Release assets containing an archived signed file binary cache; canonical CI and fresh-store import passed. Actual user-store activation remains pending.                                                                        |
+| Closure transport      | Decided: GitHub Release assets containing an archived signed file binary cache; canonical CI, fresh-store import, and actual user-store activation passed without compilation.                                                                   |
 | Android key            | Decided: new ECDSA P-256 private key, unencrypted at the user's request, in private `iExalt/keychain` as `android-signing`; X.509 PEM certificate as `android-signing.pub`. Ed25519 is not supported for APK signing.                            |
 | Android migration      | Decided: separate `sh.paseo.iexalt` app with the new signer and fresh pairing. The user uninstalled Debug before transfer; its migration gate is unavailable without a retained backup. Verify the new fork's settings through future updates.   |
 | Release cadence        | Decided: automatic paired builds from `dev`, with explicit promotion of selected revisions. Promoted releases must bind immutable artifacts to one revision.                                                                                     |
@@ -782,7 +785,11 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Pass managed Mac B-to-C launch and offline binary rollback to usable B.
 - [x] Pass S24 B-to-C in-app higher-code recovery with installed-byte, theme, and permission preservation.
 - [x] Acknowledge the S24's live saved connection after C recovery without re-pairing.
-- [x] Pass actual-device CI artifact install/update/recovery gates, with visual/reactivation limitations below.
+- [x] Pass actual-device CI artifact install/update/recovery gates, with visual and packaged-reactivation limitations below.
+- [x] Implement and test explicit retained high-water reactivation with signed recovery and unchanged replay protection.
+- [x] Reactivate retained Mac C through the source CLI without restarting the running B app or daemon.
+- [ ] Verify the Mac in-app managed-update About rows and controls.
+- [ ] Deliver the reactivation command in a verified packaged release.
 
 The earlier preference-only migration design left drafts and attachments in
 Debug; the subsequent user uninstall made that device transfer unavailable.
@@ -953,12 +960,36 @@ C200007, no staged release, and no pending operation. Both native roots remain
 retained. This proves binary rollback and launch/state preservation; it does not
 claim data-schema rollback or the blocked About visual observation.
 
-Current Mac: usable B with latest C retained. The supported commands cannot
-reactivate that exact highest sequence after rollback: stage rejects sequences at
-or below high-water, and the prior stage is consumed. Use the retained C helper for
-status; avoid B's mutating updater commands and do not bypass mapping with a manual
-profile switch. Explicit reactivation needs a separately reviewed implementation;
-a future higher-sequence release can follow the ordinary stage/activate path.
+Current Mac: B200006 app and daemon remain running; the dedicated profile now
+selects retained C200007 at native generation 2, with B at generation 1 retained.
+Ordinary stage/activate still reject sequences at or below high-water. The reviewed
+source CLI now provides parameterless `reactivate-high-water`: it selects only the
+independently verified highest activated receipt, requires a lower signed active
+release and an exact distinct retained generation, and rejects staged competitors.
+Same-root metadata reactivation remains outside this narrow operation.
+It verifies the existing closure before selecting the profile; its existing journal
+binds signed source/target identities, native generations, and unchanged high-water
+for interrupted-operation recovery. It performs no download, build, or restart.
+
+At 01:41:34 UTC October 10 (9:41:34 PM EDT October 9),
+`mise exec -- node scripts/paseo-nix-update.mjs reactivate-high-water --json`
+selected C200007/generation 2. Both B/C mappings and high-water C200007 remained
+unchanged, and staged/pending records were absent. Running app PID 44671 and daemon
+PID 44745 retained their B executable paths and start times; `/api/health` passed.
+Nix reported restricted-client settings warnings, then verified the existing closure
+successfully under the configured daemon trust. Seventeen focused updater tests
+passed with one existing opt-in signature fixture skipped; scoped format/lint passed,
+and the required typecheck took 12.33 seconds against the retained 14.2-second baseline.
+No disruptive restart or data-schema rollback was attempted.
+
+This reactivation command is available in source only; the published B/C helpers
+and desktop controls do not include it. Use the retained C helper for status and
+supported rollback; avoid B's mutating updater commands and manual profile switches.
+A future verified packaged release is required to deliver the new command normally.
+Existing macOS accessibility and capture permissions now work. Native About showed
+0.11.0, but bounded navigation did not reach the in-app managed-update About screen;
+its running/active/staged rows and update controls remain visually unverified. All
+temporary UI captures were removed, and no additional permission or restart occurred.
 The packaged script is
 a derivation input; a sequence-only metadata change remains outside the derivation.
 Same-root metadata changes will not count as binary rollback proof. Android forward
@@ -984,7 +1015,8 @@ reconnection without re-pairing; saved rows or registered notification tokens al
 would not. Screen timeout 300000 ms, charging stay-awake 0, and the fork's
 install-source permission off were restored and read back after both phone tests.
 Temporary UI captures were removed; the visual observation is first-hand evidence,
-not a retained screenshot. Final device state is Mac B200006 and phone C200007.
+not a retained screenshot. Current device state is running Mac B200006 with selected
+profile C200007, and phone C200007.
 The old Debug transfer gate is unavailable after the confirmed uninstall.
 No lock/security setting was disabled during phone automation.
 Standalone closure probe runs are stopped.
