@@ -5,3 +5,5 @@
 - [ ] Interrupting/noninterrupting agent to agent messaging
 - [ ] Fix the schedule creation tool ignoring the **archive on finish** argument.
 - [ ] Support `$` to only bring up skills
+- [ ] Speed up dev rebase workflow, don't run checks in the workflow
+- [ ] Make sure both dev/upstream rebase workflows are safe (handle reruns, cancellation, parallelism 1, etc)
