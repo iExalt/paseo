@@ -8,8 +8,9 @@
   operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
-- A1 active; G0/G1 are not complete. No live feasibility run or routine baseline
-  has passed. Worktree changes are not yet published.
+- A1 active; G0/G1 are not complete. The Linux ARM64 dependency probe passed;
+  Windows and Android runtime feasibility remain pending. No routine baseline
+  exists. Reviewed probe code and semver contracts are published on the work branch.
 
 ## Outcome gates
 
@@ -19,8 +20,8 @@
 | A2: measured routine verification         | planned / designed | A1         | step 2 live events and accepted latency ceiling, author/user |
 | A3: exact rebased-tree verification       | planned / designed | A2         | G1 including atomic publication failure fixtures, author     |
 
-Reviewer design agreement covers these three chunks. No implementation acceptance
-or full gate verification is implied by that agreement.
+Reviewer design agreement covers these three chunks. The semver helper and bounded
+probe code passed review; native evidence remains open, so A1 is not accepted.
 
 ## Decisions and current boundary
 
@@ -33,11 +34,15 @@ or full gate verification is implied by that agreement.
 - Native Windows ARM64 is unresolved: locked `sherpa-onnx-node@1.13.8` lists
   Windows x64/ia32 native packages but no Windows ARM64 package. Linux ARM64
   is listed. Package presence is not a runtime proof.
-- Actual Android shipped-ABI execution remains unresolved. An x86 emulator
-  cannot establish ARM64 artifact correctness.
-- A2's dev-event proof needs a controlled integration route: existing dev
-  packaging also triggers on `mise.toml`. Preserve it until step 9; do not
-  accidentally start signing/artifact uploads as a routine-CI probe.
+- Actual Android shipped-ABI execution remains unresolved. The hosted ARM64
+  kernel lacks exposed KVM but enables modular Android Binder, with the matching
+  extra-modules package available. One bounded Redroid container trial is designed;
+  no local emulator or physical-device operation is authorized or running.
+- A2's controlled dev-event proof uses a discovered `.mise/tasks/ci/routine`
+  file task, avoiding `mise.toml`, which triggers existing packaging. Before
+  integration, prove the complete cumulative diff does not match the old packaging
+  filters, recheck remote movement, and inspect resulting events. Preserve the old
+  trigger until step 9; no temporary workflow disablement is needed.
 - Bot PR credentials are not proven. Existing repository secret names contain
   signing/configuration secrets but no dedicated release-please credential;
   never treat secret names as proof of usable material.
@@ -73,11 +78,11 @@ or reset the baseline to conceal growth.
 
 ## Next sequence and deferred gates
 
-1. Verify the revised semver contract and reconcile all three planning tiers.
-2. Run reviewer-approved bounded native probes after checking their no-write
-   cost boundary; return unsupported requirements for explicit resolution.
-3. Close G0, then establish A2's shared routine command and live baseline.
-4. Close A3 with exact-tested-tree, failed-check and branch-movement fixtures.
+- [x] Verify the revised semver contract and reconcile all three planning tiers.
+- [ ] Reconcile bounded native probes; return unsupported requirements for
+      explicit resolution. Linux dependency proof passed; Windows/Android pending.
+- [ ] Close G0, then establish A2's shared routine command and live baseline.
+- [ ] Close A3 with exact-tested-tree, failed-check and branch-movement fixtures.
 
 Remote event, full-package and device proofs remain B/C/D as assigned in the
 roadmap. Do not mark A1 complete while native feasibility is unresolved.
@@ -87,3 +92,11 @@ roadmap. Do not mark A1 complete while native feasibility is unresolved.
 - 2026-10-10: Phase A approved in a sibling worktree; reviewer agreed chunk
   boundaries. Read-only cache/release inspection established the cost snapshot.
   User superseded numeric sequence/legacy bridge with semver0.1.0/manual migration.
+- 2026-10-10: Published `510974a2` and `dd08d506` after review. The
+  [native trial](https://github.com/iExalt/paseo/actions/runs/38079931018)
+  passed real PTY output, recursive watcher events and sherpa native buffer calls
+  on `ubuntu-24.04-arm`/Node26.11.0; locked install took 50 seconds. Windows is
+  still installing dependencies. The
+  [Android prerequisite inventory](https://github.com/iExalt/paseo/actions/runs/38080289694)
+  established the Binder module route, not Android runtime correctness. Local
+  targeted checks and all-workspace typecheck passed; broad tests remain GitHub-only.
