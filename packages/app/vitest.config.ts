@@ -112,6 +112,9 @@ export default defineConfig({
           "react-native-worklets",
           "react-native-gesture-handler",
           "react-native-keyboard-controller",
+          // Keep Reanimated and its Worklets imports in Vite: both ship extensionless ESM.
+          "react-native-reanimated",
+          "react-native-worklets",
         ],
       },
     },
