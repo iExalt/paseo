@@ -1,8 +1,19 @@
-import { appendFile, lstat, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  appendFile,
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 
 const execFileAsync = promisify(execFile);
 const RESOLUTION_REF = "refs/heads/rebase-resolutions";
@@ -11,6 +22,9 @@ const UPSTREAM_REF = "refs/heads/upstream/main";
 const CACHE_PREFIX = "resolutions/";
 const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
+const SIGNING_EMAIL = "clliaw@nvidia.com";
+const SIGNING_PUBLIC_KEY =
+  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEScQeKzAdwWjNsrJ7xQNq2BAKGSkXP6FPbBD7PZrM9J";
 
 async function git(repositoryPath, args, options = {}) {
   try {
@@ -38,9 +52,9 @@ async function gitChecked(repositoryPath, args, options) {
   return result.stdout;
 }
 
-async function gitBlob(repositoryPath, oid) {
+async function gitObject(repositoryPath, type, oid) {
   try {
-    const result = await execFileAsync("git", ["cat-file", "blob", oid], {
+    const result = await execFileAsync("git", ["cat-file", type, oid], {
       cwd: repositoryPath,
       encoding: "buffer",
       env: { ...process.env, LC_ALL: "C" },
@@ -49,8 +63,12 @@ async function gitBlob(repositoryPath, oid) {
     return result.stdout;
   } catch (error) {
     const stderr = Buffer.isBuffer(error.stderr) ? error.stderr.toString("utf8") : error.stderr;
-    throw new Error(`git cat-file blob ${oid} failed: ${(stderr ?? error.message).trim()}`);
+    throw new Error(`git cat-file ${type} ${oid} failed: ${(stderr ?? error.message).trim()}`);
   }
+}
+
+async function gitBlob(repositoryPath, oid) {
+  return gitObject(repositoryPath, "blob", oid);
 }
 
 function parseLsRemote(text) {
@@ -230,6 +248,10 @@ async function continueKnownResolutions(repositoryPath, firstResult, maxContinua
       "-c",
       "rerere.autoupdate=true",
       "-c",
+      "user.name=Rebase staging",
+      "-c",
+      "user.email=rebase-staging@users.noreply.github.com",
+      "-c",
       "core.editor=true",
       "rebase",
       "--continue",
@@ -255,6 +277,241 @@ async function replayCommitCount(repositoryPath, upstreamSha, devSha) {
     throw new Error(`Git returned an unsafe replay commit count: ${output}`);
   }
   return count;
+}
+
+async function replayCommitIds(repositoryPath, upstreamSha, devSha) {
+  const range = `${upstreamSha}..${devSha}`;
+  const merges = (await gitChecked(repositoryPath, ["rev-list", "--merges", range])).trim();
+  if (merges)
+    throw new Error("Rebase signing supports linear dev history only; merge commits found");
+  const output = await gitChecked(repositoryPath, ["rev-list", "--reverse", range]);
+  return output.trim() ? output.trim().split("\n") : [];
+}
+
+function parseCommitObject(raw, sha) {
+  const separator = raw.indexOf(Buffer.from("\n\n"));
+  if (separator < 0) throw new Error(`Commit ${sha} has no header/message separator`);
+  const headerBytes = raw.subarray(0, separator);
+  let headerText;
+  try {
+    headerText = new TextDecoder("utf-8", { fatal: true }).decode(headerBytes);
+  } catch {
+    throw new Error(`Commit ${sha} has unsupported non-UTF-8 metadata`);
+  }
+  const headers = new Map();
+  let previous = "";
+  for (const line of headerText.split("\n")) {
+    if (line.startsWith(" ")) {
+      if (previous !== "gpgsig")
+        throw new Error(`Commit ${sha} has an unsupported continued header`);
+      continue;
+    }
+    const separatorIndex = line.indexOf(" ");
+    if (separatorIndex < 1) throw new Error(`Commit ${sha} has an invalid header`);
+    const name = line.slice(0, separatorIndex);
+    if (!["tree", "parent", "author", "committer", "encoding", "gpgsig"].includes(name)) {
+      throw new Error(`Commit ${sha} has an unsupported ${name} header`);
+    }
+    const value = line.slice(separatorIndex + 1);
+    const values = headers.get(name) ?? [];
+    values.push(value);
+    headers.set(name, values);
+    previous = name;
+  }
+  const one = (name, required = true) => {
+    const values = headers.get(name) ?? [];
+    if (values.length > 1 || (required && values.length !== 1)) {
+      throw new Error(`Commit ${sha} has an unsupported ${name} header count`);
+    }
+    return values[0];
+  };
+  const parents = headers.get("parent") ?? [];
+  if (parents.length !== 1) throw new Error(`Commit ${sha} is not a single-parent replay commit`);
+  const encoding = one("encoding", false);
+  if (encoding && !/^[A-Za-z0-9._-]+$/.test(encoding)) {
+    throw new Error(`Commit ${sha} has an unsupported encoding header`);
+  }
+  const author = one("author");
+  const committer = one("committer");
+  const parseIdentity = (field, value) => {
+    const match = /^(.*) <([^>]*)> (-?\d+ [+-]\d{4})$/.exec(value);
+    if (!match) throw new Error(`Commit ${sha} has an unsupported ${field} identity`);
+    return { line: `${field} ${value}`, name: match[1], email: match[2], date: match[3] };
+  };
+  return {
+    author: parseIdentity("author", author),
+    committer: parseIdentity("committer", committer),
+    encoding,
+    message: raw.subarray(separator + 2),
+  };
+}
+
+async function validateSigningKey(signingKey, publicKey) {
+  if (!signingKey) throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is required");
+  const trustedPublicKey = publicKey.trim().split(/\s+/).slice(0, 2).join(" ");
+  if (!/^ssh-ed25519 [A-Za-z0-9+/=]+$/.test(trustedPublicKey)) {
+    throw new Error("Configured rebase SSH public key is invalid");
+  }
+  const temporaryDirectory = await mkdtemp(
+    join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-rebase-key-check-"),
+  );
+  const privateKeyPath = join(temporaryDirectory, "signing-key");
+  try {
+    await writeFile(privateKeyPath, signingKey, { flag: "wx", mode: 0o600 });
+    await chmod(privateKeyPath, 0o600);
+    let derivedKey;
+    try {
+      derivedKey = await execFileAsync("ssh-keygen", ["-y", "-f", privateKeyPath], {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+        maxBuffer: 1024 * 1024,
+      });
+    } catch {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is not a readable SSH private key");
+    }
+    const derivedPublicKey = derivedKey.stdout.trim().split(/\s+/).slice(0, 2).join(" ");
+    if (derivedPublicKey !== trustedPublicKey) {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY does not match the trusted public key");
+    }
+    return trustedPublicKey;
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+async function signRebasedCommits(
+  repositoryPath,
+  upstreamSha,
+  originalCommits,
+  signingKey,
+  publicKey,
+) {
+  if (!signingKey) throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is required");
+  const trustedPublicKey = publicKey.trim().split(/\s+/).slice(0, 2).join(" ");
+  if (!/^ssh-ed25519 [A-Za-z0-9+/=]+$/.test(trustedPublicKey)) {
+    throw new Error("Configured rebase SSH public key is invalid");
+  }
+
+  const rebasedHead = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
+  const rebasedCommits = await replayCommitIds(repositoryPath, upstreamSha, rebasedHead);
+  if (originalCommits.length !== rebasedCommits.length) {
+    throw new Error(
+      `Replayed commit count changed (${originalCommits.length} original, ${rebasedCommits.length} rewritten)`,
+    );
+  }
+  const originals = [];
+  const rebased = [];
+  for (let index = 0; index < originalCommits.length; index += 1) {
+    const original = parseCommitObject(
+      await gitObject(repositoryPath, "commit", originalCommits[index]),
+      originalCommits[index],
+    );
+    const rewritten = parseCommitObject(
+      await gitObject(repositoryPath, "commit", rebasedCommits[index]),
+      rebasedCommits[index],
+    );
+    if (
+      original.author.line !== rewritten.author.line ||
+      !original.message.equals(rewritten.message)
+    ) {
+      throw new Error(
+        `Rebase changed the author or message while mapping ${originalCommits[index]}`,
+      );
+    }
+    if (original.committer.email !== SIGNING_EMAIL) {
+      throw new Error(
+        `Cannot sign replay from unrecognized committer email ${original.committer.email}`,
+      );
+    }
+    originals.push(original);
+    rebased.push(rebasedCommits[index]);
+  }
+
+  const temporaryDirectory = await mkdtemp(
+    join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-rebase-sign-"),
+  );
+  const privateKeyPath = join(temporaryDirectory, "signing-key");
+  const allowedSignersPath = join(temporaryDirectory, "allowed-signers");
+  const messagePath = join(temporaryDirectory, "commit-message");
+  try {
+    await writeFile(privateKeyPath, signingKey, { flag: "wx", mode: 0o600 });
+    await chmod(privateKeyPath, 0o600);
+    let derivedKey;
+    try {
+      derivedKey = await execFileAsync("ssh-keygen", ["-y", "-f", privateKeyPath], {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+        maxBuffer: 1024 * 1024,
+      });
+    } catch {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is not a readable SSH private key");
+    }
+    const derivedPublicKey = derivedKey.stdout.trim().split(/\s+/).slice(0, 2).join(" ");
+    if (derivedPublicKey !== trustedPublicKey) {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY does not match the trusted public key");
+    }
+    await writeFile(allowedSignersPath, `${SIGNING_EMAIL} ${trustedPublicKey}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    let parent = upstreamSha;
+    for (let index = 0; index < originals.length; index += 1) {
+      const original = originals[index];
+      const tree = (
+        await gitChecked(repositoryPath, ["rev-parse", `${rebased[index]}^{tree}`])
+      ).trim();
+      await writeFile(messagePath, original.message, { mode: 0o600 });
+      const args = ["-c", "gpg.format=ssh", "-c", `user.signingkey=${privateKeyPath}`];
+      if (original.encoding) args.push("-c", `i18n.commitEncoding=${original.encoding}`);
+      args.push("commit-tree", "-S", tree, "-p", parent, "-F", messagePath);
+      const commitEnvironment = {
+        ...process.env,
+        LC_ALL: "C",
+        GIT_AUTHOR_NAME: original.author.name,
+        GIT_AUTHOR_EMAIL: original.author.email,
+        GIT_AUTHOR_DATE: original.author.date,
+        GIT_COMMITTER_NAME: original.committer.name,
+        GIT_COMMITTER_EMAIL: original.committer.email,
+        GIT_COMMITTER_DATE: original.committer.date,
+      };
+      const signedSha = (await gitChecked(repositoryPath, args, { env: commitEnvironment })).trim();
+      const signed = parseCommitObject(
+        await gitObject(repositoryPath, "commit", signedSha),
+        signedSha,
+      );
+      if (
+        signed.author.line !== original.author.line ||
+        signed.committer.line !== original.committer.line ||
+        signed.encoding !== original.encoding ||
+        !signed.message.equals(original.message)
+      ) {
+        throw new Error(
+          `Signing changed preserved metadata or message for ${originalCommits[index]}`,
+        );
+      }
+      await gitChecked(repositoryPath, [
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        `gpg.ssh.allowedSignersFile=${allowedSignersPath}`,
+        "verify-commit",
+        signedSha,
+      ]);
+      parent = signedSha;
+    }
+    if (originals.length > 0) {
+      await gitChecked(repositoryPath, ["reset", "--hard", parent]);
+      const finalTree = (await gitChecked(repositoryPath, ["rev-parse", "HEAD^{tree}"])).trim();
+      const expectedTree = (
+        await gitChecked(repositoryPath, ["rev-parse", `${rebasedHead}^{tree}`])
+      ).trim();
+      if (finalTree !== expectedTree)
+        throw new Error("Signed commit chain changed the rebased tree");
+    }
+    return originals.length;
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
 }
 
 async function writeDiagnostics(path, snapshots, message, repositoryPath) {
@@ -382,14 +639,26 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
   return completed.length;
 }
 
-export async function rebaseDev({ repositoryPath, remote = "origin", diagnosticsPath } = {}) {
+export async function rebaseDev({
+  repositoryPath,
+  remote = "origin",
+  diagnosticsPath,
+  signingKey,
+  publicKey = SIGNING_PUBLIC_KEY,
+} = {}) {
   if (!repositoryPath) throw new Error("repositoryPath is required");
   let snapshots = {};
   try {
+    await validateSigningKey(signingKey, publicKey);
     const status = await gitChecked(repositoryPath, ["status", "--porcelain"]);
     if (status) throw new Error("Refusing to rebase a worktree with local changes");
     snapshots = await snapshotRefs(repositoryPath, remote);
     const maxContinuations = await replayCommitCount(
+      repositoryPath,
+      snapshots.upstream,
+      snapshots.dev,
+    );
+    const originalCommits = await replayCommitIds(
       repositoryPath,
       snapshots.upstream,
       snapshots.dev,
@@ -401,6 +670,10 @@ export async function rebaseDev({ repositoryPath, remote = "origin", diagnostics
       "rerere.enabled=true",
       "-c",
       "rerere.autoupdate=true",
+      "-c",
+      "user.name=Rebase staging",
+      "-c",
+      "user.email=rebase-staging@users.noreply.github.com",
       "rebase",
       "--merge",
       "--keep-empty",
@@ -411,13 +684,20 @@ export async function rebaseDev({ repositoryPath, remote = "origin", diagnostics
     if (rebaseResult.code !== 0) {
       await continueKnownResolutions(repositoryPath, rebaseResult, maxContinuations);
     }
+    const signedCommits = await signRebasedCommits(
+      repositoryPath,
+      snapshots.upstream,
+      originalCommits,
+      signingKey,
+      publicKey,
+    );
     await writeDiagnostics(
       diagnosticsPath,
       snapshots,
       "Rebase completed; this snapshot will aid diagnosis if a later validation or publication step fails.",
       repositoryPath,
     );
-    return snapshots;
+    return { ...snapshots, signedCommits };
   } catch (error) {
     await writeDiagnostics(diagnosticsPath, snapshots, error.message, repositoryPath);
     throw error;
@@ -487,9 +767,12 @@ async function main() {
     }
     return;
   }
+  const signingKey = process.env.PASEO_REBASE_SSH_SIGNING_KEY;
+  delete process.env.PASEO_REBASE_SSH_SIGNING_KEY;
   const snapshots = await rebaseDev({
     repositoryPath,
     diagnosticsPath: process.env.REBASE_DEV_DIAGNOSTICS,
+    signingKey,
   });
   const outputsPath = process.env.GITHUB_OUTPUT;
   if (outputsPath) {

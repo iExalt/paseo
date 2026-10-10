@@ -31,8 +31,7 @@ jobs:
         run: node .github/scripts/rebase-dev.mjs
         env:
           REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
-          GIT_COMMITTER_NAME: iExalt
-          GIT_COMMITTER_EMAIL: iExalt@users.noreply.github.com
+          PASEO_REBASE_SSH_SIGNING_KEY: ${{ secrets.PASEO_REBASE_SSH_SIGNING_KEY }}
 
       - name: Install dependencies
         run: node scripts/npm-retry.mjs ci
