@@ -14,10 +14,45 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  routine:
+  plan:
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 2
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          args=()
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            args+=(--changed-from "$PR_BASE_SHA")
+          fi
+          matrix="$(node .github/scripts/ci-routine.mjs --matrix "${args[@]}")"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  routine:
+    name: routine (${{ matrix.lane }})
+    needs: plan
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private
+    runs-on: ubuntu-24.04
+    # Temporary hang bound while measuring the under-five-minute end-to-end target.
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      max-parallel: 7
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       CI: "true"
       LEFTHOOK: "0"
@@ -45,21 +80,23 @@ jobs:
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          ROUTINE_LANE: ${{ matrix.lane }}
         run: |
           if [[ "$EVENT_NAME" == pull_request ]]; then
-            mise run --skip-tools ci:routine --changed-from "$PR_BASE_SHA"
+            mise run --skip-tools ci:routine --lane "$ROUTINE_LANE" --changed-from "$PR_BASE_SHA"
           else
-            mise run --skip-tools ci:routine
+            mise run --skip-tools ci:routine --lane "$ROUTINE_LANE"
           fi
 
   required:
     name: Routine CI required
     if: always()
-    needs: routine
+    needs: [plan, routine]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
       - name: Require complete routine success
         env:
           RESULT: ${{ needs.routine.result }}
-        run: test "$RESULT" = success
+          PLAN_RESULT: ${{ needs.plan.result }}
+        run: test "$PLAN_RESULT" = success && test "$RESULT" = success
