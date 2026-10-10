@@ -7,8 +7,8 @@ on:
         description: Immutable commit SHA to build.
         required: true
         type: string
-      release_sequence:
-        description: Canonical positive integer identifying this release attempt.
+      fork_version:
+        description: Canonical semver matching the immutable source package.
         required: true
         type: string
     secrets:
@@ -19,9 +19,9 @@ on:
       source_sha:
         description: Immutable source SHA verified by the producer and consumer.
         value: ${{ jobs.build-and-export.outputs.source_sha }}
-      release_sequence:
-        description: Canonical release sequence verified by the producer and consumer.
-        value: ${{ jobs.build-and-export.outputs.release_sequence }}
+      fork_version:
+        description: Canonical fork version verified by the producer and consumer.
+        value: ${{ jobs.build-and-export.outputs.fork_version }}
       lock_hash:
         description: SHA-256 of the source flake.lock.
         value: ${{ jobs.build-and-export.outputs.lock_hash }}
@@ -55,7 +55,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: macos-nix-closure-${{ inputs.source_sha }}-${{ inputs.release_sequence }}
+  group: macos-nix-closure-${{ inputs.source_sha }}-${{ inputs.fork_version }}
   cancel-in-progress: false
 
 jobs:
@@ -69,7 +69,7 @@ jobs:
       actions: read
     outputs:
       source_sha: ${{ steps.prepare.outputs.source_sha }}
-      release_sequence: ${{ steps.prepare.outputs.release_sequence }}
+      fork_version: ${{ steps.prepare.outputs.fork_version }}
       lock_hash: ${{ steps.prepare.outputs.lock_hash }}
       output_path: ${{ steps.prepare.outputs.output_path }}
       manifest_path: ${{ steps.build.outputs.manifest_path }}
@@ -101,7 +101,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
-          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          FORK_VERSION: ${{ inputs.fork_version }}
         run: bash .github/scripts/nix-release-closure.sh prepare
 
       - name: Build the macOS desktop output
@@ -109,7 +109,7 @@ jobs:
         timeout-minutes: 60
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          FORK_VERSION: ${{ inputs.fork_version }}
         run: bash .github/scripts/nix-release-closure.sh build
 
       - name: Sign and export the closure
@@ -117,7 +117,7 @@ jobs:
         timeout-minutes: 10
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          FORK_VERSION: ${{ inputs.fork_version }}
           NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
           NIX_RELEASE_PUBLIC_KEY: paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8=
         run: bash .github/scripts/nix-release-closure.sh export-signed-closure
@@ -133,7 +133,7 @@ jobs:
           name: ${{ steps.export.outputs.artifact_name }}
           path: ${{ runner.temp }}/paseo-nix-release-artifact/*
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 1
           compression-level: 0
 
   verify-import:
@@ -169,9 +169,9 @@ jobs:
         id: verify
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
-          RELEASE_SEQUENCE: ${{ inputs.release_sequence }}
+          FORK_VERSION: ${{ inputs.fork_version }}
           EXPECTED_SOURCE_SHA: ${{ needs.build-and-export.outputs.source_sha }}
-          EXPECTED_RELEASE_SEQUENCE: ${{ needs.build-and-export.outputs.release_sequence }}
+          EXPECTED_FORK_VERSION: ${{ needs.build-and-export.outputs.fork_version }}
           EXPECTED_LOCK_HASH: ${{ needs.build-and-export.outputs.lock_hash }}
           EXPECTED_OUTPUT_PATH: ${{ needs.build-and-export.outputs.output_path }}
           EXPECTED_MANIFEST_PATH: ${{ needs.build-and-export.outputs.manifest_path }}
@@ -187,6 +187,6 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$EXPECTED_SOURCE_SHA" == "$SOURCE_SHA" ]] || { echo "::error::Producer source SHA differs from the requested source."; exit 1; }
-          [[ "$EXPECTED_RELEASE_SEQUENCE" == "$RELEASE_SEQUENCE" ]] || { echo "::error::Producer release sequence differs from the requested sequence."; exit 1; }
+          [[ "$EXPECTED_FORK_VERSION" == "$FORK_VERSION" ]] || { echo "::error::Producer fork version differs from the requested fork version."; exit 1; }
           bash .github/scripts/nix-release-closure.sh verify-import
           echo "verified=true" >> "$GITHUB_OUTPUT"
