@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../../", import.meta.url));
 export const coreTests = [
+  "scripts/ci-deep.test.mjs",
   "scripts/ci-workflow.test.mjs",
   "scripts/ci-routine.test.mjs",
   "scripts/sync-upstream-workflow.test.mjs",
