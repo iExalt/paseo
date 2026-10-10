@@ -1,11 +1,11 @@
-# Pull-request checks are routed by the behavior they prove. Package consumers
-# do not inherit their dependencies' test suites; main and manual runs execute
-# every contract regardless of these paths.
+# Pull-request checks route by ownership and expand to dependent consumers.
+# Dev pushes and rebased candidates execute every routine contract.
 routing:
   - ".github/ci-paths.yml"
 
 workspace:
-  - ".mise.toml"
+  - "mise.toml"
+  - ".mise/tasks/**"
   - ".tool-versions"
   - "package.json"
   - "package-lock.json"
@@ -17,6 +17,7 @@ workspace:
 
 ci:
   - ".github/actions/**"
+  - ".github/scripts/**"
   - ".github/workflows/ci.yml"
 
 format:

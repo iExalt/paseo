@@ -24,6 +24,7 @@ test("only fork-owned workflows are installed", () => {
     .sort();
   assert.deepEqual(workflows, [
     "android-arm64-feasibility.yml",
+    "ci.yml",
     "fork-android-apk.yml",
     "fork-builds.yml",
     "macos-closure.yml",
@@ -102,7 +103,8 @@ test("PR routing declares stable behavior ownership", () => {
   assert.deepEqual(filters, {
     routing: [".github/ci-paths.yml"],
     workspace: [
-      ".mise.toml",
+      "mise.toml",
+      ".mise/tasks/**",
       ".tool-versions",
       "package.json",
       "package-lock.json",
@@ -112,7 +114,7 @@ test("PR routing declares stable behavior ownership", () => {
       "tsconfig.base.json",
       "vitest.config.ts",
     ],
-    ci: [".github/actions/**", ".github/workflows/ci.yml"],
+    ci: [".github/actions/**", ".github/scripts/**", ".github/workflows/ci.yml"],
     format: [
       ".agents/**/*.{cjs,css,html,js,json,jsonc,jsx,md,mjs,ts,tsx,yaml,yml}",
       ".github/**/*.{cjs,css,html,js,json,jsonc,jsx,md,mjs,ts,tsx,yaml,yml}",
