@@ -169,6 +169,8 @@ explicitly required before publication, even if absent from routine CI.
       deep and package lanes to recognized merged release PRs; remove old redundant
       trigger. Await full matrix and metadata, bind all results to SHA/identity,
       handle retries/concurrency and prevent out-of-order feed regression.
+      Remove Phase A's temporary test-path exclusions and self-trigger workaround
+      when obsolete, no later than this coordinator replacement.
   - Needs: 3, 4, 5, 6, 7, 8.
   - Proof: exact SHA flows end-to-end; ordinary dev pushes never publish or run
     release packaging inadvertently; partial candidates cannot pass aggregate;

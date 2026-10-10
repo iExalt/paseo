@@ -50,8 +50,11 @@ interface decisions only; it does not establish package or release correctness.
   file task, avoiding `mise.toml`, which triggers existing packaging. Before
   integration, prove the complete cumulative diff does not match the old packaging
   filters, recheck remote movement, and inspect resulting events. Necessary client
-  and relay test repairs now match those filters. A narrow trigger amendment is awaiting
-  user approval; dev integration is pending that decision. No workflow is disabled.
+  and relay test repairs match those filters. The user approved temporary exact
+  exclusions for those two files and removal of the coordinator's self-trigger;
+  remove these workarounds when obsolete, no later than step 9. Any additional
+  packaging-sensitive baseline repairs need a consolidated integration amendment.
+  No workflow is disabled, and production paths retain their packaging triggers.
 - Bot PR credentials are not proven. Existing repository secret names contain
   signing/configuration secrets but no dedicated release-please credential;
   never treat secret names as proof of usable material. The selected App-token
