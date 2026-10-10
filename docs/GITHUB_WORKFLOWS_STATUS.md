@@ -125,12 +125,26 @@ The first trial uses seven parallel lanes: quality/types, other workspaces, app,
 three native Vitest server shards, and selected integrations. JSON routing needs
 no dependency installation and omits irrelevant lanes. Each selected lane retains
 the same checks and two unit workers, with fresh installation/build prerequisites.
-Measure summed runner time to expose that duplication. The temporary ten-minute
-lane timeout is a hang bound, not acceptance of slower CI. Default shared rebase
+The first full parallel PR trial at `69bb39f97`
+([run](https://github.com/iExalt/paseo/actions/runs/38092757078)) passed in **4m39s**
+from planner start to aggregate completion. Summed runner work was **23m04s**,
+versus 13m05s for the prior serial dev run including its aggregate; repeated
+install/build prerequisites account for much of that cost. The three server
+shards took 74/82/143s of test execution and app units took 139s. This is one
+observed under-five-minute result, with 21s headroom; two minutes remains unmet.
+The next trial removes desktop's unnecessary Electron binary installer and uses
+the app's own dependency build instead of compiling server/CLI there. The
+five-minute lane timeout bounds hangs. The required aggregate also reads the
+current attempt's job timestamps with read-only Actions permission and fails if
+elapsed time reaches 300s or timing evidence cannot be retrieved; final job
+cleanup follows that check and its completed duration is recorded separately.
+Default shared rebase
 execution remains complete; no fifteen-minute deadline was accepted or applied.
 Keep this source and pair as the comparison anchor; investigate material or
 cumulative growth even below the ceiling, explicitly accounting for parallelism without weakening
 required gates. Broad suites run on GitHub; targeted changed-file tests run locally.
+The actual Electron install/runtime and package journeys remain mandatory B/G3
+gates; the routine desktop lane only runs existing mocked/unit contracts.
 
 The warm run was slower across unrelated build/test stages as well as installation;
 it does not establish that caching accelerates CI. The
