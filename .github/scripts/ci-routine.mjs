@@ -107,6 +107,14 @@ export function planCommands(selection, cwd = root) {
     if (files.length)
       npm("format", "format:check:files", ["--", ...files.map((file) => `./${file}`)]);
   }
+  add("workflow expressions", "mise", [
+    "exec",
+    "actionlint@1.7.12",
+    "--",
+    "actionlint",
+    "-shellcheck=",
+    "-pyflakes=",
+  ]);
   add("workflow and helper contracts", process.execPath, [
     "--test",
     "--test-concurrency=2",
