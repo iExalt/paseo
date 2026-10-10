@@ -1,0 +1,65 @@
+name: Rebase dev onto upstream mirror
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rebase-dev
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "26"
+          cache: npm
+
+      - name: Rebase captured dev on captured upstream and import known resolutions
+        id: rebase
+        run: node .github/scripts/rebase-dev.mjs
+        env:
+          REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+          GIT_COMMITTER_NAME: iExalt
+          GIT_COMMITTER_EMAIL: iExalt@users.noreply.github.com
+
+      - name: Install dependencies
+        run: node scripts/npm-retry.mjs ci
+
+      - name: Verify rebase workflow and Git resolution behavior
+        run: node --test .github/scripts/rebase-dev.test.mjs scripts/sync-upstream-workflow.test.mjs
+
+      - name: Typecheck all packages
+        run: npm run typecheck
+
+      - name: Run protocol tests
+        run: npm run test --workspace=@getpaseo/protocol
+
+      - name: Publish backup and rebased dev atomically
+        run: node .github/scripts/rebase-dev.mjs publish
+        env:
+          DEV_SHA: ${{ steps.rebase.outputs.dev-sha }}
+          UPSTREAM_SHA: ${{ steps.rebase.outputs.upstream-sha }}
+          RESOLUTIONS_SHA: ${{ steps.rebase.outputs.resolutions-sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+
+      - name: Upload rebase diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: rebase-dev-diagnostics
+          path: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+          if-no-files-found: ignore
