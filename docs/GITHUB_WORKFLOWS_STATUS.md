@@ -12,11 +12,11 @@
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
 - A1 / G0 complete; G1 remains open. Linux and Windows ARM64 native dependency
   probes and hosted Android ARM64 APK startup passed. The routine baseline is measured;
-  ceiling acceptance remains pending. Reviewed probe code and semver contracts are published
+  the user requires an under-five-minute PR gate, with two minutes preferred. Reviewed probe code and semver contracts are published
   on the work branch. Routine CI has rejected a real PR failure and passed a full
   PR run and both same-SHA cold/warm dev runs. A controlled comparison found no
   net npm-cache gain; its removal passed final-source PR and dev verification.
-  Acceptance of the proposed runtime ceiling remains outstanding.
+  Parallel optimization and live verification against that target are active.
 
 ## Outcome gates
 
@@ -117,13 +117,19 @@ cache speed comparison.
 | App units              |            91.63s |                           149.01s |
 | Cache save             |             5.70s | skipped: exact key already exists |
 
-The proposed full routine-job ceiling is **15 minutes**, pending user acceptance.
-This includes checkout/tools/cache/install, excludes queue time and the separate
-aggregate. Rebase validation would have its own 15-minute command deadline within
-the existing 45-minute whole-rebase job; its preparation is outside that command
-deadline. Until accepted, existing workflow deadlines remain unchanged.
+The user rejected the proposed 15-minute ceiling and requires the complete PR
+gate in **under five minutes**, with **two minutes preferred**. Measure from the
+first job start through the required aggregate, including planning, installations
+and all dependent scheduling gaps; report event-to-start queue time separately.
+The first trial uses seven parallel lanes: quality/types, other workspaces, app,
+three native Vitest server shards, and selected integrations. JSON routing needs
+no dependency installation and omits irrelevant lanes. Each selected lane retains
+the same checks and two unit workers, with fresh installation/build prerequisites.
+Measure summed runner time to expose that duplication. The temporary ten-minute
+lane timeout is a hang bound, not acceptance of slower CI. Default shared rebase
+execution remains complete; no fifteen-minute deadline was accepted or applied.
 Keep this source and pair as the comparison anchor; investigate material or
-cumulative growth even below the ceiling, without adding workers or weakening
+cumulative growth even below the ceiling, explicitly accounting for parallelism without weakening
 required gates. Broad suites run on GitHub; targeted changed-file tests run locally.
 
 The warm run was slower across unrelated build/test stages as well as installation;
@@ -176,12 +182,12 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Verify the revised semver contract and reconcile all three planning tiers.
 - [x] Reconcile bounded native probes and close G0; all selected architectures
       retain a feasible native route, with package proof assigned to G3.
-- [ ] Close A2 after user acceptance and enforcement of the numeric runtime ceiling;
-      shared command, real failure/success events and baseline are verified.
+- [ ] Close A2 after parallel optimization and live proof of the under-five-minute
+      PR gate; preserve required checks and account for total runner work.
 - [ ] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-Only the runtime-ceiling decision and its enforcement remain for G1. Bot events,
+Routine latency optimization and verification remain for G1. Bot events,
 full-package and device proofs remain B/C/D as assigned in the roadmap.
 
 ## Progress log
