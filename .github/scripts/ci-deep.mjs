@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { verifyDeepCleanup } from "./deep-cleanup.mjs";
 
 export const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -20,6 +22,71 @@ export function validateDeepSource(sha, cwd = root, env = process.env) {
 }
 
 export function deepCommands(lane) {
+  if (lane === "integration") {
+    return [
+      ["npm", ["run", "build:server"]],
+      [
+        "npm",
+        [
+          "exec",
+          "--",
+          "vitest",
+          "run",
+          "packages/cli/src/commands/daemon/lifecycle.e2e.test.ts",
+          "--maxWorkers=1",
+        ],
+      ],
+      [
+        "env",
+        [
+          "FORCE_RELAY_E2E=1",
+          "npm",
+          "exec",
+          "--",
+          "vitest",
+          "run",
+          "packages/relay/src/e2e.test.ts",
+          "--maxWorkers=1",
+        ],
+      ],
+      ["npm", ["ci", "--prefix", ".github/deep-providers", "--no-audit", "--no-fund"]],
+      ["node", [".github/scripts/check-provider-versions.mjs"]],
+    ];
+  }
+  if (lane === "electron") {
+    return [
+      ["npm", ["run", "build:server"]],
+      ["npm", ["run", "build:main", "--workspace=@getpaseo/desktop"]],
+      ["npm", ["exec", "--workspace=@getpaseo/desktop", "--", "install-electron"]],
+      ["sudo", ["apt-get", "update", "-qq"]],
+      [
+        "sudo",
+        [
+          "apt-get",
+          "install",
+          "-y",
+          "xvfb",
+          "xdotool",
+          "libnss3",
+          "libatk-bridge2.0-0",
+          "libcups2",
+          "libgbm1",
+          "libasound2t64",
+        ],
+      ],
+      [
+        "env",
+        [
+          "PASEO_DESKTOP_LIFECYCLE_ARTIFACT_DIR=" +
+            resolve(root, ".dev/github-workflows/deep/electron"),
+          "xvfb-run",
+          "-a",
+          "node",
+          "packages/desktop/e2e/daemon-lifecycle.e2e.mjs",
+        ],
+      ],
+    ];
+  }
   assert.equal(lane, "browser", "Unknown deep lane");
   return [
     ["npm", ["run", "build:server"]],
@@ -51,8 +118,18 @@ export function deepCommands(lane) {
 
 export function runDeep(commands, run = spawnSync) {
   for (const [command, args] of commands) {
+    const owner = randomUUID();
     const started = performance.now();
-    const result = run(command, args, { cwd: root, stdio: "inherit", env: process.env });
+    let result;
+    try {
+      result = run(command, args, {
+        cwd: root,
+        stdio: "inherit",
+        env: { ...process.env, CI_DEEP_OWNER: owner },
+      });
+    } finally {
+      verifyDeepCleanup(owner);
+    }
     console.log(
       `[deep] ${command} ${args.join(" ")}: ${((performance.now() - started) / 1000).toFixed(2)}s`,
     );
@@ -65,7 +142,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const [lane, sha, option] = process.argv.slice(2);
   assert.ok(
     process.argv.length <= 5 && (!option || option === "--plan"),
-    "Usage: ci-deep.mjs browser SHA [--plan]",
+    "Usage: ci-deep.mjs browser|integration|electron SHA [--plan]",
   );
   validateDeepSource(sha);
   const commands = deepCommands(lane);

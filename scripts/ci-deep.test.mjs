@@ -1,11 +1,34 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { load } from "js-yaml";
 import { deepCommands, runDeep, validateDeepSource } from "../.github/scripts/ci-deep.mjs";
+import { ownedProcesses, verifyDeepCleanup } from "../.github/scripts/deep-cleanup.mjs";
+
+test(
+  "cleanup detects a marked child and clears after its owned fixture exits",
+  { skip: process.platform !== "linux" },
+  async () => {
+    const owner = randomUUID();
+    const child = spawn("sleep", ["30"], { env: { ...process.env, CI_DEEP_OWNER: owner } });
+    try {
+      await once(child, "spawn");
+      assert.ok(ownedProcesses(owner).includes(child.pid));
+      assert.deepEqual(ownedProcesses(randomUUID()), []);
+      assert.throws(() => verifyDeepCleanup(owner, 0), /leaked marked processes/);
+    } finally {
+      const exited = once(child, "exit");
+      child.kill("SIGTERM");
+      await exited;
+    }
+    verifyDeepCleanup(owner, 0);
+  },
+);
 
 test("deep configuration cannot inherit paid-provider or deployment projects", () => {
   execFileSync(

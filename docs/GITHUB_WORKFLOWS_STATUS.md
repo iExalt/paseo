@@ -277,6 +277,32 @@ Approved execution checklist:
       using existing receipts and required runs; preserve the routine baseline,
       account for parallel runner work, and retain unmeasured future gates.
 
+B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
+at `58a934af2` passed in 2m46s, including installation and evidence upload. One
+worker runs one existing terminal-launch journey without retries: both prompt and
+bare profiles execute real shell commands through the UI and daemon. Build took
+11.52s, Chromium provisioning 22.46s and the journey/harness 68.87s. Author and
+reviewer inspected the successful screenshot; the trace is retained and readable.
+A React development-warning overlay is visible, so this is not a claim of
+visually warning-free output. Daemon and Metro shutdown are logged. The
+[negative trial](https://github.com/iExalt/paseo/actions/runs/38095078682) at
+`c6d6b2f54` failed at the deliberately wrong output assertion; its screenshot
+shows the correct `captured: fix the flaky test` output, and cleanup is logged.
+The wrong expectation is restored for the next trial; restored positive proof
+remains pending. Routine CI passed independently on that negative-trial SHA.
+
+The next reviewed trial adds sequential CLI lifecycle, forced local relay E2EE
+and three pinned provider `--version` contracts in one lane, plus real Electron
+daemon-manager/renderer IPC under Xvfb in another. Provider dependencies have an
+isolated integrity lock; no live model prompt is used. Each initial lane is bounded
+to 15 minutes, one attempt before diagnosis, with at most 25 MiB/one-day retention
+per UI lane. A unique command marker checks Linux same-UID process cleanup within
+five seconds; this does not prove cleanup of children that deliberately strip
+their environment or unrelated root package-manager helpers. Existing harness
+shutdown receipts remain required. This Electron harness is not packaged-app
+startup proof; that remains G3. G2 remains open until all deep gates including B2's
+rebuilt Android journey pass.
+
 Before B uploads, verify an actual free/no-overage path; retention alone is not
 proof. Same-job build/install/runtime proofs can proceed within B approval without
 uploads. Cross-job draft Release transport needs explicit B authority and immutable
