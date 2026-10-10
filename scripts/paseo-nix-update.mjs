@@ -641,6 +641,113 @@ export function selectMappedGeneration(state, generation, outputPath) {
   return mapping;
 }
 
+export function selectHighWaterReactivationTarget(state, current, retainedGenerations, receipt) {
+  const identity = state.highWaterIdentity;
+  const sequence = state.highWaterSequence;
+  const manifest = receipt?.manifest;
+  if (
+    !identity ||
+    !manifest ||
+    manifestIdentity(manifest) !== identity ||
+    manifest.releaseSequence !== sequence
+  ) {
+    fail("The highest activated release does not match its signed receipt.");
+  }
+  if (!current?.receipt || !Number.isSafeInteger(current.generation)) {
+    fail("There is no verified active managed generation to reactivate from.");
+  }
+  const currentIdentity = manifestIdentity(current.receipt.manifest);
+  const currentSequence = current.receipt.manifest.releaseSequence;
+  const outputPath = manifest.macOS.outputPath;
+  if (currentIdentity === identity && current.outputPath === outputPath) {
+    return null;
+  }
+  if (currentSequence >= sequence) {
+    fail("The active release is not below the highest activated sequence.");
+  }
+  if (current.outputPath === outputPath) {
+    fail(
+      "The highest activated release shares the active Nix output; binary reactivation is not applicable.",
+    );
+  }
+
+  const currentMapping = selectMappedGeneration(state, current.generation, current.outputPath);
+  if (currentMapping.identities.at(-1) !== currentIdentity) {
+    fail("The active generation does not match its latest signed release mapping.");
+  }
+  const targetMappings = state.generations.filter((entry) => entry.identities.at(-1) === identity);
+  if (targetMappings.length !== 1) {
+    fail("The highest activated release has a missing or ambiguous retained generation mapping.");
+  }
+  const target = targetMappings[0];
+  if (
+    target.outputPath !== outputPath ||
+    target.generation === current.generation ||
+    retainedGenerations.filter(
+      (entry) =>
+        entry.generation === target.generation && entry.outputPath === outputPath && !entry.current,
+    ).length !== 1
+  ) {
+    fail("The highest activated release does not have its exact retained Nix generation.");
+  }
+  return {
+    generation: target.generation,
+    identity,
+    outputPath,
+    sequence,
+  };
+}
+
+export function assertNativeReactivationState(state, pending, manifest) {
+  const targetIdentity = pending.targetIdentity;
+  if (
+    pending.kind !== "native-reactivate" ||
+    pending.highWaterIdentity !== targetIdentity ||
+    pending.highWaterSequence !== manifest.releaseSequence ||
+    state.highWaterIdentity !== pending.highWaterIdentity ||
+    state.highWaterSequence !== pending.highWaterSequence ||
+    manifestIdentity(manifest) !== targetIdentity ||
+    manifest.macOS.outputPath !== pending.targetOutputPath ||
+    pending.fromGeneration === pending.targetGeneration ||
+    pending.fromOutputPath === pending.targetOutputPath
+  ) {
+    fail("Reactivation intent differs from the unchanged signed high-water mark.");
+  }
+  const from = state.generations.find((entry) => entry.generation === pending.fromGeneration);
+  const target = state.generations.find((entry) => entry.generation === pending.targetGeneration);
+  const targetMappings = state.generations.filter(
+    (entry) => entry.identities.at(-1) === targetIdentity,
+  );
+  if (
+    !from ||
+    from.outputPath !== pending.fromOutputPath ||
+    from.identities.at(-1) !== pending.fromIdentity ||
+    !target ||
+    target.outputPath !== pending.targetOutputPath ||
+    target.identities.at(-1) !== targetIdentity ||
+    targetMappings.length !== 1
+  ) {
+    fail("Reactivation intent does not match the retained signed generation mapping.");
+  }
+}
+
+export function assertNativeReactivationReceipts(pending, fromReceipt, targetReceipt) {
+  const from = fromReceipt?.manifest;
+  const target = targetReceipt?.manifest;
+  if (
+    !from ||
+    !target ||
+    manifestIdentity(from) !== pending.fromIdentity ||
+    from.macOS.outputPath !== pending.fromOutputPath ||
+    manifestIdentity(target) !== pending.targetIdentity ||
+    target.macOS.outputPath !== pending.targetOutputPath ||
+    target.releaseSequence !== pending.highWaterSequence ||
+    from.releaseSequence >= target.releaseSequence
+  ) {
+    fail("Reactivation receipts do not prove a lower signed source and exact high-water target.");
+  }
+}
+
 export function selectLegacyReceiptIdentity(receipts, outputPath, preferredIdentity = null) {
   const matches = receipts.filter((receipt) => receipt.outputPath === outputPath);
   const preferred = matches.find((receipt) => receipt.identity === preferredIdentity);
@@ -680,6 +787,13 @@ export function recoverNativeIntent(pending, current) {
   }
   if (
     pending.kind === "native-rollback" &&
+    observed.generation === pending.targetGeneration &&
+    observed.outputPath === pending.targetOutputPath
+  ) {
+    return "switched";
+  }
+  if (
+    pending.kind === "native-reactivate" &&
     observed.generation === pending.targetGeneration &&
     observed.outputPath === pending.targetOutputPath
   ) {
@@ -1473,6 +1587,17 @@ async function reconcileLegacyPending(pending, pendingPath) {
   });
 }
 
+function hasValidReactivationPending(pending) {
+  if (pending.kind !== "native-reactivate") return true;
+  return (
+    Number.isSafeInteger(pending.fromGeneration) &&
+    pending.fromGeneration !== pending.targetGeneration &&
+    pending.highWaterIdentity === pending.targetIdentity &&
+    Number.isSafeInteger(pending.highWaterSequence) &&
+    pending.highWaterSequence > 0
+  );
+}
+
 function hasValidPendingGeneration(pending) {
   if (
     pending.fromGeneration !== null &&
@@ -1500,11 +1625,22 @@ function hasValidPendingGeneration(pending) {
       : typeof pending.fromOutputPath === "string" &&
         /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(pending.fromOutputPath) &&
         validReleaseIdentity(pending.fromIdentity);
-  return validTargetGeneration && validGenerationOrder && validFromProfile;
+  return (
+    validTargetGeneration &&
+    validGenerationOrder &&
+    validFromProfile &&
+    hasValidReactivationPending(pending)
+  );
 }
 
 function validatePendingProfileOperation(pending) {
-  const kinds = ["metadata-activate", "metadata-rollback", "native-activate", "native-rollback"];
+  const kinds = [
+    "metadata-activate",
+    "metadata-rollback",
+    "native-activate",
+    "native-rollback",
+    "native-reactivate",
+  ];
   if (
     pending.schemaVersion !== 1 ||
     !kinds.includes(pending.kind) ||
@@ -1533,7 +1669,10 @@ async function reconcileMetadataIntent(pending, target, pendingPath) {
   await rm(pendingPath, { force: true });
 }
 
-function validateUnchangedNativeIntent(state, pending) {
+function validateUnchangedNativeIntent(state, pending, target) {
+  if (pending.kind === "native-reactivate") {
+    assertNativeReactivationState(state, pending, target.manifest);
+  }
   if (pending.fromGeneration === null) {
     if (state.generations.length > 0) {
       fail("The initial profile activation intent conflicts with existing generation state.");
@@ -1550,10 +1689,26 @@ function validateUnchangedNativeIntent(state, pending) {
   }
 }
 
+function stateAfterNativeReactivation(state, pending, current, target) {
+  assertNativeReactivationState(state, pending, target.manifest);
+  const mapping = selectMappedGeneration(state, current.generation, current.outputPath);
+  if (
+    current.generation !== pending.targetGeneration ||
+    current.outputPath !== pending.targetOutputPath ||
+    mapping.identities.at(-1) !== pending.targetIdentity
+  ) {
+    fail("Reactivation did not return to the exact retained signed Nix generation.");
+  }
+  return state;
+}
+
 function stateAfterNativeIntent(state, pending, current, target) {
   const existing = state.generations.find((entry) => entry.generation === current.generation);
   if (existing && existing.outputPath !== current.outputPath) {
     fail("The target Nix generation conflicts with its signed release mapping.");
+  }
+  if (pending.kind === "native-reactivate") {
+    return stateAfterNativeReactivation(state, pending, current, target);
   }
   if (
     pending.kind === "native-activate" &&
@@ -1606,7 +1761,7 @@ async function reconcileNativeIntent(pending, target, pendingPath) {
     fail("An interrupted native update has no identity state; manual recovery is required.");
   const outcome = recoverNativeIntent(pending, current);
   if (outcome === "unchanged") {
-    validateUnchangedNativeIntent(state, pending);
+    validateUnchangedNativeIntent(state, pending, target);
     await rm(pendingPath, { force: true });
     return;
   }
@@ -1635,6 +1790,14 @@ async function reconcilePendingActivation() {
   const target = await loadReceipt(join(DATA_ROOT, "receipts", pending.targetIdentity));
   if (target.manifest.macOS.outputPath !== pending.targetOutputPath) {
     fail("Pending profile identity differs from its signed release receipt.");
+  }
+  if (pending.kind === "native-reactivate") {
+    if (pending.highWaterSequence !== target.manifest.releaseSequence) {
+      fail("Pending reactivation sequence differs from its signed release receipt.");
+    }
+    const fromReceipt = await loadReceipt(join(DATA_ROOT, "receipts", pending.fromIdentity));
+    assertNativeReactivationReceipts(pending, fromReceipt, target);
+    await verifyImportedClosure(target.manifest, target.nixManifestBytes);
   }
   if (pending.kind.startsWith("metadata-")) {
     await reconcileMetadataIntent(pending, target, pendingPath);
@@ -2001,15 +2164,103 @@ async function rollbackProfile() {
   );
 }
 
+async function assertNoStagedRelease() {
+  try {
+    await lstat(join(DATA_ROOT, "staged.json"));
+  } catch (error) {
+    if (error?.code === "ENOENT") return;
+    throw error;
+  }
+  fail("Cannot reactivate the highest release while another release is staged.");
+}
+
+async function reactivateHighWater() {
+  assertMacArm();
+  await ensureDataRoot();
+  await assertNoStagedRelease();
+  await reconcilePendingActivation();
+
+  const current = await currentReceipt();
+  if (!current.receipt || !current.generation) {
+    fail("There is no verified active managed generation to reactivate from.");
+  }
+  const highWater = await highWaterForState(current.state);
+  if (!highWater) fail("No previously activated release is recorded.");
+  const receipt = await loadReceipt(join(DATA_ROOT, "receipts", highWater.identity));
+  const target = selectHighWaterReactivationTarget(
+    current.state,
+    current,
+    await profileGenerations(),
+    receipt,
+  );
+  if (!target) {
+    emitResult(
+      {
+        action: "reactivate-high-water",
+        active: releaseSummary(receipt),
+        staged: null,
+        highWaterSequence: highWater.manifest.releaseSequence,
+        generation: current.generation,
+        binaryChanged: false,
+        message: "The highest activated release is already active.",
+      },
+      `The highest activated release ${receipt.manifest.releaseTag} is already active.`,
+    );
+    return;
+  }
+  await verifyImportedClosure(receipt.manifest, receipt.nixManifestBytes);
+
+  const pendingPath = join(DATA_ROOT, "pending-activation.json");
+  const pending = {
+    schemaVersion: 1,
+    kind: "native-reactivate",
+    fromGeneration: current.generation,
+    fromOutputPath: current.outputPath,
+    fromIdentity: manifestIdentity(current.receipt.manifest),
+    targetGeneration: target.generation,
+    targetIdentity: target.identity,
+    targetOutputPath: target.outputPath,
+    highWaterIdentity: highWater.identity,
+    highWaterSequence: highWater.manifest.releaseSequence,
+  };
+  assertNativeReactivationState(current.state, pending, receipt.manifest);
+  await writeJson(pendingPath, pending);
+  setProfile(ACTIVE_PROFILE, target.outputPath);
+
+  const afterGenerations = await profileGenerations();
+  const after = afterGenerations.find((entry) => entry.current);
+  if (!after || after.generation !== target.generation || after.outputPath !== target.outputPath) {
+    fail("Nix did not select the exact retained high-water generation.");
+  }
+  await commitRecoveredNativeIntent(pending, after, receipt, {
+    loadState: loadProfileStateFile,
+    commitState: commitProfileState,
+    clearPending: () => rm(pendingPath, { force: true }),
+  });
+  emitResult(
+    {
+      action: "reactivate-high-water",
+      active: releaseSummary(receipt),
+      staged: null,
+      highWaterSequence: highWater.manifest.releaseSequence,
+      generation: after.generation,
+      binaryChanged: true,
+      message: "The existing highest release was selected; running processes were left untouched.",
+    },
+    `Reactivated ${receipt.manifest.releaseTag} in Nix generation ${after.generation}. Any already-running Paseo process was left untouched.`,
+  );
+}
+
 function printHelp() {
   process.stdout.write(
     [
-      "Usage: paseo-nix-update <check|stage|activate|status|rollback>",
+      "Usage: paseo-nix-update <check|stage|activate|status|rollback|reactivate-high-water>",
       "  check     Find the highest verified stable fork release.",
       "  stage     Verify and import a newer signed closure without changing the active profile.",
       "  activate  Atomically select the staged output in Paseo's dedicated Nix profile.",
       "  status    Show the active managed profile generation.",
       "  rollback  Switch to the previous Nix profile generation.",
+      "  reactivate-high-water  Select the retained highest release after rollback.",
       "  --json    Write one structured result to stdout.",
       "",
       "Supported only on Apple Silicon macOS. No app or daemon is restarted.",
@@ -2023,10 +2274,19 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
   if (
     rest.length > 1 ||
     (rest.length === 1 && rest[0] !== "--json") ||
-    !["help", "--help", "check", "stage", "activate", "status", "rollback"].includes(command)
+    ![
+      "help",
+      "--help",
+      "check",
+      "stage",
+      "activate",
+      "status",
+      "rollback",
+      "reactivate-high-water",
+    ].includes(command)
   ) {
     fail(
-      "Expected one command and an optional --json flag: check, stage, activate, status, rollback, or --help.",
+      "Expected one command and an optional --json flag: check, stage, activate, status, rollback, reactivate-high-water, or --help.",
     );
   }
   if (command === "help" || command === "--help") {
@@ -2043,8 +2303,10 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
         await activateStagedRelease();
       } else if (command === "status") {
         await printStatus();
-      } else {
+      } else if (command === "rollback") {
         await rollbackProfile();
+      } else {
+        await reactivateHighWater();
       }
     });
   }

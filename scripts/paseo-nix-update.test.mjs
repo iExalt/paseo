@@ -16,10 +16,13 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, it } from "node:test";
+import { fileURLToPath } from "node:url";
 import { serializePaseoReleaseManifest } from "../packages/protocol/src/release-manifest.ts";
 import {
   assertReceiptIdentity,
   assertAboveHighWater,
+  assertNativeReactivationReceipts,
+  assertNativeReactivationState,
   applyMetadataIntent,
   chooseHighestVerifiedStableRelease,
   commitRecoveredNativeIntent,
@@ -30,6 +33,7 @@ import {
   localCacheCopySignaturesArgs,
   parseProfileGenerations,
   recoverNativeIntent,
+  selectHighWaterReactivationTarget,
   selectLegacyReceiptIdentity,
   selectMappedGeneration,
   validateNixClosureManifest,
@@ -107,6 +111,49 @@ function signedManifest(sequence = 42) {
     signature,
     publicKey: spki.subarray(spki.length - 32).toString("base64url"),
   };
+}
+
+function nativeReactivationFixture() {
+  const outputB = `/nix/store/${"a".repeat(32)}-paseo-desktop-0.11.0`;
+  const outputC = `/nix/store/${"b".repeat(32)}-paseo-desktop-0.11.0`;
+  const identityB = `${"a".repeat(40)}-200006`;
+  const identityC = `${"b".repeat(40)}-200007`;
+  const receiptB = {
+    manifest: {
+      sourceSha: "a".repeat(40),
+      releaseSequence: 200006,
+      macOS: { outputPath: outputB },
+    },
+  };
+  const receiptC = {
+    manifest: {
+      sourceSha: "b".repeat(40),
+      releaseSequence: 200007,
+      macOS: { outputPath: outputC },
+    },
+  };
+  const state = {
+    schemaVersion: 1,
+    highWaterIdentity: identityC,
+    highWaterSequence: 200007,
+    generations: [
+      { generation: 1, outputPath: outputB, identities: [identityB] },
+      { generation: 2, outputPath: outputC, identities: [identityC] },
+    ],
+  };
+  const pending = {
+    schemaVersion: 1,
+    kind: "native-reactivate",
+    fromGeneration: 1,
+    fromOutputPath: outputB,
+    fromIdentity: identityB,
+    targetGeneration: 2,
+    targetIdentity: identityC,
+    targetOutputPath: outputC,
+    highWaterIdentity: identityC,
+    highWaterSequence: 200007,
+  };
+  return { outputB, outputC, identityB, identityC, receiptB, receiptC, state, pending };
 }
 
 function tarHeader(name, size, type = "0") {
@@ -510,6 +557,103 @@ describe("Paseo Nix updater verification", () => {
     assert.equal(pendingCleared, true);
   });
 
+  it("selects only the exact retained generation for high-water reactivation", () => {
+    const fixture = nativeReactivationFixture();
+    const { outputB, outputC, identityC, receiptB, receiptC, state } = fixture;
+    const current = { generation: 1, outputPath: outputB, receipt: receiptB };
+    const retained = [
+      { generation: 1, outputPath: outputB, current: true },
+      { generation: 2, outputPath: outputC, current: false },
+    ];
+    const withoutTarget = retained.filter((entry) => entry.generation !== 2);
+
+    assert.deepEqual(selectHighWaterReactivationTarget(state, current, retained, receiptC), {
+      generation: 2,
+      identity: identityC,
+      outputPath: outputC,
+      sequence: 200007,
+    });
+    assert.equal(
+      selectHighWaterReactivationTarget(
+        { ...state, generations: [...state.generations] },
+        { generation: 2, outputPath: outputC, receipt: receiptC },
+        [
+          { generation: 1, outputPath: outputB, current: false },
+          { generation: 2, outputPath: outputC, current: true },
+        ],
+        receiptC,
+      ),
+      null,
+    );
+    assert.throws(
+      () => selectHighWaterReactivationTarget(state, current, withoutTarget, receiptC),
+      /exact retained Nix generation/i,
+    );
+    assert.throws(
+      () =>
+        selectHighWaterReactivationTarget(state, current, retained, {
+          manifest: { ...receiptC.manifest, sourceSha: "c".repeat(40) },
+        }),
+      /does not match its signed receipt/i,
+    );
+    assert.throws(
+      () =>
+        selectHighWaterReactivationTarget(state, current, retained, {
+          manifest: { ...receiptC.manifest, releaseSequence: 200008 },
+        }),
+      /does not match its signed receipt/i,
+    );
+    assert.throws(
+      () =>
+        selectHighWaterReactivationTarget(
+          {
+            ...state,
+            generations: [...state.generations, { ...state.generations[1], generation: 3 }],
+          },
+          current,
+          retained,
+          receiptC,
+        ),
+      /missing or ambiguous retained generation/i,
+    );
+    assert.throws(
+      () =>
+        selectHighWaterReactivationTarget(
+          state,
+          { ...current, outputPath: outputC },
+          retained,
+          receiptC,
+        ),
+      /not below|shares the active Nix output/i,
+    );
+  });
+
+  it("keeps reactivation bound to the exact high-water receipt and both generation mappings", () => {
+    const { state, pending, receiptC, identityB } = nativeReactivationFixture();
+    const wrongTargetIdentityState = {
+      ...state,
+      generations: state.generations.map((entry) => {
+        if (entry.generation !== 2) return entry;
+        return Object.assign({}, entry, { identities: [identityB] });
+      }),
+    };
+
+    assert.doesNotThrow(() => assertNativeReactivationState(state, pending, receiptC.manifest));
+    assert.throws(
+      () =>
+        assertNativeReactivationState(
+          { ...state, highWaterSequence: 200008 },
+          pending,
+          receiptC.manifest,
+        ),
+      /unchanged signed high-water/i,
+    );
+    assert.throws(
+      () => assertNativeReactivationState(wrongTargetIdentityState, pending, receiptC.manifest),
+      /retained signed generation mapping/i,
+    );
+  });
+
   it("tracks same-root release identity changes without changing the Nix generation", () => {
     const outputPath = `/nix/store/${"c".repeat(32)}-paseo-desktop-1.2.3`;
     const identityB = `${"a".repeat(40)}-42`;
@@ -553,7 +697,7 @@ describe("Paseo Nix updater verification", () => {
     assert.equal(applyMetadataIntent(activeB, rollback, 43), activeB);
   });
 
-  it("recovers native activation by signed output and native rollback by exact generation", () => {
+  it("recovers native activation by signed output and native rollback/reactivation by exact generation", () => {
     const pending = {
       kind: "native-activate",
       fromGeneration: 7,
@@ -573,6 +717,35 @@ describe("Paseo Nix updater verification", () => {
       recoverNativeIntent(rollback, { generation: 6, outputPath: pending.targetOutputPath }),
       "switched",
     );
+    const reactivation = {
+      ...rollback,
+      kind: "native-reactivate",
+      fromGeneration: 6,
+      fromOutputPath: pending.targetOutputPath,
+      targetGeneration: 8,
+    };
+    assert.equal(
+      recoverNativeIntent(reactivation, {
+        generation: 6,
+        outputPath: reactivation.fromOutputPath,
+      }),
+      "unchanged",
+    );
+    assert.equal(
+      recoverNativeIntent(reactivation, {
+        generation: 8,
+        outputPath: reactivation.targetOutputPath,
+      }),
+      "switched",
+    );
+    assert.throws(
+      () =>
+        recoverNativeIntent(reactivation, {
+          generation: 9,
+          outputPath: reactivation.targetOutputPath,
+        }),
+      /manual recovery/i,
+    );
     assert.equal(
       recoverNativeIntent({ ...pending, fromGeneration: null, fromOutputPath: null }, null),
       "unchanged",
@@ -586,6 +759,129 @@ describe("Paseo Nix updater verification", () => {
       /manual recovery/i,
     );
   });
+
+  it("recovers retained high-water reactivation without lowering state and retries journal cleanup", async () => {
+    const { outputB, outputC, identityC, state, pending, receiptB, receiptC } =
+      nativeReactivationFixture();
+    const target = receiptC;
+    const wrongTargetOutputState = {
+      ...state,
+      generations: state.generations.map((entry) => {
+        if (entry.generation !== 2) return entry;
+        return Object.assign({}, entry, { outputPath: outputB });
+      }),
+    };
+
+    // A crash before setProfile leaves B current; retry can validate the same retained target.
+    const unchanged = { generation: 1, outputPath: outputB };
+    assert.equal(recoverNativeIntent(pending, unchanged), "unchanged");
+    assert.doesNotThrow(() => assertNativeReactivationState(state, pending, target.manifest));
+    assert.doesNotThrow(() => assertNativeReactivationReceipts(pending, receiptB, target));
+    assert.throws(
+      () =>
+        assertNativeReactivationReceipts(pending, receiptB, {
+          manifest: { ...target.manifest, sourceSha: "c".repeat(40) },
+        }),
+      /do not prove a lower signed source/i,
+    );
+    assert.throws(() => {
+      const equalSequenceManifest = {
+        ...receiptB.manifest,
+        sourceSha: "c".repeat(40),
+        releaseSequence: 200007,
+      };
+      assertNativeReactivationReceipts(
+        { ...pending, fromIdentity: `${"c".repeat(40)}-200007` },
+        { manifest: equalSequenceManifest },
+        target,
+      );
+    }, /do not prove a lower signed source/i);
+    assert.deepEqual(state.generations[1], {
+      generation: 2,
+      outputPath: outputC,
+      identities: [identityC],
+    });
+
+    // A crash after setProfile accepts only the exact retained C generation and keeps high-water.
+    const switched = { generation: 2, outputPath: outputC };
+    assert.equal(recoverNativeIntent(pending, switched), "switched");
+    let pendingExists = true;
+    let failClear = true;
+    const adapters = {
+      async loadState() {
+        return state;
+      },
+      async commitState(next) {
+        assert.equal(next, state);
+      },
+      async clearPending() {
+        if (failClear) {
+          failClear = false;
+          throw new Error("simulated journal cleanup failure");
+        }
+        pendingExists = false;
+      },
+    };
+    await assert.rejects(
+      commitRecoveredNativeIntent(pending, switched, target, adapters),
+      /journal cleanup failure/,
+    );
+    assert.equal(pendingExists, true);
+    assert.equal(state.highWaterIdentity, identityC);
+    assert.equal(state.highWaterSequence, 200007);
+    await commitRecoveredNativeIntent(pending, switched, target, adapters);
+    assert.equal(pendingExists, false);
+    assert.equal(state.highWaterIdentity, identityC);
+    assert.equal(state.highWaterSequence, 200007);
+
+    assert.throws(
+      () =>
+        assertNativeReactivationState(
+          { ...state, highWaterSequence: 200006 },
+          pending,
+          target.manifest,
+        ),
+      /unchanged signed high-water/i,
+    );
+    assert.throws(
+      () => assertNativeReactivationState(wrongTargetOutputState, pending, target.manifest),
+      /retained signed generation mapping/i,
+    );
+  });
+
+  it(
+    "rejects staged reactivation before invoking Nix or changing the profile",
+    {
+      skip: process.platform !== "darwin" || process.arch !== "arm64",
+    },
+    async () => {
+      const home = await temporaryDirectory();
+      const dataRoot = join(home, "Library", "Application Support", "Paseo", "nix-update");
+      const fakeBin = join(home, "bin");
+      const calls = join(home, "nix-calls");
+      await mkdir(dataRoot, { recursive: true });
+      await mkdir(fakeBin);
+      await writeFile(join(dataRoot, "staged.json"), "{}\n");
+      for (const executable of ["nix", "nix-env"]) {
+        const path = join(fakeBin, executable);
+        await writeFile(
+          path,
+          '#!/bin/sh\nprintf \'%s\\n\' "$0 $*" >> "$PASEO_NIX_CALLS"\nexit 97\n',
+        );
+        await chmod(path, 0o755);
+      }
+
+      const script = fileURLToPath(new URL("./paseo-nix-update.mjs", import.meta.url));
+      const result = spawnSync(process.execPath, [script, "reactivate-high-water", "--json"], {
+        encoding: "utf8",
+        env: { HOME: home, PATH: fakeBin, PASEO_NIX_CALLS: calls },
+      });
+
+      assert.equal(result.status, 1, result.stderr);
+      assert.match(result.stdout, /another release is staged/i);
+      await assert.rejects(access(calls));
+    },
+  );
 
   it("commits a reused Nix generation once and retries cleanup after atomic-state success", async () => {
     const outputA = `/nix/store/${"a".repeat(32)}-paseo-desktop-a`;
