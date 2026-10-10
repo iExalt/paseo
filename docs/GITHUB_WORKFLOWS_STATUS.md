@@ -21,15 +21,15 @@
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence   | Depends on                    | Exit and owner                                               |
-| ----------------------------------------- | ------------------- | ----------------------------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified | none                          | G0, author with user decisions                               |
-| A2: measured routine verification         | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | complete / verified | A2                            | G1 including atomic publication failure fixtures, author     |
-| B1: deep journeys and safe PR routing     | active / designed   | A1–A3; B2 for Android closure | G2, author                                                   |
-| B2: Mac/Android candidate preservation    | planned / designed  | A1–A3                         | Mac/Android portion of G3, author                            |
-| B3: Linux package matrix                  | planned / designed  | B2                            | Linux portion of G3, author                                  |
-| B4: Windows package matrix                | planned / designed  | B2, B3                        | Remaining G3 and phase integration, author                   |
+| Goal                                      | Status / evidence    | Depends on                    | Exit and owner                                               |
+| ----------------------------------------- | -------------------- | ----------------------------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified  | none                          | G0, author with user decisions                               |
+| A2: measured routine verification         | complete / verified  | A1                            | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | complete / verified  | A2                            | G1 including atomic publication failure fixtures, author     |
+| B1: deep journeys and safe PR routing     | active / implemented | A1–A3; B2 for Android closure | G2, author                                                   |
+| B2: Mac/Android candidate preservation    | active / implemented | A1–A3                         | Mac/Android portion of G3, author                            |
+| B3: Linux package matrix                  | planned / designed   | B2                            | Linux portion of G3, author                                  |
+| B4: Windows package matrix                | planned / designed   | B2, B3                        | Remaining G3 and phase integration, author                   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -91,7 +91,8 @@ treated as controlled before/after measurements.
 | Linux/Windows native feasibility                   | Scoped work-branch push; Ubuntu ARM64 / Windows ARM64 | `38079931018` at `510974a2`: Linux 1m07s; Windows cancelled at 15m15s during install             | 15m; diagnostic only, Windows replaced by focused binding proof             |
 | Android ARM64 feasibility                          | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                          |
 | Windows ARM64 binding feasibility                  | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                   |
-| Deep checks and Linux/Windows packages             | Approved B implementation pending                     | Unmeasured                                                                                       | Set bounded initial trials; measure required runs and optimize proven waste |
+| Deep checks                                       | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                          | 15m per lane; reduce repeated setup subprocesses, preserve journeys         |
+| Linux/Windows packages                            | Approved B implementation pending                     | Unmeasured                                                                                       | Set bounded initial trials; measure required runs and optimize proven waste |
 | Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                  |
 
 All current workflow files and callable lanes are represented. GitHub also lists
@@ -288,10 +289,13 @@ visually warning-free output. Daemon and Metro shutdown are logged. The
 [negative trial](https://github.com/iExalt/paseo/actions/runs/38095078682) at
 `c6d6b2f54` failed at the deliberately wrong output assertion; its screenshot
 shows the correct `captured: fix the flaky test` output, and cleanup is logged.
-The wrong expectation is restored for the next trial; restored positive proof
-remains pending. Routine CI passed independently on that negative-trial SHA.
+The [restored trial](https://github.com/iExalt/paseo/actions/runs/38095688591)
+at `8351fc536` passed the browser journey, daemon/Metro shutdown and all command
+ownership checks; author and reviewer inspected its screenshot and retained trace.
+B1a is accepted. Routine CI on that SHA passed in approximately 4m25s, within the
+unchanged under-five-minute budget.
 
-The next reviewed trial adds sequential CLI lifecycle, forced local relay E2EE
+The expanded trial adds sequential CLI lifecycle, forced local relay E2EE
 and three pinned provider `--version` contracts in one lane, plus real Electron
 daemon-manager/renderer IPC under Xvfb in another. Provider dependencies have an
 isolated integrity lock; no live model prompt is used. Each initial lane is bounded
@@ -303,8 +307,44 @@ shutdown receipts remain required. This Electron harness is not packaged-app
 startup proof; that remains G3. G2 remains open until all deep gates including B2's
 rebuilt Android journey pass.
 
-Before B uploads, verify an actual free/no-overage path; retention alone is not
-proof. Same-job build/install/runtime proofs can proceed within B approval without
+The expanded integration lane passed at `8351fc536`: CLI lifecycle took 222.19s,
+forced relay verification 3.13s, isolated provider installation 8.77s and pinned
+version execution 0.74s, with command ownership checks passing throughout. Electron
+passed its runtime assertions in 148.08s and retained screenshots, but failed final
+temporary-directory removal on read-only DevTools cache directories. The reviewed
+repair `03155ef58` makes only real directories in the stopped test's owned tree
+owner-writable, without following symlinks; a fast fixture verifies external target
+permissions and contents remain intact. Its hosted cleanup proof remains pending.
+The [cleanup trial](https://github.com/iExalt/paseo/actions/runs/38096041627) at
+`03155ef58` passed all three lanes: browser 2m41s, Electron 4m23s and integration
+5m15s, totaling 12m19s of runner work. Electron temporary-tree deletion and final
+process checks passed; its retained screenshots were inspected. B1a/B1b are
+reviewer-accepted, with the Windows-only CLI case retained for B4 and rebuilt
+Android still pending B2. Routine CI passed in 4m32s. The PR routing repeated all
+three lanes for the cleanup source change; that repeated runner work is verification
+cost, not a performance improvement.
+
+B2a replaces run-number identity in the manual coordinator and callable Mac/Android
+lanes with clean-source semver and its derived Android code. Candidate artifacts
+use `kind: paseo-verification-candidate`, schema 2; they are distinct from the
+published signed V2 inventory. The current source version 0.11.2 is disposable
+verification only: no public release or personal installation is authorized, and
+legacy schema-1 promotion deliberately rejects these candidates until C migrates
+publication. Initial 0.1.0 artifacts must be rebuilt after C's source-version reset.
+Source identity uses the hosted Node interpreter for builtin-only checks, not proof
+of the packaged runtime. Read-only secret-name inspection confirms all four required
+signing/configuration secrets exist; current key usability remains a live proof.
+Candidate retention is one day, with APK transfers capped at 512 MiB and the Nix
+archive at 2 GiB; quota rejection fails the gate. Package execution remains pending
+reviewed exact-dev integration and current routine success.
+
+The next required deep run also measures a reviewed fixture optimization: direct
+validated configuration writes replace five setup-only CLI invocations per home.
+Actual CLI mutation assertions, lifecycle cases and worker count are unchanged;
+this is not yet a measured speedup.
+
+The user-confirmed $0 Actions budget with Stop usage enabled clears bounded B
+artifact uploads; retention alone is not the no-overage proof. Same-job build/install/runtime proofs can proceed within B approval without
 uploads. Cross-job draft Release transport needs explicit B authority and immutable
 candidate/asset bounds. Retained UI screenshots/traces must have a verified free
 transport. Android deep closure depends on B2's rebuilt same-SHA APK, not the
