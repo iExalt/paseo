@@ -29,6 +29,14 @@ process.env.GIT_COMMITTER_EMAIL = "fixture@example.invalid";
 const root = mkdtempSync(join(tmpdir(), "paseo-rebase-dev-test-"));
 const cleanup = () => rmSync(root, { recursive: true, force: true });
 test.after(cleanup);
+const testSigningKeyPath = join(root, "fixture-signing-key");
+execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", testSigningKeyPath]);
+const testSigningKey = readFileSync(testSigningKeyPath, "utf8");
+const testSigningPublicKey = readFileSync(`${testSigningKeyPath}.pub`, "utf8").trim();
+const wrongSigningKeyPath = join(root, "wrong-fixture-signing-key");
+execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", wrongSigningKeyPath]);
+const wrongSigningKey = readFileSync(wrongSigningKeyPath, "utf8");
+const signingOptions = { signingKey: testSigningKey, publicKey: testSigningPublicKey };
 
 function git(cwd, ...args) {
   return execFileSync(
@@ -50,9 +58,40 @@ function git(cwd, ...args) {
   ).trimEnd();
 }
 
-function commit(cwd, message) {
+function gitWithEnv(cwd, extraEnv, ...args) {
+  return execFileSync(
+    "git",
+    [
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "init.defaultBranch=main",
+      "-c",
+      "advice.defaultBranchName=false",
+      ...args,
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C", ...extraEnv },
+    },
+  ).trimEnd();
+}
+
+function commit(cwd, message, metadata = {}) {
   git(cwd, "add", "-A");
-  git(cwd, "commit", "-m", message);
+  gitWithEnv(cwd, metadata, "commit", "-m", message);
+}
+
+function devMetadata(authorName, authorEmail, authorDate, committerName, committerDate) {
+  return {
+    GIT_AUTHOR_NAME: authorName,
+    GIT_AUTHOR_EMAIL: authorEmail,
+    GIT_AUTHOR_DATE: authorDate,
+    GIT_COMMITTER_NAME: committerName,
+    GIT_COMMITTER_EMAIL: "clliaw@nvidia.com",
+    GIT_COMMITTER_DATE: committerDate,
+  };
 }
 
 function content({ target = "base target", far = "base far", marker = "base marker" } = {}) {
@@ -102,13 +141,46 @@ async function makeFixture(
 
   git(seed, "checkout", "dev");
   if (initiallyEmpty) {
-    git(seed, "commit", "--allow-empty", "-m", "originally empty dev commit");
+    gitWithEnv(
+      seed,
+      devMetadata(
+        "Empty Author",
+        "empty@example.invalid",
+        "1700000100 -0700",
+        "Clement Liaw",
+        "1700000101 +0545",
+      ),
+      "commit",
+      "--allow-empty",
+      "-m",
+      "originally empty dev commit\n\nkept as an original empty commit\n",
+    );
   }
   writeFileSync(join(seed, "shared.txt"), content({ target: "dev target" }));
-  commit(seed, "dev target edit");
+  commit(
+    seed,
+    "dev target edit\n\nconflicting replay body\nwith second line\n",
+    devMetadata(
+      "Zoë Author",
+      "zoe@example.invalid",
+      "1700000300 +0930",
+      "Clement Liaw",
+      "1700000301 -0330",
+    ),
+  );
   if (unknown) {
     writeFileSync(join(seed, "shared.txt"), content({ target: "dev target", far: "dev far" }));
-    commit(seed, "dev unknown edit");
+    commit(
+      seed,
+      "dev unknown edit",
+      devMetadata(
+        "Unknown Author",
+        "unknown@example.invalid",
+        "1700000400 +0000",
+        "Clement Liaw",
+        "1700000401 +0000",
+      ),
+    );
   }
   git(seed, "push", "origin", "HEAD:refs/heads/dev");
   const devSha = git(seed, "rev-parse", "HEAD");
@@ -190,7 +262,17 @@ async function makeFixture(
   if (newlyEmpty) {
     git(seed, "checkout", "dev");
     writeFileSync(join(seed, "shared.txt"), content({ target: "dev target", far: "same far" }));
-    commit(seed, "dev patch now empty against upstream");
+    commit(
+      seed,
+      "dev patch now empty against upstream",
+      devMetadata(
+        "Emptying Author",
+        "emptying@example.invalid",
+        "1700000500 +0000",
+        "Clement Liaw",
+        "1700000501 +0000",
+      ),
+    );
     git(seed, "push", "origin", "HEAD:refs/heads/dev");
   }
   return { directory, remote, devSha, upstreamSha, resolverPath, recorder, id };
@@ -209,8 +291,12 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   assert.match(workflow.jobs.rebase.if, /github\.actor == 'iExalt'/);
   assert.deepEqual(workflow.jobs.rebase.permissions, { contents: "write" });
   const rebaseStep = workflow.jobs.rebase.steps.find((step) => step.id === "rebase");
-  assert.equal(rebaseStep.env.GIT_COMMITTER_NAME, "iExalt");
-  assert.equal(rebaseStep.env.GIT_COMMITTER_EMAIL, "iExalt@users.noreply.github.com");
+  assert.equal(
+    rebaseStep.env.PASEO_REBASE_SSH_SIGNING_KEY,
+    "${{ secrets.PASEO_REBASE_SSH_SIGNING_KEY }}",
+  );
+  assert.equal("GIT_COMMITTER_NAME" in rebaseStep.env, false);
+  assert.equal("GIT_COMMITTER_EMAIL" in rebaseStep.env, false);
   const steps = workflow.jobs.rebase.steps;
   const publishIndex = steps.findIndex(
     (step) => step.name === "Publish backup and rebased dev atomically",
@@ -265,8 +351,19 @@ test("known rerere resolution is imported and resumes while preserving adapted c
   const fixture = await makeFixture("known", { adaptedContext: true, initiallyEmpty: true });
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
 
-  const snapshots = await rebaseDev({ repositoryPath: clone });
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone }),
+    /PASEO_REBASE_SSH_SIGNING_KEY is required/,
+  );
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions, signingKey: wrongSigningKey }),
+    /does not match the trusted public key/,
+  );
+  assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
+
+  const snapshots = await rebaseDev({ repositoryPath: clone, ...signingOptions });
 
   assert.equal(snapshots.dev, fixture.devSha);
   assert.equal(snapshots.upstream, fixture.upstreamSha);
@@ -280,6 +377,62 @@ test("known rerere resolution is imported and resumes while preserving adapted c
     /originally empty dev commit/,
   );
   assert.match(git(clone, "status", "--porcelain"), /^$/);
+  const originalCommits = git(
+    clone,
+    "rev-list",
+    "--reverse",
+    `${fixture.upstreamSha}..${fixture.devSha}`,
+  ).split("\n");
+  const rewrittenCommits = git(
+    clone,
+    "rev-list",
+    "--reverse",
+    `${fixture.upstreamSha}..HEAD`,
+  ).split("\n");
+  assert.equal(rewrittenCommits.length, originalCommits.length);
+  const allowedSigners = join(fixture.directory, "allowed-signers");
+  writeFileSync(
+    allowedSigners,
+    `clliaw@nvidia.com ${testSigningPublicKey.split(/\s+/).slice(0, 2).join(" ")}\n`,
+  );
+  for (let index = 0; index < originalCommits.length; index += 1) {
+    const original = execFileSync("git", ["cat-file", "commit", originalCommits[index]], {
+      cwd: clone,
+      encoding: "buffer",
+    });
+    const rewritten = execFileSync("git", ["cat-file", "commit", rewrittenCommits[index]], {
+      cwd: clone,
+      encoding: "buffer",
+    });
+    const separator = Buffer.from("\n\n");
+    const originalSeparator = original.indexOf(separator);
+    const rewrittenSeparator = rewritten.indexOf(separator);
+    const originalHeaders = original.subarray(0, originalSeparator).toString("utf8").split("\n");
+    const rewrittenHeaders = rewritten.subarray(0, rewrittenSeparator).toString("utf8").split("\n");
+    assert.equal(
+      rewrittenHeaders.find((line) => line.startsWith("author ")),
+      originalHeaders.find((line) => line.startsWith("author ")),
+    );
+    assert.equal(
+      rewrittenHeaders.find((line) => line.startsWith("committer ")),
+      originalHeaders.find((line) => line.startsWith("committer ")),
+    );
+    assert.deepEqual(
+      rewritten.subarray(rewrittenSeparator + 2),
+      original.subarray(originalSeparator + 2),
+    );
+    assert.match(rewrittenHeaders.join("\n"), /gpgsig -----BEGIN SSH SIGNATURE-----/);
+    git(
+      clone,
+      "-c",
+      "gpg.format=ssh",
+      "-c",
+      `gpg.ssh.allowedSignersFile=${allowedSigners}`,
+      "verify-commit",
+      rewrittenCommits[index],
+    );
+  }
+  assert.ok(snapshots.signedCommits > 0);
 });
 
 test("unknown conflict stops without publishing any refs", async (t) => {
@@ -290,7 +443,7 @@ test("unknown conflict stops without publishing any refs", async (t) => {
   const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
 
   await assert.rejects(
-    rebaseDev({ repositoryPath: clone, diagnosticsPath: diagnostics }),
+    rebaseDev({ repositoryPath: clone, diagnosticsPath: diagnostics, ...signingOptions }),
     /without a safely reusable completed resolution/,
   );
 
@@ -309,7 +462,7 @@ test("a newly empty replay stops with rebase state intact", async (t) => {
   const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
 
   await assert.rejects(
-    rebaseDev({ repositoryPath: clone }),
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
     /without a safely reusable completed resolution/,
   );
 
@@ -328,7 +481,7 @@ test("schema-only resolution branch imports and leaves an unknown conflict diagn
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
 
   await assert.rejects(
-    rebaseDev({ repositoryPath: clone, diagnosticsPath: diagnostics }),
+    rebaseDev({ repositoryPath: clone, diagnosticsPath: diagnostics, ...signingOptions }),
     /without a safely reusable completed resolution/,
   );
 
@@ -364,7 +517,10 @@ test("export and import refuse symlinked rerere variants", async (t) => {
   git(fixture.resolverPath, "push", "--force", "origin", "HEAD:refs/heads/rebase-resolutions");
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
-  await assert.rejects(rebaseDev({ repositoryPath: clone }), /Unsupported path or file mode/);
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
+    /Unsupported path or file mode/,
+  );
   assert.equal(existsSync(join(clone, ".git", "rr-cache", fixture.id)), false);
 });
 
@@ -372,7 +528,7 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
   const fixture = await makeFixture("publish");
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
-  await rebaseDev({ repositoryPath: clone });
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
 
   const first = await publishRebase({
     repositoryPath: clone,
