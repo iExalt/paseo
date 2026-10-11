@@ -83,7 +83,7 @@ treated as controlled before/after measurements.
 | Workflow / callable lane                           | Trigger and runner                                    | Observed timing and largest cost                                                                 | Current deadline / optimization gate                                        |
 | -------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
 | Routine CI                                         | PR/dev; Ubuntu x64, seven lanes                       | PR 4m15s / dev 4m18s; runner work 20m18s / 20m37s at `72300136d`                                 | Complete gate <5m; 2m stretch, reduce setup duplication and expensive tests |
-| Legacy candidate coordinator                       | Manual; Ubuntu x64 with parallel Mac/Android children | `38071895947` at `d04260338`: 23m41s critical path, 37m04s runner work, initial queue 3s         | Identity job lacks explicit timeout; cross-check 10m; replacement in D      |
+| Legacy candidate coordinator                       | Manual; Ubuntu x64 with parallel Mac/Android children | `38071895947` at `d04260338`: 23m41s critical path, 37m04s runner work, initial queue 3s         | Identity 5m; cross-check 10m; replacement in D                              |
 | macOS closure build / fresh import                 | Reusable; macos-14 ARM64                              | Same run: build/sign/export 12m24s, fresh import 1m08s; Nix build 6m, export 4m26s, transfers 9s | 90m / 20m; B2 inspect compression/export before increasing parallelism      |
 | Android APK build / signing                        | Reusable; Ubuntu x64 builds ARM64                     | Same run: build 22m55s, sign 20s; Gradle 20m11s, npm 1m27s, transfers 10s                        | 60m / 10m; B2 inspect Gradle cache effectiveness and resource pressure      |
 | Rebase dev                                         | Manual; Ubuntu x64                                    | Old `38070392394` at `e399ee213`: 2m16s, install 53s; predates the complete routine gate         | 45m; current full-gate timing unmeasured, retain exact-tested-tree boundary |
@@ -335,8 +335,19 @@ Source identity uses the hosted Node interpreter for builtin-only checks, not pr
 of the packaged runtime. Read-only secret-name inspection confirms all four required
 signing/configuration secrets exist; current key usability remains a live proof.
 Candidate retention is one day, with APK transfers capped at 512 MiB and the Nix
-archive at 2 GiB; quota rejection fails the gate. Package execution remains pending
-reviewed exact-dev integration and current routine success.
+archive at 2 GiB; quota rejection fails the gate. The first package trial at
+`10591c783` stopped Android before compilation: WebView generation changed a tracked
+file before the strict clean-source check. Reviewed repair `e506c1272` moves that
+check before installation/generation; it does not weaken the guard. The independent
+Mac trial remains running. A repaired paired candidate requires both lanes at its
+new source SHA; old-source Mac bytes cannot silently substitute for that proof.
+
+The shared candidate transport helper is locally verified and reviewer-accepted:
+it checks explicit producer attempt/source, pinned artifact IDs and ZIP digests,
+bounded streams and exact flat extraction. Tiny real-ZIP fixtures cover both
+platform selections without downloading the other platform. Native metadata,
+signatures, UI state preservation and runtime cleanup remain B2 consumer gates;
+no transport-only workflow was dispatched.
 
 The [optimized integration lane](https://github.com/iExalt/paseo/actions/runs/38096508135)
 at `18510758c` passed unchanged lifecycle cases, relay/provider checks and all process
@@ -346,8 +357,10 @@ fell from 206.23s to 130.55s with the same one worker, and integration from 5m15
 3m40s. The observed 37% lifecycle reduction is not a controlled host comparison;
 the removed setup subprocesses establish avoided work without weakening coverage.
 Reviewer accepted this proof; no separate benchmark is needed. That SHA's routine
-behavior lanes passed but quality rejected two misaligned status-table rows, so
-exact-source routine closure remains pending the formatting repair.
+behavior lanes passed but quality rejected two misaligned status-table rows.
+The formatting repair at `10591c783` passed deep CI in 4m35s and routine CI in
+4m13s on the PR; its integrated dev run `38097200908` passed in 4m12s. These hosted
+observations preserve the original accepted baseline and under-five-minute budget.
 
 The user-confirmed $0 Actions budget with Stop usage enabled clears bounded B
 artifact uploads; retention alone is not the no-overage proof. Same-job build/install/runtime proofs can proceed within B approval without
