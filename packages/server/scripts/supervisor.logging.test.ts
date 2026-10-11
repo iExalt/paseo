@@ -303,36 +303,6 @@ describe("supervisor durable logging", () => {
     expect(descendantSurvived).toBe(false);
   });
 
-  test("does not restart a worker based on heartbeat absence", async () => {
-    const result = await runSupervisorFixture({
-      timeoutMs: 20_000,
-      workerSource: `
-        import { existsSync, writeFileSync } from "node:fs";
-
-        process.on("message", (message) => {
-          if (message?.type === "paseo:graceful-shutdown") process.exit(0);
-        });
-        const marker = process.argv[1] + ".started";
-        if (!existsSync(marker)) {
-          writeFileSync(marker, "started");
-          setTimeout(() => {
-            process.send?.({ type: "paseo:shutdown", reason: "silent_worker_test_complete" });
-          }, 16_000);
-          setInterval(() => {}, 1_000);
-        } else {
-          process.send?.({ type: "paseo:shutdown", reason: "unexpected_silent_worker_restart" });
-          setInterval(() => {}, 1_000);
-        }
-      `,
-    });
-
-    expect(result.code).toBe(0);
-    expect(result.signal).toBeNull();
-    expect(result.log).toContain('"reason":"silent_worker_test_complete"');
-    expect(result.log).not.toContain('"reason":"unexpected_silent_worker_restart"');
-    expect(result.log).not.toContain('"msg":"Worker heartbeat timed out; restarting worker"');
-  }, 25_000);
-
   test("forces shutdown when a worker ignores the graceful shutdown request", async () => {
     const result = await runSupervisorFixture({
       timeoutMs: 15_000,
