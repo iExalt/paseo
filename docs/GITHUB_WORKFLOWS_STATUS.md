@@ -387,6 +387,12 @@ reviewed consumer repair includes that exact filename in its bounded allowlist;
 local extraction of the actual artifact and ZIP/APK digest checks pass. No producer
 rebuild is needed. An explicit platform selector permits an Android-only retry
 without repeating accepted Mac proof; invalid selections enable neither lane.
+The Android-only retry `38100824253` at `9a0dbaedc` passed transport, APK identity
+and predecessor installation, then failed connection setup: retained UI evidence
+shows the disposable AOSP keyboard's contacts-permission dialog. The harness now
+handles only that exact denial, checks keyboard/focus readiness and verifies
+separate host/port field values before submission. Android runtime/upgrade remains
+unverified; this is a harness repair, with unchanged producer bytes and pins.
 
 The native consumer's process tracking repair `bfef0fca1` uses PID plus immutable
 start time, excluding mutable process titles. Its PR run `38099238307` passed all
