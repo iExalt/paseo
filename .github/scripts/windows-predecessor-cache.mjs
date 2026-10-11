@@ -50,6 +50,10 @@ export function validateCache(directory, recipe) {
   assert.equal(identity.architecture, recipe.architecture);
   assert.equal(identity.appId, "sh.paseo.desktop");
   assert.equal(identity.archiveFilter, "BCJ");
+  assert.equal(
+    identity.reconstruction,
+    "Fixed source rebuilt with documented current binding and NSIS assembly",
+  );
   assert.deepEqual(
     Object.keys(identity.payload).sort(),
     [
@@ -136,6 +140,11 @@ function recipeForRunner() {
     ".github/scripts/windows-predecessor-cache.mjs",
     ".github/scripts/windows-native-toolchain.ps1",
     ".github/scripts/windows-owned-job.ps1",
+    ".github/scripts/windows-owned-job.cs",
+    ".github/scripts/windows-product-runtime.mjs",
+    ".github/scripts/windows-product-runtime.ps1",
+    ".github/scripts/windows-speech-observe.cjs",
+    "packages/desktop/e2e/packaged-app-smoke.js",
     ".github/scripts/windows-job-identity.mjs",
     ".github/scripts/windows-path.mjs",
     ".github/workflows/windows-product-runtime.yml",

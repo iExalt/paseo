@@ -41,6 +41,7 @@ test("Windows predecessor cache binds exact recipe and portable identity before 
       architecture: "arm64",
       appId: "sh.paseo.desktop",
       archiveFilter: "BCJ",
+      reconstruction: "Fixed source rebuilt with documented current binding and NSIS assembly",
       payload: Object.fromEntries(
         [
           "Paseo.exe",
@@ -97,6 +98,7 @@ test("Windows predecessor cache binds exact recipe and portable identity before 
     for (const value of [
       { ...identity, installer: { ...identity.installer, filename: "../outside.exe" } },
       { ...identity, sourceSha: "f".repeat(40) },
+      { ...identity, reconstruction: "original published artifact" },
       { ...identity, binding: { ...identity.binding, provenance: { inputs: "different" } } },
     ]) {
       writeIdentity(value);
