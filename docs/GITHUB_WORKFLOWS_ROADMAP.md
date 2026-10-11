@@ -14,7 +14,7 @@ through `maintain-project-status`; do not create per-run committed reports.
 | Phase                       | Steps | Completed | Exit   |
 | --------------------------- | ----- | --------- | ------ |
 | A Foundations               | 1–3   | 3         | G0, G1 |
-| B Verification and packages | 4–6   | 0         | G2, G3 |
+| B Verification and packages | 4–6   | 2         | G2, G3 |
 | C Release preparation       | 7–8   | 0         | G4     |
 | D Integration and delivery  | 9–11  | 0         | G5, G6 |
 
@@ -114,7 +114,7 @@ explicitly required before publication, even if absent from routine CI.
     suppression cannot omit required validation. No production rebase trial needed.
   - Ticks: G1; W3.
 
-- [ ] **4. Implement bounded deep verification.** Select browser/Electron/native
+- [x] **4. Implement bounded deep verification.** Select browser/Electron/native
       Android critical journeys and platform contracts. Use isolated daemon state,
       deterministic fixtures, assertions and bounded screenshots/traces. Make checks
       callable by SHA and prove routing with a safe test PR.
@@ -129,8 +129,11 @@ explicitly required before publication, even if absent from routine CI.
     Verify installed provider executables report their versions; routine Claude
     version resolution uses a deterministic command fixture, not a machine installation.
   - Ticks: G2; W4.
+  - Verified: browser positive/negative/restored runs, final deep run
+    `10591c783`, and native Android `38107787799`; receipts and hosted-runtime
+    limits are in [status](GITHUB_WORKFLOWS_STATUS.md).
 
-- [ ] **5. Preserve Mac/Android candidate packages.** Adapt existing reusable
+- [x] **5. Preserve Mac/Android candidate packages.** Adapt existing reusable
       lanes to the candidate interface. Preserve keys, production identities,
       monotonic codes, closure verification and fresh-store import. Phase A's
       approved amendment makes legacy packaging manual-only until step 9.
@@ -140,6 +143,9 @@ explicitly required before publication, even if absent from routine CI.
     old-to-new upgrade/state-preservation checks. Verify a
     wrong key/version/source is rejected. Existing updater transition is step 7/11.
   - Ticks: W5 Mac/Android portion; contributes to G3.
+  - Verified: paired producer `38104597837` at `842a70f0c`, Mac upgrade
+    `38105941202` and Android upgrade `38107787799`; disposable 0.11.0→0.11.2
+    replacement preserves state. Initial 0.1.0 migration remains C/D.
   - Human: before signing, provision missing free manifest-key access if needed;
     secret names alone do not establish usable key material. Any unavoidable
     personal-device test waits for explicit user presence/authorization.

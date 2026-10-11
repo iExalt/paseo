@@ -8,7 +8,8 @@ import smoke from "../../packages/desktop/e2e/packaged-app-smoke.js";
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 assert.equal(process.platform, "linux");
-assert.equal(process.arch, "x64");
+assert.ok(["x64", "arm64"].includes(process.env.EXPECTED_ARCHITECTURE));
+assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
 assert.equal(
   execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
   process.env.GITHUB_SHA,
@@ -45,6 +46,7 @@ await writeFile(
   JSON.stringify(
     {
       sourceSha: process.env.GITHUB_SHA,
+      architecture: process.arch,
       version,
       daemon,
       desktop,

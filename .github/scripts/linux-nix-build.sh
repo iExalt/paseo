@@ -2,7 +2,10 @@
 set -euo pipefail
 test "$GITHUB_ACTIONS" = true
 test "$RUNNER_ENVIRONMENT" = github-hosted
-test "$(uname -sm)" = 'Linux x86_64'
+case "$EXPECTED_ARCHITECTURE:$(uname -sm)" in
+  'x64:Linux x86_64'|'arm64:Linux aarch64') ;;
+  *) echo 'Unexpected native build architecture' >&2; exit 1 ;;
+esac
 test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 test -z "$(git status --porcelain)"
 command -v xvfb-run
@@ -15,7 +18,8 @@ free -m
 lscpu
 nix config show | grep -E '^(cores|max-jobs|sandbox|builders|substituters) ='
 # Record all derivation environments: individual builders may override Nix's
-# per-build core budget. Sampling includes their combined memory/disk pressure.
+# per-build core hint (Metro chooses its own workers). Sampling includes combined
+# memory/disk pressure; cores=2 is not an enforced total CPU cap.
 nix derivation show .#paseo .#desktop > "$directory/derivations.json"
 jq -e -f .github/scripts/nix-build-environment.jq \
   "$directory/derivations.json" > "$directory/build-environment.json"

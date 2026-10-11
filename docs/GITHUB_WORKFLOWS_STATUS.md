@@ -21,15 +21,15 @@
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence    | Depends on                    | Exit and owner                                               |
-| ----------------------------------------- | -------------------- | ----------------------------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified  | none                          | G0, author with user decisions                               |
-| A2: measured routine verification         | complete / verified  | A1                            | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | complete / verified  | A2                            | G1 including atomic publication failure fixtures, author     |
-| B1: deep journeys and safe PR routing     | active / implemented | A1–A3; B2 for Android closure | G2, author                                                   |
-| B2: Mac/Android candidate preservation    | active / implemented | A1–A3                         | Mac/Android portion of G3, author                            |
-| B3: Linux package matrix                  | active / designed    | B2 for closure                | Linux portion of G3, author                                  |
-| B4: Windows package matrix                | planned / designed   | B2, B3                        | Remaining G3 and phase integration, author                   |
+| Goal                                      | Status / evidence   | Depends on                    | Exit and owner                                               |
+| ----------------------------------------- | ------------------- | ----------------------------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified | none                          | G0, author with user decisions                               |
+| A2: measured routine verification         | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | complete / verified | A2                            | G1 including atomic publication failure fixtures, author     |
+| B1: deep journeys and safe PR routing     | complete / verified | A1–A3; B2 for Android closure | G2, author                                                   |
+| B2: Mac/Android candidate preservation    | complete / verified | A1–A3                         | Mac/Android portion of G3, author                            |
+| B3: Linux package matrix                  | active / designed   | B2 for closure                | Linux portion of G3, author                                  |
+| B4: Windows package matrix                | planned / designed  | B2, B3                        | Remaining G3 and phase integration, author                   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -279,7 +279,8 @@ Linux product and format proofs remain pending B2 and subsequent B3 increments.
 
 The next Linux x64 trial builds those exact native outputs in one job, bounded
 to 45 minutes (35 minutes for realization, five for runtime), with two Nix jobs
-and two cores per builder. It records builder environment and sampled resource
+and a two-core hint per builder. Metro independently chooses workers (three on
+a four-CPU host); this setting is not a hard total CPU cap. It records builder environment and sampled resource
 pressure, launches the canonical Nix desktop wrapper under Xvfb and the separately
 evaluated daemon CLI, and verifies renderer/preload, built-in plugins, CLI/PTY,
 the shipped wrapper's disabled-sandbox policy and owned-process shutdown. The
@@ -366,12 +367,27 @@ requires a unique clickable row with stable bounds, and retains pre-tap XML/PNG.
 The next bounded trial must distinguish input targeting from product navigation;
 no workspace-preservation or terminal acceptance is inferred from this failure.
 
+Android closure `38107787799` at harness `c2a5012fb` passed in 5m37s against the
+signed `842a70f0c` pair. Author and reviewer inspected actual sidebar, terminal and
+theme evidence: old/new code 200008/211002 retained the same server-qualified
+workspace `wks_01c809966ebf12bd`, saved connection and Pure black theme; split-command
+terminal output and owned cleanup passed. The exact native row identity supersedes
+the earlier title-only assertion and closes its targeting failure. Together with
+accepted Mac `38105941202` and the retained full deep/negative/restored evidence,
+B1/G2 and B2 are complete. This is hosted ARM64 software-renderer proof, not
+physical-device, voice or first-0.1.0 migration proof; Linux/Windows G3 remains open.
+
+The native Nix runtime lane now accepts explicit x64/ARM64 choices with matching
+host/runtime guards and architecture-specific concurrency/evidence names. ARM64
+dispatch waits for the pending x64 profile acceptance, then uses the same actual
+profile lifecycle and unchanged 45/35/5-minute bounds. Preflight is not product proof.
+
 Approved execution checklist:
 
-- [ ] B1: bounded deterministic browser journey and broken-fixture proof, then
+- [x] B1: bounded deterministic browser journey and broken-fixture proof, then
       Electron, relay, CLI and installed-provider contracts; Android closure
       depends on B2's same-SHA rebuilt APK.
-- [ ] B2: preserve Mac/Android candidate identities and signatures; prove fresh
+- [x] B2: preserve Mac/Android candidate identities and signatures; prove fresh
       import/install and meaningful disposable-state upgrades.
 - [ ] B3: verify Linux x64/ARM64 Nix, DEB, RPM and AppImage journeys.
 - [ ] B4: verify Windows x64/ARM64 NSIS, speech and PTY lifecycle, then G2/G3 integration.
@@ -479,7 +495,8 @@ and runs a fixture daemon built from the candidate's exact source. Real ADB cont
 seed a saved connection/theme, open the unique fixture workspace, and exercise PTY
 input/output before and after `install -r` without clearing app data. Output markers
 are assembled by the shell and never appear in the typed command. Workspace proof
-is its visible unique title; the native UI does not expose a workspace-ID assertion.
+originally used its visible unique title; the accepted repair now requires its
+exact server-qualified native row ID, as recorded in the closure receipt above.
 Host/container/backend cleanup and screenshot retention are bounded. UI selectors,
 rendered output accessibility and upgrade behavior remain unverified until the
 accepted paired producer feeds the reviewed live consumer. The first trial stopped

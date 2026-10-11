@@ -336,10 +336,13 @@ state; installer success alone is insufficient.
       Verified at `72300136d`: complete PR/dev gates 4m15s/4m18s; live timing
       enforcement and atomic rebase fixtures pass. Two-minute stretch unmet;
       runner-work tradeoff and receipts are in [status](GITHUB_WORKFLOWS_STATUS.md).
-- [ ] **G2: Verify critical journeys.** Gate: selected deep checks run on a safe
+- [x] **G2: Verify critical journeys.** Gate: selected deep checks run on a safe
       test PR and are callable by exact SHA; G4 proves real release-please PR routing.
       Deterministic fixtures, assertions,
       bounded diagnostics and native-vs-emulator limits are explicit.
+      Accepted browser negative/restored, Electron, CLI/relay/provider and
+      native Android `38107787799` evidence is reconciled in
+      [status](GITHUB_WORKFLOWS_STATUS.md); package-matrix G3 remains open.
 - [ ] **G3: Verify every package.** Gate: each format/architecture in §1 is built
       from the candidate and passes installation/import, startup, terminal/daemon
       and disposable-state upgrade checks appropriate to it; installed legacy-client
