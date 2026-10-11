@@ -20,6 +20,10 @@ import {
 } from "../services/github-service.js";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { CLIENT_CAPS } from "@getpaseo/protocol/client-capabilities";
+import {
+  BROWSER_AUTOMATION_COMMAND_NAMES,
+  type BrowserAutomationExecuteRequest,
+} from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
 import {
   decodeFileTransferFrame,
@@ -28,6 +32,7 @@ import {
   type FileTransferFrame,
 } from "@getpaseo/protocol/binary-frames/index";
 import { Session } from "./session.js";
+import { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { DaemonConfigStore } from "./daemon-config-store.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
@@ -40,6 +45,7 @@ import { createPersistedProjectRecord } from "./workspace-registry.js";
 import { deriveProjectKey } from "./project-key.js";
 import type { SessionOptions } from "./session.js";
 import type { SessionInboundMessage, SessionOutboundMessage } from "./messages.js";
+import type { VoiceSpeakHandler } from "./voice-types.js";
 import {
   asSessionInternals as asSessionInternalsHelper,
   asAgentManager,
@@ -162,6 +168,48 @@ test("cancel_agent_request reports refusal only through its response", async () 
       },
     },
   ]);
+});
+
+test("cancel_agent_request reports the acknowledged cancellation result", async () => {
+  const agentId = "11111111-1111-4111-8111-111111111111";
+  for (const scenario of [
+    { lifecycle: "running", hasInFlightRun: true, cancellation: "settled", cancelled: true },
+    { lifecycle: "idle", hasInFlightRun: false, cancellation: "not_running", cancelled: false },
+  ] as const) {
+    const messages: SessionOutboundMessage[] = [];
+    const session = createSessionForTest({
+      messages,
+      agentManager: {
+        getAgent: vi
+          .fn()
+          .mockReturnValueOnce({
+            id: agentId,
+            provider: "codex",
+            lifecycle: scenario.lifecycle,
+          })
+          .mockReturnValue(null),
+        hasInFlightRun: vi.fn(() => scenario.hasInFlightRun),
+        cancelAgentRun: vi.fn(async () => ({ status: scenario.cancellation })),
+      },
+    });
+
+    await session.handleMessage({
+      type: "cancel_agent_request",
+      agentId,
+      requestId: `cancel-${scenario.cancelled}`,
+    });
+
+    expect(messages).toContainEqual({
+      type: "cancel_agent_response",
+      payload: {
+        requestId: `cancel-${scenario.cancelled}`,
+        agentId,
+        agent: null,
+        error: null,
+        cancelled: scenario.cancelled,
+      },
+    });
+  }
 });
 
 test("legacy cancel_agent_request reports refusal through the activity log", async () => {
@@ -340,6 +388,9 @@ interface SessionForTestOptions {
   pluginRuntime?: SessionOptions["pluginRuntime"];
   orchestrationSkills?: SessionOptions["orchestrationSkills"];
   workspaceLabelService?: WorkspaceLabelService;
+  resolveVoiceCallerContext?: SessionOptions["resolveVoiceCallerContext"];
+  resolveVoiceSpeakHandler?: SessionOptions["resolveVoiceSpeakHandler"];
+  browserToolsBroker?: SessionOptions["browserToolsBroker"];
 }
 
 function createSessionForTest(options: SessionForTestOptions = {}): Session {
@@ -376,6 +427,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
 
   const sessionOptions: SessionOptions = {
     workspaceRuntimeStore: options.workspaceRuntimeStore ?? createWorkspaceRuntimeStore(),
+    browserToolsBroker: options.browserToolsBroker,
     messageReceipts: createMessageReceiptsStub(),
     agentMessages: createAgentMessageDeliveryStub(),
     creationService: createTestCreationService(),
@@ -448,6 +500,8 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     getDaemonTcpPort: options.getDaemonTcpPort,
     getDaemonTcpHost: options.getDaemonTcpHost,
     voice: options.voice,
+    resolveVoiceCallerContext: options.resolveVoiceCallerContext,
+    resolveVoiceSpeakHandler: options.resolveVoiceSpeakHandler,
     serverId: options.serverId,
     daemonVersion: options.daemonVersion,
     daemonRuntimeConfig: options.daemonRuntimeConfig,
@@ -456,6 +510,170 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
   if (options.sendToSource) sessionOptions.onMessageToSource = options.sendToSource;
   return new Session(sessionOptions);
 }
+
+test("browser cancellation is limited to the requesting session source", async () => {
+  const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+  const hostRequests: BrowserAutomationExecuteRequest[] = [];
+  const broker = new BrowserToolsBroker({ createRequestId: () => "host-request" });
+  broker.registerClient({
+    id: "browser-host",
+    hostKind: "electron",
+    supportedCommands: BROWSER_AUTOMATION_COMMAND_NAMES,
+    sendBrowserAutomationRequest: (request) => hostRequests.push(request),
+  });
+  const session = createSessionForTest({
+    browserToolsBroker: broker,
+    targetedMessages,
+    daemonConfigStore: asDaemonConfigStore({
+      get: vi.fn(() => ({
+        browserTools: { enabled: true },
+        mcp: { injectIntoAgents: false },
+        providers: {},
+      })),
+      onChange: vi.fn(() => () => {}),
+    }),
+  });
+  const requestingSource = {};
+  const otherSource = {};
+  const requestId = "browser-command-request";
+  const execute = session.handleMessage(
+    {
+      type: "browser.command.execute.request",
+      requestId,
+      command: {
+        command: "snapshot",
+        args: { browserId: "11111111-1111-4111-8111-111111111111" },
+      },
+    },
+    requestingSource,
+  );
+
+  await vi.waitFor(() => expect(broker.getPendingRequestCount()).toBe(1));
+  expect(hostRequests).toHaveLength(1);
+
+  await session.handleMessage(
+    {
+      type: "browser.command.cancel.request",
+      requestId: "foreign-cancel",
+      targetRequestId: requestId,
+    },
+    otherSource,
+  );
+  expect(targetedMessages.at(-1)).toMatchObject({
+    source: otherSource,
+    message: {
+      type: "browser.command.cancel.response",
+      payload: { requestId: "foreign-cancel", cancelled: false },
+    },
+  });
+  expect(broker.getPendingRequestCount()).toBe(1);
+
+  await session.handleMessage(
+    {
+      type: "browser.command.cancel.request",
+      requestId: "owner-cancel",
+      targetRequestId: requestId,
+    },
+    requestingSource,
+  );
+  await execute;
+
+  expect(targetedMessages.at(-1)).toMatchObject({
+    source: requestingSource,
+    message: {
+      type: "browser.command.cancel.response",
+      payload: { requestId: "owner-cancel", cancelled: true },
+    },
+  });
+  expect(broker.getPendingRequestCount()).toBe(0);
+  expect(
+    targetedMessages.some(
+      ({ message }) =>
+        message.type === "browser.command.execute.response" &&
+        message.payload.requestId === requestId,
+    ),
+  ).toBe(false);
+
+  const detachedRequestId = "browser-command-detached";
+  const detachedExecute = session.handleMessage(
+    {
+      type: "browser.command.execute.request",
+      requestId: detachedRequestId,
+      command: {
+        command: "snapshot",
+        args: { browserId: "11111111-1111-4111-8111-111111111111" },
+      },
+    },
+    requestingSource,
+  );
+  await vi.waitFor(() => expect(broker.getPendingRequestCount()).toBe(1));
+  session.clearAgentTimelineSubscription(requestingSource);
+  await detachedExecute;
+
+  expect(broker.getPendingRequestCount()).toBe(0);
+  expect(
+    targetedMessages.some(
+      ({ message }) =>
+        message.type === "browser.command.execute.response" &&
+        message.payload.requestId === detachedRequestId,
+    ),
+  ).toBe(false);
+  await session.cleanup();
+});
+
+describe("provider inspect session context", () => {
+  test.each([
+    {
+      label: "locked caller cwd",
+      callerContext: { lockedCwd: "/workspace/locked", allowCustomCwd: true },
+      requestedCwd: "../requested",
+      expectedCwd: "/workspace/locked",
+    },
+    {
+      label: "caller with custom cwd disabled",
+      callerContext: { allowCustomCwd: false },
+      requestedCwd: "/elsewhere",
+      expectedCwd: "/workspace/parent",
+    },
+  ])(
+    "applies $label before draft feature lookup",
+    async ({ callerContext, requestedCwd, expectedCwd }) => {
+      const messages: SessionOutboundMessage[] = [];
+      const providerSnapshot = createProviderSnapshotManagerStub();
+      providerSnapshot.getProvider.mockResolvedValue({
+        provider: "claude",
+        status: "ready",
+        enabled: true,
+      });
+      const listDraftFeatures = vi.fn().mockResolvedValue([]);
+      const session = createSessionForTest({
+        messages,
+        providerSnapshotManager: providerSnapshot.manager,
+        agentManager: {
+          getAgent: vi.fn(() => ({ id: "caller-agent", cwd: "/workspace/parent" })),
+          listDraftFeatures,
+        },
+        resolveVoiceCallerContext: (agentId) => (agentId === "caller-agent" ? callerContext : null),
+      });
+
+      await session.handleMessage({
+        type: "provider.inspect.request",
+        requestId: "provider-inspect-context",
+        provider: "claude",
+        cwd: requestedCwd,
+        callerAgentId: "caller-agent",
+      });
+
+      expect(listDraftFeatures).toHaveBeenCalledWith({ provider: "claude", cwd: expectedCwd });
+      expect(messages).toContainEqual(
+        expect.objectContaining({
+          type: "provider.inspect.response",
+          payload: expect.objectContaining({ requestId: "provider-inspect-context", error: null }),
+        }),
+      );
+    },
+  );
+});
 
 test("routes host-scoped agent skills requests through the daemon owner", async () => {
   const messages: SessionOutboundMessage[] = [];
@@ -1623,6 +1841,66 @@ describe("agent detach RPC", () => {
         agentId: "child-agent",
         accepted: true,
         error: null,
+      },
+    });
+  });
+});
+
+describe("agent close RPC", () => {
+  test("closes through the shared lifecycle command and keeps the stored history", async () => {
+    const messages: unknown[] = [];
+    const closedRecord = createStoredAgentRecord({
+      id: "agent-to-close",
+      cwd: "/tmp/agent-to-close",
+      title: "Closed agent",
+    });
+    const closeAgent = vi.fn().mockResolvedValue(undefined);
+    const deleteAgentState = vi.fn();
+    const remove = vi.fn();
+    const session = createSessionForTest({
+      messages,
+      agentManager: { closeAgent, deleteAgentState },
+      agentStorage: { get: vi.fn().mockResolvedValue(closedRecord), remove },
+    });
+
+    await session.handleMessage({
+      type: "agent.close.request",
+      agentId: closedRecord.id,
+      requestId: "close-1",
+    });
+
+    expect(closeAgent).toHaveBeenCalledWith(closedRecord.id);
+    expect(deleteAgentState).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(messages).toContainEqual({
+      type: "agent.close.response",
+      payload: {
+        requestId: "close-1",
+        agentId: closedRecord.id,
+        accepted: true,
+        error: null,
+      },
+    });
+  });
+
+  test("returns a rejected response when closing fails", async () => {
+    const messages: unknown[] = [];
+    const closeAgent = vi.fn().mockRejectedValue(new Error("provider close failed"));
+    const session = createSessionForTest({ messages, agentManager: { closeAgent } });
+
+    await session.handleMessage({
+      type: "agent.close.request",
+      agentId: "agent-1",
+      requestId: "close-failed",
+    });
+
+    expect(messages).toContainEqual({
+      type: "agent.close.response",
+      payload: {
+        requestId: "close-failed",
+        agentId: "agent-1",
+        accepted: false,
+        error: "provider close failed",
       },
     });
   });
@@ -5934,4 +6212,129 @@ test("a failing direct source observes fire-and-forget file replies without unha
     await session.cleanup();
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("voice speak cancellation is limited to its source and suppresses late completion", async () => {
+  const agentId = "voice-agent-1";
+  const source = {};
+  const otherSource = {};
+  const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+  let finishPlayback: (() => void) | undefined;
+  let playbackSignal: AbortSignal | undefined;
+  const handler: VoiceSpeakHandler = ({ signal }) =>
+    new Promise<void>((resolve) => {
+      playbackSignal = signal;
+      finishPlayback = resolve;
+    });
+  const session = createSessionForTest({
+    targetedMessages,
+    agentManager: { getAgent: vi.fn(() => null) },
+    agentStorage: {
+      get: vi.fn().mockResolvedValue(createStoredAgentRecord({ id: agentId, cwd: "/tmp" })),
+    },
+    resolveVoiceSpeakHandler: (requestedAgentId) => (requestedAgentId === agentId ? handler : null),
+  });
+
+  const speaking = session.handleMessage(
+    {
+      type: "voice.speak.request",
+      requestId: "voice-speak-1",
+      callerAgentId: agentId,
+      text: "hello",
+    },
+    source,
+  );
+  await vi.waitFor(() => expect(playbackSignal).toBeInstanceOf(AbortSignal));
+
+  await session.handleMessage(
+    {
+      type: "voice.speak.cancel.request",
+      requestId: "foreign-cancel",
+      targetRequestId: "voice-speak-1",
+    },
+    otherSource,
+  );
+  expect(targetedMessages.at(-1)).toMatchObject({
+    source: otherSource,
+    message: {
+      type: "voice.speak.cancel.response",
+      payload: { requestId: "foreign-cancel", cancelled: false },
+    },
+  });
+  expect(playbackSignal?.aborted).toBe(false);
+
+  const unscopedCancelMessages: unknown[] = [];
+  const unscopedSession = createSessionForTest({ messages: unscopedCancelMessages });
+  await unscopedSession.handleMessage({
+    type: "voice.speak.cancel.request",
+    requestId: "missing-cancel",
+    targetRequestId: "missing-speech-request",
+  });
+  expect(unscopedCancelMessages.at(-1)).toMatchObject({
+    type: "voice.speak.cancel.response",
+    payload: { requestId: "missing-cancel", cancelled: false },
+  });
+
+  await session.handleMessage(
+    {
+      type: "voice.speak.cancel.request",
+      requestId: "owner-cancel",
+      targetRequestId: "voice-speak-1",
+    },
+    source,
+  );
+  await speaking;
+  expect(playbackSignal?.aborted).toBe(true);
+  expect(targetedMessages).not.toContainEqual({
+    source,
+    message: {
+      type: "voice.speak.response",
+      payload: { requestId: "voice-speak-1", ok: true },
+    },
+  });
+
+  finishPlayback?.();
+  await Promise.resolve();
+  expect(targetedMessages).not.toContainEqual(
+    expect.objectContaining({
+      source,
+      message: expect.objectContaining({ type: "voice.speak.response" }),
+    }),
+  );
+});
+
+test("session cleanup aborts active voice playback and suppresses its response", async () => {
+  const agentId = "voice-cleanup-agent";
+  const messages: unknown[] = [];
+  let playbackSignal: AbortSignal | undefined;
+  const handler: VoiceSpeakHandler = ({ signal }) => {
+    playbackSignal = signal;
+    return new Promise<void>(() => {});
+  };
+  const session = createSessionForTest({
+    messages,
+    agentManager: { getAgent: vi.fn(() => null) },
+    agentStorage: {
+      get: vi.fn().mockResolvedValue(createStoredAgentRecord({ id: agentId, cwd: "/tmp" })),
+    },
+    resolveVoiceSpeakHandler: () => handler,
+  });
+
+  const speaking = session.handleMessage({
+    type: "voice.speak.request",
+    requestId: "voice-cleanup-request",
+    callerAgentId: agentId,
+    text: "still speaking",
+  });
+  await vi.waitFor(() => expect(playbackSignal).toBeInstanceOf(AbortSignal));
+  await session.cleanup();
+  await speaking;
+
+  expect(playbackSignal?.aborted).toBe(true);
+  expect(messages).not.toContainEqual(
+    expect.objectContaining({
+      type: "voice.speak.response",
+      payload: { requestId: "voice-cleanup-request", ok: true },
+    }),
+  );
 });

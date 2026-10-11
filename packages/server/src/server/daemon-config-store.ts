@@ -19,7 +19,7 @@ type ProviderOverride = import("./agent/provider-launch-config.js").ProviderOver
 
 interface SupportedMutableConfigPatch {
   relay?: { enabled?: boolean; requireProtectedSecurity?: boolean };
-  mcp?: { injectIntoAgents?: boolean };
+  agentTools?: { enabled?: boolean };
   browserTools?: { enabled?: boolean };
   providers?: MutableDaemonConfig["providers"];
   removeProviders?: string[];
@@ -173,8 +173,7 @@ function isEqualValue(a: unknown, b: unknown): boolean {
 const RELOADABLE_PATHS = [
   "daemon.relay.enabled",
   "daemon.relay.requireProtectedSecurity",
-  "daemon.mcp.enabled",
-  "daemon.mcp.injectIntoAgents",
+  "daemon.agentTools.enabled",
   "daemon.browserTools.enabled",
   "daemon.hostnames",
   "daemon.cors.allowedOrigins",
@@ -198,8 +197,7 @@ const RELOADABLE_PATHS = [
 const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.relay.enabled", "relay.enabled"],
   ["daemon.relay.requireProtectedSecurity", "relay.requireProtectedSecurity"],
-  ["daemon.mcp.enabled", "mcp.enabled"],
-  ["daemon.mcp.injectIntoAgents", "mcp.injectIntoAgents"],
+  ["daemon.agentTools.enabled", "agentTools.enabled"],
   ["daemon.browserTools.enabled", "browserTools.enabled"],
   ["daemon.hostnames", "hostnames"],
   ["daemon.cors.allowedOrigins", "cors.allowedOrigins"],
@@ -270,8 +268,8 @@ function pickRelayPatch(
 function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMutableConfigPatch {
   return {
     ...pickRelayPatch(patch.relay),
-    ...(patch.mcp?.injectIntoAgents !== undefined
-      ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
+    ...(patch.agentTools?.enabled !== undefined
+      ? { agentTools: { enabled: patch.agentTools.enabled } }
       : {}),
     ...(patch.browserTools?.enabled !== undefined
       ? { browserTools: { enabled: patch.browserTools.enabled } }
@@ -708,8 +706,8 @@ function mergeMutableDaemonPatch(
   if (patch.relay?.requireProtectedSecurity !== undefined) {
     next.relay = { ...next.relay, requireProtectedSecurity: patch.relay.requireProtectedSecurity };
   }
-  if (patch.mcp?.injectIntoAgents !== undefined) {
-    next.mcp = { ...next.mcp, injectIntoAgents: patch.mcp.injectIntoAgents };
+  if (patch.agentTools?.enabled !== undefined) {
+    next.agentTools = { ...next.agentTools, enabled: patch.agentTools.enabled };
   }
   if (patch.browserTools?.enabled !== undefined) {
     next.browserTools = { ...next.browserTools, enabled: patch.browserTools.enabled };

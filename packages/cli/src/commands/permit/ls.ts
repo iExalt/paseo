@@ -1,11 +1,10 @@
 import type { Command } from "commander";
-import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
-import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import type { AgentPendingPermissionPayload } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 
 /** Permission list item for display */
-export interface PermissionListItem {
+export interface PermissionListItem extends AgentPendingPermissionPayload {
   id: string;
   agentId: string;
   agentShortId: string;
@@ -24,31 +23,24 @@ export const permitLsSchema: OutputSchema<PermissionListItem> = {
   ],
 };
 
-/** Transform agent snapshot + permission to list item */
-function toListItem(
-  agent: AgentSnapshotPayload,
-  permission: AgentPermissionRequest,
-): PermissionListItem {
+/** Add legacy table fields to the complete normalized permission record. */
+function toListItem(permission: AgentPendingPermissionPayload): PermissionListItem {
   return {
-    id: permission.id,
-    agentId: agent.id,
-    agentShortId: agent.id.slice(0, 7),
-    name: permission.name,
-    description: permission.description ?? "-",
+    ...permission,
+    id: permission.request.id,
+    agentShortId: permission.agentId.slice(0, 7),
+    name: permission.request.name,
+    description: permission.request.description ?? "-",
   };
 }
 
 export type PermitLsResult = ListResult<PermissionListItem>;
 
-/** Collect the pending permissions of every agent */
-export function listPendingPermissions(agents: AgentSnapshotPayload[]): PermitLsResult {
-  const items: PermissionListItem[] = [];
-  for (const agent of agents) {
-    for (const permission of agent.pendingPermissions ?? []) {
-      items.push(toListItem(agent, permission));
-    }
-  }
-
+/** Add the CLI's table fields while retaining every normalized MCP field. */
+export function listPendingPermissions(
+  permissions: AgentPendingPermissionPayload[],
+): PermitLsResult {
+  const items = permissions.map(toListItem);
   return {
     type: "list",
     data: items,
@@ -67,18 +59,25 @@ export async function runLsCommand(
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
-    const agentsPayload = await client.fetchAgents({ filter: { includeArchived: true } });
-    const agents = agentsPayload.entries.map((entry) => entry.agent);
-    await client.close();
-
-    return listPendingPermissions(agents);
+    // COMPAT(permissionList): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+    if (client.getLastServerInfoMessage()?.features?.permissionList !== true) {
+      throw {
+        code: "UNSUPPORTED_FEATURE",
+        message: "The connected daemon does not support complete permission listing.",
+        details: "Update the daemon before listing permission requests.",
+      } satisfies CommandError;
+    }
+    const { permissions } = await client.listPendingAgentPermissions();
+    return listPendingPermissions(permissions);
   } catch (err) {
-    await client.close().catch(() => {});
+    if (err && typeof err === "object" && "code" in err) throw err;
     const message = err instanceof Error ? err.message : String(err);
     const error: CommandError = {
       code: "LIST_PERMISSIONS_FAILED",
       message: `Failed to list permissions: ${message}`,
     };
     throw error;
+  } finally {
+    await client.close().catch(() => undefined);
   }
 }

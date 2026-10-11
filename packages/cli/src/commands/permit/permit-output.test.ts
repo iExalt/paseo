@@ -1,5 +1,5 @@
 import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
-import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import type { AgentPendingPermissionPayload } from "@getpaseo/protocol/messages";
 import { describe, expect, it } from "vitest";
 import { render } from "../../output/index.js";
 import { permitResponseSchema, toPermissionResponseItem } from "./allow.js";
@@ -14,17 +14,29 @@ function permissionRequest(id: string): AgentPermissionRequest {
 const writeRequest = permissionRequest("permission-cc93510e-a45d-4c4e-a0bf-fc2821f82783");
 const editRequest = permissionRequest("permission-654ff862-b312-4f6e-8aac-427421ff65eb");
 
-const agent = {
-  id: agentId,
-  pendingPermissions: [writeRequest, editRequest],
-} as AgentSnapshotPayload;
+const permissions: AgentPendingPermissionPayload[] = [
+  { agentId, status: "running", request: writeRequest },
+  { agentId, status: "idle", request: editRequest },
+];
 
 describe("permit ls output", () => {
   it("emits full request ids that permit allow accepts", () => {
-    const result = listPendingPermissions([agent]);
+    const result = listPendingPermissions(permissions);
 
-    const listed = JSON.parse(render(result, { format: "json" })) as Array<{ id: string }>;
+    const listed = JSON.parse(render(result, { format: "json" })) as Array<{
+      id: string;
+      agentId: string;
+      status: string;
+      request: AgentPermissionRequest;
+    }>;
     expect(listed.map((item) => item.id)).toEqual([writeRequest.id, editRequest.id]);
+    expect(
+      listed.map(({ agentId: listedAgentId, status, request }) => ({
+        agentId: listedAgentId,
+        status,
+        request,
+      })),
+    ).toEqual(permissions);
     expect(render(result, { quiet: true }).split("\n")).toEqual([writeRequest.id, editRequest.id]);
   });
 });
