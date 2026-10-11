@@ -103,7 +103,13 @@ if (operation === "build") {
         "--publish",
         "never",
       ],
-      { stdio: "inherit", timeout: 140000 },
+      {
+        stdio: "inherit",
+        timeout: 140000,
+        // fix: locked Nsis7z cannot decode the automatic ARM64 executable filter.
+        // https://github.com/electron-userland/electron-builder/issues/9983
+        env: { ...process.env, ELECTRON_BUILDER_7Z_FILTER: "BCJ" },
+      },
     );
     const file = join(root, "packages", `fixture-${fixtureVersion}-${process.arch}.exe`);
     writeFileSync(
@@ -120,6 +126,7 @@ if (operation === "build") {
       JSON.stringify({
         version: fixtureVersion,
         architecture: process.arch,
+        archiveFilter: "BCJ",
         bytes: bytes.length,
         sha256: createHash("sha256").update(bytes).digest("hex"),
       }),
