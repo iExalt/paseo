@@ -634,6 +634,13 @@ Host cleanup completed. A strict tiny-fixture uninstall check with bounded
 residual and package-ownership diagnostics precedes another full product build;
 neither x64 lifecycle nor the Linux matrix is accepted yet.
 
+The [small uninstall diagnostic](https://github.com/iExalt/paseo/actions/runs/38132064261)
+at `ffba93b62` reproduced the failure with seven empty directories and an absent
+binary link. The package ownership listing contained files and links but no
+directories. The repair explicitly registers the candidate's `/opt/Paseo` tree
+with FPM, preserving the old package and the strict absence checks; it does not
+delete residual files to make the check pass. Native validation is pending.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then

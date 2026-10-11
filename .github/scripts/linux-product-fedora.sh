@@ -21,6 +21,8 @@ for stage in previous candidate; do
 done
 package=$(node .github/scripts/linux-product-stage.mjs package /manifest.json candidate rpm)
 rpm -q --queryformat '[%{FILENAMES} %{FILEMODES:perms}\n]' "$package" > /evidence/rpm-owned-paths.txt
+grep -q '^/opt/Paseo d' /evidence/rpm-owned-paths.txt
+grep -q '^/opt/Paseo/resources d' /evidence/rpm-owned-paths.txt
 dnf -y remove "$package"
 if rpm -q "$package"; then exit 1; fi
 bash /repo/.github/scripts/linux-rpm-uninstall-check.sh /opt/Paseo /usr/bin/Paseo /evidence/rpm-uninstall-paths.txt

@@ -124,7 +124,7 @@ writeFileSync(
         compression: "gzip",
         afterInstall: join(source, "packages/desktop/scripts/linux-sandbox/after-install.tpl"),
         afterRemove: join(source, "packages/desktop/scripts/linux-sandbox/rpm-after-remove.tpl"),
-        fpm: ["--rpm-posttrans", posttrans],
+        fpm: ["--rpm-posttrans", posttrans, "--directories", "/opt/PaseoFormatFixture"],
       },
       appImage: {
         executableArgs: ["--class=PaseoFormatFixture"],

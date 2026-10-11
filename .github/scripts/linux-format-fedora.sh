@@ -29,6 +29,8 @@ runuser -u fixture -- env FIXTURE_RECEIPT=/evidence/rpm.json FIXTURE_FORMAT=rpm 
   '
 FIXTURE_FORMAT=rpm node /scripts/linux-format-verify.mjs /evidence/rpm.json
 rpm -q --queryformat '[%{FILENAMES} %{FILEMODES:perms}\n]' paseo-format-fixture > /evidence/rpm-owned-paths.txt
+grep -q '^/opt/PaseoFormatFixture d' /evidence/rpm-owned-paths.txt
+grep -q '^/opt/PaseoFormatFixture/resources d' /evidence/rpm-owned-paths.txt
 dnf -y remove paseo-format-fixture
 if rpm -q paseo-format-fixture; then exit 1; fi
 bash /scripts/linux-rpm-uninstall-check.sh /opt/PaseoFormatFixture /usr/bin/PaseoFormatFixture /evidence/rpm-uninstall-paths.txt
