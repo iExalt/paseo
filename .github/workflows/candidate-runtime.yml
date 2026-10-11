@@ -3,6 +3,12 @@ name: Candidate native runtime
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: Native lane to verify; select one only when the other already has accepted evidence.
+        required: true
+        type: choice
+        default: both
+        options: [both, android, macos]
       candidate_pin:
         description: "JSON with runId, attempt, sourceSha, version, artifactId and artifactDigest from the accepted paired producer."
         required: true
@@ -18,7 +24,7 @@ concurrency:
 
 jobs:
   android:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' && (inputs.platform == 'both' || inputs.platform == 'android')
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     env:
@@ -63,7 +69,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
   macos:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' && (inputs.platform == 'both' || inputs.platform == 'macos')
     runs-on: macos-14
     timeout-minutes: 30
     env:
