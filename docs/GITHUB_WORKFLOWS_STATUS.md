@@ -823,6 +823,15 @@ payload hashes before launch and recovery. Its distinct transitive dependency
 graph does not replace the full-lock installation evidence or later product builds.
 The rehearsal has a 25-minute job cap, eight-minute tooling install and unchanged
 five-minute packaging/runtime limits; it creates no Actions cache or package upload.
+The [isolated rehearsal](https://github.com/iExalt/paseo/actions/runs/38154576152)
+at `79a3df1c6` confirmed that the main executable and seven top-level DLLs were
+absent after installation, although present in the unpacked payload; recovery
+cleanup passed. PR CI passed in 4m22s. This matches the locked builder's
+[documented ARM64 extraction defect](https://github.com/electron-userland/electron-builder/issues/9983).
+The next repair sets its supported `BCJ` filter only in the Windows builder child
+environment and records it in installer provenance. Payload equality and the full
+renderer, replacement and uninstall journey remain required; the repair awaits
+native verification.
 Independent Windows producer source is implemented and source-reviewed,
 but has no native build proof yet: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are
