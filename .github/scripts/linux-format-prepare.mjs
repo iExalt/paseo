@@ -7,6 +7,7 @@ import {
   renameSync,
   writeFileSync,
   chmodSync,
+  symlinkSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { createRequire } from "node:module";
@@ -40,6 +41,17 @@ copyFileSync(
   join(payload, "PaseoFormatFixture"),
 );
 chmodSync(join(payload, "PaseoFormatFixture"), 0o755);
+// Exercise the real bundled shim and launcher with a tiny Node entrypoint.
+symlinkSync("PaseoFormatFixture.bin", join(payload, "Paseo.bin"));
+mkdirSync(join(payload, "resources/bin"), { recursive: true });
+copyFileSync(join(source, "packages/desktop/bin/paseo"), join(payload, "resources/bin/paseo"));
+chmodSync(join(payload, "resources/bin/paseo"), 0o755);
+mkdirSync(join(payload, "resources/app.asar.unpacked/dist/daemon"), { recursive: true });
+copyFileSync(
+  join(source, ".github/scripts/linux-format-fixture/cli-runner.cjs"),
+  join(payload, "resources/app.asar.unpacked/dist/daemon/node-entrypoint-runner.js"),
+);
+writeFileSync(join(payload, "resources/worker-input.txt"), "mounted worker input\n");
 cpSync(join(source, ".github/scripts/linux-format-fixture"), join(payload, "resources/app"), {
   recursive: true,
 });
