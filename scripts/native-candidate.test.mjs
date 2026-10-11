@@ -4,9 +4,51 @@ import { execFileSync } from "node:child_process";
 import { validateCandidateClosure } from "../.github/scripts/macos-candidate-runtime.mjs";
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";
 import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
+import { closeNormally } from "../packages/desktop/e2e/normal-close.cjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+test("normal replacement shutdown requires close acknowledgement and bounded exit", async () => {
+  const events = [];
+  await closeNormally({
+    child: { exitCode: 0, signalCode: null },
+    requestClose: async () => events.push("close"),
+    waitForExit: async (timeout) => {
+      events.push(timeout);
+      return true;
+    },
+  });
+  assert.deepEqual(events, ["close", 10000]);
+  for (const child of [
+    { exitCode: 1, signalCode: null },
+    { exitCode: null, signalCode: "SIGTERM" },
+  ]) {
+    await assert.rejects(
+      closeNormally({
+        child,
+        requestClose: async () => {},
+        waitForExit: async () => true,
+      }),
+      /Normal close/,
+    );
+  }
+  await assert.rejects(
+    closeNormally({ requestClose: async () => {}, waitForExit: async () => false }),
+    /must exit/,
+  );
+  await assert.rejects(
+    closeNormally({
+      requestClose: async () => {
+        throw new Error("IPC failure");
+      },
+      waitForExit: async () => {
+        assert.fail("Must not hide an IPC failure");
+      },
+    }),
+    /IPC failure/,
+  );
+});
 
 test("Nix profile verification rejects stale packages and wrong binary targets", () => {
   const manifest = { version: 3, elements: { daemon: { active: true, storePaths: ["old"] } } };
