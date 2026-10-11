@@ -98,6 +98,48 @@ test("Linux prerequisite canary evaluates without realizing packages", () => {
   assert.match(script, /allow-import-from-derivation false/g);
 });
 
+test("Linux package verification selects and enforces the native architecture", () => {
+  const workflow = load(
+    readFileSync(new URL(".github/workflows/linux-nix-runtime.yml", repoRoot), "utf8"),
+  );
+  const choice = workflow.on.workflow_dispatch.inputs.architecture;
+  assert.deepEqual(choice.options, ["x64", "arm64"]);
+  assert.equal(choice.default, "x64");
+  assert.equal(
+    workflow.jobs.native["runs-on"],
+    "${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}",
+  );
+  assert.equal(workflow.jobs.native.env.EXPECTED_ARCHITECTURE, "${{ inputs.architecture }}");
+  const guard = readFileSync(new URL(".github/scripts/linux-nix-build.sh", repoRoot), "utf8").split(
+    'test "$(git rev-parse HEAD)"',
+    1,
+  )[0];
+  for (const [expected, native, succeeds] of [
+    ["x64", "Linux x86_64", true],
+    ["arm64", "Linux aarch64", true],
+    ["arm64", "Linux x86_64", false],
+    ["x64", "Linux aarch64", false],
+    ["unexpected", "Linux x86_64", false],
+  ]) {
+    const result = spawnSync(
+      "bash",
+      ["-c", 'uname() { printf "%s\\n" "$NATIVE_TEST_HOST"; };\n' + guard],
+      {
+        env: {
+          ...process.env,
+          GITHUB_ACTIONS: "true",
+          RUNNER_ENVIRONMENT: "github-hosted",
+          EXPECTED_ARCHITECTURE: expected,
+          NATIVE_TEST_HOST: native,
+        },
+        encoding: "utf8",
+        timeout: 1000,
+      },
+    );
+    assert.equal(result.status === 0, succeeds, `${expected}:${native}: ${result.stderr}`);
+  }
+});
+
 test("native candidate runtime is manual, read-only and bounded to hosted verification", () => {
   const source = readFileSync(new URL(".github/workflows/candidate-runtime.yml", repoRoot), "utf8");
   const trigger = source.split("permissions:", 1)[0];
@@ -628,7 +670,11 @@ test("fork Android resource watcher is paired and preserves child exit and signa
     const child = spawn(
       "bash",
       [gradleResourceWatchPath, "--interval-seconds", "1", "--", "node", "-e", childCode],
-      { detached: true, env: { ...process.env }, stdio: ["ignore", "pipe", "pipe"] },
+      {
+        detached: true,
+        env: { ...process.env },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
     let output = "";
     let signalSent = false;
