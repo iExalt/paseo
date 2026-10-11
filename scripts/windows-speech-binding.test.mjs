@@ -7,6 +7,7 @@ import test from "node:test";
 import { createPackageWithOptions } from "@electron/asar";
 import { assertElectronArmBinding, inspectPe } from "../.github/scripts/windows-pe.mjs";
 import { verifyWindowsJob } from "../.github/scripts/windows-job-identity.mjs";
+import { windowsPathKey } from "../.github/scripts/windows-path.mjs";
 import {
   assertWrapperTarget,
   bindingProvenance,
@@ -14,6 +15,26 @@ import {
   verifyStagedBinding,
   verifyPackagedArmBinding,
 } from "../.github/scripts/windows-speech-binding.mjs";
+
+test("resolved Windows file keys reconcile namespace spelling without conflating locations", () => {
+  assert.equal(
+    windowsPathKey(String.raw`C:\App\onnxruntime.dll`),
+    windowsPathKey(String.raw`\\?\c:\app\ONNXRUNTIME.DLL`),
+  );
+  assert.equal(
+    windowsPathKey(String.raw`\\Server\Share\App\addon.node`),
+    windowsPathKey(String.raw`\\?\UNC\server\share\app\addon.node`),
+  );
+  assert.notEqual(
+    windowsPathKey(String.raw`C:\App\addon.node`),
+    windowsPathKey(String.raw`C:\App-other\addon.node`),
+  );
+  assert.notEqual(
+    windowsPathKey(String.raw`C:\App\addon.node`),
+    windowsPathKey(String.raw`D:\App\addon.node`),
+  );
+  assert.throws(() => windowsPathKey("relative/addon.node"), /Absolute resolved/);
+});
 
 function pe({ machine = 0xaa64, delayed = true, normalNode = false } = {}) {
   const bytes = Buffer.alloc(1024);
