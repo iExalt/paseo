@@ -1,7 +1,7 @@
 # Paseo fork automated builds and updates
 
 Status: complete on release 200008.
-Mac profile, running app, and production daemon are aligned; S24 runs the same release.
+Mac profile, running app, and production daemon are aligned; the phone runs the same release.
 The shipped helper passed rollback and explicit high-water reactivation, and both
 in-app update checks report current. No new build or promotion was needed.
 The old Debug preference transfer is unavailable after uninstall.
@@ -12,7 +12,7 @@ Updated 2026-10-10 UTC (October 10 EDT).
 Build macOS Apple Silicon and Android ARM64 releases of `iExalt/paseo` in
 GitHub Actions. Install and update the Mac through Nix; let the Android app
 download its APK and open the system installer for confirmation. Preserve
-settings, pairing, and recovery on the user's Mac and Samsung S24 Ultra.
+settings, pairing, and recovery on the user's Mac and Android phone.
 
 The first useful deliverable is evidence that a signed Nix runtime closure can
 be transported through GitHub Releases and imported without rebuilding, together
@@ -44,7 +44,7 @@ activation separately. Preserve the original Android debug key and APK
 for migration investigation. The user added Firebase/Expo delivery to the campaign:
 use native GitHub builds, configure the fork's Firebase client through a controlled
 decrypted build input, and prove notification permission, token registration, and
-actual delivery on the S24. Expo is the notification delivery service, not the
+actual delivery on the phone. Expo is the notification delivery service, not the
 native build service. The earlier Play Store delivery proof does not satisfy this gate.
 Nix signing keys, Android signing keys, and any metadata-signing key have separate
 purposes; do not reuse them by default.
@@ -536,7 +536,7 @@ Installer cancellation and permission failure retain a retryable verified APK.
 Pure release tests, mocked persistence tests, and a rendered Settings-row journey
 cover the source contract; actual autolinking resolution discovers the module.
 Kotlin compilation, real GitHub release consumption, installer behavior, and
-S24 notification/device proof remain pending. The updater source was published
+The phone notification/device proof remain pending. The updater source was published
 in `9c77c42d6dec3d64a17423b4d474bd2745fde461`; paired run
 [`37980068459`](https://github.com/iExalt/paseo/actions/runs/37980068459) tests it
 with the reviewed resource constraints at `ab8b4367749551b01f97e5ce2c0fb8e867dc3f95`.
@@ -556,7 +556,7 @@ confirmed FCM V1 assignment to `sh.paseo.iexalt`; the post-assignment metadata
 showed the matching project. No new service-account key was uploaded or generated,
 and no keystore or submission credential was assigned. Protected temporary files
 were removed and their absence verified. This proves remote delivery-credential
-association, not notification permission, token registration, or S24 delivery.
+association, not notification permission, token registration, or phone delivery.
 
 ## Installation contract and managed CLI
 
@@ -740,7 +740,7 @@ Later releases and actual host/device transitions are recorded below.
 | Complete release         | One immutable revision, increasing Android code, authenticated manifest and both verified targets. Publish only after both pass; retries cannot silently replace a published identity. Signing secrets never reach untrusted PR jobs. |
 | Mac updater              | Real release download, verified import, explicit activation, preserved settings, and offline rollback. Failed staging leaves current app unchanged.                                                                                   |
 | Android updater          | Real app check/download opens system installer; permission denial, cancellation, resume/retry, and success are visible and recoverable.                                                                                               |
-| Device delivery          | Actual user Mac and S24 Ultra install/update CI-produced artifacts through intended interfaces, preserve state, and demonstrate recovery.                                                                                             |
+| Device delivery          | Actual user Mac and Android phone install/update CI-produced artifacts through intended interfaces, preserve state, and demonstrate recovery.                                                                                         |
 
 The final device gate requires two identified releases, A and B, plus a recovery
 candidate. On Mac, prove A to B without compilation, retain prior roots through
@@ -749,7 +749,7 @@ failure injection in an isolated environment rather than disrupting unrelated
 user store paths. Verify terminal/native helpers and daemon connectivity as well
 as opening the window.
 
-On S24 Ultra, test the app-to-installer path, including first-time install-source
+On the Android phone, test the app-to-installer path, including first-time install-source
 permission and cancel/retry. `adb install` alone is insufficient. Verify installed
 package, signer, version code, architecture, pairing, notification preferences,
 and workspace settings before and after upgrade. Reject corrupted/incompatible
@@ -792,7 +792,7 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Encrypt and verify Firebase credentials, including the replacement fork client config.
 - [x] Wire the fork Firebase build input and associate its matching Expo FCM V1 credential.
 - [x] Complete canonical CI/fresh rooted-store closure proof and select signed closure assets.
-- [x] Prove notification permission, token registration, and Expo delivery on the S24.
+- [x] Prove notification permission, token registration, and Expo delivery on the phone.
 - [x] Implement paired build and explicit complete-release promotion source contracts.
 - [x] Implement and test the Android fork update interface source contract.
 - [x] Implement and test the Mac managed Nix CLI source and isolated profile lifecycle.
@@ -801,22 +801,22 @@ artifact digest, signer, result, and timing; exclude secrets and bulky logs.
 - [x] Produce both verified CI artifacts from one immutable paired candidate.
 - [x] Publish and verify its authenticated complete release.
 - [x] Activate the backed-up managed Mac installation and verify its daemon and native terminal.
-- [x] Pass the S24's A-to-B in-app update, installer cancellation/retry, and settings/connection preservation.
+- [x] Pass the phone's A-to-B in-app update, installer cancellation/retry, and settings/connection preservation.
 - [x] Implement and test distinct signed release identity and native Nix generation handling.
 - [x] Implement platform update interfaces and tested signed recovery state handling.
 - [x] Pass managed Mac B-to-C launch and offline binary rollback to usable B.
-- [x] Pass S24 B-to-C in-app higher-code recovery with installed-byte, theme, and permission preservation.
-- [x] Acknowledge the S24's live saved connection after C recovery without re-pairing.
+- [x] Pass phone B-to-C in-app higher-code recovery with installed-byte, theme, and permission preservation.
+- [x] Acknowledge the phone's live saved connection after C recovery without re-pairing.
 - [x] Pass actual-device CI artifact install/update/recovery gates, with packaged-reactivation limitations below.
 - [x] Implement and test explicit retained high-water reactivation with signed recovery and unchanged replay protection.
 - [x] Reactivate retained Mac C through the source CLI without restarting the running B app or daemon.
 - [x] Verify the Mac in-app managed-update About rows and controls.
 - [x] Deliver the reactivation command in a verified packaged release.
-- [x] Recheck clean `dev`/remote HEAD and current Mac/S24 state for release 200008 closeout.
+- [x] Recheck clean `dev`/remote HEAD and current Mac/phone state for release 200008 closeout.
 - [x] Stage signed release 200008 through the retained packaged Mac helper.
 - [x] Prove rollback and explicit reactivation with the shipped 200008 helper, preserving mappings and high-water.
 - [x] Align the running Mac app/production daemon with 200008 after fresh restart approval.
-- [x] Update S24 through its own download/installer flow to 200008 and verify artifact, settings, and live pairing.
+- [x] Update phone through its own download/installer flow to 200008 and verify artifact, settings, and live pairing.
 - [x] Verify in-app update readiness on both final installations and document packaged recovery.
 - [x] Complete device acceptance and record the recovery runbook for scoped documentation publication.
 
@@ -850,7 +850,7 @@ passed. Desktop settings, Electron Preferences/Local State, and five selected da
 configuration/identity/client/push files matched the cold baseline. Phone reconnection
 provided an additional live pairing check. No Codex restart occurred.
 
-The S24 used Check → Download → Install → Android Update. Installed package
+The phone used Check → Download → Install → Android Update. Installed package
 `sh.paseo.iexalt`, code 200008, is 140,620,645 bytes with the public APK SHA-256
 recorded below, reusing the prior public-artifact and signing-certificate verification.
 Theme = System, notification permission, saved workspace, and live connected-host
@@ -897,7 +897,7 @@ only new migration types; after correction, the app-only typecheck passed in
 3.51 seconds and other workspace results were reused. No full local suite or APK
 build was run.
 
-The connected S24 Ultra initially ran API 36 and
+The connected Android phone initially ran API 36 and
 Debug 0.11.0/code 11000 with the preserved Debug certificate; the fork was absent.
 The user confirmed the Android system installer, and the installed fork matches
 the public release's bytes, signer, code 200005, and ARM64 identity. Its own-app
@@ -987,7 +987,7 @@ equal to the cold baseline. One temporary terminal produced the expected literal
 output and was removed. About-row visual observation is blocked by macOS
 assistive-access permission; no permission was changed.
 
-The S24's in-app updater downloaded and staged B, then opened the system installer.
+The phone's in-app updater downloaded and staged B, then opened the system installer.
 Cancelling once retained code 200005 and the staged download; retrying the same
 stage installed code 200006 with the pinned signing certificate. Theme = System,
 notification permission, and a positive connected-host indicator persisted without
@@ -1110,7 +1110,7 @@ a derivation input; a sequence-only metadata change remains outside the derivati
 Same-root metadata changes will not count as binary rollback proof. Android forward
 recovery must use a higher code with the same package and signer, with signed
 `rollbackOf` identifying the selected known-good published release; cancellation
-and retry alone do not prove recovery. The S24 completed B-to-C through in-app
+and retry alone do not prove recovery. The phone completed B-to-C through in-app
 Check, verified Download, Install, and Android's standard Update confirmation.
 The installed APK is exactly 140,620,645 bytes with the public C SHA-256 above,
 binding it to the CI-verified signing certificate. Actual package metadata reports

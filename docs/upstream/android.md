@@ -119,7 +119,7 @@ rm -rf android
 Build a release APK with the `development` identity to install alongside the
 Play Store app. It is named **Paseo Debug** (`sh.paseo.debug`), uses the generated
 project's local debug signing key, and bundles JavaScript for standalone use.
-For a Samsung Galaxy S24 Ultra, select the `arm64-v8a` ABI:
+For a 64-bit ARM phone, select the `arm64-v8a` ABI:
 
 ```bash
 mise exec -- npm run build:app-deps
