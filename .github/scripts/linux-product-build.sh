@@ -10,6 +10,9 @@ case "$EXPECTED_ARCHITECTURE:$(uname -sm)" in
   *) exit 1 ;;
 esac
 test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+if [ -n "${PREDECESSOR_CACHE_MATCHED_KEY:-}" ]; then
+  test "${PREDECESSOR_CACHE_HIT:-}" = true
+fi
 test -z "$(git status --porcelain)"
 test ! -e /opt/Paseo
 test ! -e /usr/bin/Paseo
@@ -45,7 +48,11 @@ sudo apt-get install -y rpm libfuse2t64 xvfb xauth libgtk-3-0t64 libnss3 libasou
 test -c /dev/fuse
 previous=5619b7d7ee1e55b322028e8b7818aa1a8f752a0a
 git worktree add --detach "$root/previous-source" "$previous"
+if [ "${PREDECESSOR_CACHE_HIT:-}" = true ]; then
+  node .github/scripts/linux-predecessor-cache.mjs restore "$root"
+fi
 for stage in candidate previous; do
+  if [ "$stage" = previous ] && [ "${PREDECESSOR_CACHE_HIT:-}" = true ]; then continue; fi
   source="$GITHUB_WORKSPACE"
   if [ "$stage" = previous ]; then source="$root/previous-source"; fi
   started=$(date +%s)
@@ -56,5 +63,6 @@ for stage in candidate previous; do
   ) 2>&1 | tee "$root/evidence/$stage-build.log"
   printf '%s\n' "$(( $(date +%s) - started ))" > "$root/evidence/$stage-build-seconds.txt"
   node .github/scripts/linux-product-package.mjs "$source" "$stage" "$root" 2>&1 | tee "$root/evidence/$stage-packaging.log"
+  if [ "$stage" = previous ]; then node .github/scripts/linux-predecessor-cache.mjs stage "$root"; fi
 done
 node .github/scripts/linux-product-stage.mjs manifest "$root"

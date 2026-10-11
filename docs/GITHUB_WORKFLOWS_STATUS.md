@@ -639,7 +639,34 @@ at `ffba93b62` reproduced the failure with seven empty directories and an absent
 binary link. The package ownership listing contained files and links but no
 directories. The repair explicitly registers the candidate's `/opt/Paseo` tree
 with FPM, preserving the old package and the strict absence checks; it does not
-delete residual files to make the check pass. Native validation is pending.
+delete residual files to make the check pass. The
+[small x64 trial at `9628b72a3`](https://github.com/iExalt/paseo/actions/runs/38132735694)
+passed in 4m18s: RPM owns the install directories, and both the complete install
+root and launcher are absent after uninstall. The RPM monitor completed normally
+with no remaining owned processes or mounts; Fedora exited zero without OOM.
+This closes the small-fixture check; full product lifecycle verification remains
+pending. Routine PR CI passed in 4m40s, within the unchanged budget.
+
+The predecessor-cache implementation is reviewed for a bounded hosted trial;
+cache and full product acceptance still require that trial.
+The previous full x64 run spent 188s building the fixed predecessor and 111.27s
+packaging its three archives, totaling 516,275,604 bytes. Reusing these verified
+archives can avoid that work without caching the changing candidate. Exact keys
+bind the historical source/lock, native architecture, hosted image, tool versions
+and producer scripts; restored archives and identity receipts are checked before
+use. Each entry is capped at 650 MiB including receipts. New saves require current
+repository usage plus that reservation to fit within 8 GB, leaving headroom under
+the 10 GB ceiling; concurrent writers can race, so this is an advisory save guard.
+No unrelated cache is evicted. The next required x64 product run will include one
+additional five-minute fresh-runner transfer proof, requiring the producer's exact
+key, an actual hit and the real validation/copy entry point. Save/restore costs
+will be reported separately from avoided build time; cache acceptance remains
+pending if saving is skipped or the transfer proof does not pass.
+Hashing the entire producer workflow/scripts and hosted image version favors
+safe invalidation over maximum reuse: orchestration edits and image rollouts can
+cause misses. A successful save-action outcome alone does not prove persistence;
+only the fresh restore establishes that. The fixed predecessor's size cap fails
+closed if exceeded rather than silently bypassing the cache contract.
 
 Approved execution checklist:
 
