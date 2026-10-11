@@ -741,6 +741,31 @@ The controller now explicitly returns success only after its phase assertions
 finish. Locked-install timing and native NSIS/Electron behavior remain pending the
 repaired trial. PR routine CI passed in 4m18s, preserving the existing baseline.
 
+The exit-status repair is published at `4cf15d5ea`; PR/dev routine runs passed in
+4m41s/4m37s. Its [bounded ARM retry](https://github.com/iExalt/paseo/actions/runs/38137789343)
+completed npm successfully in 23m29s, but the monitor rejected a remaining child
+after the unchanged ten-second exit grace. Job termination reached zero active
+processes and final cleanup reconciled every stage; NSIS packaging never started.
+Unpacking accounted for 21m14s, lifecycle builds for 2m08s; overlapping npm timers
+do not distinguish network waits from filesystem costs. Peak Job memory was
+1.68 GB and aggregate CPU time 6m12s. The next prerequisite retry retains bounded
+Job-member identities before termination, complete bounded npm timing JSON and
+fetch records; install semantics and cleanup acceptance remain unchanged.
+Independent Windows producer source is implemented and source-reviewed,
+but has no native build proof yet: old and candidate locked installs share only a
+run-local npm download cache, each payload builds once, and Windows outputs are
+NSIS-only. ARM reuses one hash-pinned binding assembly after verifying both locked
+wrappers; the old package is explicitly a reconstruction. The assembly uses
+Electron's import library and delay-load hook, preserves the wrapper's existing
+local-addon fallback, and places pinned DLLs beside the installed executable.
+Cheap PE/provenance/ASAR fixtures reject wrong architecture, incorrect Node linkage,
+missing or changed assembly provenance, shadowed loaders and absent physical
+unpacking. The controller enforces aggregate deadlines and reconciles every stage
+receipt. Its optional start receipt binds Windows ownership mode to the actual
+assigned primary process before resume; final zero-active Job evidence remains
+mandatory. Native compilation, handshake, installed loader selection, real speech,
+state-preserving replacement and full cleanup remain required B4 gates.
+
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
 worker runs one existing terminal-launch journey without retries: both prompt and
