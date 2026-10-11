@@ -20,7 +20,7 @@
   unmet. Initial queue adds 3s to each. Required checks are preserved.
 - Phase B: B1–B3 accepted; native Nix proofs cover both architectures and
   full x64/ARM DEB/RPM/AppImage evidence is at `db2316365`. B4 Windows is active.
-  Latest routine PR/dev runs passed in 4m50s/4m36s;
+  Latest routine PR/dev runs passed in 4m37s/4m35s at `e731f231c`;
   this does not replace the accepted baseline above.
 
 ## Outcome gates
@@ -839,8 +839,8 @@ owned stages reconciled with zero survivors. Reviewer acceptance combines this
 small fixture proof with `96da1572f`'s full normal workspace install; it opens
 product implementation without claiming product or x64 lifecycle verification.
 The failure-only native launch diagnostic is removed; regression inventories remain.
-Independent Windows producer source is implemented and source-reviewed,
-but has no native build proof yet: old and candidate locked installs share only a
+Independent Windows producer source is implemented and source-reviewed;
+full native product verification remains open: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are
 NSIS-only. ARM reuses one hash-pinned binding assembly after verifying both locked
 wrappers; the old package is explicitly a reconstruction. The assembly uses
@@ -851,10 +851,10 @@ missing or changed assembly provenance, shadowed loaders and absent physical
 unpacking. The controller enforces aggregate deadlines and reconciles every stage
 receipt. Its optional start receipt binds Windows ownership mode to the actual
 assigned primary process before resume; final zero-active Job evidence remains
-mandatory. Native compilation, handshake, installed loader selection, real speech,
+mandatory. Handshake, installed loader selection, real speech,
 state-preserving replacement and full cleanup remain required B4 gates.
-The combined Windows workflow and runtime adapter are implemented locally and
-await integrated review. One ARM canary precedes x64. Its 150-minute absolute
+The combined Windows workflow and runtime adapter passed integrated source review
+and were published at `e731f231c` (PR #50). One ARM canary precedes x64. Its 150-minute absolute
 job limit includes two separate 30-minute normal installs and builds, a 15-minute
 binding budget, ten-minute pinned model preparation and a seventeen-minute
 installed-runtime ceiling; these maxima are not guaranteed to fit together.
@@ -863,7 +863,20 @@ remaining before the internal deadline. The runtime uses strict owned Jobs,
 the installed Electron speech worker and actual loaded-addon/DLL provenance,
 and preserves the predecessor-created CLI trampoline, workspace and theme.
 No product package or cache is uploaded; diagnostics remain capped at 25 MiB for
-one day. Native product correctness and timings remain unverified.
+one day. Native installed product correctness remains unverified.
+The [first full ARM canary](https://github.com/iExalt/paseo/actions/runs/38157019140)
+completed normal candidate installation in 25m34s and compiled the pinned Electron
+binding in 32.8s. Its sole verified compiler telemetry survivor was cleaned under
+the approved build-only rule; all owned stages ultimately had zero active processes.
+Candidate NSIS creation completed, but the 5m26s build stage failed in verification:
+the locked ASAR reader requires native Windows separators for nested lookups.
+An isolated probe of the locked reader reproduced the exact error with forward
+slashes and succeeded with native paths; package omission is not established.
+The repair uses native paths at both lookup sites, runs the existing real-ASAR
+fixture on Windows before compilation, and retains bounded relevant archive paths
+before verification. Old installation, UI, upgrade and speech were skipped; cleanup
+passed. Routine PR/dev CI passed in 4m37s/4m35s excluding initial queues, with
+22m13s total runner work for the PR. The next ARM canary retains every product gate.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One

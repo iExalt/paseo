@@ -140,9 +140,10 @@ export function verifyPackagedArmBinding(repository, appDirectory, directory) {
   const { extractFile, listPackage, statFile } = require("@electron/asar");
   const archive = join(appDirectory, "resources/app.asar");
   const wrapper = "node_modules/sherpa-onnx-node";
+  // fix: ASAR lookups require native separators; inventory comparisons below use POSIX.
   for (const [name, expected] of Object.entries(wrapperHashes))
     assert.equal(
-      digest(extractFile(archive, `${wrapper}/${name}`)),
+      digest(extractFile(archive, join(wrapper, name))),
       expected,
       `Packaged loader ${name}`,
     );
@@ -157,7 +158,7 @@ export function verifyPackagedArmBinding(repository, appDirectory, directory) {
   ])
     assert.equal(inventory.has(name), false, `Packaged addon shadow: ${name}`);
   assert.equal(
-    statFile(archive, `${wrapper}/sherpa-onnx.node`).unpacked,
+    statFile(archive, join(wrapper, "sherpa-onnx.node")).unpacked,
     true,
     "Physical addon unpack required",
   );

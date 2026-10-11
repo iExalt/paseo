@@ -84,6 +84,13 @@ if (operation === "init") {
       lockSha256: owner[`${stage}Lock`],
     });
   } else if (operation === "binding") {
+    // Exercise native ASAR path lookup before expensive compilation and packaging.
+    run(
+      process.execPath,
+      ["--test", "--test-name-pattern=packaged binding", "scripts/windows-speech-binding.test.mjs"],
+      repository,
+      30000,
+    );
     if (process.arch === "arm64") await buildArmBinding(repository, join(root, "binding"));
   } else if (operation === "build-candidate" || operation === "build-previous") {
     packageStage(operation.slice("build-".length), owner);
@@ -177,6 +184,17 @@ function packageStage(stage, owner) {
     { ...env, ELECTRON_BUILDER_7Z_FILTER: "BCJ" },
   );
   const payload = join(output, process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked");
+  const { extractFile, listPackage } = require("@electron/asar");
+  const inventory = listPackage(join(payload, "resources/app.asar"));
+  const relevant = inventory
+    .map((name) => name.replaceAll("\\", "/"))
+    .filter((name) => /sherpa|worker-process|node-entrypoint/.test(name));
+  save(join(root, "evidence", `${stage}-speech-layout.json`), {
+    totalEntries: inventory.length,
+    relevantEntries: relevant.length,
+    truncated: relevant.length > 500 || relevant.some((name) => name.length > 1024),
+    entries: relevant.slice(0, 500).map((name) => name.slice(0, 1024)),
+  });
   assert.equal(inspectPe(readFileSync(join(payload, "Paseo.exe"))).machine, expectedMachine);
   if (process.arch === "arm64")
     binding = verifyPackagedArmBinding(source, payload, join(root, "binding/runtime"));
@@ -190,7 +208,6 @@ function packageStage(stage, owner) {
       assert.equal(hash(packaged), file.sha256);
       if (file.name.endsWith(".dll")) assert.equal(hash(join(payload, file.name)), file.sha256);
     }
-  const { extractFile } = require("@electron/asar");
   assert.equal(
     JSON.parse(extractFile(join(payload, "resources/app.asar"), "package.json")).version,
     metadata.version,
