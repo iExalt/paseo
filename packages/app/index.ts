@@ -1,4 +1,7 @@
-// Polyfill crypto.randomUUID for React Native before any other imports
+// oxlint-disable-next-line import/no-unassigned-import -- Native terminal imports need navigator fields during module initialization.
+import "./src/polyfills/install-navigator-polyfill";
+
+// Polyfill crypto.randomUUID for React Native before application imports.
 import { polyfillCrypto } from "./src/polyfills/crypto";
 polyfillCrypto();
 

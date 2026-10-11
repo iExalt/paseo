@@ -16,9 +16,9 @@ lscpu
 nix config show | grep -E '^(cores|max-jobs|sandbox|builders|substituters) ='
 # Record all derivation environments: individual builders may override Nix's
 # per-build core budget. Sampling includes their combined memory/disk pressure.
-nix derivation show .#paseo .#desktop > "$RUNNER_TEMP/linux-nix-derivations.json"
-jq 'map_values(.env | with_entries(select(.key | test("(NIX|MAKE|JOBS|CORES|FLAGS)"))))' \
-  "$RUNNER_TEMP/linux-nix-derivations.json" > "$directory/build-environment.json"
+nix derivation show .#paseo .#desktop > "$directory/derivations.json"
+jq -e -f .github/scripts/nix-build-environment.jq \
+  "$directory/derivations.json" > "$directory/build-environment.json"
 (
   while true; do
     date -u +%FT%TZ
