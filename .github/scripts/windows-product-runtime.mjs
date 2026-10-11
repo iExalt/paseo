@@ -9,6 +9,7 @@ import { pipeline } from "node:stream/promises";
 import { pathToFileURL } from "node:url";
 import { verifyWindowsJob } from "./windows-job-identity.mjs";
 import { inspectPe } from "./windows-pe.mjs";
+import { windowsPathKey } from "./windows-path.mjs";
 
 const operation = process.argv[2];
 assert.equal(verifyWindowsJob().stage, operation);
@@ -76,7 +77,9 @@ if (operation === "models") {
   const identity = json(join(root, `${stage}.json`));
   const files = { ...identity.payload };
   for (const item of identity.binding.files) {
-    if (item.name.endsWith(".dll")) files[item.name] = item.sha256;
+    if (process.arch === "arm64")
+      files[`resources/app.asar.unpacked/node_modules/sherpa-onnx-node/${item.name}`] = item.sha256;
+    else if (item.name.endsWith(".dll")) files[item.name] = item.sha256;
   }
   for (const [name, expected] of Object.entries(files))
     assert.equal(hash(join(appPath, name)), expected, name);
@@ -109,8 +112,8 @@ async function speech() {
   const executable = join(appPath, "Paseo.exe");
   assert.equal(process.versions.electron, "44.6.0", "Speech parent must use installed Electron");
   assert.equal(
-    realpathSync(process.execPath).toLowerCase(),
-    realpathSync(executable).toLowerCase(),
+    windowsPathKey(realpathSync(process.execPath)),
+    windowsPathKey(realpathSync(executable)),
   );
   const parentRuntime = {
     executable: process.execPath,
@@ -239,8 +242,8 @@ async function speech() {
   assert.equal(loaded.architecture, process.arch);
   assert.equal(loaded.onnxruntime, "1.28.2");
   assert.equal(
-    realpathSync(loaded.executable).toLowerCase(),
-    realpathSync(executable).toLowerCase(),
+    windowsPathKey(realpathSync(loaded.executable)),
+    windowsPathKey(realpathSync(executable)),
   );
   const binding = json(join(root, "candidate.json")).binding;
   assert.equal(loaded.addons.filter((filename) => filename.endsWith("sherpa-onnx.node")).length, 1);
@@ -259,7 +262,17 @@ async function speech() {
     );
     if (!required && matches.length === 0) continue;
     assert.equal(matches.length, 1, `One loaded ${expected.name}`);
-    assert.ok(matches[0].toLowerCase().startsWith(`${realpathSync(appPath).toLowerCase()}\\`));
+    const loadedPath = windowsPathKey(realpathSync(matches[0]));
+    if (process.arch === "arm64")
+      assert.equal(
+        loadedPath,
+        windowsPathKey(
+          realpathSync(
+            join(resources, "app.asar.unpacked/node_modules/sherpa-onnx-node", expected.name),
+          ),
+        ),
+      );
+    else assert.ok(loadedPath.startsWith(`${windowsPathKey(realpathSync(appPath))}\\`));
     assert.equal(hash(matches[0]), expected.sha256);
     native.push({ filename: matches[0], sha256: expected.sha256 });
   }
