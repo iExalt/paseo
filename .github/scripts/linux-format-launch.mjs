@@ -35,6 +35,8 @@ function mounts() {
     .filter(({ target }) => target.startsWith(`${process.env.TMPDIR}/`));
 }
 assert.equal(process.platform, "linux");
+assert.ok(!process.argv.slice(2).includes("--no-sandbox"), "Harness must not disable sandboxing");
+assert.ok(!process.env.PASEO_ELECTRON_FLAGS, "Harness must not inject Electron flags");
 assert.ok(process.env.TMPDIR?.startsWith("/") && process.env.TMPDIR.length > 10);
 mkdirSync(process.env.TMPDIR, { recursive: true });
 assert.deepEqual(mounts(), [], "Owned temporary directory must begin without mounts");
