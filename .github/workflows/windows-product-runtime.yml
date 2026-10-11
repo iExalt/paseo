@@ -23,6 +23,9 @@ concurrency:
 
 jobs:
   native:
+    permissions:
+      contents: read
+      actions: read
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
     runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
     timeout-minutes: 150
