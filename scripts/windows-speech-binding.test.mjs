@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { cpSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -143,7 +151,7 @@ test("local addon preparation preserves pinned wrapper and rejects shadowing", (
   }
 });
 
-test("packaged binding requires a physically unpacked addon and executable-directory DLLs", async () => {
+test("packaged binding requires a physically unpacked addon with adjacent DLLs", async () => {
   const root = mkdtempSync(join(tmpdir(), "paseo-binding-asar-"));
   try {
     const staged = join(root, "staged");
@@ -174,22 +182,30 @@ test("packaged binding requires a physically unpacked addon and executable-direc
         new URL(`../node_modules/sherpa-onnx-node/${name}`, import.meta.url),
         join(wrapper, name),
       );
-    cpSync(join(staged, "sherpa-onnx.node"), join(wrapper, "sherpa-onnx.node"));
-    for (const unpack of [true, false]) {
-      const app = join(root, `app-${unpack}`);
+    for (const file of files) cpSync(join(staged, file.name), join(wrapper, file.name));
+    for (const [mode, unpack] of [
+      ["all", "**/*.{node,dll}"],
+      ["addon-only", "**/*.node"],
+      ["none", null],
+    ]) {
+      const app = join(root, `app-${mode}`);
       mkdirSync(join(app, "resources"), { recursive: true });
       writeFileSync(join(app, "Paseo.exe"), pe({ delayed: false }));
-      for (const file of files.filter((entry) => entry.name.endsWith(".dll")))
-        cpSync(join(staged, file.name), join(app, file.name));
       await createPackageWithOptions(
         source,
         join(app, "resources/app.asar"),
-        unpack ? { unpack: "**/*.node" } : {},
+        unpack ? { unpack } : {},
       );
       const verify = () =>
         verifyPackagedArmBinding(fileURLToPath(new URL("../", import.meta.url)), app, staged);
-      if (unpack) assert.equal(verify().architecture, "arm64");
-      else assert.throws(verify, /Physical addon unpack/);
+      if (mode === "all") {
+        assert.equal(verify().architecture, "arm64");
+        renameSync(
+          join(app, "resources/app.asar.unpacked/node_modules/sherpa-onnx-node/onnxruntime.dll"),
+          join(app, "onnxruntime.dll"),
+        );
+        assert.throws(verify, /No executable-root binding copy/);
+      } else assert.throws(verify, /Physical binding unpack/);
     }
   } finally {
     rmSync(root, { recursive: true });
