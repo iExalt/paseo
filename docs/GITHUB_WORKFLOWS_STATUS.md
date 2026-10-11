@@ -18,24 +18,25 @@
   net npm-cache gain; its removal passed final-source PR and dev verification.
   Final PR/dev verification passed in 4m15s/4m18s; the two-minute stretch remains
   unmet. Initial queue adds 3s to each. Required checks are preserved.
-- Phase B: B1–B3 accepted; native Nix proofs cover both architectures and
-  full x64/ARM DEB/RPM/AppImage evidence is at `db2316365`. B4 Windows is active.
-  Full Windows ARM installed upgrade/speech/cleanup proof is accepted at `b065b31e5`;
-  x64 verification and predecessor-cache transport remain open.
-  Latest routine PR/dev passed in 4m42s/4m37s at `b065b31e5`;
+- Phase B / G2–G3 complete; all four chunks and integration are reviewer-accepted.
+  Mac/Android evidence is at `842a70f0c`, Nix at `b74c9822e`, Linux formats at
+  `db2316365`, Windows ARM/x64 at `b065b31e5`, and x64 cache transfer at `c787e125c`.
+  These are named contributors, not a universal current-SHA rebuild. Public
+  release and installed-user 0.1.0 migration remain unperformed C/D gates.
+  Latest routine PR/dev passed in 4m24s/4m15s at `c787e125c`;
   this does not replace the accepted baseline above.
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence    | Depends on                    | Exit and owner                                               |
-| ----------------------------------------- | -------------------- | ----------------------------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified  | none                          | G0, author with user decisions                               |
-| A2: measured routine verification         | complete / verified  | A1                            | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | complete / verified  | A2                            | G1 including atomic publication failure fixtures, author     |
-| B1: deep journeys and safe PR routing     | complete / verified  | A1–A3; B2 for Android closure | G2, author                                                   |
-| B2: Mac/Android candidate preservation    | complete / verified  | A1–A3                         | Mac/Android portion of G3, author                            |
-| B3: Linux package matrix                  | complete / verified  | B2 for closure                | Linux portion of G3, author                                  |
-| B4: Windows package matrix                | active / implemented | B2, B3                        | Remaining G3 and phase integration, author                   |
+| Goal                                      | Status / evidence   | Depends on                    | Exit and owner                                               |
+| ----------------------------------------- | ------------------- | ----------------------------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified | none                          | G0, author with user decisions                               |
+| A2: measured routine verification         | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | complete / verified | A2                            | G1 including atomic publication failure fixtures, author     |
+| B1: deep journeys and safe PR routing     | complete / verified | A1–A3; B2 for Android closure | G2, author                                                   |
+| B2: Mac/Android candidate preservation    | complete / verified | A1–A3                         | Mac/Android portion of G3, author                            |
+| B3: Linux package matrix                  | complete / verified | B2 for closure                | Linux portion of G3, author                                  |
+| B4: Windows package matrix                | complete / verified | B2, B3                        | Remaining G3 and phase integration, author                   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -51,25 +52,25 @@ under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
 - `scripts/fork-version.mjs` implements a stable-version comparator and a
   deterministic Android versionCode encoding. It is not yet wired to packages
   or updaters; that is C. Android's mandatory integer remains internal.
-- Native Windows ARM64 feasibility is verified using a custom binding built from
-  pinned `sherpa-onnx@1.13.8` sources and upstream ARM64 core libraries. The locked
-  npm distribution lacks that binding. B must integrate the assembled addon,
-  matching ONNX Runtime DLLs and Node layout; keeping compiler output beside the
-  wrapper selects an unintended loader fallback. Native buffer calls, real Silero
-  VAD inference, PTY output and recursive watching passed. STT/TTS model journeys,
-  packaged Electron integration and clean lifecycle/upgrade proof remain G3.
-- Actual Android shipped-ABI startup is verified on a hosted ARM64 runner using
+- Native Windows ARM64 packaging uses a custom binding built from pinned
+  `sherpa-onnx@1.13.8` sources and upstream ARM64 core libraries because the locked
+  npm distribution lacks that binding. The unchanged wrapper's local-addon route
+  loads the physically unpacked addon and adjacent DLLs. Actual installed Electron
+  STT/TTS, CLI/PTY, state-preserving upgrade, normal close and uninstall/cleanup
+  passed on both ARM64 and x64 at `b065b31e5`.
+- Actual Android shipped-ABI installation and upgrade are verified on a hosted ARM64 runner using
   distro Binder and a pinned ashmem compatibility module. The repaired trial
   booted Android 16, installed the signed ARM64 APK and retained its foreground
-  process for 30 seconds. This proves container startup; hardware, GPU and
-  Bluetooth fidelity and the full candidate G3 gate remain unproven. No local
+  process for 30 seconds in the feasibility probe, then B2 proved the signed
+  candidate's UI/daemon/terminal and disposable-state upgrade. Hardware, GPU and
+  Bluetooth fidelity remain unproven. No local
   emulator or physical-device operation is authorized or running.
 - The user approved manual-only legacy packaging until step 9's candidate
   coordinator. Ordinary dev pushes stop producing Mac/Android candidates; the
   temporary test-path exceptions are removed. Manual packaging retains the
   trusted `dev`/`iExalt` guards. `dev` is the repository's default branch, so the
-  dispatch definition is now available there after integration; no dispatch or
-  signing operation is authorized by this CI trial. The integration audit found
+  dispatch definition is available there; B2 used approved bounded signing and
+  hosted runtime trials. The ordinary-push integration audit found
   only routine CI triggered by the dev push. Baseline repairs include production
   import-boundary fixes as well as test fixtures.
 - Bot PR credentials are not proven. Existing repository secret names contain
@@ -272,10 +273,17 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-G1 is complete. Phase B is approved: deep journeys and safe-PR routing,
-Mac/Android candidate preservation, Linux package matrix, then Windows package
-matrix. Preserve routine latency; deeper gates do not join ordinary PR blocking
-work. Bot events and installed-user migration remain C/D.
+Current sequence: request approval for the reviewer-shaped Phase C proposal.
+C covers the settled 0.1.0/semver clean break and real release-please bot events;
+D owns exact-candidate release coordination, publication and personal-device
+migration. Neither phase is approved yet. Preserve routine latency; deeper gates
+do not join ordinary PR blocking work. ARM cache transport, full cache-hit upgrade
+timing and the two-minute routine stretch remain unclaimed.
+
+### Phase B evidence history
+
+The following records preserve increment-time findings and their resolutions;
+the current snapshot and outcome gates above own present status.
 
 B3 has one bounded prerequisite investigation alongside B2: a manual Linux x64
 evaluation-only preflight, capped at ten minutes. It records exact-source Node,
@@ -711,7 +719,7 @@ Approved execution checklist:
 - [x] B2: preserve Mac/Android candidate identities and signatures; prove fresh
       import/install and meaningful disposable-state upgrades.
 - [x] B3: verify Linux x64/ARM64 Nix, DEB, RPM and AppImage journeys.
-- [ ] B4: verify Windows x64/ARM64 NSIS, speech and PTY lifecycle, then G2/G3 integration.
+- [x] B4: verify Windows x64/ARM64 NSIS, speech and PTY lifecycle, then G2/G3 integration.
 - [ ] Stretch: inventory every workflow/lane's timing and optimize avoidable work
       using existing receipts and required runs; preserve the routine baseline,
       account for parallel runner work, and retain unmeasured future gates.
@@ -998,6 +1006,40 @@ worktree, then always removes it and verifies absence. Different checkout bytes
 produce an exact-key miss; integrity checks are not normalized away. Routine
 PR/dev at this source passed in 4m35s/4m14s, with 23m32s/22m51s runner work.
 
+The [Windows x64 contributor](https://github.com/iExalt/paseo/actions/runs/38177868696)
+at `b065b31e5` passed in 14m56s and is reviewer-accepted. The retained workspace
+`wks_7566caf5d7e323ac`, Pure black theme and CLI trampoline survived replacement;
+author and reviewer inspected the candidate screenshots. Real STT matched exactly,
+TTS returned 68,808 bytes of 24 kHz PCM in 3.837s, and the three loaded native
+hashes matched the installed package manifest. All 15 owned Jobs completed with
+zero active processes; installation, registry, shortcuts and state cleanup passed.
+Candidate install/build took 2m04s/3m56s; predecessor took 1m22s/3m17s.
+Its 159,365,371-byte predecessor also fits the unchanged 200 MiB cache cap.
+At the corrected cache source `c787e125c`, routine PR/dev passed in 4m24s/4m15s,
+using 20m39s/21m20s runner work. These are additional observations, not a reset
+of the accepted baseline or a controlled performance comparison.
+
+The [corrected cache trial](https://github.com/iExalt/paseo/actions/runs/38180882993)
+at `c787e125c` passed: full x64 product verification in 21m33s followed by a
+40-second fresh-runner cache proof. The 159,368,932-byte entry contains the fixed
+installer and two metadata files; its installer SHA-256 is
+`553fb1594473776dd0f6bf06c3e3f8adfb608bd5a9b715e85b10f0c9f254819f`.
+Both lockfile hashes and the exact recipe matched on the fresh runner; restore
+took 3s, real validation/copy/absolute-identity reconstruction 1s, and clean
+proof-worktree removal 1s. Save followed successful installed speech/upgrade and
+all cleanup gates. Repository usage is now 5,306,868,709 bytes across six entries,
+under the unchanged 10 GB hard limit; no unrelated entry was evicted.
+This proves x64 cache transport/integrity, not an installed full-hit workflow or
+ARM cache transport. Those may be measured on later necessary candidate runs.
+
+The slower native run does not establish a cache regression: candidate and old
+install/build commands were unchanged, with nearly identical recorded I/O but
+higher charged CPU time. Candidate install/build took 3m04s/6m02s; predecessor
+2m16s/4m31s. New native cache steps totaled 9s (prepare 1s, miss 0s, staging 3s,
+save 5s); the optional 40s proof is separate. Preserve both observations and the
+stable routine baseline; do not claim a controlled host comparison or overall
+cache-hit speedup from this miss run.
+
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
 worker runs one existing terminal-launch journey without retries: both prompt and
@@ -1161,6 +1203,13 @@ are included by default. Windows proof includes STT/TTS and PTY lifecycle beyond
 A1's VAD smoke. Disposable upgrades must preserve meaningful state.
 
 ## Progress log
+
+- 2026-10-11: Phase B/G2–G3 accepted across the contributor matrix above. Windows
+  ARM/x64 installed upgrade, CLI/PTY, real speech and cleanup passed; x64 immutable
+  predecessor save/fresh-runner transfer also passed. Final implementation routine
+  PR/dev checks were 4m24s/4m15s; repository cache usage is 5.31 GB of 10 GB.
+  The two-minute stretch, ARM cache transfer and full cache-hit upgrade remain
+  unclaimed. The next step is Phase C approval, not public release or device migration.
 
 - 2026-10-10: Phase A approved in a sibling worktree; reviewer agreed chunk
   boundaries. Read-only cache/release inspection established the cost snapshot.

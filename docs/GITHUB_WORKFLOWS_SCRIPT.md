@@ -69,9 +69,9 @@ deviation that changes later threads.
 
 ## B. Verify journeys and every package — steps 4–6
 
-**State:** approved and active; A is complete. Start with bounded browser journeys
-and safe opt-in routing, then the remaining deep and package proofs. Review and
-optimize all CI times as a stretch goal alongside required verification.
+**State:** complete and reviewer-accepted, 2026-10-11. G2/G3 proofs cover the
+named contributors in [status](GITHUB_WORKFLOWS_STATUS.md). Continue reviewing
+all CI times as a stretch goal at subsequent approved gates.
 
 ```text
 Use $keep-me-in-the-loop to run thread B in docs/GITHUB_WORKFLOWS_SCRIPT.md.
@@ -99,7 +99,7 @@ contracts. Mark B done only after G2/G3 proofs, and record deviations affecting 
 
 ## C. Prepare compatible releases with release-please — steps 7–8
 
-**State:** provisional; waits on B.
+**State:** reviewer-shaped proposal ready; B is complete and C awaits user approval.
 
 ```text
 Use $keep-me-in-the-loop to run thread C in docs/GITHUB_WORKFLOWS_SCRIPT.md.
@@ -113,6 +113,12 @@ Keep releases unpublished. Mark C done with G4 evidence and record deviations.
   Not alongside D: candidate/version and bot-event behavior must be accepted.
 - **Chunks:** (1) version/updater transition; (2) release-please configuration and
   guarded event routing; (3) actual bot PR/update and merge-identity rehearsal.
+  C1 includes tamper/downgrade/legacy-lineage rejection and usable-previous-release
+  recovery fixtures, preserving signing/package identity. C2 verifies that scoped
+  bot credentials can emit downstream PR events before rehearsal, without adding
+  signing authority. C3 covers current-head checks on updated bot PRs, forged-label
+  rejection, exact merge SHA and two consecutive version proposals. Use fixtures
+  for rebase/version/changelog preservation; no production rebase is implied.
 - **Human:** before live tests, install/provide scoped bot access if unavailable
   and any necessary repository permissions. At approval authorize the bounded
   test PR/draft activity. No publisher certificates required; no real release.
