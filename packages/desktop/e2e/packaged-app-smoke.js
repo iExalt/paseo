@@ -1038,7 +1038,7 @@ async function smokePackagedDesktopApp({
     await writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome, artifactDir });
     await stopDaemonForCleanup();
     console.log(
-      `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; CLI shim daemon status and terminal smoke succeeded`,
+      `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; ${predecessor ? "predecessor state seeded" : "CLI shim daemon status and terminal smoke succeeded"}`,
     );
   } catch (error) {
     await writeSmokeArtifacts({
