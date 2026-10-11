@@ -24,6 +24,7 @@ fi
 export FORMAT_ROOT="$RUNNER_TEMP/paseo-format-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 test ! -e "$FORMAT_ROOT"
 mkdir -p "$FORMAT_ROOT/evidence" "$FORMAT_ROOT/payload" "$FORMAT_ROOT/home"
+printf '%s\n' "$GITHUB_SHA" "$EXPECTED_ARCHITECTURE" "$fedora" > "$FORMAT_ROOT/evidence/identity.txt"
 container="paseo-format-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 test -z "$(docker ps -aq --filter "name=^/$container$")"
 touch "$FORMAT_ROOT/owned"
@@ -46,8 +47,12 @@ export ELECTRON_BUILDER_CACHE="$FORMAT_ROOT/builder-cache"
 timeout --kill-after=10s 240s node node_modules/electron-builder/cli.js \
   --projectDir "$FORMAT_ROOT/project" --config "$FORMAT_ROOT/builder.json" \
   --prepackaged "$FORMAT_ROOT/payload" --linux deb rpm AppImage \
-  "--$EXPECTED_ARCHITECTURE" --publish never
+  "--$EXPECTED_ARCHITECTURE" --publish never 2>&1 | tee "$FORMAT_ROOT/evidence/build.log"
 sha256sum "$FORMAT_ROOT/packages/"* > "$FORMAT_ROOT/evidence/packages.sha256"
+test "$(dpkg-deb -f "$FORMAT_ROOT/packages/fixture-$EXPECTED_ARCHITECTURE.deb" Package)" = paseo-format-fixture
+test "$(dpkg-deb -f "$FORMAT_ROOT/packages/fixture-$EXPECTED_ARCHITECTURE.deb" Version)" = 1.0.0
+test "$(dpkg-deb -f "$FORMAT_ROOT/packages/fixture-$EXPECTED_ARCHITECTURE.deb" Architecture)" = "$(dpkg --print-architecture)"
+test "$(rpm -qp --queryformat '%{NAME} %{VERSION} %{ARCH}' "$FORMAT_ROOT/packages/fixture-$EXPECTED_ARCHITECTURE.rpm")" = "paseo-format-fixture 1.0.0 $(uname -m)"
 export FIXTURE_ARCH="$EXPECTED_ARCHITECTURE"
 export FIXTURE_TOKEN="$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$GITHUB_SHA"
 run_fixture() {
@@ -82,4 +87,3 @@ timeout --kill-after=10s 300s docker run --name "$container" --cpus=2 --memory=4
   "$fedora" bash /scripts/linux-format-fedora.sh > "$FORMAT_ROOT/evidence/fedora.log" 2>&1
 docker inspect "$container" > "$FORMAT_ROOT/evidence/container.json"
 docker rm "$container"
-printf '%s\n' "$GITHUB_SHA" "$EXPECTED_ARCHITECTURE" "$fedora" > "$FORMAT_ROOT/evidence/identity.txt"

@@ -49,7 +49,7 @@ writeFileSync(
         icon: join(source, "packages/desktop/assets/icon.png"),
         category: "Development",
         maintainer: "Paseo <fixture@example.invalid>",
-        artifactName: "fixture-${arch}.${ext}",
+        artifactName: "fixture-" + process.arch + ".${ext}",
       },
       deb: {
         afterInstall: join(source, "packages/desktop/scripts/linux-sandbox/after-install.tpl"),
@@ -59,7 +59,7 @@ writeFileSync(
       },
       appImage: {
         executableArgs: ["--class=PaseoFormatFixture"],
-        artifactName: "fixture-${arch}.AppImage",
+        artifactName: "fixture-" + process.arch + ".AppImage",
       },
     },
     null,
