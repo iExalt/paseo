@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][ValidateSet('setup', 'ownership', 'install', 'build', 'runtime', 'probe', 'cleanup', 'diagnostics')][string]$Phase)
+param([Parameter(Mandatory = $true)][ValidateSet('setup', 'ownership', 'install', 'fixture-tools', 'build', 'runtime', 'probe', 'cleanup', 'diagnostics')][string]$Phase)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
@@ -47,16 +47,7 @@ function Read-Registrations {
     }
 }
 
-function Get-NativeCompiler {
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $visualStudio = (& $vswhere -latest -products '*' -property installationPath).Trim()
-    if ($LASTEXITCODE -ne 0 -or !$visualStudio) { throw 'Visual Studio discovery failed' }
-    $toolVersion = (Get-Content -LiteralPath (Join-Path $visualStudio 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt') -Raw).Trim()
-    $hostArch = if ($env:EXPECTED_ARCHITECTURE -eq 'arm64') { 'Arm64' } else { 'x64' }
-    $compiler = Join-Path $visualStudio "VC\Tools\MSVC\$toolVersion\bin\Host$hostArch\$($env:EXPECTED_ARCHITECTURE)\cl.exe"
-    if (!(Test-Path -LiteralPath $compiler)) { throw 'Native compiler missing' }
-    return $compiler
-}
+. (Join-Path $PSScriptRoot 'windows-native-toolchain.ps1')
 
 function Write-Spec([string]$Name, [string]$Executable, [string[]]$Arguments, [int]$Seconds, [string]$NsisDirectory = '') {
     $specFile = Join-Path $root "$Name-spec.json"
@@ -65,7 +56,7 @@ function Write-Spec([string]$Name, [string]$Executable, [string[]]$Arguments, [i
         executable = $Executable; arguments = @($Arguments); directory = $env:GITHUB_WORKSPACE
         log = (Join-Path $root "logs\$Name.log"); receipt = (Join-Path $evidence "$Name-job.json")
         timeoutSeconds = $Seconds; nsisInstallDirectory = $NsisDirectory
-        allowedBuildTelemetry = if ($Name -in @('compiler-probe', 'npm-install', 'package')) {
+        allowedBuildTelemetry = if ($Name -in @('compiler-probe', 'npm-install', 'fixture-tools', 'package')) {
             Join-Path (Split-Path (Get-NativeCompiler)) 'VCTIP.EXE'
         } else { $null }
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $specFile -Encoding utf8
@@ -81,7 +72,7 @@ function Run-Owned([string]$Name, [string]$Executable, [string[]]$Arguments, [in
     if ($ExpectedFailure) {
         if ($status -eq 0 -or $receipt.exitCode -ne 7 -or !$receipt.terminated -or $receipt.timedOut) { throw 'Negative proof did not fail for the intended reason' }
     } else {
-        $allowed = $Name -in @('compiler-probe', 'npm-install', 'package') -and
+        $allowed = $Name -in @('compiler-probe', 'npm-install', 'fixture-tools', 'package') -and
             $receipt.buildSucceededWithTelemetryCleanup -and
             $receipt.allowedBuildTelemetry -eq (Join-Path (Split-Path (Get-NativeCompiler)) 'VCTIP.EXE')
         if ($status -ne 0 -or $receipt.exitCode -ne 0 -or ($receipt.terminated -and !$allowed) -or $receipt.timedOut) { throw "Owned stage failed: $Name" }
@@ -155,6 +146,16 @@ if ($Phase -eq 'ownership') {
         foreach ($process in $held) { $process.Dispose() }
         $monitorProcess.Dispose()
     }
+} elseif ($Phase -eq 'fixture-tools') {
+    $toolsRoot = Join-Path $root 'fixture-tools'
+    $toolLock = (Get-FileHash (Join-Path $PSScriptRoot 'windows-fixture-tools\package-lock.json') -Algorithm SHA256).Hash
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'windows-fixture-tools') -Destination $toolsRoot -Recurse
+    $env:npm_config_cache = Join-Path $root 'npm-cache'
+    $npmEntry = Join-Path (Split-Path $node) 'node_modules\npm\bin\npm-cli.js'
+    $null = Run-Owned 'fixture-tools' $node @($npmEntry, 'ci', '--prefix', $toolsRoot, '--foreground-scripts', '--no-audit', '--no-fund') 460
+    if ((Get-FileHash (Join-Path $toolsRoot 'package-lock.json') -Algorithm SHA256).Hash -ne $toolLock) { throw 'Fixture tool lock changed' }
+    @{ scope = 'isolated fixture tools only'; lockSha256 = $toolLock } |
+        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'fixture-tools.json')
 } elseif ($Phase -eq 'install') {
     $env:npm_config_cache = Join-Path $root 'npm-cache'
     $npmEntry = Join-Path (Split-Path $node) 'node_modules\npm\bin\npm-cli.js'
@@ -201,7 +202,19 @@ if ($Phase -eq 'ownership') {
         $registrations | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $evidence "registration-$version.json")
         # Installer job reached active=0 before this explicit launch: no broker auto-launch is requested.
         Assert-NoFixtureProcess
-        $null = Run-Owned "renderer-$version" $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'ui', $root, $version) 60
+        $null = Run-Owned "inventory-$version" $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'inspect', $root, $version) 30
+        try {
+            $null = Run-Owned "renderer-$version" $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'ui', $root, $version) 60
+        } catch {
+            $launchFailure = $_
+            $fixtureExe = Join-Path $installDirectory "$productName.exe"
+            if (Test-Path -LiteralPath $fixtureExe -PathType Leaf) {
+                $env:PASEO_WINDOWS_FIXTURE_PROFILE = Join-Path $root 'profile'
+                $specFile = Write-Spec "native-launch-error-$version" $fixtureExe @() 5
+                & $pwsh -NoProfile -File $monitor -Specification $specFile | Write-Host
+            }
+            throw $launchFailure
+        }
     }
     $uninstallers = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'Uninstall*.exe' -File)
     if ($uninstallers.Count -ne 1) { throw 'Expected one owned uninstaller' }

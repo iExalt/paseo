@@ -801,6 +801,28 @@ removed constructor arguments, new broker envelope fields, CLI launch context,
 normalized configuration and automatic MCP removal. Test-only repairs preserve
 the underlying assertions; fresh merged-source CI remains required before any
 native dispatch. Future product proofs must bind the merged candidate source.
+The fixture repairs passed final-source PR CI in 4m04s at `090a4a4dc`.
+Further concurrent documentation changes were merged without changing prerequisite
+code; PR CI at `96da1572f` passed in 4m36s before its verified fast-forward.
+The [native telemetry proof](https://github.com/iExalt/paseo/actions/runs/38151438940)
+then passed in 1m23s: compiler exit zero after 2.873s, one exact verified VCTIP
+survivor, stable total-process count of two before/after termination, and zero
+final active processes. Its receipt truthfully records termination and separate
+build-telemetry success. Ownership negative/monitor-death checks and final cleanup
+also passed. This proves the narrow cleanup rule, not the full installer gate.
+Same-source dev CI passed in 4m32s. The [full ARM prerequisite](https://github.com/iExalt/paseo/actions/runs/38151801119)
+completed the normal workspace install in 20m44s, with one verified VCTIP survivor
+and stable 97-process accounting through successful cleanup. Two tiny NSIS packages
+built in 1m51s. The first installation registered the exact current-user path and
+version, but renderer launch returned `ENOENT` for the expected executable.
+Recovery uninstall and all Job cleanup passed; renderer, replacement and normal
+uninstall acceptance remain unproven. The next bounded rehearsal installs only
+Electron44.6.0, electron-builder26.15.3 and Playwright1.63.0 from a separate locked
+286-package fixture toolchain. It captures unpacked/installed inventories and
+payload hashes before launch and recovery. Its distinct transitive dependency
+graph does not replace the full-lock installation evidence or later product builds.
+The rehearsal has a 25-minute job cap, eight-minute tooling install and unchanged
+five-minute packaging/runtime limits; it creates no Actions cache or package upload.
 Independent Windows producer source is implemented and source-reviewed,
 but has no native build proof yet: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are
