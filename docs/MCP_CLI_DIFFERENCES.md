@@ -4,6 +4,12 @@ Paseo's served MCP endpoint, transport, admission exception, and runtime injecti
 
 This document records the completed migration from the inventory at `b48df9e24`; Git history retains the original gap analysis. Current usage belongs in the [CLI reference](../public-docs/cli.md), [tool policy and caller context](../public-docs/mcp.md), [browser reference](../public-docs/browser-tools.md), and [schedule reference](../public-docs/schedules-cli.md). Keeping this filename preserves existing handoff links; it is no longer an open implementation plan.
 
+## Closure
+
+Status: **closed**. The implementation shipped to `dev` in [635a4e413](https://github.com/iExalt/paseo/commit/635a4e41392c3d67dbd2ac18915c5349b96d78b2); documentation and checked-in skill guidance followed in [a2b0ce986](https://github.com/iExalt/paseo/commit/a2b0ce986). The user accepted closure after the documentation update. No migration checklist items remain open.
+
+The verification limits below remain part of the completion record. The stale interactive website demo is a separate product follow-up, not an unfinished CLI replacement or documentation gate. This closure does not claim a release, deployment, or additional runtime verification.
+
 ## Completion checklist
 
 - [x] Replace all 66 Paseo operations, including browser and speech.
