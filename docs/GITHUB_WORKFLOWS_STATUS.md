@@ -92,7 +92,12 @@ treated as controlled before/after measurements.
 | Android ARM64 feasibility                          | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                          |
 | Windows ARM64 binding feasibility                  | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                   |
 | Deep checks                                        | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                           | 15m per lane; reduce repeated setup subprocesses, preserve journeys         |
-| Linux/Windows packages                             | Approved B implementation pending                     | Unmeasured                                                                                       | Set bounded initial trials; measure required runs and optimize proven waste |
+| Candidate native runtime                           | Manual; macOS ARM64 / Ubuntu ARM64 Android container  | Mac `38105941202` 4m58s; Android `38107787799` 5m37s                                             | 30m jobs; bounded install/upgrade journeys, immutable producer reuse        |
+| Linux package evaluation preflight                 | Manual; native Linux                                  | x64 `434bb96d4` 31s; substitutable Node avoids bootstrap                                         | 10m job / 8m evaluation; no product realization                             |
+| Linux Nix runtime                                  | Manual; native Linux x64/ARM64                        | x64 `38109113388` 21m46s; ARM `38110354030` 16m55s                                               | 45m job / 35m build; source filtering avoids test-only invalidation         |
+| Linux format prerequisite                          | Manual; native Linux x64/ARM64                        | x64 `c790a0156` 6m04s; ARM `6be877f3a` 3m21s; different hosts/settings                           | 20m job; gzip parity, no extra benchmark-only runs                          |
+| Linux product formats                              | Manual; native Linux x64/ARM64                        | x64 `38126449316` 15m27s failed at RPM setup; 12m25s before runtime                              | 45m job / 30m build / 10m runtime; one payload per source, gzip fan-out     |
+| Windows packages                                   | Approved B4 implementation pending                    | Full ARM workspace install previously exceeded 15m; product timing unmeasured                    | Measure install phases before expensive native NSIS/STT/TTS trials          |
 | Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                  |
 
 All current workflow files and callable lanes are represented. GitHub also lists
@@ -583,6 +588,29 @@ The next ARM prerequisite mounts that same Node instead of installing a differen
 distribution Node, so its required run also checks this boundary and the gzip
 fixture change before another full product build. The compression change at
 `72c630741` passed PR/dev CI in 4m34s/4m19s.
+
+The [ARM prerequisite at `6be877f3a`](https://github.com/iExalt/paseo/actions/runs/38128059566)
+passed in 3m21s: both fresh-supervisor lifetime modes, actual gzip DEB/RPM
+install/uninstall, and `/node-bin/node` version 26.11.0/architecture arm64 inside
+the pinned Fedora container. All four monitors completed normally with empty
+owned sets; the container exited zero without OOM. The reviewer accepted the
+ARM lifetime, compression and copied-Node prerequisites. This is not full product
+ARM proof or a controlled comparison with the earlier x64 timing. That source's
+PR/dev CI passed in 4m37s/3m48s; the repaired x64 product retry remains open.
+
+The [x64 product retry](https://github.com/iExalt/paseo/actions/runs/38128358878)
+at `6be877f3a` ran for 16m17s, including 11m56s building both payloads and
+their three formats. AppImage and DEB again preserved each workspace and Pure
+black preference, closed normally and emptied their owned process sets. Fedora
+now ran the pinned Node binary and seeded the old RPM successfully, but the RPM
+upgrade removed `/usr/bin/Paseo` before the candidate could launch. The locked
+builder's default removal script unconditionally deletes this link; the old
+package's removal runs after the new package's install hook. Both RPM sessions
+had complete process cleanup, and the owned container/state were removed. A
+candidate transaction-end repair and a small two-version installer proof are
+required before another full product trial; the predecessor must retain its
+original removal behavior so the regression is not hidden. Full x64/ARM product
+acceptance remains open.
 
 Approved execution checklist:
 
