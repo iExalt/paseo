@@ -27,6 +27,32 @@ describe("server config", () => {
     expect(standaloneConfig.desktopManaged).toBe(false);
   });
 
+  test("migrates the legacy effective tool gate unless the native setting is explicit", async () => {
+    const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-config-agent-tools-"));
+    roots.push(paseoHome);
+    const configPath = path.join(paseoHome, "config.json");
+
+    await writeFile(configPath, JSON.stringify({ daemon: { mcp: { enabled: true } } }));
+    expect(loadConfig(paseoHome, { env: {} }).agentToolsEnabled).toBe(false);
+
+    await writeFile(
+      configPath,
+      JSON.stringify({ daemon: { mcp: { enabled: true, injectIntoAgents: true } } }),
+    );
+    expect(loadConfig(paseoHome, { env: {} }).agentToolsEnabled).toBe(true);
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        daemon: {
+          mcp: { enabled: true, injectIntoAgents: true },
+          agentTools: { enabled: false },
+        },
+      }),
+    );
+    expect(loadConfig(paseoHome, { env: {} }).agentToolsEnabled).toBe(false);
+  });
+
   test("loads the provider catalog refresh timeout", async () => {
     const paseoHome = await mkdtemp(path.join(os.tmpdir(), "paseo-config-provider-timeout-"));
     roots.push(paseoHome);

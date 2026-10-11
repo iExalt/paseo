@@ -2,8 +2,6 @@ import { execFileSync } from "node:child_process";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { expect, test } from "vitest";
 import { render } from "../../../cli/src/output/index.js";
 import { runCreateCommand } from "../../../cli/src/commands/workspace/create.js";
@@ -23,20 +21,17 @@ async function readPersistedPolicy(
   return records.find((record) => record.workspaceId === workspaceId)?.notifications;
 }
 
-test("CLI and MCP create and update durable workspace notification policies", async () => {
+test("CLI creates and updates durable workspace notification policies", async () => {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), "paseo-workspace-notifications-"));
   const homeRoot = path.join(fixtureRoot, "home");
   const staticDir = path.join(fixtureRoot, "static");
   const localDirectory = path.join(fixtureRoot, "local");
-  const mcpDirectory = path.join(fixtureRoot, "mcp-local");
   const repository = path.join(fixtureRoot, "repository");
   let daemon: Awaited<ReturnType<typeof createTestPaseoDaemon>> | undefined;
-  let mcpClient: Client | undefined;
   try {
     await Promise.all([
       mkdir(staticDir, { recursive: true }),
       mkdir(localDirectory, { recursive: true }),
-      mkdir(mcpDirectory, { recursive: true }),
       mkdir(repository, { recursive: true }),
     ]);
     execFileSync("git", ["init", "-b", "main"], { cwd: repository, stdio: "ignore" });
@@ -73,6 +68,19 @@ test("CLI and MCP create and update durable workspace notification policies", as
       host: `127.0.0.1:${daemon.port}`,
     };
     const workspaceRegistryPath = path.join(daemon.paseoHome, "projects", "workspaces.json");
+    const nonDirectoryFile = path.join(fixtureRoot, "not-a-directory");
+    const missingDirectory = path.join(fixtureRoot, "missing-directory");
+    await writeFile(nonDirectoryFile, "file, not directory\n");
+    const beforeInvalidCreates = await runLsCommand({ daemonTarget }, {} as never);
+
+    for (const invalidPath of [missingDirectory, nonDirectoryFile]) {
+      await expect(
+        runCreateCommand({ daemonTarget, isolation: "local", path: invalidPath }, {} as never),
+      ).rejects.toThrow();
+    }
+    expect((await runLsCommand({ daemonTarget }, {} as never)).data).toEqual(
+      beforeInvalidCreates.data,
+    );
 
     const local = await runCreateCommand(
       {
@@ -130,50 +138,11 @@ test("CLI and MCP create and update durable workspace notification policies", as
         expect.objectContaining({ workspaceId: worktree.data.workspaceId, notifications: "on" }),
       ]),
     );
-
-    const mcpToken = daemon.daemon.agentManager.getMcpAuthToken();
-    if (!mcpToken) throw new Error("Test daemon did not provide its internal MCP capability");
-    mcpClient = new Client({ name: "workspace-notification-test", version: "0.0.0" });
-    await mcpClient.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${daemon.port}/mcp/agents`), {
-        requestInit: { headers: { authorization: `Bearer ${mcpToken}` } },
-      }),
-    );
-    const mcpCreated = await mcpClient.callTool({
-      name: "create_workspace",
-      arguments: { isolation: "local", path: mcpDirectory, notifications: "off" },
-    });
-    expect(mcpCreated.structuredContent).toMatchObject({ notifications: "off" });
-    const mcpWorkspaceId = (mcpCreated.structuredContent as { workspaceId: string }).workspaceId;
-    expect(await readPersistedPolicy(workspaceRegistryPath, mcpWorkspaceId)).toBe("off");
-
-    const mcpOn = await mcpClient.callTool({
-      name: "set_workspace_notifications",
-      arguments: { workspaceId: mcpWorkspaceId, notifications: "on" },
-    });
-    const mcpOff = await mcpClient.callTool({
-      name: "set_workspace_notifications",
-      arguments: { workspaceId: mcpWorkspaceId, notifications: "off" },
-    });
-    expect(mcpOn.structuredContent).toEqual({ workspaceId: mcpWorkspaceId, notifications: "on" });
-    expect(mcpOff.structuredContent).toEqual({ workspaceId: mcpWorkspaceId, notifications: "off" });
-    expect(await readPersistedPolicy(workspaceRegistryPath, mcpWorkspaceId)).toBe("off");
-
-    const mcpListed = await mcpClient.callTool({ name: "list_workspaces", arguments: {} });
-    expect(mcpListed.structuredContent).toMatchObject({
-      workspaces: expect.arrayContaining([
-        expect.objectContaining({ workspaceId: mcpWorkspaceId, notifications: "off" }),
-      ]),
-    });
   } finally {
     try {
-      await mcpClient?.close().catch(() => undefined);
+      await daemon?.close();
     } finally {
-      try {
-        await daemon?.close();
-      } finally {
-        await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
-      }
+      await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
   }
 });

@@ -21,7 +21,7 @@ function reloadableConfig(
     relay: {
       enabled: relay.enabled ?? options.relayEnabledFallback ?? true,
     },
-    mcp: { enabled: true, injectIntoAgents: false },
+    agentTools: { enabled: false },
     browserTools: { enabled: daemon.browserTools?.enabled ?? false },
     providers: (agents.providers ?? {}) as MutableDaemonConfig["providers"],
     metadataGeneration: { providers: agents.metadataGeneration?.providers ?? [] },
@@ -106,7 +106,7 @@ describe("DaemonConfigStore", () => {
     tempDirs.push(otherPaseoHome);
     const store = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -132,7 +132,7 @@ describe("DaemonConfigStore", () => {
 
     const otherStore = new DaemonConfigStore(otherPaseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -142,7 +142,7 @@ describe("DaemonConfigStore", () => {
     });
     const restartedStore = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -172,7 +172,7 @@ describe("DaemonConfigStore", () => {
     tempDirs.push(paseoHome);
     const store = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -240,7 +240,7 @@ describe("DaemonConfigStore", () => {
     tempDirs.push(paseoHome);
     const store = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -262,7 +262,7 @@ describe("DaemonConfigStore", () => {
     tempDirs.push(paseoHome);
     const store = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -308,7 +308,7 @@ describe("DaemonConfigStore", () => {
     tempDirs.push(paseoHome);
     const store = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -332,7 +332,7 @@ describe("DaemonConfigStore", () => {
     tempDirs.push(paseoHome);
     const store = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -358,7 +358,7 @@ describe("DaemonConfigStore", () => {
     tempDirs.push(paseoHome);
     const store = new DaemonConfigStore(paseoHome, {
       relay: { enabled: false },
-      mcp: { injectIntoAgents: false },
+      agentTools: { enabled: false },
       browserTools: { enabled: false },
       providers: {},
       metadataGeneration: { providers: [] },
@@ -392,7 +392,7 @@ describe("DaemonConfigStore", () => {
       paseoHome,
       {
         relay: { enabled: false },
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -424,7 +424,7 @@ describe("DaemonConfigStore", () => {
       paseoHome,
       {
         relay: { enabled: true },
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -449,7 +449,7 @@ describe("DaemonConfigStore", () => {
       paseoHome,
       {
         relay: { enabled: true },
-        mcp: { enabled: false, injectIntoAgents: false },
+        agentTools: { enabled: false },
         hostnames: ["launch.example.test"],
         cors: { allowedOrigins: ["https://launch.example.test"] },
         trustedProxies: true,
@@ -511,7 +511,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -545,7 +545,7 @@ describe("DaemonConfigStore", () => {
       JSON.stringify({ agents: { providers: { claude: { enabled: false } } } }),
     );
     const store = new DaemonConfigStore(paseoHome, {
-      mcp: { injectIntoAgents: true },
+      agentTools: { enabled: true },
       browserTools: { enabled: false },
       providers: { claude: { enabled: false } },
       metadataGeneration: { providers: [] },
@@ -610,7 +610,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {
           gemini: {},
@@ -661,7 +661,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: { gemini: {} },
         metadataGeneration: { providers: [] },
@@ -715,7 +715,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {
           gemini: {},
@@ -774,7 +774,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -800,7 +800,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -826,7 +826,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -849,7 +849,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -891,7 +891,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -917,7 +917,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
         autoArchiveAfterMerge: false,
@@ -940,7 +940,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         metadataGeneration: { providers: [] },
@@ -993,7 +993,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         autoArchiveAfterMerge: false,
@@ -1017,7 +1017,7 @@ describe("DaemonConfigStore", () => {
     const store = new DaemonConfigStore(
       paseoHome,
       {
-        mcp: { injectIntoAgents: false },
+        agentTools: { enabled: false },
         browserTools: { enabled: false },
         providers: {},
         autoArchiveAfterMerge: false,
