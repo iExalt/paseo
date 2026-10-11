@@ -2,6 +2,20 @@
 import re
 
 
+def workspace_row(nodes, workspace_id):
+    if not re.fullmatch(r"wks_[A-Za-z0-9_-]+", workspace_id):
+        raise ValueError("Invalid fixture workspace ID")
+    found = [node for node in nodes
+             if node.get("package") == "sh.paseo.iexalt"
+             and node.get("resource-id", "").startswith("sidebar-workspace-row-")
+             and node.get("resource-id", "").endswith(":" + workspace_id)]
+    if len(found) > 1:
+        raise ValueError("Ambiguous native workspace rows")
+    if not found or found[0].get("enabled") != "true" or found[0].get("clickable") != "true":
+        return None
+    return found[0]
+
+
 def permission_deny(nodes, message, buttons=("permission_deny_button",)):
     controller = "com.android.permissioncontroller"
     if not any(node.get("package") == controller

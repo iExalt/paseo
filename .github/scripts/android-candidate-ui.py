@@ -7,9 +7,9 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
-from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready, terminal_echo
+from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready, terminal_echo, workspace_row
 
-previous, candidate, output, endpoint, version_code = sys.argv[1:]
+previous, candidate, output, endpoint, version_code, workspace_id = sys.argv[1:]
 output = pathlib.Path(output)
 output.mkdir(parents=True, exist_ok=True)
 app = "sh.paseo.iexalt"
@@ -110,6 +110,25 @@ def text(value):
     adb("shell", "input", "text", shlex.quote(value.replace(" ", "%s")))
 
 
+def select_workspace(stage):
+    deadline = time.monotonic() + 30
+    last_bounds = None
+    while time.monotonic() < deadline:
+        row = workspace_row(nodes(), workspace_id)
+        bounds = row.get("bounds", "") if row is not None else ""
+        coordinates = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+        if coordinates:
+            x1, y1, x2, y2 = map(int, coordinates.groups())
+            if x2 > x1 and y2 > y1 and bounds == last_bounds:
+                (output / (stage + "-sidebar.xml")).write_text((output / "last-ui.xml").read_text())
+                screenshot(stage + "-sidebar")
+                tap_node(row, "Exact persisted workspace row")
+                return row.get("resource-id")
+        last_bounds = bounds
+        time.sleep(0.5)
+    raise RuntimeError("Exact native workspace row did not become stable: " + workspace_id)
+
+
 def type_terminal_command(command):
     deadline = time.monotonic() + 30
     stable = 0
@@ -171,8 +190,9 @@ try:
             if any(matches(node, "welcome-screen") for node in nodes()):
                 raise RuntimeError("Upgrade lost its saved connection")
         tap("menu-button")
-        tap("Persisted Android workspace")
+        selected_row = select_workspace(stage)
         wait("workspace-header-menu-trigger")
+        wait("Persisted Android workspace")
         screenshot(stage + "-workspace")
         tap("workspace-header-menu-trigger")
         tap("New terminal")
@@ -202,7 +222,7 @@ try:
             raise RuntimeError("App crash during native journey")
         (output / (stage + "-state.json")).write_text(json.dumps({"versionCode": expected_code,
             "connection": endpoint, "workspaceTitle": "Persisted Android workspace",
-            "workspaceIdentityProof": "visible unique fixture title; native UI does not expose its ID",
+            "workspaceId": workspace_id, "workspaceIdentityProof": selected_row,
             "theme": "Pure black", "terminalMarker": marker}))
 finally:
     try:

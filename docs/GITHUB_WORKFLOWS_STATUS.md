@@ -354,6 +354,18 @@ artifact. Both builds share Nix dependency substitutions and the existing
 35-minute build / 45-minute job limits. A separate native ARM64 evaluation-only
 preflight must establish its Node substitution path before ARM64 realization.
 
+ARM64 preflight `38107364661` at `2c09f759a` passed on the native hosted runner:
+Node runtime/wrapper are substitutable, seven derivations need builds and 481
+substitutions total 554.9 MiB compressed / 1.8 GiB unpacked. No product was built;
+ARM package runtime remains open. The x64 profile trial is still pending.
+Android `38106951818` passed the notification repair but ended on the New workspace
+screen instead of the expected workspace header. Its text-only tap cannot prove
+which control received the input; a drawer-animation/header collision is only a
+hypothesis. The harness now selects the exact seeded workspace's native row ID,
+requires a unique clickable row with stable bounds, and retains pre-tap XML/PNG.
+The next bounded trial must distinguish input targeting from product navigation;
+no workspace-preservation or terminal acceptance is inferred from this failure.
+
 Approved execution checklist:
 
 - [ ] B1: bounded deterministic browser journey and broken-fixture proof, then

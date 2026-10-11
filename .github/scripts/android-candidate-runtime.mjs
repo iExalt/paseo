@@ -186,6 +186,7 @@ try {
       artifacts,
       "127.0.0.1:18767",
       candidate.android.versionCode,
+      workspace.workspaceId,
     ],
     { env, timeout: 300000, stdio: "inherit" },
   );
