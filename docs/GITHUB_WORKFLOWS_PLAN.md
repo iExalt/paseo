@@ -1,6 +1,6 @@
 # GitHub workflows plan
 
-Status: **Phase A complete; Phase B approved and active, 2026-10-10**.
+Status: **Phases A–B / G0–G3 complete; Phase C awaits approval, 2026-10-11**.
 
 Current evidence and remaining gates: [project status](GITHUB_WORKFLOWS_STATUS.md).
 
@@ -342,12 +342,17 @@ state; installer success alone is insufficient.
       bounded diagnostics and native-vs-emulator limits are explicit.
       Accepted browser negative/restored, Electron, CLI/relay/provider and
       native Android `38107787799` evidence is reconciled in
-      [status](GITHUB_WORKFLOWS_STATUS.md); package-matrix G3 remains open.
-- [ ] **G3: Verify every package.** Gate: each format/architecture in §1 is built
+      [status](GITHUB_WORKFLOWS_STATUS.md).
+- [x] **G3: Verify every package.** Gate: each format/architecture in §1 is built
       from the candidate and passes installation/import, startup, terminal/daemon
       and disposable-state upgrade checks appropriate to it; installed legacy-client
       migration and recovery remain G6. Mac/Android signing identities
       remain unchanged. Actual shipped-ABI proof is accounted for.
+      Accepted contributors: Mac/Android `842a70f0c`, Nix `b74c9822e`, Linux formats
+      `db2316365`, Windows ARM/x64 `b065b31e5` and x64 cache proof `c787e125c`.
+      This is contributor-based closure, not a universal same-SHA release matrix;
+      exact initial 0.1.0 release coordination remains G5/G6. Receipts and limitations
+      are in [status](GITHUB_WORKFLOWS_STATUS.md).
 - [ ] **G4: Prepare compatible releases automatically.** Gate: a real bot-created
       release PR triggers required checks; independent semver, workspace versions,
       new-client semver ordering and manual-migration fixtures pass; no public release is created.

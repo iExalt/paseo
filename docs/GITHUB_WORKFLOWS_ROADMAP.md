@@ -1,6 +1,6 @@
 # GitHub workflows roadmap
 
-Status: **Phase A / G0–G1 complete; Phase B approved and active, 2026-10-10**.
+Status: **Phases A–B / G0–G3 complete; Phase C awaits approval, 2026-10-11**.
 Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
@@ -14,7 +14,7 @@ through `maintain-project-status`; do not create per-run committed reports.
 | Phase                       | Steps | Completed | Exit   |
 | --------------------------- | ----- | --------- | ------ |
 | A Foundations               | 1–3   | 3         | G0, G1 |
-| B Verification and packages | 4–6   | 2         | G2, G3 |
+| B Verification and packages | 4–6   | 3         | G2, G3 |
 | C Release preparation       | 7–8   | 0         | G4     |
 | D Integration and delivery  | 9–11  | 0         | G5, G6 |
 
@@ -150,7 +150,7 @@ explicitly required before publication, even if absent from routine CI.
     secret names alone do not establish usable key material. Any unavoidable
     personal-device test waits for explicit user presence/authorization.
 
-- [ ] **6. Add Linux/Windows packages and manual-upgrade checks.** Build native
+- [x] **6. Add Linux/Windows packages and manual-upgrade checks.** Build native
       x64 and ARM64 Nix daemon/desktop, DEB/RPM/AppImage and NSIS. Exclude unselected
       tarball/ZIP outputs. Exercise actual installation or import, app launch,
       daemon/terminal operation, uninstall where applicable and state-preserving
@@ -161,6 +161,12 @@ explicitly required before publication, even if absent from routine CI.
     metadata, checksums and absent publisher signing match scope. No inferred
     success from cross-compilation alone. Combine with step 5 for G3.
   - Ticks: G3 after 5 and 6; W5 remainder.
+  - Verified: Nix x64/ARM at `b74c9822e`, DEB/RPM/AppImage x64/ARM at
+    `db2316365`, Windows ARM `38173280275` and x64 `38177868696` at `b065b31e5`.
+    Windows x64 repeated product proof plus fresh-runner predecessor-cache transfer
+    passed in `38180882993` at `c787e125c`. Contributor-based integration accepted;
+    exact release-SHA coordination, ARM cache transport and full-hit timing remain
+    separate later gates/measurements, as recorded in [status](GITHUB_WORKFLOWS_STATUS.md).
 
 - [ ] **7. Implement independent versioning and updater transition.** Apply
       step 1's settled interface and initial 0.1.0 version. Synchronize workspace,
