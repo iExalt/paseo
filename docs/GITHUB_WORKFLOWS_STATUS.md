@@ -20,8 +20,9 @@
   unmet. Initial queue adds 3s to each. Required checks are preserved.
 - Phase B: B1–B3 accepted; native Nix proofs cover both architectures and
   full x64/ARM DEB/RPM/AppImage evidence is at `db2316365`. B4 Windows is active.
-  Latest routine PR passed in 4m41s at `2b40c197d`; dev failed on an unhandled
-  React teardown callback after all app assertions passed, with a scoped repair pending;
+  Full Windows ARM installed upgrade/speech/cleanup proof is accepted at `b065b31e5`;
+  x64 verification and predecessor-cache transport remain open.
+  Latest routine PR/dev passed in 4m42s/4m37s at `b065b31e5`;
   this does not replace the accepted baseline above.
 
 ## Outcome gates
@@ -102,8 +103,8 @@ treated as controlled before/after measurements.
 | Linux Nix runtime                                  | Manual; native Linux x64/ARM64                        | x64 `38109113388` 21m46s; ARM `38110354030` 16m55s                                               | 45m job / 35m build; source filtering avoids test-only invalidation              |
 | Linux format prerequisite                          | Manual; native Linux x64/ARM64                        | x64 `c790a0156` 6m04s; ARM `6be877f3a` 3m21s; different hosts/settings                           | 20m job; gzip parity, no extra benchmark-only runs                               |
 | Linux product formats                              | Manual; native Linux x64/ARM64                        | x64 `38133587458`: native 17m16s, build/fan-out 11m56s, runtime 4m52s; additive cache proof 31s  | 45m job / 30m build / 10m runtime; verified predecessor cache avoids ~5m rebuild |
-| Windows package prerequisite                       | Manual; native Windows ARM64 first                    | Implemented; hosted timing and ownership/installer proof pending                                 | 50m job; install 30m, ownership 3m, packaging/runtime 5m each, cleanup 2m        |
-| Windows packages                                   | Approved B4 implementation pending                    | Full ARM workspace install previously exceeded 15m; product timing unmeasured                    | Measure install phases before expensive native NSIS/STT/TTS trials               |
+| Windows package prerequisite                       | Manual; native Windows ARM64 first                    | `38155408446` passed in 5m04s; fixture lifecycle and owned process checks                        | 50m cap; small fixture graph avoids repeating root installation                  |
+| Windows packages                                   | Manual; native Windows ARM64 / x64                    | ARM `38173280275` passed in 65m28s; installs 23m32s + 20m55s, builds 5m28s + 4m43s               | 150m cap; immutable predecessor caching targets repeated old install/build       |
 | Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                       |
 
 All current workflow files and callable lanes are represented. GitHub also lists
@@ -959,6 +960,34 @@ lacked explicit unmount/query cleanup with Vitest globals disabled, and its fina
 deferred lookup was not awaited through settlement. The scoped repair adds owned
 cleanup and awaited settlement without weakening assertions or suppressing errors;
 the next required hosted routine run is its integration gate.
+
+The [full ARM product trial](https://github.com/iExalt/paseo/actions/runs/38173280275)
+at `b065b31e5` passed in 65m28s and is reviewer-accepted. Both installed UI journeys
+preserved workspace `wks_311f36b74ce62131`, Pure black theme and the original
+295-byte CLI trampoline; CLI/PTY checks and normal close passed. Author and reviewer
+inspected the retained screenshots. Installed Electron 44.6.0 loaded the exact
+addon-adjacent native hashes, transcribed “This is a voice note.” with similarity 1,
+and produced 68,834 bytes of 24 kHz PCM in 9.466s. All 15 owned Jobs completed
+with zero active processes; installer, application, speech and uninstaller exits
+were normal. Registry, install directory, shortcuts and owned state were removed.
+Candidate installation/build took 23m32s/5m28s; predecessor took 20m55s/4m43s.
+Npm timing attributes 21m18s/19m44s to unpacking, so a download cache alone does
+not remove the dominant repeated work. Routine PR/dev passed in 4m42s/4m37s,
+using 22m35s/23m36s runner work, including the repaired file-link lifecycle.
+
+The next cache increment retains only the fixed predecessor NSIS and portable
+identity/provenance, capped at 200 MiB per architecture (ARM installer measured
+147,218,235 bytes). Candidate install/build always remains normal. Exact keys bind
+source, lock, native architecture, tool/image versions, BCJ and producer/binding
+recipes; no prefix restore or unrelated eviction is allowed. Restores validate
+the exact regular-file inventory, hashes, binding provenance and relative installer
+name before constructing a new owned absolute path. Save follows successful
+installed verification and cleanup, and requires current repository usage plus
+the full reservation to fit the advisory 8 GB ceiling under the 10 GB hard limit.
+Oversize entries or unavailable usage skip saving. A necessary native miss run
+and a separate small fresh-runner restore through the real consumer will prove
+transport/integrity; full cache-hit upgrade and overall latency savings remain
+unclaimed until a later necessary hit run. No extra long benchmark run is planned.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
