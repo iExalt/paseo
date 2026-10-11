@@ -21,15 +21,15 @@
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence   | Depends on                    | Exit and owner                                               |
-| ----------------------------------------- | ------------------- | ----------------------------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified | none                          | G0, author with user decisions                               |
-| A2: measured routine verification         | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | complete / verified | A2                            | G1 including atomic publication failure fixtures, author     |
-| B1: deep journeys and safe PR routing     | complete / verified | A1–A3; B2 for Android closure | G2, author                                                   |
-| B2: Mac/Android candidate preservation    | complete / verified | A1–A3                         | Mac/Android portion of G3, author                            |
-| B3: Linux package matrix                  | active / designed   | B2 for closure                | Linux portion of G3, author                                  |
-| B4: Windows package matrix                | planned / designed  | B2, B3                        | Remaining G3 and phase integration, author                   |
+| Goal                                      | Status / evidence    | Depends on                    | Exit and owner                                               |
+| ----------------------------------------- | -------------------- | ----------------------------- | ------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts | complete / verified  | none                          | G0, author with user decisions                               |
+| A2: measured routine verification         | complete / verified  | A1                            | step 2 live events and accepted latency ceiling, author/user |
+| A3: exact rebased-tree verification       | complete / verified  | A2                            | G1 including atomic publication failure fixtures, author     |
+| B1: deep journeys and safe PR routing     | complete / verified  | A1–A3; B2 for Android closure | G2, author                                                   |
+| B2: Mac/Android candidate preservation    | complete / verified  | A1–A3                         | Mac/Android portion of G3, author                            |
+| B3: Linux package matrix                  | active / implemented | B2 for closure                | Linux portion of G3, author                                  |
+| B4: Windows package matrix                | planned / designed   | B2, B3                        | Remaining G3 and phase integration, author                   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -358,7 +358,7 @@ preflight must establish its Node substitution path before ARM64 realization.
 ARM64 preflight `38107364661` at `2c09f759a` passed on the native hosted runner:
 Node runtime/wrapper are substitutable, seven derivations need builds and 481
 substitutions total 554.9 MiB compressed / 1.8 GiB unpacked. No product was built;
-ARM package runtime remains open. The x64 profile trial is still pending.
+ARM package runtime remains open. The subsequent x64 profile result is recorded below.
 Android `38106951818` passed the notification repair but ended on the New workspace
 screen instead of the expected workspace header. Its text-only tap cannot prove
 which control received the input; a drawer-animation/header collision is only a
@@ -379,7 +379,7 @@ physical-device, voice or first-0.1.0 migration proof; Linux/Windows G3 remains 
 
 The native Nix runtime lane now accepts explicit x64/ARM64 choices with matching
 host/runtime guards and architecture-specific concurrency/evidence names. ARM64
-dispatch waits for the pending x64 profile acceptance, then uses the same actual
+dispatch follows x64 profile acceptance and uses the same actual
 profile lifecycle and unchanged 45/35/5-minute bounds. Preflight is not product proof.
 
 The x64 profile trial `38107363053` built both versions and verified exact old
@@ -391,7 +391,30 @@ terminated the whole process group. Its next trial requests the existing normal
 window-close/app-quit path and requires exit within ten seconds, retaining forced
 termination only for failed-run cleanup. It records selected persisted theme,
 origin and observable storage file paths before shutdown/after replacement.
-No candidate setting is rewritten. ARM dispatch remains paused until this gate passes.
+No candidate setting is rewritten.
+
+The normal-close x64 trial `38109113388` at `b74c9822e` passed in 21m46s;
+author and reviewer accepted the raw identity, profile, UI and cleanup evidence.
+Both versions exited normally with code zero. The replacement opened the same
+workspace `wks_5376e70df391f7e2` and already-persisted Pure black theme, using
+the same observed LevelDB paths and `paseo://app` origin. Actual profile executable
+links, built-in plugins, CLI/PTY, exact old/new membership and final empty-profile
+uninstall passed. This proves normal-shutdown manual replacement, not crash
+durability or a definitive diagnosis of the previous forced-termination failure.
+Native ARM64 trial `38110354030` started at the same SHA on
+2026-10-11 04:03 UTC (00:03 EDT), within unchanged limits; its result remains pending.
+DEB/RPM/AppImage and Windows lifecycle proofs remain open.
+
+The performance audit found the plugin service suite taking 58.59s in required
+PR run `38108861492`. Three service-policy cases now use a controlled runtime
+with real manifest/configuration/filesystem behavior; subprocess registration,
+compilation, reload and cleanup contracts remain in their existing tests.
+The provider-icon integration case now stops its service even on assertion failure.
+The next required hosted run measures this change with unchanged shards/workers;
+no speedup is claimed from local targeted tests. The stable baseline and <5m
+budget remain unchanged. Latest pre-change PR/dev gates passed in 4m31s/4m27s,
+with dev runner work of 20m37s. Cache usage remains 4,109,654,256 bytes across
+the three original entries under the unchanged 10 GB ceiling.
 
 Approved execution checklist:
 

@@ -21,6 +21,7 @@ import { PluginService } from "./index.js";
 import { BuiltinPluginLoader } from "./builtin/index.js";
 import { ManagedPluginSources } from "./managed-source.js";
 import type { PluginProviderMetadata } from "./plugin-process-protocol.js";
+import { readPluginManifest } from "./manifest.js";
 import {
   startNpmRegistry,
   npmPluginPackages,
@@ -148,6 +149,41 @@ function createPausedRuntime() {
     bindPaseoSessionHost: () => undefined,
   };
   return { runtime, started, releaseStart };
+}
+
+function createPolicyRuntime(failures: Record<string, Error> = {}) {
+  const attempts: string[] = [];
+  const starts: string[] = [];
+  const stops: string[] = [];
+  const running = new Set<string>();
+  const runtime: TestPluginRuntime = {
+    ...emptyUsageRuntime,
+    catalog: () => [...running].map((id) => ({ id, clientBundle: "bundle" })),
+    invoke: async (pluginId) => {
+      if (!running.has(pluginId)) throw new Error(`Plugin is not available: ${pluginId}`);
+      return undefined;
+    },
+    getLogs: () => [],
+    clearLogs: () => undefined,
+    startPlugin: async (pluginId, directory, canPublish) => {
+      attempts.push(pluginId);
+      await readPluginManifest(directory);
+      if (failures[pluginId]) throw failures[pluginId];
+      if (!canPublish()) throw new Error(`Plugin start cancelled: ${pluginId}`);
+      starts.push(pluginId);
+      running.add(pluginId);
+    },
+    stopPluginById: async (pluginId) => {
+      stops.push(pluginId);
+      return running.delete(pluginId);
+    },
+    stopAll: async () => {
+      running.clear();
+    },
+    subscribe: () => () => undefined,
+    bindPaseoSessionHost: () => undefined,
+  };
+  return { runtime, attempts, starts, stops };
 }
 
 function createPluginSelectivePausedRuntime(pausedPluginId: string) {
@@ -327,21 +363,24 @@ describe("PluginService", () => {
     const iconSvg = '<svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z" /></svg>';
     await writeFile(path.join(directory, "icon.svg"), iconSvg);
     const service = createService(home);
+    try {
+      await service.start();
+      await service.installDirectory({ path: directory });
 
-    await service.start();
-    await service.installDirectory({ path: directory });
-
-    expect(service.getProviderRegistrations()).toMatchObject([
-      { id: "plugin-agent", icon: iconSvg, getCatalogCacheKey: expect.any(Function) },
-    ]);
-    const provider = service.getProviderRegistrations()[0]!;
-    expect(await provider.getCatalogCacheKey!({ scope: "workspace", cwd: "/project-a" })).toBe(
-      "runtime:/project-a",
-    );
-    expect(
-      await provider.getCatalogCacheKey!({ scope: "workspace", cwd: "/project-b", force: true }),
-    ).toBe("runtime:/project-b");
-    expect(await provider.getCatalogCacheKey!({ scope: "global" })).toBeUndefined();
+      expect(service.getProviderRegistrations()).toMatchObject([
+        { id: "plugin-agent", icon: iconSvg, getCatalogCacheKey: expect.any(Function) },
+      ]);
+      const provider = service.getProviderRegistrations()[0]!;
+      expect(await provider.getCatalogCacheKey!({ scope: "workspace", cwd: "/project-a" })).toBe(
+        "runtime:/project-a",
+      );
+      expect(
+        await provider.getCatalogCacheKey!({ scope: "workspace", cwd: "/project-b", force: true }),
+      ).toBe("runtime:/project-b");
+      expect(await provider.getCatalogCacheKey!({ scope: "global" })).toBeUndefined();
+    } finally {
+      await service.stopAllPlugins();
+    }
   });
 
   it("publishes provider registrations only while their plugin is running", async () => {
@@ -608,13 +647,20 @@ describe("PluginService", () => {
       JSON.stringify({ id: "disabled", description: "Waits until enabled" }),
     );
     await writeFile(path.join(malformed, "paseo-plugin.json"), "{");
-    const service = createService(home, {
-      running: { source: "directory", path: running },
-      disabled: { source: "directory", path: disabled, enabled: false },
-      malformed: { source: "directory", path: malformed },
-    });
+    const controlled = createPolicyRuntime();
+    const service = createService(
+      home,
+      {
+        running: { source: "directory", path: running },
+        disabled: { source: "directory", path: disabled, enabled: false },
+        malformed: { source: "directory", path: malformed },
+      },
+      { runtime: controlled.runtime },
+    );
 
     await service.start();
+    expect(controlled.attempts).toEqual(["running", "malformed"]);
+    expect(controlled.starts).toEqual(["running"]);
 
     expect(
       (await service.listPlugins()).map(({ id, description, name, icon, media }) => ({
@@ -1404,7 +1450,9 @@ export default function contribute(plugin: unknown) {
       "failed-install",
       `export default function contribute(plugin: unknown) { void plugin; throw new Error("startup exploded"); }`,
     );
-    const service = createService(home);
+    const failure = new Error("startup exploded");
+    const controlled = createPolicyRuntime({ "failed-install": failure });
+    const service = createService(home, {}, { runtime: controlled.runtime });
     const events: string[] = [];
     service.subscribe((pluginId) => events.push(pluginId));
     await service.start();
@@ -1413,8 +1461,11 @@ export default function contribute(plugin: unknown) {
     expect(events).toEqual(["successful-install"]);
 
     events.length = 0;
-    await expect(service.installDirectory({ path: failed })).rejects.toThrow("startup exploded");
+    await expect(service.installDirectory({ path: failed })).rejects.toThrow(failure.message);
     expect(events).toEqual(["failed-install"]);
+    expect(controlled.attempts).toEqual(["successful-install", "failed-install"]);
+    expect(controlled.starts).toEqual(["successful-install"]);
+    expect(catalogIds(service)).toEqual(["successful-install"]);
     await service.stopAllPlugins();
   });
 
