@@ -440,7 +440,7 @@ current FUSE2 AppImage runtime before expensive product builds. It retains the
 production launcher and installer template, uses a distinct fixture package,
 and records the selected sandbox policy, renderer outcome, process identities,
 FUSE mount and normal shutdown/uninstall. Fedora 44 is pinned by native image
-digest and uses default Docker security with 2 CPUs, 4 GiB and 512 PIDs; this
+digest and uses Docker's default security plus no-new-privileges, with 2 CPUs, 4 GiB and 512 PIDs; this
 proves Fedora userland on the hosted Ubuntu kernel, not a Fedora host kernel.
 One x64 trial is bounded to 20 minutes overall and five minutes in the container,
 with no caches and at most 25 MiB of one-day diagnostics; inspect it before ARM64.
@@ -481,6 +481,15 @@ shutdown race: DOMContentLoaded IPC closed the window before `loadURL` settled.
 The fixture now awaits successful navigation before assertions and normal close;
 navigation rejection remains fatal. AppImage passed again, and failure cleanup
 purged the DEB and removed owned processes. RPM is not yet exercised.
+Trial `38115197241` at `907135a34` passed both AppImage and DEB install/runtime/
+normal-exit cleanup. The actual RPM installed in Fedora, then its root-owned SUID
+helper failed namespace creation under Docker's default restrictions. The next
+trial adds no-new-privileges, verifies inheritance in the nonroot launch context,
+and exercises the shipped fallback without relaxing any container restriction.
+Container diagnostics are captured before removal even on failure; failed
+diagnostic collection must not prevent owned cleanup. A pass would establish the
+hardened Fedora userland fallback on Ubuntu's kernel, not default Docker SUID
+support or native Fedora host behavior. Actual Paseo package cells remain open.
 The Nix filter increment `490c6eac0` passed seven-lane PR CI in 4m30s; the preceding
 `5139c9514` full dev run passed in 4m34s. The stable latency baseline is unchanged.
 
