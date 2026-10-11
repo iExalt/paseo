@@ -28,9 +28,8 @@ runuser -u fixture -- env FIXTURE_RECEIPT=/evidence/rpm.json FIXTURE_FORMAT=rpm 
       --user-data-dir=/home/fixture/profile
   '
 FIXTURE_FORMAT=rpm node /scripts/linux-format-verify.mjs /evidence/rpm.json
+rpm -q --queryformat '[%{FILENAMES} %{FILEMODES:perms}\n]' paseo-format-fixture > /evidence/rpm-owned-paths.txt
 dnf -y remove paseo-format-fixture
 if rpm -q paseo-format-fixture; then exit 1; fi
-test ! -e /opt/PaseoFormatFixture/chrome-sandbox
-test ! -e /usr/bin/PaseoFormatFixture
-test ! -L /usr/bin/PaseoFormatFixture
+bash /scripts/linux-rpm-uninstall-check.sh /opt/PaseoFormatFixture /usr/bin/PaseoFormatFixture /evidence/rpm-uninstall-paths.txt
 printf 'RPM legacy upgrade, renderer, normal exit and uninstall passed\n' > /evidence/rpm-lifecycle.txt
