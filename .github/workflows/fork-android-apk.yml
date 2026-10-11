@@ -101,17 +101,6 @@ jobs:
           registry-url: https://npm.pkg.github.com
           scope: "@boudra"
 
-      - name: Install JavaScript dependencies
-        run: node scripts/npm-retry.mjs ci
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build app dependencies
-        run: npm run build:app-deps
-
-      - name: Build terminal WebView assets
-        run: npm --prefix packages/app run build:terminal-webview
-
       - name: Resolve fork Android version code
         id: version
         shell: bash
@@ -124,6 +113,17 @@ jobs:
           version_code="$(printf '%s\n' "$identity" | sed -n 's/^version_code=//p')"
           echo "version_code=$version_code" >> "$GITHUB_OUTPUT"
           echo "PASEO_ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+
+      - name: Install JavaScript dependencies
+        run: node scripts/npm-retry.mjs ci
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build app dependencies
+        run: npm run build:app-deps
+
+      - name: Build terminal WebView assets
+        run: npm --prefix packages/app run build:terminal-webview
 
       - name: Prepare protected Firebase client config
         shell: bash
