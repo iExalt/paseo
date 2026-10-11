@@ -25,6 +25,7 @@ assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
 const require = createRequire(import.meta.url);
 const ts = require("typescript");
 const asar = require("@electron/asar");
+const { installLinuxPackageHook } = require("../../packages/desktop/scripts/linux-sandbox");
 const { generateAppRunScript } = require("app-builder-lib/out/targets/appimage/appImageUtil.js");
 const expectedAppRun = generateAppRunScript({
   DesktopFileName: "PaseoFormatFixture.desktop",
@@ -43,6 +44,15 @@ copyFileSync(
   join(payload, "PaseoFormatFixture"),
 );
 chmodSync(join(payload, "PaseoFormatFixture"), 0o755);
+installLinuxPackageHook(payload, "PaseoFormatFixture", "PaseoFormatFixture");
+const posttrans = join(root, "rpm-posttrans.sh");
+writeFileSync(
+  posttrans,
+  readFileSync(
+    join(source, "packages/desktop/scripts/linux-sandbox/rpm-posttrans.sh"),
+    "utf8",
+  ).replaceAll("/opt/Paseo/", "/opt/PaseoFormatFixture/"),
+);
 // Exercise the real bundled shim and launcher with a tiny Node entrypoint.
 symlinkSync("PaseoFormatFixture.bin", join(payload, "Paseo.bin"));
 mkdirSync(join(payload, "resources/bin"), { recursive: true });
@@ -113,6 +123,8 @@ writeFileSync(
       rpm: {
         compression: "gzip",
         afterInstall: join(source, "packages/desktop/scripts/linux-sandbox/after-install.tpl"),
+        afterRemove: join(source, "packages/desktop/scripts/linux-sandbox/rpm-after-remove.tpl"),
+        fpm: ["--rpm-posttrans", posttrans],
       },
       appImage: {
         executableArgs: ["--class=PaseoFormatFixture"],
@@ -123,3 +135,9 @@ writeFileSync(
     2,
   ),
 );
+const legacy = JSON.parse(readFileSync(join(root, "builder.json")));
+legacy.linux.artifactName = "legacy-" + process.arch + ".${ext}";
+legacy.extraMetadata = { version: "0.9.0" };
+delete legacy.rpm.afterRemove;
+delete legacy.rpm.fpm;
+writeFileSync(join(root, "legacy-builder.json"), JSON.stringify(legacy));
