@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   copyFileSync,
+  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -20,6 +21,10 @@ const hash = (filename) => digest(readFileSync(filename));
 const json = (filename) => JSON.parse(readFileSync(filename));
 const save = (filename, value) => writeFileSync(filename, JSON.stringify(value), { flag: "wx" });
 const installerName = (recipe) => `previous-${recipe.architecture}.exe`;
+export const lockIdentity = (blob, checkoutFile) => ({
+  lockBlobSha256: digest(blob),
+  lockSha256: hash(checkoutFile),
+});
 export const cacheKey = (recipe) =>
   `paseo-windows-predecessor-v1-${recipe.architecture}-${digest(JSON.stringify(recipe))}`;
 
@@ -113,7 +118,7 @@ export function consumeCache(directory, recipe, root) {
   return identity;
 }
 
-function recipeForRunner() {
+function recipeForRunner(root) {
   assert.equal(process.platform, "win32");
   assert.equal(process.version, "v26.11.0");
   assert.ok(["arm64", "x64"].includes(process.arch));
@@ -134,6 +139,14 @@ function recipeForRunner() {
   const packages = JSON.parse(lock).packages;
   assert.equal(packages["node_modules/electron"].version, "44.6.0");
   assert.equal(packages["node_modules/electron-builder"].version, "26.15.3");
+  const previousSource = join(root, "previous-source");
+  assert.equal(
+    execFileSync("git", ["-C", previousSource, "rev-parse", "HEAD"], {
+      encoding: "utf8",
+      timeout: 15000,
+    }).trim(),
+    previousSha,
+  );
   const producers = [
     ".github/scripts/windows-product-build.mjs",
     ".github/scripts/windows-product-stage.ps1",
@@ -155,7 +168,7 @@ function recipeForRunner() {
   return {
     schema: 1,
     sourceSha: previousSha,
-    lockSha256: digest(lock),
+    ...lockIdentity(lock, join(previousSource, "package-lock.json")),
     architecture: process.arch,
     node: "26.11.0",
     npm: "11.20.0",
@@ -182,16 +195,35 @@ async function main() {
   const directory = join(process.env.RUNNER_TEMP, "paseo-windows-predecessor-cache");
   const recipeFile = join(process.env.RUNNER_TEMP, "paseo-windows-predecessor-recipe.json");
   const output = (name, value) => appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
+  if (operation === "cleanup-proof") {
+    const previousSource = join(root, "previous-source");
+    if (existsSync(previousSource))
+      execFileSync("git", ["worktree", "remove", previousSource], { timeout: 30000 });
+    assert.equal(existsSync(previousSource), false, "Proof worktree cleanup required");
+    return;
+  }
   if (operation === "prepare" || operation === "prepare-proof") {
-    const recipe = recipeForRunner();
+    if (operation === "prepare-proof") {
+      mkdirSync(root);
+      mkdirSync(join(root, "evidence"));
+      const previousSource = join(root, "previous-source");
+      execFileSync("git", ["worktree", "add", "--detach", previousSource, previousSha], {
+        timeout: 30000,
+      });
+      assert.equal(
+        execFileSync("git", ["-C", previousSource, "status", "--porcelain"], {
+          encoding: "utf8",
+          timeout: 15000,
+        }).trim(),
+        "",
+      );
+    }
+    const recipe = recipeForRunner(root);
     if (operation === "prepare") {
       const candidate = json(join(root, "candidate.json"));
       assert.equal(candidate.sourceSha, process.env.GITHUB_SHA);
       if (process.arch === "arm64")
         assert.deepEqual(candidate.binding.provenance, recipe.bindingProvenance);
-    } else {
-      mkdirSync(root);
-      mkdirSync(join(root, "evidence"));
     }
     save(recipeFile, recipe);
     output("key", cacheKey(recipe));
@@ -199,7 +231,7 @@ async function main() {
     return;
   }
   const recipe = json(recipeFile);
-  assert.deepEqual(recipe, recipeForRunner());
+  assert.deepEqual(recipe, recipeForRunner(root));
   if (operation === "restore") {
     assert.equal(
       process.env.PREDECESSOR_CACHE_MATCHED_KEY,
