@@ -213,7 +213,17 @@ if ($Phase -eq 'ownership') {
     $npmLogs = Join-Path $root 'npm-cache\_logs'
     if (Test-Path -LiteralPath $npmLogs) {
         foreach ($log in @(Get-ChildItem -LiteralPath $npmLogs -File)) {
-            Get-Content -LiteralPath $log.FullName -Tail 200 | Set-Content -LiteralPath (Join-Path $evidence "npm-$($log.Name)") -Encoding utf8
+            if ($log.Name -like '*-timing.json' -and $log.Length -le 4194304) {
+                Copy-Item -LiteralPath $log.FullName -Destination (Join-Path $evidence "npm-$($log.Name)")
+            } else {
+                Get-Content -LiteralPath $log.FullName -Tail 200 | Set-Content -LiteralPath (Join-Path $evidence "npm-$($log.Name)") -Encoding utf8
+            }
+            if ($log.Name -like '*-debug-*.log') {
+                # Stream only fetch diagnostics; bound retention independently of
+                # npm's verbose dependency log and preserve timing/status/cache mode.
+                Get-Content -LiteralPath $log.FullName | Select-String 'http fetch' | Select-Object -Last 3000 |
+                    ForEach-Object { $_.Line } | Set-Content -LiteralPath (Join-Path $evidence "fetch-$($log.Name)") -Encoding utf8
+            }
         }
     }
     $bytes = (Get-ChildItem -LiteralPath $evidence -File -Recurse | Measure-Object Length -Sum).Sum

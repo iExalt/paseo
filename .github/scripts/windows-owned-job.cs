@@ -94,6 +94,17 @@ public static class PaseoOwnedJob
     public static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
     [DllImport("kernel32.dll")]
     static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", EntryPoint = "QueryInformationJobObject", SetLastError = true)]
+    static extern bool QueryProcessList(IntPtr job, int kind, IntPtr data, uint size, IntPtr returned);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    static extern bool IsProcessInJob(IntPtr process, IntPtr job, out bool member);
+
+    public sealed class MemberDiagnostic
+    {
+        public uint pid;
+        public string image, startedUtc, error;
+        public bool membershipVerified;
+    }
 
     public sealed class Receipt
     {
@@ -102,6 +113,9 @@ public static class PaseoOwnedJob
         public long elapsedMs, cpuMilliseconds;
         public ulong readBytes, writeBytes, peakJobMemoryBytes;
         public string error;
+        public long primaryExitObservedMs = -1;
+        public MemberDiagnostic[] remainingProcesses = Array.Empty<MemberDiagnostic>();
+        public string processDiagnosticError;
     }
 
     static void Check(bool success, string operation)
@@ -134,7 +148,50 @@ public static class PaseoOwnedJob
         return data;
     }
 
+    // Read-only diagnostics. Ownership and termination always use the Job handle,
+    // never these recyclable PIDs. Bound allocation even for a broken install.
+    static void DiagnoseMembers(IntPtr job, Receipt receipt)
+    {
+        const int capacity = 256;
+        int bytes = 8 + capacity * IntPtr.Size;
+        IntPtr buffer = Marshal.AllocHGlobal(bytes);
+        try
+        {
+            Check(QueryProcessList(job, 3, buffer, (uint)bytes, IntPtr.Zero), "Query bounded Job members");
+            int count = Marshal.ReadInt32(buffer, 4);
+            if (count < 0 || count > capacity) throw new InvalidOperationException("Invalid Job member count");
+            receipt.remainingProcesses = new MemberDiagnostic[count];
+            for (int i = 0; i < count; i++)
+            {
+                uint pid = checked((uint)Marshal.ReadIntPtr(buffer, 8 + i * IntPtr.Size).ToInt64());
+                var item = new MemberDiagnostic { pid = pid };
+                receipt.remainingProcesses[i] = item;
+                try
+                {
+                    using (var member = Process.GetProcessById(checked((int)pid)))
+                    {
+                        IntPtr handle = member.Handle;
+                        bool belongs;
+                        Check(IsProcessInJob(handle, job, out belongs), "Verify diagnostic process membership");
+                        if (!belongs) throw new InvalidOperationException("Process no longer belongs to Job");
+                        item.membershipVerified = true;
+                        item.startedUtc = member.StartTime.ToUniversalTime().ToString("O");
+                        item.image = member.MainModule.FileName;
+                    }
+                }
+                catch (Exception error) { item.error = error.Message; }
+            }
+        }
+        catch (Exception error) { receipt.processDiagnosticError = error.Message; }
+        finally { Marshal.FreeHGlobal(buffer); }
+    }
+
     public static Receipt Run(string executable, string[] arguments, string directory, string log, int timeoutSeconds, string nsisInstallDirectory)
+    {
+        return Run(executable, arguments, directory, log, timeoutSeconds, nsisInstallDirectory, null, null);
+    }
+
+    public static Receipt Run(string executable, string[] arguments, string directory, string log, int timeoutSeconds, string nsisInstallDirectory, string startReceipt, string startIdentity)
     {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT || IntPtr.Size != 8)
             throw new InvalidOperationException("A native 64-bit Windows monitor is required");
@@ -175,6 +232,17 @@ public static class PaseoOwnedJob
             receipt.primaryPid = process.ProcessId;
             Check(AssignProcessToJobObject(job, process.Process), "Assign suspended primary to job");
             assigned = true;
+            if (!String.IsNullOrEmpty(startReceipt))
+            {
+                if (!Path.IsPathRooted(startReceipt) || String.IsNullOrEmpty(startIdentity))
+                    throw new InvalidOperationException("Owned start receipt identity required");
+                // Exclusive publication precedes execution; the child cannot mint
+                // this receipt before its assignment. The Job handle stays private.
+                using (var file = new FileStream(startReceipt, FileMode.CreateNew, FileAccess.Write, FileShare.Read))
+                using (var writer = new StreamWriter(file, new UTF8Encoding(false)))
+                    writer.Write("{\"primaryPid\":" + process.ProcessId + ",\"monitorPid\":" + Environment.ProcessId +
+                        ",\"killOnClose\":true,\"breakaway\":false,\"identity\":" + startIdentity + "}");
+            }
             Check(ResumeThread(process.Thread) != uint.MaxValue, "Resume assigned primary");
             CloseHandle(process.Thread); process.Thread = IntPtr.Zero;
             CloseHandle(output); output = IntPtr.Zero;
@@ -198,6 +266,7 @@ public static class PaseoOwnedJob
                 }
             }
             Check(GetExitCodeProcess(process.Process, out receipt.exitCode), "Read primary exit");
+            if (receipt.exitCode != 259) receipt.primaryExitObservedMs = clock.ElapsedMilliseconds;
             if (!receipt.timedOut && receipt.exitCode == 0)
             {
                 long deadline = clock.ElapsedMilliseconds + 10000;
@@ -206,6 +275,7 @@ public static class PaseoOwnedJob
             if (receipt.timedOut || receipt.exitCode != 0 || Inspect(job).Basic.ActiveProcesses != 0)
             {
                 receipt.terminated = true;
+                DiagnoseMembers(job, receipt);
                 Check(TerminateJobObject(job, 1), "Terminate owned job");
             }
         }
