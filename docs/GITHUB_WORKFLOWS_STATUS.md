@@ -20,7 +20,8 @@
   unmet. Initial queue adds 3s to each. Required checks are preserved.
 - Phase B: B1–B3 accepted; native Nix proofs cover both architectures and
   full x64/ARM DEB/RPM/AppImage evidence is at `db2316365`. B4 Windows is active.
-  Latest routine PR/dev runs passed in 4m33s/4m37s at `59e9bb2df`;
+  Latest routine PR passed in 4m41s at `2b40c197d`; dev failed on an unhandled
+  React teardown callback after all app assertions passed, with a scoped repair pending;
   this does not replace the accepted baseline above.
 
 ## Outcome gates
@@ -940,6 +941,24 @@ case-insensitive keys; drive/UNC and distinct-location fixtures guard the compar
 One cheap probe retry must complete hashes and strict success before production
 relocation. Routine PR/dev checks passed in 4m40s/4m17s, using 24m09s/22m06s
 of runner work; the stable baseline and under-five-minute budget are unchanged.
+
+The [completed binding prerequisite](https://github.com/iExalt/paseo/actions/runs/38172099352)
+at `2b40c197d` passed in 3m22s: unchanged wrapper, Electron 44.6.0 ARM64,
+ONNX Runtime 1.28.2, exact addon-adjacent loaded paths and all required hashes.
+The runtime exited normally in 2.33s; all six owned stages had zero active
+processes. Author and reviewer accepted this prerequisite. Production assembly
+now places every pinned DLL beside the physically unpacked addon and rejects
+executable-root duplicates; installed inspection and speech checks require that
+location. A 30-second load check using the actual candidate executable/archive
+runs before the costly predecessor install. The temporary diagnostic is removed.
+Installed STT/TTS and x64 remain open at the full product trial.
+Routine PR passed in 4m41s (22m16s runner work); dev failed in 4m22s
+(23m02s runner work) after 633 app files/5,650 tests passed with an unhandled
+React `window is not defined` teardown exception. The attributed file-link suite
+lacked explicit unmount/query cleanup with Vitest globals disabled, and its final
+deferred lookup was not awaited through settlement. The scoped repair adds owned
+cleanup and awaited settlement without weakening assertions or suppressing errors;
+the next required hosted routine run is its integration gate.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One

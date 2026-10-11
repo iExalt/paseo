@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][ValidateSet('setup', 'ownership', 'install', 'fixture-tools', 'build', 'runtime', 'probe', 'binding-build', 'binding-runtime', 'cleanup', 'diagnostics')][string]$Phase)
+param([Parameter(Mandatory = $true)][ValidateSet('setup', 'ownership', 'install', 'fixture-tools', 'build', 'runtime', 'probe', 'cleanup', 'diagnostics')][string]$Phase)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
@@ -56,7 +56,7 @@ function Write-Spec([string]$Name, [string]$Executable, [string[]]$Arguments, [i
         executable = $Executable; arguments = @($Arguments); directory = $env:GITHUB_WORKSPACE
         log = (Join-Path $root "logs\$Name.log"); receipt = (Join-Path $evidence "$Name-job.json")
         timeoutSeconds = $Seconds; nsisInstallDirectory = $NsisDirectory
-        allowedBuildTelemetry = if ($Name -in @('compiler-probe', 'npm-install', 'fixture-tools', 'package', 'binding-build')) {
+        allowedBuildTelemetry = if ($Name -in @('compiler-probe', 'npm-install', 'fixture-tools', 'package')) {
             Join-Path (Split-Path (Get-NativeCompiler)) 'VCTIP.EXE'
         } else { $null }
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $specFile -Encoding utf8
@@ -72,7 +72,7 @@ function Run-Owned([string]$Name, [string]$Executable, [string[]]$Arguments, [in
     if ($ExpectedFailure) {
         if ($status -eq 0 -or $receipt.exitCode -ne 7 -or !$receipt.terminated -or $receipt.timedOut) { throw 'Negative proof did not fail for the intended reason' }
     } else {
-        $allowed = $Name -in @('compiler-probe', 'npm-install', 'fixture-tools', 'package', 'binding-build') -and
+        $allowed = $Name -in @('compiler-probe', 'npm-install', 'fixture-tools', 'package') -and
             $receipt.buildSucceededWithTelemetryCleanup -and
             $receipt.allowedBuildTelemetry -eq (Join-Path (Split-Path (Get-NativeCompiler)) 'VCTIP.EXE')
         if ($status -ne 0 -or $receipt.exitCode -ne 0 -or ($receipt.terminated -and !$allowed) -or $receipt.timedOut) { throw "Owned stage failed: $Name" }
@@ -175,10 +175,6 @@ if ($Phase -eq 'ownership') {
         buildSucceededWithTelemetryCleanup = $receipt.buildSucceededWithTelemetryCleanup
         classification = 'build-only cleanup proof; not installer acceptance'
     } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'compiler-probe.json')
-} elseif ($Phase -in @('binding-build', 'binding-runtime')) {
-    if ($env:EXPECTED_ARCHITECTURE -ne 'arm64') { throw 'ARM64 binding diagnostic only' }
-    $seconds = if ($Phase -eq 'binding-build') { 900 } else { 90 }
-    $null = Run-Owned $Phase $node @((Join-Path $PSScriptRoot 'windows-binding-probe.mjs'), $Phase, $root) $seconds
 } elseif ($Phase -eq 'build') {
     $null = Run-Owned 'package' $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'build', $root) 280
 } elseif ($Phase -eq 'runtime') {
