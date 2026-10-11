@@ -70,8 +70,10 @@ linux:
     - deb
     - rpm
 deb:
+  compression: gz
   afterInstall: scripts/linux-sandbox/after-install.tpl
 rpm:
+  compression: gzip
   afterInstall: scripts/linux-sandbox/after-install.tpl
 appImage:
   # Replace the desktop entry's --no-sandbox default. AppRun still probes user
