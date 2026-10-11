@@ -940,11 +940,136 @@ async function finishSmokeSession({
   }
 }
 
+function prepareInstalledLaunch(installedLayout, ownedSession, predecessor) {
+  let appPath, executablePath, cliPath, installedIdentity;
+  assert.equal(process.platform, "linux");
+  assert.notEqual(process.getuid(), 0);
+  assert.ok(ownedSession);
+  const { format, expected, architecture, stableFile } = installedLayout;
+  const { verifyInstalledPackage, digest } = require("./linux-installed-layout.cjs");
+  if (format === "appimage") {
+    executablePath = stableFile;
+    cliPath = path.join(ownedSession.daemonHome, ".local/bin/paseo");
+    assert.equal(digest(stableFile), expected.artifacts.appimage.sha256);
+    if (!predecessor)
+      assert.equal(fs.readlinkSync(cliPath), stableFile, "Retain the old CLI symlink");
+  } else {
+    installedIdentity = verifyInstalledPackage(format, expected, architecture);
+    appPath = "/opt/Paseo";
+    executablePath = "/usr/bin/Paseo";
+    cliPath = getCliShimPath(appPath);
+  }
+  return { appPath, executablePath, cliPath, installedIdentity };
+}
+
+async function verifyInstalledLaunch({
+  installedLayout,
+  installedIdentity,
+  appPath,
+  browser,
+  page,
+  predecessor,
+  cliPath,
+  artifactDir,
+  stdout,
+  stderr,
+}) {
+  if (installedLayout.format === "appimage") {
+    const { verifyMountedPayload } = require("./linux-installed-layout.cjs");
+    installedIdentity = await verifyMountedPayload(
+      browser,
+      installedLayout.stableFile,
+      installedLayout.mountsRoot,
+      installedLayout.expected,
+      installedLayout.architecture,
+    );
+    appPath = installedIdentity.directory;
+    if (predecessor) {
+      const result = await page.evaluate(() => window.paseoDesktop.invoke("install_cli"));
+      assert.equal(result.installed, true);
+    }
+    assert.equal(fs.readlinkSync(cliPath), installedLayout.stableFile);
+  }
+  fs.writeFileSync(
+    path.join(artifactDir, "installed-identity.json"),
+    JSON.stringify(installedIdentity),
+  );
+  const diagnostics = await page.evaluate(() =>
+    window.paseoDesktop.invoke("desktop_sandbox_diagnostics"),
+  );
+  assert.equal(typeof diagnostics.enabled, "boolean");
+  if (diagnostics.enabled)
+    assert.ok(
+      ["user namespaces available", "root-owned SUID helper available"].includes(
+        diagnostics.reason,
+      ),
+    );
+  else
+    assert.ok(
+      diagnostics.reason.startsWith("user namespaces unavailable") ||
+        (installedLayout.format === "appimage" &&
+          diagnostics.reason === "requested by --no-sandbox" &&
+          installedIdentity.namespaceProbe.status > 0),
+    );
+  await assertSandboxState({
+    browser,
+    page,
+    expectedSandbox: diagnostics.enabled,
+    stdout,
+    stderr,
+  });
+  fs.writeFileSync(path.join(artifactDir, "sandbox.json"), JSON.stringify(diagnostics));
+  return { appPath, installedIdentity };
+}
+
+async function waitInstalledMountGone(installedIdentity) {
+  if (installedIdentity?.mount) {
+    const mountDeadline = Date.now() + 10000;
+    while (fs.existsSync(installedIdentity.mount.target) && Date.now() < mountDeadline)
+      await delay(100);
+    assert.equal(
+      fs.existsSync(installedIdentity.mount.target),
+      false,
+      "AppImage mount must disappear before replacement",
+    );
+  }
+}
+
+async function reserveDesktopDebugPort(daemonPort) {
+  let port = await reserveLocalTcpPort();
+  for (let attempt = 0; port === daemonPort && attempt < 10; attempt += 1) {
+    port = await reserveLocalTcpPort();
+  }
+  if (port === daemonPort)
+    throw new Error("Failed to reserve distinct TCP ports for the daemon and CDP");
+  return port;
+}
+
+async function finishInstalledAwareSession(options, installedIdentity, primaryError) {
+  const errors = [];
+  try {
+    await finishSmokeSession(options);
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    await waitInstalledMountGone(installedIdentity);
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length)
+    throw new AggregateError(
+      [primaryError, ...errors].filter(Boolean),
+      "Packaged smoke cleanup failed",
+    );
+}
+
 async function smokePackagedDesktopApp({
   appPath,
   executablePath,
   nixLayout,
   nixProfile,
+  installedLayout,
   launchArgs = [],
   expectedSandbox,
   ownedSession,
@@ -953,7 +1078,14 @@ async function smokePackagedDesktopApp({
   inspectState = async () => {},
 }) {
   let cliPath;
-  if (nixLayout) {
+  let installedIdentity;
+  if (installedLayout) {
+    ({ appPath, executablePath, cliPath, installedIdentity } = prepareInstalledLaunch(
+      installedLayout,
+      ownedSession,
+      predecessor,
+    ));
+  } else if (nixLayout) {
     const { nixLinuxLaunchPaths } = require("./nix-linux-layout.cjs");
     assert.equal(executablePath, undefined, "Nix must launch its canonical wrapper");
     ({ executablePath, cliPath } = nixLinuxLaunchPaths({
@@ -970,13 +1102,7 @@ async function smokePackagedDesktopApp({
     await smokeColdCliDaemonStart({ appPath, cliPath, strict: Boolean(ownedSession) });
 
   const { userData, daemonHome, port: daemonPort } = await prepareSmokeSession(ownedSession);
-  let cdpPort = await reserveLocalTcpPort();
-  for (let attempt = 0; cdpPort === daemonPort && attempt < 10; attempt += 1) {
-    cdpPort = await reserveLocalTcpPort();
-  }
-  if (cdpPort === daemonPort) {
-    throw new Error("Failed to reserve distinct TCP ports for the daemon and CDP");
-  }
+  const cdpPort = await reserveDesktopDebugPort(daemonPort);
   const listen = `127.0.0.1:${daemonPort}`;
   const env = createIsolatedDesktopEnv({
     home: daemonHome,
@@ -1005,6 +1131,7 @@ async function smokePackagedDesktopApp({
   let page = null;
   let daemonStopped = false;
   let daemonIdentity;
+  let primaryError;
 
   const stopDaemonForCleanup = async () => {
     if (daemonStopped) {
@@ -1029,6 +1156,20 @@ async function smokePackagedDesktopApp({
     });
     page = await waitForPackagedAppPage(browser, deadline);
     await assertPackagedRendererLoaded(page, deadline);
+    if (installedLayout) {
+      ({ appPath, installedIdentity } = await verifyInstalledLaunch({
+        installedLayout,
+        installedIdentity,
+        appPath,
+        browser,
+        page,
+        predecessor,
+        cliPath,
+        artifactDir,
+        stdout,
+        stderr,
+      }));
+    }
     console.log("Packaged desktop smoke: real app renderer and preload bridge loaded");
     const status = await waitForRendererStartedDaemon({
       page,
@@ -1060,6 +1201,7 @@ async function smokePackagedDesktopApp({
     await stopDaemonForCleanup();
     await closeProfileWindow({
       nixProfile,
+      installedFormat: Boolean(installedLayout),
       ownedSession,
       page,
       child,
@@ -1070,6 +1212,7 @@ async function smokePackagedDesktopApp({
       `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; ${predecessor ? "predecessor state seeded" : "CLI shim daemon status and terminal smoke succeeded"}`,
     );
   } catch (error) {
+    primaryError = error;
     await writeSmokeArtifacts({
       page,
       stdout,
@@ -1088,14 +1231,18 @@ async function smokePackagedDesktopApp({
     }
     throw error;
   } finally {
-    await finishSmokeSession({
-      ownedSession,
-      stopDaemonForCleanup,
-      browser,
-      child,
-      userData,
-      daemonHome,
-    });
+    await finishInstalledAwareSession(
+      {
+        ownedSession,
+        stopDaemonForCleanup,
+        browser,
+        child,
+        userData,
+        daemonHome,
+      },
+      installedIdentity,
+      primaryError,
+    );
   }
 }
 
@@ -1289,7 +1436,109 @@ async function smokeNixLinuxDesktop({ desktop, daemon, version, artifactDir }) {
   }
 }
 
+async function smokeInstalledLinuxStage({
+  manifest,
+  manifestSha256,
+  format,
+  stage,
+  root,
+  artifactDir,
+  stableFile,
+}) {
+  assert.equal(process.platform, "linux");
+  assert.notEqual(process.getuid(), 0);
+  assert.ok(["deb", "rpm", "appimage"].includes(format));
+  assert.ok(["previous", "candidate"].includes(stage));
+  assert.match(manifestSha256, /^[a-f0-9]{64}$/);
+  assert.equal(fs.realpathSync(root), root, "Owned state root must be canonical");
+  assert.equal(fs.statSync(root).uid, process.getuid());
+  const { validateManifest } = require("./linux-installed-layout.cjs");
+  validateManifest(manifest, process.env.GITHUB_SHA, process.arch);
+  const directory = path.join(root, format);
+  const stateFile = path.join(directory, "previous.json");
+  const stageDir = path.join(artifactDir, format, stage);
+  fs.mkdirSync(stageDir, { recursive: true });
+  let previous;
+  let ownedSession;
+  if (stage === "previous") {
+    assert.equal(fs.existsSync(directory), false, "Do not reuse a prior format session");
+    fs.mkdirSync(directory);
+    ownedSession = {
+      userData: path.join(directory, "profile"),
+      daemonHome: path.join(directory, "daemon"),
+      port: await reserveLocalTcpPort(),
+    };
+    fs.mkdirSync(ownedSession.userData);
+    fs.mkdirSync(ownedSession.daemonHome);
+    configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
+  } else {
+    previous = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+    assert.equal(previous.completed, true, "Predecessor must finish before upgrade");
+    assert.equal(previous.manifestSha256, manifestSha256);
+    assert.equal(previous.format, format);
+    assert.equal(previous.architecture, process.arch);
+    assert.match(previous.workspaceId, /^wks_[a-zA-Z0-9]+$/);
+    ownedSession = previous.ownedSession;
+    assert.equal(ownedSession.userData, path.join(directory, "profile"));
+    assert.equal(ownedSession.daemonHome, path.join(directory, "daemon"));
+    assert.ok(
+      Number.isInteger(ownedSession.port) && ownedSession.port > 0 && ownedSession.port < 65536,
+    );
+    for (const filename of [ownedSession.userData, ownedSession.daemonHome])
+      assert.equal(fs.realpathSync(filename), filename);
+  }
+  const linkIdentity = () => {
+    const filename = path.join(ownedSession.daemonHome, ".local/bin/paseo");
+    const stat = fs.lstatSync(filename);
+    assert.ok(stat.isSymbolicLink());
+    assert.equal(fs.readlinkSync(filename), stableFile);
+    return { filename, target: stableFile, inode: stat.ino, modified: stat.mtimeMs };
+  };
+  if (format === "appimage" && stage === "candidate")
+    assert.deepEqual(linkIdentity(), previous.cliLink);
+  let workspaceId = previous?.workspaceId;
+  await smokePackagedDesktopApp({
+    installedLayout: {
+      format,
+      stage,
+      expected: manifest[stage],
+      architecture: process.arch,
+      stableFile,
+      mountsRoot: process.env.TMPDIR,
+    },
+    ownedSession,
+    predecessor: stage === "previous",
+    artifactDir: stageDir,
+    inspectState: async (context) => {
+      workspaceId = await inspectUpgradeState({
+        ...context,
+        stage,
+        stageDir,
+        workspaceId,
+        title: "Persisted upgrade workspace",
+        theme: "Pure black",
+        storageDiagnostics: true,
+      });
+    },
+  });
+  const cliLink = format === "appimage" ? linkIdentity() : undefined;
+  if (previous && cliLink)
+    assert.deepEqual(cliLink, previous.cliLink, "Upgrade must not recreate the CLI link");
+  const receipt = {
+    completed: true,
+    manifestSha256,
+    format,
+    architecture: process.arch,
+    ownedSession,
+    workspaceId,
+    cliLink,
+  };
+  fs.writeFileSync(path.join(directory, `${stage}.json`), JSON.stringify(receipt));
+  fs.writeFileSync(path.join(stageDir, "stage.json"), JSON.stringify(receipt));
+}
+
 module.exports = {
+  smokeInstalledLinuxStage,
   smokeNixLinuxDesktop,
   smokePackagedDesktopApp,
   smokePackagedDesktopUpgrade,
