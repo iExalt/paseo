@@ -102,10 +102,14 @@ test("installed package identity binds source, archive paths, metadata and nativ
       candidate: item,
       previous: {
         ...item,
+        payload: { ...item.payload },
         version: "0.11.0",
         sourceSha: "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a",
       },
     };
+    const hook = join(root, "resources/linux-after-install.sh");
+    writeFileSync(hook, "fixture");
+    item.payload["resources/linux-after-install.sh"] = digest(hook);
     validateManifest(manifest, item.sourceSha, "x64");
     assert.throws(() => validateManifest(manifest, "0".repeat(40), "x64"));
     assert.throws(() => validateManifest(manifest, item.sourceSha, "arm64"));
@@ -115,6 +119,9 @@ test("installed package identity binds source, archive paths, metadata and nativ
     verifyPayload(root, item, "x64");
     assert.throws(() => verifyPayload(root, { ...item, version: "0.11.0" }, "x64"));
     assert.throws(() => verifyPayload(root, item, "arm64"));
+    writeFileSync(hook, "changed package hook");
+    assert.throws(() => verifyPayload(root, item, "x64"));
+    writeFileSync(hook, "fixture");
     writeFileSync(join(root, "Paseo"), "changed runtime launcher");
     assert.throws(() => verifyPayload(root, item, "x64"));
   } finally {
