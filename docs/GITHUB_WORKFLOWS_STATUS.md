@@ -929,6 +929,17 @@ dependency-search hypothesis; it does not yet establish which module was missing
 or rule out an additional CRT dependency. Product assembly stays unchanged until
 that result is reviewed. Routine PR/dev checks passed in 4m24s/4m41s, with
 21m19s/22m49s total runner work and unchanged latency budget.
+The [placement-only probe](https://github.com/iExalt/paseo/actions/runs/38171244555)
+at `5d7b6a81b` loaded the unchanged wrapper successfully with ONNX Runtime 1.28.2;
+the addon, C API and ONNX Runtime were all loaded beside the unpacked addon.
+The 3m13s job then failed a path comparison because Windows reported the `\\?\`
+namespace prefix on the loaded module, while the expected path lacked it. It
+stopped before completing hash verification, so probe acceptance remains open.
+The narrow repair canonicalizes both filesystem-resolved paths to namespaced,
+case-insensitive keys; drive/UNC and distinct-location fixtures guard the comparison.
+One cheap probe retry must complete hashes and strict success before production
+relocation. Routine PR/dev checks passed in 4m40s/4m17s, using 24m09s/22m06s
+of runner work; the stable baseline and under-five-minute budget are unchanged.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
