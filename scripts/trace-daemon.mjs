@@ -105,6 +105,11 @@ const additionalInputs = [
   "packages/server/dist/server/server/agent/providers/opencode/**/bridge-plugin.bundle.mjs",
   // Server runtime config files (read by path, not require)
   "packages/server/.env.example",
+  // RE2's generated loader computes this companion path; nft retains its JS
+  // but cannot discover the WASM binary. Resolve at the actual runtime importer.
+  requireFrom("packages/server/dist/server/server/agent/reply-rule-matcher.js").resolve(
+    "re2-wasm/build/wasm/re2.wasm",
+  ),
   ...ptyNativeFiles,
   // Resolve native speech packages from the same modules as the runtime.
   resolvedPackageFiles(sherpaModule, "sherpa-onnx-node"),

@@ -313,8 +313,16 @@ same-source build and native verification; the old Android candidate remains fai
 Linux trials `38103498455` and `38103959904` stopped before product realization
 on diagnostic assumptions: missing ripgrep, then Nix's v4 JSON envelope. Portable
 filtering and strict v4-envelope fixtures repair these prerequisites. No Linux
-product build/runtime success is claimed. Routine CI at `4789f1d8d` passed in
-4m35s; the stable baseline and under-five-minute budget remain unchanged.
+product build/runtime success was established by those diagnostic trials. The next
+trial, `38104599559` at `842a70f0c`, built both exact Linux outputs in 8m15s but
+failed the first daemon CLI startup: the static package trace omitted RE2's
+computed `re2.wasm` companion. The tracer now resolves that exact asset from its
+actual importer, and the existing isolated-closure fixture exercises the copied
+matcher without a second trace/copy. Native runtime acceptance remains open.
+The fixed `5619b7d7e` predecessor source shares the omission; any packaging-only
+repair used for its future Linux upgrade proof must be explicit in provenance.
+Routine dev CI at `842a70f0c` passed in 4m37s; the stable baseline and
+under-five-minute budget remain unchanged.
 
 Approved execution checklist:
 
