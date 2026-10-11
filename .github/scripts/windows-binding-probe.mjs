@@ -87,6 +87,13 @@ if (phase === "binding-build") {
   const manifest = verifyStagedBinding(staging);
   const require = createRequire(join(root, "fixture-tools/package.json"));
   assert.equal(require("electron/package.json").version, "44.6.0");
+  execFileSync(process.execPath, [require.resolve("electron/install.js")], {
+    timeout: 120000,
+    stdio: "inherit",
+  });
+  const distribution = join(root, "fixture-tools/node_modules/electron/dist");
+  assert.equal(readFileSync(join(distribution, "version"), "utf8").trim(), "44.6.0");
+  assert.equal(inspectPe(readFileSync(join(distribution, "electron.exe"))).machine, 0xaa64);
   cpSync(join(root, "fixture-tools/node_modules/electron/dist"), app, {
     recursive: true,
     errorOnExist: true,
