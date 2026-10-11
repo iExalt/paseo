@@ -107,6 +107,18 @@ if (operation === "models") {
 
 async function speech() {
   const executable = join(appPath, "Paseo.exe");
+  assert.equal(process.versions.electron, "44.6.0", "Speech parent must use installed Electron");
+  assert.equal(
+    realpathSync(process.execPath).toLowerCase(),
+    realpathSync(executable).toLowerCase(),
+  );
+  const parentRuntime = {
+    executable: process.execPath,
+    electron: process.versions.electron,
+    node: process.versions.node,
+    v8: process.versions.v8,
+  };
+  save(join(evidence, "speech-parent.json"), parentRuntime);
   const resources = join(appPath, "resources");
   const runner = join(
     resources,
@@ -222,6 +234,8 @@ async function speech() {
   const loaded = json(loaderReceipt);
   assert.equal(loaded.code, 0);
   assert.equal(loaded.electron, "44.6.0");
+  assert.equal(loaded.node, parentRuntime.node);
+  assert.equal(loaded.v8, parentRuntime.v8);
   assert.equal(loaded.architecture, process.arch);
   assert.equal(loaded.onnxruntime, "1.28.2");
   assert.equal(
@@ -252,6 +266,8 @@ async function speech() {
   save(join(evidence, "speech.json"), {
     executable,
     electron: loaded.electron,
+    parentRuntime,
+    workerRuntime: { node: loaded.node, v8: loaded.v8 },
     onnxruntime: loaded.onnxruntime,
     architecture: process.arch,
     native,

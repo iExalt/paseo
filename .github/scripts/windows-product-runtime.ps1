@@ -124,7 +124,14 @@ if ($Phase -eq 'prepare') {
         Assert-NoPaseoProcess
         Run-Node "runtime-$stage" 180
     }
-    Run-Node 'speech' 280
+    # fix: advanced IPC requires matching V8 serializers in parent and worker.
+    $previousRunAsNode = $env:ELECTRON_RUN_AS_NODE
+    try {
+        $env:ELECTRON_RUN_AS_NODE = '1'
+        Run-Owned 'speech' (Join-Path $installDirectory 'Paseo.exe') @((Join-Path $PSScriptRoot 'windows-product-runtime.mjs'), 'speech') 280
+    } finally {
+        $env:ELECTRON_RUN_AS_NODE = $previousRunAsNode
+    }
     Uninstall-Owned 'uninstall'
     @{ complete = $true; directoryAbsent = $true; registryAbsent = $true } | ConvertTo-Json | Set-Content (Join-Path $evidence 'uninstall.json')
 } elseif ($Phase -eq 'cleanup') {
