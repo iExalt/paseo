@@ -20,9 +20,8 @@ for stage in previous candidate; do
     ' bash "$stage"
 done
 package=$(node .github/scripts/linux-product-stage.mjs package /manifest.json candidate rpm)
+rpm -q --queryformat '[%{FILENAMES} %{FILEMODES:perms}\n]' "$package" > /evidence/rpm-owned-paths.txt
 dnf -y remove "$package"
 if rpm -q "$package"; then exit 1; fi
-test ! -e /opt/Paseo
-test ! -e /usr/bin/Paseo
-test ! -L /usr/bin/Paseo
+bash /repo/.github/scripts/linux-rpm-uninstall-check.sh /opt/Paseo /usr/bin/Paseo /evidence/rpm-uninstall-paths.txt
 printf 'RPM upgrade and uninstall passed\n' > /evidence/rpm-lifecycle.txt
