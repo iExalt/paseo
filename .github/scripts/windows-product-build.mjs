@@ -122,7 +122,6 @@ function packageStage(stage, owner) {
   if (process.arch === "arm64") {
     const additions = prepareArmBinding(source, join(root, "binding/runtime"));
     config.asarUnpack = [...(config.asarUnpack ?? []), ...additions.asarUnpack];
-    config.extraFiles = [...(config.extraFiles ?? []), ...additions.extraFiles];
   } else {
     const packageDirectory = dirname(require.resolve("sherpa-onnx-win-x64/package.json"));
     assert.equal(json(join(packageDirectory, "package.json")).version, "1.13.8");
@@ -212,6 +211,20 @@ function packageStage(stage, owner) {
     JSON.parse(extractFile(join(payload, "resources/app.asar"), "package.json")).version,
     metadata.version,
   );
+  if (stage === "candidate" && process.arch === "arm64") {
+    // fix: reject loader/ABI failures before the expensive predecessor install.
+    run(
+      join(payload, "Paseo.exe"),
+      [
+        "-e",
+        "const a=require('node:assert/strict'); a.equal(process.versions.electron,'44.6.0'); a.equal(process.arch,'arm64'); a.equal(require(process.argv[1]).onnxruntimeVersion,'1.28.2'); console.log('Packaged ARM wrapper loaded normally');",
+        join(payload, "resources/app.asar/node_modules/sherpa-onnx-node/addon.js"),
+      ],
+      source,
+      30000,
+      { ...env, ELECTRON_RUN_AS_NODE: "1" },
+    );
+  }
   const installer = join(output, `${stage}-${process.arch}.exe`);
   const identity = {
     sourceSha: expectedSha,
