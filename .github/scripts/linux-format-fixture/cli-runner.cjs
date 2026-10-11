@@ -14,12 +14,24 @@ try {
       "--eval",
       `
   const fs = require('node:fs');
+  process.on('uncaughtException', (error) => { console.error(error); process.exitCode = 1; });
+  process.on('unhandledRejection', (error) => { console.error(error); process.exitCode = 1; });
+  process.on('exit', (code) => console.error(JSON.stringify({exitCode: code})));
+  fs.writeFileSync(process.env.FIXTURE_CLI_RECEIPT + '.ready', JSON.stringify({
+    pid: process.pid,
+    start: fs.readFileSync('/proc/self/stat', 'utf8').split(') ').at(-1).split(' ')[19],
+    execPath: process.execPath,
+    appdir: process.env.APPDIR,
+    inputExists: fs.existsSync(process.env.FIXTURE_CLI_INPUT),
+  }));
   setTimeout(() => {
     let parentExited = false;
     try { process.kill(Number(process.env.FIXTURE_CLI_PARENT), 0); }
     catch (error) { if (error.code !== 'ESRCH') throw error; parentExited = true; }
-    const content = fs.readFileSync(process.env.FIXTURE_CLI_INPUT, 'utf8');
-    fs.writeFileSync(process.env.FIXTURE_CLI_RECEIPT, JSON.stringify({content, parentExited}));
+    let content, error;
+    try { content = fs.readFileSync(process.env.FIXTURE_CLI_INPUT, 'utf8'); }
+    catch (failure) { error = String(failure); process.exitCode = 1; }
+    fs.writeFileSync(process.env.FIXTURE_CLI_RECEIPT, JSON.stringify({content, error, parentExited}));
   }, 1500);
 `,
     ],
@@ -37,14 +49,32 @@ try {
   fs.closeSync(stderr);
 }
 child.unref();
-assert.ok(fs.existsSync(process.env.APPDIR));
-console.log(
-  JSON.stringify({
-    args: process.argv.slice(4),
-    argv0: process.env.ARGV0,
-    appdir: process.env.APPDIR,
-    runAsNode: process.env.ELECTRON_RUN_AS_NODE,
-    display: process.env.DISPLAY,
-    architecture: process.arch,
-  }),
-);
+child.on("error", (error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+// Establish a running worker before releasing the CLI's runtime mount.
+void (async () => {
+  const deadline = Date.now() + 5000;
+  while (!fs.existsSync(`${process.env.FIXTURE_CLI_RECEIPT}.ready`) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.ok(
+    fs.existsSync(`${process.env.FIXTURE_CLI_RECEIPT}.ready`),
+    `Worker never became ready (exit=${child.exitCode}, signal=${child.signalCode})`,
+  );
+  assert.ok(fs.existsSync(process.env.APPDIR));
+  console.log(
+    JSON.stringify({
+      args: process.argv.slice(4),
+      argv0: process.env.ARGV0,
+      appdir: process.env.APPDIR,
+      runAsNode: process.env.ELECTRON_RUN_AS_NODE,
+      display: process.env.DISPLAY,
+      architecture: process.arch,
+    }),
+  );
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
