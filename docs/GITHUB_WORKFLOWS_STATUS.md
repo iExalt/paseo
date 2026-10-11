@@ -475,6 +475,12 @@ uses the observer PID for mandatory metrics and kernel evidence, and rejects
 missing/malformed mappings. Tiny parser cases cover nested and unnested identities
 and mismatched endpoints. DEB cleanup purged the package and left no owned processes;
 full DEB/RPM acceptance still requires the corrected hosted trial.
+Trial `38114504476` at `39a160e9f` verified the DEB renderer mapping
+`3868 → 4 → 1`, enabled policy, NoNewPrivs=1 and Seccomp=2, then exposed a fixture
+shutdown race: DOMContentLoaded IPC closed the window before `loadURL` settled.
+The fixture now awaits successful navigation before assertions and normal close;
+navigation rejection remains fatal. AppImage passed again, and failure cleanup
+purged the DEB and removed owned processes. RPM is not yet exercised.
 The Nix filter increment `490c6eac0` passed seven-lane PR CI in 4m30s; the preceding
 `5139c9514` full dev run passed in 4m34s. The stable latency baseline is unchanged.
 

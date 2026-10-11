@@ -30,8 +30,11 @@ app
         preload: path.join(__dirname, "preload.cjs"),
       },
     });
-    ipcMain.once("fixture-ready", (event, renderer) => {
+    let navigation;
+    ipcMain.once("fixture-ready", async (event, renderer) => {
       try {
+        assert.ok(navigation, "Navigation must start before renderer IPC");
+        await navigation;
         assert.equal(event.sender, window.webContents);
         const observerPid = window.webContents.getOSProcessId();
         const rendererStatus = fs.readFileSync(`/proc/${observerPid}/status`, "utf8");
@@ -141,8 +144,9 @@ app
         fail(error);
       }
     });
-    return window.loadURL(
+    navigation = window.loadURL(
       "data:text/html,<title>Linux format fixture</title><h1>Renderer ready</h1>",
     );
+    return navigation;
   })
   .catch(fail);
