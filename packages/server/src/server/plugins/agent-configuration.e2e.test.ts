@@ -12,7 +12,7 @@ test("the configuration example adds MCP servers and overrides Codex options whi
   const daemon = await createTestPaseoDaemon({
     daemonVersion: "0.8.0",
     agentClients: { codex: createTestAgentClient("codex", { supportsMcpServers: true }) },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws`, appVersion: "0.8.0" });
   try {

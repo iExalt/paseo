@@ -113,7 +113,7 @@ test("Antigravity creates an agent and answers a prompt with real agy", async ({
   const cwd = await mkdtemp(path.join(os.tmpdir(), "paseo-antigravity-e2e-"));
   const daemon = await createTestPaseoDaemon({
     agentClients: {},
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     builtinPlugins: new BuiltinPluginLoader(undefined, ["antigravity-provider"]),
     providerOverrides: { antigravity: { command: [command], paseoTools: { enabled: false } } },
   });

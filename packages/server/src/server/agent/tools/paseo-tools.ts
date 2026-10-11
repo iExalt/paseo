@@ -1,4 +1,3 @@
-import { AgentDirectory } from "../directory.js";
 import { stat } from "node:fs/promises";
 import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
@@ -14,23 +13,13 @@ import {
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import {
   AgentFeatureSchema,
-  AgentPermissionRequestPayloadSchema,
+  AgentPendingPermissionPayloadSchema,
   AgentListItemPayloadSchema,
   AgentPermissionResponseSchema,
   AgentSnapshotPayloadSchema,
   WorkspaceScriptPayloadSchema,
 } from "../../messages.js";
-import type { AgentListItemPayload } from "../../messages.js";
-import {
-  buildStoredAgentPayload,
-  toAgentListItemPayload,
-  toAgentPayload,
-} from "../agent-projections.js";
-import { curateAgentActivity } from "../activity-curator.js";
-import { selectItemsByProjectedLimit } from "../timeline-projection.js";
 import type { AgentStorage } from "../agent-storage.js";
-import { ensureAgentLoaded } from "../agent-loading.js";
-import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
 import {
   archiveByScope,
   killTerminalsForWorkspace,
@@ -39,12 +28,16 @@ import {
 } from "../../workspace-archive-service.js";
 import { createAgentCommand, type CreateAgentFromMcpInput } from "../create-agent/create.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js";
+import { speakWithHandler } from "../speak-service.js";
 import type { FirstAgentContext } from "../../messages.js";
 import { everyMsToFiveFieldCron } from "@getpaseo/protocol/schedule/cadence";
-import { expandUserPath, isSameOrDescendantPath, resolvePathFromBase } from "../../path-utils.js";
+import { expandUserPath, isSameOrDescendantPath } from "../../path-utils.js";
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
+import { sendTerminalInput } from "../../../terminal/terminal-input.js";
 import type { CreatePaseoWorktreeWorkflowFn } from "../../worktree-session.js";
 import type { ScheduleService } from "../../schedule/service.js";
+import { resolveNewAgentScheduleTarget } from "../../schedule/caller-runtime.js";
+import { scheduleExpiryFromDuration } from "../../schedule/expiry.js";
 import {
   ScheduleRunSchema,
   ScheduleSummarySchema,
@@ -61,10 +54,10 @@ import {
   ProviderSummarySchema,
   parseDurationString,
   resolveRequiredProviderModel,
-  sanitizePermissionRequest,
-  serializeSnapshotWithMetadata,
   toScheduleSummary,
 } from "../mcp-shared.js";
+import { listPendingAgentPermissions } from "../permission-list.js";
+import { getAgentActivity, getAgentStatus, queryAgentDirectory } from "../agent-query-service.js";
 import {
   type PromptDispatchDisposition,
   sendPromptToAgent,
@@ -105,6 +98,8 @@ import type {
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
 import { SessionAuthorization } from "../../authorization/index.js";
+import { resolveScopedAgentCwd } from "../scoped-cwd.js";
+import { inspectProviderCapabilities } from "../provider-inspection-service.js";
 
 export interface PaseoToolHostDependencies {
   agentManager: AgentManager;
@@ -170,24 +165,6 @@ export interface PaseoToolHostDependencies {
   enableVoiceTools?: boolean;
   voiceOnly?: boolean;
   logger: Logger;
-}
-
-function parseTimestamp(value: string | null | undefined): number {
-  if (!value) {
-    return 0;
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function resolveAgentListActivityTime(agent: AgentListItemPayload): number {
-  return Math.max(
-    parseTimestamp(agent.updatedAt),
-    parseTimestamp(agent.lastUserMessageAt),
-    parseTimestamp(agent.attentionTimestamp),
-    parseTimestamp(agent.archivedAt),
-    parseTimestamp(agent.createdAt),
-  );
 }
 
 interface ProviderSummary {
@@ -337,50 +314,6 @@ function toProviderSummary(entry: {
   };
 }
 
-function compareAgentListItems(a: AgentListItemPayload, b: AgentListItemPayload): number {
-  const attentionDelta =
-    Number(b.requiresAttention ?? false) - Number(a.requiresAttention ?? false);
-  if (attentionDelta !== 0) {
-    return attentionDelta;
-  }
-
-  const statusOrder = {
-    running: 0,
-    initializing: 1,
-    idle: 2,
-    error: 3,
-    closed: 4,
-  } as Record<string, number>;
-  const statusDelta = (statusOrder[a.status] ?? 999) - (statusOrder[b.status] ?? 999);
-  if (statusDelta !== 0) {
-    return statusDelta;
-  }
-
-  return resolveAgentListActivityTime(b) - resolveAgentListActivityTime(a);
-}
-
-function resolveScheduleProviderAndModel(params: {
-  provider?: string;
-  defaultProvider: AgentProvider;
-}): { provider: AgentProvider; model?: string } {
-  const providerInput = params.provider?.trim() || params.defaultProvider;
-  const slashIndex = providerInput.indexOf("/");
-  if (slashIndex === -1) {
-    return { provider: providerInput };
-  }
-
-  const provider = providerInput.slice(0, slashIndex).trim();
-  const model = providerInput.slice(slashIndex + 1).trim();
-  if (!provider || !model) {
-    throw new Error("provider must be <provider> or <provider>/<model>");
-  }
-
-  return {
-    provider: provider,
-    model,
-  };
-}
-
 function resolveScheduleUpdateProviderAndModel(params: {
   provider?: string;
   model?: string | null;
@@ -491,7 +424,7 @@ function resolveScheduleUpdateExpiresAt(input: ScheduleUpdateToolInput): string 
     throw new Error("Specify at most one of expiresIn or clearExpires");
   }
   if (input.expiresIn !== undefined) {
-    return new Date(Date.now() + parseDurationString(input.expiresIn)).toISOString();
+    return scheduleExpiryFromDuration({ expiresIn: input.expiresIn }) ?? null;
   }
   if (input.clearExpires) {
     return null;
@@ -522,25 +455,6 @@ function buildScheduleUpdateInput(input: ScheduleUpdateToolInput): UpdateSchedul
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(Object.keys(newAgentConfig).length > 0 ? { newAgentConfig } : {}),
   };
-}
-
-function resolveChildAgentCwd(params: {
-  parentCwd: string;
-  requestedCwd?: string;
-  lockedCwd?: string;
-  allowCustomCwd: boolean;
-}): string {
-  const lockedCwd = params.lockedCwd?.trim();
-  if (lockedCwd) {
-    return expandUserPath(lockedCwd);
-  }
-
-  const requestedCwd = params.requestedCwd?.trim();
-  if (!requestedCwd || !params.allowCustomCwd) {
-    return params.parentCwd;
-  }
-
-  return resolvePathFromBase(params.parentCwd, requestedCwd);
 }
 
 const TerminalSummarySchema = z.object({
@@ -688,12 +602,6 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     };
   };
 
-  const buildScheduleExpiry = (expiresIn: string | undefined): string | undefined => {
-    return expiresIn === undefined
-      ? undefined
-      : new Date(Date.now() + parseDurationString(expiresIn)).toISOString();
-  };
-
   const resolveCallerAgent = () => {
     if (!callerAgentId) {
       return null;
@@ -716,25 +624,12 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
   };
 
   const resolveScopedCwd = (requestedCwd?: string, opts?: { required?: boolean }): string => {
-    const callerAgent = resolveCallerAgent();
-    if (callerAgent) {
-      return resolveChildAgentCwd({
-        parentCwd: callerAgent.cwd,
-        requestedCwd,
-        lockedCwd: callerContext?.lockedCwd,
-        allowCustomCwd: callerContext?.allowCustomCwd ?? true,
-      });
-    }
-
-    const trimmedCwd = requestedCwd?.trim();
-    if (!trimmedCwd) {
-      if (opts?.required) {
-        throw new Error("cwd is required");
-      }
-      throw new Error("cwd is required outside an agent-scoped session");
-    }
-
-    return expandUserPath(trimmedCwd);
+    return resolveScopedAgentCwd({
+      requestedCwd,
+      callerAgent: resolveCallerAgent(),
+      callerContext,
+      required: opts?.required,
+    });
   };
 
   async function resolveTerminalWorkspaceId(resolvedCwd: string): Promise<string> {
@@ -771,91 +666,6 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     }
     throw new Error("workspaceId is required outside an agent-scoped session");
   }
-
-  const buildCallerAgentScheduleConfigExtras = (
-    callerAgent: NonNullable<ReturnType<typeof resolveCallerAgent>>,
-    resolvedProvider: string,
-  ): Record<string, unknown> => {
-    return {
-      ...(callerAgent.config.thinkingOptionId
-        ? { thinkingOptionId: callerAgent.config.thinkingOptionId }
-        : {}),
-      ...(callerAgent.provider === resolvedProvider && callerAgent.config.providerOptions
-        ? { providerOptions: callerAgent.config.providerOptions }
-        : {}),
-      ...(callerAgent.config.featureValues
-        ? { featureValues: callerAgent.config.featureValues }
-        : {}),
-      ...(callerAgent.config.systemPrompt ? { systemPrompt: callerAgent.config.systemPrompt } : {}),
-      ...(callerAgent.config.mcpServers ? { mcpServers: callerAgent.config.mcpServers } : {}),
-    };
-  };
-
-  const buildCallerAgentScheduleConfig = (
-    callerAgent: NonNullable<ReturnType<typeof resolveCallerAgent>>,
-    params?: { provider?: string; cwd?: string },
-  ) => {
-    const hasProviderOverride = params?.provider !== undefined;
-    const resolvedProviderModel = hasProviderOverride
-      ? resolveScheduleProviderAndModel({
-          provider: params?.provider,
-          defaultProvider: callerAgent.provider,
-        })
-      : null;
-    const resolvedProvider = resolvedProviderModel?.provider ?? callerAgent.provider;
-    let resolvedModel: string | undefined;
-    if (resolvedProviderModel?.model) {
-      resolvedModel = resolvedProviderModel.model;
-    } else if (!hasProviderOverride && callerAgent.config.model) {
-      resolvedModel = callerAgent.config.model;
-    }
-    return {
-      provider: resolvedProvider,
-      cwd: params?.cwd?.trim() ? expandUserPath(params.cwd) : callerAgent.cwd,
-      ...(callerAgent.currentModeId && callerAgent.provider === resolvedProvider
-        ? {
-            modeId: callerAgent.currentModeId,
-          }
-        : {}),
-      ...(resolvedModel ? { model: resolvedModel } : {}),
-      ...buildCallerAgentScheduleConfigExtras(callerAgent, resolvedProvider),
-    };
-  };
-
-  const resolveNewAgentScheduleTarget = (params?: {
-    provider?: string;
-    cwd?: string;
-    isolation?: "local" | "worktree";
-  }) => {
-    const callerAgent = resolveCallerAgent();
-    if (callerAgent) {
-      return {
-        type: "new-agent" as const,
-        config: {
-          ...buildCallerAgentScheduleConfig(callerAgent, params),
-          ...(params?.isolation ? { isolation: params.isolation } : {}),
-        },
-      };
-    }
-
-    if (!params?.provider?.trim()) {
-      throw new Error("provider is required when target is new-agent");
-    }
-
-    const resolvedProviderModel = resolveScheduleProviderAndModel({
-      provider: params?.provider,
-      defaultProvider: params.provider,
-    });
-    return {
-      type: "new-agent" as const,
-      config: {
-        provider: resolvedProviderModel.provider,
-        cwd: params?.cwd?.trim() ? expandUserPath(params.cwd) : process.cwd(),
-        ...(resolvedProviderModel.model ? { model: resolvedProviderModel.model } : {}),
-        ...(params?.isolation ? { isolation: params.isolation } : {}),
-      },
-    };
-  };
 
   async function requireScheduleTarget(id: string, type: "agent" | "new-agent") {
     if (!scheduleService) {
@@ -1228,16 +1038,10 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         },
       },
       async (args, context) => {
-        if (!callerAgentId) {
-          throw new Error("speak is only available to agent-scoped tool sessions");
-        }
-        const handler = resolveSpeakHandler?.(callerAgentId) ?? null;
-        if (!handler) {
-          throw new Error(`No speak handler registered for your session '${callerAgentId}'`);
-        }
-        await handler({
+        await speakWithHandler({
           text: args.text,
           callerAgentId,
+          resolveSpeakHandler: (agentId) => resolveSpeakHandler?.(agentId) ?? null,
           signal: context?.signal,
         });
         return {
@@ -2131,37 +1935,19 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId }) => {
-      const snapshot = agentManager.getAgent(agentId);
-      if (snapshot) {
-        const structuredSnapshot = await serializeSnapshotWithMetadata(
+      const result = await getAgentStatus({
+        dependencies: {
+          agentManager,
           agentStorage,
-          snapshot,
-          childLogger,
-        );
-        return {
-          content: [],
-          structuredContent: ensureValidJson({
-            status: snapshot.lifecycle,
-            snapshot: structuredSnapshot,
-          }),
-        };
-      }
-
-      const record = await agentStorage.get(agentId);
-      if (!record || record.internal) {
-        throw new Error(`Agent ${agentId} not found`);
-      }
-
-      const structuredSnapshot = buildStoredAgentPayload(
-        record,
-        new Set(providerSnapshotManager.listRegisteredProviderIds()),
-      );
+          providerSnapshotManager,
+          workspaceRegistry: options.workspaceRegistry,
+          logger: childLogger,
+        },
+        agentId,
+      });
       return {
         content: [],
-        structuredContent: ensureValidJson({
-          status: structuredSnapshot.status,
-          snapshot: structuredSnapshot,
-        }),
+        structuredContent: ensureValidJson(result),
       };
     },
   );
@@ -2197,37 +1983,24 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       statuses,
       limit = 50,
     }) => {
-      const callerCwd = callerAgentId ? resolveCallerAgent()?.cwd : undefined;
-      const requestedCwd = cwd?.trim() ? expandUserPath(cwd) : callerCwd;
-      const statusFilter = statuses && statuses.length > 0 ? new Set(statuses) : null;
-      const sinceMs = Date.now() - sinceHours * 60 * 60 * 1000;
-      if (!options.workspaceRegistry) throw new Error("Workspace registry is not configured");
-      const directory = new AgentDirectory({
-        manager: agentManager,
-        storage: agentStorage,
-        workspaces: options.workspaceRegistry,
-        projectLive: (snapshot) =>
-          serializeSnapshotWithMetadata(agentStorage, snapshot, childLogger),
-        projectStored: (record) =>
-          buildStoredAgentPayload(
-            record,
-            new Set(providerSnapshotManager.listRegisteredProviderIds()),
-          ),
-        isProviderVisible: () => true,
-        isStoredProviderAvailable: (record) =>
-          isStoredAgentProviderAvailable(
-            record,
-            new Set(providerSnapshotManager.listRegisteredProviderIds()),
-          ),
+      const agents = await queryAgentDirectory({
+        dependencies: {
+          agentManager,
+          agentStorage,
+          providerSnapshotManager,
+          workspaceRegistry: options.workspaceRegistry,
+          logger: childLogger,
+        },
+        query: {
+          includeBackground,
+          includeArchived,
+          cwd,
+          callerAgentId,
+          sinceHours,
+          statuses,
+          limit,
+        },
       });
-      const agents = (await directory.list({ includeBackground, includeArchived }))
-        .map(toAgentListItemPayload)
-        .filter((agent) => !requestedCwd || isSameOrDescendantPath(requestedCwd, agent.cwd))
-        .filter((agent) => !statusFilter || statusFilter.has(agent.status))
-        .filter((agent) => !agent.archivedAt || resolveAgentListActivityTime(agent) >= sinceMs)
-        .sort(compareAgentListItems)
-        .slice(0, limit);
-
       return {
         content: [],
         structuredContent: ensureValidJson({ agents }),
@@ -2669,15 +2442,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         throw new Error("Terminal manager is not configured");
       }
 
-      const terminal = terminalManager.getTerminal(terminalId);
-      if (!terminal) {
-        throw new Error(`Terminal ${terminalId} not found`);
-      }
-
-      terminal.send({
-        type: "input",
-        data: resolveTerminalKeyToken(keys, literal),
-      });
+      sendTerminalInput(terminalManager, terminalId, resolveTerminalKeyToken(keys, literal));
 
       return {
         content: [],
@@ -2716,14 +2481,17 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         throw new Error("Schedule service is not configured");
       }
 
-      const expiresAt = buildScheduleExpiry(expiresIn);
+      const expiresAt = scheduleExpiryFromDuration({ expiresIn });
       const schedule = await scheduleService.createOrReplace({
         prompt: prompt.trim(),
         cadence: buildCronScheduleCadence({
           cron,
           ...(timezone !== undefined ? { timezone } : {}),
         }),
-        target: resolveNewAgentScheduleTarget({ provider, cwd, isolation }),
+        target: resolveNewAgentScheduleTarget({
+          callerAgent: resolveCallerAgent(),
+          overrides: { provider, cwd, isolation },
+        }),
         ...(name?.trim() ? { name: name.trim() } : {}),
         ...(maxRuns === undefined ? {} : { maxRuns }),
         ...(expiresAt === undefined ? {} : { expiresAt }),
@@ -2765,7 +2533,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       }
       resolveCallerAgent();
 
-      const expiresAt = buildScheduleExpiry(expiresIn);
+      const expiresAt = scheduleExpiryFromDuration({ expiresIn });
       const schedule = await scheduleService.createOrReplace({
         prompt: prompt.trim(),
         cadence: buildCronScheduleCadence({
@@ -3143,45 +2911,20 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ provider, cwd, settings }) => {
-      const resolvedProviderModel = resolveScheduleProviderAndModel({
-        provider,
-        defaultProvider: provider,
-      });
-      const providerId = resolvedProviderModel.provider;
-      const resolvedCwd = resolveScopedCwd(cwd, { required: true });
-      const entry = await providerSnapshotManager.getProvider({
-        cwd: resolvedCwd,
-        provider: providerId,
-        wait: true,
-      });
-      const summary = toProviderSummary(entry);
-      if (!entry.enabled) {
-        throw new Error(`Provider '${providerId}' is disabled`);
-      }
-      if (entry.status !== "ready") {
-        throw new Error(entry.error ?? `Provider '${providerId}' is unavailable`);
-      }
-      const selectedModel = settings?.model ?? resolvedProviderModel.model;
-      const features = await agentManager.listDraftFeatures({
-        provider: providerId,
-        cwd: resolvedCwd,
-        ...(settings?.modeId ? { modeId: settings.modeId } : {}),
-        ...(selectedModel ? { model: selectedModel } : {}),
-        ...(settings?.thinkingOptionId ? { thinkingOptionId: settings.thinkingOptionId } : {}),
-        ...(settings?.features ? { featureValues: settings.features } : {}),
+      const result = await inspectProviderCapabilities({
+        input: {
+          provider,
+          cwd,
+          callerAgentId,
+          settings,
+        },
+        agentManager,
+        providerSnapshotManager,
+        resolveCallerContext,
       });
       return {
         content: [],
-        structuredContent: ensureValidJson({
-          provider: providerId,
-          label: summary.label,
-          description: summary.description,
-          enabled: summary.enabled,
-          status: summary.status,
-          modes: summary.modes,
-          selectedModel: selectedModel ?? null,
-          features,
-        }),
+        structuredContent: ensureValidJson(result),
       };
     },
   );
@@ -3206,38 +2949,20 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       },
     },
     async ({ agentId, limit }) => {
-      await ensureAgentLoaded(agentId, {
-        agentManager,
-        agentStorage,
-        logger: childLogger,
+      const result = await getAgentActivity({
+        dependencies: {
+          agentManager,
+          agentStorage,
+          providerSnapshotManager,
+          workspaceRegistry: options.workspaceRegistry,
+          logger: childLogger,
+        },
+        agentId,
+        limit,
       });
-      const timeline = agentManager.getTimeline(agentId);
-      const snapshot = agentManager.getAgent(agentId);
-
-      const selection = selectItemsByProjectedLimit({
-        items: timeline,
-        direction: "tail",
-        limit: limit ?? 0,
-      });
-      const curatedContent = curateAgentActivity(selection.items);
-      const { totalProjected, shownProjected } = selection;
-
-      const noun = totalProjected === 1 ? "activity" : "activities";
-      const countHeader =
-        limit && shownProjected < totalProjected
-          ? `Showing ${shownProjected} of ${totalProjected} ${noun} (limited to ${limit})`
-          : `Showing all ${totalProjected} ${noun}`;
-
-      const contentWithCount = `${countHeader}\n\n${curatedContent}`;
-
       return {
         content: [],
-        structuredContent: ensureValidJson({
-          agentId,
-          updateCount: timeline.length,
-          currentModeId: snapshot?.currentModeId ?? null,
-          content: contentWithCount,
-        }),
+        structuredContent: ensureValidJson(result),
       };
     },
   );
@@ -3274,24 +2999,11 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         "Return all pending permission requests across all agents with the normalized payloads.",
       inputSchema: {},
       outputSchema: {
-        permissions: z.array(
-          z.object({
-            agentId: z.string(),
-            status: AgentStatusEnum,
-            request: AgentPermissionRequestPayloadSchema,
-          }),
-        ),
+        permissions: z.array(AgentPendingPermissionPayloadSchema),
       },
     },
     async () => {
-      const permissions = agentManager.listAgents().flatMap((agent) => {
-        const payload = toAgentPayload(agent);
-        return payload.pendingPermissions.map((request) => ({
-          agentId: agent.id,
-          status: payload.status,
-          request: sanitizePermissionRequest(request),
-        }));
-      });
+      const permissions = listPendingAgentPermissions({ agentManager });
 
       return {
         content: [],

@@ -16,7 +16,12 @@ export async function connectTerminalClient(target: DaemonTarget) {
   const daemonHost = getDaemonHost({ target });
   try {
     const client = await connectToDaemon({ target });
-    return { client: createPaseoApi(client), daemonHost, close: () => client.close() };
+    return {
+      client: createPaseoApi(client),
+      daemonClient: client,
+      daemonHost,
+      close: () => client.close(),
+    };
   } catch (err) {
     if (err && typeof err === "object" && "code" in err) throw err;
     const message = err instanceof Error ? err.message : String(err);

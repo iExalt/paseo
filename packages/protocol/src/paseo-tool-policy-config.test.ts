@@ -56,4 +56,23 @@ describe("provider Paseo-tool policy", () => {
       }).providers?.codex?.paseoTools,
     ).toEqual({ disabledTools: ["browser_future_tool"] });
   });
+
+  test("preserves the effective legacy agent-tool setting unless the new field is explicit", () => {
+    expect(
+      MutableDaemonConfigSchema.parse({
+        mcp: { enabled: true, injectIntoAgents: true },
+      }).agentTools,
+    ).toEqual({ enabled: true });
+    expect(
+      MutableDaemonConfigSchema.parse({
+        mcp: { enabled: false, injectIntoAgents: true },
+      }).agentTools,
+    ).toEqual({ enabled: false });
+    expect(
+      MutableDaemonConfigSchema.parse({
+        mcp: { enabled: true, injectIntoAgents: true },
+        agentTools: { enabled: false },
+      }).agentTools,
+    ).toEqual({ enabled: false });
+  });
 });

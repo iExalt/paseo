@@ -260,7 +260,6 @@ function createSessionForWorkspaceGitWatchTests(options?: {
       dispose: () => {},
     }),
     workspaceGitService,
-    mcpBaseUrl: null,
     stt: null,
     tts: null,
     providerSnapshotManager: createProviderSnapshotManagerStub().manager,
