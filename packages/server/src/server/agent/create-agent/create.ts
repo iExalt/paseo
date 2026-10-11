@@ -58,6 +58,8 @@ export type EnsureWorkspaceForCreate = (
 export interface CreateAgentFromSessionInput {
   kind: "session";
   onAgentReady?: (agent: ManagedAgent) => Promise<void>;
+  callerAgentId?: string;
+  notifyOnFinish?: boolean;
   agentId?: string;
   config: AgentSessionConfig;
   workspaceId: string;
@@ -199,7 +201,6 @@ export async function createAgentCommand(
     input.onCreated?.({ agentId: snapshot.id, createdWorktree: resolved.createdWorktree ?? null });
   }
   const stopNotification =
-    input.kind === "mcp" &&
     input.notifyOnFinish &&
     input.callerAgentId &&
     (resolved.prompt !== undefined || resolved.setupContinuation !== undefined)

@@ -54,7 +54,7 @@ export interface ComposerSendClient {
       images: Array<{ data: string; mimeType: string }>;
       attachments: ReturnType<typeof splitComposerAttachmentsForSubmit>["attachments"];
     },
-  ) => Promise<void>;
+  ) => Promise<unknown>;
   uploadFile: (input: { fileName: string; mimeType: string; bytes: Uint8Array }) => Promise<{
     requestId: string;
     file: {
@@ -70,7 +70,7 @@ export interface ComposerSendClient {
 }
 
 export interface ComposerCancelClient {
-  cancelAgent: (agentId: string) => Promise<void> | void;
+  cancelAgent: (agentId: string) => Promise<unknown> | void;
 }
 
 export interface MessageSubmissionWriter {
@@ -178,7 +178,7 @@ export function cancelComposerAgent(input: CancelComposerAgentInput): Promise<vo
   if (!input.isAgentRunning || input.isCancellingAgent) return null;
   if (!input.isConnected || !input.client) return null;
   try {
-    return Promise.resolve(input.client.cancelAgent(input.agentId));
+    return Promise.resolve(input.client.cancelAgent(input.agentId)).then(() => undefined);
   } catch (error) {
     return Promise.reject(error);
   }

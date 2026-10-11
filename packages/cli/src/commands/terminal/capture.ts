@@ -53,6 +53,8 @@ async function executeCaptureCommand(
   terminalId: string,
   options: TerminalCaptureOptions,
 ): Promise<{ terminalId: string; lines: string[]; totalLines: number }> {
+  const start = options.scrollback ? 0 : parseLineNumber("--start", options.start);
+  const end = parseLineNumber("--end", options.end);
   const { client, close } = await connectTerminalClient(options.daemonTarget);
 
   try {
@@ -64,9 +66,6 @@ async function executeCaptureCommand(
         details: "Use `paseo terminal ls --all` to list available terminals.",
       };
     }
-
-    const start = options.scrollback ? 0 : parseLineNumber("--start", options.start);
-    const end = parseLineNumber("--end", options.end);
 
     return await client.terminals.ref(resolvedId).capture({
       ...(start === undefined ? {} : { start }),
@@ -85,8 +84,15 @@ function parseLineNumber(flag: string, value?: string): number | undefined {
     return undefined;
   }
 
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed)) {
+  if (!/^[+-]?\d+$/.test(value)) {
+    throw {
+      code: "INVALID_LINE_NUMBER",
+      message: `Invalid ${flag} value: ${value}`,
+      details: "Use an integer line number.",
+    };
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
     throw {
       code: "INVALID_LINE_NUMBER",
       message: `Invalid ${flag} value: ${value}`,

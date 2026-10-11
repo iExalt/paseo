@@ -1,8 +1,6 @@
 import { parseAgentMessage } from "./agent-messages/index.js";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { describe, expect, it, vi } from "vitest";
 import { realpathSync } from "node:fs";
 import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
@@ -11,7 +9,6 @@ import { tmpdir } from "node:os";
 import { z } from "zod";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
-import { createAgentMcpServer as createAgentMcpServerWithDependencies } from "./mcp-server.js";
 import { AgentManager, type ManagedAgent } from "./agent-manager.js";
 import { AgentStorage, type StoredAgentRecord } from "./agent-storage.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
@@ -71,6 +68,8 @@ import type { BrowserToolsResponsePayload } from "../browser-tools/errors.js";
 import { readPaseoWorktreeMetadata } from "../../utils/worktree-metadata.js";
 import { createWorkspaceProvisioningService } from "../session/workspace-provisioning/workspace-provisioning-service.js";
 import { SessionAuthorization } from "../authorization/index.js";
+import { createPaseoToolCatalog } from "./tools/paseo-tools.js";
+import type { PaseoToolCatalog } from "./tools/types.js";
 
 const REPO_CWD = resolvePath("/tmp/repo");
 const TARGET_CWD = resolvePath("/tmp/target");
@@ -99,7 +98,7 @@ interface LooseContentBlock {
   mimeType?: string;
 }
 
-interface RegisteredMcpTool {
+interface RegisteredCatalogTool {
   inputSchema: LooseInputSchema;
   callback?: (
     input: unknown,
@@ -114,38 +113,61 @@ interface RegisteredMcpTool {
   }>;
 }
 
-interface RegisteredMcpToolWithHandler extends RegisteredMcpTool {
+interface RegisteredCatalogToolWithHandler extends RegisteredCatalogTool {
   handler: (input: unknown) => Promise<{
     structuredContent: LooseStructuredContent;
     content?: LooseContentBlock[];
   }>;
 }
 
-function lookupTool(
-  server: Awaited<ReturnType<typeof createAgentMcpServer>>,
-  name: string,
-): RegisteredMcpTool | undefined {
-  const tools: Record<string, RegisteredMcpTool> = Reflect.get(server, "_registeredTools");
-  return tools[name];
+function lookupTool(catalog: PaseoToolCatalog, name: string): RegisteredCatalogTool | undefined {
+  const definition = catalog.getTool(name);
+  if (!definition) return undefined;
+  const rawSchema = definition.inputSchema;
+  const schema =
+    rawSchema &&
+    typeof rawSchema === "object" &&
+    "safeParseAsync" in rawSchema &&
+    typeof rawSchema.safeParseAsync === "function"
+      ? rawSchema
+      : z.object(rawSchema ?? {}).passthrough();
+  return {
+    inputSchema: {
+      async safeParseAsync(input) {
+        const parsed = await schema.safeParseAsync(input);
+        return parsed.success
+          ? { success: true, data: parsed.data, error: { issues: [] } }
+          : {
+              success: false,
+              data: undefined,
+              error: {
+                issues: parsed.error.issues.map((issue) => ({
+                  path: issue.path,
+                  message: issue.message,
+                  code: issue.code,
+                })),
+              },
+            };
+      },
+    },
+    handler: (input) => catalog.executeTool(name, input),
+  };
 }
 
-function registeredTool(
-  server: Awaited<ReturnType<typeof createAgentMcpServer>>,
-  name: string,
-): RegisteredMcpToolWithHandler {
-  const tool = lookupTool(server, name);
+function registeredTool(catalog: PaseoToolCatalog, name: string): RegisteredCatalogToolWithHandler {
+  const tool = lookupTool(catalog, name);
   if (!tool) {
-    throw new Error(`MCP tool not registered: ${name}`);
+    throw new Error(`Paseo tool not registered: ${name}`);
   }
   const handler = tool.handler ?? tool.callback;
   if (!handler) {
-    throw new Error(`MCP tool has no callable handler: ${name}`);
+    throw new Error(`Paseo tool has no callable handler: ${name}`);
   }
   return { ...tool, handler };
 }
 
 async function invokeToolWithParsedInput(
-  tool: RegisteredMcpToolWithHandler,
+  tool: RegisteredCatalogToolWithHandler,
   input: Record<string, unknown>,
 ) {
   const parsed = await tool.inputSchema.safeParseAsync(input);
@@ -157,14 +179,6 @@ function agentsOf(response: {
   structuredContent: LooseStructuredContent;
 }): Array<Record<string, unknown>> {
   return z.array(z.record(z.string(), z.unknown())).parse(response.structuredContent.agents);
-}
-
-function expectSingleTextContent(response: { content?: LooseContentBlock[] }): string {
-  const content = response.content ?? [];
-  expect(content).toHaveLength(1);
-  const block = content[0];
-  expect(block?.type).toBe("text");
-  return z.string().min(1).parse(block?.text);
 }
 
 async function waitForWorkspaceTitle(
@@ -309,7 +323,7 @@ interface ConfigureProviderEntry {
 }
 
 // Builds a ProviderSnapshotEntry for tests that need to configure listProviders /
-// getProvider directly. Mirrors the shape MCP server reads from the manager:
+// getProvider directly. Mirrors the shape native catalog receives from the manager:
 // status: "ready" for enabled+available, "unavailable" for disabled.
 function buildSnapshotEntry(entry: ConfigureProviderEntry): ProviderSnapshotEntry {
   const enabled = entry.enabled ?? true;
@@ -638,12 +652,16 @@ class BoundaryProviderSnapshotManagerFake {
   }
 }
 
-async function connectInMemoryMcpClient(server: Awaited<ReturnType<typeof createAgentMcpServer>>) {
-  const client = new Client({ name: "paseo-test-client", version: "0.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-  return client;
+async function directCatalogClient(catalog: PaseoToolCatalog) {
+  return {
+    async listTools() {
+      return { tools: [...catalog.tools.values()] };
+    },
+    async callTool(request: { name: string; arguments?: Record<string, unknown> }) {
+      return catalog.executeTool(request.name, request.arguments ?? {});
+    },
+    async close() {},
+  };
 }
 
 function createStoredSchedule(input: CreateScheduleInput): StoredSchedule {
@@ -835,18 +853,18 @@ function createPaseoWorktreeForMcpTest(options: {
   };
 }
 
-// Typed in-memory workspace port for catalogue tests without workspace setup.
-function createAgentMcpServer(options: Parameters<typeof createAgentMcpServerWithDependencies>[0]) {
-  return createAgentMcpServerWithDependencies({
+// Supply the minimal workspace port needed by direct catalog behavior tests.
+function createAgentToolCatalog(options: Parameters<typeof createPaseoToolCatalog>[0]) {
+  return createPaseoToolCatalog({
     workspaceRegistry: { get: async () => null, list: async () => [], upsert: async () => {} },
     ...options,
   });
 }
 
-describe("browser MCP tools", () => {
+describe("browser tool catalog", () => {
   const logger = createTestLogger();
 
-  it("omits output schemas from tools/list and keeps tool call content model-visible", async () => {
+  it("registers browser and agent commands and returns structured catalog results", async () => {
     const agentManager = new BoundaryAgentManagerFake();
     const agentStorage = new BoundaryAgentStorageFake();
     const broker = new FakeBrowserToolsBroker({
@@ -864,8 +882,8 @@ describe("browser MCP tools", () => {
       callerAgentId: "agent-1",
       logger,
     };
-    const server = await createAgentMcpServer(serverOptions);
-    const client = await connectInMemoryMcpClient(server);
+    const server = await createAgentToolCatalog(serverOptions);
+    const client = await directCatalogClient(server);
 
     try {
       const browserResult = await client.callTool({
@@ -877,7 +895,7 @@ describe("browser MCP tools", () => {
         arguments: {},
       });
 
-      expect(broker.calls).toEqual([
+      expect(broker.calls).toMatchObject([
         {
           agentId: "agent-1",
           cwd: REPO_CWD,
@@ -895,19 +913,20 @@ describe("browser MCP tools", () => {
       expect(listAgentsResult.structuredContent).toEqual({
         agents: [],
       });
-      expectSingleTextContent(browserResult);
-      expect(expectSingleTextContent(listAgentsResult)).toContain('"agents": []');
+      expect(browserResult.content).toEqual([
+        {
+          type: "text",
+          text: "No Paseo browser tabs are open. Call browser_new_tab to create one.",
+        },
+      ]);
+      expect(listAgentsResult.content).toEqual([]);
 
       const listedTools = await client.listTools();
       expect(listedTools.tools.map((tool) => tool.name)).toEqual(
         expect.arrayContaining(["browser_list_tabs", "list_agents"]),
       );
-      for (const tool of listedTools.tools) {
-        expect(tool, `${tool.name} outputSchema`).not.toHaveProperty("outputSchema");
-      }
     } finally {
       await client.close();
-      await server.close();
     }
   });
 
@@ -926,7 +945,7 @@ describe("browser MCP tools", () => {
         height: 600,
       },
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager: agentManager as AgentManager,
       agentStorage: agentStorage as AgentStorage,
       providerSnapshotManager:
@@ -936,7 +955,7 @@ describe("browser MCP tools", () => {
       callerAgentId: "agent-1",
       logger,
     });
-    const client = await connectInMemoryMcpClient(server);
+    const client = await directCatalogClient(server);
 
     try {
       const response = await client.callTool({
@@ -944,7 +963,7 @@ describe("browser MCP tools", () => {
         arguments: { browserId: "11111111-1111-4111-8111-111111111111" },
       });
 
-      expect(broker.calls).toEqual([
+      expect(broker.calls).toMatchObject([
         {
           agentId: "agent-1",
           cwd: REPO_CWD,
@@ -982,7 +1001,6 @@ describe("browser MCP tools", () => {
       expect(JSON.stringify(response.structuredContent)).not.toContain("dataBase64");
     } finally {
       await client.close();
-      await server.close();
     }
   });
 
@@ -993,7 +1011,7 @@ describe("browser MCP tools", () => {
       cwd: REPO_CWD,
       workspaceId: BROWSER_WORKSPACE_ID,
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1002,7 +1020,7 @@ describe("browser MCP tools", () => {
       logger,
     });
 
-    const client = await connectInMemoryMcpClient(server);
+    const client = await directCatalogClient(server);
     try {
       const listedTools = await client.listTools();
       const toolNames = listedTools.tools.map((tool) => tool.name);
@@ -1012,7 +1030,6 @@ describe("browser MCP tools", () => {
       expect(toolNames).toEqual(expect.arrayContaining(["create_agent", "list_agents"]));
     } finally {
       await client.close();
-      await server.close();
     }
   });
 
@@ -1024,7 +1041,7 @@ describe("browser MCP tools", () => {
       ok: true,
       result: { command: "list_tabs", tabs: [] },
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager: agentManager as AgentManager,
       agentStorage: agentStorage as AgentStorage,
       providerSnapshotManager:
@@ -1040,7 +1057,7 @@ describe("browser MCP tools", () => {
     expect(lookupTool(server, "browser_snapshot")).toBeDefined();
   });
 
-  it("filters policy-disabled tools from MCP listing and calls", async () => {
+  it("filters policy-disabled tools from catalog listing and calls", async () => {
     const agentManager = new BoundaryAgentManagerFake();
     const agentStorage = new BoundaryAgentStorageFake();
     const broker = new FakeBrowserToolsBroker({
@@ -1048,7 +1065,7 @@ describe("browser MCP tools", () => {
       ok: true,
       result: { command: "list_tabs", tabs: [] },
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager: agentManager as AgentManager,
       agentStorage: agentStorage as AgentStorage,
       providerSnapshotManager:
@@ -1059,7 +1076,7 @@ describe("browser MCP tools", () => {
       paseoToolPolicy: { disabledTools: ["list_agents", "browser_list_tabs"] },
       logger,
     });
-    const client = await connectInMemoryMcpClient(server);
+    const client = await directCatalogClient(server);
 
     try {
       const listedTools = await client.listTools();
@@ -1068,18 +1085,15 @@ describe("browser MCP tools", () => {
       expect(toolNames).not.toContain("list_agents");
       expect(toolNames).not.toContain("browser_list_tabs");
       expect(toolNames).toEqual(expect.arrayContaining(["create_agent", "browser_snapshot"]));
-      await expect(client.callTool({ name: "list_agents", arguments: {} })).resolves.toEqual({
-        content: [{ type: "text", text: "MCP error -32602: Tool list_agents not found" }],
-        isError: true,
-      });
-      await expect(client.callTool({ name: "browser_list_tabs", arguments: {} })).resolves.toEqual({
-        content: [{ type: "text", text: "MCP error -32602: Tool browser_list_tabs not found" }],
-        isError: true,
-      });
+      await expect(client.callTool({ name: "list_agents", arguments: {} })).rejects.toThrow(
+        "Paseo tool not found: list_agents",
+      );
+      await expect(client.callTool({ name: "browser_list_tabs", arguments: {} })).rejects.toThrow(
+        "Paseo tool not found: browser_list_tabs",
+      );
       expect(broker.calls).toEqual([]);
     } finally {
       await client.close();
-      await server.close();
     }
   });
 
@@ -1095,7 +1109,7 @@ describe("browser MCP tools", () => {
       ok: true,
       result: { command: "list_tabs", tabs: [] },
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1108,12 +1122,14 @@ describe("browser MCP tools", () => {
 
     const response = await tool.handler({});
 
-    expect(execute).toHaveBeenCalledWith({
-      agentId: "agent-1",
-      cwd: REPO_CWD,
-      workspaceId: BROWSER_WORKSPACE_ID,
-      command: { command: "list_tabs", args: {} },
-    });
+    expect(execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agentId: "agent-1",
+        cwd: REPO_CWD,
+        workspaceId: BROWSER_WORKSPACE_ID,
+        command: { command: "list_tabs", args: {} },
+      }),
+    );
     expect(response.content).toEqual([
       {
         type: "text",
@@ -1135,7 +1151,7 @@ describe("browser MCP tools", () => {
       ok: true,
       result: { command: "list_tabs", tabs: [] },
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1168,7 +1184,7 @@ describe("browser MCP tools", () => {
   });
 });
 
-describe("terminal MCP tools", () => {
+describe("terminal native tool catalog", () => {
   const logger = createTestLogger();
 
   it("captures terminal output through the terminal manager authority", async () => {
@@ -1186,7 +1202,7 @@ describe("terminal MCP tools", () => {
       }),
       captureTerminal,
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1216,7 +1232,7 @@ describe("terminal MCP tools", () => {
   });
 });
 
-describe("create_agent MCP tool", () => {
+describe("create_agent native tool", () => {
   const logger = createTestLogger();
   const existingCwd = process.cwd();
   const detachedDirectoryWorkspace = (path = existingCwd) => ({
@@ -1254,7 +1270,7 @@ describe("create_agent MCP tool", () => {
 
   it("requires a concise title no longer than 60 characters", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1306,7 +1322,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "New workspace agent" },
     } as ManagedAgent);
     const persistWorkspaceForCreate = vi.fn(async () => "workspace-created");
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1334,7 +1350,7 @@ describe("create_agent MCP tool", () => {
 
   it("requires initialPrompt", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1369,7 +1385,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Top-level agent" },
     } as ManagedAgent);
     const ensureWorkspace = vi.fn(async () => "workspace-created");
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1404,7 +1420,7 @@ describe("create_agent MCP tool", () => {
       logger,
     });
     try {
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage: storage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -1423,7 +1439,7 @@ describe("create_agent MCP tool", () => {
 
   it("rejects partial explicit workspace shape", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1447,7 +1463,7 @@ describe("create_agent MCP tool", () => {
 
   it("rejects caller-only relationship and workspace intents without a caller agent", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1483,7 +1499,7 @@ describe("create_agent MCP tool", () => {
       provider: "codex",
       currentModeId: "full-access",
     } as ManagedAgent);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1513,7 +1529,7 @@ describe("create_agent MCP tool", () => {
       availableModes: [],
       config: { title: "Existing workspace" },
     } as ManagedAgent);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1546,7 +1562,7 @@ describe("create_agent MCP tool", () => {
     const listActiveWorkspaces = vi.fn(async () => [
       { workspaceId: "wks_existing", cwd: existingCwd, kind: "worktree" as const },
     ]);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1576,7 +1592,7 @@ describe("create_agent MCP tool", () => {
     const createDirectoryWorkspace = vi.fn();
     const ensureWorkspaceForCreateSpy = vi.fn();
     const listActiveWorkspaces = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1618,7 +1634,7 @@ describe("create_agent MCP tool", () => {
       }),
     ).rejects.toThrow(unsupported);
 
-    const scopedServer = await createAgentMcpServer({
+    const scopedServer = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1675,7 +1691,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Feature test", featureValues: { fast_mode: true } },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1728,7 +1744,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Mode test" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1765,7 +1781,7 @@ describe("create_agent MCP tool", () => {
 
   it("requires provider as provider/model and rejects the old model field", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1828,7 +1844,7 @@ describe("create_agent MCP tool", () => {
 
   it("accepts worktree workspace intent in create_agent input validation", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1851,7 +1867,7 @@ describe("create_agent MCP tool", () => {
 
   it("exposes workspace tools instead of worktree tools", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1872,7 +1888,7 @@ describe("create_agent MCP tool", () => {
     spies.agentManager.createAgent.mockRejectedValue(
       new Error("Working directory does not exist: /path/that/does/not/exist"),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1902,7 +1918,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Fix auth bug" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1938,7 +1954,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Fix auth" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -1973,7 +1989,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Config test", model: "claude-sonnet-4-20250514" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -2041,7 +2057,7 @@ describe("create_agent MCP tool", () => {
         config: { title: "Worktree agent" },
       }));
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2132,7 +2148,7 @@ describe("create_agent MCP tool", () => {
         config: { title: "Worktree agent" },
       }));
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2206,7 +2222,7 @@ describe("create_agent MCP tool", () => {
         config: { title: "Agent title" },
       }));
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2298,7 +2314,7 @@ describe("create_agent MCP tool", () => {
         config: { title: "Agent title" },
       }));
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2396,7 +2412,7 @@ describe("create_agent MCP tool", () => {
         config: { title: "Explicit Agent Title" },
       }));
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2496,7 +2512,7 @@ describe("create_agent MCP tool", () => {
         config: { title: "Directory agent" },
       }));
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2602,7 +2618,7 @@ describe("create_agent MCP tool", () => {
         config: { title: "Checkout agent" },
       }));
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2721,7 +2737,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "PR agent" },
     }));
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -2800,7 +2816,7 @@ describe("create_agent MCP tool", () => {
         resolveRepoRoot: vi.fn(async () => repoDir),
       };
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -2868,7 +2884,7 @@ describe("create_agent MCP tool", () => {
         created: true,
       };
     };
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -2930,7 +2946,7 @@ describe("create_agent MCP tool", () => {
           updatedAt: "2026-07-18T00:00:00.000Z",
         }),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -2983,7 +2999,7 @@ describe("create_agent MCP tool", () => {
       repoRoot: REPO_CWD,
       created: true,
     }));
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3078,7 +3094,7 @@ describe("create_agent MCP tool", () => {
       const markWorkspaceArchiving = vi.fn();
       const clearWorkspaceArchiving = vi.fn();
       const listActiveWorkspaces = vi.fn(async () => []);
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -3138,7 +3154,7 @@ describe("create_agent MCP tool", () => {
 
   it("rejects archiving a missing workspace", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3191,7 +3207,7 @@ describe("create_agent MCP tool", () => {
         activeWorkspaces,
         archivedWorkspaceIds,
       );
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -3268,7 +3284,7 @@ describe("create_agent MCP tool", () => {
         listWorktrees: vi.fn(async () => []),
         resolveRepoRoot: vi.fn(async () => repoDir),
       };
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage,
         providerSnapshotManager: createOpenCodeManager().manager,
@@ -3305,7 +3321,7 @@ describe("create_agent MCP tool", () => {
       createdAt: "2026-07-17T00:00:00.000Z",
       updatedAt: "2026-07-17T00:00:00.000Z",
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3342,7 +3358,7 @@ describe("create_agent MCP tool", () => {
       updatedAt: "2026-07-17T00:00:00.000Z",
       background: true,
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3383,7 +3399,7 @@ describe("create_agent MCP tool", () => {
     });
     let current = workspace;
     const emittedWorkspaceIds: string[][] = [];
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3442,7 +3458,7 @@ describe("create_agent MCP tool", () => {
   it("rejects workspace notification mutation before callback on an unsupported host", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const update = vi.fn(async () => null);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3464,7 +3480,7 @@ describe("create_agent MCP tool", () => {
     const update = vi.fn(async () => {
       throw new Error("workspace registry write failed");
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3503,7 +3519,7 @@ describe("create_agent MCP tool", () => {
       replyRuleFilteringEnabled: true,
       logger,
     };
-    const anonymousServer = await createAgentMcpServer(base);
+    const anonymousServer = await createAgentToolCatalog(base);
 
     await expect(
       registeredTool(anonymousServer, "get_daemon_notification_rules").handler({}),
@@ -3516,7 +3532,7 @@ describe("create_agent MCP tool", () => {
     expect(getReplyRules).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
 
-    const readerServer = await createAgentMcpServer({
+    const readerServer = await createAgentToolCatalog({
       ...base,
       hostAuthorization: new SessionAuthorization(["daemon.read"]),
     });
@@ -3528,7 +3544,7 @@ describe("create_agent MCP tool", () => {
     ).rejects.toThrow("daemon.manage");
     expect(patch).not.toHaveBeenCalled();
 
-    const managerServer = await createAgentMcpServer({
+    const managerServer = await createAgentToolCatalog({
       ...base,
       hostAuthorization: new SessionAuthorization(["daemon.manage"]),
     });
@@ -3548,7 +3564,7 @@ describe("create_agent MCP tool", () => {
     });
     expect(patch).toHaveBeenNthCalledWith(2, { replyRules: [] });
 
-    const unsupportedServer = await createAgentMcpServer({
+    const unsupportedServer = await createAgentToolCatalog({
       ...base,
       hostAuthorization: new SessionAuthorization(["daemon.manage"]),
       replyRuleFilteringEnabled: false,
@@ -3563,7 +3579,7 @@ describe("create_agent MCP tool", () => {
 
   it("accepts custom provider IDs in create_agent input validation", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3604,7 +3620,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Child" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3651,7 +3667,7 @@ describe("create_agent MCP tool", () => {
       currentModeId: "full-access",
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3712,7 +3728,7 @@ describe("create_agent MCP tool", () => {
     });
     spies.agentManager.createAgent.mockResolvedValue(childAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3752,7 +3768,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Detached" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3810,7 +3826,7 @@ describe("create_agent MCP tool", () => {
       return { modeId: undefined, featureValues: opts.featureValues };
     });
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       callerAgentId: "parent-agent",
@@ -3871,7 +3887,7 @@ describe("create_agent MCP tool", () => {
       availableModes: [],
       config: { title: "Child" },
     } as ManagedAgent);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3905,7 +3921,7 @@ describe("create_agent MCP tool", () => {
     );
   });
 
-  it("inherits the parent's workspaceId when an MCP child is created in the parent's working tree", async () => {
+  it("inherits the parent's workspaceId when an agent child is created in the parent's working tree", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "mcp-workspace-inherit-"));
     const storage = new AgentStorage(join(workdir, "agents"), logger);
     const agentManager = new AgentManager({
@@ -3921,7 +3937,7 @@ describe("create_agent MCP tool", () => {
         { workspaceId: "wks_parent" },
       );
 
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage: storage,
         callerAgentId: parent.id,
@@ -3945,7 +3961,7 @@ describe("create_agent MCP tool", () => {
     }
   });
 
-  it("delegates MCP injection to AgentManager and passes through an undefined agent ID", async () => {
+  it("delegates native tool setup to AgentManager and passes through an undefined agent ID", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     spies.agentManager.createAgent.mockResolvedValue({
       id: "agent-injected-123",
@@ -3956,7 +3972,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Injected config test" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -3990,7 +4006,7 @@ describe("create_agent MCP tool", () => {
     providerSnapshot.stub.resolveCreateConfig.mockImplementation(async () => {
       throw new Error("resolver rejected mode");
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: providerSnapshot.manager,
@@ -4038,7 +4054,7 @@ describe("create_agent MCP tool", () => {
       expect(opts.requestedMode).toBe("dynamic");
       return { modeId: "dynamic", featureValues: undefined };
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: provStub.manager,
@@ -4077,7 +4093,7 @@ describe("create_agent MCP tool", () => {
       modeId: "build",
       featureValues: { auto_accept: true },
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: providerSnapshot.manager,
@@ -4126,7 +4142,7 @@ describe("create_agent MCP tool", () => {
       featureValues: { resolver_feature: true },
     });
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       callerAgentId: "parent-agent",
@@ -4173,7 +4189,7 @@ describe("create_agent MCP tool", () => {
       config: { title: "Child" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -4384,7 +4400,7 @@ class HeldTurnAgentClient implements AgentClient {
   }
 }
 
-describe("send_agent_prompt MCP tool", () => {
+describe("send_agent_prompt native tool", () => {
   const logger = createTestLogger();
   const existingCwd = process.cwd();
 
@@ -4412,7 +4428,7 @@ describe("send_agent_prompt MCP tool", () => {
       return null;
     });
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -4453,7 +4469,7 @@ describe("send_agent_prompt MCP tool", () => {
       config: { title: "Child" },
     } as ManagedAgent);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -4503,7 +4519,7 @@ describe("send_agent_prompt MCP tool", () => {
       return null;
     });
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -4549,7 +4565,7 @@ describe("send_agent_prompt MCP tool", () => {
           undefined,
           { workspaceId: "wks_parent" },
         );
-        const server = await createAgentMcpServer({
+        const server = await createAgentToolCatalog({
           agentManager,
           agentStorage: storage,
           callerAgentId: parent.id,
@@ -4628,7 +4644,7 @@ describe("send_agent_prompt MCP tool", () => {
           undefined,
           { workspaceId: "wks_parent" },
         );
-        const server = await createAgentMcpServer({
+        const server = await createAgentToolCatalog({
           agentManager,
           agentStorage: storage,
           callerAgentId: parent.id,
@@ -4705,7 +4721,7 @@ describe("send_agent_prompt MCP tool", () => {
         undefined,
         { workspaceId: "wks_parent" },
       );
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage: storage,
         callerAgentId: parent.id,
@@ -4756,7 +4772,7 @@ describe("send_agent_prompt MCP tool", () => {
         undefined,
         { workspaceId: "wks_parent" },
       );
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage: storage,
         callerAgentId: parent.id,
@@ -4823,7 +4839,7 @@ describe("send_agent_prompt MCP tool", () => {
         undefined,
         { workspaceId: "wks_parent" },
       );
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage: storage,
         callerAgentId: parent.id,
@@ -4884,7 +4900,7 @@ describe("send_agent_prompt MCP tool", () => {
         undefined,
         { workspaceId: "wks_parent" },
       );
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage: storage,
         callerAgentId: parent.id,
@@ -4932,12 +4948,12 @@ describe("send_agent_prompt MCP tool", () => {
   });
 });
 
-describe("update_agent MCP tool", () => {
+describe("update_agent native tool", () => {
   const logger = createTestLogger();
 
-  it("does not register the replaced feature-specific MCP tool", async () => {
+  it("does not register the replaced feature-specific native tool", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -4949,7 +4965,7 @@ describe("update_agent MCP tool", () => {
 
   it("updates runtime settings before metadata", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -4986,7 +5002,7 @@ describe("update_agent MCP tool", () => {
 
   it("reports success for a no-op update with neither metadata nor settings", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5007,7 +5023,7 @@ describe("update_agent MCP tool", () => {
   it("does not update metadata when runtime settings fail", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     spies.agentManager.setAgentFeature.mockRejectedValue(new Error("unsupported feature"));
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5029,7 +5045,7 @@ describe("update_agent MCP tool", () => {
   });
 });
 
-describe("rename_workspace MCP tool", () => {
+describe("rename_workspace native tool", () => {
   const logger = createTestLogger();
 
   it("renames the caller workspace when workspaceId is omitted", async () => {
@@ -5053,7 +5069,7 @@ describe("rename_workspace MCP tool", () => {
         workspaceId: workspace.workspaceId,
       }),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5124,7 +5140,7 @@ describe("rename_workspace MCP tool", () => {
         workspaceId: parentWorkspace.workspaceId,
       }),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5185,7 +5201,7 @@ describe("rename_workspace MCP tool", () => {
         workspaceId: workspace.workspaceId,
       }),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5214,7 +5230,7 @@ describe("rename_workspace MCP tool", () => {
   });
 });
 
-describe("create_schedule MCP tool", () => {
+describe("create_schedule native tool", () => {
   const logger = createTestLogger();
 
   it("requires provider for schedules", async () => {
@@ -5222,7 +5238,7 @@ describe("create_schedule MCP tool", () => {
     const createOrReplace = vi.fn(async (input: CreateScheduleInput) =>
       createStoredSchedule(input),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5246,7 +5262,7 @@ describe("create_schedule MCP tool", () => {
     const createOrReplace = vi.fn(async (input: CreateScheduleInput) =>
       createStoredSchedule(input),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5330,7 +5346,7 @@ describe("create_schedule MCP tool", () => {
     const createOrReplace = vi.fn(async (input: CreateScheduleInput) =>
       createStoredSchedule(input),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5362,7 +5378,7 @@ describe("create_schedule MCP tool", () => {
     const createOrReplace = vi.fn(async (scheduleInput: CreateScheduleInput) =>
       createStoredSchedule(scheduleInput),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5392,7 +5408,7 @@ describe("create_schedule MCP tool", () => {
   it("rejects removed create_schedule every input", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const createOrReplace = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5414,7 +5430,7 @@ describe("create_schedule MCP tool", () => {
   it("rejects create_schedule without cron", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const createOrReplace = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5436,7 +5452,7 @@ describe("create_schedule MCP tool", () => {
   it.each(["", "   "])("rejects create_schedule blank timezone %#", async (timezone) => {
     const { agentManager, agentStorage } = createTestDeps();
     const createOrReplace = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5458,7 +5474,7 @@ describe("create_schedule MCP tool", () => {
   });
 });
 
-describe("create_heartbeat MCP tool", () => {
+describe("create_heartbeat native tool", () => {
   const logger = createTestLogger();
 
   it("creates a self-targeted cron heartbeat", async () => {
@@ -5475,7 +5491,7 @@ describe("create_heartbeat MCP tool", () => {
     const createOrReplace = vi.fn(async (input: CreateScheduleInput) =>
       createStoredSchedule(input),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5509,7 +5525,7 @@ describe("create_heartbeat MCP tool", () => {
   it("requires an agent-scoped session", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const createOrReplace = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5529,7 +5545,7 @@ describe("create_heartbeat MCP tool", () => {
   });
 });
 
-describe("heartbeat ownership MCP tools", () => {
+describe("heartbeat ownership native tool catalog", () => {
   const logger = createTestLogger();
 
   it("deletes the caller's heartbeat", async () => {
@@ -5541,7 +5557,7 @@ describe("heartbeat ownership MCP tools", () => {
     });
     const inspect = vi.fn(async () => heartbeat);
     const deleteSchedule = vi.fn(async () => undefined);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5565,7 +5581,7 @@ describe("heartbeat ownership MCP tools", () => {
       cadence: { type: "cron", expression: "0 * * * *" },
       target: { type: "agent", agentId: "other-agent" },
     });
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5583,7 +5599,7 @@ describe("heartbeat ownership MCP tools", () => {
   });
 });
 
-describe("update_schedule MCP tool", () => {
+describe("update_schedule native tool", () => {
   const logger = createTestLogger();
 
   function makeStoredSchedule(): StoredSchedule {
@@ -5624,7 +5640,7 @@ describe("update_schedule MCP tool", () => {
       prompt: "new prompt",
       updatedAt: "2026-04-11T01:00:00.000Z",
     }));
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5650,7 +5666,7 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5674,7 +5690,7 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5703,7 +5719,7 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5744,7 +5760,7 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5764,7 +5780,7 @@ describe("update_schedule MCP tool", () => {
   it("rejects both every and cron", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const update = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5786,7 +5802,7 @@ describe("update_schedule MCP tool", () => {
   it("rejects update_schedule timezone without cron", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const update = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5809,7 +5825,7 @@ describe("update_schedule MCP tool", () => {
   it.each(["", "   "])("rejects update_schedule blank timezone %#", async (timezone) => {
     const { agentManager, agentStorage } = createTestDeps();
     const update = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5833,7 +5849,7 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5867,7 +5883,7 @@ describe("update_schedule MCP tool", () => {
     const { agentManager, agentStorage } = createTestDeps();
     const stored = makeStoredSchedule();
     const update = vi.fn(async (_input: UpdateScheduleInput) => stored);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5898,7 +5914,7 @@ describe("update_schedule MCP tool", () => {
   it("rejects conflicting model and expiry inputs", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const update = vi.fn();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5925,7 +5941,7 @@ describe("update_schedule MCP tool", () => {
   });
 });
 
-describe("schedule_logs MCP tool", () => {
+describe("schedule_logs native tool", () => {
   const logger = createTestLogger();
 
   function makeRun(overrides: Partial<{ id: string; status: string }> = {}) {
@@ -5949,7 +5965,7 @@ describe("schedule_logs MCP tool", () => {
       id: "schedule-1",
       target: { type: "new-agent", config: { provider: "codex", cwd: "/tmp" } },
     }));
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5966,7 +5982,7 @@ describe("schedule_logs MCP tool", () => {
 
   it("throws when schedule service is not configured", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -5980,7 +5996,7 @@ describe("schedule_logs MCP tool", () => {
   });
 });
 
-describe("provider listing MCP tool", () => {
+describe("provider listing native tool", () => {
   const logger = createTestLogger();
 
   it("returns providers from the registry, including custom providers", async () => {
@@ -6003,7 +6019,7 @@ describe("provider listing MCP tool", () => {
       }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: provStub.manager,
@@ -6011,8 +6027,6 @@ describe("provider listing MCP tool", () => {
     });
     const tool = registeredTool(server, "list_providers");
     const response = await tool.handler({});
-    const modelVisibleText = String(response.content[0]?.text);
-
     expect(response.structuredContent).toEqual({
       providers: [
         {
@@ -6033,9 +6047,7 @@ describe("provider listing MCP tool", () => {
         },
       ],
     });
-    expect(modelVisibleText).toContain("providers_count=2");
-    expect(modelVisibleText).toContain("providers_ids=claude,zai");
-    expect(modelVisibleText).toContain('"providers"');
+    expect(response.content).toEqual([]);
   });
 
   it("returns provider modes from the shared snapshot catalog", async () => {
@@ -6049,7 +6061,7 @@ describe("provider listing MCP tool", () => {
         modes: [{ id: "dynamic", label: "Dynamic", description: "Runtime mode" }],
       }),
     ]);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: provStub.manager,
@@ -6080,7 +6092,7 @@ describe("provider listing MCP tool", () => {
         modes: [{ id: "read-only", label: "Read Only", description: "No edits" }],
       }),
     ]);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: provStub.manager,
@@ -6113,7 +6125,7 @@ function daemonConfigStoreStub(agentProfiles?: AgentProfile[]): Pick<DaemonConfi
   return { get: () => config };
 }
 
-describe("agent profile listing MCP tool", () => {
+describe("agent profile listing native tool", () => {
   const logger = createTestLogger();
 
   it("returns configured profiles, including notes", async () => {
@@ -6130,7 +6142,7 @@ describe("agent profile listing MCP tool", () => {
         notes: "Use for UI work: components, layout, design tokens. Not for backend.",
       },
     ];
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6146,7 +6158,7 @@ describe("agent profile listing MCP tool", () => {
 
   it("returns an empty array when no profiles are configured", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6162,7 +6174,7 @@ describe("agent profile listing MCP tool", () => {
 
   it("returns an empty array when no daemon config store is provided", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6176,12 +6188,12 @@ describe("agent profile listing MCP tool", () => {
   });
 });
 
-describe("provider MCP tools", () => {
+describe("provider native tool catalog", () => {
   const logger = createTestLogger();
 
-  it("does not register the replaced feature-specific provider discovery MCP tool", async () => {
+  it("does not register the replaced feature-specific provider discovery native tool", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6211,7 +6223,7 @@ describe("provider MCP tools", () => {
     });
     provStub.listProviders.mockResolvedValue([codexEntry]);
     provStub.getProvider.mockResolvedValue(codexEntry);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: provStub.manager,
@@ -6265,7 +6277,7 @@ describe("provider MCP tools", () => {
     const provStub = createProviderSnapshotManagerStub();
     provStub.listRegisteredProviderIds.mockReturnValue(["codex"]);
     provStub.listModels.mockRejectedValue(new Error("Provider 'codex' is disabled"));
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: provStub.manager,
@@ -6285,7 +6297,7 @@ describe("provider MCP tools", () => {
     provStub.getProvider.mockResolvedValue(
       buildSnapshotEntry({ provider: "codex", label: "Codex", enabled: false }),
     );
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: provStub.manager,
@@ -6299,13 +6311,13 @@ describe("provider MCP tools", () => {
   });
 });
 
-describe("speak MCP tool", () => {
+describe("speak native tool", () => {
   const logger = createTestLogger();
 
   it("invokes registered speak handler for caller agent", async () => {
     const { agentManager, agentStorage } = createTestDeps();
     const speak = vi.fn().mockResolvedValue(undefined);
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6328,7 +6340,7 @@ describe("speak MCP tool", () => {
 
   it("fails when no speak handler exists", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6345,7 +6357,7 @@ describe("speak MCP tool", () => {
 
   it("does not register speak tool unless voice tools are enabled", async () => {
     const { agentManager, agentStorage } = createTestDeps();
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6357,7 +6369,7 @@ describe("speak MCP tool", () => {
   });
 });
 
-describe("agent snapshot MCP serialization", () => {
+describe("agent snapshot tool result projection", () => {
   const logger = createTestLogger();
 
   it("returns compact list items from list_agents", async () => {
@@ -6373,7 +6385,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6425,7 +6437,7 @@ describe("agent snapshot MCP serialization", () => {
     spies.agentManager.getAgent.mockReturnValue(null);
     spies.agentStorage.get.mockResolvedValue(record);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6496,7 +6508,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     );
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6569,7 +6581,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     );
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6611,7 +6623,7 @@ describe("agent snapshot MCP serialization", () => {
       createStoredRecord({ id: "internal-agent", archivedAt: null, internal: true }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6662,7 +6674,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6701,7 +6713,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6742,7 +6754,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6820,7 +6832,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
@@ -6853,7 +6865,7 @@ describe("agent snapshot MCP serialization", () => {
       createStoredRecord({ id: "stored-archived", archivedAt: now }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6894,7 +6906,7 @@ describe("agent snapshot MCP serialization", () => {
       }),
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6950,7 +6962,7 @@ describe("agent snapshot MCP serialization", () => {
       },
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger,
@@ -6987,7 +6999,7 @@ describe("agent snapshot MCP serialization", () => {
       { type: "assistant_message", text: " you?" },
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger: createTestLogger(),
@@ -7016,7 +7028,7 @@ describe("agent snapshot MCP serialization", () => {
       { type: "assistant_message", text: "answer" },
     ]);
 
-    const server = await createAgentMcpServer({
+    const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       logger: createTestLogger(),

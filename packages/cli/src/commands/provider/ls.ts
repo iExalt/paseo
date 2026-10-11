@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import type { CommandOptions, ListResult, OutputSchema } from "../../output/index.js";
+import type { CommandOptions, ListResult, OutputSchema, SingleResult } from "../../output/index.js";
 import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
 import { connectToDaemon } from "../../utils/client.js";
 
@@ -10,6 +10,16 @@ export interface ProviderListItem {
   enabled: "Enabled" | "Disabled";
   defaultMode: string;
   modes: string;
+}
+
+export interface ProviderRecord {
+  id: string;
+  label: string;
+  description: string;
+  enabled: boolean;
+  modes: NonNullable<ProviderSnapshotEntry["modes"]>;
+  status: string;
+  error?: string;
 }
 
 /** Schema for provider ls output */
@@ -38,16 +48,44 @@ export type ProviderLsResult = ListResult<ProviderListItem>;
 
 export interface ProviderLsOptions extends CommandOptions {
   host?: string;
+  full?: boolean;
 }
+
+export interface ProviderLsFullResult {
+  providers: ProviderRecord[];
+}
+
+const providerLsFullSchema: OutputSchema<ProviderLsFullResult> = {
+  idField: () => "providers",
+  columns: [],
+  renderHuman: (result) => JSON.stringify(result.data, null, 2),
+};
 
 export async function runLsCommand(
   options: ProviderLsOptions,
   _command: Command,
-): Promise<ProviderLsResult> {
+): Promise<ProviderLsResult | SingleResult<ProviderLsFullResult>> {
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
     const snapshot = await client.getProvidersSnapshot();
+    if (options.full) {
+      return {
+        type: "single",
+        data: {
+          providers: snapshot.entries.map((entry) => ({
+            id: entry.provider,
+            label: entry.label ?? entry.provider,
+            description: entry.description ?? "",
+            enabled: entry.enabled,
+            modes: entry.modes ?? [],
+            status: entry.status === "ready" ? "available" : entry.status,
+            ...(entry.error ? { error: entry.error } : {}),
+          })),
+        },
+        schema: providerLsFullSchema,
+      };
+    }
     return {
       type: "list",
       data: snapshot.entries.map((entry) => ({

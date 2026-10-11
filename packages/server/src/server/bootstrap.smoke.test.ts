@@ -80,6 +80,27 @@ describe("paseo daemon bootstrap", () => {
     }
   });
 
+  test("removes the Agent MCP endpoint and keeps it behind ordinary daemon authentication", async () => {
+    const daemonHandle = await createTestPaseoDaemon({
+      auth: { password: hashDaemonPassword("route-test-password") },
+    });
+
+    try {
+      const unauthenticated = await fetch(`http://127.0.0.1:${daemonHandle.port}/mcp/agents`, {
+        method: "POST",
+      });
+      expect(unauthenticated.status).toBe(401);
+
+      const authenticated = await fetch(`http://127.0.0.1:${daemonHandle.port}/mcp/agents`, {
+        method: "POST",
+        headers: { Authorization: "Bearer route-test-password" },
+      });
+      expect(authenticated.status).toBe(404);
+    } finally {
+      await daemonHandle.close();
+    }
+  });
+
   test("keeps timeline activity in memory and removes obsolete timeline files at startup", async () => {
     const paseoHomeRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-timeline-cleanup-"));
     const paseoHome = path.join(paseoHomeRoot, ".paseo");
@@ -140,7 +161,7 @@ describe("paseo daemon bootstrap", () => {
     }
   });
 
-  test("reload applies live HTTP, MCP, Git, provider, relay, and app policies", async () => {
+  test("reload applies live HTTP, native tools, Git, provider, relay, and app policies", async () => {
     const paseoHomeRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-config-reload-runtime-"));
     const paseoHome = path.join(paseoHomeRoot, ".paseo");
     const staticDir = await mkdtemp(path.join(os.tmpdir(), "paseo-static-"));
@@ -154,7 +175,7 @@ describe("paseo daemon bootstrap", () => {
         hostnames: ["127.0.0.1", "before.example.test"],
         cors: { allowedOrigins: ["https://before.example.test"] },
         trustedProxies: [],
-        mcp: { enabled: true, injectIntoAgents: false },
+        agentTools: { enabled: true },
         git: { maxProcessesPerSecond: 64, maxProcessConcurrency: 8 },
         relay: {
           enabled: false,
@@ -226,7 +247,7 @@ describe("paseo daemon bootstrap", () => {
       const beforeMcp = await fetch(`http://127.0.0.1:${target.port}/mcp/agents`, {
         method: "POST",
       });
-      expect(beforeMcp.status).toBe(406);
+      expect(beforeMcp.status).toBe(404);
       const beforeProxyReload = await httpGetWithHost(target.port, proxyHost, "/", {
         "x-forwarded-proto": "https",
       });
@@ -239,7 +260,7 @@ describe("paseo daemon bootstrap", () => {
           hostnames: ["127.0.0.1", "after.example.test"],
           cors: { allowedOrigins: ["https://after.example.test"] },
           trustedProxies: true as const,
-          mcp: { enabled: false, injectIntoAgents: false },
+          agentTools: { enabled: false },
           git: { maxProcessesPerSecond: 5, maxProcessConcurrency: 1 },
           relay: { ...initialPersisted.daemon.relay, enabled: true },
         },
@@ -259,11 +280,11 @@ describe("paseo daemon bootstrap", () => {
           "agents.catalogRefreshTimeoutMs",
           "agents.providers",
           "app.baseUrl",
+          "daemon.agentTools.enabled",
           "daemon.cors.allowedOrigins",
           "daemon.git.maxProcessConcurrency",
           "daemon.git.maxProcessesPerSecond",
           "daemon.hostnames",
-          "daemon.mcp.enabled",
           "daemon.relay.enabled",
           "daemon.trustedProxies",
         ],
@@ -441,9 +462,8 @@ describe("paseo daemon bootstrap", () => {
       paseoHome,
       corsAllowedOrigins: [],
       hostnames: true,
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       staticDir,
-      mcpDebug: false,
       agentClients: createTestAgentClients(),
       agentStoragePath: path.join(paseoHome, "agents"),
       relayEnabled: false,
@@ -554,9 +574,8 @@ describe("paseo daemon bootstrap", () => {
       paseoHome,
       corsAllowedOrigins: [],
       hostnames: true,
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       staticDir,
-      mcpDebug: false,
       agentClients: createTestAgentClients(),
       agentStoragePath: path.join(paseoHome, "agents"),
       relayEnabled: false,
@@ -692,9 +711,8 @@ export default function contribute(plugin: unknown) {
       paseoHome,
       corsAllowedOrigins: [],
       hostnames: true,
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       staticDir,
-      mcpDebug: false,
       agentClients: createTestAgentClients(),
       agentStoragePath: path.join(paseoHome, "agents"),
       relayEnabled: false,
@@ -723,53 +741,6 @@ export default function contribute(plugin: unknown) {
     }
   });
 
-  test("redacts Agent MCP debug request credentials and bodies", async () => {
-    const logLines: string[] = [];
-    const logger = pino(
-      { level: "debug" },
-      {
-        write: (line: string) => {
-          logLines.push(line);
-        },
-      },
-    );
-    const daemonHandle = await createTestPaseoDaemon({
-      logger,
-      mcpDebug: true,
-    });
-
-    try {
-      const response = await fetch(`http://127.0.0.1:${daemonHandle.port}/mcp/agents`, {
-        method: "POST",
-        headers: {
-          Authorization: "Bearer secret-debug-token",
-          Accept: "application/json, text/event-stream",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            apiKey: "secret-body-token",
-          },
-        }),
-      });
-
-      await response.text();
-      const logs = logLines.join("\n");
-      expect(logs).toContain("Agent MCP request");
-      expect(logs).toContain("[redacted]");
-      expect(logs).toContain('"method":"tools/call"');
-      expect(logs).toContain('"hasParams":true');
-      expect(logs).not.toContain("secret-debug-token");
-      expect(logs).not.toContain("secret-body-token");
-      expect(logs).not.toContain("apiKey");
-    } finally {
-      await daemonHandle.close();
-    }
-  });
-
   test("starts when OpenAI speech provider is configured without credentials", async () => {
     const paseoHomeRoot = await mkdtemp(path.join(os.tmpdir(), "paseo-openai-config-"));
     const paseoHome = path.join(paseoHomeRoot, ".paseo");
@@ -781,9 +752,8 @@ export default function contribute(plugin: unknown) {
       paseoHome,
       corsAllowedOrigins: [],
       hostnames: true,
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       staticDir,
-      mcpDebug: false,
       agentClients: createTestAgentClients(),
       agentStoragePath: path.join(paseoHome, "agents"),
       relayEnabled: false,
@@ -917,9 +887,8 @@ export default function contribute(plugin: unknown) {
         paseoHome,
         corsAllowedOrigins: [],
         hostnames: true,
-        mcpEnabled: false,
+        agentToolsEnabled: false,
         staticDir,
-        mcpDebug: false,
         agentClients: createTestAgentClients(),
         agentStoragePath: path.join(paseoHome, "agents"),
         relayEnabled: true,
