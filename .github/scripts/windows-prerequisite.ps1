@@ -1,4 +1,4 @@
-param([Parameter(Mandatory = $true)][ValidateSet('setup', 'ownership', 'install', 'build', 'runtime', 'cleanup', 'diagnostics')][string]$Phase)
+param([Parameter(Mandatory = $true)][ValidateSet('setup', 'ownership', 'install', 'build', 'runtime', 'probe', 'cleanup', 'diagnostics')][string]$Phase)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
@@ -140,8 +140,31 @@ if ($Phase -eq 'ownership') {
     $env:npm_config_cache = Join-Path $root 'npm-cache'
     $npmEntry = Join-Path (Split-Path $node) 'node_modules\npm\bin\npm-cli.js'
     if (!(Test-Path -LiteralPath $npmEntry)) { throw 'Bundled npm entry point missing' }
-    $null = Run-Owned 'npm-install' $node @($npmEntry, 'ci', '--timing', '--foreground-scripts', '--no-audit', '--no-fund') 1780
+    $null = Run-Owned 'npm-install' $node @($npmEntry, 'ci', '--timing', '--loglevel=http', '--foreground-scripts', '--no-audit', '--no-fund') 1780
     if ((Get-FileHash package-lock.json -Algorithm SHA256).Hash -ne $owner.lockSha256) { throw 'Locked install changed lockfile' }
+} elseif ($Phase -eq 'probe') {
+    # Observe tool behavior without accepting it as successful prerequisite proof.
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $visualStudio = (& $vswhere -latest -products '*' -property installationPath).Trim()
+    if ($LASTEXITCODE -ne 0 -or !$visualStudio) { throw 'Visual Studio discovery failed' }
+    $toolVersion = (Get-Content -LiteralPath (Join-Path $visualStudio 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt') -Raw).Trim()
+    $hostArch = if ($env:EXPECTED_ARCHITECTURE -eq 'arm64') { 'Arm64' } else { 'x64' }
+    $compiler = Join-Path $visualStudio "VC\Tools\MSVC\$toolVersion\bin\Host$hostArch\$($env:EXPECTED_ARCHITECTURE)\cl.exe"
+    if (!(Test-Path -LiteralPath $compiler)) { throw 'Native compiler missing' }
+    $source = Join-Path $root 'probe.cpp'
+    $object = Join-Path $root 'probe.obj'
+    'int probe() { return 42; }' | Set-Content -LiteralPath $source -Encoding utf8
+    $specFile = Write-Spec 'compiler-probe' $compiler @('/nologo', '/c', $source, "/Fo$object") 60
+    & $pwsh -NoProfile -File $monitor -Specification $specFile | Write-Host
+    $receipt = Get-Content -LiteralPath (Join-Path $evidence 'compiler-probe-job.json') -Raw | ConvertFrom-Json
+    if (!$receipt.complete -or $receipt.activeProcesses -ne 0) { throw 'Compiler probe cleanup incomplete' }
+    @{
+        compiler = $compiler; objectPresent = (Test-Path -LiteralPath $object)
+        compiled = ($receipt.exitCode -eq 0 -and (Test-Path -LiteralPath $object))
+        strictStagePassed = (!$receipt.terminated -and !$receipt.timedOut -and $receipt.exitCode -eq 0)
+        classification = 'diagnostic only; not installer acceptance'
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'compiler-probe.json')
+    $null = Run-Owned 'extraction-probe' $node @((Join-Path $PSScriptRoot 'windows-install-diagnostic.mjs'), $root) 330
 } elseif ($Phase -eq 'build') {
     $null = Run-Owned 'package' $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'build', $root) 280
 } elseif ($Phase -eq 'runtime') {
@@ -209,6 +232,10 @@ if ($Phase -eq 'ownership') {
 } elseif ($Phase -eq 'diagnostics') {
     foreach ($log in @(Get-ChildItem -LiteralPath (Join-Path $root 'logs') -Filter '*.log' -File)) {
         Get-Content -LiteralPath $log.FullName -Tail 200 | Set-Content -LiteralPath (Join-Path $evidence "$($log.BaseName)-tail.txt") -Encoding utf8
+        # npm may not flush its own files when the Job is terminated. Its owned
+        # stdout file still contains emitted HTTP/timing records from that run.
+        Get-Content -LiteralPath $log.FullName | Select-String 'npm (http fetch|timing)' | Select-Object -Last 6000 |
+            ForEach-Object { $_.Line } | Set-Content -LiteralPath (Join-Path $evidence "$($log.BaseName)-timing-fetch.txt") -Encoding utf8
     }
     $npmLogs = Join-Path $root 'npm-cache\_logs'
     if (Test-Path -LiteralPath $npmLogs) {
