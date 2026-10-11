@@ -1,9 +1,24 @@
 import unittest
 import xml.etree.ElementTree as ET
-from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready, terminal_echo
+from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready, terminal_echo, workspace_row
 
 
 class ControlsTest(unittest.TestCase):
+    def test_workspace_selection_uses_unique_native_identity_not_header_text(self):
+        root = ET.fromstring('''<hierarchy>
+          <node package="sh.paseo.iexalt" text="Persisted Android workspace" />
+          <node package="sh.paseo.iexalt" resource-id="sidebar-workspace-row-host:wks_abc"
+            enabled="true" clickable="true" />
+        </hierarchy>''')
+        nodes = list(root.iter("node"))
+        self.assertIs(workspace_row(nodes, "wks_abc"), nodes[1])
+        self.assertIsNone(workspace_row(nodes[:1], "wks_abc"))
+        self.assertIsNone(workspace_row(nodes, "wks_ab"))
+        with self.assertRaises(ValueError):
+            workspace_row(nodes + [nodes[1]], "wks_abc")
+        nodes[1].set("clickable", "false")
+        self.assertIsNone(workspace_row(nodes, "wks_abc"))
+
     def test_terminal_echo_requires_rendered_rows_and_handles_wrapping(self):
         command = "printf PASEO_NATIVE_;echo PREVIOUS"
         root = ET.fromstring('''<hierarchy>
