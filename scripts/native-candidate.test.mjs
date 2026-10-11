@@ -7,7 +7,23 @@ import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
 import { closeNormally } from "../packages/desktop/e2e/normal-close.cjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { ownedProcesses } from "../.github/scripts/linux-format-processes.mjs";
 import { join } from "node:path";
+
+test("fixture cleanup retains observed children across session changes without claiming reused PIDs", () => {
+  const retained = [
+    { pid: 10, session: 10, start: "100" },
+    { pid: 11, session: 10, start: "101" },
+  ];
+  const rows = [
+    { pid: 11, session: 11, start: "101" },
+    { pid: 10, session: 90, start: "999" },
+    { pid: 12, session: 10, start: "102" },
+    { pid: 90, session: 90, start: "50" },
+  ];
+  assert.deepEqual(ownedProcesses(rows, 10, retained), [rows[0], rows[2]]);
+  assert.deepEqual(ownedProcesses([], 10, retained), []);
+});
 
 test("normal replacement shutdown requires close acknowledgement and bounded exit", async () => {
   const events = [];
