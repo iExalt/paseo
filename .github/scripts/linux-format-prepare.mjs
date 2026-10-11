@@ -107,9 +107,11 @@ writeFileSync(
         artifactName: "fixture-" + process.arch + ".${ext}",
       },
       deb: {
+        compression: "gz",
         afterInstall: join(source, "packages/desktop/scripts/linux-sandbox/after-install.tpl"),
       },
       rpm: {
+        compression: "gzip",
         afterInstall: join(source, "packages/desktop/scripts/linux-sandbox/after-install.tpl"),
       },
       appImage: {
