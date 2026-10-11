@@ -452,7 +452,16 @@ also exposed that builder expands architecture names differently by format;
 the harness now assigns explicit filenames without changing native metadata.
 Identity and packaging logs are retained before build completion so early failures
 have bounded diagnostics. No installer, renderer or FUSE acceptance follows from
-this failed trial; a reviewed corrected x64 trial remains the next gate.
+this failed trial. The corrected trial `38112388625` at `5139c9514` built all three
+formats and launched the actual FUSE AppImage, then rejected its sandbox reason.
+Locked builder's AppRun independently injects `--no-sandbox` when `unshare -Ur true`
+fails; desktop-entry arguments do not disable this shipped fallback. The fixture
+now verifies the complete generated AppRun hash, independently observes that exact
+probe's normal nonzero exit, and requires an unsandboxed renderer only for this
+AppImage-specific path. The harness injects no disabling flags. Failure cleanup
+confirmed no remaining owned processes or mounts; DEB/RPM runtime is still unproven.
+The Nix filter increment `490c6eac0` passed seven-lane PR CI in 4m30s; the preceding
+`5139c9514` full dev run passed in 4m34s. The stable latency baseline is unchanged.
 
 Approved execution checklist:
 
