@@ -44,6 +44,10 @@ printf '%s  %s\n' "$electron_sha" "$FORMAT_ROOT/electron.zip" | sha256sum --chec
 unzip -q "$FORMAT_ROOT/electron.zip" -d "$FORMAT_ROOT/payload"
 node .github/scripts/linux-format-prepare.mjs
 export ELECTRON_BUILDER_CACHE="$FORMAT_ROOT/builder-cache"
+timeout --kill-after=10s 120s node node_modules/electron-builder/cli.js \
+  --projectDir "$FORMAT_ROOT/project" --config "$FORMAT_ROOT/legacy-builder.json" \
+  --prepackaged "$FORMAT_ROOT/payload" --linux rpm \
+  "--$EXPECTED_ARCHITECTURE" --publish never 2>&1 | tee "$FORMAT_ROOT/evidence/legacy-build.log"
 timeout --kill-after=10s 240s node node_modules/electron-builder/cli.js \
   --projectDir "$FORMAT_ROOT/project" --config "$FORMAT_ROOT/builder.json" \
   --prepackaged "$FORMAT_ROOT/payload" --linux deb rpm AppImage \
@@ -81,6 +85,7 @@ test ! -e /usr/bin/PaseoFormatFixture
 printf 'DEB install, renderer, normal exit and uninstall passed\n' > "$FORMAT_ROOT/evidence/deb-lifecycle.txt"
 mkdir "$FORMAT_ROOT/rpm-input"
 cp "$FORMAT_ROOT/packages/fixture-$EXPECTED_ARCHITECTURE.rpm" "$FORMAT_ROOT/rpm-input/fixture.rpm"
+cp "$FORMAT_ROOT/packages/legacy-$EXPECTED_ARCHITECTURE.rpm" "$FORMAT_ROOT/rpm-input/legacy.rpm"
 # This directory is disposable and only the bounded container's nonroot user writes it.
 chmod 777 "$FORMAT_ROOT/evidence"
 timeout --kill-after=10s 300s docker run --name "$container" --cpus=2 --memory=4g --pids-limit=512 \

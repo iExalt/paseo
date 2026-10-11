@@ -28,7 +28,11 @@ function validateManifest(manifest, expectedSha, architecture) {
     assert.match(item.lockHash, /^[a-f0-9]{64}$/);
     assert.equal(item.name, "@getpaseo/desktop");
     assert.equal(item.desktopName, "Paseo.desktop");
-    assert.deepEqual(Object.keys(item.payload).sort(), [...payloadFiles].sort());
+    const files =
+      item === manifest.candidate
+        ? [...payloadFiles, "resources/linux-after-install.sh"]
+        : payloadFiles;
+    assert.deepEqual(Object.keys(item.payload).sort(), [...files].sort());
     for (const hash of Object.values(item.payload)) assert.match(hash, /^[a-f0-9]{64}$/);
     assert.deepEqual(Object.keys(item.artifacts).sort(), ["appimage", "deb", "rpm"]);
     for (const [format, artifact] of Object.entries(item.artifacts)) {
@@ -51,7 +55,7 @@ function verifyPayload(directory, expected, architecture) {
   );
   for (const field of ["name", "version", "desktopName"])
     assert.equal(metadata[field], expected[field], field);
-  for (const filename of payloadFiles)
+  for (const filename of Object.keys(expected.payload))
     assert.equal(digest(path.join(directory, filename)), expected.payload[filename], filename);
   const executable = fs.readFileSync(path.join(directory, "Paseo.bin"));
   assert.equal(executable.subarray(0, 4).toString("hex"), "7f454c46");

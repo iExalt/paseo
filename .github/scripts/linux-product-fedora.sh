@@ -24,4 +24,5 @@ dnf -y remove "$package"
 if rpm -q "$package"; then exit 1; fi
 test ! -e /opt/Paseo
 test ! -e /usr/bin/Paseo
+test ! -L /usr/bin/Paseo
 printf 'RPM upgrade and uninstall passed\n' > /evidence/rpm-lifecycle.txt

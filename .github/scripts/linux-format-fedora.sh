@@ -7,7 +7,17 @@ case "$FIXTURE_ARCH:$(uname -m)" in
 esac
 export PATH="/node-bin:$PATH"
 bash /scripts/linux-fedora-runtime-deps.sh "$FIXTURE_ARCH"
+rpm -qp --scripts /input/legacy.rpm > /evidence/rpm-legacy-scripts.txt
+rpm -qp --scripts /input/fixture.rpm > /evidence/rpm-candidate-scripts.txt
+if grep -q 'posttrans\|remaining-package count' /evidence/rpm-legacy-scripts.txt; then exit 1; fi
+grep -q 'posttrans' /evidence/rpm-candidate-scripts.txt
+grep -q 'remaining-package count' /evidence/rpm-candidate-scripts.txt
+dnf -y install /input/legacy.rpm
+test "$(rpm -q --queryformat '%{VERSION}' paseo-format-fixture)" = 0.9.0
+test "$(readlink -f /usr/bin/PaseoFormatFixture)" = /opt/PaseoFormatFixture/PaseoFormatFixture
 dnf -y install /input/fixture.rpm
+test "$(rpm -q --queryformat '%{VERSION}' paseo-format-fixture)" = 1.0.0
+test "$(readlink -f /usr/bin/PaseoFormatFixture)" = /opt/PaseoFormatFixture/PaseoFormatFixture
 useradd --create-home fixture
 test "$(stat -Lc '%u:%a' /opt/PaseoFormatFixture/chrome-sandbox)" = 0:4755
 rpm -q paseo-format-fixture
@@ -22,4 +32,5 @@ dnf -y remove paseo-format-fixture
 if rpm -q paseo-format-fixture; then exit 1; fi
 test ! -e /opt/PaseoFormatFixture/chrome-sandbox
 test ! -e /usr/bin/PaseoFormatFixture
-printf 'RPM install, renderer, normal exit and uninstall passed\n' > /evidence/rpm-lifecycle.txt
+test ! -L /usr/bin/PaseoFormatFixture
+printf 'RPM legacy upgrade, renderer, normal exit and uninstall passed\n' > /evidence/rpm-lifecycle.txt
