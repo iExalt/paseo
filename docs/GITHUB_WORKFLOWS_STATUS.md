@@ -729,7 +729,17 @@ owned path containing spaces, verifies registry scope and absence of auto-launch
 then starts the installed EXE directly inside the Job. Node-only ownership tests
 run before the install, so a broken monitor cannot launch a long install. Native
 Electron nested-job compatibility is a required result. Full product, speech and
-manual-upgrade proofs follow this prerequisite; no Windows dispatch has begun.
+manual-upgrade proofs follow this prerequisite.
+
+The first [ARM prerequisite](https://github.com/iExalt/paseo/actions/runs/38137270161)
+at `47104afd7` proved normal descendant exit, detached-child failure cleanup and
+forced monitor-death cleanup. Both monitored jobs reached zero active processes;
+the death verifier observed both held process handles exit. Cleanup reconciled all
+three stages. The workflow nevertheless stopped before installation because the
+PowerShell runner propagated the intentional negative monitor's stale exit code.
+The controller now explicitly returns success only after its phase assertions
+finish. Locked-install timing and native NSIS/Electron behavior remain pending the
+repaired trial. PR routine CI passed in 4m18s, preserving the existing baseline.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One

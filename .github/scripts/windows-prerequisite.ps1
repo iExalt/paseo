@@ -219,3 +219,6 @@ if ($Phase -eq 'ownership') {
     $bytes = (Get-ChildItem -LiteralPath $evidence -File -Recurse | Measure-Object Length -Sum).Sum
     if ($bytes -gt 26214400) { throw 'Diagnostic retention exceeds 25 MiB' }
 }
+# GitHub's pwsh wrapper propagates LASTEXITCODE. The intentional negative monitor
+# leaves it nonzero even after its expected failure and cleanup were verified.
+exit 0
