@@ -642,8 +642,10 @@ async function smokeCliShim({ appPath, cliPath, env }) {
   assertCleanDaemonStatusOutput(`${result.stdout}\n${result.stderr}`);
 }
 
-async function smokeColdCliDaemonStart({ appPath, cliPath, strict = false }) {
-  const home = createTempDir("paseo-smoke-cli-daemon-home-");
+async function smokeColdCliDaemonStart({ appPath, cliPath, strict = false, windowsOwned }) {
+  const home = windowsOwned
+    ? fs.mkdtempSync(path.join(windowsOwned.stateRoot, "cold-cli-"))
+    : createTempDir("paseo-smoke-cli-daemon-home-");
   const pidPath = path.join(home, "paseo.pid");
   let identities = [];
   let env;
@@ -684,18 +686,36 @@ async function smokeColdCliDaemonStart({ appPath, cliPath, strict = false }) {
       }
     }
   } finally {
-    await cleanupColdDaemon({ strict, pidPath, appPath, cliPath, env, home, identities });
+    await cleanupColdDaemon({
+      strict,
+      pidPath,
+      appPath,
+      cliPath,
+      env,
+      home,
+      identities,
+      windowsOwned,
+    });
   }
 }
 
-async function cleanupColdDaemon({ strict, pidPath, appPath, cliPath, env, home, identities }) {
+async function cleanupColdDaemon({
+  strict,
+  pidPath,
+  appPath,
+  cliPath,
+  env,
+  home,
+  identities,
+  windowsOwned,
+}) {
   try {
     if (fs.existsSync(pidPath)) {
-      if (strict && !identities.length) {
+      if (strict && !windowsOwned && !identities.length) {
         const { pid } = JSON.parse(fs.readFileSync(pidPath, "utf8"));
         identities = captureProcessTree(pid);
       }
-      if (strict) identities = refreshProcessTree(identities);
+      if (strict && !windowsOwned) identities = refreshProcessTree(identities);
       await runCliShimCommand({
         appPath,
         cliPath,
@@ -707,9 +727,12 @@ async function cleanupColdDaemon({ strict, pidPath, appPath, cliPath, env, home,
         console.warn(`Packaged desktop smoke: failed to stop cold CLI daemon: ${error}`);
       });
     }
-    if (strict) await waitForProcessTreeExit(identities);
+    if (strict && !windowsOwned) await waitForProcessTreeExit(identities);
   } finally {
-    if (strict) {
+    // Windows state is removed by the controller only after the outer Job is empty.
+    if (windowsOwned) {
+      assert.ok(strict);
+    } else if (strict) {
       const { removeOwnedTree } = await import("./remove-owned-tree.mjs");
       await removeOwnedTree(home);
     } else await removeTempDir(home);
@@ -1074,6 +1097,7 @@ async function smokePackagedDesktopApp({
   nixLayout,
   nixProfile,
   installedLayout,
+  windowsLayout,
   launchArgs = [],
   expectedSandbox,
   ownedSession,
@@ -1083,6 +1107,9 @@ async function smokePackagedDesktopApp({
 }) {
   let cliPath;
   let installedIdentity;
+  const windowsOwned = await authorizeWindowsLayout(windowsLayout, predecessor, ownedSession);
+  cliPath = windowsLayout?.cliPath;
+  const trackPosixProcesses = shouldTrackPosixProcesses(ownedSession, windowsOwned);
   if (installedLayout) {
     ({ appPath, executablePath, cliPath, installedIdentity } = prepareInstalledLaunch(
       installedLayout,
@@ -1103,7 +1130,12 @@ async function smokePackagedDesktopApp({
   }
   assertExecutable(executablePath, "Packaged app executable");
   if (!predecessor)
-    await smokeColdCliDaemonStart({ appPath, cliPath, strict: Boolean(ownedSession) });
+    await smokeColdCliDaemonStart({
+      appPath,
+      cliPath,
+      strict: Boolean(ownedSession),
+      windowsOwned,
+    });
 
   const { userData, daemonHome, port: daemonPort } = await prepareSmokeSession(ownedSession);
   const cdpPort = await reserveDesktopDebugPort(daemonPort);
@@ -1142,9 +1174,9 @@ async function smokePackagedDesktopApp({
       return;
     }
 
-    if (ownedSession && daemonIdentity) daemonIdentity = refreshProcessTree(daemonIdentity);
+    if (trackPosixProcesses && daemonIdentity) daemonIdentity = refreshProcessTree(daemonIdentity);
     await stopCliDaemon({ appPath, cliPath, env });
-    if (ownedSession && daemonIdentity) await waitForProcessTreeExit(daemonIdentity);
+    if (trackPosixProcesses && daemonIdentity) await waitForProcessTreeExit(daemonIdentity);
     daemonStopped = true;
   };
 
@@ -1185,7 +1217,7 @@ async function smokePackagedDesktopApp({
       deadline,
     });
     console.log("Packaged desktop smoke: renderer-started desktop daemon reported running");
-    if (ownedSession) {
+    if (trackPosixProcesses) {
       daemonIdentity = captureProcessTree(status.pid);
     }
     if (!predecessor) {
@@ -1205,7 +1237,7 @@ async function smokePackagedDesktopApp({
     await stopDaemonForCleanup();
     await closeProfileWindow({
       nixProfile,
-      installedFormat: Boolean(installedLayout),
+      installedFormat: hasInstalledLayout(installedLayout, windowsOwned),
       ownedSession,
       page,
       child,
@@ -1542,7 +1574,103 @@ async function smokeInstalledLinuxStage({
   fs.writeFileSync(path.join(stageDir, "stage.json"), JSON.stringify(receipt));
 }
 
+function shouldTrackPosixProcesses(ownedSession, windowsOwned) {
+  return Boolean(ownedSession && !windowsOwned);
+}
+
+function hasInstalledLayout(installedLayout, windowsOwned) {
+  return Boolean(installedLayout || windowsOwned);
+}
+
+async function authorizeWindowsLayout(layout, predecessor, ownedSession) {
+  if (!layout) return undefined;
+  const { verifyWindowsJob } = await import("../../../.github/scripts/windows-job-identity.mjs");
+  const identity = verifyWindowsJob();
+  assert.equal(identity.stage, predecessor ? "runtime-previous" : "runtime-candidate");
+  assert.ok(ownedSession);
+  const expectedRoot = path.join(
+    process.env.RUNNER_TEMP,
+    `paseo-windows-products-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
+    "state",
+  );
+  assert.equal(layout.stateRoot, expectedRoot);
+  return { ...identity, stateRoot: expectedRoot };
+}
+
+async function smokeInstalledWindowsStage({ stage, root, appPath, artifactDir }) {
+  const { verifyWindowsJob } = await import("../../../.github/scripts/windows-job-identity.mjs");
+  assert.equal(verifyWindowsJob().stage, `runtime-${stage}`);
+  assert.ok(["previous", "candidate"].includes(stage));
+  const stateRoot = path.join(root, "state");
+  const previousFile = path.join(stateRoot, "previous.json");
+  const previous = stage === "candidate" ? JSON.parse(fs.readFileSync(previousFile)) : null;
+  const ownedSession = previous?.ownedSession ?? {
+    userData: path.join(stateRoot, "profile"),
+    daemonHome: path.join(stateRoot, "daemon"),
+    port: await reserveLocalTcpPort(),
+  };
+  assert.equal(ownedSession.userData, path.join(stateRoot, "profile"));
+  assert.equal(ownedSession.daemonHome, path.join(stateRoot, "daemon"));
+  if (!previous) {
+    fs.mkdirSync(ownedSession.userData);
+    fs.mkdirSync(ownedSession.daemonHome);
+    configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
+  } else {
+    assert.equal(previous.completed, true);
+    assert.equal(previous.sourceSha, process.env.GITHUB_SHA);
+    assert.equal(previous.architecture, process.arch);
+  }
+  const cliPath = path.join(ownedSession.daemonHome, ".local", "bin", "paseo.cmd");
+  const cliIdentity = () => {
+    const stat = fs.lstatSync(cliPath);
+    assert.ok(stat.isFile() && !stat.isSymbolicLink());
+    const contents = fs.readFileSync(cliPath, "utf8");
+    assert.ok(contents.includes(`set "BUNDLED_CLI=${getCliShimPath(appPath)}"`));
+    return { contents, modified: stat.mtimeMs, bytes: stat.size };
+  };
+  if (previous) assert.deepEqual(cliIdentity(), previous.cli);
+  let workspaceId = previous?.workspaceId;
+  fs.mkdirSync(artifactDir, { recursive: true });
+  await smokePackagedDesktopApp({
+    appPath,
+    windowsLayout: { stateRoot, cliPath },
+    ownedSession,
+    predecessor: stage === "previous",
+    artifactDir,
+    inspectState: async (context) => {
+      if (!previous) {
+        const result = await context.page.evaluate(() => window.paseoDesktop.invoke("install_cli"));
+        assert.equal(result.installed, true);
+        cliIdentity();
+      }
+      workspaceId = await inspectUpgradeState({
+        ...context,
+        stage,
+        stageDir: artifactDir,
+        workspaceId,
+        title: "Persisted upgrade workspace",
+        theme: "Pure black",
+        storageDiagnostics: true,
+      });
+    },
+  });
+  const cli = cliIdentity();
+  if (previous)
+    assert.deepEqual(cli, previous.cli, "Upgrade must preserve the original CLI trampoline");
+  const receipt = {
+    completed: true,
+    sourceSha: process.env.GITHUB_SHA,
+    architecture: process.arch,
+    ownedSession,
+    workspaceId,
+    cli,
+  };
+  fs.writeFileSync(path.join(stateRoot, `${stage}.json`), JSON.stringify(receipt), { flag: "wx" });
+  fs.writeFileSync(path.join(artifactDir, "stage.json"), JSON.stringify(receipt));
+}
+
 module.exports = {
+  smokeInstalledWindowsStage,
   smokeInstalledLinuxStage,
   smokeNixLinuxDesktop,
   smokePackagedDesktopApp,
