@@ -61,7 +61,7 @@ Paseo creates worktrees under `$PASEO_HOME/worktrees`, runs setup and teardown h
 
 Both tools support reviewing diffs, committing, pushing, and opening pull requests from the app.
 
-Paseo also surfaces PR checks and reviews in the app, and exposes the same workflow through the CLI and MCP server.
+Paseo also surfaces PR checks and reviews in the app, and exposes the same workflow through the CLI.
 
 ## CLI and automation
 
@@ -78,7 +78,7 @@ paseo send <agent-id> "add tests"
 paseo schedule create --cron "0 9 * * 1" "audit the codebase"
 ```
 
-`paseo run --host` connects to a remote daemon. `paseo schedule` runs an agent on a cron. The MCP server lets other agents create worktrees, launch agents, open terminals, and send prompts.
+`paseo run --host` connects to a remote daemon. `paseo schedule` runs an agent on a cron. The CLI lets other agents create worktrees, launch agents, open terminals, and send prompts.
 
 ## Voice
 
