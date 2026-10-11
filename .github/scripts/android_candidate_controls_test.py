@@ -34,6 +34,14 @@ class ControlsTest(unittest.TestCase):
         nodes[0].set("text", "Allow Paseo iExalt to send you notifications?")
         self.assertIs(notification_permission_deny(nodes), nodes[1])
         self.assertIsNone(keyboard_permission_deny(nodes))
+        nodes[1].set("resource-id", "com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button")
+        self.assertIs(notification_permission_deny(nodes), nodes[1])
+        for button in ["permission_allow_button", "unknown_button"]:
+            nodes[1].set("resource-id", "com.android.permissioncontroller:id/" + button)
+            self.assertIsNone(notification_permission_deny(nodes))
+        nodes[1].set("resource-id", "com.android.permissioncontroller:id/permission_deny_and_dont_ask_again_button")
+        nodes[0].set("text", "Allow Android Keyboard (AOSP) to access your contacts?")
+        self.assertIsNone(keyboard_permission_deny(nodes))
         nodes[0].set("text", "Allow Paseo iExalt to access your contacts?")
         self.assertIsNone(notification_permission_deny(nodes))
 

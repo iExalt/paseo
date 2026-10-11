@@ -310,6 +310,17 @@ the entry's first side-effect import; an actual-entry ordering fixture passes
 and rejects omission of that installer. The repaired product needs a new paired
 same-source build and native verification; the old Android candidate remains failed.
 
+The rebuilt pair at `842a70f0c` passed producer `38104597837` in 23m38s, including
+fresh signed Mac import. Native Mac run `38105941202` preserved workspace
+`wks_7113eea1d39bd6ee` and Pure black theme and passed strict PTY/cleanup checks;
+review accepted its raw and UI evidence. Android's first attempt stopped at an
+npm connection reset before installation. Its one unchanged retry `38106245869`
+passed the predecessor journey and reached the candidate's preserved workspace,
+but stopped on a second notification prompt whose denial ID differs from the
+first prompt. The harness now recognizes that exact denial ID only for the
+already allowlisted Paseo notification message. Candidate terminal/theme closure
+still requires a successful native run; no additional product rebuild is needed.
+
 Linux trials `38103498455` and `38103959904` stopped before product realization
 on diagnostic assumptions: missing ripgrep, then Nix's v4 JSON envelope. Portable
 filtering and strict v4-envelope fixtures repair these prerequisites. No Linux
@@ -323,6 +334,14 @@ The fixed `5619b7d7e` predecessor source shares the omission; any packaging-only
 repair used for its future Linux upgrade proof must be explicit in provenance.
 Routine dev CI at `842a70f0c` passed in 4m37s; the stable baseline and
 under-five-minute budget remain unchanged.
+
+The repaired Linux x64 trial `38105829857` at `a1326cf3a` passed in 12m39s,
+including 9m49s realization and actual canonical wrappers, renderer/preload,
+built-in plugins, CLI/PTY, owned shutdown and retained workspace screenshot.
+Review accepted current unsigned same-job package runtime; profile installation,
+manual replacement, ARM64 and DEB/RPM/AppImage remain open. The difference from
+the prior build's 8m15s is not a controlled regression measurement. PR/dev routine
+checks at the repaired source passed in 4m30s/4m28s without changing the budget.
 
 Approved execution checklist:
 

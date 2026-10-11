@@ -2,14 +2,14 @@
 import re
 
 
-def permission_deny(nodes, message):
+def permission_deny(nodes, message, buttons=("permission_deny_button",)):
     controller = "com.android.permissioncontroller"
     if not any(node.get("package") == controller
                and node.get("resource-id") == controller + ":id/permission_message"
                and node.get("text") == message for node in nodes):
         return None
     return next((node for node in nodes if node.get("package") == controller
-                 and node.get("resource-id") == controller + ":id/permission_deny_button"), None)
+                 and node.get("resource-id") in {controller + ":id/" + button for button in buttons}), None)
 
 
 def keyboard_permission_deny(nodes):
@@ -17,7 +17,8 @@ def keyboard_permission_deny(nodes):
 
 
 def notification_permission_deny(nodes):
-    return permission_deny(nodes, "Allow Paseo iExalt to send you notifications?")
+    return permission_deny(nodes, "Allow Paseo iExalt to send you notifications?",
+                           ("permission_deny_button", "permission_deny_and_dont_ask_again_button"))
 
 
 def input_ready(nodes, selector, ime):
