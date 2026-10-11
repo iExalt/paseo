@@ -1,9 +1,21 @@
 import unittest
 import xml.etree.ElementTree as ET
-from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready
+from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready, terminal_echo
 
 
 class ControlsTest(unittest.TestCase):
+    def test_terminal_echo_requires_rendered_rows_and_handles_wrapping(self):
+        command = "printf PASEO_NATIVE_;echo PREVIOUS"
+        root = ET.fromstring('''<hierarchy>
+          <node resource-id="terminal-native-input" text="printf PASEO_NATIVE_;echo PREVIOUS" />
+          <node resource-id="terminal-row-0" content-desc="runner$ printf PASEO_NATIVE_;echo" />
+          <node resource-id="terminal-row-1" content-desc="PREVIOUS" />
+        </hierarchy>''')
+        nodes = list(root.iter("node"))
+        self.assertTrue(terminal_echo(nodes, command))
+        self.assertFalse(terminal_echo(nodes[:1], command))
+        self.assertFalse(terminal_echo(nodes, "PASEO_NATIVE_PREVIOUS"))
+
     def test_only_keyboard_contacts_dialog_is_denied(self):
         # Minimal nodes from the retained Android 16 permission overlay.
         root = ET.fromstring('''<hierarchy>

@@ -271,7 +271,18 @@ daemon and desktop derivations, substitution/build plans and runner resources;
 import-from-derivation builds are disabled. It does not realize products, upload
 artifacts, sign or write Actions caches. Costly Node compilation waits for a
 reviewed reuse/retention contract so successful bootstrap work is not discarded.
+The preflight at `434bb96d4` passed in 31 seconds: the pinned Node wrapper and
+runtime are substitutable, seven product derivations need builds, and 479
+substitutions total 566 MiB compressed / 1.7 GiB unpacked on a runner with 86 GiB
+free. No Node bootstrap or seed archive is needed for the next x64 trial.
 Linux product and format proofs remain pending B2 and subsequent B3 increments.
+
+Android native run `38102420953` passed connection and permission handling but
+failed before upgrade: the terminal showed two empty prompts and no injected
+command. The harness now requires stable native-input focus, visible keyboard
+and completed terminal attachment before typing, then checks rendered command
+echo before Enter. The separate output marker remains mandatory. This repair
+needs another bounded Android-only trial; native upgrade proof remains open.
 
 Approved execution checklist:
 
