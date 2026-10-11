@@ -71,6 +71,7 @@ test("only fork-owned workflows are installed", () => {
     "linux-format-preflight.yml",
     "linux-nix-runtime.yml",
     "linux-package-preflight.yml",
+    "linux-product-runtime.yml",
     "macos-closure.yml",
     "native-feasibility.yml",
     "rebase-dev.yml",
