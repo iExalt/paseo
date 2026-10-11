@@ -12,6 +12,9 @@ import type { AgentMode } from "@getpaseo/protocol/agent-types";
 export interface SetModeResult {
   agentId: string;
   mode: string;
+  success: true;
+  newMode: string;
+  resolvedAgentId: string;
 }
 
 /** Schema for mode list output */
@@ -106,6 +109,9 @@ export async function runModeCommand(
       data: {
         agentId: resolvedId.slice(0, 7),
         mode: normalizedMode,
+        success: true,
+        newMode: normalizedMode,
+        resolvedAgentId: resolvedId,
       },
       schema: setModeSchema,
     };

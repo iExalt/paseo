@@ -85,7 +85,7 @@ describe("daemon web UI bootstrap", () => {
   });
 
   test("advertises ComputerName as the hostname over HTTP and WebSocket", async () => {
-    daemonHandle = await createTestPaseoDaemon({ mcpEnabled: false });
+    daemonHandle = await createTestPaseoDaemon({ agentToolsEnabled: false });
     const response = await fetch(`http://127.0.0.1:${daemonHandle.port}/api/status`);
     expect(await response.json()).toMatchObject({ hostname: expectedHostName });
     const client = new DaemonClient({
@@ -105,7 +105,7 @@ describe("daemon web UI bootstrap", () => {
     const distDir = await createWebUiDist();
 
     daemonHandle = await createTestPaseoDaemon({
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       webUi: {
         enabled: true,
         distDir,
@@ -176,7 +176,7 @@ describe("daemon web UI bootstrap", () => {
     const distDir = await createWebUiDist();
 
     daemonHandle = await createTestPaseoDaemon({
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       trustedProxies: [],
       webUi: {
         enabled: true,

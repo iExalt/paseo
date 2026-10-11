@@ -31,8 +31,22 @@ export const ScheduleCreateRequestSchema = z.object({
   name: z.string().optional(),
   cadence: ScheduleCadenceSchema,
   target: ScheduleCreateTargetSchema,
+  callerContext: z
+    .object({
+      agentId: z.guid(),
+      provider: z.string().optional(),
+      model: z.string().optional(),
+      cwd: z.string().optional(),
+      modeId: z.string().optional(),
+      thinkingOptionId: z.string().optional(),
+      isolation: z.enum(["local", "worktree"]).optional(),
+    })
+    .optional(),
+  callerAgentId: z.guid().optional(),
+  replaceExisting: z.boolean().optional(),
   maxRuns: z.number().int().positive().optional(),
   expiresAt: z.string().optional(),
+  expiresIn: z.string().optional(),
   runOnCreate: z.boolean().optional(),
 });
 
@@ -69,6 +83,7 @@ export const ScheduleDeleteRequestSchema = z.object({
   type: z.literal("schedule/delete"),
   requestId: z.string(),
   scheduleId: z.string(),
+  callerAgentId: z.guid().optional(),
 });
 
 export const ScheduleRunOnceRequestSchema = z.object({
@@ -91,12 +106,14 @@ export const ScheduleUpdateRequestSchema = z.object({
   type: z.literal("schedule/update"),
   requestId: z.string(),
   scheduleId: z.string(),
+  callerAgentId: z.guid().optional(),
   name: z.string().nullable().optional(),
   prompt: z.string().min(1).optional(),
   cadence: ScheduleCadenceSchema.optional(),
   newAgentConfig: ScheduleUpdateNewAgentConfigSchema.optional(),
   maxRuns: z.number().int().positive().nullable().optional(),
   expiresAt: z.string().nullable().optional(),
+  expiresIn: z.string().optional(),
 });
 
 export const ScheduleCreateResponseSchema = z.object({

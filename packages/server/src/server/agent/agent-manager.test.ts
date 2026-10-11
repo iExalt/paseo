@@ -1525,30 +1525,6 @@ test("steering records concurrent early echoes as canonical submitted prompts", 
   }
 });
 
-class McpCapableTestAgentClient extends TestAgentClient {
-  override readonly capabilities = {
-    ...TEST_CAPABILITIES,
-    supportsMcpServers: true,
-  };
-
-  override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-    this.createdConfigs.push(config);
-    return new McpCapableTestAgentSession(config);
-  }
-
-  override async resumeSession(
-    _handle: AgentPersistenceHandle,
-    config?: Partial<AgentSessionConfig>,
-  ): Promise<AgentSession> {
-    this.resumeOverrides.push(config);
-    return new McpCapableTestAgentSession({
-      ...config,
-      provider: this.provider,
-      cwd: config?.cwd ?? process.cwd(),
-    });
-  }
-}
-
 class ControlledInterruptSession extends TestAgentSession {
   interruptCalled = false;
 
@@ -3216,72 +3192,6 @@ test("createAgent persists workspaceId on the stored record and emits it in the 
   }
 });
 
-test("createAgent injects paseo MCP server only into provider launch config", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
-  const storagePath = join(workdir, "agents");
-  const storage = new AgentStorage(storagePath, logger);
-
-  class CaptureClient extends TestAgentClient {
-    lastConfig: AgentSessionConfig | null = null;
-
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-      this.lastConfig = config;
-      return new McpCapableTestAgentSession(config);
-    }
-  }
-
-  const client = new CaptureClient();
-  const manager = new AgentManager({
-    clients: {
-      codex: client,
-    },
-    registry: storage,
-    logger,
-    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
-    idFactory: () => "00000000-0000-4000-8000-000000000103",
-  });
-
-  const snapshot = await manager.createAgent(
-    {
-      provider: "codex",
-      cwd: workdir,
-      mcpServers: {
-        custom: {
-          type: "stdio",
-          command: "custom-mcp",
-        },
-      },
-    },
-    undefined,
-    { workspaceId: undefined },
-  );
-
-  expect(snapshot.config.mcpServers).toEqual({
-    custom: {
-      type: "stdio",
-      command: "custom-mcp",
-    },
-  });
-  expect(client.lastConfig?.mcpServers).toEqual({
-    paseo: {
-      type: "http",
-      url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${snapshot.id}`,
-    },
-    custom: {
-      type: "stdio",
-      command: "custom-mcp",
-    },
-  });
-
-  const stored = await storage.get(snapshot.id);
-  expect(stored?.config?.mcpServers).toEqual({
-    custom: {
-      type: "stdio",
-      command: "custom-mcp",
-    },
-  });
-});
-
 test("createAgent closes and rejects a provider session that cannot honor MCP servers", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
@@ -3485,7 +3395,6 @@ test("createAgent passes native Paseo tools through launch context without inter
     },
     registry: storage,
     logger,
-    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
     paseoToolCatalogFactory: () => paseoTools,
     idFactory: () => "00000000-0000-4000-8000-000000000106",
   });
@@ -3526,51 +3435,6 @@ test("createAgent passes native Paseo tools through launch context without inter
       command: "custom-mcp",
     },
   });
-});
-
-test("createAgent allows best-effort internal MCP when the provider session reports no support", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
-  const storagePath = join(workdir, "agents");
-  const storage = new AgentStorage(storagePath, logger);
-
-  class CaptureClient extends TestAgentClient {
-    lastConfig: AgentSessionConfig | null = null;
-
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
-      this.lastConfig = config;
-      return new TestAgentSession(config);
-    }
-  }
-
-  const client = new CaptureClient();
-  const manager = new AgentManager({
-    clients: {
-      codex: client,
-    },
-    registry: storage,
-    logger,
-    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
-    mcpAuthToken: "cap-token",
-    idFactory: () => "00000000-0000-4000-8000-000000000104",
-  });
-
-  const snapshot = await manager.createAgent(
-    {
-      provider: "codex",
-      cwd: workdir,
-    },
-    undefined,
-    { workspaceId: undefined },
-  );
-
-  expect(manager.getMcpAuthToken()).toBe("cap-token");
-  expect(client.lastConfig?.mcpServers?.paseo).toEqual({
-    type: "http",
-    url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${snapshot.id}`,
-    headers: { Authorization: "Bearer cap-token" },
-  });
-
-  rmSync(workdir, { recursive: true, force: true });
 });
 
 test("uses each provider's current policy for new sessions and snapshots it by agent", async () => {
@@ -3614,7 +3478,6 @@ test("uses each provider's current policy for new sessions and snapshots it by a
     clients: { codex, claude },
     registry: storage,
     logger,
-    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
     resolvePaseoToolPolicy: (provider) => policies.get(provider),
     paseoToolCatalogFactory: async (context) => {
       policyInputs.push(context);
@@ -3672,30 +3535,43 @@ test("uses each provider's current policy for new sessions and snapshots it by a
   rmSync(workdir, { recursive: true, force: true });
 });
 
-test("keeps the global Paseo-tools gate outside provider policy and MCP injection", async () => {
+test("applies the global native tools gate before provider policy", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
 
-  class McpClient extends TestAgentClient {
+  class NativeClient extends TestAgentClient {
     override readonly capabilities = {
       ...TEST_CAPABILITIES,
-      supportsMcpServers: true,
+      supportsNativePaseoTools: true,
     };
-    lastConfig: AgentSessionConfig | null = null;
+    lastLaunchContext: AgentLaunchContext | undefined;
+    lastConfig: AgentSessionConfig | undefined;
 
-    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+    override async createSession(
+      config: AgentSessionConfig,
+      launchContext?: AgentLaunchContext,
+    ): Promise<AgentSession> {
       this.lastConfig = config;
+      this.lastLaunchContext = launchContext;
       return new TestAgentSession(config);
     }
   }
 
-  const enabledClient = new McpClient();
+  const paseoTools: PaseoToolCatalog = {
+    tools: new Map(),
+    getTool: () => undefined,
+    executeTool: async () => {
+      throw new Error("No tools registered in test catalog");
+    },
+  };
+  const enabledClient = new NativeClient();
   const enabledManager = new AgentManager({
     clients: { codex: enabledClient },
     registry: storage,
     logger,
-    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
+    agentToolsEnabled: true,
     resolvePaseoToolPolicy: () => ({ disabledTools: ["list_agents"] }),
+    paseoToolCatalogFactory: () => paseoTools,
   });
   const enabledAgent = await enabledManager.createAgent(
     { provider: "codex", cwd: workdir },
@@ -3703,19 +3579,21 @@ test("keeps the global Paseo-tools gate outside provider policy and MCP injectio
     { workspaceId: undefined },
   );
 
-  expect(enabledClient.lastConfig?.mcpServers?.paseo).toEqual({
-    type: "http",
-    url: `http://127.0.0.1:6767/mcp/agents?callerAgentId=${enabledAgent.id}`,
+  expect(enabledClient.lastLaunchContext?.paseoTools).toBe(paseoTools);
+  expect(enabledClient.lastLaunchContext?.env.PASEO_CLI).toBeTruthy();
+  expect(enabledClient.lastConfig?.daemonAppendSystemPrompt).toContain("agent status");
+  expect(enabledClient.lastConfig?.daemonAppendSystemPrompt).not.toContain("agent query");
+  expect(enabledManager.getPaseoToolPolicy(enabledAgent.id)).toEqual({
+    disabledTools: ["list_agents"],
   });
 
-  const disabledClient = new McpClient();
+  const disabledClient = new NativeClient();
   let catalogFactoryCalls = 0;
   const disabledManager = new AgentManager({
     clients: { codex: disabledClient },
     registry: storage,
     logger,
-    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
-    paseoToolsEnabled: false,
+    agentToolsEnabled: false,
     resolvePaseoToolPolicy: () => ({ enabled: true }),
     paseoToolCatalogFactory: () => {
       catalogFactoryCalls += 1;
@@ -3728,99 +3606,13 @@ test("keeps the global Paseo-tools gate outside provider policy and MCP injectio
     { workspaceId: undefined },
   );
 
-  expect(disabledClient.lastConfig?.mcpServers).toBeUndefined();
+  expect(disabledClient.lastLaunchContext?.paseoTools).toBeUndefined();
+  expect(disabledClient.lastLaunchContext?.env.PASEO_CLI).toBeUndefined();
+  expect(disabledClient.lastConfig?.daemonAppendSystemPrompt).toBeUndefined();
   expect(catalogFactoryCalls).toBe(0);
   expect(disabledManager.getPaseoToolPolicy(disabledAgent.id)).toEqual({ enabled: false });
 
   rmSync(workdir, { recursive: true, force: true });
-});
-
-test("resumeAgentFromPersistence replaces stored internal paseo MCP with current runtime URL", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
-  const storagePath = join(workdir, "agents");
-  const storage = new AgentStorage(storagePath, logger);
-  const client = new McpCapableTestAgentClient();
-  const manager = new AgentManager({
-    clients: {
-      codex: client,
-    },
-    registry: storage,
-    logger,
-    mcpBaseUrl: "http://127.0.0.1:6768/mcp/agents",
-    idFactory: () => "00000000-0000-4000-8000-000000000105",
-  });
-  const handle: AgentPersistenceHandle = {
-    provider: "codex",
-    sessionId: "session-123",
-    metadata: {
-      cwd: workdir,
-    },
-  };
-
-  const snapshot = await manager.resumeAgentFromPersistence(handle, {
-    cwd: workdir,
-    mcpServers: {
-      paseo: {
-        type: "http",
-        url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=stale-agent",
-      },
-      custom: {
-        type: "stdio",
-        command: "custom-mcp",
-      },
-    },
-  });
-
-  expect(client.resumeOverrides[0]?.mcpServers).toEqual({
-    paseo: {
-      type: "http",
-      url: `http://127.0.0.1:6768/mcp/agents?callerAgentId=${snapshot.id}`,
-    },
-    custom: {
-      type: "stdio",
-      command: "custom-mcp",
-    },
-  });
-  expect(snapshot.config.mcpServers).toEqual({
-    custom: {
-      type: "stdio",
-      command: "custom-mcp",
-    },
-  });
-});
-
-test("resumeAgentFromPersistence drops stored internal paseo MCP when runtime injection is disabled", async () => {
-  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-test-"));
-  const storagePath = join(workdir, "agents");
-  const storage = new AgentStorage(storagePath, logger);
-  const client = new TestAgentClient();
-  const manager = new AgentManager({
-    clients: {
-      codex: client,
-    },
-    registry: storage,
-    logger,
-  });
-  const handle: AgentPersistenceHandle = {
-    provider: "codex",
-    sessionId: "session-123",
-    metadata: {
-      cwd: workdir,
-    },
-  };
-
-  const snapshot = await manager.resumeAgentFromPersistence(handle, {
-    cwd: workdir,
-    mcpServers: {
-      paseo: {
-        type: "http",
-        url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=stale-agent",
-      },
-    },
-  });
-
-  expect(client.resumeOverrides[0]?.mcpServers).toBeUndefined();
-  expect(snapshot.config.mcpServers).toBeUndefined();
 });
 
 test("createAgent preserves a user-provided paseo MCP config", async () => {
@@ -3844,7 +3636,6 @@ test("createAgent preserves a user-provided paseo MCP config", async () => {
     },
     registry: storage,
     logger,
-    mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
     idFactory: () => "00000000-0000-4000-8000-000000000104",
   });
 
@@ -10326,6 +10117,12 @@ test("closeAgent persists one final closed snapshot", async () => {
     await manager.flush();
 
     expect(applySnapshotSpy).toHaveBeenCalledTimes(persistCountBeforeClose + 1);
+    const persisted = await storage.get(snapshot.id);
+    expect(persisted).toMatchObject({
+      id: snapshot.id,
+      lastStatus: "closed",
+    });
+    expect(persisted?.archivedAt).toBeFalsy();
   } finally {
     applySnapshotSpy.mockRestore();
     await manager.flush().catch(() => undefined);

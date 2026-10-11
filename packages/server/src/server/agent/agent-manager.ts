@@ -25,6 +25,7 @@ import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
+import { resolvePaseoCliExecutablePath } from "../../terminal/paseo-cli-path.js";
 
 import {
   getAgentStreamEventTurnId,
@@ -86,14 +87,14 @@ import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
-  PASEO_MCP_SERVER_NAME,
-  stripInternalPaseoMcpServer,
-  withRuntimePaseoMcpServer,
-} from "./runtime-mcp-config.js";
-import { CompletionSubjectCollector, type CompletionSubject } from "./completion-subject-collector.js";
+  CompletionSubjectCollector,
+  type CompletionSubject,
+} from "./completion-subject-collector.js";
+import { PASEO_MCP_SERVER_NAME, stripLegacyInternalPaseoMcpServer } from "./runtime-mcp-config.js";
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
 import { isPaseoToolPolicyEnabled } from "./paseo-tool-policy.js";
+import { getPaseoCliCommands } from "./paseo-cli-guidance.js";
 import {
   ProviderSubagentStore,
   type ProviderSubagentDescriptor,
@@ -222,7 +223,7 @@ function buildStoredAgentConfig(record: StoredAgentRecord): AgentSessionConfig {
     config.systemPrompt = record.config.systemPrompt;
   }
   if (record.config.mcpServers != null) config.mcpServers = record.config.mcpServers;
-  return stripInternalPaseoMcpServer(config);
+  return stripLegacyInternalPaseoMcpServer(config);
 }
 
 export { AGENT_LIFECYCLE_STATUSES, type AgentLifecycleStatus };
@@ -340,10 +341,9 @@ export interface AgentManagerOptions {
   timelineStore?: InMemoryAgentTimelineStore;
   durableTimelineStore?: AgentTimelineStore;
   terminalManager?: TerminalManager | null;
-  mcpBaseUrl?: string;
-  mcpAuthToken?: string;
+  agentToolsEnabled?: boolean;
+  paseoHome?: string;
   pluginAgentTools?: PluginAgentToolsRuntime;
-  paseoToolsEnabled?: boolean;
   paseoToolCatalogFactory?: PaseoToolCatalogFactory;
   resolvePaseoToolPolicy?: (provider: AgentProvider) => ProviderPaseoToolsPolicy | undefined;
   appendSystemPrompt?: string;
@@ -787,13 +787,13 @@ export class AgentManager {
   private readonly collectingRuntimes = new Set<string>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
-  private mcpBaseUrl: string | null;
-  private readonly mcpAuthToken: string | null;
   private sessionOpenGeneration = 0;
   private readonly sessionOpenGenerations = new Map<string, number>();
   private readonly attachedPluginTools = new Map<string, AttachedAgentTool[]>();
   private readonly pluginAgentTools: PluginAgentToolsRuntime | undefined;
-  private paseoToolsEnabled = true;
+  private agentToolsEnabled = true;
+  private readonly paseoHome?: string;
+  private readonly paseoCliPath: string | null;
   private paseoToolCatalogFactory: PaseoToolCatalogFactory | null = null;
   private readonly paseoToolPolicies = new Map<string, ProviderPaseoToolsPolicy | undefined>();
   private readonly resolvePaseoToolPolicy: (
@@ -814,11 +814,11 @@ export class AgentManager {
     this.timelineStore = options.timelineStore ?? new InMemoryAgentTimelineStore();
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.registry = options?.registry;
+    this.paseoHome = options.paseoHome ? resolve(options.paseoHome) : undefined;
+    this.paseoCliPath = resolvePaseoCliExecutablePath();
     this.durableTimelineStore = options?.durableTimelineStore;
     this.onAgentAttention = options?.onAgentAttention;
     this.onWorkspaceStateMayHaveChanged = options?.onWorkspaceStateMayHaveChanged;
-    this.mcpBaseUrl = options?.mcpBaseUrl ?? null;
-    this.mcpAuthToken = options?.mcpAuthToken ?? null;
     this.configurePaseoTools(options);
     this.resolvePaseoToolPolicy = options.resolvePaseoToolPolicy ?? (() => undefined);
     this.appendSystemPrompt = options.appendSystemPrompt ?? "";
@@ -845,7 +845,7 @@ export class AgentManager {
   }
 
   private configurePaseoTools(options: AgentManagerOptions): void {
-    this.paseoToolsEnabled = options.paseoToolsEnabled ?? true;
+    this.agentToolsEnabled = options.agentToolsEnabled ?? true;
     this.paseoToolCatalogFactory = options.paseoToolCatalogFactory ?? null;
   }
 
@@ -899,16 +899,12 @@ export class AgentManager {
     this.onAgentArchived = callback;
   }
 
-  setMcpBaseUrl(url: string | null): void {
-    this.mcpBaseUrl = url;
-  }
-
   prepareForShutdown(): void {
     this.acceptingAgentRegistrations = false;
   }
 
-  setPaseoToolsEnabled(enabled: boolean): void {
-    this.paseoToolsEnabled = enabled;
+  setAgentToolsEnabled(enabled: boolean): void {
+    this.agentToolsEnabled = enabled;
   }
 
   setPaseoToolCatalogFactory(factory: PaseoToolCatalogFactory | null): void {
@@ -973,16 +969,6 @@ export class AgentManager {
 
   getPaseoToolPolicy(agentId: string): ProviderPaseoToolsPolicy | undefined {
     return this.paseoToolPolicies.get(agentId);
-  }
-
-  /**
-   * Capability token the daemon's own MCP clients must present to the Agent MCP
-   * endpoint when a daemon password is configured. Read by the per-client
-   * session to authenticate its own MCP connection. Stays in the daemon — never
-   * sent to remote clients.
-   */
-  getMcpAuthToken(): string | null {
-    return this.mcpAuthToken;
   }
 
   setAppendSystemPrompt(prompt: string | null | undefined): void {
@@ -1382,7 +1368,6 @@ export class AgentManager {
     await this.deleteAgentState(resolvedAgentId);
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
       config,
-      resolvedAgentId,
       { env: options?.env },
     );
     this.requireEnabledProvider(storedConfig.provider);
@@ -1505,7 +1490,6 @@ export class AgentManager {
     const launchEnv = record?.launchEnv;
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
       mergedConfig,
-      resolvedAgentId,
       { purpose, env: launchEnv },
     );
     const client = this.requireClient(handle.provider);
@@ -1572,13 +1556,10 @@ export class AgentManager {
       throw new Error(`Provider '${input.provider}' does not support importing sessions`);
     }
 
-    const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
-      {
-        provider: input.provider,
-        cwd: input.cwd,
-      },
-      resolvedAgentId,
-    );
+    const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig({
+      provider: input.provider,
+      cwd: input.cwd,
+    });
     this.paseoToolPolicies.set(resolvedAgentId, paseoToolPolicy);
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
@@ -1605,7 +1586,7 @@ export class AgentManager {
     let handedToRegistration = false;
     try {
       const importedConfig = await this.normalizeConfig(
-        stripInternalPaseoMcpServer(imported.config),
+        stripLegacyInternalPaseoMcpServer(imported.config),
       );
       const timelineRows = buildImportedTimelineRows(imported.timeline);
       const initialTitle = resolveImportedAgentTitle(importedConfig, timelineRows);
@@ -1677,7 +1658,6 @@ export class AgentManager {
     } as AgentSessionConfig;
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
       refreshConfig,
-      agentId,
       { env: existing.launchEnv },
     );
     const hadPreviousPaseoToolPolicy = this.paseoToolPolicies.has(agentId);
@@ -1698,7 +1678,7 @@ export class AgentManager {
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     if (
-      Object.keys(stripInternalPaseoMcpServer(providerLaunchConfig).mcpServers ?? {}).length > 0 &&
+      Object.keys(stripLegacyInternalPaseoMcpServer(providerLaunchConfig).mcpServers ?? {}).length > 0 &&
       existing.session.capabilities.supportsMcpServers !== true
     ) {
       throw this.unsupportedMcpError(providerLaunchConfig, launchContext);
@@ -3985,7 +3965,7 @@ export class AgentManager {
     launchContext: AgentLaunchContext,
   ): Promise<void> {
     if (
-      Object.keys(stripInternalPaseoMcpServer(launchConfig).mcpServers ?? {}).length === 0 ||
+      Object.keys(stripLegacyInternalPaseoMcpServer(launchConfig).mcpServers ?? {}).length === 0 ||
       session.capabilities.supportsMcpServers === true
     ) {
       return;
@@ -5643,41 +5623,56 @@ export class AgentManager {
 
   private async prepareSessionConfig(
     config: AgentSessionConfig,
-    agentId: string,
     options: { env?: Record<string, string>; purpose?: AgentResumePurpose } = {},
   ): Promise<PreparedSessionConfig> {
-    const storedConfig = await this.normalizeConfig(stripInternalPaseoMcpServer(config), {
+    const storedConfig = await this.normalizeConfig(stripLegacyInternalPaseoMcpServer(config), {
       env: options.env,
       purpose: options.purpose,
     });
-    const paseoToolPolicy = this.paseoToolsEnabled
+    const paseoToolPolicy = this.agentToolsEnabled
       ? this.resolvePaseoToolPolicy(storedConfig.provider)
       : { enabled: false };
-    const launchConfig = this.applyDaemonAppendSystemPrompt(
-      withRuntimePaseoMcpServer({
-        config: storedConfig,
-        agentId,
-        mcpBaseUrl:
-          this.paseoToolsEnabled && isPaseoToolPolicyEnabled(paseoToolPolicy)
-            ? this.mcpBaseUrl
-            : null,
-        mcpAuthToken: this.mcpAuthToken,
-      }),
-    );
+    const cliCommands = this.shouldExposePaseoCli(paseoToolPolicy)
+      ? getPaseoCliCommands(paseoToolPolicy)
+      : [];
+    const launchConfig = this.applyDaemonAppendSystemPrompt(storedConfig, cliCommands);
     return { storedConfig, launchConfig, paseoToolPolicy };
   }
 
-  private applyDaemonAppendSystemPrompt(config: AgentSessionConfig): AgentSessionConfig {
+  private applyDaemonAppendSystemPrompt(
+    config: AgentSessionConfig,
+    cliCommands: readonly string[],
+  ): AgentSessionConfig {
     const daemonAppendSystemPrompt = this.appendSystemPrompt.trim();
     const next = { ...config };
     delete next.daemonAppendSystemPrompt;
+    const runtimeInstructions = [
+      daemonAppendSystemPrompt,
+      cliCommands.length > 0
+        ? [
+            "Use the Paseo CLI for Paseo operations that are not available as native provider tools.",
+            `Available commands: ${cliCommands.join(", ")}. Use "$PASEO_CLI" <command> --help for syntax.`,
+            "It is scoped to this agent and daemon; preserve PASEO_AGENT_ID, PASEO_AGENT_CWD, and PASEO_HOME when invoking it.",
+          ].join(" ")
+        : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n");
 
-    return daemonAppendSystemPrompt
+    return runtimeInstructions
       ? {
           ...next,
-          daemonAppendSystemPrompt,
+          daemonAppendSystemPrompt: runtimeInstructions,
         }
       : next;
+  }
+
+  private shouldExposePaseoCli(paseoToolPolicy: ProviderPaseoToolsPolicy | undefined): boolean {
+    return (
+      this.agentToolsEnabled &&
+      this.paseoCliPath !== null &&
+      isPaseoToolPolicyEnabled(paseoToolPolicy)
+    );
   }
 
   private async buildLaunchContext(
@@ -5721,18 +5716,29 @@ export class AgentManager {
         mcpServerOwners = transformed.mcpServerOwners;
       }
     }
+    const exposePaseoCli = this.shouldExposePaseoCli(paseoToolPolicy);
+    const launchEnv: Record<string, string> = {
+      ...env,
+      PASEO_AGENT_ID: agentId,
+      PASEO_AGENT_CWD: cwd,
+    };
+    if (exposePaseoCli && this.paseoHome) {
+      launchEnv.PASEO_HOME = this.paseoHome;
+      // Ignore a daemon-host override inherited from the daemon's parent shell.
+      launchEnv.PASEO_HOST = "";
+    }
+    if (exposePaseoCli && this.paseoCliPath) {
+      launchEnv.PASEO_CLI = this.paseoCliPath;
+    }
+
     const context: AgentLaunchContext = {
       agentId,
       mcpServers,
       mcpServerOwners,
-      env: {
-        ...env,
-        PASEO_AGENT_ID: agentId,
-        PASEO_AGENT_CWD: cwd,
-      },
+      env: launchEnv,
     };
     const useNativeTools =
-      this.paseoToolsEnabled &&
+      this.agentToolsEnabled &&
       isPaseoToolPolicyEnabled(paseoToolPolicy) &&
       client.capabilities.supportsNativePaseoTools;
     if (
@@ -5759,7 +5765,7 @@ export class AgentManager {
     launchContext: AgentLaunchContext,
   ): AgentSessionConfig {
     const savedServerNames = new Set(
-      Object.keys(stripInternalPaseoMcpServer(launchConfig).mcpServers ?? {}),
+      Object.keys(stripLegacyInternalPaseoMcpServer(launchConfig).mcpServers ?? {}),
     );
     for (const name of Object.keys(launchContext.mcpServers ?? {})) {
       const owner = launchContext.mcpServerOwners?.[name];
@@ -5777,7 +5783,7 @@ export class AgentManager {
             mcpServers: { ...launchConfig.mcpServers, ...launchContext.mcpServers },
           }
         : launchConfig;
-    return launchContext.paseoTools ? stripInternalPaseoMcpServer(merged) : merged;
+    return launchContext.paseoTools ? stripLegacyInternalPaseoMcpServer(merged) : merged;
   }
 
   private async requireAvailableClient(options: { provider: AgentProvider }): Promise<AgentClient> {

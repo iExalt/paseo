@@ -1,6 +1,5 @@
 import { compare, hashSync } from "bcryptjs";
 import type { RequestHandler } from "express";
-import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import { matchesLocalCredential } from "./local-credential.js";
 
 export const DAEMON_PASSWORD_BCRYPT_COST = 12;
@@ -112,7 +111,7 @@ export function createRequireBearerMiddleware(
   };
 }
 
-const SELF_AUTHENTICATING_ROUTES = new Set(["/api/files/download", "/mcp/agents"]);
+const SELF_AUTHENTICATING_ROUTES = new Set(["/api/files/download"]);
 
 function isBearerFreeRoute(path: string): boolean {
   return path === "/api/health" || SELF_AUTHENTICATING_ROUTES.has(path);
@@ -123,75 +122,4 @@ export function shouldBypassBearerAuth(method: string, path: string): boolean {
     return true;
   }
   return isBearerFreeRoute(path);
-}
-
-/**
- * Authorizes a request to the Agent MCP endpoint (/mcp/agents), which is exempt
- * from the global daemon-password middleware. Accepts either the per-daemon-run
- * capability token the daemon injects into its own agents' configs and MCP
- * client, or a valid daemon-password bearer (so existing password-authenticated
- * callers keep working). When no daemon password is configured the endpoint is
- * open, matching the global middleware's behavior.
- */
-export async function isAgentMcpRequestAuthorized(input: {
-  password: string | undefined;
-  capabilityToken: string | null;
-  authorizationHeader: string | undefined;
-}): Promise<boolean> {
-  const admission = await resolveAgentMcpRequestAdmission({
-    password: input.password,
-    capabilityToken: input.capabilityToken,
-    localCredential: null,
-    authorizationHeader: input.authorizationHeader,
-  });
-  return admission.kind !== "rejected";
-}
-
-export type AgentMcpRequestAdmission =
-  | { kind: "agent-capability" | "anonymous"; permissions: readonly [] }
-  | {
-      kind: "local-owner" | "password-owner";
-      permissions: readonly DaemonPermission[];
-    }
-  | { kind: "rejected"; permissions: readonly [] };
-
-/**
- * Classifies /mcp/agents credentials separately from session admission. The
- * injected agent capability authenticates control-plane access but never grants
- * daemon host permissions. Anonymous access remains available without a daemon
- * password, also without host permissions.
- */
-export async function resolveAgentMcpRequestAdmission(input: {
-  password: string | undefined;
-  capabilityToken: string | null;
-  localCredential: string | null;
-  authorizationHeader: string | undefined;
-}): Promise<AgentMcpRequestAdmission> {
-  const token = extractHttpBearerToken(input.authorizationHeader);
-
-  // The injected per-run token authenticates an agent before any owner
-  // credential checks, in both password modes, and never implies host access.
-  if (
-    input.capabilityToken !== null &&
-    token !== null &&
-    matchesLocalCredential(input.capabilityToken, token)
-  ) {
-    return { kind: "agent-capability", permissions: [] };
-  }
-
-  if (
-    input.localCredential !== null &&
-    token !== null &&
-    matchesLocalCredential(input.localCredential, token)
-  ) {
-    return { kind: "local-owner", permissions: OWNER_PERMISSIONS };
-  }
-
-  if (input.password) {
-    return (await isBearerTokenValidAsync({ password: input.password, token }))
-      ? { kind: "password-owner", permissions: OWNER_PERMISSIONS }
-      : { kind: "rejected", permissions: [] };
-  }
-
-  return { kind: "anonymous", permissions: [] };
 }

@@ -29,6 +29,8 @@ import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
 import { TerminalActivityTracker } from "./activity/terminal-activity-tracker.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
+import { resolvePaseoCliExecutablePath } from "./paseo-cli-path.js";
+export { resolvePaseoCliExecutablePath } from "./paseo-cli-path.js";
 
 const { Terminal } = xterm;
 const require = createRequire(import.meta.url);
