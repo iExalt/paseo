@@ -1,5 +1,23 @@
 import assert from "node:assert/strict";
 
+export function reconcilePrivilegedScan(before, after, marked, owner) {
+  const rows = before
+    .filter((row) =>
+      after.some((current) => current.pid === row.pid && current.start === row.start),
+    )
+    .map((row) =>
+      Object.assign({}, row, {
+        owner: marked.includes(row.pid) ? owner : row.owner,
+        unreadable: false,
+      }),
+    );
+  // ID-only discovery cannot establish an identity that was absent before the scan.
+  const pending = marked.some(
+    (pid) => after.some((row) => row.pid === pid) && !rows.some((row) => row.pid === pid),
+  );
+  return { rows, pending };
+}
+
 export function verifyCompleteMonitor(started, completed) {
   assert.equal(completed.owner, started.owner);
   assert.equal(

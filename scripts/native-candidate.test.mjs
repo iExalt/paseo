@@ -11,6 +11,7 @@ import {
   ownedProcesses,
   unreadableUnknowns,
   verifyCompleteMonitor,
+  reconcilePrivilegedScan,
 } from "../.github/scripts/linux-format-processes.mjs";
 import { join } from "node:path";
 import { verifyNamespacePid } from "../.github/scripts/linux-format-fixture/process-identity.cjs";
@@ -115,6 +116,21 @@ test("fixture cleanup retains observed children across session changes without c
   assert.deepEqual(members, detached.slice(0, 2));
   assert.deepEqual(unreadableUnknowns(detached, members), [detached[2]]);
   assert.deepEqual(unreadableUnknowns(detached, [...members, detached[2]]), []);
+  const before = [
+    { pid: 30, start: "120", unreadable: true },
+    { pid: 31, start: "121", unreadable: true },
+  ];
+  const after = [
+    { pid: 31, start: "999" },
+    { pid: 32, start: "122" },
+  ];
+  const scan = reconcilePrivilegedScan(before, after, [31, 32], "token");
+  assert.deepEqual(scan.rows, []);
+  assert.equal(scan.pending, true);
+  assert.deepEqual(reconcilePrivilegedScan(before, [], [], "token"), { rows: [], pending: false });
+  const live = reconcilePrivilegedScan(before, before, [30], "token");
+  assert.deepEqual(ownedProcesses(live.rows, 0, [], "token"), [live.rows[0]]);
+  assert.equal(live.pending, false);
   const started = { owner: "token" };
   const complete = { owner: "token", complete: true, remaining: [], mounts: [] };
   verifyCompleteMonitor(started, complete);
