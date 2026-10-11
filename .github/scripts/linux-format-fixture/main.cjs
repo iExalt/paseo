@@ -57,16 +57,15 @@ app
             (reason === "requested by --no-sandbox" && appRun?.namespaceProbe.status > 0),
           "Unexpected policy override",
         );
-        assert.equal(
-          renderer.sandboxed,
-          enabled,
-          "Renderer must match the shipped launch chain's decision",
-        );
-        const processes = app.getAppMetrics().flatMap(({ pid, type }) => {
+        assert.equal(renderer.sandboxed, true, "The configured preload must remain sandboxed");
+        const noSandbox = app.commandLine.hasSwitch("no-sandbox");
+        assert.equal(noSandbox, !enabled, "Chromium flag must match the shipped launch chain");
+        const processes = app.getAppMetrics().flatMap(({ pid, type, sandboxed }) => {
           try {
             const observed = {
               pid,
               type,
+              metricSandboxed: sandboxed ?? "unavailable on this platform",
               stat: fs.readFileSync(`/proc/${pid}/stat`, "utf8"),
               status: fs.readFileSync(`/proc/${pid}/status`, "utf8"),
             };
@@ -90,6 +89,11 @@ app
         });
         assert.ok(processes.some(({ pid }) => pid === renderer.pid));
         assert.ok(processes.some(({ pid }) => pid === process.pid));
+        if (enabled) {
+          const rendererStatus = processes.find(({ pid }) => pid === renderer.pid).status;
+          assert.match(rendererStatus, /^NoNewPrivs:\s+1$/m, "Renderer needs no-new-privileges");
+          assert.match(rendererStatus, /^Seccomp:\s+2$/m, "Renderer needs a seccomp filter");
+        }
         let mount;
         if (process.env.FIXTURE_FORMAT === "appimage") {
           assert.equal(
@@ -116,6 +120,8 @@ app
               token: process.env.FIXTURE_TOKEN,
               uid: process.getuid(),
               reason,
+              chromiumNoSandbox: noSandbox,
+              policyEnabled: enabled,
               appRun,
               renderer,
               processes,
