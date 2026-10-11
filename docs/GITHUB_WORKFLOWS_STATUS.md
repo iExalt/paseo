@@ -988,6 +988,15 @@ Oversize entries or unavailable usage skip saving. A necessary native miss run
 and a separate small fresh-runner restore through the real consumer will prove
 transport/integrity; full cache-hit upgrade and overall latency savings remain
 unclaimed until a later necessary hit run. No extra long benchmark run is planned.
+The first [cache-enabled x64 trial](https://github.com/iExalt/paseo/actions/runs/38179007301)
+at `be8fadb30` repeated full installed verification and cleanup but failed cache
+staging after 18m32s: Git's LF lockfile blob hashed differently from the physical
+Windows CRLF checkout. Re-encoding that exact blob reproduced the observed hash;
+no cache was saved. The repair records both hashes separately and reads the actual
+fixed predecessor checkout. Its fresh-runner proof creates the same clean detached
+worktree, then always removes it and verifies absence. Different checkout bytes
+produce an exact-key miss; integrity checks are not normalized away. Routine
+PR/dev at this source passed in 4m35s/4m14s, with 23m32s/22m51s runner work.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
