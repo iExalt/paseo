@@ -135,7 +135,7 @@ npx skills add getpaseo/paseo
 
 모노레포 패키지 구성은 다음과 같습니다.
 
-- `packages/server`: Paseo 데몬(에이전트 프로세스 오케스트레이션, WebSocket API, MCP 서버 제공)
+- `packages/server`: Paseo 데몬(에이전트 프로세스 오케스트레이션, WebSocket API, 공급자 네이티브 도구 제공)
 - `packages/app`: Expo 클라이언트(iOS, Android, 웹)
 - `packages/cli`: `paseo` CLI(데몬과 에이전트 워크플로)
 - `packages/desktop`: Electron 데스크톱 앱

@@ -72,6 +72,15 @@
               },
               "additionalProperties": true
             },
+            "agentTools": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "additionalProperties": {}
+            },
             "git": {
               "type": "object",
               "properties": {

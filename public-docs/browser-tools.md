@@ -1,78 +1,78 @@
 ---
-title: Browser tools
-description: The browser_* MCP tools agents use to drive Paseo browser tabs.
-nav: Tools reference
+title: Browser commands
+description: All 22 CLI operations for Paseo browser tabs.
+nav: Commands reference
 order: 37
 category: Browser
 ---
 
-# Browser tools
+# Browser commands
 
-The `browser_*` tools are injected into agents alongside the other [Paseo MCP tools](/docs/mcp) when [browser automation](/docs/browser) is enabled.
+Use `paseo browser` when [browser automation](/docs/browser) is enabled and a desktop browser host is connected. Provider-native catalogs retain the corresponding `browser_*` tools where supported; Paseo no longer serves an MCP endpoint.
 
-Shared concepts:
+## Context and results
 
-- **`browserId`** identifies a tab. It comes from `browser_new_tab` or `browser_list_tabs` and is required by every tab-scoped tool.
-- **`ref`** identifies an element, e.g. `@e3`. Refs come from the latest `browser_snapshot` of the same tab and expire when the page changes — stale refs return an error instead of acting on the wrong element.
-- Every result reports **dialogs** the page opened during the command (alerts accepted; confirm/prompt/beforeunload dismissed).
+`--workspace <id>` selects a workspace; `--agent <id>` supplies agent runtime context. Without explicit context the CLI resolves the caller from `PASEO_AGENT_ID`. External callers should select a workspace for tab creation/listing. Browser IDs come from `new-tab` or `list-tabs` and are required for tab operations. Tab operations use explicit IDs and remain subject to host context checks. When both an agent and a workspace are selected, the workspace must belong to that agent.
 
-Arguments marked `?` are optional.
+Add `--json` for structured results and context. Results report dialogs opened during the command (alerts accepted; confirm/prompt/beforeunload dismissed). Global `--home` or `--host` selects the daemon; it does not move the browser from its connected desktop host.
 
-## Tabs
+## Commands
 
-| Tool                | Arguments                  | Purpose                                                                   |
-| ------------------- | -------------------------- | ------------------------------------------------------------------------- |
-| `browser_list_tabs` | —                          | List open tabs in the agent's workspace across connected hosts.           |
-| `browser_new_tab`   | `url?`                     | Open a tab in the background and return its `browserId`.                  |
-| `browser_close_tab` | `browserId`                | Close a tab and clean up its webview.                                     |
-| `browser_resize`    | `browserId, width, height` | Resize the tab's viewport — check a layout at phone or tablet dimensions. |
+Every row starts with `paseo browser`. Brackets denote optional arguments.
 
-## Reading the page
+| Command and arguments                                   | Purpose                                                                                        |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `list-tabs`                                             | List tabs in the selected context.                                                             |
+| `new-tab [url]`                                         | Open a background tab and return its browser ID.                                               |
+| `close-tab <browser-id>`                                | Close a tab and its webview.                                                                   |
+| `resize <browser-id> <width> <height>`                  | Resize the viewport in pixels.                                                                 |
+| `snapshot <browser-id>`                                 | Read the accessibility tree and fresh element refs.                                            |
+| `screenshot <browser-id> --output <path> [--full-page]` | Write a PNG on the CLI machine.                                                                |
+| `logs <browser-id> [--max-entries <n>]`                 | Console and network entries; default 50, maximum 200.                                          |
+| `wait <browser-id> --text <text>`                       | Wait for visible text.                                                                         |
+| `click <browser-id> <ref>`                              | Click; accepts `--button left                                                                  | right | middle`, `--double-click`, repeatable `--modifier`. |
+| `fill <browser-id> <ref> <value>`                       | Replace input content.                                                                         |
+| `type <browser-id> <text> [--ref <ref>]`                | Type into a referenced or focused control.                                                     |
+| `keypress <browser-id> <key> [--ref <ref>]`             | Press Enter, Escape, Tab, or another key.                                                      |
+| `hover <browser-id> <ref>`                              | Hover, including CSS hover behavior.                                                           |
+| `select <browser-id> <ref> <value>`                     | Select an option.                                                                              |
+| `drag <browser-id> <source-ref> <target-ref>`           | Drag between elements.                                                                         |
+| `upload <browser-id> <ref> --file <path>`               | Set file input contents; repeat `--file` for multiple files.                                   |
+| `scroll <browser-id> <delta-x> <delta-y> [--ref <ref>]` | Scroll in CSS pixels.                                                                          |
+| `navigate <browser-id> <url>`                           | Open an HTTP(S) URL.                                                                           |
+| `back <browser-id>`                                     | Go back; errors if no history exists.                                                          |
+| `forward <browser-id>`                                  | Go forward; errors if no forward entry exists.                                                 |
+| `reload <browser-id>`                                   | Reload the page.                                                                               |
+| `evaluate <browser-id> <function> [--ref <ref>]`        | Evaluate JavaScript; with a ref, pass the element as the first argument. Returns bounded JSON. |
 
-| Tool                 | Arguments                              | Purpose                                                                               |
-| -------------------- | -------------------------------------- | ------------------------------------------------------------------------------------- |
-| `browser_snapshot`   | `browserId`                            | Return the page as an accessibility tree with element refs.                           |
-| `browser_screenshot` | `browserId, fullPage?`                 | Capture a PNG of the viewport, or the full page with `fullPage`.                      |
-| `browser_logs`       | `browserId, maxEntries?`               | Read recent console messages and network timing entries.                              |
-| `browser_wait`       | `browserId, text? \| url?, timeoutMs?` | Wait until the page contains text or reaches a URL fragment (exactly one of the two). |
+`wait` also accepts `--url <url>` instead of `--text`. Supply exactly one condition. `--timeout-ms <ms>` accepts 1–30000 milliseconds.
 
-## Interacting
+## Snapshot, act, verify
 
-| Tool               | Arguments                                           | Purpose                                                                              |
-| ------------------ | --------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `browser_click`    | `browserId, ref, button?, doubleClick?, modifiers?` | Click an element — left/right/middle, double-click, keyboard modifiers.              |
-| `browser_fill`     | `browserId, ref, value`                             | Set the value of an input-like element.                                              |
-| `browser_type`     | `browserId, text, ref?`                             | Type text into an element, or into the focused element when `ref` is omitted.        |
-| `browser_keypress` | `browserId, key, ref?`                              | Press a key (`Enter`, `Escape`, `Tab`, `Space`, …) on an element or the focused one. |
-| `browser_hover`    | `browserId, ref`                                    | Hover an element — triggers real CSS `:hover`.                                       |
-| `browser_select`   | `browserId, ref, value`                             | Choose an option in a `<select>`.                                                    |
-| `browser_drag`     | `browserId, sourceRef, targetRef`                   | Drag one element onto another.                                                       |
-| `browser_upload`   | `browserId, ref, filePaths`                         | Set files on a file input. Paths must be inside the agent's workspace.               |
-| `browser_scroll`   | `browserId, deltaX, deltaY, ref?`                   | Scroll the page, or center the wheel input over an element with `ref`.               |
+```bash
+paseo browser list-tabs --workspace <workspace-id> --json
+paseo browser snapshot <browser-id> --json
+paseo browser click <browser-id> @e3
+paseo browser wait <browser-id> --text "Saved" --timeout-ms 10000
+paseo browser screenshot <browser-id> --output ./saved.png
+```
 
-## Navigation
+Element refs such as `@e3` belong to the latest snapshot of that tab and expire when the page changes. On `browser_stale_ref`, take a new snapshot before retrying.
 
-| Tool               | Arguments        | Purpose                                             |
-| ------------------ | ---------------- | --------------------------------------------------- |
-| `browser_navigate` | `browserId, url` | Go to an `http(s)` URL.                             |
-| `browser_back`     | `browserId`      | Go back — errors when there is no history to go to. |
-| `browser_forward`  | `browserId`      | Go forward — errors when there is no forward entry. |
-| `browser_reload`   | `browserId`      | Reload the page.                                    |
+## Files and screenshots
 
-## Scripting
+Screenshots require `--output <path>`, resolved relative to the CLI's current directory. The parent directory must already exist. The CLI writes or overwrites the PNG and returns an absolute `outputPath` with image metadata, not inline base64. Even with `--host`, the artifact is on the CLI machine.
 
-| Tool               | Arguments                   | Purpose                                                                                                                                  |
-| ------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `browser_evaluate` | `browserId, function, ref?` | Run a JavaScript function in the page. With `ref`, the resolved element is passed as the first argument. Results return as bounded JSON. |
+Uploads use paths available to the browser host in the permitted workspace. They do not transfer arbitrary files from a remote CLI machine. See [browser file access](/docs/browser).
 
 ## Errors
 
-Tools return structured errors rather than failing silently. The ones agents see most:
+| Code                | Recovery                                               |
+| ------------------- | ------------------------------------------------------ |
+| `browser_disabled`  | Enable browser tools on the selected daemon.           |
+| `browser_no_host`   | Connect a desktop browser host, then retry.            |
+| `browser_stale_ref` | Read a fresh snapshot.                                 |
+| `browser_timeout`   | Check page state and the wait condition.               |
+| `browser_denied`    | Check URL, file path, navigation history, and context. |
 
-| Code                | Meaning                                                                         |
-| ------------------- | ------------------------------------------------------------------------------- |
-| `browser_disabled`  | Browser tools are turned off on this host.                                      |
-| `browser_no_host`   | No browser host (desktop app) is connected. Retryable.                          |
-| `browser_stale_ref` | The ref no longer matches the page — take a new snapshot.                       |
-| `browser_timeout`   | The element never became actionable, or the wait condition never held.          |
-| `browser_denied`    | The action isn't allowed — e.g. a non-`http(s)` URL, or no history to navigate. |
+An older daemon without CLI browser support returns an update-required error. Interrupting the CLI cancels the browser request.

@@ -55,7 +55,7 @@ Accepting new work after an ambiguous interruption would create a split-brain se
 For workspace notification settings and their relationship to agent attention,
 see the [workspace notifications plan](../complete-campaigns/CONFIGURABLE_NOTIFICATIONS.md).
 
-Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and always stamps `paseo.parent-agent-id`, pointing back at the caller. Omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.
+Agents launch workers with `paseo run --no-wait`. Caller-scoped creation defaults to a subagent and stamps `paseo.parent-agent-id`; `--relationship detached` explicitly selects independent work. Omit `--workspace` to use the caller's workspace, or pass an ID returned by `paseo workspace create`. Placement never changes parentage. See [CLI delegation](../../public-docs/cli.md#asynchronous-delegation) for waiting and notification behavior.
 
 - **Subagents** — exist as part of the creating agent's work, appear in that agent's subagent track, and are archived with it.
 - **Detached agents** — stand on their own after an explicit detach transition, do not appear in the former parent's subagent track, and are not archived with it.
@@ -74,7 +74,7 @@ normal root agent immediately, and closing its still-open tab archives it.
 
 Runtime ownership is resolved from explicit workspace ID and caller context, never from `cwd`. Workspace creation is a separate operation with `local | worktree` isolation; agent creation reuses that workspace unless a new workspace is explicitly requested.
 
-Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an agent-facing MCP tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
+Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an provider-native tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
 
 `notifyOnFinish` defaults to `true` for agent-scoped creation and prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` only for truly fire-and-forget agents or prompts.
 Permission requests are notification checkpoints, not the end of that subscription. The caller is notified again after a permission response when the child finishes, errors, or requests another permission.
