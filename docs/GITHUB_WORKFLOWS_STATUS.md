@@ -525,6 +525,13 @@ canonical mount context is also required. Only the reserved leading
 tiny actual-runtime prerequisite must prove headless argument preservation and
 delayed mounted-file access by a detached worker after the CLI parent exits.
 That lifetime proof remains pending; immediate CLI success alone is insufficient.
+The [tiny x64 trial at `76d9360fb`](https://github.com/iExalt/paseo/actions/runs/38123731406)
+passed the first headless/argument assertions but failed after 4m08s because the
+detached worker produced no delayed receipt. Its stderr was empty and owned
+cleanup passed; this does not yet identify the worker's exit cause. The same
+discriminator now waits for a worker-ready receipt before the CLI exits and
+records subsequent mount state and worker exit/error diagnostics. Full product
+and ARM64 trials remain stopped. PR/dev CI passed in 4m27s/4m21s.
 
 Approved execution checklist:
 
