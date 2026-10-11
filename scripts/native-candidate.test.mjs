@@ -5,7 +5,15 @@ import { validateCandidateClosure } from "../.github/scripts/macos-candidate-run
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";
 import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
 import { closeNormally } from "../packages/desktop/e2e/normal-close.cjs";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, lstatSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  symlinkSync,
+  rmSync,
+  lstatSync,
+  truncateSync,
+} from "node:fs";
 import { createServer } from "node:net";
 import {
   stageTemporaryDirectory,
@@ -22,11 +30,80 @@ import { join } from "node:path";
 import { verifyNamespacePid } from "../.github/scripts/linux-format-fixture/process-identity.cjs";
 import { createPackage } from "@electron/asar";
 import {
+  cacheKey,
+  validateCache,
+  previousSha,
+  cacheLimit,
+} from "../.github/scripts/linux-predecessor-cache.mjs";
+import {
   payloadFiles,
   digest,
   validateManifest,
   verifyPayload,
 } from "../packages/desktop/e2e/linux-installed-layout.cjs";
+
+test("predecessor cache binds the producer recipe, archive bytes and immutable identity", () => {
+  const root = mkdtempSync(join(tmpdir(), "paseo-predecessor-cache-"));
+  try {
+    const recipe = {
+      architecture: "x64",
+      lockHash: "b".repeat(64),
+      sourceSha: previousSha,
+      producer: "recipe1",
+    };
+    const identity = {
+      sourceSha: previousSha,
+      lockHash: recipe.lockHash,
+      version: "0.11.0",
+      name: "@getpaseo/desktop",
+      desktopName: "Paseo.desktop",
+      payload: Object.fromEntries(payloadFiles.map((file) => [file, "c".repeat(64)])),
+      artifacts: {},
+    };
+    for (const format of ["deb", "rpm", "appimage"]) {
+      const file = `previous-x64.${format === "appimage" ? "AppImage" : format}`;
+      writeFileSync(join(root, file), "fixture");
+      identity.artifacts[format] = { file, bytes: 7, sha256: digest(join(root, file)) };
+    }
+    identity.artifacts.deb.packageName = "paseo";
+    identity.artifacts.rpm.packageName = "Paseo";
+    identity.artifacts.appimage.appRunSha256 = "d".repeat(64);
+    writeFileSync(join(root, "previous.json"), JSON.stringify(identity));
+    const receipt = {
+      recipe,
+      producerSha: "e".repeat(40),
+      runId: "123",
+      attempt: "1",
+      identitySha256: digest(join(root, "previous.json")),
+      rpmScriptsSha256: "f".repeat(64),
+    };
+    writeFileSync(join(root, "receipt.json"), JSON.stringify(receipt));
+    assert.equal(validateCache(root, recipe).identity.sourceSha, previousSha);
+    truncateSync(join(root, "previous-x64.rpm"), cacheLimit + 1);
+    assert.throws(() => validateCache(root, recipe), /exceeds 650 MiB/);
+    rmSync(join(root, "previous-x64.rpm"));
+    symlinkSync("previous-x64.deb", join(root, "previous-x64.rpm"));
+    assert.throws(() => validateCache(root, recipe), /Only regular cache files/);
+    rmSync(join(root, "previous-x64.rpm"));
+    writeFileSync(join(root, "previous-x64.rpm"), "fixture");
+    const changed = { ...recipe, producer: "recipe2" };
+    assert.notEqual(cacheKey(recipe), cacheKey(changed));
+    assert.throws(() => validateCache(root, changed), /recipe mismatch/);
+    writeFileSync(join(root, "previous-x64.rpm"), "changed");
+    assert.throws(() => validateCache(root, recipe), /Corrupt cached rpm/);
+    writeFileSync(join(root, "previous-x64.rpm"), "fixture");
+    writeFileSync(
+      join(root, "previous.json"),
+      JSON.stringify({ ...identity, sourceSha: "0".repeat(40) }),
+    );
+    assert.throws(() => validateCache(root, recipe));
+    receipt.identitySha256 = digest(join(root, "previous.json"));
+    writeFileSync(join(root, "receipt.json"), JSON.stringify(receipt));
+    assert.throws(() => validateCache(root, recipe));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test(
   "owned product temporary paths support real singleton sockets and reject substituted roots",
