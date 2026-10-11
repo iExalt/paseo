@@ -21,7 +21,7 @@ This keeps credentials and execution in your environment and avoids introducing 
 - Speech I/O: STT and TTS providers per feature (`local` or `openai`)
 - Local speech runtime: ONNX models executed on CPU by default
 - Voice LLM orchestration: hidden agent session using your configured provider (`claude`, `codex`, or `opencode`)
-- Tooling path: MCP stdio bridge for voice tools and agent control
+- Tooling path: provider-native tools and the Paseo CLI for voice output and agent control. Use [`paseo speech speak`](/docs/cli#speech) for caller-scoped output.
 
 ## Local Speech
 
