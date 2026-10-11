@@ -28,7 +28,7 @@
 | A3: exact rebased-tree verification       | complete / verified  | A2                            | G1 including atomic publication failure fixtures, author     |
 | B1: deep journeys and safe PR routing     | active / implemented | A1–A3; B2 for Android closure | G2, author                                                   |
 | B2: Mac/Android candidate preservation    | active / implemented | A1–A3                         | Mac/Android portion of G3, author                            |
-| B3: Linux package matrix                  | planned / designed   | B2                            | Linux portion of G3, author                                  |
+| B3: Linux package matrix                  | active / designed    | B2 for closure                | Linux portion of G3, author                                  |
 | B4: Windows package matrix                | planned / designed   | B2, B3                        | Remaining G3 and phase integration, author                   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
@@ -264,6 +264,14 @@ G1 is complete. Phase B is approved: deep journeys and safe-PR routing,
 Mac/Android candidate preservation, Linux package matrix, then Windows package
 matrix. Preserve routine latency; deeper gates do not join ordinary PR blocking
 work. Bot events and installed-user migration remain C/D.
+
+B3 has one bounded prerequisite investigation alongside B2: a manual Linux x64
+evaluation-only preflight, capped at ten minutes. It records exact-source Node,
+daemon and desktop derivations, substitution/build plans and runner resources;
+import-from-derivation builds are disabled. It does not realize products, upload
+artifacts, sign or write Actions caches. Costly Node compilation waits for a
+reviewed reuse/retention contract so successful bootstrap work is not discarded.
+Linux product and format proofs remain pending B2 and subsequent B3 increments.
 
 Approved execution checklist:
 

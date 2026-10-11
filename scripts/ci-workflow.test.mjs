@@ -68,12 +68,33 @@ test("only fork-owned workflows are installed", () => {
     "ci.yml",
     "fork-android-apk.yml",
     "fork-builds.yml",
+    "linux-package-preflight.yml",
     "macos-closure.yml",
     "native-feasibility.yml",
     "rebase-dev.yml",
     "upstream-sync.yml",
     "windows-arm64-feasibility.yml",
   ]);
+});
+
+test("Linux prerequisite canary evaluates without realizing packages", () => {
+  const workflow = readFileSync(
+    new URL(".github/workflows/linux-package-preflight.yml", repoRoot),
+    "utf8",
+  );
+  const script = readFileSync(
+    new URL(".github/scripts/linux-package-preflight.sh", repoRoot),
+    "utf8",
+  );
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.doesNotMatch(
+    workflow,
+    /push:|pull_request:|: write|secrets\.|upload-artifact|actions\/cache/,
+  );
+  assert.match(workflow, /timeout-minutes: 10/);
+  assert.match(workflow, /github\.ref == 'refs\/heads\/dev'/);
+  assert.match(script, /nix build --dry-run --no-link/);
+  assert.match(script, /allow-import-from-derivation false/g);
 });
 
 test("native candidate runtime is manual, read-only and bounded to hosted verification", () => {
