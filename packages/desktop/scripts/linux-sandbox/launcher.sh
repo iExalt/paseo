@@ -5,9 +5,19 @@ set -eu
 launcher=$(readlink -f -- "$0")
 executable="${launcher}.bin"
 
-# Node entrypoints are not Chromium processes. Never inject browser flags here.
-if [ "${ELECTRON_RUN_AS_NODE:-}" = 1 ]; then
-  exec "$executable" "$@"
+if [ "${PASEO_APPIMAGE_SUPERVISOR:-}" = 1 ]; then
+  if [ "${ELECTRON_RUN_AS_NODE:-}" != 1 ] || [ -z "${APPIMAGE:-}" ] ||
+     [ ! -f "$APPIMAGE" ] || [ ! -x "$APPIMAGE" ] || [ -z "${APPDIR:-}" ] ||
+     [ "$(readlink -f -- "$APPDIR")" != "$(dirname -- "$launcher")" ]; then
+    echo 'Invalid AppImage supervisor context' >&2
+    exit 1
+  fi
+  unset PASEO_APPIMAGE_SUPERVISOR
+  if [ "${1:-}" = --no-sandbox ]; then shift; fi
+  resources="$(dirname -- "$launcher")/resources"
+  exec "$executable" --disable-warning=DEP0040 \
+    "$resources/app.asar.unpacked/dist/daemon/node-entrypoint-runner.js" node-script \
+    "$resources/app.asar/node_modules/@getpaseo/server/dist/scripts/supervisor-entrypoint.js" "$@"
 fi
 
 # AppImage preserves the invoked symlink in ARGV0. The installed `paseo` link
@@ -20,6 +30,11 @@ if [ "${invoked##*/}" = paseo ] && [ -n "${APPIMAGE:-}" ] && [ -f "$APPIMAGE" ] 
   # The desktop passthrough also treats it as a launcher flag, not a CLI option.
   if [ "${1:-}" = --no-sandbox ]; then shift; fi
   exec "$(dirname -- "$launcher")/resources/bin/paseo" "$@"
+fi
+
+# Node entrypoints are not Chromium processes. Never inject browser flags here.
+if [ "${ELECTRON_RUN_AS_NODE:-}" = 1 ]; then
+  exec "$executable" "$@"
 fi
 
 for arg in "$@"; do
