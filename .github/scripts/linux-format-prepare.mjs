@@ -23,6 +23,8 @@ assert.equal(
 assert.ok(["x64", "arm64"].includes(process.env.EXPECTED_ARCHITECTURE));
 assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
 const require = createRequire(import.meta.url);
+const ts = require("typescript");
+const asar = require("@electron/asar");
 const { generateAppRunScript } = require("app-builder-lib/out/targets/appimage/appImageUtil.js");
 const expectedAppRun = generateAppRunScript({
   DesktopFileName: "PaseoFormatFixture.desktop",
@@ -47,14 +49,40 @@ mkdirSync(join(payload, "resources/bin"), { recursive: true });
 copyFileSync(join(source, "packages/desktop/bin/paseo"), join(payload, "resources/bin/paseo"));
 chmodSync(join(payload, "resources/bin/paseo"), 0o755);
 mkdirSync(join(payload, "resources/app.asar.unpacked/dist/daemon"), { recursive: true });
-copyFileSync(
-  join(source, ".github/scripts/linux-format-fixture/cli-runner.cjs"),
+function compile(relative, output) {
+  mkdirSync(join(output, ".."), { recursive: true });
+  writeFileSync(
+    output,
+    ts.transpileModule(readFileSync(join(source, relative), "utf8"), {
+      fileName: "fixture.cts",
+      compilerOptions: {
+        module: ts.ModuleKind.Node16,
+        target: ts.ScriptTarget.ES2022,
+        esModuleInterop: true,
+      },
+    }).outputText,
+  );
+}
+compile(
+  "packages/desktop/src/daemon/node-entrypoint-runner.ts",
   join(payload, "resources/app.asar.unpacked/dist/daemon/node-entrypoint-runner.js"),
 );
 writeFileSync(join(payload, "resources/worker-input.txt"), "mounted worker input\n");
-cpSync(join(source, ".github/scripts/linux-format-fixture"), join(payload, "resources/app"), {
+const app = join(root, "app-source");
+cpSync(join(source, ".github/scripts/linux-format-fixture"), app, {
   recursive: true,
 });
+const cli = join(app, "node_modules/@getpaseo/cli/dist");
+const supervisor = join(app, "node_modules/@getpaseo/server/dist/scripts");
+mkdirSync(cli, { recursive: true });
+mkdirSync(supervisor, { recursive: true });
+copyFileSync(join(app, "cli-runner.cjs"), join(cli, "index.js"));
+copyFileSync(join(app, "supervisor.cjs"), join(supervisor, "supervisor-entrypoint.js"));
+compile(
+  "packages/cli/src/commands/daemon/appimage-supervisor.ts",
+  join(cli, "appimage-supervisor.js"),
+);
+await asar.createPackage(app, join(payload, "resources/app.asar"));
 mkdirSync(join(root, "project"));
 copyFileSync(
   join(source, ".github/scripts/linux-format-fixture/package.json"),

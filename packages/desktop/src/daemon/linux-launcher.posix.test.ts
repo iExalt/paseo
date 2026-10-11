@@ -1,5 +1,14 @@
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +30,7 @@ async function launch(
     symlink?: boolean;
     rerun?: boolean;
     appImageCli?: boolean;
+    expectedStatus?: number;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "paseo-launcher-"));
@@ -73,12 +83,71 @@ async function launch(
         ...options.env,
       },
     });
-    expect(result.status, result.stderr).toBe(0);
-    return { args: JSON.parse(result.stdout), stderr: result.stderr, input: args };
+    expect(result.status, result.stderr).toBe(options.expectedStatus ?? 0);
+    return {
+      args: result.stdout ? JSON.parse(result.stdout) : [],
+      stderr: result.stderr,
+      input: args,
+    };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+test.runIf(process.platform !== "win32")(
+  "preserves the verified installed CLI link without resolving its final symlink",
+  () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), "paseo-cli-link-")));
+    try {
+      const app = join(root, "app");
+      const bin = join(app, "resources/bin");
+      mkdirSync(bin, { recursive: true });
+      const shim = join(bin, "paseo");
+      copyFileSync(new URL("../../bin/paseo", import.meta.url), shim);
+      chmodSync(shim, 0o755);
+      const image = join(root, "Paseo.AppImage");
+      writeFileSync(image, "fixture");
+      chmodSync(image, 0o755);
+      const link = join(root, "paseo");
+      symlinkSync(image, link);
+      writeFileSync(
+        join(app, "Paseo.bin"),
+        `#!${process.execPath}\nconsole.log(JSON.stringify({cli:process.env.PASEO_CLI,args:process.argv.slice(2)}));\n`,
+      );
+      chmodSync(join(app, "Paseo.bin"), 0o755);
+      const env = {
+        ...process.env,
+        APPDIR: app,
+        APPIMAGE: image,
+        OWD: root,
+        PATH: `${root}:${process.env.PATH}`,
+      };
+      for (const argv0 of [link, "./paseo", "paseo"]) {
+        const result = spawnSync(shim, ["argument with spaces"], {
+          cwd: root,
+          encoding: "utf8",
+          env: { ...env, ARGV0: argv0 },
+        });
+        expect(result.status, result.stderr).toBe(0);
+        const receipt = JSON.parse(result.stdout);
+        expect(receipt.cli).toBe(link);
+        expect(receipt.args.at(-1)).toBe("argument with spaces");
+      }
+      const invalid = spawnSync(shim, [], { encoding: "utf8", env: { ...env, ARGV0: shim } });
+      expect(invalid.status).toBe(1);
+      expect(invalid.stderr).toContain("AppImage CLI");
+      const direct = spawnSync(shim, ["status", "argument with spaces"], {
+        encoding: "utf8",
+        env: { ...env, ARGV0: image },
+      });
+      expect(direct.status, direct.stderr).toBe(0);
+      expect(JSON.parse(direct.stdout).cli).toBe(shim);
+      expect(JSON.parse(direct.stdout).args.slice(-2)).toEqual(["status", "argument with spaces"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test.runIf(process.platform !== "win32")(
   "routes the installed AppImage CLI before Chromium and preserves remaining arguments",
@@ -90,9 +159,39 @@ test.runIf(process.platform !== "win32")(
       "--class=keep",
       "--no-sandbox",
     ];
-    const result = await launch({ appImageCli: true, args: ["--no-sandbox", ...args] });
+    const result = await launch({
+      appImageCli: true,
+      env: { ELECTRON_RUN_AS_NODE: "1" },
+      args: ["--no-sandbox", ...args],
+    });
     expect(result.args).toEqual(args);
     expect(result.stderr).toBe("");
+  },
+);
+
+test.runIf(process.platform !== "win32")(
+  "selects only its own fixed supervisor entry before Node passthrough",
+  async () => {
+    const result = await launch({
+      appImageCli: true,
+      env: { ELECTRON_RUN_AS_NODE: "1", PASEO_APPIMAGE_SUPERVISOR: "1" },
+      args: ["--no-sandbox", "argument with spaces"],
+    });
+    expect(result.args[0]).toBe("--disable-warning=DEP0040");
+    expect(result.args[1]).toMatch(
+      /\/resources\/app.asar.unpacked\/dist\/daemon\/node-entrypoint-runner.js$/,
+    );
+    expect(result.args[2]).toBe("node-script");
+    expect(result.args[3]).toMatch(
+      /\/resources\/app.asar\/node_modules\/@getpaseo\/server\/dist\/scripts\/supervisor-entrypoint.js$/,
+    );
+    expect(result.args.slice(4)).toEqual(["argument with spaces"]);
+    const invalid = await launch({
+      appImageCli: true,
+      env: { PASEO_APPIMAGE_SUPERVISOR: "1", ELECTRON_RUN_AS_NODE: "1", APPDIR: "/" },
+      expectedStatus: 1,
+    });
+    expect(invalid.stderr).toContain("Invalid AppImage supervisor context");
   },
 );
 

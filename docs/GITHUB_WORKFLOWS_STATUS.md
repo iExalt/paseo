@@ -533,6 +533,24 @@ discriminator now waits for a worker-ready receipt before the CLI exits and
 records subsequent mount state and worker exit/error diagnostics. Full product
 and ARM64 trials remain stopped. PR/dev CI passed in 4m27s/4m21s.
 
+The [ready-worker diagnostic at `326a482bd`](https://github.com/iExalt/paseo/actions/runs/38124448935)
+confirmed that the original FUSE mount disappears after the CLI exits even when
+a worker was already running. This proves mount teardown, not the worker's exact
+exit mechanism. The next repair gives the supervisor its own AppImage invocation,
+selects only its fixed bundled entry, and retains the verified installed CLI link
+for later subprocesses. Ordinary package launch paths remain unchanged. Cheap
+selector/shell checks and CLI typechecking pass; native lifetime acceptance is
+still pending. The tiny fixture now uses the production selector, shell shim and
+Node runner in an actual ASAR; it must prove the original mount disappears while
+the supervisor's fresh mount survives, read a mounted file, invoke the stable CLI
+link with inherited Node environment, and stop with empty owned process/mount
+sets before another full product build is allowed.
+The supervisor must retain the spawned PID to satisfy daemon readiness semantics;
+its stop receipt is an acknowledgment, with termination independently observed
+by PID/start identity and mount disappearance. Direct calls to the exact bundled
+shim from a running GUI keep their existing GUI-owned mount lifetime; this repair
+does not claim to make that separate launch mode independent of the GUI.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then
