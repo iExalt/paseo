@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
-from android_candidate_controls import keyboard_permission_deny, input_ready
+from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready
 
 previous, candidate, output, endpoint, version_code = sys.argv[1:]
 output = pathlib.Path(output)
@@ -34,7 +34,16 @@ def matches(node, selector):
 def wait(selector, timeout=30, value=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        found = [node for node in nodes() if matches(node, selector)
+        current = nodes()
+        deny = notification_permission_deny(current)
+        if deny is not None:
+            print("Declining Paseo notification permission for disposable journey", flush=True)
+            screenshot("notification-permission")
+            tap_node(deny, "Paseo notification denial")
+            continue
+        if any(node.get("package") == "com.android.permissioncontroller" for node in current):
+            raise RuntimeError("Unexpected permission dialog while waiting for " + selector)
+        found = [node for node in current if matches(node, selector)
                  and (value is None or node.get("text") == value)]
         if found:
             return found[0]
@@ -64,6 +73,7 @@ def fill_connection_field(selector, value):
         current = nodes()
         deny = keyboard_permission_deny(current)
         if deny is not None:
+            print("Declining disposable keyboard contacts permission", flush=True)
             screenshot("keyboard-permission")
             tap_node(deny, "keyboard contacts denial")
             stable = 0
