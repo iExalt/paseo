@@ -15,6 +15,7 @@ import {
 import { basename, dirname, join, resolve } from "node:path";
 import { buildArmBinding, digest, verifyStagedBinding } from "./windows-speech-binding.mjs";
 import { inspectPe } from "./windows-pe.mjs";
+import { windowsPathKey } from "./windows-path.mjs";
 
 assert.equal(process.platform, "win32");
 assert.equal(process.arch, "arm64");
@@ -173,8 +174,8 @@ process.exitCode = result.ok ? 0 : 1;
   assert.equal(wrapper.architecture, "arm64");
   assert.equal(wrapper.onnxruntime, "1.28.2");
   assert.equal(
-    realpathSync(wrapper.executable).toLowerCase(),
-    realpathSync(executable).toLowerCase(),
+    windowsPathKey(realpathSync(wrapper.executable)),
+    windowsPathKey(realpathSync(executable)),
   );
   for (const file of manifest.files) {
     const loaded = wrapper.sharedObjects.filter(
@@ -187,7 +188,7 @@ process.exitCode = result.ok ? 0 : 1;
       continue;
     assert.equal(loaded.length, 1, file.name);
     const expected = join(dirname(physical), file.name);
-    assert.equal(realpathSync(loaded[0]).toLowerCase(), realpathSync(expected).toLowerCase());
+    assert.equal(windowsPathKey(realpathSync(loaded[0])), windowsPathKey(realpathSync(expected)));
     assert.equal(digest(readFileSync(loaded[0])), file.sha256);
   }
 } else throw new Error(`Unknown binding diagnostic phase: ${phase}`);
