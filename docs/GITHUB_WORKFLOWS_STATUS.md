@@ -551,6 +551,24 @@ by PID/start identity and mount disappearance. Direct calls to the exact bundled
 shim from a running GUI keep their existing GUI-owned mount lifetime; this repair
 does not claim to make that separate launch mode independent of the GUI.
 
+The [x64 lifetime prerequisite](https://github.com/iExalt/paseo/actions/runs/38126007548)
+passed at `c790a0156` in 6m04s. Both argument modes preserved the spawned supervisor
+PID, lost the original mount while retaining a distinct live supervisor mount,
+read its payload after the CLI exited, invoked the stable CLI link, and stopped
+with independently observed PID/start and mount disappearance. All four CLI/GUI
+format monitors finished normally with complete discovery and empty owned sets;
+the Fedora container exited zero without OOM. PR/dev CI passed in 4m40s/4m23s.
+The reviewer accepted this prerequisite for one unchanged-source x64 product
+trial; full product and ARM acceptance remain open.
+
+The tiny fixture's DEB packaging interval was about 85 seconds in that run;
+its two CLI lifetime cases took about six seconds. Its remaining default xz
+settings now match production's DEB `gz` and RPM `gzip`, preserving all installed
+runtime checks. The next required ARM prerequisite will validate that parity
+change; differing hosted runs will not establish a controlled speedup. Repository
+cache usage remains three entries totaling 4,109,654,256 bytes; these trials add
+no caches.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then
