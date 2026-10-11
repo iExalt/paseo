@@ -33,6 +33,7 @@ export const vitestHelpers = [
   "scripts/validate-desktop-manifests.test.mjs",
 ];
 export const packageTests = [
+  "scripts/nix-source-filter.test.mjs",
   "scripts/builtin-plugins-dist.test.mjs",
   "scripts/trace-daemon-dist.test.mjs",
 ]; // Mandatory G3, alongside the Nix signature and macOS reactivation fixtures.

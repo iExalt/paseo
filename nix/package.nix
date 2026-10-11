@@ -53,8 +53,7 @@ buildNpmPackage rec {
       # daemon's trace script copies into the output.
       && builtins.match "/[^/]+\\.md" relPath == null
       # Exclude test fixtures and debug files
-      && !(lib.hasSuffix ".test.ts" baseName)
-      && !(lib.hasSuffix ".e2e.test.ts" baseName)
+      && !((import ./is-test-file.nix) baseName)
       && baseName != "node_modules"
       && baseName != ".git"
       && baseName != ".paseo"

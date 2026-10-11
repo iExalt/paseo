@@ -40,14 +40,20 @@ jobs:
             allow-import-from-derivation = false
             max-jobs = 2
             cores = 2
-      - name: Build exact native predecessor and candidate packages
-        timeout-minutes: 35
-        run: bash .github/scripts/linux-nix-build.sh
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Verify Nix source invalidation rules before building
+        timeout-minutes: 1
+        run: |
+          nix eval --raw --no-update-lock-file --impure --expr \
+            '(builtins.getFlake (toString ./.)).inputs.nixpkgs.outPath' >/dev/null
+          node scripts/nix-source-filter.test.mjs
+      - name: Build exact native predecessor and candidate packages
+        timeout-minutes: 35
+        run: bash .github/scripts/linux-nix-build.sh
       - name: Install harness dependencies
         timeout-minutes: 3
         run: |
