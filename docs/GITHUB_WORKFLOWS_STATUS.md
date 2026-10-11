@@ -424,6 +424,16 @@ Latest pre-change PR/dev gates passed in 4m31s/4m27s,
 with dev runner work of 20m37s. Cache usage remains 4,109,654,256 bytes across
 the three original entries under the unchanged 10 GB ceiling.
 
+Both Nix package filters now exclude the same standard test/spec filename suffixes
+while preserving ordinary e2e helpers and nested runtime assets. The tracked-file
+audit found 27 `.test.mjs`, 61 `.test.tsx` and 230 `.spec.ts` files beyond the old
+`.test.ts` rule, with no build/runtime imports of those newly excluded files.
+The actual daemon and desktop filter predicates pass a tiny offline Nix identity
+fixture: changing test content leaves both filtered store identities unchanged;
+changing an e2e runtime helper or nested speech asset changes both. This proves
+avoided test-only invalidation, not a timing gain for required builds. The check
+remains an explicit native Nix workflow gate; no package realization is required.
+
 The next B3 prerequisite uses one tiny Electron 44.6.0 payload per architecture
 and locked electron-builder 26.15.3 to exercise actual DEB/RPM installers and the
 current FUSE2 AppImage runtime before expensive product builds. It retains the
