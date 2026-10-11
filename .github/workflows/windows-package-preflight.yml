@@ -9,6 +9,12 @@ on:
         type: choice
         default: arm64
         options: [arm64, x64]
+      mode:
+        description: Full prerequisite or bounded install diagnosis without a workspace install
+        required: true
+        type: choice
+        default: full
+        options: [full, diagnostic]
 
 permissions:
   contents: read
@@ -21,7 +27,7 @@ jobs:
   prerequisite:
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
     runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
-    timeout-minutes: 50
+    timeout-minutes: ${{ inputs.mode == 'diagnostic' && 10 || 50 }}
     defaults:
       run:
         shell: pwsh
@@ -44,14 +50,21 @@ jobs:
         timeout-minutes: 3
         run: ./.github/scripts/windows-prerequisite.ps1 ownership
       - name: Measure the complete locked install once
+        if: inputs.mode == 'full'
         timeout-minutes: 30
         run: ./.github/scripts/windows-prerequisite.ps1 install
       - name: Package two tiny native NSIS fixtures
+        if: inputs.mode == 'full'
         timeout-minutes: 5
         run: ./.github/scripts/windows-prerequisite.ps1 build
       - name: Verify current-user install, replacement, renderer and uninstall
+        if: inputs.mode == 'full'
         timeout-minutes: 5
         run: ./.github/scripts/windows-prerequisite.ps1 runtime
+      - name: Diagnose extraction and compiler descendants without a workspace install
+        if: inputs.mode == 'diagnostic'
+        timeout-minutes: 7
+        run: ./.github/scripts/windows-prerequisite.ps1 probe
       - name: Verify owned fixture cleanup
         if: always()
         timeout-minutes: 2

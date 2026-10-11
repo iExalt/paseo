@@ -751,6 +751,23 @@ do not distinguish network waits from filesystem costs. Peak Job memory was
 1.68 GB and aggregate CPU time 6m12s. The next prerequisite retry retains bounded
 Job-member identities before termination, complete bounded npm timing JSON and
 fetch records; install semantics and cleanup acceptance remain unchanged.
+The diagnostic amendment is published at `5239e2697` (PR #44); routine PR
+verification passed in 3m50s. Dev attempt 1 of `38140033750` exceeded its deadline
+after one checkout spent 136 seconds failing to connect to GitHub, then backed
+off 18 seconds before succeeding. Its npm install took 72 seconds; the other six
+lanes passed. This is an infrastructure-affected failure, not an accepted latency
+sample. The unchanged full retry passed in 4m24s, preserving the
+planner-to-aggregate measurement and existing baseline. ARM full-prerequisite retry
+`38140033767` reached the 1,780-second install bound while compilation was still
+active. Its verified Job members included CL/MSBuild and VCTIP; this does not
+identify the earlier post-exit survivor. All processes were terminated and final
+cleanup passed. npm did not flush its own timing files before termination, so the
+harness now retains emitted HTTP/timing records from its owned stdout file too.
+The next diagnostic is capped at ten minutes: one integrity-verified locked
+tarball, local-file npm/native-tar extraction with matching content inventories,
+and a tiny native compiler invocation. This temporary probe will be removed after
+the diagnosis is resolved. It changes no install, cache, Defender or
+cleanup policy and cannot satisfy the still-pending full installer prerequisite.
 Independent Windows producer source is implemented and source-reviewed,
 but has no native build proof yet: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are
