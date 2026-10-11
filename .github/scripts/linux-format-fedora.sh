@@ -5,7 +5,9 @@ case "$FIXTURE_ARCH:$(uname -m)" in
   x64:x86_64|arm64:aarch64) ;;
   *) exit 1 ;;
 esac
-dnf -y install /input/fixture.rpm nodejs xorg-x11-server-Xvfb xorg-x11-xauth util-linux procps-ng mesa-libgbm
+export PATH="/node-bin:$PATH"
+bash /scripts/linux-fedora-runtime-deps.sh "$FIXTURE_ARCH"
+dnf -y install /input/fixture.rpm
 useradd --create-home fixture
 test "$(stat -Lc '%u:%a' /opt/PaseoFormatFixture/chrome-sandbox)" = 0:4755
 rpm -q paseo-format-fixture

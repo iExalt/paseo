@@ -86,6 +86,7 @@ chmod 777 "$FORMAT_ROOT/evidence"
 timeout --kill-after=10s 300s docker run --name "$container" --cpus=2 --memory=4g --pids-limit=512 \
   --security-opt=no-new-privileges \
   --env FIXTURE_ARCH --env FIXTURE_TOKEN \
+  --mount "type=bind,src=$(dirname "$(mise which node)"),dst=/node-bin,readonly" \
   --mount "type=bind,src=$FORMAT_ROOT/rpm-input,dst=/input,readonly" \
   --mount "type=bind,src=$FORMAT_ROOT/evidence,dst=/evidence" \
   --mount "type=bind,src=$GITHUB_WORKSPACE/.github/scripts,dst=/scripts,readonly" \
