@@ -3,6 +3,7 @@ import {
   AgentTimelineItemPayloadSchema,
   FileExplorerRequestSchema,
   PaseoWorktreeArchiveRequestSchema,
+  ProviderInspectSettingsSchema,
   parseServerInfoStatusPayload,
   SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
@@ -371,6 +372,91 @@ describe("agent detach RPC", () => {
     expect(parsed.features?.agentDetach).toBe(true);
   });
 
+  test("parses the discovery RPC capability gates", () => {
+    const parsed = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: { profileList: true, providerInspect: true },
+    });
+
+    expect(parsed?.features?.profileList).toBe(true);
+    expect(parsed?.features?.providerInspect).toBe(true);
+  });
+
+  test("parses the schedule and heartbeat CLI parity gate", () => {
+    const parsed = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: { scheduleCliParity: true },
+    });
+
+    expect(parsed?.features?.scheduleCliParity).toBe(true);
+  });
+
+  test("parses the permission-list RPC and capability gate", () => {
+    const request = SessionInboundMessageSchema.parse({
+      type: "permission.list.request",
+      requestId: "permission-list-1",
+    });
+    const response = SessionOutboundMessageSchema.parse({
+      type: "permission.list.response",
+      payload: {
+        requestId: "permission-list-1",
+        permissions: [
+          {
+            agentId: "agent-1",
+            status: "running",
+            request: {
+              id: "permission-1",
+              provider: "claude",
+              name: "Bash",
+              kind: "tool",
+              actions: [{ id: "allow_once", label: "Allow once", behavior: "allow" }],
+            },
+          },
+          {
+            agentId: "agent-2",
+            status: "idle",
+            request: {
+              id: "permission-2",
+              provider: "claude",
+              name: "Read",
+              kind: "tool",
+            },
+          },
+        ],
+      },
+    });
+    const serverInfo = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: { permissionList: true },
+    });
+
+    expect(request.type).toBe("permission.list.request");
+    expect(response.type).toBe("permission.list.response");
+    expect(response.payload.permissions).toHaveLength(2);
+    expect(serverInfo?.features?.permissionList).toBe(true);
+  });
+
+  test("parses the dedicated agent-query capability gates", () => {
+    const parsed = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: { agentDirectoryQuery: true, agentStatus: true, agentActivity: true },
+    });
+
+    expect(parsed?.features?.agentDirectoryQuery).toBe(true);
+    expect(parsed?.features?.agentStatus).toBe(true);
+    expect(parsed?.features?.agentActivity).toBe(true);
+  });
+
+  test("rejects unknown provider-inspection setting fields", () => {
+    expect(
+      ProviderInspectSettingsSchema.safeParse({ modeId: "default", extra: true }).success,
+    ).toBe(false);
+  });
+
   test("parses the workspace-targeted session import feature gate", () => {
     const parsed = parseServerInfoStatusPayload({
       status: "server_info",
@@ -399,6 +485,98 @@ describe("agent detach RPC", () => {
       throw new Error("Expected server info payload to parse");
     }
     expect(parsed.features?.importSessionSearch).toBe(true);
+  });
+});
+
+describe("agent close RPC", () => {
+  test("parses the namespaced close request and response", () => {
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "agent.close.request",
+        agentId: "agent-1",
+        requestId: "req-close",
+      }),
+    ).toEqual({
+      type: "agent.close.request",
+      agentId: "agent-1",
+      requestId: "req-close",
+    });
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "agent.close.response",
+        payload: {
+          requestId: "req-close",
+          agentId: "agent-1",
+          accepted: true,
+          error: null,
+        },
+      }),
+    ).toMatchObject({ type: "agent.close.response" });
+  });
+
+  test("parses the agentClose server feature gate", () => {
+    const parsed = parseServerInfoStatusPayload({
+      status: "server_info",
+      serverId: "srv-test",
+      features: { agentClose: true },
+    });
+
+    expect(parsed?.features?.agentClose).toBe(true);
+  });
+});
+
+describe("agent query RPCs", () => {
+  test("validates finite list constraints while retaining empty status filters", () => {
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "agent.directory.query.request",
+        requestId: "query-defaults",
+      }),
+    ).toMatchObject({ type: "agent.directory.query.request" });
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "agent.directory.query.request",
+        requestId: "query-empty-statuses",
+        statuses: [],
+        sinceHours: 720,
+        limit: 200,
+      }),
+    ).toMatchObject({ statuses: [], sinceHours: 720, limit: 200 });
+    for (const invalid of [
+      { limit: 0 },
+      { limit: 201 },
+      { sinceHours: 0 },
+      { sinceHours: 721 },
+      { statuses: ["unexpected"] },
+    ]) {
+      expect(
+        SessionInboundMessageSchema.safeParse({
+          type: "agent.directory.query.request",
+          requestId: "invalid-query",
+          ...invalid,
+        }).success,
+      ).toBe(false);
+    }
+  });
+
+  test("accepts exact status IDs and fractional or negative activity limits", () => {
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "agent.status.get.request",
+        requestId: "status-empty-id",
+        agentId: "",
+      }).type,
+    ).toBe("agent.status.get.request");
+    for (const limit of [-1, 0, 0.5, 1.5]) {
+      expect(
+        SessionInboundMessageSchema.parse({
+          type: "agent.activity.get.request",
+          requestId: "activity-limit",
+          agentId: "agent-1",
+          limit,
+        }),
+      ).toMatchObject({ limit });
+    }
   });
 });
 
@@ -587,4 +765,52 @@ test("agent messages are an optional semantic payload on existing tool rows", ()
       agentMessage: { ...agentMessage, sender: { id: 42 } },
     }).success,
   ).toBe(false);
+});
+
+test("agent orchestration options remain optional on existing create and send RPCs", () => {
+  const create = SessionInboundMessageSchema.parse({
+    type: "create_agent_request",
+    requestId: "create-1",
+    config: { provider: "codex", cwd: "/repo" },
+    relationship: "detached",
+    notifyOnFinish: true,
+    runtimeCwd: "/workspace/custom",
+    labels: {},
+  });
+  const send = SessionInboundMessageSchema.parse({
+    type: "send_agent_message_request",
+    requestId: "send-1",
+    agentId: "agent-1",
+    text: "continue",
+    sessionMode: "plan",
+    notifyOnFinish: false,
+    attachments: [],
+  });
+  const response = SessionOutboundMessageSchema.parse({
+    type: "send_agent_message_response",
+    payload: {
+      requestId: "send-1",
+      agentId: "agent-1",
+      accepted: true,
+      error: null,
+      disposition: "out_of_band",
+    },
+  });
+
+  expect(create).toMatchObject({
+    relationship: "detached",
+    notifyOnFinish: true,
+    runtimeCwd: "/workspace/custom",
+  });
+  expect(send).toMatchObject({ sessionMode: "plan", notifyOnFinish: false });
+  expect(response).toMatchObject({ payload: { disposition: "out_of_band" } });
+  expect(
+    SessionInboundMessageSchema.parse({
+      type: "send_agent_message_request",
+      requestId: "legacy-send",
+      agentId: "agent-1",
+      text: "continue",
+      attachments: [],
+    }),
+  ).not.toHaveProperty("sessionMode");
 });

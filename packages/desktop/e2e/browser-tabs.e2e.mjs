@@ -9,8 +9,6 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { createMCPClient } from "@ai-sdk/mcp";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { chromium } from "playwright";
 import { runAppearanceFontSizeRegression } from "./appearance-font-size.electron.mjs";
 import { runSettingsMemoryRegression } from "./settings-memory.electron.mjs";
@@ -86,6 +84,37 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+async function captureStartupDiagnostics(page, artifactDir, label, rendererConsole, pageErrors) {
+  const diagnostic = {
+    url: null,
+    title: null,
+    bodyText: null,
+    screenshotError: null,
+    console: rendererConsole.slice(-30),
+    pageErrors: pageErrors.slice(-30),
+  };
+  try {
+    const pageDetails = await page.evaluate(() => ({
+      url: location.href,
+      title: document.title,
+      bodyText: (document.body?.innerText ?? "").slice(0, 4_000),
+    }));
+    Object.assign(diagnostic, pageDetails);
+  } catch (error) {
+    diagnostic.pageError = String(error).slice(0, 500);
+  }
+  try {
+    await page.screenshot({ path: path.join(artifactDir, `${label}.png`) });
+  } catch (error) {
+    diagnostic.screenshotError = String(error).slice(0, 500);
+  }
+  try {
+    writeJson(path.join(artifactDir, `${label}.json`), diagnostic);
+  } catch (error) {
+    console.warn(`Failed to write ${label} renderer diagnostics: ${String(error).slice(0, 500)}`);
+  }
+}
+
 function seedPaseoHome(paseoHome, listen, workspaceRoot) {
   const timestamp = "2026-01-01T00:00:00.000Z";
   const projects = workspaceIds.map((workspaceId, index) => {
@@ -122,7 +151,7 @@ function seedPaseoHome(paseoHome, listen, workspaceRoot) {
     daemon: {
       listen,
       relay: { enabled: false },
-      mcp: { enabled: true, injectIntoAgents: true },
+      agentTools: { enabled: true },
       browserTools: { enabled: true },
       cors: { allowedOrigins: ["*"] },
     },
@@ -161,7 +190,7 @@ function stopProcess(child) {
   }
 }
 
-async function waitForAppPage(browser, expoPort) {
+async function waitForAppPage(browser, expoPort, cdpPort) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     for (const context of browser.contexts()) {
@@ -171,7 +200,31 @@ async function waitForAppPage(browser, expoPort) {
     }
     await delay(250);
   }
-  throw new Error("Timed out waiting for the real Electron app renderer");
+  const pages = browser.contexts().flatMap((context) => context.pages().map((page) => page.url()));
+  const targets = await fetch(`http://127.0.0.1:${cdpPort}/json/list`)
+    .then((response) => response.json())
+    .catch(() => []);
+  throw new Error(
+    `Timed out waiting for the real Electron app renderer: ${JSON.stringify({ pages, targets })}`,
+  );
+}
+
+async function waitForAppTarget(cdpPort, expoPort) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const targets = await fetch(`http://127.0.0.1:${cdpPort}/json/list`)
+      .then((response) => response.json())
+      .catch(() => []);
+    if (
+      targets.some(
+        (target) => target.type === "page" && target.url.includes(`localhost:${expoPort}`),
+      )
+    ) {
+      return;
+    }
+    await delay(250);
+  }
+  throw new Error("Timed out waiting for Electron to publish the app CDP target");
 }
 
 async function waitForDesktopStatus(page) {
@@ -228,18 +281,181 @@ async function closeServer(server) {
   await new Promise((resolve) => server.close(resolve));
 }
 
-function mcpPayload(result, command) {
-  const payload = result.structuredContent;
-  assert(
-    payload && typeof payload === "object",
-    `${command} returned no structured payload: ${JSON.stringify(result)}`,
+async function callPaseoCli(
+  args,
+  { commandName = "browser", daemonPort, callerAgentId, workspaceId, env, label },
+) {
+  const command = spawn(
+    process.execPath,
+    [
+      path.join(rootDir, "packages/cli/bin/paseo"),
+      commandName,
+      ...args,
+      ...(callerAgentId ? ["--agent", callerAgentId] : []),
+      ...(workspaceId ? ["--workspace", workspaceId] : []),
+      "--json",
+      "--host",
+      `127.0.0.1:${daemonPort}`,
+    ],
+    { cwd: rootDir, env, stdio: ["ignore", "pipe", "pipe"] },
   );
-  assert(payload.ok === true, `${command} failed: ${JSON.stringify(payload)}`);
-  return payload.result;
+  let stdout = "";
+  let stderr = "";
+  command.stdout.setEncoding("utf8");
+  command.stderr.setEncoding("utf8");
+  command.stdout.on("data", (chunk) => (stdout += chunk));
+  command.stderr.on("data", (chunk) => (stderr += chunk));
+
+  const exitCode = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      command.kill("SIGTERM");
+      reject(new Error(`${label} CLI command timed out`));
+    }, timeoutMs);
+    command.once("error", (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    command.once("close", (code, signal) => {
+      clearTimeout(timer);
+      if (signal) reject(new Error(`${label} CLI command exited on ${signal}: ${stderr}`));
+      else resolve(code);
+    });
+  });
+  assert(exitCode === 0, `${label} CLI command failed (${exitCode}): ${stderr || stdout}`);
+  try {
+    return JSON.parse(stdout);
+  } catch (error) {
+    throw new Error(`${label} CLI command returned invalid JSON: ${stdout}`, { cause: error });
+  }
 }
 
-async function callBrowserTool(client, name, args = {}) {
-  return mcpPayload(await client.callTool({ name, arguments: args }), name);
+async function callBrowserCli(args, options) {
+  return callPaseoCli(args, options);
+}
+
+const browserCliArgBuilders = {
+  browser_list_tabs: () => ["list-tabs"],
+  browser_new_tab: (_context, args) => ["new-tab", ...(args.url ? [args.url] : [])],
+  browser_snapshot: (_context, args) => ["snapshot", ...(args.browserId ? [args.browserId] : [])],
+  browser_click: (_context, args) => [
+    "click",
+    ...(args.browserId ? [args.browserId] : []),
+    args.ref,
+    ...(args.button && args.button !== "left" ? ["--button", args.button] : []),
+    ...(args.doubleClick ? ["--double-click"] : []),
+    ...(args.modifiers ?? []).flatMap((modifier) => ["--modifier", modifier]),
+  ],
+  browser_fill: (_context, args) => [
+    "fill",
+    ...(args.browserId ? [args.browserId] : []),
+    args.ref,
+    args.value,
+  ],
+  browser_type: (_context, args) => [
+    "type",
+    ...(args.browserId ? [args.browserId] : []),
+    args.text,
+    ...(args.ref ? ["--ref", args.ref] : []),
+  ],
+  browser_keypress: (_context, args) => [
+    "keypress",
+    ...(args.browserId ? [args.browserId] : []),
+    args.key,
+    ...(args.ref ? ["--ref", args.ref] : []),
+  ],
+  browser_evaluate: (_context, args) => [
+    "evaluate",
+    ...(args.browserId ? [args.browserId] : []),
+    args.function,
+    ...(args.ref ? ["--ref", args.ref] : []),
+  ],
+  browser_wait: (_context, args) => [
+    "wait",
+    ...(args.browserId ? [args.browserId] : []),
+    ...(args.text ? ["--text", args.text] : []),
+    ...(args.url ? ["--url", args.url] : []),
+    ...(args.timeoutMs ? ["--timeout-ms", String(args.timeoutMs)] : []),
+  ],
+  browser_screenshot: (context, args) => {
+    context.screenshotSequence += 1;
+    return [
+      "screenshot",
+      ...(args.browserId ? [args.browserId] : []),
+      "--output",
+      path.join(context.artifactDir, `browser-screenshot-${context.screenshotSequence}.png`),
+      ...(args.fullPage ? ["--full-page"] : []),
+    ];
+  },
+  browser_resize: (_context, args) => [
+    "resize",
+    ...(args.browserId ? [args.browserId] : []),
+    String(args.width),
+    String(args.height),
+  ],
+};
+
+async function callBrowserTool(context, name, args = {}) {
+  const buildCliArgs = browserCliArgBuilders[name];
+  if (!buildCliArgs) throw new Error(`Browser CLI regression does not map ${name}`);
+  const cliArgs = buildCliArgs(context, args);
+  const output = await callBrowserCli(cliArgs, {
+    ...context,
+    label: name,
+  });
+  assert(output.ok === true, `${name} failed: ${JSON.stringify(output)}`);
+  return output.result;
+}
+
+async function runBrowserCliJourney({ daemonPort, callerAgentId, browserId, artifactDir, env }) {
+  const commandOptions = {
+    daemonPort,
+    callerAgentId,
+    workspaceId: workspaceIds[0],
+    env,
+  };
+  const snapshotResponse = await callBrowserCli(["snapshot", browserId], {
+    ...commandOptions,
+    label: "snapshot",
+  });
+  assert(snapshotResponse.ok === true, `CLI snapshot failed: ${JSON.stringify(snapshotResponse)}`);
+  const snapshot = snapshotResponse.result;
+  const ref = snapshot.snapshot.match(/textbox "Typing target" \[ref=(@e\d+)\]/)?.[1];
+  assert(ref, `CLI snapshot did not expose the typing target: ${snapshot.snapshot}`);
+
+  const fillResponse = await callBrowserCli(["fill", browserId, ref, "CLI browser command"], {
+    ...commandOptions,
+    label: "fill",
+  });
+  assert(fillResponse.ok === true, `CLI fill failed: ${JSON.stringify(fillResponse)}`);
+  const evaluated = await callBrowserCli(
+    ["evaluate", browserId, "() => document.querySelector('#typing-target')?.value"],
+    { ...commandOptions, label: "evaluate" },
+  );
+  assert(evaluated.ok === true, `CLI evaluate failed: ${JSON.stringify(evaluated)}`);
+  assert(
+    JSON.parse(evaluated.result.resultJson) === "CLI browser command",
+    `CLI fill did not update the live page: ${JSON.stringify(evaluated.result)}`,
+  );
+
+  const screenshotPath = path.join(artifactDir, "cli-browser-screenshot.png");
+  const screenshotResponse = await callBrowserCli(
+    ["screenshot", browserId, "--output", screenshotPath],
+    { ...commandOptions, label: "screenshot" },
+  );
+  assert(
+    screenshotResponse.ok === true && screenshotResponse.result.outputPath === screenshotPath,
+    `CLI screenshot failed: ${JSON.stringify(screenshotResponse)}`,
+  );
+  assert(
+    !Object.hasOwn(screenshotResponse.result, "dataBase64"),
+    "CLI screenshot output exposed base64 image data",
+  );
+  const pngHeader = (await fs.promises.readFile(screenshotPath)).subarray(0, 8);
+  assert(
+    pngHeader.equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10])),
+    `CLI screenshot did not write a PNG: ${screenshotPath}`,
+  );
+  return { browserId, snapshot: "passed", fill: "passed", screenshotPath };
 }
 
 async function waitForGuestSelector(client, browserId) {
@@ -272,37 +488,37 @@ async function waitForGuestActiveElement(client, browserId, elementId) {
   return false;
 }
 
-async function createCallerAgent(daemonPort, workspaceId = workspaceIds[0]) {
-  const transport = new StreamableHTTPClientTransport(
-    new URL(`http://127.0.0.1:${daemonPort}/mcp/agents`),
+async function createCallerAgent(daemonPort, workspaceId = workspaceIds[0], env) {
+  const response = await callPaseoCli(
+    [
+      "run",
+      "Remain available while the browser bridge regression runs.",
+      "--provider",
+      "mock/ten-second-stream",
+      "--mode",
+      "load-test",
+      "--title",
+      "Browser desktop browser E2E caller",
+      "--no-wait",
+    ],
+    {
+      commandName: "agent",
+      daemonPort,
+      workspaceId,
+      env,
+      label: "agent run",
+    },
   );
-  const client = await createMCPClient({ transport });
-  try {
-    const response = await client.callTool({
-      name: "create_agent",
-      arguments: {
-        relationship: { kind: "detached" },
-        workspace: { kind: "existing", workspaceId },
-        title: "Browser desktop browser E2E caller",
-        provider: "mock/ten-second-stream",
-        settings: { modeId: "load-test" },
-        initialPrompt: "Remain available while the browser bridge regression runs.",
-      },
-    });
-    const result = response.structuredContent;
-    assert(
-      result && typeof result === "object",
-      `create_agent returned no structured payload: ${JSON.stringify(response)}`,
-    );
-    assert(typeof result.agentId === "string", "create_agent returned no caller agent id");
-    assert(
-      result.workspaceId === workspaceId,
-      `MCP caller attached to unexpected workspace ${result.workspaceId}`,
-    );
-    return result.agentId;
-  } finally {
-    await client.close();
-  }
+  const result = response.result ?? response.data ?? response;
+  assert(
+    typeof result.agentId === "string",
+    `agent run returned no agent id: ${JSON.stringify(response)}`,
+  );
+  assert(
+    result.workspaceId === undefined || result.workspaceId === workspaceId,
+    `CLI caller attached to unexpected workspace ${result.workspaceId}`,
+  );
+  return result.agentId;
 }
 
 async function readGuest(page, browserId) {
@@ -528,17 +744,13 @@ async function verifyHiddenBrowserScreenshots({
       browserId,
       function: "() => { document.body.style.background = 'rgb(0,255,0)'; }",
     });
-    const response = await client.callTool({
-      name: "browser_screenshot",
-      arguments: { browserId },
+    const screenshotPath = path.join(artifactDir, "hidden-browser-viewport.png");
+    const screenshot = await callBrowserCli(["screenshot", browserId, "--output", screenshotPath], {
+      ...client,
+      label: "hidden browser screenshot",
     });
-    mcpPayload(response, "browser_screenshot");
-    const screenshot = response.content.find((item) => item.type === "image");
-    assert(screenshot, "browser_screenshot returned no image");
-    fs.writeFileSync(
-      path.join(artifactDir, "hidden-browser-viewport.png"),
-      Buffer.from(screenshot.data, "base64"),
-    );
+    assert(screenshot.ok === true, `browser screenshot failed: ${JSON.stringify(screenshot)}`);
+    const screenshotBytes = await fs.promises.readFile(screenshotPath);
     const pixel = await page.evaluate(async (base64) => {
       const image = new Image();
       image.src = `data:image/png;base64,${base64}`;
@@ -552,7 +764,7 @@ async function verifyHiddenBrowserScreenshots({
         ...context.getImageData(Math.floor(image.width / 2), Math.floor(image.height / 2), 1, 1)
           .data,
       ];
-    }, screenshot.data);
+    }, screenshotBytes.toString("base64"));
     assert(
       JSON.stringify(pixel) === "[0,255,0,255]",
       `Hidden screenshot returned stale pixels: ${pixel}`,
@@ -1101,7 +1313,9 @@ async function main() {
   seedPaseoHome(remoteHome, `127.0.0.1:${remotePort}`, path.join(runtimeDir, "remote-workspaces"));
   const children = [];
   let browser = null;
-  let client = null;
+  let page = null;
+  const rendererConsole = [];
+  const pageErrors = [];
 
   try {
     // Observe the real Electron shell handoff without launching a user's browser.
@@ -1188,9 +1402,23 @@ async function main() {
     children.push(desktop.child);
     await waitForPort(cdpPort, "Electron CDP", desktop);
 
+    // Electron can publish its renderer after CDP starts accepting connections.
+    // Attach after the target exists so Playwright discovers the actual app page.
+    await waitForAppTarget(cdpPort, expoPort);
     browser = await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
-    const page = await waitForAppPage(browser, expoPort);
+    page = await waitForAppPage(browser, expoPort, cdpPort);
+    page.on("console", (message) => {
+      rendererConsole.push({ type: message.type(), text: message.text().slice(0, 500) });
+      if (rendererConsole.length > 30) rendererConsole.shift();
+    });
+    page.on("pageerror", (error) => {
+      pageErrors.push(String(error).slice(0, 500));
+      if (pageErrors.length > 30) pageErrors.shift();
+    });
     const status = await waitForDesktopStatus(page);
+    await captureStartupDiagnostics(page, artifactDir, "startup", rendererConsole, pageErrors);
+
+    const browserOnly = process.env.PASEO_DESKTOP_BROWSER_E2E_BROWSER_ONLY === "1";
 
     const checkPluginLinks = () =>
       runPluginLinksRegression({
@@ -1202,14 +1430,14 @@ async function main() {
         artifactDir,
         externalOpenLog: process.platform === "linux" ? externalOpenLog : null,
       });
-    if (process.env.PASEO_DESKTOP_PLUGIN_LINKS_ONLY === "1") {
+    if (!browserOnly && process.env.PASEO_DESKTOP_PLUGIN_LINKS_ONLY === "1") {
       const pluginLinks = await checkPluginLinks();
       writeJson(path.join(artifactDir, "result.json"), { pluginLinks });
       console.log("Plugin external links and workspace browser passed.");
       return;
     }
-    const settingsMemory = await runSettingsMemoryRegression(page);
-    if (process.env.PASEO_DESKTOP_SETTINGS_MEMORY_ONLY === "1") {
+    const settingsMemory = browserOnly ? undefined : await runSettingsMemoryRegression(page);
+    if (!browserOnly && process.env.PASEO_DESKTOP_SETTINGS_MEMORY_ONLY === "1") {
       writeJson(path.join(artifactDir, "result.json"), { settingsMemory });
       console.log(
         `Desktop Settings memory regression passed: ${settingsMemory.detachedAfterWarmRound} detached panes after warm and stress rotations.`,
@@ -1217,19 +1445,21 @@ async function main() {
       return;
     }
 
-    await runAppearanceFontSizeRegression(page);
+    if (!browserOnly) await runAppearanceFontSizeRegression(page);
 
-    const callerAgentId = await createCallerAgent(daemonPort);
+    const callerAgentId = await createCallerAgent(daemonPort, workspaceIds[0], commonEnv);
     const typingAgent = {
       workspaceId: workspaceIds.at(-1),
-      agentId: await createCallerAgent(daemonPort, workspaceIds.at(-1)),
+      agentId: await createCallerAgent(daemonPort, workspaceIds.at(-1), commonEnv),
     };
-    const transport = new StreamableHTTPClientTransport(
-      new URL(
-        `http://127.0.0.1:${daemonPort}/mcp/agents?callerAgentId=${encodeURIComponent(callerAgentId)}`,
-      ),
-    );
-    client = await createMCPClient({ transport });
+    const client = {
+      daemonPort,
+      callerAgentId,
+      workspaceId: workspaceIds[0],
+      env: commonEnv,
+      artifactDir,
+      screenshotSequence: 0,
+    };
     const report = await runRegression({
       page,
       client,
@@ -1240,17 +1470,31 @@ async function main() {
       typingAgent,
       artifactDir,
     });
-    const pluginLinks = await checkPluginLinks();
-    writeJson(path.join(artifactDir, "result.json"), { ...report, settingsMemory, pluginLinks });
+    const browserCli = await runBrowserCliJourney({
+      daemonPort,
+      callerAgentId,
+      browserId: report.browserId,
+      artifactDir,
+      env: commonEnv,
+    });
+    const pluginLinks = browserOnly ? undefined : await checkPluginLinks();
+    writeJson(path.join(artifactDir, "result.json"), {
+      ...report,
+      browserCli,
+      ...(settingsMemory ? { settingsMemory } : {}),
+      ...(pluginLinks ? { pluginLinks } : {}),
+    });
     console.log(
       `Browser desktop browser E2E passed: WebContents ${report.originalWebContentsId} remained ${report.finalWebContentsId}; viewport, inactive capture, focus continuity, list, snapshot, click, local-page selectors passed.`,
     );
   } catch (error) {
     console.error(`Browser desktop browser E2E failed. Artifacts: ${artifactDir}`);
     console.error(error);
+    if (page) {
+      await captureStartupDiagnostics(page, artifactDir, "failure", rendererConsole, pageErrors);
+    }
     throw error;
   } finally {
-    await client?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
     for (const child of children.toReversed()) stopProcess(child);
     await closeServer(target.server);

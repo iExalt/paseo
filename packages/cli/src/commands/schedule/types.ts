@@ -30,6 +30,11 @@ export type ScheduleTarget =
         thinkingOptionId?: string;
         title?: string | null;
         providerOptions?: Record<string, unknown>;
+        featureValues?: Record<string, unknown>;
+        isolation?: "local" | "worktree";
+        archiveOnFinish?: boolean;
+        systemPrompt?: string;
+        mcpServers?: Record<string, unknown>;
       };
     };
 
@@ -40,6 +45,7 @@ export interface ScheduleRunRecord {
   endedAt: string | null;
   status: "running" | "succeeded" | "failed";
   agentId: string | null;
+  workspaceId?: string | null;
   output: string | null;
   error: string | null;
 }
@@ -81,9 +87,30 @@ export interface CreateScheduleInput {
   name?: string;
   cadence: ScheduleCadence;
   target: ScheduleTarget;
+  callerContext?: {
+    agentId: string;
+    provider?: string;
+    model?: string;
+    cwd?: string;
+    modeId?: string;
+    thinkingOptionId?: string;
+    isolation?: "local" | "worktree";
+  };
+  callerAgentId?: string;
+  replaceExisting?: boolean;
   maxRuns?: number;
   expiresAt?: string;
+  expiresIn?: string;
   runOnCreate?: boolean;
+}
+
+export interface ScheduleCallerAgent {
+  id: string;
+  provider: string;
+  cwd: string;
+  model: string | null;
+  currentModeId: string | null;
+  thinkingOptionId?: string | null;
 }
 
 export interface ScheduleCreatePayload {
@@ -143,12 +170,14 @@ export interface UpdateScheduleNewAgentConfig {
 
 export interface UpdateScheduleInput {
   id: string;
+  callerAgentId?: string;
   name?: string | null;
   prompt?: string;
   cadence?: ScheduleCadence;
   newAgentConfig?: UpdateScheduleNewAgentConfig;
   maxRuns?: number | null;
   expiresAt?: string | null;
+  expiresIn?: string;
 }
 
 export interface ScheduleUpdatePayload {
@@ -158,13 +187,14 @@ export interface ScheduleUpdatePayload {
 }
 
 export interface ScheduleDaemonClient {
+  fetchAgent(input: { agentId: string }): Promise<{ agent: ScheduleCallerAgent } | null>;
   scheduleCreate(input: CreateScheduleInput): Promise<ScheduleCreatePayload>;
   scheduleList(): Promise<ScheduleListPayload>;
   scheduleInspect(input: { id: string }): Promise<ScheduleInspectPayload>;
   scheduleLogs(input: { id: string }): Promise<ScheduleLogsPayload>;
   schedulePause(input: { id: string }): Promise<SchedulePausePayload>;
   scheduleResume(input: { id: string }): Promise<ScheduleResumePayload>;
-  scheduleDelete(input: { id: string }): Promise<ScheduleDeletePayload>;
+  scheduleDelete(input: { id: string; callerAgentId?: string }): Promise<ScheduleDeletePayload>;
   scheduleRunOnce(input: { id: string }): Promise<ScheduleRunOncePayload>;
   scheduleUpdate(input: UpdateScheduleInput): Promise<ScheduleUpdatePayload>;
   close(): Promise<void>;
