@@ -915,6 +915,20 @@ It will be removed after diagnosis; installed STT/TTS and x64 remain mandatory.
 Local extraction verified both root-lock SRI values and pinned wrapper/hook hashes.
 Routine PR/dev checks at `59e9bb2df` passed in 4m33s/4m37s excluding initial queues,
 using 21m54s/23m51s of runner work. No cache or install acceptance rule changed.
+The [isolated binding probe](https://github.com/iExalt/paseo/actions/runs/38170355615)
+at `038ecda08` reached native loading in a 3m51s job and exposed
+`ERR_DLOPEN_FAILED: The specified module could not be found` from the physical
+addon as well as the wrapper failure. All six owned stages reconciled with zero
+active processes. [libuv 1.52.1's loader](https://raw.githubusercontent.com/libuv/libuv/v1.52.1/src/win/dl.c)
+uses `LOAD_WITH_ALTERED_SEARCH_PATH`; [Windows documents](https://learn.microsoft.com/en-us/windows/win32/dlls/dynamic-link-library-search-order)
+that this substitutes the loaded module's directory for the executable directory.
+The next placement-only probe puts the exact DLLs beside the unpacked addon,
+asserts executable-root copies are absent, and requires loaded paths and hashes
+there. PATH, linker flags and loader bytes remain unchanged. This tests a concrete
+dependency-search hypothesis; it does not yet establish which module was missing
+or rule out an additional CRT dependency. Product assembly stays unchanged until
+that result is reviewed. Routine PR/dev checks passed in 4m24s/4m41s, with
+21m19s/22m49s total runner work and unchanged latency budget.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
