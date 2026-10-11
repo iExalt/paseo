@@ -277,6 +277,22 @@ substitutions total 566 MiB compressed / 1.7 GiB unpacked on a runner with 86 Gi
 free. No Node bootstrap or seed archive is needed for the next x64 trial.
 Linux product and format proofs remain pending B2 and subsequent B3 increments.
 
+The next Linux x64 trial builds those exact native outputs in one job, bounded
+to 45 minutes (35 minutes for realization, five for runtime), with two Nix jobs
+and two cores per builder. It records builder environment and sampled resource
+pressure, launches the canonical Nix desktop wrapper under Xvfb and the separately
+evaluated daemon CLI, and verifies renderer/preload, built-in plugins, CLI/PTY,
+the shipped wrapper's disabled-sandbox policy and owned-process shutdown. The
+Nix layout adapter validates its actual app metadata and desktop entry; regular
+Electron packages retain their ASAR checks. No closure archive, signing, Actions
+cache or public release is produced; diagnostics retain the 25 MiB/one-day bound.
+Installation/upgrade and the other formats/architecture remain separate G3 proofs.
+
+Shared desktop review found that the prior PTY marker could match command echo.
+The repair constructs output from separate marker halves and accepts only an
+exact output line. Mac workspace/theme preservation remains proven, while PTY
+execution must pass a repeat against the same signed candidate before B2 closes.
+
 Android native run `38102420953` passed connection and permission handling but
 failed before upgrade: the terminal showed two empty prompts and no injected
 command. The harness now requires stable native-input focus, visible keyboard
