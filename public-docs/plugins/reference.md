@@ -426,8 +426,7 @@ includes configured defaults and per-agent overrides; validate and apply it in y
 with the values the session runs under `providerOptions`. A running-session change arrives as
 `session.configure` with `changes.providerOptions`. See [Provider options](/docs/sdk/provider-options)
 for configuration and merge semantics.
-Host tools arrive as MCP servers in the complete
-session config.
+Third-party MCP servers remain in the complete session config. Paseo operations use provider-native tools where supported or the CLI; Paseo does not inject its own MCP server.
 
 Paseo refreshes an agent by closing its current provider session and opening it with current
 configuration and persistence. Providers re-read external state during `session.open`.

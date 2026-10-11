@@ -136,7 +136,7 @@ npx skills add getpaseo/paseo
 
 Monorepo 包结构速览：
 
-- `packages/server`：Paseo daemon（agent 进程编排、WebSocket API、MCP server）
+- `packages/server`：Paseo daemon（agent 进程编排、WebSocket API、provider-native tools）
 - `packages/app`：Expo 客户端（iOS、Android、Web）
 - `packages/cli`：用于 daemon 和 agent 工作流的 `paseo` CLI
 - `packages/desktop`：Electron 桌面 app

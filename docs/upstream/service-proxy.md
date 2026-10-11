@@ -36,7 +36,7 @@ paseo script start <name> [--cwd <path> | --workspace <workspace-id>]
 paseo script stop <name> [--cwd <path> | --workspace <workspace-id>]
 ```
 
-The commands return the same script metadata shown by the workspace: lifecycle, service port, proxy URLs, health, exit code, and supervised terminal ID. `stop` terminates the managed terminal rather than only removing the proxy route, so normal script lifecycle cleanup remains authoritative. MCP exposes matching `list_workspace_scripts`, `start_workspace_script`, and `stop_workspace_script` tools; those require an explicit workspace ID.
+The commands return the same script metadata shown by the workspace: lifecycle, service port, proxy URLs, health, exit code, and supervised terminal ID. `stop` terminates the managed terminal rather than only removing the proxy route, so normal script lifecycle cleanup remains authoritative. Provider-native catalogs retain matching workspace-script tools; CLI automation uses the commands above.
 
 ## Configuration
 

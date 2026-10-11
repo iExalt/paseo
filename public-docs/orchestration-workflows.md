@@ -100,4 +100,4 @@ Open the **Subagents track** near the composer to inspect delegated work.
 
 A Paseo subagent in another workspace still belongs to its parent's track. It also opens as a tab in its own workspace. To make it a top-level agent, detach it in the app or with [`paseo agent detach`](/docs/cli#agent-modes).
 
-See the [MCP reference](/docs/mcp#mental-model) for workspace and parentage rules.
+See the [caller and workspace rules](/docs/mcp#mental-model) for workspace and parentage rules.

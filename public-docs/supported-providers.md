@@ -37,7 +37,7 @@ fresh because `agy` does not replay its history.
 
 This integration uses your installed CLI and sign-in. It is not endorsed by Google.
 
-Paseo MCP tools and steering are unavailable. Your own `agy` MCP servers still work. Attached
+Steering is unavailable. Use the Paseo CLI for Paseo operations in shell-capable sessions. Your own `agy` MCP servers still work. Attached
 images are passed as file references for the agent to read.
 
 If `agy` is outside your daemon's PATH, override its command in `~/.paseo/config.json`. Use `env`
