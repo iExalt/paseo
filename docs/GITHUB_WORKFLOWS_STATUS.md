@@ -436,6 +436,13 @@ One x64 trial is bounded to 20 minutes overall and five minutes in the container
 with no caches and at most 25 MiB of one-day diagnostics; inspect it before ARM64.
 Sandbox restrictions are findings, not permission to relax host/container security.
 Fixture success does not close any actual Paseo package or upgrade cell.
+The first x64 fixture trial `38111849668` at `832b9059c` stopped before installation:
+the tiny fixture lacked FPM's required homepage. Its successful AppImage packaging
+also exposed that builder expands architecture names differently by format;
+the harness now assigns explicit filenames without changing native metadata.
+Identity and packaging logs are retained before build completion so early failures
+have bounded diagnostics. No installer, renderer or FUSE acceptance follows from
+this failed trial; a reviewed corrected x64 trial remains the next gate.
 
 Approved execution checklist:
 
