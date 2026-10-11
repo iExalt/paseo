@@ -137,6 +137,7 @@ test("candidate transport follows pinned attempt and selected payload through re
   candidate.android.metadataSha256 = checksum(metadata);
   const android = zip({
     "paseo-iexalt-fork-201000.apk": apk,
+    "paseo-iexalt-fork-201000.apk.idsig": "v4 signature sidecar",
     "build-metadata.json": metadata,
     SHA256SUMS: "",
   });

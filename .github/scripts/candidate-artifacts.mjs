@@ -224,7 +224,11 @@ export async function fetchCandidate(pin, directory, token, platform, request = 
     const destination = await artifact(
       { id: lane.artifactId, digest: lane.artifactDigest, name: lane.artifactName },
       name,
-      [...Object.keys(files), "SHA256SUMS"],
+      [
+        ...Object.keys(files),
+        "SHA256SUMS",
+        ...(name === "android" ? [`paseo-iexalt-fork-${lane.versionCode}.apk.idsig`] : []),
+      ],
       maximum,
     );
     for (const [file, expected] of Object.entries(files))
