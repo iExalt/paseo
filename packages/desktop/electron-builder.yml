@@ -77,7 +77,8 @@ deb:
 rpm:
   afterInstall: scripts/linux-sandbox/after-install.tpl
 appImage:
-  # A nonempty argument list replaces builder's hardcoded --no-sandbox default.
+  # Replace the desktop entry's --no-sandbox default. AppRun still probes user
+  # namespaces and may select its own --no-sandbox fallback at launch.
   executableArgs: ["--class=Paseo"]
   # Keep the AppImage filename stable across versions (no ${version}) so
   # electron-updater overwrites the file in place instead of renaming it to a new
