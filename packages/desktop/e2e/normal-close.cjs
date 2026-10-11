@@ -11,13 +11,14 @@ async function closeNormally({ requestClose, waitForExit, child }) {
 
 async function closeProfileWindow({
   nixProfile,
+  installedFormat,
   ownedSession,
   page,
   child,
   waitForExit,
   artifactDir,
 }) {
-  if (!nixProfile) return;
+  if (!nixProfile && !installedFormat) return;
   assert.ok(ownedSession);
   await closeNormally({
     child,

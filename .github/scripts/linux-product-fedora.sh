@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+test "$(id -u)" = 0
+export PATH="/node-bin:$PATH"
+test "$(node --version)" = v26.11.0
+cd /repo
+dnf -y install xorg-x11-server-Xvfb xorg-x11-xauth util-linux procps-ng mesa-libgbm
+useradd --create-home fixture
+chown fixture:fixture /state /evidence
+for stage in previous candidate; do
+  artifact=$(node .github/scripts/linux-product-stage.mjs artifact /manifest.json "$stage" rpm /input)
+  dnf -y install "$artifact"
+  install -d -o fixture -g fixture -m 755 "/evidence/mounts-$stage"
+  runuser -u fixture -- test -w "/evidence/mounts-$stage"
+  OWNED_SESSION_UID="$(id -u fixture)" OWNED_SESSION_TIMEOUT_SECONDS=180 OWNED_SESSION_SKIP_XVFB=1 \
+    FIXTURE_FORMAT="rpm-$stage" TMPDIR="/evidence/mounts-$stage" \
+    bash -eu -c '
+      grep -q "^NoNewPrivs:[[:space:]]*1$" /proc/self/status
+      exec node /repo/.github/scripts/linux-format-launch.mjs runuser -u fixture -- node /repo/.github/scripts/linux-product-stage.mjs \
+        "$1" rpm /manifest.json /state /evidence
+    ' bash "$stage"
+done
+package=$(node .github/scripts/linux-product-stage.mjs package /manifest.json candidate rpm)
+dnf -y remove "$package"
+if rpm -q "$package"; then exit 1; fi
+test ! -e /opt/Paseo
+test ! -e /usr/bin/Paseo
+printf 'RPM upgrade and uninstall passed\n' > /evidence/rpm-lifecycle.txt

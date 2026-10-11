@@ -1,26 +1,46 @@
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { join } from "node:path";
-import { ownedProcesses } from "./linux-format-processes.mjs";
+import { ownedProcesses, unreadableUnknowns } from "./linux-format-processes.mjs";
+import { elevatedOwnedProcesses } from "./deep-cleanup.mjs";
 
 // A detached session scopes Xvfb, the FUSE runtime and Chromium even if parents exit.
 // PID plus kernel start time prevents signaling a subsequently reused PID.
-function processes() {
+const owner = randomUUID();
+const originalUid = Number(process.env.OWNED_SESSION_UID ?? process.getuid());
+assert.ok(Number.isSafeInteger(originalUid) && originalUid > 0);
+function processes(readEnvironment = true) {
   return readdirSync("/proc")
     .filter((name) => /^\d+$/.test(name))
     .flatMap((name) => {
       try {
         const fields = readFileSync(`/proc/${name}/stat`, "utf8").split(") ").at(-1).split(" ");
-        return [
-          {
-            pid: Number(name),
-            group: Number(fields[2]),
-            session: Number(fields[3]),
-            start: fields[19],
-          },
-        ];
+        const row = {
+          pid: Number(name),
+          parent: Number(fields[1]),
+          group: Number(fields[2]),
+          session: Number(fields[3]),
+          start: fields[19],
+        };
+        if (readEnvironment && statSync(`/proc/${name}`).uid === originalUid) {
+          try {
+            if (
+              readFileSync(`/proc/${name}/environ`, "utf8")
+                .split("\0")
+                .includes(`CI_DEEP_OWNER=${owner}`)
+            )
+              row.owner = owner;
+          } catch (error) {
+            if (!["EACCES", "EPERM"].includes(error.code)) throw error;
+            row.unreadable = true;
+          }
+          const current = readFileSync(`/proc/${name}/stat`, "utf8").split(") ").at(-1).split(" ");
+          if (current[19] !== row.start) return [];
+        }
+        return [row];
       } catch (error) {
         if (["ENOENT", "ESRCH"].includes(error.code)) return [];
         throw error;
@@ -40,9 +60,28 @@ assert.ok(!process.env.PASEO_ELECTRON_FLAGS, "Harness must not inject Electron f
 assert.ok(process.env.TMPDIR?.startsWith("/") && process.env.TMPDIR.length > 10);
 mkdirSync(process.env.TMPDIR, { recursive: true });
 assert.deepEqual(mounts(), [], "Owned temporary directory must begin without mounts");
-const child = spawn("xvfb-run", ["-a", ...process.argv.slice(2)], {
+const timeoutSeconds = Number(process.env.OWNED_SESSION_TIMEOUT_SECONDS ?? 60);
+assert.ok(Number.isInteger(timeoutSeconds) && timeoutSeconds >= 1 && timeoutSeconds <= 180);
+const command =
+  process.env.OWNED_SESSION_SKIP_XVFB === "1"
+    ? process.argv.slice(2)
+    : ["xvfb-run", "-a", ...process.argv.slice(2)];
+const receipt = (suffix) =>
+  join(process.env.TMPDIR, "..", `${process.env.FIXTURE_FORMAT}-${suffix}.json`);
+assert.match(process.env.FIXTURE_FORMAT, /^[a-z]+(?:-[a-z]+)?$/);
+writeFileSync(
+  receipt("started"),
+  JSON.stringify({
+    owner,
+    originalUid,
+    tmpdir: process.env.TMPDIR,
+    monitor: processes(false).find((row) => row.pid === process.pid),
+  }),
+);
+const child = spawn(command[0], command.slice(1), {
   detached: true,
   stdio: "inherit",
+  env: { ...process.env, CI_DEEP_OWNER: owner },
 });
 let result;
 child.once("error", (error) => {
@@ -53,13 +92,36 @@ child.once("exit", (code, signal) => {
 });
 const owned = new Map();
 let interrupted;
+let discoveryFailure;
 for (const signal of ["SIGTERM", "SIGINT"])
   process.on(signal, () => {
     interrupted = signal;
   });
 function capture() {
   const rows = processes();
-  const members = ownedProcesses(rows, child.pid, [...owned.values()]);
+  let members = ownedProcesses(rows, child.pid, [...owned.values()], owner);
+  let unknown = unreadableUnknowns(rows, members);
+  discoveryFailure = undefined;
+  if (unknown.length && process.getuid() !== 0) {
+    try {
+      const marked = elevatedOwnedProcesses(owner, { uid: originalUid });
+      const after = processes(false);
+      for (const row of rows) {
+        if (!after.some((current) => current.pid === row.pid && current.start === row.start))
+          continue;
+        row.owner = marked.includes(row.pid) ? owner : row.owner;
+        row.unreadable = false;
+      }
+      members = ownedProcesses(rows, child.pid, [...owned.values()], owner);
+      unknown = unreadableUnknowns(rows, members);
+    } catch (error) {
+      discoveryFailure = error;
+    }
+  }
+  if (unknown.length)
+    discoveryFailure ??= new Error(
+      `Unreadable unclassified processes: ${unknown.map((row) => row.pid).join(",")}`,
+    );
   // A reused leader PID would identify another session, never ours.
   const leader = rows.find(({ pid }) => pid === child.pid);
   const original = owned.get(child.pid);
@@ -74,22 +136,24 @@ function capture() {
 let failure;
 const finished = () => Boolean(result || interrupted);
 try {
-  const deadline = Date.now() + 60000;
+  const deadline = Date.now() + timeoutSeconds * 1000;
   while (!finished() && Date.now() < deadline) {
     capture();
+    if (discoveryFailure) throw discoveryFailure;
     await delay(50);
   }
-  assert.ok(result, interrupted ?? "Fixture launch exceeded 60s");
+  assert.ok(result, interrupted ?? `Owned launch exceeded ${timeoutSeconds}s`);
   assert.deepEqual(result, { code: 0, signal: null }, "Fixture must exit normally");
   const deadlineExit = Date.now() + 10000;
   while ((capture().length || mounts().length) && Date.now() < deadlineExit) await delay(100);
   assert.deepEqual(capture(), [], "Fixture session still running after normal exit");
+  if (discoveryFailure) throw discoveryFailure;
   assert.deepEqual(mounts(), [], "Fixture FUSE mount remains after normal exit");
 } catch (error) {
   failure = error;
 }
 function signalOwned(entry, signal) {
-  const current = processes().find(({ pid }) => pid === entry.pid);
+  const current = processes(false).find(({ pid }) => pid === entry.pid);
   if (current?.start !== entry.start) return;
   try {
     process.kill(entry.pid, signal);
@@ -116,13 +180,16 @@ async function cleanupOwned() {
     remaining: capture(),
     mounts: mounts(),
     owned: [...owned.values()],
+    owner,
+    session: child.pid,
+    discoveryFailure: discoveryFailure?.message,
   };
-  writeFileSync(
-    join(process.env.TMPDIR, "..", `${process.env.FIXTURE_FORMAT}-cleanup.json`),
-    JSON.stringify(cleanup, null, 2),
-  );
+  cleanup.complete =
+    cleanup.remaining.length === 0 && cleanup.mounts.length === 0 && !discoveryFailure;
+  writeFileSync(receipt("cleanup"), JSON.stringify(cleanup, null, 2));
   assert.deepEqual(cleanup.remaining, [], "Owned fixture processes remained");
   assert.deepEqual(cleanup.mounts, [], "Owned fixture mounts remained");
+  assert.equal(cleanup.complete, true, "Process discovery must be complete");
 }
 try {
   await cleanupOwned();
