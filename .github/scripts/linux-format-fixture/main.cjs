@@ -4,6 +4,7 @@ const path = require("node:path");
 const { execFileSync, spawnSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const { app, BrowserWindow, ipcMain } = require("electron");
+const { verifyNamespacePid } = require("./process-identity.cjs");
 
 const fail = (error) => {
   console.error(error);
@@ -32,7 +33,9 @@ app
     ipcMain.once("fixture-ready", (event, renderer) => {
       try {
         assert.equal(event.sender, window.webContents);
-        assert.equal(renderer.pid, window.webContents.getOSProcessId());
+        const observerPid = window.webContents.getOSProcessId();
+        const rendererStatus = fs.readFileSync(`/proc/${observerPid}/status`, "utf8");
+        const namespacePids = verifyNamespacePid(rendererStatus, observerPid, renderer.pid);
         const reason = process.env.PASEO_DESKTOP_SANDBOX_REASON;
         let appRun;
         if (process.env.FIXTURE_FORMAT === "appimage") {
@@ -78,7 +81,7 @@ app
             return [observed];
           } catch (error) {
             if (
-              pid === renderer.pid ||
+              pid === observerPid ||
               pid === process.pid ||
               !["ENOENT", "ESRCH"].includes(error.code)
             )
@@ -87,10 +90,9 @@ app
             return [];
           }
         });
-        assert.ok(processes.some(({ pid }) => pid === renderer.pid));
+        assert.ok(processes.some(({ pid }) => pid === observerPid));
         assert.ok(processes.some(({ pid }) => pid === process.pid));
         if (enabled) {
-          const rendererStatus = processes.find(({ pid }) => pid === renderer.pid).status;
           assert.match(rendererStatus, /^NoNewPrivs:\s+1$/m, "Renderer needs no-new-privileges");
           assert.match(rendererStatus, /^Seccomp:\s+2$/m, "Renderer needs a seccomp filter");
         }
@@ -123,7 +125,7 @@ app
               chromiumNoSandbox: noSandbox,
               policyEnabled: enabled,
               appRun,
-              renderer,
+              renderer: { ...renderer, observerPid, namespacePids },
               processes,
               mount,
               appImage: process.env.APPIMAGE,
