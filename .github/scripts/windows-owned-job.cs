@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -116,6 +117,9 @@ public static class PaseoOwnedJob
         public long primaryExitObservedMs = -1;
         public MemberDiagnostic[] remainingProcesses = Array.Empty<MemberDiagnostic>();
         public string processDiagnosticError;
+        public bool buildSucceededWithTelemetryCleanup;
+        public string allowedBuildTelemetry;
+        public uint telemetryTotalBefore, telemetryTotalVerified, telemetryActiveBefore, telemetryActiveVerified;
     }
 
     static void Check(bool success, string operation)
@@ -150,7 +154,7 @@ public static class PaseoOwnedJob
 
     // Read-only diagnostics. Ownership and termination always use the Job handle,
     // never these recyclable PIDs. Bound allocation even for a broken install.
-    static void DiagnoseMembers(IntPtr job, Receipt receipt)
+    static void DiagnoseMembers(IntPtr job, Receipt receipt, List<Process> held)
     {
         const int capacity = 256;
         int bytes = 8 + capacity * IntPtr.Size;
@@ -159,7 +163,8 @@ public static class PaseoOwnedJob
         {
             Check(QueryProcessList(job, 3, buffer, (uint)bytes, IntPtr.Zero), "Query bounded Job members");
             int count = Marshal.ReadInt32(buffer, 4);
-            if (count < 0 || count > capacity) throw new InvalidOperationException("Invalid Job member count");
+            if (count < 0 || count > capacity || Marshal.ReadInt32(buffer) != count)
+                throw new InvalidOperationException("Incomplete Job member list");
             receipt.remainingProcesses = new MemberDiagnostic[count];
             for (int i = 0; i < count; i++)
             {
@@ -168,22 +173,40 @@ public static class PaseoOwnedJob
                 receipt.remainingProcesses[i] = item;
                 try
                 {
-                    using (var member = Process.GetProcessById(checked((int)pid)))
-                    {
-                        IntPtr handle = member.Handle;
-                        bool belongs;
-                        Check(IsProcessInJob(handle, job, out belongs), "Verify diagnostic process membership");
-                        if (!belongs) throw new InvalidOperationException("Process no longer belongs to Job");
-                        item.membershipVerified = true;
-                        item.startedUtc = member.StartTime.ToUniversalTime().ToString("O");
-                        item.image = member.MainModule.FileName;
-                    }
+                    var member = Process.GetProcessById(checked((int)pid));
+                    held.Add(member);
+                    IntPtr handle = member.Handle;
+                    bool belongs;
+                    Check(IsProcessInJob(handle, job, out belongs), "Verify diagnostic process membership");
+                    if (!belongs) throw new InvalidOperationException("Process no longer belongs to Job");
+                    item.membershipVerified = true;
+                    item.startedUtc = member.StartTime.ToUniversalTime().ToString("O");
+                    item.image = member.MainModule.FileName;
+                    if (WaitForSingleObject(handle, 0) != 258) throw new InvalidOperationException("Member exited during verification");
                 }
                 catch (Exception error) { item.error = error.Message; }
             }
         }
         catch (Exception error) { receipt.processDiagnosticError = error.Message; }
         finally { Marshal.FreeHGlobal(buffer); }
+    }
+
+    // Pure classification; final accounting catches births racing with termination.
+    public static bool IsBuildTelemetryCleanup(Receipt receipt)
+    {
+        if (!receipt.complete || !receipt.terminated || receipt.timedOut || receipt.exitCode != 0 ||
+            receipt.error != null || receipt.processDiagnosticError != null ||
+            String.IsNullOrEmpty(receipt.allowedBuildTelemetry) || receipt.activeProcesses != 0 ||
+            receipt.telemetryActiveBefore == 0 || receipt.telemetryActiveBefore != receipt.telemetryActiveVerified ||
+            receipt.remainingProcesses.Length != receipt.telemetryActiveBefore ||
+            receipt.telemetryTotalBefore != receipt.telemetryTotalVerified || receipt.totalProcesses != receipt.telemetryTotalBefore)
+            return false;
+        var seen = new HashSet<uint>();
+        foreach (var member in receipt.remainingProcesses)
+            if (!seen.Add(member.pid) || !member.membershipVerified || member.error != null ||
+                String.IsNullOrEmpty(member.startedUtc) ||
+                !String.Equals(member.image, receipt.allowedBuildTelemetry, StringComparison.OrdinalIgnoreCase)) return false;
+        return true;
     }
 
     public static Receipt Run(string executable, string[] arguments, string directory, string log, int timeoutSeconds, string nsisInstallDirectory)
@@ -193,6 +216,11 @@ public static class PaseoOwnedJob
 
     public static Receipt Run(string executable, string[] arguments, string directory, string log, int timeoutSeconds, string nsisInstallDirectory, string startReceipt, string startIdentity)
     {
+        return Run(executable, arguments, directory, log, timeoutSeconds, nsisInstallDirectory, startReceipt, startIdentity, null);
+    }
+
+    public static Receipt Run(string executable, string[] arguments, string directory, string log, int timeoutSeconds, string nsisInstallDirectory, string startReceipt, string startIdentity, string allowedBuildTelemetry)
+    {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT || IntPtr.Size != 8)
             throw new InvalidOperationException("A native 64-bit Windows monitor is required");
         if (!Path.IsPathRooted(executable) || !File.Exists(executable) || !Directory.Exists(directory))
@@ -201,7 +229,12 @@ public static class PaseoOwnedJob
         if (String.IsNullOrEmpty(nsisInstallDirectory)) nsisInstallDirectory = null;
         if (nsisInstallDirectory != null && (!Path.IsPathRooted(nsisInstallDirectory) || nsisInstallDirectory.IndexOfAny(new[] { '"', '\r', '\n' }) >= 0))
             throw new InvalidOperationException("NSIS installation directory must be an absolute unquoted path");
-        var receipt = new Receipt();
+        if (!String.IsNullOrEmpty(allowedBuildTelemetry) &&
+            (!Path.IsPathRooted(allowedBuildTelemetry) || !File.Exists(allowedBuildTelemetry) ||
+             !String.Equals(Path.GetFileName(allowedBuildTelemetry), "VCTIP.EXE", StringComparison.OrdinalIgnoreCase) || nsisInstallDirectory != null))
+            throw new InvalidOperationException("Exact build telemetry executable required");
+        var receipt = new Receipt { allowedBuildTelemetry = allowedBuildTelemetry };
+        var held = new List<Process>();
         var clock = Stopwatch.StartNew();
         IntPtr job = IntPtr.Zero, output = IntPtr.Zero, input = IntPtr.Zero;
         ProcessInformation process = new ProcessInformation();
@@ -275,7 +308,13 @@ public static class PaseoOwnedJob
             if (receipt.timedOut || receipt.exitCode != 0 || Inspect(job).Basic.ActiveProcesses != 0)
             {
                 receipt.terminated = true;
-                DiagnoseMembers(job, receipt);
+                var before = Inspect(job).Basic;
+                receipt.telemetryTotalBefore = before.TotalProcesses;
+                receipt.telemetryActiveBefore = before.ActiveProcesses;
+                DiagnoseMembers(job, receipt, held);
+                var verified = Inspect(job).Basic;
+                receipt.telemetryTotalVerified = verified.TotalProcesses;
+                receipt.telemetryActiveVerified = verified.ActiveProcesses;
                 Check(TerminateJobObject(job, 1), "Terminate owned job");
             }
         }
@@ -306,11 +345,13 @@ public static class PaseoOwnedJob
                     Check(QueryLimits(job, 9, out memory, (uint)Marshal.SizeOf<ExtendedLimits>(), IntPtr.Zero), "Read final job memory");
                     receipt.peakJobMemoryBytes = memory.PeakJobMemory.ToUInt64();
                     receipt.complete = receipt.activeProcesses == 0 && receipt.error == null;
+                    receipt.buildSucceededWithTelemetryCleanup = IsBuildTelemetryCleanup(receipt);
                 }
             }
             catch (Exception error) { receipt.error = (receipt.error ?? "") + error; receipt.complete = false; }
             foreach (IntPtr handle in new[] { process.Thread, process.Process, output, input, job })
                 if (Valid(handle)) CloseHandle(handle);
+            foreach (var member in held) member.Dispose();
             receipt.elapsedMs = clock.ElapsedMilliseconds;
         }
         return receipt;
