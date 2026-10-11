@@ -5,7 +5,12 @@ import { validateCandidateClosure } from "../.github/scripts/macos-candidate-run
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";
 import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
 import { closeNormally } from "../packages/desktop/e2e/normal-close.cjs";
-import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync, lstatSync } from "node:fs";
+import { createServer } from "node:net";
+import {
+  stageTemporaryDirectory,
+  validateTemporaryRoot,
+} from "../.github/scripts/linux-product-temp.mjs";
 import { tmpdir } from "node:os";
 import {
   ownedProcesses,
@@ -22,6 +27,42 @@ import {
   validateManifest,
   verifyPayload,
 } from "../packages/desktop/e2e/linux-installed-layout.cjs";
+
+test(
+  "owned product temporary paths support real singleton sockets and reject substituted roots",
+  { skip: process.platform === "win32" },
+  async () => {
+    const directory = mkdtempSync("/tmp/paseo-");
+    const stat = lstatSync(directory);
+    const record = { path: directory, uid: stat.uid, dev: stat.dev, ino: stat.ino };
+    const server = createServer();
+    try {
+      if (process.platform === "linux") {
+        validateTemporaryRoot(record);
+        assert.throws(() => validateTemporaryRoot({ ...record, ino: record.ino + 1 }));
+      }
+      assert.throws(() => stageTemporaryDirectory(record, "../unowned"));
+      const socketDirectory = join(
+        stageTemporaryDirectory(record, "appimage-previous"),
+        "scoped_dir123456",
+      );
+      mkdirSync(socketDirectory, { recursive: true });
+      await new Promise((resolve, reject) => {
+        server.once("error", reject);
+        server.listen(join(socketDirectory, "SingletonSocket"), resolve);
+      });
+      await new Promise((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+      rmSync(directory, { recursive: true });
+      symlinkSync(tmpdir(), directory);
+      if (process.platform === "linux") assert.throws(() => validateTemporaryRoot(record));
+    } finally {
+      if (server.listening) await new Promise((resolve) => server.close(resolve));
+      rmSync(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 test("installed package identity binds source, archive paths, metadata and native payload bytes", async () => {
   const root = mkdtempSync(join(tmpdir(), "paseo-installed-identity-"));

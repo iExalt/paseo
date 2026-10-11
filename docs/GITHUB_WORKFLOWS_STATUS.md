@@ -489,12 +489,24 @@ race timing is not in the receipt. Verified cleanup left no owned processes or
 mounts. PR/dev CI passed in 4m31s/4m30s.
 
 This trial also measured 328s/298s of candidate/predecessor packaging, mostly
-DEB/RPM xz compression; AppImage took about 19s per version. The next trial uses
+DEB/RPM xz compression; AppImage took about 19s per version. The next trial used
 gzip for production DEB/RPM and an explicit identical compression override when
 rebuilding the fixed predecessor. Its product source and payload checks remain
-unchanged. Archive sizes will be recorded; historical sizes were not retained,
-and gzip's latency/size tradeoff is not yet measured. No duplicate xz build is
-required unless the new sizes raise a concrete concern.
+unchanged. At `b801126f2`, [the trial](https://github.com/iExalt/paseo/actions/runs/38120787401)
+measured 121s/112s packaging, reducing combined packaging from 626s to 233s
+under hosted-runner variation. Candidate DEB/RPM sizes are 172,456,942/172,431,299
+bytes, close to the unchanged AppImage's 171,481,940 bytes; historical xz sizes
+were not retained, so no size-change percentage is claimed. No duplicate xz
+build is required. PR/dev CI passed in 4m23s/4m23s with the stable baseline unchanged.
+
+The product trial failed after 12m57s because its long temporary path exceeded
+Chromium's Unix singleton-socket limit, before the first AppImage renderer opened.
+Its process/mount and final state cleanup passed. The reviewed repair uses a
+short, exclusively created `/tmp` root with recorded path, UID and filesystem
+identity; receipts remain in the evidence directory. Cleanup requires exact stage
+paths and complete monitor receipts before deleting temporary state. The real
+singleton lock, sandbox policy and normal-close proof are unchanged; installed
+product upgrade acceptance and the ARM64 trial remain pending.
 
 Approved execution checklist:
 

@@ -70,8 +70,10 @@ const command =
   process.env.OWNED_SESSION_SKIP_XVFB === "1"
     ? process.argv.slice(2)
     : ["xvfb-run", "-a", ...process.argv.slice(2)];
-const receipt = (suffix) =>
-  join(process.env.TMPDIR, "..", `${process.env.FIXTURE_FORMAT}-${suffix}.json`);
+const receiptDirectory =
+  process.env.OWNED_SESSION_RECEIPT_DIRECTORY ?? join(process.env.TMPDIR, "..");
+assert.ok(receiptDirectory.startsWith("/"));
+const receipt = (suffix) => join(receiptDirectory, `${process.env.FIXTURE_FORMAT}-${suffix}.json`);
 assert.match(process.env.FIXTURE_FORMAT, /^[a-z]+(?:-[a-z]+)?$/);
 writeFileSync(
   receipt("started"),
