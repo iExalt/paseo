@@ -10,8 +10,11 @@ useradd --create-home fixture
 test "$(stat -Lc '%u:%a' /opt/PaseoFormatFixture/chrome-sandbox)" = 0:4755
 rpm -q paseo-format-fixture
 runuser -u fixture -- env FIXTURE_RECEIPT=/evidence/rpm.json FIXTURE_FORMAT=rpm TMPDIR=/evidence/rpm-mounts \
-  node /scripts/linux-format-launch.mjs /usr/bin/PaseoFormatFixture \
-  --user-data-dir=/home/fixture/profile
+  bash -eu -c '
+    grep -q "^NoNewPrivs:[[:space:]]*1$" /proc/self/status
+    exec node /scripts/linux-format-launch.mjs /usr/bin/PaseoFormatFixture \
+      --user-data-dir=/home/fixture/profile
+  '
 FIXTURE_FORMAT=rpm node /scripts/linux-format-verify.mjs /evidence/rpm.json
 dnf -y remove paseo-format-fixture
 if rpm -q paseo-format-fixture; then exit 1; fi
