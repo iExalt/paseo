@@ -480,6 +480,21 @@ directory, so fanout must use `packages/desktop`, as the normal build does.
 The detached-child negative probe and final cleanup passed; no product was
 installed. A locked-builder probe verifies both hooks after the cwd repair.
 PR #29 and full dev CI passed in 4m18s and 4m22s at `56babf666`.
+The [retry at `ec2f19de2`](https://github.com/iExalt/paseo/actions/runs/38119044745)
+built all six artifacts, then stopped in the first AppImage stage on an unreadable
+process identity. Source review found that a process disappearing or reusing its
+PID during the privileged scan remained falsely unclassified; the repair drops
+stale identities and requires another capture for newly discovered IDs. The exact
+race timing is not in the receipt. Verified cleanup left no owned processes or
+mounts. PR/dev CI passed in 4m31s/4m30s.
+
+This trial also measured 328s/298s of candidate/predecessor packaging, mostly
+DEB/RPM xz compression; AppImage took about 19s per version. The next trial uses
+gzip for production DEB/RPM and an explicit identical compression override when
+rebuilding the fixed predecessor. Its product source and payload checks remain
+unchanged. Archive sizes will be recorded; historical sizes were not retained,
+and gzip's latency/size tradeoff is not yet measured. No duplicate xz build is
+required unless the new sizes raise a concrete concern.
 
 Approved execution checklist:
 
