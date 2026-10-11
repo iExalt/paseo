@@ -213,6 +213,11 @@ describe("run feature values", () => {
     });
     const parentAgent = createAgentSnapshot("parent-agent");
     const createdAgent = createAgentSnapshot("created-agent");
+    vi.spyOn(client, "getLastServerInfoMessage").mockReturnValue({
+      status: "server_info",
+      serverId: "cli-run-feature-test",
+      features: { agentOrchestrationParity: true },
+    });
     vi.spyOn(client, "fetchAgent").mockResolvedValue({ agent: parentAgent, project: null });
     const createAgent = vi.spyOn(client, "createAgent").mockResolvedValue(createdAgent);
     vi.spyOn(client, "close").mockResolvedValue();
