@@ -1094,6 +1094,74 @@ async function smokePackagedDesktopApp({
   }
 }
 
+async function inspectUpgradeState({
+  stage,
+  stageDir,
+  appPath,
+  cliPath,
+  env,
+  page,
+  daemonHome,
+  browser,
+  userData,
+  workspaceId,
+  title,
+  theme,
+  storageDiagnostics,
+}) {
+  const recordStorage = async (name) => {
+    const storage = await page.evaluate(() => ({
+      origin: location.origin,
+      theme: JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme ?? null,
+    }));
+    fs.writeFileSync(path.join(stageDir, `${name}-storage.json`), JSON.stringify(storage));
+    return storage;
+  };
+  if (storageDiagnostics) {
+    await recordStorage("entry");
+    await recordStoragePaths({ browser, userData, artifactDir: stageDir });
+  }
+  if (stage === "previous") {
+    const project = path.join(daemonHome, "persisted-project");
+    fs.mkdirSync(project);
+    fs.writeFileSync(path.join(project, "README.md"), "Persisted package-upgrade fixture\n");
+    const workspace = await runCliShimJsonCommand({
+      appPath,
+      cliPath,
+      env,
+      args: ["workspace", "create", "--isolation", "local", "--path", project, "--title", title],
+      label: "Seed predecessor workspace",
+    });
+    workspaceId = workspace.workspaceId;
+    assert.equal(typeof workspaceId, "string");
+  }
+  await page.getByRole("button", { name: title, exact: true }).click();
+  await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${workspaceId}`));
+  await page.screenshot({ path: path.join(stageDir, "workspace.png") });
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("button", { name: "Appearance", exact: true }).click();
+  if (stage === "previous") {
+    await page.getByLabel("Theme: System", { exact: true }).click();
+    await page.getByText(theme, { exact: true }).click();
+  }
+  await page.getByLabel(`Theme: ${theme}`, { exact: true }).waitFor({ state: "visible" });
+  if (storageDiagnostics) {
+    await page.waitForFunction(
+      () =>
+        JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme === "pureBlack",
+      undefined,
+      { timeout: 5000 },
+    );
+    await recordStorage("selected");
+  }
+  await page.screenshot({ path: path.join(stageDir, "theme.png") });
+  fs.writeFileSync(
+    path.join(stageDir, "state.json"),
+    JSON.stringify({ appPath, workspaceId, theme }),
+  );
+  return workspaceId;
+}
+
 async function smokePackagedDesktopUpgrade({
   previousApp,
   candidateApp,
@@ -1160,71 +1228,17 @@ async function smokePackagedDesktopUpgrade({
         ownedSession,
         predecessor: stage === "previous",
         artifactDir: stageDir,
-        inspectState: async ({ cliPath, env, page, daemonHome, browser, userData }) => {
-          const recordStorage = async (name) => {
-            const storage = await page.evaluate(() => ({
-              origin: location.origin,
-              theme:
-                JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme ?? null,
-            }));
-            fs.writeFileSync(path.join(stageDir, `${name}-storage.json`), JSON.stringify(storage));
-            return storage;
-          };
-          if (nixLayout) {
-            await recordStorage("entry");
-            await recordStoragePaths({ browser, userData, artifactDir: stageDir });
-          }
-          if (stage === "previous") {
-            const project = path.join(daemonHome, "persisted-project");
-            fs.mkdirSync(project);
-            fs.writeFileSync(
-              path.join(project, "README.md"),
-              "Persisted package-upgrade fixture\n",
-            );
-            const workspace = await runCliShimJsonCommand({
-              appPath,
-              cliPath,
-              env,
-              args: [
-                "workspace",
-                "create",
-                "--isolation",
-                "local",
-                "--path",
-                project,
-                "--title",
-                title,
-              ],
-              label: "Seed predecessor workspace",
-            });
-            workspaceId = workspace.workspaceId;
-            assert.equal(typeof workspaceId, "string");
-          }
-          await page.getByRole("button", { name: title, exact: true }).click();
-          await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${workspaceId}`));
-          await page.screenshot({ path: path.join(stageDir, "workspace.png") });
-          await page.getByRole("button", { name: "Settings", exact: true }).click();
-          await page.getByRole("button", { name: "Appearance", exact: true }).click();
-          if (stage === "previous") {
-            await page.getByLabel("Theme: System", { exact: true }).click();
-            await page.getByText(theme, { exact: true }).click();
-          }
-          await page.getByLabel(`Theme: ${theme}`, { exact: true }).waitFor({ state: "visible" });
-          if (nixLayout) {
-            await page.waitForFunction(
-              () =>
-                JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme ===
-                "pureBlack",
-              undefined,
-              { timeout: 5000 },
-            );
-            await recordStorage("selected");
-          }
-          await page.screenshot({ path: path.join(stageDir, "theme.png") });
-          fs.writeFileSync(
-            path.join(stageDir, "state.json"),
-            JSON.stringify({ appPath, workspaceId, theme }),
-          );
+        inspectState: async (context) => {
+          workspaceId = await inspectUpgradeState({
+            ...context,
+            stage,
+            stageDir,
+            appPath,
+            workspaceId,
+            title,
+            theme,
+            storageDiagnostics: Boolean(nixLayout),
+          });
         },
       });
     }
