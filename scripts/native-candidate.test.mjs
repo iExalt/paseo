@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { execFileSync } from "node:child_process";
 import { validateCandidateClosure } from "../.github/scripts/macos-candidate-runtime.mjs";
+
+test("Android first-use controls distinguish the keyboard prompt and focused input", () => {
+  execFileSync("python3", ["-B", ".github/scripts/android_candidate_controls_test.py"], {
+    timeout: 5000,
+  });
+});
 
 test("native candidate reader rejects legacy or mismatched closure identities", () => {
   const candidate = {

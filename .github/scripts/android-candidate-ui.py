@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from android_candidate_controls import keyboard_permission_deny, input_ready
 
 previous, candidate, output, endpoint, version_code = sys.argv[1:]
 output = pathlib.Path(output)
@@ -30,10 +31,11 @@ def matches(node, selector):
     return any(node.get(key) == selector for key in ("text", "content-desc", "resource-id")) or node.get("resource-id", "").endswith(":id/" + selector)
 
 
-def wait(selector, timeout=30):
+def wait(selector, timeout=30, value=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        found = [node for node in nodes() if matches(node, selector)]
+        found = [node for node in nodes() if matches(node, selector)
+                 and (value is None or node.get("text") == value)]
         if found:
             return found[0]
         time.sleep(0.5)
@@ -42,11 +44,53 @@ def wait(selector, timeout=30):
 
 def tap(selector):
     node = wait(selector)
+    tap_node(node, selector)
+
+
+def tap_node(node, selector):
     bounds = re.fullmatch(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", node.get("bounds", ""))
     if not bounds:
         raise RuntimeError("Missing tappable bounds: " + selector)
     x1, y1, x2, y2 = map(int, bounds.groups())
     adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+
+
+def fill_connection_field(selector, value):
+    tap(selector)
+    deadline = time.monotonic() + 30
+    stable = 0
+    refocus = False
+    while time.monotonic() < deadline:
+        current = nodes()
+        deny = keyboard_permission_deny(current)
+        if deny is not None:
+            screenshot("keyboard-permission")
+            tap_node(deny, "keyboard contacts denial")
+            stable = 0
+            refocus = True
+            continue
+        if any(node.get("package") == "com.android.permissioncontroller" for node in current):
+            raise RuntimeError("Unexpected permission dialog")
+        if refocus:
+            field = next((node for node in current if matches(node, selector)), None)
+            if field is None:
+                raise RuntimeError("Connection field disappeared after permission denial")
+            tap_node(field, selector)
+            refocus = False
+            continue
+        if input_ready(current, selector, adb("shell", "dumpsys", "input_method")):
+            stable += 1
+            if stable == 2:
+                break
+        else:
+            stable = 0
+        time.sleep(0.5)
+    else:
+        raise RuntimeError("Connection input did not become ready: " + selector)
+    adb("shell", "input", "keycombination", "113", "29")
+    adb("shell", "input", "keyevent", "67")
+    text(value)
+    wait(selector, timeout=10, value=value)
 
 
 def text(value):
@@ -83,8 +127,11 @@ try:
         adb("shell", "am", "start", "-W", "-n", activity)
         if stage == "previous":
             tap("welcome-direct-connection")
-            tap("direct-host-input")
-            text(endpoint)
+            host, port = endpoint.rsplit(":", 1)
+            fill_connection_field("direct-host-input", host)
+            fill_connection_field("direct-port-input", port)
+            adb("shell", "input", "keyevent", "4")
+            screenshot("previous-connection")
             tap("direct-host-submit")
         else:
             # Reaching the saved host without entering its address proves app data survived.
