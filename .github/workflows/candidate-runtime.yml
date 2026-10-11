@@ -1,0 +1,68 @@
+name: Candidate native runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_pin:
+        description: "JSON with runId, attempt, sourceSha, version, artifactId and artifactDigest from the accepted paired producer."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: candidate-native-runtime
+  cancel-in-progress: false
+
+jobs:
+  macos:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    runs-on: macos-14
+    timeout-minutes: 30
+    env:
+      CANDIDATE_PIN: ${{ inputs.candidate_pin }}
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      CI: "true"
+      LEFTHOOK: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Install locked harness dependencies
+        run: |
+          test "$(node --version)" = v26.11.0
+          test "$(npm --version)" = 11.20.0
+          npm ci --cache "$RUNNER_TEMP/npm-cache"
+          npm run build:server
+      - name: Verify canonical signed packages and preserved native state
+        timeout-minutes: 10
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/macos-candidate-runtime.mjs
+      - name: Bound retained evidence
+        id: evidence
+        if: ${{ !cancelled() }}
+        run: |
+          directory=.dev/github-workflows/native/macos
+          test -d "$directory"
+          bytes="$(find "$directory" -type f -exec stat -f%z {} \; | awk '{sum += $1} END {print sum+0}')"
+          test "$bytes" -le 26214400
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && steps.evidence.outcome == 'success' }}
+        with:
+          name: native-macos-${{ github.sha }}-${{ github.run_attempt }}
+          path: .dev/github-workflows/native/macos/
+          retention-days: 1
+          if-no-files-found: error

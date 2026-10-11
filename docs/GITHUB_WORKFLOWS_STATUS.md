@@ -338,9 +338,11 @@ Candidate retention is one day, with APK transfers capped at 512 MiB and the Nix
 archive at 2 GiB; quota rejection fails the gate. The first package trial at
 `10591c783` stopped Android before compilation: WebView generation changed a tracked
 file before the strict clean-source check. Reviewed repair `e506c1272` moves that
-check before installation/generation; it does not weaken the guard. The independent
-Mac trial remains running. A repaired paired candidate requires both lanes at its
-new source SHA; old-source Mac bytes cannot silently substitute for that proof.
+check before installation/generation; it does not weaken the guard. That trial's
+Mac signing/export passed in 11m59s and fresh-runner signature/import verification
+in 1m16s; Android failure still prevents paired acceptance. Reviewed `e506c1272`
+passed routine CI and is integrated into dev. Repaired paired run `38097874209`
+is active at that exact SHA; old-source Mac bytes cannot substitute for its proof.
 
 The shared candidate transport helper is locally verified and reviewer-accepted:
 it checks explicit producer attempt/source, pinned artifact IDs and ZIP digests,
@@ -348,6 +350,18 @@ bounded streams and exact flat extraction. Tiny real-ZIP fixtures cover both
 platform selections without downloading the other platform. Native metadata,
 signatures, UI state preservation and runtime cleanup remain B2 consumer gates;
 no transport-only workflow was dispatched.
+
+The first native consumer implements a manual, read-only Mac verification job:
+it verifies the pinned published 0.11.0 predecessor and the accepted candidate's
+signed Nix closure in the canonical store, then uses their actual packaged binaries
+against one disposable profile. The predecessor seeds a workspace and theme through
+its CLI/UI; the replacement must show the same workspace identity and selected theme,
+with its full plugin/CLI/PTY checks. Supervisor/descendant identities are captured
+before and after runtime activity and must exit before replacement. Early launch
+failures without a PID remain failed gates with hosted teardown as fallback, not
+successful process-cleanup proof. Native execution is pending producer acceptance
+and reviewed consumer integration; local fixtures only verify identity and process
+ownership rules. Android runtime/state preservation remains to be implemented.
 
 The [optimized integration lane](https://github.com/iExalt/paseo/actions/runs/38096508135)
 at `18510758c` passed unchanged lifecycle cases, relay/provider checks and all process
