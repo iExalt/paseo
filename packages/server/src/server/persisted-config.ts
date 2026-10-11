@@ -247,6 +247,7 @@ export const PersistedConfigSchema = z
           })
           .passthrough()
           .optional(),
+        agentTools: z.object({ enabled: z.boolean().optional() }).passthrough().optional(),
         browserTools: z
           .object({
             enabled: z.boolean().optional(),

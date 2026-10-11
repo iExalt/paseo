@@ -1,6 +1,7 @@
 import { type Command } from "commander";
 import { collectMultiple } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
+import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import type {
   CommandOptions,
   SingleResult,
@@ -15,6 +16,7 @@ export interface AgentSendResult {
   agentId: string;
   status: "sent" | "completed" | "timeout" | "permission" | "error";
   message: string;
+  disposition?: "out_of_band" | "steered" | "turn_started";
 }
 
 /** Schema for agent send output */
@@ -32,6 +34,8 @@ export interface AgentSendOptions extends CommandOptions {
   image?: string[];
   prompt?: string;
   promptFile?: string;
+  mode?: string;
+  notifyOnFinish?: boolean;
 }
 
 export function addSendOptions(cmd: Command): Command {
@@ -42,6 +46,9 @@ export function addSendOptions(cmd: Command): Command {
     .option("--prompt <text>", "Provide the message inline as a flag")
     .option("--prompt-file <path>", "Read the message from a UTF-8 text file")
     .option("--image <path>", "Attach image(s) to the message", collectMultiple, [])
+    .option("--mode <id>", "Set the provider mode before sending the message")
+    .option("--notify-on-finish", "Notify the calling agent when this agent finishes")
+    .option("--no-notify-on-finish", "Do not notify the calling agent when this agent finishes")
     .option("--no-wait", "Return immediately without waiting for completion");
 }
 
@@ -187,14 +194,19 @@ export async function runSendCommand(
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
+    const callerAgentId = await resolveCallerAgentId(client);
     // Read image files if provided
     const images =
       options.image && options.image.length > 0 ? await readImageFiles(options.image) : undefined;
 
     // Send the message
-    await client.sendAgentMessage(agentIdArg, promptInput, {
+    const dispatch = await client.sendAgentMessage(agentIdArg, promptInput, {
       images,
-      sourceAgentId: process.env.PASEO_AGENT_ID?.trim() || undefined,
+      sourceAgentId: callerAgentId,
+      sessionMode: options.mode,
+      ...(options.notifyOnFinish !== undefined || callerAgentId
+        ? { notifyOnFinish: options.notifyOnFinish ?? true }
+        : {}),
     });
 
     // If --no-wait, return immediately
@@ -207,6 +219,7 @@ export async function runSendCommand(
           agentId: agentIdArg,
           status: "sent",
           message: "Message sent, not waiting for completion",
+          ...dispatch,
         },
         schema: agentSendSchema,
       };
@@ -217,7 +230,7 @@ export async function runSendCommand(
 
     return {
       type: "single",
-      data: buildSendResult(agentIdArg, state),
+      data: { ...buildSendResult(agentIdArg, state), ...dispatch },
       schema: agentSendSchema,
     };
   } catch (err) {

@@ -37,12 +37,14 @@ export async function runStart(options: CommandOptions, _command: Command) {
 export function daemonRunCommand(): Command {
   return rejectRemovedLaunchFlags(addLocalDaemonOptions(new Command("run")))
     .description("Run a local daemon in the foreground with deployment environment overrides")
+    .option("--no-agent-tools", "Disable native Paseo tools for agents")
     .action(
-      withOutput(async (options: CommandOptions, _command: Command) => {
+      withOutput(async (options: CommandOptions & { agentTools?: boolean }, _command: Command) => {
         if (options.daemonTarget.kind !== "instance") throw new Error("Run requires a local home");
         const result = await launchLocalDaemon({
           home: options.daemonTarget.home,
           foreground: true,
+          ...(options.agentTools === false ? { agentToolsEnabled: false } : {}),
         });
         process.exitCode = result.exitCode ?? 0;
         return {

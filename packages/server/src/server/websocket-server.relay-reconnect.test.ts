@@ -1144,6 +1144,13 @@ describe("relay external socket reconnect behavior", () => {
     expect(serverInfo.features?.pluginLogs).toBe(true);
     expect(serverInfo.features?.workspaceMarkUnread).toBe(true);
     expect(serverInfo.features?.workspaceNotifications).toBe(true);
+    expect(serverInfo.features?.agentClose).toBe(true);
+    expect(serverInfo.features?.agentCancelOutcome).toBe(true);
+    expect(serverInfo.features?.profileList).toBe(true);
+    expect(serverInfo.features?.providerInspect).toBe(true);
+    expect(serverInfo.features?.agentDirectoryQuery).toBe(true);
+    expect(serverInfo.features?.agentStatus).toBe(true);
+    expect(serverInfo.features?.agentActivity).toBe(true);
     expect(serverInfo.features?.["terminal-input-mode-replay"]).toBe(true);
     expect(serverInfo.features?.["terminal-size-ownership"]).toBe(true);
     expect(serverInfo.features?.agentTurnIdentity).toBeUndefined();

@@ -1,0 +1,83 @@
+import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
+import { isPaseoToolEnabled, isPaseoToolPolicyEnabled } from "./paseo-tool-policy.js";
+
+const PASEO_TOOL_CLI_COMMANDS: Readonly<Record<string, string>> = {
+  speak: "speech speak",
+  create_workspace: "workspace create",
+  list_workspaces: "workspace ls",
+  get_daemon_notification_rules: "daemon notifications rules get",
+  set_daemon_notification_rules: "daemon notifications rules set",
+  clear_daemon_notification_rules: "daemon notifications rules clear",
+  set_workspace_notifications: "workspace update",
+  archive_workspace: "workspace archive",
+  create_agent: "agent run --no-wait",
+  send_agent_prompt: "agent send --no-wait",
+  get_agent_status: "agent status",
+  list_agents: "agent query",
+  cancel_agent: "agent stop",
+  archive_agent: "agent archive --force",
+  kill_agent: "agent close",
+  update_agent: "agent update",
+  rename_workspace: "workspace rename",
+  list_workspace_scripts: "script ls",
+  start_workspace_script: "script start",
+  stop_workspace_script: "script stop",
+  list_terminals: "terminal ls",
+  create_terminal: "terminal create",
+  kill_terminal: "terminal kill",
+  capture_terminal: "terminal capture",
+  send_terminal_keys: "terminal send-keys",
+  create_schedule: "schedule create --replace",
+  create_heartbeat: "heartbeat create --replace",
+  delete_heartbeat: "heartbeat delete",
+  list_schedules: "schedule ls",
+  inspect_schedule: "schedule inspect",
+  pause_schedule: "schedule pause",
+  resume_schedule: "schedule resume",
+  delete_schedule: "schedule delete",
+  update_schedule: "schedule update",
+  schedule_logs: "schedule logs",
+  run_schedule_once: "schedule run-once",
+  list_providers: "provider ls --full",
+  list_models: "provider models --full",
+  list_profiles: "profile ls",
+  inspect_provider: "provider inspect",
+  get_agent_activity: "agent activity",
+  set_agent_mode: "agent mode",
+  list_pending_permissions: "permit ls",
+  respond_to_permission: "permit allow / permit deny",
+  browser_list_tabs: "browser list-tabs",
+  browser_new_tab: "browser new-tab",
+  browser_snapshot: "browser snapshot",
+  browser_navigate: "browser navigate",
+  browser_back: "browser back",
+  browser_forward: "browser forward",
+  browser_reload: "browser reload",
+  browser_click: "browser click",
+  browser_fill: "browser fill",
+  browser_type: "browser type",
+  browser_keypress: "browser keypress",
+  browser_hover: "browser hover",
+  browser_select: "browser select",
+  browser_drag: "browser drag",
+  browser_upload: "browser upload",
+  browser_wait: "browser wait",
+  browser_screenshot: "browser screenshot --output <file>",
+  browser_logs: "browser logs",
+  browser_evaluate: "browser evaluate",
+  browser_scroll: "browser scroll",
+  browser_resize: "browser resize",
+  browser_close_tab: "browser close-tab",
+};
+
+export function getPaseoCliCommands(policy: ProviderPaseoToolsPolicy | undefined): string[] {
+  if (!isPaseoToolPolicyEnabled(policy)) return [];
+
+  return [
+    ...new Set(
+      Object.entries(PASEO_TOOL_CLI_COMMANDS)
+        .filter(([toolName]) => isPaseoToolEnabled(policy, toolName))
+        .map(([, command]) => command),
+    ),
+  ].sort();
+}
