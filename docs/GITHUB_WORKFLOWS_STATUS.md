@@ -20,7 +20,7 @@
   unmet. Initial queue adds 3s to each. Required checks are preserved.
 - Phase B: B1–B3 accepted; native Nix proofs cover both architectures and
   full x64/ARM DEB/RPM/AppImage evidence is at `db2316365`. B4 Windows is active.
-  Latest routine PR/dev runs passed in 4m37s/4m35s at `e731f231c`;
+  Latest routine PR/dev runs passed in 4m40s/3m42s at `88882cdf5`;
   this does not replace the accepted baseline above.
 
 ## Outcome gates
@@ -877,6 +877,24 @@ fixture on Windows before compilation, and retains bounded relevant archive path
 before verification. Old installation, UI, upgrade and speech were skipped; cleanup
 passed. Routine PR/dev CI passed in 4m37s/4m35s excluding initial queues, with
 22m13s total runner work for the PR. The next ARM canary retains every product gate.
+The [archive-path retry](https://github.com/iExalt/paseo/actions/runs/38160340090)
+at `88882cdf5` ran for 57m51s and passed both native package inventories, installed
+UI/CLI/PTY journeys, retained workspace/theme/trampoline and normal application
+close. Author and reviewer inspected the candidate screenshots. Normal candidate
+and predecessor installs took 20m54s/18m47s; package builds took 4m58s/4m06s.
+The predecessor installer is 147,217,267 bytes; model preparation took 76s.
+Speech failed after 829ms because the Node26 parent could not deserialize the
+installed Electron worker's advanced IPC. A disposable local probe reproduced
+that exact error and passed an ArrayBuffer round trip with both sides using the
+locked Electron 44.6.0 (Node24.21.0); importing the existing TypeScript WAV and
+transcript helpers also passed under that runtime. The repair makes installed
+Electron the speech Job's primary process, preserving exact PID/executable/argv
+authorization, advanced IPC, real worker loading and the 280-second ceiling.
+Parent/worker runtime identities are retained and compared. Recovery uninstall,
+registry/directory/state removal and all fifteen Job receipts reconciled with
+zero active processes. Speech and x64 remain required; no cache is introduced.
+Routine PR/dev verification passed in 4m40s/3m42s excluding initial queues;
+dev used 19m44s total runner time. These measurements preserve the stable baseline.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
