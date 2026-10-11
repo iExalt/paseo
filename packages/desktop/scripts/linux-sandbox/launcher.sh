@@ -10,6 +10,18 @@ if [ "${ELECTRON_RUN_AS_NODE:-}" = 1 ]; then
   exec "$executable" "$@"
 fi
 
+# AppImage preserves the invoked symlink in ARGV0. The installed `paseo` link
+# must enter Node before Chromium needs a display or writes startup logs.
+invoked=${ARGV0:-}
+if [ "${invoked##*/}" = paseo ] && [ -n "${APPIMAGE:-}" ] && [ -f "$APPIMAGE" ] &&
+   [ -x "$APPIMAGE" ] && [ -n "${APPDIR:-}" ] &&
+   [ "$(readlink -f -- "$APPDIR")" = "$(dirname -- "$launcher")" ]; then
+  # AppRun reserves this leading browser flag, injecting it when userns fails.
+  # The desktop passthrough also treats it as a launcher flag, not a CLI option.
+  if [ "${1:-}" = --no-sandbox ]; then shift; fi
+  exec "$(dirname -- "$launcher")/resources/bin/paseo" "$@"
+fi
+
 for arg in "$@"; do
   if [ "$arg" = '--no-sandbox' ]; then
     export PASEO_DESKTOP_SANDBOX_REASON='requested by --no-sandbox'

@@ -508,6 +508,24 @@ paths and complete monitor receipts before deleting temporary state. The real
 singleton lock, sandbox policy and normal-close proof are unchanged; installed
 product upgrade acceptance and the ARM64 trial remain pending.
 
+The short-path repair `d5ca50186` passed PR/dev CI in 4m33s/4m27s.
+Its [product trial](https://github.com/iExalt/paseo/actions/runs/38122231438)
+opened the real predecessor AppImage renderer and daemon, then exposed the
+installed CLI link entering Chromium without a display. Cleanup again proved
+empty owned processes/mounts and removed the short temporary root. The predecessor
+will seed/stop through its verified live payload's bundled CLI, preserving the
+installed symlink unchanged. Candidate acceptance still requires that retained
+link's cold daemon, status and PTY journeys.
+
+An early launcher repair routes the AppImage's `paseo` invocation to the bundled
+Node shim before Chromium startup. AppImage's documented `ARGV0` identifies the
+invoked symlink ([runtime environment](https://github.com/AppImage/docs.appimage.org/blob/master/source/packaging-guide/environment-variables.rst));
+canonical mount context is also required. Only the reserved leading
+`--no-sandbox` launcher flag is consumed. Before another full product build, the
+tiny actual-runtime prerequisite must prove headless argument preservation and
+delayed mounted-file access by a detached worker after the CLI parent exits.
+That lifetime proof remains pending; immediate CLI success alone is insufficient.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then

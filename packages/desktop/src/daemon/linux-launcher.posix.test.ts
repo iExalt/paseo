@@ -20,6 +20,7 @@ async function launch(
     args?: string[];
     symlink?: boolean;
     rerun?: boolean;
+    appImageCli?: boolean;
   } = {},
 ) {
   const root = mkdtempSync(join(tmpdir(), "paseo-launcher-"));
@@ -47,6 +48,14 @@ async function launch(
     chmodSync(join(app, "chrome-sandbox"), 0o755);
     await afterPack({ appOutDir: app, electronPlatformName: "linux", arch: 1 });
     if (options.rerun) await afterPack({ appOutDir: app, electronPlatformName: "linux", arch: 1 });
+    if (options.appImageCli) {
+      mkdirSync(join(app, "resources/bin"), { recursive: true });
+      writeFileSync(
+        join(app, "resources/bin/paseo"),
+        `#!${process.execPath}\nconsole.log(JSON.stringify(process.argv.slice(2)));\n`,
+      );
+      chmodSync(join(app, "resources/bin/paseo"), 0o755);
+    }
     const executablePath = options.symlink ? join(root, "paseo") : join(app, "Paseo");
     if (options.symlink) symlinkSync(join(app, "Paseo"), executablePath);
     const args = options.args ?? ["path with spaces", "$(touch never)", "semi;colon", "*.txt"];
@@ -57,6 +66,9 @@ async function launch(
         FORCE_COLOR: undefined,
         PATH: `${commands}:${process.env.PATH}`,
         APPIMAGE: "/tmp/Paseo.AppImage",
+        ...(options.appImageCli
+          ? { APPIMAGE: join(app, "Paseo.bin"), APPDIR: app, ARGV0: join(root, "paseo") }
+          : {}),
         PASEO_DESKTOP_SMOKE: "0",
         ...options.env,
       },
@@ -67,6 +79,22 @@ async function launch(
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+test.runIf(process.platform !== "win32")(
+  "routes the installed AppImage CLI before Chromium and preserves remaining arguments",
+  async () => {
+    const args = [
+      "path with spaces",
+      "$(touch never)",
+      "literal'quote",
+      "--class=keep",
+      "--no-sandbox",
+    ];
+    const result = await launch({ appImageCli: true, args: ["--no-sandbox", ...args] });
+    expect(result.args).toEqual(args);
+    expect(result.stderr).toBe("");
+  },
+);
 
 it("launches a portable app with the fallback on argv when user namespaces are denied", async () => {
   const result = await launch();

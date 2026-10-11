@@ -994,6 +994,10 @@ async function verifyInstalledLaunch({
       assert.equal(result.installed, true);
     }
     assert.equal(fs.readlinkSync(cliPath), installedLayout.stableFile);
+    // The fixed predecessor's AppImage link starts Chromium for CLI commands.
+    // Seed/stop it through the verified live payload; candidate proof must use
+    // the untouched installed link, including before the candidate GUI starts.
+    if (predecessor) cliPath = getCliShimPath(appPath);
   }
   fs.writeFileSync(
     path.join(artifactDir, "installed-identity.json"),
@@ -1024,7 +1028,7 @@ async function verifyInstalledLaunch({
     stderr,
   });
   fs.writeFileSync(path.join(artifactDir, "sandbox.json"), JSON.stringify(diagnostics));
-  return { appPath, installedIdentity };
+  return { appPath, installedIdentity, cliPath };
 }
 
 async function waitInstalledMountGone(installedIdentity) {
@@ -1162,7 +1166,7 @@ async function smokePackagedDesktopApp({
     page = await waitForPackagedAppPage(browser, deadline);
     await assertPackagedRendererLoaded(page, deadline);
     if (installedLayout) {
-      ({ appPath, installedIdentity } = await verifyInstalledLaunch({
+      ({ appPath, installedIdentity, cliPath } = await verifyInstalledLaunch({
         installedLayout,
         installedIdentity,
         appPath,
@@ -1537,6 +1541,7 @@ async function smokeInstalledLinuxStage({
     ownedSession,
     workspaceId,
     cliLink,
+    predecessorCli: format === "appimage" ? "verified-mounted-bundled-shim" : undefined,
   };
   fs.writeFileSync(path.join(directory, `${stage}.json`), JSON.stringify(receipt));
   fs.writeFileSync(path.join(stageDir, "stage.json"), JSON.stringify(receipt));
