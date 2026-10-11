@@ -791,6 +791,16 @@ after successful primary exit and the normal grace. Held process identities and
 unchanged Job creation counts through cleanup reject snapshot races; unknown
 survivors, build failures and timeouts still fail. Local classifier checks pass;
 native verification and full installer verification remain open.
+Telemetry source was published in PR #47 (`aef8fff22`/`a344c482e`); its PR gate
+passed in 4m00s. Concurrent `dev` commit `635a4e413` changed the CLI transport,
+so the nonforce fast-forward was rejected. An accidental dispatch following that
+rejection, `38149454202`, was cancelled during checkout before fixture setup or
+the probe; it supplies no native proof. The merge `e8464a0af` preserves that work.
+Its routine run `38149548928` exposed stale migration fixtures in nine files:
+removed constructor arguments, new broker envelope fields, CLI launch context,
+normalized configuration and automatic MCP removal. Test-only repairs preserve
+the underlying assertions; fresh merged-source CI remains required before any
+native dispatch. Future product proofs must bind the merged candidate source.
 Independent Windows producer source is implemented and source-reviewed,
 but has no native build proof yet: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are

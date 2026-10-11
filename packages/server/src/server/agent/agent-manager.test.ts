@@ -1,4 +1,5 @@
 import { createIdleRuntimeCleanup } from "./idle-runtime-cleanup/index.js";
+import { resolvePaseoCliExecutablePath } from "../../terminal/paseo-cli-path.js";
 import {
   prepareAgentMessage,
   formatAgentMessage,
@@ -2755,7 +2756,9 @@ test("createAgent injects daemon append system prompt at runtime only", async ()
   const record = await storage.get(snapshot.id);
 
   expect(client.createdConfigs[0]?.systemPrompt).toBe("Agent instructions.");
-  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("Daemon instructions.");
+  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toMatch(
+    /^Daemon instructions\.\n\nUse the Paseo CLI /,
+  );
   expect(snapshot.config).not.toHaveProperty("daemonAppendSystemPrompt");
   expect(record?.config?.systemPrompt).toBe("Agent instructions.");
   expect(record?.config).not.toHaveProperty("daemonAppendSystemPrompt");
@@ -2789,7 +2792,9 @@ test("daemon append system prompt is injected into Pi configs", async () => {
     { workspaceId: undefined },
   );
 
-  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toBe("Daemon instructions.");
+  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toMatch(
+    /^Daemon instructions\.\n\nUse the Paseo CLI /,
+  );
 });
 
 test("setAgentMode persists the selected mode across session reload", async () => {
@@ -3409,12 +3414,14 @@ test("createAgent passes daemon launch env through the provider launch context",
     provider: "codex",
     cwd: workdir,
     model: "gpt-5.4",
+    daemonAppendSystemPrompt: expect.stringMatching(/^Use the Paseo CLI /),
   });
   expect(client.lastLaunchContext).toEqual({
     agentId: snapshot.id,
     env: {
       PASEO_AGENT_ID: snapshot.id,
       PASEO_AGENT_CWD: workdir,
+      PASEO_CLI: resolvePaseoCliExecutablePath(),
     },
   });
 });
@@ -4729,6 +4736,7 @@ test("resumeAgentFromPersistence keeps metadata config, applies overrides, and p
     env: {
       PASEO_AGENT_ID: resumed.id,
       PASEO_AGENT_CWD: workdir,
+      PASEO_CLI: resolvePaseoCliExecutablePath(),
     },
   });
 });
@@ -4923,6 +4931,7 @@ test("importProviderSession imports the selected session without listing and pub
       PASEO_AGENT_ID: imported.id,
       PASEO_AGENT_CWD: workdir,
       PASEO_WORKSPACE_ID: "ws-imported",
+      PASEO_CLI: resolvePaseoCliExecutablePath(),
     },
   });
   expect(imported.lifecycle).toBe("idle");
@@ -5026,6 +5035,7 @@ test("reloadAgentSession passes daemon launch env through the provider launch co
     env: {
       PASEO_AGENT_ID: snapshot.id,
       PASEO_AGENT_CWD: workdir,
+      PASEO_CLI: resolvePaseoCliExecutablePath(),
     },
   });
 
@@ -5038,6 +5048,7 @@ test("reloadAgentSession passes daemon launch env through the provider launch co
     env: {
       PASEO_AGENT_ID: snapshot.id,
       PASEO_AGENT_CWD: workdir,
+      PASEO_CLI: resolvePaseoCliExecutablePath(),
     },
   });
 });
