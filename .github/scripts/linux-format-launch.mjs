@@ -4,7 +4,11 @@ import { mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "n
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { join } from "node:path";
-import { ownedProcesses, unreadableUnknowns } from "./linux-format-processes.mjs";
+import {
+  ownedProcesses,
+  unreadableUnknowns,
+  reconcilePrivilegedScan,
+} from "./linux-format-processes.mjs";
 import { elevatedOwnedProcesses } from "./deep-cleanup.mjs";
 
 // A detached session scopes Xvfb, the FUSE runtime and Chromium even if parents exit.
@@ -93,25 +97,22 @@ child.once("exit", (code, signal) => {
 const owned = new Map();
 let interrupted;
 let discoveryFailure;
+let discoveryPending = false;
 for (const signal of ["SIGTERM", "SIGINT"])
   process.on(signal, () => {
     interrupted = signal;
   });
 function capture() {
-  const rows = processes();
+  let rows = processes();
   let members = ownedProcesses(rows, child.pid, [...owned.values()], owner);
   let unknown = unreadableUnknowns(rows, members);
   discoveryFailure = undefined;
+  discoveryPending = false;
   if (unknown.length && process.getuid() !== 0) {
     try {
       const marked = elevatedOwnedProcesses(owner, { uid: originalUid });
       const after = processes(false);
-      for (const row of rows) {
-        if (!after.some((current) => current.pid === row.pid && current.start === row.start))
-          continue;
-        row.owner = marked.includes(row.pid) ? owner : row.owner;
-        row.unreadable = false;
-      }
+      ({ rows, pending: discoveryPending } = reconcilePrivilegedScan(rows, after, marked, owner));
       members = ownedProcesses(rows, child.pid, [...owned.values()], owner);
       unknown = unreadableUnknowns(rows, members);
     } catch (error) {
@@ -145,8 +146,10 @@ try {
   assert.ok(result, interrupted ?? `Owned launch exceeded ${timeoutSeconds}s`);
   assert.deepEqual(result, { code: 0, signal: null }, "Fixture must exit normally");
   const deadlineExit = Date.now() + 10000;
-  while ((capture().length || mounts().length) && Date.now() < deadlineExit) await delay(100);
+  while ((capture().length || discoveryPending || mounts().length) && Date.now() < deadlineExit)
+    await delay(100);
   assert.deepEqual(capture(), [], "Fixture session still running after normal exit");
+  assert.equal(discoveryPending, false, "New discovery requires another identity capture");
   if (discoveryFailure) throw discoveryFailure;
   assert.deepEqual(mounts(), [], "Fixture FUSE mount remains after normal exit");
 } catch (error) {
@@ -183,9 +186,13 @@ async function cleanupOwned() {
     owner,
     session: child.pid,
     discoveryFailure: discoveryFailure?.message,
+    discoveryPending,
   };
   cleanup.complete =
-    cleanup.remaining.length === 0 && cleanup.mounts.length === 0 && !discoveryFailure;
+    cleanup.remaining.length === 0 &&
+    cleanup.mounts.length === 0 &&
+    !discoveryFailure &&
+    !discoveryPending;
   writeFileSync(receipt("cleanup"), JSON.stringify(cleanup, null, 2));
   assert.deepEqual(cleanup.remaining, [], "Owned fixture processes remained");
   assert.deepEqual(cleanup.mounts, [], "Owned fixture mounts remained");

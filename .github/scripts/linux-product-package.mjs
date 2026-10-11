@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { execFileSync } from "node:child_process";
 import {
@@ -35,6 +35,13 @@ config.directories.output = output;
 config.linux.target = ["deb", "rpm", "AppImage"];
 config.linux.artifactName = `${basename}.\${ext}`;
 config.appImage.artifactName = `${basename}.AppImage`;
+if (stage === "candidate") {
+  assert.equal(config.deb.compression, "gz");
+  assert.equal(config.rpm.compression, "gzip");
+}
+// Rebuild the fixed predecessor with the same archive policy, leaving its payload unchanged.
+config.deb.compression = "gz";
+config.rpm.compression = "gzip";
 const configFile = join(root, `${stage}-builder.json`);
 writeFileSync(configFile, JSON.stringify(config));
 const identity = {
@@ -71,7 +78,7 @@ execFileSync(
 for (const format of ["deb", "rpm", "appimage"]) {
   const file = `${basename}.${format === "appimage" ? "AppImage" : format}`;
   const artifact = join(output, file);
-  const record = { file, sha256: digest(artifact) };
+  const record = { file, sha256: digest(artifact), bytes: statSync(artifact).size };
   if (format === "deb")
     record.packageName = execFileSync("dpkg-deb", ["-f", artifact, "Package"], {
       encoding: "utf8",
@@ -110,6 +117,8 @@ writeFileSync(
         linux: config.linux.artifactName,
         appImage: config.appImage.artifactName,
         targets: config.linux.target,
+        debCompression: config.deb.compression,
+        rpmCompression: config.rpm.compression,
       },
     },
     null,
