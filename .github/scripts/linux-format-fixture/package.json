@@ -2,7 +2,9 @@
   "name": "paseo-format-fixture",
   "version": "1.0.0",
   "description": "Disposable Linux installer feasibility fixture",
+  "homepage": "https://paseo.sh",
   "license": "MIT",
   "author": "Paseo",
-  "main": "main.cjs"
+  "main": "main.cjs",
+  "desktopName": "PaseoFormatFixture.desktop"
 }
