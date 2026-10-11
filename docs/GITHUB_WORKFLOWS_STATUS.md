@@ -831,7 +831,14 @@ cleanup passed. PR CI passed in 4m22s. This matches the locked builder's
 The next repair sets its supported `BCJ` filter only in the Windows builder child
 environment and records it in installer provenance. Payload equality and the full
 renderer, replacement and uninstall journey remain required; the repair awaits
-native verification.
+native verification. The [repair trial](https://github.com/iExalt/paseo/actions/runs/38155408446)
+at `9d8169e4a` passed in 5m04s: both versions' installed payloads matched their
+unpacked hashes, native renderers launched and closed normally, replacement
+succeeded, and uninstall removed the directory and registration. All thirteen
+owned stages reconciled with zero survivors. Reviewer acceptance combines this
+small fixture proof with `96da1572f`'s full normal workspace install; it opens
+product implementation without claiming product or x64 lifecycle verification.
+The failure-only native launch diagnostic is removed; regression inventories remain.
 Independent Windows producer source is implemented and source-reviewed,
 but has no native build proof yet: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are
@@ -846,6 +853,17 @@ receipt. Its optional start receipt binds Windows ownership mode to the actual
 assigned primary process before resume; final zero-active Job evidence remains
 mandatory. Native compilation, handshake, installed loader selection, real speech,
 state-preserving replacement and full cleanup remain required B4 gates.
+The combined Windows workflow and runtime adapter are implemented locally and
+await integrated review. One ARM canary precedes x64. Its 150-minute absolute
+job limit includes two separate 30-minute normal installs and builds, a 15-minute
+binding budget, ten-minute pinned model preparation and a seventeen-minute
+installed-runtime ceiling; these maxima are not guaranteed to fit together.
+Controllers refuse new operations without their full timeout and cleanup reserve
+remaining before the internal deadline. The runtime uses strict owned Jobs,
+the installed Electron speech worker and actual loaded-addon/DLL provenance,
+and preserves the predecessor-created CLI trampoline, workspace and theme.
+No product package or cache is uploaded; diagnostics remain capped at 25 MiB for
+one day. Native product correctness and timings remain unverified.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
