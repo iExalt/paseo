@@ -13,7 +13,7 @@ mkdir -p "$directory"
 df -h / /nix
 free -m
 lscpu
-nix config show | rg '^(cores|max-jobs|sandbox|builders|substituters) ='
+nix config show | grep -E '^(cores|max-jobs|sandbox|builders|substituters) ='
 # Record all derivation environments: individual builders may override Nix's
 # per-build core budget. Sampling includes their combined memory/disk pressure.
 nix derivation show .#paseo .#desktop > "$RUNNER_TEMP/linux-nix-derivations.json"
