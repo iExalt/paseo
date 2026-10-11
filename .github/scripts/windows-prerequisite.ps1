@@ -203,18 +203,7 @@ if ($Phase -eq 'ownership') {
         # Installer job reached active=0 before this explicit launch: no broker auto-launch is requested.
         Assert-NoFixtureProcess
         $null = Run-Owned "inventory-$version" $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'inspect', $root, $version) 30
-        try {
-            $null = Run-Owned "renderer-$version" $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'ui', $root, $version) 60
-        } catch {
-            $launchFailure = $_
-            $fixtureExe = Join-Path $installDirectory "$productName.exe"
-            if (Test-Path -LiteralPath $fixtureExe -PathType Leaf) {
-                $env:PASEO_WINDOWS_FIXTURE_PROFILE = Join-Path $root 'profile'
-                $specFile = Write-Spec "native-launch-error-$version" $fixtureExe @() 5
-                & $pwsh -NoProfile -File $monitor -Specification $specFile | Write-Host
-            }
-            throw $launchFailure
-        }
+        $null = Run-Owned "renderer-$version" $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'ui', $root, $version) 60
     }
     $uninstallers = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'Uninstall*.exe' -File)
     if ($uninstallers.Count -ne 1) { throw 'Expected one owned uninstaller' }

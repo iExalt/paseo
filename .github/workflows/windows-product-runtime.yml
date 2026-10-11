@@ -1,0 +1,88 @@
+name: Windows product formats
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Native architecture for installed NSIS upgrade and speech proof
+        type: choice
+        required: true
+        default: arm64
+        options: [arm64, x64]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-product-formats
+  cancel-in-progress: false
+
+jobs:
+  native:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
+      CI: "true"
+      LEFTHOOK: "0"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Reserve time for cleanup before the whole-job deadline
+        run: '"PASEO_WINDOWS_DEADLINE=$([DateTimeOffset]::UtcNow.AddMinutes(145).ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.0"
+          architecture: ${{ inputs.architecture }}
+          package-manager-cache: false
+      - name: Bind exact sources and clean installation scope
+        run: |
+          ./.github/scripts/windows-product-stage.ps1 init
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.github/scripts/windows-product-runtime.ps1 prepare
+      - name: Install candidate locked dependencies normally
+        timeout-minutes: 30
+        run: ./.github/scripts/windows-product-stage.ps1 install-candidate
+      - name: Build the pinned ARM Electron speech binding once
+        timeout-minutes: 16
+        run: ./.github/scripts/windows-product-stage.ps1 binding
+      - name: Build the candidate native NSIS payload once
+        timeout-minutes: 30
+        run: ./.github/scripts/windows-product-stage.ps1 build-candidate
+      - name: Install predecessor locked dependencies normally
+        timeout-minutes: 30
+        run: ./.github/scripts/windows-product-stage.ps1 install-previous
+      - name: Reconstruct the fixed predecessor NSIS payload once
+        timeout-minutes: 30
+        run: ./.github/scripts/windows-product-stage.ps1 build-previous
+      - name: Download and verify pinned speech models
+        timeout-minutes: 10
+        run: ./.github/scripts/windows-product-runtime.ps1 models
+      - name: Verify installed upgrade, retained CLI, PTY and real speech
+        timeout-minutes: 17
+        run: ./.github/scripts/windows-product-runtime.ps1 runtime
+      - name: Reconcile owned processes and remove installation and state
+        if: always()
+        timeout-minutes: 3
+        run: |
+          ./.github/scripts/windows-product-runtime.ps1 cleanup
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./.github/scripts/windows-product-stage.ps1 cleanup
+      - name: Bound retained diagnostics
+        id: evidence
+        if: always()
+        run: ./.github/scripts/windows-product-stage.ps1 diagnostics
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        if: always() && steps.evidence.outcome == 'success'
+        with:
+          name: windows-products-${{ inputs.architecture }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/paseo-windows-products-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          retention-days: 1
+          if-no-files-found: error
