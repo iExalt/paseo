@@ -47,6 +47,17 @@ function Read-Registrations {
     }
 }
 
+function Get-NativeCompiler {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    $visualStudio = (& $vswhere -latest -products '*' -property installationPath).Trim()
+    if ($LASTEXITCODE -ne 0 -or !$visualStudio) { throw 'Visual Studio discovery failed' }
+    $toolVersion = (Get-Content -LiteralPath (Join-Path $visualStudio 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt') -Raw).Trim()
+    $hostArch = if ($env:EXPECTED_ARCHITECTURE -eq 'arm64') { 'Arm64' } else { 'x64' }
+    $compiler = Join-Path $visualStudio "VC\Tools\MSVC\$toolVersion\bin\Host$hostArch\$($env:EXPECTED_ARCHITECTURE)\cl.exe"
+    if (!(Test-Path -LiteralPath $compiler)) { throw 'Native compiler missing' }
+    return $compiler
+}
+
 function Write-Spec([string]$Name, [string]$Executable, [string[]]$Arguments, [int]$Seconds, [string]$NsisDirectory = '') {
     $specFile = Join-Path $root "$Name-spec.json"
     if (Test-Path -LiteralPath $specFile) { throw "Do not repeat stage $Name" }
@@ -54,6 +65,9 @@ function Write-Spec([string]$Name, [string]$Executable, [string[]]$Arguments, [i
         executable = $Executable; arguments = @($Arguments); directory = $env:GITHUB_WORKSPACE
         log = (Join-Path $root "logs\$Name.log"); receipt = (Join-Path $evidence "$Name-job.json")
         timeoutSeconds = $Seconds; nsisInstallDirectory = $NsisDirectory
+        allowedBuildTelemetry = if ($Name -in @('compiler-probe', 'npm-install', 'package')) {
+            Join-Path (Split-Path (Get-NativeCompiler)) 'VCTIP.EXE'
+        } else { $null }
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $specFile -Encoding utf8
     return $specFile
 }
@@ -66,7 +80,12 @@ function Run-Owned([string]$Name, [string]$Executable, [string[]]$Arguments, [in
     if (!$receipt.complete -or $receipt.activeProcesses -ne 0) { throw "Incomplete job cleanup: $Name" }
     if ($ExpectedFailure) {
         if ($status -eq 0 -or $receipt.exitCode -ne 7 -or !$receipt.terminated -or $receipt.timedOut) { throw 'Negative proof did not fail for the intended reason' }
-    } elseif ($status -ne 0 -or $receipt.exitCode -ne 0 -or $receipt.terminated -or $receipt.timedOut) { throw "Owned stage failed: $Name" }
+    } else {
+        $allowed = $Name -in @('compiler-probe', 'npm-install', 'package') -and
+            $receipt.buildSucceededWithTelemetryCleanup -and
+            $receipt.allowedBuildTelemetry -eq (Join-Path (Split-Path (Get-NativeCompiler)) 'VCTIP.EXE')
+        if ($status -ne 0 -or $receipt.exitCode -ne 0 -or ($receipt.terminated -and !$allowed) -or $receipt.timedOut) { throw "Owned stage failed: $Name" }
+    }
     return $receipt
 }
 
@@ -143,31 +162,18 @@ if ($Phase -eq 'ownership') {
     $null = Run-Owned 'npm-install' $node @($npmEntry, 'ci', '--timing', '--loglevel=http', '--foreground-scripts', '--no-audit', '--no-fund') 1780
     if ((Get-FileHash package-lock.json -Algorithm SHA256).Hash -ne $owner.lockSha256) { throw 'Locked install changed lockfile' }
 } elseif ($Phase -eq 'probe') {
-    # Observe tool behavior without accepting it as successful prerequisite proof.
-    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
-    $visualStudio = (& $vswhere -latest -products '*' -property installationPath).Trim()
-    if ($LASTEXITCODE -ne 0 -or !$visualStudio) { throw 'Visual Studio discovery failed' }
-    $toolVersion = (Get-Content -LiteralPath (Join-Path $visualStudio 'VC\Auxiliary\Build\Microsoft.VCToolsVersion.default.txt') -Raw).Trim()
-    $hostArch = if ($env:EXPECTED_ARCHITECTURE -eq 'arm64') { 'Arm64' } else { 'x64' }
-    $compiler = Join-Path $visualStudio "VC\Tools\MSVC\$toolVersion\bin\Host$hostArch\$($env:EXPECTED_ARCHITECTURE)\cl.exe"
-    if (!(Test-Path -LiteralPath $compiler)) { throw 'Native compiler missing' }
+    $compiler = Get-NativeCompiler
     $source = Join-Path $root 'probe.cpp'
     $object = Join-Path $root 'probe.obj'
     'int probe() { return 42; }' | Set-Content -LiteralPath $source -Encoding utf8
-    $policy = Join-Path $PSScriptRoot 'windows-telemetry-policy.ps1'
-    $compilerFailure = $null
-    try {
-        & $policy apply $root
-        $null = Run-Owned 'compiler-probe' $compiler @('/nologo', '/c', $source, "/Fo$object") 60
-        if (!(Test-Path -LiteralPath $object)) { throw 'Compiler did not create its object' }
-        @{
-            compiler = $compiler; objectPresent = $true; compiled = $true; strictStagePassed = $true
-            classification = 'telemetry opt-out proof; not installer acceptance'
-        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'compiler-probe.json')
-    } catch { $compilerFailure = $_ }
-    finally { & $policy restore $root }
-    $null = Run-Owned 'extraction-probe' $node @((Join-Path $PSScriptRoot 'windows-install-diagnostic.mjs'), $root) 330
-    if ($null -ne $compilerFailure) { throw $compilerFailure }
+    & (Join-Path $PSScriptRoot 'windows-owned-job.test.ps1')
+    $receipt = Run-Owned 'compiler-probe' $compiler @('/nologo', '/c', $source, "/Fo$object") 60
+    if (!(Test-Path -LiteralPath $object)) { throw 'Compiler did not create its object' }
+    @{
+        compiler = $compiler; objectPresent = $true; compiled = $true
+        buildSucceededWithTelemetryCleanup = $receipt.buildSucceededWithTelemetryCleanup
+        classification = 'build-only cleanup proof; not installer acceptance'
+    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'compiler-probe.json')
 } elseif ($Phase -eq 'build') {
     $null = Run-Owned 'package' $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'build', $root) 280
 } elseif ($Phase -eq 'runtime') {
@@ -205,7 +211,6 @@ if ($Phase -eq 'ownership') {
     foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'Uninstall left a fixture shortcut' } }
     @{ complete = $true; installDirectoryAbsent = $true; registryAbsent = $true } | ConvertTo-Json | Set-Content (Join-Path $evidence 'uninstall.json')
 } elseif ($Phase -eq 'cleanup') {
-    & (Join-Path $PSScriptRoot 'windows-telemetry-policy.ps1') restore $root
     # Recovery may remove only this fixture's exact installation through its own uninstaller.
     if (Test-Path -LiteralPath $installDirectory) {
         $uninstallers = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'Uninstall*.exe' -File)

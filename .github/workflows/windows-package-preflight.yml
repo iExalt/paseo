@@ -61,7 +61,7 @@ jobs:
         if: inputs.mode == 'full'
         timeout-minutes: 5
         run: ./.github/scripts/windows-prerequisite.ps1 runtime
-      - name: Diagnose extraction and compiler descendants without a workspace install
+      - name: Verify build-only telemetry cleanup without a workspace install
         if: inputs.mode == 'diagnostic'
         timeout-minutes: 7
         run: ./.github/scripts/windows-prerequisite.ps1 probe

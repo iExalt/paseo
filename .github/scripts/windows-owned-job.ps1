@@ -12,7 +12,8 @@ $startIdentity = if ($startReceipt) {
         specificationSha256 = (Get-FileHash -LiteralPath $Specification -Algorithm SHA256).Hash.ToLowerInvariant()
     } | ConvertTo-Json -Compress
 } else { $null }
-$receipt = [PaseoOwnedJob]::Run($spec.executable, [string[]]$spec.arguments, $spec.directory, $spec.log, $spec.timeoutSeconds, $installDirectory, $startReceipt, $startIdentity)
+$telemetry = if ($spec.PSObject.Properties.Name -contains 'allowedBuildTelemetry') { $spec.allowedBuildTelemetry } else { $null }
+$receipt = [PaseoOwnedJob]::Run($spec.executable, [string[]]$spec.arguments, $spec.directory, $spec.log, $spec.timeoutSeconds, $installDirectory, $startReceipt, $startIdentity, $telemetry)
 $receipt | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $spec.receipt -Encoding utf8
 Get-Content -LiteralPath $spec.log -Tail 100 -ErrorAction SilentlyContinue
-if (!$receipt.complete -or $receipt.timedOut -or $receipt.terminated -or $receipt.exitCode -ne 0) { exit 1 }
+if (!$receipt.complete -or $receipt.timedOut -or ($receipt.terminated -and !$receipt.buildSucceededWithTelemetryCleanup) -or $receipt.exitCode -ne 0) { exit 1 }

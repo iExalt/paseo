@@ -777,7 +777,20 @@ out, so no Defender attribution is established. All Job and final cleanup receip
 completed in the 2m25s job. PR/dev CI passed in 4m25s/4m31s. The next bounded diagnostic tests documented
 VSCEIP opt-out with exact policy-value restoration and a strict normal compiler
 exit, plus fresh-process extraction with filesystem worker counts 4/16/16/4.
-No full-install tuning is adopted until this comparison supports it.
+The follow-up [diagnostic at `062701923`](https://github.com/iExalt/paseo/actions/runs/38144005005)
+rejected the compiler stage: CL exited zero after 2.44s, but the exact verified
+VCTIP child again survived the grace period. Policy restoration and final Job
+cleanup passed. Extraction at 4/16/16/4 workers took 43.550/42.983/41.912/42.048s
+with identical inventories; the 0.8% mean difference is smaller than within-setting
+variation. Neither registry policy nor increased worker concurrency is adopted.
+PR/dev CI passed in 4m27s/4m30s, without resetting the accepted baseline.
+The user approved narrowly verified build-tool telemetry cleanup, distinct from
+installed-product lifecycle acceptance. The implementation preserves truthful
+termination receipts and accepts only exact compiler-adjacent VCTIP survivors
+after successful primary exit and the normal grace. Held process identities and
+unchanged Job creation counts through cleanup reject snapshot races; unknown
+survivors, build failures and timeouts still fail. Local classifier checks pass;
+native verification and full installer verification remain open.
 Independent Windows producer source is implemented and source-reviewed,
 but has no native build proof yet: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are
