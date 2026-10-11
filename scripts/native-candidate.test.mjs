@@ -3,6 +3,39 @@ import test from "node:test";
 import { execFileSync } from "node:child_process";
 import { validateCandidateClosure } from "../.github/scripts/macos-candidate-runtime.mjs";
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";
+import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
+import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+test("Nix profile verification rejects stale packages and wrong binary targets", () => {
+  const manifest = { version: 3, elements: { daemon: { active: true, storePaths: ["old"] } } };
+  nixProfile.assertProfilePackages(manifest, ["old"]);
+  assert.throws(() => nixProfile.assertProfilePackages(manifest, ["new"]));
+  assert.throws(() => nixProfile.assertProfilePackages(manifest, []));
+  nixProfile.assertProfilePackages({ version: 3, elements: {} }, []);
+  const root = mkdtempSync(join(tmpdir(), "nix-profile-links-"));
+  try {
+    const profile = join(root, "profile");
+    mkdirSync(join(profile, "bin"), { recursive: true });
+    const canonical = { executablePath: join(root, "desktop"), cliPath: join(root, "cli") };
+    for (const file of Object.values(canonical)) writeFileSync(file, "fixture");
+    symlinkSync(canonical.executablePath, join(profile, "bin/paseo-desktop"));
+    symlinkSync(canonical.cliPath, join(profile, "bin/paseo"));
+    assert.deepEqual(nixProfile.profileExecutables(profile, canonical), {
+      executablePath: join(profile, "bin/paseo-desktop"),
+      cliPath: join(profile, "bin/paseo"),
+    });
+    assert.throws(() =>
+      nixProfile.profileExecutables(profile, {
+        ...canonical,
+        cliPath: canonical.executablePath,
+      }),
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("Nix environment diagnostics validate the v4 envelope", () => {
   const valid = {

@@ -36,4 +36,5 @@ nix eval --raw --no-update-lock-file .#desktop.outPath > "$RUNNER_TEMP/linux-nix
   --option max-jobs 2 --option cores 2 .#paseo .#desktop \
   > "$RUNNER_TEMP/linux-nix-outputs.json" 2> >(tee "$directory/build.log" >&2)
 echo "Nix build elapsed: $(( $(date +%s) - started ))s" | tee -a "$GITHUB_STEP_SUMMARY"
+bash .github/scripts/linux-previous-build.sh
 test -z "$(git status --porcelain)"

@@ -343,6 +343,17 @@ manual replacement, ARM64 and DEB/RPM/AppImage remain open. The difference from
 the prior build's 8m15s is not a controlled regression measurement. PR/dev routine
 checks at the repaired source passed in 4m30s/4m28s without changing the budget.
 
+The next Linux increment installs both old and current outputs through a
+task-owned Nix profile, launches its validated executable links, removes the
+exact old entries before installing new ones, and checks retained workspace/theme,
+CLI/PTY and final uninstall/owned-state cleanup. This is explicit two-step manual
+replacement, not an atomic updater. The old `5619b7d7e` source is rebuilt with a
+packaging-only RE2 asset override; its exact expression/digest, outputs and asset
+hash remain in bounded diagnostics. It is not represented as a published Linux
+artifact. Both builds share Nix dependency substitutions and the existing
+35-minute build / 45-minute job limits. A separate native ARM64 evaluation-only
+preflight must establish its Node substitution path before ARM64 realization.
+
 Approved execution checklist:
 
 - [ ] B1: bounded deterministic browser journey and broken-fixture proof, then
