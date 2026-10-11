@@ -1,7 +1,8 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, spawnSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const { app, BrowserWindow, ipcMain } = require("electron");
 
 const fail = (error) => {
@@ -33,17 +34,33 @@ app
         assert.equal(event.sender, window.webContents);
         assert.equal(renderer.pid, window.webContents.getOSProcessId());
         const reason = process.env.PASEO_DESKTOP_SANDBOX_REASON;
+        let appRun;
+        if (process.env.FIXTURE_FORMAT === "appimage") {
+          const content = fs.readFileSync(path.join(process.env.APPDIR, "AppRun"));
+          const sha256 = createHash("sha256").update(content).digest("hex");
+          assert.equal(
+            sha256,
+            fs.readFileSync(path.join(process.resourcesPath, "app-run.sha256"), "utf8"),
+          );
+          const probe = spawnSync("unshare", ["-Ur", "true"], { encoding: "utf8", timeout: 5000 });
+          assert.equal(probe.error, undefined, "Namespace probe must execute");
+          assert.equal(probe.signal, null, "Namespace probe must exit normally");
+          assert.ok(Number.isInteger(probe.status));
+          appRun = { sha256, namespaceProbe: { status: probe.status, stderr: probe.stderr } };
+        }
         const enabled = ["user namespaces available", "root-owned SUID helper available"].includes(
           reason,
         );
         assert.ok(
-          enabled || reason?.startsWith("user namespaces unavailable"),
+          enabled ||
+            reason?.startsWith("user namespaces unavailable") ||
+            (reason === "requested by --no-sandbox" && appRun?.namespaceProbe.status > 0),
           "Unexpected policy override",
         );
         assert.equal(
           renderer.sandboxed,
           enabled,
-          "Renderer must match the shipped launcher's decision",
+          "Renderer must match the shipped launch chain's decision",
         );
         const processes = app.getAppMetrics().flatMap(({ pid, type }) => {
           try {
@@ -99,6 +116,7 @@ app
               token: process.env.FIXTURE_TOKEN,
               uid: process.getuid(),
               reason,
+              appRun,
               renderer,
               processes,
               mount,

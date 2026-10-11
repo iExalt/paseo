@@ -9,6 +9,8 @@ import {
   chmodSync,
 } from "node:fs";
 import { resolve, join } from "node:path";
+import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 
 const root = resolve(process.env.FORMAT_ROOT);
 const source = resolve(process.env.GITHUB_WORKSPACE);
@@ -19,6 +21,19 @@ assert.equal(
 );
 assert.ok(["x64", "arm64"].includes(process.env.EXPECTED_ARCHITECTURE));
 assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
+const require = createRequire(import.meta.url);
+const { generateAppRunScript } = require("app-builder-lib/out/targets/appimage/appImageUtil.js");
+const expectedAppRun = generateAppRunScript({
+  DesktopFileName: "PaseoFormatFixture.desktop",
+  ExecutableName: "PaseoFormatFixture",
+  ProductName: "PaseoFormatFixture",
+  ProductFilename: "PaseoFormatFixture",
+  ResourceName: "appimagekit-PaseoFormatFixture",
+});
+writeFileSync(
+  join(root, "payload/resources/app-run.sha256"),
+  createHash("sha256").update(expectedAppRun).digest("hex"),
+);
 renameSync(join(payload, "electron"), join(payload, "PaseoFormatFixture.bin"));
 copyFileSync(
   join(source, "packages/desktop/scripts/linux-sandbox/launcher.sh"),
