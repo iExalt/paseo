@@ -4,6 +4,31 @@ import { execFileSync } from "node:child_process";
 import { validateCandidateClosure } from "../.github/scripts/macos-candidate-runtime.mjs";
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";
 
+test("Nix environment diagnostics validate the v4 envelope", () => {
+  const valid = {
+    version: 4,
+    derivations: {
+      "fixture.drv": { version: 4, env: { NIX_BUILD_CORES: "2", unrelated: "value" } },
+    },
+  };
+  const filter = (input) =>
+    execFileSync("jq", ["-e", "-f", ".github/scripts/nix-build-environment.jq"], {
+      input: JSON.stringify(input),
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+      timeout: 1000,
+    });
+  assert.deepEqual(JSON.parse(filter(valid)), { "fixture.drv": { NIX_BUILD_CORES: "2" } });
+  for (const input of [
+    {},
+    { ...valid, version: 3 },
+    { version: 4, derivations: [] },
+    { version: 4, derivations: { "fixture.drv": { version: 4, env: null } } },
+  ]) {
+    assert.throws(() => filter(input));
+  }
+});
+
 test("terminal execution proof cannot accept echoed commands", () => {
   const marker = "paseo-packaged-terminal-smoke-123";
   for (const platform of ["linux", "win32"]) {
