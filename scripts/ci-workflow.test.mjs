@@ -77,6 +77,7 @@ test("only fork-owned workflows are installed", () => {
     "rebase-dev.yml",
     "upstream-sync.yml",
     "windows-arm64-feasibility.yml",
+    "windows-package-preflight.yml",
   ]);
 });
 
