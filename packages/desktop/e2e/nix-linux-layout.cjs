@@ -38,4 +38,9 @@ function validateNixLinuxLayout({ desktop, daemon, version }) {
   return { executablePath, cliPath };
 }
 
-module.exports = { validateNixLinuxLayout };
+function nixLinuxLaunchPaths({ desktop, daemon, version, profile }) {
+  const canonical = validateNixLinuxLayout({ desktop, daemon, version });
+  return profile ? require("./nix-profile.cjs").profileExecutables(profile, canonical) : canonical;
+}
+
+module.exports = { validateNixLinuxLayout, nixLinuxLaunchPaths };
