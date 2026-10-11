@@ -66,7 +66,7 @@ execFileSync(
     "--publish",
     "never",
   ],
-  { cwd: source, stdio: "inherit", timeout: 600000 },
+  { cwd: join(source, "packages/desktop"), stdio: "inherit", timeout: 600000 },
 );
 for (const format of ["deb", "rpm", "appimage"]) {
   const file = `${basename}.${format === "appimage" ? "AppImage" : format}`;
