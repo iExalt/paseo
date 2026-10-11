@@ -9,6 +9,8 @@ process.once("exit", (code) => {
       code,
       executable: process.execPath,
       electron: process.versions.electron,
+      node: process.versions.node,
+      v8: process.versions.v8,
       architecture: process.arch,
       addons,
       onnxruntime: sherpa ? require.cache[sherpa].exports.onnxruntimeVersion : null,
