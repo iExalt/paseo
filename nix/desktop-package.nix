@@ -48,8 +48,7 @@ buildNpmPackage {
       # installPhase copies into the output.
       && builtins.match "/[^/]+\\.md" relPath == null
       # Test fixtures and build artifacts
-      && !(lib.hasSuffix ".test.ts" baseName)
-      && !(lib.hasSuffix ".e2e.test.ts" baseName)
+      && !((import ./is-test-file.nix) baseName)
       && baseName != "node_modules"
       && baseName != ".git"
       && baseName != ".paseo"
