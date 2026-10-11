@@ -24,3 +24,11 @@ def input_ready(nodes, selector, ime):
     return bool(re.search(r"^\s*mInputShown=true\s*$", ime, re.M)) and any(
         node.get("resource-id", "").split(":id/")[-1] == selector
         and node.get("focused") == "true" for node in nodes)
+
+
+def terminal_echo(nodes, command):
+    # Native rows expose trimmed content descriptions; wrapping may remove a
+    # trailing space. Restrict matching to terminal rows, never the input buffer.
+    rows = "".join(node.get("content-desc", "") for node in nodes
+                   if re.fullmatch(r"terminal-row-\d+", node.get("resource-id", "")))
+    return "".join(command.split()) in "".join(rows.split())

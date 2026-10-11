@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
-from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready
+from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready, terminal_echo
 
 previous, candidate, output, endpoint, version_code = sys.argv[1:]
 output = pathlib.Path(output)
@@ -110,6 +110,29 @@ def text(value):
     adb("shell", "input", "text", shlex.quote(value.replace(" ", "%s")))
 
 
+def type_terminal_command(command):
+    deadline = time.monotonic() + 30
+    stable = 0
+    while time.monotonic() < deadline:
+        current = nodes()
+        ready = (not any(matches(node, "terminal-attach-loading") for node in current)
+                 and input_ready(current, "terminal-native-input", adb("shell", "dumpsys", "input_method")))
+        stable = stable + 1 if ready else 0
+        if stable == 2:
+            break
+        time.sleep(0.5)
+    else:
+        raise RuntimeError("Terminal input did not become ready")
+    text(command)
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        if terminal_echo(nodes(), command):
+            screenshot("terminal-command-echo")
+            return
+        time.sleep(0.5)
+    raise RuntimeError("Terminal did not echo the injected command; Enter withheld")
+
+
 def screenshot(name):
     (output / (name + ".png")).write_bytes(adb("exec-out", "screencap", "-p", binary=True))
 
@@ -153,10 +176,14 @@ try:
         screenshot(stage + "-workspace")
         tap("workspace-header-menu-trigger")
         tap("New terminal")
-        tap("terminal-keyboard-toggle")
+        keyboard = wait("terminal-keyboard-toggle")
+        if keyboard.get("content-desc") == "Show keyboard":
+            tap_node(keyboard, "Show keyboard")
+        elif keyboard.get("content-desc") != "Hide keyboard":
+            raise RuntimeError("Unknown terminal keyboard control state")
         marker = "PASEO_NATIVE_" + stage.upper()
         # Neither typed string contains the complete output marker.
-        text("printf PASEO_NATIVE_;echo " + stage.upper())
+        type_terminal_command("printf PASEO_NATIVE_;echo " + stage.upper())
         tap("terminal-key-enter")
         wait(marker)
         screenshot(stage + "-terminal")
