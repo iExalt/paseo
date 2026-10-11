@@ -12,7 +12,7 @@ import {
   renameSync,
   writeFileSync,
 } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { buildArmBinding, digest, verifyStagedBinding } from "./windows-speech-binding.mjs";
 import { inspectPe } from "./windows-pe.mjs";
 
@@ -101,30 +101,27 @@ if (phase === "binding-build") {
   });
   renameSync(join(app, "electron.exe"), executable);
   assert.equal(inspectPe(readFileSync(executable)).machine, 0xaa64);
-  for (const file of manifest.files.filter((item) => item.name.endsWith(".dll"))) {
-    assert.equal(
-      existsSync(join(app, file.name)),
-      false,
-      `Refuse Electron DLL collision: ${file.name}`,
-    );
-    cpSync(join(staging, file.name), join(app, file.name), { errorOnExist: true, force: false });
-  }
   const source = join(root, "binding-asar");
   const wrapper = join(source, "node_modules/sherpa-onnx-node");
   cpSync(join(inputs, "node_modules/sherpa-onnx-node"), wrapper, { recursive: true });
-  cpSync(join(staging, "sherpa-onnx.node"), join(wrapper, "sherpa-onnx.node"));
+  for (const file of manifest.files) {
+    assert.equal(existsSync(join(app, file.name)), false, `No executable-root copy: ${file.name}`);
+    cpSync(join(staging, file.name), join(wrapper, file.name), {
+      errorOnExist: true,
+      force: false,
+    });
+  }
   const archive = join(app, "resources/app.asar");
   assert.equal(existsSync(archive), false);
   const { createPackageWithOptions, statFile } = require("@electron/asar");
-  await createPackageWithOptions(source, archive, { unpack: "**/*.node" });
-  assert.equal(
-    statFile(archive, join("node_modules", "sherpa-onnx-node", "sherpa-onnx.node")).unpacked,
-    true,
-  );
-  assert.equal(
-    digest(readFileSync(physical)),
-    manifest.files.find((file) => file.name.endsWith(".node")).sha256,
-  );
+  await createPackageWithOptions(source, archive, { unpack: "**/*.{node,dll}" });
+  for (const file of manifest.files) {
+    assert.equal(
+      statFile(archive, join("node_modules", "sherpa-onnx-node", file.name)).unpacked,
+      true,
+    );
+    assert.equal(digest(readFileSync(join(dirname(physical), file.name))), file.sha256);
+  }
   save("binding-assembly.json", {
     sources,
     manifest,
@@ -135,6 +132,8 @@ if (phase === "binding-build") {
   });
 } else if (phase === "binding-runtime") {
   const manifest = verifyStagedBinding(staging);
+  for (const file of manifest.files)
+    assert.equal(existsSync(join(app, file.name)), false, `No executable-root copy: ${file.name}`);
   const script = join(root, "binding-load.cjs");
   writeFileSync(
     script,
@@ -187,7 +186,7 @@ process.exitCode = result.ok ? 0 : 1;
     )
       continue;
     assert.equal(loaded.length, 1, file.name);
-    const expected = file.name.endsWith(".node") ? physical : join(app, file.name);
+    const expected = join(dirname(physical), file.name);
     assert.equal(realpathSync(loaded[0]).toLowerCase(), realpathSync(expected).toLowerCase());
     assert.equal(digest(readFileSync(loaded[0])), file.sha256);
   }
