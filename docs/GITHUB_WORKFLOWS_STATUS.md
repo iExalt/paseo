@@ -20,7 +20,7 @@
   unmet. Initial queue adds 3s to each. Required checks are preserved.
 - Phase B: B1–B3 accepted; native Nix proofs cover both architectures and
   full x64/ARM DEB/RPM/AppImage evidence is at `db2316365`. B4 Windows is active.
-  Latest routine PR/dev runs passed in 4m40s/3m42s at `88882cdf5`;
+  Latest routine PR/dev runs passed in 4m33s/4m37s at `59e9bb2df`;
   this does not replace the accepted baseline above.
 
 ## Outcome gates
@@ -895,6 +895,26 @@ registry/directory/state removal and all fifteen Job receipts reconciled with
 zero active processes. Speech and x64 remain required; no cache is introduced.
 Routine PR/dev verification passed in 4m40s/3m42s excluding initial queues;
 dev used 19m44s total runner time. These measurements preserve the stable baseline.
+The [matching-runtime trial](https://github.com/iExalt/paseo/actions/runs/38164959163)
+at `59e9bb2df` passed IPC and repeated both installed journeys and cleanup, but
+speech failed loading the ARM addon after 528ms. The unchanged upstream wrapper
+suppresses individual native require errors, so its generic failure cannot yet
+identify a missing DLL, export, initialization problem or archive-resolution issue.
+No linker or search-path repair is inferred. The 66m05s run motivates a temporary
+binding-only prerequisite before another full trial: normal locked fixture tools,
+root-lock integrity-verified wrapper/hook inputs, the same pinned compilation,
+and a copied native Electron distribution renamed to `Paseo.exe`. Pinned DLLs
+remain beside that executable; collisions fail. A tiny ASAR uses the unchanged
+wrapper and explicitly unpacked addon; its fixture writer is 3.4.1, while the
+actual Electron 44.6.0 reader performs loading. A fresh wrapper process runs first;
+on failure a separate physical-addon process records the underlying error without
+turning the original failure into success. Strict runtime Jobs and loaded-module
+hashes remain required. This diagnostic is capped at 35 minutes, with 900 seconds
+for assembly and 90 seconds for runtime, bounded evidence and always-run cleanup.
+It will be removed after diagnosis; installed STT/TTS and x64 remain mandatory.
+Local extraction verified both root-lock SRI values and pinned wrapper/hook hashes.
+Routine PR/dev checks at `59e9bb2df` passed in 4m33s/4m37s excluding initial queues,
+using 21m54s/23m51s of runner work. No cache or install acceptance rule changed.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One

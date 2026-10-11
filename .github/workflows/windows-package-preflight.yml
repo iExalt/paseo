@@ -14,7 +14,7 @@ on:
         required: true
         type: choice
         default: full
-        options: [full, diagnostic, fixture-tools]
+        options: [full, diagnostic, fixture-tools, binding-only]
 
 permissions:
   contents: read
@@ -27,7 +27,7 @@ jobs:
   prerequisite:
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
     runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
-    timeout-minutes: ${{ inputs.mode == 'diagnostic' && 10 || inputs.mode == 'fixture-tools' && 25 || 50 }}
+    timeout-minutes: ${{ inputs.mode == 'binding-only' && 35 || inputs.mode == 'diagnostic' && 10 || inputs.mode == 'fixture-tools' && 25 || 50 }}
     defaults:
       run:
         shell: pwsh
@@ -54,21 +54,29 @@ jobs:
         timeout-minutes: 30
         run: ./.github/scripts/windows-prerequisite.ps1 install
       - name: Install only the locked fixture tools
-        if: inputs.mode == 'fixture-tools'
+        if: inputs.mode == 'fixture-tools' || inputs.mode == 'binding-only'
         timeout-minutes: 8
         run: ./.github/scripts/windows-prerequisite.ps1 fixture-tools
       - name: Package two tiny native NSIS fixtures
-        if: inputs.mode != 'diagnostic'
+        if: inputs.mode == 'full' || inputs.mode == 'fixture-tools'
         timeout-minutes: 5
         run: ./.github/scripts/windows-prerequisite.ps1 build
       - name: Verify current-user install, replacement, renderer and uninstall
-        if: inputs.mode != 'diagnostic'
+        if: inputs.mode == 'full' || inputs.mode == 'fixture-tools'
         timeout-minutes: 5
         run: ./.github/scripts/windows-prerequisite.ps1 runtime
       - name: Verify build-only telemetry cleanup without a workspace install
         if: inputs.mode == 'diagnostic'
         timeout-minutes: 7
         run: ./.github/scripts/windows-prerequisite.ps1 probe
+      - name: Assemble the pinned Electron ARM binding diagnostic
+        if: inputs.mode == 'binding-only'
+        timeout-minutes: 16
+        run: ./.github/scripts/windows-prerequisite.ps1 binding-build
+      - name: Diagnose native wrapper and physical addon loading
+        if: inputs.mode == 'binding-only'
+        timeout-minutes: 2
+        run: ./.github/scripts/windows-prerequisite.ps1 binding-runtime
       - name: Verify owned fixture cleanup
         if: always()
         timeout-minutes: 2
