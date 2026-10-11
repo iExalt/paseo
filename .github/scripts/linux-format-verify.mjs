@@ -33,5 +33,5 @@ assert.deepEqual(
 if (receipt.mount)
   assert.equal(existsSync(receipt.mount.target), false, "Owned FUSE mount must disappear");
 console.log(
-  `${receipt.format}: normal exit, renderer sandbox=${receipt.renderer.sandboxed}; ${receipt.reason}`,
+  `${receipt.format}: normal exit, preload sandbox=${receipt.renderer.sandboxed}, Chromium no-sandbox=${receipt.chromiumNoSandbox}; ${receipt.reason}`,
 );

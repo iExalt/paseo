@@ -457,9 +457,16 @@ formats and launched the actual FUSE AppImage, then rejected its sandbox reason.
 Locked builder's AppRun independently injects `--no-sandbox` when `unshare -Ur true`
 fails; desktop-entry arguments do not disable this shipped fallback. The fixture
 now verifies the complete generated AppRun hash, independently observes that exact
-probe's normal nonzero exit, and requires an unsandboxed renderer only for this
-AppImage-specific path. The harness injects no disabling flags. Failure cleanup
+probe's normal nonzero exit, and verifies Chromium's disabling flag only for this
+AppImage-specific fallback. The harness injects no disabling flags. Failure cleanup
 confirmed no remaining owned processes or mounts; DEB/RPM runtime is still unproven.
+Trial `38113187628` at `20c934dd3` passed AppRun hash/probe checks, then exposed
+that Electron's sandboxed preload flag stays true with Chromium's OS sandbox
+disabled. The fixture now distinguishes preload isolation from the Chromium
+switch and records kernel process status; enabled policy requires renderer
+NoNewPrivs=1 and Seccomp=2. Fallback kernel values are retained, not assumed zero
+or called proof of an Electron sandbox. Optional OS-sandbox metrics are not a
+Linux API. Cleanup again confirmed no owned processes or mounts remained.
 The Nix filter increment `490c6eac0` passed seven-lane PR CI in 4m30s; the preceding
 `5139c9514` full dev run passed in 4m34s. The stable latency baseline is unchanged.
 
