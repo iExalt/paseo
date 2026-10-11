@@ -363,10 +363,14 @@ its CLI/UI; the replacement must show the same workspace identity and selected t
 with its full plugin/CLI/PTY checks. Supervisor/descendant identities are captured
 before and after runtime activity and must exit before replacement. Early launch
 failures without a PID remain failed gates with hosted teardown as fallback, not
-successful process-cleanup proof. Native execution is pending producer acceptance
-and reviewed consumer integration; local fixtures only verify identity and process
-ownership rules. Mac consumer `e527d12f2` passed routine CI in 4m30s and is integrated
-into dev; native execution remains pending.
+successful process-cleanup proof. Native Mac execution passed in run `38100022842`,
+with harness `7b87e5ab6` and producer `e506c1272`: 4m28s including setup/import and
+retained evidence. Author and reviewer inspected screenshots and state receipts:
+both canonical signed app roots show the same workspace ID and Pure black theme.
+Candidate plugin/CLI/PTY behavior and owned-process cleanup passed. The predecessor
+only seeds state; its generic terminal-success log was inaccurate and is corrected
+without changing behavior. This closes B2's Mac runtime/manual-upgrade portion,
+not C's updater transition or G6's 0.1.0 user migration.
 
 The Android consumer is implemented and reviewer-accepted for hosted verification.
 It uses the proven pinned ARM64 container/kernel module, verifies both signed APKs,
@@ -377,17 +381,23 @@ are assembled by the shell and never appear in the typed command. Workspace proo
 is its visible unique title; the native UI does not expose a workspace-ID assertion.
 Host/container/backend cleanup and screenshot retention are bounded. UI selectors,
 rendered output accessibility and upgrade behavior remain unverified until the
-accepted paired producer feeds the reviewed live consumer.
+accepted paired producer feeds the reviewed live consumer. The first trial stopped
+before installation because the signer also emits an `.apk.idsig` sidecar. The
+reviewed consumer repair includes that exact filename in its bounded allowlist;
+local extraction of the actual artifact and ZIP/APK digest checks pass. No producer
+rebuild is needed. An explicit platform selector permits an Android-only retry
+without repeating accepted Mac proof; invalid selections enable neither lane.
 
 The native consumer's process tracking repair `bfef0fca1` uses PID plus immutable
 start time, excluding mutable process titles. Its PR run `38099238307` passed all
-behavioral checks but failed the unchanged latency gate at 304s; native dispatch
-is paused pending a passing repaired head. Server shard 3 took 149.81s versus
+behavioral checks but failed the unchanged latency gate at 304s. Server shard 3 took 149.81s versus
 137.32s on the preceding head, with unchanged tests and two workers. This exposed
 insufficient latency margin rather than added test work on that shard. The reviewed
 repair moves a 16-second supervisor heartbeat observation to virtual time, retaining
-real IPC/logging and the real ten-second forced-termination journey. Required hosted
-verification will measure the result; no deadline or concurrency increase is applied.
+real IPC/logging and the real ten-second forced-termination journey. At `7b87e5ab6`,
+PR run `38099694096` passed in 4m01s and dev `38100019453` in 4m31s; the logging
+suite fell from 30.21s to 13.43s and virtual timing took 9ms on the PR. Host variation
+also affects total duration. No deadline or concurrency increase was applied.
 
 The [optimized integration lane](https://github.com/iExalt/paseo/actions/runs/38096508135)
 at `18510758c` passed unchanged lifecycle cases, relay/provider checks and all process
