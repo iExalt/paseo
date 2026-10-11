@@ -1,6 +1,6 @@
 import unittest
 import xml.etree.ElementTree as ET
-from android_candidate_controls import keyboard_permission_deny, input_ready
+from android_candidate_controls import keyboard_permission_deny, notification_permission_deny, input_ready
 
 
 class ControlsTest(unittest.TestCase):
@@ -19,6 +19,11 @@ class ControlsTest(unittest.TestCase):
                         "Allow Android Keyboard (AOSP) to record audio?"]:
             nodes[0].set("text", message)
             self.assertIsNone(keyboard_permission_deny(nodes))
+        nodes[0].set("text", "Allow Paseo iExalt to send you notifications?")
+        self.assertIs(notification_permission_deny(nodes), nodes[1])
+        self.assertIsNone(keyboard_permission_deny(nodes))
+        nodes[0].set("text", "Allow Paseo iExalt to access your contacts?")
+        self.assertIsNone(notification_permission_deny(nodes))
 
     def test_input_requires_focus_and_visible_keyboard(self):
         field = ET.fromstring('<node resource-id="direct-host-input" focused="true" />')
