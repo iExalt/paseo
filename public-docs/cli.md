@@ -10,7 +10,7 @@ category: Orchestration
 
 The Paseo CLI lets you manage agents from your terminal. It's the same interface exposed by the daemon's API, so anything you can do in the app you can do from the command line.
 
-> **Agent orchestration:** You can tell coding agents to use the Paseo CLI to spawn and manage other agents. Paseo recognizes the calling agent, so CLI-created workers get the same workspace and parent defaults as MCP-created workers.
+> **Agent orchestration:** You can tell coding agents to use the Paseo CLI to spawn and manage other agents. Paseo recognizes the calling agent, so CLI-created workers inherit caller workspace and parent defaults. See [caller context and native tool policy](/docs/mcp).
 
 ## Quick reference
 
@@ -188,6 +188,19 @@ paseo workspace archive <workspace-id>
 
 Add `--forge <name>` to PR checkout when Paseo cannot infer the forge from the source checkout. See [Git worktrees](/docs/worktrees) for setup hooks and services.
 
+### Workspace notification policy
+
+```bash
+paseo workspace create --isolation local --path /absolute/repo --notifications off
+paseo workspace update <workspace-id> --notifications on
+paseo workspace ls --json
+paseo daemon notifications rules get --json
+paseo daemon notifications rules set '<reply-rules-json-array>'
+paseo daemon notifications rules clear
+```
+
+Create a workspace with the desired policy before `run --workspace`; `run` has no notification-policy flag. Listing reports workspace policy. Host reply-rule reads and mutations require daemon read/manage authority respectively; caller identity does not grant host authority.
+
 ## Terminals
 
 Use the workspace ID when multiple workspaces share a directory:
@@ -263,6 +276,17 @@ paseo ls -a -g --json       # All agents, including archived, as JSON
 paseo ls --background       # Also include agents in background workspaces
 ```
 
+Use `agent query` for directory descendants, status sets, limits, and archived activity age, with independent archive/background inclusion:
+
+```bash
+paseo agent query --cwd /absolute/repo --status running --status idle --limit 20 --json
+paseo agent query --include-archived --include-background --since-hours 48 --json
+paseo agent status <exact-agent-id> --json
+paseo agent activity <exact-agent-id> --limit 20 --json
+```
+
+Query defaults to 50 results and a 48-hour archived activity window; it uses the caller's directory when available. `agent status` returns the full snapshot, including stored-agent fallback, while `inspect` is a display-oriented projection. `agent activity` returns curated activity; `logs` provides timeline filtering and following. Do not treat their JSON shapes as interchangeable.
+
 ## Streaming output
 
 Use `paseo attach` to stream an agent's output in real-time:
@@ -321,9 +345,19 @@ Agents may request permission for certain actions. Manage these from the CLI:
 
 ```bash
 paseo permit ls                # List pending requests
-paseo permit allow <id>        # Allow all pending for agent
+paseo permit allow <id> --all  # Allow all pending for agent
 paseo permit deny <id> --all   # Deny all pending
 ```
+
+For a single request, pass its ID from `permit ls --json`:
+
+```bash
+paseo permit allow <agent-id> <request-id> --selected-action-id <action-id>
+paseo permit allow <agent-id> <request-id> --updated-permissions '<permissions-json-array>'
+paseo permit deny <agent-id> <request-id> --selected-action-id <action-id> --message "Declined"
+```
+
+Use the action ID and permission data supplied by the provider. Action selection and updated permission arrays cannot be combined with bulk approval.
 
 ## Agent modes
 
@@ -337,6 +371,69 @@ paseo agent detach <id>        # Make a subagent top-level
 ```
 
 Detaching is an explicit lifecycle action, not a creation flag. The agent keeps running; only its relationship to its parent changes.
+
+## Profiles and provider discovery
+
+```bash
+paseo profile ls --json
+paseo provider ls --full --json
+paseo provider models <provider> --full --json
+paseo provider inspect <provider> --cwd /absolute/repo --json
+paseo provider inspect <provider> --model <model> --mode <mode> --thinking <thinking> --json
+```
+
+Read profile notes before delegation. There is no `run --profile` flag: copy `provider`, `model`, `modeId`, `thinkingOptionId`, and `featureValues` into `--provider`, `--model`, `--mode`, `--thinking`, and `--features-json`. Omit absent values. `provider inspect` accepts draft settings and reports capabilities/features; `provider diagnostic` checks installation. `--full --json` on provider/model discovery preserves canonical records rather than the display projection.
+
+## Agent runtime settings
+
+```bash
+paseo run --provider codex --feature fast_mode=true --no-wait "Review this branch"
+paseo agent update <id> --model <model> --thinking <thinking> --name "Review"
+paseo agent update <id> --clear-model --clear-thinking
+paseo send <id> --mode <mode> --no-wait "Continue in this mode"
+```
+
+Use only feature IDs and values reported by `provider inspect`. `run`, `agent update`, and `provider inspect` accept repeatable `--feature` assignments, comma-separated assignments, and `--features-json`. These examples show syntax using illustrative feature IDs:
+
+```bash
+paseo agent update <id> --feature enabled=true --feature choice=fast
+paseo agent update <id> --feature 'enabled=true,choice="a,b"'
+paseo agent update <id> --features-json '{"choice":"a,b","count":2,"custom":{"level":2},"empty":""}'
+```
+
+The inner double quotes in `'choice="a,b"'` must reach the parser; shell quoting alone around `'choice=a,b'` does not protect the comma. Bare `true`, `false`, and `null` are typed; other values (including numerals) are strings. JSON accepts arbitrary values. Duplicate feature IDs, including across flag and JSON input, fail.
+
+Combined updates apply mode, model, thinking, each feature, then metadata. This is not atomic: an error reports completed, failed, and unattempted steps. Earlier changes may remain, and a lost response can leave the failed step's outcome unknown. Inspect before retrying. `send --mode` sets mode before prompt dispatch; if dispatch fails, the mode change can remain.
+
+## Asynchronous delegation
+
+`run` and `send` wait by default; `--no-wait` returns after startup or dispatch acknowledgement. Parentage is independent: in a managed caller, `run` defaults to a subagent, even in a different `--workspace`. `--relationship detached` creates independent work; `--relationship subagent` requires caller context.
+
+For a resolved caller, create/send default to finish, error, and permission notifications. Use `--no-notify-on-finish` for fire-and-forget work, or `--notify-on-finish` to state the intent explicitly. A human shell has no parent callback. Use `wait`, `agent status`, or `agent activity` when no callback is available; avoid repeated polling when notifications are enabled.
+
+Use the daemon-provided `"$PASEO_CLI"` inside managed sessions and preserve caller/home environment values. See [caller context and policy](/docs/mcp#caller-context-and-daemon-selection).
+
+## Close, stop, archive, and delete
+
+| Command                  | Effect                                                                                                             |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| `paseo stop <id>`        | Cancel the current run, keeping the agent available.                                                               |
+| `paseo agent close <id>` | Close the runtime and persist its closed snapshot, preserving history. Replaces the former `kill_agent` operation. |
+| `paseo archive <id>`     | Remove from active use. A running agent requires `--force`; history remains.                                       |
+| `paseo delete <id>`      | Hard-delete stored state, interrupting if needed.                                                                  |
+
+## Browser commands
+
+All browser operations are available under `paseo browser`. See the [22-command browser reference](/docs/browser-tools) for tab selection, stale refs, uploads, and screenshot paths.
+
+## Speech
+
+```bash
+paseo speech speak "The review is complete"
+paseo speech speak --agent <agent-id> "The review is complete" --json
+```
+
+Speech uses the resolved caller's active daemon-managed voice session, or the explicit `--agent`. Text must contain 1–4000 non-whitespace characters. Success follows playback completion; interrupting the CLI cancels the request. A missing voice session or playback failure returns an error. This is not an audio-file generation command.
 
 ## Daemon management
 
