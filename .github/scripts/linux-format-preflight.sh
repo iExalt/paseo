@@ -66,6 +66,10 @@ run_fixture() {
 }
 export FIXTURE_APPIMAGE="$FORMAT_ROOT/packages/fixture-$EXPECTED_ARCHITECTURE.AppImage"
 chmod +x "$FIXTURE_APPIMAGE"
+OWNED_SESSION_SKIP_XVFB=1 FIXTURE_FORMAT=appimage-cli \
+  TMPDIR="$FORMAT_ROOT/evidence/cli-mounts" \
+  node .github/scripts/linux-format-launch.mjs node .github/scripts/linux-format-cli.mjs \
+  > "$FORMAT_ROOT/evidence/appimage-cli.log" 2>&1
 run_fixture appimage "$FIXTURE_APPIMAGE"
 sudo apt-get install -y "$FORMAT_ROOT/packages/fixture-$EXPECTED_ARCHITECTURE.deb"
 test "$(stat -Lc '%u:%a' /opt/PaseoFormatFixture/chrome-sandbox)" = 0:4755
