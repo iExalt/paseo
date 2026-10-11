@@ -361,7 +361,19 @@ before and after runtime activity and must exit before replacement. Early launch
 failures without a PID remain failed gates with hosted teardown as fallback, not
 successful process-cleanup proof. Native execution is pending producer acceptance
 and reviewed consumer integration; local fixtures only verify identity and process
-ownership rules. Android runtime/state preservation remains to be implemented.
+ownership rules. Mac consumer `e527d12f2` passed routine CI in 4m30s and is integrated
+into dev; native execution remains pending.
+
+The Android consumer is implemented and reviewer-accepted for hosted verification.
+It uses the proven pinned ARM64 container/kernel module, verifies both signed APKs,
+and runs a fixture daemon built from the candidate's exact source. Real ADB controls
+seed a saved connection/theme, open the unique fixture workspace, and exercise PTY
+input/output before and after `install -r` without clearing app data. Output markers
+are assembled by the shell and never appear in the typed command. Workspace proof
+is its visible unique title; the native UI does not expose a workspace-ID assertion.
+Host/container/backend cleanup and screenshot retention are bounded. UI selectors,
+rendered output accessibility and upgrade behavior remain unverified until the
+accepted paired producer feeds the reviewed live consumer.
 
 The [optimized integration lane](https://github.com/iExalt/paseo/actions/runs/38096508135)
 at `18510758c` passed unchanged lifecycle cases, relay/provider checks and all process
