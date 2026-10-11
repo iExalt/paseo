@@ -28,20 +28,20 @@ You can also start and supervise each task yourself in the desktop app. [Run par
 
 Use built-in Paseo tools or the CLI. Both let an agent launch and coordinate workers.
 
-### Built-in Paseo tools (MCP)
+### Native tools and CLI guidance
 
 Enable Paseo tools so agents running inside Paseo can manage agents and workspaces on their host directly.
 
 1. Open **Settings → your host → Agents**.
 2. Turn on **Enable Paseo tools**. Tool injection is off by default.
-3. Start a new agent, or reload an existing agent so it receives the tools.
+3. Start a new agent, or reload an existing agent so it receives native tools where supported and CLI guidance.
 4. Ask:
 
 > Use Paseo to launch a second agent to review this branch. Have it report potential bugs without changing files, then summarize its findings.
 
 The worker appears in the **Subagents track** near the composer. Open it to follow the conversation. Your main agent receives a notification when the worker finishes, and you can keep talking while it works.
 
-See the [MCP reference](/docs/mcp) for tool configuration and the full catalog. [Orchestration skills](/docs/skills) are optional reusable workflows.
+See the [Paseo tool policy](/docs/mcp) for configuration and caller context. [Orchestration skills](/docs/skills) are optional reusable workflows.
 
 ### CLI
 
@@ -53,7 +53,7 @@ paseo run --provider codex --no-wait \
 paseo ls -a
 ```
 
-The first command starts a worker and returns immediately; the second lists archived and background agents as well. When a Paseo agent runs the command, the worker becomes its subagent in the same workspace. From your own terminal, it starts in a new local workspace.
+The first command starts a worker and returns immediately; the second includes archived agents; add `--background` to include background workspaces. When a Paseo agent runs the command, the worker becomes its subagent in the same workspace. From your own terminal, it starts in a new local workspace.
 
 See the [CLI reference](/docs/cli) for follow-ups, output, worktrees, and remote hosts.
 

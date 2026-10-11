@@ -8,7 +8,7 @@ Paseo is a mobile app for monitoring and controlling your local AI coding agents
 
 This is an npm workspace monorepo:
 
-- `packages/server` — Daemon: agent lifecycle, WebSocket API, MCP server
+- `packages/server` — Daemon: agent lifecycle, WebSocket API, provider-native tools
 - `packages/app` — Mobile + web client (Expo)
 - `packages/cli` — Docker-style CLI (`paseo run/ls/logs/wait`)
 - `packages/relay` — E2E encrypted relay for remote access
@@ -38,6 +38,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 
 | Doc                                                                                                                            | What's in it                                                                                                                   |
 | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| [docs/MCP_CLI_DIFFERENCES.md](docs/MCP_CLI_DIFFERENCES.md)                                                                     | Completed Paseo MCP-to-CLI migration, operation mapping, and verification limits                                               |
 | [docs/upstream/product.md](docs/upstream/product.md)                                                                           | What Paseo is, who it's for, where it's going                                                                                  |
 | [docs/upstream/architecture.md](docs/upstream/architecture.md)                                                                 | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
 | [docs/upstream/agent-lifecycle.md](docs/upstream/agent-lifecycle.md)                                                           | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
