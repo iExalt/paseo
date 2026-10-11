@@ -434,62 +434,31 @@ changing an e2e runtime helper or nested speech asset changes both. This proves
 avoided test-only invalidation, not a timing gain for required builds. The check
 remains an explicit native Nix workflow gate; no package realization is required.
 
-The next B3 prerequisite uses one tiny Electron 44.6.0 payload per architecture
-and locked electron-builder 26.15.3 to exercise actual DEB/RPM installers and the
-current FUSE2 AppImage runtime before expensive product builds. It retains the
-production launcher and installer template, uses a distinct fixture package,
-and records the selected sandbox policy, renderer outcome, process identities,
-FUSE mount and normal shutdown/uninstall. Fedora 44 is pinned by native image
-digest and uses Docker's default security plus no-new-privileges, with 2 CPUs, 4 GiB and 512 PIDs; this
-proves Fedora userland on the hosted Ubuntu kernel, not a Fedora host kernel.
-One x64 trial is bounded to 20 minutes overall and five minutes in the container,
-with no caches and at most 25 MiB of one-day diagnostics; inspect it before ARM64.
-Sandbox restrictions are findings, not permission to relax host/container security.
-Fixture success does not close any actual Paseo package or upgrade cell.
-The first x64 fixture trial `38111849668` at `832b9059c` stopped before installation:
-the tiny fixture lacked FPM's required homepage. Its successful AppImage packaging
-also exposed that builder expands architecture names differently by format;
-the harness now assigns explicit filenames without changing native metadata.
-Identity and packaging logs are retained before build completion so early failures
-have bounded diagnostics. No installer, renderer or FUSE acceptance follows from
-this failed trial. The corrected trial `38112388625` at `5139c9514` built all three
-formats and launched the actual FUSE AppImage, then rejected its sandbox reason.
-Locked builder's AppRun independently injects `--no-sandbox` when `unshare -Ur true`
-fails; desktop-entry arguments do not disable this shipped fallback. The fixture
-now verifies the complete generated AppRun hash, independently observes that exact
-probe's normal nonzero exit, and verifies Chromium's disabling flag only for this
-AppImage-specific fallback. The harness injects no disabling flags. Failure cleanup
-confirmed no remaining owned processes or mounts; DEB/RPM runtime is still unproven.
-Trial `38113187628` at `20c934dd3` passed AppRun hash/probe checks, then exposed
-that Electron's sandboxed preload flag stays true with Chromium's OS sandbox
-disabled. The fixture now distinguishes preload isolation from the Chromium
-switch and records kernel process status; enabled policy requires renderer
-NoNewPrivs=1 and Seccomp=2. Fallback kernel values are retained, not assumed zero
-or called proof of an Electron sandbox. Optional OS-sandbox metrics are not a
-Linux API. Cleanup again confirmed no owned processes or mounts remained.
-Trial `38113877323` at `40cb98773` passed actual AppImage FUSE launch, provenance,
-renderer policy and normal cleanup. DEB installation then started a namespace-
-sandboxed renderer, exposing an incorrect comparison of its inner PID 1 with
-observer PID 3745. The fixture now binds both through the kernel's NSpid mapping,
-uses the observer PID for mandatory metrics and kernel evidence, and rejects
-missing/malformed mappings. Tiny parser cases cover nested and unnested identities
-and mismatched endpoints. DEB cleanup purged the package and left no owned processes;
-full DEB/RPM acceptance still requires the corrected hosted trial.
-Trial `38114504476` at `39a160e9f` verified the DEB renderer mapping
-`3868 → 4 → 1`, enabled policy, NoNewPrivs=1 and Seccomp=2, then exposed a fixture
-shutdown race: DOMContentLoaded IPC closed the window before `loadURL` settled.
-The fixture now awaits successful navigation before assertions and normal close;
-navigation rejection remains fatal. AppImage passed again, and failure cleanup
-purged the DEB and removed owned processes. RPM is not yet exercised.
-Trial `38115197241` at `907135a34` passed both AppImage and DEB install/runtime/
-normal-exit cleanup. The actual RPM installed in Fedora, then its root-owned SUID
-helper failed namespace creation under Docker's default restrictions. The next
-trial adds no-new-privileges, verifies inheritance in the nonroot launch context,
-and exercises the shipped fallback without relaxing any container restriction.
-Container diagnostics are captured before removal even on failure; failed
-diagnostic collection must not prevent owned cleanup. A pass would establish the
-hardened Fedora userland fallback on Ubuntu's kernel, not default Docker SUID
-support or native Fedora host behavior. Actual Paseo package cells remain open.
+B3's installer prerequisite is accepted on native
+[x64](https://github.com/iExalt/paseo/actions/runs/38115901669) in 4m21s and
+[ARM64](https://github.com/iExalt/paseo/actions/runs/38116204675) in 5m00s at
+`96708bccc`. A tiny Electron 44.6.0 payload, locked builder 26.15.3 and the actual
+production launcher/templates passed DEB/RPM installation, real FUSE AppImage
+launch, renderer checks, normal exit and uninstall. All owned PID/mount sets
+were empty; native package identities and hashes were retained. These are
+environment prerequisites, not actual Paseo package or upgrade acceptance.
+
+AppImage proof binds the live mounted executable and full generated AppRun hash;
+its failed namespace probe selects the shipped fallback without harness-injected
+flags. DEB renderers showed namespace mappings and NoNewPrivs=1/Seccomp=2.
+Preload isolation is recorded separately from Chromium's OS sandbox switch, and
+observer/inner PIDs are bound through NSpid. Navigation must finish before normal
+close. Earlier trials exposed and repaired those fixture assumptions; cheap
+mapping cases and an actual-source deferred-navigation probe cover the repairs.
+
+Fedora 44 uses a pinned native image, 2 CPUs, 4 GiB, 512 PIDs and enforced
+no-new-privileges. The default-container SUID route failed namespace creation in
+`38115197241`; the accepted hardened configuration exercises the shipped fallback
+without relaxing security. This proves Fedora userland on Ubuntu's kernel, not
+default Docker SUID support or native Fedora host behavior. Container exit was
+zero without OOM; diagnostics precede removal even on failure. Both trials stayed
+within the 20-minute/five-minute-container bounds, used no caches and retained
+at most 25 MiB of one-day diagnostics. Actual product format journeys are next.
 The Nix filter increment `490c6eac0` passed seven-lane PR CI in 4m30s; the preceding
 `5139c9514` full dev run passed in 4m34s. The stable latency baseline is unchanged.
 
