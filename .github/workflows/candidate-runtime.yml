@@ -17,6 +17,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  android:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    env:
+      CANDIDATE_PIN: ${{ inputs.candidate_pin }}
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      CI: "true"
+      LEFTHOOK: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Verify signed ARM64 APKs and retained native state
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/android-candidate-host.sh
+      - name: Remove owned Android container after interruption
+        if: always()
+        run: |
+          if test -f "$RUNNER_TEMP/paseo-native-candidate-owned" && docker inspect paseo-native-candidate >/dev/null 2>&1; then
+            docker rm -f paseo-native-candidate
+          fi
+      - name: Bound retained Android evidence
+        id: evidence
+        if: ${{ !cancelled() }}
+        run: |
+          directory=.dev/github-workflows/native/android
+          test -d "$directory"
+          bytes="$(du -sb "$directory" | cut -f1)"
+          test "$bytes" -le 26214400
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && steps.evidence.outcome == 'success' }}
+        with:
+          name: native-android-${{ github.sha }}-${{ github.run_attempt }}
+          path: .dev/github-workflows/native/android/
+          retention-days: 1
+          if-no-files-found: error
   macos:
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
     runs-on: macos-14
