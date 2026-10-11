@@ -8,6 +8,7 @@ const { chromium } = require("playwright");
 const { extractFile } = require("@electron/asar");
 const { WebSocket } = require("ws");
 const assert = require("node:assert/strict");
+const { terminalHookCommand, hasTerminalOutput } = require("./terminal-proof.cjs");
 const {
   captureProcessTree,
   refreshProcessTree,
@@ -122,20 +123,6 @@ function shellQuoteCliArg(value) {
   }
 
   return shellQuote(String(value));
-}
-
-function getTerminalHookSmokeCommand(marker) {
-  if (process.platform === "win32") {
-    const script = [
-      "& $env:PASEO_HOOK_CLI hooks codex Stop",
-      "if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }",
-      `Write-Output '${marker}'`,
-    ].join("; ");
-    const encodedScript = Buffer.from(script, "utf16le").toString("base64");
-    return `powershell.exe -NoProfile -NonInteractive -EncodedCommand ${encodedScript}`;
-  }
-
-  return `"$PASEO_HOOK_CLI" hooks codex Stop && echo ${marker}`;
 }
 
 function getShellCommand(script) {
@@ -611,8 +598,8 @@ function getCliShimScript(cliShimPath, args) {
   return `${shellQuote(cliShimPath)} ${commandArgs}`;
 }
 
-async function runCliShimCommand({ appPath, env, args, label }) {
-  const cliShimPath = getCliShimPath(appPath);
+async function runCliShimCommand({ appPath, cliPath, env, args, label }) {
+  const cliShimPath = cliPath ?? getCliShimPath(appPath);
   assertExecutable(cliShimPath, "Bundled CLI shim");
 
   return await runShellCommand({
@@ -622,9 +609,10 @@ async function runCliShimCommand({ appPath, env, args, label }) {
   });
 }
 
-async function runCliShimJsonCommand({ appPath, env, args, label }) {
+async function runCliShimJsonCommand({ appPath, cliPath, env, args, label }) {
   const result = await runCliShimCommand({
     appPath,
+    cliPath,
     env,
     args: [...args, "--json"],
     label,
@@ -641,10 +629,11 @@ async function runCliShimJsonCommand({ appPath, env, args, label }) {
   }
 }
 
-async function smokeCliShim({ appPath, env }) {
+async function smokeCliShim({ appPath, cliPath, env }) {
   console.log("Packaged desktop smoke: running bundled CLI shim daemon status");
   const result = await runCliShimCommand({
     appPath,
+    cliPath,
     env,
     args: ["daemon", "status"],
     label: "Bundled CLI shim daemon status",
@@ -652,7 +641,7 @@ async function smokeCliShim({ appPath, env }) {
   assertCleanDaemonStatusOutput(`${result.stdout}\n${result.stderr}`);
 }
 
-async function smokeColdCliDaemonStart({ appPath, strict = false }) {
+async function smokeColdCliDaemonStart({ appPath, cliPath, strict = false }) {
   const home = createTempDir("paseo-smoke-cli-daemon-home-");
   const pidPath = path.join(home, "paseo.pid");
   let identities = [];
@@ -666,6 +655,7 @@ async function smokeColdCliDaemonStart({ appPath, strict = false }) {
     console.log("Packaged desktop smoke: cold-starting daemon through bundled CLI shim");
     await runCliShimCommand({
       appPath,
+      cliPath,
       env,
       args: ["daemon", "start", "--home", home],
       label: "Bundled CLI shim cold daemon start",
@@ -693,11 +683,11 @@ async function smokeColdCliDaemonStart({ appPath, strict = false }) {
       }
     }
   } finally {
-    await cleanupColdDaemon({ strict, pidPath, appPath, env, home, identities });
+    await cleanupColdDaemon({ strict, pidPath, appPath, cliPath, env, home, identities });
   }
 }
 
-async function cleanupColdDaemon({ strict, pidPath, appPath, env, home, identities }) {
+async function cleanupColdDaemon({ strict, pidPath, appPath, cliPath, env, home, identities }) {
   try {
     if (fs.existsSync(pidPath)) {
       if (strict && !identities.length) {
@@ -707,6 +697,7 @@ async function cleanupColdDaemon({ strict, pidPath, appPath, env, home, identiti
       if (strict) identities = refreshProcessTree(identities);
       await runCliShimCommand({
         appPath,
+        cliPath,
         env,
         args: ["daemon", "stop", "--home", home, "--force"],
         label: "Bundled CLI shim cold daemon stop",
@@ -737,7 +728,7 @@ function assertCleanDaemonStatusOutput(output) {
   }
 }
 
-async function smokeCliTerminal({ appPath, env }) {
+async function smokeCliTerminal({ appPath, cliPath, env }) {
   const cwd = createTempDir("paseo-smoke-terminal-cwd-");
   const marker = `paseo-packaged-terminal-smoke-${Date.now()}`;
   const name = `packaged-smoke-${process.pid}-${Date.now()}`;
@@ -747,6 +738,7 @@ async function smokeCliTerminal({ appPath, env }) {
     console.log("Packaged desktop smoke: creating terminal through bundled CLI shim");
     const created = await runCliShimJsonCommand({
       appPath,
+      cliPath,
       env,
       args: ["terminal", "create", "--cwd", cwd, "--name", name],
       label: "Bundled CLI shim terminal create",
@@ -758,6 +750,7 @@ async function smokeCliTerminal({ appPath, env }) {
 
     const terminals = await runCliShimJsonCommand({
       appPath,
+      cliPath,
       env,
       args: ["terminal", "ls", "--all"],
       label: "Bundled CLI shim terminal ls",
@@ -768,20 +761,22 @@ async function smokeCliTerminal({ appPath, env }) {
 
     await runCliShimJsonCommand({
       appPath,
+      cliPath,
       env,
-      args: ["terminal", "send-keys", terminalId, getTerminalHookSmokeCommand(marker), "Enter"],
+      args: ["terminal", "send-keys", terminalId, terminalHookCommand(marker), "Enter"],
       label: "Bundled CLI shim terminal hook command",
     });
 
     for (let attempt = 1; attempt <= TERMINAL_CAPTURE_ATTEMPTS; attempt += 1) {
       const capture = await runCliShimJsonCommand({
         appPath,
+        cliPath,
         env,
         args: ["terminal", "capture", terminalId, "--scrollback"],
         label: "Bundled CLI shim terminal capture",
       });
       const lines = Array.isArray(capture?.lines) ? capture.lines : [];
-      if (lines.join("\n").includes(marker)) {
+      if (hasTerminalOutput(lines, marker)) {
         console.log("Packaged desktop smoke: terminal hook command completed");
         return;
       }
@@ -796,6 +791,7 @@ async function smokeCliTerminal({ appPath, env }) {
     if (terminalId) {
       await runCliShimJsonCommand({
         appPath,
+        cliPath,
         env,
         args: ["terminal", "kill", terminalId],
         label: "Bundled CLI shim terminal kill",
@@ -807,22 +803,24 @@ async function smokeCliTerminal({ appPath, env }) {
   }
 }
 
-async function stopCliDaemon({ appPath, env }) {
+async function stopCliDaemon({ appPath, cliPath, env }) {
   console.log("Packaged desktop smoke: stopping daemon through bundled CLI shim");
   await runCliShimCommand({
     appPath,
+    cliPath,
     env,
     args: ["daemon", "stop", "--force"],
     label: "Bundled CLI shim daemon stop",
   });
 }
 
-async function openSmokeWorkspace({ appPath, env, page, daemonHome }) {
+async function openSmokeWorkspace({ appPath, cliPath, env, page, daemonHome }) {
   const projectPath = path.join(daemonHome, "sandbox-smoke-project");
   fs.mkdirSync(projectPath);
   fs.writeFileSync(path.join(projectPath, "README.md"), "Packaged Linux sandbox smoke\n");
   const workspace = await runCliShimJsonCommand({
     appPath,
+    cliPath,
     env,
     args: [
       "workspace",
@@ -938,7 +936,8 @@ async function finishSmokeSession({
 
 async function smokePackagedDesktopApp({
   appPath,
-  executablePath = getExecutablePath(appPath),
+  executablePath,
+  nixLayout,
   launchArgs = [],
   expectedSandbox,
   ownedSession,
@@ -946,9 +945,20 @@ async function smokePackagedDesktopApp({
   artifactDir,
   inspectState = async () => {},
 }) {
+  let cliPath;
+  if (nixLayout) {
+    const { validateNixLinuxLayout } = require("./nix-linux-layout.cjs");
+    const layout = validateNixLinuxLayout({ desktop: appPath, ...nixLayout });
+    assert.equal(executablePath, undefined, "Nix must launch its canonical wrapper");
+    executablePath = layout.executablePath;
+    cliPath = layout.cliPath;
+  } else {
+    executablePath ??= getExecutablePath(appPath);
+    assertLinuxDesktopIdentity(appPath);
+  }
   assertExecutable(executablePath, "Packaged app executable");
-  assertLinuxDesktopIdentity(appPath);
-  if (!predecessor) await smokeColdCliDaemonStart({ appPath, strict: Boolean(ownedSession) });
+  if (!predecessor)
+    await smokeColdCliDaemonStart({ appPath, cliPath, strict: Boolean(ownedSession) });
 
   const { userData, daemonHome, port: daemonPort } = await prepareSmokeSession(ownedSession);
   let cdpPort = await reserveLocalTcpPort();
@@ -993,7 +1003,7 @@ async function smokePackagedDesktopApp({
     }
 
     if (ownedSession && daemonIdentity) daemonIdentity = refreshProcessTree(daemonIdentity);
-    await stopCliDaemon({ appPath, env });
+    await stopCliDaemon({ appPath, cliPath, env });
     if (ownedSession && daemonIdentity) await waitForProcessTreeExit(daemonIdentity);
     daemonStopped = true;
   };
@@ -1027,14 +1037,15 @@ async function smokePackagedDesktopApp({
     if (!predecessor) {
       await assertBuiltinPluginsStarted(listen);
       console.log("Packaged desktop smoke: every built-in plugin started");
-      await smokeCliShim({ appPath, env });
-      await smokeCliTerminal({ appPath, env });
+      await smokeCliShim({ appPath, cliPath, env });
+      await smokeCliTerminal({ appPath, cliPath, env });
     }
     await inspectState({ appPath, env, page, daemonHome });
     if (expectedSandbox !== undefined) {
       await assertSandboxState({ browser, page, expectedSandbox, stdout, stderr });
-      await openSmokeWorkspace({ appPath, env, page, daemonHome });
+      await openSmokeWorkspace({ appPath, cliPath, env, page, daemonHome });
     }
+    if (nixLayout) await page.screenshot({ path: path.join(artifactDir, "workspace.png") });
     await writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome, artifactDir });
     await stopDaemonForCleanup();
     console.log(
@@ -1152,7 +1163,33 @@ async function smokePackagedDesktopUpgrade({ previousApp, candidateApp, artifact
   }
 }
 
+async function smokeNixLinuxDesktop({ desktop, daemon, version, artifactDir }) {
+  assert.equal(process.platform, "linux");
+  const root = createTempDir("paseo-nix-linux-");
+  try {
+    const ownedSession = {
+      userData: path.join(root, "profile"),
+      daemonHome: path.join(root, "daemon"),
+      port: await reserveLocalTcpPort(),
+    };
+    fs.mkdirSync(ownedSession.userData);
+    fs.mkdirSync(ownedSession.daemonHome);
+    configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
+    await smokePackagedDesktopApp({
+      appPath: desktop,
+      nixLayout: { daemon, version },
+      ownedSession,
+      expectedSandbox: false, // The shipped Nix wrapper explicitly uses --no-sandbox.
+      artifactDir,
+    });
+  } finally {
+    const { removeOwnedTree } = await import("./remove-owned-tree.mjs");
+    await removeOwnedTree(root);
+  }
+}
+
 module.exports = {
+  smokeNixLinuxDesktop,
   smokePackagedDesktopApp,
   smokePackagedDesktopUpgrade,
 };

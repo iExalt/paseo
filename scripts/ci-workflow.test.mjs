@@ -68,6 +68,7 @@ test("only fork-owned workflows are installed", () => {
     "ci.yml",
     "fork-android-apk.yml",
     "fork-builds.yml",
+    "linux-nix-runtime.yml",
     "linux-package-preflight.yml",
     "macos-closure.yml",
     "native-feasibility.yml",
