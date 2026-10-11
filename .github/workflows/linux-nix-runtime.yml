@@ -23,6 +23,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           install_url: https://releases.nixos.org/nix/nix-2.34.7/install
@@ -31,7 +32,7 @@ jobs:
             allow-import-from-derivation = false
             max-jobs = 2
             cores = 2
-      - name: Build exact native daemon and desktop
+      - name: Build exact native predecessor and candidate packages
         timeout-minutes: 35
         run: bash .github/scripts/linux-nix-build.sh
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
@@ -44,7 +45,7 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build:server
-      - name: Run shipped wrappers and real desktop under Xvfb
+      - name: Replace owned Nix profile and verify retained desktop state
         timeout-minutes: 5
         run: node .github/scripts/linux-nix-runtime.mjs
       - name: Bound retained diagnostics
