@@ -1,7 +1,7 @@
 # Paseo fork automated builds and updates
 
 Status: complete on release 200008.
-Mac profile, running app, and production daemon are aligned; phone runs the same release.
+Mac profile, running app, and production daemon are aligned; the phone runs the same release.
 The shipped helper passed rollback and explicit high-water reactivation, and both
 in-app update checks report current. No new build or promotion was needed.
 The old Debug preference transfer is unavailable after uninstall.
@@ -536,7 +536,7 @@ Installer cancellation and permission failure retain a retryable verified APK.
 Pure release tests, mocked persistence tests, and a rendered Settings-row journey
 cover the source contract; actual autolinking resolution discovers the module.
 Kotlin compilation, real GitHub release consumption, installer behavior, and
-phone notification/device proof remain pending. The updater source was published
+The phone notification/device proof remain pending. The updater source was published
 in `9c77c42d6dec3d64a17423b4d474bd2745fde461`; paired run
 [`37980068459`](https://github.com/iExalt/paseo/actions/runs/37980068459) tests it
 with the reviewed resource constraints at `ab8b4367749551b01f97e5ce2c0fb8e867dc3f95`.
@@ -740,7 +740,7 @@ Later releases and actual host/device transitions are recorded below.
 | Complete release         | One immutable revision, increasing Android code, authenticated manifest and both verified targets. Publish only after both pass; retries cannot silently replace a published identity. Signing secrets never reach untrusted PR jobs. |
 | Mac updater              | Real release download, verified import, explicit activation, preserved settings, and offline rollback. Failed staging leaves current app unchanged.                                                                                   |
 | Android updater          | Real app check/download opens system installer; permission denial, cancellation, resume/retry, and success are visible and recoverable.                                                                                               |
-| Device delivery          | Actual user Mac and Android phone install/update CI-produced artifacts through intended interfaces, preserve state, and demonstrate recovery.                                                                                             |
+| Device delivery          | Actual user Mac and Android phone install/update CI-produced artifacts through intended interfaces, preserve state, and demonstrate recovery.                                                                                         |
 
 The final device gate requires two identified releases, A and B, plus a recovery
 candidate. On Mac, prove A to B without compilation, retain prior roots through
@@ -749,7 +749,7 @@ failure injection in an isolated environment rather than disrupting unrelated
 user store paths. Verify terminal/native helpers and daemon connectivity as well
 as opening the window.
 
-On Android phone, test the app-to-installer path, including first-time install-source
+On the Android phone, test the app-to-installer path, including first-time install-source
 permission and cancel/retry. `adb install` alone is insufficient. Verify installed
 package, signer, version code, architecture, pairing, notification preferences,
 and workspace settings before and after upgrade. Reject corrupted/incompatible
