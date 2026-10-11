@@ -11,6 +11,7 @@ import {
   statfsSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 assert.equal(process.platform, "win32");
 assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
@@ -30,6 +31,38 @@ const require = createRequire(join(npmRoot, "package.json"));
 const pacote = require("pacote");
 const tar = require("tar");
 const work = join(root, "extraction-diagnostic");
+const integrity =
+  "sha512-BCkyiFbeCAKvM1q+1GMFbAT6+eq57trBXt4ETyLtWaxGM2X4Ux/iff1S5B/wwDnfcWytcfJo03MkKzHnHFcpyw==";
+if (process.argv[3]) {
+  const label = process.argv[3];
+  assert.match(label, /^pass-[0-3]$/);
+  assert.ok(["4", "16"].includes(process.env.UV_THREADPOOL_SIZE));
+  const destination = join(work, label);
+  mkdirSync(destination);
+  const started = performance.now();
+  const cpu = process.cpuUsage();
+  await pacote.extract(join(work, "package.tgz"), destination, {
+    offline: true,
+    integrity,
+    cache: join(work, `${label}-cache`),
+  });
+  const elapsedMs = performance.now() - started;
+  const cpuUsage = process.cpuUsage(cpu);
+  const files = inventory(destination);
+  writeFileSync(
+    join(root, "evidence", `${label}.json`),
+    JSON.stringify({
+      workers: Number(process.env.UV_THREADPOOL_SIZE),
+      elapsedMs,
+      cpuUsage,
+      peakMemoryKiB: process.resourceUsage().maxRSS,
+      files: files.length,
+      bytes: files.reduce((sum, item) => sum + item.bytes, 0),
+      inventorySha256: createHash("sha256").update(JSON.stringify(files)).digest("hex"),
+    }),
+  );
+  process.exit(0);
+}
 mkdirSync(work);
 const evidence = join(root, "evidence/extraction.json");
 const result = {
@@ -37,28 +70,11 @@ const result = {
   node: process.version,
   npm: "11.20.0",
   pacote: require("pacote/package.json").version,
-  tar: execFileSync("tar.exe", ["--version"], { encoding: "utf8", timeout: 10000 }).trim(),
-  ordering: "pacote then native tar; OS and Defender warming uncontrolled",
+  ordering:
+    "fresh-process ABBA filesystem workers 4,16,16,4; same archive, fresh destinations and caches",
+  passes: [],
 };
 const save = () => writeFileSync(evidence, JSON.stringify(result, null, 2));
-const protectionSnapshot = () => {
-  try {
-    return JSON.parse(
-      execFileSync(
-        "pwsh.exe",
-        [
-          "-NoProfile",
-          "-Command",
-          "$ErrorActionPreference='Stop'; $status=Get-MpComputerStatus; $cpu=@(Get-Process MsMpEng -ErrorAction SilentlyContinue | Select-Object Id,CPU); @{ realTimeProtection=$status.RealTimeProtectionEnabled; tamperProtection=$status.IsTamperProtected; processes=$cpu } | ConvertTo-Json -Depth 4 -Compress",
-        ],
-        { encoding: "utf8", timeout: 5000 },
-      ),
-    );
-  } catch (error) {
-    return { unavailable: error.message };
-  }
-};
-result.protectionBefore = protectionSnapshot();
 save();
 try {
   const lock = JSON.parse(readFileSync("package-lock.json"));
@@ -102,52 +118,48 @@ try {
   });
   result.archive = { entries, expandedBytes };
   save();
-  const npmDestination = join(work, "pacote");
-  const nativeDestination = join(work, "native");
-  mkdirSync(npmDestination);
-  mkdirSync(nativeDestination);
-  const npmStart = performance.now();
-  await pacote.extract(filename, npmDestination, {
-    offline: true,
-    integrity: entry.integrity,
-    cache: join(work, "npm-cache"),
-  });
-  result.pacoteMs = performance.now() - npmStart;
-  save();
-  const nativeStart = performance.now();
-  execFileSync("tar.exe", ["-xf", filename, "-C", nativeDestination, "--strip-components", "1"], {
-    timeout: 120000,
-    stdio: "inherit",
-  });
-  result.nativeTarMs = performance.now() - nativeStart;
-  save();
-  const inventory = (directory, prefix = "") =>
-    readdirSync(directory)
-      .sort()
-      .flatMap((name) => {
-        const file = join(directory, name);
-        const stat = lstatSync(file);
-        assert.ok(!stat.isSymbolicLink());
-        const relative = `${prefix}${name}`;
-        if (stat.isDirectory()) return inventory(file, `${relative}/`);
-        assert.ok(stat.isFile());
-        return [
-          {
-            name: relative,
-            bytes: stat.size,
-            sha256: createHash("sha256").update(readFileSync(file)).digest("hex"),
-          },
-        ];
-      });
-  const npmFiles = inventory(npmDestination);
-  assert.deepEqual(inventory(nativeDestination), npmFiles);
-  result.files = npmFiles.length;
-  result.extractedBytes = npmFiles.reduce((sum, item) => sum + item.bytes, 0);
-  result.inventorySha256 = createHash("sha256").update(JSON.stringify(npmFiles)).digest("hex");
+  for (const [index, workers] of [4, 16, 16, 4].entries()) {
+    const label = `pass-${index}`;
+    result.activePass = label;
+    save();
+    execFileSync(process.execPath, [fileURLToPath(import.meta.url), root, label], {
+      env: { ...process.env, UV_THREADPOOL_SIZE: String(workers) },
+      stdio: "inherit",
+      timeout: 90000,
+    });
+    const pass = JSON.parse(readFileSync(join(root, "evidence", `${label}.json`)));
+    assert.equal(pass.workers, workers);
+    if (result.passes.length) {
+      for (const key of ["files", "bytes", "inventorySha256"])
+        assert.equal(pass[key], result.passes[0][key]);
+    }
+    result.passes.push(pass);
+    save();
+  }
+  result.activePass = null;
   const disk = statfsSync(work);
   result.availableDiskBytes = disk.bavail * disk.bsize;
   result.complete = true;
 } finally {
-  result.protectionAfter = protectionSnapshot();
   save();
+}
+
+function inventory(directory, prefix = "") {
+  return readdirSync(directory)
+    .sort()
+    .flatMap((name) => {
+      const file = join(directory, name);
+      const stat = lstatSync(file);
+      assert.ok(!stat.isSymbolicLink());
+      const relative = `${prefix}${name}`;
+      if (stat.isDirectory()) return inventory(file, `${relative}/`);
+      assert.ok(stat.isFile());
+      return [
+        {
+          name: relative,
+          bytes: stat.size,
+          sha256: createHash("sha256").update(readFileSync(file)).digest("hex"),
+        },
+      ];
+    });
 }

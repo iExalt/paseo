@@ -768,6 +768,16 @@ tarball, local-file npm/native-tar extraction with matching content inventories,
 and a tiny native compiler invocation. This temporary probe will be removed after
 the diagnosis is resolved. It changes no install, cache, Defender or
 cleanup policy and cannot satisfy the still-pending full installer prerequisite.
+The small diagnostic `38142871112` at `eae043774` completed successfully: CL
+created its object and exited zero, but the only remaining verified child after
+ten seconds was VCTIP telemetry. The locked 2.29 MB tarball downloaded in 152 ms;
+npm extraction took 50.76s versus native tar's 6.95s for identical 9,664-file,
+29.75 MB inventories. Ordering/warming were uncontrolled; Defender queries timed
+out, so no Defender attribution is established. All Job and final cleanup receipts
+completed in the 2m25s job. PR/dev CI passed in 4m25s/4m31s. The next bounded diagnostic tests documented
+VSCEIP opt-out with exact policy-value restoration and a strict normal compiler
+exit, plus fresh-process extraction with filesystem worker counts 4/16/16/4.
+No full-install tuning is adopted until this comparison supports it.
 Independent Windows producer source is implemented and source-reviewed,
 but has no native build proof yet: old and candidate locked installs share only a
 run-local npm download cache, each payload builds once, and Windows outputs are
