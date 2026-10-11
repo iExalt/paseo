@@ -154,17 +154,20 @@ if ($Phase -eq 'ownership') {
     $source = Join-Path $root 'probe.cpp'
     $object = Join-Path $root 'probe.obj'
     'int probe() { return 42; }' | Set-Content -LiteralPath $source -Encoding utf8
-    $specFile = Write-Spec 'compiler-probe' $compiler @('/nologo', '/c', $source, "/Fo$object") 60
-    & $pwsh -NoProfile -File $monitor -Specification $specFile | Write-Host
-    $receipt = Get-Content -LiteralPath (Join-Path $evidence 'compiler-probe-job.json') -Raw | ConvertFrom-Json
-    if (!$receipt.complete -or $receipt.activeProcesses -ne 0) { throw 'Compiler probe cleanup incomplete' }
-    @{
-        compiler = $compiler; objectPresent = (Test-Path -LiteralPath $object)
-        compiled = ($receipt.exitCode -eq 0 -and (Test-Path -LiteralPath $object))
-        strictStagePassed = (!$receipt.terminated -and !$receipt.timedOut -and $receipt.exitCode -eq 0)
-        classification = 'diagnostic only; not installer acceptance'
-    } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'compiler-probe.json')
+    $policy = Join-Path $PSScriptRoot 'windows-telemetry-policy.ps1'
+    $compilerFailure = $null
+    try {
+        & $policy apply $root
+        $null = Run-Owned 'compiler-probe' $compiler @('/nologo', '/c', $source, "/Fo$object") 60
+        if (!(Test-Path -LiteralPath $object)) { throw 'Compiler did not create its object' }
+        @{
+            compiler = $compiler; objectPresent = $true; compiled = $true; strictStagePassed = $true
+            classification = 'telemetry opt-out proof; not installer acceptance'
+        } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'compiler-probe.json')
+    } catch { $compilerFailure = $_ }
+    finally { & $policy restore $root }
     $null = Run-Owned 'extraction-probe' $node @((Join-Path $PSScriptRoot 'windows-install-diagnostic.mjs'), $root) 330
+    if ($null -ne $compilerFailure) { throw $compilerFailure }
 } elseif ($Phase -eq 'build') {
     $null = Run-Owned 'package' $node @((Join-Path $PSScriptRoot 'windows-prerequisite.mjs'), 'build', $root) 280
 } elseif ($Phase -eq 'runtime') {
@@ -202,6 +205,7 @@ if ($Phase -eq 'ownership') {
     foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'Uninstall left a fixture shortcut' } }
     @{ complete = $true; installDirectoryAbsent = $true; registryAbsent = $true } | ConvertTo-Json | Set-Content (Join-Path $evidence 'uninstall.json')
 } elseif ($Phase -eq 'cleanup') {
+    & (Join-Path $PSScriptRoot 'windows-telemetry-policy.ps1') restore $root
     # Recovery may remove only this fixture's exact installation through its own uninstaller.
     if (Test-Path -LiteralPath $installDirectory) {
         $uninstallers = @(Get-ChildItem -LiteralPath $installDirectory -Filter 'Uninstall*.exe' -File)
