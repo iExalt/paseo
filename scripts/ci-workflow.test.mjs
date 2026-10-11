@@ -96,6 +96,18 @@ test("native candidate runtime is manual, read-only and bounded to hosted verifi
   assert.match(source, /android-candidate-host\.sh/);
   assert.match(source, /timeout-minutes: 15/);
   assert.match(source, /docker rm -f paseo-native-candidate/);
+  assert.match(trigger, /default: both\s+options: \[both, android, macos\]/);
+  const jobs = jobBlocks(source);
+  for (const lane of ["android", "macos"]) {
+    const guard = jobs.get(lane).find((line) => line.trim().startsWith("if:"));
+    assert.ok(guard.endsWith(`(inputs.platform == 'both' || inputs.platform == '${lane}')`));
+    const accepted = new Set(
+      [...guard.matchAll(/inputs\.platform == '([^']+)'/g)].map((match) => match[1]),
+    );
+    for (const choice of ["both", "android", "macos", "", "unexpected"]) {
+      assert.equal(accepted.has(choice), choice === "both" || choice === lane);
+    }
+  }
 });
 
 const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
