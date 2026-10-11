@@ -303,7 +303,6 @@ function createVoiceAssistantWebSocketServer(params: {
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-browser-tools-websocket-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
-    null,
     { allowedOrigins: new Set(["*"]) },
     createWorkspaceAutoNameStub(),
     undefined,
