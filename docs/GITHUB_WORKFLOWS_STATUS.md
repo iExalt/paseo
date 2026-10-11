@@ -467,6 +467,14 @@ switch and records kernel process status; enabled policy requires renderer
 NoNewPrivs=1 and Seccomp=2. Fallback kernel values are retained, not assumed zero
 or called proof of an Electron sandbox. Optional OS-sandbox metrics are not a
 Linux API. Cleanup again confirmed no owned processes or mounts remained.
+Trial `38113877323` at `40cb98773` passed actual AppImage FUSE launch, provenance,
+renderer policy and normal cleanup. DEB installation then started a namespace-
+sandboxed renderer, exposing an incorrect comparison of its inner PID 1 with
+observer PID 3745. The fixture now binds both through the kernel's NSpid mapping,
+uses the observer PID for mandatory metrics and kernel evidence, and rejects
+missing/malformed mappings. Tiny parser cases cover nested and unnested identities
+and mismatched endpoints. DEB cleanup purged the package and left no owned processes;
+full DEB/RPM acceptance still requires the corrected hosted trial.
 The Nix filter increment `490c6eac0` passed seven-lane PR CI in 4m30s; the preceding
 `5139c9514` full dev run passed in 4m34s. The stable latency baseline is unchanged.
 
