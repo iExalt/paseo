@@ -401,6 +401,9 @@ shows the disposable AOSP keyboard's contacts-permission dialog. The harness now
 handles only that exact denial, checks keyboard/focus readiness and verifies
 separate host/port field values before submission. Android runtime/upgrade remains
 unverified; this is a harness repair, with unchanged producer bytes and pins.
+The next trial `38101632063` passed that connection setup and reached the app home,
+then stopped on Paseo's first-use notification dialog. Its exact denial is added
+for this disposable journey; unrelated permission requests still fail the gate.
 
 The native consumer's process tracking repair `bfef0fca1` uses PID plus immutable
 start time, excluding mutable process titles. Its PR run `38099238307` passed all
