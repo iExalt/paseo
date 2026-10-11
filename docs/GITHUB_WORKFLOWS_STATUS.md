@@ -401,8 +401,12 @@ the same observed LevelDB paths and `paseo://app` origin. Actual profile executa
 links, built-in plugins, CLI/PTY, exact old/new membership and final empty-profile
 uninstall passed. This proves normal-shutdown manual replacement, not crash
 durability or a definitive diagnosis of the previous forced-termination failure.
-Native ARM64 trial `38110354030` started at the same SHA on
-2026-10-11 04:03 UTC (00:03 EDT), within unchanged limits; its result remains pending.
+Native ARM64 trial `38110354030` at the same SHA passed in 16m55s;
+author and reviewer accepted exact profile identity, preserved workspace
+`wks_ec327f839363df4d` and Pure black entry state, normal exits, built-in plugins,
+CLI/PTY and uninstall/owned-state cleanup. Native Nix daemon/desktop lifecycle
+is now verified on both architectures. The architecture timing difference is
+not a controlled optimization result.
 DEB/RPM/AppImage and Windows lifecycle proofs remain open.
 
 The performance audit found the plugin service suite taking 58.59s in required
@@ -410,11 +414,28 @@ PR run `38108861492`. Three service-policy cases now use a controlled runtime
 with real manifest/configuration/filesystem behavior; subprocess registration,
 compilation, reload and cleanup contracts remain in their existing tests.
 The provider-icon integration case now stops its service even on assertion failure.
-The next required hosted run measures this change with unchanged shards/workers;
-no speedup is claimed from local targeted tests. The stable baseline and <5m
-budget remain unchanged. Latest pre-change PR/dev gates passed in 4m31s/4m27s,
+Required PR `38110696695` at `5d9db4ec3` passed in 3m38s with unchanged
+shards/workers; all 29 plugin cases passed in 28.57s. The observed suite decrease
+is not a controlled attribution of the whole timing difference, and this test-only
+PR correctly omitted the unrelated app lane. Full seven-lane dev verification
+`38110952794` passed in 4m36s after the reviewed fast-forward. The stable baseline
+and <5m budget remain unchanged.
+Latest pre-change PR/dev gates passed in 4m31s/4m27s,
 with dev runner work of 20m37s. Cache usage remains 4,109,654,256 bytes across
 the three original entries under the unchanged 10 GB ceiling.
+
+The next B3 prerequisite uses one tiny Electron 44.6.0 payload per architecture
+and locked electron-builder 26.15.3 to exercise actual DEB/RPM installers and the
+current FUSE2 AppImage runtime before expensive product builds. It retains the
+production launcher and installer template, uses a distinct fixture package,
+and records the selected sandbox policy, renderer outcome, process identities,
+FUSE mount and normal shutdown/uninstall. Fedora 44 is pinned by native image
+digest and uses default Docker security with 2 CPUs, 4 GiB and 512 PIDs; this
+proves Fedora userland on the hosted Ubuntu kernel, not a Fedora host kernel.
+One x64 trial is bounded to 20 minutes overall and five minutes in the container,
+with no caches and at most 25 MiB of one-day diagnostics; inspect it before ARM64.
+Sandbox restrictions are findings, not permission to relax host/container security.
+Fixture success does not close any actual Paseo package or upgrade cell.
 
 Approved execution checklist:
 

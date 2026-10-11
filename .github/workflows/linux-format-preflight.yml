@@ -1,0 +1,62 @@
+name: Linux format preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Native architecture for disposable installer and FUSE feasibility
+        required: true
+        type: choice
+        default: x64
+        options: [x64, arm64]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-format-preflight
+  cancel-in-progress: false
+
+jobs:
+  formats:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 20
+    env:
+      EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
+      LEFTHOOK: "0"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Install locked packaging tools
+        timeout-minutes: 3
+        run: npm ci --prefer-offline
+      - name: Verify actual installer and FUSE environments
+        timeout-minutes: 15
+        run: bash .github/scripts/linux-format-preflight.sh
+      - name: Verify owned container and installer cleanup
+        if: always()
+        timeout-minutes: 1
+        run: bash .github/scripts/linux-format-cleanup.sh
+      - name: Bound retained diagnostics
+        id: diagnostics
+        if: always()
+        run: |
+          evidence="$RUNNER_TEMP/paseo-format-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/evidence"
+          test -d "$evidence"
+          test "$(du -sb "$evidence" | cut -f1)" -le 26214400
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.0
+        if: always() && steps.diagnostics.outcome == 'success'
+        with:
+          name: linux-format-${{ inputs.architecture }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/paseo-format-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          retention-days: 1
+          if-no-files-found: error

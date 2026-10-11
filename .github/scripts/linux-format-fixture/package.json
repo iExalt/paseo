@@ -1,0 +1,8 @@
+{
+  "name": "paseo-format-fixture",
+  "version": "1.0.0",
+  "description": "Disposable Linux installer feasibility fixture",
+  "license": "MIT",
+  "author": "Paseo",
+  "main": "main.cjs"
+}
