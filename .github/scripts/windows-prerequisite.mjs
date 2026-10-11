@@ -2,16 +2,57 @@ import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
-import { cpSync, mkdirSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
+import {
+  cpSync,
+  mkdirSync,
+  readFileSync,
+  writeFileSync,
+  realpathSync,
+  existsSync,
+  readdirSync,
+  lstatSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-const require = createRequire(import.meta.url);
 assert.equal(process.platform, "win32");
 assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
 assert.equal(process.version, "v26.11.0");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 const [operation, root, version] = process.argv.slice(2);
+const tooling = join(root, "fixture-tools", "package.json");
+const require = createRequire(existsSync(tooling) ? tooling : import.meta.url);
 const executableName = "Paseo Windows Fixture.exe";
+function inventory(directory) {
+  const files = [];
+  function walk(relative = "") {
+    for (const name of readdirSync(join(directory, relative)).sort()) {
+      const filename = join(relative, name);
+      const stat = lstatSync(join(directory, filename));
+      assert.equal(stat.isSymbolicLink(), false, "Fixture files must not be links");
+      if (stat.isDirectory()) walk(filename);
+      else {
+        assert.ok(stat.isFile());
+        assert.ok(files.length < 2000, "Bound fixture inventory");
+        assert.ok(stat.size <= 256 * 1024 * 1024, "Bound fixture file reads");
+        const bytes = readFileSync(join(directory, filename));
+        const entry = {
+          path: filename,
+          bytes: stat.size,
+          sha256: createHash("sha256").update(bytes).digest("hex"),
+        };
+        if (filename === executableName) {
+          assert.equal(bytes.toString("ascii", 0, 2), "MZ");
+          const pe = bytes.readUInt32LE(0x3c);
+          assert.equal(bytes.toString("ascii", pe, pe + 4), "PE\0\0");
+          entry.machine = bytes.readUInt16LE(pe + 4);
+        }
+        files.push(entry);
+      }
+    }
+  }
+  walk();
+  return files;
+}
 if (operation === "build") {
   assert.equal(require("electron/package.json").version, "44.6.0");
   assert.equal(require("electron-builder/package.json").version, "26.15.3");
@@ -65,6 +106,14 @@ if (operation === "build") {
       { stdio: "inherit", timeout: 140000 },
     );
     const file = join(root, "packages", `fixture-${fixtureVersion}-${process.arch}.exe`);
+    writeFileSync(
+      join(root, "evidence", `unpacked-${fixtureVersion}.json`),
+      JSON.stringify(
+        inventory(
+          join(root, "packages", process.arch === "arm64" ? "win-arm64-unpacked" : "win-unpacked"),
+        ),
+      ),
+    );
     const bytes = readFileSync(file);
     writeFileSync(
       join(root, "evidence", `installer-${fixtureVersion}.json`),
@@ -76,9 +125,31 @@ if (operation === "build") {
       }),
     );
   }
+} else if (operation === "inspect") {
+  assert.ok(["0.9.0", "1.0.0"].includes(version));
+  const installed = inventory(join(root, "Installed App With Spaces"));
+  writeFileSync(join(root, "evidence", `installed-${version}.json`), JSON.stringify(installed));
+  const unpacked = JSON.parse(readFileSync(join(root, "evidence", `unpacked-${version}.json`)));
+  for (const entry of unpacked.filter(
+    (file) =>
+      file.path === executableName ||
+      file.path === join("resources", "app.asar") ||
+      /^[^\\/]+\.dll$/i.test(file.path),
+  )) {
+    assert.deepEqual(
+      installed.find((file) => file.path === entry.path),
+      entry,
+      `Installed payload mismatch: ${entry.path}`,
+    );
+  }
+  assert.equal(
+    installed.find((file) => file.path === executableName)?.machine,
+    process.arch === "arm64" ? 0xaa64 : 0x8664,
+  );
 } else if (operation === "ui") {
   assert.ok(["0.9.0", "1.0.0"].includes(version));
   const { chromium } = require("playwright");
+  assert.equal(require("playwright/package.json").version, "1.63.0");
   const { createServer } = await import("node:net");
   const server = createServer();
   await new Promise((resolvePromise, reject) => {
