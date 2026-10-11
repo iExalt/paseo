@@ -291,6 +291,15 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.match(source, /github\.actor == 'iExalt'/);
   assert.match(build, /ref: \$\{\{ inputs\.source_sha \}\}/);
   assert.match(build, /candidate-identity\.mjs "\$SOURCE_SHA" "\$FORK_VERSION"/);
+  // Generated WebView output changes a tracked file; bind clean source first.
+  assert.ok(
+    build.indexOf("Resolve fork Android version code") <
+      build.indexOf("Install JavaScript dependencies"),
+  );
+  assert.ok(
+    build.indexOf("Install JavaScript dependencies") <
+      build.indexOf("Build terminal WebView assets"),
+  );
   assert.doesNotMatch(build, /getForkAndroidVersionCodeFromRunNumber|GITHUB_RUN_NUMBER\)\)/);
   assert.match(build, /PASEO_FORK_GOOGLE_SERVICES_JSON/);
   assert.match(
