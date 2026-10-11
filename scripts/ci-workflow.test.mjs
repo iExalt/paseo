@@ -76,7 +76,7 @@ test("only fork-owned workflows are installed", () => {
   ]);
 });
 
-test("native candidate runtime is manual, read-only and bounded to hosted Mac verification", () => {
+test("native candidate runtime is manual, read-only and bounded to hosted verification", () => {
   const source = readFileSync(new URL(".github/workflows/candidate-runtime.yml", repoRoot), "utf8");
   const trigger = source.split("permissions:", 1)[0];
   assert.match(trigger, /workflow_dispatch:/);
@@ -86,12 +86,16 @@ test("native candidate runtime is manual, read-only and bounded to hosted Mac ve
   assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
   assert.match(source, /github\.actor == 'iExalt'/);
   assert.match(source, /runs-on: macos-14/);
+  assert.match(source, /runs-on: ubuntu-24\.04-arm/);
   assert.match(source, /timeout-minutes: 30/);
   assert.match(source, /timeout-minutes: 10/);
   assert.match(source, /install_args: node@26\.11\.0/);
   assert.match(source, /cache: false/);
   assert.match(source, /retention-days: 1/);
   assert.match(source, /macos-candidate-runtime\.mjs/);
+  assert.match(source, /android-candidate-host\.sh/);
+  assert.match(source, /timeout-minutes: 15/);
+  assert.match(source, /docker rm -f paseo-native-candidate/);
 });
 
 const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
