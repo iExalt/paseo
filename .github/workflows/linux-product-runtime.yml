@@ -1,0 +1,64 @@
+name: Linux product formats
+
+on:
+  workflow_dispatch:
+    inputs:
+      architecture:
+        description: Native architecture for installed product upgrades
+        type: choice
+        required: true
+        default: x64
+        options: [x64, arm64]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linux-product-formats
+  cancel-in-progress: false
+
+jobs:
+  native:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    env:
+      EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
+      CI: "true"
+      LEFTHOOK: "0"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Build each exact source once and fan out native formats
+        timeout-minutes: 30
+        run: bash .github/scripts/linux-product-build.sh
+      - name: Verify installed product upgrades and preserved state
+        timeout-minutes: 10
+        run: bash .github/scripts/linux-product-runtime.sh
+      - name: Clean owned installations, containers and state
+        if: always()
+        timeout-minutes: 2
+        run: bash .github/scripts/linux-product-cleanup.sh
+      - name: Bound retained diagnostics
+        id: evidence
+        if: always()
+        run: |
+          directory="$RUNNER_TEMP/paseo-products-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/evidence"
+          test -d "$directory"
+          test "$(du -sb "$directory" | cut -f1)" -le 26214400
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always() && steps.evidence.outcome == 'success'
+        with:
+          name: linux-products-${{ inputs.architecture }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/paseo-products-${{ github.run_id }}-${{ github.run_attempt }}/evidence
+          retention-days: 1
+          if-no-files-found: error

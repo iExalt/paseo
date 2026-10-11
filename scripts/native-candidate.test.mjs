@@ -7,9 +7,78 @@ import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
 import { closeNormally } from "../packages/desktop/e2e/normal-close.cjs";
 import { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { ownedProcesses } from "../.github/scripts/linux-format-processes.mjs";
+import {
+  ownedProcesses,
+  unreadableUnknowns,
+  verifyCompleteMonitor,
+} from "../.github/scripts/linux-format-processes.mjs";
 import { join } from "node:path";
 import { verifyNamespacePid } from "../.github/scripts/linux-format-fixture/process-identity.cjs";
+import { createPackage } from "@electron/asar";
+import {
+  payloadFiles,
+  digest,
+  validateManifest,
+  verifyPayload,
+} from "../packages/desktop/e2e/linux-installed-layout.cjs";
+
+test("installed package identity binds source, archive paths, metadata and native payload bytes", async () => {
+  const root = mkdtempSync(join(tmpdir(), "paseo-installed-identity-"));
+  try {
+    const source = join(root, "source");
+    mkdirSync(source);
+    mkdirSync(join(root, "resources/bin"), { recursive: true });
+    const metadata = { name: "@getpaseo/desktop", version: "0.11.2", desktopName: "Paseo.desktop" };
+    writeFileSync(join(source, "package.json"), JSON.stringify(metadata));
+    await createPackage(source, join(root, "resources/app.asar"));
+    for (const filename of payloadFiles.filter((name) => name !== "resources/app.asar"))
+      writeFileSync(join(root, filename), "fixture");
+    const elf = Buffer.alloc(20);
+    elf.write("\x7fELF");
+    elf[4] = 2;
+    elf[5] = 1;
+    elf.writeUInt16LE(62, 18);
+    writeFileSync(join(root, "Paseo.bin"), elf);
+    const item = {
+      ...metadata,
+      sourceSha: "a".repeat(40),
+      lockHash: "b".repeat(64),
+      payload: Object.fromEntries(payloadFiles.map((file) => [file, digest(join(root, file))])),
+      artifacts: {
+        deb: { file: "candidate.deb", sha256: "c".repeat(64), packageName: "paseo" },
+        rpm: { file: "candidate.rpm", sha256: "d".repeat(64), packageName: "Paseo" },
+        appimage: {
+          file: "candidate.AppImage",
+          sha256: "e".repeat(64),
+          appRunSha256: "f".repeat(64),
+        },
+      },
+    };
+    const manifest = {
+      schema: 1,
+      architecture: "x64",
+      candidate: item,
+      previous: {
+        ...item,
+        version: "0.11.0",
+        sourceSha: "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a",
+      },
+    };
+    validateManifest(manifest, item.sourceSha, "x64");
+    assert.throws(() => validateManifest(manifest, "0".repeat(40), "x64"));
+    assert.throws(() => validateManifest(manifest, item.sourceSha, "arm64"));
+    const badPath = structuredClone(manifest);
+    badPath.candidate.artifacts.deb.file = "../candidate.deb";
+    assert.throws(() => validateManifest(badPath, item.sourceSha, "x64"));
+    verifyPayload(root, item, "x64");
+    assert.throws(() => verifyPayload(root, { ...item, version: "0.11.0" }, "x64"));
+    assert.throws(() => verifyPayload(root, item, "arm64"));
+    writeFileSync(join(root, "Paseo"), "changed runtime launcher");
+    assert.throws(() => verifyPayload(root, item, "x64"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
 
 test("renderer identity maps observer and nested namespace PIDs without trusting missing mappings", () => {
   assert.deepEqual(verifyNamespacePid("NSpid:\t3745\n", 3745, 3745), [3745]);
@@ -37,6 +106,26 @@ test("fixture cleanup retains observed children across session changes without c
   ];
   assert.deepEqual(ownedProcesses(rows, 10, retained), [rows[0], rows[2]]);
   assert.deepEqual(ownedProcesses([], 10, retained), []);
+  const detached = [
+    { pid: 20, parent: 1, session: 20, start: "110", owner: "token" },
+    { pid: 21, parent: 20, session: 20, start: "111", unreadable: true },
+    { pid: 22, parent: 1, session: 22, start: "112", unreadable: true },
+  ];
+  const members = ownedProcesses(detached, 10, retained, "token");
+  assert.deepEqual(members, detached.slice(0, 2));
+  assert.deepEqual(unreadableUnknowns(detached, members), [detached[2]]);
+  assert.deepEqual(unreadableUnknowns(detached, [...members, detached[2]]), []);
+  const started = { owner: "token" };
+  const complete = { owner: "token", complete: true, remaining: [], mounts: [] };
+  verifyCompleteMonitor(started, complete);
+  for (const invalid of [
+    undefined,
+    { ...complete, complete: false },
+    { ...complete, owner: "other" },
+    { ...complete, remaining: [detached[0]] },
+    { ...complete, mounts: ["live"] },
+  ])
+    assert.throws(() => verifyCompleteMonitor(started, invalid));
 });
 
 test("normal replacement shutdown requires close acknowledgement and bounded exit", async () => {

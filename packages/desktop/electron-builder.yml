@@ -71,7 +71,6 @@ linux:
     - AppImage
     - deb
     - rpm
-    - tar.gz
 deb:
   afterInstall: scripts/linux-sandbox/after-install.tpl
 rpm:
