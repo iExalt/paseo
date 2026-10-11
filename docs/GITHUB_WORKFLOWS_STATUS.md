@@ -569,6 +569,21 @@ change; differing hosted runs will not establish a controlled speedup. Repositor
 cache usage remains three entries totaling 4,109,654,256 bytes; these trials add
 no caches.
 
+The [real x64 product trial at `c790a0156`](https://github.com/iExalt/paseo/actions/runs/38126449316)
+verified AppImage and DEB predecessor-to-candidate upgrades: retained workspace and
+Pureblack preference, real renderer/plugins, cold CLI daemon startup, status and
+PTY, normal shutdown and uninstall. The installed AppImage link's identity stayed
+unchanged. All four native monitors completed with empty owned sets and final
+cleanup removed state and the short temporary root. RPM stopped before install
+because the pinned host Node could not load Fedora's missing `libatomic.so.1`;
+the full matrix is not accepted. The 15m27s trial spent 12m25s before runtime.
+The reviewed repair shares Fedora runtime dependency setup between the tiny and
+product fixtures, installing `libatomic` before invoking the exact pinned Node.
+The next ARM prerequisite mounts that same Node instead of installing a different
+distribution Node, so its required run also checks this boundary and the gzip
+fixture change before another full product build. The compression change at
+`72c630741` passed PR/dev CI in 4m34s/4m19s.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then

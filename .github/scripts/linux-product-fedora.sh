@@ -2,9 +2,8 @@
 set -euo pipefail
 test "$(id -u)" = 0
 export PATH="/node-bin:$PATH"
-test "$(node --version)" = v26.11.0
 cd /repo
-dnf -y install xorg-x11-server-Xvfb xorg-x11-xauth util-linux procps-ng mesa-libgbm
+bash .github/scripts/linux-fedora-runtime-deps.sh "$EXPECTED_ARCHITECTURE"
 useradd --create-home fixture
 chown fixture:fixture /state /evidence
 for stage in previous candidate; do
