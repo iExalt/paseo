@@ -3,6 +3,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { startDaemonInstance, resolvePaseoHome } from "@getpaseo/server/daemon-control";
+import { appImageSupervisorLaunch } from "./appimage-supervisor.js";
 const require = createRequire(import.meta.url);
 function resolveServerRunnerFromDir(currentDir: string): string | null {
   const packageJsonPath = path.join(currentDir, "package.json");
@@ -51,11 +52,18 @@ export async function launchLocalDaemon(options: {
   process.once("SIGTERM", cancel);
   try {
     const entry = resolveDaemonRunnerEntry();
+    const launch = appImageSupervisorLaunch({
+      platform: process.platform,
+      electron: process.versions.electron,
+      execPath: process.execPath,
+      entry,
+      env: process.env,
+    });
     return await startDaemonInstance({
       home: resolvePaseoHome({ PASEO_HOME: options.home }),
-      command: process.execPath,
-      args: [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry],
-      env: process.env,
+      command: launch?.command ?? process.execPath,
+      args: launch?.args ?? [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry],
+      env: launch?.env ?? process.env,
       mode: options.foreground ? "deployment" : "managed",
       foreground: options.foreground,
       timeoutMs: options.timeoutMs,
