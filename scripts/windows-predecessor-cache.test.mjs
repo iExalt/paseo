@@ -15,6 +15,7 @@ import {
   cacheKey,
   cacheLimit,
   consumeCache,
+  lockIdentity,
   previousSha,
   validateCache,
 } from "../.github/scripts/windows-predecessor-cache.mjs";
@@ -25,11 +26,17 @@ test("Windows predecessor cache binds exact recipe and portable identity before 
   const directory = join(root, "cache");
   mkdirSync(directory);
   try {
+    const blob = '{"lockfileVersion":3}\n';
+    const checkout = join(root, "package-lock.json");
+    writeFileSync(checkout, blob.replaceAll("\n", "\r\n"));
     const recipe = {
       architecture: "arm64",
-      lockSha256: "a".repeat(64),
+      ...lockIdentity(blob, checkout),
       bindingProvenance: { inputs: "pinned" },
     };
+    assert.equal(recipe.lockBlobSha256, digest(blob));
+    assert.equal(recipe.lockSha256, digest(readFileSync(checkout)));
+    assert.notEqual(recipe.lockBlobSha256, recipe.lockSha256);
     const filename = "previous-arm64.exe";
     const installer = join(directory, filename);
     const content = "installer fixture";
@@ -92,6 +99,9 @@ test("Windows predecessor cache binds exact recipe and portable identity before 
     const changed = { ...recipe, lockSha256: "e".repeat(64) };
     assert.notEqual(cacheKey(recipe), cacheKey(changed));
     assert.throws(() => validateCache(directory, changed), /recipe mismatch/);
+    const changedBlob = { ...recipe, lockBlobSha256: recipe.lockSha256 };
+    assert.notEqual(cacheKey(recipe), cacheKey(changedBlob));
+    assert.throws(() => validateCache(directory, changedBlob), /recipe mismatch/);
     writeFileSync(installer, content.replace("fixture", "corrupt"));
     assert.throws(() => validateCache(directory, recipe), /Corrupt cached installer/);
     writeFileSync(installer, content);
