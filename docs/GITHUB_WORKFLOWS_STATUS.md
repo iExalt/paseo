@@ -290,8 +290,10 @@ Installation/upgrade and the other formats/architecture remain separate G3 proof
 
 Shared desktop review found that the prior PTY marker could match command echo.
 The repair constructs output from separate marker halves and accepts only an
-exact output line. Mac workspace/theme preservation remains proven, while PTY
-execution must pass a repeat against the same signed candidate before B2 closes.
+exact output line. Mac re-verification in `38103496947` at harness `4789f1d8d`
+passed against the same `e506c1272` candidate, including the stronger PTY assertion,
+matching workspace `wks_0e0aadf92e4274aa`, Pure black theme and owned shutdown.
+Author and reviewer inspected its state and UI evidence; Mac acceptance is restored.
 
 Android native run `38102420953` passed connection and permission handling but
 failed before upgrade: the terminal showed two empty prompts and no injected
@@ -299,6 +301,20 @@ command. The harness now requires stable native-input focus, visible keyboard
 and completed terminal attachment before typing, then checks rendered command
 echo before Enter. The separate output marker remains mandatory. This repair
 needs another bounded Android-only trial; native upgrade proof remains open.
+That repair passed the predecessor journey in `38103496947`, exposing a real
+candidate startup crash after replacement: xterm's platform detection calls
+`navigator.userAgent.includes` before the late root-layout polyfill executes.
+An isolated VM reproduces the same failure with the locked headless library and
+React Native's incomplete navigator. The existing polyfill now initializes as
+the entry's first side-effect import; an actual-entry ordering fixture passes
+and rejects omission of that installer. The repaired product needs a new paired
+same-source build and native verification; the old Android candidate remains failed.
+
+Linux trials `38103498455` and `38103959904` stopped before product realization
+on diagnostic assumptions: missing ripgrep, then Nix's v4 JSON envelope. Portable
+filtering and strict v4-envelope fixtures repair these prerequisites. No Linux
+product build/runtime success is claimed. Routine CI at `4789f1d8d` passed in
+4m35s; the stable baseline and under-five-minute budget remain unchanged.
 
 Approved execution checklist:
 
