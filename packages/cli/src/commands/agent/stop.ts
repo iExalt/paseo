@@ -12,6 +12,14 @@ import type {
 export interface StopResult {
   stoppedCount: number;
   agentIds: string[];
+  success?: boolean;
+  results?: StopTargetResult[];
+}
+
+export interface StopTargetResult {
+  agentId: string;
+  cancelled?: boolean;
+  error?: string;
 }
 
 /** Schema for stop command output */
@@ -36,6 +44,53 @@ export interface AgentStopOptions extends CommandOptions {
 
 export type AgentStopResult = SingleResult<StopResult>;
 
+async function cancelStopTarget(
+  client: Awaited<ReturnType<typeof connectToDaemon>>,
+  agentId: string,
+) {
+  try {
+    const cancelled = await client.cancelAgent(agentId);
+    if (typeof cancelled !== "boolean") {
+      throw new Error("Daemon did not report whether the agent run was cancelled");
+    }
+    return { ok: true as const, id: agentId, cancelled };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false as const, id: agentId, message };
+  }
+}
+
+function collectStopResults(
+  stopResults: Awaited<ReturnType<typeof cancelStopTarget>>[],
+  singleTarget: boolean,
+): StopResult {
+  const agentIds: string[] = [];
+  const results: StopTargetResult[] = [];
+  for (const result of stopResults) {
+    if (!result.ok) {
+      if (singleTarget) {
+        throw {
+          code: "STOP_AGENT_FAILED",
+          message: `Failed to stop agent ${result.id}: ${result.message}`,
+        } satisfies CommandError;
+      }
+      console.error(`Warning: Failed to stop agent ${result.id.slice(0, 7)}: ${result.message}`);
+      results.push({ agentId: result.id, error: result.message });
+      continue;
+    }
+    results.push({ agentId: result.id, cancelled: result.cancelled });
+    if (result.cancelled) agentIds.push(result.id);
+  }
+  return {
+    stoppedCount: agentIds.length,
+    agentIds,
+    ...(singleTarget && results[0]?.cancelled !== undefined
+      ? { success: results[0].cancelled }
+      : {}),
+    ...(singleTarget ? {} : { results }),
+  };
+}
+
 export async function runStopCommand(
   id: string | undefined,
   options: AgentStopOptions,
@@ -54,9 +109,17 @@ export async function runStopCommand(
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
+    // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
+    if (client.getLastServerInfoMessage()?.features?.agentCancelOutcome !== true) {
+      throw {
+        code: "UNSUPPORTED_DAEMON_FEATURE",
+        message: "Agent stop requires a daemon that reports cancellation outcomes.",
+        details: "Update the daemon and try again.",
+      } satisfies CommandError;
+    }
+
     const fetchPayload = await client.fetchAgents({ filter: { includeArchived: true } });
     let agents = fetchPayload.entries.map((entry) => entry.agent);
-    const stoppedIds: string[] = [];
 
     if (options.all) {
       // Stop all agents (not archived)
@@ -83,35 +146,16 @@ export async function runStopCommand(
 
     // Interrupt each running agent. Idle agents are a no-op.
     const stopResults = await Promise.all(
-      agents.map(async (agent) => {
-        if (agent.status !== "running") return { ok: true as const, id: agent.id, stopped: false };
-        try {
-          await client.cancelAgent(agent.id);
-          return { ok: true as const, id: agent.id, stopped: true };
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          return { ok: false as const, id: agent.id, message };
-        }
-      }),
+      agents.map((agent) => cancelStopTarget(client, agent.id)),
     );
-    for (const result of stopResults) {
-      if (!result.ok) {
-        console.error(`Warning: Failed to stop agent ${result.id.slice(0, 7)}: ${result.message}`);
-        continue;
-      }
-      if (result.stopped) {
-        stoppedIds.push(result.id);
-      }
-    }
+    const singleTarget = Boolean(id && !options.all && !options.cwd);
+    const data = collectStopResults(stopResults, singleTarget);
 
     await client.close();
 
     return {
       type: "single",
-      data: {
-        stoppedCount: stoppedIds.length,
-        agentIds: stoppedIds,
-      },
+      data,
       schema: stopSchema,
     };
   } catch (err) {

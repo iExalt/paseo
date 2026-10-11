@@ -22,6 +22,38 @@ describe("canonical CLI surface", () => {
     expect(createCli().helpInformation()).toContain("--host <host>");
   });
 
+  it("offers saved agent profile discovery", () => {
+    const profile = createCli().commands.find((command) => command.name() === "profile");
+    const list = profile?.commands.find((command) => command.name() === "ls");
+
+    expect(list?.helpInformation()).toContain("--json");
+    expect(list?.helpInformation()).toContain("--host <host>");
+  });
+
+  it("offers provider inspection with cwd and draft settings", () => {
+    const provider = createCli().commands.find((command) => command.name() === "provider");
+    const inspect = provider?.commands.find((command) => command.name() === "inspect");
+
+    expect(inspect?.helpInformation()).toContain("--cwd <path>");
+    expect(inspect?.helpInformation()).toContain("--caller-agent <id>");
+    expect(inspect?.helpInformation()).toContain("--feature <id=value>");
+    expect(inspect?.helpInformation()).toContain("--features-json <object>");
+  });
+
+  it("offers dedicated agent query, status, and curated activity commands", () => {
+    const agent = createCli().commands.find((command) => command.name() === "agent");
+    const query = agent?.commands.find((command) => command.name() === "query");
+    const status = agent?.commands.find((command) => command.name() === "status");
+    const activity = agent?.commands.find((command) => command.name() === "activity");
+
+    expect(query?.helpInformation()).toContain("--include-archived");
+    expect(query?.helpInformation()).toContain("--include-background");
+    expect(query?.helpInformation()).toContain("--since-hours <hours>");
+    expect(query?.helpInformation()).toContain("--status <status>");
+    expect(status?.helpInformation()).toContain("<agent-id>");
+    expect(activity?.helpInformation()).toContain("--limit <number>");
+  });
+
   it("shows project, workspace, and heartbeat commands while hiding worktree compatibility", () => {
     const cli = createCli();
     const help = cli.helpInformation();
@@ -83,16 +115,29 @@ describe("canonical CLI surface", () => {
     expect(workspaceCreate?.helpInformation()).toContain("--background");
   });
 
-  it("offers thinking configuration when running, updating, and scheduling agents", () => {
+  it("offers runtime settings when running, updating, and scheduling agents", () => {
     const cli = createCli();
     const run = cli.commands.find((command) => command.name() === "run");
     const agent = cli.commands.find((command) => command.name() === "agent");
+    const agentRun = agent?.commands.find((command) => command.name() === "run");
+    const agentClose = agent?.commands.find((command) => command.name() === "close");
     const update = agent?.commands.find((command) => command.name() === "update");
     const schedule = cli.commands.find((command) => command.name() === "schedule");
     const scheduleCreate = schedule?.commands.find((command) => command.name() === "create");
 
     expect(run?.helpInformation()).toContain("--thinking <id>");
+    expect(run?.helpInformation()).toContain("--feature <id=value>");
+    expect(run?.helpInformation()).toContain("comma-separated");
+    expect(agentRun?.helpInformation()).toContain("--feature <id=value>");
+    expect(agentClose?.helpInformation()).toContain("Agent ID or unambiguous ID prefix");
+    expect(agentClose?.helpInformation()).toContain("preserving its history");
+    expect(update?.helpInformation()).toContain("--mode <id>");
+    expect(update?.helpInformation()).toContain("--model <id>");
+    expect(update?.helpInformation()).toContain("--clear-model");
     expect(update?.helpInformation()).toContain("--thinking <id>");
+    expect(update?.helpInformation()).toContain("--clear-thinking");
+    expect(update?.helpInformation()).toContain("--feature <id=value>");
+    expect(update?.helpInformation()).toContain("comma-separated");
     expect(scheduleCreate?.helpInformation()).toContain("--thinking <id>");
   });
 

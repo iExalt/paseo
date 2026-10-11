@@ -153,6 +153,14 @@ export async function runCreateCommand(
       ...(options.title ? { title: options.title } : {}),
       ...(options.background !== undefined ? { background: options.background } : {}),
       ...(callerAgentId ? { callerAgentId } : {}),
+      ...(callerAgentId
+        ? {
+            callerContext: {
+              agentId: callerAgentId,
+              ...(options.path !== undefined ? { requestedCwd: options.path } : {}),
+            },
+          }
+        : {}),
       ...(options.notifications ? { notifications: options.notifications } : {}),
     });
     if (!payload.workspace) {

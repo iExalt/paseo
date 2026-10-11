@@ -9,7 +9,7 @@ import { DaemonClient } from "./test-utils/daemon-client.js";
 import { createTestPaseoDaemon } from "./test-utils/paseo-daemon.js";
 
 test("two SDK facades own combined agent lists and disposal preserves the other facade", async () => {
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
     appVersion: "0.8.0",
@@ -84,7 +84,7 @@ test("two SDK facades own combined agent lists and disposal preserves the other 
 });
 
 test("public SDK scope cancellation during bootstrap releases the returned ID", async () => {
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
   const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
   const lifetime = new AbortController();
   const api = createPaseoApi(client, { signal: lifetime.signal });
@@ -105,7 +105,7 @@ test("public SDK scope cancellation during bootstrap releases the returned ID", 
 });
 
 test("a restored public SDK timeline leaves missed history to the consumer", async () => {
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
   const sockets: WebSocket[] = [];
   const makeClient = (observer: boolean) =>
     new PublicDaemonClient({

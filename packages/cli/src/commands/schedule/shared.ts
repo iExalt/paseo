@@ -7,6 +7,7 @@ import type {
   ScheduleDaemonClient,
   ScheduleListItem,
   ScheduleRecord,
+  ScheduleCallerAgent,
   ScheduleTarget,
   UpdateScheduleInput,
   UpdateScheduleNewAgentConfig,
@@ -18,6 +19,8 @@ import { everyMsToFiveFieldCron } from "@getpaseo/protocol/schedule/cadence";
 export interface ScheduleCommandOptions extends CommandOptions {
   host?: string;
 }
+
+export type ScheduleCallerAgentFallback = ScheduleCallerAgent;
 
 export async function connectScheduleClient(
   target: DaemonTarget,
@@ -116,7 +119,7 @@ function resolveScheduleTarget(args: {
   if (hasExplicitNewAgentOption) {
     throw {
       code: "INVALID_TARGET",
-      message: "--provider/--mode/--thinking can only be used with a new-agent target",
+      message: "--provider/--mode/--thinking/--isolation can only be used with a new-agent target",
       details: "Use --target new-agent or omit --target to create a new agent schedule",
     } satisfies CommandError;
   }
@@ -137,7 +140,7 @@ function resolveScheduleTarget(args: {
   return { type: "agent", agentId: targetValue };
 }
 
-export function parseScheduleCreateInput(options: {
+interface ScheduleCreateParseOptions {
   prompt: string;
   every?: string;
   cron?: string;
@@ -147,13 +150,29 @@ export function parseScheduleCreateInput(options: {
   provider?: string;
   mode?: string;
   thinking?: string;
+  isolation?: "local" | "worktree";
   cwd?: string;
   host?: string;
+  callerAgent?: ScheduleCallerAgentFallback;
+  replaceExisting?: boolean;
   daemonTarget: import("../../utils/daemon-target.js").DaemonTarget;
   maxRuns?: string;
   expiresIn?: string;
   runNow?: boolean;
-}): CreateScheduleInput {
+}
+
+interface NormalizedScheduleCreateOptions {
+  prompt: string;
+  cadence: ScheduleCadence;
+  cwdInput?: string;
+  modeId?: string;
+  thinkingOptionId?: string;
+  runOnCreate: boolean;
+}
+
+function validateScheduleCreateOptions(
+  options: ScheduleCreateParseOptions,
+): NormalizedScheduleCreateOptions {
   const prompt = options.prompt.trim();
   if (!prompt) {
     throw {
@@ -171,7 +190,7 @@ export function parseScheduleCreateInput(options: {
   }
 
   const cwdInput = options.cwd?.trim();
-  if (options.daemonTarget.kind === "endpoint" && !cwdInput) {
+  if (options.daemonTarget.kind === "endpoint" && !cwdInput && !options.callerAgent) {
     throw {
       code: "MISSING_CWD",
       message:
@@ -179,55 +198,134 @@ export function parseScheduleCreateInput(options: {
     } satisfies CommandError;
   }
 
-  const runOnCreate = resolveRunOnCreate(options.runNow, cadence.type);
-
-  const targetValue = options.target?.trim();
+  if (options.provider !== undefined && !options.provider.trim()) {
+    throw {
+      code: "INVALID_PROVIDER",
+      message: "--provider cannot be empty",
+    } satisfies CommandError;
+  }
   const modeId = options.mode?.trim();
   const thinkingOptionId = options.thinking?.trim();
+  if (options.mode !== undefined && !modeId) {
+    throw {
+      code: "INVALID_MODE",
+      message: "--mode cannot be empty",
+    } satisfies CommandError;
+  }
   if (options.thinking !== undefined && !thinkingOptionId) {
     throw {
       code: "INVALID_THINKING_OPTION",
       message: "--thinking cannot be empty",
     } satisfies CommandError;
   }
-  const hasExplicitNewAgentOption =
-    options.provider !== undefined || options.mode !== undefined || options.thinking !== undefined;
-  const createNewAgentTarget = (): ScheduleTarget => {
-    const resolvedProviderModel = resolveProviderAndModel({
-      provider: options.provider,
-    });
-    return {
-      type: "new-agent",
-      config: {
-        provider: resolvedProviderModel.provider,
-        cwd: cwdInput ?? process.cwd(),
-        ...(resolvedProviderModel.model ? { model: resolvedProviderModel.model } : {}),
-        ...(modeId ? { modeId } : {}),
-        ...(thinkingOptionId ? { thinkingOptionId } : {}),
-      },
-    };
-  };
-  const target = resolveScheduleTarget({
-    targetValue,
-    hasExplicitNewAgentOption,
-    createNewAgentTarget,
-  });
-
-  const maxRuns =
-    options.maxRuns === undefined ? undefined : parsePositiveInt(options.maxRuns, "--max-runs");
-  const expiresAt =
-    options.expiresIn === undefined
-      ? undefined
-      : new Date(Date.now() + parseDuration(options.expiresIn)).toISOString();
-
   return {
     prompt,
     cadence,
+    ...(cwdInput ? { cwdInput } : {}),
+    ...(modeId ? { modeId } : {}),
+    ...(thinkingOptionId ? { thinkingOptionId } : {}),
+    runOnCreate: resolveRunOnCreate(options.runNow, cadence.type),
+  };
+}
+
+function createInheritedNewAgentTarget(
+  options: ScheduleCreateParseOptions,
+  normalized: NormalizedScheduleCreateOptions,
+): ScheduleTarget {
+  const callerAgent = options.callerAgent;
+  if (!callerAgent) throw new Error("Caller agent is required for inherited runtime");
+  const resolvedOverride = options.provider
+    ? resolveProviderAndModel({ provider: options.provider })
+    : undefined;
+  const provider = resolvedOverride?.provider ?? callerAgent.provider;
+  const model =
+    resolvedOverride?.model ?? (options.provider === undefined ? callerAgent.model : undefined);
+  const modeId =
+    normalized.modeId ??
+    (callerAgent.provider === provider ? callerAgent.currentModeId : undefined);
+  const thinkingOptionId = normalized.thinkingOptionId ?? callerAgent.thinkingOptionId;
+  const cwd = normalized.cwdInput ?? callerAgent.cwd;
+  return {
+    type: "new-agent",
+    config: {
+      provider,
+      cwd,
+      ...(model ? { model } : {}),
+      ...(modeId ? { modeId } : {}),
+      ...(thinkingOptionId ? { thinkingOptionId } : {}),
+      ...(options.isolation ? { isolation: options.isolation } : {}),
+    },
+  };
+}
+
+function createUnscopedNewAgentTarget(
+  options: ScheduleCreateParseOptions,
+  normalized: NormalizedScheduleCreateOptions,
+): ScheduleTarget {
+  const resolvedProviderModel = resolveProviderAndModel({ provider: options.provider });
+  return {
+    type: "new-agent",
+    config: {
+      provider: resolvedProviderModel.provider,
+      cwd: normalized.cwdInput ?? process.cwd(),
+      ...(resolvedProviderModel.model ? { model: resolvedProviderModel.model } : {}),
+      ...(normalized.modeId ? { modeId: normalized.modeId } : {}),
+      ...(normalized.thinkingOptionId ? { thinkingOptionId: normalized.thinkingOptionId } : {}),
+      ...(options.isolation ? { isolation: options.isolation } : {}),
+    },
+  };
+}
+
+function getScheduleCreateTarget(
+  options: ScheduleCreateParseOptions,
+  normalized: NormalizedScheduleCreateOptions,
+): ScheduleTarget {
+  const hasExplicitNewAgentOption =
+    options.provider !== undefined ||
+    options.mode !== undefined ||
+    options.thinking !== undefined ||
+    options.isolation !== undefined;
+  const target = resolveScheduleTarget({
+    targetValue: options.target?.trim(),
+    hasExplicitNewAgentOption,
+    createNewAgentTarget: () =>
+      options.callerAgent
+        ? createInheritedNewAgentTarget(options, normalized)
+        : createUnscopedNewAgentTarget(options, normalized),
+  });
+  return target;
+}
+
+export function parseScheduleCreateInput(options: ScheduleCreateParseOptions): CreateScheduleInput {
+  const normalized = validateScheduleCreateOptions(options);
+  const target = getScheduleCreateTarget(options, normalized);
+
+  const maxRuns =
+    options.maxRuns === undefined ? undefined : parsePositiveInt(options.maxRuns, "--max-runs");
+  if (options.expiresIn !== undefined) parseDuration(options.expiresIn);
+  return {
+    prompt: normalized.prompt,
+    cadence: normalized.cadence,
     target,
-    runOnCreate,
+    runOnCreate: normalized.runOnCreate,
     ...(options.name?.trim() ? { name: options.name.trim() } : {}),
     ...(maxRuns !== undefined ? { maxRuns } : {}),
-    ...(expiresAt ? { expiresAt } : {}),
+    ...(options.expiresIn !== undefined ? { expiresIn: options.expiresIn } : {}),
+    ...(options.callerAgent && target.type === "new-agent"
+      ? {
+          callerContext: {
+            agentId: options.callerAgent.id,
+            ...(options.provider !== undefined ? { provider: options.provider } : {}),
+            ...(normalized.cwdInput !== undefined ? { cwd: normalized.cwdInput } : {}),
+            ...(normalized.modeId !== undefined ? { modeId: normalized.modeId } : {}),
+            ...(normalized.thinkingOptionId !== undefined
+              ? { thinkingOptionId: normalized.thinkingOptionId }
+              : {}),
+            ...(options.isolation !== undefined ? { isolation: options.isolation } : {}),
+          },
+        }
+      : {}),
+    ...(options.replaceExisting ? { replaceExisting: true } : {}),
   };
 }
 
@@ -248,6 +346,8 @@ export interface ScheduleUpdateOptionsInput {
   provider?: string;
   model?: string;
   mode?: string;
+  clearModel?: boolean;
+  clearMode?: boolean;
   cwd?: string;
   maxRuns?: string;
   expiresIn?: string;
@@ -267,7 +367,7 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
   const cadence = parseCadenceFromFlags(options.every, options.cron, options.timezone);
   const newAgentConfig = buildNewAgentConfigPatch(options);
   const maxRuns = parseUpdateMaxRuns(options);
-  const expiresAt = parseUpdateExpiresAt(options);
+  const expiry = parseUpdateExpiry(options);
   const name = parseUpdateName(options);
   const prompt = parseUpdatePrompt(options);
 
@@ -277,7 +377,8 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
     cadence === undefined &&
     newAgentConfig === undefined &&
     maxRuns === undefined &&
-    expiresAt === undefined
+    expiry.expiresAt === undefined &&
+    expiry.expiresIn === undefined
   ) {
     throw {
       code: "NO_UPDATES",
@@ -292,7 +393,7 @@ export function parseScheduleUpdateInput(options: ScheduleUpdateOptionsInput): U
     ...(cadence !== undefined ? { cadence } : {}),
     ...(newAgentConfig !== undefined ? { newAgentConfig } : {}),
     ...(maxRuns !== undefined ? { maxRuns } : {}),
-    ...(expiresAt !== undefined ? { expiresAt } : {}),
+    ...expiry,
   };
 }
 
@@ -371,7 +472,10 @@ function parseUpdateMaxRuns(options: ScheduleUpdateOptionsInput): number | null 
   return undefined;
 }
 
-function parseUpdateExpiresAt(options: ScheduleUpdateOptionsInput): string | null | undefined {
+function parseUpdateExpiry(options: ScheduleUpdateOptionsInput): {
+  expiresAt?: null;
+  expiresIn?: string;
+} {
   if (options.expiresIn !== undefined && options.clearExpires) {
     throw {
       code: "CONFLICTING_EXPIRES",
@@ -379,12 +483,13 @@ function parseUpdateExpiresAt(options: ScheduleUpdateOptionsInput): string | nul
     } satisfies CommandError;
   }
   if (options.clearExpires) {
-    return null;
+    return { expiresAt: null };
   }
   if (options.expiresIn !== undefined) {
-    return new Date(Date.now() + parseDuration(options.expiresIn)).toISOString();
+    parseDuration(options.expiresIn);
+    return { expiresIn: options.expiresIn };
   }
-  return undefined;
+  return {};
 }
 
 function parseUpdateName(options: ScheduleUpdateOptionsInput): string | null | undefined {
@@ -413,16 +518,45 @@ function buildNewAgentConfigPatch(
   options: ScheduleUpdateOptionsInput,
 ): UpdateScheduleNewAgentConfig | undefined {
   const patch: UpdateScheduleNewAgentConfig = {};
-  if (options.provider !== undefined || options.model !== undefined) {
+  if (options.clearModel && options.model !== undefined) {
+    throw {
+      code: "CONFLICTING_MODEL",
+      message: "Use either --model <model> or --clear-model, not both",
+    } satisfies CommandError;
+  }
+  if (options.clearMode && options.mode !== undefined) {
+    throw {
+      code: "CONFLICTING_MODE",
+      message: "Use either --mode <mode> or --clear-mode, not both",
+    } satisfies CommandError;
+  }
+  if (options.provider !== undefined) {
+    if (options.clearModel && options.provider?.includes("/")) {
+      throw {
+        code: "CONFLICTING_MODEL",
+        message: "--provider cannot include a model when --clear-model is used",
+      } satisfies CommandError;
+    }
     const resolved = resolveProviderAndModel({
       provider: options.provider,
-      model: options.model,
+      model: options.clearModel ? undefined : options.model,
     });
     patch.provider = resolved.provider;
     if (resolved.model !== undefined) {
       patch.model = resolved.model;
     }
+  } else if (options.model !== undefined) {
+    const model = options.model.trim();
+    if (!model) {
+      throw {
+        code: "INVALID_MODEL",
+        message: "--model cannot be empty",
+      } satisfies CommandError;
+    }
+    patch.model = model;
   }
+  if (options.clearModel) patch.model = null;
+  if (options.clearMode) patch.modeId = null;
   if (options.mode !== undefined) {
     const trimmed = options.mode.trim();
     patch.modeId = trimmed.length > 0 ? trimmed : null;
@@ -459,6 +593,7 @@ export interface ScheduleRow {
   status: string;
   nextRunAt: string | null;
   lastRunAt: string | null;
+  schedule: ScheduleListItem | ScheduleRecord;
 }
 
 export function toScheduleRow(schedule: ScheduleListItem | ScheduleRecord): ScheduleRow {
@@ -470,5 +605,6 @@ export function toScheduleRow(schedule: ScheduleListItem | ScheduleRecord): Sche
     status: schedule.status,
     nextRunAt: schedule.nextRunAt,
     lastRunAt: schedule.lastRunAt,
+    schedule,
   };
 }

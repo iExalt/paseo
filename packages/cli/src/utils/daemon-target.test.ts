@@ -21,6 +21,13 @@ test("explicit selectors win over both environment selectors", () => {
   expect(() => selectDaemonTarget({ home: "/tmp/b", host: "chosen:23456" }, {})).toThrow();
 });
 
+test("uses the owned home when a managed agent clears inherited host selection", () => {
+  expect(selectDaemonTarget({}, { PASEO_HOME: "/tmp/owned-home", PASEO_HOST: "" })).toEqual({
+    kind: "instance",
+    home: "/tmp/owned-home",
+  });
+});
+
 test("endpoint connections resolve local credentials from PASEO_HOME", () => {
   expect(
     resolveClientPaseoHome(

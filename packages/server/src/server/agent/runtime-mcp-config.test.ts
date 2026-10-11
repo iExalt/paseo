@@ -1,51 +1,51 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it } from "vitest";
+import { stripLegacyInternalPaseoMcpServer } from "./runtime-mcp-config.js";
 
-import type { AgentSessionConfig } from "./agent-sdk-types.js";
-import { withRuntimePaseoMcpServer } from "./runtime-mcp-config.js";
+describe("legacy internal Paseo MCP config cleanup", () => {
+  it("removes only stored HTTP or SSE configs targeting the retired endpoint", () => {
+    const input = {
+      provider: "codex",
+      cwd: "/workspace/project",
+      mcpServers: {
+        paseo: {
+          type: "http",
+          url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=stale-agent",
+        },
+        issueTracker: { type: "stdio", command: "tracker-mcp" },
+      },
+    } as const;
 
-const BASE_CONFIG: AgentSessionConfig = {
-  provider: "claude",
-  cwd: "/tmp/agent",
-};
-
-describe("withRuntimePaseoMcpServer", () => {
-  test("injects the paseo MCP server with a bearer header when a token is provided", () => {
-    const result = withRuntimePaseoMcpServer({
-      config: BASE_CONFIG,
-      agentId: "agent-1",
-      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
-      mcpAuthToken: "cap-token",
+    expect(stripLegacyInternalPaseoMcpServer(input)).toEqual({
+      provider: "codex",
+      cwd: "/workspace/project",
+      mcpServers: { issueTracker: { type: "stdio", command: "tracker-mcp" } },
     });
-
-    expect(result.mcpServers?.paseo).toEqual({
-      type: "http",
-      url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=agent-1",
-      headers: { Authorization: "Bearer cap-token" },
-    });
-  });
-
-  test("omits the header when no token is available", () => {
-    const result = withRuntimePaseoMcpServer({
-      config: BASE_CONFIG,
-      agentId: "agent-1",
-      mcpBaseUrl: "http://127.0.0.1:6767/mcp/agents",
-      mcpAuthToken: null,
-    });
-
-    expect(result.mcpServers?.paseo).toEqual({
-      type: "http",
-      url: "http://127.0.0.1:6767/mcp/agents?callerAgentId=agent-1",
+    expect(
+      stripLegacyInternalPaseoMcpServer({
+        provider: "codex",
+        cwd: "/workspace/project",
+        mcpServers: {
+          paseo: { type: "sse", url: "https://localhost/mcp/agents" },
+          issueTracker: { type: "stdio", command: "tracker-mcp" },
+        },
+      }),
+    ).toEqual({
+      provider: "codex",
+      cwd: "/workspace/project",
+      mcpServers: { issueTracker: { type: "stdio", command: "tracker-mcp" } },
     });
   });
 
-  test("does not inject when no MCP base URL is configured", () => {
-    const result = withRuntimePaseoMcpServer({
-      config: BASE_CONFIG,
-      agentId: "agent-1",
-      mcpBaseUrl: null,
-      mcpAuthToken: "cap-token",
-    });
+  it("preserves unrelated user Paseo and third-party MCP server configs", () => {
+    const config = {
+      provider: "codex",
+      cwd: "/workspace/project",
+      mcpServers: {
+        paseo: { type: "stdio", command: "paseo-tools" },
+        issueTracker: { type: "http", url: "https://example.test/mcp" },
+      },
+    } as const;
 
-    expect(result.mcpServers).toBeUndefined();
+    expect(stripLegacyInternalPaseoMcpServer(config)).toBe(config);
   });
 });

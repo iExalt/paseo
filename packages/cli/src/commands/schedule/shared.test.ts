@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 
 import { selectDaemonTarget } from "../../utils/daemon-target.js";
 
@@ -140,6 +140,88 @@ describe("parseScheduleCreateInput first-run timing", () => {
   });
 });
 
+describe("parseScheduleCreateInput caller inheritance and isolation", () => {
+  const callerAgent = {
+    id: "caller-agent",
+    provider: "codex",
+    cwd: "/daemon/caller",
+    model: "gpt-5.4",
+    currentModeId: "plan",
+    thinkingOptionId: "high",
+  };
+
+  test("uses caller values only as fallback and sends only explicit overrides", () => {
+    const input = parseScheduleCreateInput({
+      daemonTarget: selectDaemonTarget({ home: process.cwd() }, {}),
+      prompt: "run",
+      cron: "0 9 * * *",
+      callerAgent,
+      isolation: "worktree",
+    });
+
+    expect(input.target).toEqual({
+      type: "new-agent",
+      config: {
+        provider: "codex",
+        cwd: "/daemon/caller",
+        model: "gpt-5.4",
+        modeId: "plan",
+        thinkingOptionId: "high",
+        isolation: "worktree",
+      },
+    });
+    expect(input.callerContext).toEqual({
+      agentId: "caller-agent",
+      isolation: "worktree",
+    });
+  });
+
+  test("an explicit provider/model and cwd are preserved as caller overrides", () => {
+    const input = parseScheduleCreateInput({
+      daemonTarget: selectDaemonTarget({ home: process.cwd() }, {}),
+      prompt: "run",
+      cron: "0 9 * * *",
+      callerAgent,
+      provider: "claude/sonnet",
+      cwd: "/override",
+    });
+
+    expect(input.callerContext).toEqual({
+      agentId: "caller-agent",
+      provider: "claude/sonnet",
+      cwd: "/override",
+    });
+    expect(input.target).toEqual({
+      type: "new-agent",
+      config: {
+        provider: "claude",
+        cwd: "/override",
+        model: "sonnet",
+        thinkingOptionId: "high",
+      },
+    });
+  });
+});
+
+describe("parseScheduleCreateInput parity fields", () => {
+  test("preserves isolation, daemon-relative expiry, and explicit replacement", () => {
+    expect(
+      parseScheduleCreateInput({
+        ...baseCron,
+        isolation: "worktree",
+        expiresIn: "1h",
+        replaceExisting: true,
+      }),
+    ).toMatchObject({
+      target: {
+        type: "new-agent",
+        config: { isolation: "worktree" },
+      },
+      expiresIn: "1h",
+    });
+  });
+});
+
 describe("parseScheduleCreateInput thinking", () => {
   test("sets the thinking option for each scheduled new-agent run", () => {
     const input = parseScheduleCreateInput({
@@ -247,6 +329,32 @@ describe("parseScheduleUpdateInput", () => {
     });
   });
 
+  test("model-only patches do not invent a provider", () => {
+    expect(parseScheduleUpdateInput({ id: "abc", model: "  opus  " })).toEqual({
+      id: "abc",
+      newAgentConfig: { model: "opus" },
+    });
+  });
+
+  test("provider-only patches preserve an omitted model", () => {
+    expect(parseScheduleUpdateInput({ id: "abc", provider: "claude" })).toEqual({
+      id: "abc",
+      newAgentConfig: { provider: "claude" },
+    });
+  });
+
+  test("provider/model shorthand still rejects conflicting explicit models", () => {
+    expect(() =>
+      parseScheduleUpdateInput({ id: "abc", provider: "claude/sonnet", model: "opus" }),
+    ).toThrow(expect.objectContaining({ code: "CONFLICTING_MODEL_OPTIONS" }));
+  });
+
+  test("rejects an empty model-only patch", () => {
+    expect(() => parseScheduleUpdateInput({ id: "abc", model: "   " })).toThrow(
+      expect.objectContaining({ code: "INVALID_MODEL" }),
+    );
+  });
+
   test("--mode with empty value clears the modeId", () => {
     expect(parseScheduleUpdateInput({ id: "abc", mode: "" })).toEqual({
       id: "abc",
@@ -277,17 +385,11 @@ describe("parseScheduleUpdateInput", () => {
     );
   });
 
-  test("--expires-in computes an absolute timestamp; --no-expires-in clears", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
-    try {
-      expect(parseScheduleUpdateInput({ id: "abc", expiresIn: "1h" })).toEqual({
-        id: "abc",
-        expiresAt: "2026-01-01T01:00:00.000Z",
-      });
-    } finally {
-      vi.useRealTimers();
-    }
+  test("--expires-in stays relative for daemon-side clocking; --no-expires-in clears", () => {
+    expect(parseScheduleUpdateInput({ id: "abc", expiresIn: "1h" })).toEqual({
+      id: "abc",
+      expiresIn: "1h",
+    });
 
     expect(parseScheduleUpdateInput({ id: "abc", clearExpires: true })).toEqual({
       id: "abc",
@@ -299,6 +401,20 @@ describe("parseScheduleUpdateInput", () => {
     expect(() =>
       parseScheduleUpdateInput({ id: "abc", expiresIn: "1h", clearExpires: true }),
     ).toThrow(expect.objectContaining({ code: "CONFLICTING_EXPIRES" }));
+  });
+
+  test("--clear-model and --clear-mode send explicit null patches", () => {
+    expect(
+      parseScheduleUpdateInput({
+        id: "abc",
+        provider: "claude",
+        clearModel: true,
+        clearMode: true,
+      }),
+    ).toEqual({
+      id: "abc",
+      newAgentConfig: { provider: "claude", model: null, modeId: null },
+    });
   });
 });
 

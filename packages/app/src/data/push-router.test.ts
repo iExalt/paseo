@@ -40,6 +40,7 @@ type DiffFile = SubscribeCheckoutDiffResponseMessage["payload"]["files"][number]
 
 const daemonConfig: MutableDaemonConfig = {
   relay: { enabled: false },
+  agentTools: { enabled: false },
   mcp: { injectIntoAgents: true },
   browserTools: { enabled: false },
   providers: {},

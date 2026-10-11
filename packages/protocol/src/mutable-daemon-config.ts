@@ -51,12 +51,15 @@ export const MutableDaemonConfigSchema = z
   .object({
     // COMPAT(relayConfig): added in v0.2.6, remove after 2027-01-31 when old daemons are unsupported.
     relay: MutableRelayConfigSchema.optional(),
+    // COMPAT(agentTools): retained only to migrate older persisted daemon settings.
     mcp: z
       .object({
         enabled: z.boolean().optional(),
-        injectIntoAgents: z.boolean(),
+        injectIntoAgents: z.boolean().optional(),
       })
-      .passthrough(),
+      .passthrough()
+      .optional(),
+    agentTools: z.object({ enabled: z.boolean() }).optional(),
     hostnames: z.union([z.literal(true), z.array(z.string())]).optional(),
     cors: z
       .object({
@@ -86,12 +89,18 @@ export const MutableDaemonConfigSchema = z
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
     replyRules: z.array(ReplyRuleSchema).optional(),
   })
-  .passthrough();
+  .passthrough()
+  .transform((config) => ({
+    ...config,
+    agentTools: config.agentTools ?? {
+      enabled: (config.mcp?.enabled ?? true) && (config.mcp?.injectIntoAgents ?? false),
+    },
+  }));
 
 export const MutableDaemonConfigPatchSchema = z
   .object({
     relay: MutableRelayConfigSchema.partial().optional(),
-    mcp: z.object({ injectIntoAgents: z.boolean().optional() }).passthrough().optional(),
+    agentTools: z.object({ enabled: z.boolean().optional() }).optional(),
     browserTools: MutableBrowserToolsConfigSchema.partial().optional(),
     providers: z
       .record(z.string(), MutableDaemonProviderConfigSchema.partial().passthrough())

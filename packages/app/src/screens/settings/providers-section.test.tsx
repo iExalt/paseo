@@ -292,6 +292,7 @@ const disabledCodexEntry: ProviderSnapshotEntry = {
 function makeConfig(providers: MutableDaemonConfig["providers"] = {}): MutableDaemonConfig {
   return {
     relay: { enabled: false },
+    agentTools: { enabled: false },
     mcp: { injectIntoAgents: false },
     browserTools: { enabled: false },
     providers,

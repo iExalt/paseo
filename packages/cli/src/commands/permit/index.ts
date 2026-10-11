@@ -19,7 +19,12 @@ export function createPermitCommand(): Command {
       .argument("<agent>", "Agent ID (or prefix)")
       .argument("[req_id]", "Permission request ID (optional if --all)")
       .option("--all", "Allow all pending permissions for this agent")
-      .option("--input <json>", "Modified input parameters (JSON)"),
+      .option("--input <json>", "Modified input parameters (JSON)")
+      .option("--selected-action-id <id>", "Selected permission action ID (requires one request)")
+      .option(
+        "--updated-permissions <json>",
+        "Updated permissions array (JSON; requires one request)",
+      ),
   ).action(withOutput(runAllowCommand));
 
   addJsonAndDaemonHostOptions(
@@ -30,7 +35,8 @@ export function createPermitCommand(): Command {
       .argument("[req_id]", "Permission request ID (optional if --all)")
       .option("--all", "Deny all pending permissions for this agent")
       .option("--message <msg>", "Denial reason message")
-      .option("--interrupt", "Stop agent after denial"),
+      .option("--interrupt", "Stop agent after denial")
+      .option("--selected-action-id <id>", "Selected permission action ID (requires one request)"),
   ).action(withOutput(runDenyCommand));
 
   return permit;

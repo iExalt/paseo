@@ -6,6 +6,8 @@ interface WorkspaceArchiveResult {
   workspaceId: string;
   status: "archived";
   archivedAt: string;
+  archivedAgentIds?: string[];
+  removedDirectory?: boolean;
 }
 
 const workspaceArchiveSchema: OutputSchema<WorkspaceArchiveResult> = {
@@ -40,7 +42,17 @@ export async function runArchiveCommand(
     }
     return {
       type: "single",
-      data: { workspaceId, status: "archived", archivedAt: payload.archivedAt },
+      data: {
+        workspaceId,
+        status: "archived",
+        archivedAt: payload.archivedAt,
+        ...(payload.archivedAgentIds === undefined
+          ? {}
+          : { archivedAgentIds: payload.archivedAgentIds }),
+        ...(payload.removedDirectory === undefined
+          ? {}
+          : { removedDirectory: payload.removedDirectory }),
+      },
       schema: workspaceArchiveSchema,
     };
   } catch (error) {

@@ -36,6 +36,8 @@ import type { TerminalReplayOptions, TerminalReplayMetadata } from "./terminal-r
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
 import { TerminalActivityTracker } from "./activity/terminal-activity-tracker.js";
 import type { TerminalActivity, TerminalActivityState } from "@getpaseo/protocol/terminal-activity";
+import { resolvePaseoCliExecutablePath } from "./paseo-cli-path.js";
+export { resolvePaseoCliExecutablePath } from "./paseo-cli-path.js";
 
 const require = createRequire(import.meta.url);
 let nodePtySpawnHelperChecked = false;

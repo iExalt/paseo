@@ -3052,9 +3052,9 @@ export const en = {
         title: "Orchestration",
         unavailable: "Connect to this host to manage orchestration",
         enableTools: {
-          title: "Enable Paseo tools",
+          title: "Enable native Paseo tools",
           hint: "Agents will be able to manage worktrees, agents and schedules",
-          accessibilityLabel: "Inject Paseo tools",
+          accessibilityLabel: "Enable native Paseo tools",
           updateFailed: "Unable to update Paseo tools.",
         },
         systemPrompt: {

@@ -17,6 +17,7 @@ interface HeartbeatOptions extends CommandOptions {
   name?: string;
   maxRuns?: string;
   expiresIn?: string;
+  replace?: boolean;
 }
 
 interface HeartbeatDeleteRow {
@@ -32,10 +33,16 @@ const heartbeatDeleteSchema: OutputSchema<HeartbeatDeleteRow> = {
   ],
 };
 
-function requireCallerAgentId(): string {
+async function requireCallerAgentId(
+  client: Awaited<ReturnType<typeof connectScheduleClient>>["client"],
+): Promise<string> {
   const agentId = process.env.PASEO_AGENT_ID?.trim();
   if (!agentId) {
     throw new Error("Heartbeat commands must run inside a Paseo agent");
+  }
+  const caller = await client.fetchAgent({ agentId });
+  if (caller?.agent.id !== agentId) {
+    throw new Error(`Agent ${agentId} is not available on the selected daemon`);
   }
   return agentId;
 }
@@ -59,13 +66,14 @@ async function runCreateHeartbeat(
   options: HeartbeatOptions,
   _command: Command,
 ): Promise<SingleResult<ScheduleRow>> {
-  const agentId = requireCallerAgentId();
   const cron = options.cron?.trim();
   if (!cron) {
     throw new Error("--cron is required");
   }
+  if (options.expiresIn) parseDuration(options.expiresIn);
   const { client } = await connectScheduleClient(options.daemonTarget);
   try {
+    const agentId = await requireCallerAgentId(client);
     const maxRuns = options.maxRuns ? Number.parseInt(options.maxRuns, 10) : undefined;
     if (maxRuns !== undefined && (!Number.isSafeInteger(maxRuns) || maxRuns <= 0)) {
       throw new Error("--max-runs must be a positive integer");
@@ -78,11 +86,11 @@ async function runCreateHeartbeat(
         ...(options.timezone?.trim() ? { timezone: options.timezone.trim() } : {}),
       },
       target: { type: "agent", agentId },
+      callerAgentId: agentId,
+      ...(options.replace ? { replaceExisting: true } : {}),
       ...(options.name?.trim() ? { name: options.name.trim() } : {}),
       ...(maxRuns ? { maxRuns } : {}),
-      ...(options.expiresIn
-        ? { expiresAt: new Date(Date.now() + parseDuration(options.expiresIn)).toISOString() }
-        : {}),
+      ...(options.expiresIn ? { expiresIn: options.expiresIn } : {}),
     });
     if (payload.error || !payload.schedule) {
       throw new Error(payload.error ?? "Heartbeat creation failed");
@@ -100,16 +108,17 @@ async function runUpdateHeartbeat(
   options: HeartbeatOptions,
   _command: Command,
 ): Promise<SingleResult<ScheduleRow>> {
-  const agentId = requireCallerAgentId();
   const cron = options.cron?.trim();
   if (!cron) {
     throw new Error("--cron is required");
   }
   const { client } = await connectScheduleClient(options.daemonTarget);
   try {
+    const agentId = await requireCallerAgentId(client);
     await requireOwnedHeartbeat(client, id, agentId);
     const payload = await client.scheduleUpdate({
       id,
+      callerAgentId: agentId,
       cadence: {
         type: "cron",
         expression: cron,
@@ -132,11 +141,11 @@ async function runDeleteHeartbeat(
   options: HeartbeatOptions,
   _command: Command,
 ): Promise<SingleResult<HeartbeatDeleteRow>> {
-  const agentId = requireCallerAgentId();
   const { client } = await connectScheduleClient(options.daemonTarget);
   try {
+    const agentId = await requireCallerAgentId(client);
     await requireOwnedHeartbeat(client, id, agentId);
-    const payload = await client.scheduleDelete({ id });
+    const payload = await client.scheduleDelete({ id, callerAgentId: agentId });
     if (payload.error) {
       throw new Error(payload.error);
     }
@@ -163,7 +172,8 @@ export function createHeartbeatCommand(): Command {
       .option("--timezone <iana>", "IANA time zone")
       .option("--name <name>", "Heartbeat name")
       .option("--max-runs <n>", "Maximum number of runs")
-      .option("--expires-in <duration>", "Time to live"),
+      .option("--expires-in <duration>", "Time to live")
+      .option("--replace", "Replace an existing named heartbeat for this agent"),
   ).action(withOutput(runCreateHeartbeat));
   addJsonAndDaemonHostOptions(
     heartbeat

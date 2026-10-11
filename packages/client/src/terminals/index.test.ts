@@ -1,5 +1,10 @@
 import { expect, test } from "vitest";
-import { createTerminalActions } from "./index.js";
+import { createTerminalActions, serializeTerminalKeys } from "./index.js";
+
+test("terminal key serialization preserves literal input and expands supported tokens", () => {
+  expect(serializeTerminalKeys(["C-c", "Enter"])).toBe("\u0003\r");
+  expect(serializeTerminalKeys(["Enter"], true)).toBe("Enter");
+});
 
 test("an older host rejects terminal operations before sending requests", async () => {
   const unexpectedRequest = () => {

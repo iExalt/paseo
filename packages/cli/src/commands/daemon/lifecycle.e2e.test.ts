@@ -669,19 +669,30 @@ test("a background start that fails before the supervisor logs names the cause i
   }
 }, 60_000);
 
-test("onboarding preserves an existing MCP choice unless explicitly supplied", async () => {
+test("onboarding preserves native tool choice unless explicitly disabled", async () => {
   const f = await fixture();
   const home = f.homes[0]!;
   try {
     await f.configure(home, `127.0.0.1:${await port()}`);
-    await f.ok(["daemon", "config", "set", "daemon.mcp.enabled", "false", "--home", home]);
-    for (const flags of [[], ["--no-mcp"]]) {
-      const onboard = await f.run(["onboard", "--home", home, "--voice", "disable", ...flags]);
-      expect(onboard.code, onboard.stderr).toBe(0);
-      expect(
-        (await f.ok(["daemon", "config", "get", "daemon.mcp.enabled", "--home", home])).value,
-      ).toBe(false);
-    }
+    await f.ok(["daemon", "config", "set", "daemon.agentTools.enabled", "true", "--home", home]);
+    const preserved = await f.run(["onboard", "--home", home, "--voice", "disable"]);
+    expect(preserved.code, preserved.stderr).toBe(0);
+    expect(
+      (await f.ok(["daemon", "config", "get", "daemon.agentTools.enabled", "--home", home])).value,
+    ).toBe(true);
+
+    const disabled = await f.run([
+      "onboard",
+      "--home",
+      home,
+      "--voice",
+      "disable",
+      "--no-agent-tools",
+    ]);
+    expect(disabled.code, disabled.stderr).toBe(0);
+    expect(
+      (await f.ok(["daemon", "config", "get", "daemon.agentTools.enabled", "--home", home])).value,
+    ).toBe(false);
   } finally {
     await f.close();
   }

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
+import { Command } from "commander";
+import { DaemonClient, DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
+import { AgentSnapshotPayloadSchema } from "@getpaseo/protocol/messages";
+import { connectToDaemon } from "../../utils/client.js";
 import { resolveCallerAgentId as resolveRunCallerAgentId } from "../../utils/caller-agent.js";
 import {
   resolveExistingRunWorkspace,
@@ -8,7 +11,36 @@ import {
   type AgentRunOptions,
 } from "./run";
 
+vi.mock("../../utils/client.js", () => ({ connectToDaemon: vi.fn() }));
+
 const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
+
+function createAgentSnapshot(id: string) {
+  return AgentSnapshotPayloadSchema.parse({
+    id,
+    provider: "codex",
+    cwd: "/workspace",
+    model: "gpt-5.4",
+    createdAt: "2026-10-10T00:00:00.000Z",
+    updatedAt: "2026-10-10T00:00:00.000Z",
+    lastUserMessageAt: null,
+    status: "idle",
+    capabilities: {
+      supportsStreaming: true,
+      supportsSessionPersistence: true,
+      supportsDynamicModes: true,
+      supportsMcpServers: true,
+      supportsReasoningStream: true,
+      supportsToolInvocations: true,
+    },
+    currentModeId: null,
+    availableModes: [],
+    pendingPermissions: [],
+    persistence: null,
+    title: "Task",
+    labels: {},
+  });
+}
 
 // Answers fetchAgent the way a daemon does: an unknown id is an error.
 function daemonWithAgents(...agentIds: string[]) {
@@ -124,7 +156,7 @@ describe("runRunCommand option validation", () => {
     messageMatch: RegExp,
   ) {
     await expect(
-      runRunCommand("do something", { ...options, daemonTarget }, {} as never),
+      runRunCommand("do something", { ...options, daemonTarget }, new Command("run")),
     ).rejects.toMatchObject({
       code: "INVALID_OPTIONS",
       message: expect.stringMatching(messageMatch),
@@ -146,7 +178,7 @@ describe("runRunCommand option validation", () => {
       runRunCommand(
         "do something",
         { newWorkspace: "worktree", provider: undefined, daemonTarget },
-        {} as never,
+        new Command("run"),
       ),
     ).rejects.not.toMatchObject({ code: "INVALID_OPTIONS" });
   });
@@ -167,5 +199,50 @@ describe("runRunCommand option validation", () => {
       { newWorkspace: "worktree", worktreeMode: "container" },
       /Unsupported worktree mode/,
     );
+  });
+});
+
+describe("run feature values", () => {
+  it("passes parsed provider feature values to agent creation", async () => {
+    const originalCallerId = process.env.PASEO_AGENT_ID;
+    const originalWorkspaceId = process.env.PASEO_WORKSPACE_ID;
+    const client = new DaemonClient({
+      url: "ws://daemon.test",
+      clientId: "cli-run-feature-test",
+      reconnect: { enabled: false },
+    });
+    const parentAgent = createAgentSnapshot("parent-agent");
+    const createdAgent = createAgentSnapshot("created-agent");
+    vi.spyOn(client, "fetchAgent").mockResolvedValue({ agent: parentAgent, project: null });
+    const createAgent = vi.spyOn(client, "createAgent").mockResolvedValue(createdAgent);
+    vi.spyOn(client, "close").mockResolvedValue();
+    vi.mocked(connectToDaemon).mockResolvedValueOnce(client);
+    process.env.PASEO_AGENT_ID = parentAgent.id;
+    delete process.env.PASEO_WORKSPACE_ID;
+
+    try {
+      await expect(
+        runRunCommand(
+          "do something",
+          {
+            provider: "codex/gpt-5.4",
+            feature: ["fast_mode=true", "service_tier=flex"],
+            wait: false,
+            daemonTarget,
+          },
+          new Command("run"),
+        ),
+      ).resolves.toMatchObject({ data: { agentId: "created-agent" } });
+      expect(createAgent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          featureValues: { fast_mode: true, service_tier: "flex" },
+        }),
+      );
+    } finally {
+      if (originalCallerId === undefined) delete process.env.PASEO_AGENT_ID;
+      else process.env.PASEO_AGENT_ID = originalCallerId;
+      if (originalWorkspaceId === undefined) delete process.env.PASEO_WORKSPACE_ID;
+      else process.env.PASEO_WORKSPACE_ID = originalWorkspaceId;
+    }
   });
 });

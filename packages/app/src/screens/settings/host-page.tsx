@@ -68,6 +68,7 @@ import { BrowserToolsOptInCard } from "./browser-tools-card";
 import { PaseoToolsCard } from "./paseo-tools-card";
 import { RestartRecoveryCard } from "./restart-recovery-card";
 import { IdleRuntimeCleanupCard } from "./idle-runtime-cleanup-card";
+import { AgentToolsCard } from "./agent-tools-card";
 import { ReplyRulesSection } from "./reply-rules-section";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
 
@@ -292,7 +293,7 @@ export function HostAgentsPage({ serverId }: { serverId: string }) {
     <View>
       {isConnected ? (
         <SettingsSection title={t("settings.hostSections.agents")}>
-          <PaseoToolsCard serverId={serverId} />
+          <AgentToolsCard serverId={serverId} />
           <BrowserToolsOptInCard serverId={serverId} />
           <AppendSystemPromptCard serverId={serverId} />
           <RestartRecoveryCard serverId={serverId} />
