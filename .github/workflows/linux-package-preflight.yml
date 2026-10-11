@@ -2,6 +2,13 @@ name: Linux package preflight
 
 on:
   workflow_dispatch:
+    inputs:
+      architecture:
+        description: Native architecture to evaluate without building
+        required: true
+        type: choice
+        default: x64
+        options: [x64, arm64]
 
 permissions:
   contents: read
@@ -13,8 +20,10 @@ concurrency:
 jobs:
   evaluate:
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 10
+    env:
+      EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

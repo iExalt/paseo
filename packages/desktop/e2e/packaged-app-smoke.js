@@ -943,6 +943,7 @@ async function smokePackagedDesktopApp({
   appPath,
   executablePath,
   nixLayout,
+  nixProfile,
   launchArgs = [],
   expectedSandbox,
   ownedSession,
@@ -952,11 +953,13 @@ async function smokePackagedDesktopApp({
 }) {
   let cliPath;
   if (nixLayout) {
-    const { validateNixLinuxLayout } = require("./nix-linux-layout.cjs");
-    const layout = validateNixLinuxLayout({ desktop: appPath, ...nixLayout });
+    const { nixLinuxLaunchPaths } = require("./nix-linux-layout.cjs");
     assert.equal(executablePath, undefined, "Nix must launch its canonical wrapper");
-    executablePath = layout.executablePath;
-    cliPath = layout.cliPath;
+    ({ executablePath, cliPath } = nixLinuxLaunchPaths({
+      desktop: appPath,
+      ...nixLayout,
+      profile: nixProfile,
+    }));
   } else {
     executablePath ??= getExecutablePath(appPath);
     assertLinuxDesktopIdentity(appPath);
@@ -1045,12 +1048,13 @@ async function smokePackagedDesktopApp({
       await smokeCliShim({ appPath, cliPath, env });
       await smokeCliTerminal({ appPath, cliPath, env });
     }
-    await inspectState({ appPath, env, page, daemonHome });
+    await inspectState({ appPath, cliPath, env, page, daemonHome });
     if (expectedSandbox !== undefined) {
       await assertSandboxState({ browser, page, expectedSandbox, stdout, stderr });
-      await openSmokeWorkspace({ appPath, cliPath, env, page, daemonHome });
+      if (!nixProfile) await openSmokeWorkspace({ appPath, cliPath, env, page, daemonHome });
     }
-    if (nixLayout) await page.screenshot({ path: path.join(artifactDir, "workspace.png") });
+    if (nixLayout && !nixProfile)
+      await page.screenshot({ path: path.join(artifactDir, "workspace.png") });
     await writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome, artifactDir });
     await stopDaemonForCleanup();
     console.log(
@@ -1086,15 +1090,27 @@ async function smokePackagedDesktopApp({
   }
 }
 
-async function smokePackagedDesktopUpgrade({ previousApp, candidateApp, artifactDir }) {
-  assert.equal(process.platform, "darwin", "Upgrade session currently requires native macOS");
+async function smokePackagedDesktopUpgrade({
+  previousApp,
+  candidateApp,
+  artifactDir,
+  nixPackages,
+}) {
+  assert.equal(process.platform, nixPackages ? "linux" : "darwin");
   const previous = fs.realpathSync(previousApp);
   const candidate = fs.realpathSync(candidateApp);
   for (const app of [previous, candidate])
-    assert.match(app, /^\/nix\/store\/[a-z0-9]{32}-[^/]+\/Applications\/Paseo\.app$/);
+    assert.match(
+      app,
+      nixPackages
+        ? /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/
+        : /^\/nix\/store\/[a-z0-9]{32}-[^/]+\/Applications\/Paseo\.app$/,
+    );
   assert.notEqual(previous, candidate, "Upgrade requires two distinct pinned package outputs");
   assert.ok(path.isAbsolute(artifactDir));
   const root = createTempDir("paseo-upgrade-");
+  const profile = path.join(root, "nix-profile");
+  const { changeProfile } = require("./nix-profile.cjs");
   try {
     const ownedSession = {
       userData: path.join(root, "profile"),
@@ -1113,12 +1129,34 @@ async function smokePackagedDesktopUpgrade({ previousApp, candidateApp, artifact
     ]) {
       const stageDir = path.join(artifactDir, stage);
       fs.mkdirSync(stageDir, { recursive: true });
+      const nixLayout = nixPackages?.[stage];
+      if (nixLayout) {
+        const { validateNixLinuxLayout } = require("./nix-linux-layout.cjs");
+        validateNixLinuxLayout({ desktop: appPath, ...nixLayout });
+        if (stage === "candidate") {
+          changeProfile(
+            profile,
+            "remove",
+            [previous, nixPackages.previous.daemon],
+            path.join(stageDir, "profile-before-install.json"),
+          );
+        }
+        changeProfile(
+          profile,
+          "add",
+          [appPath, nixLayout.daemon],
+          path.join(stageDir, "profile.json"),
+        );
+      }
       await smokePackagedDesktopApp({
         appPath,
+        nixLayout,
+        nixProfile: nixLayout ? profile : undefined,
+        expectedSandbox: nixLayout ? false : undefined,
         ownedSession,
         predecessor: stage === "previous",
         artifactDir: stageDir,
-        inspectState: async ({ env, page, daemonHome }) => {
+        inspectState: async ({ cliPath, env, page, daemonHome }) => {
           if (stage === "previous") {
             const project = path.join(daemonHome, "persisted-project");
             fs.mkdirSync(project);
@@ -1128,6 +1166,7 @@ async function smokePackagedDesktopUpgrade({ previousApp, candidateApp, artifact
             );
             const workspace = await runCliShimJsonCommand({
               appPath,
+              cliPath,
               env,
               args: [
                 "workspace",
@@ -1162,9 +1201,20 @@ async function smokePackagedDesktopUpgrade({ previousApp, candidateApp, artifact
         },
       });
     }
+    if (nixPackages) {
+      changeProfile(
+        profile,
+        "remove",
+        [candidate, nixPackages.candidate.daemon],
+        path.join(artifactDir, "uninstalled-profile.json"),
+      );
+      for (const binary of ["paseo", "paseo-desktop"])
+        assert.equal(fs.existsSync(path.join(profile, "bin", binary)), false);
+    }
   } finally {
     const { removeOwnedTree } = await import("./remove-owned-tree.mjs");
     await removeOwnedTree(root);
+    assert.equal(fs.existsSync(root), false, "Owned profile generations and state removed");
   }
 }
 
