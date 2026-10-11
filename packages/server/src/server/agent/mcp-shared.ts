@@ -65,6 +65,25 @@ export interface ResolvedProviderModel {
   model: string | undefined;
 }
 
+export function resolveScheduleProviderAndModel(params: {
+  provider?: string;
+  defaultProvider: AgentProvider;
+}): { provider: AgentProvider; model?: string } {
+  const providerInput = params.provider?.trim() || params.defaultProvider;
+  const slashIndex = providerInput.indexOf("/");
+  if (slashIndex === -1) {
+    return { provider: providerInput };
+  }
+
+  const provider = providerInput.slice(0, slashIndex).trim();
+  const model = providerInput.slice(slashIndex + 1).trim();
+  if (!provider || !model) {
+    throw new Error("provider must be <provider> or <provider>/<model>");
+  }
+
+  return { provider, model };
+}
+
 export function resolveRequiredProviderModel(
   providerValue: string,
 ): Required<ResolvedProviderModel> {

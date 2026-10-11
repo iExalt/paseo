@@ -29,7 +29,7 @@ export function addArchiveOptions(cmd: Command): Command {
   return cmd
     .description("Archive an agent (soft-delete)")
     .argument("<id>", "Agent ID, prefix, or name")
-    .option("--force", "Force archive running agent (interrupts active run first)");
+    .option("--force", "Force archive a running agent or acknowledge an already archived agent");
 }
 
 export interface AgentArchiveOptions extends CommandOptions {
@@ -57,9 +57,15 @@ export async function runArchiveCommand(
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
-    const agents = await fetchAllAgents(client, { filter: { includeArchived: true } });
-    const agentId = resolveAgentId(agentIdArg, agents);
-    if (!agentId) {
+    // Directory rows require workspace placement; direct lookup also finds
+    // durable agents whose workspace is absent or has already been archived.
+    let agent = (await client.fetchAgent({ agentId: agentIdArg }))?.agent;
+    if (!agent) {
+      const agents = await fetchAllAgents(client, { filter: { includeArchived: true } });
+      const resolvedId = resolveAgentId(agentIdArg, agents);
+      agent = agents.find((entry) => entry.id === resolvedId);
+    }
+    if (!agent) {
       const error: CommandError = {
         code: "AGENT_NOT_FOUND",
         message: `Agent not found: ${agentIdArg}`,
@@ -67,13 +73,10 @@ export async function runArchiveCommand(
       };
       throw error;
     }
-    const agent = agents.find((entry) => entry.id === agentId);
-    if (!agent) {
-      throw new Error(`Resolved agent missing from fetched agents: ${agentId}`);
-    }
+    const agentId = agent.id;
 
     // Check if agent is already archived
-    if (agent.archivedAt) {
+    if (agent.archivedAt && !options.force) {
       const error: CommandError = {
         code: "AGENT_ALREADY_ARCHIVED",
         message: `Agent ${agentId.slice(0, 7)} is already archived`,

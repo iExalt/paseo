@@ -113,8 +113,7 @@ export type CliConfigOverrides = Partial<{
   listen: string;
   relayEnabled: boolean;
   relayUseTls: boolean;
-  mcpEnabled: boolean;
-  mcpInjectIntoAgents: boolean;
+  agentToolsEnabled: boolean;
   webUiEnabled: boolean;
   hostnames: HostnamesConfig;
 }>;
@@ -539,15 +538,22 @@ function resolveProfileLists(persisted: ReturnType<typeof loadPersistedConfig>) 
   };
 }
 
+function resolveAgentToolsEnabled(
+  persisted: PersistedConfig,
+  cli: CliConfigOverrides | undefined,
+): boolean {
+  const legacyEnabled =
+    (persisted.daemon?.mcp?.enabled ?? true) && (persisted.daemon?.mcp?.injectIntoAgents ?? false);
+  return cli?.agentToolsEnabled ?? persisted.daemon?.agentTools?.enabled ?? legacyEnabled;
+}
+
 function resolveStaticLoadConfigSettings(
   env: NodeJS.ProcessEnv,
   cli: CliConfigOverrides | undefined,
   persisted: ReturnType<typeof loadPersistedConfig>,
 ) {
   return {
-    mcpEnabled: cli?.mcpEnabled ?? persisted.daemon?.mcp?.enabled ?? true,
-    mcpInjectIntoAgents:
-      cli?.mcpInjectIntoAgents ?? persisted.daemon?.mcp?.injectIntoAgents ?? false,
+    agentToolsEnabled: resolveAgentToolsEnabled(persisted, cli),
     browserToolsEnabled: resolveBrowserToolsEnabled(persisted),
     autoArchiveAfterMerge: persisted.daemon?.autoArchiveAfterMerge ?? false,
     appendSystemPrompt: resolveAppendSystemPrompt(persisted),
@@ -581,8 +587,7 @@ export function resolveConfigFromPersisted(
 
   const listen = resolveListenAddress(env, cli, persisted);
   const {
-    mcpEnabled,
-    mcpInjectIntoAgents,
+    agentToolsEnabled,
     browserToolsEnabled,
     autoArchiveAfterMerge,
     appendSystemPrompt,
@@ -624,8 +629,7 @@ export function resolveConfigFromPersisted(
     corsAllowedOrigins: resolveCorsAllowedOrigins(env, persisted),
     hostnames,
     trustedProxies,
-    mcpEnabled,
-    mcpInjectIntoAgents,
+    agentToolsEnabled,
     browserToolsEnabled,
     git: resolveGitProcessConfig(env, persisted),
     autoArchiveAfterMerge,
@@ -638,7 +642,6 @@ export function resolveConfigFromPersisted(
     plugins: persisted.plugins,
     pluginRegistries: persisted.pluginRegistries,
     pluginRegistryUrl: env.PASEO_PLUGIN_REGISTRY,
-    mcpDebug: env.MCP_DEBUG === "1",
     isDev: resolvePaseoNodeEnv(env) === "development",
     agentStoragePath: path.join(paseoHome, "agents"),
     staticDir: "public",
@@ -721,8 +724,7 @@ function resolveCoreDaemonOverridePaths(
   if (cli?.listen !== undefined || env.PASEO_LISTEN !== undefined) {
     paths.push("daemon.listen");
   }
-  if (cli?.mcpEnabled !== undefined) paths.push("daemon.mcp.enabled");
-  if (cli?.mcpInjectIntoAgents !== undefined) paths.push("daemon.mcp.injectIntoAgents");
+  if (cli?.agentToolsEnabled !== undefined) paths.push("daemon.agentTools.enabled");
   // Hostname sources append instead of replacing one another, so a launch value
   // does not prevent a persisted hostname edit from taking effect.
   if (parseTrustedProxiesEnv(env.PASEO_TRUSTED_PROXIES) !== undefined) {

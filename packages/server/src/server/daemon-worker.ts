@@ -106,15 +106,10 @@ function applyCliFlagOverrides(config: ReturnType<typeof loadConfig>): void {
     cli.relayUseTls = true;
     override("daemon.relay.useTls");
   }
-  if (process.argv.includes("--no-mcp")) {
-    config.mcpEnabled = false;
-    cli.mcpEnabled = false;
-    override("daemon.mcp.enabled");
-  }
-  if (process.argv.includes("--no-inject-mcp")) {
-    config.mcpInjectIntoAgents = false;
-    cli.mcpInjectIntoAgents = false;
-    override("daemon.mcp.injectIntoAgents");
+  if (process.argv.includes("--no-agent-tools")) {
+    config.agentToolsEnabled = false;
+    cli.agentToolsEnabled = false;
+    override("daemon.agentTools.enabled");
   }
   if (process.argv.includes("--web-ui")) {
     config.webUi = { ...(config.webUi ?? { distDir: null }), enabled: true };

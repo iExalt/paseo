@@ -306,6 +306,7 @@ describe("cancelComposerAgent", () => {
         canceledIds,
         cancelAgent: async (id) => {
           canceledIds.push(id);
+          return true;
         },
       },
       agentId: "agent",
@@ -319,7 +320,7 @@ describe("cancelComposerAgent", () => {
     const input = baseInput();
     const result = cancelComposerAgent(input);
     expect(result).not.toBeNull();
-    await result;
+    await expect(result).resolves.toBeUndefined();
     expect(input.client.canceledIds).toEqual(["agent"]);
   });
 

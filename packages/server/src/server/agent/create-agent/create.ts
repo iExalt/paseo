@@ -46,6 +46,8 @@ export type EnsureWorkspaceForCreate = (
 export interface CreateAgentFromSessionInput {
   kind: "session";
   onAgentReady?: (agent: ManagedAgent) => Promise<void>;
+  callerAgentId?: string;
+  notifyOnFinish?: boolean;
   agentId?: string;
   config: AgentSessionConfig;
   workspaceId: string;
@@ -179,10 +181,7 @@ export async function createAgentCommand(
     input.onCreated?.({ agentId: snapshot.id, createdWorktree: resolved.createdWorktree ?? null });
   }
   const notification =
-    input.kind === "mcp" &&
-    input.notifyOnFinish &&
-    input.callerAgentId &&
-    resolved.prompt !== undefined
+    input.notifyOnFinish && input.callerAgentId && resolved.prompt !== undefined
       ? await requireFinishSubscriptions(dependencies).register(
           {
             childAgentId: snapshot.id,
