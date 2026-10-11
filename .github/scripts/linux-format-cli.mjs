@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, symlinkSync } from "node:fs";
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -23,8 +23,25 @@ for (const mode of ["injected", "trailing"]) {
   assert.equal(receipt.display, "");
   assert.equal(receipt.architecture, process.env.EXPECTED_ARCHITECTURE);
   assert.ok(receipt.appdir.startsWith(`${process.env.TMPDIR}/.mount_`));
+  const ready = JSON.parse(readFileSync(`${lateReceipt}.ready`));
+  assert.equal(ready.appdir, receipt.appdir);
+  assert.equal(ready.inputExists, true);
+  const mounted = () =>
+    readFileSync("/proc/self/mountinfo", "utf8")
+      .split("\n")
+      .some((line) => line.split(" ")[4] === receipt.appdir);
+  const afterCliExit = { mounted: mounted(), directoryExists: existsSync(receipt.appdir) };
   const deadline = Date.now() + 10000;
   while (!existsSync(lateReceipt) && Date.now() < deadline) await delay(100);
+  writeFileSync(
+    `${lateReceipt}.observation`,
+    JSON.stringify({
+      receipt,
+      ready,
+      afterCliExit,
+      afterWait: { mounted: mounted(), directoryExists: existsSync(receipt.appdir) },
+    }),
+  );
   const worker = JSON.parse(readFileSync(lateReceipt));
   assert.equal(worker.content, "mounted worker input\n");
   assert.equal(worker.parentExited, true);
