@@ -14,9 +14,11 @@ finish() {
   exit "$cleanup"
 }
 trap finish EXIT
+node .github/scripts/linux-product-temp.mjs "$root" create
 run_stage() {
-  local format=$1 stage=$2
-  FIXTURE_FORMAT="$format-$stage" TMPDIR="$root/evidence/mounts-$format-$stage" \
+  local format=$1 stage=$2 temporary
+  temporary=$(node .github/scripts/linux-product-temp.mjs "$root" "$format-$stage")
+  FIXTURE_FORMAT="$format-$stage" TMPDIR="$temporary" OWNED_SESSION_RECEIPT_DIRECTORY="$root/evidence" \
     node .github/scripts/linux-format-launch.mjs node .github/scripts/linux-product-stage.mjs \
       "$stage" "$format" "$root/manifest.json" "$root/state" "$root/evidence" \
       "$root/portable/Paseo-$EXPECTED_ARCHITECTURE.AppImage" \
