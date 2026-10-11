@@ -462,6 +462,18 @@ at most 25 MiB of one-day diagnostics. Actual product format journeys are next.
 The Nix filter increment `490c6eac0` passed seven-lane PR CI in 4m30s; the preceding
 `5139c9514` full dev run passed in 4m34s. The stable latency baseline is unchanged.
 
+Actual product format verification is implemented locally and awaiting review/live
+proof. Each native runner builds predecessor `5619b7d7e` and the exact candidate
+once, then packages the same unpacked payload into DEB, RPM and AppImage. Separate
+nonroot UI stages preserve owned workspace, theme, daemon home and profile across
+the root-managed upgrade. Manifests bind source, lock, native payload and package
+hashes; AppImage must retain the installed CLI symlink while replacing the stable
+filename. A detached-child failure probe precedes expensive builds, and cleanup
+requires verified process identities and empty mount sets before removing state.
+The proposed trial is x64 first, then ARM64 after x64 acceptance, bounded to 45
+minutes per job with no cache and 25 MiB of one-day diagnostics. Fast fixture and
+workflow checks pass locally; these do not establish installed product behavior.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then
