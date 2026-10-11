@@ -342,7 +342,11 @@ check before installation/generation; it does not weaken the guard. That trial's
 Mac signing/export passed in 11m59s and fresh-runner signature/import verification
 in 1m16s; Android failure still prevents paired acceptance. Reviewed `e506c1272`
 passed routine CI and is integrated into dev. Repaired paired run `38097874209`
-is active at that exact SHA; old-source Mac bytes cannot substitute for its proof.
+passed at that exact SHA: 23m43s critical path and 36m28s summed runner work,
+including Mac build/export 11m44s, fresh import 1m10s and Android build 22m46s.
+The reviewer accepted matching source/version, signatures and artifact pins.
+Gradle still executed all 1,323 tasks in 20m16s despite a cache hit; this is not
+evidence of useful compiled-output caching. Runtime/upgrade acceptance remains open.
 
 The shared candidate transport helper is locally verified and reviewer-accepted:
 it checks explicit producer attempt/source, pinned artifact IDs and ZIP digests,
@@ -374,6 +378,16 @@ is its visible unique title; the native UI does not expose a workspace-ID assert
 Host/container/backend cleanup and screenshot retention are bounded. UI selectors,
 rendered output accessibility and upgrade behavior remain unverified until the
 accepted paired producer feeds the reviewed live consumer.
+
+The native consumer's process tracking repair `bfef0fca1` uses PID plus immutable
+start time, excluding mutable process titles. Its PR run `38099238307` passed all
+behavioral checks but failed the unchanged latency gate at 304s; native dispatch
+is paused pending a passing repaired head. Server shard 3 took 149.81s versus
+137.32s on the preceding head, with unchanged tests and two workers. This exposed
+insufficient latency margin rather than added test work on that shard. The reviewed
+repair moves a 16-second supervisor heartbeat observation to virtual time, retaining
+real IPC/logging and the real ten-second forced-termination journey. Required hosted
+verification will measure the result; no deadline or concurrency increase is applied.
 
 The [optimized integration lane](https://github.com/iExalt/paseo/actions/runs/38096508135)
 at `18510758c` passed unchanged lifecycle cases, relay/provider checks and all process
