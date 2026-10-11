@@ -382,6 +382,17 @@ host/runtime guards and architecture-specific concurrency/evidence names. ARM64
 dispatch waits for the pending x64 profile acceptance, then uses the same actual
 profile lifecycle and unchanged 45/35/5-minute bounds. Preflight is not product proof.
 
+The x64 profile trial `38107363053` built both versions and verified exact old
+profile removal/new installation, then failed candidate theme preservation:
+the same workspace opened, but Appearance showed System instead of Pure black.
+Different renderer client IDs also suggest lost renderer storage; shared forced
+userData and origin match, so the cause is not yet proven. The harness previously
+terminated the whole process group. Its next trial requests the existing normal
+window-close/app-quit path and requires exit within ten seconds, retaining forced
+termination only for failed-run cleanup. It records selected persisted theme,
+origin and observable storage file paths before shutdown/after replacement.
+No candidate setting is rewritten. ARM dispatch remains paused until this gate passes.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then

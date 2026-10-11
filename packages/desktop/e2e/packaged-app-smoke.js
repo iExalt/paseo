@@ -9,6 +9,7 @@ const { extractFile } = require("@electron/asar");
 const { WebSocket } = require("ws");
 const assert = require("node:assert/strict");
 const { terminalHookCommand, hasTerminalOutput } = require("./terminal-proof.cjs");
+const { closeProfileWindow, recordStoragePaths } = require("./normal-close.cjs");
 const {
   captureProcessTree,
   refreshProcessTree,
@@ -1048,7 +1049,7 @@ async function smokePackagedDesktopApp({
       await smokeCliShim({ appPath, cliPath, env });
       await smokeCliTerminal({ appPath, cliPath, env });
     }
-    await inspectState({ appPath, cliPath, env, page, daemonHome });
+    await inspectState({ appPath, cliPath, env, page, daemonHome, browser, userData });
     if (expectedSandbox !== undefined) {
       await assertSandboxState({ browser, page, expectedSandbox, stdout, stderr });
       if (!nixProfile) await openSmokeWorkspace({ appPath, cliPath, env, page, daemonHome });
@@ -1057,6 +1058,14 @@ async function smokePackagedDesktopApp({
       await page.screenshot({ path: path.join(artifactDir, "workspace.png") });
     await writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome, artifactDir });
     await stopDaemonForCleanup();
+    await closeProfileWindow({
+      nixProfile,
+      ownedSession,
+      page,
+      child,
+      artifactDir,
+      waitForExit: (timeout) => waitForChildExit(child, timeout),
+    });
     console.log(
       `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; ${predecessor ? "predecessor state seeded" : "CLI shim daemon status and terminal smoke succeeded"}`,
     );
@@ -1156,7 +1165,20 @@ async function smokePackagedDesktopUpgrade({
         ownedSession,
         predecessor: stage === "previous",
         artifactDir: stageDir,
-        inspectState: async ({ cliPath, env, page, daemonHome }) => {
+        inspectState: async ({ cliPath, env, page, daemonHome, browser, userData }) => {
+          const recordStorage = async (name) => {
+            const storage = await page.evaluate(() => ({
+              origin: location.origin,
+              theme:
+                JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme ?? null,
+            }));
+            fs.writeFileSync(path.join(stageDir, `${name}-storage.json`), JSON.stringify(storage));
+            return storage;
+          };
+          if (nixLayout) {
+            await recordStorage("entry");
+            await recordStoragePaths({ browser, userData, artifactDir: stageDir });
+          }
           if (stage === "previous") {
             const project = path.join(daemonHome, "persisted-project");
             fs.mkdirSync(project);
@@ -1193,6 +1215,16 @@ async function smokePackagedDesktopUpgrade({
             await page.getByText(theme, { exact: true }).click();
           }
           await page.getByLabel(`Theme: ${theme}`, { exact: true }).waitFor({ state: "visible" });
+          if (nixLayout) {
+            await page.waitForFunction(
+              () =>
+                JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme ===
+                "pureBlack",
+              undefined,
+              { timeout: 5000 },
+            );
+            await recordStorage("selected");
+          }
           await page.screenshot({ path: path.join(stageDir, "theme.png") });
           fs.writeFileSync(
             path.join(stageDir, "state.json"),
