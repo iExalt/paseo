@@ -18,6 +18,10 @@
   net npm-cache gain; its removal passed final-source PR and dev verification.
   Final PR/dev verification passed in 4m15s/4m18s; the two-minute stretch remains
   unmet. Initial queue adds 3s to each. Required checks are preserved.
+- Phase B: B1–B3 accepted; native Nix proofs cover both architectures and
+  full x64/ARM DEB/RPM/AppImage evidence is at `db2316365`. B4 Windows is active.
+  Latest routine PR/dev runs passed in 4m50s/4m36s;
+  this does not replace the accepted baseline above.
 
 ## Outcome gates
 
@@ -28,8 +32,8 @@
 | A3: exact rebased-tree verification       | complete / verified  | A2                            | G1 including atomic publication failure fixtures, author     |
 | B1: deep journeys and safe PR routing     | complete / verified  | A1–A3; B2 for Android closure | G2, author                                                   |
 | B2: Mac/Android candidate preservation    | complete / verified  | A1–A3                         | Mac/Android portion of G3, author                            |
-| B3: Linux package matrix                  | active / implemented | B2 for closure                | Linux portion of G3, author                                  |
-| B4: Windows package matrix                | planned / designed   | B2, B3                        | Remaining G3 and phase integration, author                   |
+| B3: Linux package matrix                  | complete / verified  | B2 for closure                | Linux portion of G3, author                                  |
+| B4: Windows package matrix                | active / implemented | B2, B3                        | Remaining G3 and phase integration, author                   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -80,25 +84,26 @@ runner time counts parallel work. Failed/cancelled samples are not successful
 baselines. These historical inputs differ from current code and must not be
 treated as controlled before/after measurements.
 
-| Workflow / callable lane                           | Trigger and runner                                    | Observed timing and largest cost                                                                 | Current deadline / optimization gate                                        |
-| -------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| Routine CI                                         | PR/dev; Ubuntu x64, seven lanes                       | PR 4m15s / dev 4m18s; runner work 20m18s / 20m37s at `72300136d`                                 | Complete gate <5m; 2m stretch, reduce setup duplication and expensive tests |
-| Legacy candidate coordinator                       | Manual; Ubuntu x64 with parallel Mac/Android children | `38071895947` at `d04260338`: 23m41s critical path, 37m04s runner work, initial queue 3s         | Identity 5m; cross-check 10m; replacement in D                              |
-| macOS closure build / fresh import                 | Reusable; macos-14 ARM64                              | Same run: build/sign/export 12m24s, fresh import 1m08s; Nix build 6m, export 4m26s, transfers 9s | 90m / 20m; B2 inspect compression/export before increasing parallelism      |
-| Android APK build / signing                        | Reusable; Ubuntu x64 builds ARM64                     | Same run: build 22m55s, sign 20s; Gradle 20m11s, npm 1m27s, transfers 10s                        | 60m / 10m; B2 inspect Gradle cache effectiveness and resource pressure      |
-| Rebase dev                                         | Manual; Ubuntu x64                                    | Old `38070392394` at `e399ee213`: 2m16s, install 53s; predates the complete routine gate         | 45m; current full-gate timing unmeasured, retain exact-tested-tree boundary |
-| Upstream sync                                      | Schedule/manual; Ubuntu                               | `38063683920` at `585037fd8`: 3s job, 4s initial queue                                           | 5m; no measured bottleneck                                                  |
-| Linux/Windows native feasibility                   | Scoped work-branch push; Ubuntu ARM64 / Windows ARM64 | `38079931018` at `510974a2`: Linux 1m07s; Windows cancelled at 15m15s during install             | 15m; diagnostic only, Windows replaced by focused binding proof             |
-| Android ARM64 feasibility                          | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                          |
-| Windows ARM64 binding feasibility                  | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                   |
-| Deep checks                                        | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                           | 15m per lane; reduce repeated setup subprocesses, preserve journeys         |
-| Candidate native runtime                           | Manual; macOS ARM64 / Ubuntu ARM64 Android container  | Mac `38105941202` 4m58s; Android `38107787799` 5m37s                                             | 30m jobs; bounded install/upgrade journeys, immutable producer reuse        |
-| Linux package evaluation preflight                 | Manual; native Linux                                  | x64 `434bb96d4` 31s; substitutable Node avoids bootstrap                                         | 10m job / 8m evaluation; no product realization                             |
-| Linux Nix runtime                                  | Manual; native Linux x64/ARM64                        | x64 `38109113388` 21m46s; ARM `38110354030` 16m55s                                               | 45m job / 35m build; source filtering avoids test-only invalidation         |
-| Linux format prerequisite                          | Manual; native Linux x64/ARM64                        | x64 `c790a0156` 6m04s; ARM `6be877f3a` 3m21s; different hosts/settings                           | 20m job; gzip parity, no extra benchmark-only runs                          |
-| Linux product formats                              | Manual; native Linux x64/ARM64                        | x64 `38126449316` 15m27s failed at RPM setup; 12m25s before runtime                              | 45m job / 30m build / 10m runtime; one payload per source, gzip fan-out     |
-| Windows packages                                   | Approved B4 implementation pending                    | Full ARM workspace install previously exceeded 15m; product timing unmeasured                    | Measure install phases before expensive native NSIS/STT/TTS trials          |
-| Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                  |
+| Workflow / callable lane                           | Trigger and runner                                    | Observed timing and largest cost                                                                 | Current deadline / optimization gate                                             |
+| -------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Routine CI                                         | PR/dev; Ubuntu x64, seven lanes                       | PR 4m15s / dev 4m18s; runner work 20m18s / 20m37s at `72300136d`                                 | Complete gate <5m; 2m stretch, reduce setup duplication and expensive tests      |
+| Legacy candidate coordinator                       | Manual; Ubuntu x64 with parallel Mac/Android children | `38071895947` at `d04260338`: 23m41s critical path, 37m04s runner work, initial queue 3s         | Identity 5m; cross-check 10m; replacement in D                                   |
+| macOS closure build / fresh import                 | Reusable; macos-14 ARM64                              | Same run: build/sign/export 12m24s, fresh import 1m08s; Nix build 6m, export 4m26s, transfers 9s | 90m / 20m; B2 inspect compression/export before increasing parallelism           |
+| Android APK build / signing                        | Reusable; Ubuntu x64 builds ARM64                     | Same run: build 22m55s, sign 20s; Gradle 20m11s, npm 1m27s, transfers 10s                        | 60m / 10m; B2 inspect Gradle cache effectiveness and resource pressure           |
+| Rebase dev                                         | Manual; Ubuntu x64                                    | Old `38070392394` at `e399ee213`: 2m16s, install 53s; predates the complete routine gate         | 45m; current full-gate timing unmeasured, retain exact-tested-tree boundary      |
+| Upstream sync                                      | Schedule/manual; Ubuntu                               | `38063683920` at `585037fd8`: 3s job, 4s initial queue                                           | 5m; no measured bottleneck                                                       |
+| Linux/Windows native feasibility                   | Scoped work-branch push; Ubuntu ARM64 / Windows ARM64 | `38079931018` at `510974a2`: Linux 1m07s; Windows cancelled at 15m15s during install             | 15m; diagnostic only, Windows replaced by focused binding proof                  |
+| Android ARM64 feasibility                          | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                               |
+| Windows ARM64 binding feasibility                  | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                        |
+| Deep checks                                        | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                           | 15m per lane; reduce repeated setup subprocesses, preserve journeys              |
+| Candidate native runtime                           | Manual; macOS ARM64 / Ubuntu ARM64 Android container  | Mac `38105941202` 4m58s; Android `38107787799` 5m37s                                             | 30m jobs; bounded install/upgrade journeys, immutable producer reuse             |
+| Linux package evaluation preflight                 | Manual; native Linux                                  | x64 `434bb96d4` 31s; substitutable Node avoids bootstrap                                         | 10m job / 8m evaluation; no product realization                                  |
+| Linux Nix runtime                                  | Manual; native Linux x64/ARM64                        | x64 `38109113388` 21m46s; ARM `38110354030` 16m55s                                               | 45m job / 35m build; source filtering avoids test-only invalidation              |
+| Linux format prerequisite                          | Manual; native Linux x64/ARM64                        | x64 `c790a0156` 6m04s; ARM `6be877f3a` 3m21s; different hosts/settings                           | 20m job; gzip parity, no extra benchmark-only runs                               |
+| Linux product formats                              | Manual; native Linux x64/ARM64                        | x64 `38133587458`: native 17m16s, build/fan-out 11m56s, runtime 4m52s; additive cache proof 31s  | 45m job / 30m build / 10m runtime; verified predecessor cache avoids ~5m rebuild |
+| Windows package prerequisite                       | Manual; native Windows ARM64 first                    | Implemented; hosted timing and ownership/installer proof pending                                 | 50m job; install 30m, ownership 3m, packaging/runtime 5m each, cleanup 2m        |
+| Windows packages                                   | Approved B4 implementation pending                    | Full ARM workspace install previously exceeded 15m; product timing unmeasured                    | Measure install phases before expensive native NSIS/STT/TTS trials               |
+| Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                       |
 
 All current workflow files and callable lanes are represented. GitHub also lists
 deleted Nix/cache probes as active historical workflow records; they have no
@@ -647,8 +652,7 @@ with no remaining owned processes or mounts; Fedora exited zero without OOM.
 This closes the small-fixture check; full product lifecycle verification remains
 pending. Routine PR CI passed in 4m40s, within the unchanged budget.
 
-The predecessor-cache implementation is reviewed for a bounded hosted trial;
-cache and full product acceptance still require that trial.
+The predecessor-cache implementation passed its bounded hosted trial.
 The previous full x64 run spent 188s building the fixed predecessor and 111.27s
 packaging its three archives, totaling 516,275,604 bytes. Reusing these verified
 archives can avoid that work without caching the changing candidate. Exact keys
@@ -657,16 +661,45 @@ and producer scripts; restored archives and identity receipts are checked before
 use. Each entry is capped at 650 MiB including receipts. New saves require current
 repository usage plus that reservation to fit within 8 GB, leaving headroom under
 the 10 GB ceiling; concurrent writers can race, so this is an advisory save guard.
-No unrelated cache is evicted. The next required x64 product run will include one
-additional five-minute fresh-runner transfer proof, requiring the producer's exact
-key, an actual hit and the real validation/copy entry point. Save/restore costs
-will be reported separately from avoided build time; cache acceptance remains
-pending if saving is skipped or the transfer proof does not pass.
+No unrelated cache is evicted. The required x64 product run included one
+additional fresh-runner transfer proof with a five-minute cap, requiring the
+producer's exact key, an actual hit and the real validation/copy entry point. Save/restore costs
+are reported separately from avoided build time below.
 Hashing the entire producer workflow/scripts and hosted image version favors
 safe invalidation over maximum reuse: orchestration edits and image rollouts can
 cause misses. A successful save-action outcome alone does not prove persistence;
 only the fresh restore establishes that. The fixed predecessor's size cap fails
 closed if exceeded rather than silently bypassing the cache contract.
+
+The [full x64 lifecycle and transfer trial](https://github.com/iExalt/paseo/actions/runs/38133587458)
+at `db2316365` passed: all three formats preserved their workspace identity and
+Pure black preference, candidate plugin/CLI/PTY checks passed, and all six app
+sessions closed normally with empty owned process/mount sets. RPM's complete
+install root and launcher were absent after removal; host state cleanup completed.
+Author inspection of retained workspace/theme screenshots confirmed the UI
+evidence. Native work took 17m16s, including 11m56s build/fan-out and 4m52s runtime.
+The additional fresh-runner cache proof took 31s. Saving took 4s, restoring 3s,
+and archive validation/copy 3.172s; the same run spent 188s plus 111.542s producing
+the predecessor. This establishes useful transfer reuse, not an observed complete
+warm product-run duration. The entry including receipts is 516,279,012 bytes;
+repository usage is four entries totaling 4,624,462,030 bytes. Routine PR/dev
+verification passed in 4m50s/4m36s (PR summed job time 21m08s). The app suite is
+unchanged and took 149.31s versus the prior 142.68s observation; there is no
+confirmed source regression or baseline reset. The reviewer accepted the x64
+lifecycle and cache-transfer evidence. The same revision's
+[full ARM trial](https://github.com/iExalt/paseo/actions/runs/38134751874) passed
+in 14m47s, including 10m01s build/fan-out and 4m27s runtime. All three formats
+preserved their workspace/theme, passed candidate CLI/PTY checks, closed normally
+and completed installation/state cleanup. Six session monitors reported normal
+exit and empty owned process/mount sets. The ARM cache entry is 525,596,032 bytes;
+repository usage is five entries totaling 5,148,560,329 bytes. ARM cache creation
+is proven; a fresh ARM restore is not separately claimed.
+
+The reviewer accepted B3 across these format proofs and the earlier `b74c9822e`
+Nix x64/ARM profile-upgrade proofs. Linux Nix packaging bypasses the later
+electron-builder RPM hook, so that hook does not invalidate its contributor
+evidence. This is closure across named contributors, not a claim that every
+package was rebuilt and tested at one universal current SHA.
 
 Approved execution checklist:
 
@@ -675,11 +708,28 @@ Approved execution checklist:
       depends on B2's same-SHA rebuilt APK.
 - [x] B2: preserve Mac/Android candidate identities and signatures; prove fresh
       import/install and meaningful disposable-state upgrades.
-- [ ] B3: verify Linux x64/ARM64 Nix, DEB, RPM and AppImage journeys.
+- [x] B3: verify Linux x64/ARM64 Nix, DEB, RPM and AppImage journeys.
 - [ ] B4: verify Windows x64/ARM64 NSIS, speech and PTY lifecycle, then G2/G3 integration.
 - [ ] Stretch: inventory every workflow/lane's timing and optimize avoidable work
       using existing receipts and required runs; preserve the routine baseline,
       account for parallel runner work, and retain unmeasured future gates.
+
+B4's first increment is implemented locally and awaiting review/native proof: one native
+Windows ARM64 prerequisite job, capped at 50 minutes, measures the complete locked
+install with normal required lifecycle scripts (30-minute cap), then reuses that
+install for ownership proofs (3 minutes), tiny NSIS packaging (5 minutes), and
+installation/renderer/uninstall checks (5 minutes), with bounded cleanup. The
+monitor creates its primary process suspended and assigns it to an anonymous,
+non-breakaway Job Object before execution. Only the monitor owns the
+noninheritable kill-on-close Job handle. Normal completion requires a zero exit
+and zero active processes; failure cleanup and forced monitor death must also
+empty the owned process set. The independent death verifier holds process
+handles, never another Job handle. Silent current-user NSIS installation uses an
+owned path containing spaces, verifies registry scope and absence of auto-launch,
+then starts the installed EXE directly inside the Job. Node-only ownership tests
+run before the install, so a broken monitor cannot launch a long install. Native
+Electron nested-job compatibility is a required result. Full product, speech and
+manual-upgrade proofs follow this prerequisite; no Windows dispatch has begun.
 
 B1's first [browser trial](https://github.com/iExalt/paseo/actions/runs/38094860337)
 at `58a934af2` passed in 2m46s, including installation and evidence upload. One
@@ -750,6 +800,13 @@ including Mac build/export 11m44s, fresh import 1m10s and Android build 22m46s.
 The reviewer accepted matching source/version, signatures and artifact pins.
 Gradle still executed all 1,323 tasks in 20m16s despite a cache hit; this is not
 evidence of useful compiled-output caching. Runtime/upgrade acceptance remains open.
+
+The later required producer `38104597837` also exposes a memory bottleneck during
+Hermes compilation: its sample at 02:35:37 UTC on 2026-10-11 (22:35:37 EDT on
+2026-10-10) recorded `hermesc` RSS 14,081,668 KiB, only 505,532,416 bytes of available
+RAM and 6,093,950,976 bytes of swap in use. This is not evidence that increasing
+Gradle workers would help. Retain the sample for the next required Android build;
+no extra benchmark, concurrency increase or compiled-cache benefit is claimed.
 
 The shared candidate transport helper is locally verified and reviewer-accepted:
 it checks explicit producer attempt/source, pinned artifact IDs and ZIP digests,
