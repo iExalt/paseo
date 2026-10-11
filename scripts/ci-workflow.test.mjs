@@ -78,7 +78,49 @@ test("only fork-owned workflows are installed", () => {
     "upstream-sync.yml",
     "windows-arm64-feasibility.yml",
     "windows-package-preflight.yml",
+    "windows-product-runtime.yml",
   ]);
+});
+
+test("Windows product trials retain trusted native runners, bounded cleanup and evidence-only storage", () => {
+  const workflow = load(
+    readFileSync(new URL(".github/workflows/windows-product-runtime.yml", repoRoot), "utf8"),
+  );
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+  assert.deepEqual(workflow.permissions, { contents: "read" });
+  const job = workflow.jobs.native;
+  for (const guard of [
+    "github.repository == 'iExalt/paseo'",
+    "!github.event.repository.private",
+    "github.ref == 'refs/heads/dev'",
+    "github.actor == 'iExalt'",
+  ])
+    assert.ok(job.if.includes(guard));
+  assert.equal(
+    job["runs-on"],
+    "${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}",
+  );
+  assert.equal(job["timeout-minutes"], 150);
+  const model = job.steps.find((step) => step.run?.endsWith("windows-product-runtime.ps1 models"));
+  assert.equal(model["timeout-minutes"], 10);
+  const runtime = job.steps.find((step) =>
+    step.run?.endsWith("windows-product-runtime.ps1 runtime"),
+  );
+  assert.equal(runtime["timeout-minutes"], 17);
+  const cleanup = job.steps.find((step) =>
+    step.run?.includes("windows-product-runtime.ps1 cleanup"),
+  );
+  assert.equal(cleanup.if, "always()");
+  assert.equal(cleanup["timeout-minutes"], 3);
+  assert.equal(
+    job.steps.some((step) => step.uses?.startsWith("actions/cache")),
+    false,
+  );
+  const uploads = job.steps.filter((step) => step.uses?.startsWith("actions/upload-artifact"));
+  assert.equal(uploads.length, 1);
+  assert.ok(uploads[0].with.path.endsWith("/evidence"));
+  assert.equal(uploads[0].with["retention-days"], 1);
+  assert.equal(uploads[0].if, "always() && steps.evidence.outcome == 'success'");
 });
 
 test("Linux prerequisite canary evaluates without realizing packages", () => {
