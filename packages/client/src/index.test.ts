@@ -1531,6 +1531,7 @@ test("config actions delegate to existing daemon config RPCs", async () => {
   await expect(getPromise).resolves.toEqual({
     requestId: "config-get-request",
     config: {
+      agentTools: { enabled: true },
       mcp: { injectIntoAgents: true },
       providers: {},
       browserTools: { enabled: false },
@@ -1582,6 +1583,7 @@ test("config actions delegate to existing daemon config RPCs", async () => {
   await expect(patchPromise).resolves.toEqual({
     requestId: "config-patch-request",
     config: {
+      agentTools: { enabled: true },
       mcp: { injectIntoAgents: true },
       providers: {
         codex: {
