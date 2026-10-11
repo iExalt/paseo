@@ -6,12 +6,29 @@ import { setTimeout as delay } from "node:timers/promises";
 import { elevatedOwnedProcesses } from "./deep-cleanup.mjs";
 import { removeOwnedTree } from "../../packages/desktop/e2e/remove-owned-tree.mjs";
 import { verifyCompleteMonitor } from "./linux-format-processes.mjs";
+import { stageTemporaryDirectory, validateTemporaryRoot } from "./linux-product-temp.mjs";
 
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 const root = `${process.env.RUNNER_TEMP}/paseo-products-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`;
 assert.equal(realpathSync(root), root);
 assert.equal(readFileSync(join(root, "owned"), "utf8").trim(), process.env.GITHUB_SHA);
+const evidence = join(root, "evidence");
+const temporaryReceipt = join(root, "temporary-root.json");
+const temporary = existsSync(temporaryReceipt)
+  ? JSON.parse(readFileSync(temporaryReceipt))
+  : undefined;
+let temporaryRemoved = false;
+if (temporary) {
+  if (existsSync(temporary.path)) validateTemporaryRoot(temporary);
+  else {
+    // The workflow repeats cleanup after the runtime's EXIT trap.
+    const completed = JSON.parse(readFileSync(join(evidence, "state-cleanup.json")));
+    assert.equal(completed.complete, true);
+    assert.deepEqual(completed.removedTemporaryRoot, temporary);
+    temporaryRemoved = true;
+  }
+}
 
 function identity(pid) {
   try {
@@ -45,16 +62,24 @@ function mounts() {
     .trim()
     .split("\n")
     .map((line) => ({ target: line.split(" ")[4], type: line.split(" - ")[1].split(" ")[0] }))
-    .filter((mount) => mount.target.startsWith(`${root}/`));
+    .filter(
+      (mount) =>
+        mount.target.startsWith(`${root}/`) ||
+        (temporary &&
+          (mount.target === temporary.path || mount.target.startsWith(`${temporary.path}/`))),
+    );
 }
-const evidence = join(root, "evidence");
 const starts = readdirSync(evidence).filter((name) =>
   /^(appimage|deb)-(previous|candidate)-started\.json$/.test(name),
 );
 for (const name of starts) {
   const receipt = JSON.parse(readFileSync(join(evidence, name)));
   assert.equal(receipt.originalUid, process.getuid());
-  assert.ok(receipt.tmpdir.startsWith(`${evidence}/mounts-`));
+  assert.ok(temporary);
+  assert.equal(
+    receipt.tmpdir,
+    stageTemporaryDirectory(temporary, name.replace("-started.json", "")),
+  );
   assert.ok(Number.isSafeInteger(receipt.monitor.pid) && receipt.monitor.pid > 0);
   assert.match(receipt.monitor.start, /^\d+$/);
   // A timeout may have killed the monitor before its own finally block ran.
@@ -77,6 +102,10 @@ for (const name of starts) {
     readFileSync(join(evidence, name.replace("-started.json", "-cleanup.json"))),
   );
   verifyCompleteMonitor(started, completed);
+}
+if (temporary && !temporaryRemoved) {
+  validateTemporaryRoot(temporary);
+  await removeOwnedTree(temporary.path);
 }
 for (const name of ["state", "portable"]) {
   const directory = join(root, name);
@@ -107,5 +136,6 @@ writeFileSync(
     nativeSessions: starts.length,
     mounts: mounts(),
     removed: ["state", "portable", "rpm-state"],
+    removedTemporaryRoot: temporary,
   }),
 );
