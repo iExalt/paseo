@@ -612,6 +612,28 @@ required before another full product trial; the predecessor must retain its
 original removal behavior so the regression is not hidden. Full x64/ARM product
 acceptance remains open.
 
+Repair `a1fcb175b` installs the shared rendered package hook in the candidate
+payload, hashes it in the manifest and invokes it from RPM `%posttrans`, after
+the historical remover. New RPM removers skip upgrades and retain final erase
+behavior. The [x64 installer trial](https://github.com/iExalt/paseo/actions/runs/38130136220)
+passed in 3m39s: scriptlet inspection confirmed the legacy unguarded remover,
+then an actual 0.9.0→1.0.0 fixture upgrade preserved the launcher and opened the
+renderer. Final uninstall rejected dangling links as well as existing targets.
+All four process monitors completed normally with empty owned sets, and Fedora
+exited zero without OOM. The reviewer accepted this prerequisite; PR/dev routine
+CI passed in 4m32s/4m21s. Full product x64 and ARM acceptance remains pending.
+
+The [full x64 trial](https://github.com/iExalt/paseo/actions/runs/38130433226)
+at that repair passed all three package upgrade journeys, including RPM's same
+workspace/Pure black preference, candidate CLI/PTY checks and normal shutdown.
+The reviewer accepted the RPM runtime contributor; its two monitors completed
+with no owned processes or mounts. The run nevertheless failed after RPM removal
+reported the package absent: one of the install-root/link absence assertions
+failed, and the retained log does not identify which residual path remained.
+Host cleanup completed. A strict tiny-fixture uninstall check with bounded
+residual and package-ownership diagnostics precedes another full product build;
+neither x64 lifecycle nor the Linux matrix is accepted yet.
+
 Approved execution checklist:
 
 - [x] B1: bounded deterministic browser journey and broken-fixture proof, then
