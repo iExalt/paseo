@@ -122,15 +122,13 @@ export function prepareArmBinding(repository, directory) {
   const manifest = verifyStagedBinding(directory);
   const wrapper = join(repository, "node_modules/sherpa-onnx-node");
   assertWrapperTarget(wrapper);
-  cpSync(join(directory, "sherpa-onnx.node"), join(wrapper, "sherpa-onnx.node"), {
-    errorOnExist: true,
-    force: false,
-  });
+  for (const file of manifest.files)
+    cpSync(join(directory, file.name), join(wrapper, file.name), {
+      errorOnExist: true,
+      force: false,
+    });
   return {
-    asarUnpack: ["node_modules/sherpa-onnx-node/sherpa-onnx.node"],
-    extraFiles: manifest.files
-      .filter((file) => file.name.endsWith(".dll"))
-      .map((file) => ({ from: join(directory, file.name), to: file.name })),
+    asarUnpack: manifest.files.map((file) => `node_modules/sherpa-onnx-node/${file.name}`),
   };
 }
 
@@ -157,15 +155,18 @@ export function verifyPackagedArmBinding(repository, appDirectory, directory) {
     "node_modules/sherpa-onnx-win-arm64/sherpa-onnx.node",
   ])
     assert.equal(inventory.has(name), false, `Packaged addon shadow: ${name}`);
-  assert.equal(
-    statFile(archive, join(wrapper, "sherpa-onnx.node")).unpacked,
-    true,
-    "Physical addon unpack required",
-  );
   for (const file of manifest.files) {
-    const filename = file.name.endsWith(".node")
-      ? join(appDirectory, "resources/app.asar.unpacked", wrapper, file.name)
-      : join(appDirectory, file.name);
+    assert.equal(
+      statFile(archive, join(wrapper, file.name)).unpacked,
+      true,
+      "Physical binding unpack required",
+    );
+    assert.equal(
+      existsSync(join(appDirectory, file.name)),
+      false,
+      "No executable-root binding copy",
+    );
+    const filename = join(appDirectory, "resources/app.asar.unpacked", wrapper, file.name);
     assert.ok(lstatSync(filename).isFile() && !lstatSync(filename).isSymbolicLink());
     const bytes = readFileSync(filename);
     assert.equal(digest(bytes), file.sha256, `Packaged binding file ${file.name}`);
@@ -244,7 +245,7 @@ export async function buildArmBinding(repository, root) {
     onnxruntime: "1.28.2",
     sourceCommit,
     provenance: bindingProvenance(),
-    assembly: "Locked wrapper local-addon fallback; core DLLs beside installed Paseo.exe",
+    assembly: "Locked wrapper local-addon fallback; core DLLs beside physically unpacked addon",
     files: readdirSync(output)
       .sort()
       .map((name) => {
