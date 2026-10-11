@@ -140,7 +140,7 @@ Prefer a `@lezer/*` grammar. When a language only ships inside an editor extensi
 
 ### Desktop browser regression
 
-The desktop browser E2E launches an isolated real daemon, Metro, and Electron app. It forces workspace LRU eviction to reparent the original tab and replace its guest `WebContents`, then makes one MCP call each for tab listing, snapshot, and click against that original browser id. A final MCP wait proves the real target page received the click.
+The desktop browser E2E launches an isolated real daemon, Metro, and Electron app. It forces workspace LRU eviction to reparent the original tab and replace its guest `WebContents`, then invokes one CLI command each for tab listing, snapshot, and click against that original browser id. A final CLI browser wait proves the real target page received the click.
 
 Run it locally with the same command owned by the Ubuntu `desktop-tests` required check:
 

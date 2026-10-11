@@ -71,8 +71,7 @@ the effective provider options. Skills appear in the slash-command menu, alongsi
 
 ## Limitations in Muse 1.4.1
 
-- **Paseo MCP tools are unavailable.** Muse drops the returned tool namespace before matching
-  an MCP call. This upstream issue must be fixed in Muse before its agents can use Paseo tools.
+- **Paseo operations use the CLI.** Use the daemon-provided `PASEO_CLI` in a shell-capable session; Paseo no longer injects its own MCP server.
 - **Compaction needs a model context limit.** If your endpoint does not report one, configure
   `context_compaction.provider_context_limit_tokens` in Muse for the selected model.
 - **Usage windows appear only when Muse reports them.** An empty `usage/read` response
