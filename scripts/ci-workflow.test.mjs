@@ -63,6 +63,7 @@ test("only fork-owned workflows are installed", () => {
     .sort();
   assert.deepEqual(workflows, [
     "android-arm64-feasibility.yml",
+    "candidate-runtime.yml",
     "ci-deep.yml",
     "ci.yml",
     "fork-android-apk.yml",
@@ -73,6 +74,24 @@ test("only fork-owned workflows are installed", () => {
     "upstream-sync.yml",
     "windows-arm64-feasibility.yml",
   ]);
+});
+
+test("native candidate runtime is manual, read-only and bounded to hosted Mac verification", () => {
+  const source = readFileSync(new URL(".github/workflows/candidate-runtime.yml", repoRoot), "utf8");
+  const trigger = source.split("permissions:", 1)[0];
+  assert.match(trigger, /workflow_dispatch:/);
+  assert.doesNotMatch(trigger, /push:|pull_request:|schedule:/);
+  assert.match(source, /contents: read\s+actions: read/);
+  assert.doesNotMatch(source, /: write|secrets\./);
+  assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
+  assert.match(source, /github\.actor == 'iExalt'/);
+  assert.match(source, /runs-on: macos-14/);
+  assert.match(source, /timeout-minutes: 30/);
+  assert.match(source, /timeout-minutes: 10/);
+  assert.match(source, /install_args: node@26\.11\.0/);
+  assert.match(source, /cache: false/);
+  assert.match(source, /retention-days: 1/);
+  assert.match(source, /macos-candidate-runtime\.mjs/);
 });
 
 const forkAndroidWorkflowPath = new URL(".github/workflows/fork-android-apk.yml", repoRoot);
