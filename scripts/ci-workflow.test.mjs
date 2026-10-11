@@ -82,7 +82,7 @@ test("only fork-owned workflows are installed", () => {
   ]);
 });
 
-test("Windows product trials retain trusted native runners, bounded cleanup and evidence-only storage", () => {
+test("Windows product trials retain trusted native runners, bounded cleanup and exact predecessor caching", () => {
   const workflow = load(
     readFileSync(new URL(".github/workflows/windows-product-runtime.yml", repoRoot), "utf8"),
   );
@@ -112,9 +112,26 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   );
   assert.equal(cleanup.if, "always()");
   assert.equal(cleanup["timeout-minutes"], 3);
-  assert.equal(
-    job.steps.some((step) => step.uses?.startsWith("actions/cache")),
-    false,
+  const restore = job.steps.find((step) => step.id === "predecessor-cache");
+  assert.ok(restore.uses.startsWith("actions/cache/restore@"));
+  assert.equal(restore.with["restore-keys"], undefined);
+  const save = job.steps.find((step) => step.id === "predecessor-save");
+  assert.equal(save.if, "steps.cache-budget.outputs.save == 'true'");
+  const budget = job.steps.find((step) => step.id === "cache-budget");
+  assert.equal(budget.if, "success() && steps.predecessor-cache.outputs.cache-hit != 'true'");
+  assert.ok(job.steps.indexOf(budget) > job.steps.indexOf(cleanup));
+  for (const phase of ["install-previous", "build-previous"])
+    assert.equal(
+      job.steps.find((step) => step.run?.endsWith(`windows-product-stage.ps1 ${phase}`)).if,
+      "steps.predecessor-cache.outputs.cache-hit != 'true'",
+    );
+  for (const phase of ["install-candidate", "build-candidate"])
+    assert.equal(
+      job.steps.find((step) => step.run?.endsWith(`windows-product-stage.ps1 ${phase}`)).if,
+      undefined,
+    );
+  assert.ok(
+    workflow.jobs["cache-proof"].steps.some((step) => step.with?.["fail-on-cache-miss"] === true),
   );
   const uploads = job.steps.filter((step) => step.uses?.startsWith("actions/upload-artifact"));
   assert.equal(uploads.length, 1);
