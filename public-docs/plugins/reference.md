@@ -326,8 +326,7 @@ Provider settings are toggle/select descriptors that Paseo renders in the compos
 provider-private options under `ProviderSessionConfig.providerOptions` on `session.open`.
 This record includes configured defaults and per-agent overrides; validate and apply it in your
 provider. See [Provider options](/docs/sdk/provider-options) for configuration and merge semantics.
-Host tools arrive as MCP servers in the complete
-session config.
+Third-party MCP servers remain in the complete session config. Paseo operations use provider-native tools where supported or the CLI; Paseo does not inject its own MCP server.
 
 Paseo refreshes an agent by closing its current provider session and opening it with current
 configuration and persistence. Providers re-read external state during `session.open`.
