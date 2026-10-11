@@ -77,6 +77,8 @@ deb:
 rpm:
   compression: gzip
   afterInstall: scripts/linux-sandbox/after-install.tpl
+  afterRemove: scripts/linux-sandbox/rpm-after-remove.tpl
+  fpm: ["--rpm-posttrans", "scripts/linux-sandbox/rpm-posttrans.sh"]
 appImage:
   # Replace the desktop entry's --no-sandbox default. AppRun still probes user
   # namespaces and may select its own --no-sandbox fallback at launch.
