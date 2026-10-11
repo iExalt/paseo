@@ -89,6 +89,7 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
   const job = workflow.jobs.native;
+  assert.deepEqual(job.permissions, { contents: "read", actions: "read" });
   for (const guard of [
     "github.repository == 'iExalt/paseo'",
     "!github.event.repository.private",
