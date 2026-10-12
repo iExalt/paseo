@@ -67,8 +67,8 @@ receives the signing key. Retry requires historical policy bytes to match both
 the signed digest and the currently trusted policy, so a policy change requires
 explicit reauthorization rather than silently changing candidate identity.
 Its local entrypoint fixture covers plan, issuance and retry without old logs;
-hosted execution remains unverified. No manifest signing secret has been
-provisioned or used by Actions.
+hosted issuance remains unverified. The existing pinned manifest key has been
+provisioned as an Actions secret; the first canary stopped before signing.
 
 The reviewer-accepted transport-only REST rehearsal at `4e4122904` passed in
 26.89s: draft `410728638` recovered a simulated lost upload response, reused
@@ -92,8 +92,9 @@ routine run `38267651739` passed in 4m34s (21m30s summed); same-SHA dev run
 `38270034555` in 4m42s (22m57s summed), within the unchanged five-minute budget.
 This does not close the complete candidate matrix.
 
-D1c coordinator source is reviewer-accepted through `9e4b5e5fb` and awaits
-publication/routine integration. The root connects seven routine lanes, three deep
+D1c coordinator source through `5cf5d2043` is reviewed and integrated. Its
+first production canary exposed GitHub event-identity assumptions before issuance;
+the repair and recovery rehearsal remain active. The root connects seven routine lanes, three deep
 journeys, all 14 native cells, eight trusted transfers and a final aggregate.
 Workers authenticate descriptor/source/attempt and validate their current API job
 name before costly execution. Transfers require completed signing/import/runtime/
@@ -203,6 +204,24 @@ hosted pass contains no observed request retry and does not establish a controll
 speedup. Temporary phase timing is removed; the same install-only bounds cover
 Linux deep and exact-candidate verification. Final changed-source PR/dev gates
 remain required before issuance; the stable performance baseline is unchanged.
+
+Final-source PR `38285727192` and same-SHA dev `38286302261` both passed in
+4m42s at `5cf5d2043`; exact nonforce integration closed PR #73. Installed-dependency
+caching is deferred at the user's request. Authentic bot PR #74 passed routine
+`38287154658` and all three deep lanes in `38287155192`. Conditional rebase merge
+`376090618` retained sole parent `5cf5d2043` and tested tree
+`3712c173aeb208518d4e2b856b07f0469cf41517`.
+
+Native-disabled canary `38287902994` failed in read-only planning: GitHub emptied
+the earlier runs' PR associations after merge. Its API run head remains PR head
+`044171222`, while the trusted checkout is merge `376090618`. No draft or
+descriptor was issued; public release/tag inventory is unchanged. The repair
+uses immutable checkout receipts for merged-PR association, separates API head
+from controller identity through artifact validation, and permits owner-only
+initial issuance by authenticated merged PR number. This input is mutually
+exclusive with draft-ID retry; only initial issuance receives the signing key.
+Both plan and issue independently verify merged authority. New PR/dev checks and
+native-disabled recovery against PR #74 remain required before native enablement.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
