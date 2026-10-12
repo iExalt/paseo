@@ -205,8 +205,12 @@ explicitly required before publication, even if absent from routine CI.
       deep and package lanes to recognized merged release PRs; remove old redundant
       trigger. Await full matrix and metadata, bind all results to SHA/identity,
       handle retries/concurrency and prevent out-of-order feed regression.
-      Replace Phase A's manual-only legacy trigger with candidate coordination;
-      the temporary test-path exclusions were removed during Phase A.
+  - Prerequisite: resolve the inherited upstream `v0.1.1` collision with one
+    fork tag contract shared by release-please, V2 manifests, discovery and
+    preflight. Preserve historical tags and prove inherited-tag rejection before
+    coordinator/signing/release trials; semver ordering remains unchanged.
+    Replace Phase A's manual-only legacy trigger with candidate coordination;
+    the temporary test-path exclusions were removed during Phase A.
   - Needs: 3, 4, 5, 6, 7, 8.
   - Proof: exact SHA flows end-to-end; ordinary dev pushes never publish or run
     release packaging inadvertently; partial candidates cannot pass aggregate;
