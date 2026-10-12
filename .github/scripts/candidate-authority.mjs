@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { assertReleasePr } from "./release-pr.mjs";
 import { verifyMergedPrChecks } from "./release-pr-checks.mjs";
-import { validateForkConfig } from "../../scripts/fork-release-config.mjs";
+import { inspectForkRelease, validateForkConfig } from "../../scripts/fork-release-config.mjs";
 import {
   descriptorFromProof,
   sourceGatePolicy,
@@ -9,6 +9,16 @@ import {
 } from "./candidate-descriptor.mjs";
 
 const repo = "/repos/iExalt/paseo";
+async function sourceVersion(sourceSha, read) {
+  const { config } = await inspectForkRelease((file) => read(sourceSha, file));
+  const manifest = JSON.parse(await read(sourceSha, ".release-please-manifest.json"));
+  assert.deepEqual(
+    manifest,
+    { ".": config.version },
+    "Merged version proposal manifest differs from source",
+  );
+  return config;
+}
 export function candidateRoute(event, env) {
   assert.equal(event.repository.id, 1404390841);
   assert.equal(event.repository.full_name, "iExalt/paseo");
@@ -34,9 +44,7 @@ export function candidateRoute(event, env) {
 
 export async function newCandidate(route, controllerSha, identity, request, read) {
   const proof = await verifyMergedPrChecks(route.number, route.sourceSha, identity, request);
-  const fork = validateForkConfig(
-    JSON.parse(await read(route.sourceSha, ".github/fork-release.json")),
-  );
+  const fork = await sourceVersion(route.sourceSha, read);
   const policy = await sourceGatePolicy(controllerSha, (file) => read(controllerSha, file));
   return descriptorFromProof(proof, fork, policy);
 }
@@ -56,9 +64,7 @@ export async function currentCandidate(descriptor, controllerSha, identity, requ
     trustedPolicy.sha256,
     "Policy changed; explicit candidate reauthorization required",
   );
-  const fork = validateForkConfig(
-    JSON.parse(await read(descriptor.sourceSha, ".github/fork-release.json")),
-  );
+  const fork = await sourceVersion(descriptor.sourceSha, read);
   assert.equal(fork.version, descriptor.version);
   assert.equal(fork.upstreamBase, descriptor.upstreamBase);
   const checkPr = async () => {
