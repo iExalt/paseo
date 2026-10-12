@@ -178,8 +178,7 @@ export interface DesktopNixUpdateBridge {
 
 export interface DesktopNixReleaseSummary {
   releaseTag: string;
-  packageVersion: string;
-  releaseSequence: number;
+  version: string;
   outputPath: string;
 }
 
@@ -189,7 +188,7 @@ export interface DesktopNixUpdateResult {
   latest?: DesktopNixReleaseSummary;
   active: DesktopNixReleaseSummary | null;
   staged?: DesktopNixReleaseSummary | null;
-  highWaterSequence: number;
+  highWaterVersion: string | null;
   canStage?: boolean;
   message?: string;
   running: { version: string; outputPath: string };

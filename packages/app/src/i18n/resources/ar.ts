@@ -2497,9 +2497,9 @@ export const ar: TranslationResources = {
       nixUpdates: {
         label: "تحديثات Nix المُدارة",
         running: "التطبيق قيد التشغيل: {{version}}",
-        active: "إصدار الملف الشخصي: {{version}} (التسلسل {{sequence}})",
-        staged: "الإصدار المُجهز: {{version}} (التسلسل {{sequence}})",
-        latest: "أحدث إصدار موقّع: {{version}} (التسلسل {{sequence}})",
+        active: "إصدار الملف الشخصي: {{version}}",
+        staged: "الإصدار المُجهز: {{version}}",
+        latest: "أحدث إصدار موقّع: {{version}}",
         ready: "تحقق من وجود تحديث موقّع عندما تكون مستعدًا.",
         invalidMarker: "تعذر التحقق من تثبيت Nix هذا.",
         restartRequired: "أعد تشغيل Paseo يدويًا لاستخدام إصدار الملف الشخصي النشط.",

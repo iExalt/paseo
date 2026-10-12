@@ -45,7 +45,7 @@ describe("Nix updater command bridge", () => {
         ok: true,
         action: "status",
         active: null,
-        highWaterSequence: 0,
+        highWaterVersion: null,
         message: `Unrecognized profile /nix/store/${"a".repeat(32)}-paseo-desktop-0.11.0`,
       }),
     );
@@ -75,7 +75,7 @@ describe("Nix updater command bridge", () => {
 
     const resultPromise = run("check");
     child.stdout.end(
-      JSON.stringify({ ok: true, action: "stage", active: null, highWaterSequence: 0 }),
+      JSON.stringify({ ok: true, action: "stage", active: null, highWaterVersion: null }),
     );
     child.stderr.end();
     child.emit("close", 0);
@@ -97,5 +97,25 @@ describe("Nix updater command bridge", () => {
     child.emit("close", 1);
 
     await expect(resultPromise).rejects.toThrow("No update is available.");
+  });
+
+  it("rejects legacy sequence results and malformed semver before exposing updater state", async () => {
+    for (const payload of [
+      { highWaterSequence: 200008 },
+      { highWaterVersion: "0.1.0-beta.1" },
+      { highWaterVersion: "0.1.0", active: { version: "0.1.0", releaseTag: "v0.1.1", outputPath } },
+    ]) {
+      const child = fakeChild();
+      const run = createNixUpdaterCommandRunner({
+        installation,
+        runningVersion: "0.1.0",
+        spawnProcess: vi.fn(() => child) as never,
+      });
+      const result = run("status");
+      child.stdout.end(JSON.stringify({ ok: true, action: "status", active: null, ...payload }));
+      child.stderr.end();
+      child.emit("close", 0);
+      await expect(result).rejects.toThrow(/invalid/);
+    }
   });
 });
