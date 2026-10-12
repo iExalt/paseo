@@ -92,7 +92,7 @@ routine run `38267651739` passed in 4m34s (21m30s summed); same-SHA dev run
 `38270034555` in 4m42s (22m57s summed), within the unchanged five-minute budget.
 This does not close the complete candidate matrix.
 
-D1c coordinator source is reviewer-accepted through `f264f064d` and awaits
+D1c coordinator source is reviewer-accepted through `9e4b5e5fb` and awaits
 publication/routine integration. The root connects seven routine lanes, three deep
 journeys, all 14 native cells, eight trusted transfers and a final aggregate.
 Workers authenticate descriptor/source/attempt and validate their current API job
@@ -177,6 +177,15 @@ download evidence, not a cache hit. Shared setup uses this route for Ubuntu x64
 routine/deep CI and candidate controller/verification/transfer jobs. No repository
 cache allocation is added; the existing six caches occupy 5,306,868,709 bytes.
 The temporary probe mode is removed. Final-source PR/dev measurements remain open.
+
+At `9e4b5e5fb`, PR run `38283121071` confirmed 10–13s runtime setup across all
+seven lanes, but server-2 hit the five-minute deadline: dependency installation
+took 190s, verification 88s, and the job ended cancelled at 303s despite passing
+all test steps. Other installs took 63–113s. Required aggregation correctly failed;
+this is not an accepted run. Existing logs cannot separate download, extraction
+and dependency-script delay. Temporary npm phase timing on the next required run
+preserves the lock, normal scripts, tests, caches, concurrency and deadlines.
+Integration and candidate issuance remain gated on final-source CI success.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
