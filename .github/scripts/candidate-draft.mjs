@@ -32,7 +32,7 @@ export function draftBody(descriptor, state = "active", activeAttempt = null) {
     activeAttempt,
   });
 }
-export function validateDraft(release, descriptor, active = true) {
+export function validateDraft(release, descriptor, active = true, inventory = true) {
   validateDescriptor(descriptor);
   positive(release.id);
   assert.equal(release.draft, true, "Candidate storage is no longer a draft");
@@ -43,6 +43,7 @@ export function validateDraft(release, descriptor, active = true) {
   const body = JSON.parse(release.body);
   assert.equal(release.body, draftBody(descriptor, body.state, body.activeAttempt));
   if (active) assert.equal(body.state, "active", "Candidate has stopped");
+  if (!inventory) return release;
   assert.ok(Array.isArray(release.assets));
   const names = new Set();
   for (const asset of release.assets) {
@@ -56,9 +57,13 @@ export function validateDraft(release, descriptor, active = true) {
 // Adapter contract: list() returns every release (including drafts); get/ref/read
 // are fresh reads. All writes run under the coordinator's global concurrency lock.
 export async function eligibleDraft(api, descriptor, existingId) {
-  assert.equal(await api.ref(descriptor.releaseTag), null, "Final tag already exists");
-  assert.equal(await api.ref(draftTag(descriptor)), null, "Transport tag already exists");
-  const releases = await api.list();
+  let releases;
+  if (api.lifecycle) releases = await api.lifecycle(descriptor);
+  else {
+    assert.equal(await api.ref(descriptor.releaseTag), null, "Final tag already exists");
+    assert.equal(await api.ref(draftTag(descriptor)), null, "Transport tag already exists");
+    releases = await api.list();
+  }
   let selected;
   for (const release of releases) {
     const version = forkVersionFromTag(release.tag_name);
@@ -70,12 +75,12 @@ export async function eligibleDraft(api, descriptor, existingId) {
     }
     if (release.tag_name === draftTag(descriptor)) {
       assert.equal(selected, undefined, "Duplicate candidate draft");
-      selected = validateDraft(release, descriptor);
+      selected = validateDraft(release, descriptor, true, false);
     } else if (release.tag_name?.startsWith(`paseo-candidate-v${descriptor.version}-`)) {
       // Replacement authority requires a verifiable stopped predecessor, not a
       // mutable body claiming it stopped or an arbitrary similarly named draft.
       const prior = await loadDescriptor(api, release.id);
-      validateDraft(release, prior, false);
+      validateDraft(release, prior, false, false);
       assert.equal(
         JSON.parse(release.body).state,
         "stopped",
@@ -85,7 +90,7 @@ export async function eligibleDraft(api, descriptor, existingId) {
   }
   if (existingId !== undefined) {
     assert.equal(selected?.id, existingId, "Candidate draft identity changed");
-    return validateDraft(await api.get(existingId), descriptor);
+    return selected;
   }
   return selected;
 }
@@ -105,7 +110,14 @@ export async function loadDescriptor(api, releaseId) {
   return descriptor;
 }
 
-async function immutablePayload(api, descriptor, id, name, payload, guard = async () => {}) {
+async function immutablePayload(
+  api,
+  descriptor,
+  id,
+  name,
+  payload,
+  guard = () => eligibleDraft(api, descriptor, id),
+) {
   const check = async (asset) => {
     assert.equal(asset.state, "uploaded");
     assert.equal(asset.size, payload.bytes);
@@ -114,7 +126,7 @@ async function immutablePayload(api, descriptor, id, name, payload, guard = asyn
     return asset;
   };
   await guard();
-  const release = await eligibleDraft(api, descriptor, id);
+  const release = validateDraft(await api.get(id), descriptor);
   const existing = release.assets.find((asset) => asset.name === name);
   if (existing) return check(existing);
   try {
@@ -122,12 +134,12 @@ async function immutablePayload(api, descriptor, id, name, payload, guard = asyn
   } catch (error) {
     // A lost response is not permission to overwrite. Reconcile the exact name
     // and bytes before deciding whether the interrupted operation succeeded.
-    const reconciled = await eligibleDraft(api, descriptor, id);
+    const reconciled = validateDraft(await api.get(id), descriptor);
     const asset = reconciled.assets.find((item) => item.name === name);
     if (!asset) throw error;
     return check(asset);
   }
-  const completed = await eligibleDraft(api, descriptor, id);
+  const completed = validateDraft(await api.get(id), descriptor);
   const asset = completed.assets.find((item) => item.name === name);
   assert.ok(asset, "Uploaded asset is absent");
   return check(asset);
@@ -185,29 +197,46 @@ export function attemptAssetName(runId, attempt, name) {
   assert.match(name, /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,179}$/);
   return `run-${runId}-attempt-${attempt}-${name}`;
 }
-export async function uploadAttemptBytes(api, descriptor, id, runId, attempt, name, bytes) {
+// Immutable authority may be retained only for this authenticated invocation.
+// Every individual write still performs fresh lifecycle checks before and after
+// transfer, and uses a complete paginated inventory for immutable reconciliation.
+export async function attemptWriter(api, descriptor, id, runId, attempt) {
   assert.deepEqual(await loadDescriptor(api, id), descriptor);
-  return immutableBytes(api, descriptor, id, attemptAssetName(runId, attempt, name), bytes, () =>
-    requireAttempt(api, descriptor, id, runId, attempt),
-  );
-}
-
-export async function uploadAttemptFile(api, descriptor, id, runId, attempt, name, file, expected) {
-  fileIdentity(expected);
-  assert.deepEqual(await loadDescriptor(api, id), descriptor);
-  const assetName = attemptAssetName(runId, attempt, name);
-  return immutablePayload(
-    api,
-    descriptor,
-    id,
-    assetName,
-    {
-      bytes: expected.bytes,
-      upload: () => api.uploadFile(id, assetName, file, expected),
-      verify: (asset) => api.verifyFile(asset, expected),
+  const guard = () => requireAttempt(api, descriptor, id, runId, attempt);
+  return {
+    bytes(name, bytes) {
+      return immutableBytes(
+        api,
+        descriptor,
+        id,
+        attemptAssetName(runId, attempt, name),
+        bytes,
+        guard,
+      );
     },
-    () => requireAttempt(api, descriptor, id, runId, attempt),
-  );
+    file(name, file, expected) {
+      fileIdentity(expected);
+      const assetName = attemptAssetName(runId, attempt, name);
+      return immutablePayload(
+        api,
+        descriptor,
+        id,
+        assetName,
+        {
+          bytes: expected.bytes,
+          upload: () => api.uploadFile(id, assetName, file, expected),
+          verify: (asset) => api.verifyFile(asset, expected),
+        },
+        guard,
+      );
+    },
+  };
+}
+export async function uploadAttemptBytes(api, descriptor, id, runId, attempt, name, bytes) {
+  return (await attemptWriter(api, descriptor, id, runId, attempt)).bytes(name, bytes);
+}
+export async function uploadAttemptFile(api, descriptor, id, runId, attempt, name, file, expected) {
+  return (await attemptWriter(api, descriptor, id, runId, attempt)).file(name, file, expected);
 }
 
 export async function requireAttempt(api, descriptor, id, runId, attempt) {
@@ -219,6 +248,7 @@ export async function requireAttempt(api, descriptor, id, runId, attempt) {
     { runId, attempt },
     "Candidate attempt is no longer admitted",
   );
+  return release;
 }
 
 export async function requireCurrentRun(env, request) {

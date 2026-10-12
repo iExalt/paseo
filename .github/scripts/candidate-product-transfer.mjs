@@ -8,12 +8,7 @@ import { fileIdentity, packageLimit, withVerifiedFile } from "./candidate-files.
 import { producerGroups, validateCellReceipt, verifyProducerJob } from "./candidate-matrix.mjs";
 import { githubResponse, saveDownload, validateArtifact } from "./candidate-artifacts.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
-import {
-  requireCurrentRun,
-  requireAttempt,
-  uploadAttemptFile,
-  uploadAttemptBytes,
-} from "./candidate-draft.mjs";
+import { requireCurrentRun, requireAttempt, attemptWriter } from "./candidate-draft.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 
@@ -283,28 +278,15 @@ export async function transferProducts(
   }
   const receipts = productReceipts(bundle, context, group, producerJobId, manifests);
   const api = draftApi(env.GH_TOKEN);
+  const writer = await attemptWriter(api, descriptor, releaseId, runId, attempt);
   for (const receipt of receipts) {
     if (receipt.artifact.closureManifest) {
       const closure = receipt.artifact.closureManifest;
       await requireCurrentRun(env, request);
-      await uploadAttemptFile(
-        api,
-        descriptor,
-        releaseId,
-        runId,
-        attempt,
-        closure.name,
-        join(extracted, closure.name),
-        closure,
-      );
+      await writer.file(closure.name, join(extracted, closure.name), closure);
     }
     await requireCurrentRun(env, request);
-    await uploadAttemptFile(
-      api,
-      descriptor,
-      releaseId,
-      runId,
-      attempt,
+    await writer.file(
       receipt.artifact.name,
       join(extracted, receipt.artifact.name),
       receipt.artifact,
@@ -312,15 +294,7 @@ export async function transferProducts(
   }
   await requireCurrentRun(env, request);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
-  await uploadAttemptBytes(
-    api,
-    descriptor,
-    releaseId,
-    runId,
-    attempt,
-    `receipts-${group}.json`,
-    Buffer.from(JSON.stringify(receipts) + "\n"),
-  );
+  await writer.bytes(`receipts-${group}.json`, Buffer.from(JSON.stringify(receipts) + "\n"));
   await requireCurrentRun(env, request);
 }
 
