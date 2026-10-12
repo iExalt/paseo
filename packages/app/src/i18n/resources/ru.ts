@@ -2298,9 +2298,9 @@ export const ru: TranslationResources = {
       nixUpdates: {
         label: "Обновления под управлением Nix",
         running: "Запущенное приложение: {{version}}",
-        active: "Версия профиля: {{version}} (последовательность {{sequence}})",
-        staged: "Подготовленная версия: {{version}} (последовательность {{sequence}})",
-        latest: "Последняя подписанная версия: {{version}} (последовательность {{sequence}})",
+        active: "Версия профиля: {{version}}",
+        staged: "Подготовленная версия: {{version}}",
+        latest: "Последняя подписанная версия: {{version}}",
         ready: "Проверьте подписанное обновление, когда будете готовы.",
         invalidMarker: "Не удалось проверить эту установку Nix.",
         restartRequired: "Перезапустите Paseo вручную, чтобы использовать активную версию профиля.",

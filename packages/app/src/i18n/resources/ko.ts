@@ -2271,9 +2271,9 @@ export const ko: TranslationResources = {
       nixUpdates: {
         label: "Nix 관리 업데이트",
         running: "실행 중인 앱: {{version}}",
-        active: "프로필 버전: {{version}} (순서 {{sequence}})",
-        staged: "준비된 버전: {{version}} (순서 {{sequence}})",
-        latest: "최신 서명 버전: {{version}} (순서 {{sequence}})",
+        active: "프로필 버전: {{version}}",
+        staged: "준비된 버전: {{version}}",
+        latest: "최신 서명 버전: {{version}}",
         ready: "원하는 때에 서명된 업데이트를 확인하세요.",
         invalidMarker: "이 Nix 설치를 확인할 수 없습니다.",
         restartRequired: "활성 프로필 버전을 사용하려면 Paseo를 직접 다시 시작하세요.",
