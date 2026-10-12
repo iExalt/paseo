@@ -6,7 +6,7 @@ case "$EXPECTED_ARCHITECTURE:$(uname -sm)" in
   'x64:Linux x86_64'|'arm64:Linux aarch64') ;;
   *) echo 'Unexpected native build architecture' >&2; exit 1 ;;
 esac
-test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+test "$(git rev-parse HEAD)" = "${PASEO_CANDIDATE_SHA:-$GITHUB_SHA}"
 test -z "$(git status --porcelain)"
 command -v xvfb-run
 command -v Xvfb

@@ -49,13 +49,16 @@ const ownerFile = join(root, "owner.json");
 if (operation === "init") {
   // The stage monitor creates root/logs/evidence before launching this operation.
   assert.equal(existsSync(ownerFile), false);
-  assert.equal(git(repository, "rev-parse", "HEAD"), process.env.GITHUB_SHA);
+  assert.equal(
+    git(repository, "rev-parse", "HEAD"),
+    process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
+  );
   assert.equal(git(repository, "status", "--porcelain"), "");
   for (const name of ["packages", "state", "npm-cache"]) mkdirSync(join(root, name));
   run("git", ["worktree", "add", "--detach", previousSource, previousSha]);
   assert.equal(git(previousSource, "rev-parse", "HEAD"), previousSha);
   save(ownerFile, {
-    sourceSha: process.env.GITHUB_SHA,
+    sourceSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
     architecture: process.arch,
     previousSha,
     candidateLock: hash(join(repository, "package-lock.json")),
@@ -63,7 +66,7 @@ if (operation === "init") {
   });
 } else {
   const owner = json(ownerFile);
-  assert.equal(owner.sourceSha, process.env.GITHUB_SHA);
+  assert.equal(owner.sourceSha, process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA);
   assert.equal(owner.architecture, process.arch);
   assert.equal(owner.previousSha, previousSha);
   if (operation === "install-candidate" || operation === "install-previous") {

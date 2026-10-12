@@ -2,6 +2,7 @@ param([Parameter(Mandatory = $true)][ValidateSet('init', 'install-candidate', 'i
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
+$candidateSha = if ($env:PASEO_CANDIDATE_SHA) { $env:PASEO_CANDIDATE_SHA } else { $env:GITHUB_SHA }
 if (!$IsWindows -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
     $env:GITHUB_REPOSITORY -ne 'iExalt/paseo' -or $env:GITHUB_REF -ne 'refs/heads/dev' -or $env:GITHUB_ACTOR -ne 'iExalt') {
     throw 'Trusted hosted Windows dev run required'
@@ -14,7 +15,7 @@ $pwsh = (Get-Process -Id $PID).Path
 . (Join-Path $PSScriptRoot 'windows-native-toolchain.ps1')
 if ($Phase -eq 'init') {
     if (Test-Path -LiteralPath $root) { throw 'Refuse reused product root' }
-    if ((git rev-parse HEAD).Trim() -ne $env:GITHUB_SHA -or (git status --porcelain)) { throw 'Exact clean checkout required' }
+    if ((git rev-parse HEAD).Trim() -ne $candidateSha -or (git status --porcelain)) { throw 'Exact clean checkout required' }
     git cat-file -e '5619b7d7ee1e55b322028e8b7818aa1a8f752a0a^{commit}'
     if ($LASTEXITCODE -ne 0) { throw 'Full history containing fixed predecessor required' }
     if ((& $node -p 'process.version') -ne 'v26.11.0' -or (& $node -p 'process.arch') -ne $env:EXPECTED_ARCHITECTURE) { throw 'Native pinned Node required' }
@@ -53,7 +54,7 @@ if ($Phase -eq 'cleanup') {
 
 if ($Phase -ne 'init') {
     $owner = Get-Content -LiteralPath (Join-Path $root 'owner.json') -Raw | ConvertFrom-Json
-    if ($owner.sourceSha -ne $env:GITHUB_SHA -or $owner.architecture -ne $env:EXPECTED_ARCHITECTURE) { throw 'Product ownership mismatch' }
+    if ($owner.sourceSha -ne $candidateSha -or $owner.architecture -ne $env:EXPECTED_ARCHITECTURE) { throw 'Product ownership mismatch' }
 }
 $seconds = switch ($Phase) {
     'init' { 60 }

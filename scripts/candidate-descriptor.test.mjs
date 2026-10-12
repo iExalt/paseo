@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
+import { mkdtemp, writeFile, readFile, mkdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { candidateGithub } from "../.github/scripts/candidate-github.mjs";
+import { exportProducts, productFiles } from "../.github/scripts/candidate-product-export.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
 import {
   aggregateCandidate,
@@ -26,6 +27,68 @@ import {
   uploadAttemptBytes,
   loadDescriptor,
 } from "../.github/scripts/candidate-draft.mjs";
+
+test("native exports copy only exact candidate bytes into fresh canonical bundles", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "candidate-export-"));
+  const descriptor = candidateFixture();
+  const bytes = Buffer.from("native package fixture");
+  const identity = {
+    bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+  const env = {
+    RUNNER_TEMP: directory,
+    GITHUB_RUN_ID: "500",
+    GITHUB_RUN_ATTEMPT: "2",
+    PASEO_CANDIDATE_SHA: descriptor.sourceSha,
+    CANDIDATE_DESCRIPTOR_DIGEST: descriptorDigest(descriptor),
+    CANDIDATE_CONTEXT: join(directory, "context.json"),
+    GITHUB_OUTPUT: join(directory, "output"),
+    EXPECTED_ARCHITECTURE: "arm64",
+  };
+  try {
+    await writeFile(env.CANDIDATE_CONTEXT, JSON.stringify({ descriptor, runId: 500, attempt: 2 }));
+    for (const platform of ["linux", "windows"]) {
+      const root = join(
+        directory,
+        `${platform === "linux" ? "paseo-products" : "paseo-windows-products"}-500-2`,
+      );
+      const metadata = {
+        sourceSha: descriptor.sourceSha,
+        version: descriptor.version,
+        architecture: "arm64",
+        artifacts: Object.fromEntries(
+          ["deb", "rpm", "appimage"].map((kind) => [
+            kind,
+            { ...identity, file: `candidate-arm64.${kind === "appimage" ? "AppImage" : kind}` },
+          ]),
+        ),
+        installer: { ...identity, filename: "/untrusted/ignored" },
+      };
+      const files = productFiles(metadata, descriptor, platform, "arm64");
+      await mkdir(join(root, "packages/candidate"), { recursive: true });
+      for (const file of files) await writeFile(join(root, "packages", file.relative), bytes);
+      await writeFile(join(root, "candidate.json"), JSON.stringify(metadata));
+      await exportProducts(env, platform);
+      const bundle = JSON.parse(
+        await readFile(join(root, "candidate-export/candidate-products.json")),
+      );
+      assert.equal(bundle.descriptorSha256, descriptorDigest(descriptor));
+      assert.equal(bundle.runtime, undefined);
+      for (const file of files)
+        assert.deepEqual(await readFile(join(root, "candidate-export", file.artifact.name)), bytes);
+      await assert.rejects(exportProducts(env, platform), /EEXIST/);
+      assert.throws(() =>
+        productFiles({ ...metadata, sourceSha: "b".repeat(40) }, descriptor, platform, "arm64"),
+      );
+      await rm(join(root, "candidate-export"), { recursive: true });
+      await writeFile(join(root, "packages", files[0].relative), "wrong bytes");
+      await assert.rejects(exportProducts(env, platform));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("GitHub draft adapter bounds downloads and never forwards authorization to asset storage", async () => {
   const requests = [];
