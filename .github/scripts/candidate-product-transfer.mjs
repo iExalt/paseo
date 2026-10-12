@@ -42,6 +42,24 @@ export function productContract(descriptor, group) {
   });
 }
 
+export function verifyCompletedSteps(job, names) {
+  let number = 0,
+    completed = Date.parse(job.started_at);
+  for (const name of names) {
+    const steps = job.steps.filter((step) => step.name === name);
+    assert.equal(steps.length, 1, `Missing or duplicate ${name}`);
+    const step = steps[0];
+    assert.equal(step.status, "completed");
+    assert.equal(step.conclusion, "success");
+    assert.ok(step.number > number);
+    assert.ok(Date.parse(step.started_at) >= completed);
+    assert.ok(Date.parse(step.completed_at) >= Date.parse(step.started_at));
+    number = step.number;
+    completed = Date.parse(step.completed_at);
+  }
+  assert.ok(Date.parse(job.completed_at) >= completed);
+}
+
 export function productProducer(context, group, jobs, artifact, expected) {
   const contracts = productContract(context.descriptor, group);
   const matches = jobs.filter((job) => job.name === producerGroups[group].job);
@@ -73,21 +91,7 @@ export function productProducer(context, group, jobs, artifact, expected) {
         "Export verified candidate packages",
         "Transfer immutable candidate packages",
       ];
-  let number = 0,
-    completed = Date.parse(job.started_at);
-  for (const name of names) {
-    const steps = job.steps.filter((step) => step.name === name);
-    assert.equal(steps.length, 1, `Missing or duplicate ${name}`);
-    const step = steps[0];
-    assert.equal(step.status, "completed");
-    assert.equal(step.conclusion, "success");
-    assert.ok(step.number > number);
-    assert.ok(Date.parse(step.started_at) >= completed);
-    assert.ok(Date.parse(step.completed_at) >= Date.parse(step.started_at));
-    number = step.number;
-    completed = Date.parse(step.completed_at);
-  }
-  assert.ok(Date.parse(job.completed_at) >= completed);
+  verifyCompletedSteps(job, names);
   const { platform, arch } = contracts[0];
   const name = `candidate-${platform}-${nix ? "nix" : "products"}-${arch}-${context.runId}-${context.attempt}`;
   validateArtifact(

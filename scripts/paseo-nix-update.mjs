@@ -136,7 +136,10 @@ async function listReleases() {
 }
 
 export function validateNixClosureManifest(bytes, manifest) {
-  const artifact = macArtifact(manifest);
+  return validateNixArtifactClosure(bytes, macArtifact(manifest), manifest);
+}
+
+export function validateNixArtifactClosure(bytes, artifact, manifest) {
   assert.equal(bytes.length, artifact.closureManifest.bytes);
   assert.equal(
     hash(bytes),

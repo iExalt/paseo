@@ -12,6 +12,7 @@ import {
   productReceipts,
   transferProducts,
 } from "../.github/scripts/candidate-product-transfer.mjs";
+import { pairedRuntime, transferPaired } from "../.github/scripts/candidate-paired-transfer.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
 import {
   aggregateCandidate,
@@ -374,6 +375,277 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+test("paired transfer binds signing, fresh import and native runtime before retaining original bytes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "paired-transfer-"));
+  const descriptor = candidateFixture();
+  const context = {
+    descriptor,
+    releaseId: 42,
+    runId: 500,
+    attempt: 2,
+    controllerSha: "c".repeat(40),
+  };
+  const pin = {
+    runId: "500",
+    attempt: "2",
+    sourceSha: descriptor.sourceSha,
+    version: descriptor.version,
+  };
+  const hash = (value) => createHash("sha256").update(value).digest("hex");
+  const payload = Buffer.from("already signed native bytes");
+  const cert = "943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459";
+  const outputPath = `/nix/store/${"a".repeat(32)}-paseo-desktop-0.1.0`;
+  const closure = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 2,
+      kind: "paseo-verification-candidate",
+      platform: "macos-arm64",
+      sourceSha: pin.sourceSha,
+      forkVersion: pin.version,
+      packageVersion: pin.version,
+      system: "aarch64-darwin",
+      outputPath,
+      lockHash: "b".repeat(64),
+      provenance: "local-ci-build",
+      closure: [{ path: outputPath, narHash: "sha256-" + "a".repeat(43) + "=", narSize: 4096 }],
+    }) + "\n",
+  );
+  const android = Buffer.from(
+    JSON.stringify({
+      schemaVersion: 2,
+      kind: "paseo-verification-candidate",
+      platform: "android-arm64",
+      sourceSha: pin.sourceSha,
+      forkVersion: pin.version,
+      versionCode: "201000",
+      packageId: "sh.paseo.iexalt",
+      abi: "arm64-v8a",
+      runId: "500",
+      runAttempt: "2",
+      signingRunId: "500",
+      signingRunAttempt: "2",
+      signingCertificateSha256: cert,
+      apkSha256: hash(payload),
+    }),
+  );
+  const candidate = {
+    schemaVersion: 2,
+    kind: "paseo-verification-candidate",
+    status: "candidate",
+    sourceSha: pin.sourceSha,
+    forkVersion: pin.version,
+    runId: "500",
+    runAttempt: "2",
+    android: {
+      artifactId: "10",
+      artifactDigest: "b".repeat(64),
+      artifactRunAttempt: "2",
+      artifactName: `paseo-iexalt-201000-${pin.sourceSha}-attempt-2`,
+      packageId: "sh.paseo.iexalt",
+      versionCode: "201000",
+      signingCertificateSha256: cert,
+      apkSha256: hash(payload),
+      metadataSha256: hash(android),
+    },
+    macOS: {
+      artifactId: "11",
+      artifactDigest: "b".repeat(64),
+      artifactRunAttempt: "2",
+      artifactName: `paseo-nix-closure-${pin.sourceSha}-0.1.0-attempt-2`,
+      system: "aarch64-darwin",
+      provenance: "local-ci-build",
+      nodeSeedProvenance: "local-built-dependency",
+      archiveSha256: hash(payload),
+      manifestSha256: hash(closure),
+      lockHash: "b".repeat(64),
+      outputPath,
+      manifestPath: `/nix/store/${"b".repeat(32)}-manifest.json`,
+    },
+  };
+  const auth = "Authenticate candidate and admitted attempt",
+    stamp = "2026-10-12T12:00:00Z";
+  const jobs = [
+    [
+      "paired / Build and verify macOS closure / Build and sign macOS closure",
+      [
+        auth,
+        "Read authenticated candidate source",
+        "Sign and export the closure",
+        "Remove temporary Nix signing key file",
+        "Upload public closure and metadata artifact",
+      ],
+    ],
+    [
+      "paired / Build and verify macOS closure / Verify closure on a fresh runner",
+      [auth, "Read authenticated candidate source", "Import and verify signed closure"],
+    ],
+    [
+      "paired / Build and sign Android APK / Sign and publish fork APK artifact",
+      [auth, "Sign and verify with the approved fork certificate", "Remove signing material"],
+    ],
+    [
+      "native-runtime / macos",
+      [auth, "Verify canonical signed packages and preserved native state"],
+    ],
+    [
+      "native-runtime / android",
+      [
+        auth,
+        "Verify signed ARM64 APKs and retained native state",
+        "Remove owned Android container after interruption",
+      ],
+    ],
+  ].map(([name, names], index) => ({
+    id: index + 1,
+    name,
+    run_id: 500,
+    run_attempt: 2,
+    status: "completed",
+    conclusion: "success",
+    started_at: stamp,
+    completed_at: stamp,
+    steps: names.map((stepName, stepIndex) => ({
+      name: stepName,
+      number: stepIndex + 1,
+      status: "completed",
+      conclusion: "success",
+      started_at: stamp,
+      completed_at: stamp,
+    })),
+  }));
+  const pair = generateKeyPairSync("ed25519"),
+    publicPin = pair.publicKey.export({ format: "jwk" }).x;
+  const draft = {
+    id: 42,
+    draft: true,
+    prerelease: false,
+    name: draftTag(descriptor),
+    tag_name: draftTag(descriptor),
+    target_commitish: descriptor.sourceSha,
+    body: draftBody(descriptor, "active", { runId: 500, attempt: 2 }),
+    assets: [],
+  };
+  const data = new Map();
+  function upload(_id, name, value) {
+    const asset = { id: data.size + 1, name, size: value.length, state: "uploaded" };
+    data.set(asset.id, value);
+    draft.assets.push(asset);
+    return asset;
+  }
+  upload(42, "candidate-descriptor.json", descriptorBytes(descriptor));
+  upload(
+    42,
+    "candidate-descriptor.sig",
+    Buffer.from(
+      signDescriptor(
+        descriptor,
+        pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+        publicPin,
+      ),
+    ),
+  );
+  const api = {
+    publicPin,
+    get: async () => structuredClone(draft),
+    list: async () => [structuredClone(draft)],
+    ref: async () => null,
+    read: async (asset) => data.get(asset.id),
+    upload,
+    uploadFile: async (id, name, file, identity) => {
+      const value = await readFile(file);
+      await verifyStream([value], identity);
+      return upload(id, name, value);
+    },
+    verifyFile: async (asset, identity) => verifyStream([data.get(asset.id)], identity),
+  };
+  const root = {
+    id: 500,
+    run_attempt: 2,
+    repository: { id: 1404390841, full_name: "iExalt/paseo", private: false },
+    path: ".github/workflows/release-candidate.yml",
+    head_sha: context.controllerSha,
+    head_branch: "dev",
+    event: "workflow_dispatch",
+    status: "in_progress",
+    conclusion: null,
+    actor: { id: 7889894, login: "iExalt" },
+  };
+  try {
+    for (const platform of ["macos", "android"]) {
+      const env = {
+        RUNNER_TEMP: directory,
+        GH_TOKEN: "fixture",
+        GITHUB_RUN_ID: "500",
+        GITHUB_RUN_ATTEMPT: "2",
+        GITHUB_SHA: context.controllerSha,
+        GITHUB_EVENT_NAME: "workflow_dispatch",
+        CANDIDATE_PLATFORM: platform,
+        CANDIDATE_PIN: JSON.stringify(pin),
+      };
+      const missing = jobs.filter(
+        (job) => !job.name.includes(platform === "macos" ? "fresh runner" : "Sign and publish"),
+      );
+      assert.throws(() => pairedRuntime(context, platform, missing));
+      assert.throws(() =>
+        pairedRuntime(
+          context,
+          platform,
+          jobs.map((job) => ({ ...job, run_attempt: 1 })),
+        ),
+      );
+      await transferPaired(env, {
+        authenticate: async () => context,
+        draftApi: () => api,
+        request: async (route) => (route.includes("/jobs?") ? { jobs } : root),
+        download: async (_pin, destination) => {
+          await mkdir(join(destination, platform), { recursive: true });
+          await writeFile(
+            join(
+              destination,
+              platform,
+              platform === "macos"
+                ? `${candidate.macOS.artifactName}.tar`
+                : "paseo-iexalt-fork-201000.apk",
+            ),
+            payload,
+          );
+          await writeFile(
+            join(
+              destination,
+              platform,
+              platform === "macos" ? "manifest.json" : "build-metadata.json",
+            ),
+            platform === "macos" ? closure : android,
+          );
+          return candidate;
+        },
+      });
+      const receiptAsset = draft.assets.find((asset) =>
+        asset.name.endsWith(`receipts-${platform}-arm64.json`),
+      );
+      const [receipt] = JSON.parse(data.get(receiptAsset.id));
+      assert.equal(
+        receipt.runtime.signature,
+        platform === "macos" ? "nix-pinned" : "android-pinned",
+      );
+      assert.deepEqual(
+        data.get(draft.assets.find((asset) => asset.name.endsWith(receipt.artifact.name)).id),
+        payload,
+      );
+      if (platform === "macos")
+        assert.deepEqual(
+          data.get(
+            draft.assets.find((asset) => asset.name.endsWith(receipt.artifact.closureManifest.name))
+              .id,
+          ),
+          closure,
+        );
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("draft inventory paginates retries and rejects duplicate or unbounded assets", async () => {
   let count = 101,
