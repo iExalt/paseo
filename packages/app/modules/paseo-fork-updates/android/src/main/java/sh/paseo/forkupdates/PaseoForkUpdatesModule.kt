@@ -39,6 +39,10 @@ class PaseoForkUpdatesModule : Module() {
       currentPackageInfo().longVersionCode.toInt()
     }
 
+    Function("getInstalledVersion") {
+      requireNotNull(currentPackageInfo().versionName) { "Installed app version is unavailable." }
+    }
+
     Function("canInstallUnknownApps") {
       android.os.Build.VERSION.SDK_INT < 26 || appContext.reactContext
         ?.packageManager?.canRequestPackageInstalls() == true
@@ -94,6 +98,7 @@ class PaseoForkUpdatesModule : Module() {
         expectedSha256: String,
         expectedPackage: String,
         expectedVersionCode: Int,
+        expectedVersion: String,
         expectedCertificateSha256: String,
       ->
       require(fileName.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) { "APK filename is invalid." }
@@ -115,7 +120,7 @@ class PaseoForkUpdatesModule : Module() {
           require(hashFile(destination).equals(expectedSha256, ignoreCase = true)) {
             "Staged APK hash does not match the signed release manifest."
           }
-          verifyApk(destination, expectedPackage, expectedVersionCode, expectedCertificateSha256)
+          verifyApk(destination, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
         }
           .isSuccess
       if (stagedIsValid) {
@@ -130,6 +135,7 @@ class PaseoForkUpdatesModule : Module() {
           expectedSha256,
           expectedPackage,
           expectedVersionCode,
+          expectedVersion,
           expectedCertificateSha256,
         )
       }
@@ -141,6 +147,7 @@ class PaseoForkUpdatesModule : Module() {
         expectedSha256: String,
         expectedPackage: String,
         expectedVersionCode: Int,
+        expectedVersion: String,
         expectedCertificateSha256: String,
       ->
       require(fileName.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) { "APK filename is invalid." }
@@ -156,7 +163,7 @@ class PaseoForkUpdatesModule : Module() {
           null
         } else {
           try {
-            verifyApk(apk, expectedPackage, expectedVersionCode, expectedCertificateSha256)
+            verifyApk(apk, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
             apk.absolutePath
           } catch (_: IllegalArgumentException) {
             null
@@ -171,6 +178,7 @@ class PaseoForkUpdatesModule : Module() {
         expectedSha256: String,
         expectedPackage: String,
         expectedVersionCode: Int,
+        expectedVersion: String,
         expectedCertificateSha256: String,
       ->
       val context = requireNotNull(appContext.reactContext)
@@ -183,7 +191,7 @@ class PaseoForkUpdatesModule : Module() {
       require(apk.length() == expectedBytes && hashFile(apk).equals(expectedSha256, ignoreCase = true)) {
         "Staged APK no longer matches the signed release manifest."
       }
-      verifyApk(apk, expectedPackage, expectedVersionCode, expectedCertificateSha256)
+      verifyApk(apk, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
       val authority = "${context.packageName}.FileSystemFileProvider"
       require(context.packageManager.resolveContentProvider(authority, 0) != null) {
         "Expo FileSystem content provider is unavailable."
@@ -205,6 +213,7 @@ class PaseoForkUpdatesModule : Module() {
     expectedSha256: String,
     expectedPackage: String,
     expectedVersionCode: Int,
+    expectedVersion: String,
     expectedCertificateSha256: String,
   ): String {
     part.delete()
@@ -251,9 +260,9 @@ class PaseoForkUpdatesModule : Module() {
         require(actualHash.equals(expectedSha256, ignoreCase = true)) {
           "APK hash does not match the signed release manifest."
         }
-        verifyApk(part, expectedPackage, expectedVersionCode, expectedCertificateSha256)
+        verifyApk(part, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
         Files.move(part.toPath(), destination.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
-        destination.parentFile?.listFiles { file -> file.name.endsWith(".apk") && file != destination }
+        destination.parentFile?.listFiles { file -> file.name.startsWith("fork-v") && file.name.endsWith(".apk") && file != destination }
           ?.forEach(File::delete)
         destination.absolutePath
       } finally {
@@ -270,7 +279,7 @@ class PaseoForkUpdatesModule : Module() {
     return context.packageManager.getPackageInfo(context.packageName, 0)
   }
 
-  private fun verifyApk(file: File, packageName: String, versionCode: Int, certificateSha256: String) {
+  private fun verifyApk(file: File, packageName: String, versionCode: Int, version: String, certificateSha256: String) {
     val context = requireNotNull(appContext.reactContext)
     require(packageName == "sh.paseo.iexalt") { "APK package is unsupported." }
     val info = context.packageManager.getPackageArchiveInfo(
@@ -279,6 +288,7 @@ class PaseoForkUpdatesModule : Module() {
     ) ?: throw IllegalArgumentException("Downloaded file is not a readable APK.")
     require(info.packageName == packageName) { "APK package does not match this app." }
     require(info.longVersionCode == versionCode.toLong()) { "APK version does not match the release manifest." }
+    require(info.versionName == version) { "APK semver does not match the release manifest." }
     val signers = info.signingInfo?.apkContentsSigners.orEmpty()
     require(signers.size == 1) { "APK must have exactly one approved signer." }
     val signerHash = MessageDigest.getInstance("SHA-256").digest(signers.single().toByteArray()).toHex()

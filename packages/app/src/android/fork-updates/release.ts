@@ -1,14 +1,18 @@
 import nacl from "tweetnacl";
-import {
-  PASEO_RELEASE_MANIFEST_PUBLIC_KEY_BASE64URL,
-  validatePaseoReleaseManifest,
-  type PaseoReleaseManifest,
-} from "@getpaseo/protocol/release-manifest";
+import { PASEO_RELEASE_MANIFEST_PUBLIC_KEY_BASE64URL } from "@getpaseo/protocol/release-manifest";
 
-export const FORK_REPOSITORY = "iExalt/paseo";
-export const FORK_PACKAGE_ID = "sh.paseo.iexalt";
-export const FORK_SIGNING_CERTIFICATE_SHA256 =
-  "943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459";
+import {
+  validateForkReleaseManifest,
+  FORK_RELEASE_REPOSITORY as FORK_REPOSITORY,
+  type ForkReleaseManifest,
+  type ForkReleaseArtifact,
+} from "@getpaseo/protocol/release-manifest-v2";
+import { compareForkVersions, parseForkVersion } from "@getpaseo/protocol/fork-version";
+export { FORK_REPOSITORY };
+export {
+  FORK_ANDROID_PACKAGE_ID as FORK_PACKAGE_ID,
+  FORK_ANDROID_CERTIFICATE_SHA256 as FORK_SIGNING_CERTIFICATE_SHA256,
+} from "@getpaseo/protocol/release-manifest-v2";
 export const RELEASE_MANIFEST_NAME = "paseo-release-manifest.json";
 export const RELEASE_SIGNATURE_NAME = "paseo-release-manifest.sig";
 export const MAX_RELEASE_METADATA_BYTES = 256 * 1024;
@@ -35,17 +39,22 @@ export interface GitHubRelease {
 }
 
 export interface VerifiedForkUpdate {
-  manifest: PaseoReleaseManifest;
+  manifest: ForkReleaseManifest;
+  android: Extract<ForkReleaseArtifact, { kind: "apk" }>;
   apkUrl: string;
   manifestText: string;
   signatureText: string;
 }
 
-export function releaseSequenceFromTag(tag: string): number | null {
-  const match = /^paseo-fork-v\d+\.\d+\.\d+(?:-beta\.\d+)?-r([1-9][0-9]*)-[a-f0-9]{40}$/.exec(tag);
-  if (!match) return null;
-  const sequence = Number(match[1]);
-  return Number.isSafeInteger(sequence) && sequence > 0 ? sequence : null;
+export function releaseVersionFromTag(tag: string): string | null {
+  if (typeof tag !== "string" || !tag.startsWith("v")) return null;
+  const version = tag.slice(1);
+  try {
+    parseForkVersion(version);
+    return version;
+  } catch {
+    return null;
+  }
 }
 
 export async function findHighestVerifiedForkRelease<T>(
@@ -54,18 +63,18 @@ export async function findHighestVerifiedForkRelease<T>(
 ): Promise<{ release: GitHubRelease; verified: T }> {
   const candidates = releases
     .filter((release) => !release.draft && !release.prerelease)
-    .map((release) => ({ release, sequence: releaseSequenceFromTag(release.tag_name) }))
+    .map((release) => ({ release, version: releaseVersionFromTag(release.tag_name) }))
     .filter(
-      (candidate): candidate is { release: GitHubRelease; sequence: number } =>
-        candidate.sequence !== null,
+      (candidate): candidate is { release: GitHubRelease; version: string } =>
+        candidate.version !== null,
     )
-    .sort((left, right) => right.sequence - left.sequence);
-  const seenSequences = new Set<number>();
+    .sort((left, right) => compareForkVersions(right.version, left.version));
+  const seenVersions = new Set<string>();
   for (const candidate of candidates) {
-    if (seenSequences.has(candidate.sequence)) {
-      throw new Error("Published Paseo fork releases have a duplicate sequence.");
+    if (seenVersions.has(candidate.version)) {
+      throw new Error("Published Paseo fork releases have a duplicate version.");
     }
-    seenSequences.add(candidate.sequence);
+    seenVersions.add(candidate.version);
     const verified = await verifyCandidate(candidate.release);
     if (verified !== null) return { release: candidate.release, verified };
   }
@@ -83,7 +92,7 @@ export function verifySignedManifest(
   manifestBytes: Uint8Array,
   signatureText: string,
   publicKeyBase64Url = PASEO_RELEASE_MANIFEST_PUBLIC_KEY_BASE64URL,
-): PaseoReleaseManifest {
+): ForkReleaseManifest {
   const signatureValue = signatureText.trim();
   const signature = decodeBase64Url(signatureValue);
   const publicKey = decodeBase64Url(publicKeyBase64Url);
@@ -100,7 +109,7 @@ export function verifySignedManifest(
   let value: unknown;
   try {
     value = JSON.parse(new TextDecoder().decode(manifestBytes));
-    validatePaseoReleaseManifest(value);
+    validateForkReleaseManifest(value);
   } catch {
     throw new Error("Signed release manifest is invalid.");
   }
@@ -109,25 +118,23 @@ export function verifySignedManifest(
 
 export function verifyReleaseBinding(
   release: GitHubRelease,
-  manifest: PaseoReleaseManifest,
+  manifest: ForkReleaseManifest,
   manifestText = "",
   signatureText = "",
 ): VerifiedForkUpdate {
   if (release.draft || release.prerelease)
     throw new Error("This fork release is not published and stable.");
-  const sequence = releaseSequenceFromTag(release.tag_name);
-  if (sequence === null || manifest.releaseTag !== release.tag_name) {
+  const version = releaseVersionFromTag(release.tag_name);
+  if (version === null || manifest.releaseTag !== release.tag_name) {
     throw new Error("Release tag does not match the signed manifest.");
   }
-  assertApprovedForkManifest(manifest);
-  if (manifest.releaseSequence !== sequence)
-    throw new Error("Release sequence does not match its tag.");
+  const android = approvedAndroidArtifact(manifest);
 
-  const apkAssets = release.assets.filter((asset) => asset.name === manifest.android.apk.name);
+  const apkAssets = release.assets.filter((asset) => asset.name === android.name);
   if (
     apkAssets.length !== 1 ||
-    apkAssets[0].size !== manifest.android.apk.bytes ||
-    manifest.android.apk.bytes > MAX_APK_BYTES
+    apkAssets[0].size !== android.bytes ||
+    android.bytes > MAX_APK_BYTES
   ) {
     throw new Error("The signed APK asset is missing or has an unexpected size.");
   }
@@ -139,35 +146,28 @@ export function verifyReleaseBinding(
 
   const apkUrl = `https://github.com/${FORK_REPOSITORY}/releases/download/${encodeURIComponent(
     release.tag_name,
-  )}/${encodeURIComponent(manifest.android.apk.name)}`;
-  return { manifest, apkUrl, manifestText, signatureText };
+  )}/${encodeURIComponent(android.name)}`;
+  return { manifest, android, apkUrl, manifestText, signatureText };
 }
 
-export function assertApprovedForkManifest(manifest: PaseoReleaseManifest): void {
-  const sequence = releaseSequenceFromTag(manifest.releaseTag);
-  if (
-    sequence === null ||
-    manifest.releaseSequence !== sequence ||
-    manifest.android.packageId !== FORK_PACKAGE_ID ||
-    manifest.android.versionCode !== sequence ||
-    manifest.android.signingCertificateSha256 !== FORK_SIGNING_CERTIFICATE_SHA256 ||
-    manifest.android.apk.bytes > MAX_APK_BYTES
-  ) {
+export function approvedAndroidArtifact(
+  manifest: ForkReleaseManifest,
+): Extract<ForkReleaseArtifact, { kind: "apk" }> {
+  validateForkReleaseManifest(manifest);
+  const android = manifest.artifacts.find((artifact) => artifact.kind === "apk");
+  if (!android || android.kind !== "apk" || android.bytes > MAX_APK_BYTES) {
     throw new Error("Release identity does not match the approved Paseo fork.");
   }
+  return android;
 }
 
 export function isNewerThanInstalled(
   update: VerifiedForkUpdate,
-  installedVersionCode: number,
-  lastInstalledSequence: number,
+  installedVersion: string,
+  highWaterVersion: string,
 ): boolean {
-  const { releaseSequence, android } = update.manifest;
   return (
-    Number.isSafeInteger(installedVersionCode) &&
-    Number.isSafeInteger(lastInstalledSequence) &&
-    releaseSequence > installedVersionCode &&
-    releaseSequence > lastInstalledSequence &&
-    android.versionCode === releaseSequence
+    compareForkVersions(update.manifest.version, installedVersion) > 0 &&
+    compareForkVersions(update.manifest.version, highWaterVersion) > 0
   );
 }

@@ -1,3 +1,4 @@
+import { compareForkVersions } from "@getpaseo/protocol/fork-version";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppState, Platform, Text, View } from "react-native";
 import Constants from "expo-constants";
@@ -7,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { settingsStyles } from "@/styles/settings";
 import {
+  ForkManualMigrationRequired,
   canInstallForkUpdate,
   checkForForkUpdate,
   clearStagedForkUpdate,
@@ -30,7 +32,8 @@ type UpdateStatus =
   | "installing"
   | "installed"
   | "canceled"
-  | "error";
+  | "error"
+  | "migration-required";
 
 function getStatusMessage(
   t: TFunction,
@@ -38,7 +41,7 @@ function getStatusMessage(
   update: VerifiedForkUpdate | null,
   downloadedBytes: number,
 ): string {
-  const version = update?.manifest.packageVersion;
+  const version = update?.manifest.version;
   switch (status) {
     case "idle":
       return t("settings.about.forkUpdates.idle");
@@ -49,7 +52,7 @@ function getStatusMessage(
     case "available":
       return t("settings.about.forkUpdates.available", { version });
     case "downloading": {
-      const totalBytes = update?.manifest.android.apk.bytes ?? 0;
+      const totalBytes = update?.android.bytes ?? 0;
       const percent =
         totalBytes > 0 ? Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100)) : 0;
       return t("settings.about.forkUpdates.downloadingProgress", { percent });
@@ -64,6 +67,10 @@ function getStatusMessage(
       return t("settings.about.forkUpdates.installed", { version });
     case "canceled":
       return t("settings.about.forkUpdates.canceled");
+    case "migration-required":
+      return t("settings.about.forkUpdates.manualMigration", {
+        defaultValue: "Install the fork 0.1.0 or newer manually before using fork updates.",
+      });
     case "error":
       return t("settings.about.forkUpdates.failed");
   }
@@ -101,10 +108,10 @@ export function ForkAndroidUpdateRow() {
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [update, setUpdate] = useState<VerifiedForkUpdate | null>(null);
   const [apkPath, setApkPath] = useState<string | null>(null);
-  const [installedVersionCode, setInstalledVersionCode] = useState<number | null>(null);
+  const [installedVersion, setInstalledVersion] = useState<string | null>(null);
   const [downloadedBytes, setDownloadedBytes] = useState(0);
   const updateRef = useRef(update);
-  const beforeInstallerVersionRef = useRef<number | null>(null);
+  const beforeInstallerVersionRef = useRef<string | null>(null);
   const installerPendingRef = useRef(false);
   const permissionSettingsPendingRef = useRef(false);
   updateRef.current = update;
@@ -112,17 +119,17 @@ export function ForkAndroidUpdateRow() {
   const reconcileInstallerReturn = useCallback(async () => {
     const candidate = updateRef.current;
     if (!candidate || !forkUpdatesNative) return;
-    const currentCode = forkUpdatesNative.getInstalledVersionCode();
-    setInstalledVersionCode(currentCode);
+    const currentVersion = forkUpdatesNative.getInstalledVersion();
+    setInstalledVersion(currentVersion);
     if (
-      currentCode === candidate.manifest.android.versionCode &&
-      currentCode > (beforeInstallerVersionRef.current ?? 0)
+      currentVersion === candidate.manifest.version &&
+      compareForkVersions(currentVersion, beforeInstallerVersionRef.current ?? currentVersion) > 0
     ) {
-      await recordInstalledForkUpdate(candidate.manifest.releaseSequence);
+      await recordInstalledForkUpdate(candidate.manifest.version);
       setStatus("installed");
       return;
     }
-    if (currentCode > candidate.manifest.android.versionCode) {
+    if (compareForkVersions(currentVersion, candidate.manifest.version) > 0) {
       await clearStagedForkUpdate();
       setStatus("up-to-date");
       return;
@@ -135,12 +142,18 @@ export function ForkAndroidUpdateRow() {
       if (nextState !== "active") return;
       if (installerPendingRef.current) {
         installerPendingRef.current = false;
-        void reconcileInstallerReturn().catch(() => setStatus("error"));
+        void reconcileInstallerReturn().catch((error) =>
+          setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error"),
+        );
       } else if (permissionSettingsPendingRef.current) {
         permissionSettingsPendingRef.current = false;
         void canInstallForkUpdate()
           .then((allowed) => setStatus(allowed ? "downloaded" : "permission"))
-          .catch(() => setStatus("error"));
+          .catch((error) =>
+            setStatus(
+              error instanceof ForkManualMigrationRequired ? "migration-required" : "error",
+            ),
+          );
       }
     });
     return () => subscription.remove();
@@ -157,12 +170,14 @@ export function ForkAndroidUpdateRow() {
         setUpdate(staged.update);
         updateRef.current = staged.update;
         setApkPath(staged.path);
-        setInstalledVersionCode(staged.installedVersionCode);
+        setInstalledVersion(staged.installedVersion);
         setStatus("downloaded");
-        setDownloadedBytes(staged.update.manifest.android.apk.bytes);
+        setDownloadedBytes(staged.update.android.bytes);
         return undefined;
       })
-      .catch(() => setStatus("error"));
+      .catch((error) =>
+        setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error"),
+      );
     return () => subscription.remove();
   }, []);
 
@@ -170,14 +185,14 @@ export function ForkAndroidUpdateRow() {
     setStatus("checking");
     try {
       const result = await checkForForkUpdate();
-      setInstalledVersionCode(result.installedVersionCode);
+      setInstalledVersion(result.installedVersion);
       setUpdate(result.update);
       updateRef.current = result.update;
       setApkPath(null);
       setDownloadedBytes(0);
       setStatus(result.update ? "available" : "up-to-date");
-    } catch {
-      setStatus("error");
+    } catch (error) {
+      setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error");
     }
   }, []);
 
@@ -189,8 +204,8 @@ export function ForkAndroidUpdateRow() {
       const path = await downloadForkUpdate(update);
       setApkPath(path);
       setStatus("downloaded");
-    } catch {
-      setStatus("error");
+    } catch (error) {
+      setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error");
     }
   }, [update]);
 
@@ -210,7 +225,7 @@ export function ForkAndroidUpdateRow() {
         await openForkUpdateInstallSettings();
         return;
       }
-      beforeInstallerVersionRef.current = installedVersionCode;
+      beforeInstallerVersionRef.current = installedVersion;
       installerPendingRef.current = true;
       setStatus("installing");
       await launchForkUpdateInstaller(update, apkPath);
@@ -218,7 +233,7 @@ export function ForkAndroidUpdateRow() {
       installerPendingRef.current = false;
       setStatus("error");
     }
-  }, [apkPath, installedVersionCode, t, update]);
+  }, [apkPath, installedVersion, t, update]);
 
   const action = useCallback(() => {
     if (!enabled) return;
@@ -241,7 +256,9 @@ export function ForkAndroidUpdateRow() {
             return openForkUpdateInstallSettings();
           }
         })
-        .catch(() => setStatus("error"));
+        .catch((error) =>
+          setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error"),
+        );
     } else {
       void check();
     }
