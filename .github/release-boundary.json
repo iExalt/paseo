@@ -1,9 +1,7 @@
 {
   "schemaVersion": 1,
-  "kind": "bootstrap",
-  "forkVersion": "0.1.0",
-  "changelogSha256": "49e1be178a2d14ae750f1cf3b4ff427e2f0f15d67218ed5119c8f54ec1305f6e",
-  "version": "0.0.0",
-  "originalSha": "460ae999b44463146756494795f909574394aedf",
-  "currentSha": "460ae999b44463146756494795f909574394aedf"
+  "kind": "release",
+  "version": "0.1.0",
+  "originalSha": "d0cc78574e1b794827479bdaebaac6fd254369d6",
+  "currentSha": "d0cc78574e1b794827479bdaebaac6fd254369d6"
 }

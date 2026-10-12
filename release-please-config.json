@@ -9,7 +9,6 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "release-as": "0.1.0",
       "changelog-path": "CHANGELOG.fork.md",
       "extra-files": [
         {
@@ -285,5 +284,5 @@
       ]
     }
   },
-  "last-release-sha": "460ae999b44463146756494795f909574394aedf"
+  "last-release-sha": "d0cc78574e1b794827479bdaebaac6fd254369d6"
 }
