@@ -15,7 +15,11 @@ if (operation === "manifest") {
     previous: JSON.parse(readFileSync(join(root, "previous.json"))),
     candidate: JSON.parse(readFileSync(join(root, "candidate.json"))),
   };
-  validateManifest(manifest, process.env.GITHUB_SHA, process.arch);
+  validateManifest(
+    manifest,
+    process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
+    process.arch,
+  );
   const bytes = JSON.stringify(manifest, null, 2);
   writeFileSync(join(root, "manifest.json"), bytes);
   writeFileSync(join(root, "evidence/manifest.json"), bytes);
@@ -24,7 +28,11 @@ if (operation === "manifest") {
   assert.ok(["previous", "candidate"].includes(stage));
   assert.ok(["deb", "rpm", "appimage"].includes(format));
   const manifest = JSON.parse(readFileSync(manifestFile));
-  validateManifest(manifest, process.env.GITHUB_SHA, process.arch);
+  validateManifest(
+    manifest,
+    process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
+    process.arch,
+  );
   const artifact = manifest[stage].artifacts[format];
   if (operation === "artifact") {
     const filename = join(realpathSync(packages), artifact.file);

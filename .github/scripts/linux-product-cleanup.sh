@@ -4,7 +4,7 @@ test "$GITHUB_ACTIONS" = true
 test "$RUNNER_ENVIRONMENT" = github-hosted
 root="$RUNNER_TEMP/paseo-products-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 test -f "$root/owned" || exit 0
-test "$(cat "$root/owned")" = "$GITHUB_SHA"
+test "$(cat "$root/owned")" = "${PASEO_CANDIDATE_SHA:-$GITHUB_SHA}"
 result=0
 container="paseo-products-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 if [ -n "$(docker ps -aq --filter "name=^/$container$")" ]; then
