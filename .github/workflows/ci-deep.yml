@@ -85,7 +85,13 @@ jobs:
           install_args: node@26.11.0
           cache: false
       - name: Validate exact source and isolated configuration
-        run: node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA" --plan
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA" --plan
+          node .github/scripts/ci-source-receipt.mjs
       - name: Install locked dependencies
         run: |
           test "$(node --version)" = v26.11.0
