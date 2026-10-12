@@ -14,6 +14,11 @@ import { promisify } from "node:util";
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+import {
+  FORK_CONFIG_PATH,
+  inspectForkRelease,
+  assertForkReleasePreserved,
+} from "../../scripts/fork-release-config.mjs";
 
 const execFileAsync = promisify(execFile);
 const RESOLUTION_REF = "refs/heads/rebase-resolutions";
@@ -751,6 +756,9 @@ export async function rebaseDev({
     const status = await gitChecked(repositoryPath, ["status", "--porcelain"]);
     if (status) throw new Error("Refusing to rebase a worktree with local changes");
     snapshots = await snapshotRefs(repositoryPath, remote);
+    const before = await inspectForkRelease((file) =>
+      gitChecked(repositoryPath, ["show", `${snapshots.dev}:${file}`]),
+    );
     const maxContinuations = await replayCommitCount(
       repositoryPath,
       snapshots.upstream,
@@ -796,13 +804,51 @@ export async function rebaseDev({
       signingKey,
       publicKey,
     );
+    const readRelease = () =>
+      inspectForkRelease((file) => readFile(join(repositoryPath, file), "utf8"));
+    assertForkReleasePreserved(before, await readRelease());
+    let provenanceCommits = 0;
+    if (before.config.upstreamBase !== snapshots.upstream) {
+      // Keep replayed author/message metadata intact. Provenance is a separate,
+      // signed commit, and the downstream routine gate validates this final HEAD.
+      const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
+      await writeFile(
+        join(repositoryPath, FORK_CONFIG_PATH),
+        `${JSON.stringify({ ...before.config, upstreamBase: snapshots.upstream }, null, 2)}\n`,
+      );
+      await gitChecked(repositoryPath, ["add", "--", FORK_CONFIG_PATH]);
+      const tree = (await gitChecked(repositoryPath, ["write-tree"])).trim();
+      const unsigned = (
+        await gitChecked(
+          repositoryPath,
+          ["commit-tree", tree, "-p", parent, "-m", "chore(rebase): capture incorporated upstream"],
+          {
+            env: {
+              GIT_AUTHOR_NAME: "Clement Liaw",
+              GIT_AUTHOR_EMAIL: SIGNING_EMAIL,
+              GIT_COMMITTER_NAME: "Clement Liaw",
+              GIT_COMMITTER_EMAIL: SIGNING_EMAIL,
+            },
+          },
+        )
+      ).trim();
+      await gitChecked(repositoryPath, ["reset", "--hard", unsigned]);
+      provenanceCommits = await signRebasedCommits(
+        repositoryPath,
+        parent,
+        [unsigned],
+        signingKey,
+        publicKey,
+      );
+    }
+    assertForkReleasePreserved(before, await readRelease(), snapshots.upstream);
     await writeDiagnostics(
       diagnosticsPath,
       snapshots,
       "Rebase completed; this snapshot will aid diagnosis if a later validation or publication step fails.",
       repositoryPath,
     );
-    return { ...snapshots, signedCommits };
+    return { ...snapshots, signedCommits, provenanceCommits };
   } catch (error) {
     await writeDiagnostics(diagnosticsPath, snapshots, error.message, repositoryPath);
     throw error;
