@@ -186,8 +186,15 @@ test("merged authority binds the old checked tree and parent while dev advances"
     version: "0.1.0",
     upstreamBase: base,
   };
-  const read = async (_sha, file) =>
-    file === ".github/fork-release.json" ? JSON.stringify(fork) : "trusted policy fixture";
+  const rootPackage = { name: "paseo", version: fork.version, private: true, workspaces: [] };
+  const sourceFiles = {
+    ".github/fork-release.json": JSON.stringify(fork),
+    ".release-please-manifest.json": JSON.stringify({ ".": fork.version }),
+    "package.json": JSON.stringify(rootPackage),
+    "package-lock.json": JSON.stringify({ version: fork.version, packages: { "": rootPackage } }),
+    "CHANGELOG.fork.md": "# Fork release",
+  };
+  const read = async (_sha, file) => sourceFiles[file] ?? "trusted policy fixture";
   const entryEnv = {
     GITHUB_REF: "refs/heads/dev",
     GITHUB_SHA: dev,
@@ -229,6 +236,14 @@ test("merged authority binds the old checked tree and parent while dev advances"
       ...overrides,
     });
   const descriptor = await execute();
+  for (const file of ["package.json", ".release-please-manifest.json"]) {
+    await assert.rejects(
+      execute({
+        read: async (sha, name) =>
+          name === file ? (await read(sha, name)).replace("0.1.0", "0.1.1") : read(sha, name),
+      }),
+    );
+  }
   assert.equal(draft, undefined, "Read-only plan must not allocate storage");
   const issueEnv = {
     ...entryEnv,
