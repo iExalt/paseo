@@ -162,6 +162,22 @@ retaining the independent controller-SHA check and merged-source proof. Artifact
 branch provenance follows that authenticated context; manual retries still require
 `dev`. Actual rebased-bot event SHA and reusable context remain canary checks.
 
+At `2f8c4a1ca`, routine PR run `38279311229` passed in 4m18s (20m40s summed);
+the Linux observer suite completed in 977ms with its stress workload unchanged.
+Final-source run `38280405652` then exposed repeated setup latency rather than
+test failures: attempt 1 spent 104.8s downloading Node and hit the two-minute
+planner deadline; attempt 2 spent 182s in app-lane Node setup, exhausting the
+five-minute job before tests started. These failures do not count as passing
+routine measurements, and the baseline/deadlines remain unchanged.
+
+The bounded setup probe `38282228694` passed in 15s. The stock runner lacked exact
+Node 26.11.0; pinned `setup-node` downloaded it from GitHub's Node distribution in
+5s, and mise activated the same verified binary with npm 11.20.0. This is cold
+download evidence, not a cache hit. Shared setup uses this route for Ubuntu x64
+routine/deep CI and candidate controller/verification/transfer jobs. No repository
+cache allocation is added; the existing six caches occupy 5,306,868,709 bytes.
+The temporary probe mode is removed. Final-source PR/dev measurements remain open.
+
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase

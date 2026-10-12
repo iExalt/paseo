@@ -2,12 +2,6 @@ name: Native feasibility (bounded Phase A probe)
 
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        type: choice
-        options: [native, node-setup]
-        default: native
-        description: Native dependency probe or bounded Node setup measurement
 
 permissions:
   contents: read
@@ -17,52 +11,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  node-setup:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1 && github.ref == 'refs/heads/ci/github-workflows' && inputs.mode == 'node-setup'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Inspect stock exact runtime
-        run: |
-          if [[ -x "$RUNNER_TOOL_CACHE/node/26.11.0/x64/bin/node" ]]; then
-            echo 'stock_exact_runtime=true'
-            "$RUNNER_TOOL_CACHE/node/26.11.0/x64/bin/node" --version
-          else
-            echo 'stock_exact_runtime=false'
-          fi
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "26.11.0"
-          architecture: x64
-          package-manager-cache: false
-      - name: Verify resolved runtime
-        id: runtime
-        run: |
-          test "$(node --version)" = v26.11.0
-          test "$(npm --version)" = 11.20.0
-          node_root="$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
-          echo "root=$node_root" >> "$GITHUB_OUTPUT"
-          echo "runtime_root=$node_root"
-          du -sm "$node_root"
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install: false
-          cache: false
-      - name: Link and verify mise runtime identity
-        env:
-          NODE_ROOT: ${{ steps.runtime.outputs.root }}
-        run: |
-          mise link node@26.11.0 "$NODE_ROOT"
-          test "$(readlink -f "$(mise which node)")" = "$NODE_ROOT/bin/node"
-          test "$(mise exec node@26.11.0 -- node --version)" = v26.11.0
-          test "$(mise exec node@26.11.0 -- npm --version)" = 11.20.0
-          echo 'Exact runtime linked; no dependency install, repository cache or artifact write.'
   native:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1 && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/ci/github-workflows') && inputs.mode != 'node-setup'
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1 && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/ci/github-workflows')
     strategy:
       fail-fast: false
       matrix:

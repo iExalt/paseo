@@ -41,11 +41,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install_args: node@26.11.0
-          cache: false
+      - uses: ./.github/actions/setup-ci-tools
       - name: Verify completed producer and admit exact package bytes
         env:
           GH_TOKEN: ${{ github.token }}
