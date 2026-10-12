@@ -2515,9 +2515,9 @@ export const en = {
       nixUpdates: {
         label: "Nix-managed updates",
         running: "Running app: {{version}}",
-        active: "Profile version: {{version}} (sequence {{sequence}})",
-        staged: "Staged version: {{version}} (sequence {{sequence}})",
-        latest: "Latest signed version: {{version}} (sequence {{sequence}})",
+        active: "Profile version: {{version}}",
+        staged: "Staged version: {{version}}",
+        latest: "Latest signed version: {{version}}",
         ready: "Check for a signed update when you are ready.",
         invalidMarker: "This Nix installation could not be verified.",
         restartRequired: "Restart Paseo manually to use the active profile version.",

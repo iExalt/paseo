@@ -2412,9 +2412,9 @@ export const es: TranslationResources = {
       nixUpdates: {
         label: "Actualizaciones administradas por Nix",
         running: "Aplicación en ejecución: {{version}}",
-        active: "Versión del perfil: {{version}} (secuencia {{sequence}})",
-        staged: "Versión preparada: {{version}} (secuencia {{sequence}})",
-        latest: "Última versión firmada: {{version}} (secuencia {{sequence}})",
+        active: "Versión del perfil: {{version}}",
+        staged: "Versión preparada: {{version}}",
+        latest: "Última versión firmada: {{version}}",
         ready: "Busca una actualización firmada cuando quieras.",
         invalidMarker: "No se pudo verificar esta instalación de Nix.",
         restartRequired: "Reinicia Paseo manualmente para usar la versión activa del perfil.",

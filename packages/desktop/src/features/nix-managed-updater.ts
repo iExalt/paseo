@@ -1,3 +1,4 @@
+import { parseForkVersion } from "@getpaseo/protocol/fork-version";
 import { spawn } from "node:child_process";
 import type { DesktopInstallation } from "./nix-managed-install.js";
 
@@ -6,8 +7,7 @@ export type NixUpdateCommand = (typeof NIX_UPDATE_COMMANDS)[number];
 
 export interface NixReleaseSummary {
   releaseTag: string;
-  packageVersion: string;
-  releaseSequence: number;
+  version: string;
   outputPath: string;
 }
 
@@ -17,7 +17,7 @@ export interface NixUpdateResult {
   latest?: NixReleaseSummary;
   active: NixReleaseSummary | null;
   staged?: NixReleaseSummary | null;
-  highWaterSequence: number;
+  highWaterVersion: string | null;
   canStage?: boolean;
   message?: string;
   running: { version: string; outputPath: string };
@@ -59,17 +59,25 @@ function parseResult(stdout: Buffer, command: NixUpdateCommand): Omit<NixUpdateR
     }
     fail("The managed Nix updater returned an unexpected result.");
   }
-  if (!Number.isSafeInteger(value.highWaterSequence) || (value.highWaterSequence as number) < 0) {
-    fail("The managed Nix updater returned an invalid release sequence.");
+  const isVersion = (version: unknown): version is string => {
+    try {
+      parseForkVersion(version);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (value.highWaterVersion !== null && !isVersion(value.highWaterVersion)) {
+    fail("The managed Nix updater returned an invalid fork high-water version.");
   }
   const validateRelease = (release: unknown): release is NixReleaseSummary =>
     release === null ||
     (isObject(release) &&
-      typeof release.releaseTag === "string" &&
-      typeof release.packageVersion === "string" &&
-      Number.isSafeInteger(release.releaseSequence) &&
+      isVersion(release.version) &&
+      release.releaseTag === `v${release.version}` &&
       typeof release.outputPath === "string" &&
-      /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(release.outputPath));
+      /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(release.outputPath) &&
+      release.outputPath.endsWith(`-paseo-desktop-${release.version}`));
   if (!validateRelease(value.active))
     fail("The managed Nix updater returned an invalid active release.");
   if ("latest" in value && !validateRelease(value.latest)) {

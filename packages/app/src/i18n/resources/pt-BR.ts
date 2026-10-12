@@ -2395,9 +2395,9 @@ export const ptBR: TranslationResources = {
       nixUpdates: {
         label: "Atualizações gerenciadas pelo Nix",
         running: "Aplicativo em execução: {{version}}",
-        active: "Versão do perfil: {{version}} (sequência {{sequence}})",
-        staged: "Versão preparada: {{version}} (sequência {{sequence}})",
-        latest: "Versão assinada mais recente: {{version}} (sequência {{sequence}})",
+        active: "Versão do perfil: {{version}}",
+        staged: "Versão preparada: {{version}}",
+        latest: "Versão assinada mais recente: {{version}}",
         ready: "Verifique uma atualização assinada quando quiser.",
         invalidMarker: "Não foi possível verificar esta instalação do Nix.",
         restartRequired: "Reinicie o Paseo manualmente para usar a versão ativa do perfil.",
