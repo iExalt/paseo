@@ -65,6 +65,7 @@ jobs:
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
+          CANDIDATE_EXPECTED_JOB: paired / Pin paired build identity
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
@@ -145,6 +146,7 @@ jobs:
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
+          CANDIDATE_EXPECTED_JOB: paired / Cross-check paired candidate artifacts
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
