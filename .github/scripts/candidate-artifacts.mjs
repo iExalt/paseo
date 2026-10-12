@@ -195,13 +195,20 @@ export async function saveDownload(response, file, maximum, expectedBytes, expec
   }
 }
 
-export async function fetchCandidate(pin, directory, token, platform, request = fetch) {
+export async function fetchCandidate(
+  pin,
+  directory,
+  token,
+  platform,
+  request = fetch,
+  authenticatedContext = null,
+) {
   assert.ok(["android", "macos"].includes(platform));
   const json = async (route) => (await githubResponse(route, token, request)).json();
   const coordinated =
     process.env.GITHUB_WORKFLOW_REF ===
     "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev";
-  const context = coordinated ? await readWorkerContext() : null;
+  const context = coordinated ? (authenticatedContext ?? (await readWorkerContext())) : null;
   const run = await json(`actions/runs/${integer(pin.runId)}/attempts/${integer(pin.attempt)}`);
   if (context) validateCoordinatedProducer(run, pin, context, await attemptJobs(context));
   else validateProducer(run, pin);
