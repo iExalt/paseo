@@ -80,6 +80,14 @@ test("only fork-owned workflows are installed", () => {
     "windows-package-preflight.yml",
     "windows-product-runtime.yml",
   ]);
+  for (const name of workflows.filter((file) => file.endsWith("feasibility.yml"))) {
+    const workflow = load(readFileSync(new URL(`.github/workflows/${name}`, repoRoot), "utf8"));
+    assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+    for (const job of Object.values(workflow.jobs)) {
+      assert.match(job.if, /github.ref == 'refs\/heads\/dev'/);
+      assert.match(job.if, /github.ref == 'refs\/heads\/ci\/github-workflows'/);
+    }
+  }
 });
 
 test("Windows product trials retain trusted native runners, bounded cleanup and exact predecessor caching", () => {
