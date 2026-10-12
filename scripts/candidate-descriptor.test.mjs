@@ -116,6 +116,63 @@ test("merged candidate run binds original PR branch independently of controller 
       headBranch: branch,
       headSha: descriptor.headSha,
     });
+    const queued = { ...run, status: "queued" };
+    let clock = 0;
+    const waits = [];
+    const timing = {
+      now: () => clock,
+      wait: async (delay) => {
+        waits.push(delay);
+        clock += delay;
+      },
+    };
+    const responses = [queued, run];
+    assert.equal(
+      (await requireCurrentRun(env, async () => responses.shift(), descriptor, timing)).runId,
+      run.id,
+    );
+    assert.deepEqual(waits, [1000]);
+    for (const delta of [
+      { status: "completed", conclusion: "cancelled" },
+      { run_attempt: 3 },
+      { head_sha: "f".repeat(40) },
+      { repository: { ...repository, id: 1 } },
+    ]) {
+      const sequence = [queued, { ...queued, ...delta }];
+      const before = waits.length;
+      await assert.rejects(
+        requireCurrentRun(env, async () => sequence.shift(), descriptor, timing),
+      );
+      assert.equal(waits.length, before + 1, "Changed authority must not be retried");
+    }
+    let calls = 0;
+    const before = clock;
+    await assert.rejects(
+      requireCurrentRun(
+        env,
+        async () => {
+          calls++;
+          return queued;
+        },
+        descriptor,
+        timing,
+      ),
+      /remained queued/,
+    );
+    assert.equal(calls, 6);
+    assert.equal(clock - before, 25000);
+    await assert.rejects(
+      requireCurrentRun(
+        env,
+        async () => {
+          clock += 30000;
+          return run;
+        },
+        descriptor,
+        timing,
+      ),
+      /polling deadline/,
+    );
     for (const delta of [
       { head_branch: "dev" },
       { head_sha: env.GITHUB_SHA },
