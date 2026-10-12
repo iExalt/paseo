@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { generateKeyPairSync } from "node:crypto";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { candidateEntry } from "../.github/scripts/candidate-entry.mjs";
 import { currentCandidate, candidateRoute } from "../.github/scripts/candidate-authority.mjs";
 import { descriptorDigest } from "../.github/scripts/candidate-descriptor.mjs";
@@ -159,7 +162,9 @@ function fixture() {
   return state;
 }
 
-test("merged authority binds the old checked tree and parent while dev advances", async () => {
+test("merged authority binds the old checked tree and parent while dev advances", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "candidate-entry-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
   let rootEvent = "pull_request_target";
   const source = "e".repeat(40),
     dev = "f".repeat(40);
@@ -179,7 +184,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
           repository: repo,
           path: ".github/workflows/release-candidate.yml",
           head_sha: dev,
-          head_branch: "dev",
+          head_branch: rootEvent === "workflow_dispatch" ? "dev" : f.current.head.ref,
           event: rootEvent,
           status: "in_progress",
           conclusion: null,
@@ -217,6 +222,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
     GITHUB_REF: "refs/heads/dev",
     GITHUB_SHA: dev,
     GITHUB_EVENT_NAME: "pull_request_target",
+    GITHUB_EVENT_PATH: join(directory, "event.json"),
     CANDIDATE_MODE: "plan",
     PASEO_RELEASE_APP_ID: "1",
     PASEO_RELEASE_APP_CLIENT_ID: "Ivtest",
@@ -224,6 +230,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
     PASEO_RELEASE_BOT_LOGIN: identity.botLogin,
   };
   const event = { repository: repo, action: "closed", pull_request: setup().current };
+  await writeFile(entryEnv.GITHUB_EVENT_PATH, JSON.stringify(event));
   const output = [];
   let draft;
   const assets = new Map();
@@ -274,6 +281,17 @@ test("merged authority binds the old checked tree and parent while dev advances"
   };
   await assert.rejects(execute({ env: { ...issueEnv, EXPECTED_DESCRIPTOR_DIGEST: "wrong" } }));
   assert.equal(draft, undefined);
+  await assert.rejects(
+    execute({
+      env: issueEnv,
+      request: async (url) => {
+        const response = await setup().request(url);
+        return url.endsWith("/actions/runs/500") ? { ...response, head_sha: head } : response;
+      },
+    }),
+  );
+  assert.equal(draft, undefined, "Invalid root must not create draft authority");
+  assert.equal(assets.size, 0, "Invalid root must not upload authority");
   await execute({ env: issueEnv });
   assert.equal(draft.assets.length, 2);
   assert.ok(output.includes("release_id=42\n"));
