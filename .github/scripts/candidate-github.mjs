@@ -82,6 +82,92 @@ export function candidateGithub(token, request = fetch) {
     throw new Error("Too many asset redirects");
   }
   return {
+    async lifecycle(descriptor) {
+      const query = `query CandidateLifecycle($final: String!, $transport: String!, $cursor: String) {
+        rateLimit { cost remaining resetAt }
+        repository(owner: "iExalt", name: "paseo") {
+          databaseId nameWithOwner
+          final: ref(qualifiedName: $final) { name }
+          transport: ref(qualifiedName: $transport) { name }
+          releases(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes { databaseId name tagName targetCommitish isDraft isPrerelease description }
+            pageInfo { hasNextPage endCursor }
+          }
+        }
+      }`;
+      const releases = [],
+        ids = new Set(),
+        cursors = new Set();
+      let cursor = null;
+      for (let page = 1; page <= 10; page++) {
+        const result = await response("https://api.github.com/graphql", {
+          method: "POST",
+          body: JSON.stringify({
+            query,
+            variables: {
+              final: `refs/tags/${descriptor.releaseTag}`,
+              transport: `refs/tags/paseo-candidate-v${descriptor.version}-${descriptor.sourceSha}`,
+              cursor,
+            },
+          }),
+        });
+        assert.equal(result.status, 200, "Lifecycle query failed");
+        const payload = JSON.parse((await bounded(result, 8 * metadataLimit)).toString("utf8"));
+        assert.ok(!Object.hasOwn(payload, "errors"), "Partial or failed lifecycle query");
+        const repository = payload.data?.repository,
+          quota = payload.data?.rateLimit;
+        assert.equal(repository?.databaseId, 1404390841);
+        assert.equal(repository.nameWithOwner, "iExalt/paseo");
+        for (const ref of ["final", "transport"]) {
+          assert.ok(Object.hasOwn(repository, ref), "Missing lifecycle ref result");
+          assert.equal(repository[ref], null, `${ref} tag already exists`);
+        }
+        assert.ok(Number.isSafeInteger(quota?.cost) && quota.cost >= 0);
+        assert.ok(Number.isSafeInteger(quota.remaining) && quota.remaining >= 0);
+        assert.ok(Number.isFinite(Date.parse(quota.resetAt)));
+        console.log(
+          `[candidate-api] GraphQL cost=${quota.cost} remaining=${quota.remaining} resetAt=${quota.resetAt}`,
+        );
+        const connection = repository.releases;
+        assert.ok(Array.isArray(connection?.nodes) && connection.nodes.length <= 100);
+        for (const row of connection.nodes) {
+          id(row.databaseId);
+          assert.ok(!ids.has(row.databaseId), "Duplicate lifecycle release");
+          ids.add(row.databaseId);
+          for (const field of [
+            "name",
+            "tagName",
+            "targetCommitish",
+            "isDraft",
+            "isPrerelease",
+            "description",
+          ])
+            assert.ok(Object.hasOwn(row, field));
+          assert.equal(typeof row.tagName, "string");
+          assert.equal(typeof row.targetCommitish, "string");
+          assert.equal(typeof row.isDraft, "boolean");
+          assert.equal(typeof row.isPrerelease, "boolean");
+          releases.push({
+            id: row.databaseId,
+            name: row.name,
+            tag_name: row.tagName,
+            target_commitish: row.targetCommitish,
+            draft: row.isDraft,
+            prerelease: row.isPrerelease,
+            body: row.description,
+          });
+        }
+        assert.equal(typeof connection.pageInfo?.hasNextPage, "boolean");
+        if (!connection.pageInfo.hasNextPage) return releases;
+        cursor = connection.pageInfo.endCursor;
+        assert.ok(
+          typeof cursor === "string" && cursor.length > 0 && !cursors.has(cursor),
+          "Lifecycle pagination did not advance",
+        );
+        cursors.add(cursor);
+      }
+      throw new Error("Lifecycle inventory exceeds bounded pagination");
+    },
     async list() {
       const releases = [];
       for (let page = 1; page <= 10; page++) {
