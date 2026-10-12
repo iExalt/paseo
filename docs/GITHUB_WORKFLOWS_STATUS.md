@@ -197,6 +197,13 @@ now bounds idle/request waits to 30s and retry waits to 1–5s, preserving two r
 retries and normal lock/script/integrity behavior. Partial-body timeouts fail fast;
 they are not automatically retried. Hosted acceptance remains open.
 
+The bounded-install trial `38285100098` at `25f702751` passed all seven lanes and
+aggregation in 4m11s (21m56s summed), with installs taking 47–73s. This single
+hosted pass contains no observed request retry and does not establish a controlled
+speedup. Temporary phase timing is removed; the same install-only bounds cover
+Linux deep and exact-candidate verification. Final changed-source PR/dev gates
+remain required before issuance; the stable performance baseline is unchanged.
+
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase

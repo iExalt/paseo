@@ -93,6 +93,11 @@ jobs:
           node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA" --plan
           node .github/scripts/ci-source-receipt.mjs
       - name: Install locked dependencies
+        env:
+          npm_config_fetch_timeout: "30000"
+          npm_config_fetch_retries: "2"
+          npm_config_fetch_retry_mintimeout: "1000"
+          npm_config_fetch_retry_maxtimeout: "5000"
         run: |
           test "$(node --version)" = v26.11.0
           test "$(npm --version)" = 11.20.0
