@@ -12,6 +12,7 @@ import {
   validateArtifact,
   validateCandidate,
   validateProducer,
+  validateCoordinatedProducer,
 } from "../.github/scripts/candidate-artifacts.mjs";
 
 const sha = "a".repeat(40);
@@ -28,6 +29,54 @@ const run = {
   status: "completed",
   conclusion: "success",
 };
+
+test("paired runtime distinguishes current coordinator completion from historical manual producers", () => {
+  const context = {
+    runId: 123,
+    attempt: 2,
+    controllerSha: "c".repeat(40),
+    descriptor: { sourceSha: sha, version: pin.version },
+  };
+  const current = {
+    ...run,
+    path: ".github/workflows/release-candidate.yml",
+    head_sha: context.controllerSha,
+    status: "in_progress",
+    conclusion: null,
+  };
+  const job = {
+    id: 10,
+    run_id: 123,
+    run_attempt: 2,
+    name: "paired / Cross-check paired candidate artifacts",
+    status: "completed",
+    conclusion: "success",
+    steps: [
+      "Authenticate candidate and admitted attempt",
+      "Verify both artifacts and write normalized candidate manifest",
+      "Upload normalized paired candidate manifest",
+    ].map((name, index) => ({
+      name,
+      number: index + 1,
+      status: "completed",
+      conclusion: "success",
+    })),
+  };
+  validateCoordinatedProducer(current, pin, context, [job]);
+  for (const delta of [{ run_attempt: 1 }, { status: "completed" }, { head_sha: sha }])
+    assert.throws(() => validateCoordinatedProducer({ ...current, ...delta }, pin, context, [job]));
+  for (const delta of [
+    { run_attempt: 1 },
+    { conclusion: "failure" },
+    { steps: job.steps.slice(1) },
+  ])
+    assert.throws(() => validateCoordinatedProducer(current, pin, context, [{ ...job, ...delta }]));
+  const candidate = candidateFixture();
+  candidate.android.artifactRunAttempt = "1";
+  candidate.android.artifactName = `paseo-iexalt-201000-${sha}-attempt-1`;
+  validateCandidate(candidate, pin);
+  assert.throws(() => validateCandidate(candidate, pin, true));
+});
 
 test("artifact transport rejects a different or unsuccessful producer attempt", () => {
   validateProducer(run, pin);
