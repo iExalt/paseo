@@ -69,6 +69,7 @@ jobs:
         if: inputs.source_sha != ''
         id: candidate
         env:
+          CANDIDATE_EXPECTED_JOB: linux-nix (${{ inputs.architecture }}) / native
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
