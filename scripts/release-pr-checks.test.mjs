@@ -17,6 +17,7 @@ const head = "a".repeat(40),
 const identity = { botId: 456, botLogin: "paseo-release[bot]" };
 const repo = { id: 1404390841, full_name: "iExalt/paseo", private: false };
 const pr = {
+  commits: 1,
   number: 7,
   state: "open",
   user: { id: 456, login: identity.botLogin, type: "Bot" },
@@ -131,6 +132,9 @@ function fixture() {
   let prReads = 0;
   const state = { runs, jobs, logs, current: structuredClone(pr), onFinal: () => {} };
   state.request = async (url) => {
+    if (url.includes("/pulls/7/commits?")) return [{ sha: state.current.head.sha }];
+    if (url.includes("/git/commits/"))
+      return { sha: merge, parents: [{ sha: base }, { sha: head }], tree: { sha: "d".repeat(40) } };
     if (url.endsWith("/pulls/7")) {
       if (++prReads === 2) state.onFinal(state.current);
       return structuredClone(state.current);
@@ -154,6 +158,9 @@ test("current-head verifier requires both latest gates, exact setup receipts and
   assert.equal(proof.headSha, head);
   assert.equal(proof.proofs.length, 2);
   for (const mutate of [
+    (f) => {
+      f.current.commits = 2;
+    },
     (f) => {
       f.runs[0].status = "in_progress";
     },
@@ -206,21 +213,30 @@ test("current-head verifier requires both latest gates, exact setup receipts and
     ),
   );
   const merged = { ...pr, state: "closed", merged: true, merge_commit_sha: merge };
-  assert.equal(
-    verifyRehearsalMerge(merged, { sha: merge, parents: [{ sha: base }, { sha: head }] }, proof),
-    merge,
+  const finalCommit = { sha: merge, parents: [{ sha: base }], tree: { sha: proof.treeSha } };
+  const finalRefs = { returnedSha: merge, branchSha: merge };
+  assert.equal(verifyRehearsalMerge(merged, finalCommit, proof, finalRefs), merge);
+  assert.throws(() =>
+    verifyRehearsalMerge(merged, { ...finalCommit, sha: head }, proof, finalRefs),
   );
   assert.throws(() =>
-    verifyRehearsalMerge(merged, { sha: head, parents: [{ sha: base }, { sha: head }] }, proof),
-  );
-  assert.throws(() =>
-    verifyRehearsalMerge(merged, { sha: merge, parents: [{ sha: head }, { sha: base }] }, proof),
+    verifyRehearsalMerge(merged, { ...finalCommit, parents: [{ sha: head }] }, proof, finalRefs),
   );
   assert.throws(() =>
     verifyRehearsalMerge(
       { ...merged, base: { ...pr.base, ref: "dev" } },
-      { sha: merge, parents: [{ sha: base }, { sha: head }] },
+      finalCommit,
       proof,
+      finalRefs,
     ),
+  );
+  assert.throws(() =>
+    verifyRehearsalMerge(merged, { ...finalCommit, tree: { sha: head } }, proof, finalRefs),
+  );
+  assert.throws(() =>
+    verifyRehearsalMerge(merged, finalCommit, proof, { ...finalRefs, branchSha: head }),
+  );
+  assert.throws(() =>
+    verifyRehearsalMerge({ ...merged, commits: 2 }, finalCommit, proof, finalRefs),
   );
 });
