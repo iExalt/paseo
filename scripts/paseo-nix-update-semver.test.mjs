@@ -17,6 +17,7 @@ import {
   executeCommand,
   verifyReleaseManifestBytes,
   validateNixClosureManifest,
+  validateNixArtifactClosure,
   chooseHighestVerifiedStableRelease,
   macArtifact,
 } from "./paseo-nix-update.mjs";
@@ -105,6 +106,11 @@ test("V2 verification binds exact signed bytes and producer closure metadata wit
     ),
   );
   assert.equal(validateNixClosureManifest(closure, manifest).forkVersion, "0.1.0");
+  assert.deepEqual(
+    validateNixArtifactClosure(closure, artifact, manifest),
+    validateNixClosureManifest(closure, manifest),
+  );
+  assert.throws(() => validateNixClosureManifest(closure, { ...manifest, artifacts: [artifact] }));
   assert.throws(() =>
     validateNixClosureManifest(Buffer.concat([closure, Buffer.from(" ")]), manifest),
   );
