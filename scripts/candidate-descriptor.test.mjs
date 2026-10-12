@@ -63,6 +63,79 @@ import {
   uploadAttemptBytes,
   loadDescriptor,
 } from "../.github/scripts/candidate-draft.mjs";
+import { requireCurrentRun } from "../.github/scripts/candidate-draft.mjs";
+
+test("merged candidate run binds original PR branch independently of controller SHA", async () => {
+  const descriptor = candidateFixture();
+  const directory = await mkdtemp(join(tmpdir(), "candidate-event-"));
+  const repository = { id: 1404390841, full_name: "iExalt/paseo", private: false };
+  const branch = "release-please--branches--dev--components--paseo";
+  const event = {
+    repository,
+    action: "closed",
+    pull_request: {
+      number: descriptor.releasePr,
+      state: "closed",
+      merged: true,
+      merge_commit_sha: descriptor.sourceSha,
+      base: { ref: "dev", repo: repository },
+      head: { ref: branch, sha: descriptor.headSha, repo: repository },
+      user: { id: 341220930, login: "paseo-release[bot]", type: "Bot" },
+      labels: [{ name: "autorelease: pending" }],
+    },
+  };
+  const env = {
+    GITHUB_RUN_ID: "500",
+    GITHUB_RUN_ATTEMPT: "2",
+    GITHUB_SHA: "e".repeat(40),
+    GITHUB_EVENT_NAME: "pull_request_target",
+    GITHUB_EVENT_PATH: join(directory, "event.json"),
+    PASEO_RELEASE_APP_ID: "5280233",
+    PASEO_RELEASE_APP_CLIENT_ID: "Iv23liQYsBhweG1AFerq",
+    PASEO_RELEASE_BOT_ID: "341220930",
+    PASEO_RELEASE_BOT_LOGIN: "paseo-release[bot]",
+  };
+  const run = {
+    id: 500,
+    run_attempt: 2,
+    repository,
+    path: ".github/workflows/release-candidate.yml",
+    head_sha: env.GITHUB_SHA,
+    head_branch: branch,
+    event: env.GITHUB_EVENT_NAME,
+    status: "in_progress",
+    conclusion: null,
+    pull_requests: [{ number: 999, head: { sha: "f".repeat(40), ref: "reused-branch" } }],
+  };
+  try {
+    await writeFile(env.GITHUB_EVENT_PATH, JSON.stringify(event));
+    assert.notEqual(descriptor.headSha, env.GITHUB_SHA);
+    assert.deepEqual(await requireCurrentRun(env, async () => run, descriptor), {
+      runId: 500,
+      attempt: 2,
+      headBranch: branch,
+    });
+    for (const delta of [
+      { head_branch: "dev" },
+      { head_sha: descriptor.headSha },
+      { event: "workflow_dispatch" },
+    ])
+      await assert.rejects(requireCurrentRun(env, async () => ({ ...run, ...delta }), descriptor));
+    for (const delta of [
+      { number: 999 },
+      { merged: false },
+      { merge_commit_sha: "f".repeat(40) },
+    ]) {
+      await writeFile(
+        env.GITHUB_EVENT_PATH,
+        JSON.stringify({ ...event, pull_request: { ...event.pull_request, ...delta } }),
+      );
+      await assert.rejects(requireCurrentRun(env, async () => run, descriptor));
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 
 test("policy covers invoked native ownership and UI controls before active worker execution", () => {
   for (const file of [
@@ -175,6 +248,7 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
       runId: 500,
       attempt: 2,
       controllerSha: "c".repeat(40),
+      rootBranch: "dev",
     };
     const nix = group.startsWith("linux-nix-");
     const bytes = Buffer.from("native installer fixture");
@@ -453,6 +527,7 @@ test("paired transfer binds signing, fresh import and native runtime before reta
     runId: 500,
     attempt: 2,
     controllerSha: "c".repeat(40),
+    rootBranch: "dev",
   };
   const pin = {
     runId: "500",
@@ -1070,6 +1145,7 @@ test("candidate aggregate requires every same-attempt native cell and all source
     runId: 500,
     attempt: 2,
     controllerSha: "c".repeat(40),
+    rootBranch: "dev",
   };
   const root = {
     id: 500,

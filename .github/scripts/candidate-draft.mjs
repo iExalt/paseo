@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { assertReleasePr } from "./release-pr.mjs";
+import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { compareForkVersions, forkVersionFromTag } from "../../scripts/fork-version.mjs";
 import { fileIdentity } from "./candidate-files.mjs";
 import {
@@ -251,7 +254,7 @@ export async function requireAttempt(api, descriptor, id, runId, attempt) {
   return release;
 }
 
-export async function requireCurrentRun(env, request) {
+export async function requireCurrentRun(env, request, descriptor) {
   const runId = Number(env.GITHUB_RUN_ID),
     attempt = Number(env.GITHUB_RUN_ATTEMPT);
   positive(runId);
@@ -264,20 +267,36 @@ export async function requireCurrentRun(env, request) {
   assert.equal(run.repository.private, false);
   assert.equal(run.path, ".github/workflows/release-candidate.yml");
   assert.equal(run.head_sha, env.GITHUB_SHA);
-  assert.equal(run.head_branch, "dev");
   assert.equal(run.event, env.GITHUB_EVENT_NAME);
   assert.ok(["pull_request_target", "workflow_dispatch"].includes(run.event));
   assert.equal(run.status, "in_progress");
   assert.equal(run.conclusion, null);
   if (run.event === "workflow_dispatch") {
+    assert.equal(run.head_branch, "dev");
     assert.equal(run.actor.id, 7889894);
     assert.equal(run.actor.login, "iExalt");
+  } else {
+    // API pull_requests associations can change after a later PR reuses a
+    // branch. Bind the original event instead, keeping controller SHA separate.
+    const event = JSON.parse(await readFile(env.GITHUB_EVENT_PATH, "utf8"));
+    assert.equal(event.repository.id, 1404390841);
+    assert.equal(event.repository.full_name, "iExalt/paseo");
+    assert.equal(event.repository.private, false);
+    assert.equal(event.action, "closed");
+    const pr = event.pull_request;
+    assert.equal(pr.state, "closed");
+    assert.equal(pr.merged, true);
+    assert.equal(pr.number, descriptor.releasePr);
+    assert.equal(pr.merge_commit_sha, descriptor.sourceSha);
+    assert.equal(pr.base.ref, "dev");
+    assertReleasePr({ ...pr, state: "open" }, releaseBotIdentity(env), descriptor.headSha);
+    assert.equal(run.head_branch, pr.head.ref);
   }
-  return { runId, attempt };
+  return { runId, attempt, headBranch: run.head_branch };
 }
 
 export async function admitAttempt(api, descriptor, id, env, request) {
-  const { runId, attempt } = await requireCurrentRun(env, request);
+  const { runId, attempt } = await requireCurrentRun(env, request, descriptor);
   assert.deepEqual(await loadDescriptor(api, id), descriptor);
   const release = await eligibleDraft(api, descriptor, id);
   const previous = JSON.parse(release.body).activeAttempt;

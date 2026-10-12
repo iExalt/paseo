@@ -35,6 +35,7 @@ test("paired runtime distinguishes current coordinator completion from historica
     runId: 123,
     attempt: 2,
     controllerSha: "c".repeat(40),
+    rootBranch: "dev",
     descriptor: { sourceSha: sha, version: pin.version },
   };
   const current = {
@@ -63,6 +64,16 @@ test("paired runtime distinguishes current coordinator completion from historica
     })),
   };
   validateCoordinatedProducer(current, pin, context, [job]);
+  const branch = "release-please--branches--dev--components--paseo";
+  validateCoordinatedProducer(
+    { ...current, head_branch: branch },
+    pin,
+    { ...context, rootBranch: branch },
+    [job],
+  );
+  assert.throws(() =>
+    validateCoordinatedProducer(current, pin, { ...context, rootBranch: branch }, [job]),
+  );
   for (const delta of [{ run_attempt: 1 }, { status: "completed" }, { head_sha: sha }])
     assert.throws(() => validateCoordinatedProducer({ ...current, ...delta }, pin, context, [job]));
   for (const delta of [
@@ -103,6 +114,20 @@ test("artifact transport rejects a different or unsuccessful producer attempt", 
   };
   const expected = { id: "456", name: "pinned", digest: hash };
   validateArtifact(artifact, pin, expected, 10);
+  const coordinated = {
+    ...artifact,
+    workflow_run: {
+      ...artifact.workflow_run,
+      head_branch: "release-please--branches--dev--components--paseo",
+    },
+  };
+  validateArtifact(
+    coordinated,
+    { ...pin, headBranch: coordinated.workflow_run.head_branch },
+    expected,
+    10,
+  );
+  assert.throws(() => validateArtifact(coordinated, pin, expected, 10));
   for (const delta of [
     { id: 457 },
     { name: "latest" },

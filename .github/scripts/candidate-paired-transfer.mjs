@@ -204,16 +204,16 @@ export async function transferPaired(
   const api = draftApi(env.GH_TOKEN);
   const writer = await attemptWriter(api, descriptor, releaseId, runId, attempt);
   for (const [asset, file] of files) {
-    await requireCurrentRun(env, request);
+    await requireCurrentRun(env, request, context.descriptor);
     await writer.file(asset.name, file, asset);
   }
-  await requireCurrentRun(env, request);
+  await requireCurrentRun(env, request, context.descriptor);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   await writer.bytes(
     `receipts-${platform}-arm64.json`,
     Buffer.from(JSON.stringify([receipt]) + "\n"),
   );
-  await requireCurrentRun(env, request);
+  await requireCurrentRun(env, request, context.descriptor);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
