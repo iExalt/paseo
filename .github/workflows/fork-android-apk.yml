@@ -3,6 +3,12 @@ name: Fork Android APK
 on:
   workflow_call:
     inputs:
+      release_id:
+        type: string
+        required: true
+      descriptor_digest:
+        type: string
+        required: true
       source_sha:
         description: Immutable commit SHA shared by the paired build lanes.
         required: true
@@ -42,6 +48,9 @@ on:
       verified:
         value: ${{ jobs.sign.outputs.verified }}
 
+env:
+  PASEO_CANDIDATE_SHA: ${{ inputs.source_sha }}
+
 concurrency:
   group: fork-android-apk-${{ github.ref }}
   cancel-in-progress: false
@@ -50,22 +59,49 @@ permissions: {}
 
 jobs:
   build:
-    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'
     name: Build fork arm64 APK
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     permissions:
       contents: read
       packages: read
+      actions: read
+      pull-requests: read
     outputs:
       artifact_name: ${{ steps.candidate.outputs.artifact_name }}
       artifact_id: ${{ steps.upload-candidate.outputs.artifact-id }}
       artifact_digest: ${{ steps.upload-candidate.outputs.artifact-digest }}
       version_code: ${{ steps.version.outputs.version_code }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read trusted controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Authenticate candidate and admitted attempt
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/candidate-worker.mjs
+      - name: Read authenticated candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.authority.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Verify clean immutable dev commit
         shell: bash
@@ -75,9 +111,9 @@ jobs:
           set -euo pipefail
           test "$GITHUB_REPOSITORY" = "iExalt/paseo"
           test "$GITHUB_REF" = "refs/heads/dev"
-          test "$GITHUB_ACTOR" = "iExalt"
+          node .github/scripts/native-candidate-authority.mjs
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-          test "$SOURCE_SHA" = "$GITHUB_SHA"
+          test "$SOURCE_SHA" = "$PASEO_CANDIDATE_SHA"
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           test -z "$(git status --porcelain)"
 
@@ -96,8 +132,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "26.11.0"
-          cache: npm
-          cache-dependency-path: package-lock.json
+          package-manager-cache: false
           registry-url: https://npm.pkg.github.com
           scope: "@boudra"
 
@@ -165,8 +200,20 @@ jobs:
         with:
           distribution: temurin
           java-version: "25.0.4"
-          cache: gradle
-          cache-dependency-path: packages/app/android/gradle/wrapper/gradle-wrapper.properties
+
+      # Match setup-java v4.7.1's absolute paths and exact key, without its save hook.
+      - name: Resolve Gradle cache home
+        id: gradle-cache-home
+        run: echo "home=$HOME" >> "$GITHUB_OUTPUT"
+      - name: Restore exact Gradle dependencies without saving
+        id: gradle-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 3
+        with:
+          key: setup-java-Linux-x64-gradle-${{ hashFiles('packages/app/android/gradle/wrapper/gradle-wrapper.properties') }}
+          path: |
+            ${{ steps.gradle-cache-home.outputs.home }}/.gradle/caches
+            ${{ steps.gradle-cache-home.outputs.home }}/.gradle/wrapper
 
       - name: Install pinned Android SDK packages
         shell: bash
@@ -278,11 +325,14 @@ jobs:
 
   sign:
     needs: build
-    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'
     name: Sign and publish fork APK artifact
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions: {}
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     outputs:
       source_sha: ${{ steps.signed.outputs.source_sha }}
       fork_version: ${{ steps.signed.outputs.fork_version }}
@@ -296,6 +346,28 @@ jobs:
       artifact_digest: ${{ steps.upload-final.outputs.artifact-digest }}
       verified: ${{ steps.signed.outputs.verified }}
     steps:
+      - name: Read trusted controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Authenticate candidate and admitted attempt
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/candidate-worker.mjs
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
@@ -363,7 +435,7 @@ jobs:
 
           candidate="$RUNNER_TEMP/fork-apk-candidate/paseo-iexalt-fork.apk"
           metadata="$RUNNER_TEMP/fork-apk-candidate/build-metadata.json"
-          test "$GITHUB_SHA" = "$SOURCE_SHA"
+          test "$PASEO_CANDIDATE_SHA" = "$SOURCE_SHA"
           jq -e '.kind == "paseo-verification-candidate" and .schemaVersion == 2 and .platform == "android-arm64" and (has("releaseSequence") | not)' "$metadata" >/dev/null
           test "$(jq -r .sourceSha "$metadata")" = "$SOURCE_SHA"
           test "$(jq -r .forkVersion "$metadata")" = "$FORK_VERSION"
@@ -373,7 +445,7 @@ jobs:
           test "$(jq -r .runId "$metadata")" = "$GITHUB_RUN_ID"
           builder_attempt="$(jq -er '.runAttempt' "$metadata")"
           [[ "$builder_attempt" =~ ^[1-9][0-9]*$ ]]
-          (( builder_attempt <= GITHUB_RUN_ATTEMPT ))
+          (( builder_attempt == GITHUB_RUN_ATTEMPT ))
 
           android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}"
           apksigner="$android_home/build-tools/36.0.0/apksigner"
