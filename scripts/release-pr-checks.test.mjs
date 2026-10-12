@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { generateKeyPairSync } from "node:crypto";
+import { candidateEntry } from "../.github/scripts/candidate-entry.mjs";
+import { currentCandidate, candidateRoute } from "../.github/scripts/candidate-authority.mjs";
+import { descriptorDigest } from "../.github/scripts/candidate-descriptor.mjs";
 import {
   RECEIPT_PREFIX,
   sourceReceipt,
@@ -175,6 +179,98 @@ test("merged authority binds the old checked tree and parent while dev advances"
   const proof = await verifyMergedPrChecks(7, source, identity, setup().request);
   assert.equal(proof.sourceSha, source);
   assert.equal(proof.baseSha, base);
+  const fork = {
+    schemaVersion: 1,
+    repository: repo.full_name,
+    lineage: "iExalt/paseo:semver-v1",
+    version: "0.1.0",
+    upstreamBase: base,
+  };
+  const read = async (_sha, file) =>
+    file === ".github/fork-release.json" ? JSON.stringify(fork) : "trusted policy fixture";
+  const entryEnv = {
+    GITHUB_REF: "refs/heads/dev",
+    GITHUB_SHA: dev,
+    GITHUB_EVENT_NAME: "pull_request_target",
+    CANDIDATE_MODE: "plan",
+    PASEO_RELEASE_APP_ID: "1",
+    PASEO_RELEASE_APP_CLIENT_ID: "Ivtest",
+    PASEO_RELEASE_BOT_ID: "456",
+    PASEO_RELEASE_BOT_LOGIN: identity.botLogin,
+  };
+  const event = { repository: repo, action: "closed", pull_request: setup().current };
+  const output = [];
+  let draft;
+  const assets = new Map();
+  const pair = generateKeyPairSync("ed25519");
+  const api = {
+    publicPin: pair.publicKey.export({ format: "jwk" }).x,
+    ref: async () => null,
+    list: async () => (draft ? [draft] : []),
+    get: async () => draft,
+    create: async (value) => {
+      draft = { ...value, id: 42, assets: [] };
+    },
+    upload: async (_id, name, bytes) => {
+      const asset = { id: assets.size + 1, name, size: bytes.length, state: "uploaded" };
+      assets.set(asset.id, bytes);
+      draft.assets.push(asset);
+    },
+    read: async (asset) => assets.get(asset.id),
+  };
+  const execute = (overrides) =>
+    candidateEntry({
+      event,
+      env: entryEnv,
+      read,
+      request: setup().request,
+      api,
+      output: async (text) => output.push(text),
+      ...overrides,
+    });
+  const descriptor = await execute();
+  assert.equal(draft, undefined, "Read-only plan must not allocate storage");
+  const issueEnv = {
+    ...entryEnv,
+    CANDIDATE_MODE: "issue",
+    EXPECTED_DESCRIPTOR_DIGEST: descriptorDigest(descriptor),
+    PASEO_RELEASE_MANIFEST_PRIVATE_KEY: pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+  };
+  await assert.rejects(execute({ env: { ...issueEnv, EXPECTED_DESCRIPTOR_DIGEST: "wrong" } }));
+  assert.equal(draft, undefined);
+  await execute({ env: issueEnv });
+  assert.equal(draft.assets.length, 2);
+  assert.ok(output.includes("release_id=42\n"));
+  const retryEvent = { repository: repo, sender: { id: 7889894 }, inputs: { release_id: "42" } };
+  const retryEnv = {
+    ...issueEnv,
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    GITHUB_ACTOR: "iExalt",
+    PASEO_RELEASE_MANIFEST_PRIVATE_KEY: undefined,
+  };
+  await execute({
+    event: retryEvent,
+    env: retryEnv,
+    request: async (url) => {
+      assert.ok(!url.includes("/actions/"), "Retry must not depend on expired logs");
+      return setup().request(url);
+    },
+  });
+  assert.equal(draft.assets.length, 2);
+  assert.throws(() => candidateRoute({ ...retryEvent, sender: { id: 999 } }, retryEnv));
+  await assert.rejects(
+    currentCandidate(descriptor, dev, identity, setup().request, async (sha, file) =>
+      file === ".github/fork-release.json"
+        ? JSON.stringify({ ...fork, version: "0.1.1" })
+        : read(sha, file),
+    ),
+  );
+  await assert.rejects(
+    currentCandidate(descriptor, head, identity, setup().request, async (sha, file) =>
+      sha === head ? "new policy" : read(sha, file),
+    ),
+    /Policy changed/,
+  );
   for (const mutate of [
     (f) => {
       f.current.user.id = 999;

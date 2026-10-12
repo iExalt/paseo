@@ -1,0 +1,93 @@
+name: Fork release candidate
+
+on:
+  pull_request_target:
+    types: [closed]
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      release_id:
+        description: Existing authenticated candidate draft ID to retry
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paseo-release-candidate-control
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: >-
+      github.repository == 'iExalt/paseo' && !github.event.repository.private &&
+      github.ref == 'refs/heads/dev' &&
+      ((github.event_name == 'pull_request_target' && github.event.pull_request.merged &&
+        github.event.pull_request.user.id == 341220930) ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'iExalt'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    outputs:
+      digest: ${{ steps.authority.outputs.descriptor_digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Verify merged source or authenticated retry
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_MODE: plan
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/candidate-entry.mjs
+
+  issue:
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: write
+      pull-requests: read
+    outputs:
+      release_id: ${{ steps.authority.outputs.release_id }}
+      source_sha: ${{ steps.authority.outputs.source_sha }}
+      version: ${{ steps.authority.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Independently revalidate and issue draft authority
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_MODE: issue
+          EXPECTED_DESCRIPTOR_DIGEST: ${{ needs.plan.outputs.digest }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+          PASEO_RELEASE_MANIFEST_PRIVATE_KEY: ${{ github.event_name == 'pull_request_target' && secrets.PASEO_RELEASE_MANIFEST_PRIVATE_KEY || '' }}
+        run: node .github/scripts/candidate-entry.mjs
