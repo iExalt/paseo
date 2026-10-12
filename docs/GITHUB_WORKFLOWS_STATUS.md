@@ -311,7 +311,11 @@ dependency install is uncached; it does not consume the repository cache budget.
 
 An explicit release boundary records the immutable original commit and its
 current signed-replay counterpart. Rebase maps exact commit identities and signs
-the updated pointer with upstream provenance. Missing/nonancestor boundaries
+the updated pointer with upstream provenance. Bootstrap also retains its source
+version and exact changelog SHA256, so a fresh clone remains verifiable after
+the original rebased object is no longer reachable. Published boundaries still
+require the original release tag and original/current content agreement.
+Missing/nonancestor boundaries
 stop proposal generation. A merged proposal pauses further proposals until
 publication supplies the next boundary. Only the fixed rehearsal branch
 `ci/release-please-rehearsal` permits a simulated publication boundary; this never
@@ -336,6 +340,11 @@ action's normal cleanup. A separate read-only deep-check gate revalidates bot PR
 identity and captures its current head SHA. A forged label does not authorize
 deep execution or signing. Real event delivery, updated-head checks and the two
 unpublished proposals remain C2/C3 live acceptance work.
+Production proposals additionally require repository variable
+`PASEO_RELEASE_PROPOSALS_ENABLED=true`; leave it unset during C2/C3. Provisioning
+credentials does not enable production. The owner-dispatched fixed rehearsal
+branch provides the first bot-event proof and subsequent proposal lifecycle.
+Production activation is a separately reviewed handoff after that proof.
 
 - [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
 
