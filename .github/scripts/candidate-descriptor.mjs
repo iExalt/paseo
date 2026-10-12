@@ -52,6 +52,8 @@ export const sourceGateFiles = Object.freeze([
   ".github/workflows/windows-product-runtime.yml",
   ".github/scripts/candidate-product-export.mjs",
   ".github/scripts/candidate-product-transfer.mjs",
+  ".github/scripts/candidate-paired-transfer.mjs",
+  "scripts/paseo-nix-update.mjs",
   ".github/scripts/candidate-artifacts.mjs",
   ".github/scripts/extract-candidate-artifact.py",
   ".github/scripts/native-candidate-authority.mjs",
