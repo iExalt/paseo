@@ -5,7 +5,13 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { candidateRoute, currentCandidate, newCandidate } from "./candidate-authority.mjs";
 import { descriptorDigest, signDescriptor } from "./candidate-descriptor.mjs";
-import { admitAttempt, eligibleDraft, ensureDraft, loadDescriptor } from "./candidate-draft.mjs";
+import {
+  admitAttempt,
+  eligibleDraft,
+  ensureDraft,
+  loadDescriptor,
+  requireCurrentRun,
+} from "./candidate-draft.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
@@ -22,6 +28,7 @@ export async function candidateEntry({ event, env, read, request, api, output })
   const digest = descriptorDigest(descriptor);
   if (env.CANDIDATE_MODE === "issue") {
     assert.equal(digest, env.EXPECTED_DESCRIPTOR_DIGEST, "Plan changed before issuance");
+    await requireCurrentRun(env, request, descriptor);
     let releaseId = route.releaseId;
     if (!releaseId) {
       const signature = signDescriptor(
