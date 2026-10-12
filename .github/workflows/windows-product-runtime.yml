@@ -45,7 +45,8 @@ jobs:
     permissions:
       contents: read
       actions: read
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+      pull-requests: read
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && (github.actor == 'iExalt' || (inputs.source_sha != '' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'))
     runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
     timeout-minutes: 150
     outputs:

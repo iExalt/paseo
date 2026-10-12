@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { assertNativeActor } from "./native-candidate-authority.mjs";
 import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
@@ -185,7 +186,7 @@ function recipeForRunner(root) {
 async function main() {
   assert.equal(process.env.GITHUB_REPOSITORY, "iExalt/paseo");
   assert.equal(process.env.GITHUB_REF, "refs/heads/dev");
-  assert.equal(process.env.GITHUB_ACTOR, "iExalt");
+  assertNativeActor(process.env);
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   const [operation] = process.argv.slice(2);
   const root = join(

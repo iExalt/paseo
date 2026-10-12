@@ -160,7 +160,7 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   assert.deepEqual(Object.keys(workflow.on), ["workflow_call", "workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
   const job = workflow.jobs.native;
-  assert.deepEqual(job.permissions, { contents: "read", actions: "read" });
+  assert.deepEqual(job.permissions, { contents: "read", actions: "read", "pull-requests": "read" });
   for (const guard of [
     "github.repository == 'iExalt/paseo'",
     "!github.event.repository.private",
@@ -225,6 +225,11 @@ test("native product exports authenticate source before execution and follow suc
     assert.match(workflow.concurrency.group, /paseo-predecessor-cache-writer/);
     assert.match(workflow.concurrency.group, /inputs.source_sha/);
     const job = workflow.jobs.native;
+    assert.equal((job.permissions ?? workflow.permissions)["pull-requests"], "read");
+    assert.match(
+      job.if,
+      /github.workflow_ref == 'iExalt\/paseo\/\.github\/workflows\/release-candidate.yml@refs\/heads\/dev'/,
+    );
     const index = (id) => job.steps.findIndex((step) => step.id === id);
     const gate = index("candidate");
     const checkout = job.steps.findIndex(
