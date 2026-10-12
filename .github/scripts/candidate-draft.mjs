@@ -266,12 +266,12 @@ export async function requireCurrentRun(env, request, descriptor) {
   assert.equal(run.repository.full_name, "iExalt/paseo");
   assert.equal(run.repository.private, false);
   assert.equal(run.path, ".github/workflows/release-candidate.yml");
-  assert.equal(run.head_sha, env.GITHUB_SHA);
   assert.equal(run.event, env.GITHUB_EVENT_NAME);
   assert.ok(["pull_request_target", "workflow_dispatch"].includes(run.event));
   assert.equal(run.status, "in_progress");
   assert.equal(run.conclusion, null);
   if (run.event === "workflow_dispatch") {
+    assert.equal(run.head_sha, env.GITHUB_SHA);
     assert.equal(run.head_branch, "dev");
     assert.equal(run.actor.id, 7889894);
     assert.equal(run.actor.login, "iExalt");
@@ -288,11 +288,13 @@ export async function requireCurrentRun(env, request, descriptor) {
     assert.equal(pr.merged, true);
     assert.equal(pr.number, descriptor.releasePr);
     assert.equal(pr.merge_commit_sha, descriptor.sourceSha);
+    assert.equal(env.GITHUB_SHA, pr.merge_commit_sha);
     assert.equal(pr.base.ref, "dev");
     assertReleasePr({ ...pr, state: "open" }, releaseBotIdentity(env), descriptor.headSha);
+    assert.equal(run.head_sha, pr.head.sha);
     assert.equal(run.head_branch, pr.head.ref);
   }
-  return { runId, attempt, headBranch: run.head_branch };
+  return { runId, attempt, headBranch: run.head_branch, headSha: run.head_sha };
 }
 
 export async function admitAttempt(api, descriptor, id, env, request) {
