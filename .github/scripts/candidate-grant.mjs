@@ -7,6 +7,7 @@ import { descriptorBytes, verifyDescriptor } from "./candidate-descriptor.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
 import { requireAttempt } from "./candidate-draft.mjs";
 import { attemptJobs, readTrustedWorkerContext } from "./candidate-worker.mjs";
+import { githubResponse, saveDownload, validateArtifact } from "./candidate-artifacts.mjs";
 
 const paired = "paired / ";
 const mac = `${paired}Build and verify macOS closure / `;
@@ -90,8 +91,6 @@ export function validateGrant(grant, context, group, worker, jobs, pin) {
 }
 
 export async function downloadGrant(env, request = fetch) {
-  const { githubResponse, saveDownload, validateArtifact } =
-    await import("./candidate-artifacts.mjs");
   const id = env.CANDIDATE_GRANT_ID;
   assert.match(id, /^[1-9]\d*$/);
   const directory = await mkdtemp(join(env.RUNNER_TEMP, "candidate-grant-"));
