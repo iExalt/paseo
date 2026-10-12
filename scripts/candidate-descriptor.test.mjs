@@ -759,7 +759,6 @@ test("batched lifecycle and immutable writer retain fresh checks with bounded AP
         databaseId: draft.id,
         name: draft.name,
         tagName: draft.tag_name,
-        targetCommitish: draft.target_commitish,
         isDraft: draft.draft,
         isPrerelease: draft.prerelease,
         description: draft.body,
@@ -798,10 +797,10 @@ test("batched lifecycle and immutable writer retain fresh checks with bounded AP
   api.publicPin = publicPin;
   const writer = await attemptWriter(api, descriptor, 42, 500, 2);
   await writer.bytes("fixture.json", Buffer.from("first"));
-  assert.deepEqual(counts, { rest: 10, graphql: 2 });
+  assert.deepEqual(counts, { rest: 12, graphql: 2 });
   loseReply = true;
   await writer.bytes("lost.json", Buffer.from("recovered"));
-  assert.deepEqual(counts, { rest: 16, graphql: 4 });
+  assert.deepEqual(counts, { rest: 20, graphql: 4 });
   assert.equal(draft.assets.filter((asset) => asset.name.endsWith("lost.json")).length, 1);
   for (const mutate of [
     (payload) => {
@@ -840,6 +839,15 @@ test("batched lifecycle and immutable writer retain fresh checks with bounded AP
       attempt: 3,
     });
   };
+  await assert.rejects(
+    writer.bytes("raced.json", Buffer.from("no")),
+    /changed during lifecycle read/,
+  );
+  fault = null;
+  draft.target_commitish = "f".repeat(40);
+  await assert.rejects(writer.bytes("wrong-target.json", Buffer.from("no")));
+  draft.target_commitish = descriptor.sourceSha;
+  draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 3 });
   await assert.rejects(writer.bytes("stale.json", Buffer.from("no")), /no longer admitted/);
   assert.ok(!draft.assets.some((asset) => asset.name.endsWith("stale.json")));
 });
