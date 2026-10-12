@@ -107,6 +107,7 @@ jobs:
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
+          CANDIDATE_EXPECTED_JOB: paired / Build and verify macOS closure / Build and sign macOS closure
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
@@ -197,6 +198,7 @@ jobs:
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
+          CANDIDATE_EXPECTED_JOB: paired / Build and verify macOS closure / Verify closure on a fresh runner
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
