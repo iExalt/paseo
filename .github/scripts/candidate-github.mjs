@@ -4,6 +4,23 @@ import { packageLimit, fileIdentity, verifyStream, withVerifiedFile } from "./ca
 const root = "https://api.github.com/repos/iExalt/paseo";
 const uploads = "https://uploads.github.com/repos/iExalt/paseo";
 const metadataLimit = 1024 * 1024;
+export function candidateQuota(headers, log = console.log) {
+  const resource = headers.get("x-ratelimit-resource");
+  const fields = ["limit", "used", "remaining", "reset"].map((field) => [
+    field,
+    headers.get(`x-ratelimit-${field}`),
+  ]);
+  if (
+    !["core", "graphql"].includes(resource) ||
+    fields.some(([, value]) => !/^\d{1,12}$/.test(value ?? ""))
+  ) {
+    log("[candidate-api] adapter quota unavailable");
+    return;
+  }
+  log(
+    `[candidate-api] adapter resource=${resource} ${fields.map(([field, value]) => `${field}=${value}`).join(" ")}`,
+  );
+}
 function id(value) {
   assert.ok(Number.isSafeInteger(value) && value > 0);
   return value;
@@ -24,6 +41,12 @@ async function bounded(response, maximum) {
 // Metadata is bounded in memory; package transfers hash streams end to end.
 export function candidateGithub(token, request = fetch) {
   assert.ok(typeof token === "string" && token.length > 0);
+  const transport = request;
+  request = async (...args) => {
+    const result = await transport(...args);
+    candidateQuota(result.headers);
+    return result;
+  };
   async function response(url, { method = "GET", body, binary = false } = {}) {
     return request(url, {
       method,
