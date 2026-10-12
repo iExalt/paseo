@@ -365,6 +365,10 @@ latest attempts and rechecks PR head/base after collecting evidence. Fixture
 proofs cover stale/rerun/missing checks and wrong merge parents; real events remain
 pending. The second engine proposal is also exercised without any GitHub release,
 matching the explicitly unpublished rehearsal.
+The repository allows only rebase merges. The rehearsal therefore requires one
+bot commit, conditionally merges its verified head using that method, and checks
+the returned/final/branch SHA, single parent equal to the verified base, and tree
+equal to the routine-tested merge tree. Repository merge policy is unchanged.
 
 - [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
 
