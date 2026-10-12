@@ -72,7 +72,7 @@ jobs:
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
       - name: Install locked dependencies once
-        run: time npm ci --prefer-offline
+        run: time npm ci --prefer-offline --timing
       - name: Verify the checked-out source
         env:
           EVENT_NAME: ${{ github.event_name }}
