@@ -223,6 +223,34 @@ exclusive with draft-ID retry; only initial issuance receives the signing key.
 Both plan and issue independently verify merged authority. New PR/dev checks and
 native-disabled recovery against PR #74 remain required before native enablement.
 
+Recovery repair `f419ba2cc` passed PR #75 in 4m27s. Same-SHA dev
+`38289212754` attempt 1 passed all functional checks but failed the strict 300s
+latency gate. Identical app tests took 97.20s in PR versus 156.93s in dev;
+dependency builds took 6.90s/11.39s and installation 48.48s/75.25s on the same
+Ubuntu image. One full unchanged rerun passed; both measurements remain evidence,
+not a reset baseline or proof of a source regression.
+
+Owner recovery `38290484353` verified merged authority and created draft
+`410889371` with signed descriptor digest
+`96b8c1592ddbb793a9529b5ca988b2ba8dd545151569e430b25dba483b186bd3`.
+Admission then failed: GitHub's body-only PATCH replaced its draft tag with
+`untagged-a3270c8a346d9ee3cb9d`. Disposable probe `410891045` reproduced the
+mutation and verified that explicitly including the unchanged tag preserves it;
+the probe was deleted. Only the descriptor and signature exist in the production
+draft; no verification/native matrix or final manifest completed.
+
+The adapter repair validates current identity/admission, preserves the verified
+tag in PATCH, and checks fresh readback. Existing signed policy cannot silently
+accept this repair. Proposed recovery requires explicit approval: retain the two
+signed assets in draft `410889371`, mark its control state stopped and rename
+its draft tag to `paseo-retired-candidate-410889371` without creating a Git tag;
+then issue replacement authority for the same PR #74/source `376090618` under
+the reviewed repaired policy. Fresh signature, asset-ID/hash, lifecycle and
+no-tag checks precede and follow retirement. The original draft is untouched
+pending that approval; replacement remains native-disabled until canary closure.
+Observed Actions limits were 5,000 for both REST and GraphQL, with 4,939/4,990
+remaining at failure. These partial adapter counters are not full-matrix usage.
+
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase
