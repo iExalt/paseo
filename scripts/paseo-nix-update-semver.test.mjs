@@ -145,6 +145,7 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
   let legacyPending = true;
   let candidateVersion = "0.1.0";
   let selections = 0;
+  let lastGeneration = 4;
   const adapters = {
     current: async () => selected,
     readState: () => read(files.state),
@@ -167,7 +168,7 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     async selectTarget(value) {
       if (failSelect) throw new Error("profile switch interrupted");
       selections++;
-      selected = actual({ ...value, generation: value.generation ?? 5 });
+      selected = actual({ ...value, generation: value.generation ?? ++lastGeneration });
     },
     async assertNoLegacyJournal() {
       assert.equal(legacyPending, false, "legacy pending journal");
@@ -225,6 +226,19 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     );
     selected = { ...selected, generation: 99 };
     await assert.rejects(executeCommand("activate", adapters), /outside the updater/);
+    selected = actual(target("0.1.0", 5));
+    const upgraded = await executeCommand("activate", adapters);
+    assert.equal(upgraded.active.version, "0.1.1");
+    assert.equal(upgraded.highWaterVersion, "0.1.1");
+    assert.equal(selected.generation, 6);
+    const previousFork = await executeCommand("rollback", adapters);
+    assert.equal(previousFork.active.version, "0.1.0");
+    assert.equal(previousFork.highWaterVersion, "0.1.1");
+    assert.equal(selected.generation, 5);
+    const reactivated = await executeCommand("reactivate-high-water", adapters);
+    assert.equal(reactivated.active.version, "0.1.1");
+    assert.equal(reactivated.highWaterVersion, "0.1.1");
+    assert.equal(selected.generation, 6);
     assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
   } finally {
     await rm(root, { recursive: true, force: true });
