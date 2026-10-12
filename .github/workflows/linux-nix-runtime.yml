@@ -117,6 +117,10 @@ jobs:
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
           NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
         run: node .github/scripts/candidate-nix-export.mjs
+      - name: Remove owned temporary Nix signing key
+        if: always() && inputs.source_sha != ''
+        timeout-minutes: 1
+        run: rm -f -- "$RUNNER_TEMP/candidate-nix-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/signing-key"
       - name: Transfer immutable candidate closures
         if: inputs.source_sha != ''
         id: packages
