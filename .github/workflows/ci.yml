@@ -77,7 +77,7 @@ jobs:
           npm_config_fetch_retries: "2"
           npm_config_fetch_retry_mintimeout: "1000"
           npm_config_fetch_retry_maxtimeout: "5000"
-        run: time npm ci --prefer-offline --timing
+        run: time npm ci --prefer-offline
       - name: Verify the checked-out source
         env:
           EVENT_NAME: ${{ github.event_name }}
