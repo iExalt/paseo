@@ -4,6 +4,7 @@ import { generateKeyPairSync } from "node:crypto";
 import { candidateEntry } from "../.github/scripts/candidate-entry.mjs";
 import { currentCandidate, candidateRoute } from "../.github/scripts/candidate-authority.mjs";
 import { descriptorDigest } from "../.github/scripts/candidate-descriptor.mjs";
+import { draftBody } from "../.github/scripts/candidate-draft.mjs";
 import {
   RECEIPT_PREFIX,
   sourceReceipt,
@@ -158,6 +159,7 @@ function fixture() {
 }
 
 test("merged authority binds the old checked tree and parent while dev advances", async () => {
+  let rootEvent = "pull_request_target";
   const source = "e".repeat(40),
     dev = "f".repeat(40);
   const setup = () => {
@@ -169,6 +171,19 @@ test("merged authority binds the old checked tree and parent while dev advances"
     f.ancestry = { status: "ahead", base_commit: { sha: source } };
     const request = f.request;
     f.request = async (url) => {
+      if (url.endsWith("/actions/runs/500"))
+        return {
+          id: 500,
+          run_attempt: 1,
+          repository: repo,
+          path: ".github/workflows/release-candidate.yml",
+          head_sha: dev,
+          head_branch: "dev",
+          event: rootEvent,
+          status: "in_progress",
+          conclusion: null,
+          actor: { id: 7889894, login: "iExalt" },
+        };
       if (url.endsWith(`/git/commits/${source}`)) return f.commit;
       if (url.endsWith("/git/ref/heads/dev")) return { object: { sha: dev } };
       if (url.includes("/compare/")) return f.ancestry;
@@ -196,6 +211,8 @@ test("merged authority binds the old checked tree and parent while dev advances"
   };
   const read = async (_sha, file) => sourceFiles[file] ?? "trusted policy fixture";
   const entryEnv = {
+    GITHUB_RUN_ID: "500",
+    GITHUB_RUN_ATTEMPT: "1",
     GITHUB_REF: "refs/heads/dev",
     GITHUB_SHA: dev,
     GITHUB_EVENT_NAME: "pull_request_target",
@@ -211,6 +228,9 @@ test("merged authority binds the old checked tree and parent while dev advances"
   const assets = new Map();
   const pair = generateKeyPairSync("ed25519");
   const api = {
+    setBody: async (_id, body) => {
+      draft.body = body;
+    },
     publicPin: pair.publicKey.export({ format: "jwk" }).x,
     ref: async () => null,
     list: async () => (draft ? [draft] : []),
@@ -263,16 +283,48 @@ test("merged authority binds the old checked tree and parent while dev advances"
     GITHUB_ACTOR: "iExalt",
     PASEO_RELEASE_MANIFEST_PRIVATE_KEY: undefined,
   };
+  rootEvent = "workflow_dispatch";
   await execute({
     event: retryEvent,
     env: retryEnv,
     request: async (url) => {
-      assert.ok(!url.includes("/actions/"), "Retry must not depend on expired logs");
+      assert.ok(
+        !url.includes("/actions/") || url.endsWith("/actions/runs/500"),
+        "Retry must not depend on expired logs",
+      );
       return setup().request(url);
     },
   });
   assert.equal(draft.assets.length, 2);
   assert.throws(() => candidateRoute({ ...retryEvent, sender: { id: 999 } }, retryEnv));
+  for (const override of [
+    { status: "completed" },
+    { run_attempt: 2 },
+    { head_sha: head },
+    { path: ".github/workflows/ci.yml" },
+    { actor: { id: 999, login: "iExalt" } },
+    { repository: { ...repo, id: 999 } },
+  ]) {
+    const originalBody = draft.body;
+    await assert.rejects(
+      execute({
+        event: retryEvent,
+        env: retryEnv,
+        request: async (url) => {
+          const response = await setup().request(url);
+          return url.endsWith("/actions/runs/500") ? { ...response, ...override } : response;
+        },
+      }),
+    );
+    assert.equal(draft.body, originalBody);
+  }
+  draft.body = draftBody(descriptor, "active", { runId: 501, attempt: 1 });
+  await assert.rejects(execute({ event: retryEvent, env: retryEnv }), /Cannot regress/);
+  draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 2 });
+  await assert.rejects(execute({ event: retryEvent, env: retryEnv }), /Cannot regress/);
+  draft.body = draftBody(descriptor, "stopped", { runId: 500, attempt: 1 });
+  await assert.rejects(execute({ event: retryEvent, env: retryEnv }), /stopped/);
+  draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 1 });
   await assert.rejects(
     currentCandidate(descriptor, dev, identity, setup().request, async (sha, file) =>
       file === ".github/fork-release.json"
