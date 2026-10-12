@@ -164,8 +164,48 @@ test("write-token product transfer executes only the trusted controller", () => 
   for (const step of workflow.jobs.transfer.steps) {
     if (step.uses?.startsWith("actions/checkout@"))
       assert.equal(step.with.ref, "${{ github.sha }}");
-    if (step.run) assert.equal(step.run, "node .github/scripts/candidate-product-transfer.mjs");
+    if (step.run)
+      assert.equal(
+        step.run,
+        [
+          'case "$CANDIDATE_PRODUCT_GROUP" in',
+          "  macos-arm64|android-arm64) node .github/scripts/candidate-paired-transfer.mjs ;;",
+          "  *) node .github/scripts/candidate-product-transfer.mjs ;;",
+          "esac",
+          "",
+        ].join("\n"),
+      );
   }
+});
+
+test("candidate coordinator cannot sign before complete verification and keeps canary native work off", () => {
+  const workflow = load(
+    readFileSync(new URL(".github/workflows/release-candidate.yml", repoRoot), "utf8"),
+  );
+  assert.equal(workflow.concurrency.group, "paseo-release-candidate-control");
+  assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  for (const name of [
+    "paired",
+    "linux-nix-x64",
+    "linux-nix-arm64",
+    "linux-products-x64",
+    "linux-products-arm64",
+    "windows-x64",
+    "windows-arm64",
+  ])
+    assert.equal(workflow.jobs[name].if, "vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'");
+  const steps = workflow.jobs.aggregate.steps;
+  const check = steps.findIndex((step) => step.id === "verified");
+  const signing = steps.findIndex((step) => step.env?.PASEO_RELEASE_MANIFEST_PRIVATE_KEY);
+  assert.ok(check >= 0 && signing > check);
+  assert.equal(steps[signing].if, undefined);
+  assert.equal(
+    steps[signing].env.VERIFIED_MANIFEST_DIGEST,
+    "${{ steps.verified.outputs.manifest_digest }}",
+  );
+  assert.ok(
+    !JSON.stringify(steps.slice(0, signing)).includes("PASEO_RELEASE_MANIFEST_PRIVATE_KEY"),
+  );
 });
 
 test("Windows product trials retain trusted native runners, bounded cleanup and exact predecessor caching", () => {

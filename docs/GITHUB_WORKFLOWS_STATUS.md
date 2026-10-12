@@ -92,21 +92,41 @@ routine run `38267651739` passed in 4m34s (21m30s summed); same-SHA dev run
 `38270034555` in 4m42s (22m57s summed), within the unchanged five-minute budget.
 This does not close the complete candidate matrix.
 
-D1c's worker gate and pure aggregate are reviewer-accepted at `123cbd4e9`:
-workers resolve source inputs against the signed descriptor and current admitted
-tuple; the aggregate requires all seven routine lanes, three deep journeys and
-exactly 14 current-attempt cells with successful producer-job API evidence.
-The read-only routine/deep fanout is reviewer-accepted at `d45683fd3`, with an
-authenticated worker gate before candidate checkout and exact source/tree checks.
-Artifact provenance/download integration, closure signing and the hosted same-SHA
-native proof remain unimplemented or unverified. Linux/Windows product wiring
-and fixed-name package exports are reviewer-accepted at `70f6fed5f`: coordinator
-workers bind their source/controller/run/attempt to gate-created context, retain
-PR-read permission, and export only after successful runtime and cleanup steps.
-Coordinator calls restore exact predecessor caches without saving; manual Linux
-and Windows cache writers share one repository-wide lock. Cache misses still
-build and verify. These workflows are not yet connected to the root native fanout;
-trusted transfer admission and actual hosted reusable-job identities remain open.
+D1c coordinator source is reviewer-accepted through `c0013d6f6` and awaits
+publication/routine integration. The root connects seven routine lanes, three deep
+journeys, all 14 native cells, eight trusted transfers and a final aggregate.
+Workers authenticate descriptor/source/attempt and validate their current API job
+name before costly execution. Transfers require completed signing/import/runtime/
+cleanup evidence, exact ZIP provenance and independently hashed package bytes.
+The aggregate downloads every draft package again and accepts only a complete
+current-attempt matrix; a subsequent controller-only step rechecks admission and
+signs an immutable attempt-scoped inventory. Drafts remain unpublished.
+
+Linux Nix emits distinct daemon/desktop signed closures, then verifies exact
+archive/manifest bytes and recursive NAR signatures in independent empty isolated
+stores with builders/substituters disabled. This is isolated-store proof, not a
+fresh-runner runtime claim. Mac retains fresh-runner closure verification and
+unchanged consumer metadata. Android signing remains controller-only. Signing
+key files have in-process and workflow-level cleanup. Retry inventory now uses
+bounded asset pagination and rejects duplicate identities.
+
+Coordinator calls restore exact predecessor/Gradle dependencies without saving;
+manual Linux and Windows cache writers share one repository-wide lock. Android's
+implicit npm cache and Gradle save hook are removed while preserving its exact
+existing Gradle restore key/paths. Misses still build and verify; no cache was
+removed. The first production candidate will run with native work disabled and
+must fail final aggregation without receiving its signing key. Only after that
+cheap identity/routine/deep canary is reconciled will a full same-policy retry
+run native work; no proof carries across attempts. Actual native CLI behavior,
+reusable job names, transfer timings and all 14 current-SHA cells remain D2 gates.
+
+Published PR #72 at `9e3a450c2` passed routine run `38272451302` in 4m33s
+(22m33s summed); same-SHA dev run `38273164338` passed in 4m28s (23m35s).
+The unchanged baseline is 4m15s/20m18s PR and 4m18s/20m37s dev. App test time
+in the latest PR was 149.64s versus 99.52s at baseline, with 633 versus 631 files;
+imports accounted for 53% versus 51%. This localizes the critical-path growth but
+does not isolate hosted-runner variation from source cost. The all-CI performance
+review and two-minute stretch remain open; budgets and verification are unchanged.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
