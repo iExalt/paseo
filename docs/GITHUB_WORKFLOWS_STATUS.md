@@ -51,9 +51,9 @@ under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
 - User selected **0.1.0**, **semver-only upgrade ordering**, and **clean break
   with manual migration**. The independent reservation/sequence design and
   legacy compatibility bridge are superseded. No installed client was changed.
-- `scripts/fork-version.mjs` implements a stable-version comparator and a
-  deterministic Android versionCode encoding. It is not yet wired to packages
-  or updaters; that is C. Android's mandatory integer remains internal.
+- Shared fork version rules now drive Android configuration and both normal
+  updater paths. Android's mandatory integer remains internal; C1 integration
+  and publication are pending.
 - Native Windows ARM64 packaging uses a custom binding built from pinned
   `sherpa-onnx@1.13.8` sources and upstream ARM64 core libraries because the locked
   npm distribution lacks that binding. The unchanged wrapper's local-addon route
@@ -287,7 +287,7 @@ timing and the two-minute routine stretch remain unclaimed.
 - [ ] C1: 0.1.0 reset, semver-only upgrades, clean-break migration and recovery fixtures.
   - [x] C1a: portable V2 inventory and shared version rules (reviewer-accepted `f8b156ee7`; local).
   - [x] C1b: Android discovery, receipts and native fork encoding (reviewer-accepted `a299c61b6`; local).
-  - [ ] C1c: Nix transactional recovery and desktop updater contract (implemented; review pending).
+  - [x] C1c: Nix transactional recovery and desktop updater contract (reviewer-accepted `46a931497`; local).
   - [ ] C1d: workspace/native version reset and rebase-preservation integration.
 - [ ] C2: release-please bootstrap and scoped App authentication.
 - [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
@@ -308,7 +308,7 @@ The settings row explains manual migration for incompatible installed builds.
 Protocol, Android receipt/UI and native configuration fixtures pass in 2.05s;
 app typecheck and actual Expo fork configuration evaluation pass. Kotlin runtime
 and installed 0.1.0 migration are not claimed; those remain Phase D package/device
-gates. Workspace versions have not yet changed.
+gates. Workspace reset is owned by C1d.
 
 C1c separates retained V1 recovery from new semver discovery and state. Both use
 the existing outer operation lock and active Nix profile; V2 receipts/journals
@@ -322,11 +322,22 @@ version labels no longer expose numeric release sequences.
 
 Cheap transaction fixtures cover interruption before profile selection, failed
 state writes, failed journal cleanup, repeated migration, downgrade rejection,
-legacy rollback and exact reactivation. New fixtures take about 142ms locally;
+legacy rollback, second-version activation and exact reactivation. New fixtures take about 312ms locally;
 the retained V1 suite passes with its existing opt-in real Nix signature fixture
 still skipped. App/desktop typechecks, UI fixtures, standalone packaged-source
 imports and Nix expression parsing pass. Actual installed migration and rebuilt
 0.1.0 package/runtime evidence remain Phase D gates.
+
+C1d resets the root and all 12 workspace versions, internal dependencies and
+matching lock entries to 0.1.0 without changing external dependency resolutions.
+`.github/fork-release.json` owns the fork version and exact incorporated upstream
+base; `CHANGELOG.fork.md` keeps independent history. The routine contract checks
+every workspace and lock identity. Rebase requires this metadata, preserves fork
+version/history through replay and adds a separately signed provenance commit
+only when the captured upstream SHA changes; validation binds the final HEAD.
+An upstream version conflict or missing authority stops before publication.
+The upstream version/tag writer is disabled for this fork. Source review and
+hosted combined verification remain pending.
 
 ### Phase B evidence history
 
