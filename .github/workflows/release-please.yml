@@ -1,0 +1,116 @@
+name: Fork version proposals
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Trusted target for an unpublished version proposal
+        type: choice
+        options: [dev, ci/release-please-rehearsal]
+        default: dev
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-please-${{ inputs.target || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    if: >-
+      github.repository == 'iExalt/paseo' && !github.event.repository.private &&
+      github.ref == 'refs/heads/dev' &&
+      (github.event_name == 'push' || github.actor == 'iExalt')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      TARGET_BRANCH: ${{ inputs.target || 'dev' }}
+      PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+      PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+      PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+      PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+    steps:
+      - name: Read trusted workflow source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Verify pinned release engine output
+        run: |
+          npm ci --prefix .github/release-tools --ignore-scripts --no-audit --no-fund
+          node --test .github/release-tools/contract.test.mjs
+      - name: Capture target tree
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$(gh api "repos/iExalt/paseo/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)"
+          [[ "$sha" =~ ^[a-f0-9]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - name: Read target data without running its code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          path: .dev/release-target
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify version and bounded history
+        id: boundary
+        env:
+          TARGET_DIRECTORY: .dev/release-target
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node .github/scripts/release-please-preflight.mjs
+      - name: Verify configured App and installation identity
+        id: identity
+        if: steps.boundary.outputs.ready == 'true' && vars.PASEO_RELEASE_APP_CLIENT_ID != ''
+        env:
+          PASEO_RELEASE_APP_PRIVATE_KEY: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
+        run: node .github/scripts/release-app-auth.mjs app
+      - name: Mint repository-scoped bot token
+        id: app
+        if: steps.identity.outcome == 'success'
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
+          owner: iExalt
+          repositories: paseo
+          permission-contents: write
+          permission-pull-requests: write
+          permission-issues: write
+      - name: Verify minted scope
+        if: steps.app.outcome == 'success'
+        env:
+          RELEASE_APP_TOKEN: ${{ steps.app.outputs.token }}
+          TOKEN_INSTALLATION_ID: ${{ steps.app.outputs.installation-id }}
+          TOKEN_APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          VERIFIED_INSTALLATION_ID: ${{ steps.identity.outputs.installation_id }}
+          VERIFIED_APP_SLUG: ${{ steps.identity.outputs.slug }}
+        run: node .github/scripts/release-app-auth.mjs token
+      - name: Reject target movement before proposing
+        if: steps.app.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ steps.target.outputs.sha }}
+        run: test "$(gh api "repos/iExalt/paseo/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
+      - name: Propose version without creating a release
+        if: steps.app.outcome == 'success'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app.outputs.token }}
+          target-branch: ${{ env.TARGET_BRANCH }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
+      - name: Record missing setup
+        if: vars.PASEO_RELEASE_APP_CLIENT_ID == ''
+        run: echo 'Bot event proof is pending narrowly scoped App configuration.' >> "$GITHUB_STEP_SUMMARY"
