@@ -125,6 +125,7 @@ interface RemoteProviderConnection {
 }
 
 interface PluginRuntimeDependencies {
+  compatibilityVersion?: string;
   settingsDirectory?: string;
   onSettingsChanged?: (pluginId: string, settingsId: string) => void;
   spawnChild?: () => PluginChild;
@@ -343,7 +344,7 @@ export class PluginRuntime {
     if (this.plugins.has(input.id)) throw new Error(`Plugin is already running: ${input.id}`);
     this.appendLog(input.id, "stdout", "[paseo] Loading plugin");
     const directory = path.resolve(input.directory);
-    const bundles = await compileDirectoryPlugin(directory, this.daemonVersion, input.id);
+    const bundles = await compileDirectoryPlugin(directory, this.dependencies.compatibilityVersion ?? this.daemonVersion, input.id);
     const { manifest } = bundles;
     if (!bundles.serverBundle) throw new Error(`Built-in plugin ${input.id} needs a server entry`);
     const loaded = await this.launchPlugin({
@@ -360,7 +361,7 @@ export class PluginRuntime {
   }
 
   async validatePlugin(configuredPath: string): Promise<void> {
-    await compileDirectoryPlugin(path.resolve(configuredPath), this.daemonVersion);
+    await compileDirectoryPlugin(path.resolve(configuredPath), this.dependencies.compatibilityVersion ?? this.daemonVersion);
   }
 
   async stopPluginById(pluginId: string): Promise<boolean> {
@@ -768,7 +769,7 @@ export class PluginRuntime {
     canPublish: () => boolean,
   ): Promise<LoadedPlugin> {
     const directory = path.resolve(configuredPath);
-    const bundles = await compileDirectoryPlugin(directory, this.daemonVersion);
+    const bundles = await compileDirectoryPlugin(directory, this.dependencies.compatibilityVersion ?? this.daemonVersion);
     const { manifest } = bundles;
     if (!canPublish()) throw new Error(`Plugin start cancelled: ${pluginId}`);
     const serverBundle = bundles.serverBundle;
