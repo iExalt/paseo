@@ -6,6 +6,7 @@ import {
   readReleaseBoundary,
   rebindReleaseBoundary,
   verifyBoundaryHistory,
+  changelogDigest,
 } from "./release-boundary.mjs";
 import { releaseVersionSelectors } from "../.github/scripts/release-version-selectors.mjs";
 
@@ -31,6 +32,28 @@ test("release configuration owns exactly the fork version selectors and cannot p
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.deepEqual(workflow.on.push.branches, ["dev"]);
   assert.match(workflow.jobs.propose.if, /github.ref == 'refs\/heads\/dev'/);
+  const eligible = new Function(
+    "github",
+    "inputs",
+    "vars",
+    `return (${workflow.jobs.propose.if});`,
+  );
+  const event = {
+    repository: "iExalt/paseo",
+    event: { repository: { private: false } },
+    ref: "refs/heads/dev",
+    event_name: "push",
+    actor: "iExalt",
+  };
+  assert.equal(eligible(event, {}, {}), false);
+  assert.equal(eligible(event, {}, { PASEO_RELEASE_PROPOSALS_ENABLED: "true" }), true);
+  event.event_name = "workflow_dispatch";
+  assert.equal(eligible(event, { target: "dev" }, {}), false);
+  assert.equal(eligible(event, { target: "ci/release-please-rehearsal" }, {}), true);
+  assert.equal(
+    eligible({ ...event, actor: "other" }, { target: "ci/release-please-rehearsal" }, {}),
+    false,
+  );
   const release = workflow.jobs.propose.steps.find((step) =>
     step.uses?.startsWith("googleapis/release-please-action@"),
   );
@@ -61,12 +84,25 @@ test("missing or changed history fails closed while exact signed replay preserve
     /missing file/,
   );
   const fork = JSON.parse(await read(".github/fork-release.json"));
-  const boundary = { ...rebound.boundary, kind: "bootstrap", version: "0.0.0" };
+  const boundary = {
+    ...rebound.boundary,
+    kind: "bootstrap",
+    version: "0.0.0",
+    forkVersion: "0.1.0",
+    changelogSha256: changelogDigest("unchanged changelog"),
+  };
   const readAt = async (_sha, file) =>
     file === ".github/fork-release.json"
       ? JSON.stringify({ ...fork, version: "0.1.0" })
       : "unchanged changelog";
   await verifyBoundaryHistory(boundary, { isAncestor: async () => true, readAt });
+  await assert.rejects(
+    verifyBoundaryHistory(
+      { ...boundary, changelogSha256: "f".repeat(64) },
+      { isAncestor: async () => true, readAt },
+    ),
+    /changelog/,
+  );
   await assert.rejects(
     verifyBoundaryHistory(boundary, { isAncestor: async () => false, readAt }),
     /ancestor/,

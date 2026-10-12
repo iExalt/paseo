@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { releasePreflight } from "../.github/scripts/release-please-preflight.mjs";
+import { changelogDigest } from "./release-boundary.mjs";
 
 test("clean target preflight bounds bootstrap, pauses merged proposals and rejects nonancestor history", async () => {
   const directory = await mkdtemp(join(tmpdir(), "paseo-release-preflight-"));
@@ -78,17 +79,26 @@ test("clean target preflight bounds bootstrap, pauses merged proposals and rejec
     fork.version = "0.1.0";
     await write(".github/fork-release.json", JSON.stringify(fork));
     const sourceSha = commit();
+    const mappedSha = git(
+      "commit-tree",
+      `${sourceSha}^{tree}`,
+      "-m",
+      "test: replayed bootstrap root",
+    );
+    git("reset", "--hard", mappedSha);
     const config = JSON.parse(await read("release-please-config.json"));
-    config["bootstrap-sha"] = sourceSha;
-    config["last-release-sha"] = sourceSha;
+    config["bootstrap-sha"] = mappedSha;
+    config["last-release-sha"] = mappedSha;
     config.packages["."]["release-as"] = "0.1.0";
     await write("release-please-config.json", JSON.stringify(config));
     const boundary = {
       schemaVersion: 1,
       kind: "bootstrap",
+      forkVersion: "0.1.0",
+      changelogSha256: changelogDigest(await read("CHANGELOG.fork.md")),
       version: "0.0.0",
       originalSha: sourceSha,
-      currentSha: sourceSha,
+      currentSha: mappedSha,
     };
     await write(".github/release-boundary.json", JSON.stringify(boundary));
     await write(".release-please-manifest.json", JSON.stringify({ ".": "0.0.0" }));
@@ -103,6 +113,16 @@ test("clean target preflight bounds bootstrap, pauses merged proposals and rejec
         },
       });
     assert.equal((await check()).ready, true);
+    const fresh = join(directory, "fresh");
+    git("clone", "--quiet", "--no-local", directory, fresh);
+    assert.throws(() =>
+      execFileSync("git", ["-C", fresh, "cat-file", "-e", sourceSha], { stdio: "pipe" }),
+    );
+    assert.equal(
+      (await releasePreflight({ repositoryPath: fresh, branch: "dev", expectedSha })).ready,
+      true,
+    );
+    await rm(fresh, { recursive: true, force: true });
     await write(".release-please-manifest.json", JSON.stringify({ ".": "0.1.0" }));
     expectedSha = commit();
     assert.equal((await check()).ready, false);
@@ -113,6 +133,8 @@ test("clean target preflight bounds bootstrap, pauses merged proposals and rejec
       originalSha: releaseSha,
       currentSha: releaseSha,
     });
+    delete boundary.forkVersion;
+    delete boundary.changelogSha256;
     config["last-release-sha"] = releaseSha;
     delete config.packages["."]["release-as"];
     await write(".github/release-boundary.json", JSON.stringify(boundary));

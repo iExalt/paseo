@@ -23,7 +23,9 @@ jobs:
     if: >-
       github.repository == 'iExalt/paseo' && !github.event.repository.private &&
       github.ref == 'refs/heads/dev' &&
-      (github.event_name == 'push' || github.actor == 'iExalt')
+      ((github.event_name == 'push' && vars.PASEO_RELEASE_PROPOSALS_ENABLED == 'true') ||
+       (github.event_name == 'workflow_dispatch' && github.actor == 'iExalt' &&
+        (inputs.target == 'ci/release-please-rehearsal' || vars.PASEO_RELEASE_PROPOSALS_ENABLED == 'true')))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
