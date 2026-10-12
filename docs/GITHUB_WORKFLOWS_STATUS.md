@@ -52,6 +52,17 @@
 Phase D1 is active / implemented in part; D2 is planned / designed and depends on
 D1's authenticated-source, transport and complete native aggregate proofs.
 
+D1b source authority and draft transport are implemented locally, pending review
+and the hosted entry-point rehearsal. A merged proposal must match its authenticated
+bot identity, verified premerge tree and sole rebase parent, and remain in dev's
+ancestry. Candidate descriptors bind the 14 cells, upstream base, source and policy
+digests, and premerge run attempts under a separate Ed25519 signature domain.
+Version-plus-source draft identities and immutable attempt assets reject replacement
+bytes; interrupted uploads reconcile by downloading and hashing the existing asset.
+These cheap fixtures do not establish a live candidate: workflow wiring, streaming
+package transfers, exact-source reruns and the complete D2 native matrix remain open.
+No manifest signing secret has been provisioned or used by Actions.
+
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase
