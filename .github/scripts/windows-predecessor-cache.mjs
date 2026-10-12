@@ -221,7 +221,7 @@ async function main() {
     const recipe = recipeForRunner(root);
     if (operation === "prepare") {
       const candidate = json(join(root, "candidate.json"));
-      assert.equal(candidate.sourceSha, process.env.GITHUB_SHA);
+      assert.equal(candidate.sourceSha, process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA);
       if (process.arch === "arm64")
         assert.deepEqual(candidate.binding.provenance, recipe.bindingProvenance);
     }
@@ -268,7 +268,7 @@ async function main() {
     });
     save(join(directory, "receipt.json"), {
       recipe,
-      producerSha: process.env.GITHUB_SHA,
+      producerSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
       runId: process.env.GITHUB_RUN_ID,
       attempt: process.env.GITHUB_RUN_ATTEMPT,
       identitySha256: hash(join(directory, "previous.json")),

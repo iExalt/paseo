@@ -187,7 +187,7 @@ async function main() {
     copyFileSync(join(root, "previous.json"), join(directory, "previous.json"));
     const receipt = {
       recipe,
-      producerSha: process.env.GITHUB_SHA,
+      producerSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
       runId: process.env.GITHUB_RUN_ID,
       attempt: process.env.GITHUB_RUN_ATTEMPT,
       identitySha256: hashFile(join(directory, "previous.json")),

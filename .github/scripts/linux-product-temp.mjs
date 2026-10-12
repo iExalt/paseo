@@ -35,7 +35,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   assert.equal(realpathSync(root), root);
-  assert.equal(readFileSync(join(root, "owned"), "utf8").trim(), process.env.GITHUB_SHA);
+  assert.equal(
+    readFileSync(join(root, "owned"), "utf8").trim(),
+    process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
+  );
   const receipt = join(root, "temporary-root.json");
   if (stage === "create") {
     const directory = mkdtempSync("/tmp/paseo-");

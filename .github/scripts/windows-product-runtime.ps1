@@ -2,6 +2,7 @@ param([Parameter(Mandatory = $true)][ValidateSet('prepare', 'models', 'runtime',
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
+$candidateSha = if ($env:PASEO_CANDIDATE_SHA) { $env:PASEO_CANDIDATE_SHA } else { $env:GITHUB_SHA }
 if (!$IsWindows -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
     $env:GITHUB_REPOSITORY -ne 'iExalt/paseo' -or $env:GITHUB_REF -ne 'refs/heads/dev' -or $env:GITHUB_ACTOR -ne 'iExalt') {
     throw 'Trusted hosted Windows dev run required'
@@ -13,7 +14,7 @@ if (!(Test-Path -LiteralPath (Join-Path $root 'owner.json'))) {
     throw 'Product owner missing'
 }
 $owner = Get-Content -LiteralPath (Join-Path $root 'owner.json') -Raw | ConvertFrom-Json
-if ($owner.sourceSha -ne $env:GITHUB_SHA -or $owner.architecture -ne $env:EXPECTED_ARCHITECTURE) { throw 'Product ownership mismatch' }
+if ($owner.sourceSha -ne $candidateSha -or $owner.architecture -ne $env:EXPECTED_ARCHITECTURE) { throw 'Product ownership mismatch' }
 $evidence = Join-Path $root 'evidence'
 $installDirectory = Join-Path $root 'Installed App With Spaces'
 $guid = 'ca8eee31-e786-591a-8405-a3710823b93a' # UUIDv5 of sh.paseo.desktop in electron-builder's namespace.
@@ -93,7 +94,7 @@ if ($Phase -eq 'prepare') {
     Assert-NoPaseoProcess
     if ((Test-Path -LiteralPath $marker) -or (Test-Path -LiteralPath $installDirectory) -or @(Read-Registrations).Count -ne 0) { throw 'Refuse pre-existing product installation' }
     foreach ($shortcut in $shortcuts) { if (Test-Path -LiteralPath $shortcut) { throw 'Pre-existing shortcut' } }
-    @{ sourceSha = $env:GITHUB_SHA; installDirectory = $installDirectory } | ConvertTo-Json | Set-Content -LiteralPath $marker
+    @{ sourceSha = $candidateSha; installDirectory = $installDirectory } | ConvertTo-Json | Set-Content -LiteralPath $marker
 } elseif ($Phase -eq 'models') {
     Run-Node 'models' 580
 } elseif ($Phase -eq 'runtime') {
@@ -138,7 +139,7 @@ if ($Phase -eq 'prepare') {
     Assert-EmptyJobs
     if (Test-Path -LiteralPath $marker) {
         $runtimeOwner = Get-Content -LiteralPath $marker -Raw | ConvertFrom-Json
-        if ($runtimeOwner.sourceSha -ne $env:GITHUB_SHA -or $runtimeOwner.installDirectory -ne $installDirectory) { throw 'Runtime ownership mismatch' }
+        if ($runtimeOwner.sourceSha -ne $candidateSha -or $runtimeOwner.installDirectory -ne $installDirectory) { throw 'Runtime ownership mismatch' }
         Uninstall-Owned 'recovery-uninstall'
         Assert-EmptyJobs
         Remove-Item -LiteralPath (Join-Path $root 'state') -Recurse -Force

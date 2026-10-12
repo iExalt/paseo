@@ -80,7 +80,7 @@ validate_identity() {
     || fail "Refusing to run for unexpected repository: ${GITHUB_REPOSITORY:-unset}."
   [[ "${GITHUB_REF:-}" == "refs/heads/dev" ]] || fail "The Nix closure lane only accepts a dev-branch caller."
   [[ "${GITHUB_ACTOR:-}" == "iExalt" ]] || fail "The Nix closure lane only accepts the trusted iExalt caller."
-  [[ "$source_sha" == "${GITHUB_SHA:?}" ]] || fail "Caller SHA differs from the immutable source SHA input."
+  [[ "$source_sha" == "${PASEO_CANDIDATE_SHA:-${GITHUB_SHA:?}}" ]] || fail "Caller SHA differs from the immutable source SHA input."
   [[ "$(git rev-parse HEAD)" == "$source_sha" ]] || fail "Checkout HEAD differs from the immutable source SHA input."
   [[ -z "$(git status --porcelain)" ]] || fail "The canonical checkout is not clean."
   require_arm64_darwin

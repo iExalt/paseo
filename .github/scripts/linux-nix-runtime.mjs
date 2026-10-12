@@ -12,7 +12,7 @@ assert.ok(["x64", "arm64"].includes(process.env.EXPECTED_ARCHITECTURE));
 assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
 assert.equal(
   execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
-  process.env.GITHUB_SHA,
+  process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
 );
 const outputs = JSON.parse(
   await readFile(process.env.RUNNER_TEMP + "/linux-nix-outputs.json", "utf8"),
@@ -45,7 +45,7 @@ await writeFile(
   resolve(artifactDir, "identity.json"),
   JSON.stringify(
     {
-      sourceSha: process.env.GITHUB_SHA,
+      sourceSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
       architecture: process.arch,
       version,
       daemon,

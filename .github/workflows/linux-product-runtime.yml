@@ -1,6 +1,25 @@
 name: Linux product formats
 
 on:
+  workflow_call:
+    inputs:
+      architecture:
+        type: string
+        required: true
+      source_sha:
+        type: string
+        required: true
+      release_id:
+        type: string
+        required: true
+      descriptor_digest:
+        type: string
+        required: true
+    outputs:
+      artifact_id:
+        value: ${{ jobs.native.outputs.artifact_id }}
+      artifact_digest:
+        value: ${{ jobs.native.outputs.artifact_digest }}
   workflow_dispatch:
     inputs:
       architecture:
@@ -19,7 +38,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: linux-product-formats
+  group: ${{ inputs.source_sha && format('candidate-products-{0}-{1}', 'linux', inputs.architecture) || 'paseo-predecessor-cache-writer' }}
   cancel-in-progress: false
 
 jobs:
@@ -28,9 +47,12 @@ jobs:
     runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 45
     outputs:
+      artifact_id: ${{ steps.packages.outputs.artifact-id }}
+      artifact_digest: ${{ steps.packages.outputs.artifact-digest }}
       predecessor_key: ${{ steps.predecessor.outputs.key }}
       cache_saved: ${{ steps.predecessor-save.outcome == 'success' }}
     env:
+      PASEO_CANDIDATE_SHA: ${{ inputs.source_sha || github.sha }}
       EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
       CI: "true"
       LEFTHOOK: "0"
@@ -39,6 +61,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
@@ -46,6 +69,25 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Authenticate candidate and admitted attempt
+        if: inputs.source_sha != ''
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/candidate-worker.mjs
+      - name: Read authenticated candidate source
+        if: inputs.source_sha != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.candidate.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Bind the immutable predecessor recipe
         id: predecessor
         run: node .github/scripts/linux-predecessor-cache.mjs prepare
@@ -62,7 +104,7 @@ jobs:
           PREDECESSOR_CACHE_MATCHED_KEY: ${{ steps.predecessor-cache.outputs.cache-matched-key }}
         run: bash .github/scripts/linux-product-build.sh
       - name: Reserve headroom before saving the predecessor
-        if: steps.predecessor-cache.outputs.cache-hit != 'true'
+        if: inputs.source_sha == '' && steps.predecessor-cache.outputs.cache-hit != 'true'
         id: cache-budget
         env:
           GH_TOKEN: ${{ github.token }}
@@ -81,6 +123,23 @@ jobs:
         if: always()
         timeout-minutes: 2
         run: bash .github/scripts/linux-product-cleanup.sh
+      - name: Export verified candidate packages
+        if: success() && inputs.source_sha != ''
+        id: export
+        env:
+          CANDIDATE_CONTEXT: ${{ steps.candidate.outputs.context }}
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+        run: node .github/scripts/candidate-product-export.mjs linux
+      - name: Transfer immutable candidate packages
+        if: success() && inputs.source_sha != ''
+        id: packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: candidate-linux-products-${{ inputs.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.export.outputs.directory }}/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
       - name: Bound retained diagnostics
         id: evidence
         if: always()
