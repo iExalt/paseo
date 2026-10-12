@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 import { assertReleasePr } from "./release-pr.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { compareForkVersions, forkVersionFromTag } from "../../scripts/fork-version.mjs";
@@ -254,12 +255,33 @@ export async function requireAttempt(api, descriptor, id, runId, attempt) {
   return release;
 }
 
-export async function requireCurrentRun(env, request, descriptor) {
+export async function requireCurrentRun(
+  env,
+  request,
+  descriptor,
+  { wait = sleep, now = () => performance.now() } = {},
+) {
+  positive(Number(env.GITHUB_RUN_ID));
+  positive(Number(env.GITHUB_RUN_ATTEMPT));
+  const deadline = now() + 30000;
+  const delays = [1000, 2000, 4000, 8000, 10000];
+  for (let index = 0; ; index++) {
+    assert.ok(now() < deadline, "Candidate root remained queued beyond polling deadline");
+    const run = await request(`/repos/iExalt/paseo/actions/runs/${Number(env.GITHUB_RUN_ID)}`);
+    const identity = await validateCurrentRun(env, run, descriptor);
+    assert.ok(now() < deadline, "Candidate root polling deadline exceeded");
+    if (run.status === "in_progress") return identity;
+    assert.equal(run.status, "queued", "Candidate root is not executing");
+    assert.ok(index < delays.length && now() < deadline, "Candidate root remained queued");
+    await wait(Math.min(delays[index], deadline - now()));
+  }
+}
+
+async function validateCurrentRun(env, run, descriptor) {
   const runId = Number(env.GITHUB_RUN_ID),
     attempt = Number(env.GITHUB_RUN_ATTEMPT);
   positive(runId);
   positive(attempt);
-  const run = await request(`/repos/iExalt/paseo/actions/runs/${runId}`);
   assert.equal(run.id, runId);
   assert.equal(run.run_attempt, attempt);
   assert.equal(run.repository.id, 1404390841);
@@ -268,7 +290,6 @@ export async function requireCurrentRun(env, request, descriptor) {
   assert.equal(run.path, ".github/workflows/release-candidate.yml");
   assert.equal(run.event, env.GITHUB_EVENT_NAME);
   assert.ok(["pull_request_target", "workflow_dispatch"].includes(run.event));
-  assert.equal(run.status, "in_progress");
   assert.equal(run.conclusion, null);
   if (run.event === "workflow_dispatch") {
     assert.equal(run.head_sha, env.GITHUB_SHA);
