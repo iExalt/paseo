@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { mkdtemp, writeFile, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { candidateGithub } from "../.github/scripts/candidate-github.mjs";
+import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
 import {
   descriptorFromProof,
   descriptorBytes,
@@ -44,6 +48,50 @@ test("GitHub draft adapter bounds downloads and never forwards authorization to 
   await assert.rejects(hostile.read({ id: 7, size: bytes.length }, 100));
   const oversized = candidateGithub("test-token", async () => new Response(Buffer.alloc(101)));
   await assert.rejects(oversized.read({ id: 7, size: 100 }, 100));
+});
+
+test("package transfer streams verified files and rejects truncation, mutation and early replies", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "candidate-stream-"));
+  const file = join(directory, "package.bin");
+  const bytes = Buffer.alloc(1024 * 128, 42);
+  const expected = {
+    bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+  try {
+    await writeFile(file, bytes);
+    const api = candidateGithub("test-token", async (_url, options) => {
+      if (options.method === "POST") {
+        assert.equal(options.duplex, "half");
+        assert.equal(options.headers["Content-Length"], String(bytes.length));
+        await verifyStream(options.body, expected);
+        return Response.json({ id: 1, size: bytes.length }, { status: 201 });
+      }
+      return new Response(bytes);
+    });
+    const asset = await api.uploadFile(42, "package.bin", file, expected);
+    await api.verifyFile(asset, expected);
+    await assert.rejects(verifyStream([bytes.subarray(1)], expected), /Truncated/);
+    await assert.rejects(verifyStream([bytes, Buffer.from("x")], expected), /exceeds/);
+    await assert.rejects(
+      withVerifiedFile(file, expected, async () => {}),
+      /did not consume/,
+    );
+    await assert.rejects(
+      withVerifiedFile(file, expected, async (body) => {
+        await writeFile(file, Buffer.alloc(bytes.length, 43));
+        for await (const chunk of body) assert.ok(chunk.length);
+      }),
+    );
+    const linked = join(directory, "linked.bin");
+    await symlink(file, linked);
+    await assert.rejects(
+      withVerifiedFile(linked, expected, async () => {}),
+      /regular file/,
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 });
 
 function candidateFixture() {
@@ -154,6 +202,11 @@ test("draft transport reconciles interrupted immutable uploads and rejects chang
   assert.equal(releases[0].assets.length, 2);
   assert.deepEqual(await loadDescriptor(api, id), descriptor);
   const bytes = Buffer.from("runtime receipt");
+  await assert.rejects(
+    uploadAttemptBytes(api, descriptor, id, 123, 1, "proof.json", bytes),
+    /no longer admitted/,
+  );
+  releases[0].body = draftBody(descriptor, "active", { runId: 123, attempt: 1 });
   const first = await uploadAttemptBytes(api, descriptor, id, 123, 1, "proof.json", bytes);
   assert.equal(
     (await uploadAttemptBytes(api, descriptor, id, 123, 1, "proof.json", bytes)).id,
@@ -161,6 +214,11 @@ test("draft transport reconciles interrupted immutable uploads and rejects chang
   );
   await assert.rejects(
     uploadAttemptBytes(api, descriptor, id, 123, 1, "proof.json", Buffer.from("changed receipt")),
+  );
+  releases[0].body = draftBody(descriptor, "active", { runId: 123, attempt: 2 });
+  await assert.rejects(
+    uploadAttemptBytes(api, descriptor, id, 123, 1, "proof.json", bytes),
+    /no longer admitted/,
   );
   assert.notEqual(
     (await uploadAttemptBytes(api, descriptor, id, 123, 2, "proof.json", bytes)).id,
@@ -186,7 +244,7 @@ test("draft transport reconciles interrupted immutable uploads and rejects chang
   ]) {
     releases = structuredClone(saved);
     change(releases[0]);
-    await assert.rejects(uploadAttemptBytes(api, descriptor, id, 123, 3, "proof.json", bytes));
+    await assert.rejects(uploadAttemptBytes(api, descriptor, id, 123, 2, "proof.json", bytes));
   }
   releases = structuredClone(saved);
   finalTag = { sha: descriptor.sourceSha };
@@ -195,7 +253,7 @@ test("draft transport reconciles interrupted immutable uploads and rejects chang
   transportTag = { sha: "9".repeat(40) };
   await assert.rejects(ensureDraft(api, descriptor, signature), /Transport tag already exists/);
   await assert.rejects(
-    uploadAttemptBytes(api, descriptor, id, 123, 3, "proof.json", bytes),
+    uploadAttemptBytes(api, descriptor, id, 123, 2, "proof.json", bytes),
     /Transport tag already exists/,
   );
   transportTag = null;

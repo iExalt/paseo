@@ -70,6 +70,24 @@ Its local entrypoint fixture covers plan, issuance and retry without old logs;
 hosted execution remains unverified. No manifest signing secret has been
 provisioned or used by Actions.
 
+The reviewer-accepted transport-only REST rehearsal at `4e4122904` passed in
+26.89s: draft `410728638` recovered a simulated lost upload response, reused
+immutable asset IDs and verified downloaded bytes. Its ephemeral key and fixture
+version 0.0.0 were never production candidate authority. The exact owned draft
+was removed and release/tag inventories matched the initial snapshot afterward.
+Package streaming, admitted attempts and genuine production issuance remain open.
+
+Streaming and attempt admission are now implemented locally, pending review and
+integration: package transfers verify a stable file handle and actual byte/hash
+counts; the trusted coordinator admits only the current nonterminal root Actions
+run and monotonic attempt. Workers check the active tuple before and after writes.
+A supersession racing an upload may leave an immutable unadmitted asset; aggregate
+admission must exclude it. No cross-attempt proof reuse is allowed initially, and
+the full lifecycle must stay inside the coordinator's global concurrency group.
+PR #70 integrates the preceding authority/entrypoint source at `4e4122904` after
+routine run `38267651739` passed in 4m34s (21m30s summed); same-SHA dev verification
+is still running. This does not close the complete candidate matrix.
+
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase

@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { candidateRoute, currentCandidate, newCandidate } from "./candidate-authority.mjs";
 import { descriptorDigest, signDescriptor } from "./candidate-descriptor.mjs";
-import { eligibleDraft, ensureDraft, loadDescriptor } from "./candidate-draft.mjs";
+import { admitAttempt, eligibleDraft, ensureDraft, loadDescriptor } from "./candidate-draft.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
@@ -31,6 +31,7 @@ export async function candidateEntry({ event, env, read, request, api, output })
       );
       releaseId = await ensureDraft(api, descriptor, signature);
     }
+    await admitAttempt(api, descriptor, releaseId, env, request);
     await output(`release_id=${releaseId}\n`);
   }
   await output(

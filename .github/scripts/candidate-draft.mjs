@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { compareForkVersions, forkVersionFromTag } from "../../scripts/fork-version.mjs";
+import { fileIdentity } from "./candidate-files.mjs";
 import {
   descriptorBytes,
   descriptorDigest,
@@ -15,13 +16,20 @@ const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 function positive(value) {
   assert.ok(Number.isSafeInteger(value) && value > 0);
 }
-export function draftBody(descriptor, state = "active") {
+export function draftBody(descriptor, state = "active", activeAttempt = null) {
   assert.ok(["active", "stopped"].includes(state));
+  if (activeAttempt !== null) {
+    assert.deepEqual(Object.keys(activeAttempt).sort(), ["attempt", "runId"]);
+    positive(activeAttempt.runId);
+    positive(activeAttempt.attempt);
+    activeAttempt = { runId: activeAttempt.runId, attempt: activeAttempt.attempt };
+  }
   return JSON.stringify({
     kind: "paseo-candidate-storage",
     schemaVersion: 1,
     descriptorSha256: descriptorDigest(descriptor),
     state,
+    activeAttempt,
   });
 }
 export function validateDraft(release, descriptor, active = true) {
@@ -33,7 +41,7 @@ export function validateDraft(release, descriptor, active = true) {
   assert.equal(release.target_commitish, descriptor.sourceSha);
   assert.equal(release.name, draftTag(descriptor));
   const body = JSON.parse(release.body);
-  assert.equal(release.body, draftBody(descriptor, body.state));
+  assert.equal(release.body, draftBody(descriptor, body.state, body.activeAttempt));
   if (active) assert.equal(body.state, "active", "Candidate has stopped");
   assert.ok(Array.isArray(release.assets));
   const names = new Set();
@@ -97,20 +105,20 @@ export async function loadDescriptor(api, releaseId) {
   return descriptor;
 }
 
-async function immutableBytes(api, descriptor, id, name, bytes) {
+async function immutablePayload(api, descriptor, id, name, payload, guard = async () => {}) {
   const check = async (asset) => {
     assert.equal(asset.state, "uploaded");
-    assert.equal(asset.size, bytes.length);
-    const actual = await api.read(asset, bytes.length);
-    assert.equal(actual.length, bytes.length);
-    assert.equal(digest(actual), digest(bytes), "Immutable asset content differs");
+    assert.equal(asset.size, payload.bytes);
+    await payload.verify(asset);
+    await guard();
     return asset;
   };
+  await guard();
   const release = await eligibleDraft(api, descriptor, id);
   const existing = release.assets.find((asset) => asset.name === name);
   if (existing) return check(existing);
   try {
-    await api.upload(id, name, bytes);
+    await payload.upload();
   } catch (error) {
     // A lost response is not permission to overwrite. Reconcile the exact name
     // and bytes before deciding whether the interrupted operation succeeded.
@@ -123,6 +131,25 @@ async function immutableBytes(api, descriptor, id, name, bytes) {
   const asset = completed.assets.find((item) => item.name === name);
   assert.ok(asset, "Uploaded asset is absent");
   return check(asset);
+}
+
+async function immutableBytes(api, descriptor, id, name, bytes, guard) {
+  return immutablePayload(
+    api,
+    descriptor,
+    id,
+    name,
+    {
+      bytes: bytes.length,
+      upload: () => api.upload(id, name, bytes),
+      verify: async (asset) => {
+        const actual = await api.read(asset, bytes.length);
+        assert.equal(actual.length, bytes.length);
+        assert.equal(digest(actual), digest(bytes), "Immutable asset content differs");
+      },
+    },
+    guard,
+  );
 }
 
 export async function ensureDraft(api, descriptor, signature) {
@@ -160,5 +187,71 @@ export function attemptAssetName(runId, attempt, name) {
 }
 export async function uploadAttemptBytes(api, descriptor, id, runId, attempt, name, bytes) {
   assert.deepEqual(await loadDescriptor(api, id), descriptor);
-  return immutableBytes(api, descriptor, id, attemptAssetName(runId, attempt, name), bytes);
+  return immutableBytes(api, descriptor, id, attemptAssetName(runId, attempt, name), bytes, () =>
+    requireAttempt(api, descriptor, id, runId, attempt),
+  );
+}
+
+export async function uploadAttemptFile(api, descriptor, id, runId, attempt, name, file, expected) {
+  fileIdentity(expected);
+  assert.deepEqual(await loadDescriptor(api, id), descriptor);
+  const assetName = attemptAssetName(runId, attempt, name);
+  return immutablePayload(
+    api,
+    descriptor,
+    id,
+    assetName,
+    {
+      bytes: expected.bytes,
+      upload: () => api.uploadFile(id, assetName, file, expected),
+      verify: (asset) => api.verifyFile(asset, expected),
+    },
+    () => requireAttempt(api, descriptor, id, runId, attempt),
+  );
+}
+
+export async function requireAttempt(api, descriptor, id, runId, attempt) {
+  positive(runId);
+  positive(attempt);
+  const release = await eligibleDraft(api, descriptor, id);
+  assert.deepEqual(
+    JSON.parse(release.body).activeAttempt,
+    { runId, attempt },
+    "Candidate attempt is no longer admitted",
+  );
+}
+
+export async function admitAttempt(api, descriptor, id, env, request) {
+  const runId = Number(env.GITHUB_RUN_ID),
+    attempt = Number(env.GITHUB_RUN_ATTEMPT);
+  positive(runId);
+  positive(attempt);
+  const run = await request(`/repos/iExalt/paseo/actions/runs/${runId}`);
+  assert.equal(run.id, runId);
+  assert.equal(run.run_attempt, attempt);
+  assert.equal(run.repository.id, 1404390841);
+  assert.equal(run.repository.full_name, "iExalt/paseo");
+  assert.equal(run.repository.private, false);
+  assert.equal(run.path, ".github/workflows/release-candidate.yml");
+  assert.equal(run.head_sha, env.GITHUB_SHA);
+  assert.equal(run.head_branch, "dev");
+  assert.equal(run.event, env.GITHUB_EVENT_NAME);
+  assert.ok(["pull_request_target", "workflow_dispatch"].includes(run.event));
+  assert.equal(run.status, "in_progress");
+  assert.equal(run.conclusion, null);
+  if (run.event === "workflow_dispatch") {
+    assert.equal(run.actor.id, 7889894);
+    assert.equal(run.actor.login, "iExalt");
+  }
+  assert.deepEqual(await loadDescriptor(api, id), descriptor);
+  const release = await eligibleDraft(api, descriptor, id);
+  const previous = JSON.parse(release.body).activeAttempt;
+  if (previous)
+    assert.ok(
+      runId > previous.runId || (runId === previous.runId && attempt >= previous.attempt),
+      "Cannot regress candidate attempt",
+    );
+  const body = draftBody(descriptor, "active", { runId, attempt });
+  if (release.body !== body) await api.setBody(id, body);
+  await requireAttempt(api, descriptor, id, runId, attempt);
 }
