@@ -4,7 +4,11 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { compareForkVersions, parseForkVersion } from "../packages/protocol/src/fork-version.ts";
+import {
+  compareForkVersions,
+  forkReleaseTag,
+  forkVersionFromTag,
+} from "../packages/protocol/src/fork-version.ts";
 import {
   validateForkReleaseManifest,
   FORK_RELEASE_LINEAGE,
@@ -76,20 +80,7 @@ export function macArtifact(manifest) {
 }
 
 function releaseVersion(release) {
-  if (
-    release.draft ||
-    release.prerelease ||
-    typeof release.tag_name !== "string" ||
-    !release.tag_name.startsWith("v")
-  )
-    return null;
-  const version = release.tag_name.slice(1);
-  try {
-    parseForkVersion(version);
-    return version;
-  } catch {
-    return null;
-  }
+  return release.draft || release.prerelease ? null : forkVersionFromTag(release.tag_name);
 }
 
 async function verifiedRelease(release) {
@@ -362,7 +353,7 @@ function productionAdapters() {
 function summary(target) {
   if (!target || target.lineage === "legacy-v1") return null;
   return {
-    releaseTag: `v${target.version}`,
+    releaseTag: forkReleaseTag(target.version),
     version: target.version,
     outputPath: target.outputPath,
   };

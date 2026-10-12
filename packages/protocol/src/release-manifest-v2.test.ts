@@ -31,6 +31,8 @@ describe("fork semver release inventory", () => {
       { version: "0.1.0-beta.1" },
       { version: "00.1.0" },
       { releaseTag: "v0.1.1" },
+      { releaseTag: "v0.1.0" },
+      { releaseTag: "paseo-v0.1.1" },
       { sourceSha: "b".repeat(39) },
       { upstreamBase: "dev" },
       { releaseSequence: 201000 },
