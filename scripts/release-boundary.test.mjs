@@ -54,11 +54,19 @@ test("release configuration owns exactly the fork version selectors and cannot p
     eligible({ ...event, actor: "other" }, { target: "ci/release-please-rehearsal" }, {}),
     false,
   );
-  const release = workflow.jobs.propose.steps.find((step) =>
-    step.uses?.startsWith("googleapis/release-please-action@"),
-  );
-  assert.equal(release.with["skip-github-release"], true);
-  assert.equal(release.with.token, "${{ steps.app.outputs.token }}");
+  const steps = workflow.jobs.propose.steps;
+  const release = steps.find((step) => step.run === "node .github/release-tools/proposal-run.mjs");
+  const prepare = steps.find((step) => step.id === "prepare");
+  assert.equal(release.env.RELEASE_APP_TOKEN, "${{ steps.app.outputs.token }}");
+  assert.equal(release.env.TARGET_SHA, "${{ steps.target.outputs.sha }}");
+  assert.equal(prepare.env.TARGET_SHA, release.env.TARGET_SHA);
+  assert.equal(prepare.env.TARGET_DIRECTORY, release.env.TARGET_DIRECTORY);
+  assert.equal(prepare.env.PREPARED_PROPOSAL, release.env.PREPARED_PROPOSAL);
+  assert.equal(prepare.run, "node .github/release-tools/proposal-prepare.mjs");
+  assert.equal(prepare.env.GITHUB_TOKEN, "${{ github.token }}");
+  assert.equal(prepare.env.RELEASE_APP_TOKEN, undefined);
+  assert.ok(steps.indexOf(prepare) < steps.findIndex((step) => step.id === "identity"));
+  assert.ok(steps.indexOf(prepare) < steps.findIndex((step) => step.id === "app"));
   const engine = JSON.parse(await read(".github/release-tools/package.json"));
   assert.equal(engine.dependencies["release-please"], "17.6.0");
 });
