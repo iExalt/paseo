@@ -92,7 +92,29 @@ export function candidateGithub(token, request = fetch) {
       }
       throw new Error("Release inventory exceeds bounded pagination");
     },
-    get: (releaseId) => json(`releases/${id(releaseId)}`),
+    async get(releaseId) {
+      const release = await json(`releases/${id(releaseId)}`);
+      const assets = [],
+        ids = new Set(),
+        names = new Set();
+      for (let page = 1; page <= 10; page++) {
+        const rows = await json(`releases/${releaseId}/assets?per_page=100&page=${page}`);
+        assert.ok(Array.isArray(rows));
+        for (const asset of rows) {
+          id(asset.id);
+          assert.ok(typeof asset.name === "string" && asset.name.length > 0);
+          assert.ok(
+            !ids.has(asset.id) && !names.has(asset.name),
+            "Duplicate release asset identity",
+          );
+          ids.add(asset.id);
+          names.add(asset.name);
+          assets.push(asset);
+        }
+        if (rows.length < 100) return { ...release, assets };
+      }
+      throw new Error("Release assets exceed bounded pagination");
+    },
     ref: (tag) => json(`git/ref/tags/${encodeURIComponent(tag)}`, undefined, true),
     async setBody(releaseId, body) {
       const control = JSON.parse(body);

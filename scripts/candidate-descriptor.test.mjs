@@ -375,6 +375,27 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
     }
   });
 
+test("draft inventory paginates retries and rejects duplicate or unbounded assets", async () => {
+  let count = 101,
+    duplicate = false;
+  const api = candidateGithub("fixture", async (url) => {
+    if (!url.includes("/assets?")) return Response.json({ id: 42, assets: [] });
+    const page = Number(new URL(url).searchParams.get("page"));
+    return Response.json(
+      Array.from({ length: Math.max(0, Math.min(100, count - (page - 1) * 100)) }, (_, index) => {
+        const id = duplicate ? 1 : (page - 1) * 100 + index + 1;
+        return { id, name: `attempt-asset-${id}` };
+      }),
+    );
+  });
+  assert.equal((await api.get(42)).assets.length, 101);
+  duplicate = true;
+  await assert.rejects(api.get(42), /Duplicate/);
+  duplicate = false;
+  count = 1000;
+  await assert.rejects(api.get(42), /bounded pagination/);
+});
+
 test("GitHub draft adapter bounds downloads and never forwards authorization to asset storage", async () => {
   const requests = [];
   const bytes = Buffer.from("signed receipt");
