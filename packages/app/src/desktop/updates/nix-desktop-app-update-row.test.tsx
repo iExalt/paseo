@@ -76,18 +76,16 @@ vi.mock("@/styles/settings", () => ({
 import { NixDesktopAppUpdateRow } from "./nix-desktop-app-update-row";
 
 const prior = {
-  releaseTag: "paseo-fork-1",
-  packageVersion: "0.10.0",
-  releaseSequence: 1,
-  outputPath: "/nix/store/12345678901234567890123456789012-paseo-desktop-0.10.0",
+  releaseTag: "v0.1.0",
+  version: "0.1.0",
+  outputPath: "/nix/store/12345678901234567890123456789012-paseo-desktop-0.1.0",
 };
 const candidate = {
-  releaseTag: "paseo-fork-2",
-  packageVersion: "0.11.0",
-  releaseSequence: 2,
-  outputPath: "/nix/store/23456789012345678901234567890123-paseo-desktop-0.11.0",
+  releaseTag: "v0.1.1",
+  version: "0.1.1",
+  outputPath: "/nix/store/23456789012345678901234567890123-paseo-desktop-0.1.1",
 };
-const olderStaged = { ...candidate, releaseTag: "paseo-fork-0", releaseSequence: 0 };
+const olderStaged = { ...candidate, releaseTag: "v0.0.9", version: "0.0.9" };
 
 function result(
   action: "check" | "status" | "stage" | "activate" | "rollback",
@@ -98,8 +96,8 @@ function result(
     action,
     active: prior,
     staged: null,
-    highWaterSequence: 1,
-    running: { version: "0.10.0", outputPath: prior.outputPath },
+    highWaterVersion: "0.1.0",
+    running: { version: "0.1.0", outputPath: prior.outputPath },
     ...overrides,
   };
 }
@@ -117,10 +115,10 @@ describe("Nix desktop About update row", () => {
     );
     harness.bridge.stage.mockResolvedValue(result("stage", { staged: candidate, canStage: false }));
     harness.bridge.activate.mockResolvedValue(
-      result("activate", { active: candidate, staged: null, highWaterSequence: 2 }),
+      result("activate", { active: candidate, staged: null, highWaterVersion: "0.1.1" }),
     );
     harness.bridge.rollback.mockResolvedValue(
-      result("rollback", { active: prior, staged: null, highWaterSequence: 2 }),
+      result("rollback", { active: prior, staged: null, highWaterVersion: "0.1.1" }),
     );
     harness.confirmDialog.mockResolvedValue(true);
   });
@@ -132,34 +130,34 @@ describe("Nix desktop About update row", () => {
 
   it("checks, stages, confirms activation, and offers rollback without restarting", async () => {
     render(<NixDesktopAppUpdateRow />);
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.10.0","sequence":1}');
+    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
 
     fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.check" }));
-    await screen.findByText('settings.about.nixUpdates.latest {"version":"v0.11.0","sequence":2}');
+    await screen.findByText('settings.about.nixUpdates.latest {"version":"v0.1.1"}');
     expect(
       screen.getByRole<HTMLButtonElement>("button", {
         name: "settings.about.nixUpdates.stage",
       }).disabled,
     ).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.stage" }));
-    await screen.findByText('settings.about.nixUpdates.staged {"version":"v0.11.0","sequence":2}');
+    await screen.findByText('settings.about.nixUpdates.staged {"version":"v0.1.1"}');
 
     fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.activate" }));
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.11.0","sequence":2}');
+    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.1"}');
     expect(harness.confirmDialog).toHaveBeenCalledOnce();
     expect(screen.getByText("settings.about.nixUpdates.restartRequired")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.rollback" }));
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.10.0","sequence":1}');
+    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
     expect(harness.confirmDialog).toHaveBeenCalledTimes(2);
     expect(harness.bridge.status).toHaveBeenCalledOnce();
   });
 
   it("uses an existing translated label while a command is running", async () => {
     render(<NixDesktopAppUpdateRow />);
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.10.0","sequence":1}');
+    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
     fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.check" }));
-    await screen.findByText('settings.about.nixUpdates.latest {"version":"v0.11.0","sequence":2}');
+    await screen.findByText('settings.about.nixUpdates.latest {"version":"v0.1.1"}');
 
     let finishStage!: (value: ReturnType<typeof result>) => void;
     harness.bridge.stage.mockImplementation(
