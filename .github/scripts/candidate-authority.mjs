@@ -36,13 +36,23 @@ export function candidateRoute(event, env) {
   assert.equal(env.GITHUB_EVENT_NAME, "workflow_dispatch");
   assert.equal(env.GITHUB_ACTOR, "iExalt");
   assert.equal(event.sender.id, 7889894);
-  assert.match(event.inputs?.release_id ?? "", /^[1-9][0-9]*$/);
-  const releaseId = Number(event.inputs.release_id);
-  assert.ok(Number.isSafeInteger(releaseId));
-  return { releaseId };
+  const releaseId = event.inputs?.release_id ?? "";
+  const number = event.inputs?.merged_pr ?? "";
+  assert.notEqual(Boolean(releaseId), Boolean(number), "Specify exactly one draft ID or merged PR");
+  const value = releaseId || number;
+  assert.match(value, /^[1-9][0-9]*$/);
+  assert.ok(Number.isSafeInteger(Number(value)));
+  return releaseId ? { releaseId: Number(value) } : { number: Number(value) };
 }
 
 export async function newCandidate(route, controllerSha, identity, request, read) {
+  if (!route.sourceSha) {
+    const pr = await request(`${repo}/pulls/${route.number}`);
+    assert.equal(pr.number, route.number);
+    assert.equal(pr.state, "closed");
+    assert.equal(pr.merged, true);
+    route = { ...route, sourceSha: pr.merge_commit_sha };
+  }
   const proof = await verifyMergedPrChecks(route.number, route.sourceSha, identity, request);
   const fork = await sourceVersion(route.sourceSha, read);
   const policy = await sourceGatePolicy(controllerSha, (file) => read(controllerSha, file));

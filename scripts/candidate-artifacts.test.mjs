@@ -35,13 +35,14 @@ test("paired runtime distinguishes current coordinator completion from historica
     runId: 123,
     attempt: 2,
     controllerSha: "c".repeat(40),
+    rootHeadSha: "d".repeat(40),
     rootBranch: "dev",
     descriptor: { sourceSha: sha, version: pin.version },
   };
   const current = {
     ...run,
     path: ".github/workflows/release-candidate.yml",
-    head_sha: context.controllerSha,
+    head_sha: context.rootHeadSha,
     status: "in_progress",
     conclusion: null,
   };

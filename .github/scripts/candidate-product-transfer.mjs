@@ -91,7 +91,7 @@ export function productProducer(context, group, jobs, artifact, expected) {
   const name = `candidate-${platform}-${nix ? "nix" : "products"}-${arch}-${context.runId}-${context.attempt}`;
   validateArtifact(
     artifact,
-    { runId: context.runId, sourceSha: context.controllerSha, headBranch: context.rootBranch },
+    { runId: context.runId, sourceSha: context.rootHeadSha, headBranch: context.rootBranch },
     { ...expected, name },
     contracts.length * (packageLimit + metadataLimit) + metadataLimit * 2,
   );

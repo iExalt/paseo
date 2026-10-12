@@ -27,13 +27,15 @@ async function pages(request, endpoint, field) {
   throw new Error("GitHub proof exceeds bounded pagination");
 }
 
-export function latestPrRun(runs, workflow, pr) {
+export function latestPrRun(runs, workflow, pr, { merged = false } = {}) {
+  // GitHub can erase the PR association after merge. Merged verification still
+  // binds PR number, both SHAs and tested tree through the job's source receipt.
   const matching = runs.filter(
     (run) =>
       run.path === `.github/workflows/${workflow}` &&
       run.event === "pull_request" &&
       run.head_sha === pr.head.sha &&
-      run.pull_requests?.some((item) => item.number === pr.number),
+      (merged || run.pull_requests?.some((item) => item.number === pr.number)),
   );
   matching.sort((a, b) => b.id - a.id || b.run_attempt - a.run_attempt);
   assert.ok(matching.length, `Missing current-head ${workflow} run`);
@@ -69,7 +71,9 @@ export async function verifyMergedPrChecks(number, sourceSha, identity, request 
     assert.equal(pr.base.ref, "dev");
     return { ...pr, state: "open", base: { ...pr.base, sha: parent } };
   };
-  const proof = await verifyPrChecks(await readMerged(), identity, request, readMerged);
+  const proof = await verifyPrChecks(await readMerged(), identity, request, readMerged, {
+    merged: true,
+  });
   assert.equal(merge.tree.sha, proof.treeSha, "Merged candidate differs from tested PR tree");
   const dev = await request(`${repository}/git/ref/heads/dev`);
   assert.match(dev.object.sha, /^[a-f0-9]{40}$/);
@@ -80,7 +84,7 @@ export async function verifyMergedPrChecks(number, sourceSha, identity, request 
   return { ...proof, sourceSha };
 }
 
-async function verifyPrChecks(pr, identity, request, readCurrent) {
+async function verifyPrChecks(pr, identity, request, readCurrent, options = {}) {
   const number = pr.number;
   assertReleasePr(pr, identity, pr.head.sha);
   assert.equal(pr.commits, 1, "Rehearsal requires one bot proposal commit");
@@ -95,7 +99,7 @@ async function verifyPrChecks(pr, identity, request, readCurrent) {
       "workflow_runs",
     );
   for (const workflow of ["ci.yml", "ci-deep.yml"]) {
-    const run = latestPrRun(await runsFor(workflow), workflow, pr);
+    const run = latestPrRun(await runsFor(workflow), workflow, pr, options);
     const jobs = await pages(
       request,
       `${repository}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`,
@@ -152,7 +156,7 @@ async function verifyPrChecks(pr, identity, request, readCurrent) {
   assert.match(testedCommit.tree.sha, /^[a-f0-9]{40}$/);
   // Recheck both axes after logs/API enumeration; old green never blesses movement.
   for (const proof of proofs) {
-    const latest = latestPrRun(await runsFor(proof.workflow), proof.workflow, pr);
+    const latest = latestPrRun(await runsFor(proof.workflow), proof.workflow, pr, options);
     assert.equal(latest.id, proof.runId, "A newer run superseded the proof");
     assert.equal(latest.run_attempt, proof.attempt, "A rerun superseded the proof");
   }

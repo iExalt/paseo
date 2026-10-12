@@ -8,7 +8,11 @@ on:
     inputs:
       release_id:
         description: Existing authenticated candidate draft ID to retry
-        required: true
+        required: false
+        type: string
+      merged_pr:
+        description: Authenticated merged release PR for initial issuance (exclusive with draft ID)
+        required: false
         type: string
 
 permissions:
@@ -82,7 +86,7 @@ jobs:
           PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
-          PASEO_RELEASE_MANIFEST_PRIVATE_KEY: ${{ github.event_name == 'pull_request_target' && secrets.PASEO_RELEASE_MANIFEST_PRIVATE_KEY || '' }}
+          PASEO_RELEASE_MANIFEST_PRIVATE_KEY: ${{ (github.event_name == 'pull_request_target' || (inputs.merged_pr != '' && inputs.release_id == '')) && secrets.PASEO_RELEASE_MANIFEST_PRIVATE_KEY || '' }}
         run: node .github/scripts/candidate-entry.mjs
 
   verify:

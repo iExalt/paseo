@@ -87,7 +87,7 @@ test("merged candidate run binds original PR branch independently of controller 
   const env = {
     GITHUB_RUN_ID: "500",
     GITHUB_RUN_ATTEMPT: "2",
-    GITHUB_SHA: "e".repeat(40),
+    GITHUB_SHA: descriptor.sourceSha,
     GITHUB_EVENT_NAME: "pull_request_target",
     GITHUB_EVENT_PATH: join(directory, "event.json"),
     PASEO_RELEASE_APP_ID: "5280233",
@@ -100,7 +100,7 @@ test("merged candidate run binds original PR branch independently of controller 
     run_attempt: 2,
     repository,
     path: ".github/workflows/release-candidate.yml",
-    head_sha: env.GITHUB_SHA,
+    head_sha: descriptor.headSha,
     head_branch: branch,
     event: env.GITHUB_EVENT_NAME,
     status: "in_progress",
@@ -114,10 +114,11 @@ test("merged candidate run binds original PR branch independently of controller 
       runId: 500,
       attempt: 2,
       headBranch: branch,
+      headSha: descriptor.headSha,
     });
     for (const delta of [
       { head_branch: "dev" },
-      { head_sha: descriptor.headSha },
+      { head_sha: env.GITHUB_SHA },
       { event: "workflow_dispatch" },
     ])
       await assert.rejects(requireCurrentRun(env, async () => ({ ...run, ...delta }), descriptor));
@@ -249,6 +250,7 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
       runId: 500,
       attempt: 2,
       controllerSha: "c".repeat(40),
+      rootHeadSha: "c".repeat(40),
       rootBranch: "dev",
     };
     const nix = group.startsWith("linux-nix-");
@@ -528,6 +530,7 @@ test("paired transfer binds signing, fresh import and native runtime before reta
     runId: 500,
     attempt: 2,
     controllerSha: "c".repeat(40),
+    rootHeadSha: "c".repeat(40),
     rootBranch: "dev",
   };
   const pin = {
@@ -1146,6 +1149,7 @@ test("candidate aggregate requires every same-attempt native cell and all source
     runId: 500,
     attempt: 2,
     controllerSha: "c".repeat(40),
+    rootHeadSha: "c".repeat(40),
     rootBranch: "dev",
   };
   const root = {
