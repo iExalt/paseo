@@ -8,6 +8,7 @@ import { pipeline } from "node:stream/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
+import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 
 const repository = "iExalt/paseo";
 const certificate = "943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459";
@@ -38,6 +39,42 @@ export function validateProducer(run, pin) {
   assert.equal(run.conclusion, "success");
 }
 
+export function validateCoordinatedProducer(run, pin, context, jobs) {
+  assert.equal(integer(pin.runId), context.runId);
+  assert.equal(integer(pin.attempt), context.attempt);
+  assert.equal(pin.sourceSha, context.descriptor.sourceSha);
+  assert.equal(pin.version, context.descriptor.version);
+  assert.equal(run.id, context.runId);
+  assert.equal(run.run_attempt, context.attempt);
+  assert.equal(run.path, ".github/workflows/release-candidate.yml");
+  assert.equal(run.head_sha, context.controllerSha);
+  assert.equal(run.head_branch, "dev");
+  assert.equal(run.status, "in_progress");
+  assert.equal(run.conclusion, null);
+  const matches = jobs.filter(
+    (job) => job.name === "paired / Cross-check paired candidate artifacts",
+  );
+  assert.equal(matches.length, 1);
+  const job = matches[0];
+  assert.equal(job.run_id, context.runId);
+  assert.equal(job.run_attempt, context.attempt);
+  assert.equal(job.status, "completed");
+  assert.equal(job.conclusion, "success");
+  let number = 0;
+  for (const name of [
+    "Authenticate candidate and admitted attempt",
+    "Verify both artifacts and write normalized candidate manifest",
+    "Upload normalized paired candidate manifest",
+  ]) {
+    const steps = job.steps.filter((step) => step.name === name);
+    assert.equal(steps.length, 1);
+    assert.equal(steps[0].status, "completed");
+    assert.equal(steps[0].conclusion, "success");
+    assert.ok(steps[0].number > number);
+    number = steps[0].number;
+  }
+}
+
 export function validateArtifact(artifact, pin, expected, maximum) {
   assert.equal(artifact.id, integer(expected.id));
   assert.equal(artifact.name, expected.name);
@@ -50,7 +87,7 @@ export function validateArtifact(artifact, pin, expected, maximum) {
   assert.ok(artifact.size_in_bytes <= maximum, "Artifact exceeds download bound");
 }
 
-export function validateCandidate(candidate, pin) {
+export function validateCandidate(candidate, pin, strictAttempt = false) {
   assert.equal(candidate.kind, "paseo-verification-candidate");
   assert.equal(candidate.schemaVersion, 2);
   assert.ok(!Object.hasOwn(candidate, "releaseSequence"));
@@ -64,6 +101,7 @@ export function validateCandidate(candidate, pin) {
   const mac = candidate.macOS;
   for (const lane of [android, mac]) {
     assert.ok(integer(lane.artifactRunAttempt) <= integer(pin.attempt));
+    if (strictAttempt) assert.equal(integer(lane.artifactRunAttempt), integer(pin.attempt));
     integer(lane.artifactId);
     digest(lane.artifactDigest);
   }
@@ -160,16 +198,24 @@ export async function saveDownload(response, file, maximum, expectedBytes, expec
 export async function fetchCandidate(pin, directory, token, platform, request = fetch) {
   assert.ok(["android", "macos"].includes(platform));
   const json = async (route) => (await githubResponse(route, token, request)).json();
-  validateProducer(
-    await json(`actions/runs/${integer(pin.runId)}/attempts/${integer(pin.attempt)}`),
-    pin,
-  );
+  const coordinated =
+    process.env.GITHUB_WORKFLOW_REF ===
+    "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev";
+  const context = coordinated ? await readWorkerContext() : null;
+  const run = await json(`actions/runs/${integer(pin.runId)}/attempts/${integer(pin.attempt)}`);
+  if (context) validateCoordinatedProducer(run, pin, context, await attemptJobs(context));
+  else validateProducer(run, pin);
   forkAndroidVersionCode(pin.version);
   await mkdir(directory, { recursive: false });
   async function artifact(expected, subdirectory, names, maximum) {
     const id = integer(expected.id);
     const metadata = await json(`actions/artifacts/${id}`);
-    validateArtifact(metadata, pin, expected, maximum + MiB);
+    validateArtifact(
+      metadata,
+      context ? { ...pin, sourceSha: context.controllerSha } : pin,
+      expected,
+      maximum + MiB,
+    );
     const zip = join(directory, `${subdirectory}.zip`);
     await saveDownload(
       await githubResponse(`actions/artifacts/${id}/zip`, token, request),
@@ -199,6 +245,7 @@ export async function fetchCandidate(pin, directory, token, platform, request = 
   const candidate = validateCandidate(
     JSON.parse(await readFile(join(paired, "paired-candidate.json"), "utf8")),
     pin,
+    coordinated,
   );
   for (const [name, lane, files, maximum] of [
     [

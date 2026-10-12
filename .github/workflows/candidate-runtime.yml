@@ -1,6 +1,23 @@
 name: Candidate native runtime
 
 on:
+  workflow_call:
+    inputs:
+      source_sha:
+        type: string
+        required: true
+      release_id:
+        type: string
+        required: true
+      descriptor_digest:
+        type: string
+        required: true
+      candidate_pin:
+        type: string
+        required: true
+      platform:
+        type: string
+        default: both
   workflow_dispatch:
     inputs:
       platform:
@@ -17,6 +34,16 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
+
+env:
+  PASEO_CANDIDATE_SHA: ${{ inputs.source_sha || github.sha }}
+  CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
+  CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+  PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+  PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+  PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+  PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
 
 concurrency:
   group: candidate-native-runtime
@@ -24,7 +51,7 @@ concurrency:
 
 jobs:
   android:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' && (inputs.platform == 'both' || inputs.platform == 'android')
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && (github.actor == 'iExalt' || (inputs.source_sha != '' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev')) && (inputs.platform == 'both' || inputs.platform == 'android')
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     env:
@@ -35,6 +62,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
           fetch-depth: 0
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
@@ -42,6 +70,11 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Authenticate candidate and admitted attempt
+        if: inputs.source_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/candidate-worker.mjs
       - name: Verify signed ARM64 APKs and retained native state
         timeout-minutes: 15
         env:
@@ -69,7 +102,7 @@ jobs:
           retention-days: 1
           if-no-files-found: error
   macos:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' && (inputs.platform == 'both' || inputs.platform == 'macos')
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && (github.actor == 'iExalt' || (inputs.source_sha != '' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev')) && (inputs.platform == 'both' || inputs.platform == 'macos')
     runs-on: macos-14
     timeout-minutes: 30
     env:
@@ -80,12 +113,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Authenticate candidate and admitted attempt
+        if: inputs.source_sha != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/candidate-worker.mjs
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           install_url: https://releases.nixos.org/nix/nix-2.34.7/install

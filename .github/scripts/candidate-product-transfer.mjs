@@ -15,7 +15,7 @@ import {
   uploadAttemptBytes,
 } from "./candidate-draft.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
-import { readWorkerContext } from "./candidate-worker.mjs";
+import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 
 const metadataLimit = 1024 * 1024;
 const extractor = fileURLToPath(new URL("./extract-candidate-artifact.py", import.meta.url));
@@ -141,19 +141,6 @@ export function productReceipts(bundle, context, group, producerJobId) {
       context.attempt,
     );
   });
-}
-
-export async function attemptJobs(context, request = readGithub) {
-  const jobs = [];
-  for (let page = 1; page <= 10; page++) {
-    const result = await request(
-      `/repos/iExalt/paseo/actions/runs/${context.runId}/attempts/${context.attempt}/jobs?per_page=100&page=${page}`,
-    );
-    assert.ok(Array.isArray(result.jobs));
-    jobs.push(...result.jobs);
-    if (result.jobs.length < 100) return jobs;
-  }
-  throw new Error("Candidate job inventory exceeds bound");
 }
 
 export async function transferProducts(
