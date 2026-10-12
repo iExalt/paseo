@@ -1,5 +1,5 @@
 /** Portable signed release inventory. Verify the original bytes before parsing. */
-import { forkAndroidVersionCode, parseForkVersion } from "./fork-version.ts";
+import { forkAndroidVersionCode, forkReleaseTag, parseForkVersion } from "./fork-version.ts";
 import { PASEO_RELEASE_MANIFEST_KEY_ID } from "./release-manifest.ts";
 import type { ReleaseManifestAsset } from "./release-manifest.ts";
 
@@ -118,7 +118,7 @@ export function validateForkReleaseManifest(value: unknown): asserts value is Fo
   parseForkVersion(manifest.version);
   const version = manifest.version as string;
   if (
-    manifest.releaseTag !== `v${version}` ||
+    manifest.releaseTag !== forkReleaseTag(version) ||
     !matches(manifest.sourceSha, commitPattern) ||
     !matches(manifest.upstreamBase, commitPattern)
   )

@@ -3,4 +3,6 @@ export {
   parseForkVersion,
   compareForkVersions,
   forkAndroidVersionCode,
+  forkReleaseTag,
+  forkVersionFromTag,
 } from "../packages/protocol/src/fork-version.ts";

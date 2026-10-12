@@ -140,15 +140,15 @@ test("clean target preflight bounds bootstrap, pauses merged proposals and rejec
     await write(".github/release-boundary.json", JSON.stringify(boundary));
     await write("release-please-config.json", JSON.stringify(config));
     expectedSha = commit();
-    git("tag", "v0.1.0", releaseSha);
-    const release = { draft: false, prerelease: false, tag_name: "v0.1.0" };
+    git("tag", "paseo-v0.1.0", releaseSha);
+    const release = { draft: false, prerelease: false, tag_name: "paseo-v0.1.0" };
     const published = () =>
       releasePreflight({
         repositoryPath: directory,
         branch: "dev",
         expectedSha,
         request: async (url) => {
-          assert.equal(url, "/repos/iExalt/paseo/releases/tags/v0.1.0");
+          assert.equal(url, "/repos/iExalt/paseo/releases/tags/paseo-v0.1.0");
           return release;
         },
       });
@@ -156,7 +156,7 @@ test("clean target preflight bounds bootstrap, pauses merged proposals and rejec
     release.draft = true;
     await assert.rejects(published());
     release.draft = false;
-    git("tag", "--force", "v0.1.0", sourceSha);
+    git("tag", "--force", "paseo-v0.1.0", sourceSha);
     await assert.rejects(published(), /Published tag/);
     boundary.currentSha = "f".repeat(40);
     config["bootstrap-sha"] = boundary.currentSha;

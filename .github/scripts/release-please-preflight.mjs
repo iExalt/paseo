@@ -7,6 +7,7 @@ import { inspectForkRelease } from "../../scripts/fork-release-config.mjs";
 import { readReleaseBoundary, verifyBoundaryHistory } from "../../scripts/release-boundary.mjs";
 import { releaseVersionSelectors } from "./release-version-selectors.mjs";
 import { githubRequest } from "./release-app-auth.mjs";
+import { forkReleaseTag } from "../../scripts/fork-version.mjs";
 
 export const REHEARSAL_BRANCH = "ci/release-please-rehearsal";
 
@@ -69,15 +70,13 @@ export async function releasePreflight({
     };
   }
   if (state.boundary.kind === "release" && branch === "dev") {
-    const release = await request(
-      `/repos/iExalt/paseo/releases/tags/v${state.boundary.version}`,
-      token,
-    );
+    const tag = forkReleaseTag(state.boundary.version);
+    const release = await request(`/repos/iExalt/paseo/releases/tags/${tag}`, token);
     assert.equal(release.draft, false);
     assert.equal(release.prerelease, false);
-    assert.equal(release.tag_name, `v${state.boundary.version}`);
+    assert.equal(release.tag_name, tag);
     assert.equal(
-      git("rev-parse", `refs/tags/v${state.boundary.version}^{commit}`),
+      git("rev-parse", `refs/tags/${tag}^{commit}`),
       state.boundary.originalSha,
       "Published tag does not bind the original release boundary",
     );

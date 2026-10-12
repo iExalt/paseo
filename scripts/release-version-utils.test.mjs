@@ -1,11 +1,33 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compareForkVersions, forkAndroidVersionCode } from "./fork-version.mjs";
+import {
+  compareForkVersions,
+  forkAndroidVersionCode,
+  forkReleaseTag,
+  forkVersionFromTag,
+} from "./fork-version.mjs";
 import {
   computeNextReleaseVersion,
   getReleaseInfoFromSourceTag,
   parseReleaseVersion,
 } from "./release-version-utils.mjs";
+
+test("fork tags round-trip stable semver without admitting inherited or legacy namespaces", () => {
+  assert.equal(forkReleaseTag("0.1.1"), "paseo-v0.1.1");
+  assert.equal(forkVersionFromTag("paseo-v0.1.1"), "0.1.1");
+  for (const tag of [
+    "v0.1.1",
+    "paseo-fork-v0.1.1-r200008-deadbeef",
+    "paseo-v01.1.1",
+    "paseo-v0.1.1-beta.1",
+    "paseo-v0.1.1+meta",
+    "paseo-v0.1.1/",
+    null,
+  ]) {
+    assert.equal(forkVersionFromTag(tag), null);
+  }
+  assert.throws(() => forkReleaseTag("0.1.1-beta.1"));
+});
 
 test("computes the next beta patch from a stable version", () => {
   assert.equal(computeNextReleaseVersion("0.1.59", "beta-patch"), "0.1.60-beta.1");

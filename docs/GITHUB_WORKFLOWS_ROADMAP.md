@@ -1,6 +1,6 @@
 # GitHub workflows roadmap
 
-Status: **Phases A–C / G0–G4 complete; Phase D awaits approval, 2026-10-12**.
+Status: **Phases A–C / G0–G4 complete; Phase D1/D2 approved and active, 2026-10-12**.
 Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
