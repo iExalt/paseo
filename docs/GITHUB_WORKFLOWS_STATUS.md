@@ -438,6 +438,15 @@ $0 stop control. Publication and personal-device actions still require a concret
 candidate review and explicit later authorization. Existing native deadlines,
 cache admission limits and strict cleanup remain in force.
 
+The final tag audit found an inherited upstream `v0.1.1` tag pointing to
+`5181d715bf96ad11f731988ceac222f50ba094f5`, a historical workspace-version commit,
+with no matching GitHub release. The rehearsal did not create it. **Production
+tag naming is not settled:** before coordinator/signing/release trials, D1 must
+select and verify a collision-free fork tag contract across release-please,
+signed V2 manifests, discovery and preflight, with inherited-tag rejection.
+Preserve the historical tag unchanged. This does not change product semver or
+upgrade ordering, nor the accepted unpublished two-proposal proof.
+
 C1a introduces an exact 14-cell signed inventory, preserves explicit V1 recovery
 exports, and moves fork version rules into the portable protocol package. The
 normal consumers now use V2 while explicit legacy recovery remains V1;
