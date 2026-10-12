@@ -64,6 +64,7 @@ async function proposal(contents, boundary, previousRelease) {
     },
     async *tagIterator() {
       yield { name: "v0.11.2", sha: oldUpstreamSha };
+      yield { name: "v0.1.1", sha: oldUpstreamSha };
     },
     async *mergeCommitIterator() {
       yield commit("d".repeat(40), "fix: preserve fork state");
@@ -77,6 +78,33 @@ async function proposal(contents, boundary, previousRelease) {
   assert.equal(proposals.length, 1);
   assert.equal(stopped, false, "Engine must stop at the explicit boundary");
   const result = proposals[0];
+  github.pullRequestIterator = async function* () {
+    yield {
+      number: 1,
+      title: result.title.toString(),
+      body: result.body.toString(),
+      headBranchName: result.headRefName,
+      sha: mergeSha,
+      labels: ["autorelease: pending"],
+    };
+  };
+  assert.deepEqual(await manifest.buildReleases(), [], "Production configuration cannot release");
+  // Exercise tag composition offline without calling createReleases or any API.
+  const tagManifest = await Manifest.fromManifest(
+    {
+      ...github,
+      async getFileJson(file) {
+        const value = await github.getFileJson(file);
+        return file === "release-please-config.json"
+          ? { ...value, "skip-github-release": false }
+          : value;
+      },
+    },
+    "dev",
+  );
+  const releases = await tagManifest.buildReleases();
+  assert.equal(releases.length, 1);
+  assert.equal(releases[0].tag.toString(), `paseo-v${result.version.toString()}`);
   assert.doesNotMatch(
     result.body.toString(),
     /forbidden upstream|bootstrap boundary|Generated with|generated with|beep/,
@@ -107,7 +135,7 @@ test("pinned release engine composes all version edits and bounds both proposals
   contents.set("release-please-config.json", JSON.stringify(config));
   const rehearsalContents = new Map(contents);
   const second = await proposal(contents, mergeSha, {
-    tagName: "v0.1.0",
+    tagName: "paseo-v0.1.0",
     sha: "e".repeat(40),
     name: "prior fork release outside rebased ancestry",
     notes: "previous fork notes",

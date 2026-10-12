@@ -20,6 +20,22 @@ export function compareForkVersions(left: string, right: string): -1 | 0 | 1 {
   return 0;
 }
 
+// Public fork tags never share the inherited upstream or legacy sequence namespace.
+export function forkReleaseTag(version: string): string {
+  parseForkVersion(version);
+  return `paseo-v${version}`;
+}
+
+export function forkVersionFromTag(tag: unknown): string | null {
+  if (typeof tag !== "string" || !tag.startsWith("paseo-v")) return null;
+  const version = tag.slice("paseo-v".length);
+  try {
+    return forkReleaseTag(version) === tag ? version : null;
+  } catch {
+    return null;
+  }
+}
+
 export function forkAndroidVersionCode(version: string): number {
   const [major, minor, patch] = parseForkVersion(version);
   if (minor >= 1000 || patch >= 1000) {

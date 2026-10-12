@@ -6,9 +6,9 @@
   `paseo-github-workflows`, branch `ci/github-workflows`.
 - Reviewed implementation `72300136d` is integrated on `dev`; PRs #1–#3 merged
   by fast-forward after their final-source routine checks passed.
-- Authority: Phase C approved on 2026-10-11, including reviewed commits/pushes and
-  bounded unpublished bot PR/draft rehearsals on free runners. Phase D and
-  personal-device/public-release operations retain the boundaries in the
+- Authority: Phase D1/D2 approved on 2026-10-12, including reviewed commits/pushes,
+  bounded free-runner signing, draft transfers and native candidate trials under
+  the confirmed $0 stop control. D3 personal-device/public-release operations retain the boundaries in the
   [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
@@ -48,6 +48,9 @@
 | C1: independent version and updater transition | complete / verified | B1–B4                         | Step 7 source/fixture integration; installed migration belongs to D, author |
 | C2: scoped version proposal automation         | complete / verified | C1                            | Step 8 configuration and actual bot event delivery, author                  |
 | C3: consecutive bot proposal rehearsal         | complete / verified | C2                            | Remaining G4 current-head, forged-label and merge-identity proofs, author   |
+
+Phase D1 is active / implemented in part; D2 is planned / designed and depends on
+D1's authenticated-source, transport and complete native aggregate proofs.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -300,9 +303,9 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-Current sequence: obtain approval for Phase D.
+Current sequence: execute approved Phase D1/D2.
 D owns exact-candidate release coordination, publication and personal-device
-migration. Phase D is not approved. Preserve routine latency; deeper gates
+migration. D3 remains unapproved. Preserve routine latency; deeper gates
 do not join ordinary PR blocking work. ARM cache transport, full cache-hit upgrade
 timing and the two-minute routine stretch remain unclaimed.
 
@@ -440,12 +443,27 @@ cache admission limits and strict cleanup remain in force.
 
 The final tag audit found an inherited upstream `v0.1.1` tag pointing to
 `5181d715bf96ad11f731988ceac222f50ba094f5`, a historical workspace-version commit,
-with no matching GitHub release. The rehearsal did not create it. **Production
-tag naming is not settled:** before coordinator/signing/release trials, D1 must
-select and verify a collision-free fork tag contract across release-please,
-signed V2 manifests, discovery and preflight, with inherited-tag rejection.
-Preserve the historical tag unchanged. This does not change product semver or
-upgrade ordering, nor the accepted unpublished two-proposal proof.
+with no matching GitHub release. The rehearsal did not create it. D1a selects
+`paseo-v<stable-semver>` across release-please, signed V2 manifests, discovery and
+preflight; read-only inspection found no existing `paseo-v*` tags. The portable
+tag builder/parser excludes inherited `v*` and legacy sequence tags. Offline
+pinned-engine composition proves both `paseo-v0.1.0` and `paseo-v0.1.1`, while
+production release creation stays disabled. Historical tags, product semver,
+receipt identities and upgrade ordering remain unchanged.
+
+### Phase D checklist
+
+- [ ] D1: exact-candidate coordination.
+  - [ ] D1a: shared collision-free tag contract and consumer/engine verification.
+  - [ ] D1b: authenticated merged-PR descriptor and immutable draft transport.
+  - [ ] D1c: exact-source routine/deep/native fanout, complete aggregate and legacy retirement.
+- [ ] D2: failure/retry fixtures, bounded real partial-upload recovery, then complete same-SHA draft proof.
+
+D1b uses the actual merged commit's sole parent and tested tree, not the current
+dev tip, and requires the merged source remain an ancestor of dev. Draft transport
+identity includes version and full source SHA, separately from the canonical
+publication tag. Attempt metadata cannot substitute for candidate identity;
+retries reuse authenticated descriptors, and published history is immutable.
 
 C1a introduces an exact 14-cell signed inventory, preserves explicit V1 recovery
 exports, and moves fork version rules into the portable protocol package. The
