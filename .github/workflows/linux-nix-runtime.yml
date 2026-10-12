@@ -1,6 +1,28 @@
 name: Linux Nix runtime
 
 on:
+  workflow_call:
+    inputs:
+      architecture:
+        type: string
+        required: true
+      source_sha:
+        type: string
+        required: true
+      release_id:
+        type: string
+        required: true
+      descriptor_digest:
+        type: string
+        required: true
+    secrets:
+      PASEO_NIX_RELEASE_SIGNING_KEY:
+        required: true
+    outputs:
+      artifact_id:
+        value: ${{ jobs.native.outputs.artifact_id }}
+      artifact_digest:
+        value: ${{ jobs.native.outputs.artifact_digest }}
   workflow_dispatch:
     inputs:
       architecture:
@@ -12,6 +34,8 @@ on:
 
 permissions:
   contents: read
+  actions: read
+  pull-requests: read
 
 concurrency:
   group: linux-nix-runtime-${{ inputs.architecture }}
@@ -19,10 +43,14 @@ concurrency:
 
 jobs:
   native:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && (github.actor == 'iExalt' || (inputs.source_sha != '' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'))
     runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 45
+    outputs:
+      artifact_id: ${{ steps.packages.outputs.artifact-id }}
+      artifact_digest: ${{ steps.packages.outputs.artifact-digest }}
     env:
+      PASEO_CANDIDATE_SHA: ${{ inputs.source_sha || github.sha }}
       EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
       CI: "true"
       LEFTHOOK: "0"
@@ -32,6 +60,30 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Authenticate candidate and admitted attempt
+        if: inputs.source_sha != ''
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/candidate-worker.mjs
+      - name: Read authenticated candidate source
+        if: inputs.source_sha != ''
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.candidate.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           install_url: https://releases.nixos.org/nix/nix-2.34.7/install
@@ -40,11 +92,6 @@ jobs:
             allow-import-from-derivation = false
             max-jobs = 2
             cores = 2
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install_args: node@26.11.0
-          cache: false
       - name: Verify Nix source invalidation rules before building
         timeout-minutes: 1
         run: |
@@ -62,6 +109,24 @@ jobs:
       - name: Replace owned Nix profile and verify retained desktop state
         timeout-minutes: 5
         run: node .github/scripts/linux-nix-runtime.mjs
+      - name: Export and verify signed native closures
+        if: inputs.source_sha != ''
+        id: export
+        timeout-minutes: 8
+        env:
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
+        run: node .github/scripts/candidate-nix-export.mjs
+      - name: Transfer immutable candidate closures
+        if: inputs.source_sha != ''
+        id: packages
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: candidate-linux-nix-${{ inputs.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ steps.export.outputs.directory }}/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
       - name: Bound retained diagnostics
         id: evidence
         if: ${{ !cancelled() }}
