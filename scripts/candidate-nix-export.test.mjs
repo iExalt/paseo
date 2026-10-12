@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { closureEntries } from "./candidate-nix-export.mjs";
+import { closureEntries } from "../.github/scripts/candidate-nix-export.mjs";
 
 test("closure identity includes its exact root and valid NAR identities", () => {
   const root = `/nix/store/${"0".repeat(32)}-paseo`;
