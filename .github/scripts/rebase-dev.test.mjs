@@ -143,8 +143,13 @@ async function makeFixture(
 
   initRepo(seed);
   writeFileSync(join(seed, "shared.txt"), content());
+  writeFileSync(
+    join(seed, "package.json"),
+    JSON.stringify({ name: "fixture", version: "0.11.2", workspaces: [] }) + "\n",
+  );
   if (deletion) writeFileSync(join(seed, "old.patch"), content());
   commit(seed, "base");
+  const baseSha = git(seed, "rev-parse", "HEAD");
   git(seed, "remote", "add", "origin", remote);
   git(seed, "push", "origin", "HEAD:refs/heads/dev");
   git(remote, "symbolic-ref", "HEAD", "refs/heads/dev");
@@ -174,6 +179,24 @@ async function makeFixture(
     );
   }
   writeFileSync(join(seed, "shared.txt"), content({ target: "dev target" }));
+  mkdirSync(join(seed, ".github"), { recursive: true });
+  writeFileSync(
+    join(seed, ".github/fork-release.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      repository: "iExalt/paseo",
+      lineage: "iExalt/paseo:semver-v1",
+      version: "0.1.0",
+      upstreamBase: baseSha,
+    }) + "\n",
+  );
+  const forkPackage = { name: "fixture", version: "0.1.0", workspaces: [] };
+  writeFileSync(join(seed, "package.json"), JSON.stringify(forkPackage) + "\n");
+  writeFileSync(
+    join(seed, "package-lock.json"),
+    JSON.stringify({ version: "0.1.0", packages: { "": forkPackage } }) + "\n",
+  );
+  writeFileSync(join(seed, "CHANGELOG.fork.md"), "# Fork fixture\n");
   if (deletion) {
     git(seed, "mv", "old.patch", "renamed.patch");
     writeFileSync(join(seed, "renamed.patch"), content({ target: "updated patch" }));
@@ -501,7 +524,7 @@ test("known rerere resolution is imported and resumes while preserving adapted c
     clone,
     "rev-list",
     "--reverse",
-    `${fixture.upstreamSha}..HEAD`,
+    `${fixture.upstreamSha}..HEAD^`,
   ).split("\n");
   assert.equal(rewrittenCommits.length, originalCommits.length);
   const allowedSigners = join(fixture.directory, "allowed-signers");
@@ -547,6 +570,71 @@ test("known rerere resolution is imported and resumes while preserving adapted c
     );
   }
   assert.ok(snapshots.signedCommits > 0);
+  assert.equal(snapshots.provenanceCommits, 1);
+  assert.equal(
+    JSON.parse(readFileSync(join(clone, ".github/fork-release.json"))).upstreamBase,
+    fixture.upstreamSha,
+  );
+  git(
+    clone,
+    "-c",
+    "gpg.format=ssh",
+    "-c",
+    `gpg.ssh.allowedSignersFile=${allowedSigners}`,
+    "verify-commit",
+    "HEAD",
+  );
+  assert.equal(
+    await validateRebase({ repositoryPath: clone, runChecks: async () => {} }),
+    git(clone, "rev-parse", "HEAD"),
+  );
+  git(
+    clone,
+    "push",
+    `--force-with-lease=refs/heads/dev:${fixture.devSha}`,
+    "origin",
+    "HEAD:refs/heads/dev",
+  );
+  const repeated = join(fixture.directory, "repeat-checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, repeated);
+  const unchanged = await rebaseDev({ repositoryPath: repeated, ...signingOptions });
+  assert.equal(
+    unchanged.provenanceCommits,
+    0,
+    "Unchanged upstream must not add provenance commits",
+  );
+});
+
+test("upstream version changes and missing fork authority stop before publication", async () => {
+  const fixture = await makeFixture("fork-version");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "upstream/main");
+  writeFileSync(
+    join(seed, "package.json"),
+    JSON.stringify({ name: "fixture", version: "0.12.0", workspaces: [] }) + "\n",
+  );
+  commit(seed, "chore: bump upstream version");
+  git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
+    /conflict|resolution/i,
+  );
+  assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
+  git(seed, "checkout", "dev");
+  git(seed, "rm", ".github/fork-release.json");
+  commit(seed, "test: remove required authority");
+  git(seed, "push", "origin", "HEAD:refs/heads/dev");
+  const missingRefs = git(clone, "ls-remote", "--refs", "origin");
+  const missing = join(fixture.directory, "missing");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, missing);
+  await assert.rejects(
+    rebaseDev({ repositoryPath: missing, ...signingOptions }),
+    /fork-release.json/,
+  );
+  assert.equal(git(missing, "ls-remote", "--refs", "origin"), missingRefs);
 });
 
 test("unknown conflict stops without publishing any refs", async () => {
