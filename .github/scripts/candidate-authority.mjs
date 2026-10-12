@@ -8,6 +8,9 @@ import {
   validateDescriptor,
 } from "./candidate-descriptor.mjs";
 
+import { replacementForSource, verifyReplacementHistory } from "./candidate-replacement.mjs";
+import { validateGrant } from "./candidate-grant.mjs";
+
 const repo = "/repos/iExalt/paseo";
 async function sourceVersion(sourceSha, read) {
   const { config } = await inspectForkRelease((file) => read(sourceSha, file));
@@ -61,7 +64,7 @@ export async function newCandidate(route, controllerSha, identity, request, read
 
 // Signed authority is durable, but it never exempts a retry from present source,
 // lineage, policy or lifecycle eligibility. No expired job logs are required here.
-export async function currentCandidate(descriptor, controllerSha, identity, request, read) {
+async function currentIdentity(descriptor, controllerSha, identity, request, read) {
   validateDescriptor(descriptor);
   const issuedPolicy = await sourceGatePolicy(descriptor.policy.sourceSha, (file) =>
     read(descriptor.policy.sourceSha, file),
@@ -110,5 +113,36 @@ export async function currentCandidate(descriptor, controllerSha, identity, requ
   );
   await checkPr();
   assert.equal((await request(`${repo}/git/ref/heads/dev`)).object.sha, dev.object.sha);
+  return descriptor;
+}
+
+export async function currentCandidate(descriptor, controllerSha, identity, request, read, api) {
+  await currentIdentity(descriptor, controllerSha, identity, request, read);
+  const record = await replacementForSource(descriptor, read, request);
+  if (record) {
+    assert.ok(api, "Trusted replacement history verification requires draft access");
+    await verifyReplacementHistory(record, {
+      api,
+      request,
+      identity,
+      currentSource: descriptor.sourceSha,
+    });
+  }
+  return descriptor;
+}
+
+export async function currentGrantedCandidate(
+  descriptor,
+  controllerSha,
+  identity,
+  request,
+  read,
+  proof,
+) {
+  validateGrant(proof.grant, proof.context, proof.group, proof.worker, proof.jobs, proof.pin);
+  assert.deepEqual(proof.context.descriptor, descriptor);
+  assert.equal(proof.context.controllerSha, controllerSha);
+  await currentIdentity(descriptor, controllerSha, identity, request, read);
+  await replacementForSource(descriptor, read, request);
   return descriptor;
 }
