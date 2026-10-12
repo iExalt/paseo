@@ -208,7 +208,9 @@ test("deleting a watched root cannot wedge idempotent unsubscription", async () 
   await expect(subscription.unsubscribe()).resolves.toBeUndefined();
 });
 
-test("observes a thousand concurrent writes and remains healthy after delete and rename churn", async () => {
+test("observes a thousand concurrent writes and remains healthy after delete and rename churn", async ({
+  onTestFailed,
+}) => {
   const root = await createRoot();
   const directories = Array.from({ length: 20 }, (_, index) => join(root, `dir-${index}`));
   await Promise.all(directories.map((directory) => mkdir(directory)));
@@ -236,6 +238,19 @@ test("observes a thousand concurrent writes and remains healthy after delete and
   const deletions = expectFileChanges(removedPaths, "delete");
   const movedFiles = expectFileChanges(movedPaths);
   const recovery = expectFileChanges([sentinel]);
+  let phase = "population";
+  onTestFailed(() => {
+    console.error("File observation did not finish", {
+      phase,
+      pending: {
+        population: population.pending(),
+        writes: writes.pending(),
+        deletions: deletions.pending(),
+        movedFiles: movedFiles.pending(),
+        recovery: recovery.pending(),
+      },
+    });
+  });
   const subscription = await subscribeToFileChanges(root, (error, events) => {
     expect(error).toBeNull();
     for (const event of events) {
@@ -251,17 +266,21 @@ test("observes a thousand concurrent writes and remains healthy after delete and
   await Promise.all(populatedPaths.map((path, index) => writeFile(path, `${index}`)));
   await population.complete;
 
+  phase = "writes";
   await Promise.all(paths.map((path, index) => writeFile(path, `${index}`)));
   await writes.complete;
 
+  phase = "deletions";
   // A native watcher may recover coalesced paths through its safety audit.
   // Completion comes from the delivered deletions, not an idle diagnostic or
   // a deadline shorter than that recovery cycle.
   await Promise.all(removedPaths.map((path) => rm(path)));
   await deletions.complete;
 
+  phase = "renames";
   await Promise.all(moves.map(({ from, to }) => rename(from, to)));
   await movedFiles.complete;
+  phase = "recovery";
   await Promise.all(moves.map(({ to }) => rm(to, { recursive: true, force: true })));
   await writeFile(sentinel, "alive");
   await recovery.complete;
@@ -375,6 +394,7 @@ function expectFileChanges(paths: string[], type?: FileChange["type"]) {
   const { promise: complete, resolve } = Promise.withResolvers<void>();
   return {
     complete,
+    pending: () => ({ count: pending.size, sample: [...pending].slice(0, 5) }),
     record(event: FileChange) {
       if (type && event.type !== type) return;
       pending.delete(event.path);
