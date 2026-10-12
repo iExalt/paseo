@@ -62,20 +62,21 @@ bytes; interrupted uploads reconcile by downloading and hashing the existing ass
 These cheap fixtures do not establish a live candidate: complete workflow wiring,
 real package transfers, exact-source reruns and the D2 native matrix remain open.
 The trusted closed-PR/owner-retry entrypoint is implemented with
-read-only planning and independently revalidated issuance; only first issuance
+keyless controller planning and independently revalidated issuance; only first issuance
 receives the signing key. Retry requires historical policy bytes to match both
 the signed digest and the currently trusted policy, so a policy change requires
 explicit reauthorization rather than silently changing candidate identity.
-Its local entrypoint fixture covers plan, issuance and retry without old logs;
-hosted issuance remains unverified. The existing pinned manifest key has been
-provisioned as an Actions secret; the first canary stopped before signing.
+Its local entrypoint fixture covers plan, issuance and retry without old logs.
+Hosted descriptor issuance and attempt admission are now verified; worker
+authentication and the full candidate remain unverified. The existing pinned
+manifest key is provisioned as an Actions secret.
 
 The reviewer-accepted transport-only REST rehearsal at `4e4122904` passed in
 26.89s: draft `410728638` recovered a simulated lost upload response, reused
 immutable asset IDs and verified downloaded bytes. Its ephemeral key and fixture
 version 0.0.0 were never production candidate authority. The exact owned draft
 was removed and release/tag inventories matched the initial snapshot afterward.
-Real package streaming, admitted-attempt execution and genuine production issuance remain open.
+Real package streaming and admitted-attempt worker execution remain open.
 
 Streaming and attempt admission source is reviewed and integrated:
 package transfers verify a stable file handle and actual byte/hash
@@ -239,17 +240,49 @@ mutation and verified that explicitly including the unchanged tag preserves it;
 the probe was deleted. Only the descriptor and signature exist in the production
 draft; no verification/native matrix or final manifest completed.
 
-The adapter repair validates current identity/admission, preserves the verified
-tag in PATCH, and checks fresh readback. Existing signed policy cannot silently
-accept this repair. Proposed recovery requires explicit approval: retain the two
-signed assets in draft `410889371`, mark its control state stopped and rename
-its draft tag to `paseo-retired-candidate-410889371` without creating a Git tag;
-then issue replacement authority for the same PR #74/source `376090618` under
-the reviewed repaired policy. Fresh signature, asset-ID/hash, lifecycle and
-no-tag checks precede and follow retirement. The original draft is untouched
-pending that approval; replacement remains native-disabled until canary closure.
-Observed Actions limits were 5,000 for both REST and GraphQL, with 4,939/4,990
-remaining at failure. These partial adapter counters are not full-matrix usage.
+The adapter repair at `d03d5e5c6` validates current identity/admission, preserves
+the verified tag in PATCH, and checks fresh readback. PR/dev runs
+`38291282481`/`38291894498` passed in 4m53s/4m37s. With explicit user approval,
+draft `410889371` was stopped and its draft tag changed to
+`paseo-retired-candidate-410889371`; its descriptor/signature assets were preserved
+and no Git tag created. Fresh signature, asset-ID/hash, lifecycle and no-tag
+checks passed before and after retirement.
+
+Replacement run `38308904161` verified the same PR #74/source `376090618`, issued
+draft `410999337` and admitted attempt 1 while preserving its canonical draft tag.
+Its descriptor digest is
+`793f33590fdd798b132ae6e21948026bf1b2621d6c1cb07b203d16a99d4049eb`, under
+policy `7ec07adb6c0dbf1ceaa93218c71a6a32969067080142575dcab61b02e9859b08`.
+All ten verification workers then failed their first draft metadata request with
+HTTP 403 using read-only workflow tokens, before candidate checkout or tests.
+Native jobs and transfers were skipped; aggregate failed closed. The draft
+contains only descriptor/signature assets `635005493`/`635005605`, with no final
+manifest. A trusted authentication handoff to read-only workers is under design
+review; any changed stop/admission boundary and replacement signed policy require
+explicit reauthorization. Native enablement remains blocked on canary closure.
+
+User-approved, reviewer-agreed amendment: controller-only authentication
+jobs read fresh draft admission and pass a bounded immutable Actions artifact to
+read-only workers. Separate grants cover verification, native build groups and
+later Mac/Android installed runtime; signing stages retain fresh admission checks.
+Each grant binds the signed descriptor, controller/source, root run/attempt and
+allowed worker names. Consumers verify signature, artifact identity/digest,
+successful authentication job provenance and a still-active root before checkout.
+Authentication jobs receive no signing key and execute no candidate code.
+Supported manual stop cancels the root, waits for terminal state and cleanup
+evidence, then marks admission stopped. A draft-only stop after grant issuance may
+allow computation to start, but fresh transfer/aggregate checks still reject it.
+The extra controller/artifact overhead must be measured; existing CI budgets stay
+unchanged. Implementation is active; replacement of draft `410999337` is approved after
+review and source verification, preserving its signed assets.
+The grant implementation is reviewer-accepted in the worktree. Its 48 targeted
+checks passed in 4.74s, including real ZIP transport and grant-backed worker
+authorization. Native-disabled hosted validation must still establish read-only
+artifact access, exact nested job names, all ten verification lanes and added
+scheduling overhead before native enablement.
+Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
+for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
+adapter counters are not full-matrix usage.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.

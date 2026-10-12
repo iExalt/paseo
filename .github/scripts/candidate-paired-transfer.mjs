@@ -7,7 +7,7 @@ import { validateCandidateClosure } from "./macos-candidate-runtime.mjs";
 import { validateNixArtifactClosure } from "../../scripts/paseo-nix-update.mjs";
 import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
-import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
+import { readTrustedWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 import { verifyCompletedSteps } from "./candidate-product-transfer.mjs";
 import { producerGroups, validateCellReceipt } from "./candidate-matrix.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
@@ -177,7 +177,7 @@ export async function pairedReceipt(candidate, pin, context, platform, directory
 export async function transferPaired(
   env = process.env,
   {
-    authenticate = readWorkerContext,
+    authenticate = readTrustedWorkerContext,
     request = readGithub,
     download = fetchCandidate,
     draftApi = candidateGithub,

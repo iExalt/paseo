@@ -68,6 +68,7 @@ export const sourceGateFiles = Object.freeze([
 
   ".github/workflows/release-candidate.yml",
   ".github/workflows/candidate-verify.yml",
+  ".github/workflows/candidate-auth.yml",
   ".github/workflows/candidate-transfer.yml",
   ".github/workflows/fork-builds.yml",
   ".github/workflows/fork-android-apk.yml",
@@ -110,6 +111,7 @@ export const sourceGateFiles = Object.freeze([
   ".github/scripts/candidate-github.mjs",
   ".github/scripts/candidate-files.mjs",
   ".github/scripts/candidate-worker.mjs",
+  ".github/scripts/candidate-grant.mjs",
   ".github/scripts/candidate-matrix.mjs",
   ".github/scripts/candidate-aggregate.mjs",
   ".github/scripts/ci-routine.mjs",
