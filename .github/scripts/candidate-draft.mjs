@@ -221,7 +221,7 @@ export async function requireAttempt(api, descriptor, id, runId, attempt) {
   );
 }
 
-export async function admitAttempt(api, descriptor, id, env, request) {
+export async function requireCurrentRun(env, request) {
   const runId = Number(env.GITHUB_RUN_ID),
     attempt = Number(env.GITHUB_RUN_ATTEMPT);
   positive(runId);
@@ -243,6 +243,11 @@ export async function admitAttempt(api, descriptor, id, env, request) {
     assert.equal(run.actor.id, 7889894);
     assert.equal(run.actor.login, "iExalt");
   }
+  return { runId, attempt };
+}
+
+export async function admitAttempt(api, descriptor, id, env, request) {
+  const { runId, attempt } = await requireCurrentRun(env, request);
   assert.deepEqual(await loadDescriptor(api, id), descriptor);
   const release = await eligibleDraft(api, descriptor, id);
   const previous = JSON.parse(release.body).activeAttempt;

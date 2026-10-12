@@ -34,9 +34,13 @@ const keys = [
 export const sourceGateFiles = Object.freeze([
   ".github/workflows/release-candidate.yml",
   ".github/workflows/candidate-verify.yml",
+  ".github/workflows/candidate-transfer.yml",
   ".github/workflows/linux-product-runtime.yml",
   ".github/workflows/windows-product-runtime.yml",
   ".github/scripts/candidate-product-export.mjs",
+  ".github/scripts/candidate-product-transfer.mjs",
+  ".github/scripts/candidate-artifacts.mjs",
+  ".github/scripts/extract-candidate-artifact.py",
   ".github/scripts/native-candidate-authority.mjs",
   ".github/scripts/linux-predecessor-cache.mjs",
   ".github/scripts/windows-predecessor-cache.mjs",

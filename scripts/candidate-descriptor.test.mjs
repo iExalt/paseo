@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, writeFile, readFile, mkdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -6,6 +7,11 @@ import { join } from "node:path";
 import test from "node:test";
 import { candidateGithub } from "../.github/scripts/candidate-github.mjs";
 import { exportProducts, productFiles } from "../.github/scripts/candidate-product-export.mjs";
+import {
+  productProducer,
+  productReceipts,
+  transferProducts,
+} from "../.github/scripts/candidate-product-transfer.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
 import {
   aggregateCandidate,
@@ -85,6 +91,211 @@ test("native exports copy only exact candidate bytes into fresh canonical bundle
       await writeFile(join(root, "packages", files[0].relative), "wrong bytes");
       await assert.rejects(exportProducts(env, platform));
     }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("trusted product transfer admits receipts only after completed provenance and exact downloaded bytes", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "candidate-transfer-"));
+  const descriptor = candidateFixture();
+  const context = {
+    descriptor,
+    releaseId: 42,
+    runId: 500,
+    attempt: 2,
+    controllerSha: "c".repeat(40),
+  };
+  const group = "windows-arm64";
+  const bytes = Buffer.from("native installer fixture");
+  const payload = {
+    platform: "windows",
+    arch: "arm64",
+    kind: "nsis",
+    name: "paseo-0.1.0-windows-arm64.exe",
+    bytes: bytes.length,
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  };
+  const bundle = {
+    schemaVersion: 1,
+    kind: "paseo-candidate-products",
+    descriptorSha256: descriptorDigest(descriptor),
+    sourceSha: descriptor.sourceSha,
+    treeSha: descriptor.treeSha,
+    version: descriptor.version,
+    runId: 500,
+    attempt: 2,
+    group,
+    artifacts: [payload],
+  };
+  const stamp = "2026-10-12T12:00:00Z";
+  const job = {
+    id: 123,
+    run_id: 500,
+    run_attempt: 2,
+    name: producerGroups[group].job,
+    status: "completed",
+    conclusion: "success",
+    started_at: stamp,
+    completed_at: stamp,
+    steps: [
+      "Authenticate candidate and admitted attempt",
+      "Read authenticated candidate source",
+      "Verify installed upgrade, retained CLI, PTY and real speech",
+      "Reconcile owned processes and remove installation and state",
+      "Export verified candidate packages",
+      "Transfer immutable candidate packages",
+    ].map((name, index) => ({
+      name,
+      number: index + 1,
+      status: "completed",
+      conclusion: "success",
+      started_at: stamp,
+      completed_at: stamp,
+    })),
+  };
+  const env = {
+    RUNNER_TEMP: directory,
+    GH_TOKEN: "fixture",
+    GITHUB_RUN_ID: "500",
+    GITHUB_RUN_ATTEMPT: "2",
+    GITHUB_SHA: context.controllerSha,
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    CANDIDATE_PRODUCT_GROUP: group,
+    CANDIDATE_ARTIFACT_ID: "77",
+  };
+  try {
+    await mkdir(join(directory, "input"));
+    await writeFile(join(directory, "input", payload.name), bytes);
+    await writeFile(join(directory, "input/candidate-products.json"), JSON.stringify(bundle));
+    execFileSync("python3", [
+      "-c",
+      "import pathlib,sys,zipfile\nwith zipfile.ZipFile(sys.argv[2],'w') as z:\n for p in pathlib.Path(sys.argv[1]).iterdir(): z.write(p,p.name)",
+      join(directory, "input"),
+      join(directory, "fixture.zip"),
+    ]);
+    const zip = await readFile(join(directory, "fixture.zip"));
+    env.CANDIDATE_ARTIFACT_DIGEST = createHash("sha256").update(zip).digest("hex");
+    const artifact = {
+      id: 77,
+      name: "candidate-windows-products-arm64-500-2",
+      digest: `sha256:${env.CANDIDATE_ARTIFACT_DIGEST}`,
+      expired: false,
+      size_in_bytes: zip.length,
+      created_at: stamp,
+      workflow_run: {
+        id: 500,
+        head_sha: context.controllerSha,
+        head_branch: "dev",
+        repository_id: 1404390841,
+        head_repository_id: 1404390841,
+      },
+    };
+    const expected = { id: 77, digest: env.CANDIDATE_ARTIFACT_DIGEST };
+    assert.equal(productProducer(context, group, [job], artifact, expected), 123);
+    for (const patch of [
+      { run_attempt: 1 },
+      { conclusion: "failure" },
+      {
+        steps: job.steps.map((step, index) =>
+          index === 3 ? { ...step, conclusion: "skipped" } : step,
+        ),
+      },
+      { steps: [...job.steps, job.steps[0]] },
+      { steps: job.steps.map((step, index) => (index === 4 ? { ...step, number: 2 } : step)) },
+    ])
+      assert.throws(() =>
+        productProducer(context, group, [{ ...job, ...patch }], artifact, expected),
+      );
+    assert.throws(() =>
+      productProducer(
+        context,
+        group,
+        [job],
+        { ...artifact, workflow_run: { ...artifact.workflow_run, head_sha: descriptor.sourceSha } },
+        expected,
+      ),
+    );
+    assert.throws(() => productReceipts({ ...bundle, attempt: 1 }, context, group, 123));
+    assert.throws(() =>
+      productReceipts(
+        { ...bundle, artifacts: [{ ...payload, name: "../escape" }] },
+        context,
+        group,
+        123,
+      ),
+    );
+    const pair = generateKeyPairSync("ed25519");
+    const pin = pair.publicKey.export({ format: "jwk" }).x;
+    const signature = signDescriptor(
+      descriptor,
+      pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+      pin,
+    );
+    const draft = {
+      id: 42,
+      draft: true,
+      prerelease: false,
+      name: draftTag(descriptor),
+      tag_name: draftTag(descriptor),
+      target_commitish: descriptor.sourceSha,
+      body: draftBody(descriptor, "active", { runId: 500, attempt: 2 }),
+      assets: [],
+    };
+    const data = new Map();
+    function upload(_id, name, value) {
+      const asset = { id: data.size + 1, name, size: value.length, state: "uploaded" };
+      data.set(asset.id, value);
+      draft.assets.push(asset);
+      return asset;
+    }
+    upload(42, "candidate-descriptor.json", descriptorBytes(descriptor));
+    upload(42, "candidate-descriptor.sig", Buffer.from(signature));
+    const api = {
+      publicPin: pin,
+      get: async () => structuredClone(draft),
+      list: async () => [structuredClone(draft)],
+      ref: async () => null,
+      read: async (asset) => data.get(asset.id),
+      upload,
+      uploadFile: async (id, name, file, identity) => {
+        const value = await readFile(file);
+        await verifyStream([value], identity);
+        return upload(id, name, value);
+      },
+      verifyFile: async (asset, identity) => verifyStream([data.get(asset.id)], identity),
+    };
+    const root = {
+      id: 500,
+      run_attempt: 2,
+      repository: { id: 1404390841, full_name: "iExalt/paseo", private: false },
+      path: ".github/workflows/release-candidate.yml",
+      head_sha: context.controllerSha,
+      head_branch: "dev",
+      event: "workflow_dispatch",
+      status: "in_progress",
+      conclusion: null,
+      actor: { id: 7889894, login: "iExalt" },
+    };
+    await transferProducts(env, {
+      authenticate: async () => context,
+      draftApi: () => api,
+      response: async () => new Response(zip),
+      request: async (route) => {
+        if (route.includes("/jobs?")) return { jobs: [job] };
+        if (route.includes("/artifacts/")) return artifact;
+        return root;
+      },
+    });
+    const receipt = draft.assets.find((asset) => asset.name.endsWith(`receipts-${group}.json`));
+    assert.deepEqual(
+      JSON.parse(data.get(receipt.id)),
+      productReceipts(bundle, context, group, 123),
+    );
+    assert.deepEqual(
+      data.get(draft.assets.find((asset) => asset.name.endsWith(payload.name)).id),
+      bytes,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
