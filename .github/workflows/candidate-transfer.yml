@@ -15,12 +15,15 @@ on:
       group:
         type: string
         required: true
+      candidate_pin:
+        type: string
+        default: ""
       artifact_id:
         type: string
-        required: true
+        default: ""
       artifact_digest:
         type: string
-        required: true
+        default: ""
 
 permissions:
   contents: write
@@ -49,6 +52,8 @@ jobs:
           PASEO_CANDIDATE_SHA: ${{ inputs.source_sha }}
           CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          CANDIDATE_PIN: ${{ inputs.candidate_pin }}
+          CANDIDATE_PLATFORM: ${{ inputs.group == 'macos-arm64' && 'macos' || 'android' }}
           CANDIDATE_PRODUCT_GROUP: ${{ inputs.group }}
           CANDIDATE_ARTIFACT_ID: ${{ inputs.artifact_id }}
           CANDIDATE_ARTIFACT_DIGEST: ${{ inputs.artifact_digest }}
@@ -56,4 +61,8 @@ jobs:
           PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
-        run: node .github/scripts/candidate-product-transfer.mjs
+        run: |
+          case "$CANDIDATE_PRODUCT_GROUP" in
+            macos-arm64|android-arm64) node .github/scripts/candidate-paired-transfer.mjs ;;
+            *) node .github/scripts/candidate-product-transfer.mjs ;;
+          esac
