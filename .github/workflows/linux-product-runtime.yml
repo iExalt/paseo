@@ -36,6 +36,7 @@ on:
 permissions:
   contents: read
   actions: read
+  pull-requests: read
 
 concurrency:
   group: ${{ inputs.source_sha && format('candidate-products-{0}-{1}', 'linux', inputs.architecture) || 'paseo-predecessor-cache-writer' }}
@@ -43,7 +44,7 @@ concurrency:
 
 jobs:
   native:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && (github.actor == 'iExalt' || (inputs.source_sha != '' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'))
     runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 45
     outputs:
