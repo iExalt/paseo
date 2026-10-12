@@ -61,7 +61,9 @@ it("rejects incompatible installs without persisting them, then accepts the corr
   const root = await directory();
   await writePlugin(root, ">=0.9.0");
   const { service, store } = await host();
-  await expect(service.installDirectory({ path: root })).rejects.toThrow("Your daemon is 0.8.0");
+  await expect(service.installDirectory({ path: root })).rejects.toThrow(
+    "Your daemon plugin API is 0.8.0",
+  );
   expect(store.get().plugins).toEqual({});
   expect(service.catalog()).toEqual([]);
   await writePlugin(root, "^0.8.0");
