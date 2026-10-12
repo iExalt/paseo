@@ -107,6 +107,7 @@ export const sourceGateFiles = Object.freeze([
   ".github/scripts/windows-product-stage.ps1",
   ".github/scripts/candidate-entry.mjs",
   ".github/scripts/candidate-authority.mjs",
+  ".github/scripts/candidate-replacement.mjs",
   ".github/scripts/candidate-draft.mjs",
   ".github/scripts/candidate-github.mjs",
   ".github/scripts/candidate-files.mjs",

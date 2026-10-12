@@ -1546,3 +1546,144 @@ test("draft transport reconciles interrupted immutable uploads and rejects chang
     uploadAttemptBytes(api, descriptor, replacementId, 123, 3, "proof.json", bytes),
   );
 });
+
+test("replacement authenticates retired signed authorities and rejects active, missing or changed history", async () => {
+  const { verifyReplacementHistory } = await import("../.github/scripts/candidate-replacement.mjs");
+  const descriptor = candidateFixture();
+  const pair = generateKeyPairSync("ed25519");
+  const pin = pair.publicKey.export({ format: "jwk" }).x;
+  const signature = signDescriptor(
+    descriptor,
+    pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+    pin,
+  );
+  const release = {
+    id: 42,
+    tag_name: "paseo-retired-candidate-42",
+    name: draftTag(descriptor),
+    target_commitish: descriptor.sourceSha,
+    draft: true,
+    prerelease: false,
+    body: draftBody(descriptor, "stopped"),
+    assets: [
+      { id: 1, name: "candidate-descriptor.json" },
+      { id: 2, name: "candidate-descriptor.sig" },
+    ],
+  };
+  const record = {
+    schemaVersion: 1,
+    version: descriptor.version,
+    supersededPr: descriptor.releasePr,
+    supersededSource: descriptor.sourceSha,
+    repairBase: "f".repeat(40),
+    lockSha256: "a".repeat(64),
+    npmDepsHash: `sha256-${Buffer.alloc(32).toString("base64")}`,
+    authorities: [{ releaseId: 42, descriptorSha256: descriptorDigest(descriptor) }],
+  };
+  const repository = { id: 1404390841, full_name: "iExalt/paseo", private: false };
+  const identity = { botId: 341220930, botLogin: "paseo-release[bot]" };
+  const pr = {
+    number: descriptor.releasePr,
+    state: "closed",
+    merged: true,
+    commits: 1,
+    merge_commit_sha: descriptor.sourceSha,
+    user: { id: identity.botId, login: identity.botLogin, type: "Bot" },
+    base: { ref: "dev", repo: repository },
+    head: {
+      ref: "release-please--branches--dev--components--paseo",
+      repo: repository,
+      sha: descriptor.headSha,
+    },
+    labels: [{ name: "autorelease: pending" }],
+  };
+  const api = {
+    publicPin: pin,
+    ref: async () => null,
+    list: async () => [release],
+    get: async () => release,
+    read: async (asset) => (asset.id === 1 ? descriptorBytes(descriptor) : Buffer.from(signature)),
+  };
+  const request = async (route) => {
+    if (route.includes("/pulls/")) return pr;
+    if (route.includes("/git/commits/"))
+      return {
+        sha: descriptor.sourceSha,
+        tree: { sha: descriptor.treeSha },
+        parents: [{ sha: descriptor.baseSha }],
+      };
+    if (route.includes("/compare/"))
+      return { status: "ahead", base_commit: { sha: descriptor.sourceSha } };
+    throw new Error(`Unexpected route ${route}`);
+  };
+  const verifyHistory = (overrides = {}) =>
+    verifyReplacementHistory(record, { api, request, identity, ...overrides });
+  await verifyHistory();
+  pr.labels = [{ name: "autorelease: superseded" }];
+  await verifyHistory();
+  release.body = draftBody(descriptor, "active");
+  await assert.rejects(verifyHistory(), /remains active/);
+  release.body = draftBody(descriptor, "stopped");
+  await assert.rejects(
+    verifyHistory({ api: { ...api, list: async () => [] } }),
+    /inventory changed/,
+  );
+  await assert.rejects(verifyHistory({ api: { ...api, ref: async () => ({}) } }), /final tag/);
+  await assert.rejects(
+    verifyHistory({
+      api: {
+        ...api,
+        read: async (asset) =>
+          asset.id === 1 ? descriptorBytes(descriptor) : Buffer.from("x".repeat(86)),
+      },
+    }),
+  );
+  await assert.rejects(verifyHistory({ identity: { ...identity, botId: 1 } }));
+  const later = { ...descriptor, sourceSha: "9".repeat(40), releasePr: 81 };
+  const laterSignature = signDescriptor(
+    later,
+    pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+    pin,
+  );
+  const retired = {
+    ...release,
+    id: 43,
+    tag_name: "paseo-retired-candidate-43",
+    name: draftTag(later),
+    target_commitish: later.sourceSha,
+    body: draftBody(later, "stopped"),
+    assets: [
+      { id: 3, name: "candidate-descriptor.json" },
+      { id: 4, name: "candidate-descriptor.sig" },
+    ],
+  };
+  const reissuedApi = {
+    ...api,
+    list: async () => [release, retired],
+    get: async (id) => (id === 42 ? release : retired),
+    read: async (asset) => {
+      if (asset.id === 3) return descriptorBytes(later);
+      if (asset.id === 4) return Buffer.from(laterSignature);
+      return api.read(asset);
+    },
+  };
+  await verifyHistory({ api: reissuedApi, currentSource: later.sourceSha });
+  retired.body = draftBody(later, "active");
+  await assert.rejects(
+    verifyHistory({ api: reissuedApi, currentSource: later.sourceSha }),
+    /remains active/,
+  );
+  retired.body = draftBody(later, "stopped");
+  await assert.rejects(
+    verifyHistory({
+      api: {
+        ...reissuedApi,
+        read: async (asset) =>
+          asset.id === 4 ? Buffer.from("x".repeat(86)) : reissuedApi.read(asset),
+      },
+      currentSource: later.sourceSha,
+    }),
+  );
+  record.authorities[0].descriptorSha256 = "0".repeat(64);
+  await assert.rejects(verifyHistory(), /inventory changed/);
+});
