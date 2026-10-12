@@ -121,6 +121,9 @@ Keep releases unpublished. Mark C done with G4 evidence and record deviations.
   signing authority. C3 covers current-head checks on updated bot PRs, forged-label
   rejection, exact merge SHA and two consecutive version proposals. Use fixtures
   for rebase/version/changelog preservation; no production rebase is implied.
+- **Progress:** C1 accepted and published at `e674ae2f5` (PR #60); full PR/dev
+  checks passed in 4m26s / 4m16s. C2 is active; production proposals remain
+  disabled while the fixed rehearsal branch proves bot events and the C3 lifecycle.
 - **Human:** before live tests, install/provide scoped bot access if unavailable
   and any necessary repository permissions. At approval authorize the bounded
   test PR/draft activity. No publisher certificates required; no real release.

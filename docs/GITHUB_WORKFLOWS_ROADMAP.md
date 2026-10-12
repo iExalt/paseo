@@ -168,7 +168,7 @@ explicitly required before publication, even if absent from routine CI.
     exact release-SHA coordination, ARM cache transport and full-hit timing remain
     separate later gates/measurements, as recorded in [status](GITHUB_WORKFLOWS_STATUS.md).
 
-- [ ] **7. Implement independent versioning and updater transition.** Apply
+- [x] **7. Implement independent versioning and updater transition.** Apply
       step 1's settled interface and initial 0.1.0 version. Synchronize workspace,
       lockfile/native/new-manifest consumers. Preserve signing identities;
       gate new-client upgrades by fork semver and exclude the legacy lineage.
@@ -177,6 +177,9 @@ explicitly required before publication, even if absent from routine CI.
     confusion; rebase, deterministic Android encoding and manual-migration fixtures pass. Recovery
     retains usable previous release. Actual installed-device proof remains step 11.
   - Ticks: W6 migration portion; contributes to G4.
+  - Verified: reviewed `e674ae2f5`, merged PR #60; full PR/dev checks
+    `38190475746` / `38191279639` passed in 4m26s / 4m16s. Installed 0.1.0
+    package/device migration remains step 11; source fixtures do not replace it.
 
 - [ ] **8. Configure release-please and verify its real PR event chain.** Add
       pinned action, manifest/config, fork changelog/bootstrap, bot permissions and
