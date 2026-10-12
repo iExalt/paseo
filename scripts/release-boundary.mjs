@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { parseForkVersion } from "./fork-version.mjs";
 import {
   validateForkConfig,
@@ -8,20 +9,20 @@ import {
 
 export const RELEASE_BOUNDARY_PATH = ".github/release-boundary.json";
 export const RELEASE_CONFIG_PATH = "release-please-config.json";
+export const changelogDigest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 export function validateReleaseBoundary(value) {
-  assert.deepEqual(Object.keys(value).sort(), [
-    "currentSha",
-    "kind",
-    "originalSha",
-    "schemaVersion",
-    "version",
-  ]);
+  const keys = ["currentSha", "kind", "originalSha", "schemaVersion", "version"];
+  if (value.kind === "bootstrap") keys.push("forkVersion", "changelogSha256");
+  assert.deepEqual(Object.keys(value).sort(), keys.sort());
   assert.equal(value.schemaVersion, 1);
   assert.ok(value.kind === "bootstrap" || value.kind === "release");
   parseForkVersion(value.version);
-  if (value.kind === "bootstrap") assert.equal(value.version, "0.0.0");
-  else assert.notEqual(value.version, "0.0.0");
+  if (value.kind === "bootstrap") {
+    assert.equal(value.version, "0.0.0");
+    assert.equal(value.forkVersion, "0.1.0");
+    assert.match(value.changelogSha256, /^[a-f0-9]{64}$/);
+  } else assert.notEqual(value.version, "0.0.0");
   assert.match(value.originalSha, /^[a-f0-9]{40}$/);
   assert.match(value.currentSha, /^[a-f0-9]{40}$/);
   return value;
@@ -56,8 +57,10 @@ export async function verifyBoundaryHistory(boundary, { isAncestor, readAt }) {
     await isAncestor(boundary.currentSha),
     "Recorded release boundary is not an ancestor of the target",
   );
-  const expectedVersion = boundary.kind === "bootstrap" ? "0.1.0" : boundary.version;
-  for (const sha of new Set([boundary.originalSha, boundary.currentSha])) {
+  const bootstrap = boundary.kind === "bootstrap";
+  const expectedVersion = bootstrap ? boundary.forkVersion : boundary.version;
+  const commits = bootstrap ? [boundary.currentSha] : [boundary.originalSha, boundary.currentSha];
+  for (const sha of new Set(commits)) {
     const config = validateForkConfig(JSON.parse(await readAt(sha, FORK_CONFIG_PATH)));
     assert.equal(config.version, expectedVersion, "Release boundary source version differs");
     if (boundary.kind === "release")
@@ -65,6 +68,14 @@ export async function verifyBoundaryHistory(boundary, { isAncestor, readAt }) {
         JSON.parse(await readAt(sha, ".release-please-manifest.json"))["."],
         boundary.version,
       );
+  }
+  if (bootstrap) {
+    assert.equal(
+      changelogDigest(await readAt(boundary.currentSha, FORK_CHANGELOG_PATH)),
+      boundary.changelogSha256,
+      "Replayed bootstrap changed fork changelog history",
+    );
+    return;
   }
   assert.equal(
     await readAt(boundary.currentSha, FORK_CHANGELOG_PATH),
