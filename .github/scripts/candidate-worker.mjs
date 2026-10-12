@@ -29,7 +29,7 @@ export async function workerGate(env, api, request, read) {
   await currentCandidate(descriptor, env.GITHUB_SHA, releaseBotIdentity(env), request, read);
   const runId = Number(env.GITHUB_RUN_ID),
     attempt = Number(env.GITHUB_RUN_ATTEMPT);
-  await requireCurrentRun(env, request);
+  const { headBranch: rootBranch } = await requireCurrentRun(env, request, descriptor);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   return {
     descriptor,
@@ -37,6 +37,7 @@ export async function workerGate(env, api, request, read) {
     runId,
     attempt,
     controllerSha: env.GITHUB_SHA,
+    rootBranch,
   };
 }
 
