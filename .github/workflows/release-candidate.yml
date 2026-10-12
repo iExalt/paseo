@@ -40,11 +40,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install_args: node@26.11.0
-          cache: false
+      - uses: ./.github/actions/setup-ci-tools
       - name: Verify merged source or authenticated retry
         id: authority
         env:
@@ -75,11 +71,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install_args: node@26.11.0
-          cache: false
+      - uses: ./.github/actions/setup-ci-tools
       - name: Independently revalidate and issue draft authority
         id: authority
         env:
@@ -390,11 +382,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install_args: node@26.11.0
-          cache: false
+      - uses: ./.github/actions/setup-ci-tools
       - name: Independently verify complete current-attempt draft bytes
         id: verified
         run: node .github/scripts/candidate-aggregate.mjs verify
