@@ -76,16 +76,16 @@ vi.mock("@/styles/settings", () => ({
 import { NixDesktopAppUpdateRow } from "./nix-desktop-app-update-row";
 
 const prior = {
-  releaseTag: "v0.1.0",
+  releaseTag: "paseo-v0.1.0",
   version: "0.1.0",
   outputPath: "/nix/store/12345678901234567890123456789012-paseo-desktop-0.1.0",
 };
 const candidate = {
-  releaseTag: "v0.1.1",
+  releaseTag: "paseo-v0.1.1",
   version: "0.1.1",
   outputPath: "/nix/store/23456789012345678901234567890123-paseo-desktop-0.1.1",
 };
-const olderStaged = { ...candidate, releaseTag: "v0.0.9", version: "0.0.9" };
+const olderStaged = { ...candidate, releaseTag: "paseo-v0.0.9", version: "0.0.9" };
 
 function result(
   action: "check" | "status" | "stage" | "activate" | "rollback",

@@ -43,6 +43,7 @@ describe("fork release verification", () => {
   it("accepts only canonical promoted stable tags and checks semver monotonicity", () => {
     expect(releaseVersionFromTag(releaseFor("0.1.2").tag_name)).toBe("0.1.2");
     expect(releaseVersionFromTag("nix-closure-probe-seed-20261009")).toBeNull();
+    expect(releaseVersionFromTag("v0.1.1")).toBeNull();
     expect(releaseVersionFromTag(`paseo-fork-v0.11.0-r0-${sourceSha}`)).toBeNull();
     const update = verifyReleaseBinding(releaseFor("0.1.2"), manifestFor("0.1.2"));
     expect(isNewerThanInstalled(update, "0.1.1", "0.1.0")).toBe(true);
