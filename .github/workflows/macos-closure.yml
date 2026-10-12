@@ -3,6 +3,12 @@ name: macOS Nix closure
 on:
   workflow_call:
     inputs:
+      release_id:
+        type: string
+        required: true
+      descriptor_digest:
+        type: string
+        required: true
       source_sha:
         description: Immutable commit SHA to build.
         required: true
@@ -54,6 +60,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  PASEO_CANDIDATE_SHA: ${{ inputs.source_sha }}
+
 concurrency:
   group: macos-nix-closure-${{ inputs.source_sha }}-${{ inputs.fork_version }}
   cancel-in-progress: false
@@ -61,12 +70,13 @@ concurrency:
 jobs:
   build-and-export:
     name: Build and sign macOS closure
-    if: ${{ github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' }}
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'
     runs-on: macos-14
     timeout-minutes: 90
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     outputs:
       source_sha: ${{ steps.prepare.outputs.source_sha }}
       fork_version: ${{ steps.prepare.outputs.fork_version }}
@@ -83,10 +93,34 @@ jobs:
       artifact_id: ${{ steps.upload.outputs.artifact-id }}
       artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read trusted controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Authenticate candidate and admitted attempt
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/candidate-worker.mjs
+      - name: Read authenticated candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.authority.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
@@ -139,19 +173,44 @@ jobs:
   verify-import:
     name: Verify closure on a fresh runner
     needs: build-and-export
-    if: ${{ github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt' }}
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'
     runs-on: macos-14
     timeout-minutes: 20
     permissions:
       contents: read
       actions: read
+      pull-requests: read
     outputs:
       verified: ${{ steps.verify.outputs.verified }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read trusted controller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ inputs.source_sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.11.0
+          cache: false
+      - name: Authenticate candidate and admitted attempt
+        id: authority
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
+          CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/candidate-worker.mjs
+      - name: Read authenticated candidate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.authority.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
