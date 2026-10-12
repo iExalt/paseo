@@ -24,24 +24,30 @@
   Mac/Android evidence is at `842a70f0c`, Nix at `b74c9822e`, Linux formats at
   `db2316365`, Windows ARM/x64 at `b065b31e5`, and x64 cache transfer at `c787e125c`.
   These are named contributors, not a universal current-SHA rebuild. Public
-  release and installed-user 0.1.0 migration remain unperformed C/D gates.
+  release and installed-user 0.1.0 migration remain unperformed D gates.
   Latest routine PR/dev passed in 4m24s/4m15s at `c787e125c`;
   this does not replace the accepted baseline above.
+- Phase C / G4 live evidence is complete at source `07b997d79`: scoped App
+  credentials created and updated authentic 0.1.0 and 0.1.1 proposals, stale
+  checks and forged identity were rejected, and an isolated rebase merge matched
+  the tested tree. Final integration is reviewer-accepted. No public release,
+  production proposal activation or device migration
+  occurred; the two rehearsal refs have been removed.
 
 ## Outcome gates
 
-| Goal                                           | Status / evidence    | Depends on                               | Exit and owner                                                              |
-| ---------------------------------------------- | -------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
-| A1: feasible candidate and cost contracts      | complete / verified  | none                                     | G0, author with user decisions                                              |
-| A2: measured routine verification              | complete / verified  | A1                                       | step 2 live events and accepted latency ceiling, author/user                |
-| A3: exact rebased-tree verification            | complete / verified  | A2                                       | G1 including atomic publication failure fixtures, author                    |
-| B1: deep journeys and safe PR routing          | complete / verified  | A1–A3; B2 for Android closure            | G2, author                                                                  |
-| B2: Mac/Android candidate preservation         | complete / verified  | A1–A3                                    | Mac/Android portion of G3, author                                           |
-| B3: Linux package matrix                       | complete / verified  | B2 for closure                           | Linux portion of G3, author                                                 |
-| B4: Windows package matrix                     | complete / verified  | B2, B3                                   | Remaining G3 and phase integration, author                                  |
-| C1: independent version and updater transition | complete / verified  | B1–B4                                    | Step 7 source/fixture integration; installed migration belongs to D, author |
-| C2: scoped version proposal automation         | active / implemented | C1; owner-provisioned App for live proof | Step 8 configuration and actual bot event delivery, author                  |
-| C3: consecutive bot proposal rehearsal         | planned / designed   | C2                                       | Remaining G4 current-head, forged-label and merge-identity proofs, author   |
+| Goal                                           | Status / evidence   | Depends on                    | Exit and owner                                                              |
+| ---------------------------------------------- | ------------------- | ----------------------------- | --------------------------------------------------------------------------- |
+| A1: feasible candidate and cost contracts      | complete / verified | none                          | G0, author with user decisions                                              |
+| A2: measured routine verification              | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user                |
+| A3: exact rebased-tree verification            | complete / verified | A2                            | G1 including atomic publication failure fixtures, author                    |
+| B1: deep journeys and safe PR routing          | complete / verified | A1–A3; B2 for Android closure | G2, author                                                                  |
+| B2: Mac/Android candidate preservation         | complete / verified | A1–A3                         | Mac/Android portion of G3, author                                           |
+| B3: Linux package matrix                       | complete / verified | B2 for closure                | Linux portion of G3, author                                                 |
+| B4: Windows package matrix                     | complete / verified | B2, B3                        | Remaining G3 and phase integration, author                                  |
+| C1: independent version and updater transition | complete / verified | B1–B4                         | Step 7 source/fixture integration; installed migration belongs to D, author |
+| C2: scoped version proposal automation         | complete / verified | C1                            | Step 8 configuration and actual bot event delivery, author                  |
+| C3: consecutive bot proposal rehearsal         | complete / verified | C2                            | Remaining G4 current-head, forged-label and merge-identity proofs, author   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -294,8 +300,7 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-Current sequence: implement the approved, reviewer-shaped Phase C proposal.
-C covers the settled 0.1.0/semver clean break and real release-please bot events;
+Current sequence: obtain approval for Phase D.
 D owns exact-candidate release coordination, publication and personal-device
 migration. Phase D is not approved. Preserve routine latency; deeper gates
 do not join ordinary PR blocking work. ARM cache transport, full cache-hit upgrade
@@ -308,7 +313,7 @@ timing and the two-minute routine stretch remain unclaimed.
   - [x] C1b: Android discovery, receipts and native fork encoding (reviewer-accepted `a299c61b6`; local).
   - [x] C1c: Nix transactional recovery and desktop updater contract (reviewer-accepted `46a931497`; local).
   - [x] C1d: workspace/native version reset and rebase-preservation integration (accepted/published `e674ae2f5`; PR/dev green).
-- [ ] C2: release-please bootstrap and scoped App authentication.
+- [x] C2: release-please bootstrap and scoped App authentication.
 
 #### C2 release App setup and implementation boundary
 
@@ -324,8 +329,14 @@ The owner provisioned App `5280233` and installation `170437913`; authenticated
 read-only inspection verified its client identity, selected repository and exact
 permissions, and resolved bot `paseo-release[bot]` / `341220930`. All four
 repository variables are configured and the owner supplied the private-key secret.
-Minted-token scope and real bot events remain unproven until the hosted rehearsal.
-The proposed workflow uses release-please 17.6.0 through pinned action v5.0.0,
+Hosted dispatch `38194783635` verified the usable secret, identity, minted-token
+scope and token cleanup, and created authentic bot PR #65. After the generated
+changelog formatting repair at `07b997d79`, dispatch `38195842720` updated that PR;
+routine `38195889307` and all deep lanes in `38195889191` passed at head
+`080a9325a89a2ed9bac6931527b4121cf755a89c`. The read-only verifier checked exact
+run attempts, setup receipts, head/base and the tested merge tree. C2 is
+reviewer-accepted; C3 owns the remaining lifecycle closure.
+The workflow uses release-please 17.6.0 through pinned action v5.0.0,
 with GitHub release creation disabled. The independent manifest starts at 0.0.0
 and explicitly proposes 0.1.0. Explicit JSON selectors synchronize all workspace
 versions, internal dependency ranges, lock entries and the fork version authority.
@@ -345,7 +356,7 @@ publication supplies the next boundary. Only the fixed rehearsal branch
 `ci/release-please-rehearsal` permits a simulated publication boundary; this never
 creates a public release or tag.
 
-Before the live bot rehearsal, the owner must configure a dedicated GitHub App:
+The dedicated GitHub App setup is complete; its required configuration is:
 
 - Install only on the selected `iExalt/paseo` repository, with repository
   **Contents: read/write**, **Issues: read/write**, **Pull requests: read/write**,
@@ -362,8 +373,8 @@ bot numeric identity and minted token scope before the pinned action runs.
 The token is restricted to this single repository and revoked by the token
 action's normal cleanup. A separate read-only deep-check gate revalidates bot PR
 identity and captures its current head SHA. A forged label does not authorize
-deep execution or signing. Real event delivery, updated-head checks and the two
-unpublished proposals remain C2/C3 live acceptance work.
+deep execution or signing. Real event delivery and current-head checks passed;
+two successive unpublished proposals and final campaign cleanup belong to C3.
 Production proposals additionally require repository variable
 `PASEO_RELEASE_PROPOSALS_ENABLED=true`; leave it unset during C2/C3. Provisioning
 credentials does not enable production. The owner-dispatched fixed rehearsal
@@ -374,15 +385,58 @@ C3 preparation adds checkout receipts to existing routine/deep setup logs, with
 no extra job, artifact or cache. The read-only verifier distinguishes routine's
 actual PR merge tree from deep checks on the authorized head, requires successful
 latest attempts and rechecks PR head/base after collecting evidence. Fixture
-proofs cover stale/rerun/missing checks and wrong merge parents; real events remain
-pending. The second engine proposal is also exercised without any GitHub release,
+proofs cover stale/rerun/missing checks and wrong merge parents. Real PR #65 also
+rejected its previously green head and runs after refresh; fresh routine
+`38196353860` and deep `38196353853` then passed at head `f26d06fbf`.
+The second engine proposal is also exercised without any GitHub release,
 matching the explicitly unpublished rehearsal.
 The repository allows only rebase merges. The rehearsal therefore requires one
 bot commit, conditionally merges its verified head using that method, and checks
 the returned/final/branch SHA, single parent equal to the verified base, and tree
 equal to the routine-tested merge tree. Repository merge policy is unchanged.
+The conditional PR #65 merge returned `d0cc78574e1b794827479bdaebaac6fd254369d6`,
+matching the closed PR and rehearsal branch tip, with sole parent
+`6c1437e3611cb244ca449de8d8177f77087f8816` and verified tree
+`a4a7222f793ef70fa9376779c338499e51f8f3c4`. This was an isolated rehearsal merge;
+no simulated boundary or successor version was merged into `dev`.
 
-- [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
+- [x] C3: real bot PR events, two proposals, current-head and forged-label proofs.
+
+The successor dispatch `38196770999` created bot PR #67 for 0.1.1 at
+`c2ea39c00cb29cfb8b8a18bf91db2e7fb682caf4`, based on an explicitly simulated
+publication boundary on the fixed rehearsal branch. Its root and 12 workspace
+versions, internal dependency ranges and lock entries passed the shared checker.
+Routine `38196829378` and deep `38196829432` passed; the unchanged verifier bound
+their latest successful attempts and all setup receipts to that exact head/base.
+PR #67 was then closed unmerged, pending labels removed, and both campaign
+rehearsal refs deleted atomically with exact SHA leases. The release inventory
+was unchanged and `dev` retained 0.1.0 with its real bootstrap boundary.
+
+| Successful bot head             | Routine wall / summed runner | Deep wall / summed runner |
+| ------------------------------- | ---------------------------- | ------------------------- |
+| `080a9325a` (first green 0.1.0) | 4m21s / 23m28s               | 4m58s / 11m00s            |
+| `f26d06fbf` (refreshed 0.1.0)   | 4m37s / 24m47s               | 4m54s / 12m08s            |
+| `c2ea39c00` (0.1.1 successor)   | 4m36s / 22m49s               | 5m09s / 13m45s            |
+
+The original routine baseline remains 4m15s / 20m18s (PR), 4m18s / 20m37s
+(dev), using standard Ubuntu runners, seven routine lanes and no npm cache.
+Bot trials additionally ran three separate deep lanes concurrently. Routine gates
+remain below five minutes; two minutes is still unmet. The new checkout receipts
+add no jobs, caches or artifacts. At `07b997d79`, hosted helper contracts took
+9.37s and uncached engine install/output 2.18s / 2.39s; the formatter correction
+adds no recurring test. These hosted samples do not isolate runner variation from
+source cost, and the higher summed runner times are retained for the all-CI
+performance review rather than becoming new baselines.
+
+Proposed Phase D preserves three boundaries: D1 authentic merged-PR recognition
+and immutable exact-SHA candidate coordination; D2 failure/retry fixtures and a
+complete unpublished same-SHA 14-cell package/runtime rehearsal; D3 separately
+authorized publication of those exact verified bytes and personal-device manual
+migration/recovery. D1/D2 approval would include reviewed commits/pushes and
+bounded free-runner signing, draft transfers and native trials under the confirmed
+$0 stop control. Publication and personal-device actions still require a concrete
+candidate review and explicit later authorization. Existing native deadlines,
+cache admission limits and strict cleanup remain in force.
 
 C1a introduces an exact 14-cell signed inventory, preserves explicit V1 recovery
 exports, and moves fork version rules into the portable protocol package. The

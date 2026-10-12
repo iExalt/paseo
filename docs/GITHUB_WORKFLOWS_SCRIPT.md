@@ -1,9 +1,9 @@
 # GitHub workflows execution script
 
 **Four serial threads take the fork from its current workflows to a verified
-GitHub release. Phases A–B are complete; Phase C is approved and active.**
+GitHub release. Phases A–C are complete; Phase D awaits approval.**
 
-Status: **Phases A–B complete; Phase C approved and active, 2026-10-11**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
+Status: **Phases A–C complete; Phase D awaits approval, 2026-10-12**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
 decisions and the [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) for step proofs. This
 script adds thread boundaries, dependencies and literal starting prompts.
 
@@ -99,9 +99,9 @@ contracts. Mark B done only after G2/G3 proofs, and record deviations affecting 
 
 ## C. Prepare compatible releases with release-please — steps 7–8
 
-**State:** approved and active; B is complete. Approval includes reviewed commits/pushes
-and bounded unpublished test PR/draft activity on free runners. Public releases
-and personal-device migration remain Phase D.
+**State:** complete / G4 verified. All three chunks and phase integration are
+reviewer-accepted, including actual unpublished bot proposal/update/merge proofs.
+Public releases and personal-device migration remain Phase D.
 
 ```text
 Use $keep-me-in-the-loop to run thread C in docs/GITHUB_WORKFLOWS_SCRIPT.md.
@@ -122,8 +122,10 @@ Keep releases unpublished. Mark C done with G4 evidence and record deviations.
   rejection, exact merge SHA and two consecutive version proposals. Use fixtures
   for rebase/version/changelog preservation; no production rebase is implied.
 - **Progress:** C1 accepted and published at `e674ae2f5` (PR #60); full PR/dev
-  checks passed in 4m26s / 4m16s. C2 is active; production proposals remain
-  disabled while the fixed rehearsal branch proves bot events and the C3 lifecycle.
+  checks passed in 4m26s / 4m16s. C2/C3 passed with actual 0.1.0 and 0.1.1
+  bot proposals, stale/forged rejection and exact rebase merge identity. The final
+  successor routine/deep runs `38196829378` / `38196829432` passed in
+  4m36s / 5m09s; campaign refs were removed. Production proposals remain disabled.
 - **Human:** before live tests, install/provide scoped bot access if unavailable
   and any necessary repository permissions. At approval authorize the bounded
   test PR/draft activity. No publisher certificates required; no real release.
@@ -135,7 +137,9 @@ Keep releases unpublished. Mark C done with G4 evidence and record deviations.
 
 ## D. Enforce and demonstrate complete release delivery — steps 9–11
 
-**State:** provisional; waits on C.
+**State:** next; C is complete, but Phase D implementation/live trials await user
+approval. The reviewer-shaped D1/D2 proposal and separate D3 publication/device
+authorization boundary are recorded in [status](GITHUB_WORKFLOWS_STATUS.md).
 
 ```text
 Use $keep-me-in-the-loop to run thread D in docs/GITHUB_WORKFLOWS_SCRIPT.md.
