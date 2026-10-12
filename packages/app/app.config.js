@@ -128,6 +128,7 @@ const nativeReleaseVersion = getNativeReleaseVersion(pkg.version);
 const variantIdentity = resolveAppVariant(
   appVariant,
   nativeReleaseVersion.androidVersionCode,
+  pkg.version,
   process.env.PASEO_ANDROID_VERSION_CODE,
 );
 const variant =
