@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/iExalt/paseo/compare/v0.1.0...v0.1.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* rehearse independent patch proposal ([2cbe4cc](https://github.com/iExalt/paseo/commit/2cbe4ccc62ef2d93d4e1a5614d7c89048e204762))
+
 ## 0.1.0 (2026-10-12)
 
 
