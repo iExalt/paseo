@@ -138,6 +138,7 @@ test("merged candidate run binds original PR branch independently of controller 
 });
 
 test("policy covers invoked native ownership and UI controls before active worker execution", () => {
+  assert.ok(sourceGateFiles.includes(".github/actions/setup-ci-tools/action.yml"));
   for (const file of [
     "windows-owned-job.ps1",
     "windows-owned-job.cs",
