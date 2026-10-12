@@ -187,6 +187,16 @@ and dependency-script delay. Temporary npm phase timing on the next required run
 preserves the lock, normal scripts, tests, caches, concurrency and deadlines.
 Integration and candidate issuance remain gated on final-source CI success.
 
+Diagnostic run `38284079731` isolated a package acquisition stall: quality completed
+2,831 of 2,832 package extractions within 56s, then waited until the job deadline
+on the locked nested `glob@13.0.6` tarball, before dependency lifecycle scripts.
+Other lanes installed in 56–73s. A temporary loopback probe of npm 11.20.0's
+bundled fetcher verified delayed headers retry, stalled bodies fail with
+`EIDLETIMEOUT`, and healthy streaming can outlast the timeout. Routine installation
+now bounds idle/request waits to 30s and retry waits to 1–5s, preserving two request
+retries and normal lock/script/integrity behavior. Partial-body timeouts fail fast;
+they are not automatically retried. Hosted acceptance remains open.
+
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase
