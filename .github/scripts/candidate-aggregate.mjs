@@ -66,7 +66,7 @@ export async function verifyAggregate(
   // Re-download every admitted byte from draft storage. Producer-local files or
   // artifact ZIPs cannot substitute for the eventual publication payload.
   for (const entry of manifest.artifacts) {
-    await requireCurrentRun(env, request);
+    await requireCurrentRun(env, request, context.descriptor);
     await api.verifyFile(asset(release, runId, attempt, entry.name), entry);
     if (entry.closureManifest) {
       const expected = entry.closureManifest;
@@ -84,7 +84,7 @@ export async function verifyAggregate(
       }
     }
   }
-  await requireCurrentRun(env, request);
+  await requireCurrentRun(env, request, context.descriptor);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   const bytes = Buffer.from(serializeForkReleaseManifest(manifest));
   const evidence = Buffer.from(
@@ -152,7 +152,7 @@ export async function signAggregate(
     ),
     manifest,
   );
-  await requireCurrentRun(env, request);
+  await requireCurrentRun(env, request, context.descriptor);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   const key = createPrivateKey(env.PASEO_RELEASE_MANIFEST_PRIVATE_KEY);
   delete env.PASEO_RELEASE_MANIFEST_PRIVATE_KEY;
@@ -165,10 +165,10 @@ export async function signAggregate(
     ["paseo-release-manifest.sig", signature],
     ["candidate-evidence.json", evidence],
   ]) {
-    await requireCurrentRun(env, request);
+    await requireCurrentRun(env, request, context.descriptor);
     await writer.bytes(name, value);
   }
-  await requireCurrentRun(env, request);
+  await requireCurrentRun(env, request, context.descriptor);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
 }
 
