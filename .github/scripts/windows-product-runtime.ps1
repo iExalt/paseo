@@ -68,7 +68,7 @@ function Run-Owned([string]$Name, [string]$Executable, [string[]]$Arguments, [in
     & $pwsh -NoProfile -File (Join-Path $PSScriptRoot 'windows-owned-job.ps1') -Specification $specFile | Write-Host
     $status = $LASTEXITCODE
     $receipt = Get-Content -LiteralPath (Join-Path $evidence "$Name-job.json") -Raw | ConvertFrom-Json
-    if ($status -ne 0 -or !$receipt.complete -or $receipt.activeProcesses -ne 0 -or $receipt.exitCode -ne 0 -or $receipt.terminated -or $receipt.timedOut) { throw "Strict product stage failed: $Name" }
+    if ($status -ne 0 -or !$receipt.complete -or $receipt.activeProcesses -ne 0 -or $receipt.exitCode -ne 0 -or $receipt.terminated -or $receipt.timedOut -or $receipt.cancelled) { throw "Strict product stage failed: $Name" }
 }
 function Run-Node([string]$Name, [int]$Seconds) {
     Run-Owned $Name $node @((Join-Path $PSScriptRoot 'windows-product-runtime.mjs'), $Name) $Seconds
