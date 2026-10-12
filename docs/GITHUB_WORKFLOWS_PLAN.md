@@ -283,6 +283,19 @@ asset names are immutable. A replacement source requires a new draft identity
 after the earlier candidate stops. Only trusted candidate jobs receive a scoped
 `contents: write` token. Remove only inactive, campaign-owned drafts older than
 seven days after proving ownership and inactivity; never published releases.
+
+Approved D1/D2 authentication amendment: draft access requires a controller token
+with write permission, so keyless controller jobs authenticate each execution
+phase and issue bounded immutable Actions grants. Candidate execution remains
+read-only. Grants bind signed authority, source/controller, root run/attempt and
+the allowed worker names; workers verify successful authentication-job provenance,
+artifact identity/digest and an active root. Refresh grants after build dependencies
+before signing, fresh import, cross-check and installed runtime. Transfers and
+aggregate/signing acceptance still check live draft admission. To stop a candidate,
+cancel the root, wait for terminal state and cleanup evidence, then mark admission
+stopped. Editing only the draft after a grant was issued may permit computation,
+but cannot permit transfer or acceptance. Measure added job/artifact overhead
+without changing CI budgets.
 Live draft/upload/failure proofs remain later B/C/D gates.
 
 GitHub currently permits up to 1,000 assets per release, each strictly below

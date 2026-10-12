@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       actions: read
-      contents: read
+      contents: write
       pull-requests: read
     outputs:
       digest: ${{ steps.authority.outputs.descriptor_digest }}
@@ -93,7 +93,7 @@ jobs:
     needs: issue
     uses: ./.github/workflows/candidate-verify.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -107,7 +107,7 @@ jobs:
     uses: ./.github/workflows/fork-builds.yml
     permissions:
       packages: read
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -124,7 +124,7 @@ jobs:
     needs: [issue, paired]
     uses: ./.github/workflows/candidate-runtime.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -140,7 +140,7 @@ jobs:
     if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
     uses: ./.github/workflows/linux-nix-runtime.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -172,7 +172,7 @@ jobs:
     if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
     uses: ./.github/workflows/linux-nix-runtime.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -204,7 +204,7 @@ jobs:
     if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
     uses: ./.github/workflows/linux-product-runtime.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -234,7 +234,7 @@ jobs:
     if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
     uses: ./.github/workflows/linux-product-runtime.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -264,7 +264,7 @@ jobs:
     if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
     uses: ./.github/workflows/windows-product-runtime.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:
@@ -294,7 +294,7 @@ jobs:
     if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
     uses: ./.github/workflows/windows-product-runtime.yml
     permissions:
-      contents: read
+      contents: write
       actions: read
       pull-requests: read
     with:

@@ -3,7 +3,7 @@ import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto
 import { appendFile, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
+import { readTrustedWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 import { aggregateCandidate, producerGroups } from "./candidate-matrix.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
@@ -34,7 +34,11 @@ function asset(release, runId, attempt, name) {
 
 export async function verifyAggregate(
   env = process.env,
-  { authenticate = readWorkerContext, request = readGithub, draftApi = candidateGithub } = {},
+  {
+    authenticate = readTrustedWorkerContext,
+    request = readGithub,
+    draftApi = candidateGithub,
+  } = {},
 ) {
   assert.equal(
     env.CANDIDATE_NATIVE_ENABLED,
@@ -121,7 +125,7 @@ export async function verifyAggregate(
 export async function signAggregate(
   env = process.env,
   {
-    authenticate = readWorkerContext,
+    authenticate = readTrustedWorkerContext,
     request = readGithub,
     draftApi = candidateGithub,
     publicPin = PASEO_RELEASE_MANIFEST_PUBLIC_KEY_BASE64URL,

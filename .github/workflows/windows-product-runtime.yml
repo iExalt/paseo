@@ -41,12 +41,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  authorize:
+    if: inputs.source_sha != ''
+    uses: ./.github/workflows/candidate-auth.yml
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    with:
+      release_id: ${{ inputs.release_id }}
+      source_sha: ${{ inputs.source_sha }}
+      descriptor_digest: ${{ inputs.descriptor_digest }}
+      group: windows-${{ inputs.architecture }}
+
   native:
+    needs: [authorize]
     permissions:
       contents: read
       actions: read
       pull-requests: read
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && (github.actor == 'iExalt' || (inputs.source_sha != '' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'))
+    if: ${{ !cancelled() && (needs.authorize.result == 'success' || inputs.source_sha == '') && (github.repository == 'iExalt/paseo' && !github.event.repository.private && github.ref == 'refs/heads/dev' && (github.actor == 'iExalt' || (inputs.source_sha != '' && github.workflow_ref == 'iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev'))) }}
     runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
     timeout-minutes: 150
     outputs:
@@ -58,6 +72,10 @@ jobs:
       run:
         shell: pwsh
     env:
+      CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
+      CANDIDATE_GRANT_GROUP: windows-${{ inputs.architecture }}
+      CANDIDATE_EXPECTED_JOB: windows (${{ inputs.architecture }}) / native
       PASEO_CANDIDATE_SHA: ${{ inputs.source_sha || github.sha }}
       EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
       CI: "true"
