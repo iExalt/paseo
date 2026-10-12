@@ -308,6 +308,6 @@ export async function admitAttempt(api, descriptor, id, env, request) {
       "Cannot regress candidate attempt",
     );
   const body = draftBody(descriptor, "active", { runId, attempt });
-  if (release.body !== body) await api.setBody(id, body);
+  if (release.body !== body) await api.setBody(id, body, descriptor, release.body);
   await requireAttempt(api, descriptor, id, runId, attempt);
 }
