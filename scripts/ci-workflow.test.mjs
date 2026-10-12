@@ -75,6 +75,7 @@ test("only fork-owned workflows are installed", () => {
     "macos-closure.yml",
     "native-feasibility.yml",
     "rebase-dev.yml",
+    "release-please.yml",
     "upstream-sync.yml",
     "windows-arm64-feasibility.yml",
     "windows-package-preflight.yml",

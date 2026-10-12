@@ -1,0 +1,289 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "460ae999b44463146756494795f909574394aedf",
+  "include-component-in-tag": false,
+  "include-v-in-tag": true,
+  "skip-github-release": true,
+  "pull-request-header": "Proposed independent fork release.",
+  "pull-request-footer": "Publication follows separate candidate verification and approval gates.",
+  "packages": {
+    ".": {
+      "release-type": "node",
+      "release-as": "0.1.0",
+      "changelog-path": "CHANGELOG.fork.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": ".github/fork-release.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "plugins/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"plugins\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/expo-two-way-audio/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/expo-two-way-audio\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/highlight/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/highlight\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/plugin/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/plugin\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/plugin/package.json",
+          "jsonpath": "$[\"devDependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/plugin\"][\"devDependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/plugin/package.json",
+          "jsonpath": "$[\"devDependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/plugin\"][\"devDependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/plugin/package.json",
+          "jsonpath": "$[\"peerDependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/plugin\"][\"peerDependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/plugin/package.json",
+          "jsonpath": "$[\"peerDependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/plugin\"][\"peerDependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/protocol/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/protocol\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/client/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/client\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/client/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/client\"][\"dependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/client/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/relay\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/client\"][\"dependencies\"][\"@getpaseo/relay\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/server/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/server\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/server/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/server\"][\"dependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/server/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/highlight\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/server\"][\"dependencies\"][\"@getpaseo/highlight\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/server/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/plugin\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/server\"][\"dependencies\"][\"@getpaseo/plugin\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/server/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/server\"][\"dependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/server/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/relay\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/server\"][\"dependencies\"][\"@getpaseo/relay\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/app/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/app\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/relay/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/relay\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/website/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/website\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/desktop/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/desktop\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/cli/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/cli\"][\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/cli/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/cli\"][\"dependencies\"][\"@getpaseo/client\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/cli/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/cli\"][\"dependencies\"][\"@getpaseo/protocol\"]"
+        },
+        {
+          "type": "json",
+          "path": "packages/cli/package.json",
+          "jsonpath": "$[\"dependencies\"][\"@getpaseo/server\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/cli\"][\"dependencies\"][\"@getpaseo/server\"]"
+        }
+      ]
+    }
+  },
+  "last-release-sha": "460ae999b44463146756494795f909574394aedf"
+}
