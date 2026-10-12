@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { downloadGrant } from "../.github/scripts/candidate-grant.mjs";
 
 test("worker grant transport binds immutable artifact bytes and root provenance", async () => {
@@ -37,6 +38,48 @@ test("worker grant transport binds immutable artifact bytes and root provenance"
     url.endsWith("/zip") ? new Response(zip) : Response.json(value);
   try {
     assert.deepEqual(await downloadGrant(env, request(metadata)), grant);
+    // Execute the real CLI: library imports alone cannot detect a top-level-await
+    // cycle. A transported but incomplete authority must reach workerGate and fail.
+    const preload = join(directory, "transport.mjs");
+    await writeFile(
+      preload,
+      `
+      globalThis.fetch = async (url) => {
+        if (url === 'https://api.github.com/repos/iExalt/paseo/actions/artifacts/456')
+          return Response.json(${JSON.stringify(metadata)});
+        if (url === 'https://api.github.com/repos/iExalt/paseo/actions/artifacts/456/zip') {
+          console.log('GRANT_ZIP_REACHED');
+          return new Response(Buffer.from('${zip.toString("base64")}', 'base64'));
+        }
+        throw new Error('Unexpected fixture request: ' + url);
+      };
+    `,
+    );
+    const cwd = fileURLToPath(new URL("../", import.meta.url));
+    const cli = spawnSync(
+      process.execPath,
+      ["--import", preload, ".github/scripts/candidate-worker.mjs"],
+      {
+        cwd,
+        timeout: 5000,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          ...env,
+          GITHUB_SHA: execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" }).trim(),
+          GITHUB_REPOSITORY: "iExalt/paseo",
+          GITHUB_REF: "refs/heads/dev",
+          GITHUB_WORKFLOW_REF:
+            "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev",
+          CANDIDATE_RELEASE_ID: "42",
+        },
+      },
+    );
+    assert.equal(cli.error, undefined);
+    assert.equal(cli.status, 1, cli.stderr);
+    assert.match(cli.stdout, /GRANT_ZIP_REACHED/);
+    assert.match(cli.stderr, /workerGate/);
+    assert.doesNotMatch(cli.stderr, /unsettled top-level await/);
     for (const delta of [
       { id: 457 },
       { name: "candidate-grant-verification-123-1" },

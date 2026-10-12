@@ -280,6 +280,21 @@ checks passed in 4.74s, including real ZIP transport and grant-backed worker
 authorization. Native-disabled hosted validation must still establish read-only
 artifact access, exact nested job names, all ten verification lanes and added
 scheduling overhead before native enablement.
+
+Grant source `6b2dabfd5` is integrated through PR #77. PR run `38310681845`
+passed in 4m01s; same-SHA dev `38311196465` also passed below five minutes.
+Approved retirement preserved draft `410999337` and both signed assets under
+`paseo-retired-candidate-410999337`. Replacement canary `38311736724` issued
+draft `411016397`, retained its canonical tag and admitted attempt 1. Authentication
+completed in 33s after a 3s scheduling gap and uploaded grant artifact `11774907552`.
+Workers then exited before reading it: a dynamic import cycle deadlocked the
+worker CLI's top-level await. Native execution/transfers and final signing stayed
+off. The draft contains only signed authority assets `635064760`/`635064810`;
+descriptor digest is `8f0975bad5caee0b5a47762c66e6b53bfde62864f182cc7bbe7e3dbdd3433fb9`.
+The narrow static-import repair preserves the approved boundary; a real CLI
+subprocess fixture rejects the old implementation and passes the repair.
+Retirement/reissuance of this additional signed policy still requires explicit
+reauthorization after review and green source checks. Draft `411016397` is untouched.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.
