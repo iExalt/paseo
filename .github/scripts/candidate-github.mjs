@@ -113,7 +113,7 @@ export function candidateGithub(token, request = fetch) {
           final: ref(qualifiedName: $final) { name }
           transport: ref(qualifiedName: $transport) { name }
           releases(first: 100, after: $cursor, orderBy: {field: CREATED_AT, direction: DESC}) {
-            nodes { databaseId name tagName targetCommitish isDraft isPrerelease description }
+            nodes { databaseId name tagName isDraft isPrerelease description }
             pageInfo { hasNextPage endCursor }
           }
         }
@@ -157,28 +157,28 @@ export function candidateGithub(token, request = fetch) {
           id(row.databaseId);
           assert.ok(!ids.has(row.databaseId), "Duplicate lifecycle release");
           ids.add(row.databaseId);
-          for (const field of [
-            "name",
-            "tagName",
-            "targetCommitish",
-            "isDraft",
-            "isPrerelease",
-            "description",
-          ])
+          for (const field of ["name", "tagName", "isDraft", "isPrerelease", "description"])
             assert.ok(Object.hasOwn(row, field));
           assert.equal(typeof row.tagName, "string");
-          assert.equal(typeof row.targetCommitish, "string");
           assert.equal(typeof row.isDraft, "boolean");
           assert.equal(typeof row.isPrerelease, "boolean");
-          releases.push({
+          const release = {
             id: row.databaseId,
             name: row.name,
             tag_name: row.tagName,
-            target_commitish: row.targetCommitish,
             draft: row.isDraft,
             prerelease: row.isPrerelease,
             body: row.description,
-          });
+          };
+          if (row.tagName.startsWith(`paseo-candidate-v${descriptor.version}-`)) {
+            // GraphQL Release has no targetCommitish field. Read it from REST
+            // and reject concurrent changes to the other lifecycle metadata.
+            const current = await json(`releases/${row.databaseId}`);
+            for (const [field, value] of Object.entries(release))
+              assert.equal(current[field], value, "Candidate changed during lifecycle read");
+            assert.equal(typeof current.target_commitish, "string");
+            releases.push(current);
+          } else releases.push(release);
         }
         assert.equal(typeof connection.pageInfo?.hasNextPage, "boolean");
         if (!connection.pageInfo.hasNextPage) return releases;
