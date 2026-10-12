@@ -295,6 +295,17 @@ test("merged authority binds the old checked tree and parent while dev advances"
   );
   await assert.rejects(
     workerGate({ ...workerEnv, GITHUB_RUN_ATTEMPT: "2" }, api, setup().request, read),
+  );
+  await assert.rejects(
+    workerGate(
+      { ...workerEnv, GITHUB_RUN_ATTEMPT: "2" },
+      api,
+      async (url) => {
+        const response = await setup().request(url);
+        return url.endsWith("/actions/runs/500") ? { ...response, run_attempt: 2 } : response;
+      },
+      read,
+    ),
     /no longer admitted/,
   );
   const retryEvent = { repository: repo, sender: { id: 7889894 }, inputs: { release_id: "42" } };
