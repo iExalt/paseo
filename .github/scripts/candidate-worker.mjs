@@ -9,6 +9,7 @@ import { currentCandidate } from "./candidate-authority.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
+import { downloadGrant, validateGrant } from "./candidate-grant.mjs";
 
 export async function workerGate(env, api, request, read, grant = null) {
   const releaseId = Number(env.CANDIDATE_RELEASE_ID);
@@ -44,7 +45,6 @@ export async function workerGate(env, api, request, read, grant = null) {
     rootHeadSha,
   };
   if (grant) {
-    const { validateGrant } = await import("./candidate-grant.mjs");
     validateGrant(
       grant,
       context,
@@ -72,7 +72,7 @@ async function readContext(env, granted) {
     execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     env.GITHUB_SHA,
   );
-  const grant = granted ? await (await import("./candidate-grant.mjs")).downloadGrant(env) : null;
+  const grant = granted ? await downloadGrant(env) : null;
   return workerGate(
     env,
     candidateGithub(env.GH_TOKEN),
