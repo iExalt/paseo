@@ -2235,9 +2235,9 @@ export const zhCN: TranslationResources = {
       nixUpdates: {
         label: "Nix 管理的更新",
         running: "正在运行的应用：{{version}}",
-        active: "配置版本：{{version}}（序号 {{sequence}}）",
-        staged: "已准备版本：{{version}}（序号 {{sequence}}）",
-        latest: "最新签名版本：{{version}}（序号 {{sequence}}）",
+        active: "配置版本：{{version}}",
+        staged: "已准备版本：{{version}}",
+        latest: "最新签名版本：{{version}}",
         ready: "准备好时可检查签名更新。",
         invalidMarker: "无法验证此 Nix 安装。",
         restartRequired: "请手动重启 Paseo 以使用当前配置版本。",

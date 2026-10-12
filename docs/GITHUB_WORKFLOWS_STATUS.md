@@ -286,15 +286,15 @@ timing and the two-minute routine stretch remain unclaimed.
 
 - [ ] C1: 0.1.0 reset, semver-only upgrades, clean-break migration and recovery fixtures.
   - [x] C1a: portable V2 inventory and shared version rules (reviewer-accepted `f8b156ee7`; local).
-  - [ ] C1b: Android discovery, receipts and native fork encoding (implemented; review pending).
-  - [ ] C1c: Nix transactional recovery and desktop updater contract.
+  - [x] C1b: Android discovery, receipts and native fork encoding (reviewer-accepted `a299c61b6`; local).
+  - [ ] C1c: Nix transactional recovery and desktop updater contract (implemented; review pending).
   - [ ] C1d: workspace/native version reset and rebase-preservation integration.
 - [ ] C2: release-please bootstrap and scoped App authentication.
 - [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
 
 C1a introduces an exact 14-cell signed inventory, preserves explicit V1 recovery
 exports, and moves fork version rules into the portable protocol package. The
-Nix consumers still use V1 until their coordinated C1c migration;
+normal consumers now use V2 while explicit legacy recovery remains V1;
 no installed state or signing identity has changed. Source TypeScript, emitted
 JavaScript and Node 26 CommonJS loading are checked separately. Contract cases
 remain cheap unit fixtures; live packaging and device migration remain Phase D.
@@ -309,6 +309,24 @@ Protocol, Android receipt/UI and native configuration fixtures pass in 2.05s;
 app typecheck and actual Expo fork configuration evaluation pass. Kotlin runtime
 and installed 0.1.0 migration are not claimed; those remain Phase D package/device
 gates. Workspace versions have not yet changed.
+
+C1c separates retained V1 recovery from new semver discovery and state. Both use
+the existing outer operation lock and active Nix profile; V2 receipts/journals
+live under `nix-update/semver-v1`. The explicit `migrate` command records the
+verified legacy generation before switching, and rollback can select that exact
+retained generation without lowering the fork high-water version. Unexpected
+profile movement and unresolved legacy journals fail closed. No migration was
+run. Historical validation remains in the renamed legacy module; normal commands
+cannot discover V1 releases. The desktop bridge and all existing translated
+version labels no longer expose numeric release sequences.
+
+Cheap transaction fixtures cover interruption before profile selection, failed
+state writes, failed journal cleanup, repeated migration, downgrade rejection,
+legacy rollback and exact reactivation. New fixtures take about 142ms locally;
+the retained V1 suite passes with its existing opt-in real Nix signature fixture
+still skipped. App/desktop typechecks, UI fixtures, standalone packaged-source
+imports and Nix expression parsing pass. Actual installed migration and rebuilt
+0.1.0 package/runtime evidence remain Phase D gates.
 
 ### Phase B evidence history
 
