@@ -105,6 +105,7 @@ test("pinned release engine composes all version edits and bounds both proposals
   delete config.packages["."]["release-as"];
   config["last-release-sha"] = mergeSha;
   contents.set("release-please-config.json", JSON.stringify(config));
+  const rehearsalContents = new Map(contents);
   const second = await proposal(contents, mergeSha, {
     tagName: "v0.1.0",
     sha: "e".repeat(40),
@@ -112,6 +113,12 @@ test("pinned release engine composes all version edits and bounds both proposals
     notes: "previous fork notes",
   });
   assert.equal(second.version.toString(), "0.1.1");
+  const unpublished = await proposal(rehearsalContents, mergeSha);
+  assert.equal(
+    unpublished.version.toString(),
+    "0.1.1",
+    "The unpublished rehearsal needs no fabricated GitHub release",
+  );
   const beforeLock = JSON.parse(files.get("package-lock.json"));
   const afterLock = JSON.parse(contents.get("package-lock.json"));
   for (const [key, value] of Object.entries(beforeLock.packages)) {
