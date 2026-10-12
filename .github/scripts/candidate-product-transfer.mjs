@@ -91,7 +91,7 @@ export function productProducer(context, group, jobs, artifact, expected) {
   const name = `candidate-${platform}-${nix ? "nix" : "products"}-${arch}-${context.runId}-${context.attempt}`;
   validateArtifact(
     artifact,
-    { runId: context.runId, sourceSha: context.controllerSha },
+    { runId: context.runId, sourceSha: context.controllerSha, headBranch: context.rootBranch },
     { ...expected, name },
     contracts.length * (packageLimit + metadataLimit) + metadataLimit * 2,
   );
@@ -282,20 +282,20 @@ export async function transferProducts(
   for (const receipt of receipts) {
     if (receipt.artifact.closureManifest) {
       const closure = receipt.artifact.closureManifest;
-      await requireCurrentRun(env, request);
+      await requireCurrentRun(env, request, context.descriptor);
       await writer.file(closure.name, join(extracted, closure.name), closure);
     }
-    await requireCurrentRun(env, request);
+    await requireCurrentRun(env, request, context.descriptor);
     await writer.file(
       receipt.artifact.name,
       join(extracted, receipt.artifact.name),
       receipt.artifact,
     );
   }
-  await requireCurrentRun(env, request);
+  await requireCurrentRun(env, request, context.descriptor);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   await writer.bytes(`receipts-${group}.json`, Buffer.from(JSON.stringify(receipts) + "\n"));
-  await requireCurrentRun(env, request);
+  await requireCurrentRun(env, request, context.descriptor);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
