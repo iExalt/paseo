@@ -32,6 +32,7 @@ const keys = [
   "checks",
 ];
 export const sourceGateFiles = Object.freeze([
+  ".github/actions/setup-ci-tools/action.yml",
   ".github/scripts/windows-owned-job.ps1",
   ".github/scripts/windows-owned-job.cs",
   ".github/scripts/windows-native-toolchain.ps1",
