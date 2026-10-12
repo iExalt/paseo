@@ -12,7 +12,7 @@ import {
   NIX_RELEASE_PUBLIC_KEY,
   validateNixClosureManifest,
   verifyReleaseManifestBytes,
-} from "../../scripts/paseo-nix-update.mjs";
+} from "../../scripts/paseo-nix-update-legacy.mjs";
 
 const predecessorSha = "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
 const predecessorTag = `paseo-fork-v0.11.0-r200008-${predecessorSha}`;

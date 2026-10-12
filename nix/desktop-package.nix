@@ -226,8 +226,10 @@ buildNpmPackage {
       # the active and previous profile generations both retain a usable CLI.
       updater_root="$out/libexec/paseo-nix-update"
       mkdir -p "$updater_root/scripts" "$updater_root/packages/protocol/src"
-      cp scripts/paseo-nix-update.mjs "$updater_root/scripts/"
-      cp packages/protocol/src/release-manifest.ts "$updater_root/packages/protocol/src/"
+      cp scripts/paseo-nix-update.mjs scripts/paseo-nix-update-legacy.mjs \
+        scripts/paseo-nix-update-state.mjs "$updater_root/scripts/"
+      cp packages/protocol/src/release-manifest.ts packages/protocol/src/release-manifest-v2.ts \
+        packages/protocol/src/fork-version.ts "$updater_root/packages/protocol/src/"
       printf '%s\n' '{ "type": "module" }' > "$updater_root/package.json"
       makeWrapper ${nodejs_26}/bin/node "$out/bin/paseo-nix-update" \
         --add-flags "$updater_root/scripts/paseo-nix-update.mjs"

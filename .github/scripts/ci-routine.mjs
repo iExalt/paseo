@@ -23,6 +23,7 @@ export const helperTests = [
   "scripts/daemon-launch-contract.test.mjs",
   "scripts/is-main-module.test.mjs",
   "scripts/paseo-nix-update.test.mjs",
+  "scripts/paseo-nix-update-semver.test.mjs",
   "scripts/postinstall-patches-target.test.mjs",
   "scripts/promote-fork-release.test.mjs",
   "scripts/sync-fdroid-changelogs.test.mjs",

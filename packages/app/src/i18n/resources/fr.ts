@@ -2296,9 +2296,9 @@ export const fr: TranslationResources = {
       nixUpdates: {
         label: "Mises à jour gérées par Nix",
         running: "Application en cours : {{version}}",
-        active: "Version du profil : {{version}} (séquence {{sequence}})",
-        staged: "Version préparée : {{version}} (séquence {{sequence}})",
-        latest: "Dernière version signée : {{version}} (séquence {{sequence}})",
+        active: "Version du profil : {{version}}",
+        staged: "Version préparée : {{version}}",
+        latest: "Dernière version signée : {{version}}",
         ready: "Rechercher une mise à jour signée lorsque vous le souhaitez.",
         invalidMarker: "Cette installation Nix n’a pas pu être vérifiée.",
         restartRequired: "Redémarrez Paseo manuellement pour utiliser la version active du profil.",
