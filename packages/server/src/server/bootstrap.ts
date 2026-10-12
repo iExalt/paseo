@@ -5,6 +5,7 @@ import {
 } from "./agent/finish-subscriptions/index.js";
 import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { PluginRegistries } from "@getpaseo/protocol/plugin-registry";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { describeHookWorkspace } from "./plugins/lifecycle/index.js";
 import express from "express";
 import { createServer as createHTTPServer } from "http";
@@ -591,6 +592,7 @@ export async function createPaseoDaemon(
   const browserToolsPolicy = new DaemonConfigBrowserToolsPolicy(daemonConfigStore);
   const browserToolsBroker = new BrowserToolsBroker({});
   const pluginRuntime: PluginService = new PluginService(logger, daemonConfigStore, daemonVersion, {
+    compatibilityVersion: PASEO_PLUGIN_API_VERSION,
     usageAgents: {
       hasAgent: (id) => agentManager.getAgent(id) !== null,
       usageSession: (id) => agentManager.usageSession(id),
