@@ -39,7 +39,7 @@ import {
   validateNixClosureManifest,
   verifyReleaseManifestBytes,
   withOperationLock,
-} from "./paseo-nix-update.mjs";
+} from "./paseo-nix-update-legacy.mjs";
 
 const temporaryDirectories = [];
 
@@ -872,10 +872,14 @@ describe("Paseo Nix updater verification", () => {
       }
 
       const script = fileURLToPath(new URL("./paseo-nix-update.mjs", import.meta.url));
-      const result = spawnSync(process.execPath, [script, "reactivate-high-water", "--json"], {
-        encoding: "utf8",
-        env: { HOME: home, PATH: fakeBin, PASEO_NIX_CALLS: calls },
-      });
+      const result = spawnSync(
+        process.execPath,
+        [script, "legacy-reactivate-high-water", "--json"],
+        {
+          encoding: "utf8",
+          env: { HOME: home, PATH: fakeBin, PASEO_NIX_CALLS: calls },
+        },
+      );
 
       assert.equal(result.status, 1, result.stderr);
       assert.match(result.stdout, /another release is staged/i);

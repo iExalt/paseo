@@ -1,3 +1,4 @@
+import { compareForkVersions } from "@getpaseo/protocol/fork-version";
 import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { StyleSheet, Text, View } from "react-native";
@@ -52,21 +53,18 @@ function NixUpdateDetails({ result }: { result: DesktopNixUpdateResult | null })
       </Text>
       <Text style={settingsStyles.rowHint}>
         {t("settings.about.nixUpdates.active", {
-          version: formatVersionWithPrefix(active?.packageVersion),
-          sequence: active?.releaseSequence ?? "—",
+          version: formatVersionWithPrefix(active?.version),
         })}
       </Text>
       <Text style={settingsStyles.rowHint}>
         {t("settings.about.nixUpdates.staged", {
-          version: formatVersionWithPrefix(staged?.packageVersion),
-          sequence: staged?.releaseSequence ?? "—",
+          version: formatVersionWithPrefix(staged?.version),
         })}
       </Text>
       {latest ? (
         <Text style={settingsStyles.rowHint}>
           {t("settings.about.nixUpdates.latest", {
-            version: formatVersionWithPrefix(latest.packageVersion),
-            sequence: latest.releaseSequence,
+            version: formatVersionWithPrefix(latest.version),
           })}
         </Text>
       ) : null}
@@ -137,7 +135,7 @@ export function NixDesktopAppUpdateRow() {
   const staged = result?.staged ?? null;
   const latest = result?.latest ?? null;
   const canReplaceStaged =
-    staged === null || (latest !== null && latest.releaseSequence > staged.releaseSequence);
+    staged === null || (latest !== null && compareForkVersions(latest.version, staged.version) > 0);
   const canStage = !isNixInvalid && result?.canStage === true && canReplaceStaged;
   const canActivate = !isNixInvalid && staged !== null;
   const canRollback = !isNixInvalid && active !== null;
