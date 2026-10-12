@@ -170,6 +170,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
     dev = "f".repeat(40);
   const setup = () => {
     const f = fixture();
+    for (const run of f.runs) run.pull_requests = [];
     Object.assign(f.current, { state: "closed", merged: true, merge_commit_sha: source });
     f.current.base = { ...f.current.base, ref: "dev", sha: dev };
     f.current.head.ref = "release-please--branches--dev--components--paseo";
@@ -183,7 +184,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
           run_attempt: 1,
           repository: repo,
           path: ".github/workflows/release-candidate.yml",
-          head_sha: dev,
+          head_sha: rootEvent === "workflow_dispatch" ? dev : head,
           head_branch: rootEvent === "workflow_dispatch" ? "dev" : f.current.head.ref,
           event: rootEvent,
           status: "in_progress",
@@ -220,7 +221,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
     GITHUB_RUN_ID: "500",
     GITHUB_RUN_ATTEMPT: "1",
     GITHUB_REF: "refs/heads/dev",
-    GITHUB_SHA: dev,
+    GITHUB_SHA: source,
     GITHUB_EVENT_NAME: "pull_request_target",
     GITHUB_EVENT_PATH: join(directory, "event.json"),
     CANDIDATE_MODE: "plan",
@@ -286,7 +287,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
       env: issueEnv,
       request: async (url) => {
         const response = await setup().request(url);
-        return url.endsWith("/actions/runs/500") ? { ...response, head_sha: head } : response;
+        return url.endsWith("/actions/runs/500") ? { ...response, head_sha: source } : response;
       },
     }),
   );
@@ -329,11 +330,21 @@ test("merged authority binds the old checked tree and parent while dev advances"
   const retryEvent = { repository: repo, sender: { id: 7889894 }, inputs: { release_id: "42" } };
   const retryEnv = {
     ...issueEnv,
+    GITHUB_SHA: dev,
     GITHUB_EVENT_NAME: "workflow_dispatch",
     GITHUB_ACTOR: "iExalt",
     PASEO_RELEASE_MANIFEST_PRIVATE_KEY: undefined,
   };
   rootEvent = "workflow_dispatch";
+  const initialEvent = { ...retryEvent, inputs: { merged_pr: "7" } };
+  for (const inputs of [
+    {},
+    { merged_pr: "7", release_id: "42" },
+    { merged_pr: "0" },
+    { merged_pr: "1e2" },
+  ])
+    assert.throws(() => candidateRoute({ ...initialEvent, inputs }, retryEnv));
+  assert.throws(() => candidateRoute(initialEvent, { ...retryEnv, GITHUB_ACTOR: "someone-else" }));
   await execute({
     event: retryEvent,
     env: retryEnv,
@@ -390,6 +401,12 @@ test("merged authority binds the old checked tree and parent while dev advances"
   );
   for (const mutate of [
     (f) => {
+      f.logs.set(200, f.logs.get(200).replace('"prNumber":7', '"prNumber":8'));
+    },
+    (f) => {
+      f.runs[0].conclusion = "failure";
+    },
+    (f) => {
       f.current.user.id = 999;
     },
     (f) => {
@@ -426,6 +443,32 @@ test("merged authority binds the old checked tree and parent while dev advances"
     mutate(f);
     await assert.rejects(verifyMergedPrChecks(7, source, identity, f.request));
   }
+  // Recover initial issuance from a genuine merged PR before a draft exists.
+  draft = undefined;
+  assets.clear();
+  const initialEnv = { ...retryEnv, CANDIDATE_MODE: "plan" };
+  const initialDescriptor = await execute({ event: initialEvent, env: initialEnv });
+  assert.equal(initialDescriptor.sourceSha, source);
+  assert.equal(initialDescriptor.policy.sourceSha, dev);
+  await assert.rejects(
+    execute({
+      event: initialEvent,
+      env: {
+        ...retryEnv,
+        EXPECTED_DESCRIPTOR_DIGEST: descriptorDigest(initialDescriptor),
+      },
+    }),
+  );
+  assert.equal(draft, undefined, "Keyless initial issuance must not allocate a draft");
+  await execute({
+    event: initialEvent,
+    env: {
+      ...retryEnv,
+      EXPECTED_DESCRIPTOR_DIGEST: descriptorDigest(initialDescriptor),
+      PASEO_RELEASE_MANIFEST_PRIVATE_KEY: issueEnv.PASEO_RELEASE_MANIFEST_PRIVATE_KEY,
+    },
+  });
+  assert.equal(draft.assets.length, 2);
 });
 
 test("current-head verifier requires both latest gates, exact setup receipts and unchanged PR", async () => {
@@ -434,6 +477,9 @@ test("current-head verifier requires both latest gates, exact setup receipts and
   assert.equal(proof.headSha, head);
   assert.equal(proof.proofs.length, 2);
   for (const mutate of [
+    (f) => {
+      f.runs[0].pull_requests = [];
+    },
     (f) => {
       f.current.commits = 2;
     },
