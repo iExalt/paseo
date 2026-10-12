@@ -70,12 +70,12 @@ function Run-Owned([string]$Name, [string]$Executable, [string[]]$Arguments, [in
     $receipt = Get-Content -LiteralPath (Join-Path $evidence "$Name-job.json") -Raw | ConvertFrom-Json
     if (!$receipt.complete -or $receipt.activeProcesses -ne 0) { throw "Incomplete job cleanup: $Name" }
     if ($ExpectedFailure) {
-        if ($status -eq 0 -or $receipt.exitCode -ne 7 -or !$receipt.terminated -or $receipt.timedOut) { throw 'Negative proof did not fail for the intended reason' }
+        if ($status -eq 0 -or $receipt.exitCode -ne 7 -or !$receipt.terminated -or $receipt.timedOut -or $receipt.cancelled) { throw 'Negative proof did not fail for the intended reason' }
     } else {
         $allowed = $Name -in @('compiler-probe', 'npm-install', 'fixture-tools', 'package') -and
             $receipt.buildSucceededWithTelemetryCleanup -and
             $receipt.allowedBuildTelemetry -eq (Join-Path (Split-Path (Get-NativeCompiler)) 'VCTIP.EXE')
-        if ($status -ne 0 -or $receipt.exitCode -ne 0 -or ($receipt.terminated -and !$allowed) -or $receipt.timedOut) { throw "Owned stage failed: $Name" }
+        if ($status -ne 0 -or $receipt.exitCode -ne 0 -or ($receipt.terminated -and !$allowed) -or $receipt.timedOut -or $receipt.cancelled) { throw "Owned stage failed: $Name" }
     }
     return $receipt
 }

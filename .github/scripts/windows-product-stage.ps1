@@ -85,7 +85,7 @@ $buildTelemetry = if ($Phase -in @('install-candidate', 'install-previous', 'bin
 $status = $LASTEXITCODE
 $receipt = Get-Content -LiteralPath $receiptFile -Raw | ConvertFrom-Json
 $telemetryCleaned = $buildTelemetry -and $receipt.buildSucceededWithTelemetryCleanup -and $receipt.allowedBuildTelemetry -eq $buildTelemetry
-if ($status -ne 0 -or !$receipt.complete -or $receipt.activeProcesses -ne 0 -or $receipt.exitCode -ne 0 -or ($receipt.terminated -and !$telemetryCleaned) -or $receipt.timedOut) {
+if ($status -ne 0 -or !$receipt.complete -or $receipt.activeProcesses -ne 0 -or $receipt.exitCode -ne 0 -or ($receipt.terminated -and !$telemetryCleaned) -or $receipt.timedOut -or $receipt.cancelled) {
     throw "Owned producer stage failed: $Phase"
 }
 exit 0

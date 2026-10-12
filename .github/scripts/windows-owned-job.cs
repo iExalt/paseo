@@ -109,7 +109,7 @@ public static class PaseoOwnedJob
 
     public sealed class Receipt
     {
-        public bool complete, timedOut, terminated;
+        public bool complete, timedOut, terminated, cancelled;
         public uint primaryPid, exitCode = 259, activeProcesses, totalProcesses;
         public long elapsedMs, cpuMilliseconds;
         public ulong readBytes, writeBytes, peakJobMemoryBytes;
@@ -194,7 +194,7 @@ public static class PaseoOwnedJob
     // Pure classification; final accounting catches births racing with termination.
     public static bool IsBuildTelemetryCleanup(Receipt receipt)
     {
-        if (!receipt.complete || !receipt.terminated || receipt.timedOut || receipt.exitCode != 0 ||
+        if (!receipt.complete || !receipt.terminated || receipt.timedOut || receipt.cancelled || receipt.exitCode != 0 ||
             receipt.error != null || receipt.processDiagnosticError != null ||
             String.IsNullOrEmpty(receipt.allowedBuildTelemetry) || receipt.activeProcesses != 0 ||
             receipt.telemetryActiveBefore == 0 || receipt.telemetryActiveBefore != receipt.telemetryActiveVerified ||
@@ -221,6 +221,11 @@ public static class PaseoOwnedJob
 
     public static Receipt Run(string executable, string[] arguments, string directory, string log, int timeoutSeconds, string nsisInstallDirectory, string startReceipt, string startIdentity, string allowedBuildTelemetry)
     {
+        return Run(executable, arguments, directory, log, timeoutSeconds, nsisInstallDirectory, startReceipt, startIdentity, allowedBuildTelemetry, null);
+    }
+
+    public static Receipt Run(string executable, string[] arguments, string directory, string log, int timeoutSeconds, string nsisInstallDirectory, string startReceipt, string startIdentity, string allowedBuildTelemetry, string receiptFile)
+    {
         if (Environment.OSVersion.Platform != PlatformID.Win32NT || IntPtr.Size != 8)
             throw new InvalidOperationException("A native 64-bit Windows monitor is required");
         if (!Path.IsPathRooted(executable) || !File.Exists(executable) || !Directory.Exists(directory))
@@ -234,11 +239,19 @@ public static class PaseoOwnedJob
              !String.Equals(Path.GetFileName(allowedBuildTelemetry), "VCTIP.EXE", StringComparison.OrdinalIgnoreCase) || nsisInstallDirectory != null))
             throw new InvalidOperationException("Exact build telemetry executable required");
         var receipt = new Receipt { allowedBuildTelemetry = allowedBuildTelemetry };
+        if (receiptFile != null && (!Path.IsPathRooted(receiptFile) || File.Exists(receiptFile)))
+            throw new InvalidOperationException("Fresh absolute receipt path required");
         var held = new List<Process>();
         var clock = Stopwatch.StartNew();
         IntPtr job = IntPtr.Zero, output = IntPtr.Zero, input = IntPtr.Zero;
         ProcessInformation process = new ProcessInformation();
         bool assigned = false;
+        int cancelled = 0;
+        ConsoleCancelEventHandler handler = (sender, args) => {
+            Interlocked.Exchange(ref cancelled, 1);
+            args.Cancel = true;
+        };
+        Console.CancelKeyPress += handler;
         try
         {
             job = CreateJobObjectW(IntPtr.Zero, null);
@@ -283,6 +296,7 @@ public static class PaseoOwnedJob
             long nextSample = 60000;
             while (true)
             {
+                if (Volatile.Read(ref cancelled) != 0) break;
                 uint wait = WaitForSingleObject(process.Process, 100);
                 if (wait == 0) break;
                 Check(wait == 258, "Wait for primary");
@@ -300,12 +314,13 @@ public static class PaseoOwnedJob
             }
             Check(GetExitCodeProcess(process.Process, out receipt.exitCode), "Read primary exit");
             if (receipt.exitCode != 259) receipt.primaryExitObservedMs = clock.ElapsedMilliseconds;
-            if (!receipt.timedOut && receipt.exitCode == 0)
+            if (!receipt.timedOut && receipt.exitCode == 0 && Volatile.Read(ref cancelled) == 0)
             {
                 long deadline = clock.ElapsedMilliseconds + 10000;
-                while (Inspect(job).Basic.ActiveProcesses != 0 && clock.ElapsedMilliseconds < deadline) Thread.Sleep(50);
+                while (Inspect(job).Basic.ActiveProcesses != 0 && clock.ElapsedMilliseconds < deadline && Volatile.Read(ref cancelled) == 0) Thread.Sleep(50);
             }
-            if (receipt.timedOut || receipt.exitCode != 0 || Inspect(job).Basic.ActiveProcesses != 0)
+            receipt.cancelled = Volatile.Read(ref cancelled) != 0;
+            if (receipt.cancelled || receipt.timedOut || receipt.exitCode != 0 || Inspect(job).Basic.ActiveProcesses != 0)
             {
                 receipt.terminated = true;
                 var before = Inspect(job).Basic;
@@ -345,7 +360,6 @@ public static class PaseoOwnedJob
                     Check(QueryLimits(job, 9, out memory, (uint)Marshal.SizeOf<ExtendedLimits>(), IntPtr.Zero), "Read final job memory");
                     receipt.peakJobMemoryBytes = memory.PeakJobMemory.ToUInt64();
                     receipt.complete = receipt.activeProcesses == 0 && receipt.error == null;
-                    receipt.buildSucceededWithTelemetryCleanup = IsBuildTelemetryCleanup(receipt);
                 }
             }
             catch (Exception error) { receipt.error = (receipt.error ?? "") + error; receipt.complete = false; }
@@ -353,6 +367,25 @@ public static class PaseoOwnedJob
                 if (Valid(handle)) CloseHandle(handle);
             foreach (var member in held) member.Dispose();
             receipt.elapsedMs = clock.ElapsedMilliseconds;
+            receipt.cancelled = Volatile.Read(ref cancelled) != 0;
+            receipt.buildSucceededWithTelemetryCleanup = IsBuildTelemetryCleanup(receipt);
+            try
+            {
+                if (receiptFile != null)
+                {
+                    // Persist before returning to PowerShell, whose pipeline may
+                    // already be stopping after the console cancellation event.
+                    string temporary = receiptFile + ".partial-" + Guid.NewGuid().ToString("N");
+                    try
+                    {
+                        File.WriteAllText(temporary, System.Text.Json.JsonSerializer.Serialize(receipt,
+                            new System.Text.Json.JsonSerializerOptions { IncludeFields = true }), new UTF8Encoding(false));
+                        File.Move(temporary, receiptFile);
+                    }
+                    finally { if (File.Exists(temporary)) File.Delete(temporary); }
+                }
+            }
+            finally { Console.CancelKeyPress -= handler; }
         }
         return receipt;
     }

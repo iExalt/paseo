@@ -25,6 +25,7 @@ $cases = @{
     unknown = { param($r) $r.remainingProcesses[0].image = 'C:\toolchain\cl.exe' }
     nonzero = { param($r) $r.exitCode = 7 }
     timeout = { param($r) $r.timedOut = $true }
+    cancelled = { param($r) $r.cancelled = $true }
     defaultStrict = { param($r) $r.allowedBuildTelemetry = $null }
     unverified = { param($r) $r.remainingProcesses[0].membershipVerified = $false }
     unreadable = { param($r) $r.remainingProcesses[0].error = 'access denied' }

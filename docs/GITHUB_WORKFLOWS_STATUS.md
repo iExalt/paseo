@@ -365,6 +365,52 @@ checks and reviewed same-source authority replacement remain before another
 canary. G5 stays open; all 14 native cells and eight transfer groups must pass
 in one admitted attempt. Existing deadlines, the confirmed $0 stop and
 failure/identity stop conditions remain in force.
+
+Polling repair `e7603e691` is integrated through PR #80; PR `38318022123`
+passed in 4m29s and same-SHA dev `38318466707` in 4m38s. Draft `411037339`
+was retired with signed assets preserved. Replacement `411057310` has descriptor
+`be3612bb03e347c87b82a45c5e5e4493efd31600f7494bdd5cdef551e5d0dc1b`, policy
+`7e019de71f1a8afb38e2becb2455ae18c2142ce92e4f810cf41f7e919248d10c` and assets
+`635216684`/`635216756`. Canary `38319037371` passed all ten lanes, verified grant
+bytes and read-only execution, and rejected native-disabled aggregation without
+signing. Authentication took 24s plus 3s scheduling. Reviewer reconciliation
+accepted one full same-draft retry; public inventories stayed unchanged and
+observed quota exceeded the conservative reserve.
+
+Full retry `38319798522` passed authentication and reached native builds, then
+both Linux Nix architectures rejected the same stale dependency hash. The 0.1.0
+lockfile reset changed the fixed-output input without refreshing
+`nix/npm-deps.hash`. Both builders computed
+`sha256-XUXsxOmy4fXeZlmgNlQAT+WG7MdQwj1Zgo1gOEFuXw0=`; an independent local
+prefetch using the exact `flake.lock` nixpkgs fetcher reproduced it. The corrected
+hash and refresh comment are prepared locally, not published. Correcting the
+immutable product source requires a new authenticated 0.1.0 proposal and fresh
+proofs; the existing same-source authority does not cover that transition.
+The user approved explicit unpublished-proposal replacement and pre-merge hash
+maintenance, preserving bootstrap/publication history and signed assets, and
+authorized autonomous resolution of routine Phase D issues. Public release and
+personal-device migration remain excluded. The replacement transition is not
+yet implemented or verified.
+
+The failed trial is terminal/canceled and native enablement is removed. Linux
+product cleanup and Linux/macOS signing-key cleanup passed. Both Windows jobs
+were interrupted during dependency installation; their cleanup steps failed
+because the monitor's final receipt was absent. Windows cleanup is unproven,
+not waived by hosted-runner termination. A separate repair must exercise the
+actual PowerShell wrapper under console cancellation, retain private kill-on-close
+Jobs, persist verified zero-process evidence and continue rejecting missing
+receipts. No package/runtime result or G5 completion is claimed.
+
+The reviewed cancellation repair now records cancellation inside the owned-Job
+monitor and atomically persists its final receipt before returning to PowerShell.
+Private kill-on-close ownership remains unchanged; cancellation cannot qualify
+for the build-only telemetry exception. Actual hosted cancellation trial
+`38322791846` exercised the production child-PowerShell invocation, preserved a
+canceled, complete, zero-active receipt, and independently found both fixture
+descendants absent; ordinary execution also passed. Synthetic Ctrl-C/Break
+trials covered both signals. Hard kills and missing receipts still fail closed.
+This verifies the repaired cleanup boundary, not the interrupted native builds;
+the fresh-source full matrix remains required.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.
