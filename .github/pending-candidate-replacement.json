@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "version": "0.1.0",
+  "supersededPr": 74,
+  "supersededSource": "376090618a85dcaa37e044e88af8b107b6abd05b",
+  "repairBase": "d58c1cc1e9459632be43b7e743d42f52fdda1391",
+  "lockSha256": "8916cf9a084df53fed887f358c6c67d25edf8ecb4c120e3b96b53cd04ed69547",
+  "npmDepsHash": "sha256-XUXsxOmy4fXeZlmgNlQAT+WG7MdQwj1Zgo1gOEFuXw0=",
+  "authorities": [
+    {
+      "releaseId": 410889371,
+      "descriptorSha256": "96b8c1592ddbb793a9529b5ca988b2ba8dd545151569e430b25dba483b186bd3"
+    },
+    {
+      "releaseId": 410999337,
+      "descriptorSha256": "793f33590fdd798b132ae6e21948026bf1b2621d6c1cb07b203d16a99d4049eb"
+    },
+    {
+      "releaseId": 411016397,
+      "descriptorSha256": "8f0975bad5caee0b5a47762c66e6b53bfde62864f182cc7bbe7e3dbdd3433fb9"
+    },
+    {
+      "releaseId": 411027658,
+      "descriptorSha256": "dcb25f57538faa96999a71a4ef1593589c8ccbb80fd2bb8de72564b9afa3609e"
+    },
+    {
+      "releaseId": 411037339,
+      "descriptorSha256": "bcabaf5d4be829407990861d763d55fa6ffe9fad5d4411e758aade6f91af44ca"
+    },
+    {
+      "releaseId": 411057310,
+      "descriptorSha256": "be3612bb03e347c87b82a45c5e5e4493efd31600f7494bdd5cdef551e5d0dc1b"
+    }
+  ]
+}
