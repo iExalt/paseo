@@ -1,4 +1,4 @@
-const { getRequiredAndroidVersionCode } = require("./native-release-version");
+const { getForkAndroidVersionCode } = require("./native-release-version");
 
 const variants = {
   production: {
@@ -18,7 +18,7 @@ const variants = {
   },
 };
 
-function resolveAppVariant(appVariant, defaultAndroidVersionCode, forkAndroidVersionCode) {
+function resolveAppVariant(appVariant, defaultAndroidVersionCode, version, forkAndroidVersionCode) {
   const variantName = Object.hasOwn(variants, appVariant) ? appVariant : "production";
   const variant = variants[variantName];
 
@@ -26,7 +26,7 @@ function resolveAppVariant(appVariant, defaultAndroidVersionCode, forkAndroidVer
     ...variant,
     androidVersionCode:
       variantName === "fork"
-        ? getRequiredAndroidVersionCode(forkAndroidVersionCode)
+        ? getForkAndroidVersionCode(version, forkAndroidVersionCode)
         : defaultAndroidVersionCode,
   };
 }
