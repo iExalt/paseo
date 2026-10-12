@@ -122,11 +122,12 @@ test("draft transport reconciles interrupted immutable uploads and rejects chang
   let releases = [],
     nextId = 1,
     lostResponse = true,
-    finalTag = null;
+    finalTag = null,
+    transportTag = null;
   const data = new Map();
   const api = {
     publicPin,
-    ref: async () => finalTag,
+    ref: async (tag) => (tag === descriptor.releaseTag ? finalTag : transportTag),
     list: async () => structuredClone(releases),
     get: async (id) => structuredClone(releases.find((item) => item.id === id)),
     create: async (value) => {
@@ -191,6 +192,13 @@ test("draft transport reconciles interrupted immutable uploads and rejects chang
   finalTag = { sha: descriptor.sourceSha };
   await assert.rejects(ensureDraft(api, descriptor, signature));
   finalTag = null;
+  transportTag = { sha: "9".repeat(40) };
+  await assert.rejects(ensureDraft(api, descriptor, signature), /Transport tag already exists/);
+  await assert.rejects(
+    uploadAttemptBytes(api, descriptor, id, 123, 3, "proof.json", bytes),
+    /Transport tag already exists/,
+  );
+  transportTag = null;
   releases.push({ tag_name: "paseo-v0.1.1" });
   await assert.rejects(ensureDraft(api, descriptor, signature));
   releases = structuredClone(saved);
