@@ -4,7 +4,7 @@ import { appendFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { candidateGithub } from "./candidate-github.mjs";
-import { loadDescriptor, requireAttempt } from "./candidate-draft.mjs";
+import { loadDescriptor, requireAttempt, requireCurrentRun } from "./candidate-draft.mjs";
 import { currentCandidate } from "./candidate-authority.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
@@ -29,6 +29,7 @@ export async function workerGate(env, api, request, read) {
   await currentCandidate(descriptor, env.GITHUB_SHA, releaseBotIdentity(env), request, read);
   const runId = Number(env.GITHUB_RUN_ID),
     attempt = Number(env.GITHUB_RUN_ATTEMPT);
+  await requireCurrentRun(env, request);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   return {
     descriptor,
@@ -39,26 +40,25 @@ export async function workerGate(env, api, request, read) {
   };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const env = process.env;
+export async function readWorkerContext(env = process.env) {
   assert.equal(
     execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     env.GITHUB_SHA,
   );
-  const context = await workerGate(
-    env,
-    candidateGithub(env.GH_TOKEN),
-    readGithub,
-    async (sha, file) => {
-      assert.match(sha, /^[a-f0-9]{40}$/);
-      assert.match(file, /^[a-zA-Z0-9._/-]+$/);
-      return execFileSync("git", ["show", `${sha}:${file}`], {
-        encoding: "utf8",
-        maxBuffer: 32 * 1024 * 1024,
-        timeout: 30000,
-      });
-    },
-  );
+  return workerGate(env, candidateGithub(env.GH_TOKEN), readGithub, async (sha, file) => {
+    assert.match(sha, /^[a-f0-9]{40}$/);
+    assert.match(file, /^[a-zA-Z0-9._/-]+$/);
+    return execFileSync("git", ["show", `${sha}:${file}`], {
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+      timeout: 30000,
+    });
+  });
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const env = process.env;
+  const context = await readWorkerContext(env);
   const file = join(env.RUNNER_TEMP, `paseo-candidate-${context.runId}-${context.attempt}.json`);
   await writeFile(file, JSON.stringify(context) + "\n", {
     flag: "wx",
