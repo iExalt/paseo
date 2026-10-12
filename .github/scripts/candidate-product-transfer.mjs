@@ -4,7 +4,7 @@ import { mkdir, readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
-import { fileIdentity, packageLimit } from "./candidate-files.mjs";
+import { fileIdentity, packageLimit, withVerifiedFile } from "./candidate-files.mjs";
 import { producerGroups, validateCellReceipt, verifyProducerJob } from "./candidate-matrix.mjs";
 import { githubResponse, saveDownload, validateArtifact } from "./candidate-artifacts.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
@@ -17,6 +17,8 @@ import {
 import { readGithub } from "./release-pr-checks.mjs";
 import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 
+import { closureEntries } from "./candidate-nix-export.mjs";
+
 const metadataLimit = 1024 * 1024;
 const extractor = fileURLToPath(new URL("./extract-candidate-artifact.py", import.meta.url));
 function exact(value, keys) {
@@ -24,7 +26,7 @@ function exact(value, keys) {
   assert.deepEqual(Object.keys(value).sort(), [...keys].sort());
 }
 export function productContract(descriptor, group) {
-  assert.match(group, /^(?:linux-products|windows)-(?:x64|arm64)$/);
+  assert.match(group, /^(?:linux-products|linux-nix|windows)-(?:x64|arm64)$/);
   return producerGroups[group].cells.map((cell) => {
     const [platform, arch, kind] = cell.split("/");
     const extension = { appimage: "AppImage", nsis: "exe" }[kind] ?? kind;
@@ -33,7 +35,9 @@ export function productContract(descriptor, group) {
       platform,
       arch,
       kind,
-      name: `paseo-${descriptor.version}-${platform}-${arch}.${extension}`,
+      name: kind.startsWith("nix-")
+        ? `paseo-${descriptor.version}-${platform}-${arch}-${kind}.tar`
+        : `paseo-${descriptor.version}-${platform}-${arch}.${extension}`,
     };
   });
 }
@@ -47,18 +51,28 @@ export function productProducer(context, group, jobs, artifact, expected) {
   assert.equal(job.run_id, context.runId);
   assert.equal(job.run_attempt, context.attempt);
   const linux = group.startsWith("linux-");
-  const names = [
-    "Authenticate candidate and admitted attempt",
-    "Read authenticated candidate source",
-    linux
-      ? "Verify installed product upgrades and preserved state"
-      : "Verify installed upgrade, retained CLI, PTY and real speech",
-    linux
-      ? "Clean owned installations, containers and state"
-      : "Reconcile owned processes and remove installation and state",
-    "Export verified candidate packages",
-    "Transfer immutable candidate packages",
-  ];
+  const nix = group.startsWith("linux-nix-");
+  const names = nix
+    ? [
+        "Authenticate candidate and admitted attempt",
+        "Read authenticated candidate source",
+        "Replace owned Nix profile and verify retained desktop state",
+        "Export and verify signed native closures",
+        "Remove owned temporary Nix signing key",
+        "Transfer immutable candidate closures",
+      ]
+    : [
+        "Authenticate candidate and admitted attempt",
+        "Read authenticated candidate source",
+        linux
+          ? "Verify installed product upgrades and preserved state"
+          : "Verify installed upgrade, retained CLI, PTY and real speech",
+        linux
+          ? "Clean owned installations, containers and state"
+          : "Reconcile owned processes and remove installation and state",
+        "Export verified candidate packages",
+        "Transfer immutable candidate packages",
+      ];
   let number = 0,
     completed = Date.parse(job.started_at);
   for (const name of names) {
@@ -75,12 +89,12 @@ export function productProducer(context, group, jobs, artifact, expected) {
   }
   assert.ok(Date.parse(job.completed_at) >= completed);
   const { platform, arch } = contracts[0];
-  const name = `candidate-${platform}-products-${arch}-${context.runId}-${context.attempt}`;
+  const name = `candidate-${platform}-${nix ? "nix" : "products"}-${arch}-${context.runId}-${context.attempt}`;
   validateArtifact(
     artifact,
     { runId: context.runId, sourceSha: context.controllerSha },
     { ...expected, name },
-    contracts.length * packageLimit + metadataLimit * 2,
+    contracts.length * (packageLimit + metadataLimit) + metadataLimit * 2,
   );
   assert.equal(artifact.workflow_run.repository_id, 1404390841);
   assert.equal(artifact.workflow_run.head_repository_id, 1404390841);
@@ -90,7 +104,8 @@ export function productProducer(context, group, jobs, artifact, expected) {
   return job.id;
 }
 
-export function productReceipts(bundle, context, group, producerJobId) {
+export function productReceipts(bundle, context, group, producerJobId, manifests = new Map()) {
+  const nix = group.startsWith("linux-nix-");
   exact(bundle, [
     "schemaVersion",
     "kind",
@@ -104,7 +119,7 @@ export function productReceipts(bundle, context, group, producerJobId) {
     "artifacts",
   ]);
   assert.equal(bundle.schemaVersion, 1);
-  assert.equal(bundle.kind, "paseo-candidate-products");
+  assert.equal(bundle.kind, nix ? "paseo-candidate-nix" : "paseo-candidate-products");
   for (const key of ["sourceSha", "treeSha", "version"])
     assert.equal(bundle[key], context.descriptor[key]);
   assert.equal(bundle.descriptorSha256, descriptorDigest(context.descriptor));
@@ -116,8 +131,61 @@ export function productReceipts(bundle, context, group, producerJobId) {
   return contracts.map(({ cell, ...identity }) => {
     const matches = bundle.artifacts.filter((entry) => entry.name === identity.name);
     assert.equal(matches.length, 1, "Missing or duplicate product bytes");
-    const artifact = matches[0];
-    exact(artifact, ["name", "platform", "arch", "kind", "sha256", "bytes"]);
+    let artifact = matches[0];
+    exact(artifact, [
+      "name",
+      "platform",
+      "arch",
+      "kind",
+      "sha256",
+      "bytes",
+      ...(nix ? ["system", "outputPath", "manifestPath", "closureManifest"] : []),
+    ]);
+    if (nix) {
+      const system = identity.arch === "arm64" ? "aarch64-linux" : "x86_64-linux";
+      assert.equal(artifact.system, system);
+      const manifest = manifests.get(artifact.closureManifest.name);
+      exact(artifact.closureManifest, ["name", "bytes", "sha256"]);
+      assert.equal(artifact.closureManifest.name, identity.name.replace(/\.tar$/, ".json"));
+      fileIdentity(artifact.closureManifest);
+      assert.ok(artifact.closureManifest.bytes <= metadataLimit);
+      assert.match(
+        artifact.manifestPath,
+        /^\/nix\/store\/[0-9abcdfghijklmnpqrsvwxyz]{32}-[A-Za-z0-9+._?=-]+$/,
+      );
+      exact(manifest, [
+        "schemaVersion",
+        "kind",
+        "sourceSha",
+        "treeSha",
+        "version",
+        "system",
+        "product",
+        "outputPath",
+        "closure",
+      ]);
+      assert.equal(manifest.schemaVersion, 1);
+      assert.equal(manifest.kind, "paseo-nix-closure");
+      for (const key of ["sourceSha", "treeSha", "version"])
+        assert.equal(manifest[key], context.descriptor[key]);
+      assert.equal(manifest.system, system);
+      assert.equal(manifest.product, identity.kind.slice(4));
+      assert.equal(manifest.outputPath, artifact.outputPath);
+      const product = manifest.product === "desktop" ? "paseo-desktop" : "paseo";
+      assert.match(
+        artifact.outputPath,
+        new RegExp(
+          `^/nix/store/[0-9abcdfghijklmnpqrsvwxyz]{32}-${product}-${context.descriptor.version.replaceAll(".", "\\.")}$`,
+        ),
+      );
+      assert.ok(Array.isArray(manifest.closure) && manifest.closure.length > 0);
+      const entries = Object.fromEntries(
+        manifest.closure.map(({ path, ...value }) => [path, value]),
+      );
+      assert.deepEqual(closureEntries(entries, artifact.outputPath), manifest.closure);
+      const { manifestPath: _manifestPath, ...releaseArtifact } = artifact;
+      artifact = releaseArtifact;
+    }
     for (const key of Object.keys(identity)) assert.equal(artifact[key], identity[key]);
     fileIdentity(artifact);
     return validateCellReceipt(
@@ -134,7 +202,7 @@ export function productReceipts(bundle, context, group, producerJobId) {
         producerJobId,
         cell,
         artifact,
-        runtime: { passed: true, cleanup: true, signature: "not-applicable" },
+        runtime: { passed: true, cleanup: true, signature: nix ? "nix-pinned" : "not-applicable" },
       },
       context.descriptor,
       context.runId,
@@ -169,7 +237,11 @@ export async function transferProducts(
   const directory = join(env.RUNNER_TEMP, `candidate-transfer-${group}-${runId}-${attempt}`);
   await mkdir(directory);
   const zip = join(directory, "products.zip");
-  const expandedLimit = contracts.length * packageLimit + metadataLimit;
+  const nix = group.startsWith("linux-nix-");
+  const bundleName = nix ? "candidate-nix.json" : "candidate-products.json";
+  const manifestNames = nix ? contracts.map(({ name }) => name.replace(/\.tar$/, ".json")) : [];
+  const expandedLimit =
+    contracts.length * packageLimit + metadataLimit * (manifestNames.length + 1);
   await saveDownload(
     await response(`actions/artifacts/${expected.id}/zip`, env.GH_TOKEN),
     zip,
@@ -185,20 +257,43 @@ export async function transferProducts(
       zip,
       extracted,
       String(expandedLimit),
-      JSON.stringify(["candidate-products.json", ...contracts.map(({ name }) => name)]),
+      JSON.stringify([bundleName, ...contracts.map(({ name }) => name), ...manifestNames]),
     ],
     { timeout: 120000, stdio: "pipe" },
   );
-  const metadata = join(extracted, "candidate-products.json");
+  const metadata = join(extracted, bundleName);
   assert.ok((await stat(metadata)).size <= metadataLimit);
-  const receipts = productReceipts(
-    JSON.parse(await readFile(metadata, "utf8")),
-    context,
-    group,
-    producerJobId,
-  );
+  const bundle = JSON.parse(await readFile(metadata, "utf8"));
+  const manifests = new Map();
+  for (const name of manifestNames) {
+    const file = join(extracted, name);
+    assert.ok((await stat(file)).size <= metadataLimit);
+    const matches = bundle.artifacts.filter((item) => item.closureManifest?.name === name);
+    assert.equal(matches.length, 1);
+    await withVerifiedFile(file, matches[0].closureManifest, async (body) => {
+      for await (const _chunk of body) {
+        /* verify exact metadata bytes */
+      }
+    });
+    manifests.set(name, JSON.parse(await readFile(file, "utf8")));
+  }
+  const receipts = productReceipts(bundle, context, group, producerJobId, manifests);
   const api = draftApi(env.GH_TOKEN);
   for (const receipt of receipts) {
+    if (receipt.artifact.closureManifest) {
+      const closure = receipt.artifact.closureManifest;
+      await requireCurrentRun(env, request);
+      await uploadAttemptFile(
+        api,
+        descriptor,
+        releaseId,
+        runId,
+        attempt,
+        closure.name,
+        join(extracted, closure.name),
+        closure,
+      );
+    }
     await requireCurrentRun(env, request);
     await uploadAttemptFile(
       api,
