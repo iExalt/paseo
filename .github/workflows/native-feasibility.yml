@@ -1,11 +1,7 @@
 name: Native feasibility (bounded Phase A probe)
 
 on:
-  push:
-    branches: [ci/github-workflows]
-    paths:
-      - .github/workflows/native-feasibility.yml
-      - .github/scripts/probe-native-runtime.mjs
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -16,7 +12,7 @@ concurrency:
 
 jobs:
   native:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1 && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/ci/github-workflows')
     strategy:
       fail-fast: false
       matrix:

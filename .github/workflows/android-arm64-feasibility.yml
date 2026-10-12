@@ -1,12 +1,7 @@
 name: Android ARM64 runtime (bounded Phase A probe)
 
 on:
-  push:
-    branches: [ci/github-workflows]
-    paths:
-      - .github/workflows/android-arm64-feasibility.yml
-      - .github/scripts/probe-android-arm64.sh
-      - .github/scripts/verify-probe-apk.mjs
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -17,7 +12,7 @@ concurrency:
 
 jobs:
   runtime:
-    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private && github.actor == 'iExalt' && github.run_attempt == 1 && (github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/ci/github-workflows')
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 15
     steps:
