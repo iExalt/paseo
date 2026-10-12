@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { packageLimit, fileIdentity, verifyStream, withVerifiedFile } from "./candidate-files.mjs";
+import { validateDraft } from "./candidate-draft.mjs";
 
 const root = "https://api.github.com/repos/iExalt/paseo";
 const uploads = "https://uploads.github.com/repos/iExalt/paseo";
@@ -225,11 +226,25 @@ export function candidateGithub(token, request = fetch) {
       throw new Error("Release assets exceed bounded pagination");
     },
     ref: (tag) => json(`git/ref/tags/${encodeURIComponent(tag)}`, undefined, true),
-    async setBody(releaseId, body) {
-      const control = JSON.parse(body);
-      assert.equal(control.kind, "paseo-candidate-storage");
-      assert.equal(control.schemaVersion, 1);
-      return json(`releases/${id(releaseId)}`, { method: "PATCH", body: JSON.stringify({ body }) });
+    async setBody(releaseId, body, descriptor, expectedBody) {
+      const endpoint = `releases/${id(releaseId)}`;
+      const current = await json(endpoint);
+      assert.equal(current.id, releaseId);
+      validateDraft(current, descriptor, true, false);
+      assert.equal(current.body, expectedBody, "Admission changed before update");
+      validateDraft({ ...current, body }, descriptor, true, false);
+      // GitHub replaces a draft's uncreated tag with an `untagged-*` value when
+      // PATCH omits tag_name. Preserve the freshly authenticated identity.
+      await json(endpoint, {
+        method: "PATCH",
+        body: JSON.stringify({ body, tag_name: current.tag_name }),
+      });
+      const updated = await json(endpoint);
+      validateDraft(updated, descriptor, true, false);
+      for (const field of ["id", "name", "tag_name", "target_commitish", "draft", "prerelease"])
+        assert.equal(updated[field], current[field], "Draft identity changed during admission");
+      assert.equal(updated.body, body, "Admission readback differs");
+      return updated;
     },
     async create(value) {
       assert.equal(value.draft, true);
