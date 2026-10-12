@@ -24,14 +24,18 @@ test("candidate issuance isolates signing from read-only planning and executes o
   const workflow = load(
     readFileSync(new URL(".github/workflows/release-candidate.yml", repoRoot), "utf8"),
   );
-  assert.deepEqual(workflow.on.pull_request_target, { types: ["closed"], branches: ["dev"] });
+  assert.deepEqual(workflow.on.pull_request_target, {
+    types: ["closed"],
+    branches: ["dev"],
+  });
   assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), ["release_id"]);
   assert.equal(workflow.concurrency.group, "paseo-release-candidate-control");
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.equal(workflow.jobs.plan.permissions.contents, "read");
   assert.equal(workflow.jobs.issue.permissions.contents, "write");
   assert.equal(workflow.jobs.issue.needs, "plan");
-  for (const [name, job] of Object.entries(workflow.jobs)) {
+  for (const name of ["plan", "issue"]) {
+    const job = workflow.jobs[name];
     assert.equal(job["runs-on"], "ubuntu-24.04");
     for (const step of job.steps) {
       if (step.uses?.startsWith("actions/checkout@")) {
@@ -50,6 +54,30 @@ test("candidate issuance isolates signing from read-only planning and executes o
       }
     }
   }
+  assert.equal(workflow.jobs.verify.needs, "issue");
+  assert.equal(workflow.jobs.verify.uses, "./.github/workflows/candidate-verify.yml");
+  assert.equal(workflow.jobs.verify.permissions.contents, "read");
+  assert.equal(workflow.jobs.verify.with.source_sha, "${{ needs.issue.outputs.source_sha }}");
+  const verification = load(
+    readFileSync(new URL(".github/workflows/candidate-verify.yml", repoRoot), "utf8"),
+  );
+  assert.deepEqual(Object.keys(verification.on), ["workflow_call"]);
+  const job = verification.jobs.verify;
+  assert.equal(job.strategy.matrix.include.length, 10);
+  assert.ok(!JSON.stringify(verification).includes("secrets."));
+  const gate = job.steps.findIndex(
+    (step) => step.run === "node .github/scripts/candidate-worker.mjs",
+  );
+  const checkout = job.steps.findIndex(
+    (step) => step.with?.ref === "${{ steps.candidate.outputs.source_sha }}",
+  );
+  assert.ok(gate > 0 && checkout > gate);
+  assert.ok(job.steps.some((step) => step.run?.includes('"$EXPECTED_TREE"')));
+  assert.ok(
+    job.steps.some(
+      (step) => step.run === 'mise run --skip-tools ci:routine --lane "$ROUTINE_LANE"',
+    ),
+  );
 });
 
 test("candidate identity binds semver and Android encoding to a clean exact source", () => {
@@ -96,6 +124,7 @@ test("only fork-owned workflows are installed", () => {
   assert.deepEqual(workflows, [
     "android-arm64-feasibility.yml",
     "candidate-runtime.yml",
+    "candidate-verify.yml",
     "ci-deep.yml",
     "ci.yml",
     "fork-android-apk.yml",
