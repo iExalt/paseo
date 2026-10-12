@@ -61,7 +61,14 @@ Version-plus-source draft identities and immutable attempt assets reject replace
 bytes; interrupted uploads reconcile by downloading and hashing the existing asset.
 These cheap fixtures do not establish a live candidate: workflow wiring, streaming
 package transfers, exact-source reruns and the complete D2 native matrix remain open.
-No manifest signing secret has been provisioned or used by Actions.
+The trusted closed-PR/owner-retry entrypoint is now implemented locally with
+read-only planning and independently revalidated issuance; only first issuance
+receives the signing key. Retry requires historical policy bytes to match both
+the signed digest and the currently trusted policy, so a policy change requires
+explicit reauthorization rather than silently changing candidate identity.
+Its local entrypoint fixture covers plan, issuance and retry without old logs;
+hosted execution remains unverified. No manifest signing secret has been
+provisioned or used by Actions.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -462,10 +469,19 @@ pinned-engine composition proves both `paseo-v0.1.0` and `paseo-v0.1.1`, while
 production release creation stays disabled. Historical tags, product semver,
 receipt identities and upgrade ordering remain unchanged.
 
+D1a is reviewed and integrated through PR #69 at `9d253019c`. Corrected routine
+PR run `38265781837` passed in 4m46s (23m57s summed runner time), and same-SHA
+dev run `38266478579` passed in 4m34s (24m48s summed). Both retain seven standard
+Ubuntu lanes, pinned tools and no npm cache. The unchanged baseline remains
+4m15s/20m18s PR and 4m18s/20m37s dev; current app verification took 164s/161s
+and installs 54–85s across lanes. These hosted samples stay within the five-minute
+gate but leave little margin; cumulative timing and the two-minute stretch remain
+open, without raising the budget or weakening checks.
+
 ### Phase D checklist
 
 - [ ] D1: exact-candidate coordination.
-  - [ ] D1a: shared collision-free tag contract and consumer/engine verification.
+  - [x] D1a: shared collision-free tag contract and consumer/engine verification.
   - [ ] D1b: authenticated merged-PR descriptor and immutable draft transport.
   - [ ] D1c: exact-source routine/deep/native fanout, complete aggregate and legacy retirement.
 - [ ] D2: failure/retry fixtures, bounded real partial-upload recovery, then complete same-SHA draft proof.

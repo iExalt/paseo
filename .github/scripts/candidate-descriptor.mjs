@@ -32,6 +32,11 @@ const keys = [
   "checks",
 ];
 export const sourceGateFiles = Object.freeze([
+  ".github/workflows/release-candidate.yml",
+  ".github/scripts/candidate-entry.mjs",
+  ".github/scripts/candidate-authority.mjs",
+  ".github/scripts/candidate-draft.mjs",
+  ".github/scripts/candidate-github.mjs",
   ".github/scripts/candidate-descriptor.mjs",
   ".github/scripts/release-pr-checks.mjs",
   ".github/scripts/ci-source-receipt.mjs",
