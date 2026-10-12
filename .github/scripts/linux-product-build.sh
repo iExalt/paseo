@@ -4,7 +4,7 @@ test "${GITHUB_ACTIONS:-}" = true
 test "${RUNNER_ENVIRONMENT:-}" = github-hosted
 test "$GITHUB_REPOSITORY" = iExalt/paseo
 test "$GITHUB_REF" = refs/heads/dev
-test "$GITHUB_ACTOR" = iExalt
+node .github/scripts/native-candidate-authority.mjs
 case "$EXPECTED_ARCHITECTURE:$(uname -sm)" in
   x64:Linux\ x86_64|arm64:Linux\ aarch64) ;;
   *) exit 1 ;;
