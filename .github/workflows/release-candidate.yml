@@ -68,6 +68,7 @@ jobs:
       release_id: ${{ steps.authority.outputs.release_id }}
       source_sha: ${{ steps.authority.outputs.source_sha }}
       version: ${{ steps.authority.outputs.version }}
+      descriptor_digest: ${{ steps.authority.outputs.descriptor_digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,3 +92,15 @@ jobs:
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
           PASEO_RELEASE_MANIFEST_PRIVATE_KEY: ${{ github.event_name == 'pull_request_target' && secrets.PASEO_RELEASE_MANIFEST_PRIVATE_KEY || '' }}
         run: node .github/scripts/candidate-entry.mjs
+
+  verify:
+    needs: issue
+    uses: ./.github/workflows/candidate-verify.yml
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    with:
+      release_id: ${{ needs.issue.outputs.release_id }}
+      source_sha: ${{ needs.issue.outputs.source_sha }}
+      descriptor_digest: ${{ needs.issue.outputs.descriptor_digest }}

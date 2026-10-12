@@ -30,7 +30,13 @@ export async function workerGate(env, api, request, read) {
   const runId = Number(env.GITHUB_RUN_ID),
     attempt = Number(env.GITHUB_RUN_ATTEMPT);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
-  return { descriptor, releaseId, runId, attempt, controllerSha: env.GITHUB_SHA };
+  return {
+    descriptor,
+    releaseId,
+    runId,
+    attempt,
+    controllerSha: env.GITHUB_SHA,
+  };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
@@ -54,9 +60,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     },
   );
   const file = join(env.RUNNER_TEMP, `paseo-candidate-${context.runId}-${context.attempt}.json`);
-  await writeFile(file, JSON.stringify(context) + "\n", { flag: "wx", mode: 0o600 });
+  await writeFile(file, JSON.stringify(context) + "\n", {
+    flag: "wx",
+    mode: 0o600,
+  });
   await appendFile(
     env.GITHUB_OUTPUT,
-    `source_sha=${context.descriptor.sourceSha}\nversion=${context.descriptor.version}\ncontext=${file}\n`,
+    `source_sha=${context.descriptor.sourceSha}\ntree_sha=${context.descriptor.treeSha}\nversion=${context.descriptor.version}\ncontext=${file}\n`,
   );
 }

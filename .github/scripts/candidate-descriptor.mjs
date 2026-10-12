@@ -33,6 +33,7 @@ const keys = [
 ];
 export const sourceGateFiles = Object.freeze([
   ".github/workflows/release-candidate.yml",
+  ".github/workflows/candidate-verify.yml",
   ".github/scripts/candidate-entry.mjs",
   ".github/scripts/candidate-authority.mjs",
   ".github/scripts/candidate-draft.mjs",
@@ -41,6 +42,9 @@ export const sourceGateFiles = Object.freeze([
   ".github/scripts/candidate-worker.mjs",
   ".github/scripts/candidate-matrix.mjs",
   ".github/scripts/ci-routine.mjs",
+  ".github/scripts/ci-deep.mjs",
+  ".github/scripts/deep-cleanup.mjs",
+  ".github/scripts/candidate-identity.mjs",
   ".github/scripts/candidate-descriptor.mjs",
   ".github/scripts/release-pr-checks.mjs",
   ".github/scripts/ci-source-receipt.mjs",
@@ -114,7 +118,11 @@ export function descriptorFromProof(proof, fork, policy) {
     headSha: proof.headSha,
     baseSha: proof.baseSha,
     cells: [...FORK_RELEASE_CELLS],
-    checks: proof.proofs.map(({ workflow, runId, attempt }) => ({ workflow, runId, attempt })),
+    checks: proof.proofs.map(({ workflow, runId, attempt }) => ({
+      workflow,
+      runId,
+      attempt,
+    })),
   });
 }
 
@@ -125,7 +133,11 @@ export function descriptorBytes(value) {
       if (key === "checks")
         return [
           key,
-          value.checks.map(({ workflow, runId, attempt }) => ({ workflow, runId, attempt })),
+          value.checks.map(({ workflow, runId, attempt }) => ({
+            workflow,
+            runId,
+            attempt,
+          })),
         ];
       if (key === "policy")
         return [
@@ -171,7 +183,10 @@ export function verifyDescriptor(
 ) {
   assert.ok(bytes.length > 0 && bytes.length <= 16384);
   assert.match(signature, /^[A-Za-z0-9_-]{86}$/);
-  const key = createPublicKey({ key: { kty: "OKP", crv: "Ed25519", x: pin }, format: "jwk" });
+  const key = createPublicKey({
+    key: { kty: "OKP", crv: "Ed25519", x: pin },
+    format: "jwk",
+  });
   assert.ok(
     verify(null, Buffer.concat([domain, bytes]), key, Buffer.from(signature, "base64url")),
     "Candidate signature invalid",
