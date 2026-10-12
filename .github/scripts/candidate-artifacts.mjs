@@ -47,7 +47,7 @@ export function validateCoordinatedProducer(run, pin, context, jobs) {
   assert.equal(run.id, context.runId);
   assert.equal(run.run_attempt, context.attempt);
   assert.equal(run.path, ".github/workflows/release-candidate.yml");
-  assert.equal(run.head_sha, context.controllerSha);
+  assert.equal(run.head_sha, context.rootHeadSha);
   assert.equal(run.head_branch, context.rootBranch);
   assert.equal(run.status, "in_progress");
   assert.equal(run.conclusion, null);
@@ -219,7 +219,7 @@ export async function fetchCandidate(
     const metadata = await json(`actions/artifacts/${id}`);
     validateArtifact(
       metadata,
-      context ? { ...pin, sourceSha: context.controllerSha, headBranch: context.rootBranch } : pin,
+      context ? { ...pin, sourceSha: context.rootHeadSha, headBranch: context.rootBranch } : pin,
       expected,
       maximum + MiB,
     );
