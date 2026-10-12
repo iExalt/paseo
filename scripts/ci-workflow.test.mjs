@@ -20,6 +20,38 @@ import { candidateIdentity } from "../.github/scripts/candidate-identity.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 
+test("candidate issuance isolates signing from read-only planning and executes only trusted source", () => {
+  const workflow = load(
+    readFileSync(new URL(".github/workflows/release-candidate.yml", repoRoot), "utf8"),
+  );
+  assert.deepEqual(workflow.on.pull_request_target, { types: ["closed"], branches: ["dev"] });
+  assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), ["release_id"]);
+  assert.equal(workflow.concurrency.group, "paseo-release-candidate-control");
+  assert.equal(workflow.concurrency["cancel-in-progress"], false);
+  assert.equal(workflow.jobs.plan.permissions.contents, "read");
+  assert.equal(workflow.jobs.issue.permissions.contents, "write");
+  assert.equal(workflow.jobs.issue.needs, "plan");
+  for (const [name, job] of Object.entries(workflow.jobs)) {
+    assert.equal(job["runs-on"], "ubuntu-24.04");
+    for (const step of job.steps) {
+      if (step.uses?.startsWith("actions/checkout@")) {
+        assert.equal(step.with.ref, "${{ github.sha }}");
+        assert.equal(step.with["persist-credentials"], false);
+      }
+      if (step.run) assert.equal(step.run, "node .github/scripts/candidate-entry.mjs");
+      if (name === "plan") assert.ok(!JSON.stringify(step).includes("secrets."));
+      if (step.env?.PASEO_RELEASE_MANIFEST_PRIVATE_KEY) {
+        assert.equal(name, "issue");
+        assert.match(
+          step.env.PASEO_RELEASE_MANIFEST_PRIVATE_KEY,
+          /github.event_name == 'pull_request_target'/,
+        );
+        assert.equal(step.env.EXPECTED_DESCRIPTOR_DIGEST, "${{ needs.plan.outputs.digest }}");
+      }
+    }
+  }
+});
+
 test("candidate identity binds semver and Android encoding to a clean exact source", () => {
   const cwd = mkdtempSync(join(tmpdir(), "paseo-candidate-"));
   const git = (...args) => execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -75,6 +107,7 @@ test("only fork-owned workflows are installed", () => {
     "macos-closure.yml",
     "native-feasibility.yml",
     "rebase-dev.yml",
+    "release-candidate.yml",
     "release-please.yml",
     "upstream-sync.yml",
     "windows-arm64-feasibility.yml",
