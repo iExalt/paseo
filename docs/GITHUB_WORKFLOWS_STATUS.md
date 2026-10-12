@@ -293,8 +293,36 @@ off. The draft contains only signed authority assets `635064760`/`635064810`;
 descriptor digest is `8f0975bad5caee0b5a47762c66e6b53bfde62864f182cc7bbe7e3dbdd3433fb9`.
 The narrow static-import repair preserves the approved boundary; a real CLI
 subprocess fixture rejects the old implementation and passes the repair.
-Retirement/reissuance of this additional signed policy still requires explicit
-reauthorization after review and green source checks. Draft `411016397` is untouched.
+The user explicitly approved retirement/reissuance of this additional signed
+policy after review and green source checks.
+CLI repair `28013c71d` is reviewer-accepted and integrated through PR #78;
+PR run `38312349270` passed in 4m42s; same-SHA dev `38312910120` passed in 4m25s.
+The resulting policy digest is
+`e07aaca70911ea76c10ba7745deccaf75e4301e52172b2bc337b1c1c7a2fe3ed`.
+The reviewed retirement preflight for `411016397` passes in read-only mode;
+the proposed retired draft tag is `paseo-retired-candidate-411016397`, preserving
+both signed assets. Public-release and Git-tag inventories remain unchanged.
+User-approved standing authority: remaining unpublished D1/D2
+implementation repairs may retire/reissue only the same PR #74/source `376090618`
+after review and fresh exact-source PR/dev checks, recording old/new draft,
+descriptor and policy identities and preserving signed assets. Security/acceptance
+boundaries and budgets stay unchanged; native remains off until canary closure.
+Ambiguous mutations, unexpected identities or required scope changes still stop
+for reconciliation. This prevents a new approval request for each routine
+same-source policy repair without bypassing signed-policy validation.
+
+Under that approval, draft `411016397` was retired with signed assets preserved.
+Canary `38313660840` issued draft `411027658` under policy `e07aaca7…`, with
+descriptor `dcb25f57538faa96999a71a4ef1593589c8ccbb80fd2bb8de72564b9afa3609e` and
+assets `635103580`/`635103644`. All ten workers authenticated through the grant;
+nine verification lanes passed, including all three deep journeys. Quality alone
+failed because a pinned-source transport fixture inherited the coordinator
+workflow selector and attempted live authority. The reviewed repair unsets that
+selector only in the routine-test subprocess, after authenticated source checkout;
+execution gates, native transport and final admission remain unchanged. A
+disposable checkout reproduced the failure and passed with the isolated context;
+the checkout was removed. The 23 workflow checks pass in 3.25s. Fresh PR/dev gates
+and another preserved-authority replacement remain before canary closure.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.

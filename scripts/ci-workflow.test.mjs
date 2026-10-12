@@ -128,7 +128,9 @@ test("candidate issuance isolates signing from keyless planning and executes onl
   assert.ok(job.steps.some((step) => step.run?.includes('"$EXPECTED_TREE"')));
   assert.ok(
     job.steps.some(
-      (step) => step.run === 'mise run --skip-tools ci:routine --lane "$ROUTINE_LANE"',
+      (step) =>
+        step.run ===
+        'env -u GITHUB_WORKFLOW_REF mise run --skip-tools ci:routine --lane "$ROUTINE_LANE"',
     ),
   );
 });
