@@ -79,7 +79,7 @@ validate_identity() {
   [[ "${GITHUB_REPOSITORY:-}" == "iExalt/paseo" ]] \
     || fail "Refusing to run for unexpected repository: ${GITHUB_REPOSITORY:-unset}."
   [[ "${GITHUB_REF:-}" == "refs/heads/dev" ]] || fail "The Nix closure lane only accepts a dev-branch caller."
-  [[ "${GITHUB_ACTOR:-}" == "iExalt" ]] || fail "The Nix closure lane only accepts the trusted iExalt caller."
+  node .github/scripts/native-candidate-authority.mjs
   [[ "$source_sha" == "${PASEO_CANDIDATE_SHA:-${GITHUB_SHA:?}}" ]] || fail "Caller SHA differs from the immutable source SHA input."
   [[ "$(git rev-parse HEAD)" == "$source_sha" ]] || fail "Checkout HEAD differs from the immutable source SHA input."
   [[ -z "$(git status --porcelain)" ]] || fail "The canonical checkout is not clean."
