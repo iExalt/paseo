@@ -1,6 +1,6 @@
 # GitHub workflows roadmap
 
-Status: **Phases A–B / G0–G3 complete; Phase C approved and active, 2026-10-11**.
+Status: **Phases A–C / G0–G4 complete; Phase D awaits approval, 2026-10-12**.
 Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
@@ -181,7 +181,7 @@ explicitly required before publication, even if absent from routine CI.
     `38190475746` / `38191279639` passed in 4m26s / 4m16s. Installed 0.1.0
     package/device migration remains step 11; source fixtures do not replace it.
 
-- [ ] **8. Configure release-please and verify its real PR event chain.** Add
+- [x] **8. Configure release-please and verify its real PR event chain.** Add
       pinned action, manifest/config, fork changelog/bootstrap, bot permissions and
       PR identity detection. Keep public release creation disabled/gated. Test
       release PR updates, merge SHA recognition and two consecutive version proposals.
@@ -190,6 +190,13 @@ explicitly required before publication, even if absent from routine CI.
     cannot authorize signing; exact merge SHA chosen; upstream rebase doesn't
     reset fork version or replay whole changelog; no public release yet.
   - Ticks: G4; W6 remainder.
+  - Verified: dedicated App dispatch `38194783635` created PR #65; updated
+    0.1.0 head `f26d06fbf` passed routine/deep `38196353860` / `38196353853`.
+    Old green checks were rejected after refresh, and the conditional rehearsal
+    rebase merge `d0cc78574` matched the verified parent and tested tree.
+    Successor 0.1.1 PR #67 passed `38196829378` / `38196829432`; forged-owner
+    PR #64 failed authorization with no deep lane executed. Both rehearsal refs
+    were removed; no release, tag, production activation or device change occurred.
   - Human: before live event test, provide/install narrowly scoped bot access if
     unavailable; never print credentials. Phase approval includes test PR and
     draft-only scope, not user-facing publication.
