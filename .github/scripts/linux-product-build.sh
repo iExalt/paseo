@@ -9,7 +9,7 @@ case "$EXPECTED_ARCHITECTURE:$(uname -sm)" in
   x64:Linux\ x86_64|arm64:Linux\ aarch64) ;;
   *) exit 1 ;;
 esac
-test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+test "$(git rev-parse HEAD)" = "${PASEO_CANDIDATE_SHA:-$GITHUB_SHA}"
 if [ -n "${PREDECESSOR_CACHE_MATCHED_KEY:-}" ]; then
   test "${PREDECESSOR_CACHE_HIT:-}" = true
 fi
@@ -23,7 +23,7 @@ root="$RUNNER_TEMP/paseo-products-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 test ! -e "$root"
 test -z "$(docker ps -aq --filter "name=^/paseo-products-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT$")"
 mkdir -p "$root/evidence" "$root/state" "$root/packages" "$root/portable" "$root/mounts"
-printf '%s\n' "$GITHUB_SHA" > "$root/owned"
+printf '%s\n' "${PASEO_CANDIDATE_SHA:-$GITHUB_SHA}" > "$root/owned"
 if OWNED_SESSION_SKIP_XVFB=1 FIXTURE_FORMAT=ownership-probe TMPDIR="$root/evidence/mounts-ownership-probe" \
   node .github/scripts/linux-format-launch.mjs node -e '
     const {spawn}=require("node:child_process");

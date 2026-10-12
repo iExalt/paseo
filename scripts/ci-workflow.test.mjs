@@ -157,7 +157,7 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   const workflow = load(
     readFileSync(new URL(".github/workflows/windows-product-runtime.yml", repoRoot), "utf8"),
   );
-  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_call", "workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
   const job = workflow.jobs.native;
   assert.deepEqual(job.permissions, { contents: "read", actions: "read" });
@@ -190,7 +190,10 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   const save = job.steps.find((step) => step.id === "predecessor-save");
   assert.equal(save.if, "steps.cache-budget.outputs.save == 'true'");
   const budget = job.steps.find((step) => step.id === "cache-budget");
-  assert.equal(budget.if, "success() && steps.predecessor-cache.outputs.cache-hit != 'true'");
+  assert.equal(
+    budget.if,
+    "success() && inputs.source_sha == '' && steps.predecessor-cache.outputs.cache-hit != 'true'",
+  );
   assert.ok(job.steps.indexOf(budget) > job.steps.indexOf(cleanup));
   for (const phase of ["install-previous", "build-previous"])
     assert.equal(
@@ -205,11 +208,47 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   assert.ok(
     workflow.jobs["cache-proof"].steps.some((step) => step.with?.["fail-on-cache-miss"] === true),
   );
-  const uploads = job.steps.filter((step) => step.uses?.startsWith("actions/upload-artifact"));
+  const uploads = job.steps.filter(
+    (step) => step.uses?.startsWith("actions/upload-artifact") && step.id !== "packages",
+  );
   assert.equal(uploads.length, 1);
   assert.ok(uploads[0].with.path.endsWith("/evidence"));
   assert.equal(uploads[0].with["retention-days"], 1);
   assert.equal(uploads[0].if, "always() && steps.evidence.outcome == 'success'");
+});
+
+test("native product exports authenticate source before execution and follow successful cleanup without concurrent cache writes", () => {
+  for (const platform of ["linux", "windows"]) {
+    const workflow = load(
+      readFileSync(new URL(`.github/workflows/${platform}-product-runtime.yml`, repoRoot), "utf8"),
+    );
+    assert.match(workflow.concurrency.group, /paseo-predecessor-cache-writer/);
+    assert.match(workflow.concurrency.group, /inputs.source_sha/);
+    const job = workflow.jobs.native;
+    const index = (id) => job.steps.findIndex((step) => step.id === id);
+    const gate = index("candidate");
+    const checkout = job.steps.findIndex(
+      (step) => step.with?.ref === "${{ steps.candidate.outputs.source_sha }}",
+    );
+    assert.ok(gate > 0 && checkout > gate);
+    const cleanup = job.steps.findIndex((step) =>
+      step.run?.includes(
+        `${platform}-product-${platform === "linux" ? "cleanup.sh" : "runtime.ps1 cleanup"}`,
+      ),
+    );
+    assert.ok(
+      cleanup > checkout && index("export") > cleanup && index("packages") > index("export"),
+    );
+    for (const id of ["export", "packages"])
+      assert.equal(job.steps[index(id)].if, "success() && inputs.source_sha != ''");
+    assert.match(job.steps[index("cache-budget")].if, /inputs.source_sha == ''/);
+    assert.equal(job.env.PASEO_CANDIDATE_SHA, "${{ inputs.source_sha || github.sha }}");
+    assert.equal(job.env.GITHUB_SHA, undefined);
+    assert.equal(
+      workflow.on.workflow_call.outputs.artifact_id.value,
+      "${{ jobs.native.outputs.artifact_id }}",
+    );
+  }
 });
 
 test("Linux prerequisite canary evaluates without realizing packages", () => {
