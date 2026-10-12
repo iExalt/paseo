@@ -28,7 +28,11 @@ test("candidate issuance isolates signing from read-only planning and executes o
     types: ["closed"],
     branches: ["dev"],
   });
-  assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), ["release_id"]);
+  assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), ["release_id", "merged_pr"]);
+  const initialKey = workflow.jobs.issue.steps.find(
+    (step) => step.env?.PASEO_RELEASE_MANIFEST_PRIVATE_KEY,
+  ).env.PASEO_RELEASE_MANIFEST_PRIVATE_KEY;
+  assert.match(initialKey, /inputs.merged_pr != '' && inputs.release_id == ''/);
   assert.equal(workflow.concurrency.group, "paseo-release-candidate-control");
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.equal(workflow.jobs.plan.permissions.contents, "read");
