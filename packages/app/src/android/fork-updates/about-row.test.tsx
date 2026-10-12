@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
   activeListener: null as ((state: string) => void) | null,
-  installedCode: 10,
+  installedVersion: "0.1.0",
   allowInstall: false,
   checkForForkUpdate: vi.fn(),
   downloadForkUpdate: vi.fn(),
@@ -66,8 +66,9 @@ vi.mock("@/styles/settings", () => ({
   settingsStyles: { row: {}, rowBorder: {}, rowContent: {}, rowTitle: {}, rowHint: {} },
 }));
 vi.mock("./client", () => ({
+  ForkManualMigrationRequired: class extends Error {},
   forkUpdatesNative: {
-    getInstalledVersionCode: () => harness.installedCode,
+    getInstalledVersion: () => harness.installedVersion,
     addListener: (_name: string, listener: (event: { downloadedBytes: number }) => void) => {
       harness.nativeListener.mockImplementation(listener);
       return { remove: () => harness.nativeListener.mockReset() };
@@ -84,21 +85,21 @@ vi.mock("./client", () => ({
 }));
 
 import { ForkAndroidUpdateRow } from "./about-row";
+import { ForkManualMigrationRequired } from "./client";
 
 const update = {
   manifest: {
-    releaseSequence: 11,
-    packageVersion: "0.11.0",
-    android: { versionCode: 11, apk: { bytes: 100 } },
+    version: "0.1.1",
   },
+  android: { bytes: 100 },
   apkUrl: "https://github.com/iExalt/paseo/releases/download/test/update.apk",
 } as never;
 
 describe("fork Android update row", () => {
   beforeEach(() => {
-    harness.installedCode = 10;
+    harness.installedVersion = "0.1.0";
     harness.allowInstall = false;
-    harness.checkForForkUpdate.mockResolvedValue({ update, installedVersionCode: 10 });
+    harness.checkForForkUpdate.mockResolvedValue({ update, installedVersion: "0.1.0" });
     harness.downloadForkUpdate.mockResolvedValue("/private/files/fork-updates/update.apk");
     harness.canInstallForkUpdate.mockImplementation(async () => harness.allowInstall);
     harness.openForkUpdateInstallSettings.mockResolvedValue(undefined);
@@ -117,10 +118,10 @@ describe("fork Android update row", () => {
     render(<ForkAndroidUpdateRow />);
     expect(screen.getByText("settings.about.forkUpdates.idle")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.check" }));
-    await screen.findByText('settings.about.forkUpdates.available {"version":"0.11.0"}');
+    await screen.findByText('settings.about.forkUpdates.available {"version":"0.1.1"}');
 
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.download" }));
-    await screen.findByText('settings.about.forkUpdates.downloaded {"version":"0.11.0"}');
+    await screen.findByText('settings.about.forkUpdates.downloaded {"version":"0.1.1"}');
 
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.install" }));
     await screen.findByText("settings.about.forkUpdates.permission");
@@ -129,7 +130,7 @@ describe("fork Android update row", () => {
 
     harness.allowInstall = true;
     harness.activeListener?.("active");
-    await screen.findByText('settings.about.forkUpdates.downloaded {"version":"0.11.0"}');
+    await screen.findByText('settings.about.forkUpdates.downloaded {"version":"0.1.1"}');
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.install" }));
     await screen.findByText("settings.about.forkUpdates.installer");
     expect(harness.confirmDialog).toHaveBeenCalledTimes(2);
@@ -140,10 +141,10 @@ describe("fork Android update row", () => {
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.install" }));
     await waitFor(() => expect(harness.launchForkUpdateInstaller).toHaveBeenCalledTimes(2));
 
-    harness.installedCode = 11;
+    harness.installedVersion = "0.1.1";
     harness.activeListener?.("active");
-    await screen.findByText('settings.about.forkUpdates.installed {"version":"0.11.0"}');
-    expect(harness.recordInstalledForkUpdate).toHaveBeenCalledWith(11);
+    await screen.findByText('settings.about.forkUpdates.installed {"version":"0.1.1"}');
+    expect(harness.recordInstalledForkUpdate).toHaveBeenCalledWith("0.1.1");
   });
 
   it("shows a retryable error when installer-return persistence fails", async () => {
@@ -151,15 +152,21 @@ describe("fork Android update row", () => {
     harness.recordInstalledForkUpdate.mockRejectedValueOnce(new Error("storage unavailable"));
     render(<ForkAndroidUpdateRow />);
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.check" }));
-    await screen.findByText('settings.about.forkUpdates.available {"version":"0.11.0"}');
+    await screen.findByText('settings.about.forkUpdates.available {"version":"0.1.1"}');
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.download" }));
-    await screen.findByText('settings.about.forkUpdates.downloaded {"version":"0.11.0"}');
+    await screen.findByText('settings.about.forkUpdates.downloaded {"version":"0.1.1"}');
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.install" }));
     await screen.findByText("settings.about.forkUpdates.installer");
 
-    harness.installedCode = 11;
+    harness.installedVersion = "0.1.1";
     harness.activeListener?.("active");
     await screen.findByText("settings.about.forkUpdates.failed");
     expect(screen.getByRole("button", { name: "settings.about.forkUpdates.install" })).toBeTruthy();
+  });
+
+  it("explains that a legacy installation requires manual migration", async () => {
+    harness.restoreStagedForkUpdate.mockRejectedValueOnce(new ForkManualMigrationRequired());
+    render(<ForkAndroidUpdateRow />);
+    expect(await screen.findByText(/Install the fork 0.1.0 or newer manually/)).toBeTruthy();
   });
 });

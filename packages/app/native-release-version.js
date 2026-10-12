@@ -1,3 +1,4 @@
+const { forkAndroidVersionCode } = require("../protocol/src/fork-version.ts");
 const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/;
 const maxAndroidVersionCode = 2_100_000_000;
 const stableIosBuildSlot = 999;
@@ -66,13 +67,12 @@ function getRequiredAndroidVersionCode(value) {
   return versionCode;
 }
 
-function getForkAndroidVersionCodeFromRunNumber(runNumber) {
-  const versionCode = 100_000 + getRequiredAndroidVersionCode(runNumber);
-  if (versionCode > maxAndroidVersionCode) {
-    throw new Error("GitHub run number is too large for PASEO_ANDROID_VERSION_CODE");
+function getForkAndroidVersionCode(version, override) {
+  const code = forkAndroidVersionCode(version);
+  if (override !== undefined && getRequiredAndroidVersionCode(override) !== code) {
+    throw new Error("PASEO_ANDROID_VERSION_CODE must equal the fork semver encoding.");
   }
-
-  return versionCode;
+  return code;
 }
 
 function getFdroidVersionCodes(version) {
@@ -86,7 +86,7 @@ function getFdroidVersionCodes(version) {
 module.exports = {
   FDROID_ABI_VERSION_CODE_SUFFIXES,
   getFdroidVersionCodes,
-  getForkAndroidVersionCodeFromRunNumber,
+  getForkAndroidVersionCode,
   getNativeReleaseVersion,
   getRequiredAndroidVersionCode,
 };

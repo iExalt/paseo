@@ -1,9 +1,9 @@
 # GitHub workflows execution script
 
 **Four serial threads take the fork from its current workflows to a verified
-GitHub release. Phases A–B are complete; Phase C awaits approval.**
+GitHub release. Phases A–B are complete; Phase C is approved and active.**
 
-Status: **Phases A–B complete; Phase C awaits approval, 2026-10-11**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
+Status: **Phases A–B complete; Phase C approved and active, 2026-10-11**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
 decisions and the [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) for step proofs. This
 script adds thread boundaries, dependencies and literal starting prompts.
 
@@ -99,7 +99,9 @@ contracts. Mark B done only after G2/G3 proofs, and record deviations affecting 
 
 ## C. Prepare compatible releases with release-please — steps 7–8
 
-**State:** reviewer-shaped proposal ready; B is complete and C awaits user approval.
+**State:** approved and active; B is complete. Approval includes reviewed commits/pushes
+and bounded unpublished test PR/draft activity on free runners. Public releases
+and personal-device migration remain Phase D.
 
 ```text
 Use $keep-me-in-the-loop to run thread C in docs/GITHUB_WORKFLOWS_SCRIPT.md.

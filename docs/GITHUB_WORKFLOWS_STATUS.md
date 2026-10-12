@@ -285,8 +285,8 @@ timing and the two-minute routine stretch remain unclaimed.
 ### Phase C checklist
 
 - [ ] C1: 0.1.0 reset, semver-only upgrades, clean-break migration and recovery fixtures.
-  - [ ] C1a: portable V2 inventory and shared version rules (implemented; review pending).
-  - [ ] C1b: Android discovery, receipts and native fork encoding.
+  - [x] C1a: portable V2 inventory and shared version rules (reviewer-accepted `f8b156ee7`; local).
+  - [ ] C1b: Android discovery, receipts and native fork encoding (implemented; review pending).
   - [ ] C1c: Nix transactional recovery and desktop updater contract.
   - [ ] C1d: workspace/native version reset and rebase-preservation integration.
 - [ ] C2: release-please bootstrap and scoped App authentication.
@@ -294,10 +294,21 @@ timing and the two-minute routine stretch remain unclaimed.
 
 C1a introduces an exact 14-cell signed inventory, preserves explicit V1 recovery
 exports, and moves fork version rules into the portable protocol package. The
-existing consumers still use V1 until their coordinated C1b/C1c migrations;
+Nix consumers still use V1 until their coordinated C1c migration;
 no installed state or signing identity has changed. Source TypeScript, emitted
 JavaScript and Node 26 CommonJS loading are checked separately. Contract cases
 remain cheap unit fixtures; live packaging and device migration remain Phase D.
+
+C1b changes Android discovery and persisted high-water to fork semver, with
+separate V2 receipt keys. Historical sequence keys, receipts and staged APKs remain
+untouched. Download and installer entry points reverify signed receipts and
+current installed state; native verification also binds APK versionName. Native
+versionCode remains the deterministic encoding and OS installation floor.
+The settings row explains manual migration for incompatible installed builds.
+Protocol, Android receipt/UI and native configuration fixtures pass in 2.05s;
+app typecheck and actual Expo fork configuration evaluation pass. Kotlin runtime
+and installed 0.1.0 migration are not claimed; those remain Phase D package/device
+gates. Workspace versions have not yet changed.
 
 ### Phase B evidence history
 

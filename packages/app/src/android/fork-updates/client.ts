@@ -1,3 +1,8 @@
+import {
+  compareForkVersions,
+  forkAndroidVersionCode,
+  parseForkVersion,
+} from "@getpaseo/protocol/fork-version";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { requireOptionalNativeModule } from "expo-modules-core";
 import {
@@ -5,7 +10,7 @@ import {
   RELEASE_MANIFEST_NAME,
   RELEASE_SIGNATURE_NAME,
   MAX_RELEASE_METADATA_BYTES,
-  assertApprovedForkManifest,
+  approvedAndroidArtifact,
   findHighestVerifiedForkRelease,
   isNewerThanInstalled,
   verifyReleaseBinding,
@@ -15,18 +20,20 @@ import {
 } from "./release";
 
 const RELEASES_URL = `https://api.github.com/repos/${FORK_REPOSITORY}/releases`;
-const INSTALLED_SEQUENCE_KEY = "@getpaseo/fork-update/installed-sequence";
-const STAGED_UPDATE_KEY = "@getpaseo/fork-update/staged";
-const PENDING_STAGED_UPDATE_KEY = "@getpaseo/fork-update/staged-pending";
+// Historical keys are retained for manual recovery, never interpreted as fork semver.
+const HIGH_WATER_VERSION_KEY = "@getpaseo/fork-update/semver-v1/high-water";
+const STAGED_UPDATE_KEY = "@getpaseo/fork-update/semver-v1/staged";
+const PENDING_STAGED_UPDATE_KEY = "@getpaseo/fork-update/semver-v1/staged-pending";
 const MAX_RELEASE_PAGES = 10;
 const MAX_RELEASE_LIST_BYTES = 1_048_576;
 
 function stagedApkFileName(update: VerifiedForkUpdate): string {
-  return `fork-r${update.manifest.releaseSequence}-${update.manifest.android.apk.name}`;
+  return `fork-v${update.manifest.version}-${update.android.name}`;
 }
 
 interface ForkUpdatesNativeModule {
   getInstalledVersionCode(): number;
+  getInstalledVersion(): string;
   canInstallUnknownApps(): boolean;
   openUnknownSourcesSettings(): Promise<void>;
   fetchText(url: string, maxBytes: number): Promise<string>;
@@ -37,6 +44,7 @@ interface ForkUpdatesNativeModule {
     expectedSha256: string,
     expectedPackage: string,
     expectedVersionCode: number,
+    expectedVersion: string,
     expectedCertificateSha256: string,
   ): Promise<string>;
   openInstaller(
@@ -45,6 +53,7 @@ interface ForkUpdatesNativeModule {
     expectedSha256: string,
     expectedPackage: string,
     expectedVersionCode: number,
+    expectedVersion: string,
     expectedCertificateSha256: string,
   ): Promise<void>;
   findVerifiedStagedApk(
@@ -53,6 +62,7 @@ interface ForkUpdatesNativeModule {
     expectedSha256: string,
     expectedPackage: string,
     expectedVersionCode: number,
+    expectedVersion: string,
     expectedCertificateSha256: string,
   ): Promise<string | null>;
   addListener(
@@ -88,15 +98,76 @@ function releaseAssetUrl(tag: string, name: string): string {
   return `https://github.com/${FORK_REPOSITORY}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
 }
 
+export class ForkManualMigrationRequired extends Error {
+  constructor() {
+    super("Install the fork 0.1.0 or newer manually before using fork updates.");
+  }
+}
+
+let installedStateQueue: Promise<unknown> = Promise.resolve();
+async function readInstalledState(): Promise<{
+  installedVersion: string;
+  highWaterVersion: string;
+}> {
+  const operation = installedStateQueue.then(async () => {
+    if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
+    let installedVersion: string;
+    try {
+      installedVersion = forkUpdatesNative.getInstalledVersion();
+      parseForkVersion(installedVersion);
+      if (
+        forkUpdatesNative.getInstalledVersionCode() !== forkAndroidVersionCode(installedVersion)
+      ) {
+        throw new Error("Installed build encoding does not match fork semver.");
+      }
+    } catch {
+      throw new ForkManualMigrationRequired();
+    }
+    const stored = await AsyncStorage.getItem(HIGH_WATER_VERSION_KEY);
+    if (stored !== null) parseForkVersion(stored);
+    const highWaterVersion =
+      stored !== null && compareForkVersions(stored, installedVersion) > 0
+        ? stored
+        : installedVersion;
+    if (stored !== highWaterVersion)
+      await AsyncStorage.setItem(HIGH_WATER_VERSION_KEY, highWaterVersion);
+    return { installedVersion, highWaterVersion };
+  });
+  installedStateQueue = operation.catch(() => undefined);
+  return operation;
+}
+
+function updateFromReceipt(manifestText: string, signatureText: string): VerifiedForkUpdate {
+  const manifest = verifySignedManifest(new TextEncoder().encode(manifestText), signatureText);
+  const android = approvedAndroidArtifact(manifest);
+  return {
+    manifest,
+    android,
+    manifestText,
+    signatureText,
+    apkUrl: releaseAssetUrl(manifest.releaseTag, android.name),
+  };
+}
+
+async function requireNewerInstalledUpdate(
+  update: VerifiedForkUpdate,
+): Promise<VerifiedForkUpdate> {
+  const verified = updateFromReceipt(update.manifestText, update.signatureText);
+  const { installedVersion, highWaterVersion } = await readInstalledState();
+  if (!isNewerThanInstalled(verified, installedVersion, highWaterVersion)) {
+    throw new Error("Fork update is not newer than the installed high-water version.");
+  }
+  return verified;
+}
+
 export async function checkForForkUpdate(): Promise<{
   update: VerifiedForkUpdate | null;
-  installedVersionCode: number;
+  installedVersion: string;
 }> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
-  const [releases, installedVersionCode, storedSequenceText] = await Promise.all([
+  const [{ installedVersion, highWaterVersion }, releases] = await Promise.all([
+    readInstalledState(),
     readStableReleases(),
-    Promise.resolve(forkUpdatesNative.getInstalledVersionCode()),
-    AsyncStorage.getItem(INSTALLED_SEQUENCE_KEY),
   ]);
   const { verified } = await findHighestVerifiedForkRelease(releases, async (release) => {
     const manifestAssets = release.assets.filter((asset) => asset.name === RELEASE_MANIFEST_NAME);
@@ -132,24 +203,20 @@ export async function checkForForkUpdate(): Promise<{
       return null;
     }
   });
-  const storedSequence =
-    storedSequenceText && /^[1-9][0-9]*$/.test(storedSequenceText) ? Number(storedSequenceText) : 0;
-  if (!Number.isSafeInteger(storedSequence)) {
-    throw new Error("The installed fork update sequence is invalid.");
-  }
-  const update = isNewerThanInstalled(verified, installedVersionCode, storedSequence)
+  const update = isNewerThanInstalled(verified, installedVersion, highWaterVersion)
     ? verified
     : null;
   if (!update) await clearStagedForkUpdate();
   return {
     update,
-    installedVersionCode,
+    installedVersion,
   };
 }
 
 export async function downloadForkUpdate(update: VerifiedForkUpdate): Promise<string> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
-  const { manifest, apkUrl } = update;
+  update = await requireNewerInstalledUpdate(update);
+  const { android, apkUrl } = update;
   const receipt = JSON.stringify({
     manifestText: update.manifestText,
     signatureText: update.signatureText,
@@ -160,11 +227,12 @@ export async function downloadForkUpdate(update: VerifiedForkUpdate): Promise<st
     path = await forkUpdatesNative.downloadAndVerifyApk(
       apkUrl,
       stagedApkFileName(update),
-      manifest.android.apk.bytes,
-      manifest.android.apk.sha256,
-      manifest.android.packageId,
-      manifest.android.versionCode,
-      manifest.android.signingCertificateSha256,
+      android.bytes,
+      android.sha256,
+      android.packageId,
+      android.versionCode,
+      update.manifest.version,
+      android.signingCertificateSha256,
     );
   } catch (error) {
     await AsyncStorage.removeItem(PENDING_STAGED_UPDATE_KEY);
@@ -178,18 +246,10 @@ export async function downloadForkUpdate(update: VerifiedForkUpdate): Promise<st
 export async function restoreStagedForkUpdate(): Promise<{
   update: VerifiedForkUpdate;
   path: string;
-  installedVersionCode: number;
+  installedVersion: string;
 } | null> {
   if (!forkUpdatesNative) return null;
-  const installedVersionCode = forkUpdatesNative.getInstalledVersionCode();
-  const installedSequenceText = await AsyncStorage.getItem(INSTALLED_SEQUENCE_KEY);
-  const installedSequence =
-    installedSequenceText && /^[1-9][0-9]*$/.test(installedSequenceText)
-      ? Number(installedSequenceText)
-      : 0;
-  if (!Number.isSafeInteger(installedSequence)) {
-    throw new Error("The installed fork update sequence is invalid.");
-  }
+  const { installedVersion, highWaterVersion } = await readInstalledState();
 
   for (const key of [PENDING_STAGED_UPDATE_KEY, STAGED_UPDATE_KEY]) {
     const receiptText = await AsyncStorage.getItem(key);
@@ -207,41 +267,24 @@ export async function restoreStagedForkUpdate(): Promise<{
       if (typeof receipt.manifestText !== "string" || typeof receipt.signatureText !== "string") {
         throw new Error("Staged update metadata is malformed.");
       }
-      const manifestBytes = new TextEncoder().encode(receipt.manifestText);
-      const manifest = verifySignedManifest(manifestBytes, receipt.signatureText);
-      assertApprovedForkManifest(manifest);
-      update = {
-        manifest,
-        manifestText: receipt.manifestText,
-        signatureText: receipt.signatureText,
-        apkUrl: `https://github.com/${FORK_REPOSITORY}/releases/download/${encodeURIComponent(
-          manifest.releaseTag,
-        )}/${encodeURIComponent(manifest.android.apk.name)}`,
-      };
+      update = updateFromReceipt(receipt.manifestText, receipt.signatureText);
     } catch {
       await AsyncStorage.removeItem(key);
       continue;
     }
 
-    if (
-      installedVersionCode === update.manifest.android.versionCode &&
-      update.manifest.releaseSequence > installedSequence
-    ) {
-      await AsyncStorage.setItem(INSTALLED_SEQUENCE_KEY, String(update.manifest.releaseSequence));
-      await clearStagedForkUpdate();
-      return null;
-    }
-    if (!isNewerThanInstalled(update, installedVersionCode, installedSequence)) {
+    if (!isNewerThanInstalled(update, installedVersion, highWaterVersion)) {
       await AsyncStorage.removeItem(key);
       continue;
     }
     const path = await forkUpdatesNative.findVerifiedStagedApk(
       stagedApkFileName(update),
-      update.manifest.android.apk.bytes,
-      update.manifest.android.apk.sha256,
-      update.manifest.android.packageId,
-      update.manifest.android.versionCode,
-      update.manifest.android.signingCertificateSha256,
+      update.android.bytes,
+      update.android.sha256,
+      update.android.packageId,
+      update.android.versionCode,
+      update.manifest.version,
+      update.android.signingCertificateSha256,
     );
     if (!path) {
       await AsyncStorage.removeItem(key);
@@ -251,7 +294,7 @@ export async function restoreStagedForkUpdate(): Promise<{
       await AsyncStorage.setItem(STAGED_UPDATE_KEY, receiptText);
       await AsyncStorage.removeItem(PENDING_STAGED_UPDATE_KEY);
     }
-    return { update, path, installedVersionCode };
+    return { update, path, installedVersion };
   }
   return null;
 }
@@ -270,21 +313,21 @@ export async function launchForkUpdateInstaller(
   path: string,
 ): Promise<void> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
+  update = await requireNewerInstalledUpdate(update);
   await forkUpdatesNative.openInstaller(
     path,
-    update.manifest.android.apk.bytes,
-    update.manifest.android.apk.sha256,
-    update.manifest.android.packageId,
-    update.manifest.android.versionCode,
-    update.manifest.android.signingCertificateSha256,
+    update.android.bytes,
+    update.android.sha256,
+    update.android.packageId,
+    update.android.versionCode,
+    update.manifest.version,
+    update.android.signingCertificateSha256,
   );
 }
 
-export async function recordInstalledForkUpdate(sequence: number): Promise<void> {
-  if (!Number.isSafeInteger(sequence) || sequence <= 0) {
-    throw new Error("Installed fork sequence is invalid.");
-  }
-  await AsyncStorage.setItem(INSTALLED_SEQUENCE_KEY, String(sequence));
+export async function recordInstalledForkUpdate(version: string): Promise<void> {
+  const { installedVersion } = await readInstalledState();
+  if (installedVersion !== version) throw new Error("The expected fork version is not installed.");
   await clearStagedForkUpdate();
 }
 
