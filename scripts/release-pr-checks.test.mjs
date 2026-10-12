@@ -8,7 +8,8 @@ import { candidateEntry } from "../.github/scripts/candidate-entry.mjs";
 import { currentCandidate, candidateRoute } from "../.github/scripts/candidate-authority.mjs";
 import { descriptorDigest } from "../.github/scripts/candidate-descriptor.mjs";
 import { draftBody } from "../.github/scripts/candidate-draft.mjs";
-import { workerGate } from "../.github/scripts/candidate-worker.mjs";
+import { workerGate, readTrustedWorkerContext } from "../.github/scripts/candidate-worker.mjs";
+import { grantGroups } from "../.github/scripts/candidate-grant.mjs";
 import {
   RECEIPT_PREFIX,
   sourceReceipt,
@@ -307,6 +308,95 @@ test("merged authority binds the old checked tree and parent while dev advances"
   assert.equal(
     (await workerGate(workerEnv, api, setup().request, read)).descriptor.sourceSha,
     source,
+  );
+  const context = await workerGate(workerEnv, api, setup().request, read);
+  const group = "verification";
+  const grant = {
+    kind: "paseo-worker-grant",
+    schemaVersion: 1,
+    group,
+    context,
+    descriptor: assets.get(1).toString("utf8"),
+    signature: assets.get(2).toString("ascii"),
+    workers: grantGroups[group].workers,
+    authenticationJobId: 900,
+  };
+  const authJob = {
+    id: 900,
+    name: grantGroups[group].job,
+    run_id: context.runId,
+    run_attempt: context.attempt,
+    status: "completed",
+    conclusion: "success",
+    steps: [
+      { name: "Upload authenticated worker grant", status: "completed", conclusion: "success" },
+    ],
+  };
+  const grantedEnv = {
+    ...workerEnv,
+    CANDIDATE_GRANT_GROUP: group,
+    CANDIDATE_EXPECTED_JOB: grant.workers[0],
+  };
+  const grantedRequest = async (url) =>
+    url.includes("/jobs?") ? { jobs: [authJob] } : setup().request(url);
+  const readonlyApi = {
+    publicPin: api.publicPin,
+    get: () => assert.fail("Readonly workers must not fetch drafts"),
+  };
+  assert.deepEqual(await workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant), context);
+  for (const mutate of [
+    (g) => {
+      g.context.attempt++;
+    },
+    (g) => {
+      g.group = "runtime";
+    },
+    (g) => {
+      g.workers = ["native-runtime / android"];
+    },
+    (g) => {
+      g.authenticationJobId++;
+    },
+    (g) => {
+      g.signature = "A".repeat(86);
+    },
+  ]) {
+    const bad = structuredClone(grant);
+    mutate(bad);
+    await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, bad));
+  }
+  await assert.rejects(
+    workerGate(
+      { ...grantedEnv, CANDIDATE_EXPECTED_JOB: "native-runtime / android" },
+      readonlyApi,
+      grantedRequest,
+      read,
+      grant,
+    ),
+  );
+  authJob.conclusion = "failure";
+  await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant));
+  authJob.conclusion = "success";
+  authJob.steps[0].conclusion = "failure";
+  await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant));
+  authJob.steps[0].conclusion = "success";
+  await assert.rejects(
+    readTrustedWorkerContext({ CANDIDATE_GRANT_ID: "456" }),
+    /cannot use a worker grant/,
+  );
+  await assert.rejects(
+    workerGate(
+      grantedEnv,
+      readonlyApi,
+      async (url) => {
+        const value = await grantedRequest(url);
+        return url.endsWith("/actions/runs/500")
+          ? { ...value, status: "completed", conclusion: "cancelled" }
+          : value;
+      },
+      read,
+      grant,
+    ),
   );
   await assert.rejects(
     workerGate({ ...workerEnv, PASEO_CANDIDATE_SHA: head }, api, setup().request, read),

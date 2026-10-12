@@ -20,7 +20,56 @@ import { candidateIdentity } from "../.github/scripts/candidate-identity.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 
-test("candidate issuance isolates signing from read-only planning and executes only trusted source", () => {
+test("phase authentication is controller-only and every grant consumer remains read-only", () => {
+  const read = (file) => load(readFileSync(new URL(`.github/workflows/${file}`, repoRoot), "utf8"));
+  const auth = read("candidate-auth.yml");
+  assert.ok(!JSON.stringify(auth).includes("secrets."));
+  const job = auth.jobs.authenticate;
+  assert.equal(job.permissions.contents, "write");
+  for (const step of job.steps) {
+    if (step.uses?.startsWith("actions/checkout@")) {
+      assert.equal(step.with.ref, "${{ github.sha }}");
+      assert.equal(step.with["persist-credentials"], false);
+    }
+    if (step.run) assert.equal(step.run, "node .github/scripts/candidate-grant.mjs");
+  }
+  for (const file of [
+    "candidate-verify.yml",
+    "candidate-runtime.yml",
+    "fork-builds.yml",
+    "macos-closure.yml",
+    "fork-android-apk.yml",
+    "linux-nix-runtime.yml",
+    "linux-product-runtime.yml",
+    "windows-product-runtime.yml",
+  ]) {
+    const workflow = read(file);
+    for (const worker of Object.values(workflow.jobs).filter(
+      (value) => value.env?.CANDIDATE_GRANT_ID,
+    )) {
+      assert.equal(worker.permissions.contents, "read");
+      const dependency = worker.env.CANDIDATE_GRANT_ID.match(
+        /^\$\{\{ needs\.([\w-]+)\.outputs\.artifact_id \}\}$/,
+      )[1];
+      assert.ok(worker.needs.includes(dependency));
+      assert.equal(
+        worker.env.CANDIDATE_GRANT_DIGEST,
+        `\${{ needs.${dependency}.outputs.artifact_digest }}`,
+      );
+      const gate = workflow.jobs[dependency];
+      assert.equal(gate.uses, "./.github/workflows/candidate-auth.yml");
+      assert.equal(gate.permissions.contents, "write");
+      assert.equal(gate.with.group, worker.env.CANDIDATE_GRANT_GROUP);
+      for (const prior of worker.needs.filter((value) => value !== dependency))
+        assert.ok(
+          gate.needs.includes(prior),
+          "Later execution needs fresh admission after its producers",
+        );
+    }
+  }
+});
+
+test("candidate issuance isolates signing from keyless planning and executes only trusted source", () => {
   const workflow = load(
     readFileSync(new URL(".github/workflows/release-candidate.yml", repoRoot), "utf8"),
   );
@@ -35,7 +84,7 @@ test("candidate issuance isolates signing from read-only planning and executes o
   assert.match(initialKey, /inputs.merged_pr != '' && inputs.release_id == ''/);
   assert.equal(workflow.concurrency.group, "paseo-release-candidate-control");
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
-  assert.equal(workflow.jobs.plan.permissions.contents, "read");
+  assert.equal(workflow.jobs.plan.permissions.contents, "write");
   assert.equal(workflow.jobs.issue.permissions.contents, "write");
   assert.equal(workflow.jobs.issue.needs, "plan");
   for (const name of ["plan", "issue"]) {
@@ -60,7 +109,7 @@ test("candidate issuance isolates signing from read-only planning and executes o
   }
   assert.equal(workflow.jobs.verify.needs, "issue");
   assert.equal(workflow.jobs.verify.uses, "./.github/workflows/candidate-verify.yml");
-  assert.equal(workflow.jobs.verify.permissions.contents, "read");
+  assert.equal(workflow.jobs.verify.permissions.contents, "write");
   assert.equal(workflow.jobs.verify.with.source_sha, "${{ needs.issue.outputs.source_sha }}");
   const verification = load(
     readFileSync(new URL(".github/workflows/candidate-verify.yml", repoRoot), "utf8"),
@@ -127,6 +176,7 @@ test("only fork-owned workflows are installed", () => {
     .sort();
   assert.deepEqual(workflows, [
     "android-arm64-feasibility.yml",
+    "candidate-auth.yml",
     "candidate-runtime.yml",
     "candidate-transfer.yml",
     "candidate-verify.yml",
@@ -383,7 +433,9 @@ test("native candidate runtime is manual, read-only and bounded to hosted verifi
   assert.match(trigger, /workflow_dispatch:/);
   assert.doesNotMatch(trigger, /push:|pull_request:|schedule:/);
   assert.match(source, /contents: read\s+actions: read/);
-  assert.doesNotMatch(source, /: write|secrets\./);
+  assert.doesNotMatch(source, /secrets\./);
+  for (const job of Object.values(load(source).jobs).filter((value) => value.steps))
+    assert.equal(job.permissions.contents, "read");
   assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
   assert.match(source, /github\.actor == 'iExalt'/);
   assert.match(source, /runs-on: macos-14/);
@@ -401,7 +453,7 @@ test("native candidate runtime is manual, read-only and bounded to hosted verifi
   const jobs = jobBlocks(source);
   for (const lane of ["android", "macos"]) {
     const guard = jobs.get(lane).find((line) => line.trim().startsWith("if:"));
-    assert.ok(guard.endsWith(`(inputs.platform == 'both' || inputs.platform == '${lane}')`));
+    assert.ok(guard.includes(`(inputs.platform == 'both' || inputs.platform == '${lane}')`));
     const accepted = new Set(
       [...guard.matchAll(/inputs\.platform == '([^']+)'/g)].map((match) => match[1]),
     );
@@ -708,7 +760,7 @@ test("fork candidate orchestration shares one identity and only completes after 
   assert.match(android, /uses: \.\/\.github\/workflows\/fork-android-apk\.yml/);
   assert.match(macos, /source_sha: \$\{\{ needs\.identity\.outputs\.source_sha \}\}/);
   assert.match(android, /fork_version: \$\{\{ needs\.identity\.outputs\.fork_version \}\}/);
-  assert.match(candidate, /needs: \[identity, build-macos, build-android\]/);
+  assert.match(candidate, /needs: \[identity, build-macos, build-android, authorize-complete\]/);
   assert.match(candidate, /ANDROID_VERIFIED: \$\{\{ needs\.build-android\.outputs\.verified \}\}/);
   assert.match(candidate, /MACOS_VERIFIED: \$\{\{ needs\.build-macos\.outputs\.verified \}\}/);
   assert.match(candidate, /artifact-ids: \$\{\{ needs\.build-android\.outputs\.artifact_id \}\}/);
@@ -767,7 +819,7 @@ test("paired workers gate source before execution and preserve signing and cache
   assert.match(restore.with.key, /^setup-java-Linux-x64-gradle-/);
   assert.ok(!build.steps.some((step) => step.uses?.startsWith("actions/cache/save")));
   const mac = load(readFileSync(new URL(".github/workflows/macos-closure.yml", repoRoot), "utf8"));
-  assert.equal(mac.jobs["verify-import"].needs, "build-and-export");
+  assert.deepEqual(mac.jobs["verify-import"].needs, ["build-and-export", "authorize-import"]);
   assert.ok(
     mac.jobs["build-and-export"].steps.some(
       (step) => step.if === "always()" && step.run?.includes("paseo-nix-release-secret-key"),
