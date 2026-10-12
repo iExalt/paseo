@@ -155,6 +155,13 @@ consistency checks. The corrected estimate includes that read on every guard.
 Full enablement requires enough observed quota for conservatively estimated
 remaining work and concurrent CI; the estimate alone does not authorize fanout.
 
+Existing closed-PR run `38273169558` reports the PR head branch, while its mutable
+API PR association now points at a later PR on that branch. Root validation uses
+the original event payload to bind the authenticated merged PR and branch,
+retaining the independent controller-SHA check and merged-source proof. Artifact
+branch provenance follows that authenticated context; manual retries still require
+`dev`. Actual rebased-bot event SHA and reusable context remain canary checks.
+
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
 A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase
