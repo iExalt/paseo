@@ -51,6 +51,7 @@ for (const arch of ["x64", "arm64"]) {
   }
   cells.add(`windows/${arch}/nsis`);
 }
+export const FORK_RELEASE_CELLS: readonly string[] = Object.freeze([...cells].sort());
 const digestPattern = /^[a-f0-9]{64}$/;
 const commitPattern = /^[a-f0-9]{40}$/;
 const assetKeys = ["name", "bytes", "sha256"];
