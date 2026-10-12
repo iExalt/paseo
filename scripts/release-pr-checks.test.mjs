@@ -5,6 +5,7 @@ import { candidateEntry } from "../.github/scripts/candidate-entry.mjs";
 import { currentCandidate, candidateRoute } from "../.github/scripts/candidate-authority.mjs";
 import { descriptorDigest } from "../.github/scripts/candidate-descriptor.mjs";
 import { draftBody } from "../.github/scripts/candidate-draft.mjs";
+import { workerGate } from "../.github/scripts/candidate-worker.mjs";
 import {
   RECEIPT_PREFIX,
   sourceReceipt,
@@ -276,6 +277,26 @@ test("merged authority binds the old checked tree and parent while dev advances"
   await execute({ env: issueEnv });
   assert.equal(draft.assets.length, 2);
   assert.ok(output.includes("release_id=42\n"));
+  const workerEnv = {
+    ...entryEnv,
+    GITHUB_REPOSITORY: repo.full_name,
+    GITHUB_WORKFLOW_REF: "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev",
+    CANDIDATE_RELEASE_ID: "42",
+    PASEO_CANDIDATE_SHA: source,
+    CANDIDATE_DESCRIPTOR_DIGEST: descriptorDigest(descriptor),
+  };
+  assert.equal(
+    (await workerGate(workerEnv, api, setup().request, read)).descriptor.sourceSha,
+    source,
+  );
+  await assert.rejects(
+    workerGate({ ...workerEnv, PASEO_CANDIDATE_SHA: head }, api, setup().request, read),
+    /another candidate/,
+  );
+  await assert.rejects(
+    workerGate({ ...workerEnv, GITHUB_RUN_ATTEMPT: "2" }, api, setup().request, read),
+    /no longer admitted/,
+  );
   const retryEvent = { repository: repo, sender: { id: 7889894 }, inputs: { release_id: "42" } };
   const retryEnv = {
     ...issueEnv,

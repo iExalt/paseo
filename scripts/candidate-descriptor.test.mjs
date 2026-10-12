@@ -7,6 +7,12 @@ import test from "node:test";
 import { candidateGithub } from "../.github/scripts/candidate-github.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
 import {
+  aggregateCandidate,
+  producerGroups,
+  verificationJobs,
+} from "../.github/scripts/candidate-matrix.mjs";
+import { forkReleaseManifestFixture } from "./test-fixtures/fork-release-manifest.ts";
+import {
   descriptorFromProof,
   descriptorBytes,
   descriptorDigest,
@@ -91,6 +97,109 @@ test("package transfer streams verified files and rejects truncation, mutation a
     );
   } finally {
     await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("candidate aggregate requires every same-attempt native cell and all source verification lanes", () => {
+  const descriptor = candidateFixture();
+  const jobs = Object.entries(producerGroups).map(([, group], index) => ({
+    id: index + 1,
+    name: group.job,
+    status: "completed",
+    conclusion: "success",
+  }));
+  jobs.push(
+    ...verificationJobs.map((name, index) => ({
+      id: 100 + index,
+      name,
+      status: "completed",
+      conclusion: "success",
+    })),
+  );
+  const receipts = forkReleaseManifestFixture().artifacts.map((artifact) => {
+    const cell = `${artifact.platform}/${artifact.arch}/${artifact.kind}`;
+    const [group, producer] = Object.entries(producerGroups).find(([, item]) =>
+      item.cells.includes(cell),
+    );
+    let signature = "not-applicable";
+    if (artifact.kind.startsWith("nix-")) signature = "nix-pinned";
+    if (artifact.kind === "apk") signature = "android-pinned";
+    return {
+      schemaVersion: 1,
+      kind: "paseo-candidate-cell",
+      descriptorSha256: descriptorDigest(descriptor),
+      sourceSha: descriptor.sourceSha,
+      treeSha: descriptor.treeSha,
+      version: descriptor.version,
+      runId: 500,
+      attempt: 2,
+      group,
+      producerJobId: jobs.find((job) => job.name === producer.job).id,
+      cell,
+      artifact,
+      runtime: { passed: true, cleanup: true, signature },
+    };
+  });
+  assert.equal(aggregateCandidate(descriptor, 500, 2, receipts, jobs).artifacts.length, 14);
+  for (const change of [
+    (rows) => rows.pop(),
+    (rows) => rows.push(rows[0]),
+    (rows) => {
+      rows[1] = rows[0];
+    },
+    (rows) => {
+      rows[0].attempt = 1;
+    },
+    (rows) => {
+      rows[0].sourceSha = "f".repeat(40);
+    },
+    (rows) => {
+      rows[0].runtime.passed = false;
+    },
+    (rows) => {
+      rows[0].runtime.cleanup = false;
+    },
+    (rows) => {
+      rows[0].runtime.signature = "not-applicable";
+    },
+    (rows) => {
+      rows[0].producerJobId = 999;
+    },
+    (rows) => {
+      rows[0].artifact.bytes = 0;
+    },
+    (rows) => {
+      rows[0].artifact.sha256 = "bad";
+    },
+    (rows) => {
+      rows[0].artifact.closureManifest = rows[1].artifact.closureManifest;
+    },
+  ]) {
+    const altered = structuredClone(receipts);
+    change(altered);
+    assert.throws(() => aggregateCandidate(descriptor, 500, 2, altered, jobs));
+  }
+  for (const name of [producerGroups[receipts[0].group].job, verificationJobs[0]]) {
+    assert.throws(() =>
+      aggregateCandidate(
+        descriptor,
+        500,
+        2,
+        receipts,
+        jobs.filter((job) => job.name !== name),
+      ),
+    );
+    assert.throws(() =>
+      aggregateCandidate(
+        descriptor,
+        500,
+        2,
+        receipts,
+        jobs.map((job) =>
+          job.name === name ? Object.assign({}, job, { conclusion: "failure" }) : job,
+        ),
+      ),
+    );
   }
 });
 
