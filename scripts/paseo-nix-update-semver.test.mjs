@@ -111,11 +111,13 @@ test("V2 verification binds exact signed bytes and producer closure metadata wit
   const selected = await chooseHighestVerifiedStableRelease(
     [
       { tag_name: "paseo-fork-v0.11.0-r200008-" + "d".repeat(40) },
-      { tag_name: "v0.1.10" },
-      { tag_name: "v0.1.2" },
-      { tag_name: "v1.0.0", draft: true },
+      { tag_name: "v0.1.1" },
+      { tag_name: "paseo-v0.1.10" },
+      { tag_name: "paseo-v0.1.2" },
+      { tag_name: "paseo-v1.0.0", draft: true },
     ],
-    async (release) => (release.tag_name === "v0.1.10" ? null : { manifest: { version: "0.1.2" } }),
+    async (release) =>
+      release.tag_name === "paseo-v0.1.10" ? null : { manifest: { version: "0.1.2" } },
   );
   assert.equal(selected.manifest.version, "0.1.2");
 });

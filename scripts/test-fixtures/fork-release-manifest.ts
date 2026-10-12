@@ -52,7 +52,7 @@ export function forkReleaseManifestFixture(version = "0.1.0"): ForkReleaseManife
     version,
     sourceSha: "b".repeat(40),
     upstreamBase: "c".repeat(40),
-    releaseTag: `v${version}`,
+    releaseTag: `paseo-v${version}`,
     artifacts,
   };
 }
