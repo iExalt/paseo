@@ -30,7 +30,8 @@ export async function releasePreflight({
     isAncestor: async (sha) =>
       spawnSync("git", ["merge-base", "--is-ancestor", sha, expectedSha], { cwd: repositoryPath })
         .status === 0,
-    readAt: async (sha, file) => git("show", `${sha}:${file}`),
+    readAt: async (sha, file) =>
+      execFileSync("git", ["show", `${sha}:${file}`], { cwd: repositoryPath, encoding: "utf8" }),
   });
   const root = JSON.parse(await read("package.json"));
   const packages = [

@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
-import { verifyBoundaryHistory } from "../../scripts/release-boundary.mjs";
+import { changelogDigest, verifyBoundaryHistory } from "../../scripts/release-boundary.mjs";
 import {
   exportResolutions,
   importResolutions,
@@ -186,6 +186,8 @@ async function makeFixture(
     JSON.stringify({
       schemaVersion: 1,
       kind: "bootstrap",
+      forkVersion: "0.1.0",
+      changelogSha256: "0".repeat(64),
       version: "0.0.0",
       originalSha: baseSha,
       currentSha: baseSha,
@@ -659,6 +661,8 @@ test("release history boundary follows the exact signed replay while retaining i
   const boundary = {
     schemaVersion: 1,
     kind: "bootstrap",
+    forkVersion: "0.1.0",
+    changelogSha256: changelogDigest(readFileSync(join(seed, "CHANGELOG.fork.md"))),
     version: "0.0.0",
     originalSha: fixture.devSha,
     currentSha: fixture.devSha,
@@ -685,7 +689,8 @@ test("release history boundary follows the exact signed replay while retaining i
   assert.equal(config["last-release-sha"], after.currentSha);
   await verifyBoundaryHistory(after, {
     isAncestor: async (sha) => git(clone, "merge-base", "--is-ancestor", sha, "HEAD") === "",
-    readAt: async (sha, file) => git(clone, "show", `${sha}:${file}`),
+    readAt: async (sha, file) =>
+      execFileSync("git", ["show", `${sha}:${file}`], { cwd: clone, encoding: "utf8" }),
   });
   assert.equal(git(clone, "status", "--porcelain"), "");
 });
