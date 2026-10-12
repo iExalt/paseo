@@ -1,15 +1,10 @@
-import { forkAndroidVersionCode } from "@getpaseo/protocol/fork-version";
-import {
-  FORK_ANDROID_CERTIFICATE_SHA256,
-  FORK_ANDROID_PACKAGE_ID,
-  FORK_RELEASE_LINEAGE,
-  FORK_RELEASE_REPOSITORY,
-  type ForkReleaseArtifact,
-  type ForkReleaseManifest,
+import type {
+  ForkReleaseArtifact,
+  ForkReleaseManifest,
 } from "@getpaseo/protocol/release-manifest-v2";
-import { PASEO_RELEASE_MANIFEST_KEY_ID } from "@getpaseo/protocol/release-manifest";
 
 export function forkReleaseManifestFixture(version = "0.1.0"): ForkReleaseManifest {
+  const [major, minor, patch] = version.split(".").map(Number);
   const artifacts: ForkReleaseArtifact[] = [];
   const asset = (name: string) => ({ name, bytes: 123, sha256: "a".repeat(64) });
   for (const arch of ["arm64", "x64"] as const) {
@@ -45,15 +40,15 @@ export function forkReleaseManifestFixture(version = "0.1.0"): ForkReleaseManife
     arch: "arm64",
     kind: "apk",
     abi: "arm64-v8a",
-    packageId: FORK_ANDROID_PACKAGE_ID,
-    versionCode: forkAndroidVersionCode(version),
-    signingCertificateSha256: FORK_ANDROID_CERTIFICATE_SHA256,
+    packageId: "sh.paseo.iexalt",
+    versionCode: 200000 + major * 1000000 + minor * 1000 + patch,
+    signingCertificateSha256: "943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459",
   });
   return {
     schemaVersion: 2,
-    keyId: PASEO_RELEASE_MANIFEST_KEY_ID,
-    repository: FORK_RELEASE_REPOSITORY,
-    lineage: FORK_RELEASE_LINEAGE,
+    keyId: "paseo-release-manifest-1",
+    repository: "iExalt/paseo",
+    lineage: "iExalt/paseo:semver-v1",
     version,
     sourceSha: "b".repeat(40),
     upstreamBase: "c".repeat(40),

@@ -6,6 +6,7 @@ import { PassThrough } from "node:stream";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pino from "pino";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import type { ProviderEvent, ProviderRegistration } from "@getpaseo/plugin/server/provider";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentStreamEvent } from "../agent/agent-sdk-types.js";
@@ -257,6 +258,29 @@ afterEach(async () => {
 });
 
 describe("PluginRuntime", () => {
+  it("checks the plugin API version while initializing with the fork product version", async () => {
+    const directory = await createPlugin("fork-api", "export default function() {}");
+    await writeFile(
+      path.join(directory, "paseo-plugin.json"),
+      JSON.stringify({ id: "fork-api", requirements: { paseo: ">=0.11.0 <0.12.0" } }),
+    );
+    const child = createReloadChild("fork-api", []);
+    const send = vi.spyOn(child, "send");
+    const runtime = createTestRuntime(
+      { compatibilityVersion: PASEO_PLUGIN_API_VERSION, spawnChild: () => child },
+      undefined,
+      "0.1.0",
+    );
+    try {
+      await runtime.startPlugin("fork-api", directory);
+      expect(send).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "initialize", appVersion: "0.1.0" }),
+        expect.any(Function),
+      );
+    } finally {
+      await runtime.stopAll();
+    }
+  });
   it.each([
     { specifier: "@getpaseo/plugin", moduleDirectory: "shared" },
     { specifier: "@getpaseo/plugin", moduleDirectory: "server" },
