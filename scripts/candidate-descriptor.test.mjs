@@ -5,7 +5,32 @@ import { mkdtemp, writeFile, readFile, mkdir, rm, symlink } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { candidateGithub } from "../.github/scripts/candidate-github.mjs";
+import { candidateGithub, candidateQuota } from "../.github/scripts/candidate-github.mjs";
+
+test("quota telemetry emits only allowlisted counters and marks missing or malformed headers unavailable", () => {
+  const messages = [];
+  const headers = new Headers({
+    "x-ratelimit-resource": "core",
+    "x-ratelimit-limit": "1000",
+    "x-ratelimit-used": "125",
+    "x-ratelimit-remaining": "875",
+    "x-ratelimit-reset": "1791828000",
+    authorization: "secret-fixture",
+  });
+  candidateQuota(headers, (message) => messages.push(message));
+  assert.equal(
+    messages.pop(),
+    "[candidate-api] adapter resource=core limit=1000 used=125 remaining=875 reset=1791828000",
+  );
+  for (const invalid of [
+    new Headers(),
+    new Headers({ "x-ratelimit-resource": "secret-fixture" }),
+    new Headers({ ...Object.fromEntries(headers), "x-ratelimit-used": "secret-fixture" }),
+  ]) {
+    candidateQuota(invalid, (message) => messages.push(message));
+    assert.equal(messages.pop(), "[candidate-api] adapter quota unavailable");
+  }
+});
 import { exportProducts, productFiles } from "../.github/scripts/candidate-product-export.mjs";
 import {
   productProducer,

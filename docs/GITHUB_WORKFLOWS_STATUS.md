@@ -92,7 +92,7 @@ routine run `38267651739` passed in 4m34s (21m30s summed); same-SHA dev run
 `38270034555` in 4m42s (22m57s summed), within the unchanged five-minute budget.
 This does not close the complete candidate matrix.
 
-D1c coordinator source is reviewer-accepted through `c0013d6f6` and awaits
+D1c coordinator source is reviewer-accepted through `f264f064d` and awaits
 publication/routine integration. The root connects seven routine lanes, three deep
 journeys, all 14 native cells, eight trusted transfers and a final aggregate.
 Workers authenticate descriptor/source/attempt and validate their current API job
@@ -127,6 +127,27 @@ in the latest PR was 149.64s versus 99.52s at baseline, with 633 versus 631 file
 imports accounted for 53% versus 51%. This localizes the critical-path growth but
 does not isolate hosted-runner variation from source cost. The all-CI performance
 review and two-minute stretch remain open; budgets and verification are unchanged.
+
+PR #73 run `38277353937` failed the unchanged 90-second Linux file-observer
+stress test; dev integration stopped. A deterministic injected-watch fixture
+reproduced a coverage gap: a file created between enumeration and watch attachment
+was permanently missed. Reviewed repair `f264f064d` attaches coverage before
+enumeration and adds bounded failure-phase diagnostics without reducing the burst
+or raising its deadline. The five local observer suites pass in 15.33s, including
+the Linux backend fixture; hosted Linux verification and attribution of the
+original timeout remain pending.
+
+Reviewed API repair `a0d2a598c` batches fresh lifecycle metadata in GraphQL and
+reuses only immutable authority within a transfer. Full REST asset pagination and
+fresh admission checks remain mandatory. The first-page callgraph estimate is
+650–750 REST requests plus 110–130 GraphQL queries; GraphQL point cost must be
+measured separately. Additional pages, redirects, action internals and concurrent
+CI add overhead. The native-disabled canary must reconcile sanitized live quota
+evidence before full fanout; the estimate is not a measured full-attempt result.
+Response-header counters cover the candidate adapter only, not authority/job
+queries made through `gh` or action internals. Shared-token counter changes can
+bound intervening usage but do not attribute it to individual callers. Missing
+headers are reported as unavailable, never zero; only allowlisted counters are logged.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
