@@ -140,7 +140,7 @@ original timeout remain pending.
 Reviewed API repair `a0d2a598c` batches fresh lifecycle metadata in GraphQL and
 reuses only immutable authority within a transfer. Full REST asset pagination and
 fresh admission checks remain mandatory. The first-page callgraph estimate is
-650–750 REST requests plus 110–130 GraphQL queries; GraphQL point cost must be
+760–880 REST requests plus 110–130 GraphQL queries; GraphQL point cost must be
 measured separately. Additional pages, redirects, action internals and concurrent
 CI add overhead. The native-disabled canary must reconcile sanitized live quota
 evidence before full fanout; the estimate is not a measured full-attempt result.
@@ -148,6 +148,12 @@ Response-header counters cover the candidate adapter only, not authority/job
 queries made through `gh` or action internals. Shared-token counter changes can
 bound intervening usage but do not attribute it to individual callers. Missing
 headers are reported as unavailable, never zero; only allowlisted counters are logged.
+An actual read-only GraphQL schema probe rejected `targetCommitish`, which Release
+does not expose. Supported lifecycle fields cost one point in the authenticated
+probe; candidate target identity uses a fresh REST metadata read with cross-read
+consistency checks. The corrected estimate includes that read on every guard.
+Full enablement requires enough observed quota for conservatively estimated
+remaining work and concurrent CI; the estimate alone does not authorize fanout.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
