@@ -82,11 +82,23 @@ under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
   hosted runtime trials. The ordinary-push integration audit found
   only routine CI triggered by the dev push. Baseline repairs include production
   import-boundary fixes as well as test fixtures.
-- Bot PR credentials are not proven. Existing repository secret names contain
-  signing/configuration secrets but no dedicated release-please credential;
-  never treat secret names as proof of usable material. The selected App-token
-  event route, signed V2 interface and trusted draft-asset transport are recorded
-  in plan section 4; credential/event and draft API proofs remain G4/G5.
+- The dedicated `paseo-release[bot]` App (ID `5280233`, bot ID `341220930`,
+  selected installation `170437913`) passed hosted identity, token minting and
+  single-repository scope checks in `38194783635`, creating 0.1.0 PR #65.
+  Production proposals remain disabled. Required current-head CI and the full
+  proposal lifecycle remain G4; draft API proofs remain G5.
+- The live proposal exposed a formatter mismatch: release-please owns
+  `CHANGELOG.fork.md` formatting, so only that exact root file is excluded from
+  oxfmt. Engine output, workspace/version consistency, bounded changelog history,
+  bootstrap digest and rebase preservation checks remain required. PR #65's
+  initial routine run `38194832028` correctly failed before this repair.
+- The owner-created negative PR #64 matched the expected release branch names
+  and pending label, but deep run `38194592551` rejected author ID `7889894`
+  against pinned bot ID `341220930`; its deep matrix was skipped before expansion
+  and no lane executed. Routine `38194592591` passed; PR #64 was closed unmerged
+  and its exact temporary head deleted. Real bot open/label events raced on
+  PR #65 (`38194831999` / `38194832043`); an explicit relabel produced a newer
+  run, then the formatter failure stopped the trial before any merge.
 
 ## Performance and storage contract
 
