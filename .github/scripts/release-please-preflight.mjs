@@ -16,6 +16,7 @@ export async function releasePreflight({
   branch,
   expectedSha,
   token,
+  replacement,
   request = githubRequest,
 }) {
   assert.ok(branch === "dev" || branch === REHEARSAL_BRANCH);
@@ -64,11 +65,21 @@ export async function releasePreflight({
   assert.deepEqual(Object.keys(manifest), ["."]);
   if (manifest["."] !== state.boundary.version) {
     assert.equal(manifest["."], fork.config.version, "Unrecognized pending version");
+    if (replacement) {
+      assert.equal(branch, "dev");
+      assert.equal(replacement.version, manifest["."]);
+      assert.equal(replacement.repairBase, expectedSha);
+      return {
+        ready: true,
+        reason: "Explicit pending replacement; signed predecessor authorization still required",
+      };
+    }
     return {
       ready: false,
       reason: "A merged version proposal awaits verified publication and boundary handoff",
     };
   }
+  assert.equal(replacement, undefined, "Replacement requires an unpublished merged version");
   if (state.boundary.kind === "release" && branch === "dev") {
     const tag = forkReleaseTag(state.boundary.version);
     const release = await request(`/repos/iExalt/paseo/releases/tags/${tag}`, token);
@@ -96,6 +107,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     branch: process.env.TARGET_BRANCH,
     expectedSha: process.env.TARGET_SHA,
     token: process.env.GITHUB_TOKEN,
+    replacement: process.env.REPLACEMENT_RECORD
+      ? JSON.parse(process.env.REPLACEMENT_RECORD)
+      : undefined,
   });
   await appendFile(process.env.GITHUB_OUTPUT, `ready=${result.ready}\n`);
   console.log(result.reason);

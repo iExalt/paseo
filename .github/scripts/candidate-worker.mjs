@@ -5,11 +5,11 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { candidateGithub } from "./candidate-github.mjs";
 import { loadDescriptor, requireAttempt, requireCurrentRun } from "./candidate-draft.mjs";
-import { currentCandidate } from "./candidate-authority.mjs";
+import { currentCandidate, currentGrantedCandidate } from "./candidate-authority.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
-import { downloadGrant, validateGrant } from "./candidate-grant.mjs";
+import { downloadGrant } from "./candidate-grant.mjs";
 
 export async function workerGate(env, api, request, read, grant = null) {
   const releaseId = Number(env.CANDIDATE_RELEASE_ID);
@@ -27,7 +27,6 @@ export async function workerGate(env, api, request, read, grant = null) {
     "Caller supplied another candidate source",
   );
   assert.equal(descriptorDigest(descriptor), env.CANDIDATE_DESCRIPTOR_DIGEST);
-  await currentCandidate(descriptor, env.GITHUB_SHA, releaseBotIdentity(env), request, read);
   const runId = Number(env.GITHUB_RUN_ID),
     attempt = Number(env.GITHUB_RUN_ATTEMPT);
   const { headBranch: rootBranch, headSha: rootHeadSha } = await requireCurrentRun(
@@ -45,15 +44,25 @@ export async function workerGate(env, api, request, read, grant = null) {
     rootHeadSha,
   };
   if (grant) {
-    validateGrant(
-      grant,
-      context,
-      env.CANDIDATE_GRANT_GROUP,
-      env.CANDIDATE_EXPECTED_JOB,
-      await attemptJobs(context, request),
-      api.publicPin,
+    await currentGrantedCandidate(
+      descriptor,
+      env.GITHUB_SHA,
+      releaseBotIdentity(env),
+      request,
+      read,
+      {
+        grant,
+        context,
+        group: env.CANDIDATE_GRANT_GROUP,
+        worker: env.CANDIDATE_EXPECTED_JOB,
+        jobs: await attemptJobs(context, request),
+        pin: api.publicPin,
+      },
     );
-  } else await requireAttempt(api, descriptor, releaseId, runId, attempt);
+  } else {
+    await currentCandidate(descriptor, env.GITHUB_SHA, releaseBotIdentity(env), request, read, api);
+    await requireAttempt(api, descriptor, releaseId, runId, attempt);
+  }
   return context;
 }
 
