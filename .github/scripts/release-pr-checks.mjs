@@ -47,6 +47,41 @@ export async function verifyCurrentPrChecks(number, identity, request = readGith
   assert.ok(Number.isSafeInteger(number) && number > 0);
   const pr = await request(`${repository}/pulls/${number}`);
   assert.equal(pr.number, number);
+  return verifyPrChecks(pr, identity, request, () => request(`${repository}/pulls/${number}`));
+}
+
+// The actual rebase commit preserves the verified premerge tree and parent even
+// after dev advances. Its old PR base API field is not a source authority.
+export async function verifyMergedPrChecks(number, sourceSha, identity, request = readGithub) {
+  assert.ok(Number.isSafeInteger(number) && number > 0);
+  assert.match(sourceSha, /^[a-f0-9]{40}$/);
+  const merge = await request(`${repository}/git/commits/${sourceSha}`);
+  assert.equal(merge.sha, sourceSha);
+  assert.equal(merge.parents.length, 1, "Candidate requires a single rebase parent");
+  const parent = merge.parents[0].sha;
+  assert.match(parent, /^[a-f0-9]{40}$/);
+  const readMerged = async () => {
+    const pr = await request(`${repository}/pulls/${number}`);
+    assert.equal(pr.number, number);
+    assert.equal(pr.state, "closed");
+    assert.equal(pr.merged, true);
+    assert.equal(pr.merge_commit_sha, sourceSha);
+    assert.equal(pr.base.ref, "dev");
+    return { ...pr, state: "open", base: { ...pr.base, sha: parent } };
+  };
+  const proof = await verifyPrChecks(await readMerged(), identity, request, readMerged);
+  assert.equal(merge.tree.sha, proof.treeSha, "Merged candidate differs from tested PR tree");
+  const dev = await request(`${repository}/git/ref/heads/dev`);
+  assert.match(dev.object.sha, /^[a-f0-9]{40}$/);
+  const ancestry = await request(`${repository}/compare/${sourceSha}...${dev.object.sha}`);
+  assert.equal(ancestry.base_commit.sha, sourceSha);
+  assert.ok(["ahead", "identical"].includes(ancestry.status), "Candidate is no longer in dev");
+  assert.equal((await request(`${repository}/git/ref/heads/dev`)).object.sha, dev.object.sha);
+  return { ...proof, sourceSha };
+}
+
+async function verifyPrChecks(pr, identity, request, readCurrent) {
+  const number = pr.number;
   assertReleasePr(pr, identity, pr.head.sha);
   assert.equal(pr.commits, 1, "Rehearsal requires one bot proposal commit");
   const commits = await request(`${repository}/pulls/${number}/commits?per_page=2`);
@@ -121,7 +156,7 @@ export async function verifyCurrentPrChecks(number, identity, request = readGith
     assert.equal(latest.id, proof.runId, "A newer run superseded the proof");
     assert.equal(latest.run_attempt, proof.attempt, "A rerun superseded the proof");
   }
-  const current = await request(`${repository}/pulls/${number}`);
+  const current = await readCurrent();
   assertReleasePr(current, identity, pr.head.sha);
   assert.equal(current.commits, 1);
   assert.equal(current.base.sha, pr.base.sha, "PR base moved during verification");

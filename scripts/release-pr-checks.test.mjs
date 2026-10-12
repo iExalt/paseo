@@ -8,6 +8,7 @@ import {
 import {
   latestPrRun,
   verifyCurrentPrChecks,
+  verifyMergedPrChecks,
   verifyRehearsalMerge,
 } from "../.github/scripts/release-pr-checks.mjs";
 
@@ -151,6 +152,68 @@ function fixture() {
   };
   return state;
 }
+
+test("merged authority binds the old checked tree and parent while dev advances", async () => {
+  const source = "e".repeat(40),
+    dev = "f".repeat(40);
+  const setup = () => {
+    const f = fixture();
+    Object.assign(f.current, { state: "closed", merged: true, merge_commit_sha: source });
+    f.current.base = { ...f.current.base, ref: "dev", sha: dev };
+    f.current.head.ref = "release-please--branches--dev--components--paseo";
+    f.commit = { sha: source, parents: [{ sha: base }], tree: { sha: "d".repeat(40) } };
+    f.ancestry = { status: "ahead", base_commit: { sha: source } };
+    const request = f.request;
+    f.request = async (url) => {
+      if (url.endsWith(`/git/commits/${source}`)) return f.commit;
+      if (url.endsWith("/git/ref/heads/dev")) return { object: { sha: dev } };
+      if (url.includes("/compare/")) return f.ancestry;
+      return request(url);
+    };
+    return f;
+  };
+  const proof = await verifyMergedPrChecks(7, source, identity, setup().request);
+  assert.equal(proof.sourceSha, source);
+  assert.equal(proof.baseSha, base);
+  for (const mutate of [
+    (f) => {
+      f.current.user.id = 999;
+    },
+    (f) => {
+      f.current.base.ref = "ci/release-please-rehearsal";
+    },
+    (f) => {
+      f.current.merged = false;
+    },
+    (f) => {
+      f.current.merge_commit_sha = head;
+    },
+    (f) => {
+      f.current.commits = 2;
+    },
+    (f) => {
+      f.commit.parents.push({ sha: head });
+    },
+    (f) => {
+      f.commit.tree.sha = base;
+    },
+    (f) => {
+      f.ancestry.status = "diverged";
+    },
+    (f) => {
+      f.ancestry.base_commit.sha = head;
+    },
+    (f) => {
+      f.onFinal = (currentPr) => {
+        currentPr.merge_commit_sha = head;
+      };
+    },
+  ]) {
+    const f = setup();
+    mutate(f);
+    await assert.rejects(verifyMergedPrChecks(7, source, identity, f.request));
+  }
+});
 
 test("current-head verifier requires both latest gates, exact setup receipts and unchanged PR", async () => {
   const good = fixture();
