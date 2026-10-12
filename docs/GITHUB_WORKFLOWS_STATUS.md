@@ -30,15 +30,18 @@
 
 ## Outcome gates
 
-| Goal                                      | Status / evidence   | Depends on                    | Exit and owner                                               |
-| ----------------------------------------- | ------------------- | ----------------------------- | ------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts | complete / verified | none                          | G0, author with user decisions                               |
-| A2: measured routine verification         | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user |
-| A3: exact rebased-tree verification       | complete / verified | A2                            | G1 including atomic publication failure fixtures, author     |
-| B1: deep journeys and safe PR routing     | complete / verified | A1–A3; B2 for Android closure | G2, author                                                   |
-| B2: Mac/Android candidate preservation    | complete / verified | A1–A3                         | Mac/Android portion of G3, author                            |
-| B3: Linux package matrix                  | complete / verified | B2 for closure                | Linux portion of G3, author                                  |
-| B4: Windows package matrix                | complete / verified | B2, B3                        | Remaining G3 and phase integration, author                   |
+| Goal                                           | Status / evidence    | Depends on                               | Exit and owner                                                              |
+| ---------------------------------------------- | -------------------- | ---------------------------------------- | --------------------------------------------------------------------------- |
+| A1: feasible candidate and cost contracts      | complete / verified  | none                                     | G0, author with user decisions                                              |
+| A2: measured routine verification              | complete / verified  | A1                                       | step 2 live events and accepted latency ceiling, author/user                |
+| A3: exact rebased-tree verification            | complete / verified  | A2                                       | G1 including atomic publication failure fixtures, author                    |
+| B1: deep journeys and safe PR routing          | complete / verified  | A1–A3; B2 for Android closure            | G2, author                                                                  |
+| B2: Mac/Android candidate preservation         | complete / verified  | A1–A3                                    | Mac/Android portion of G3, author                                           |
+| B3: Linux package matrix                       | complete / verified  | B2 for closure                           | Linux portion of G3, author                                                 |
+| B4: Windows package matrix                     | complete / verified  | B2, B3                                   | Remaining G3 and phase integration, author                                  |
+| C1: independent version and updater transition | complete / verified  | B1–B4                                    | Step 7 source/fixture integration; installed migration belongs to D, author |
+| C2: scoped version proposal automation         | active / implemented | C1; owner-provisioned App for live proof | Step 8 configuration and actual bot event delivery, author                  |
+| C3: consecutive bot proposal rehearsal         | planned / designed   | C2                                       | Remaining G4 current-head, forged-label and merge-identity proofs, author   |
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
@@ -52,8 +55,12 @@ under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
   with manual migration**. The independent reservation/sequence design and
   legacy compatibility bridge are superseded. No installed client was changed.
 - Shared fork version rules now drive Android configuration and both normal
-  updater paths. Android's mandatory integer remains internal; C1 integration
-  and publication are pending.
+  updater paths. Android's mandatory integer remains internal; C1 is reviewed,
+  integrated and published at `e674ae2f5` through PR #60. Corrected PR run
+  `38190475746` passed in 4m26s and same-SHA dev run `38191279639` in 4m16s.
+  Summed runner time was 20m57s / 22m24s versus the unchanged baseline
+  20m18s / 20m37s; these uncontrolled hosted samples do not establish a source
+  regression. Continue cumulative comparisons in C2. Native migration remains D.
 - Native Windows ARM64 packaging uses a custom binding built from pinned
   `sherpa-onnx@1.13.8` sources and upstream ARM64 core libraries because the locked
   npm distribution lacks that binding. The unchanged wrapper's local-addon route
@@ -284,12 +291,52 @@ timing and the two-minute routine stretch remain unclaimed.
 
 ### Phase C checklist
 
-- [ ] C1: 0.1.0 reset, semver-only upgrades, clean-break migration and recovery fixtures.
+- [x] C1: 0.1.0 reset, semver-only upgrades, clean-break migration and recovery fixtures.
   - [x] C1a: portable V2 inventory and shared version rules (reviewer-accepted `f8b156ee7`; local).
   - [x] C1b: Android discovery, receipts and native fork encoding (reviewer-accepted `a299c61b6`; local).
   - [x] C1c: Nix transactional recovery and desktop updater contract (reviewer-accepted `46a931497`; local).
-  - [ ] C1d: workspace/native version reset and rebase-preservation integration.
+  - [x] C1d: workspace/native version reset and rebase-preservation integration (accepted/published `e674ae2f5`; PR/dev green).
 - [ ] C2: release-please bootstrap and scoped App authentication.
+
+#### C2 release App setup and implementation boundary
+
+Implementation is in progress; no App credential or bot event has been proven.
+The proposed workflow uses release-please 17.6.0 through pinned action v5.0.0,
+with GitHub release creation disabled. The independent manifest starts at 0.0.0
+and explicitly proposes 0.1.0. Explicit JSON selectors synchronize all workspace
+versions, internal dependency ranges, lock entries and the fork version authority.
+The actual pinned engine fixture produces both 0.1.0 and 0.1.1 without changing
+external resolutions or replaying upstream release history. Its small separate
+dependency install is uncached; it does not consume the repository cache budget.
+
+An explicit release boundary records the immutable original commit and its
+current signed-replay counterpart. Rebase maps exact commit identities and signs
+the updated pointer with upstream provenance. Missing/nonancestor boundaries
+stop proposal generation. A merged proposal pauses further proposals until
+publication supplies the next boundary. Only the fixed rehearsal branch
+`ci/release-please-rehearsal` permits a simulated publication boundary; this never
+creates a public release or tag.
+
+Before the live bot rehearsal, the owner must configure a dedicated GitHub App:
+
+- Install only on the selected `iExalt/paseo` repository, with repository
+  **Contents: read/write**, **Issues: read/write**, **Pull requests: read/write**,
+  and mandatory **Metadata: read**. No organization or other repository permission
+  is needed; webhooks are not required.
+- Set repository variables `PASEO_RELEASE_APP_ID`,
+  `PASEO_RELEASE_APP_CLIENT_ID`, `PASEO_RELEASE_BOT_ID` (numeric user ID), and
+  `PASEO_RELEASE_BOT_LOGIN` (the App slug followed by `[bot]`).
+- Store the generated PEM private key directly in repository Actions secret
+  `PASEO_RELEASE_APP_PRIVATE_KEY`; never paste it into chat or committed files.
+
+Trusted base code verifies App identity, installation owner and permissions,
+bot numeric identity and minted token scope before the pinned action runs.
+The token is restricted to this single repository and revoked by the token
+action's normal cleanup. A separate read-only deep-check gate revalidates bot PR
+identity and captures its current head SHA. A forged label does not authorize
+deep execution or signing. Real event delivery, updated-head checks and the two
+unpublished proposals remain C2/C3 live acceptance work.
+
 - [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
 
 C1a introduces an exact 14-cell signed inventory, preserves explicit V1 recovery
@@ -337,7 +384,14 @@ version/history through replay and adds a separately signed provenance commit
 only when the captured upstream SHA changes; validation binds the final HEAD.
 An upstream version conflict or missing authority stops before publication.
 The upstream version/tag writer is disabled for this fork. Source review and
-hosted combined verification remain pending.
+hosted combined verification passed at `e674ae2f5`. The first PR run
+`38189751183` exposed a source-only fixture import and plugin compatibility
+regression; both were fixed before the accepted rerun. Plugin API compatibility
+now explicitly remains at upstream API 0.11.2 while the product version is 0.1.0;
+neither release automation nor rebase advances that API promise implicitly.
+The old feasibility probe triggered unexpectedly once (`38189730636`), was
+cancelled with container absence confirmed, and all completed feasibility probes
+are now manual-only. Subsequent ordinary pushes launched routine CI only.
 
 ### Phase B evidence history
 

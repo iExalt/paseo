@@ -149,10 +149,20 @@ test("deep workflow admits only opt-in owned PRs or exact trusted candidates", (
     "github",
     "inputs",
     "contains",
-    `return (${workflow.jobs.browser.if.replace("labels.*.name", "labels.map(label => label.name)")});`,
+    "needs",
+    "cancelled",
+    `return (${workflow.jobs.browser.if.replace("labels.*.name", "labels.map(label => label.name)").replaceAll("needs.authorize-release", "needs.authorizeRelease")});`,
   );
   const check = (github, inputs = {}) =>
-    Boolean(evaluate(github, inputs, (array, value) => array.includes(value)));
+    Boolean(
+      evaluate(
+        github,
+        inputs,
+        (array, value) => array.includes(value),
+        { authorizeRelease: { outputs: {} } },
+        () => false,
+      ),
+    );
   assert.equal(check(pr), true);
   for (const mutate of [
     (x) => {

@@ -18,11 +18,42 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  browser:
-    name: deep (${{ matrix.lane }})
+  authorize-release:
     if: >-
       github.repository == 'iExalt/paseo' && !github.event.repository.private &&
-      ((github.event_name == 'pull_request' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == 'iExalt/paseo' &&
+      startsWith(github.event.pull_request.head.ref, 'release-please--branches--')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      allowed: ${{ steps.authorize.outputs.allowed }}
+      sha: ${{ steps.authorize.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Revalidate bot PR identity and capture current head
+        id: authorize
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
+          PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
+          PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+        run: node .github/scripts/release-pr.mjs
+  browser:
+    name: deep (${{ matrix.lane }})
+    needs: authorize-release
+    if: >-
+      !cancelled() &&
+      github.repository == 'iExalt/paseo' && !github.event.repository.private &&
+      (needs.authorize-release.outputs.allowed == 'true' ||
+       (github.event_name == 'pull_request' &&
         github.event.pull_request.head.repo.full_name == 'iExalt/paseo' &&
         github.event.pull_request.head.repo.owner.login == 'iExalt' &&
         github.event.pull_request.head.ref == 'ci/github-workflows' &&
@@ -41,7 +72,7 @@ jobs:
       LEFTHOOK: "0"
       npm_config_audit: "false"
       npm_config_fund: "false"
-      SOURCE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.source_sha }}
+      SOURCE_SHA: ${{ needs.authorize-release.outputs.sha || (github.event_name == 'pull_request' && github.event.pull_request.head.sha || inputs.source_sha) }}
       DEEP_LANE: ${{ matrix.lane }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

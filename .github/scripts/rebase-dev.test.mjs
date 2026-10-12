@@ -19,6 +19,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
+import { verifyBoundaryHistory } from "../../scripts/release-boundary.mjs";
 import {
   exportResolutions,
   importResolutions,
@@ -180,6 +181,20 @@ async function makeFixture(
   }
   writeFileSync(join(seed, "shared.txt"), content({ target: "dev target" }));
   mkdirSync(join(seed, ".github"), { recursive: true });
+  writeFileSync(
+    join(seed, ".github/release-boundary.json"),
+    JSON.stringify({
+      schemaVersion: 1,
+      kind: "bootstrap",
+      version: "0.0.0",
+      originalSha: baseSha,
+      currentSha: baseSha,
+    }) + "\n",
+  );
+  writeFileSync(
+    join(seed, "release-please-config.json"),
+    JSON.stringify({ "bootstrap-sha": baseSha, "last-release-sha": baseSha }) + "\n",
+  );
   writeFileSync(
     join(seed, ".github/fork-release.json"),
     JSON.stringify({
@@ -635,6 +650,44 @@ test("upstream version changes and missing fork authority stop before publicatio
     /fork-release.json/,
   );
   assert.equal(git(missing, "ls-remote", "--refs", "origin"), missingRefs);
+});
+
+test("release history boundary follows the exact signed replay while retaining its original identity", async () => {
+  const fixture = await makeFixture("release-boundary");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "dev");
+  const boundary = {
+    schemaVersion: 1,
+    kind: "bootstrap",
+    version: "0.0.0",
+    originalSha: fixture.devSha,
+    currentSha: fixture.devSha,
+  };
+  writeFileSync(join(seed, ".github/release-boundary.json"), JSON.stringify(boundary) + "\n");
+  writeFileSync(
+    join(seed, "release-please-config.json"),
+    JSON.stringify({ "bootstrap-sha": fixture.devSha, "last-release-sha": fixture.devSha }) + "\n",
+  );
+  commit(seed, "chore: record release boundary", { GIT_COMMITTER_EMAIL: "clliaw@nvidia.com" });
+  git(seed, "push", "origin", "HEAD:refs/heads/dev");
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const after = JSON.parse(readFileSync(join(clone, ".github/release-boundary.json")));
+  assert.equal(after.originalSha, fixture.devSha);
+  const signedReplay = git(clone, "rev-list", "--reverse", `${fixture.upstreamSha}..HEAD`).split(
+    "\n",
+  );
+  assert.equal(after.currentSha, signedReplay[0]);
+  assert.notEqual(after.currentSha, after.originalSha);
+  const config = JSON.parse(readFileSync(join(clone, "release-please-config.json")));
+  assert.equal(config["bootstrap-sha"], after.currentSha);
+  assert.equal(config["last-release-sha"], after.currentSha);
+  await verifyBoundaryHistory(after, {
+    isAncestor: async (sha) => git(clone, "merge-base", "--is-ancestor", sha, "HEAD") === "",
+    readAt: async (sha, file) => git(clone, "show", `${sha}:${file}`),
+  });
+  assert.equal(git(clone, "status", "--porcelain"), "");
 });
 
 test("unknown conflict stops without publishing any refs", async () => {
