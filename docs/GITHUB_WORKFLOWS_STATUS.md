@@ -321,8 +321,50 @@ workflow selector and attempted live authority. The reviewed repair unsets that
 selector only in the routine-test subprocess, after authenticated source checkout;
 execution gates, native transport and final admission remain unchanged. A
 disposable checkout reproduced the failure and passed with the isolated context;
-the checkout was removed. The 23 workflow checks pass in 3.25s. Fresh PR/dev gates
-and another preserved-authority replacement remain before canary closure.
+the checkout was removed. The 23 workflow checks pass in 3.25s. Repair `657cb216b`
+is integrated through PR #79; PR `38314402607` passed in 4m30s and same-SHA dev
+`38314890679` in 4m27s. Draft `411027658` was retired with its signed assets intact.
+Replacement draft `411037339` carries descriptor
+`bcabaf5d4be829407990861d763d55fa6ffe9fad5d4411e758aade6f91af44ca`, policy
+`ecab8a7cb03a5a377919396e7c6f45729e1c8c050a22cab5ee30a3fc48a038d7`, and assets
+`635139983`/`635140065`. Its first canary `38315432339` encountered npm
+`ECONNRESET` during quality dependency installation; nine other lanes passed.
+
+Unchanged same-draft retry `38316290049` passed all ten verification lanes.
+The aggregate rejected the native-disabled run explicitly, with final signing
+and native jobs skipped. Independent reconciliation verified the complete draft
+identity, signature and admission tuple; downloaded and hashed grant artifact
+`11776830882` (1,240 bytes, SHA-256
+`2873d76d817d6b17fb2b4becc5b6b12f97d7a1fb97e6341c210e749052127120`); and checked
+its controller/source context, worker allowlist, authentication job and upload
+step. Worker logs show read-only Contents permission and those exact grant inputs.
+Authentication took 25s plus 2s scheduling. All four retired drafts retain their
+verified signed bytes and stopped body digests; public releases and Git tags are
+unchanged. Observed adapter quota had at least 4,845 REST requests and 4,982
+GraphQL points remaining, exceeding the 1,600 REST planning reserve plus 1,000
+shared-usage headroom and 200 GraphQL points. These are partial counters, not
+full-attempt usage. Six caches occupy 5,306,868,709 bytes; coordinator work remains
+restore-only.
+
+Reviewer reconciliation accepted the canary. Full unpublished same-draft trial
+`38317031793` passed all ten verification lanes, but two native authentication
+jobs saw the parent run reported as `queued` while child jobs were executing.
+Their strict `in_progress` assertion failed. The trial was canceled, all jobs
+are terminal, and native enablement was removed. Nix signing-key cleanup passed;
+Windows stopped before building, and Linux jobs stopped during builds before
+runtime verification. No complete package/runtime result is claimed.
+
+The repair retains `in_progress` as the required execution state, revalidates
+all identity fields on every response, and retries only `queued` with a null
+conclusion. It allows at most six reads with 25s cumulative backoff and a 30s
+acceptance deadline; an individual in-flight API request remains subject
+to its existing 30s timeout. Terminal or changed authority fails immediately.
+The existing fixture covers queued-to-running, cancellation, changed identity,
+attempt replacement and bounded exhaustion without real sleeps. Fresh source
+checks and reviewed same-source authority replacement remain before another
+canary. G5 stays open; all 14 native cells and eight transfer groups must pass
+in one admitted attempt. Existing deadlines, the confirmed $0 stop and
+failure/identity stop conditions remain in force.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.
