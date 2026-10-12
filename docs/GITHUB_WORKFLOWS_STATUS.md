@@ -52,16 +52,16 @@
 Phase D1 is active / implemented in part; D2 is planned / designed and depends on
 D1's authenticated-source, transport and complete native aggregate proofs.
 
-D1b source authority and draft transport are implemented locally, pending review
-and the hosted entry-point rehearsal. A merged proposal must match its authenticated
+D1b source authority and draft transport are reviewer-accepted; the hosted
+production entry-point rehearsal remains open. A merged proposal must match its authenticated
 bot identity, verified premerge tree and sole rebase parent, and remain in dev's
 ancestry. Candidate descriptors bind the 14 cells, upstream base, source and policy
 digests, and premerge run attempts under a separate Ed25519 signature domain.
 Version-plus-source draft identities and immutable attempt assets reject replacement
 bytes; interrupted uploads reconcile by downloading and hashing the existing asset.
-These cheap fixtures do not establish a live candidate: workflow wiring, streaming
-package transfers, exact-source reruns and the complete D2 native matrix remain open.
-The trusted closed-PR/owner-retry entrypoint is now implemented locally with
+These cheap fixtures do not establish a live candidate: complete workflow wiring,
+real package transfers, exact-source reruns and the D2 native matrix remain open.
+The trusted closed-PR/owner-retry entrypoint is implemented with
 read-only planning and independently revalidated issuance; only first issuance
 receives the signing key. Retry requires historical policy bytes to match both
 the signed digest and the currently trusted policy, so a policy change requires
@@ -75,10 +75,10 @@ The reviewer-accepted transport-only REST rehearsal at `4e4122904` passed in
 immutable asset IDs and verified downloaded bytes. Its ephemeral key and fixture
 version 0.0.0 were never production candidate authority. The exact owned draft
 was removed and release/tag inventories matched the initial snapshot afterward.
-Package streaming, admitted attempts and genuine production issuance remain open.
+Real package streaming, admitted-attempt execution and genuine production issuance remain open.
 
-Streaming and attempt admission are now implemented locally, pending review and
-integration: package transfers verify a stable file handle and actual byte/hash
+Streaming and attempt admission source is reviewed and integrated:
+package transfers verify a stable file handle and actual byte/hash
 counts; the trusted coordinator admits only the current nonterminal root Actions
 run and monotonic attempt. Workers check the active tuple before and after writes.
 A supersession racing an upload may leave an immutable unadmitted asset; aggregate
@@ -96,10 +96,17 @@ D1c's worker gate and pure aggregate are reviewer-accepted at `123cbd4e9`:
 workers resolve source inputs against the signed descriptor and current admitted
 tuple; the aggregate requires all seven routine lanes, three deep journeys and
 exactly 14 current-attempt cells with successful producer-job API evidence.
-The read-only routine/deep fanout is implemented locally for review, with an
+The read-only routine/deep fanout is reviewer-accepted at `d45683fd3`, with an
 authenticated worker gate before candidate checkout and exact source/tree checks.
 Artifact provenance/download integration, closure signing and the hosted same-SHA
-native proof remain unimplemented or unverified.
+native proof remain unimplemented or unverified. Linux/Windows product wiring
+and fixed-name package exports are reviewer-accepted at `70f6fed5f`: coordinator
+workers bind their source/controller/run/attempt to gate-created context, retain
+PR-read permission, and export only after successful runtime and cleanup steps.
+Coordinator calls restore exact predecessor caches without saving; manual Linux
+and Windows cache writers share one repository-wide lock. Cache misses still
+build and verify. These workflows are not yet connected to the root native fanout;
+trusted transfer admission and actual hosted reusable-job identities remain open.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
