@@ -122,6 +122,7 @@ interface RemoteProviderConnection {
 }
 
 interface PluginRuntimeDependencies {
+  compatibilityVersion?: string;
   settingsDirectory?: string;
   onSettingsChanged?: (pluginId: string, settingsId: string) => void;
   spawnChild?: () => PluginChild;
@@ -351,7 +352,11 @@ export class PluginRuntime {
     if (manifest.id !== input.id) {
       throw new Error(`Built-in plugin ${input.id} has manifest ID ${manifest.id}`);
     }
-    assertPluginCompatibility({ ...manifest, version: this.daemonVersion, runtime: "daemon" });
+    assertPluginCompatibility({
+      ...manifest,
+      version: this.dependencies.compatibilityVersion ?? this.daemonVersion,
+      runtime: "daemon",
+    });
     const bundles = await compilePlugin(await resolveEntryPaths(directory));
     if (!bundles.serverBundle) throw new Error(`Built-in plugin ${input.id} needs a server entry`);
     const loaded = await this.launchPlugin({
@@ -369,7 +374,11 @@ export class PluginRuntime {
   async validatePlugin(configuredPath: string): Promise<void> {
     const directory = path.resolve(configuredPath);
     const manifest = await readPluginManifest(directory);
-    assertPluginCompatibility({ ...manifest, version: this.daemonVersion, runtime: "daemon" });
+    assertPluginCompatibility({
+      ...manifest,
+      version: this.dependencies.compatibilityVersion ?? this.daemonVersion,
+      runtime: "daemon",
+    });
     const entryPaths = await resolveEntryPaths(directory);
     await compilePlugin(entryPaths);
   }
@@ -634,7 +643,11 @@ export class PluginRuntime {
   ): Promise<LoadedPlugin> {
     const directory = path.resolve(configuredPath);
     const manifest = await readPluginManifest(directory);
-    assertPluginCompatibility({ ...manifest, version: this.daemonVersion, runtime: "daemon" });
+    assertPluginCompatibility({
+      ...manifest,
+      version: this.dependencies.compatibilityVersion ?? this.daemonVersion,
+      runtime: "daemon",
+    });
     const entryPaths = await resolveEntryPaths(directory);
     const bundles = await compilePlugin(entryPaths);
     const serverBundle = bundles.serverBundle;

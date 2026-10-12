@@ -61,6 +61,7 @@ interface PluginRuntimePort {
 }
 
 interface PluginServiceDependencies {
+  compatibilityVersion?: string;
   usageAgents?: AgentUsageLookup;
   settingsDirectory?: string;
   runtime?: PluginRuntimePort;
@@ -111,6 +112,7 @@ export class PluginService {
     this.runtime =
       dependencies.runtime ??
       new PluginRuntime(logger, daemonVersion, {
+        compatibilityVersion: dependencies.compatibilityVersion,
         settingsDirectory: dependencies.settingsDirectory,
         onSettingsChanged: (pluginId, settingsId) => {
           for (const listener of this.settingsListeners) listener(pluginId, settingsId);
@@ -255,7 +257,11 @@ export class PluginService {
     return this.enqueue(async () => {
       const directory = path.resolve(input.path);
       const manifest = await readPluginManifest(directory);
-      assertPluginCompatibility({ ...manifest, version: this.daemonVersion, runtime: "daemon" });
+      assertPluginCompatibility({
+        ...manifest,
+        version: this.dependencies.compatibilityVersion ?? this.daemonVersion,
+        runtime: "daemon",
+      });
       const pluginId = PluginIdSchema.parse(input.id ?? manifest.id);
       if (this.builtinPluginIds.has(pluginId)) {
         throw new Error(`Plugin ID "${pluginId}" is reserved for a built-in plugin`);
@@ -687,7 +693,11 @@ export class PluginService {
 
   private async checkRequirements(directory: string): Promise<void> {
     const manifest = await readPluginManifest(directory);
-    assertPluginCompatibility({ ...manifest, version: this.daemonVersion, runtime: "daemon" });
+    assertPluginCompatibility({
+      ...manifest,
+      version: this.dependencies.compatibilityVersion ?? this.daemonVersion,
+      runtime: "daemon",
+    });
   }
 
   private async updateSource(proposal: PluginUpdateProposal): Promise<PluginUpdateResult> {
