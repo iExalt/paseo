@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { assertNativeActor } from "./native-candidate-authority.mjs";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
@@ -20,7 +21,7 @@ assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 assert.equal(process.env.GITHUB_REPOSITORY, "iExalt/paseo");
 assert.equal(process.env.GITHUB_REF, "refs/heads/dev");
-assert.equal(process.env.GITHUB_ACTOR, "iExalt");
+assertNativeActor(process.env);
 assert.match(process.env.GITHUB_RUN_ID, /^\d+$/);
 assert.match(process.env.GITHUB_RUN_ATTEMPT, /^\d+$/);
 const repository = resolve(process.env.GITHUB_WORKSPACE);

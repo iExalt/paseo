@@ -1,5 +1,36 @@
 import assert from "node:assert/strict";
+import { assertNativeActor } from "../.github/scripts/native-candidate-authority.mjs";
 import test from "node:test";
+
+test("native coordinator exception requires the exact caller and matching worker context", () => {
+  assertNativeActor({ GITHUB_ACTOR: "iExalt" });
+  const env = {
+    GITHUB_ACTOR: "release-merger[bot]",
+    GITHUB_WORKFLOW_REF: "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev",
+    GITHUB_SHA: "a".repeat(40),
+    PASEO_CANDIDATE_SHA: "b".repeat(40),
+    GITHUB_RUN_ID: "500",
+    GITHUB_RUN_ATTEMPT: "2",
+    RUNNER_TEMP: "/runner/temp",
+    PASEO_CANDIDATE_CONTEXT: "/runner/temp/paseo-candidate-500-2.json",
+  };
+  const read = () =>
+    JSON.stringify({
+      controllerSha: env.GITHUB_SHA,
+      descriptor: { sourceSha: env.PASEO_CANDIDATE_SHA },
+      runId: 500,
+      attempt: 2,
+    });
+  assertNativeActor(env, read);
+  for (const patch of [
+    { GITHUB_WORKFLOW_REF: "arbitrary" },
+    { PASEO_CANDIDATE_SHA: "" },
+    { PASEO_CANDIDATE_CONTEXT: "" },
+    { GITHUB_SHA: "c".repeat(40) },
+    { GITHUB_RUN_ATTEMPT: "3", PASEO_CANDIDATE_CONTEXT: "/runner/temp/paseo-candidate-500-3.json" },
+  ])
+    assert.throws(() => assertNativeActor({ ...env, ...patch }, read));
+});
 import { execFileSync } from "node:child_process";
 import { validateCandidateClosure } from "../.github/scripts/macos-candidate-runtime.mjs";
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";

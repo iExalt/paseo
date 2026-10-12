@@ -68,4 +68,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     env.GITHUB_OUTPUT,
     `source_sha=${context.descriptor.sourceSha}\ntree_sha=${context.descriptor.treeSha}\nversion=${context.descriptor.version}\ncontext=${file}\n`,
   );
+  await appendFile(env.GITHUB_ENV, `PASEO_CANDIDATE_CONTEXT=${file}\n`);
 }
