@@ -31,10 +31,14 @@ jobs:
           install_args: node@26.11.0
           cache: false
       - id: plan
+        name: Plan checks and record source
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
+          node .github/scripts/ci-source-receipt.mjs
           args=()
           if [[ "$EVENT_NAME" == pull_request ]]; then
             args+=(--changed-from "$PR_BASE_SHA")
