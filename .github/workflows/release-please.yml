@@ -10,6 +10,10 @@ on:
         type: choice
         options: [dev, ci/release-please-rehearsal]
         default: dev
+      replacement_record:
+        description: Explicit reviewed pending-candidate replacement record (owner only)
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -29,6 +33,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
+      REPLACEMENT_RECORD: ${{ github.event_name == 'workflow_dispatch' && inputs.replacement_record || '' }}
       TARGET_BRANCH: ${{ inputs.target || 'dev' }}
       PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
       PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
@@ -48,7 +53,7 @@ jobs:
       - name: Verify pinned release engine output
         run: |
           npm ci --prefix .github/release-tools --ignore-scripts --no-audit --no-fund
-          node --test .github/release-tools/contract.test.mjs
+          node --test .github/release-tools/*.test.mjs
       - name: Capture target tree
         id: target
         env:
@@ -71,9 +76,21 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           GITHUB_TOKEN: ${{ github.token }}
         run: node .github/scripts/release-please-preflight.mjs
+      - name: Install pinned dependency fetcher runtime
+        if: steps.boundary.outputs.ready == 'true'
+        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: Freeze proposal and refresh dependency hash without App credentials
+        id: prepare
+        if: steps.boundary.outputs.ready == 'true'
+        env:
+          TARGET_DIRECTORY: .dev/release-target
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREPARED_PROPOSAL: ${{ runner.temp }}/paseo-prepared-proposal.json
+        run: node .github/release-tools/proposal-prepare.mjs
       - name: Verify configured App and installation identity
         id: identity
-        if: steps.boundary.outputs.ready == 'true' && vars.PASEO_RELEASE_APP_CLIENT_ID != ''
+        if: steps.prepare.outputs.ready == 'true' && vars.PASEO_RELEASE_APP_CLIENT_ID != ''
         env:
           PASEO_RELEASE_APP_PRIVATE_KEY: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
         run: node .github/scripts/release-app-auth.mjs app
@@ -104,15 +121,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SHA: ${{ steps.target.outputs.sha }}
         run: test "$(gh api "repos/iExalt/paseo/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
-      - name: Propose version without creating a release
+      - name: Publish leased authentic proposal without creating a release
         if: steps.app.outcome == 'success'
-        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        with:
-          token: ${{ steps.app.outputs.token }}
-          target-branch: ${{ env.TARGET_BRANCH }}
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-          skip-github-release: true
+        env:
+          TARGET_DIRECTORY: .dev/release-target
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          RELEASE_APP_TOKEN: ${{ steps.app.outputs.token }}
+          PREPARED_PROPOSAL: ${{ runner.temp }}/paseo-prepared-proposal.json
+        run: node .github/release-tools/proposal-run.mjs
       - name: Record missing setup
         if: vars.PASEO_RELEASE_APP_CLIENT_ID == ''
         run: echo 'Bot event proof is pending narrowly scoped App configuration.' >> "$GITHUB_STEP_SUMMARY"
