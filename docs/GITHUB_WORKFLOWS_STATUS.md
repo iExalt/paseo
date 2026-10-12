@@ -85,8 +85,17 @@ A supersession racing an upload may leave an immutable unadmitted asset; aggrega
 admission must exclude it. No cross-attempt proof reuse is allowed initially, and
 the full lifecycle must stay inside the coordinator's global concurrency group.
 PR #70 integrates the preceding authority/entrypoint source at `4e4122904` after
-routine run `38267651739` passed in 4m34s (21m30s summed); same-SHA dev verification
-is still running. This does not close the complete candidate matrix.
+routine run `38267651739` passed in 4m34s (21m30s summed); same-SHA dev run
+`38268486424` passed in 4m33s (23m10s summed). Streaming/admission source
+`7d4feb67f` is reviewer-accepted and published for PR #71 verification.
+This does not close the complete candidate matrix.
+
+D1c's worker gate and pure aggregate are implemented locally, pending review:
+workers resolve source inputs against the signed descriptor and current admitted
+tuple; the aggregate requires all seven routine lanes, three deep journeys and
+exactly 14 current-attempt cells with successful producer-job API evidence.
+Workflow fanout, artifact provenance/download integration, closure signing and
+the hosted same-SHA native proof remain unimplemented or unverified.
 
 Reviewer design agreement covers A1–A3 and the approved B chunk boundaries. A1 closes feasibility and
 interface decisions only; it does not establish package or release correctness.
