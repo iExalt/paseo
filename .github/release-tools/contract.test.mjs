@@ -5,6 +5,14 @@ import test from "node:test";
 import { Manifest } from "release-please";
 import { inspectForkRelease } from "../../scripts/fork-release-config.mjs";
 import { releaseVersionSelectors } from "../scripts/release-version-selectors.mjs";
+import { composeProposalTree, lockDigest, verifyProposalLock } from "./proposal-tree.mjs";
+import {
+  replacementPath,
+  replacementTree,
+  verifyReplacementTree,
+  validateReplacement,
+  replacementForSource,
+} from "../scripts/candidate-replacement.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (file) => readFile(`${root}${file}`, "utf8");
@@ -28,6 +36,8 @@ const files = new Map(
       "package-lock.json",
       "CHANGELOG.fork.md",
       "package.json",
+      "nix/npm-deps.hash",
+      ".github/release-boundary.json",
       ...rootPackage.workspaces.map((directory) => `${directory}/package.json`),
     ].map(async (file) => [file, await read(file)]),
   ),
@@ -109,10 +119,29 @@ async function proposal(contents, boundary, previousRelease) {
     result.body.toString(),
     /forbidden upstream|bootstrap boundary|Generated with|generated with|beep/,
   );
-  for (const update of result.updates) {
-    if (!contents.has(update.path) && !update.createIfMissing) continue;
-    contents.set(update.path, update.updater.updateContent(contents.get(update.path)));
-  }
+  let fetchedLock;
+  const readProposal = async (file) => {
+    if (!contents.has(file)) throw Object.assign(new Error(`Missing ${file}`), { code: "ENOENT" });
+    return contents.get(file);
+  };
+  const prepared = await composeProposalTree(result, readProposal, async (lock) => {
+    fetchedLock = lock;
+    assert.equal(JSON.parse(lock).version, result.version.toString());
+    // This fixture tests input binding, not the Nix fetcher's hash algorithm.
+    return `sha256-${Buffer.from(lockDigest(lock), "hex").toString("base64")}`;
+  });
+  verifyProposalLock(prepared);
+  assert.equal(prepared.files.get("package-lock.json"), fetchedLock);
+  const changed = { ...prepared, files: new Map(prepared.files) };
+  changed.files.set("package-lock.json", `${fetchedLock}\n`);
+  assert.throws(() => verifyProposalLock(changed));
+  await assert.rejects(
+    composeProposalTree(result, readProposal, async () => {
+      throw new Error("fetch failed");
+    }),
+    /fetch failed/,
+  );
+  for (const [file, content] of prepared.files) contents.set(file, content);
   await inspectForkRelease(async (file) => contents.get(file));
   return result;
 }
@@ -153,4 +182,85 @@ test("pinned release engine composes all version edits and bounds both proposals
     if (key.startsWith("node_modules/"))
       assert.deepEqual(afterLock.packages[key], value, `External resolution changed: ${key}`);
   }
+});
+
+test("pending replacement is one selection commit over the exact repaired source", async () => {
+  const contents = new Map(files);
+  const version = JSON.parse(contents.get("package.json")).version;
+  contents.set(".release-please-manifest.json", JSON.stringify({ ".": version }));
+  const record = {
+    schemaVersion: 1,
+    version,
+    supersededPr: 74,
+    supersededSource: "b".repeat(40),
+    repairBase: "a".repeat(40),
+    lockSha256: lockDigest(contents.get("package-lock.json")),
+    npmDepsHash: contents.get("nix/npm-deps.hash").trim(),
+    authorities: [{ releaseId: 500, descriptorSha256: "d".repeat(64) }],
+  };
+  const updates = await replacementTree(record, async (file) => contents.get(file));
+  assert.deepEqual([...updates.keys()], [replacementPath]);
+  const source = "c".repeat(40);
+  const readAt = async (sha, file) =>
+    sha === source && updates.has(file) ? updates.get(file) : contents.get(file);
+  await verifyReplacementTree(record, source, record.repairBase, [replacementPath], readAt);
+  const descriptor = { sourceSha: source, baseSha: record.repairBase, version };
+  const compare = async () => ({
+    status: "ahead",
+    total_commits: 1,
+    base_commit: { sha: record.repairBase },
+    files: [{ filename: replacementPath }],
+  });
+  assert.deepEqual(await replacementForSource(descriptor, readAt, compare), record);
+  assert.equal(
+    await replacementForSource(
+      descriptor,
+      async (sha, file) =>
+        sha === record.repairBase && file === ".release-please-manifest.json"
+          ? JSON.stringify({ ".": "0.0.0" })
+          : readAt(sha, file),
+      compare,
+    ),
+    null,
+  );
+  await assert.rejects(
+    replacementForSource({ ...descriptor, version: "0.0.0" }, readAt, compare),
+    /regressed/,
+  );
+  await assert.rejects(
+    replacementForSource(
+      descriptor,
+      async (sha, file) => (file === replacementPath ? "{}" : readAt(sha, file)),
+      compare,
+    ),
+  );
+
+  await assert.rejects(
+    verifyReplacementTree(record, source, "e".repeat(40), [replacementPath], readAt),
+  );
+  await assert.rejects(
+    verifyReplacementTree(
+      record,
+      source,
+      record.repairBase,
+      [replacementPath, "package.json"],
+      readAt,
+    ),
+  );
+  await assert.rejects(
+    verifyReplacementTree(
+      record,
+      source,
+      record.repairBase,
+      [replacementPath],
+      async (sha, file) =>
+        sha === source && file === ".github/release-boundary.json" ? "{}" : readAt(sha, file),
+    ),
+  );
+  await assert.rejects(
+    replacementTree({ ...record, lockSha256: "e".repeat(64) }, async (file) => contents.get(file)),
+  );
+  assert.throws(() =>
+    validateReplacement({ ...record, authorities: [...record.authorities, ...record.authorities] }),
+  );
 });

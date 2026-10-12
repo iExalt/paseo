@@ -411,6 +411,28 @@ descendants absent; ordinary execution also passed. Synthetic Ctrl-C/Break
 trials covered both signals. Hard kills and missing receipts still fail closed.
 This verifies the repaired cleanup boundary, not the interrupted native builds;
 the fresh-source full matrix remains required.
+
+Repair `c052ac894` is integrated through PR #81: routine PR `38323024917`
+passed in 4m32s and same-SHA dev `38323517211` in 4m56s, within the unchanged
+five-minute ceiling. Draft `411057310` is now stopped under
+`paseo-retired-candidate-411057310`; descriptor/signature asset IDs and downloaded
+bytes are preserved. Read-only verification authenticated all six stopped signed
+predecessor drafts against PR #74 and its source. The original interrupted
+Windows trial still lacks its cleanup receipts.
+
+The replacement transition and future proposal hash maintenance are source-reviewed.
+The pinned release engine's complete generated lock is hashed before App credentials
+exist; the hash and version edits share one frozen commit. Git publication uses
+an explicit expected-head lease, and lost replies reconcile exact branch/tree/PR
+identity. Owner-only replacement adds one selection record over the reviewed repair
+parent, preserves version/manifest/changelog/publication history, and supersedes the
+old pending label only after authenticating the new proposal. Trusted candidate
+admission verifies all stopped signed predecessors, including retired tags;
+read-only workers validate their current-attempt grant and immutable source structure.
+Later same-source authority retirement remains possible without rewriting the record.
+Cheap tree, lease, interrupted-publication and signed-history fixtures passed;
+the live replacement proposal, source checks, canary and complete native matrix
+remain open. No public release or personal-device migration is authorized here.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.

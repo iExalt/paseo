@@ -23,7 +23,7 @@ export async function candidateEntry({ event, env, read, request, api, output })
   const descriptor = route.releaseId
     ? await loadDescriptor(api, route.releaseId)
     : await newCandidate(route, env.GITHUB_SHA, identity, request, read);
-  await currentCandidate(descriptor, env.GITHUB_SHA, identity, request, read);
+  await currentCandidate(descriptor, env.GITHUB_SHA, identity, request, read, api);
   await eligibleDraft(api, descriptor, route.releaseId);
   const digest = descriptorDigest(descriptor);
   if (env.CANDIDATE_MODE === "issue") {

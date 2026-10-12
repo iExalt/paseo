@@ -217,7 +217,10 @@ test("merged authority binds the old checked tree and parent while dev advances"
     "package-lock.json": JSON.stringify({ version: fork.version, packages: { "": rootPackage } }),
     "CHANGELOG.fork.md": "# Fork release",
   };
-  const read = async (_sha, file) => sourceFiles[file] ?? "trusted policy fixture";
+  const read = async (sha, file) =>
+    sha === base && file === ".release-please-manifest.json"
+      ? JSON.stringify({ ".": "0.0.0" })
+      : (sourceFiles[file] ?? "trusted policy fixture");
   const entryEnv = {
     GITHUB_RUN_ID: "500",
     GITHUB_RUN_ATTEMPT: "1",
