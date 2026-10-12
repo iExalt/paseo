@@ -811,7 +811,8 @@ test("batched lifecycle and immutable writer retain fresh checks with bounded AP
   const data = new Map(),
     counts = { rest: 0, graphql: 0 };
   let fault = null,
-    loseReply = false;
+    loseReply = false,
+    patchFault = null;
   function add(name, value) {
     const row = { id: data.size + 1, name, size: value.length, state: "uploaded" };
     data.set(row.id, value);
@@ -871,6 +872,13 @@ test("batched lifecycle and immutable writer retain fresh checks with bounded AP
     if (target.pathname.includes("/releases/assets/"))
       return new Response(data.get(Number(target.pathname.split("/").at(-1))));
     assert.ok(target.pathname.endsWith("/releases/42"));
+    if (options.method === "PATCH") {
+      const payload = JSON.parse(options.body);
+      assert.deepEqual(Object.keys(payload).sort(), ["body", "tag_name"]);
+      assert.equal(payload.tag_name, draft.tag_name);
+      Object.assign(draft, payload);
+      if (patchFault) patchFault(draft);
+    }
     return Response.json(draft);
   });
   api.publicPin = publicPin;
@@ -929,6 +937,27 @@ test("batched lifecycle and immutable writer retain fresh checks with bounded AP
   draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 3 });
   await assert.rejects(writer.bytes("stale.json", Buffer.from("no")), /no longer admitted/);
   assert.ok(!draft.assets.some((asset) => asset.name.endsWith("stale.json")));
+  const previousBody = draft.body;
+  const nextBody = draftBody(descriptor, "active", { runId: 500, attempt: 4 });
+  await api.setBody(42, nextBody, descriptor, previousBody);
+  assert.equal(draft.tag_name, draftTag(descriptor));
+  await assert.rejects(
+    api.setBody(42, previousBody, descriptor, previousBody),
+    /Admission changed/,
+  );
+  for (const mutate of [
+    (row) => {
+      row.tag_name = "untagged-fixture";
+    },
+    (row) => {
+      row.body = previousBody;
+    },
+  ]) {
+    draft.tag_name = draftTag(descriptor);
+    draft.body = previousBody;
+    patchFault = mutate;
+    await assert.rejects(api.setBody(42, nextBody, descriptor, previousBody));
+  }
 });
 
 test("draft inventory paginates retries and rejects duplicate or unbounded assets", async () => {
