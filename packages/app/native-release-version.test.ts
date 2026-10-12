@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 const {
   FDROID_ABI_VERSION_CODE_SUFFIXES,
-  getForkAndroidVersionCodeFromRunNumber,
+  getForkAndroidVersionCode,
   getFdroidVersionCodes,
   getNativeReleaseVersion,
   getRequiredAndroidVersionCode,
@@ -56,24 +56,18 @@ describe("native release version", () => {
     expect(() => getRequiredAndroidVersionCode("2100000001")).toThrow("PASEO_ANDROID_VERSION_CODE");
   });
 
-  it("derives a stable fork version code from the persistent workflow run number", () => {
-    expect(getForkAndroidVersionCodeFromRunNumber("1")).toBe(100_001);
-    expect(getForkAndroidVersionCodeFromRunNumber("42")).toBe(100_042);
-    expect(getForkAndroidVersionCodeFromRunNumber("2099900000")).toBe(2_100_000_000);
-    expect(() => getForkAndroidVersionCodeFromRunNumber(undefined)).toThrow(
-      "PASEO_ANDROID_VERSION_CODE",
-    );
-    expect(() => getForkAndroidVersionCodeFromRunNumber("2099900001")).toThrow(
-      "GitHub run number is too large",
-    );
+  it("derives fork encoding from semver and rejects a disagreeing environment override", () => {
+    expect(getForkAndroidVersionCode("0.1.0")).toBe(201000);
+    expect(getForkAndroidVersionCode("0.1.0", "201000")).toBe(201000);
+    expect(() => getForkAndroidVersionCode("0.1.0", "200008")).toThrow("semver encoding");
   });
 
   it("resolves fork Android identity while keeping its iOS and existing identities stable", () => {
-    expect(resolveAppVariant("fork", 11000, "23456")).toEqual({
+    expect(resolveAppVariant("fork", 1000, "0.1.0", "201000")).toEqual({
       name: "Paseo iExalt",
       iosBundleIdentifier: "sh.paseo",
       androidPackage: "sh.paseo.iexalt",
-      androidVersionCode: 23456,
+      androidVersionCode: 201000,
     });
     expect(resolveAppVariant("production", 11000, "invalid")).toEqual({
       name: "Paseo",
