@@ -10,7 +10,7 @@ import { githubResponse, saveDownload, validateArtifact } from "./candidate-arti
 import { candidateGithub } from "./candidate-github.mjs";
 import { requireCurrentRun, requireAttempt, attemptWriter } from "./candidate-draft.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
-import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
+import { readTrustedWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 
 import { closureEntries } from "./candidate-nix-export.mjs";
 
@@ -213,7 +213,7 @@ export function productReceipts(bundle, context, group, producerJobId, manifests
 export async function transferProducts(
   env = process.env,
   {
-    authenticate = readWorkerContext,
+    authenticate = readTrustedWorkerContext,
     request = readGithub,
     response = githubResponse,
     draftApi = candidateGithub,

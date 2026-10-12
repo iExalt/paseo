@@ -5,6 +5,56 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { downloadGrant } from "../.github/scripts/candidate-grant.mjs";
+
+test("worker grant transport binds immutable artifact bytes and root provenance", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "paseo-grant-"));
+  const grant = { context: { rootHeadSha: "a".repeat(40), rootBranch: "dev" } };
+  const zip = execFileSync("python3", [
+    "-c",
+    "import io,sys,zipfile;b=io.BytesIO();z=zipfile.ZipFile(b,'w');z.writestr('grant.json',sys.argv[1]);z.close();sys.stdout.buffer.write(b.getvalue())",
+    JSON.stringify(grant),
+  ]);
+  const digest = createHash("sha256").update(zip).digest("hex");
+  const env = {
+    RUNNER_TEMP: directory,
+    GH_TOKEN: "fixture",
+    GITHUB_RUN_ID: "123",
+    GITHUB_RUN_ATTEMPT: "2",
+    CANDIDATE_GRANT_ID: "456",
+    CANDIDATE_GRANT_DIGEST: digest,
+    CANDIDATE_GRANT_GROUP: "verification",
+  };
+  const metadata = {
+    id: 456,
+    name: "candidate-grant-verification-123-2",
+    digest: `sha256:${digest}`,
+    expired: false,
+    size_in_bytes: zip.length,
+    workflow_run: { id: 123, head_sha: grant.context.rootHeadSha, head_branch: "dev" },
+  };
+  const request = (value) => async (url) =>
+    url.endsWith("/zip") ? new Response(zip) : Response.json(value);
+  try {
+    assert.deepEqual(await downloadGrant(env, request(metadata)), grant);
+    for (const delta of [
+      { id: 457 },
+      { name: "candidate-grant-verification-123-1" },
+      { digest: `sha256:${"f".repeat(64)}` },
+      { workflow_run: { ...metadata.workflow_run, id: 124 } },
+      { workflow_run: { ...metadata.workflow_run, head_sha: "b".repeat(40) } },
+      { workflow_run: { ...metadata.workflow_run, head_branch: "other" } },
+    ])
+      await assert.rejects(downloadGrant(env, request({ ...metadata, ...delta })));
+    await assert.rejects(
+      downloadGrant(env, async (url) =>
+        url.endsWith("/zip") ? new Response(Buffer.alloc(zip.length)) : Response.json(metadata),
+      ),
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 import {
   fetchCandidate,
   githubResponse,
