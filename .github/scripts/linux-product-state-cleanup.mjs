@@ -12,7 +12,10 @@ assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 const root = `${process.env.RUNNER_TEMP}/paseo-products-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`;
 assert.equal(realpathSync(root), root);
-assert.equal(readFileSync(join(root, "owned"), "utf8").trim(), process.env.GITHUB_SHA);
+assert.equal(
+  readFileSync(join(root, "owned"), "utf8").trim(),
+  process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
+);
 const evidence = join(root, "evidence");
 const temporaryReceipt = join(root, "temporary-root.json");
 const temporary = existsSync(temporaryReceipt)

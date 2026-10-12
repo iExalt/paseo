@@ -25,7 +25,7 @@ const hash = (filename) => createHash("sha256").update(readFileSync(filename)).d
 const json = (filename) => JSON.parse(readFileSync(filename));
 const save = (filename, data) => writeFileSync(filename, JSON.stringify(data), { flag: "wx" });
 const owner = json(join(root, "owner.json"));
-assert.equal(owner.sourceSha, process.env.GITHUB_SHA);
+assert.equal(owner.sourceSha, process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA);
 assert.equal(owner.architecture, process.arch);
 const started = Date.now();
 

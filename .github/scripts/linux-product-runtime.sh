@@ -3,7 +3,7 @@ set -euo pipefail
 test "$GITHUB_ACTIONS" = true
 test "$RUNNER_ENVIRONMENT" = github-hosted
 root="$RUNNER_TEMP/paseo-products-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
-test "$(cat "$root/owned")" = "$GITHUB_SHA"
+test "$(cat "$root/owned")" = "${PASEO_CANDIDATE_SHA:-$GITHUB_SHA}"
 export OWNED_SESSION_TIMEOUT_SECONDS=180 OWNED_SESSION_SKIP_XVFB=1
 container="paseo-products-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
 finish() {
@@ -52,7 +52,7 @@ esac
 mkdir "$root/rpm-state" "$root/evidence/rpm"
 chmod 777 "$root/rpm-state" "$root/evidence/rpm"
 timeout --kill-after=10s 300s docker run --name "$container" --cpus=2 --memory=4g --pids-limit=512 \
-  --security-opt=no-new-privileges --env GITHUB_SHA --env EXPECTED_ARCHITECTURE \
+  --security-opt=no-new-privileges --env GITHUB_SHA --env PASEO_CANDIDATE_SHA --env EXPECTED_ARCHITECTURE \
   --mount "type=bind,src=$GITHUB_WORKSPACE,dst=/repo,readonly" \
   --mount "type=bind,src=$(dirname "$(mise which node)"),dst=/node-bin,readonly" \
   --mount "type=bind,src=$root/packages,dst=/input,readonly" \
