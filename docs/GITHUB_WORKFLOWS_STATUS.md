@@ -1458,3 +1458,5 @@ A1's VAD smoke. Disposable upgrades must preserve meaningful state.
   remaining G1 closure gate; no later phase has started.
 
 <!-- C3 isolated proposal-refresh fixture; no publication or device operation. -->
+
+<!-- C3 simulated 0.1.0 publication boundary; no release or tag exists. -->
