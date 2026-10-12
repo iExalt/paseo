@@ -2266,9 +2266,9 @@ export const ja: TranslationResources = {
       nixUpdates: {
         label: "Nix 管理の更新",
         running: "実行中のアプリ: {{version}}",
-        active: "プロファイルのバージョン: {{version}}（シーケンス {{sequence}}）",
-        staged: "準備済みバージョン: {{version}}（シーケンス {{sequence}}）",
-        latest: "最新の署名済みバージョン: {{version}}（シーケンス {{sequence}}）",
+        active: "プロファイルのバージョン: {{version}}",
+        staged: "準備済みバージョン: {{version}}",
+        latest: "最新の署名済みバージョン: {{version}}",
         ready: "必要なときに署名済み更新を確認できます。",
         invalidMarker: "この Nix インストールを検証できませんでした。",
         restartRequired:

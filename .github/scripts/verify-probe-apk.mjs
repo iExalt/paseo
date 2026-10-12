@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { verifyReleaseManifestBytes } from "../../scripts/paseo-nix-update.mjs";
+import { verifyReleaseManifestBytes } from "../../scripts/paseo-nix-update-legacy.mjs";
 
 const directory = process.argv[2];
 const manifest = verifyReleaseManifestBytes(
