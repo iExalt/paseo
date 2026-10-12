@@ -353,9 +353,14 @@ state; installer success alone is insufficient.
       This is contributor-based closure, not a universal same-SHA release matrix;
       exact initial 0.1.0 release coordination remains G5/G6. Receipts and limitations
       are in [status](GITHUB_WORKFLOWS_STATUS.md).
-- [ ] **G4: Prepare compatible releases automatically.** Gate: a real bot-created
+- [x] **G4: Prepare compatible releases automatically.** Gate: a real bot-created
       release PR triggers required checks; independent semver, workspace versions,
       new-client semver ordering and manual-migration fixtures pass; no public release is created.
+      Accepted C1 source `e674ae2f5` and C2/C3 source `07b997d79`: actual App
+      proposals #65 (0.1.0) and #67 (0.1.1), current-head routine/deep proofs,
+      forged identity and stale checks rejected, and exact rehearsal rebase
+      merge/tree verified. Campaign refs removed; publication and installed
+      migration remain G5/G6. See [status](GITHUB_WORKFLOWS_STATUS.md) for receipts.
 - [ ] **G5: Enforce complete publication.** Gate: a missing/failed platform,
       stale SHA, wrong signature, partial upload, concurrent or retried attempt cannot
       publish. The all-green same-SHA rehearsal succeeds without making assets public.
