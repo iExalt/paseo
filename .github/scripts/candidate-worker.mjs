@@ -56,6 +56,19 @@ export async function readWorkerContext(env = process.env) {
   });
 }
 
+export async function attemptJobs(context, request = readGithub) {
+  const jobs = [];
+  for (let page = 1; page <= 10; page++) {
+    const result = await request(
+      `/repos/iExalt/paseo/actions/runs/${context.runId}/attempts/${context.attempt}/jobs?per_page=100&page=${page}`,
+    );
+    assert.ok(Array.isArray(result.jobs));
+    jobs.push(...result.jobs);
+    if (result.jobs.length < 100) return jobs;
+  }
+  throw new Error("Candidate job inventory exceeds bound");
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const env = process.env;
   const context = await readWorkerContext(env);
