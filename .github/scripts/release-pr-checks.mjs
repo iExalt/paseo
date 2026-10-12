@@ -48,6 +48,10 @@ export async function verifyCurrentPrChecks(number, identity, request = readGith
   const pr = await request(`${repository}/pulls/${number}`);
   assert.equal(pr.number, number);
   assertReleasePr(pr, identity, pr.head.sha);
+  assert.equal(pr.commits, 1, "Rehearsal requires one bot proposal commit");
+  const commits = await request(`${repository}/pulls/${number}/commits?per_page=2`);
+  assert.equal(commits.length, 1);
+  assert.equal(commits[0].sha, pr.head.sha);
   const proofs = [];
   const runsFor = async (workflow) =>
     pages(
@@ -103,6 +107,14 @@ export async function verifyCurrentPrChecks(number, identity, request = readGith
     }
     proofs.push({ workflow, runId: run.id, attempt: run.run_attempt, receipts });
   }
+  const tested = proofs.find((proof) => proof.workflow === "ci.yml").receipts[0];
+  const testedCommit = await request(`${repository}/git/commits/${tested.sha}`);
+  assert.equal(testedCommit.sha, tested.sha);
+  assert.deepEqual(
+    testedCommit.parents.map((parent) => parent.sha),
+    [pr.base.sha, pr.head.sha],
+  );
+  assert.match(testedCommit.tree.sha, /^[a-f0-9]{40}$/);
   // Recheck both axes after logs/API enumeration; old green never blesses movement.
   for (const proof of proofs) {
     const latest = latestPrRun(await runsFor(proof.workflow), proof.workflow, pr);
@@ -111,20 +123,31 @@ export async function verifyCurrentPrChecks(number, identity, request = readGith
   }
   const current = await request(`${repository}/pulls/${number}`);
   assertReleasePr(current, identity, pr.head.sha);
+  assert.equal(current.commits, 1);
   assert.equal(current.base.sha, pr.base.sha, "PR base moved during verification");
-  return { number, headSha: pr.head.sha, baseSha: pr.base.sha, proofs };
+  return {
+    number,
+    headSha: pr.head.sha,
+    baseSha: pr.base.sha,
+    treeSha: testedCommit.tree.sha,
+    proofs,
+  };
 }
 
-export function verifyRehearsalMerge(pr, commit, proof) {
+export function verifyRehearsalMerge(pr, commit, proof, { returnedSha, branchSha }) {
   assert.equal(pr.base.ref, "ci/release-please-rehearsal");
   assert.equal(pr.number, proof.number);
   assert.equal(pr.merged, true);
   assert.equal(pr.state, "closed");
   assert.equal(pr.head.sha, proof.headSha);
+  assert.equal(pr.commits, 1);
   assert.equal(commit.sha, pr.merge_commit_sha);
+  assert.equal(commit.sha, returnedSha);
+  assert.equal(commit.sha, branchSha);
   assert.deepEqual(
     commit.parents.map((parent) => parent.sha),
-    [proof.baseSha, proof.headSha],
+    [proof.baseSha],
   );
+  assert.equal(commit.tree.sha, proof.treeSha, "Rebased merge differs from the tested merge tree");
   return commit.sha;
 }
