@@ -1,0 +1,42 @@
+name: Exact CI tools
+description: Install the pinned hosted Node runtime and activate it through mise without repository caching
+inputs:
+  actionlint:
+    description: Also install pinned actionlint for routine verification
+    default: "false"
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version: "26.11.0"
+        architecture: x64
+        package-manager-cache: false
+    - name: Verify hosted runtime
+      id: runtime
+      shell: bash
+      run: |
+        test "$(uname -s)" = Linux
+        test "$(uname -m)" = x86_64
+        test "$(node --version)" = v26.11.0
+        test "$(npm --version)" = 11.20.0
+        node_root="$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
+        echo "root=$node_root" >> "$GITHUB_OUTPUT"
+    - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      with:
+        version: "2026.10.3"
+        install: false
+        cache: false
+    - name: Activate exact mise runtime
+      shell: bash
+      env:
+        NODE_ROOT: ${{ steps.runtime.outputs.root }}
+      run: |
+        mise link node@26.11.0 "$NODE_ROOT"
+        test "$(readlink -f "$(mise which node)")" = "$NODE_ROOT/bin/node"
+        test "$(mise exec node@26.11.0 -- node --version)" = v26.11.0
+        test "$(mise exec node@26.11.0 -- npm --version)" = 11.20.0
+    - name: Install pinned workflow linter
+      if: inputs.actionlint == 'true'
+      shell: bash
+      run: mise install actionlint@1.7.12
