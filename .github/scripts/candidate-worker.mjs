@@ -69,9 +69,20 @@ export async function attemptJobs(context, request = readGithub) {
   throw new Error("Candidate job inventory exceeds bound");
 }
 
+export function verifyWorkerJob(context, jobs, expected) {
+  assert.ok(typeof expected === "string" && expected.length > 0);
+  const matches = jobs.filter((job) => job.name === expected);
+  assert.equal(matches.length, 1, `Missing or duplicate active worker ${expected}`);
+  assert.equal(matches[0].run_id, context.runId);
+  assert.equal(matches[0].run_attempt, context.attempt);
+  assert.equal(matches[0].status, "in_progress");
+  assert.equal(matches[0].conclusion, null);
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const env = process.env;
   const context = await readWorkerContext(env);
+  verifyWorkerJob(context, await attemptJobs(context), env.CANDIDATE_EXPECTED_JOB);
   const file = join(env.RUNNER_TEMP, `paseo-candidate-${context.runId}-${context.attempt}.json`);
   await writeFile(file, JSON.stringify(context) + "\n", {
     flag: "wx",

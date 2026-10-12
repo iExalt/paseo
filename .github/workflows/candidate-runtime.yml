@@ -73,6 +73,7 @@ jobs:
       - name: Authenticate candidate and admitted attempt
         if: inputs.source_sha != ''
         env:
+          CANDIDATE_EXPECTED_JOB: native-runtime / android
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/candidate-worker.mjs
       - name: Verify signed ARM64 APKs and retained native state
@@ -124,6 +125,7 @@ jobs:
       - name: Authenticate candidate and admitted attempt
         if: inputs.source_sha != ''
         env:
+          CANDIDATE_EXPECTED_JOB: native-runtime / macos
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/candidate-worker.mjs
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1

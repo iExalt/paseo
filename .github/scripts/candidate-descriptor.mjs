@@ -32,6 +32,18 @@ const keys = [
   "checks",
 ];
 export const sourceGateFiles = Object.freeze([
+  ".github/scripts/windows-owned-job.ps1",
+  ".github/scripts/windows-owned-job.cs",
+  ".github/scripts/windows-native-toolchain.ps1",
+  ".github/scripts/windows-speech-observe.cjs",
+  ".github/scripts/windows-electron-binding/CMakeLists.txt",
+  ".github/scripts/android-candidate-ui.py",
+  ".github/scripts/android_candidate_controls.py",
+  ".github/scripts/linux-product-fedora.sh",
+  ".github/scripts/linux-fedora-runtime-deps.sh",
+  ".github/scripts/linux-rpm-uninstall-check.sh",
+  ".github/scripts/linux-format-launch.mjs",
+
   ".github/scripts/linux-format-processes.mjs",
   ".github/scripts/windows-job-identity.mjs",
   ".github/scripts/windows-path.mjs",

@@ -60,6 +60,7 @@ jobs:
       - name: Authenticate candidate and admitted attempt
         id: candidate
         env:
+          CANDIDATE_EXPECTED_JOB: verify / ${{ matrix.kind }} (${{ matrix.lane }})
           GH_TOKEN: ${{ github.token }}
           CANDIDATE_RELEASE_ID: ${{ inputs.release_id }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}

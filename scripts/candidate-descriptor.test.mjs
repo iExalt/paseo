@@ -12,6 +12,7 @@ import {
   productReceipts,
   transferProducts,
 } from "../.github/scripts/candidate-product-transfer.mjs";
+import { verifyWorkerJob } from "../.github/scripts/candidate-worker.mjs";
 import { verifyAggregate, signAggregate } from "../.github/scripts/candidate-aggregate.mjs";
 import { pairedRuntime, transferPaired } from "../.github/scripts/candidate-paired-transfer.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
@@ -22,6 +23,7 @@ import {
 } from "../.github/scripts/candidate-matrix.mjs";
 import { forkReleaseManifestFixture } from "./test-fixtures/fork-release-manifest.ts";
 import {
+  sourceGateFiles,
   descriptorFromProof,
   descriptorBytes,
   descriptorDigest,
@@ -35,6 +37,45 @@ import {
   uploadAttemptBytes,
   loadDescriptor,
 } from "../.github/scripts/candidate-draft.mjs";
+
+test("policy covers invoked native ownership and UI controls before active worker execution", () => {
+  for (const file of [
+    "windows-owned-job.ps1",
+    "windows-owned-job.cs",
+    "windows-native-toolchain.ps1",
+    "windows-speech-observe.cjs",
+    "windows-electron-binding/CMakeLists.txt",
+    "android-candidate-ui.py",
+    "android_candidate_controls.py",
+    "linux-product-fedora.sh",
+    "linux-fedora-runtime-deps.sh",
+    "linux-rpm-uninstall-check.sh",
+    "linux-format-launch.mjs",
+  ])
+    assert.ok(
+      sourceGateFiles.includes(`.github/scripts/${file}`),
+      `Unsigned acceptance dependency ${file}`,
+    );
+  assert.equal(new Set(sourceGateFiles).size, sourceGateFiles.length);
+  const context = { runId: 500, attempt: 2 },
+    expected = "linux-nix (arm64) / native";
+  const job = {
+    name: expected,
+    run_id: 500,
+    run_attempt: 2,
+    status: "in_progress",
+    conclusion: null,
+  };
+  verifyWorkerJob(context, [job], expected);
+  for (const delta of [
+    { name: "other" },
+    { run_attempt: 1 },
+    { run_id: 501 },
+    { status: "completed", conclusion: "success" },
+  ])
+    assert.throws(() => verifyWorkerJob(context, [{ ...job, ...delta }], expected));
+  assert.throws(() => verifyWorkerJob(context, [job, job], expected));
+});
 
 test("native exports copy only exact candidate bytes into fresh canonical bundles", async () => {
   const directory = await mkdtemp(join(tmpdir(), "candidate-export-"));
