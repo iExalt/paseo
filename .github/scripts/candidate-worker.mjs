@@ -10,7 +10,7 @@ import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 
-export async function workerGate(env, api, request, read) {
+export async function workerGate(env, api, request, read, grant = null) {
   const releaseId = Number(env.CANDIDATE_RELEASE_ID);
   assert.ok(Number.isSafeInteger(releaseId) && releaseId > 0);
   assert.equal(env.GITHUB_REPOSITORY, "iExalt/paseo");
@@ -19,7 +19,7 @@ export async function workerGate(env, api, request, read) {
     env.GITHUB_WORKFLOW_REF,
     "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev",
   );
-  const descriptor = await loadDescriptor(api, releaseId);
+  const descriptor = grant ? grant.context.descriptor : await loadDescriptor(api, releaseId);
   assert.equal(
     descriptor.sourceSha,
     env.PASEO_CANDIDATE_SHA,
@@ -34,8 +34,7 @@ export async function workerGate(env, api, request, read) {
     request,
     descriptor,
   );
-  await requireAttempt(api, descriptor, releaseId, runId, attempt);
-  return {
+  const context = {
     descriptor,
     releaseId,
     runId,
@@ -44,22 +43,51 @@ export async function workerGate(env, api, request, read) {
     rootBranch,
     rootHeadSha,
   };
+  if (grant) {
+    const { validateGrant } = await import("./candidate-grant.mjs");
+    validateGrant(
+      grant,
+      context,
+      env.CANDIDATE_GRANT_GROUP,
+      env.CANDIDATE_EXPECTED_JOB,
+      await attemptJobs(context, request),
+      api.publicPin,
+    );
+  } else await requireAttempt(api, descriptor, releaseId, runId, attempt);
+  return context;
+}
+
+export async function readTrustedWorkerContext(env = process.env) {
+  assert.ok(!env.CANDIDATE_GRANT_ID, "Trusted admission cannot use a worker grant");
+  return readContext(env, false);
 }
 
 export async function readWorkerContext(env = process.env) {
+  assert.ok(env.CANDIDATE_GRANT_ID, "Execution requires a controller-issued worker grant");
+  return readContext(env, true);
+}
+
+async function readContext(env, granted) {
   assert.equal(
     execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
     env.GITHUB_SHA,
   );
-  return workerGate(env, candidateGithub(env.GH_TOKEN), readGithub, async (sha, file) => {
-    assert.match(sha, /^[a-f0-9]{40}$/);
-    assert.match(file, /^[a-zA-Z0-9._/-]+$/);
-    return execFileSync("git", ["show", `${sha}:${file}`], {
-      encoding: "utf8",
-      maxBuffer: 32 * 1024 * 1024,
-      timeout: 30000,
-    });
-  });
+  const grant = granted ? await (await import("./candidate-grant.mjs")).downloadGrant(env) : null;
+  return workerGate(
+    env,
+    candidateGithub(env.GH_TOKEN),
+    readGithub,
+    async (sha, file) => {
+      assert.match(sha, /^[a-f0-9]{40}$/);
+      assert.match(file, /^[a-zA-Z0-9._/-]+$/);
+      return execFileSync("git", ["show", `${sha}:${file}`], {
+        encoding: "utf8",
+        maxBuffer: 32 * 1024 * 1024,
+        timeout: 30000,
+      });
+    },
+    grant,
+  );
 }
 
 export async function attemptJobs(context, request = readGithub) {
@@ -87,6 +115,7 @@ export function verifyWorkerJob(context, jobs, expected) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const env = process.env;
+  assert.ok(env.CANDIDATE_GRANT_ID, "Execution requires a controller-issued worker grant");
   const context = await readWorkerContext(env);
   verifyWorkerJob(context, await attemptJobs(context), env.CANDIDATE_EXPECTED_JOB);
   const file = join(env.RUNNER_TEMP, `paseo-candidate-${context.runId}-${context.attempt}.json`);
