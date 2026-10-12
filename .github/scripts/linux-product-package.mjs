@@ -45,6 +45,7 @@ config.rpm.compression = "gzip";
 const configFile = join(root, `${stage}-builder.json`);
 writeFileSync(configFile, JSON.stringify(config));
 const identity = {
+  architecture,
   name: metadata.name,
   version: metadata.version,
   desktopName: metadata.desktopName,
