@@ -148,6 +148,8 @@ export function planCommands(selection, cwd = root) {
   add("release engine output", process.execPath, [
     "--test",
     ".github/release-tools/contract.test.mjs",
+    ".github/release-tools/proposal-git.test.mjs",
+    ".github/release-tools/proposal-publish.test.mjs",
   ]);
   add("Vitest helper contracts", "npm", [
     "exec",
