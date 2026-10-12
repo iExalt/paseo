@@ -72,6 +72,11 @@ jobs:
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
       - name: Install locked dependencies once
+        env:
+          npm_config_fetch_timeout: "30000"
+          npm_config_fetch_retries: "2"
+          npm_config_fetch_retry_mintimeout: "1000"
+          npm_config_fetch_retry_maxtimeout: "5000"
         run: time npm ci --prefer-offline --timing
       - name: Verify the checked-out source
         env:
