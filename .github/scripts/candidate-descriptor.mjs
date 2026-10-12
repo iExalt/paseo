@@ -37,6 +37,7 @@ export const sourceGateFiles = Object.freeze([
   ".github/workflows/linux-product-runtime.yml",
   ".github/workflows/windows-product-runtime.yml",
   ".github/scripts/candidate-product-export.mjs",
+  ".github/scripts/native-candidate-authority.mjs",
   ".github/scripts/linux-predecessor-cache.mjs",
   ".github/scripts/windows-predecessor-cache.mjs",
   ".github/scripts/linux-product-build.sh",

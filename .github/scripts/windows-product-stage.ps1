@@ -4,9 +4,11 @@ $PSNativeCommandUseErrorActionPreference = $false
 Set-StrictMode -Version Latest
 $candidateSha = if ($env:PASEO_CANDIDATE_SHA) { $env:PASEO_CANDIDATE_SHA } else { $env:GITHUB_SHA }
 if (!$IsWindows -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
-    $env:GITHUB_REPOSITORY -ne 'iExalt/paseo' -or $env:GITHUB_REF -ne 'refs/heads/dev' -or $env:GITHUB_ACTOR -ne 'iExalt') {
+    $env:GITHUB_REPOSITORY -ne 'iExalt/paseo' -or $env:GITHUB_REF -ne 'refs/heads/dev') {
     throw 'Trusted hosted Windows dev run required'
 }
+& node (Join-Path $PSScriptRoot 'native-candidate-authority.mjs')
+if ($LASTEXITCODE -ne 0) { throw 'Native actor or coordinator context mismatch' }
 if ($env:GITHUB_RUN_ID -notmatch '^\d+$' -or $env:GITHUB_RUN_ATTEMPT -notmatch '^\d+$') { throw 'Invalid run identity' }
 $root = Join-Path $env:RUNNER_TEMP "paseo-windows-products-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
 $evidence = Join-Path $root 'evidence'
