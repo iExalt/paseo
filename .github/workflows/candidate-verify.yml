@@ -118,7 +118,8 @@ jobs:
         if: matrix.kind == 'routine'
         env:
           ROUTINE_LANE: ${{ matrix.lane }}
-        run: mise run --skip-tools ci:routine --lane "$ROUTINE_LANE"
+        # Unit fixtures must not select live coordinator transport from ambient CI identity.
+        run: env -u GITHUB_WORKFLOW_REF mise run --skip-tools ci:routine --lane "$ROUTINE_LANE"
       - name: Exercise isolated deep journey
         if: matrix.kind == 'deep'
         env:
