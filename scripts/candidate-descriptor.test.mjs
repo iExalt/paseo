@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { createHash, generateKeyPairSync, sign, verify } from "node:crypto";
 import { mkdtemp, writeFile, readFile, mkdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,7 @@ import {
   productReceipts,
   transferProducts,
 } from "../.github/scripts/candidate-product-transfer.mjs";
+import { verifyAggregate, signAggregate } from "../.github/scripts/candidate-aggregate.mjs";
 import { pairedRuntime, transferPaired } from "../.github/scripts/candidate-paired-transfer.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
 import {
@@ -741,7 +742,7 @@ test("package transfer streams verified files and rejects truncation, mutation a
   }
 });
 
-test("candidate aggregate requires every same-attempt native cell and all source verification lanes", () => {
+test("candidate aggregate requires every same-attempt native cell and all source verification lanes", async () => {
   const descriptor = candidateFixture();
   const jobs = Object.entries(producerGroups).map(([, group], index) => ({
     id: index + 1,
@@ -781,6 +782,160 @@ test("candidate aggregate requires every same-attempt native cell and all source
       runtime: { passed: true, cleanup: true, signature },
     };
   });
+
+  const directory = await mkdtemp(join(tmpdir(), "candidate-aggregate-"));
+  const pair = generateKeyPairSync("ed25519"),
+    publicPin = pair.publicKey.export({ format: "jwk" }).x;
+  const draft = {
+    id: 42,
+    draft: true,
+    prerelease: false,
+    name: draftTag(descriptor),
+    tag_name: draftTag(descriptor),
+    target_commitish: descriptor.sourceSha,
+    body: draftBody(descriptor, "active", { runId: 500, attempt: 2 }),
+    assets: [],
+  };
+  const data = new Map();
+  const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  function upload(_id, name, value) {
+    const asset = { id: data.size + 1, name, size: value.length, state: "uploaded" };
+    data.set(asset.id, value);
+    draft.assets.push(asset);
+    return asset;
+  }
+  upload(42, "candidate-descriptor.json", descriptorBytes(descriptor));
+  upload(
+    42,
+    "candidate-descriptor.sig",
+    Buffer.from(
+      signDescriptor(
+        descriptor,
+        pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+        publicPin,
+      ),
+    ),
+  );
+  for (const receipt of receipts) {
+    const artifact = receipt.artifact,
+      bytes = Buffer.from(artifact.name);
+    artifact.bytes = bytes.length;
+    artifact.sha256 = hash(bytes);
+    upload(42, `run-500-attempt-2-${artifact.name}`, bytes);
+    if (artifact.closureManifest) {
+      const closure = Buffer.from(
+        JSON.stringify({
+          schemaVersion: artifact.platform === "macos" ? 2 : 1,
+          kind:
+            artifact.platform === "macos" ? "paseo-verification-candidate" : "paseo-nix-closure",
+          sourceSha: descriptor.sourceSha,
+          treeSha: descriptor.treeSha,
+          version: descriptor.version,
+          forkVersion: descriptor.version,
+          system: artifact.system,
+          outputPath: artifact.outputPath,
+          provenance: "local-ci-build",
+          closure: [
+            { path: artifact.outputPath, narHash: "sha256-" + "a".repeat(43) + "=", narSize: 4096 },
+          ],
+        }),
+      );
+      artifact.closureManifest.bytes = closure.length;
+      artifact.closureManifest.sha256 = hash(closure);
+      upload(42, `run-500-attempt-2-${artifact.closureManifest.name}`, closure);
+    }
+  }
+  for (const group of Object.keys(producerGroups))
+    upload(
+      42,
+      `run-500-attempt-2-receipts-${group}.json`,
+      Buffer.from(JSON.stringify(receipts.filter((receipt) => receipt.group === group))),
+    );
+  const api = {
+    publicPin,
+    get: async () => structuredClone(draft),
+    list: async () => [structuredClone(draft)],
+    ref: async () => null,
+    read: async (asset) => data.get(asset.id),
+    upload,
+    verifyFile: async (asset, identity) => verifyStream([data.get(asset.id)], identity),
+  };
+  const context = {
+    descriptor,
+    releaseId: 42,
+    runId: 500,
+    attempt: 2,
+    controllerSha: "c".repeat(40),
+  };
+  const root = {
+    id: 500,
+    run_attempt: 2,
+    repository: { id: 1404390841, full_name: "iExalt/paseo", private: false },
+    path: ".github/workflows/release-candidate.yml",
+    head_sha: context.controllerSha,
+    head_branch: "dev",
+    event: "workflow_dispatch",
+    status: "in_progress",
+    conclusion: null,
+    actor: { id: 7889894, login: "iExalt" },
+  };
+  const env = {
+    RUNNER_TEMP: directory,
+    GITHUB_OUTPUT: join(directory, "outputs"),
+    GH_TOKEN: "fixture",
+    GITHUB_RUN_ID: "500",
+    GITHUB_RUN_ATTEMPT: "2",
+    GITHUB_SHA: context.controllerSha,
+    GITHUB_EVENT_NAME: "workflow_dispatch",
+    CANDIDATE_NATIVE_ENABLED: "true",
+  };
+  const adapters = {
+    authenticate: async () => context,
+    draftApi: () => api,
+    publicPin,
+    request: async (route) =>
+      route.includes("/jobs?")
+        ? { jobs: jobs.map((job) => ({ ...job, run_id: 500, run_attempt: 2 })) }
+        : root,
+  };
+  try {
+    await assert.rejects(
+      verifyAggregate({ ...env, CANDIDATE_NATIVE_ENABLED: "false" }, adapters),
+      /canary/,
+    );
+    const complete = await verifyAggregate(env, adapters);
+    assert.equal(complete.artifacts.length, 14);
+    const verified = Object.fromEntries(
+      (await readFile(env.GITHUB_OUTPUT, "utf8"))
+        .trim()
+        .split("\n")
+        .map((line) => line.split("=")),
+    );
+    const signing = {
+      ...env,
+      VERIFIED_MANIFEST_DIGEST: verified.manifest_digest,
+      VERIFIED_EVIDENCE_DIGEST: verified.evidence_digest,
+      PASEO_RELEASE_MANIFEST_PRIVATE_KEY: pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+    };
+    draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 3 });
+    await assert.rejects(signAggregate({ ...signing }, adapters), /no longer admitted/);
+    assert.ok(!draft.assets.some((asset) => asset.name.endsWith("paseo-release-manifest.sig")));
+    draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 2 });
+    await signAggregate(signing, adapters);
+    const final = data.get(
+      draft.assets.find((asset) => asset.name.endsWith("paseo-release-manifest.json")).id,
+    );
+    const signature = data.get(
+      draft.assets.find((asset) => asset.name.endsWith("paseo-release-manifest.sig")).id,
+    );
+    assert.equal(
+      verify(null, final, pair.publicKey, Buffer.from(signature.toString(), "base64url")),
+      true,
+    );
+    assert.equal(draft.draft, true);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
   assert.equal(aggregateCandidate(descriptor, 500, 2, receipts, jobs).artifacts.length, 14);
   for (const change of [
     (rows) => rows.pop(),
