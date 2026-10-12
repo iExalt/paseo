@@ -300,7 +300,19 @@ timing and the two-minute routine stretch remain unclaimed.
 
 #### C2 release App setup and implementation boundary
 
-Implementation is in progress; no App credential or bot event has been proven.
+Source is reviewer-accepted and integrated at `121258cb6` through PR #61.
+Full routine PR `38192206691` passed in 4m15s and same-source dev `38192511163`
+in 4m01s; runner totals were 21m58s / 19m25s, retaining the original comparison
+baseline. Hosted helper contracts took 6.44s, including the signed mapping fixture
+at 0.49s and preflight at 0.80s. The uncached engine install/output added 2.78s.
+The full local rebase suite took 188s during high host load; hosted evidence
+does not show that slowdown as recurring CI cost.
+
+The owner provisioned App `5280233` and installation `170437913`; authenticated
+read-only inspection verified its client identity, selected repository and exact
+permissions, and resolved bot `paseo-release[bot]` / `341220930`. All four
+repository variables are configured and the owner supplied the private-key secret.
+Minted-token scope and real bot events remain unproven until the hosted rehearsal.
 The proposed workflow uses release-please 17.6.0 through pinned action v5.0.0,
 with GitHub release creation disabled. The independent manifest starts at 0.0.0
 and explicitly proposes 0.1.0. Explicit JSON selectors synchronize all workspace
@@ -345,6 +357,14 @@ Production proposals additionally require repository variable
 credentials does not enable production. The owner-dispatched fixed rehearsal
 branch provides the first bot-event proof and subsequent proposal lifecycle.
 Production activation is a separately reviewed handoff after that proof.
+
+C3 preparation adds checkout receipts to existing routine/deep setup logs, with
+no extra job, artifact or cache. The read-only verifier distinguishes routine's
+actual PR merge tree from deep checks on the authorized head, requires successful
+latest attempts and rechecks PR head/base after collecting evidence. Fixture
+proofs cover stale/rerun/missing checks and wrong merge parents; real events remain
+pending. The second engine proposal is also exercised without any GitHub release,
+matching the explicitly unpublished rehearsal.
 
 - [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
 
