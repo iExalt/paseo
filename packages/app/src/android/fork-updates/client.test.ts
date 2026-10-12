@@ -82,7 +82,7 @@ describe("fork update staged receipt recovery", () => {
     expect(harness.storage.has("@getpaseo/fork-update/semver-v1/staged-pending")).toBe(true);
     expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledOnce();
     expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledWith(
-      "https://github.com/iExalt/paseo/releases/download/v0.1.1/paseo.apk",
+      "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk",
       "fork-v0.1.1-paseo.apk",
       123,
       "a".repeat(64),
