@@ -580,8 +580,11 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.doesNotMatch(trigger, /push:|workflow_dispatch:/);
   assert.match(source, /github\.repository == 'iExalt\/paseo'/);
   assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
-  assert.match(source, /github\.actor == 'iExalt'/);
-  assert.match(build, /ref: \$\{\{ inputs\.source_sha \}\}/);
+  assert.match(
+    source,
+    /github\.workflow_ref == 'iExalt\/paseo\/\.github\/workflows\/release-candidate.yml@refs\/heads\/dev'/,
+  );
+  assert.match(build, /ref: \$\{\{ steps\.authority\.outputs\.source_sha \}\}/);
   assert.match(build, /candidate-identity\.mjs "\$SOURCE_SHA" "\$FORK_VERSION"/);
   // Generated WebView output changes a tracked file; bind clean source first.
   assert.ok(
@@ -602,11 +605,16 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.doesNotMatch(build, /PASEO_FORK_SIGNING_(?:KEY|CERT)/);
   assert.match(build, /apkanalyzer="\$ANDROID_HOME\/cmdline-tools\/latest\/bin\/apkanalyzer"/);
   assert.match(build, /Firebase client config failed validation/);
-  assert.doesNotMatch(sign, /actions\/checkout|npm |gradlew/);
+  assert.doesNotMatch(sign, /npm |gradlew/);
+  assert.doesNotMatch(
+    sign,
+    /ref: \$\{\{ (?:inputs\.source_sha|steps\.authority\.outputs\.source_sha) \}\}/,
+  );
+  assert.match(sign, /ref: \$\{\{ github.sha \}\}/);
   assert.match(sign, /apkanalyzer="\$android_home\/cmdline-tools\/latest\/bin\/apkanalyzer"/);
   assert.match(sign, /PASEO_FORK_SIGNING_KEY_PKCS8_PEM/);
   assert.match(sign, /PASEO_FORK_SIGNING_CERT_PEM/);
-  assert.match(sign, /permissions:\s*\{\}/);
+  assert.match(sign, /pull-requests: read/);
   assert.match(sign, /sha256sum .*build-metadata\.json/);
   assert.match(sign, /openssl pkcs8 -topk8 -nocrypt .* -outform DER/);
   assert.match(sign, /test "\$signer_count" -eq 1/);
@@ -642,12 +650,15 @@ test("fork candidate orchestration shares one identity and only completes after 
   const android = jobs.get("build-android")?.join("\n") ?? "";
   const candidate = jobs.get("candidate-complete")?.join("\n") ?? "";
 
-  assert.deepEqual(load(source).on, { workflow_dispatch: null });
+  assert.deepEqual(Object.keys(load(source).on), ["workflow_call"]);
   assert.doesNotMatch(trigger, /paths:|paths-ignore:/);
   assert.match(source, /github\.repository == 'iExalt\/paseo'/);
-  assert.match(source, /github\.actor == 'iExalt'/);
+  assert.match(
+    source,
+    /github\.workflow_ref == 'iExalt\/paseo\/\.github\/workflows\/release-candidate.yml@refs\/heads\/dev'/,
+  );
   assert.match(source, /github\.ref == 'refs\/heads\/dev'/);
-  assert.match(identity, /candidate-identity\.mjs "\$GITHUB_SHA"/);
+  assert.match(identity, /candidate-identity\.mjs "\$PASEO_CANDIDATE_SHA"/);
   assert.doesNotMatch(identity, /GITHUB_RUN_NUMBER/);
   assert.match(macos, /uses: \.\/\.github\/workflows\/macos-closure\.yml/);
   assert.match(android, /uses: \.\/\.github\/workflows\/fork-android-apk\.yml/);
@@ -675,6 +686,48 @@ test("fork candidate orchestration shares one identity and only completes after 
   assert.match(
     macosHelper,
     /paseo-nix-closure-\$source_sha-\$fork_version-attempt-\$\{GITHUB_RUN_ATTEMPT/,
+  );
+});
+
+test("paired workers gate source before execution and preserve signing and cache boundaries", () => {
+  for (const file of ["fork-builds.yml", "fork-android-apk.yml", "macos-closure.yml"]) {
+    const workflow = load(readFileSync(new URL(`.github/workflows/${file}`, repoRoot), "utf8"));
+    for (const job of Object.values(workflow.jobs).filter((item) => item.steps)) {
+      assert.equal((job.permissions ?? workflow.permissions)["pull-requests"], "read");
+      const gate = job.steps.findIndex(
+        (step) => step.run === "node .github/scripts/candidate-worker.mjs",
+      );
+      assert.ok(gate > 0);
+      const checkout = job.steps.findIndex(
+        (step) => step.with?.ref === "${{ steps.authority.outputs.source_sha }}",
+      );
+      if (checkout >= 0) assert.ok(checkout > gate);
+      for (const step of job.steps.filter((item) =>
+        JSON.stringify(item.env ?? {}).includes("SIGNING_KEY"),
+      )) {
+        assert.ok(job.steps.indexOf(step) > gate);
+        assert.ok(
+          [
+            "Sign and export the closure",
+            "Sign and verify with the approved fork certificate",
+          ].includes(step.name),
+        );
+      }
+    }
+  }
+  const android = load(readFileSync(forkAndroidWorkflowPath, "utf8"));
+  const build = android.jobs.build;
+  assert.ok(build.steps.every((step) => !["npm", "gradle"].includes(step.with?.cache)));
+  const restore = build.steps.find((step) => step.id === "gradle-cache");
+  assert.equal(restore.with["restore-keys"], undefined);
+  assert.match(restore.with.key, /^setup-java-Linux-x64-gradle-/);
+  assert.ok(!build.steps.some((step) => step.uses?.startsWith("actions/cache/save")));
+  const mac = load(readFileSync(new URL(".github/workflows/macos-closure.yml", repoRoot), "utf8"));
+  assert.equal(mac.jobs["verify-import"].needs, "build-and-export");
+  assert.ok(
+    mac.jobs["build-and-export"].steps.some(
+      (step) => step.if === "always()" && step.run?.includes("paseo-nix-release-secret-key"),
+    ),
   );
 });
 
@@ -768,7 +821,7 @@ test("candidate metadata rejects old, mixed, wrong-version and wrong-source inve
   }
 });
 
-test("paired candidate retries retain successful lane attempts without accepting future artifacts", () => {
+test("paired coordinator requires both platform artifacts from the admitted attempt", () => {
   const source = readFileSync(forkBuildsWorkflowPath, "utf8");
   const start = source.indexOf("          android_artifact_attempt=");
   const end = source.indexOf("          android_dir=", start);
@@ -780,8 +833,9 @@ test("paired candidate retries retain successful lane attempts without accepting
     .join("\n")}`;
   const sha = "a".repeat(40);
   for (const [androidAttempt, macosAttempt, accepted] of [
-    ["1", "2", true],
-    ["2", "1", true],
+    ["2", "2", true],
+    ["1", "2", false],
+    ["2", "1", false],
     ["3", "2", false],
     ["1", "3", false],
     ["0", "2", false],
