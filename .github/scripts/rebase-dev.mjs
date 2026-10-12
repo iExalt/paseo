@@ -19,6 +19,12 @@ import {
   inspectForkRelease,
   assertForkReleasePreserved,
 } from "../../scripts/fork-release-config.mjs";
+import {
+  RELEASE_BOUNDARY_PATH,
+  RELEASE_CONFIG_PATH,
+  readReleaseBoundary,
+  rebindReleaseBoundary,
+} from "../../scripts/release-boundary.mjs";
 
 const execFileAsync = promisify(execFile);
 const RESOLUTION_REF = "refs/heads/rebase-resolutions";
@@ -483,6 +489,7 @@ async function signRebasedCommits(
   originalCommits,
   signingKey,
   publicKey,
+  rewrittenMap = new Map(),
 ) {
   if (!signingKey) throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is required");
   const trustedPublicKey = publicKey.trim().split(/\s+/).slice(0, 2).join(" ");
@@ -596,6 +603,7 @@ async function signRebasedCommits(
         signedSha,
       ]);
       parent = signedSha;
+      rewrittenMap.set(originalCommits[index], signedSha);
     }
     if (originals.length > 0) {
       await gitChecked(repositoryPath, ["reset", "--hard", parent]);
@@ -759,6 +767,9 @@ export async function rebaseDev({
     const before = await inspectForkRelease((file) =>
       gitChecked(repositoryPath, ["show", `${snapshots.dev}:${file}`]),
     );
+    const beforeRelease = await readReleaseBoundary((file) =>
+      gitChecked(repositoryPath, ["show", `${snapshots.dev}:${file}`]),
+    );
     const maxContinuations = await replayCommitCount(
       repositoryPath,
       snapshots.upstream,
@@ -797,18 +808,35 @@ export async function rebaseDev({
         snapshots.upstream,
       );
     }
+    const rewritten = new Map();
     const signedCommits = await signRebasedCommits(
       repositoryPath,
       snapshots.upstream,
       originalCommits,
       signingKey,
       publicKey,
+      rewritten,
     );
     const readRelease = () =>
       inspectForkRelease((file) => readFile(join(repositoryPath, file), "utf8"));
     assertForkReleasePreserved(before, await readRelease());
+    const readBoundary = () =>
+      readReleaseBoundary((file) => readFile(join(repositoryPath, file), "utf8"));
+    const replayedRelease = await readBoundary();
+    if (JSON.stringify(replayedRelease) !== JSON.stringify(beforeRelease)) {
+      throw new Error("Rebase changed the recorded release boundary before mapping");
+    }
+    const reboundRelease = await rebindReleaseBoundary(
+      beforeRelease,
+      rewritten,
+      async (sha) =>
+        (await git(repositoryPath, ["merge-base", "--is-ancestor", sha, "HEAD"])).code === 0,
+    );
     let provenanceCommits = 0;
-    if (before.config.upstreamBase !== snapshots.upstream) {
+    if (
+      before.config.upstreamBase !== snapshots.upstream ||
+      reboundRelease.boundary.currentSha !== beforeRelease.boundary.currentSha
+    ) {
       // Keep replayed author/message metadata intact. Provenance is a separate,
       // signed commit, and the downstream routine gate validates this final HEAD.
       const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
@@ -816,7 +844,21 @@ export async function rebaseDev({
         join(repositoryPath, FORK_CONFIG_PATH),
         `${JSON.stringify({ ...before.config, upstreamBase: snapshots.upstream }, null, 2)}\n`,
       );
-      await gitChecked(repositoryPath, ["add", "--", FORK_CONFIG_PATH]);
+      await writeFile(
+        join(repositoryPath, RELEASE_BOUNDARY_PATH),
+        `${JSON.stringify(reboundRelease.boundary, null, 2)}\n`,
+      );
+      await writeFile(
+        join(repositoryPath, RELEASE_CONFIG_PATH),
+        `${JSON.stringify(reboundRelease.config, null, 2)}\n`,
+      );
+      await gitChecked(repositoryPath, [
+        "add",
+        "--",
+        FORK_CONFIG_PATH,
+        RELEASE_BOUNDARY_PATH,
+        RELEASE_CONFIG_PATH,
+      ]);
       const tree = (await gitChecked(repositoryPath, ["write-tree"])).trim();
       const unsigned = (
         await gitChecked(
@@ -842,6 +884,9 @@ export async function rebaseDev({
       );
     }
     assertForkReleasePreserved(before, await readRelease(), snapshots.upstream);
+    if (JSON.stringify(await readBoundary()) !== JSON.stringify(reboundRelease)) {
+      throw new Error("Signed provenance changed the release boundary");
+    }
     await writeDiagnostics(
       diagnosticsPath,
       snapshots,
