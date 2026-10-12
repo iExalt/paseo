@@ -19,7 +19,21 @@ permissions:
   pull-requests: read
 
 jobs:
+  authorize:
+    if: inputs.source_sha != ''
+    uses: ./.github/workflows/candidate-auth.yml
+    permissions:
+      contents: write
+      actions: read
+      pull-requests: read
+    with:
+      release_id: ${{ inputs.release_id }}
+      source_sha: ${{ inputs.source_sha }}
+      descriptor_digest: ${{ inputs.descriptor_digest }}
+      group: verification
+
   verify:
+    needs: [authorize]
     name: ${{ matrix.kind }} (${{ matrix.lane }})
     runs-on: ubuntu-24.04
     timeout-minutes: ${{ matrix.kind == 'routine' && 5 || 15 }}
@@ -39,12 +53,20 @@ jobs:
           - { kind: deep, lane: integration }
           - { kind: deep, lane: electron }
     env:
+      CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
+      CANDIDATE_GRANT_GROUP: verification
+      CANDIDATE_EXPECTED_JOB: verify / ${{ matrix.kind }} (${{ matrix.lane }})
       CI: "true"
       LEFTHOOK: "0"
       MISE_TASK_RUN_AUTO_INSTALL: "false"
       npm_config_audit: "false"
       npm_config_fund: "false"
       PASEO_CANDIDATE_SHA: ${{ inputs.source_sha }}
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
     steps:
       - name: Read trusted controller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
