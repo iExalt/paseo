@@ -1444,3 +1444,5 @@ A1's VAD smoke. Disposable upgrades must preserve meaningful state.
   was removed after exact metadata verification; unrelated entries and the 10 GB
   ceiling remain unchanged. Numeric-ceiling acceptance and enforcement are the
   remaining G1 closure gate; no later phase has started.
+
+<!-- C3 isolated owner-created authorization-negative rehearsal; never merge. -->
