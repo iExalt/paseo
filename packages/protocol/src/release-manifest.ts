@@ -225,3 +225,8 @@ export function serializePaseoReleaseManifest(manifest: PaseoReleaseManifest): s
   validatePaseoReleaseManifest(manifest);
   return `${JSON.stringify(sortJsonKeys(manifest))}\n`;
 }
+
+// Historical recovery tooling remains strict V1; normal fork discovery uses V2.
+export type LegacyPaseoReleaseManifest = PaseoReleaseManifest;
+export const validateLegacyPaseoReleaseManifest = validatePaseoReleaseManifest;
+export const serializeLegacyPaseoReleaseManifest = serializePaseoReleaseManifest;

@@ -6,8 +6,10 @@
   `paseo-github-workflows`, branch `ci/github-workflows`.
 - Reviewed implementation `72300136d` is integrated on `dev`; PRs #1–#3 merged
   by fast-forward after their final-source routine checks passed.
-- Authority: Phase B approved on 2026-10-10; phases C–D and personal-device/public-release
-  operations retain the boundaries in the [script](GITHUB_WORKFLOWS_SCRIPT.md).
+- Authority: Phase C approved on 2026-10-11, including reviewed commits/pushes and
+  bounded unpublished bot PR/draft rehearsals on free runners. Phase D and
+  personal-device/public-release operations retain the boundaries in the
+  [script](GITHUB_WORKFLOWS_SCRIPT.md).
 - [Plan](GITHUB_WORKFLOWS_PLAN.md) owns decisions and gates;
   [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) owns exhaustive task coverage.
 - Phase A / G0–G1 complete. Linux and Windows ARM64 native dependency
@@ -273,12 +275,29 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-Current sequence: request approval for the reviewer-shaped Phase C proposal.
+Current sequence: implement the approved, reviewer-shaped Phase C proposal.
 C covers the settled 0.1.0/semver clean break and real release-please bot events;
 D owns exact-candidate release coordination, publication and personal-device
-migration. Neither phase is approved yet. Preserve routine latency; deeper gates
+migration. Phase D is not approved. Preserve routine latency; deeper gates
 do not join ordinary PR blocking work. ARM cache transport, full cache-hit upgrade
 timing and the two-minute routine stretch remain unclaimed.
+
+### Phase C checklist
+
+- [ ] C1: 0.1.0 reset, semver-only upgrades, clean-break migration and recovery fixtures.
+  - [ ] C1a: portable V2 inventory and shared version rules (implemented; review pending).
+  - [ ] C1b: Android discovery, receipts and native fork encoding.
+  - [ ] C1c: Nix transactional recovery and desktop updater contract.
+  - [ ] C1d: workspace/native version reset and rebase-preservation integration.
+- [ ] C2: release-please bootstrap and scoped App authentication.
+- [ ] C3: real bot PR events, two proposals, current-head and forged-label proofs.
+
+C1a introduces an exact 14-cell signed inventory, preserves explicit V1 recovery
+exports, and moves fork version rules into the portable protocol package. The
+existing consumers still use V1 until their coordinated C1b/C1c migrations;
+no installed state or signing identity has changed. Source TypeScript, emitted
+JavaScript and Node 26 CommonJS loading are checked separately. Contract cases
+remain cheap unit fixtures; live packaging and device migration remain Phase D.
 
 ### Phase B evidence history
 
