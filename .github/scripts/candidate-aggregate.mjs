@@ -11,7 +11,7 @@ import {
   attemptAssetName,
   requireCurrentRun,
   requireAttempt,
-  uploadAttemptBytes,
+  attemptWriter,
 } from "./candidate-draft.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 import {
@@ -159,13 +159,14 @@ export async function signAggregate(
   assert.equal(key.asymmetricKeyType, "ed25519");
   assert.equal(createPublicKey(key).export({ format: "jwk" }).x, publicPin);
   const signature = Buffer.from(sign(null, bytes, key).toString("base64url"));
+  const writer = await attemptWriter(api, descriptor, releaseId, runId, attempt);
   for (const [name, value] of [
     ["paseo-release-manifest.json", bytes],
     ["paseo-release-manifest.sig", signature],
     ["candidate-evidence.json", evidence],
   ]) {
     await requireCurrentRun(env, request);
-    await uploadAttemptBytes(api, descriptor, releaseId, runId, attempt, name, value);
+    await writer.bytes(name, value);
   }
   await requireCurrentRun(env, request);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);

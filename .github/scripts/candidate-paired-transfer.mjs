@@ -11,12 +11,7 @@ import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 import { verifyCompletedSteps } from "./candidate-product-transfer.mjs";
 import { producerGroups, validateCellReceipt } from "./candidate-matrix.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
-import {
-  requireCurrentRun,
-  requireAttempt,
-  uploadAttemptFile,
-  uploadAttemptBytes,
-} from "./candidate-draft.mjs";
+import { requireCurrentRun, requireAttempt, attemptWriter } from "./candidate-draft.mjs";
 import { fileIdentity } from "./candidate-files.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 
@@ -197,7 +192,7 @@ export async function transferPaired(
     env.RUNNER_TEMP,
     `candidate-paired-transfer-${platform}-${runId}-${attempt}`,
   );
-  const candidate = await download(pin, directory, env.GH_TOKEN, platform);
+  const candidate = await download(pin, directory, env.GH_TOKEN, platform, undefined, context);
   const { receipt, files } = await pairedReceipt(
     candidate,
     pin,
@@ -207,18 +202,14 @@ export async function transferPaired(
     producerJobId,
   );
   const api = draftApi(env.GH_TOKEN);
+  const writer = await attemptWriter(api, descriptor, releaseId, runId, attempt);
   for (const [asset, file] of files) {
     await requireCurrentRun(env, request);
-    await uploadAttemptFile(api, descriptor, releaseId, runId, attempt, asset.name, file, asset);
+    await writer.file(asset.name, file, asset);
   }
   await requireCurrentRun(env, request);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
-  await uploadAttemptBytes(
-    api,
-    descriptor,
-    releaseId,
-    runId,
-    attempt,
+  await writer.bytes(
     `receipts-${platform}-arm64.json`,
     Buffer.from(JSON.stringify([receipt]) + "\n"),
   );

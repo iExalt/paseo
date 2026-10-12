@@ -32,6 +32,7 @@ import {
   verifyDescriptor,
 } from "../.github/scripts/candidate-descriptor.mjs";
 import {
+  attemptWriter,
   draftBody,
   ensureDraft,
   uploadAttemptBytes,
@@ -687,6 +688,135 @@ test("paired transfer binds signing, fresh import and native runtime before reta
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("batched lifecycle and immutable writer retain fresh checks with bounded API cost", async () => {
+  const descriptor = candidateFixture(),
+    pair = generateKeyPairSync("ed25519");
+  const publicPin = pair.publicKey.export({ format: "jwk" }).x;
+  const draft = {
+    id: 42,
+    name: draftTag(descriptor),
+    tag_name: draftTag(descriptor),
+    target_commitish: descriptor.sourceSha,
+    draft: true,
+    prerelease: false,
+    body: draftBody(descriptor, "active", { runId: 500, attempt: 2 }),
+    assets: [],
+  };
+  const data = new Map(),
+    counts = { rest: 0, graphql: 0 };
+  let fault = null,
+    loseReply = false;
+  function add(name, value) {
+    const row = { id: data.size + 1, name, size: value.length, state: "uploaded" };
+    data.set(row.id, value);
+    draft.assets.push(row);
+    return row;
+  }
+  add("candidate-descriptor.json", descriptorBytes(descriptor));
+  add(
+    "candidate-descriptor.sig",
+    Buffer.from(
+      signDescriptor(
+        descriptor,
+        pair.privateKey.export({ type: "pkcs8", format: "pem" }),
+        publicPin,
+      ),
+    ),
+  );
+  const api = candidateGithub("fixture", async (url, options) => {
+    if (url.endsWith("/graphql")) {
+      counts.graphql++;
+      const variables = JSON.parse(options.body).variables;
+      assert.equal(variables.final, `refs/tags/${descriptor.releaseTag}`);
+      const node = {
+        databaseId: draft.id,
+        name: draft.name,
+        tagName: draft.tag_name,
+        targetCommitish: draft.target_commitish,
+        isDraft: draft.draft,
+        isPrerelease: draft.prerelease,
+        description: draft.body,
+      };
+      const payload = {
+        data: {
+          rateLimit: { cost: 1, remaining: 999, resetAt: "2026-10-12T18:00:00Z" },
+          repository: {
+            databaseId: 1404390841,
+            nameWithOwner: "iExalt/paseo",
+            final: null,
+            transport: null,
+            releases: { nodes: [node], pageInfo: { hasNextPage: false, endCursor: null } },
+          },
+        },
+      };
+      if (fault) fault(payload, variables);
+      return Response.json(payload);
+    }
+    counts.rest++;
+    const target = new URL(url);
+    if (target.hostname === "uploads.github.com") {
+      const row = add(target.searchParams.get("name"), Buffer.from(options.body));
+      if (loseReply) {
+        loseReply = false;
+        throw new Error("lost upload reply");
+      }
+      return Response.json(row, { status: 201 });
+    }
+    if (target.pathname.endsWith("/releases/42/assets")) return Response.json(draft.assets);
+    if (target.pathname.includes("/releases/assets/"))
+      return new Response(data.get(Number(target.pathname.split("/").at(-1))));
+    assert.ok(target.pathname.endsWith("/releases/42"));
+    return Response.json(draft);
+  });
+  api.publicPin = publicPin;
+  const writer = await attemptWriter(api, descriptor, 42, 500, 2);
+  await writer.bytes("fixture.json", Buffer.from("first"));
+  assert.deepEqual(counts, { rest: 10, graphql: 2 });
+  loseReply = true;
+  await writer.bytes("lost.json", Buffer.from("recovered"));
+  assert.deepEqual(counts, { rest: 16, graphql: 4 });
+  assert.equal(draft.assets.filter((asset) => asset.name.endsWith("lost.json")).length, 1);
+  for (const mutate of [
+    (payload) => {
+      payload.errors = [{ message: "partial" }];
+    },
+    (payload) => {
+      payload.data.repository = null;
+    },
+    (payload) => {
+      delete payload.data.repository.final;
+    },
+    (payload) => {
+      payload.data.repository.transport = { name: "reserved" };
+    },
+    (payload) => {
+      payload.data.repository.releases.nodes.push(payload.data.repository.releases.nodes[0]);
+    },
+    (payload) => {
+      payload.data.repository.releases.pageInfo = { hasNextPage: true, endCursor: "same" };
+      payload.data.repository.releases.nodes = [];
+    },
+    (payload, variables) => {
+      payload.data.repository.releases.pageInfo = {
+        hasNextPage: true,
+        endCursor: (variables.cursor ?? "") + "x",
+      };
+      payload.data.repository.releases.nodes = [];
+    },
+  ]) {
+    fault = mutate;
+    await assert.rejects(api.lifecycle(descriptor));
+  }
+  fault = (payload) => {
+    payload.data.repository.releases.nodes[0].description = draftBody(descriptor, "active", {
+      runId: 500,
+      attempt: 3,
+    });
+  };
+  await assert.rejects(writer.bytes("stale.json", Buffer.from("no")), /no longer admitted/);
+  assert.ok(!draft.assets.some((asset) => asset.name.endsWith("stale.json")));
 });
 
 test("draft inventory paginates retries and rejects duplicate or unbounded assets", async () => {
