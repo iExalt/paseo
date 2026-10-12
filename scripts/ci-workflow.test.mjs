@@ -124,6 +124,7 @@ test("only fork-owned workflows are installed", () => {
   assert.deepEqual(workflows, [
     "android-arm64-feasibility.yml",
     "candidate-runtime.yml",
+    "candidate-transfer.yml",
     "candidate-verify.yml",
     "ci-deep.yml",
     "ci.yml",
@@ -150,6 +151,20 @@ test("only fork-owned workflows are installed", () => {
       assert.match(job.if, /github.ref == 'refs\/heads\/dev'/);
       assert.match(job.if, /github.ref == 'refs\/heads\/ci\/github-workflows'/);
     }
+  }
+});
+
+test("write-token product transfer executes only the trusted controller", () => {
+  const workflow = load(
+    readFileSync(new URL(".github/workflows/candidate-transfer.yml", repoRoot), "utf8"),
+  );
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_call"]);
+  assert.equal(workflow.permissions.contents, "write");
+  assert.ok(!JSON.stringify(workflow).includes("secrets."));
+  for (const step of workflow.jobs.transfer.steps) {
+    if (step.uses?.startsWith("actions/checkout@"))
+      assert.equal(step.with.ref, "${{ github.sha }}");
+    if (step.run) assert.equal(step.run, "node .github/scripts/candidate-product-transfer.mjs");
   }
 });
 
