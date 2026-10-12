@@ -176,6 +176,14 @@ test("current-head verifier requires both latest gates, exact setup receipts and
       f.logs.set(200, f.logs.get(200).replace(`"baseSha":"${base}"`, `"baseSha":"${head}"`));
     },
     (f) => {
+      const original = f.request;
+      let reads = 0;
+      f.request = async (...args) => {
+        if (args[0].includes("/workflows/ci.yml/") && ++reads === 2) f.runs[0].run_attempt = 2;
+        return original(...args);
+      };
+    },
+    (f) => {
       f.onFinal = (p) => {
         p.head.sha = merge;
       };
@@ -204,6 +212,9 @@ test("current-head verifier requires both latest gates, exact setup receipts and
   );
   assert.throws(() =>
     verifyRehearsalMerge(merged, { sha: head, parents: [{ sha: base }, { sha: head }] }, proof),
+  );
+  assert.throws(() =>
+    verifyRehearsalMerge(merged, { sha: merge, parents: [{ sha: head }, { sha: base }] }, proof),
   );
   assert.throws(() =>
     verifyRehearsalMerge(
