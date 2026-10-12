@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../../", import.meta.url));
 export const coreTests = [
+  "scripts/fork-release-config.test.mjs",
   "scripts/candidate-artifacts.test.mjs",
   "scripts/process-tree.test.mjs",
   "scripts/native-candidate.test.mjs",
