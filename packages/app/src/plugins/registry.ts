@@ -3,8 +3,10 @@ import { useMemo, useSyncExternalStore } from "react";
 import { QueryClient } from "@tanstack/react-query";
 import { createPaseoApi } from "@getpaseo/client";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { assertPluginCompatibility } from "@getpaseo/protocol/plugin-requirements";
-import { resolveAppVersion } from "@/utils/app-version";
+import {
+  assertPluginCompatibility,
+  PASEO_PLUGIN_API_VERSION,
+} from "@getpaseo/protocol/plugin-requirements";
 import { createPluginClientRuntime } from "./client-runtime";
 import { runPluginClientBundle } from "./evaluate";
 import type { InstalledPlugin } from "./types";
@@ -20,7 +22,7 @@ export class PluginRegistry {
 
   constructor(
     private readonly dependencies: {
-      version: string | null;
+      version?: string | null;
       createRuntime: typeof createPluginClientRuntime;
     },
   ) {}
@@ -70,7 +72,14 @@ export class PluginRegistry {
       let installation: InstalledPlugin | undefined;
       try {
         if (!entry.clientBundle) return [];
-        assertPluginCompatibility({ ...entry, version: this.dependencies.version, runtime: "app" });
+        assertPluginCompatibility({
+          ...entry,
+          version:
+            this.dependencies.version === undefined
+              ? PASEO_PLUGIN_API_VERSION
+              : this.dependencies.version,
+          runtime: "app",
+        });
         const existing = preserved.find(
           (plugin) => plugin.id === entry.id && plugin.clientBundle === entry.clientBundle,
         );
@@ -181,7 +190,6 @@ export class PluginRegistry {
 }
 
 export const pluginRegistry = new PluginRegistry({
-  version: resolveAppVersion(),
   createRuntime: createPluginClientRuntime,
 });
 
