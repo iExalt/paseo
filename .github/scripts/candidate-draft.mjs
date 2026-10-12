@@ -49,6 +49,7 @@ export function validateDraft(release, descriptor, active = true) {
 // are fresh reads. All writes run under the coordinator's global concurrency lock.
 export async function eligibleDraft(api, descriptor, existingId) {
   assert.equal(await api.ref(descriptor.releaseTag), null, "Final tag already exists");
+  assert.equal(await api.ref(draftTag(descriptor)), null, "Transport tag already exists");
   const releases = await api.list();
   let selected;
   for (const release of releases) {
