@@ -113,11 +113,28 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Capture hosted Android SDK before mise
+        id: hosted-sdk
+        shell: bash
+        run: |
+          android_home="$(readlink -f "${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}")"
+          test -x "$android_home/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$android_home/cmdline-tools/latest/bin/apkanalyzer"
+          echo "root=$android_home" >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Restore hosted Android SDK after mise
+        shell: bash
+        env:
+          HOSTED_ANDROID_HOME: ${{ steps.hosted-sdk.outputs.root }}
+        run: |
+          test -x "$HOSTED_ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$HOSTED_ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          echo "ANDROID_HOME=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
@@ -391,11 +408,28 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Capture hosted Android SDK before mise
+        id: hosted-sdk
+        shell: bash
+        run: |
+          android_home="$(readlink -f "${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}")"
+          test -x "$android_home/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$android_home/cmdline-tools/latest/bin/apkanalyzer"
+          echo "root=$android_home" >> "$GITHUB_OUTPUT"
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Restore hosted Android SDK after mise
+        shell: bash
+        env:
+          HOSTED_ANDROID_HOME: ${{ steps.hosted-sdk.outputs.root }}
+        run: |
+          test -x "$HOSTED_ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          test -x "$HOSTED_ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          echo "ANDROID_HOME=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:

@@ -383,14 +383,14 @@ lockfile reset changed the fixed-output input without refreshing
 `nix/npm-deps.hash`. Both builders computed
 `sha256-XUXsxOmy4fXeZlmgNlQAT+WG7MdQwj1Zgo1gOEFuXw0=`; an independent local
 prefetch using the exact `flake.lock` nixpkgs fetcher reproduced it. The corrected
-hash and refresh comment are prepared locally, not published. Correcting the
+hash and refresh comment were subsequently published in `c052ac894`. Correcting the
 immutable product source requires a new authenticated 0.1.0 proposal and fresh
 proofs; the existing same-source authority does not cover that transition.
 The user approved explicit unpublished-proposal replacement and pre-merge hash
 maintenance, preserving bootstrap/publication history and signed assets, and
 authorized autonomous resolution of routine Phase D issues. Public release and
-personal-device migration remain excluded. The replacement transition is not
-yet implemented or verified.
+personal-device migration remain excluded. The replacement transition is now
+implemented and its proposal/canary proof is recorded below; full native proof remains open.
 
 The failed trial is terminal/canceled and native enablement is removed. Linux
 product cleanup and Linux/macOS signing-key cleanup passed. Both Windows jobs
@@ -420,7 +420,8 @@ bytes are preserved. Read-only verification authenticated all six stopped signed
 predecessor drafts against PR #74 and its source. The original interrupted
 Windows trial still lacks its cleanup receipts.
 
-The replacement transition and future proposal hash maintenance are source-reviewed.
+The replacement transition and future proposal hash maintenance are integrated at
+`d58c1cc1e` through PR #82; PR/dev checks passed in 4m37s/4m53s.
 The pinned release engine's complete generated lock is hashed before App credentials
 exist; the hash and version edits share one frozen commit. Git publication uses
 an explicit expected-head lease, and lost replies reconcile exact branch/tree/PR
@@ -430,9 +431,48 @@ old pending label only after authenticating the new proposal. Trusted candidate
 admission verifies all stopped signed predecessors, including retired tags;
 read-only workers validate their current-attempt grant and immutable source structure.
 Later same-source authority retirement remains possible without rewriting the record.
-Cheap tree, lease, interrupted-publication and signed-history fixtures passed;
-the live replacement proposal, source checks, canary and complete native matrix
-remain open. No public release or personal-device migration is authorized here.
+Cheap tree, lease, interrupted-publication and signed-history fixtures passed.
+Owner proposal run `38325326647` completed in 1m31s, including a fresh 39.83s
+dependency-hash fetch before App credentials. Authentic PR #83 contains only the
+replacement selection record; PR #74 was marked superseded after its successor
+was verified. Routine/deep runs `38325444812` / `38325446209` passed; routine
+took 4m44s. Conditional rebase merge `2ddc069de` preserved sole parent
+`d58c1cc1e` and tested tree `4af845dadac7c3e0d530e6b00898c687d96d89b8`.
+Same-source dev `38326027664` passed in 4m43s. Browser/Electron screenshots were
+inspected; the previously recorded React unknown-prop toast remains visible.
+Read-only probe `38325868524` exercised the actual pinned release engine with
+only `contents: read` in 45s, preserving the normal pending-version pause and
+unchanged dev. Its owned branch/worktree were removed.
+
+Replacement canary `38326028608` attempt 3 is reviewer-accepted: all ten lanes
+passed, native jobs/signing stayed off and aggregate rejected the incomplete
+matrix as intended. Draft `411096940` binds descriptor digest
+`61b32eab46450676b09668fb85082ae8276dc770f877bd1f30b673fdddcf02ee` to
+source/controller `2ddc069de` and policy
+`df31931bfe307f883545a5e68e671cd9db44b1ac44dd7bdc8682e171ba2b3277`.
+Downloaded grant `11780359492` matched its digest; authentication took 41s plus
+4s scheduling. Public release/tag inventories remained unchanged.
+
+Initial issuance hit a partial GitHub upload: descriptor asset `635364500`
+remained `starter`, and the unchanged second attempt correctly rejected it.
+The release's embedded asset list omitted that placeholder; recovery therefore
+used the dedicated asset-list endpoint. After terminal-run, exact identity and
+unadmitted-state checks, owner recovery removed only that unfinished asset,
+preserved the draft and resumed the unchanged third attempt. Uploaded authority
+assets are now `635376906` / `635376989`; no signed asset was deleted.
+GitHub documents this [starter-asset recovery](https://docs.github.com/en/rest/releases/assets#upload-a-release-asset).
+Production transport retains its no-delete, fail-closed behavior.
+
+Full native retry `38327254656` reached all platform builds, then stopped at Android
+SDK setup: mise's repository environment replaced the hosted SDK root with an
+uninstalled local SDK path. The coordinator was canceled and native enablement
+removed. All jobs are terminal; Linux product cleanup, Linux/macOS signing-key
+cleanup and both Windows owned-process cleanup steps succeeded. The Android
+controller repair captures the hosted SDK before mise and restores both SDK
+variables afterward, in build and signing jobs. Its focused hosted setup proof,
+fresh policy issuance and complete matrix remain required. The complete 14-cell
+matrix, eight transfers, downloaded inventory and cleanup remain required before
+G5. No public release or personal-device migration is authorized here.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.
@@ -502,26 +542,26 @@ runner time counts parallel work. Failed/cancelled samples are not successful
 baselines. These historical inputs differ from current code and must not be
 treated as controlled before/after measurements.
 
-| Workflow / callable lane                           | Trigger and runner                                    | Observed timing and largest cost                                                                 | Current deadline / optimization gate                                             |
-| -------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| Routine CI                                         | PR/dev; Ubuntu x64, seven lanes                       | PR 4m15s / dev 4m18s; runner work 20m18s / 20m37s at `72300136d`                                 | Complete gate <5m; 2m stretch, reduce setup duplication and expensive tests      |
-| Legacy candidate coordinator                       | Manual; Ubuntu x64 with parallel Mac/Android children | `38071895947` at `d04260338`: 23m41s critical path, 37m04s runner work, initial queue 3s         | Identity 5m; cross-check 10m; replacement in D                                   |
-| macOS closure build / fresh import                 | Reusable; macos-14 ARM64                              | Same run: build/sign/export 12m24s, fresh import 1m08s; Nix build 6m, export 4m26s, transfers 9s | 90m / 20m; B2 inspect compression/export before increasing parallelism           |
-| Android APK build / signing                        | Reusable; Ubuntu x64 builds ARM64                     | Same run: build 22m55s, sign 20s; Gradle 20m11s, npm 1m27s, transfers 10s                        | 60m / 10m; B2 inspect Gradle cache effectiveness and resource pressure           |
-| Rebase dev                                         | Manual; Ubuntu x64                                    | Old `38070392394` at `e399ee213`: 2m16s, install 53s; predates the complete routine gate         | 45m; current full-gate timing unmeasured, retain exact-tested-tree boundary      |
-| Upstream sync                                      | Schedule/manual; Ubuntu                               | `38063683920` at `585037fd8`: 3s job, 4s initial queue                                           | 5m; no measured bottleneck                                                       |
-| Linux/Windows native feasibility                   | Scoped work-branch push; Ubuntu ARM64 / Windows ARM64 | `38079931018` at `510974a2`: Linux 1m07s; Windows cancelled at 15m15s during install             | 15m; diagnostic only, Windows replaced by focused binding proof                  |
-| Android ARM64 feasibility                          | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                               |
-| Windows ARM64 binding feasibility                  | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                        |
-| Deep checks                                        | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                           | 15m per lane; reduce repeated setup subprocesses, preserve journeys              |
-| Candidate native runtime                           | Manual; macOS ARM64 / Ubuntu ARM64 Android container  | Mac `38105941202` 4m58s; Android `38107787799` 5m37s                                             | 30m jobs; bounded install/upgrade journeys, immutable producer reuse             |
-| Linux package evaluation preflight                 | Manual; native Linux                                  | x64 `434bb96d4` 31s; substitutable Node avoids bootstrap                                         | 10m job / 8m evaluation; no product realization                                  |
-| Linux Nix runtime                                  | Manual; native Linux x64/ARM64                        | x64 `38109113388` 21m46s; ARM `38110354030` 16m55s                                               | 45m job / 35m build; source filtering avoids test-only invalidation              |
-| Linux format prerequisite                          | Manual; native Linux x64/ARM64                        | x64 `c790a0156` 6m04s; ARM `6be877f3a` 3m21s; different hosts/settings                           | 20m job; gzip parity, no extra benchmark-only runs                               |
-| Linux product formats                              | Manual; native Linux x64/ARM64                        | x64 `38133587458`: native 17m16s, build/fan-out 11m56s, runtime 4m52s; additive cache proof 31s  | 45m job / 30m build / 10m runtime; verified predecessor cache avoids ~5m rebuild |
-| Windows package prerequisite                       | Manual; native Windows ARM64 first                    | `38155408446` passed in 5m04s; fixture lifecycle and owned process checks                        | 50m cap; small fixture graph avoids repeating root installation                  |
-| Windows packages                                   | Manual; native Windows ARM64 / x64                    | ARM `38173280275` passed in 65m28s; installs 23m32s + 20m55s, builds 5m28s + 4m43s               | 150m cap; immutable predecessor caching targets repeated old install/build       |
-| Release-please / replacement candidate publication | Future C/D                                            | Unmeasured                                                                                       | Measure at approved gates; no publication for benchmarking                       |
+| Workflow / callable lane              | Trigger and runner                                    | Observed timing and largest cost                                                                 | Current deadline / optimization gate                                             |
+| ------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| Routine CI                            | PR/dev; Ubuntu x64, seven lanes                       | PR 4m15s / dev 4m18s; runner work 20m18s / 20m37s at `72300136d`                                 | Complete gate <5m; 2m stretch, reduce setup duplication and expensive tests      |
+| Legacy candidate coordinator          | Manual; Ubuntu x64 with parallel Mac/Android children | `38071895947` at `d04260338`: 23m41s critical path, 37m04s runner work, initial queue 3s         | Identity 5m; cross-check 10m; replacement in D                                   |
+| macOS closure build / fresh import    | Reusable; macos-14 ARM64                              | Same run: build/sign/export 12m24s, fresh import 1m08s; Nix build 6m, export 4m26s, transfers 9s | 90m / 20m; B2 inspect compression/export before increasing parallelism           |
+| Android APK build / signing           | Reusable; Ubuntu x64 builds ARM64                     | Same run: build 22m55s, sign 20s; Gradle 20m11s, npm 1m27s, transfers 10s                        | 60m / 10m; B2 inspect Gradle cache effectiveness and resource pressure           |
+| Rebase dev                            | Manual; Ubuntu x64                                    | Old `38070392394` at `e399ee213`: 2m16s, install 53s; predates the complete routine gate         | 45m; current full-gate timing unmeasured, retain exact-tested-tree boundary      |
+| Upstream sync                         | Schedule/manual; Ubuntu                               | `38063683920` at `585037fd8`: 3s job, 4s initial queue                                           | 5m; no measured bottleneck                                                       |
+| Linux/Windows native feasibility      | Scoped work-branch push; Ubuntu ARM64 / Windows ARM64 | `38079931018` at `510974a2`: Linux 1m07s; Windows cancelled at 15m15s during install             | 15m; diagnostic only, Windows replaced by focused binding proof                  |
+| Android ARM64 feasibility             | Scoped work-branch push; Ubuntu ARM64                 | `38081538748` at `def29fde5`: 2m, runtime setup/assertions 1m49s                                 | 15m; same-SHA APK deep proof in B2                                               |
+| Windows ARM64 binding feasibility     | Scoped work-branch push; Windows ARM64                | `38082403349` at `268e5f8df`: 1m49s, focused build/runtime 1m01s                                 | 30m; packaged STT/TTS and lifecycle in B4                                        |
+| Deep checks                           | Opt-in owned PR; three Ubuntu x64 lanes               | `03155ef58`: 5m15s critical, 12m19s runner work; CLI lifecycle 206.23s                           | 15m per lane; reduce repeated setup subprocesses, preserve journeys              |
+| Candidate native runtime              | Manual; macOS ARM64 / Ubuntu ARM64 Android container  | Mac `38105941202` 4m58s; Android `38107787799` 5m37s                                             | 30m jobs; bounded install/upgrade journeys, immutable producer reuse             |
+| Linux package evaluation preflight    | Manual; native Linux                                  | x64 `434bb96d4` 31s; substitutable Node avoids bootstrap                                         | 10m job / 8m evaluation; no product realization                                  |
+| Linux Nix runtime                     | Manual; native Linux x64/ARM64                        | x64 `38109113388` 21m46s; ARM `38110354030` 16m55s                                               | 45m job / 35m build; source filtering avoids test-only invalidation              |
+| Linux format prerequisite             | Manual; native Linux x64/ARM64                        | x64 `c790a0156` 6m04s; ARM `6be877f3a` 3m21s; different hosts/settings                           | 20m job; gzip parity, no extra benchmark-only runs                               |
+| Linux product formats                 | Manual; native Linux x64/ARM64                        | x64 `38133587458`: native 17m16s, build/fan-out 11m56s, runtime 4m52s; additive cache proof 31s  | 45m job / 30m build / 10m runtime; verified predecessor cache avoids ~5m rebuild |
+| Windows package prerequisite          | Manual; native Windows ARM64 first                    | `38155408446` passed in 5m04s; fixture lifecycle and owned process checks                        | 50m cap; small fixture graph avoids repeating root installation                  |
+| Windows packages                      | Manual; native Windows ARM64 / x64                    | ARM `38173280275` passed in 65m28s; installs 23m32s + 20m55s, builds 5m28s + 4m43s               | 150m cap; immutable predecessor caching targets repeated old install/build       |
+| Release-please / replacement proposal | Owner dispatch; Ubuntu x64                            | `38325326647`: 1m31s, fresh dependency hash 39.83s; read-only engine probe 45s                   | 5m job; hash before App mint, no added repository cache                          |
 
 All current workflow files and callable lanes are represented. GitHub also lists
 deleted Nix/cache probes as active historical workflow records; they have no
