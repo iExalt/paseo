@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/iExalt/paseo/compare/paseo-v0.1.0...paseo-v0.1.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **ci:** test upgrades from sanitized 0.1.0 history ([5898f92](https://github.com/iExalt/paseo/commit/5898f92646d4a2985de10f9e4259601cb54dcc16))
+
 ## 0.1.0 (2026-10-12)
 
 
