@@ -94,6 +94,13 @@ jobs:
           node-version: "26.11.0"
           architecture: ${{ inputs.architecture }}
           package-manager-cache: false
+      - name: Begin evidence for Authenticate candidate and admitted attempt
+        id: proof_start_14
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "14"
       - name: Authenticate candidate and admitted attempt
         if: inputs.source_sha != ''
         id: candidate
@@ -107,13 +114,41 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
+      - name: Record evidence for Authenticate candidate and admitted attempt
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "14"
+          started: ${{ steps.proof_start_14.outputs.started }}
+          outcome: ${{ steps.candidate.outcome }}
+          conclusion: ${{ steps.candidate.conclusion }}
+
+      - name: Begin evidence for Read authenticated candidate source
+        id: proof_start_15
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "15"
       - name: Read authenticated candidate source
+        id: proof_target_15
         if: inputs.source_sha != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.candidate.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Record evidence for Read authenticated candidate source
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "15"
+          started: ${{ steps.proof_start_15.outputs.started }}
+          outcome: ${{ steps.proof_target_15.outcome }}
+          conclusion: ${{ steps.proof_target_15.conclusion }}
+
       - name: Prepare isolated native build storage
         timeout-minutes: 3
         run: ./.github/scripts/windows-product-storage.ps1 setup
@@ -156,16 +191,52 @@ jobs:
       - name: Download and verify pinned speech models
         timeout-minutes: 10
         run: ./.github/scripts/windows-product-runtime.ps1 models
+      - name: Begin evidence for Verify installed upgrade, retained CLI, PTY and real speech
+        id: proof_start_16
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Verify installed upgrade, retained CLI, PTY and real speech
+          number: "16"
       - name: Verify installed upgrade, retained CLI, PTY and real speech
+        id: proof_target_16
         timeout-minutes: 17
         run: ./.github/scripts/windows-product-runtime.ps1 runtime
+      - name: Record evidence for Verify installed upgrade, retained CLI, PTY and real speech
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Verify installed upgrade, retained CLI, PTY and real speech
+          number: "16"
+          started: ${{ steps.proof_start_16.outputs.started }}
+          outcome: ${{ steps.proof_target_16.outcome }}
+          conclusion: ${{ steps.proof_target_16.conclusion }}
+
+      - name: Begin evidence for Reconcile owned processes and remove installation and state
+        id: proof_start_17
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Reconcile owned processes and remove installation and state
+          number: "17"
       - name: Reconcile owned processes and remove installation and state
+        id: proof_target_17
         if: always()
         timeout-minutes: 3
         run: |
           ./.github/scripts/windows-product-runtime.ps1 cleanup
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.github/scripts/windows-product-stage.ps1 cleanup
+      - name: Record evidence for Reconcile owned processes and remove installation and state
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Reconcile owned processes and remove installation and state
+          number: "17"
+          started: ${{ steps.proof_start_17.outputs.started }}
+          outcome: ${{ steps.proof_target_17.outcome }}
+          conclusion: ${{ steps.proof_target_17.conclusion }}
+
       - name: Stage verified predecessor within repository cache headroom
         if: success() && inputs.source_sha == '' && steps.predecessor-cache.outputs.cache-hit != 'true'
         id: cache-budget
@@ -179,10 +250,35 @@ jobs:
         with:
           path: ${{ steps.predecessor.outputs.directory }}
           key: ${{ steps.predecessor.outputs.key }}
+      - name: Begin evidence for Remove owned build worktrees and isolated storage
+        id: proof_start_18
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Remove owned build worktrees and isolated storage
+          number: "18"
       - name: Remove owned build worktrees and isolated storage
+        id: proof_target_18
         if: always()
         timeout-minutes: 3
         run: ./.github/scripts/windows-product-storage.ps1 cleanup
+      - name: Record evidence for Remove owned build worktrees and isolated storage
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Remove owned build worktrees and isolated storage
+          number: "18"
+          started: ${{ steps.proof_start_18.outputs.started }}
+          outcome: ${{ steps.proof_target_18.outcome }}
+          conclusion: ${{ steps.proof_target_18.conclusion }}
+
+      - name: Begin evidence for Export verified candidate packages
+        id: proof_start_19
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Export verified candidate packages
+          number: "19"
       - name: Export verified candidate packages
         if: success() && inputs.source_sha != ''
         id: export
@@ -190,6 +286,23 @@ jobs:
           CANDIDATE_CONTEXT: ${{ steps.candidate.outputs.context }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
         run: node .github/scripts/candidate-product-export.mjs windows
+      - name: Record evidence for Export verified candidate packages
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Export verified candidate packages
+          number: "19"
+          started: ${{ steps.proof_start_19.outputs.started }}
+          outcome: ${{ steps.export.outcome }}
+          conclusion: ${{ steps.export.conclusion }}
+
+      - name: Begin evidence for Transfer immutable candidate packages
+        id: proof_start_20
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Transfer immutable candidate packages
+          number: "20"
       - name: Transfer immutable candidate packages
         if: success() && inputs.source_sha != ''
         id: packages
@@ -200,6 +313,16 @@ jobs:
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
+      - name: Record evidence for Transfer immutable candidate packages
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Transfer immutable candidate packages
+          number: "20"
+          started: ${{ steps.proof_start_20.outputs.started }}
+          outcome: ${{ steps.packages.outcome }}
+          conclusion: ${{ steps.packages.conclusion }}
+
       - name: Bound retained diagnostics
         id: evidence
         if: always()
