@@ -32,7 +32,6 @@ const keys = [
   "checks",
 ];
 export const sourceGateFiles = Object.freeze([
-  ".github/actions/record-step/action.yml",
   ".github/workflows/ci.yml",
   ".github/workflows/ci-deep.yml",
   ".github/actions/setup-ci-tools/action.yml",
@@ -120,6 +119,7 @@ export const sourceGateFiles = Object.freeze([
   ".github/scripts/candidate-files.mjs",
   ".github/scripts/candidate-worker.mjs",
   ".github/scripts/candidate-job-proof.mjs",
+  ".github/scripts/step-proof.mjs",
   ".github/scripts/candidate-grant.mjs",
   ".github/scripts/candidate-matrix.mjs",
   ".github/scripts/candidate-aggregate.mjs",

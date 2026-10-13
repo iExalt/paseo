@@ -64,7 +64,8 @@ import {
   loadDescriptor,
 } from "../.github/scripts/candidate-draft.mjs";
 import { requireCurrentRun } from "../.github/scripts/candidate-draft.mjs";
-import { readAttemptJobs, reconcileJobSteps } from "../.github/scripts/candidate-job-proof.mjs";
+import { readAttemptJobs } from "../.github/scripts/candidate-job-proof.mjs";
+import { installStepProofs } from "./step-proof-fixture.mjs";
 
 test("merged candidate run binds original PR branch independently of controller SHA", async () => {
   const descriptor = candidateFixture();
@@ -237,68 +238,12 @@ test("merged candidate run binds original PR branch independently of controller 
   }
 });
 
-test("empty job steps reconcile only against the exact successful attempt within a fixed bound", async () => {
-  const job = {
-    id: 42,
-    run_id: 500,
-    run_attempt: 2,
-    name: "authorize",
-    status: "completed",
-    conclusion: "success",
-    steps: [],
-  };
-  const complete = {
-    ...job,
-    steps: [
-      { name: "Upload authenticated worker grant", status: "completed", conclusion: "success" },
-      { name: "Complete job", status: "completed", conclusion: "success" },
-    ],
-  };
-  let clock = 0;
-  const timing = {
-    now: () => clock,
-    wait: async (delay) => {
-      clock += delay;
-    },
-  };
-  let reads = 0;
+test("attempt job inventory rejects jobs from another run", async () => {
+  const job = { id: 42, run_id: 500, run_attempt: 2, name: "authorize" };
   assert.deepEqual(
-    await reconcileJobSteps(
-      job,
-      async (route) => {
-        if (route.endsWith("/logs")) return "";
-        assert.equal(route, "/repos/iExalt/paseo/actions/jobs/42");
-        return ++reads === 1 ? job : complete;
-      },
-      timing,
-    ),
-    complete,
+    await readAttemptJobs({ runId: 500, attempt: 2 }, async () => ({ jobs: [job] })),
+    [job],
   );
-  assert.equal(clock, 1000);
-  for (const delta of [
-    { id: 43 },
-    { run_id: 501 },
-    { run_attempt: 1 },
-    { name: "other" },
-    { status: "in_progress" },
-    { conclusion: "failure" },
-  ]) {
-    await assert.rejects(
-      reconcileJobSteps(job, async () => ({ ...complete, ...delta }), timing),
-      /changed/,
-    );
-  }
-  const before = clock;
-  await assert.rejects(
-    reconcileJobSteps(job, async (route) => (route.endsWith("/logs") ? "" : job), timing),
-    /remained unavailable/,
-  );
-  assert.equal(clock - before, 25000);
-  const failedStep = {
-    ...complete,
-    steps: [{ ...complete.steps[0], conclusion: "failure" }, complete.steps[1]],
-  };
-  assert.deepEqual(await reconcileJobSteps(job, async () => failedStep, timing), failedStep);
   await assert.rejects(
     readAttemptJobs({ runId: 500, attempt: 2 }, async () => ({ jobs: [{ ...job, run_id: 501 }] })),
   );
@@ -407,7 +352,7 @@ test("native exports copy only exact candidate bytes into fresh canonical bundle
 });
 
 for (const group of ["windows-arm64", "linux-nix-arm64"])
-  test(`trusted ${group} transfer admits exact bytes only after completed provenance`, async () => {
+  test(`trusted ${group} transfer admits exact bytes only after completed provenance`, async (t) => {
     const directory = await mkdtemp(join(tmpdir(), "candidate-transfer-"));
     const descriptor = candidateFixture();
     const context = {
@@ -492,34 +437,7 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
       conclusion: "success",
       started_at: stamp,
       completed_at: stamp,
-      steps: (nix
-        ? [
-            "Authenticate candidate and admitted attempt",
-            "Read authenticated candidate source",
-            "Replace owned Nix profile and verify retained desktop state",
-            "Export and verify signed native closures",
-            "Remove owned temporary Nix signing key",
-            "Transfer immutable candidate closures",
-          ]
-        : [
-            "Authenticate candidate and admitted attempt",
-            "Read authenticated candidate source",
-            "Verify installed upgrade, retained CLI, PTY and real speech",
-            "Reconcile owned processes and remove installation and state",
-            "Remove owned build worktrees and isolated storage",
-            "Export verified candidate packages",
-            "Transfer immutable candidate packages",
-          ]
-      )
-        .concat("Complete job")
-        .map((name, index) => ({
-          name,
-          number: index + 1,
-          status: "completed",
-          conclusion: "success",
-          started_at: stamp,
-          completed_at: stamp,
-        })),
+      steps: [],
     };
     const env = {
       RUNNER_TEMP: directory,
@@ -564,34 +482,37 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
         },
       };
       const expected = { id: 77, digest: env.CANDIDATE_ARTIFACT_DIGEST };
-      assert.equal(productProducer(context, group, [job], artifact, expected), 123);
-      if (!nix) {
-        const storage = "Remove owned build worktrees and isolated storage";
-        for (const steps of [
-          job.steps.filter((step) => step.name !== storage),
-          job.steps.map((step) =>
-            step.name === storage ? { ...step, conclusion: "failure" } : step,
-          ),
-        ])
-          assert.throws(() =>
-            productProducer(context, group, [{ ...job, steps }], artifact, expected),
-          );
-      }
-      for (const patch of [
-        { run_attempt: 1 },
-        { conclusion: "failure" },
-        {
-          steps: job.steps.map((step, index) =>
-            index === 3 ? { ...step, conclusion: "skipped" } : step,
-          ),
-        },
-        { steps: [...job.steps, job.steps[0]] },
-        { steps: job.steps.map((step, index) => (index === 4 ? { ...step, number: 2 } : step)) },
-      ])
-        assert.throws(() =>
+      const proofs = installStepProofs(t);
+      const proof = {
+        runId: 500,
+        attempt: 2,
+        slot: `producer-${group}`,
+        workflow: nix ? "linux-nix-runtime.yml" : "windows-product-runtime.yml",
+        sourceSha: context.controllerSha,
+        evidence: { artifactId: 77, artifactDigest: env.CANDIDATE_ARTIFACT_DIGEST },
+      };
+      proofs.add(proof);
+      assert.equal(await productProducer(context, group, [job], artifact, expected), 123);
+      for (const patch of [{ run_attempt: 1 }, { conclusion: "failure" }])
+        await assert.rejects(
           productProducer(context, group, [{ ...job, ...patch }], artifact, expected),
         );
-      assert.throws(() =>
+      // Verification, cleanup, export and transfer are proven only by the signed slot.
+      for (const delta of [
+        { evidence: { artifactId: 78, artifactDigest: env.CANDIDATE_ARTIFACT_DIGEST } },
+        { evidence: { artifactId: 77, artifactDigest: "f".repeat(64) } },
+        { evidence: null },
+        { workflow: "linux-product-runtime.yml" },
+        { sourceSha: descriptor.sourceSha },
+      ]) {
+        proofs.remove(proof);
+        proofs.add({ ...proof, ...delta });
+        await assert.rejects(productProducer(context, group, [job], artifact, expected));
+      }
+      proofs.remove(proof);
+      await assert.rejects(productProducer(context, group, [job], artifact, expected), /verify/);
+      proofs.add(proof);
+      await assert.rejects(
         productProducer(
           context,
           group,
@@ -616,9 +537,6 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
         const wrong = structuredClone(manifests);
         wrong.values().next().value.sourceSha = "f".repeat(40);
         assert.throws(() => productReceipts(bundle, context, group, 123, wrong));
-        const incomplete = structuredClone(job);
-        incomplete.steps[4].conclusion = "skipped";
-        assert.throws(() => productProducer(context, group, [incomplete], artifact, expected));
       }
       const pair = generateKeyPairSync("ed25519");
       const pin = pair.publicKey.export({ format: "jwk" }).x;
@@ -702,7 +620,7 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
     }
   });
 
-test("paired transfer binds signing, fresh import and native runtime before retaining original bytes", async () => {
+test("paired transfer binds signing, fresh import and native runtime before retaining original bytes", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "paired-transfer-"));
   const descriptor = candidateFixture();
   const context = {
@@ -791,40 +709,14 @@ test("paired transfer binds signing, fresh import and native runtime before reta
       manifestPath: `/nix/store/${"b".repeat(32)}-manifest.json`,
     },
   };
-  const auth = "Authenticate candidate and admitted attempt",
-    stamp = "2026-10-12T12:00:00Z";
+  const stamp = "2026-10-12T12:00:00Z";
   const jobs = [
-    [
-      "paired / Build and verify macOS closure / Build and sign macOS closure",
-      [
-        auth,
-        "Read authenticated candidate source",
-        "Sign and export the closure",
-        "Remove temporary Nix signing key file",
-        "Upload public closure and metadata artifact",
-      ],
-    ],
-    [
-      "paired / Build and verify macOS closure / Verify closure on a fresh runner",
-      [auth, "Read authenticated candidate source", "Import and verify signed closure"],
-    ],
-    [
-      "paired / Build and sign Android APK / Sign and publish fork APK artifact",
-      [auth, "Sign and verify with the approved fork certificate", "Remove signing material"],
-    ],
-    [
-      "native-runtime / macos",
-      [auth, "Verify canonical signed packages and preserved native state"],
-    ],
-    [
-      "native-runtime / android",
-      [
-        auth,
-        "Verify signed ARM64 APKs and retained native state",
-        "Remove owned Android container after interruption",
-      ],
-    ],
-  ].map(([name, names], index) => ({
+    "paired / Build and verify macOS closure / Build and sign macOS closure",
+    "paired / Build and verify macOS closure / Verify closure on a fresh runner",
+    "paired / Build and sign Android APK / Sign and publish fork APK artifact",
+    "native-runtime / macos",
+    "native-runtime / android",
+  ].map((name, index) => ({
     id: index + 1,
     name,
     run_id: 500,
@@ -833,15 +725,23 @@ test("paired transfer binds signing, fresh import and native runtime before reta
     conclusion: "success",
     started_at: stamp,
     completed_at: stamp,
-    steps: [...names, "Complete job"].map((stepName, stepIndex) => ({
-      name: stepName,
-      number: stepIndex + 1,
-      status: "completed",
-      conclusion: "success",
-      started_at: stamp,
-      completed_at: stamp,
-    })),
+    steps: [],
   }));
+  const proofs = installStepProofs(t);
+  const slots = [
+    ["paired-macos-build", "macos-closure.yml"],
+    ["paired-macos-import", "macos-closure.yml"],
+    ["paired-android-sign", "fork-android-apk.yml"],
+    ["producer-macos-arm64", "candidate-runtime.yml"],
+    ["producer-android-arm64", "candidate-runtime.yml"],
+  ].map(([slot, workflow]) => ({
+    runId: 500,
+    attempt: 2,
+    slot,
+    workflow,
+    sourceSha: context.controllerSha,
+  }));
+  for (const slot of slots) proofs.add(slot);
   const pair = generateKeyPairSync("ed25519"),
     publicPin = pair.publicKey.export({ format: "jwk" }).x;
   const draft = {
@@ -914,14 +814,22 @@ test("paired transfer binds signing, fresh import and native runtime before reta
       const missing = jobs.filter(
         (job) => !job.name.includes(platform === "macos" ? "fresh runner" : "Sign and publish"),
       );
-      assert.throws(() => pairedRuntime(context, platform, missing));
-      assert.throws(() =>
+      await assert.rejects(pairedRuntime(context, platform, missing));
+      await assert.rejects(
         pairedRuntime(
           context,
           platform,
           jobs.map((job) => ({ ...job, run_attempt: 1 })),
         ),
       );
+      for (const slot of slots.filter((item) => item.slot.includes(platform))) {
+        proofs.remove(slot);
+        await assert.rejects(pairedRuntime(context, platform, jobs), /verify/);
+        proofs.add({ ...slot, evidence: { unexpected: true } });
+        await assert.rejects(pairedRuntime(context, platform, jobs));
+        proofs.remove(slot);
+        proofs.add(slot);
+      }
       await transferPaired(env, {
         authenticate: async () => context,
         draftApi: () => api,

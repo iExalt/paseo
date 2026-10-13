@@ -36,6 +36,7 @@ jobs:
       actions: read
       contents: write
       pull-requests: read
+      attestations: read
     outputs:
       digest: ${{ steps.authority.outputs.descriptor_digest }}
     steps:
@@ -64,6 +65,7 @@ jobs:
       actions: read
       contents: write
       pull-requests: read
+      attestations: read
     outputs:
       release_id: ${{ steps.authority.outputs.release_id }}
       source_sha: ${{ steps.authority.outputs.source_sha }}
@@ -96,6 +98,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -110,6 +114,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -127,6 +133,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -143,6 +151,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -158,6 +168,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -175,6 +186,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -190,6 +203,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -207,6 +221,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -220,6 +236,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -237,6 +254,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -250,6 +269,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -267,6 +287,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -280,6 +302,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -297,6 +320,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -310,6 +335,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -325,6 +351,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
@@ -340,6 +367,7 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      attestations: read
     with:
       release_id: ${{ needs.issue.outputs.release_id }}
       source_sha: ${{ needs.issue.outputs.source_sha }}
