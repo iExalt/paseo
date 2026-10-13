@@ -78,6 +78,29 @@ function Test-WorktreeRegistration([string]$Listing, [string]$Target) {
     return ($Listing -split '\r?\n') -contains "worktree $($Target.Replace('\', '/'))"
 }
 
+function Remove-OwnedWorktreeLinks([string]$Target) {
+    $rootItem = Get-Item -LiteralPath $Target -Force
+    if (!$rootItem.PSIsContainer -or ($rootItem.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Redirected worktree root' }
+    $pending = [Collections.Generic.Stack[string]]::new()
+    $pending.Push($rootItem.FullName)
+    $removed = 0
+    while ($pending.Count) {
+        $directory = Get-Item -LiteralPath $pending.Pop() -Force
+        if (!$directory.PSIsContainer -or ($directory.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Directory identity changed during cleanup' }
+        foreach ($entry in Get-ChildItem -LiteralPath $directory.FullName -Force) {
+            if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) {
+                if ($entry.LinkType -notin @('Junction', 'SymbolicLink')) { throw 'Unknown owned reparse type' }
+                # Without -Recurse, PowerShell removes the link itself, never its target.
+                Remove-Item -LiteralPath $entry.FullName -Force
+                $removed++
+            } elseif ($entry.PSIsContainer) {
+                $pending.Push($entry.FullName)
+            }
+        }
+    }
+    @{ target = $Target; removedLinks = $removed } | ConvertTo-Json -Compress | Write-Output
+}
+
 if ($Phase -eq 'cleanup') {
     if (!(Test-Path -LiteralPath $root)) { exit 0 }
     $owner = Read-OwnedStorage
@@ -96,6 +119,8 @@ if ($Phase -eq 'cleanup') {
             foreach ($target in @($owner.candidate, $owner.previous)) {
                 Assert-OwnedVolume
                 if (Test-WorktreeRegistration (Invoke-SourceGit @('worktree', 'list', '--porcelain')) $target) {
+                    Assert-OwnedVolume
+                    Remove-OwnedWorktreeLinks $target
                     Assert-OwnedVolume
                     $null = Invoke-SourceGit @('-c', 'core.longpaths=true', 'worktree', 'remove', '--force', $target)
                 }
