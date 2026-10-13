@@ -265,6 +265,7 @@ test("empty job steps reconcile only against the exact successful attempt within
     await reconcileJobSteps(
       job,
       async (route) => {
+        if (route.endsWith("/logs")) return "";
         assert.equal(route, "/repos/iExalt/paseo/actions/jobs/42");
         return ++reads === 1 ? job : complete;
       },
@@ -288,7 +289,7 @@ test("empty job steps reconcile only against the exact successful attempt within
   }
   const before = clock;
   await assert.rejects(
-    reconcileJobSteps(job, async () => job, timing),
+    reconcileJobSteps(job, async (route) => (route.endsWith("/logs") ? "" : job), timing),
     /remained unavailable/,
   );
   assert.equal(clock - before, 25000);
