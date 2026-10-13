@@ -42,10 +42,10 @@ ashmem_loaded=1
 test -c /dev/ashmem
 echo 'PASS: matching-kernel ashmem module loaded without changing host security policy.'
 
-release_base=https://github.com/iExalt/paseo/releases/download/paseo-fork-v0.11.0-r200008-5619b7d7ee1e55b322028e8b7818aa1a8f752a0a
+release_base=https://github.com/iExalt/paseo/releases/download/paseo-v0.1.0
 for asset in paseo-release-manifest.json paseo-release-manifest.sig paseo-android-arm64.apk; do
   curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-    --max-time 120 --max-filesize 150000000 "$release_base/$asset" -o "$probe_dir/$asset"
+    --max-time 120 --max-filesize 150000000 "$release_base/legacy-0.11.0-$asset" -o "$probe_dir/$asset"
 done
 node .github/scripts/verify-probe-apk.mjs "$probe_dir"
 
