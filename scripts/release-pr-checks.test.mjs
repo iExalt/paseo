@@ -10,11 +10,9 @@ import { descriptorDigest } from "../.github/scripts/candidate-descriptor.mjs";
 import { draftBody } from "../.github/scripts/candidate-draft.mjs";
 import { workerGate, readTrustedWorkerContext } from "../.github/scripts/candidate-worker.mjs";
 import { grantGroups } from "../.github/scripts/candidate-grant.mjs";
-import {
-  RECEIPT_PREFIX,
-  sourceReceipt,
-  readSourceReceipt,
-} from "../.github/scripts/ci-source-receipt.mjs";
+import { sourceReceipt, validateSourceReceipt } from "../.github/scripts/ci-source-receipt.mjs";
+import { stepProofSubject, replaceStepProofVerifier } from "../.github/scripts/step-proof.mjs";
+import { signedProof } from "./step-proof-fixture.mjs";
 import {
   latestPrRun,
   verifyCurrentPrChecks,
@@ -49,19 +47,28 @@ const env = {
   PR_BASE_SHA: base,
   PR_HEAD_SHA: head,
 };
-const step = {
-  status: "completed",
-  conclusion: "success",
-  started_at: "2026-10-12T00:00:00Z",
-  completed_at: "2026-10-12T00:00:01Z",
-};
-const line = (receipt) => `2026-10-12T00:00:00.123Z ${RECEIPT_PREFIX}${JSON.stringify(receipt)}\n`;
+// Proofs come from the latest fixture so each mutation reaches the verifier.
+let store = { proofs: [] };
+const candidateProofs = [];
+const restoreProofs = replaceStepProofVerifier(
+  async (subject) => {
+    const results = [...store.proofs, ...candidateProofs]
+      .filter((spec) => stepProofSubject(spec.runId, spec.attempt, spec.slot) === subject)
+      .map((spec) => signedProof(spec));
+    if (!results.length) throw new Error("No attestation for subject");
+    return results;
+  },
+  async () => {},
+);
+test.after(restoreProofs);
 
 test("checkout receipts distinguish merge verification from exact-head deep and push checks", () => {
   const git = (...args) => (args[0] === "rev-parse" ? merge : `${base} ${head}`);
   const receipt = sourceReceipt(env, git);
   assert.equal(receipt.kind, "routine-pr");
-  assert.deepEqual(readSourceReceipt(line(receipt), step), receipt);
+  assert.deepEqual(validateSourceReceipt(structuredClone(receipt)), receipt);
+  assert.throws(() => validateSourceReceipt({ ...receipt, extra: true }));
+  assert.throws(() => validateSourceReceipt({ ...receipt, schemaVersion: 2 }));
   assert.throws(() => sourceReceipt({ ...env, PR_BASE_SHA: head }, git), /captured base/);
   const deep = sourceReceipt({ ...env, DEEP_LANE: "browser", SOURCE_SHA: head }, (...args) =>
     args[0] === "rev-parse" ? head : base,
@@ -85,14 +92,6 @@ test("checkout receipts distinguish merge verification from exact-head deep and 
     ).kind,
     "routine-push",
   );
-  for (const log of [
-    "",
-    line(receipt) + line(receipt),
-    `test output ${line(receipt)}`,
-    line(receipt).replace("00:00:00.123", "00:00:09.123"),
-  ])
-    assert.throws(() => readSourceReceipt(log, step));
-  assert.throws(() => readSourceReceipt(line(receipt), { ...step, conclusion: "failure" }));
 });
 
 function fixture() {
@@ -116,18 +115,11 @@ function fixture() {
       name,
       status: "completed",
       conclusion: "success",
-      steps: [
-        {
-          ...step,
-          name: index
-            ? "Validate exact source and isolated configuration"
-            : "Plan checks and record source",
-        },
-        { ...step, name: "Complete job" },
-      ],
+      // GitHub's step records are not authority; empty lists must not matter.
+      steps: [],
     })),
   );
-  const logs = new Map();
+  const proofs = [];
   for (let index = 0; index < jobs.length; index++)
     for (const job of jobs[index]) {
       if (job.name === "Routine CI required" || job.name === "authorize-release") continue;
@@ -139,10 +131,19 @@ function fixture() {
           return index ? base : `${base} ${head}`;
         },
       );
-      logs.set(job.id, line(receipt));
+      proofs.push({
+        runId: 100 + index,
+        attempt: 1,
+        slot: index ? `ci-source-deep-${lane}` : "ci-source-routine",
+        workflow: index ? "ci-deep.yml" : "ci.yml",
+        ref: "refs/pull/7/merge",
+        sourceSha: merge,
+        evidence: receipt,
+      });
     }
   let prReads = 0;
-  const state = { runs, jobs, logs, current: structuredClone(pr), onFinal: () => {} };
+  const state = { runs, jobs, proofs, current: structuredClone(pr), onFinal: () => {} };
+  store = state;
   state.request = async (url) => {
     if (url.includes("/pulls/7/commits?")) return [{ sha: state.current.head.sha }];
     if (url.includes("/git/commits/"))
@@ -158,7 +159,6 @@ function fixture() {
         total_count: jobs[url.includes("/101/") ? 1 : 0].length,
         jobs: jobs[url.includes("/101/") ? 1 : 0],
       };
-    if (url.endsWith("/logs")) return logs.get(Number(url.split("/").at(-2)));
     throw new Error(`Unexpected request ${url}`);
   };
   return state;
@@ -332,15 +332,23 @@ test("merged authority binds the old checked tree and parent while dev advances"
     run_attempt: context.attempt,
     status: "completed",
     conclusion: "success",
-    steps: [
-      { name: "Upload authenticated worker grant", status: "completed", conclusion: "success" },
-      { name: "Complete job", status: "completed", conclusion: "success" },
-    ],
+    steps: [],
   };
+  const grantProof = {
+    runId: context.runId,
+    attempt: context.attempt,
+    slot: "grant-verification",
+    workflow: "candidate-auth.yml",
+    sourceSha: context.controllerSha,
+    evidence: { artifactId: 77, artifactDigest: "7".repeat(64) },
+  };
+  candidateProofs.push(grantProof);
   const grantedEnv = {
     ...workerEnv,
     CANDIDATE_GRANT_GROUP: group,
     CANDIDATE_EXPECTED_JOB: grant.workers[0],
+    CANDIDATE_GRANT_ID: "77",
+    CANDIDATE_GRANT_DIGEST: "7".repeat(64),
   };
   const grantedRequest = async (url) =>
     url.includes("/jobs?") ? { jobs: [authJob] } : setup().request(url);
@@ -382,9 +390,19 @@ test("merged authority binds the old checked tree and parent while dev advances"
   authJob.conclusion = "failure";
   await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant));
   authJob.conclusion = "success";
-  authJob.steps[0].conclusion = "failure";
-  await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant));
-  authJob.steps[0].conclusion = "success";
+  // The grant proof must name this upload and come from this attempt's controller.
+  for (const [key, value] of [
+    ["evidence", { artifactId: 78, artifactDigest: "7".repeat(64) }],
+    ["evidence", { artifactId: 77, artifactDigest: "8".repeat(64) }],
+    ["sourceSha", head],
+    ["workflow", "ci.yml"],
+  ]) {
+    candidateProofs[0] = { ...grantProof, [key]: value };
+    await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant));
+  }
+  candidateProofs.length = 0;
+  await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant), /verify/);
+  candidateProofs.push(grantProof);
   await assert.rejects(
     readTrustedWorkerContext({ CANDIDATE_GRANT_ID: "456" }),
     /cannot use a worker grant/,
@@ -496,7 +514,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
   );
   for (const mutate of [
     (f) => {
-      f.logs.set(200, f.logs.get(200).replace('"prNumber":7', '"prNumber":8'));
+      f.proofs[0].evidence.prNumber = 8;
     },
     (f) => {
       f.runs[0].conclusion = "failure";
@@ -566,18 +584,11 @@ test("merged authority binds the old checked tree and parent while dev advances"
   assert.equal(draft.assets.length, 2);
 });
 
-test("current-head verifier requires both latest gates, exact setup receipts and unchanged PR", async () => {
+test("current-head verifier requires both latest gates, signed source receipts and unchanged PR", async () => {
   const good = fixture();
   const proof = await verifyCurrentPrChecks(7, identity, good.request);
   assert.equal(proof.headSha, head);
   assert.equal(proof.proofs.length, 2);
-  const missing = fixture();
-  const complete = structuredClone(missing.jobs[0][0]);
-  missing.jobs[0][0].steps = [];
-  const reconciled = await verifyCurrentPrChecks(7, identity, (route) =>
-    route.endsWith("/actions/jobs/200") ? complete : missing.request(route),
-  );
-  assert.equal(reconciled.treeSha, proof.treeSha);
   for (const mutate of [
     (f) => {
       f.runs[0].pull_requests = [];
@@ -601,10 +612,28 @@ test("current-head verifier requires both latest gates, exact setup receipts and
       f.jobs[1].pop();
     },
     (f) => {
-      f.logs.set(200, "");
+      f.proofs.shift();
     },
     (f) => {
-      f.logs.set(200, f.logs.get(200).replace(`"baseSha":"${base}"`, `"baseSha":"${head}"`));
+      f.proofs[0].evidence.baseSha = head;
+    },
+    (f) => {
+      f.proofs[0].sourceSha = head;
+    },
+    (f) => {
+      f.proofs[0].attempt = 2;
+    },
+    (f) => {
+      f.proofs[1].ref = "refs/heads/dev";
+    },
+    (f) => {
+      f.proofs[2].sourceSha = "e".repeat(40);
+    },
+    (f) => {
+      f.proofs[1].workflow = "ci.yml";
+    },
+    (f) => {
+      f.proofs.push({ ...f.proofs[1], evidence: { ...f.proofs[1].evidence, lane: "electron" } });
     },
     (f) => {
       const original = f.request;

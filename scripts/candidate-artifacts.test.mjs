@@ -107,6 +107,7 @@ import {
   validateProducer,
   validateCoordinatedProducer,
 } from "../.github/scripts/candidate-artifacts.mjs";
+import { installStepProofs } from "./step-proof-fixture.mjs";
 
 const sha = "a".repeat(40);
 const hash = "b".repeat(64);
@@ -123,7 +124,7 @@ const run = {
   conclusion: "success",
 };
 
-test("paired runtime distinguishes current coordinator completion from historical manual producers", () => {
+test("paired runtime distinguishes current coordinator completion from historical manual producers", async (t) => {
   const context = {
     runId: 123,
     attempt: 2,
@@ -146,18 +147,20 @@ test("paired runtime distinguishes current coordinator completion from historica
     name: "paired / Cross-check paired candidate artifacts",
     status: "completed",
     conclusion: "success",
-    steps: [
-      "Authenticate candidate and admitted attempt",
-      "Verify both artifacts and write normalized candidate manifest",
-      "Upload normalized paired candidate manifest",
-    ].map((name, index) => ({
-      name,
-      number: index + 1,
-      status: "completed",
-      conclusion: "success",
-    })),
+    steps: [],
   };
-  validateCoordinatedProducer(current, pin, context, [job]);
+  const paired = { ...pin, artifactId: "55", artifactDigest: hash };
+  const proofs = installStepProofs(t);
+  const proof = {
+    runId: 123,
+    attempt: 2,
+    slot: "paired-manifest",
+    workflow: "fork-builds.yml",
+    sourceSha: context.controllerSha,
+    evidence: { artifactId: 55, artifactDigest: hash },
+  };
+  proofs.add(proof);
+  await validateCoordinatedProducer(current, paired, context, [job]);
   const live = {
     id: 11,
     run_id: 123,
@@ -167,29 +170,37 @@ test("paired runtime distinguishes current coordinator completion from historica
     conclusion: null,
   };
   const queued = { ...current, status: "queued" };
-  validateCoordinatedProducer(queued, pin, context, [job, live]);
-  assert.throws(() => validateCoordinatedProducer(queued, pin, context, [job]));
-  assert.throws(() =>
-    validateCoordinatedProducer(queued, pin, context, [job, { ...live, run_attempt: 1 }]),
+  await validateCoordinatedProducer(queued, paired, context, [job, live]);
+  await assert.rejects(validateCoordinatedProducer(queued, paired, context, [job]));
+  await assert.rejects(
+    validateCoordinatedProducer(queued, paired, context, [job, { ...live, run_attempt: 1 }]),
   );
   const branch = "release-please--branches--dev--components--paseo";
-  validateCoordinatedProducer(
+  await validateCoordinatedProducer(
     { ...current, head_branch: branch },
-    pin,
+    paired,
     { ...context, rootBranch: branch },
     [job],
   );
-  assert.throws(() =>
-    validateCoordinatedProducer(current, pin, { ...context, rootBranch: branch }, [job]),
+  await assert.rejects(
+    validateCoordinatedProducer(current, paired, { ...context, rootBranch: branch }, [job]),
   );
   for (const delta of [{ run_attempt: 1 }, { status: "completed" }, { head_sha: sha }])
-    assert.throws(() => validateCoordinatedProducer({ ...current, ...delta }, pin, context, [job]));
-  for (const delta of [
-    { run_attempt: 1 },
-    { conclusion: "failure" },
-    { steps: job.steps.slice(1) },
-  ])
-    assert.throws(() => validateCoordinatedProducer(current, pin, context, [{ ...job, ...delta }]));
+    await assert.rejects(
+      validateCoordinatedProducer({ ...current, ...delta }, paired, context, [job]),
+    );
+  for (const delta of [{ run_attempt: 1 }, { conclusion: "failure" }])
+    await assert.rejects(
+      validateCoordinatedProducer(current, paired, context, [{ ...job, ...delta }]),
+    );
+  // Upload success is proven by the signed slot, which must name these exact bytes.
+  for (const delta of [{ artifactId: "56" }, { artifactDigest: "c".repeat(64) }])
+    await assert.rejects(
+      validateCoordinatedProducer(current, { ...paired, ...delta }, context, [job]),
+      /another artifact|other artifact bytes/,
+    );
+  proofs.remove(proof);
+  await assert.rejects(validateCoordinatedProducer(current, paired, context, [job]), /verify/);
   const candidate = candidateFixture();
   candidate.android.artifactRunAttempt = "1";
   candidate.android.artifactName = `paseo-iexalt-201000-${sha}-attempt-1`;

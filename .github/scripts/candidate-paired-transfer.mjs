@@ -8,16 +8,17 @@ import { validateNixArtifactClosure } from "../../scripts/paseo-nix-update.mjs";
 import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { readTrustedWorkerContext, attemptJobs } from "./candidate-worker.mjs";
-import { verifyCompletedSteps } from "./candidate-product-transfer.mjs";
+import { verifyCandidateProof } from "./step-proof.mjs";
 import { producerGroups, validateCellReceipt } from "./candidate-matrix.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
 import { requireCurrentRun, requireAttempt, attemptWriter } from "./candidate-draft.mjs";
 import { fileIdentity } from "./candidate-files.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 
-export function pairedRuntime(context, platform, jobs) {
+// Each slot is signed only after that job's verification and cleanup steps succeed.
+export async function pairedRuntime(context, platform, jobs) {
   assert.ok(["macos", "android"].includes(platform));
-  function completed(name, steps) {
+  async function completed(name, slot, workflow) {
     const matches = jobs.filter((job) => job.name === name);
     assert.equal(matches.length, 1, `Missing or duplicate ${name}`);
     const job = matches[0];
@@ -25,39 +26,33 @@ export function pairedRuntime(context, platform, jobs) {
     assert.equal(job.conclusion, "success");
     assert.equal(job.run_id, context.runId);
     assert.equal(job.run_attempt, context.attempt);
-    verifyCompletedSteps(job, steps);
+    const proof = await verifyCandidateProof(context, slot, workflow);
+    assert.equal(proof.evidence, null);
     return job.id;
   }
-  const auth = "Authenticate candidate and admitted attempt";
   if (platform === "macos") {
-    completed("paired / Build and verify macOS closure / Build and sign macOS closure", [
-      auth,
-      "Read authenticated candidate source",
-      "Sign and export the closure",
-      "Remove temporary Nix signing key file",
-      "Upload public closure and metadata artifact",
-    ]);
-    completed("paired / Build and verify macOS closure / Verify closure on a fresh runner", [
-      auth,
-      "Read authenticated candidate source",
-      "Import and verify signed closure",
-    ]);
+    await completed(
+      "paired / Build and verify macOS closure / Build and sign macOS closure",
+      "paired-macos-build",
+      "macos-closure.yml",
+    );
+    await completed(
+      "paired / Build and verify macOS closure / Verify closure on a fresh runner",
+      "paired-macos-import",
+      "macos-closure.yml",
+    );
   } else {
-    completed("paired / Build and sign Android APK / Sign and publish fork APK artifact", [
-      auth,
-      "Sign and verify with the approved fork certificate",
-      "Remove signing material",
-    ]);
+    await completed(
+      "paired / Build and sign Android APK / Sign and publish fork APK artifact",
+      "paired-android-sign",
+      "fork-android-apk.yml",
+    );
   }
-  return completed(producerGroups[`${platform}-arm64`].job, [
-    auth,
-    ...(platform === "macos"
-      ? ["Verify canonical signed packages and preserved native state"]
-      : [
-          "Verify signed ARM64 APKs and retained native state",
-          "Remove owned Android container after interruption",
-        ]),
-  ]);
+  return completed(
+    producerGroups[`${platform}-arm64`].job,
+    `producer-${platform}-arm64`,
+    "candidate-runtime.yml",
+  );
 }
 
 export async function pairedReceipt(candidate, pin, context, platform, directory, producerJobId) {
@@ -187,20 +182,7 @@ export async function transferPaired(
   const { descriptor, releaseId, runId, attempt } = context;
   const platform = env.CANDIDATE_PLATFORM;
   assert.ok(["macos", "android"].includes(platform));
-  const buildPrefix =
-    platform === "macos"
-      ? "paired / Build and verify macOS closure / "
-      : "paired / Build and sign Android APK / ";
-  const producerJobId = pairedRuntime(
-    context,
-    platform,
-    await attemptJobs(
-      context,
-      request,
-      (job) =>
-        job.name.startsWith(buildPrefix) || job.name === producerGroups[`${platform}-arm64`].job,
-    ),
-  );
+  const producerJobId = await pairedRuntime(context, platform, await attemptJobs(context, request));
   const pin = JSON.parse(env.CANDIDATE_PIN);
   const directory = join(
     env.RUNNER_TEMP,

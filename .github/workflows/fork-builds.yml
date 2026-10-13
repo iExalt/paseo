@@ -49,6 +49,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ inputs.release_id }}
       source_sha: ${{ inputs.source_sha }}
@@ -62,6 +64,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ inputs.release_id }}
       source_sha: ${{ inputs.source_sha }}
@@ -82,6 +86,7 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+      attestations: read
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
@@ -99,13 +104,6 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
-      - name: Begin evidence for Authenticate candidate and admitted attempt
-        id: proof_start_39
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "39"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
@@ -118,40 +116,12 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
-      - name: Record evidence for Authenticate candidate and admitted attempt
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "39"
-          started: ${{ steps.proof_start_39.outputs.started }}
-          outcome: ${{ steps.authority.outcome }}
-          conclusion: ${{ steps.authority.conclusion }}
-
-      - name: Begin evidence for Read authenticated candidate source
-        id: proof_start_40
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Read authenticated candidate source
-          number: "40"
       - name: Read authenticated candidate source
-        id: proof_target_40
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.authority.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Record evidence for Read authenticated candidate source
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Read authenticated candidate source
-          number: "40"
-          started: ${{ steps.proof_start_40.outputs.started }}
-          outcome: ${{ steps.proof_target_40.outcome }}
-          conclusion: ${{ steps.proof_target_40.conclusion }}
-
       - name: Validate caller and source version
         id: identity
         shell: bash
@@ -169,6 +139,8 @@ jobs:
       actions: read
       pull-requests: read
       packages: read
+      id-token: write
+      attestations: write
     name: Build and verify macOS closure
     needs: identity
     uses: ./.github/workflows/macos-closure.yml
@@ -186,6 +158,8 @@ jobs:
       actions: read
       pull-requests: read
       packages: read
+      id-token: write
+      attestations: write
     name: Build and sign Android APK
     needs: identity
     uses: ./.github/workflows/fork-android-apk.yml
@@ -209,6 +183,8 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     outputs:
       artifact_id: ${{ steps.upload-manifest.outputs.artifact-id }}
       artifact_digest: ${{ steps.upload-manifest.outputs.artifact-digest }}
@@ -230,13 +206,6 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
-      - name: Begin evidence for Authenticate candidate and admitted attempt
-        id: proof_start_41
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "41"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
@@ -249,16 +218,6 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
-      - name: Record evidence for Authenticate candidate and admitted attempt
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "41"
-          started: ${{ steps.proof_start_41.outputs.started }}
-          outcome: ${{ steps.authority.outcome }}
-          conclusion: ${{ steps.authority.conclusion }}
-
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
           artifact-ids: ${{ needs.build-android.outputs.artifact_id }}
@@ -271,13 +230,6 @@ jobs:
           path: ${{ runner.temp }}/paired-macos
           merge-multiple: true
 
-      - name: Begin evidence for Verify both artifacts and write normalized candidate manifest
-        id: proof_start_42
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Verify both artifacts and write normalized candidate manifest
-          number: "42"
       - name: Verify both artifacts and write normalized candidate manifest
         id: manifest
         shell: bash
@@ -407,23 +359,7 @@ jobs:
           (cd "$paired_dir" && sha256sum paired-candidate.json > SHA256SUMS)
           echo "manifest_sha256=$(sha256sum "$paired_dir/paired-candidate.json" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           echo "Verification candidate complete: both lanes match SHA, source semver, signing/package metadata, and artifact pins; this is not a published release." >> "$GITHUB_STEP_SUMMARY"
-      - name: Record evidence for Verify both artifacts and write normalized candidate manifest
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Verify both artifacts and write normalized candidate manifest
-          number: "42"
-          started: ${{ steps.proof_start_42.outputs.started }}
-          outcome: ${{ steps.manifest.outcome }}
-          conclusion: ${{ steps.manifest.conclusion }}
 
-      - name: Begin evidence for Upload normalized paired candidate manifest
-        id: proof_start_43
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Upload normalized paired candidate manifest
-          number: "43"
       - name: Upload normalized paired candidate manifest
         id: upload-manifest
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -432,12 +368,22 @@ jobs:
           path: ${{ runner.temp }}/paired-candidate/
           if-no-files-found: error
           retention-days: 1
-      - name: Record evidence for Upload normalized paired candidate manifest
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
+      - name: Bind step proof to this run attempt
+        id: proof-subject
+        if: steps.authority.outcome == 'success' && steps.manifest.outcome == 'success' && steps.upload-manifest.outcome == 'success'
+        env:
+          PROOF_SLOT: paired-manifest
+        shell: bash
+        run: |
+          [[ "$PROOF_SLOT" =~ ^[a-z0-9][a-z0-9-]{0,79}$ ]]
+          subject="$RUNNER_TEMP/paseo-step-proof-$PROOF_SLOT"
+          printf 'paseo-step-proof-v1\n%s\n%s\n%s\n%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PROOF_SLOT" > "$subject"
+          { echo "subject=$subject"; echo "slot=$PROOF_SLOT"; } >> "$GITHUB_OUTPUT"
+      - name: Sign step proof
+        if: steps.proof-subject.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          name: Upload normalized paired candidate manifest
-          number: "43"
-          started: ${{ steps.proof_start_43.outputs.started }}
-          outcome: ${{ steps.upload-manifest.outcome }}
-          conclusion: ${{ steps.upload-manifest.conclusion }}
+          subject-path: ${{ steps.proof-subject.outputs.subject }}
+          predicate-type: https://github.com/iExalt/paseo/attestations/step-proof/v1
+          predicate: ${{ format('{{"schemaVersion":1,"kind":"paseo-step-proof","repository":"{0}","runId":{1},"attempt":{2},"slot":"{3}","evidence":{4}}}', github.repository, github.run_id, github.run_attempt, steps.proof-subject.outputs.slot, format('{{"artifactId":{0},"artifactDigest":"{1}"}}', steps.upload-manifest.outputs.artifact-id, steps.upload-manifest.outputs.artifact-digest)) }}
+          show-summary: false

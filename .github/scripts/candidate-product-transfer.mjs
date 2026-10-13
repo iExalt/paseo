@@ -11,6 +11,7 @@ import { candidateGithub } from "./candidate-github.mjs";
 import { requireCurrentRun, requireAttempt, attemptWriter } from "./candidate-draft.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 import { readTrustedWorkerContext, attemptJobs } from "./candidate-worker.mjs";
+import { artifactEvidence, verifyCandidateProof } from "./step-proof.mjs";
 
 import { closureEntries } from "./candidate-nix-export.mjs";
 
@@ -37,25 +38,7 @@ export function productContract(descriptor, group) {
   });
 }
 
-export function verifyCompletedSteps(job, names) {
-  let number = 0,
-    completed = Date.parse(job.started_at);
-  for (const name of names) {
-    const steps = job.steps.filter((step) => step.name === name);
-    assert.equal(steps.length, 1, `Missing or duplicate ${name}`);
-    const step = steps[0];
-    assert.equal(step.status, "completed");
-    assert.equal(step.conclusion, "success");
-    assert.ok(step.number > number);
-    assert.ok(Date.parse(step.started_at) >= completed);
-    assert.ok(Date.parse(step.completed_at) >= Date.parse(step.started_at));
-    number = step.number;
-    completed = Date.parse(step.completed_at);
-  }
-  assert.ok(Date.parse(job.completed_at) >= completed);
-}
-
-export function productProducer(context, group, jobs, artifact, expected) {
+export async function productProducer(context, group, jobs, artifact, expected) {
   const contracts = productContract(context.descriptor, group);
   const matches = jobs.filter((job) => job.name === producerGroups[group].job);
   assert.equal(matches.length, 1, "Missing or duplicate native producer");
@@ -63,31 +46,17 @@ export function productProducer(context, group, jobs, artifact, expected) {
   verifyProducerJob({ group, producerJobId: job.id }, jobs);
   assert.equal(job.run_id, context.runId);
   assert.equal(job.run_attempt, context.attempt);
-  const linux = group.startsWith("linux-");
   const nix = group.startsWith("linux-nix-");
-  const names = nix
-    ? [
-        "Authenticate candidate and admitted attempt",
-        "Read authenticated candidate source",
-        "Replace owned Nix profile and verify retained desktop state",
-        "Export and verify signed native closures",
-        "Remove owned temporary Nix signing key",
-        "Transfer immutable candidate closures",
-      ]
-    : [
-        "Authenticate candidate and admitted attempt",
-        "Read authenticated candidate source",
-        linux
-          ? "Verify installed product upgrades and preserved state"
-          : "Verify installed upgrade, retained CLI, PTY and real speech",
-        linux
-          ? "Clean owned installations, containers and state"
-          : "Reconcile owned processes and remove installation and state",
-        ...(linux ? [] : ["Remove owned build worktrees and isolated storage"]),
-        "Export verified candidate packages",
-        "Transfer immutable candidate packages",
-      ];
-  verifyCompletedSteps(job, names);
+  const workflows = {
+    "linux-nix": "linux-nix-runtime.yml",
+    "linux-products": "linux-product-runtime.yml",
+    windows: "windows-product-runtime.yml",
+  };
+  const workflow = workflows[group.replace(/-(?:x64|arm64)$/, "")];
+  assert.ok(workflow, "Unknown native producer workflow");
+  // Signed only after verification, cleanup, export and transfer all succeed.
+  const proof = await verifyCandidateProof(context, `producer-${group}`, workflow);
+  artifactEvidence(proof.evidence, expected);
   const { platform, arch } = contracts[0];
   const name = `candidate-${platform}-${nix ? "nix" : "products"}-${arch}-${context.runId}-${context.attempt}`;
   validateArtifact(
@@ -98,9 +67,6 @@ export function productProducer(context, group, jobs, artifact, expected) {
   );
   assert.equal(artifact.workflow_run.repository_id, 1404390841);
   assert.equal(artifact.workflow_run.head_repository_id, 1404390841);
-  const upload = job.steps.find((step) => step.name === names.at(-1));
-  assert.ok(Date.parse(artifact.created_at) >= Date.parse(upload.started_at));
-  assert.ok(Date.parse(artifact.created_at) <= Date.parse(upload.completed_at));
   return job.id;
 }
 
@@ -227,10 +193,10 @@ export async function transferProducts(
   const expected = { id: Number(env.CANDIDATE_ARTIFACT_ID), digest: env.CANDIDATE_ARTIFACT_DIGEST };
   assert.ok(Number.isSafeInteger(expected.id) && expected.id > 0);
   const artifact = await request(`/repos/iExalt/paseo/actions/artifacts/${expected.id}`);
-  const producerJobId = productProducer(
+  const producerJobId = await productProducer(
     context,
     group,
-    await attemptJobs(context, request, (job) => job.name === producerGroups[group].job),
+    await attemptJobs(context, request),
     artifact,
     expected,
   );

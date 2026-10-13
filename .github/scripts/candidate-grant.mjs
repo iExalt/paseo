@@ -8,6 +8,7 @@ import { candidateGithub } from "./candidate-github.mjs";
 import { requireAttempt } from "./candidate-draft.mjs";
 import { attemptJobs, readTrustedWorkerContext } from "./candidate-worker.mjs";
 import { githubResponse, saveDownload, validateArtifact } from "./candidate-artifacts.mjs";
+import { artifactEvidence, verifyCandidateProof } from "./step-proof.mjs";
 
 const paired = "paired / ";
 const mac = `${paired}Build and verify macOS closure / `;
@@ -63,7 +64,7 @@ export function grantName(group, runId, attempt) {
   return `candidate-grant-${group}-${runId}-${attempt}`;
 }
 
-export function validateGrant(grant, context, group, worker, jobs, pin) {
+export async function validateGrant(grant, context, group, worker, jobs, pin, artifact) {
   assert.equal(grant.kind, "paseo-worker-grant");
   assert.equal(grant.schemaVersion, 1);
   assert.equal(grant.group, group);
@@ -84,10 +85,8 @@ export function validateGrant(grant, context, group, worker, jobs, pin) {
   assert.equal(job.run_attempt, context.attempt);
   assert.equal(job.status, "completed");
   assert.equal(job.conclusion, "success");
-  const steps = job.steps.filter((step) => step.name === "Upload authenticated worker grant");
-  assert.equal(steps.length, 1);
-  assert.equal(steps[0].status, "completed");
-  assert.equal(steps[0].conclusion, "success");
+  const proof = await verifyCandidateProof(context, `grant-${group}`, "candidate-auth.yml");
+  artifactEvidence(proof.evidence, artifact);
 }
 
 export async function downloadGrant(env, request = fetch) {

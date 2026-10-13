@@ -26,6 +26,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ inputs.release_id }}
       source_sha: ${{ inputs.source_sha }}
@@ -67,6 +69,7 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+      attestations: read
     steps:
       - name: Read trusted controller
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { assertReleasePr } from "./release-pr.mjs";
-import { readSourceReceipt } from "./ci-source-receipt.mjs";
-import { reconcileJobSteps } from "./candidate-job-proof.mjs";
+import { validateSourceReceipt } from "./ci-source-receipt.mjs";
+import { verifyStepProof } from "./step-proof.mjs";
 
 const repository = "/repos/iExalt/paseo";
 export function readGithub(path, { text = false } = {}) {
@@ -118,16 +118,16 @@ async function verifyPrChecks(pr, identity, request, readCurrent, options = {}) 
       assert.equal(summary.status, "completed");
       assert.equal(summary.conclusion, "success");
       if (name === "Routine CI required" || name === "authorize-release") continue;
-      const job = await reconcileJobSteps(summary, request);
-      const stepName = routine
-        ? "Plan checks and record source"
-        : "Validate exact source and isolated configuration";
-      const steps = job.steps.filter((step) => step.name === stepName);
-      assert.equal(steps.length, 1);
-      const receipt = readSourceReceipt(
-        await request(`${repository}/actions/jobs/${job.id}/logs`, { text: true }),
-        steps[0],
-      );
+      // The signed proof replaces GitHub's step records and job logs as authority.
+      const lane = routine ? null : name.match(/^deep \((browser|integration|electron)\)$/)[1];
+      const proof = await verifyStepProof({
+        runId: run.id,
+        attempt: run.run_attempt,
+        slot: routine ? "ci-source-routine" : `ci-source-deep-${lane}`,
+        workflow,
+        ref: `refs/pull/${number}/merge`,
+      });
+      const receipt = validateSourceReceipt(proof.evidence);
       assert.equal(receipt.repositoryId, 1404390841);
       assert.equal(receipt.runId, run.id);
       assert.equal(receipt.attempt, run.run_attempt);
@@ -139,10 +139,19 @@ async function verifyPrChecks(pr, identity, request, readCurrent, options = {}) 
         assert.equal(receipt.kind, "routine-pr");
         assert.equal(receipt.lane, null);
         assert.deepEqual(receipt.parents, [pr.base.sha, pr.head.sha]);
+        assert.equal(proof.sourceSha, receipt.sha, "Routine proof signed another checkout");
       } else {
         assert.equal(receipt.kind, "deep");
         assert.equal(receipt.sha, pr.head.sha);
         assert.equal(name, `deep (${receipt.lane})`);
+        // The signer's own checkout is the one claim its code cannot choose.
+        const signed = await request(`${repository}/git/commits/${proof.sourceSha}`);
+        assert.equal(signed.sha, proof.sourceSha);
+        assert.deepEqual(
+          signed.parents.map((parent) => parent.sha),
+          [pr.base.sha, pr.head.sha],
+          "Deep proof signed another checkout",
+        );
       }
       receipts.push(receipt);
     }

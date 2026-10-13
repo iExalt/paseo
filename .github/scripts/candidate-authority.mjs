@@ -139,7 +139,15 @@ export async function currentGrantedCandidate(
   read,
   proof,
 ) {
-  validateGrant(proof.grant, proof.context, proof.group, proof.worker, proof.jobs, proof.pin);
+  await validateGrant(
+    proof.grant,
+    proof.context,
+    proof.group,
+    proof.worker,
+    proof.jobs,
+    proof.pin,
+    proof.artifact,
+  );
   assert.deepEqual(proof.context.descriptor, descriptor);
   assert.equal(proof.context.controllerSha, controllerSha);
   await currentIdentity(descriptor, controllerSha, identity, request, read);

@@ -57,6 +57,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ inputs.release_id }}
       source_sha: ${{ inputs.source_sha }}
@@ -81,6 +83,8 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -92,77 +96,45 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
-      - name: Begin evidence for Authenticate candidate and admitted attempt
-        id: proof_start_34
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "34"
       - name: Authenticate candidate and admitted attempt
-        id: proof_target_34
+        id: candidate
         if: inputs.source_sha != ''
         env:
           CANDIDATE_EXPECTED_JOB: native-runtime / android
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/candidate-worker.mjs
-      - name: Record evidence for Authenticate candidate and admitted attempt
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "34"
-          started: ${{ steps.proof_start_34.outputs.started }}
-          outcome: ${{ steps.proof_target_34.outcome }}
-          conclusion: ${{ steps.proof_target_34.conclusion }}
-
-      - name: Begin evidence for Verify signed ARM64 APKs and retained native state
-        id: proof_start_35
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Verify signed ARM64 APKs and retained native state
-          number: "35"
       - name: Verify signed ARM64 APKs and retained native state
-        id: proof_target_35
+        id: verify
         timeout-minutes: 15
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash .github/scripts/android-candidate-host.sh
-      - name: Record evidence for Verify signed ARM64 APKs and retained native state
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Verify signed ARM64 APKs and retained native state
-          number: "35"
-          started: ${{ steps.proof_start_35.outputs.started }}
-          outcome: ${{ steps.proof_target_35.outcome }}
-          conclusion: ${{ steps.proof_target_35.conclusion }}
-
-      - name: Begin evidence for Remove owned Android container after interruption
-        id: proof_start_36
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Remove owned Android container after interruption
-          number: "36"
       - name: Remove owned Android container after interruption
-        id: proof_target_36
+        id: cleanup
         if: always()
         run: |
           if test -f "$RUNNER_TEMP/paseo-native-candidate-owned" && docker inspect paseo-native-candidate >/dev/null 2>&1; then
             docker rm -f paseo-native-candidate
           fi
-      - name: Record evidence for Remove owned Android container after interruption
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
+      - name: Bind step proof to this run attempt
+        id: proof-subject
+        if: steps.candidate.outcome == 'success' && steps.verify.outcome == 'success' && steps.cleanup.outcome == 'success'
+        env:
+          PROOF_SLOT: producer-android-arm64
+        shell: bash
+        run: |
+          [[ "$PROOF_SLOT" =~ ^[a-z0-9][a-z0-9-]{0,79}$ ]]
+          subject="$RUNNER_TEMP/paseo-step-proof-$PROOF_SLOT"
+          printf 'paseo-step-proof-v1\n%s\n%s\n%s\n%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PROOF_SLOT" > "$subject"
+          { echo "subject=$subject"; echo "slot=$PROOF_SLOT"; } >> "$GITHUB_OUTPUT"
+      - name: Sign step proof
+        if: steps.proof-subject.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          name: Remove owned Android container after interruption
-          number: "36"
-          started: ${{ steps.proof_start_36.outputs.started }}
-          outcome: ${{ steps.proof_target_36.outcome }}
-          conclusion: ${{ steps.proof_target_36.conclusion }}
-
+          subject-path: ${{ steps.proof-subject.outputs.subject }}
+          predicate-type: https://github.com/iExalt/paseo/attestations/step-proof/v1
+          predicate: ${{ format('{{"schemaVersion":1,"kind":"paseo-step-proof","repository":"{0}","runId":{1},"attempt":{2},"slot":"{3}","evidence":{4}}}', github.repository, github.run_id, github.run_attempt, steps.proof-subject.outputs.slot, 'null') }}
+          show-summary: false
       - name: Bound retained Android evidence
         id: evidence
         if: ${{ !cancelled() }}
@@ -196,6 +168,8 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -207,30 +181,13 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
-      - name: Begin evidence for Authenticate candidate and admitted attempt
-        id: proof_start_37
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "37"
       - name: Authenticate candidate and admitted attempt
-        id: proof_target_37
+        id: candidate
         if: inputs.source_sha != ''
         env:
           CANDIDATE_EXPECTED_JOB: native-runtime / macos
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/candidate-worker.mjs
-      - name: Record evidence for Authenticate candidate and admitted attempt
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "37"
-          started: ${{ steps.proof_start_37.outputs.started }}
-          outcome: ${{ steps.proof_target_37.outcome }}
-          conclusion: ${{ steps.proof_target_37.conclusion }}
-
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           install_url: https://releases.nixos.org/nix/nix-2.34.7/install
@@ -242,29 +199,31 @@ jobs:
           test "$(npm --version)" = 11.20.0
           npm ci --cache "$RUNNER_TEMP/npm-cache"
           npm run build:server
-      - name: Begin evidence for Verify canonical signed packages and preserved native state
-        id: proof_start_38
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Verify canonical signed packages and preserved native state
-          number: "38"
       - name: Verify canonical signed packages and preserved native state
-        id: proof_target_38
+        id: verify
         timeout-minutes: 10
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/macos-candidate-runtime.mjs
-      - name: Record evidence for Verify canonical signed packages and preserved native state
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
+      - name: Bind step proof to this run attempt
+        id: proof-subject
+        if: steps.candidate.outcome == 'success' && steps.verify.outcome == 'success'
+        env:
+          PROOF_SLOT: producer-macos-arm64
+        shell: bash
+        run: |
+          [[ "$PROOF_SLOT" =~ ^[a-z0-9][a-z0-9-]{0,79}$ ]]
+          subject="$RUNNER_TEMP/paseo-step-proof-$PROOF_SLOT"
+          printf 'paseo-step-proof-v1\n%s\n%s\n%s\n%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PROOF_SLOT" > "$subject"
+          { echo "subject=$subject"; echo "slot=$PROOF_SLOT"; } >> "$GITHUB_OUTPUT"
+      - name: Sign step proof
+        if: steps.proof-subject.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          name: Verify canonical signed packages and preserved native state
-          number: "38"
-          started: ${{ steps.proof_start_38.outputs.started }}
-          outcome: ${{ steps.proof_target_38.outcome }}
-          conclusion: ${{ steps.proof_target_38.conclusion }}
-
+          subject-path: ${{ steps.proof-subject.outputs.subject }}
+          predicate-type: https://github.com/iExalt/paseo/attestations/step-proof/v1
+          predicate: ${{ format('{{"schemaVersion":1,"kind":"paseo-step-proof","repository":"{0}","runId":{1},"attempt":{2},"slot":"{3}","evidence":{4}}}', github.repository, github.run_id, github.run_attempt, steps.proof-subject.outputs.slot, 'null') }}
+          show-summary: false
       - name: Bound retained evidence
         id: evidence
         if: ${{ !cancelled() }}
