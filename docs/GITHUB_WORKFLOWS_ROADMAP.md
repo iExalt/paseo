@@ -228,7 +228,8 @@ explicitly required before publication, even if absent from routine CI.
   - Ticks: G5; W7 verification.
   - Receipt: full run `38420127176`, attempt 1, source `dba97434b`, passed
     all 14 cells and ten verification lanes. Draft `411807759` has exactly 32
-    verified assets and remains unpublished; failure/recovery mapping, signatures,
+    verified assets at the G5 gate; D3 subsequently published those exact bytes as
+    stable `paseo-v0.1.0`. Failure/recovery mapping, signatures,
     timings and unchanged public/cache inventories are in [status](GITHUB_WORKFLOWS_STATUS.md).
 
 - [ ] **11. Publish first approved release and hand off operation.** Publish
