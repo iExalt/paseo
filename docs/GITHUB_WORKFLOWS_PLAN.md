@@ -374,9 +374,12 @@ state; installer success alone is insufficient.
       forged identity and stale checks rejected, and exact rehearsal rebase
       merge/tree verified. Campaign refs removed; publication and installed
       migration remain G5/G6. See [status](GITHUB_WORKFLOWS_STATUS.md) for receipts.
-- [ ] **G5: Enforce complete publication.** Gate: a missing/failed platform,
+- [x] **G5: Enforce complete publication.** Gate: a missing/failed platform,
       stale SHA, wrong signature, partial upload, concurrent or retried attempt cannot
       publish. The all-green same-SHA rehearsal succeeds without making assets public.
+      Verified 2026-10-13 by run `38420127176` attempt 1 at `dba97434b`: signed
+      14-cell / 32-asset draft `411807759`, independent byte verification, strict
+      cleanup and unchanged public inventory. Failure mapping is in [status](GITHUB_WORKFLOWS_STATUS.md).
 - [ ] **G6: Deliver and operate the first release.** Gate: explicit publication
       authorization, complete GH assets, download verification, and actual legacy
       Mac/Android manual migration/state/recovery evidence; all selected platform proofs,

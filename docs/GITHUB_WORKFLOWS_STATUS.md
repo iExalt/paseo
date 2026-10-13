@@ -33,15 +33,78 @@
   the tested tree. Final integration is reviewer-accepted. No public release,
   production proposal activation or device migration
   occurred; the two rehearsal refs have been removed.
-- Phase D1/D2 / G5 remains open at `2c6f331bd`: authentic replacement PR #96,
-  routine/deep checks and native-disabled canary passed. Full trial
-  `38407499134` exposed a macOS Metro worker out-of-memory failure. The monitor
-  stopped the trial and disabled native execution. Cancellation also exposed a
-  Windows ARM64 worktree-cleanup failure; its owned VHD was removed.
-  Retired draft `411714072` preserves both signed authority assets (1,154 bytes).
-  A cold macOS memory diagnostic and the focused Windows cleanup repair now
-  pass; fresh production verification and complete candidate proof remain open. The user authorized autonomous
-  routine repairs; public release and personal-device migration remain excluded.
+- Phase D1/D2 / G5 is verified at `dba97434bc07ae122625dbd66568cf7e0624c578`.
+  Authentic proposal #99, current-head routine/deep checks, native-disabled
+  canary and the complete unpublished trial passed. The independent reviewer
+  accepted the final signed inventory and runtime/cleanup evidence. D3/G6 public
+  publication and personal-device migration remain unperformed and require their
+  separate authorization.
+
+### G5 completion evidence — 2026-10-13
+
+[Full trial 38420127176, attempt 1](https://github.com/iExalt/paseo/actions/runs/38420127176)
+completed all 14 cells across eight producer groups and ten verification lanes.
+Its 53-job graph took 51m52s from first job to final completion (7s initial queue;
+52m from creation), with 4h28m49s summed successful runner time. This is the
+release-candidate gate, separate from ordinary PR CI. It finished at 16:05:00 UTC
+(12:05:00 EDT). The stop monitor removed native enablement afterward.
+
+Draft `411807759` remains unpublished with exactly 32 assets. Its descriptor
+SHA-256 is `06305743b30e9778fc8681d83474a307b49ad14c99dadbe78f7b18185a867680`;
+its signed canonical manifest SHA-256 is
+`22753678a016e300c1b10448e680a265e4bf244f5b1406b76bc57fee1950a43d`.
+Aggregate job `115399845699` independently downloaded and hashed the complete
+current-attempt package inventory before signing. Local reconciliation verified
+signatures, metadata, signing-input digests and exact inventory; it did not
+repeat every large package download. All eight retained UI archives were
+independently digest-checked, extracted and inspected. Native state, normal close,
+real Windows STT/TTS, zero-owned-process and storage cleanup proofs passed.
+These disposable upgrade fixtures do not establish personal-device migration.
+
+| G5 failure boundary                                                                              | Discriminating evidence                                                                                                                                                                                                              |
+| ------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Missing/failed native cell cannot qualify                                                        | Canary `38418838711` passed all ten verification lanes with native/signing disabled; aggregate alone rejected the incomplete matrix. Failed full trial `38407499134` stopped without publication.                                    |
+| Stale identity, wrong signature, mixed attempts, competing candidates and published immutability | Cheap `scripts/candidate-descriptor.test.mjs` authority, aggregate and immutable-transport fixtures; exact authenticated proposal #99 tree/sole-parent merge proof.                                                                  |
+| Partial upload and interrupted response recovery                                                 | Live starter-asset failure and same-draft attempt-three recovery on `38326028608`; REST rehearsal at `4e4122904` downloaded identical bytes after a simulated lost response. Signed assets were preserved.                           |
+| Cancellation and strict cleanup                                                                  | Earlier owned-process cancellation trials plus full current Windows ARM cleanup: 19 links per tree unlinked without following targets, both worktrees/registrations and VHD removed in 128s within the unchanged three-minute limit. |
+| Complete same-SHA success                                                                        | Run `38420127176` attempt 1, signed 14-cell manifest and exact 32-asset unpublished inventory; no cross-attempt substitution.                                                                                                        |
+
+Public release and historical tag inventories are unchanged. All 14 retired
+candidate authorities and their retained assets remain preserved. The exact owned
+`ci/macos-bundle-diagnostic` remote branch was deleted with its expected-head
+lease, and its clean sibling worktree/local branch removed; focused proof logs
+remain in the ignored implementation evidence directory. The requested main
+worktree and original checkout are retained. Legacy
+`fork-builds.yml` now exposes only `workflow_call`; its old push/manual entrypoints
+and temporary path exceptions are gone. Ordinary dev pushes run routine CI and
+proposal automation without starting release packaging. Candidate execution uses
+the authenticated merged-proposal/owner-retry entrypoint and explicit native gate.
+
+The final repair PR/dev pair `38414844264` / `38415751617` passed in 4m39s/4m47s,
+with 23m59s/23m23s summed runner work. The seven-lane 4m15s/4m18s baseline and
+under-five-minute ceiling remain unchanged. No required check was relaxed.
+The all-CI timing review identifies Windows ARM as the longest producer at
+40m22s: candidate/predecessor dependency installs took 12m07s/8m56s and builds
+5m15s/4m07s. The earlier native baseline took 65m28s with installs 23m32s/20m55s;
+these different-source hosted runs are not a controlled speedup ratio. The
+controlled ReFS extraction comparison and current full cleanup validate the
+storage optimization. Android assembly took 20m07s; Linux Nix x64/ARM producers
+27m37s/23m28s; Mac production build took 9m48s, including 305.656s web bundling.
+The scoped Darwin heap repair completed without increasing deadlines. Final
+aggregate verification/signing took 1m56s. Native package work remains parallel
+and outside ordinary PR blocking CI.
+
+Six repository caches total 5,306,868,709 bytes, unchanged by this trial and below
+the 10 GB limit; save admission remains 8 GB and candidate consumers restore only.
+The confirmed $0 Actions stop control and standard free runners remain the cost
+boundary. The two-minute routine goal and broader timing improvements are stretch
+work, not claimed complete; installed-dependency caching remains explicitly
+deferred by the user.
+
+### Historical D repair evidence
+
+The following records explain earlier failures and their repairs. Statements of
+then-pending native proof are superseded by the complete G5 receipt above.
 
 The cold macOS diagnostic [38411654299](https://github.com/iExalt/paseo/actions/runs/38411654299)
 was based on exact source `2c6f331bd`, with the disposable export-only memory
@@ -73,27 +136,31 @@ and unknown reparse types. Hosted fixture
 [38414104233](https://github.com/iExalt/paseo/actions/runs/38414104233) then removed
 both owned worktrees, their registrations and the VHD in eight seconds, preserving
 an external sentinel reached by a junction. Both trees included 1,000 long-path
-files and owned writers terminated at their deadlines. Full installed npm-tree
-traversal cost remains to be measured against the unchanged three-minute cleanup
-limit during the next native trial; the fixture is not full candidate acceptance.
+files and owned writers terminated at their deadlines. The subsequent full installed npm-tree cleanup passed in 128s in the G5 trial
+above, within the unchanged three-minute limit.
 
 ## Outcome gates
 
-| Goal                                           | Status / evidence   | Depends on                    | Exit and owner                                                              |
-| ---------------------------------------------- | ------------------- | ----------------------------- | --------------------------------------------------------------------------- |
-| A1: feasible candidate and cost contracts      | complete / verified | none                          | G0, author with user decisions                                              |
-| A2: measured routine verification              | complete / verified | A1                            | step 2 live events and accepted latency ceiling, author/user                |
-| A3: exact rebased-tree verification            | complete / verified | A2                            | G1 including atomic publication failure fixtures, author                    |
-| B1: deep journeys and safe PR routing          | complete / verified | A1–A3; B2 for Android closure | G2, author                                                                  |
-| B2: Mac/Android candidate preservation         | complete / verified | A1–A3                         | Mac/Android portion of G3, author                                           |
-| B3: Linux package matrix                       | complete / verified | B2 for closure                | Linux portion of G3, author                                                 |
-| B4: Windows package matrix                     | complete / verified | B2, B3                        | Remaining G3 and phase integration, author                                  |
-| C1: independent version and updater transition | complete / verified | B1–B4                         | Step 7 source/fixture integration; installed migration belongs to D, author |
-| C2: scoped version proposal automation         | complete / verified | C1                            | Step 8 configuration and actual bot event delivery, author                  |
-| C3: consecutive bot proposal rehearsal         | complete / verified | C2                            | Remaining G4 current-head, forged-label and merge-identity proofs, author   |
+| Goal                                             | Status / evidence   | Depends on                     | Exit and owner                                                                       |
+| ------------------------------------------------ | ------------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
+| A1: feasible candidate and cost contracts        | complete / verified | none                           | G0, author with user decisions                                                       |
+| A2: measured routine verification                | complete / verified | A1                             | step 2 live events and accepted latency ceiling, author/user                         |
+| A3: exact rebased-tree verification              | complete / verified | A2                             | G1 including atomic publication failure fixtures, author                             |
+| B1: deep journeys and safe PR routing            | complete / verified | A1–A3; B2 for Android closure  | G2, author                                                                           |
+| B2: Mac/Android candidate preservation           | complete / verified | A1–A3                          | Mac/Android portion of G3, author                                                    |
+| B3: Linux package matrix                         | complete / verified | B2 for closure                 | Linux portion of G3, author                                                          |
+| B4: Windows package matrix                       | complete / verified | B2, B3                         | Remaining G3 and phase integration, author                                           |
+| C1: independent version and updater transition   | complete / verified | B1–B4                          | Step 7 source/fixture integration; installed migration belongs to D, author          |
+| C2: scoped version proposal automation           | complete / verified | C1                             | Step 8 configuration and actual bot event delivery, author                           |
+| C3: consecutive bot proposal rehearsal           | complete / verified | C2                             | Remaining G4 current-head, forged-label and merge-identity proofs, author            |
+| D1: exact-candidate coordination                 | complete / verified | C1–C3                          | Step 9 authenticated source, complete aggregate and legacy retirement, author        |
+| D2: failure recovery and complete draft          | complete / verified | D1                             | Step 10 / G5 signed same-SHA matrix and failure boundaries, author                   |
+| D3: first public release and installed migration | planned / designed  | D2 and explicit user authority | Step 11 / G6 publication, personal-device recovery and final acceptance, user/author |
 
-Phase D1 is active / implemented in part; D2 is planned / designed and depends on
-D1's authenticated-source, transport and complete native aggregate proofs.
+### Historical coordinator implementation evidence
+
+The records below retain incremental verification boundaries; the current G5
+receipt above supersedes their then-open D1/D2 checks.
 
 D1b source authority and draft transport are reviewer-accepted; the hosted
 production entry-point rehearsal remains open. A merged proposal must match its authenticated
@@ -729,7 +796,10 @@ A3's exact-tested-tree and atomic-publication fixtures passed; the shared rebase
 gate remains complete and uses its existing 45-minute whole-job bound. The user's
 under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
 
-## Decisions and current boundary
+## Decisions and historical execution boundaries
+
+The current boundary is G5 complete / G6 unperformed. Earlier phase-specific
+activation and verification limits below are historical; see the current snapshot.
 
 - User selected **0.1.0**, **semver-only upgrade ordering**, and **clean break
   with manual migration**. The independent reservation/sequence design and
@@ -974,7 +1044,7 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-Current sequence: execute approved Phase D1/D2.
+Current sequence: D1/D2 verification is complete; preserve the unpublished candidate for separately authorized D3.
 D owns exact-candidate release coordination, publication and personal-device
 migration. D3 remains unapproved. Preserve routine latency; deeper gates
 do not join ordinary PR blocking work. ARM cache transport, full cache-hit upgrade
@@ -1133,11 +1203,11 @@ open, without raising the budget or weakening checks.
 
 ### Phase D checklist
 
-- [ ] D1: exact-candidate coordination.
+- [x] D1: exact-candidate coordination.
   - [x] D1a: shared collision-free tag contract and consumer/engine verification.
-  - [ ] D1b: authenticated merged-PR descriptor and immutable draft transport.
-  - [ ] D1c: exact-source routine/deep/native fanout, complete aggregate and legacy retirement.
-- [ ] D2: failure/retry fixtures, bounded real partial-upload recovery, then complete same-SHA draft proof.
+  - [x] D1b: authenticated merged-PR descriptor and immutable draft transport.
+  - [x] D1c: exact-source routine/deep/native fanout, complete aggregate and legacy retirement.
+- [x] D2: failure/retry fixtures, bounded real partial-upload recovery, then complete same-SHA draft proof.
 
 D1b uses the actual merged commit's sole parent and tested tree, not the current
 dev tip, and requires the merged source remain an ancestor of dev. Draft transport
