@@ -123,6 +123,7 @@ function fixture() {
             ? "Validate exact source and isolated configuration"
             : "Plan checks and record source",
         },
+        { ...step, name: "Complete job" },
       ],
     })),
   );
@@ -333,6 +334,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
     conclusion: "success",
     steps: [
       { name: "Upload authenticated worker grant", status: "completed", conclusion: "success" },
+      { name: "Complete job", status: "completed", conclusion: "success" },
     ],
   };
   const grantedEnv = {

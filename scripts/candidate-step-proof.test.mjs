@@ -85,3 +85,17 @@ test("controlled step receipts retain execution bounds and same-attempt successf
   const skipped = readStepProofs(log({ ...proof, outcome: "skipped", conclusion: "skipped" }), job);
   assert.equal(skipped[0].conclusion, "skipped");
 });
+
+test("partial successful-job metadata cannot hide required controlled steps", async () => {
+  for (const steps of [
+    [{ name: "Set up job", status: "in_progress", conclusion: null }],
+    [{ name: "Set up job", status: "completed", conclusion: "success" }],
+  ]) {
+    const partial = { ...job, steps };
+    const result = await reconcileJobSteps(partial, async (route) =>
+      route.endsWith("/logs") ? log() : partial,
+    );
+    assert.equal(result.stepEvidence, "controlled-job-log-v1");
+    assert.equal(result.steps[0].name, proof.name);
+  }
+});
