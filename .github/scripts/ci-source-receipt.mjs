@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { appendFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -49,19 +50,7 @@ export function sourceReceipt(
   return receipt;
 }
 
-export function readSourceReceipt(log, step) {
-  assert.equal(step.status, "completed");
-  assert.equal(step.conclusion, "success");
-  const lines = log.split(/\r?\n/).filter((line) => line.includes(RECEIPT_PREFIX));
-  assert.equal(lines.length, 1, "Expected exactly one setup source receipt");
-  const match = lines[0].match(/^([0-9T:.Z-]+) PASEO_CI_SOURCE=(\{.*\})$/);
-  assert.ok(match, "Malformed source receipt");
-  const at = Date.parse(match[1]);
-  assert.ok(
-    at >= Date.parse(step.started_at) && at < Date.parse(step.completed_at) + 1000,
-    "Receipt is outside controlled setup step",
-  );
-  const receipt = JSON.parse(match[2]);
+export function validateSourceReceipt(receipt) {
   assert.deepEqual(
     Object.keys(receipt).sort(),
     [
@@ -82,5 +71,9 @@ export function readSourceReceipt(log, step) {
   return receipt;
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
-  console.log(RECEIPT_PREFIX + JSON.stringify(sourceReceipt(process.env)));
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+  const receipt = JSON.stringify(sourceReceipt(process.env));
+  console.log(RECEIPT_PREFIX + receipt);
+  // The signed step proof carries these bytes; the log line is for readers.
+  appendFileSync(process.env.GITHUB_OUTPUT, `receipt=${receipt}\n`);
+}
