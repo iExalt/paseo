@@ -11,6 +11,7 @@ export const coreTests = [
   "scripts/release-preflight.test.mjs",
   "scripts/release-pr-checks.test.mjs",
   "scripts/candidate-descriptor.test.mjs",
+  "scripts/candidate-step-proof.test.mjs",
   "scripts/candidate-nix-export.test.mjs",
   "scripts/fork-release-config.test.mjs",
   "scripts/candidate-artifacts.test.mjs",
