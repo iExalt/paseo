@@ -1,6 +1,6 @@
 # GitHub workflows roadmap
 
-Status: **Phases A–C / G0–G4 complete; Phase D1/D2 approved and active, 2026-10-12**.
+Status: **Phases A–C / G0–G4 complete; Phase D1/D2 / G5 complete; D3 / G6 remains, 2026-10-13**.
 Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
@@ -15,8 +15,8 @@ through `maintain-project-status`; do not create per-run committed reports.
 | --------------------------- | ----- | --------- | ------ |
 | A Foundations               | 1–3   | 3         | G0, G1 |
 | B Verification and packages | 4–6   | 3         | G2, G3 |
-| C Release preparation       | 7–8   | 0         | G4     |
-| D Integration and delivery  | 9–11  | 0         | G5, G6 |
+| C Release preparation       | 7–8   | 2         | G4     |
+| D Integration and delivery  | 9–11  | 2         | G5, G6 |
 
 | Live activity             | Steps | Resources and lifetime                                                                   | Cost boundary                                                                               |
 | ------------------------- | ----- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -201,7 +201,7 @@ explicitly required before publication, even if absent from routine CI.
     unavailable; never print credentials. Phase approval includes test PR and
     draft-only scope, not user-facing publication.
 
-- [ ] **9. Coordinate exact-candidate verification and packaging.** Wire routine,
+- [x] **9. Coordinate exact-candidate verification and packaging.** Wire routine,
       deep and package lanes to recognized merged release PRs; remove old redundant
       trigger. Await full matrix and metadata, bind all results to SHA/identity,
       handle retries/concurrency and prevent out-of-order feed regression.
@@ -217,7 +217,7 @@ explicitly required before publication, even if absent from routine CI.
     updated permissions admit intended trusted actor without weakening PR isolation.
   - Ticks: W7 implementation; contributes to G5.
 
-- [ ] **10. Rehearse release failure and recovery.** Inject a missing/failed
+- [x] **10. Rehearse release failure and recovery.** Inject a missing/failed
       platform, wrong source digest/signature, partial upload and interrupted rerun;
       check competing candidate ordering and published-release immutability. Then
       run one all-green same-SHA draft-only rehearsal with download verification.
@@ -226,6 +226,10 @@ explicitly required before publication, even if absent from routine CI.
     exact complete inventory; retries neither mix attempts nor allocate a
     replacement identity accidentally; free-only controls hold under failure.
   - Ticks: G5; W7 verification.
+  - Receipt: full run `38420127176`, attempt 1, source `dba97434b`, passed
+    all 14 cells and ten verification lanes. Draft `411807759` has exactly 32
+    verified assets and remains unpublished; failure/recovery mapping, signatures,
+    timings and unchanged public/cache inventories are in [status](GITHUB_WORKFLOWS_STATUS.md).
 
 - [ ] **11. Publish first approved release and hand off operation.** Publish
       the reviewed candidate without rebuilding different bytes. Verify downloads
