@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
 import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
+import { hasLiveAttemptJob } from "./candidate-job-proof.mjs";
 
 const repository = "iExalt/paseo";
 const certificate = "943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459";
@@ -49,7 +50,10 @@ export function validateCoordinatedProducer(run, pin, context, jobs) {
   assert.equal(run.path, ".github/workflows/release-candidate.yml");
   assert.equal(run.head_sha, context.rootHeadSha);
   assert.equal(run.head_branch, context.rootBranch);
-  assert.equal(run.status, "in_progress");
+  assert.ok(
+    run.status === "in_progress" || (run.status === "queued" && hasLiveAttemptJob(context, jobs)),
+    "Candidate root is not executing",
+  );
   assert.equal(run.conclusion, null);
   const matches = jobs.filter(
     (job) => job.name === "paired / Cross-check paired candidate artifacts",
@@ -210,7 +214,17 @@ export async function fetchCandidate(
     "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev";
   const context = coordinated ? (authenticatedContext ?? (await readWorkerContext())) : null;
   const run = await json(`actions/runs/${integer(pin.runId)}/attempts/${integer(pin.attempt)}`);
-  if (context) validateCoordinatedProducer(run, pin, context, await attemptJobs(context));
+  if (context)
+    validateCoordinatedProducer(
+      run,
+      pin,
+      context,
+      await attemptJobs(
+        context,
+        undefined,
+        (job) => job.name === "paired / Cross-check paired candidate artifacts",
+      ),
+    );
   else validateProducer(run, pin);
   forkAndroidVersionCode(pin.version);
   await mkdir(directory, { recursive: false });
