@@ -46,7 +46,7 @@ node --input-type=module -e '
 sudo apt-get update -qq
 sudo apt-get install -y rpm libfuse2t64 xvfb xauth libgtk-3-0t64 libnss3 libasound2t64 libgbm1
 test -c /dev/fuse
-previous=5619b7d7ee1e55b322028e8b7818aa1a8f752a0a
+previous=b6e0474aec58b2c169f61b81b20de890d4138e30
 git worktree add --detach "$root/previous-source" "$previous"
 if [ "${PREDECESSOR_CACHE_HIT:-}" = true ]; then
   node .github/scripts/linux-predecessor-cache.mjs restore "$root"

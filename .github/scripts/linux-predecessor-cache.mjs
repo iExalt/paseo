@@ -13,7 +13,7 @@ import {
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const previousSha = "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
+export const previousSha = "b6e0474aec58b2c169f61b81b20de890d4138e30";
 export const cacheLimit = 650 * 1024 * 1024;
 export const repositorySaveCeiling = 8_000_000_000;
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
@@ -49,13 +49,20 @@ export function validateCache(directory, recipe) {
   const identity = JSON.parse(readFileSync(join(directory, "previous.json")));
   assert.equal(identity.sourceSha, previousSha);
   assert.equal(identity.lockHash, recipe.lockHash);
-  assert.equal(identity.version, "0.11.0");
+  assert.equal(identity.version, "0.1.0");
   assert.equal(identity.name, "@getpaseo/desktop");
   assert.equal(identity.desktopName, "Paseo.desktop");
   assert.deepEqual(Object.keys(identity.artifacts).sort(), ["appimage", "deb", "rpm"]);
   assert.deepEqual(
     Object.keys(identity.payload).sort(),
-    ["Paseo", "Paseo.bin", "chrome-sandbox", "resources/app.asar", "resources/bin/paseo"].sort(),
+    [
+      "Paseo",
+      "Paseo.bin",
+      "chrome-sandbox",
+      "resources/app.asar",
+      "resources/bin/paseo",
+      "resources/linux-after-install.sh",
+    ].sort(),
   );
   for (const hash of Object.values(identity.payload)) assert.match(hash, /^[a-f0-9]{64}$/);
   for (const [format, artifact] of Object.entries(identity.artifacts)) {
@@ -74,22 +81,21 @@ function validatePackageMetadata(directory, recipe) {
   const rpm = join(directory, `previous-${recipe.architecture}.rpm`);
   const scripts = execFileSync("rpm", ["-qp", "--scripts", rpm], { encoding: "utf8" });
   assert.ok(scripts.includes("postuninstall scriptlet"));
-  assert.ok(scripts.includes("rm -f '/usr/bin/Paseo'"));
   assert.ok(
-    !scripts.includes("posttrans scriptlet") && !scripts.includes("remaining-package count"),
-    "Predecessor RPM removal behavior must remain historical",
+    scripts.includes("posttrans scriptlet") && scripts.includes("remaining-package count"),
+    "The 0.1.0 predecessor must retain its upgrade-safe RPM hooks",
   );
   const architecture = recipe.architecture === "arm64" ? "aarch64" : "x86_64";
   assert.equal(
     execFileSync("rpm", ["-qp", "--queryformat", "%{NAME} %{VERSION} %{ARCH}", rpm], {
       encoding: "utf8",
     }),
-    `Paseo 0.11.0 ${architecture}`,
+    `Paseo 0.1.0 ${architecture}`,
   );
   const deb = join(directory, `previous-${recipe.architecture}.deb`);
   const fields = {
     Package: "paseo",
-    Version: "0.11.0",
+    Version: "0.1.0",
     Architecture: recipe.architecture === "arm64" ? "arm64" : "amd64",
   };
   for (const [field, expected] of Object.entries(fields))

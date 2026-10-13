@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-previous_sha=5619b7d7ee1e55b322028e8b7818aa1a8f752a0a
+previous_sha=b6e0474aec58b2c169f61b81b20de890d4138e30
 previous_root="$RUNNER_TEMP/paseo-linux-predecessor"
 test ! -e "$previous_root"
 git worktree add --detach "$previous_root" "$previous_sha"

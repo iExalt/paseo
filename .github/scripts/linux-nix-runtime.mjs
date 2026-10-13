@@ -53,10 +53,10 @@ await writeFile(
       signing: "unsigned same-job verification; no release or transfer",
       outputs,
       previous: {
-        sourceSha: "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a",
-        version: "0.11.0",
+        sourceSha: "b6e0474aec58b2c169f61b81b20de890d4138e30",
+        version: "0.1.0",
         provenance:
-          "rebuilt predecessor with explicit packaging-only RE2 asset repair; not a published Linux artifact",
+          "rebuilt 0.1.0 predecessor from sanitized history with unchanged packaging; not a published Linux artifact",
         overrideSha256: createHash("sha256").update(override).digest("hex"),
         daemon: previousDaemon,
         desktop: previousDesktop,
@@ -72,7 +72,7 @@ await smoke.smokePackagedDesktopUpgrade({
   candidateApp: desktop,
   artifactDir,
   nixPackages: {
-    previous: { daemon: previousDaemon, version: "0.11.0" },
+    previous: { daemon: previousDaemon, version: "0.1.0" },
     candidate: { daemon, version },
   },
 });

@@ -55,13 +55,18 @@ try {
     mkdirSync(stageRoot);
     if (platform === "linux") {
       const payload = Object.fromEntries(
-        ["Paseo", "Paseo.bin", "chrome-sandbox", "resources/app.asar", "resources/bin/paseo"].map(
-          (p) => [p, "c".repeat(64)],
-        ),
+        [
+          "Paseo",
+          "Paseo.bin",
+          "chrome-sandbox",
+          "resources/app.asar",
+          "resources/bin/paseo",
+          "resources/linux-after-install.sh",
+        ].map((p) => [p, "c".repeat(64)]),
       );
       const item = {
         sourceSha: candidate,
-        version: "0.1.0",
+        version: "0.1.1",
         lockHash: "d".repeat(64),
         name: "@getpaseo/desktop",
         desktopName: "Paseo.desktop",
@@ -89,8 +94,8 @@ try {
         architecture: "x64",
         previous: {
           ...item,
-          version: "0.11.0",
-          sourceSha: "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a",
+          version: "0.1.0",
+          sourceSha: "b6e0474aec58b2c169f61b81b20de890d4138e30",
         },
         candidate: {
           ...item,

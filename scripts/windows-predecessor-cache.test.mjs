@@ -44,7 +44,7 @@ test("Windows predecessor cache binds exact recipe and portable identity before 
     const identity = {
       sourceSha: previousSha,
       lockSha256: recipe.lockSha256,
-      version: "0.11.0",
+      version: "0.1.0",
       architecture: "arm64",
       appId: "sh.paseo.desktop",
       archiveFilter: "BCJ",

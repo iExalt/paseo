@@ -168,7 +168,7 @@ try:
         else:
             adb("install", apk, timeout=90)
         package = adb("shell", "dumpsys", "package", app)
-        expected_code = "200008" if stage == "previous" else version_code
+        expected_code = "201000" if stage == "previous" else version_code
         if not re.search(r"versionCode=" + expected_code + r"\b", package) or "primaryCpuAbi=arm64-v8a" not in package:
             raise RuntimeError("Installed package identity differs from verified APK")
         (output / (stage + "-package.txt")).write_text(package)

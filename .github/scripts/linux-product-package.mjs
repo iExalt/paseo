@@ -54,11 +54,9 @@ const identity = {
   payload: Object.fromEntries(payloadFiles.map((file) => [file, digest(join(payload, file))])),
   artifacts: {},
 };
-if (stage === "candidate") {
-  identity.payload["resources/linux-after-install.sh"] = digest(
-    join(payload, "resources/linux-after-install.sh"),
-  );
-}
+identity.payload["resources/linux-after-install.sh"] = digest(
+  join(payload, "resources/linux-after-install.sh"),
+);
 verifyPayload(payload, identity, architecture);
 const started = Date.now();
 execFileSync(
