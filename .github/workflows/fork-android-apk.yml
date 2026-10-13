@@ -135,6 +135,13 @@ jobs:
           test -x "$HOSTED_ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
           echo "ANDROID_HOME=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
+      - name: Begin evidence for Authenticate candidate and admitted attempt
+        id: proof_start_29
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "29"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
@@ -147,12 +154,39 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
+      - name: Record evidence for Authenticate candidate and admitted attempt
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "29"
+          started: ${{ steps.proof_start_29.outputs.started }}
+          outcome: ${{ steps.authority.outcome }}
+          conclusion: ${{ steps.authority.conclusion }}
+
+      - name: Begin evidence for Read authenticated candidate source
+        id: proof_start_30
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "30"
       - name: Read authenticated candidate source
+        id: proof_target_30
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.authority.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Record evidence for Read authenticated candidate source
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "30"
+          started: ${{ steps.proof_start_30.outputs.started }}
+          outcome: ${{ steps.proof_target_30.outcome }}
+          conclusion: ${{ steps.proof_target_30.conclusion }}
 
       - name: Verify clean immutable dev commit
         shell: bash
@@ -430,6 +464,13 @@ jobs:
           test -x "$HOSTED_ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
           echo "ANDROID_HOME=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$HOSTED_ANDROID_HOME" >> "$GITHUB_ENV"
+      - name: Begin evidence for Authenticate candidate and admitted attempt
+        id: proof_start_31
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "31"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
@@ -442,6 +483,16 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
+      - name: Record evidence for Authenticate candidate and admitted attempt
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "31"
+          started: ${{ steps.proof_start_31.outputs.started }}
+          outcome: ${{ steps.authority.outcome }}
+          conclusion: ${{ steps.authority.conclusion }}
+
       - uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
         with:
           distribution: temurin
@@ -475,6 +526,13 @@ jobs:
           path: ${{ runner.temp }}/fork-apk-candidate
           merge-multiple: true
 
+      - name: Begin evidence for Sign and verify with the approved fork certificate
+        id: proof_start_32
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Sign and verify with the approved fork certificate
+          number: "32"
       - name: Sign and verify with the approved fork certificate
         id: signed
         shell: bash
@@ -569,11 +627,37 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "final_dir=$final_dir" >> "$GITHUB_OUTPUT"
           echo "Fork APK signed and verified against the approved certificate."
+      - name: Record evidence for Sign and verify with the approved fork certificate
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Sign and verify with the approved fork certificate
+          number: "32"
+          started: ${{ steps.proof_start_32.outputs.started }}
+          outcome: ${{ steps.signed.outcome }}
+          conclusion: ${{ steps.signed.conclusion }}
 
+      - name: Begin evidence for Remove signing material
+        id: proof_start_33
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Remove signing material
+          number: "33"
       - name: Remove signing material
+        id: proof_target_33
         if: always()
         shell: bash
         run: rm -f "$RUNNER_TEMP/fork-signing-key.pk8.pem" "$RUNNER_TEMP/fork-signing-key.pk8.der" "$RUNNER_TEMP/fork-signing-cert.pem"
+      - name: Record evidence for Remove signing material
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Remove signing material
+          number: "33"
+          started: ${{ steps.proof_start_33.outputs.started }}
+          outcome: ${{ steps.proof_target_33.outcome }}
+          conclusion: ${{ steps.proof_target_33.conclusion }}
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         id: upload-final
