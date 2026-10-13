@@ -51,12 +51,21 @@ Candidate `38474320696` again failed before tests because the successful grant
 issuer had no step details in either GitHub API. Required steps now retain
 runner-expression outcomes and before/after execution bounds in their exact job
 logs. The verifier uses these receipts only when the successful job's step list
-is empty, checks repository/run/attempt, ordering and time bounds, and rejects
+is empty or incomplete, checks repository/run/attempt, ordering and time bounds, and rejects
 duplicate receipts and continued failures. Existing signature, artifact digest,
 source, cleanup and full-matrix requirements remain mandatory. These are
 observed execution bounds, not substituted GitHub step timestamps. The workflow
 and recording action are included in the signed controller policy. A fresh
 authenticated replacement is required before any publication or retirement.
+
+PR #105 exposed partial metadata as well: a completed successful job reported
+setup as running and omitted its source step. Reconciliation now accepts API
+steps only when the terminal `Complete job` entry and every listed step are
+complete; otherwise it reads controlled receipts. Twenty-two focused checks
+passed, including empty, partial, changed-identity and continued-failure cases.
+The new receipt test is explicitly assigned to required quality CI. Full source
+CI at `3b3d390ae` passed in 232 seconds; its browser journey passed an unchanged
+retry after a Metro warmup timeout. Further source repair requires fresh checks.
 
 - D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
   authorized deletion of all earlier releases/drafts, and requested removal of

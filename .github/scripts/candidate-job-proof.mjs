@@ -85,6 +85,13 @@ export function readStepProofs(log, job) {
   return steps;
 }
 
+function completeSteps(job) {
+  return (
+    job.steps?.at(-1)?.name === "Complete job" &&
+    job.steps.every((step) => step.status === "completed" && step.conclusion !== null)
+  );
+}
+
 // Reconcile the exact successful job. A controlled receipt is admissible only
 // from its authenticated job log, with the same run and attempt and no duplicates.
 export async function reconcileJobSteps(
@@ -92,7 +99,7 @@ export async function reconcileJobSteps(
   request,
   { wait = sleep, now = () => performance.now() } = {},
 ) {
-  if (job.status !== "completed" || job.conclusion !== "success" || job.steps?.length) {
+  if (job.status !== "completed" || job.conclusion !== "success" || completeSteps(job)) {
     return job;
   }
   assert.ok(Number.isSafeInteger(job.id) && job.id > 0);
@@ -106,12 +113,13 @@ export async function reconcileJobSteps(
     }
     assert.ok(Array.isArray(current.steps), "Candidate job steps are unavailable");
     assert.ok(now() < deadline, "Candidate job metadata polling deadline exceeded");
-    if (current.steps.length) return current;
+    if (completeSteps(current)) return current;
     if (index === 0) {
       const steps = readStepProofs(
         await request(`/repos/iExalt/paseo/actions/jobs/${job.id}/logs`, { text: true }),
         current,
       );
+      assert.ok(now() < deadline, "Candidate job metadata polling deadline exceeded");
       if (steps) return { ...current, steps, stepEvidence: "controlled-job-log-v1" };
     }
     assert.ok(index < delays.length, "Candidate job steps remained unavailable");
