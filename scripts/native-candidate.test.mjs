@@ -32,6 +32,36 @@ test("native coordinator exception requires the exact caller and matching worker
     assert.throws(() => assertNativeActor({ ...env, ...patch }, read));
 });
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+test("DEB manual migration allows only the selected candidate to cross the version reset", () => {
+  const source = readFileSync(
+    new URL("../.github/scripts/linux-product-runtime.sh", import.meta.url),
+    "utf8",
+  );
+  const loop = source.match(
+    /for stage in previous candidate; do\n  artifact=\$\(node [^\n]+ deb [^\n]+\n[\s\S]*?\ndone\n/,
+  );
+  assert.ok(loop, "Exercise the actual DEB transaction loop");
+  const output = execFileSync(
+    "bash",
+    [
+      "-eu",
+      "-c",
+      `
+    root='/fixture with spaces'
+    node() { printf '/%s package.deb\\n' "$4"; }
+    sudo() { printf '<%s>' "$@"; printf '\\n'; }
+    run_stage() { :; }
+    ${loop[0]}
+  `,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(
+    output,
+    "<apt-get><install><-y></previous package.deb>\n<apt-get><install><-y><--allow-downgrades></candidate package.deb>\n",
+  );
+});
 test("installed stage adapters bind candidate identity independently of the controller", () => {
   execFileSync(
     process.execPath,

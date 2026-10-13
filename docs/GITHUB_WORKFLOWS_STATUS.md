@@ -491,8 +491,24 @@ identity still governs authorization. A lightweight adapter-boundary regression
 uses distinct controller/candidate values and rejects incorrect manifest or prior
 receipt identity without launching a browser. These runtime helpers execute from
 the authenticated candidate checkout, so a controller-only reissue cannot apply
-this repair. The next authentic 0.1.0 proposal must include the repaired helpers
-and explicitly supersede PR #83, preserving all stopped signed predecessors.
+this repair. Repair `73446c8e2` passed PR/dev CI in 4m31s / 4m21s. Authentic
+replacement PR #86 merged as `531d4a018` after routine/deep checks; its dev CI passed
+in 4m40s. Native-disabled canary `38334022673` attempt 2 passed all ten lanes and
+the expected aggregate rejection after one unchanged retry for npm ECONNRESET.
+Draft `411164284` retains the signed descriptor and signature.
+
+Full trial `38335315439` proved Linux ARM AppImage migration and candidate-source
+validation, then APT rejected the deliberate 0.11.0-to-0.1.0 DEB downgrade. All jobs
+are terminal and native enablement is off. Windows and Linux ARM cleanup receipts
+are complete; canceled Linux x64 has no state-cleanup receipt. The repair enables `--allow-downgrades`
+only for the authenticated candidate's exact local DEB; predecessor installation,
+manifest/hash validation and installed-version checks remain unchanged. A cheap
+command-boundary test exercises the actual installation loop, including paths
+with spaces. DNF already selects the explicitly supplied local RPM version;
+NSIS replaces the prior installation and Nix selects exact store paths, so those
+commands need no analogous change. This is the approved manual migration trial,
+not a change to semver upgrade eligibility. A new authentic proposal must include
+this repair and supersede PR #86, preserving all nine signed draft histories.
 Fresh proposal, routine/deep, merge, dev, canary and complete matrix proofs remain
 required. The complete 14-cell
 matrix, eight transfers, downloaded inventory and cleanup remain required before
