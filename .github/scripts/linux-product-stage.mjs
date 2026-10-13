@@ -51,6 +51,7 @@ if (operation === "manifest") {
   const { smokeInstalledLinuxStage } =
     await import("../../packages/desktop/e2e/packaged-app-smoke.js");
   await smokeInstalledLinuxStage({
+    expectedSourceSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
     manifest,
     manifestSha256: createHash("sha256").update(bytes).digest("hex"),
     format,
