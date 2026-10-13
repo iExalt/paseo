@@ -17,6 +17,10 @@ const patchedPackages = [
     patchPrefix: "expo-modules-core+",
   },
   {
+    nodeModulesPath: "node_modules/@expo/cli",
+    patchPrefix: "@expo+cli+",
+  },
+  {
     nodeModulesPath: "packages/app/node_modules/react-native-enriched-markdown",
     patchPrefix: "react-native-enriched-markdown+",
     cwd: "packages/app",
