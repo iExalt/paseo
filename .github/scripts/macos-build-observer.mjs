@@ -18,20 +18,36 @@ export function parseProcesses(text) {
   return processes;
 }
 
-export function builderChain(processes, pid, cwd, version) {
+export function buildIdentity(line, outputPath, version) {
+  const marker = "PASEO_DESKTOP_BUILD_IDENTITY=";
+  const index = line.indexOf(marker);
+  if (index === -1) return null;
+  const identity = JSON.parse(line.slice(index + marker.length));
+  assert.deepEqual(Object.keys(identity).sort(), ["output", "root"]);
+  assert.equal(identity.output, outputPath);
+  assert.match(version, /^\d+\.\d+\.\d+$/);
+  const legacy = new RegExp(
+    `^/(?:private/)?tmp/nix-build-paseo-desktop-${version.replaceAll(".", "\\.")}\\.drv-[A-Za-z0-9]+$`,
+  );
+  assert.ok(
+    typeof identity.root === "string" &&
+      (/^\/nix\/var\/nix\/builds\/nix-\d+-\d+$/.test(identity.root) || legacy.test(identity.root)),
+    "Unrecognized exact desktop build root",
+  );
+  return identity;
+}
+
+export function builderChain(processes, pid, cwd, root) {
   const node = processes.get(pid);
   if (!node || !/^\/nix\/store\/[^/]+\/bin\/node$/.test(node.command)) return [];
-  if (!/^\d+\.\d+\.\d+$/.test(version)) return [];
-  const prefixes = ["n/tmp/", "n/private/tmp/"].map(
-    (prefix) => `${prefix}nix-build-paseo-desktop-${version}.drv-`,
-  );
+  if (typeof root !== "string") return [];
+  const prefix = `n${root}/source`;
   if (
     !cwd
       .split("\n")
-      .some((line) =>
-        prefixes.some(
-          (prefix) => line.startsWith(prefix) && /^[^/]+(?:\/|$)/.test(line.slice(prefix.length)),
-        ),
+      .some(
+        (line) =>
+          (line === prefix || line.startsWith(`${prefix}/`)) && !line.split("/").includes(".."),
       )
   )
     return [];
@@ -64,6 +80,21 @@ async function observe(log, owner) {
   const version = process.env.FORK_VERSION;
   assert.match(version, /^\d+\.\d+\.\d+$/);
   const report = (...values) => console.error("macOS build observer:", ...values);
+  let outputPath;
+  let identity;
+  let identityInvalid = false;
+  try {
+    const state = JSON.parse(
+      readFileSync(join(process.env.RUNNER_TEMP, "paseo-nix-closure-state.json")),
+    );
+    assert.equal(state.forkVersion, version);
+    assert.match(state.outputPath, /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-\d+\.\d+\.\d+$/);
+    assert.ok(state.outputPath.endsWith(`-paseo-desktop-${version}`));
+    outputPath = state.outputPath;
+  } catch (error) {
+    identityInvalid = true;
+    report("sampling disabled: invalid prepared desktop identity", error.message);
+  }
   const capture = (command, args, timeout = 8000) => {
     try {
       return execFileSync(command, args, { encoding: "utf8", timeout, maxBuffer: 1024 * 1024 });
@@ -101,8 +132,21 @@ async function observe(log, owner) {
   let metroStarted = false;
   let scanned = 0;
   let carry = "";
-  const scanForMetro = () => {
-    if (metroStarted) return;
+  const inspectLine = (line) => {
+    if (line.includes("Starting Metro Bundler")) metroStarted = true;
+    if (identityInvalid) return;
+    try {
+      const next = buildIdentity(line, outputPath, version);
+      if (next) {
+        if (identity) assert.deepEqual(next, identity, "Conflicting desktop build identity");
+        identity = next;
+      }
+    } catch (error) {
+      identityInvalid = true;
+      report("sampling disabled: invalid build identity", error.message);
+    }
+  };
+  const scanBuildLog = () => {
     const fd = openSync(log, "r");
     try {
       const buffer = Buffer.alloc(65536);
@@ -110,12 +154,16 @@ async function observe(log, owner) {
         const bytes = readSync(fd, buffer, 0, buffer.length, scanned);
         if (!bytes) break;
         scanned += bytes;
-        const text = carry + buffer.subarray(0, bytes).toString("utf8");
-        if (text.includes("Starting Metro Bundler")) {
-          metroStarted = true;
-          break;
+        const lines = (carry + buffer.subarray(0, bytes).toString("utf8")).split("\n");
+        carry = lines.pop();
+        if (carry.length > 8192) {
+          if (carry.includes("PASEO_DESKTOP_BUILD_IDENTITY=")) {
+            identityInvalid = true;
+            report("sampling disabled: oversized build identity");
+          }
+          carry = carry.slice(-8192);
         }
-        carry = text.slice(-32);
+        for (const line of lines) inspectLine(line);
       }
     } finally {
       closeSync(fd);
@@ -126,7 +174,7 @@ async function observe(log, owner) {
   let rounds = 0;
   while (Date.now() - started < 55 * 60000) {
     if (stopped) break;
-    scanForMetro();
+    scanBuildLog();
     const now = Date.now();
     const lastProgress = Math.max(started, statSync(log).mtimeMs);
     if (shouldSample({ now, lastProgress, lastSample, rounds, metroStarted })) {
@@ -136,6 +184,10 @@ async function observe(log, owner) {
       report(capture("ps", ["-axo", "pid,ppid,state,etime,pcpu,rss,comm"]));
       report(capture("vm_stat", []));
       report(capture("sysctl", ["vm.swapusage"]));
+      if (!identity || identityInvalid) {
+        report("sampling disabled: missing or invalid exact build identity");
+        continue;
+      }
       const processes = table();
       let samples = 0;
       for (const node of processes.values()) {
@@ -151,7 +203,7 @@ async function observe(log, owner) {
           "cwd",
           "-Fn",
         ]);
-        const chain = builderChain(processes, node.pid, cwd, version);
+        const chain = builderChain(processes, node.pid, cwd, identity.root);
         if (!sameChain(chain, table())) continue;
         const filename = join(
           process.env.RUNNER_TEMP,
