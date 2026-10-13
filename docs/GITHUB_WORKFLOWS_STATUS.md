@@ -6,7 +6,7 @@
   authorized deletion of all earlier releases/drafts, and requested removal of
   the old Mac app plus an Android download link. This supersedes the earlier
   release-preservation restriction for this cleanup. Historical Git tags remain.
-  Stable publication is complete; release bookkeeping and historical cleanup are active. Personal-device installation,
+  Stable publication, release bookkeeping and historical cleanup are complete. Personal-device installation,
   migration/recovery and final G6 acceptance are not established by this request.
 - The old 0.11.0 `/Applications/Paseo.app` and `~/Applications/Paseo.app`
   launcher were removed after graceful shutdown of the app and its verified
@@ -37,7 +37,9 @@ current app downloads. Cache policy and the routine CI budget are unchanged.
 
 Release bookkeeping records 0.1.0 at the published source, removes the bootstrap
 `release-as` override, and preserves the original Git history. Production proposals
-are paused during handoff. Unknown publication/deletion API outcomes require
+were paused during handoff and are enabled again. PR #99 is now
+`autorelease: tagged`; native candidate execution remains disabled.
+Unknown publication/deletion API outcomes require
 exact-ID/tag reconciliation before retrying; never recreate a public release,
 overwrite verified assets or rebuild different bytes under the published tag.
 Rebases preserve `originalSha` while rebinding `currentSha` through the existing
@@ -50,6 +52,24 @@ is the manual phone download. Mac installation uses the signed Nix closure and
 run on the personal Mac. Normal `rollback` / `reactivate-high-water` commands
 retain the verified recovery state after migration. Personal installation,
 state/recovery checks and final G6 acceptance remain open.
+
+Handoff [PR #101](https://github.com/iExalt/paseo/pull/101), `7374b8e0a`, passed
+full seven-lane PR/dev runs `38449862807` / `38450533878` in **4m30s / 4m08s**
+before cleanup. The stable updater independently selected release `411994337`,
+and production release preflight accepted the new boundary. Five focused
+boundary/preflight/release-engine checks passed in 2.32s, including the next
+semver proposal. Required verification and the original baseline were unchanged.
+
+All 20 earlier releases were then deleted by an exact-ID allowlist: five public
+releases and 15 drafts, including the promoted source draft. Fresh destination
+asset IDs, uploaded state, sizes and hashes were checked before deletion; only
+stable release `411994337` remains. All **252 historical Git tags** are unchanged;
+only `paseo-v0.1.0` was added. The 14 retired signed descriptor/digest authorities,
+source metadata and exact promoted payloads remain in the local ignored audit
+directory; old release URLs no longer resolve. Redundant verification downloads
+were removed, freeing 6,037,704,540 bytes. GitHub caches remain six entries /
+5,306,868,709 bytes against the unchanged 10 GB limit. No personal device
+installation or recovery test is claimed.
 
 ### Prior phase baseline and evidence
 
@@ -193,21 +213,21 @@ above, within the unchanged three-minute limit.
 
 ## Outcome gates
 
-| Goal                                             | Status / evidence   | Depends on                     | Exit and owner                                                                       |
-| ------------------------------------------------ | ------------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
-| A1: feasible candidate and cost contracts        | complete / verified | none                           | G0, author with user decisions                                                       |
-| A2: measured routine verification                | complete / verified | A1                             | step 2 live events and accepted latency ceiling, author/user                         |
-| A3: exact rebased-tree verification              | complete / verified | A2                             | G1 including atomic publication failure fixtures, author                             |
-| B1: deep journeys and safe PR routing            | complete / verified | A1–A3; B2 for Android closure  | G2, author                                                                           |
-| B2: Mac/Android candidate preservation           | complete / verified | A1–A3                          | Mac/Android portion of G3, author                                                    |
-| B3: Linux package matrix                         | complete / verified | B2 for closure                 | Linux portion of G3, author                                                          |
-| B4: Windows package matrix                       | complete / verified | B2, B3                         | Remaining G3 and phase integration, author                                           |
-| C1: independent version and updater transition   | complete / verified | B1–B4                          | Step 7 source/fixture integration; installed migration belongs to D, author          |
-| C2: scoped version proposal automation           | complete / verified | C1                             | Step 8 configuration and actual bot event delivery, author                           |
-| C3: consecutive bot proposal rehearsal           | complete / verified | C2                             | Remaining G4 current-head, forged-label and merge-identity proofs, author            |
-| D1: exact-candidate coordination                 | complete / verified | C1–C3                          | Step 9 authenticated source, complete aggregate and legacy retirement, author        |
-| D2: failure recovery and complete draft          | complete / verified | D1                             | Step 10 / G5 signed same-SHA matrix and failure boundaries, author                   |
-| D3: first public release and installed migration | planned / designed  | D2 and explicit user authority | Step 11 / G6 publication, personal-device recovery and final acceptance, user/author |
+| Goal                                             | Status / evidence   | Depends on                     | Exit and owner                                                                                    |
+| ------------------------------------------------ | ------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------- |
+| A1: feasible candidate and cost contracts        | complete / verified | none                           | G0, author with user decisions                                                                    |
+| A2: measured routine verification                | complete / verified | A1                             | step 2 live events and accepted latency ceiling, author/user                                      |
+| A3: exact rebased-tree verification              | complete / verified | A2                             | G1 including atomic publication failure fixtures, author                                          |
+| B1: deep journeys and safe PR routing            | complete / verified | A1–A3; B2 for Android closure  | G2, author                                                                                        |
+| B2: Mac/Android candidate preservation           | complete / verified | A1–A3                          | Mac/Android portion of G3, author                                                                 |
+| B3: Linux package matrix                         | complete / verified | B2 for closure                 | Linux portion of G3, author                                                                       |
+| B4: Windows package matrix                       | complete / verified | B2, B3                         | Remaining G3 and phase integration, author                                                        |
+| C1: independent version and updater transition   | complete / verified | B1–B4                          | Step 7 source/fixture integration; installed migration belongs to D, author                       |
+| C2: scoped version proposal automation           | complete / verified | C1                             | Step 8 configuration and actual bot event delivery, author                                        |
+| C3: consecutive bot proposal rehearsal           | complete / verified | C2                             | Remaining G4 current-head, forged-label and merge-identity proofs, author                         |
+| D1: exact-candidate coordination                 | complete / verified | C1–C3                          | Step 9 authenticated source, complete aggregate and legacy retirement, author                     |
+| D2: failure recovery and complete draft          | complete / verified | D1                             | Step 10 / G5 signed same-SHA matrix and failure boundaries, author                                |
+| D3: first public release and installed migration | active / mixed      | D2 and explicit user authority | Stable publication verified; personal-device recovery and final G6 acceptance remain, user/author |
 
 ### Historical coordinator implementation evidence
 
@@ -850,7 +870,7 @@ under-five-minute requirement applies to blocking PR CI, now verified on PR/dev.
 
 ## Decisions and historical execution boundaries
 
-The current boundary is G5 complete / G6 unperformed. Earlier phase-specific
+The current boundary is G5 complete / stable 0.1.0 published / G6 personal migration pending. Earlier phase-specific
 activation and verification limits below are historical; see the current snapshot.
 
 - User selected **0.1.0**, **semver-only upgrade ordering**, and **clean break
@@ -1096,9 +1116,10 @@ without artifact uploads. No production rebase has been dispatched.
 - [x] Close A3 after A2; exact-tested-tree, failed-check and branch-movement
       fixtures and shared workflow wiring are verified.
 
-Current sequence: D1/D2 verification is complete; preserve the unpublished candidate for separately authorized D3.
-D owns exact-candidate release coordination, publication and personal-device
-migration. D3 remains unapproved. Preserve routine latency; deeper gates
+Current sequence: D1/D2 verification and stable 0.1.0 publication are complete.
+The old Mac app is removed and the Android download is delivered; personal-device
+installation, state preservation/recovery verification and final G6 acceptance remain.
+Preserve routine latency; deeper gates
 do not join ordinary PR blocking work. ARM cache transport, full cache-hit upgrade
 timing and the two-minute routine stretch remain unclaimed.
 
