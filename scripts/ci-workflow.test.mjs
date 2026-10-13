@@ -31,7 +31,9 @@ test("phase authentication is controller-only and every grant consumer remains r
       assert.equal(step.with.ref, "${{ github.sha }}");
       assert.equal(step.with["persist-credentials"], false);
     }
-    if (step.run) assert.equal(step.run, "node .github/scripts/candidate-grant.mjs");
+    // The signed step proof is covered by step-proof.test.mjs.
+    if (step.run && step.id !== "proof-subject")
+      assert.equal(step.run, "node .github/scripts/candidate-grant.mjs");
   }
   for (const file of [
     "candidate-verify.yml",
@@ -271,7 +273,13 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   assert.deepEqual(Object.keys(workflow.on), ["workflow_call", "workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
   const job = workflow.jobs.native;
-  assert.deepEqual(job.permissions, { contents: "read", actions: "read", "pull-requests": "read" });
+  assert.deepEqual(job.permissions, {
+    contents: "read",
+    actions: "read",
+    "pull-requests": "read",
+    "id-token": "write",
+    attestations: "write",
+  });
   for (const guard of [
     "github.repository == 'iExalt/paseo'",
     "!github.event.repository.private",

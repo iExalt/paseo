@@ -49,6 +49,8 @@ jobs:
       contents: write
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     with:
       release_id: ${{ inputs.release_id }}
       source_sha: ${{ inputs.source_sha }}
@@ -77,6 +79,8 @@ jobs:
       contents: read
       actions: read
       pull-requests: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -87,13 +91,6 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
-      - name: Begin evidence for Authenticate candidate and admitted attempt
-        id: proof_start_2
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "2"
       - name: Authenticate candidate and admitted attempt
         if: inputs.source_sha != ''
         id: candidate
@@ -107,41 +104,14 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
-      - name: Record evidence for Authenticate candidate and admitted attempt
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Authenticate candidate and admitted attempt
-          number: "2"
-          started: ${{ steps.proof_start_2.outputs.started }}
-          outcome: ${{ steps.candidate.outcome }}
-          conclusion: ${{ steps.candidate.conclusion }}
-
-      - name: Begin evidence for Read authenticated candidate source
-        id: proof_start_3
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Read authenticated candidate source
-          number: "3"
       - name: Read authenticated candidate source
-        id: proof_target_3
+        id: source
         if: inputs.source_sha != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.candidate.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
-      - name: Record evidence for Read authenticated candidate source
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Read authenticated candidate source
-          number: "3"
-          started: ${{ steps.proof_start_3.outputs.started }}
-          outcome: ${{ steps.proof_target_3.outcome }}
-          conclusion: ${{ steps.proof_target_3.conclusion }}
-
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           install_url: https://releases.nixos.org/nix/nix-2.34.7/install
@@ -164,34 +134,10 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build:server
-      - name: Begin evidence for Replace owned Nix profile and verify retained desktop state
-        id: proof_start_4
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Replace owned Nix profile and verify retained desktop state
-          number: "4"
       - name: Replace owned Nix profile and verify retained desktop state
-        id: proof_target_4
+        id: verify
         timeout-minutes: 5
         run: node .github/scripts/linux-nix-runtime.mjs
-      - name: Record evidence for Replace owned Nix profile and verify retained desktop state
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Replace owned Nix profile and verify retained desktop state
-          number: "4"
-          started: ${{ steps.proof_start_4.outputs.started }}
-          outcome: ${{ steps.proof_target_4.outcome }}
-          conclusion: ${{ steps.proof_target_4.conclusion }}
-
-      - name: Begin evidence for Export and verify signed native closures
-        id: proof_start_5
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Export and verify signed native closures
-          number: "5"
       - name: Export and verify signed native closures
         if: inputs.source_sha != ''
         id: export
@@ -200,45 +146,11 @@ jobs:
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
           NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
         run: node .github/scripts/candidate-nix-export.mjs
-      - name: Record evidence for Export and verify signed native closures
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Export and verify signed native closures
-          number: "5"
-          started: ${{ steps.proof_start_5.outputs.started }}
-          outcome: ${{ steps.export.outcome }}
-          conclusion: ${{ steps.export.conclusion }}
-
-      - name: Begin evidence for Remove owned temporary Nix signing key
-        id: proof_start_6
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Remove owned temporary Nix signing key
-          number: "6"
       - name: Remove owned temporary Nix signing key
-        id: proof_target_6
+        id: remove-key
         if: always() && inputs.source_sha != ''
         timeout-minutes: 1
         run: rm -f -- "$RUNNER_TEMP/candidate-nix-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT/signing-key"
-      - name: Record evidence for Remove owned temporary Nix signing key
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Remove owned temporary Nix signing key
-          number: "6"
-          started: ${{ steps.proof_start_6.outputs.started }}
-          outcome: ${{ steps.proof_target_6.outcome }}
-          conclusion: ${{ steps.proof_target_6.conclusion }}
-
-      - name: Begin evidence for Transfer immutable candidate closures
-        id: proof_start_7
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Transfer immutable candidate closures
-          number: "7"
       - name: Transfer immutable candidate closures
         if: inputs.source_sha != ''
         id: packages
@@ -249,16 +161,25 @@ jobs:
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
-      - name: Record evidence for Transfer immutable candidate closures
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
+      - name: Bind step proof to this run attempt
+        id: proof-subject
+        if: steps.candidate.outcome == 'success' && steps.source.outcome == 'success' && steps.verify.outcome == 'success' && steps.export.outcome == 'success' && steps.remove-key.outcome == 'success' && steps.packages.outcome == 'success'
+        env:
+          PROOF_SLOT: producer-linux-nix-${{ inputs.architecture }}
+        shell: bash
+        run: |
+          [[ "$PROOF_SLOT" =~ ^[a-z0-9][a-z0-9-]{0,79}$ ]]
+          subject="$RUNNER_TEMP/paseo-step-proof-$PROOF_SLOT"
+          printf 'paseo-step-proof-v1\n%s\n%s\n%s\n%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PROOF_SLOT" > "$subject"
+          { echo "subject=$subject"; echo "slot=$PROOF_SLOT"; } >> "$GITHUB_OUTPUT"
+      - name: Sign step proof
+        if: steps.proof-subject.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          name: Transfer immutable candidate closures
-          number: "7"
-          started: ${{ steps.proof_start_7.outputs.started }}
-          outcome: ${{ steps.packages.outcome }}
-          conclusion: ${{ steps.packages.conclusion }}
-
+          subject-path: ${{ steps.proof-subject.outputs.subject }}
+          predicate-type: https://github.com/iExalt/paseo/attestations/step-proof/v1
+          predicate: ${{ format('{{"schemaVersion":1,"kind":"paseo-step-proof","repository":"{0}","runId":{1},"attempt":{2},"slot":"{3}","evidence":{4}}}', github.repository, github.run_id, github.run_attempt, steps.proof-subject.outputs.slot, format('{{"artifactId":{0},"artifactDigest":"{1}"}}', steps.packages.outputs.artifact-id, steps.packages.outputs.artifact-digest)) }}
+          show-summary: false
       - name: Bound retained diagnostics
         id: evidence
         if: ${{ !cancelled() }}
