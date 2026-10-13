@@ -178,7 +178,7 @@ jobs:
         env:
           SOURCE_SHA: ${{ inputs.source_sha }}
           FORK_VERSION: ${{ inputs.fork_version }}
-        run: bash .github/scripts/nix-release-closure.sh build
+        run: bash .github/scripts/observe-macos-build.sh
 
       - name: Sign and export the closure
         id: export

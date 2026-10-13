@@ -15,6 +15,10 @@ $evidence = Join-Path $root 'evidence'
 $node = (Get-Command node.exe).Source
 $pwsh = (Get-Process -Id $PID).Path
 . (Join-Path $PSScriptRoot 'windows-native-toolchain.ps1')
+if ($Phase -notin @('cleanup', 'diagnostics')) {
+    & (Join-Path $PSScriptRoot 'windows-product-storage.ps1') check
+    if ($LASTEXITCODE -ne 0) { throw 'Build storage verification failed' }
+}
 if ($Phase -eq 'init') {
     if (Test-Path -LiteralPath $root) { throw 'Refuse reused product root' }
     if ((git rev-parse HEAD).Trim() -ne $candidateSha -or (git status --porcelain)) { throw 'Exact clean checkout required' }
