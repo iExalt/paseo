@@ -12,11 +12,13 @@ import {
   NIX_RELEASE_PUBLIC_KEY,
   validateNixClosureManifest,
   verifyReleaseManifestBytes,
-} from "../../scripts/paseo-nix-update-legacy.mjs";
+  macArtifact,
+} from "../../scripts/paseo-nix-update.mjs";
 
-const predecessorSha = "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
-const predecessorTag = `paseo-fork-v0.11.0-r200008-${predecessorSha}`;
-const predecessorManifestHash = "c6b43a85ea107c5060dc85143b74ede6d9180082a5bd5b069e6171019ba1b599";
+// Historical fixture bytes retain their original signed source provenance.
+const predecessorSha = "dba97434bc07ae122625dbd66568cf7e0624c578";
+const predecessorTag = "paseo-v0.1.0";
+const predecessorManifestHash = "22753678a016e300c1b10448e680a265e4bf244f5b1406b76bc57fee1950a43d";
 const options = [
   "--option",
   "builders",
@@ -54,7 +56,7 @@ async function download(directory, name, maximum, expected) {
       "120",
       "--max-filesize",
       String(maximum),
-      `https://github.com/iExalt/paseo/releases/download/paseo-v0.1.0/legacy-0.11.0-${name}`,
+      `https://github.com/iExalt/paseo/releases/download/ci-upgrade-fixtures-v0.1.0/${name}`,
       "--output",
       file,
     ],
@@ -143,20 +145,21 @@ async function main() {
     );
     assert.equal(published.sourceSha, predecessorSha);
     assert.equal(published.releaseTag, predecessorTag);
-    assert.equal(published.packageVersion, "0.11.0");
-    assert.notEqual(published.macOS.outputPath, manifest.outputPath);
-    assert.notEqual(published.packageVersion, candidate.forkVersion);
+    assert.equal(published.version, "0.1.0");
+    const previousMac = macArtifact(published);
+    assert.notEqual(previousMac.outputPath, manifest.outputPath);
+    assert.notEqual(published.version, candidate.forkVersion);
     const previousArchive = await download(
       previousDir,
-      published.macOS.closureArchive.name,
+      previousMac.name,
       200 * 1024 * 1024,
-      published.macOS.closureArchive,
+      previousMac,
     );
     const previousManifestFile = await download(
       previousDir,
-      published.macOS.closureManifest.name,
+      previousMac.closureManifest.name,
       1024 * 1024,
-      published.macOS.closureManifest,
+      previousMac.closureManifest,
     );
     const previousManifest = validateNixClosureManifest(
       await readFile(previousManifestFile),
@@ -187,9 +190,9 @@ async function main() {
           producer: pin,
           previous: {
             sourceSha: predecessorSha,
-            version: published.packageVersion,
-            outputPath: published.macOS.outputPath,
-            archiveSha256: published.macOS.closureArchive.sha256,
+            version: published.version,
+            outputPath: previousMac.outputPath,
+            archiveSha256: previousMac.sha256,
           },
           candidate: {
             sourceSha: candidate.sourceSha,
