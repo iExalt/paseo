@@ -33,12 +33,13 @@
   the tested tree. Final integration is reviewer-accepted. No public release,
   production proposal activation or device migration
   occurred; the two rehearsal refs have been removed.
-- Phase D1/D2 / G5 remains open at `d0637213f`: authentic replacement PR #92,
-  routine/deep checks and native-disabled canary passed, but full trial
-  `38376865745` stopped on Windows ARM64 extraction timeout while macOS Metro
-  was stalled. Five native groups supplied accepted contributor evidence;
-  neither the full 14-cell matrix nor its final signed inventory passed.
-  Native enablement is off. The user authorized autonomous routine repairs;
+- Phase D1/D2 / G5 remains open at `b541c9377`: authentic replacement PR #94,
+  routine/deep checks and native-disabled canary passed. Full trial
+  `38395756103` passed every platform's runtime journey but failed Windows
+  ARM64 worktree cleanup on a long filename. Independent VHD removal passed;
+  the complete candidate and final signed inventory remain unverified.
+  The stopped trial retains 27 draft assets; native enablement is off.
+  The user authorized autonomous routine repairs;
   public release and personal-device migration remain excluded.
 
 ## Outcome gates
@@ -648,13 +649,41 @@ returns in parsed Git registration rows; independent VHD detach/delete passed.
 The install is contributor evidence only. Cleanup-only replay `38391142992`
 passed with 1,000 untracked fixture files, a zero-process receipt, exact worktree
 registration removal and independent VHD detach/delete. Reviewed production
-routing is being integrated: ARM candidate/predecessor source worktrees use
+routing is integrated at `3970fa5bc`: ARM candidate/predecessor source worktrees use
 isolated untrusted ReFS; authenticated checkout, process monitors, run-local npm
 cache, packages and evidence remain on their original volume. x64 and standalone
 cache proofs retain their existing layout. Normal ARM builds reject missing or
 foreign storage ownership. The transfer requires successful worktree/storage
 teardown, and the 150-minute job cap is unchanged with a tighter internal cleanup
 reserve. Full package/runtime proof remains the next candidate matrix.
+PR #93 routine run `38392290901` passed in 4m17s (21m59s summed runner time),
+and same-source dev run `38392987877` passed in 4m16s (22m58s summed), against
+the unchanged 4m15s / 4m18s baseline. Twelve prior signed authorities are retired
+and preserved. Authentic proposal #94 rebased to `b541c9377`, with sole parent
+`3970fa5bc` and the exact tested tree. Canary `38394688960` verified all ten
+routine/deep lanes, skipped native/signing work and rejected the incomplete
+aggregate as expected; exact-source dev run `38394687727` also passed.
+Active draft `411631985` binds descriptor
+`7dcd6e153a7cffb456ab40e46b8cc23b7d591d70f10e21464ea09b66b2ccd833`
+and policy `933470b98be96b3ba7f76af3e55434b6b61ed048accee31217a483b7dc9e8140`.
+Full trial `38395756103` began at 12:13:47 UTC (08:13:47 EDT) on 2026-10-13;
+the monitor cancelled on Windows ARM64 cleanup failure and removed native
+enablement. All 53 jobs are terminal: 46 succeeded, one failed, one was cancelled
+and five were skipped. ARM installs passed in 835s / 617s for candidate/predecessor,
+with unchanged npm behavior; builds took 337s / 257s and the installed runtime
+journey passed in 184s. Git worktree removal failed on `Filename too long` after
+97s, while independent VHD detach/delete passed. The receipt correctly records
+`complete=false`, `worktreesRemoved=false`, `imageRemoved=true`; no Windows ARM
+package transfer or final manifest was admitted. The other seven producer groups
+passed, and 27 draft assets totaling 2,500,830,346 bytes remain preserved.
+The macOS build passed in 493s without a stall. Its prior intermittent failure
+is not claimed fixed. A per-command `core.longpaths=true` override for exact owned
+worktree removal passed hosted diagnostic `38402967816`: both source worktrees
+contained 1,000 verified untracked files with 449–450-character paths, and the
+production cleanup body proved zero owned processes, path/registration removal
+and VHD removal. Repository long-path support was disabled in the disposable
+fixture, so the per-command override supplied the fix. No global Git setting is
+changed; complete native verification remains required after integration.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.
