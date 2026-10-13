@@ -397,6 +397,7 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
             "Read authenticated candidate source",
             "Verify installed upgrade, retained CLI, PTY and real speech",
             "Reconcile owned processes and remove installation and state",
+            "Remove owned build worktrees and isolated storage",
             "Export verified candidate packages",
             "Transfer immutable candidate packages",
           ]
@@ -453,6 +454,18 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
       };
       const expected = { id: 77, digest: env.CANDIDATE_ARTIFACT_DIGEST };
       assert.equal(productProducer(context, group, [job], artifact, expected), 123);
+      if (!nix) {
+        const storage = "Remove owned build worktrees and isolated storage";
+        for (const steps of [
+          job.steps.filter((step) => step.name !== storage),
+          job.steps.map((step) =>
+            step.name === storage ? { ...step, conclusion: "failure" } : step,
+          ),
+        ])
+          assert.throws(() =>
+            productProducer(context, group, [{ ...job, steps }], artifact, expected),
+          );
+      }
       for (const patch of [
         { run_attempt: 1 },
         { conclusion: "failure" },
