@@ -1468,6 +1468,7 @@ async function smokeNixLinuxDesktop({ desktop, daemon, version, artifactDir }) {
 }
 
 async function smokeInstalledLinuxStage({
+  expectedSourceSha,
   manifest,
   manifestSha256,
   format,
@@ -1484,7 +1485,7 @@ async function smokeInstalledLinuxStage({
   assert.equal(fs.realpathSync(root), root, "Owned state root must be canonical");
   assert.equal(fs.statSync(root).uid, process.getuid());
   const { validateManifest } = require("./linux-installed-layout.cjs");
-  validateManifest(manifest, process.env.GITHUB_SHA, process.arch);
+  validateManifest(manifest, expectedSourceSha, process.arch);
   const directory = path.join(root, format);
   const stateFile = path.join(directory, "previous.json");
   const stageDir = path.join(artifactDir, format, stage);
@@ -1592,7 +1593,14 @@ async function authorizeWindowsLayout(layout, predecessor, ownedSession) {
   return { ...identity, stateRoot: expectedRoot };
 }
 
-async function smokeInstalledWindowsStage({ stage, root, appPath, artifactDir }) {
+async function smokeInstalledWindowsStage({
+  expectedSourceSha,
+  stage,
+  root,
+  appPath,
+  artifactDir,
+}) {
+  assert.match(expectedSourceSha, /^[a-f0-9]{40}$/);
   const { verifyWindowsJob } = await import("../../../.github/scripts/windows-job-identity.mjs");
   assert.equal(verifyWindowsJob().stage, `runtime-${stage}`);
   assert.ok(["previous", "candidate"].includes(stage));
@@ -1612,7 +1620,7 @@ async function smokeInstalledWindowsStage({ stage, root, appPath, artifactDir })
     configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
   } else {
     assert.equal(previous.completed, true);
-    assert.equal(previous.sourceSha, process.env.GITHUB_SHA);
+    assert.equal(previous.sourceSha, expectedSourceSha);
     assert.equal(previous.architecture, process.arch);
   }
   const cliPath = path.join(ownedSession.daemonHome, ".local", "bin", "paseo.cmd");
@@ -1654,7 +1662,7 @@ async function smokeInstalledWindowsStage({ stage, root, appPath, artifactDir })
     assert.deepEqual(cli, previous.cli, "Upgrade must preserve the original CLI trampoline");
   const receipt = {
     completed: true,
-    sourceSha: process.env.GITHUB_SHA,
+    sourceSha: expectedSourceSha,
     architecture: process.arch,
     ownedSession,
     workspaceId,
