@@ -26,6 +26,13 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-tools
+      - name: Begin evidence for Plan checks and record source
+        id: proof_start_44
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Plan checks and record source
+          number: "44"
       - id: plan
         name: Plan checks and record source
         env:
@@ -41,6 +48,15 @@ jobs:
           fi
           matrix="$(node .github/scripts/ci-routine.mjs --matrix "${args[@]}")"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+      - name: Record evidence for Plan checks and record source
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Plan checks and record source
+          number: "44"
+          started: ${{ steps.proof_start_44.outputs.started }}
+          outcome: ${{ steps.plan.outcome }}
+          conclusion: ${{ steps.plan.conclusion }}
 
   routine:
     name: routine (${{ matrix.lane }})

@@ -84,7 +84,15 @@ jobs:
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
+      - name: Begin evidence for Validate exact source and isolated configuration
+        id: proof_start_45
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Validate exact source and isolated configuration
+          number: "45"
       - name: Validate exact source and isolated configuration
+        id: proof_target_45
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -92,6 +100,16 @@ jobs:
         run: |
           node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA" --plan
           node .github/scripts/ci-source-receipt.mjs
+      - name: Record evidence for Validate exact source and isolated configuration
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Validate exact source and isolated configuration
+          number: "45"
+          started: ${{ steps.proof_start_45.outputs.started }}
+          outcome: ${{ steps.proof_target_45.outcome }}
+          conclusion: ${{ steps.proof_target_45.conclusion }}
+
       - name: Install locked dependencies
         env:
           npm_config_fetch_timeout: "30000"

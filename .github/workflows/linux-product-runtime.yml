@@ -92,6 +92,13 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Begin evidence for Authenticate candidate and admitted attempt
+        id: proof_start_8
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "8"
       - name: Authenticate candidate and admitted attempt
         if: inputs.source_sha != ''
         id: candidate
@@ -105,13 +112,41 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
+      - name: Record evidence for Authenticate candidate and admitted attempt
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "8"
+          started: ${{ steps.proof_start_8.outputs.started }}
+          outcome: ${{ steps.candidate.outcome }}
+          conclusion: ${{ steps.candidate.conclusion }}
+
+      - name: Begin evidence for Read authenticated candidate source
+        id: proof_start_9
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "9"
       - name: Read authenticated candidate source
+        id: proof_target_9
         if: inputs.source_sha != ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.candidate.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Record evidence for Read authenticated candidate source
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "9"
+          started: ${{ steps.proof_start_9.outputs.started }}
+          outcome: ${{ steps.proof_target_9.outcome }}
+          conclusion: ${{ steps.proof_target_9.conclusion }}
+
       - name: Bind the immutable predecessor recipe
         id: predecessor
         run: node .github/scripts/linux-predecessor-cache.mjs prepare
@@ -140,13 +175,56 @@ jobs:
         with:
           path: ${{ steps.predecessor.outputs.directory }}
           key: ${{ steps.predecessor.outputs.key }}
+      - name: Begin evidence for Verify installed product upgrades and preserved state
+        id: proof_start_10
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Verify installed product upgrades and preserved state
+          number: "10"
       - name: Verify installed product upgrades and preserved state
+        id: proof_target_10
         timeout-minutes: 10
         run: bash .github/scripts/linux-product-runtime.sh
+      - name: Record evidence for Verify installed product upgrades and preserved state
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Verify installed product upgrades and preserved state
+          number: "10"
+          started: ${{ steps.proof_start_10.outputs.started }}
+          outcome: ${{ steps.proof_target_10.outcome }}
+          conclusion: ${{ steps.proof_target_10.conclusion }}
+
+      - name: Begin evidence for Clean owned installations, containers and state
+        id: proof_start_11
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Clean owned installations, containers and state
+          number: "11"
       - name: Clean owned installations, containers and state
+        id: proof_target_11
         if: always()
         timeout-minutes: 2
         run: bash .github/scripts/linux-product-cleanup.sh
+      - name: Record evidence for Clean owned installations, containers and state
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Clean owned installations, containers and state
+          number: "11"
+          started: ${{ steps.proof_start_11.outputs.started }}
+          outcome: ${{ steps.proof_target_11.outcome }}
+          conclusion: ${{ steps.proof_target_11.conclusion }}
+
+      - name: Begin evidence for Export verified candidate packages
+        id: proof_start_12
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Export verified candidate packages
+          number: "12"
       - name: Export verified candidate packages
         if: success() && inputs.source_sha != ''
         id: export
@@ -154,6 +232,23 @@ jobs:
           CANDIDATE_CONTEXT: ${{ steps.candidate.outputs.context }}
           CANDIDATE_DESCRIPTOR_DIGEST: ${{ inputs.descriptor_digest }}
         run: node .github/scripts/candidate-product-export.mjs linux
+      - name: Record evidence for Export verified candidate packages
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Export verified candidate packages
+          number: "12"
+          started: ${{ steps.proof_start_12.outputs.started }}
+          outcome: ${{ steps.export.outcome }}
+          conclusion: ${{ steps.export.conclusion }}
+
+      - name: Begin evidence for Transfer immutable candidate packages
+        id: proof_start_13
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Transfer immutable candidate packages
+          number: "13"
       - name: Transfer immutable candidate packages
         if: success() && inputs.source_sha != ''
         id: packages
@@ -164,6 +259,16 @@ jobs:
           compression-level: 0
           retention-days: 1
           if-no-files-found: error
+      - name: Record evidence for Transfer immutable candidate packages
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Transfer immutable candidate packages
+          number: "13"
+          started: ${{ steps.proof_start_13.outputs.started }}
+          outcome: ${{ steps.packages.outcome }}
+          conclusion: ${{ steps.packages.conclusion }}
+
       - name: Bound retained diagnostics
         id: evidence
         if: always()

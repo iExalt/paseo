@@ -55,6 +55,13 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-grant.mjs
+      - name: Begin evidence for Upload authenticated worker grant
+        id: proof_start_1
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Upload authenticated worker grant
+          number: "1"
       - name: Upload authenticated worker grant
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -63,3 +70,12 @@ jobs:
           path: ${{ runner.temp }}/grant.json
           if-no-files-found: error
           retention-days: 1
+      - name: Record evidence for Upload authenticated worker grant
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Upload authenticated worker grant
+          number: "1"
+          started: ${{ steps.proof_start_1.outputs.started }}
+          outcome: ${{ steps.upload.outcome }}
+          conclusion: ${{ steps.upload.conclusion }}

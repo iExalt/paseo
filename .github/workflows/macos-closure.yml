@@ -137,6 +137,13 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Begin evidence for Authenticate candidate and admitted attempt
+        id: proof_start_21
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "21"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
@@ -149,12 +156,39 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
+      - name: Record evidence for Authenticate candidate and admitted attempt
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "21"
+          started: ${{ steps.proof_start_21.outputs.started }}
+          outcome: ${{ steps.authority.outcome }}
+          conclusion: ${{ steps.authority.conclusion }}
+
+      - name: Begin evidence for Read authenticated candidate source
+        id: proof_start_22
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "22"
       - name: Read authenticated candidate source
+        id: proof_target_22
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.authority.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Record evidence for Read authenticated candidate source
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "22"
+          started: ${{ steps.proof_start_22.outputs.started }}
+          outcome: ${{ steps.proof_target_22.outcome }}
+          conclusion: ${{ steps.proof_target_22.conclusion }}
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
@@ -180,6 +214,13 @@ jobs:
           FORK_VERSION: ${{ inputs.fork_version }}
         run: bash .github/scripts/observe-macos-build.sh
 
+      - name: Begin evidence for Sign and export the closure
+        id: proof_start_23
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Sign and export the closure
+          number: "23"
       - name: Sign and export the closure
         id: export
         timeout-minutes: 10
@@ -189,11 +230,44 @@ jobs:
           NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
           NIX_RELEASE_PUBLIC_KEY: paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8=
         run: bash .github/scripts/nix-release-closure.sh export-signed-closure
+      - name: Record evidence for Sign and export the closure
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Sign and export the closure
+          number: "23"
+          started: ${{ steps.proof_start_23.outputs.started }}
+          outcome: ${{ steps.export.outcome }}
+          conclusion: ${{ steps.export.conclusion }}
 
+      - name: Begin evidence for Remove temporary Nix signing key file
+        id: proof_start_24
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Remove temporary Nix signing key file
+          number: "24"
       - name: Remove temporary Nix signing key file
+        id: proof_target_24
         if: always()
         run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
+      - name: Record evidence for Remove temporary Nix signing key file
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Remove temporary Nix signing key file
+          number: "24"
+          started: ${{ steps.proof_start_24.outputs.started }}
+          outcome: ${{ steps.proof_target_24.outcome }}
+          conclusion: ${{ steps.proof_target_24.conclusion }}
 
+      - name: Begin evidence for Upload public closure and metadata artifact
+        id: proof_start_25
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Upload public closure and metadata artifact
+          number: "25"
       - name: Upload public closure and metadata artifact
         id: upload
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -203,6 +277,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
+      - name: Record evidence for Upload public closure and metadata artifact
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Upload public closure and metadata artifact
+          number: "25"
+          started: ${{ steps.proof_start_25.outputs.started }}
+          outcome: ${{ steps.upload.outcome }}
+          conclusion: ${{ steps.upload.conclusion }}
 
   verify-import:
     needs: [build-and-export, authorize-import]
@@ -233,6 +316,13 @@ jobs:
           version: "2026.10.3"
           install_args: node@26.11.0
           cache: false
+      - name: Begin evidence for Authenticate candidate and admitted attempt
+        id: proof_start_26
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "26"
       - name: Authenticate candidate and admitted attempt
         id: authority
         env:
@@ -245,12 +335,39 @@ jobs:
           PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
           PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
         run: node .github/scripts/candidate-worker.mjs
+      - name: Record evidence for Authenticate candidate and admitted attempt
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Authenticate candidate and admitted attempt
+          number: "26"
+          started: ${{ steps.proof_start_26.outputs.started }}
+          outcome: ${{ steps.authority.outcome }}
+          conclusion: ${{ steps.authority.conclusion }}
+
+      - name: Begin evidence for Read authenticated candidate source
+        id: proof_start_27
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "27"
       - name: Read authenticated candidate source
+        id: proof_target_27
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ steps.authority.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Record evidence for Read authenticated candidate source
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Read authenticated candidate source
+          number: "27"
+          started: ${{ steps.proof_start_27.outputs.started }}
+          outcome: ${{ steps.proof_target_27.outcome }}
+          conclusion: ${{ steps.proof_target_27.conclusion }}
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
@@ -264,6 +381,13 @@ jobs:
           path: ${{ runner.temp }}/paseo-nix-release-artifact
           merge-multiple: true
 
+      - name: Begin evidence for Import and verify signed closure
+        id: proof_start_28
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Import and verify signed closure
+          number: "28"
       - name: Import and verify signed closure
         id: verify
         env:
@@ -289,3 +413,12 @@ jobs:
           [[ "$EXPECTED_FORK_VERSION" == "$FORK_VERSION" ]] || { echo "::error::Producer fork version differs from the requested fork version."; exit 1; }
           bash .github/scripts/nix-release-closure.sh verify-import
           echo "verified=true" >> "$GITHUB_OUTPUT"
+      - name: Record evidence for Import and verify signed closure
+        if: ${{ !cancelled() }}
+        uses: ./.github/actions/record-step
+        with:
+          name: Import and verify signed closure
+          number: "28"
+          started: ${{ steps.proof_start_28.outputs.started }}
+          outcome: ${{ steps.verify.outcome }}
+          conclusion: ${{ steps.verify.conclusion }}

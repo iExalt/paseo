@@ -1,0 +1,43 @@
+name: Record controlled step evidence
+description: Retain runner outcomes and observed execution bounds in the exact job log.
+inputs:
+  name:
+    required: true
+  number:
+    required: true
+  started:
+    default: ""
+  outcome:
+    default: ""
+  conclusion:
+    default: ""
+outputs:
+  started:
+    value: ${{ steps.record.outputs.started }}
+runs:
+  using: composite
+  steps:
+    - id: record
+      shell: bash
+      env:
+        PROOF_NAME: ${{ inputs.name }}
+        PROOF_NUMBER: ${{ inputs.number }}
+        PROOF_STARTED: ${{ inputs.started }}
+        PROOF_OUTCOME: ${{ inputs.outcome }}
+        PROOF_CONCLUSION: ${{ inputs.conclusion }}
+      run: |
+        node --input-type=module -e '
+          import { appendFileSync } from "node:fs";
+          const e = process.env, at = new Date().toISOString();
+          if (!e.PROOF_STARTED) {
+            appendFileSync(e.GITHUB_OUTPUT, `started=${at}\n`);
+          } else {
+            console.log("PASEO_STEP_PROOF=" + JSON.stringify({
+              schemaVersion: 1, repository: e.GITHUB_REPOSITORY,
+              runId: Number(e.GITHUB_RUN_ID), attempt: Number(e.GITHUB_RUN_ATTEMPT),
+              name: e.PROOF_NAME, number: Number(e.PROOF_NUMBER),
+              outcome: e.PROOF_OUTCOME, conclusion: e.PROOF_CONCLUSION,
+              started_at: e.PROOF_STARTED, completed_at: at
+            }));
+          }
+        '
