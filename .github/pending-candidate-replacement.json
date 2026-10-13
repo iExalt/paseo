@@ -1,15 +1,19 @@
 {
   "schemaVersion": 1,
   "version": "0.1.1",
-  "supersededPr": 103,
-  "supersededSource": "e369131b3326279e6bd5b51394e3401913fff449",
-  "repairBase": "7e601bde4f4ac48de6a90f1891affab0d1a914b7",
+  "supersededPr": 104,
+  "supersededSource": "619bc3718945d9327305b0f36c9da9540fc240f5",
+  "repairBase": "c7fd9321faebbca3c9a1693dd98d5944fc5adf7d",
   "lockSha256": "070df88898915c038cb572afba3ad5aa2eb91f25bf5c3f4cd54f1be5a8aac9d4",
   "npmDepsHash": "sha256-p8LgJ+xRZZ8vW+E2LZokuQg6oZcWUHvxoKi4f/dGptU=",
   "authorities": [
     {
       "releaseId": 412064712,
       "descriptorSha256": "2958a833d52966a229d3dd6a9a524bc5063ca3dfe97e2dbefff38206ccfaf800"
+    },
+    {
+      "releaseId": 412144327,
+      "descriptorSha256": "0b1ba022050039712d24a23cb117cb0164709b5188d1ad014353cde0c24114d1"
     }
   ]
 }
