@@ -230,7 +230,7 @@ export async function transferProducts(
   const producerJobId = productProducer(
     context,
     group,
-    await attemptJobs(context, request),
+    await attemptJobs(context, request, (job) => job.name === producerGroups[group].job),
     artifact,
     expected,
   );

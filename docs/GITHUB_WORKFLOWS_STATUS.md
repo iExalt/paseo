@@ -35,6 +35,17 @@ The pre-push scan's false positive for a documented public-template Git blob SHA
 is recorded as one exact historical fingerprint in `.gitleaksignore`; no rule
 or path is broadly excluded.
 
+The first sanitized candidate, run `38460110453`, passed all Linux and Windows
+native upgrade/state checks, but paired authorization and a transfer rejected a
+root reported as queued while jobs were executing. Retry `38466940433` failed
+before native builds because completed authorization jobs had empty API step
+lists. Neither attempt is publishable. The controller now reconciles required
+steps through the exact job endpoint with a fixed deadline, and requires live
+same-attempt jobs plus a fresh root-authority check when the root reports queued.
+Identity, cancellation and successful-step checks remain mandatory. Twenty-seven
+focused checks passed in 1.09 seconds. This policy repair requires a newly
+authenticated replacement candidate; old attempt receipts cannot be combined.
+
 - D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
   authorized deletion of all earlier releases/drafts, and requested removal of
   the old Mac app plus an Android download link. This supersedes the earlier
