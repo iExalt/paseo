@@ -39,8 +39,8 @@
   stopped the trial and disabled native execution. Cancellation also exposed a
   Windows ARM64 worktree-cleanup failure; its owned VHD was removed.
   Retired draft `411714072` preserves both signed authority assets (1,154 bytes).
-  A cold macOS memory diagnostic now passes; Windows cleanup investigation and
-  a fresh complete candidate proof remain open. The user authorized autonomous
+  A cold macOS memory diagnostic and the focused Windows cleanup repair now
+  pass; fresh production verification and complete candidate proof remain open. The user authorized autonomous
   routine repairs; public release and personal-device migration remain excluded.
 
 The cold macOS diagnostic [38411654299](https://github.com/iExalt/paseo/actions/runs/38411654299)
@@ -61,8 +61,21 @@ The preceding long-path repair passed routine PR/dev runs `38403404109` and
 `38404178748` in 4m51s/4m25s (25m09s/23m17s summed runner time). The seven-lane
 4m15s/4m18s baseline and under-five-minute ceiling remain unchanged; no recurring
 checks or budgets were relaxed. Its dedicated long-path fixture succeeded, but
-the subsequent cancellation failure requires separate investigation: the current
-log does not distinguish a surviving directory from surviving registration.
+the initial cancellation log did not distinguish a surviving directory from
+surviving registration; the focused reproduction below resolves that uncertainty.
+
+The cancellation cleanup failure was reproduced by hosted Windows fixture
+[38413287313](https://github.com/iExalt/paseo/actions/runs/38413287313): Git returned
+zero and removed registration but left `node_modules` containing junctions. The
+repair removes recognized junctions/symlinks without following targets before Git
+removal, after zero-process and exact-volume checks. It rejects redirected roots
+and unknown reparse types. Hosted fixture
+[38414104233](https://github.com/iExalt/paseo/actions/runs/38414104233) then removed
+both owned worktrees, their registrations and the VHD in eight seconds, preserving
+an external sentinel reached by a junction. Both trees included 1,000 long-path
+files and owned writers terminated at their deadlines. Full installed npm-tree
+traversal cost remains to be measured against the unchanged three-minute cleanup
+limit during the next native trial; the fixture is not full candidate acceptance.
 
 ## Outcome gates
 
