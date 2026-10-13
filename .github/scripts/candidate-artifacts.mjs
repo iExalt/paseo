@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
 import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 import { hasLiveAttemptJob } from "./candidate-job-proof.mjs";
+import { artifactEvidence, verifyCandidateProof } from "./step-proof.mjs";
 
 const repository = "iExalt/paseo";
 const certificate = "943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459";
@@ -40,7 +41,7 @@ export function validateProducer(run, pin) {
   assert.equal(run.conclusion, "success");
 }
 
-export function validateCoordinatedProducer(run, pin, context, jobs) {
+export async function validateCoordinatedProducer(run, pin, context, jobs) {
   assert.equal(integer(pin.runId), context.runId);
   assert.equal(integer(pin.attempt), context.attempt);
   assert.equal(pin.sourceSha, context.descriptor.sourceSha);
@@ -64,19 +65,9 @@ export function validateCoordinatedProducer(run, pin, context, jobs) {
   assert.equal(job.run_attempt, context.attempt);
   assert.equal(job.status, "completed");
   assert.equal(job.conclusion, "success");
-  let number = 0;
-  for (const name of [
-    "Authenticate candidate and admitted attempt",
-    "Verify both artifacts and write normalized candidate manifest",
-    "Upload normalized paired candidate manifest",
-  ]) {
-    const steps = job.steps.filter((step) => step.name === name);
-    assert.equal(steps.length, 1);
-    assert.equal(steps[0].status, "completed");
-    assert.equal(steps[0].conclusion, "success");
-    assert.ok(steps[0].number > number);
-    number = steps[0].number;
-  }
+  // Signed after authentication, cross-checking and upload all succeed.
+  const proof = await verifyCandidateProof(context, "paired-manifest", "fork-builds.yml");
+  artifactEvidence(proof.evidence, { id: pin.artifactId, digest: pin.artifactDigest });
 }
 
 export function validateArtifact(artifact, pin, expected, maximum) {
@@ -214,17 +205,7 @@ export async function fetchCandidate(
     "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev";
   const context = coordinated ? (authenticatedContext ?? (await readWorkerContext())) : null;
   const run = await json(`actions/runs/${integer(pin.runId)}/attempts/${integer(pin.attempt)}`);
-  if (context)
-    validateCoordinatedProducer(
-      run,
-      pin,
-      context,
-      await attemptJobs(
-        context,
-        undefined,
-        (job) => job.name === "paired / Cross-check paired candidate artifacts",
-      ),
-    );
+  if (context) await validateCoordinatedProducer(run, pin, context, await attemptJobs(context));
   else validateProducer(run, pin);
   forkAndroidVersionCode(pin.version);
   await mkdir(directory, { recursive: false });

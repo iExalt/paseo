@@ -48,24 +48,25 @@ authenticated replacement candidate; old attempt receipts cannot be combined.
 
 PR #104 passed authenticated source checks and merged as `619bc3718945d9327305b0f36c9da9540fc240f5`.
 Candidate `38474320696` again failed before tests because the successful grant
-issuer had no step details in either GitHub API. Required steps now retain
-runner-expression outcomes and before/after execution bounds in their exact job
-logs. The verifier uses these receipts only when the successful job's step list
-is empty or incomplete, checks repository/run/attempt, ordering and time bounds, and rejects
-duplicate receipts and continued failures. Existing signature, artifact digest,
-source, cleanup and full-matrix requirements remain mandatory. These are
-observed execution bounds, not substituted GitHub step timestamps. The workflow
-and recording action are included in the signed controller policy. A fresh
-authenticated replacement is required before any publication or retirement.
-
-PR #105 exposed partial metadata as well: a completed successful job reported
-setup as running and omitted its source step. Reconciliation now accepts API
-steps only when the terminal `Complete job` entry and every listed step are
-complete; otherwise it reads controlled receipts. Twenty-two focused checks
-passed, including empty, partial, changed-identity and continued-failure cases.
-The new receipt test is explicitly assigned to required quality CI. Full source
-CI at `3b3d390ae` passed in 232 seconds; its browser journey passed an unchanged
-retry after a Metro warmup timeout. Further source repair requires fresh checks.
+issuer had no step details in either GitHub API, and later jobs returned partial
+step lists. GitHub's step records and job logs are no longer proof authority.
+Each job whose success a verifier relies on now signs a Sigstore step proof with
+`actions/attest` after explicit `success` outcomes of its required steps. The
+subject names the repository, run, attempt and slot; the predicate carries the
+source receipt or uploaded artifact identity. `.github/scripts/step-proof.mjs`
+verifies it through `gh attestation verify` and checks the certificate's exact
+run invocation, signer workflow, ref, source commit and GitHub-hosted runner.
+PR source receipts, worker grants, the paired manifest, paired build/import/sign
+jobs and every native producer use these proofs; job conclusions still come from
+the jobs API. Routine signing runs beside the lanes, off the critical path, and
+the required gate fails without it; fork PRs, which receive no signing token
+and are never release sources, may skip it. Deep proofs also bind the signer's
+merge checkout to the PR's exact base and head. Known limits: a certificate
+names the workflow and attempt but not the job, so any job granted signing in
+the same workflow attempt could sign another slot; every such job runs only
+authenticated source, and job conclusions are still required. Recovering from a
+routine signing outage needs a full rerun, because re-running only failed jobs
+keeps the earlier planner receipt. Earlier attempts remain inadmissible.
 
 - D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
   authorized deletion of all earlier releases/drafts, and requested removal of
