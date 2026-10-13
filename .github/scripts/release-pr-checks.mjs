@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { assertReleasePr } from "./release-pr.mjs";
 import { readSourceReceipt } from "./ci-source-receipt.mjs";
+import { reconcileJobSteps } from "./candidate-job-proof.mjs";
 
 const repository = "/repos/iExalt/paseo";
 export function readGithub(path, { text = false } = {}) {
@@ -113,10 +114,11 @@ async function verifyPrChecks(pr, identity, request, readCurrent, options = {}) 
     for (const name of names) {
       const matches = jobs.filter((job) => job.name === name);
       assert.equal(matches.length, 1, `Missing or ambiguous ${name} job`);
-      const job = matches[0];
-      assert.equal(job.status, "completed");
-      assert.equal(job.conclusion, "success");
+      const summary = matches[0];
+      assert.equal(summary.status, "completed");
+      assert.equal(summary.conclusion, "success");
       if (name === "Routine CI required" || name === "authorize-release") continue;
+      const job = await reconcileJobSteps(summary, request);
       const stepName = routine
         ? "Plan checks and record source"
         : "Validate exact source and isolated configuration";
