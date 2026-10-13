@@ -137,9 +137,11 @@ Keep releases unpublished. Mark C done with G4 evidence and record deviations.
 
 ## D. Enforce and demonstrate complete release delivery — steps 9–11
 
-**State:** D1/D2 / G5 complete at `dba97434b`; D3 / G6 unperformed.
+**State:** D1/D2 / G5 complete at `dba97434b`; D3 active / G6 remains.
 Full unpublished trial `38420127176` passed all 14 cells; signed draft
-`411807759` is preserved for separate publication/device authorization. C is complete. Approval covers reviewed
+`411807759` supplied the exact verified bytes published as stable release
+`411994337` / `paseo-v0.1.0` under the user's 2026-10-13 authorization.
+Personal-device installation/recovery remains unperformed. C is complete. Approval covers reviewed
 commits/pushes and bounded free-runner signing, draft transfers and native trials
 under the confirmed $0 stop control. The separate D3 publication/device
 authorization boundary are recorded in [status](GITHUB_WORKFLOWS_STATUS.md).
@@ -162,8 +164,12 @@ Mark D done only after G5/G6 and record the user's final acceptance.
   approves updates/restarts and participates as needed. After proof, user accepts
   G6; do not claim campaign closure before that acceptance.
 - **Live:** one exact candidate on standard runners, bounded draft-only failures,
-  then the selected GH release. Never alter published immutable assets. Keep
-  rollback/recovery assets and installed data; clean only owned abandoned drafts.
+  then the selected GH release. Never overwrite published immutable package bytes.
+  On 2026-10-13 the user selected stable 0.1.0 and explicitly authorized deletion
+  of earlier releases/drafts and removal of the old Mac app. Preserve CI fixture
+  dependencies under 0.1.0 before deleting old records; keep historical Git tags,
+  local signed audit records, Nix profiles and personal data. Mac/phone installation
+  and recovery verification remain distinct from removal and download delivery.
 - **Done when:** G5/G6 pass and operational docs explain retries, rebase history,
   updates, zero-cost controls and stable latency checks. No unresolved required
   platform proof or implicit paid dependency remains.

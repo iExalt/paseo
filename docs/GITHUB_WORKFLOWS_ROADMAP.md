@@ -1,6 +1,6 @@
 # GitHub workflows roadmap
 
-Status: **Phases A–C / G0–G4 complete; Phase D1/D2 / G5 complete; D3 / G6 remains, 2026-10-13**.
+Status: **Phases A–C / G0–G4 complete; Phase D1/D2 / G5 complete; D3 active / G6 remains, 2026-10-13**.
 Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
@@ -235,8 +235,10 @@ explicitly required before publication, even if absent from routine CI.
       the reviewed candidate without rebuilding different bytes. Verify downloads
       and actual manual Mac/Android migration, state preservation and recovery. Document
       release retries, branch-rebase interactions, version overrides, manual package
-      upgrades, cost controls and routine baseline. Remove only owned abandoned
-      drafts/probes; preserve releases, installed state and historical recovery assets.
+      upgrades, cost controls and routine baseline. The user authorized removal of
+      all earlier releases/drafts on 2026-10-13: preserve CI predecessor/Node seed
+      bytes under 0.1.0 first, then remove the old release records. Preserve Git
+      tags, installed data and local signed authority audit records.
   - Needs: 10, G0–G5.
   - Proof: complete GH release, all matrix receipts, device migration/recovery
     evidence, measured zero-cost/latency checks and user acceptance of G6.

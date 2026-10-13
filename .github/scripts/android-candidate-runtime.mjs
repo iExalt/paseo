@@ -65,7 +65,7 @@ try {
   assert.match(badging, /^native-code: 'arm64-v8a'\s*$/m);
   const previous = join(root, "previous");
   await mkdir(previous);
-  const tag = "paseo-fork-v0.11.0-r200008-5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
+  const tag = "paseo-v0.1.0";
   for (const [name, maximum] of [
     ["paseo-release-manifest.json", 65536],
     ["paseo-release-manifest.sig", 1024],
@@ -88,7 +88,7 @@ try {
         "120",
         "--max-filesize",
         String(maximum),
-        `https://github.com/iExalt/paseo/releases/download/${tag}/${name}`,
+        `https://github.com/iExalt/paseo/releases/download/${tag}/legacy-0.11.0-${name}`,
         "-o",
         join(previous, name),
       ],

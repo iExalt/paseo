@@ -2,6 +2,57 @@
 
 ## Current snapshot
 
+- D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
+  authorized deletion of all earlier releases/drafts, and requested removal of
+  the old Mac app plus an Android download link. This supersedes the earlier
+  release-preservation restriction for this cleanup. Historical Git tags remain.
+  Stable publication is complete; release bookkeeping and historical cleanup are active. Personal-device installation,
+  migration/recovery and final G6 acceptance are not established by this request.
+- The old 0.11.0 `/Applications/Paseo.app` and `~/Applications/Paseo.app`
+  launcher were removed after graceful shutdown of the app and its verified
+  supervisor/daemon. Both entries are recoverable from
+  `~/.Trash/Paseo-0.11.0-before-fork-0.1.0`; app data, credentials and Nix
+  profiles were preserved. No new Mac installation or phone operation was performed.
+
+### D3 stable publication — 2026-10-13
+
+[Paseo 0.1.0](https://github.com/iExalt/paseo/releases/tag/paseo-v0.1.0), release
+`411994337`, was published as stable/latest at 18:46:53 UTC (14:46:53 EDT).
+Tag `paseo-v0.1.0` resolves exactly to verified source
+`dba97434bc07ae122625dbd66568cf7e0624c578`. The 14 packages, closure metadata,
+canonical manifest/signature and verification evidence were copied without
+rebuilding or re-signing from draft `411807759`; attempt prefixes were removed
+to match the signed canonical asset names. All 40 destination-draft assets were
+downloaded and hash-verified before publication. All 40 anonymous public downloads
+subsequently matched the exact verified sizes and SHA-256 digests; stable/latest
+discovery and the source-bound tag were rechecked before handoff.
+
+The release includes eight preserved CI dependencies: six assets from the pinned
+0.11.0 predecessor, transported as `legacy-0.11.0-*`, and the two pinned Node seed
+assets. Consumers save legacy files under their original basenames; original
+signed metadata, package/source identities, size/hash and signature checks remain
+unchanged. This permits deletion of old release records without breaking future
+upgrade verification or forcing Node source builds. These are CI fixtures, not
+current app downloads. Cache policy and the routine CI budget are unchanged.
+
+Release bookkeeping records 0.1.0 at the published source, removes the bootstrap
+`release-as` override, and preserves the original Git history. Production proposals
+are paused during handoff. Unknown publication/deletion API outcomes require
+exact-ID/tag reconciliation before retrying; never recreate a public release,
+overwrite verified assets or rebuild different bytes under the published tag.
+Rebases preserve `originalSha` while rebinding `currentSha` through the existing
+signed replay checks. Later version overrides go through the authenticated bot
+proposal and the full candidate gate, followed by separately authorized promotion.
+
+The [Android APK](https://github.com/iExalt/paseo/releases/download/paseo-v0.1.0/paseo-0.1.0-android-arm64.apk)
+is the manual phone download. Mac installation uses the signed Nix closure and
+`mise exec -- node scripts/paseo-nix-update.mjs migrate`; this command has not been
+run on the personal Mac. Normal `rollback` / `reactivate-high-water` commands
+retain the verified recovery state after migration. Personal installation,
+state/recovery checks and final G6 acceptance remain open.
+
+### Prior phase baseline and evidence
+
 - Baseline: `f48cc61be6457f2d90f3acb79551f4e1b27fe8a7`; sibling
   `paseo-github-workflows`, branch `ci/github-workflows`.
 - Reviewed implementation `72300136d` is integrated on `dev`; PRs #1–#3 merged
@@ -37,8 +88,8 @@
   Authentic proposal #99, current-head routine/deep checks, native-disabled
   canary and the complete unpublished trial passed. The independent reviewer
   accepted the final signed inventory and runtime/cleanup evidence. D3/G6 public
-  publication and personal-device migration remain unperformed and require their
-  separate authorization.
+  publication was subsequently authorized and completed above. Personal-device
+  migration remains unperformed.
 
 ### G5 completion evidence — 2026-10-13
 
@@ -49,7 +100,7 @@ Its 53-job graph took 51m52s from first job to final completion (7s initial queu
 release-candidate gate, separate from ordinary PR CI. It finished at 16:05:00 UTC
 (12:05:00 EDT). The stop monitor removed native enablement afterward.
 
-Draft `411807759` remains unpublished with exactly 32 assets. Its descriptor
+At G5 completion draft `411807759` was unpublished with exactly 32 assets. Its descriptor
 SHA-256 is `06305743b30e9778fc8681d83474a307b49ad14c99dadbe78f7b18185a867680`;
 its signed canonical manifest SHA-256 is
 `22753678a016e300c1b10448e680a265e4bf244f5b1406b76bc57fee1950a43d`.
@@ -69,8 +120,9 @@ These disposable upgrade fixtures do not establish personal-device migration.
 | Cancellation and strict cleanup                                                                  | Earlier owned-process cancellation trials plus full current Windows ARM cleanup: 19 links per tree unlinked without following targets, both worktrees/registrations and VHD removed in 128s within the unchanged three-minute limit. |
 | Complete same-SHA success                                                                        | Run `38420127176` attempt 1, signed 14-cell manifest and exact 32-asset unpublished inventory; no cross-attempt substitution.                                                                                                        |
 
-Public release and historical tag inventories are unchanged. All 14 retired
-candidate authorities and their retained assets remain preserved. The exact owned
+At G5 completion public release and historical tag inventories were unchanged;
+all 14 retired candidate authorities and their assets were preserved. D3's later
+authorized cleanup is tracked above. The exact owned
 `ci/macos-bundle-diagnostic` remote branch was deleted with its expected-head
 lease, and its clean sibling worktree/local branch removed; focused proof logs
 remain in the ignored implementation evidence directory. The requested main
