@@ -97,7 +97,7 @@ if ($Phase -eq 'cleanup') {
                 Assert-OwnedVolume
                 if (Test-WorktreeRegistration (Invoke-SourceGit @('worktree', 'list', '--porcelain')) $target) {
                     Assert-OwnedVolume
-                    $null = Invoke-SourceGit @('worktree', 'remove', '--force', $target)
+                    $null = Invoke-SourceGit @('-c', 'core.longpaths=true', 'worktree', 'remove', '--force', $target)
                 }
                 if ((Test-Path -LiteralPath $target) -or (Test-WorktreeRegistration (Invoke-SourceGit @('worktree', 'list', '--porcelain')) $target)) { throw 'Owned source worktree remains' }
             }
