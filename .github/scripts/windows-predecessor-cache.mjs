@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 import { bindingProvenance, digest } from "./windows-speech-binding.mjs";
 import { loadWindowsSources } from "./windows-product-sources.mjs";
 
-export const previousSha = "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
+export const previousSha = "b6e0474aec58b2c169f61b81b20de890d4138e30";
 export const cacheLimit = 200 * 1024 * 1024;
 export const repositorySaveCeiling = 8_000_000_000;
 const hash = (filename) => digest(readFileSync(filename));
@@ -53,7 +53,7 @@ export function validateCache(directory, recipe) {
   const identity = json(join(directory, "previous.json"));
   assert.equal(identity.sourceSha, previousSha);
   assert.equal(identity.lockSha256, recipe.lockSha256);
-  assert.equal(identity.version, "0.11.0");
+  assert.equal(identity.version, "0.1.0");
   assert.equal(identity.architecture, recipe.architecture);
   assert.equal(identity.appId, "sh.paseo.desktop");
   assert.equal(identity.archiveFilter, "BCJ");

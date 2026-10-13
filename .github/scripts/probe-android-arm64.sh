@@ -42,10 +42,10 @@ ashmem_loaded=1
 test -c /dev/ashmem
 echo 'PASS: matching-kernel ashmem module loaded without changing host security policy.'
 
-release_base=https://github.com/iExalt/paseo/releases/download/paseo-v0.1.0
-for asset in paseo-release-manifest.json paseo-release-manifest.sig paseo-android-arm64.apk; do
+release_base=https://github.com/iExalt/paseo/releases/download/ci-upgrade-fixtures-v0.1.0
+for asset in paseo-release-manifest.json paseo-release-manifest.sig paseo-0.1.0-android-arm64.apk; do
   curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
-    --max-time 120 --max-filesize 150000000 "$release_base/legacy-0.11.0-$asset" -o "$probe_dir/$asset"
+    --max-time 120 --max-filesize 150000000 "$release_base/$asset" -o "$probe_dir/$asset"
 done
 node .github/scripts/verify-probe-apk.mjs "$probe_dir"
 
@@ -69,7 +69,7 @@ test "$(timeout 10 adb -s 127.0.0.1:5555 shell getprop sys.boot_completed | tr -
 android() { timeout 30 adb -s 127.0.0.1:5555 "$@"; }
 test "$(android shell getprop ro.product.cpu.abi | tr -d '\r')" = arm64-v8a
 test "$(android shell getprop ro.product.cpu.abilist | tr -d '\r')" = arm64-v8a
-timeout 90 adb -s 127.0.0.1:5555 install "$probe_dir/paseo-android-arm64.apk"
+timeout 90 adb -s 127.0.0.1:5555 install "$probe_dir/paseo-0.1.0-android-arm64.apk"
 android shell dumpsys package sh.paseo.iexalt > "$probe_dir/package.txt"
 grep -q 'primaryCpuAbi=arm64-v8a' "$probe_dir/package.txt"
 activity=$(android shell cmd package resolve-activity --brief sh.paseo.iexalt | tr -d '\r' | tail -1)
