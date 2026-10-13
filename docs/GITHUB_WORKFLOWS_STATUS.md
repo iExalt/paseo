@@ -543,6 +543,40 @@ the complete candidate. Cache usage remains six entries and
 5,306,868,709 bytes, with no installed-dependency caching introduced. The complete 14-cell
 matrix, eight transfers, downloaded inventory and cleanup remain required before
 G5. No public release or personal-device migration is authorized here.
+Observability repair `2098f4244` passed PR/dev CI in 4m48s / 4m08s. Retirement
+of draft `411209003` preserved all 22 assets (2,199,103,174 bytes), including
+partial packages and the signed authority. Authentic replacement PR #90 merged
+as `c19bfd380` with its sole parent and tested tree independently verified;
+PR/dev CI passed in 4m53s / 4m28s and deep verification passed. Native-disabled
+canary `38355037365` passed all ten lanes and the expected aggregate rejection.
+Draft `411340922` binds descriptor `53fbe2ed…da3ee` and policy
+`a2292d9c…a59e5`. Full trial `38355847969` reproduced the Metro failure at
+218s / 5,477 modules without an underlying error message. All 51 jobs are
+terminal and native enablement is off. Interrupted Linux ARM and Windows x64
+cleanup failed closed on missing lifecycle receipts; their cleanup remains
+unverified. Metro-catch diagnostic `38358357515` and three realizations in
+`38359832983` passed but captured no failure. Same-host comparison `38362715678`
+failed the original derivation and passed the instrumented derivation; this does
+not establish a cause. Both attempts of `38364454451` passed the original build
+(425s / 343s), so the unchanged retry comparison never ran and that probe series
+stopped. Inspection of the integrity-verified Expo CLI 57.0.28 package found an
+error-loss path: `exportApp.js` logs the bundle exception then exits directly,
+bypassing the logger's fatal-exit handling for Metro's asynchronous output queue.
+The corrected export-boundary diagnostic `38367240072` passed in 416s without
+reproducing the failure (`38366689198` stopped before building on a diagnostic
+Nix quoting error). Original/no-op comparison `38368794199` passed both builds
+in 289s / 218s, so it establishes no derivation-path cause. Final bounded batch
+`38370277303` passed on three fresh macOS 14 hosts (3 CPUs / 7 GiB each), taking
+388s / 388s / 444s with 5,478 modules; no error was captured and sampling stopped.
+The underlying build failure remains unexplained. A production Expo patch now
+writes the fatal message/stack synchronously before the existing logger and
+exit 1. Its child-process regression exercises the actual installed catch with
+a queued logger: it failed with empty stderr before patching and passed after
+the existing postinstall mechanism applied the pinned patch. Fifteen targeted
+patch/routing checks passed in 0.98s. This repairs observability, not the
+intermittent build failure. A focused build of the new production derivation is
+required before reconsidering the full matrix. The 14-cell matrix, signed
+inventory and lifecycle evidence remain pending.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.
