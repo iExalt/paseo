@@ -46,6 +46,18 @@ Identity, cancellation and successful-step checks remain mandatory. Twenty-seven
 focused checks passed in 1.09 seconds. This policy repair requires a newly
 authenticated replacement candidate; old attempt receipts cannot be combined.
 
+PR #104 passed authenticated source checks and merged as `619bc3718945d9327305b0f36c9da9540fc240f5`.
+Candidate `38474320696` again failed before tests because the successful grant
+issuer had no step details in either GitHub API. Required steps now retain
+runner-expression outcomes and before/after execution bounds in their exact job
+logs. The verifier uses these receipts only when the successful job's step list
+is empty, checks repository/run/attempt, ordering and time bounds, and rejects
+duplicate receipts and continued failures. Existing signature, artifact digest,
+source, cleanup and full-matrix requirements remain mandatory. These are
+observed execution bounds, not substituted GitHub step timestamps. The workflow
+and recording action are included in the signed controller policy. A fresh
+authenticated replacement is required before any publication or retirement.
+
 - D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
   authorized deletion of all earlier releases/drafts, and requested removal of
   the old Mac app plus an Android download link. This supersedes the earlier
