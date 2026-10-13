@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  buildIdentity,
   builderChain,
   parseProcesses,
   sameChain,
@@ -15,23 +16,42 @@ test("observer selects only the current desktop builder and rejects reused proce
   const rows =
     "10 1 Tue Oct 13 10:00:00 2026 /nix/var/nix/profiles/default/bin/nix-daemon\n11 10 Tue Oct 13 10:00:01 2026 /nix/store/bash/bin/bash\n12 11 Tue Oct 13 10:00:02 2026 /nix/store/node/bin/node\n";
   const processes = parseProcesses(rows);
-  const cwd = "p12\nfcwd\nn/private/tmp/nix-build-paseo-desktop-0.2.0.drv-0/source/packages/app\n";
-  const chain = builderChain(processes, 12, cwd, "0.2.0");
+  const root = "/nix/var/nix/builds/nix-10588-2250876892";
+  const output = `/nix/store/${"a".repeat(32)}-paseo-desktop-0.2.0`;
+  const marker = (value) => `paseo-desktop> PASEO_DESKTOP_BUILD_IDENTITY=${JSON.stringify(value)}`;
+  assert.equal(buildIdentity("unrelated log", output, "0.2.0"), null);
+  for (const buildRoot of [root, "/private/tmp/nix-build-paseo-desktop-0.2.0.drv-0"]) {
+    assert.deepEqual(buildIdentity(marker({ root: buildRoot, output }), output, "0.2.0"), {
+      root: buildRoot,
+      output,
+    });
+  }
+  for (const invalid of [
+    { root, output: `${output}-other` },
+    { root: `${root}/../other`, output },
+    { root: "/private/tmp/nix-build-paseo-desktop-0.1.0.drv-0", output },
+    { root: "/Users/runner/source", output },
+    { root, output, extra: true },
+  ])
+    assert.throws(() => buildIdentity(marker(invalid), output, "0.2.0"));
+  assert.throws(() => buildIdentity("PASEO_DESKTOP_BUILD_IDENTITY={", output, "0.2.0"));
+  const cwd = `p12\nfcwd\nn${root}/source/packages/app\n`;
+  const chain = builderChain(processes, 12, cwd, root);
   assert.deepEqual(
     chain.map((process) => process.pid),
     [12, 11, 10],
   );
   assert.equal(sameChain(chain, processes), true);
   assert.equal(sameChain(chain, parseProcesses(rows.replace("10:00:02", "10:01:02"))), false);
-  assert.deepEqual(builderChain(processes, 12, cwd, "0.1.0"), []);
-  assert.deepEqual(
-    builderChain(processes, 12, cwd.replace("n/private/tmp/", "n/Users/runner/"), "0.2.0"),
-    [],
-  );
-  assert.deepEqual(
-    builderChain(parseProcesses(rows.replace("11 10", "11 12")), 12, cwd, "0.2.0"),
-    [],
-  );
+  assert.deepEqual(builderChain(processes, 12, cwd, `${root}1`), []);
+  for (const outside of [
+    `${root}/source-other`,
+    `${root}/source/../other`,
+    "/Users/runner/source",
+  ]) {
+    assert.deepEqual(builderChain(processes, 12, `n${outside}\n`, root), []);
+  }
+  assert.deepEqual(builderChain(parseProcesses(rows.replace("11 10", "11 12")), 12, cwd, root), []);
 });
 
 test("observer sampling is bounded by genuine build silence and round count", () => {
