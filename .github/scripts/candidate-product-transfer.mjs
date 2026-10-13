@@ -83,6 +83,7 @@ export function productProducer(context, group, jobs, artifact, expected) {
         linux
           ? "Clean owned installations, containers and state"
           : "Reconcile owned processes and remove installation and state",
+        ...(linux ? [] : ["Remove owned build worktrees and isolated storage"]),
         "Export verified candidate packages",
         "Transfer immutable candidate packages",
       ];
