@@ -64,6 +64,7 @@ import {
   loadDescriptor,
 } from "../.github/scripts/candidate-draft.mjs";
 import { requireCurrentRun } from "../.github/scripts/candidate-draft.mjs";
+import { readAttemptJobs, reconcileJobSteps } from "../.github/scripts/candidate-job-proof.mjs";
 
 test("merged candidate run binds original PR branch independently of controller SHA", async () => {
   const descriptor = candidateFixture();
@@ -127,8 +128,17 @@ test("merged candidate run binds original PR branch independently of controller 
       },
     };
     const responses = [queued, run];
+    const withoutLiveJobs = (read) => async (route) =>
+      route.includes("/jobs?") ? { jobs: [] } : read();
     assert.equal(
-      (await requireCurrentRun(env, async () => responses.shift(), descriptor, timing)).runId,
+      (
+        await requireCurrentRun(
+          env,
+          withoutLiveJobs(() => responses.shift()),
+          descriptor,
+          timing,
+        )
+      ).runId,
       run.id,
     );
     assert.deepEqual(waits, [1000]);
@@ -141,7 +151,12 @@ test("merged candidate run binds original PR branch independently of controller 
       const sequence = [queued, { ...queued, ...delta }];
       const before = waits.length;
       await assert.rejects(
-        requireCurrentRun(env, async () => sequence.shift(), descriptor, timing),
+        requireCurrentRun(
+          env,
+          withoutLiveJobs(() => sequence.shift()),
+          descriptor,
+          timing,
+        ),
       );
       assert.equal(waits.length, before + 1, "Changed authority must not be retried");
     }
@@ -150,10 +165,10 @@ test("merged candidate run binds original PR branch independently of controller 
     await assert.rejects(
       requireCurrentRun(
         env,
-        async () => {
+        withoutLiveJobs(() => {
           calls++;
           return queued;
-        },
+        }),
         descriptor,
         timing,
       ),
@@ -161,6 +176,33 @@ test("merged candidate run binds original PR branch independently of controller 
     );
     assert.equal(calls, 6);
     assert.equal(clock - before, 25000);
+    const liveJob = {
+      id: 42,
+      run_id: 500,
+      run_attempt: 2,
+      status: "in_progress",
+      conclusion: null,
+    };
+    const liveRequest = (job = liveJob, finalRun = queued) => {
+      let roots = 0;
+      return async (route) => {
+        if (route.includes("/jobs?")) return { jobs: [job] };
+        roots++;
+        return roots === 1 ? queued : finalRun;
+      };
+    };
+    assert.equal((await requireCurrentRun(env, liveRequest(), descriptor, timing)).runId, 500);
+    await assert.rejects(
+      requireCurrentRun(env, liveRequest({ ...liveJob, run_attempt: 1 }), descriptor, timing),
+    );
+    await assert.rejects(
+      requireCurrentRun(
+        env,
+        liveRequest(liveJob, { ...run, status: "completed", conclusion: "cancelled" }),
+        descriptor,
+        timing,
+      ),
+    );
     await assert.rejects(
       requireCurrentRun(
         env,
@@ -193,6 +235,68 @@ test("merged candidate run binds original PR branch independently of controller 
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test("empty job steps reconcile only against the exact successful attempt within a fixed bound", async () => {
+  const job = {
+    id: 42,
+    run_id: 500,
+    run_attempt: 2,
+    name: "authorize",
+    status: "completed",
+    conclusion: "success",
+    steps: [],
+  };
+  const complete = {
+    ...job,
+    steps: [
+      { name: "Upload authenticated worker grant", status: "completed", conclusion: "success" },
+    ],
+  };
+  let clock = 0;
+  const timing = {
+    now: () => clock,
+    wait: async (delay) => {
+      clock += delay;
+    },
+  };
+  let reads = 0;
+  assert.deepEqual(
+    await reconcileJobSteps(
+      job,
+      async (route) => {
+        assert.equal(route, "/repos/iExalt/paseo/actions/jobs/42");
+        return ++reads === 1 ? job : complete;
+      },
+      timing,
+    ),
+    complete,
+  );
+  assert.equal(clock, 1000);
+  for (const delta of [
+    { id: 43 },
+    { run_id: 501 },
+    { run_attempt: 1 },
+    { name: "other" },
+    { status: "in_progress" },
+    { conclusion: "failure" },
+  ]) {
+    await assert.rejects(
+      reconcileJobSteps(job, async () => ({ ...complete, ...delta }), timing),
+      /changed/,
+    );
+  }
+  const before = clock;
+  await assert.rejects(
+    reconcileJobSteps(job, async () => job, timing),
+    /remained unavailable/,
+  );
+  assert.equal(clock - before, 25000);
+  const failedStep = { ...complete, steps: [{ ...complete.steps[0], conclusion: "failure" }] };
+  assert.deepEqual(await reconcileJobSteps(job, async () => failedStep, timing), failedStep);
+  await assert.rejects(
+    readAttemptJobs({ runId: 500, attempt: 2 }, async () => ({ jobs: [{ ...job, run_id: 501 }] })),
+  );
 });
 
 test("policy covers invoked native ownership and UI controls before active worker execution", () => {
