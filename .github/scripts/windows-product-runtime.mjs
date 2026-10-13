@@ -10,6 +10,7 @@ import { pathToFileURL } from "node:url";
 import { verifyWindowsJob } from "./windows-job-identity.mjs";
 import { inspectPe } from "./windows-pe.mjs";
 import { windowsPathKey } from "./windows-path.mjs";
+import { loadWindowsSources } from "./windows-product-sources.mjs";
 
 const operation = process.argv[2];
 assert.equal(verifyWindowsJob().stage, operation);
@@ -18,7 +19,7 @@ const root = join(
   process.env.RUNNER_TEMP,
   `paseo-windows-products-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
 );
-const repository = process.env.GITHUB_WORKSPACE;
+const { candidate: repository, controller } = loadWindowsSources();
 const evidence = join(root, "evidence");
 const appPath = join(root, "Installed App With Spaces");
 const hash = (filename) => createHash("sha256").update(readFileSync(filename)).digest("hex");
@@ -94,10 +95,10 @@ if (operation === "models") {
     elapsedMs: Date.now() - started,
   });
 } else if (operation.startsWith("runtime-")) {
-  const require = createRequire(import.meta.url);
-  const {
-    smokeInstalledWindowsStage,
-  } = require("../../packages/desktop/e2e/packaged-app-smoke.js");
+  const require = createRequire(join(repository, "package.json"));
+  const { smokeInstalledWindowsStage } = require(
+    join(repository, "packages/desktop/e2e/packaged-app-smoke.js"),
+  );
   await smokeInstalledWindowsStage({
     expectedSourceSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
     stage: operation.slice("runtime-".length),
@@ -148,7 +149,7 @@ async function speech() {
   const loaderReceipt = join(evidence, "speech-loader.json");
   const child = fork(runner, ["node-script", worker], {
     execPath: executable,
-    execArgv: ["--require", join(repository, ".github/scripts/windows-speech-observe.cjs")],
+    execArgv: ["--require", join(controller, ".github/scripts/windows-speech-observe.cjs")],
     serialization: "advanced",
     stdio: ["ignore", "inherit", "inherit", "ipc"],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", PASEO_SPEECH_LOADER_RECEIPT: loaderReceipt },

@@ -12,6 +12,7 @@ import {
 } from "./windows-speech-binding.mjs";
 import { inspectPe } from "./windows-pe.mjs";
 import { verifyWindowsJob } from "./windows-job-identity.mjs";
+import { loadWindowsSources } from "./windows-product-sources.mjs";
 
 assert.equal(process.platform, "win32");
 assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
@@ -24,13 +25,13 @@ assert.equal(process.env.GITHUB_REF, "refs/heads/dev");
 assertNativeActor(process.env);
 assert.match(process.env.GITHUB_RUN_ID, /^\d+$/);
 assert.match(process.env.GITHUB_RUN_ATTEMPT, /^\d+$/);
-const repository = resolve(process.env.GITHUB_WORKSPACE);
+const controller = resolve(process.env.GITHUB_WORKSPACE);
+const { candidate: repository, previous: previousSource } = loadWindowsSources();
 const root = join(
   process.env.RUNNER_TEMP,
   `paseo-windows-products-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
 );
 const previousSha = "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
-const previousSource = join(root, "previous-source");
 const operation = process.argv[2];
 assert.equal(verifyWindowsJob().stage, operation);
 const run = (executable, args, cwd = repository, timeout = 120000, env = process.env) =>
@@ -51,12 +52,33 @@ if (operation === "init") {
   // The stage monitor creates root/logs/evidence before launching this operation.
   assert.equal(existsSync(ownerFile), false);
   assert.equal(
+    git(controller, "rev-parse", "HEAD"),
+    process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
+  );
+  assert.equal(git(controller, "status", "--porcelain"), "");
+  for (const name of ["packages", "state", "npm-cache"]) mkdirSync(join(root, name));
+  if (repository !== controller)
+    run(
+      "git",
+      [
+        "worktree",
+        "add",
+        "--detach",
+        repository,
+        process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
+      ],
+      controller,
+    );
+  assert.equal(
     git(repository, "rev-parse", "HEAD"),
     process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
   );
   assert.equal(git(repository, "status", "--porcelain"), "");
-  for (const name of ["packages", "state", "npm-cache"]) mkdirSync(join(root, name));
-  run("git", ["worktree", "add", "--detach", previousSource, previousSha]);
+  assert.equal(
+    hash(join(repository, "package-lock.json")),
+    hash(join(controller, "package-lock.json")),
+  );
+  run("git", ["worktree", "add", "--detach", previousSource, previousSha], controller);
   assert.equal(git(previousSource, "rev-parse", "HEAD"), previousSha);
   save(ownerFile, {
     sourceSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,

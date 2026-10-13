@@ -33,6 +33,13 @@
   the tested tree. Final integration is reviewer-accepted. No public release,
   production proposal activation or device migration
   occurred; the two rehearsal refs have been removed.
+- Phase D1/D2 / G5 remains open at `d0637213f`: authentic replacement PR #92,
+  routine/deep checks and native-disabled canary passed, but full trial
+  `38376865745` stopped on Windows ARM64 extraction timeout while macOS Metro
+  was stalled. Five native groups supplied accepted contributor evidence;
+  neither the full 14-cell matrix nor its final signed inventory passed.
+  Native enablement is off. The user authorized autonomous routine repairs;
+  public release and personal-device migration remain excluded.
 
 ## Outcome gates
 
@@ -577,6 +584,77 @@ patch/routing checks passed in 0.98s. This repairs observability, not the
 intermittent build failure. A focused build of the new production derivation is
 required before reconsidering the full matrix. The 14-cell matrix, signed
 inventory and lifecycle evidence remain pending.
+The production logging repair `c787a2018` passed PR/dev CI in 4m43s / 4m41s.
+Focused production realization `38373318286` passed in 462s, establishing build
+compatibility only. Draft `411340922` was retired with both signed assets
+preserved. Authentic replacement PR #92 passed routine/deep checks and rebased
+to `d0637213f`, preserving the tested tree and sole parent `c787a2018`.
+Canary `38375707181` passed all ten verification lanes and the expected disabled
+native aggregate rejection. Draft `411499718` binds descriptor
+`3a20908755f911126b1f20a6939cd3f0b304e15b773bd25d3ff48d09a22ec446`
+and policy `85fb1f4674ea51bcd1035065b9d6132afe4827ae301139afca380d8c39dc574d`.
+
+Full trial `38376865745` stopped when Windows ARM64 candidate installation hit
+its 1,780-second owned-stage deadline during extraction, before lifecycle
+scripts: 295s CPU, 2.56 GB written, two Node survivors terminated, zero active
+processes afterward. Producer/runtime cleanup receipts passed. macOS Metro
+emitted its start line at 09:45:57 UTC (05:45:57 EDT), then no progress before
+cancellation at 10:11:56 UTC (06:11:56 EDT). The fatal-error patch cannot report
+a promise that never rejects; this is not evidence of a particular root cause.
+All 51 jobs are terminal: 36 succeeded, one failed, four were cancelled and ten
+were skipped. Linux format groups, Linux Nix groups and Windows x64 passed
+their identity, UI/state and lifecycle evidence checks; these five groups are
+contributors, not a complete candidate. The unpublished draft retains 22 assets
+totaling 2,199,112,221 bytes; no final manifest was issued. Native enablement is
+off, public release/tag inventory is unchanged, and six caches still occupy
+5,306,868,709 bytes. Existing stage and routine budgets are unchanged.
+The next bounded diagnostic compares identical Windows archive extraction on
+existing C:/D: volumes and captures verified macOS builder process stacks during
+silence. It changes neither install semantics nor cache/security settings and
+cannot itself close G5. Installed-dependency caching remains deferred.
+Diagnostic `38383068904` found no D: volume on the Windows ARM host, so no
+volume comparison ran. Its exact macOS derivation passed in 458s (Metro
+201.536s / 5,478 modules); it never became silent long enough to sample. Further
+isolated macOS sampling is stopped. The production build observer preserves the
+existing build command, stdout, status and 60-minute deadline, reserving two
+bounded stack-sampling rounds for silence after Metro starts. Process ancestry,
+start identity and source/version build directory must match before inspection.
+Its cheap fixtures cover selection/PID reuse, sampling bounds and real shell
+success/failure cleanup. This remains an observability repair, not a stall fix.
+
+Windows contention probe `38383685385` compared equal four-copy extraction
+workloads on two native ARM hosts, reversing serial/concurrent ordering. Serial
+versus four concurrent processes took 213.951s / 221.422s on one host and
+242.959s / 255.137s on the other, including inventory hashing. All copies matched
+the same 9,664-file, 29,752,437-byte inventory and cleanup passed. This supplies
+no meaningful throughput improvement from throttling and does not directly test
+Arborist's same-process scheduling. No concurrency change is adopted. A bounded
+read-only storage-capability check `38385557837` found no existing secondary
+volume, but confirmed support for an isolated dynamic ReFS VHD. The follow-up
+`38386498182` compared identical extraction in C:/ReFS/ReFS/C: order: NTFS took
+95.809s / 87.125s and ReFS 31.992s / 31.849s, about 65% less time. All inventories
+matched, volume setup took 15.392s, and independent detach/image removal passed.
+The empty volume was explicitly made untrusted before package writes, with fresh
+trust and WdFilter checks; no antivirus exclusions or npm changes were applied.
+Full locked-install probe `38388947633` completed the exact `d0637213f` install
+in 792.869s, including the previously approved build-only VCTIP cleanup, with
+zero active processes and an unchanged lock. It used ordinary lifecycle scripts,
+pinned native Node/npm, the existing 1,780-second owned-process bound and a
+run-local download cache on C:. Its 40-minute whole-job bound reserved cleanup
+before admission. This improves on the prior 25m01s install and avoids the latest
+1,780-second timeout, although these whole-install runs used different hosts.
+The probe's worktree-removal check failed because Windows CRLF left carriage
+returns in parsed Git registration rows; independent VHD detach/delete passed.
+The install is contributor evidence only. Cleanup-only replay `38391142992`
+passed with 1,000 untracked fixture files, a zero-process receipt, exact worktree
+registration removal and independent VHD detach/delete. Reviewed production
+routing is being integrated: ARM candidate/predecessor source worktrees use
+isolated untrusted ReFS; authenticated checkout, process monitors, run-local npm
+cache, packages and evidence remain on their original volume. x64 and standalone
+cache proofs retain their existing layout. Normal ARM builds reject missing or
+foreign storage ownership. The transfer requires successful worktree/storage
+teardown, and the 150-minute job cap is unchanged with a tighter internal cleanup
+reserve. Full package/runtime proof remains the next candidate matrix.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
 for both REST and GraphQL, with 4,939/4,990 remaining at failure. These partial
 adapter counters are not full-matrix usage.
