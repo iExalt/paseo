@@ -1,6 +1,6 @@
 # GitHub workflows plan
 
-Status: **Phases A–B / G0–G3 complete; Phase C awaits approval, 2026-10-11**.
+Status: **Phases A–C / G0–G4 and D1/D2 / G5 complete; stable 0.1.0 published; personal migration / G6 remains, 2026-10-13**.
 
 Current evidence and remaining gates: [project status](GITHUB_WORKFLOWS_STATUS.md).
 
@@ -18,8 +18,11 @@ and package smoke tests. Publish to GitHub Releases only after the entire
 required matrix succeeds for the candidate revision.
 
 The user approved Phases A and B in a sibling worktree, including reviewed commits and
-pushes, safe test PRs and bounded free verification. Phases C/D, public releases and
-personal-device changes retain their explicit approval gates. CI performance
+pushes, safe test PRs and bounded free verification. Subsequent approvals completed
+Phases C and D1/D2. On 2026-10-13 the user selected stable 0.1.0 publication,
+removal of earlier release records, and old Mac app removal. Preserve CI fixture
+dependencies under the new release before cleanup, plus historical Git tags and
+personal data. Installed migration/recovery and final G6 acceptance remain open. CI performance
 and the repository's 10 GB cache ceiling are requirements.
 
 **Revised by the user during A1:** start the fork at **0.1.0**, order upgrades
