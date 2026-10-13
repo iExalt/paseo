@@ -469,8 +469,12 @@ uninstalled local SDK path. The coordinator was canceled and native enablement
 removed. All jobs are terminal; Linux product cleanup, Linux/macOS signing-key
 cleanup and both Windows owned-process cleanup steps succeeded. The Android
 controller repair captures the hosted SDK before mise and restores both SDK
-variables afterward, in build and signing jobs. Its focused hosted setup proof,
-fresh policy issuance and complete matrix remain required. The complete 14-cell
+variables afterward, in build and signing jobs. Focused hosted probe `38328588289`
+passed in 27s: it reproduced the displaced path and verified restoration through
+Node/Java setup plus exact SDK package and build/sign tool checks. Downloaded
+Windows receipts confirm complete cleanup and zero active owned processes on
+both architectures, including the canceled ARM install and x64 build.
+Fresh policy issuance and the complete matrix remain required. The complete 14-cell
 matrix, eight transfers, downloaded inventory and cleanup remain required before
 G5. No public release or personal-device migration is authorized here.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
