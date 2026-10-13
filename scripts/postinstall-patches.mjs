@@ -11,6 +11,10 @@ import { resolveOpenCodePatchTarget } from "./postinstall-patches-target.mjs";
 const openCodePatchTarget = resolveOpenCodePatchTarget(existsSync);
 const patchedPackages = [
   {
+    nodeModulesPath: "node_modules/@expo/cli",
+    patchPrefix: "@expo+cli+",
+  },
+  {
     nodeModulesPath: "packages/app/node_modules/react-native-enriched-markdown",
     patchPrefix: "react-native-enriched-markdown+",
     cwd: "packages/app",
