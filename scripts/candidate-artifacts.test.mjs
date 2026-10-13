@@ -158,6 +158,20 @@ test("paired runtime distinguishes current coordinator completion from historica
     })),
   };
   validateCoordinatedProducer(current, pin, context, [job]);
+  const live = {
+    id: 11,
+    run_id: 123,
+    run_attempt: 2,
+    name: "native-runtime / macos",
+    status: "in_progress",
+    conclusion: null,
+  };
+  const queued = { ...current, status: "queued" };
+  validateCoordinatedProducer(queued, pin, context, [job, live]);
+  assert.throws(() => validateCoordinatedProducer(queued, pin, context, [job]));
+  assert.throws(() =>
+    validateCoordinatedProducer(queued, pin, context, [job, { ...live, run_attempt: 1 }]),
+  );
   const branch = "release-please--branches--dev--components--paseo";
   validateCoordinatedProducer(
     { ...current, head_branch: branch },

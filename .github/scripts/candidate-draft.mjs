@@ -6,6 +6,7 @@ import { assertReleasePr } from "./release-pr.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { compareForkVersions, forkVersionFromTag } from "../../scripts/fork-version.mjs";
 import { fileIdentity } from "./candidate-files.mjs";
+import { hasLiveAttemptJob, readAttemptJobs } from "./candidate-job-proof.mjs";
 import {
   descriptorBytes,
   descriptorDigest,
@@ -272,6 +273,16 @@ export async function requireCurrentRun(
     assert.ok(now() < deadline, "Candidate root polling deadline exceeded");
     if (run.status === "in_progress") return identity;
     assert.equal(run.status, "queued", "Candidate root is not executing");
+    const jobs = await readAttemptJobs(identity, request);
+    if (hasLiveAttemptJob(identity, jobs)) {
+      // Reusable workflows can report a queued root while the current attempt
+      // has live jobs. Recheck root authority after obtaining execution proof.
+      const current = await request(`/repos/iExalt/paseo/actions/runs/${identity.runId}`);
+      await validateCurrentRun(env, current, descriptor);
+      assert.ok(["queued", "in_progress"].includes(current.status));
+      assert.ok(now() < deadline, "Candidate root polling deadline exceeded");
+      return identity;
+    }
     assert.ok(index < delays.length && now() < deadline, "Candidate root remained queued");
     await wait(Math.min(delays[index], deadline - now()));
   }

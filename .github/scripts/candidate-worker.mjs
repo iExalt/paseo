@@ -10,6 +10,7 @@ import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 import { downloadGrant } from "./candidate-grant.mjs";
+import { readAttemptJobs, reconcileJobSteps } from "./candidate-job-proof.mjs";
 
 export async function workerGate(env, api, request, read, grant = null) {
   const releaseId = Number(env.CANDIDATE_RELEASE_ID);
@@ -55,7 +56,7 @@ export async function workerGate(env, api, request, read, grant = null) {
         context,
         group: env.CANDIDATE_GRANT_GROUP,
         worker: env.CANDIDATE_EXPECTED_JOB,
-        jobs: await attemptJobs(context, request),
+        jobs: await attemptJobs(context, request, (job) => job.id === grant.authenticationJobId),
         pin: api.publicPin,
       },
     );
@@ -99,17 +100,18 @@ async function readContext(env, granted) {
   );
 }
 
-export async function attemptJobs(context, request = readGithub) {
-  const jobs = [];
-  for (let page = 1; page <= 10; page++) {
-    const result = await request(
-      `/repos/iExalt/paseo/actions/runs/${context.runId}/attempts/${context.attempt}/jobs?per_page=100&page=${page}`,
+export async function attemptJobs(context, request = readGithub, needsSteps = () => false) {
+  const jobs = await readAttemptJobs(context, request);
+  // Bound concurrent reconciliation without increasing normal-path API reads.
+  for (let start = 0; start < jobs.length; start += 4) {
+    const reconciled = await Promise.all(
+      jobs
+        .slice(start, start + 4)
+        .map((job) => (needsSteps(job) ? reconcileJobSteps(job, request) : job)),
     );
-    assert.ok(Array.isArray(result.jobs));
-    jobs.push(...result.jobs);
-    if (result.jobs.length < 100) return jobs;
+    jobs.splice(start, reconciled.length, ...reconciled);
   }
-  throw new Error("Candidate job inventory exceeds bound");
+  return jobs;
 }
 
 export function verifyWorkerJob(context, jobs, expected) {

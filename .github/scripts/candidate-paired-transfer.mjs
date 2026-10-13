@@ -186,7 +186,21 @@ export async function transferPaired(
   const context = await authenticate(env);
   const { descriptor, releaseId, runId, attempt } = context;
   const platform = env.CANDIDATE_PLATFORM;
-  const producerJobId = pairedRuntime(context, platform, await attemptJobs(context, request));
+  assert.ok(["macos", "android"].includes(platform));
+  const buildPrefix =
+    platform === "macos"
+      ? "paired / Build and verify macOS closure / "
+      : "paired / Build and sign Android APK / ";
+  const producerJobId = pairedRuntime(
+    context,
+    platform,
+    await attemptJobs(
+      context,
+      request,
+      (job) =>
+        job.name.startsWith(buildPrefix) || job.name === producerGroups[`${platform}-arm64`].job,
+    ),
+  );
   const pin = JSON.parse(env.CANDIDATE_PIN);
   const directory = join(
     env.RUNNER_TEMP,
