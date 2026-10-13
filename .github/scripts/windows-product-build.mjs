@@ -31,7 +31,7 @@ const root = join(
   process.env.RUNNER_TEMP,
   `paseo-windows-products-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
 );
-const previousSha = "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
+const previousSha = "b6e0474aec58b2c169f61b81b20de890d4138e30";
 const operation = process.argv[2];
 assert.equal(verifyWindowsJob().stage, operation);
 const run = (executable, args, cwd = repository, timeout = 120000, env = process.env) =>
@@ -136,7 +136,7 @@ function packageStage(stage, owner) {
   const metadata = json(join(desktop, "package.json"));
   assert.equal(
     metadata.version,
-    stage === "previous" ? "0.11.0" : json(join(repository, "package.json")).version,
+    stage === "previous" ? "0.1.0" : json(join(repository, "package.json")).version,
   );
   const config = require("js-yaml").load(
     readFileSync(join(desktop, "electron-builder.yml"), "utf8"),

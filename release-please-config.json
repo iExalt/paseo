@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "bootstrap-sha": "460ae999b44463146756494795f909574394aedf",
+  "bootstrap-sha": "97837095c07f1016a17d206dc75ff9e089725ecc",
   "component": "paseo",
   "include-component-in-tag": true,
   "include-v-in-tag": true,
@@ -286,5 +286,5 @@
       ]
     }
   },
-  "last-release-sha": "dba97434bc07ae122625dbd66568cf7e0624c578"
+  "last-release-sha": "b6e0474aec58b2c169f61b81b20de890d4138e30"
 }

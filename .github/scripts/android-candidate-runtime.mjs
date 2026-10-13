@@ -65,11 +65,11 @@ try {
   assert.match(badging, /^native-code: 'arm64-v8a'\s*$/m);
   const previous = join(root, "previous");
   await mkdir(previous);
-  const tag = "paseo-v0.1.0";
+  const tag = "ci-upgrade-fixtures-v0.1.0";
   for (const [name, maximum] of [
     ["paseo-release-manifest.json", 65536],
     ["paseo-release-manifest.sig", 1024],
-    ["paseo-android-arm64.apk", 150000000],
+    ["paseo-0.1.0-android-arm64.apk", 150000000],
   ]) {
     run(
       "curl",
@@ -88,7 +88,7 @@ try {
         "120",
         "--max-filesize",
         String(maximum),
-        `https://github.com/iExalt/paseo/releases/download/${tag}/legacy-0.11.0-${name}`,
+        `https://github.com/iExalt/paseo/releases/download/${tag}/${name}`,
         "-o",
         join(previous, name),
       ],
@@ -97,7 +97,7 @@ try {
   }
   assert.equal(
     await hashFile(join(previous, "paseo-release-manifest.json")),
-    "c6b43a85ea107c5060dc85143b74ede6d9180082a5bd5b069e6171019ba1b599",
+    "22753678a016e300c1b10448e680a265e4bf244f5b1406b76bc57fee1950a43d",
   );
   run(process.execPath, [".github/scripts/verify-probe-apk.mjs", previous]);
   producer = join(root, "producer");
@@ -167,8 +167,8 @@ try {
       {
         harnessSha,
         producer: pin,
-        predecessorSourceSha: "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a",
-        predecessorVersion: "0.11.0",
+        predecessorSourceSha: "dba97434bc07ae122625dbd66568cf7e0624c578",
+        predecessorVersion: "0.1.0",
         candidateVersion: candidate.forkVersion,
         candidate: candidate.android,
         workspace,
@@ -181,7 +181,7 @@ try {
     "python3",
     [
       join(harness, ".github/scripts/android-candidate-ui.py"),
-      join(previous, "paseo-android-arm64.apk"),
+      join(previous, "paseo-0.1.0-android-arm64.apk"),
       apk,
       artifacts,
       "127.0.0.1:18767",
