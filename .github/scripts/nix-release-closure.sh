@@ -271,7 +271,7 @@ build() {
     || fail "Source or lock changed after preparation."
 
   build_started="$(date +%s)"
-  output_path="$(nix build --no-link --print-out-paths --no-update-lock-file \
+  output_path="$(nix build -L --no-link --print-out-paths --no-update-lock-file \
     --option builders '' "$desktop_attr")"
   build_seconds="$(( $(date +%s) - build_started ))"
   [[ "$output_path" == "$(jq -er '.outputPath' "$state_file")" ]] || fail "Built output differs from its evaluated path."

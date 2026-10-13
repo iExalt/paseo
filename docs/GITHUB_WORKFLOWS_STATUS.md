@@ -507,10 +507,40 @@ command-boundary test exercises the actual installation loop, including paths
 with spaces. DNF already selects the explicitly supplied local RPM version;
 NSIS replaces the prior installation and Nix selects exact store paths, so those
 commands need no analogous change. This is the approved manual migration trial,
-not a change to semver upgrade eligibility. A new authentic proposal must include
-this repair and supersede PR #86, preserving all nine signed draft histories.
-Fresh proposal, routine/deep, merge, dev, canary and complete matrix proofs remain
-required. The complete 14-cell
+not a change to semver upgrade eligibility. Repair `f3234351e` passed PR/dev CI
+in 4m04s / 4m11s. Authentic PR #88 superseded PR #86 while preserving all nine
+stopped signed histories; its exact tested tree merged as `25d37896f` after
+routine/deep verification. PR/dev CI passed in 4m03s / 4m24s. Native-disabled
+canary `38339266748` passed all ten verification lanes and the expected aggregate
+rejection. Draft `411209003` binds descriptor `abeba105…a6734` and policy
+`09d5cccb…5737d`; downloaded descriptor/signature and grant matched.
+
+Full trial `38340039982` passed x64 DEB migration/uninstall, then stopped on a
+macOS Metro web-bundling failure. Native enablement is off and every job is
+terminal. Windows and Linux x64 cleanup receipts are complete; canceled Linux
+ARM cleanup remains unverified. Both Linux Nix and macOS signing-key removal
+steps passed. The exact failed macOS derivation had built successfully in the
+previous trial, so a source defect is not established. Isolated diagnostic
+`38341915378` attempt 1 reached its 30-minute cap during the npm dependency
+fetch, before Metro. Unchanged attempt 2 built the exact same derivation
+successfully: dependencies took about 6m19s, desktop realization 5m33s and Metro
+177s. Same-draft retry `38345764047` reached the existing 60-minute macOS
+desktop-build timeout after dependencies completed in under a minute. All jobs
+are terminal and native enablement is off. Linux products, both Linux Nix
+profiles and Windows x64 have independently reviewed UI/state/cleanup receipts.
+Windows ARM also completed its local lifecycle and speech proof, but its job
+was canceled and trusted transfer skipped; this is not an accepted matrix cell.
+Its candidate/predecessor npm installs took 25m01s / 22m33s, dominated by
+unpacking (22m44s / 21m19s), rather than the optional workerd platform warning.
+The original Metro failure and subsequent build stall remain unexplained.
+Focused diagnostic `38352264504` reproduced production mise/Nix setup and passed:
+dependencies took 65s, desktop realization 6m29s and Metro 184s; sampled swap
+remained zero. Production now streams Nix build logs to stderr with `-L`, while
+preserving stdout path validation and all deadlines. This observability repair
+needs a new authentic candidate and fresh gates before another bounded full trial;
+the two successful exact-derivation probes do not explain the failures. Neither diagnostic establishes
+the complete candidate. Cache usage remains six entries and
+5,306,868,709 bytes, with no installed-dependency caching introduced. The complete 14-cell
 matrix, eight transfers, downloaded inventory and cleanup remain required before
 G5. No public release or personal-device migration is authorized here.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
