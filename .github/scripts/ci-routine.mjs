@@ -32,6 +32,7 @@ export const helperTests = [
   "scripts/paseo-nix-update.test.mjs",
   "scripts/paseo-nix-update-semver.test.mjs",
   "scripts/postinstall-patches-target.test.mjs",
+  "scripts/expo-export-error.test.mjs",
   "scripts/promote-fork-release.test.mjs",
   "scripts/sync-fdroid-changelogs.test.mjs",
   "scripts/sync-release-notes-from-changelog.test.mjs",

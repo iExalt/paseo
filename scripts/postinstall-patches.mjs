@@ -11,6 +11,10 @@ import { resolveOpenCodePatchTarget } from "./postinstall-patches-target.mjs";
 const openCodePatchTarget = resolveOpenCodePatchTarget(existsSync);
 const patchedPackages = [
   {
+    nodeModulesPath: "node_modules/@expo/cli",
+    patchPrefix: "@expo+cli+",
+  },
+  {
     nodeModulesPath: "node_modules/react-native-markdown-display",
     patchPrefix: "react-native-markdown-display+",
   },
