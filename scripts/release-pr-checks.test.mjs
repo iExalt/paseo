@@ -569,6 +569,13 @@ test("current-head verifier requires both latest gates, exact setup receipts and
   const proof = await verifyCurrentPrChecks(7, identity, good.request);
   assert.equal(proof.headSha, head);
   assert.equal(proof.proofs.length, 2);
+  const missing = fixture();
+  const complete = structuredClone(missing.jobs[0][0]);
+  missing.jobs[0][0].steps = [];
+  const reconciled = await verifyCurrentPrChecks(7, identity, (route) =>
+    route.endsWith("/actions/jobs/200") ? complete : missing.request(route),
+  );
+  assert.equal(reconciled.treeSha, proof.treeSha);
   for (const mutate of [
     (f) => {
       f.runs[0].pull_requests = [];
