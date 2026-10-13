@@ -22,7 +22,7 @@ if ($Phase -notin @('cleanup', 'diagnostics')) {
 if ($Phase -eq 'init') {
     if (Test-Path -LiteralPath $root) { throw 'Refuse reused product root' }
     if ((git rev-parse HEAD).Trim() -ne $candidateSha -or (git status --porcelain)) { throw 'Exact clean checkout required' }
-    git cat-file -e '5619b7d7ee1e55b322028e8b7818aa1a8f752a0a^{commit}'
+    git cat-file -e 'b6e0474aec58b2c169f61b81b20de890d4138e30^{commit}'
     if ($LASTEXITCODE -ne 0) { throw 'Full history containing fixed predecessor required' }
     if ((& $node -p 'process.version') -ne 'v26.11.0' -or (& $node -p 'process.arch') -ne $env:EXPECTED_ARCHITECTURE) { throw 'Native pinned Node required' }
     New-Item -ItemType Directory -Path $root, $evidence, (Join-Path $root 'logs') | Out-Null

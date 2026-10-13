@@ -33,7 +33,7 @@ test("native coordinator exception requires the exact caller and matching worker
 });
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-test("DEB manual migration allows only the selected candidate to cross the version reset", () => {
+test("DEB semver upgrade does not permit a package downgrade", () => {
   const source = readFileSync(
     new URL("../.github/scripts/linux-product-runtime.sh", import.meta.url),
     "utf8",
@@ -59,7 +59,7 @@ test("DEB manual migration allows only the selected candidate to cross the versi
   );
   assert.equal(
     output,
-    "<apt-get><install><-y></previous package.deb>\n<apt-get><install><-y><--allow-downgrades></candidate package.deb>\n",
+    "<apt-get><install><-y></previous package.deb>\n<apt-get><install><-y></candidate package.deb>\n",
   );
 });
 test("installed stage adapters bind candidate identity independently of the controller", () => {
@@ -125,10 +125,12 @@ test("predecessor cache binds the producer recipe, archive bytes and immutable i
     const identity = {
       sourceSha: previousSha,
       lockHash: recipe.lockHash,
-      version: "0.11.0",
+      version: "0.1.0",
       name: "@getpaseo/desktop",
       desktopName: "Paseo.desktop",
-      payload: Object.fromEntries(payloadFiles.map((file) => [file, "c".repeat(64)])),
+      payload: Object.fromEntries(
+        [...payloadFiles, "resources/linux-after-install.sh"].map((file) => [file, "c".repeat(64)]),
+      ),
       artifacts: {},
     };
     for (const format of ["deb", "rpm", "appimage"]) {
@@ -218,7 +220,7 @@ test("installed package identity binds source, archive paths, metadata and nativ
     const source = join(root, "source");
     mkdirSync(source);
     mkdirSync(join(root, "resources/bin"), { recursive: true });
-    const metadata = { name: "@getpaseo/desktop", version: "0.11.2", desktopName: "Paseo.desktop" };
+    const metadata = { name: "@getpaseo/desktop", version: "0.1.1", desktopName: "Paseo.desktop" };
     writeFileSync(join(source, "package.json"), JSON.stringify(metadata));
     await createPackage(source, join(root, "resources/app.asar"));
     for (const filename of payloadFiles.filter((name) => name !== "resources/app.asar"))
@@ -251,13 +253,14 @@ test("installed package identity binds source, archive paths, metadata and nativ
       previous: {
         ...item,
         payload: { ...item.payload },
-        version: "0.11.0",
-        sourceSha: "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a",
+        version: "0.1.0",
+        sourceSha: previousSha,
       },
     };
     const hook = join(root, "resources/linux-after-install.sh");
     writeFileSync(hook, "fixture");
     item.payload["resources/linux-after-install.sh"] = digest(hook);
+    manifest.previous.payload["resources/linux-after-install.sh"] = digest(hook);
     validateManifest(manifest, item.sourceSha, "x64");
     assert.throws(() => validateManifest(manifest, "0".repeat(40), "x64"));
     assert.throws(() => validateManifest(manifest, item.sourceSha, "arm64"));
@@ -265,7 +268,7 @@ test("installed package identity binds source, archive paths, metadata and nativ
     badPath.candidate.artifacts.deb.file = "../candidate.deb";
     assert.throws(() => validateManifest(badPath, item.sourceSha, "x64"));
     verifyPayload(root, item, "x64");
-    assert.throws(() => verifyPayload(root, { ...item, version: "0.11.0" }, "x64"));
+    assert.throws(() => verifyPayload(root, { ...item, version: "0.1.0" }, "x64"));
     assert.throws(() => verifyPayload(root, item, "arm64"));
     writeFileSync(hook, "changed package hook");
     assert.throws(() => verifyPayload(root, item, "x64"));
@@ -500,8 +503,8 @@ test("native candidate reader rejects legacy or mismatched closure identities", 
     { releaseSequence: 200008 },
     { kind: "published" },
     { sourceSha: "d".repeat(40) },
-    { forkVersion: "0.11.0" },
-    { packageVersion: "0.11.0" },
+    { forkVersion: "0.1.0" },
+    { packageVersion: "0.1.0" },
     { lockHash: "e".repeat(64) },
     { outputPath: "/nix/store/other" },
     { closure: [] },
