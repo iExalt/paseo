@@ -32,6 +32,16 @@ test("native coordinator exception requires the exact caller and matching worker
     assert.throws(() => assertNativeActor({ ...env, ...patch }, read));
 });
 import { execFileSync } from "node:child_process";
+test("installed stage adapters bind candidate identity independently of the controller", () => {
+  execFileSync(
+    process.execPath,
+    [
+      "--experimental-vm-modules",
+      new URL("./fixtures/installed-stage-identity.mjs", import.meta.url).pathname,
+    ],
+    { timeout: 10000, stdio: "pipe" },
+  );
+});
 import { validateCandidateClosure } from "../.github/scripts/macos-candidate-runtime.mjs";
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";
 import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
