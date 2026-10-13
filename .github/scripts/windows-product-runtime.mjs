@@ -99,6 +99,7 @@ if (operation === "models") {
     smokeInstalledWindowsStage,
   } = require("../../packages/desktop/e2e/packaged-app-smoke.js");
   await smokeInstalledWindowsStage({
+    expectedSourceSha: process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA,
     stage: operation.slice("runtime-".length),
     root,
     appPath,

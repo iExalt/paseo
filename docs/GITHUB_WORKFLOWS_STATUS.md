@@ -474,7 +474,27 @@ passed in 27s: it reproduced the displaced path and verified restoration through
 Node/Java setup plus exact SDK package and build/sign tool checks. Downloaded
 Windows receipts confirm complete cleanup and zero active owned processes on
 both architectures, including the canceled ARM install and x64 build.
-Fresh policy issuance and the complete matrix remain required. The complete 14-cell
+SDK repair `a1527da59` passed PR/dev routine runs `38328727921` / `38329130836`
+in 4m37s / 4m42s. Draft `411096940` was stopped and retired with both signed
+assets preserved. Replacement native-disabled canary `38329589528` passed all ten
+verification lanes and the expected aggregate rejection, binding draft `411121812`
+to unchanged candidate source `2ddc069de`, controller `a1527da59` and policy
+`ea22990b67c23aad7139f46d7ebea1e25b83b5b756a55deaef7843a2573551fa`.
+Downloaded descriptor/signature and grant matched; public releases/tags stayed unchanged.
+
+Same-draft full trial `38330411476` passed Android SDK setup but stopped when Linux
+installed-stage validation compared the candidate SHA against the newer controller
+SHA. Native enablement was removed and every job is terminal. Linux cleanup and
+both Windows owned-process cleanup steps passed. The repair passes the explicit
+candidate SHA into both Linux and Windows installed-stage adapters; controller
+identity still governs authorization. A lightweight adapter-boundary regression
+uses distinct controller/candidate values and rejects incorrect manifest or prior
+receipt identity without launching a browser. These runtime helpers execute from
+the authenticated candidate checkout, so a controller-only reissue cannot apply
+this repair. The next authentic 0.1.0 proposal must include the repaired helpers
+and explicitly supersede PR #83, preserving all stopped signed predecessors.
+Fresh proposal, routine/deep, merge, dev, canary and complete matrix proofs remain
+required. The complete 14-cell
 matrix, eight transfers, downloaded inventory and cleanup remain required before
 G5. No public release or personal-device migration is authorized here.
 Earlier admission-failure canary `38290484353` observed Actions limits of 5,000
