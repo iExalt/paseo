@@ -251,6 +251,7 @@ test("empty job steps reconcile only against the exact successful attempt within
     ...job,
     steps: [
       { name: "Upload authenticated worker grant", status: "completed", conclusion: "success" },
+      { name: "Complete job", status: "completed", conclusion: "success" },
     ],
   };
   let clock = 0;
@@ -293,7 +294,10 @@ test("empty job steps reconcile only against the exact successful attempt within
     /remained unavailable/,
   );
   assert.equal(clock - before, 25000);
-  const failedStep = { ...complete, steps: [{ ...complete.steps[0], conclusion: "failure" }] };
+  const failedStep = {
+    ...complete,
+    steps: [{ ...complete.steps[0], conclusion: "failure" }, complete.steps[1]],
+  };
   assert.deepEqual(await reconcileJobSteps(job, async () => failedStep, timing), failedStep);
   await assert.rejects(
     readAttemptJobs({ runId: 500, attempt: 2 }, async () => ({ jobs: [{ ...job, run_id: 501 }] })),
@@ -506,14 +510,16 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
             "Export verified candidate packages",
             "Transfer immutable candidate packages",
           ]
-      ).map((name, index) => ({
-        name,
-        number: index + 1,
-        status: "completed",
-        conclusion: "success",
-        started_at: stamp,
-        completed_at: stamp,
-      })),
+      )
+        .concat("Complete job")
+        .map((name, index) => ({
+          name,
+          number: index + 1,
+          status: "completed",
+          conclusion: "success",
+          started_at: stamp,
+          completed_at: stamp,
+        })),
     };
     const env = {
       RUNNER_TEMP: directory,
@@ -827,7 +833,7 @@ test("paired transfer binds signing, fresh import and native runtime before reta
     conclusion: "success",
     started_at: stamp,
     completed_at: stamp,
-    steps: names.map((stepName, stepIndex) => ({
+    steps: [...names, "Complete job"].map((stepName, stepIndex) => ({
       name: stepName,
       number: stepIndex + 1,
       status: "completed",
