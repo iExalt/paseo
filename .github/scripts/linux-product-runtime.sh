@@ -36,7 +36,10 @@ test ! -e "$root/portable/Paseo-$EXPECTED_ARCHITECTURE.AppImage"
 printf 'Stable AppImage upgrade, retained CLI link and removal passed\n' > "$root/evidence/appimage-lifecycle.txt"
 for stage in previous candidate; do
   artifact=$(node .github/scripts/linux-product-stage.mjs artifact "$root/manifest.json" "$stage" deb "$root/packages")
-  sudo apt-get install -y "$artifact"
+  install_options=(-y)
+  # The explicit manual fork reset may select a lower package version.
+  if [ "$stage" = candidate ]; then install_options+=(--allow-downgrades); fi
+  sudo apt-get install "${install_options[@]}" "$artifact"
   run_stage deb "$stage"
 done
 package=$(node .github/scripts/linux-product-stage.mjs package "$root/manifest.json" candidate deb)
