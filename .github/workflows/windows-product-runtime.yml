@@ -83,7 +83,7 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - name: Reserve time for cleanup before the whole-job deadline
-        run: '"PASEO_WINDOWS_DEADLINE=$([DateTimeOffset]::UtcNow.AddMinutes(145).ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
+        run: '"PASEO_WINDOWS_DEADLINE=$([DateTimeOffset]::UtcNow.AddMinutes(143).ToUnixTimeSeconds())" >> $env:GITHUB_ENV'
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
@@ -114,6 +114,9 @@ jobs:
           ref: ${{ steps.candidate.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
+      - name: Prepare isolated native build storage
+        timeout-minutes: 3
+        run: ./.github/scripts/windows-product-storage.ps1 setup
       - name: Bind exact sources and clean installation scope
         run: |
           ./.github/scripts/windows-product-stage.ps1 init
@@ -176,6 +179,10 @@ jobs:
         with:
           path: ${{ steps.predecessor.outputs.directory }}
           key: ${{ steps.predecessor.outputs.key }}
+      - name: Remove owned build worktrees and isolated storage
+        if: always()
+        timeout-minutes: 3
+        run: ./.github/scripts/windows-product-storage.ps1 cleanup
       - name: Export verified candidate packages
         if: success() && inputs.source_sha != ''
         id: export
@@ -246,7 +253,7 @@ jobs:
       - name: Validate and consume the actual restored installer and portable identity
         env:
           PREDECESSOR_CACHE_MATCHED_KEY: ${{ steps.restored.outputs.cache-matched-key }}
-        run: node .github/scripts/windows-predecessor-cache.mjs restore
+        run: node .github/scripts/windows-predecessor-cache.mjs restore-proof
       - name: Remove the proof predecessor checkout
         if: always()
         run: node .github/scripts/windows-predecessor-cache.mjs cleanup-proof

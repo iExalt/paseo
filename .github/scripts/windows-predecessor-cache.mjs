@@ -14,6 +14,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { bindingProvenance, digest } from "./windows-speech-binding.mjs";
+import { loadWindowsSources } from "./windows-product-sources.mjs";
 
 export const previousSha = "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a";
 export const cacheLimit = 200 * 1024 * 1024;
@@ -119,7 +120,7 @@ export function consumeCache(directory, recipe, root) {
   return identity;
 }
 
-function recipeForRunner(root) {
+function recipeForRunner(proof = false) {
   assert.equal(process.platform, "win32");
   assert.equal(process.version, "v26.11.0");
   assert.ok(["arm64", "x64"].includes(process.arch));
@@ -140,7 +141,7 @@ function recipeForRunner(root) {
   const packages = JSON.parse(lock).packages;
   assert.equal(packages["node_modules/electron"].version, "44.6.0");
   assert.equal(packages["node_modules/electron-builder"].version, "26.15.3");
-  const previousSource = join(root, "previous-source");
+  const { previous: previousSource } = loadWindowsSources({ proof });
   assert.equal(
     execFileSync("git", ["-C", previousSource, "rev-parse", "HEAD"], {
       encoding: "utf8",
@@ -151,6 +152,8 @@ function recipeForRunner(root) {
   const producers = [
     ".github/scripts/windows-product-build.mjs",
     ".github/scripts/windows-product-stage.ps1",
+    ".github/scripts/windows-product-storage.ps1",
+    ".github/scripts/windows-product-sources.mjs",
     ".github/scripts/windows-predecessor-cache.mjs",
     ".github/scripts/windows-native-toolchain.ps1",
     ".github/scripts/windows-owned-job.ps1",
@@ -219,7 +222,7 @@ async function main() {
         "",
       );
     }
-    const recipe = recipeForRunner(root);
+    const recipe = recipeForRunner(operation === "prepare-proof");
     if (operation === "prepare") {
       const candidate = json(join(root, "candidate.json"));
       assert.equal(candidate.sourceSha, process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA);
@@ -232,8 +235,8 @@ async function main() {
     return;
   }
   const recipe = json(recipeFile);
-  assert.deepEqual(recipe, recipeForRunner(root));
-  if (operation === "restore") {
+  assert.deepEqual(recipe, recipeForRunner(operation === "restore-proof"));
+  if (operation === "restore" || operation === "restore-proof") {
     assert.equal(
       process.env.PREDECESSOR_CACHE_MATCHED_KEY,
       cacheKey(recipe),
