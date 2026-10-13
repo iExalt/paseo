@@ -18,6 +18,7 @@ export const coreTests = [
   "scripts/native-candidate.test.mjs",
   "scripts/windows-speech-binding.test.mjs",
   "scripts/windows-predecessor-cache.test.mjs",
+  "scripts/windows-product-sources.test.mjs",
   "scripts/ci-deep.test.mjs",
   "scripts/ci-workflow.test.mjs",
   "scripts/ci-routine.test.mjs",
@@ -26,6 +27,7 @@ export const coreTests = [
   ".github/scripts/rebase-dev.test.mjs",
 ];
 export const helperTests = [
+  "scripts/macos-build-observer.test.mjs",
   "packages/desktop/scripts/after-pack.test.mjs",
   "scripts/daemon-launch-contract.test.mjs",
   "scripts/is-main-module.test.mjs",
