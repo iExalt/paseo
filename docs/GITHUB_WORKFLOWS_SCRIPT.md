@@ -1,9 +1,9 @@
 # GitHub workflows execution script
 
 **Four serial threads take the fork from its current workflows to a verified
-GitHub release. Phases A–C are complete; Phase D1/D2 is approved and active.**
+GitHub release. Phases A–C are complete; Phase D1/D2 / G5 is complete; D3 / G6 remains.**
 
-Status: **Phases A–C complete; Phase D1/D2 approved and active, 2026-10-12**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
+Status: **Phases A–C complete; Phase D1/D2 / G5 complete; D3 / G6 remains, 2026-10-13**. Read the [plan](GITHUB_WORKFLOWS_PLAN.md) for
 decisions and the [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) for step proofs. This
 script adds thread boundaries, dependencies and literal starting prompts.
 
@@ -137,7 +137,9 @@ Keep releases unpublished. Mark C done with G4 evidence and record deviations.
 
 ## D. Enforce and demonstrate complete release delivery — steps 9–11
 
-**State:** D1/D2 approved and active; C is complete. Approval covers reviewed
+**State:** D1/D2 / G5 complete at `dba97434b`; D3 / G6 unperformed.
+Full unpublished trial `38420127176` passed all 14 cells; signed draft
+`411807759` is preserved for separate publication/device authorization. C is complete. Approval covers reviewed
 commits/pushes and bounded free-runner signing, draft transfers and native trials
 under the confirmed $0 stop control. The separate D3 publication/device
 authorization boundary are recorded in [status](GITHUB_WORKFLOWS_STATUS.md).
