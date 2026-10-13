@@ -1,67 +1,15 @@
 {
   "schemaVersion": 1,
-  "version": "0.1.0",
-  "supersededPr": 96,
-  "supersededSource": "2c6f331bd78841670c2a85bfc37ba5af2d26169d",
-  "repairBase": "ab33e9d4b578e7d0d83b1704b35d73f87f631b50",
-  "lockSha256": "8916cf9a084df53fed887f358c6c67d25edf8ecb4c120e3b96b53cd04ed69547",
-  "npmDepsHash": "sha256-XUXsxOmy4fXeZlmgNlQAT+WG7MdQwj1Zgo1gOEFuXw0=",
+  "version": "0.1.1",
+  "supersededPr": 103,
+  "supersededSource": "e369131b3326279e6bd5b51394e3401913fff449",
+  "repairBase": "7e601bde4f4ac48de6a90f1891affab0d1a914b7",
+  "lockSha256": "070df88898915c038cb572afba3ad5aa2eb91f25bf5c3f4cd54f1be5a8aac9d4",
+  "npmDepsHash": "sha256-p8LgJ+xRZZ8vW+E2LZokuQg6oZcWUHvxoKi4f/dGptU=",
   "authorities": [
     {
-      "releaseId": 410889371,
-      "descriptorSha256": "96b8c1592ddbb793a9529b5ca988b2ba8dd545151569e430b25dba483b186bd3"
-    },
-    {
-      "releaseId": 410999337,
-      "descriptorSha256": "793f33590fdd798b132ae6e21948026bf1b2621d6c1cb07b203d16a99d4049eb"
-    },
-    {
-      "releaseId": 411016397,
-      "descriptorSha256": "8f0975bad5caee0b5a47762c66e6b53bfde62864f182cc7bbe7e3dbdd3433fb9"
-    },
-    {
-      "releaseId": 411027658,
-      "descriptorSha256": "dcb25f57538faa96999a71a4ef1593589c8ccbb80fd2bb8de72564b9afa3609e"
-    },
-    {
-      "releaseId": 411037339,
-      "descriptorSha256": "bcabaf5d4be829407990861d763d55fa6ffe9fad5d4411e758aade6f91af44ca"
-    },
-    {
-      "releaseId": 411057310,
-      "descriptorSha256": "be3612bb03e347c87b82a45c5e5e4493efd31600f7494bdd5cdef551e5d0dc1b"
-    },
-    {
-      "releaseId": 411096940,
-      "descriptorSha256": "61b32eab46450676b09668fb85082ae8276dc770f877bd1f30b673fdddcf02ee"
-    },
-    {
-      "releaseId": 411121812,
-      "descriptorSha256": "8a48a0ca7df0af5e0783d43aacc097767243e0987efe087e1a4eb6c349ceac72"
-    },
-    {
-      "releaseId": 411164284,
-      "descriptorSha256": "efebadefeb34d751b7db86b20f5b710f08a1fbddf1e9e224f6584b3992b9556e"
-    },
-    {
-      "releaseId": 411209003,
-      "descriptorSha256": "abeba1059c36e515c0c070c2552452620b3e862eeb5bfd47c2cbd8f5c12a6734"
-    },
-    {
-      "releaseId": 411340922,
-      "descriptorSha256": "53fbe2edc92b6df29f4eaa03d9364ec3cabe9119ccafc77b18ba8fee547da3ee"
-    },
-    {
-      "releaseId": 411499718,
-      "descriptorSha256": "3a20908755f911126b1f20a6939cd3f0b304e15b773bd25d3ff48d09a22ec446"
-    },
-    {
-      "releaseId": 411631985,
-      "descriptorSha256": "7dcd6e153a7cffb456ab40e46b8cc23b7d591d70f10e21464ea09b66b2ccd833"
-    },
-    {
-      "releaseId": 411714072,
-      "descriptorSha256": "140123b9857afcd2103c08e8b61de11766592b72c3b191e43906e126a83457ce"
+      "releaseId": 412064712,
+      "descriptorSha256": "2958a833d52966a229d3dd6a9a524bc5063ca3dfe97e2dbefff38206ccfaf800"
     }
   ]
 }
