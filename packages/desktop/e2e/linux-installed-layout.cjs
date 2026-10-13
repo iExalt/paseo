@@ -20,18 +20,15 @@ function validateManifest(manifest, expectedSha, architecture) {
   assert.ok(["x64", "arm64"].includes(architecture));
   assert.match(expectedSha, /^[a-f0-9]{40}$/);
   assert.equal(manifest.candidate.sourceSha, expectedSha);
-  assert.equal(manifest.previous.sourceSha, "5619b7d7ee1e55b322028e8b7818aa1a8f752a0a");
-  assert.equal(manifest.previous.version, "0.11.0");
+  assert.equal(manifest.previous.sourceSha, "b6e0474aec58b2c169f61b81b20de890d4138e30");
+  assert.equal(manifest.previous.version, "0.1.0");
   assert.notEqual(manifest.candidate.version, manifest.previous.version);
   for (const item of [manifest.previous, manifest.candidate]) {
     assert.match(item.version, /^\d+\.\d+\.\d+$/);
     assert.match(item.lockHash, /^[a-f0-9]{64}$/);
     assert.equal(item.name, "@getpaseo/desktop");
     assert.equal(item.desktopName, "Paseo.desktop");
-    const files =
-      item === manifest.candidate
-        ? [...payloadFiles, "resources/linux-after-install.sh"]
-        : payloadFiles;
+    const files = [...payloadFiles, "resources/linux-after-install.sh"];
     assert.deepEqual(Object.keys(item.payload).sort(), [...files].sort());
     for (const hash of Object.values(item.payload)) assert.match(hash, /^[a-f0-9]{64}$/);
     assert.deepEqual(Object.keys(item.artifacts).sort(), ["appimage", "deb", "rpm"]);

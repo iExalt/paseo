@@ -2,6 +2,39 @@
 
 ## Current snapshot
 
+### History sanitization and 0.1.1 replacement — in progress
+
+The user authorized removal of personal-device details and local paths from
+published history, followed by a fresh 0.1.1 release and retirement of 0.1.0.
+Private rehearsal reconstructed and verified signatures on 260 commits while
+preserving 5,940 commits byte-for-byte, including all 5,840 upstream ancestors.
+Both affected merges retain parent order; author/committer metadata and messages
+are preserved. All tree differences are explicit substitutions in 32 document
+blobs across six historical paths. Scanning 103,430 proposed reachable objects
+found no remaining identified private strings. A rollback bundle was restored
+and integrity-checked; all 40 current release assets were backed up and verified
+against GitHub sizes and digests.
+
+The user approved replacing 0.11.0 migration coverage with 0.1.0-to-0.1.1 upgrade
+and state-preservation checks. Linux and Windows rebuild sanitized 0.1.0 source
+`b6e0474aec58b2c169f61b81b20de890d4138e30`; predecessor cache recipes therefore
+invalidate old receipts. Mac and Android retain original signed 0.1.0 fixture
+bytes with source provenance `dba97434bc07ae122625dbd66568cf7e0624c578`.
+These historical test fixtures and the audited Node seed move to
+`ci-upgrade-fixtures-v0.1.0`; they are not relabeled as new products. Scans of the
+seed, Mac closure and Android APK covered 1,445,246,291 decompressed bytes with
+no identified private strings. The six 0.11.0 assets are no longer CI inputs.
+
+The release boundary retains original provenance while its ancestry pointer
+uses the signed replacement. Eighteen focused native/cache/boundary checks passed
+in 3.26 seconds. Full final-source CI, native 0.1.1 candidate verification,
+publication, retirement and fresh-clone verification remain outstanding.
+Existing runtime budgets and required release gates are unchanged. Personal
+device installation or disruption is not part of these hosted checks.
+The pre-push scan's false positive for a documented public-template Git blob SHA
+is recorded as one exact historical fingerprint in `.gitleaksignore`; no rule
+or path is broadly excluded.
+
 - D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
   authorized deletion of all earlier releases/drafts, and requested removal of
   the old Mac app plus an Android download link. This supersedes the earlier
