@@ -97,6 +97,11 @@ buildNpmPackage {
   buildPhase = ''
     runHook preBuild
 
+    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
+      # Bind stalled-build diagnostics to this exact output and active build root.
+      node -e 'console.error("PASEO_DESKTOP_BUILD_IDENTITY=" + JSON.stringify({root: process.env.NIX_BUILD_TOP, output: process.env.out}))'
+    ''}
+
     # Apply repository patches without enabling unrelated install scripts.
     PATH="$PWD/node_modules/.bin:$PATH" node scripts/postinstall-patches.mjs
 
@@ -110,7 +115,13 @@ buildNpmPackage {
     npm run build --workspace=@getpaseo/expo-two-way-audio
 
     # Expo web export for the Electron renderer
-    ( cd packages/app && PASEO_WEB_PLATFORM=electron npx expo export --platform web )
+    # Hosted macOS has 7 GiB RAM. Keep Metro in one process and give its
+    # export a 4 GiB old-space limit; this is not a total process RSS limit.
+    (
+      cd packages/app
+      ${lib.optionalString stdenv.hostPlatform.isDarwin "NODE_OPTIONS=--max-old-space-size=4096"} \
+        PASEO_WEB_PLATFORM=electron npx expo export --platform web ${lib.optionalString stdenv.hostPlatform.isDarwin "--max-workers 1"}
+    )
 
     # Desktop main process
     npm run build:main --workspace=@getpaseo/desktop

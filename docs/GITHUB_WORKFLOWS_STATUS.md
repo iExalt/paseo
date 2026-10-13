@@ -33,14 +33,36 @@
   the tested tree. Final integration is reviewer-accepted. No public release,
   production proposal activation or device migration
   occurred; the two rehearsal refs have been removed.
-- Phase D1/D2 / G5 remains open at `b541c9377`: authentic replacement PR #94,
+- Phase D1/D2 / G5 remains open at `2c6f331bd`: authentic replacement PR #96,
   routine/deep checks and native-disabled canary passed. Full trial
-  `38395756103` passed every platform's runtime journey but failed Windows
-  ARM64 worktree cleanup on a long filename. Independent VHD removal passed;
-  the complete candidate and final signed inventory remain unverified.
-  The stopped trial retains 27 draft assets; native enablement is off.
-  The user authorized autonomous routine repairs;
-  public release and personal-device migration remain excluded.
+  `38407499134` exposed a macOS Metro worker out-of-memory failure. The monitor
+  stopped the trial and disabled native execution. Cancellation also exposed a
+  Windows ARM64 worktree-cleanup failure; its owned VHD was removed.
+  Retired draft `411714072` preserves both signed authority assets (1,154 bytes).
+  A cold macOS memory diagnostic now passes; Windows cleanup investigation and
+  a fresh complete candidate proof remain open. The user authorized autonomous
+  routine repairs; public release and personal-device migration remain excluded.
+
+The cold macOS diagnostic [38411654299](https://github.com/iExalt/paseo/actions/runs/38411654299)
+was based on exact source `2c6f331bd`, with the disposable export-only memory
+change, Nix 2.34.7 and the pinned Node 26.11.0 derivation
+on the standard 7 GiB / three-core runner. Its single Metro worker and export-only
+`--max-old-space-size=4096` completed web bundling in 269.584s and the complete
+cold Nix build in 525s. Default heap capacity was 2,248,146,944 bytes; the explicit
+setting yielded 4,395,630,592 bytes. Sampled Metro RSS reached 2,230,960 KiB;
+all one-minute swap samples were zero. Samples do not establish peak RSS, and the
+heap setting is not a whole-process memory bound. The production repair scopes
+these settings to the Darwin web export, retaining all existing build deadlines.
+The observer now binds a build-emitted root to the prepared exact desktop output,
+covering the observed `/nix/var/nix/builds/nix-…/source` layout; invalid or conflicting
+identity disables sampling without altering the build result.
+
+The preceding long-path repair passed routine PR/dev runs `38403404109` and
+`38404178748` in 4m51s/4m25s (25m09s/23m17s summed runner time). The seven-lane
+4m15s/4m18s baseline and under-five-minute ceiling remain unchanged; no recurring
+checks or budgets were relaxed. Its dedicated long-path fixture succeeded, but
+the subsequent cancellation failure requires separate investigation: the current
+log does not distinguish a surviving directory from surviving registration.
 
 ## Outcome gates
 
