@@ -5,7 +5,7 @@ export LC_ALL=C
 readonly desktop_attr=".#packages.aarch64-darwin.desktop"
 readonly release_public_key="paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8="
 readonly seed_public_key="paseo-nix-seed-20261009-164633:HKUIBntJ2BXdOwsTH8Z/ou1oO5sEXIUsU6ZiGuhWN54="
-readonly seed_release_tag="nix-closure-probe-seed-20261009-164633"
+readonly seed_release_tag="paseo-v0.1.0"
 readonly seed_archive_name="paseo-nix-node-seed-fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6.tar"
 readonly seed_archive_sha256="fd5cc4bfe827035b00e1f4d46325f292d1222418538c458d4e44acc4a3ae3ce6"
 readonly seed_archive_bytes="69248000"

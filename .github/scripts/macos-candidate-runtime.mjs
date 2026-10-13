@@ -54,7 +54,7 @@ async function download(directory, name, maximum, expected) {
       "120",
       "--max-filesize",
       String(maximum),
-      `https://github.com/iExalt/paseo/releases/download/${predecessorTag}/${name}`,
+      `https://github.com/iExalt/paseo/releases/download/paseo-v0.1.0/legacy-0.11.0-${name}`,
       "--output",
       file,
     ],
