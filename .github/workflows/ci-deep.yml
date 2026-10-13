@@ -67,6 +67,10 @@ jobs:
       max-parallel: 3
       matrix:
         lane: [browser, integration, electron]
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CI: "true"
       LEFTHOOK: "0"
@@ -84,15 +88,8 @@ jobs:
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
-      - name: Begin evidence for Validate exact source and isolated configuration
-        id: proof_start_45
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
-        with:
-          name: Validate exact source and isolated configuration
-          number: "45"
       - name: Validate exact source and isolated configuration
-        id: proof_target_45
+        id: validate
         env:
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -100,16 +97,25 @@ jobs:
         run: |
           node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA" --plan
           node .github/scripts/ci-source-receipt.mjs
-      - name: Record evidence for Validate exact source and isolated configuration
-        if: ${{ !cancelled() }}
-        uses: ./.github/actions/record-step
+      - name: Bind step proof to this run attempt
+        id: proof-subject
+        if: steps.validate.outcome == 'success'
+        env:
+          PROOF_SLOT: ci-source-deep-${{ matrix.lane }}
+        shell: bash
+        run: |
+          [[ "$PROOF_SLOT" =~ ^[a-z0-9][a-z0-9-]{0,79}$ ]]
+          subject="$RUNNER_TEMP/paseo-step-proof-$PROOF_SLOT"
+          printf 'paseo-step-proof-v1\n%s\n%s\n%s\n%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PROOF_SLOT" > "$subject"
+          { echo "subject=$subject"; echo "slot=$PROOF_SLOT"; } >> "$GITHUB_OUTPUT"
+      - name: Sign step proof
+        if: steps.proof-subject.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          name: Validate exact source and isolated configuration
-          number: "45"
-          started: ${{ steps.proof_start_45.outputs.started }}
-          outcome: ${{ steps.proof_target_45.outcome }}
-          conclusion: ${{ steps.proof_target_45.conclusion }}
-
+          subject-path: ${{ steps.proof-subject.outputs.subject }}
+          predicate-type: https://github.com/iExalt/paseo/attestations/step-proof/v1
+          predicate: ${{ format('{{"schemaVersion":1,"kind":"paseo-step-proof","repository":"{0}","runId":{1},"attempt":{2},"slot":"{3}","evidence":{4}}}', github.repository, github.run_id, github.run_attempt, steps.proof-subject.outputs.slot, steps.validate.outputs.receipt) }}
+          show-summary: false
       - name: Install locked dependencies
         env:
           npm_config_fetch_timeout: "30000"
