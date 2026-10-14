@@ -17,6 +17,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { load } from "js-yaml";
 import { candidateIdentity } from "../.github/scripts/candidate-identity.mjs";
+import { candidateTriggerPaths } from "../.github/scripts/candidate-replacement.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 
@@ -78,6 +79,7 @@ test("candidate issuance isolates signing from keyless planning and executes onl
   assert.deepEqual(workflow.on.pull_request_target, {
     types: ["closed"],
     branches: ["dev"],
+    paths: candidateTriggerPaths,
   });
   assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), ["release_id", "merged_pr"]);
   const initialKey = workflow.jobs.issue.steps.find(
@@ -241,6 +243,10 @@ test("candidate coordinator cannot sign before complete verification and keeps c
   assert.equal(
     workflow.jobs.issue.outputs.native,
     "${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true' }}",
+  );
+  assert.equal(
+    workflow.jobs.aggregate.if,
+    "${{ !failure() && !cancelled() && needs.issue.result == 'success' }}",
   );
   const steps = workflow.jobs.aggregate.steps;
   const check = steps.findIndex((step) => step.id === "verified");
