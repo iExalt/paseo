@@ -3,16 +3,17 @@ import { execFileSync } from "node:child_process";
 import { assertReleasePr } from "./release-pr.mjs";
 import { validateSourceReceipt } from "./ci-source-receipt.mjs";
 import { verifyStepProof } from "./step-proof.mjs";
+import { retryingGhRead } from "./github-retry.mjs";
 
 const repository = "/repos/iExalt/paseo";
-export function readGithub(path, { text = false } = {}) {
+export const readGithub = retryingGhRead((path, { text = false } = {}) => {
   const output = execFileSync("gh", ["api", path, "--allow-escape-sequences"], {
     encoding: "utf8",
     maxBuffer: 32 * 1024 * 1024,
     timeout: 30000,
   });
   return text ? output : JSON.parse(output);
-}
+});
 
 async function pages(request, endpoint, field) {
   const rows = [];
