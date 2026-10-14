@@ -2,6 +2,43 @@
 
 ## Current snapshot
 
+### Pipeline recovery, noise and speed (0.1.2/0.1.3) — in progress
+
+Approved after the 0.1.1 retrospective (seven hours, six runs). Implemented and
+reviewer-accepted at code level; live proof is due in the 0.1.2 candidate.
+
+- **Mixed-attempt recovery.** "Re-run failed jobs" clones carried jobs into the
+  new attempt with original timestamps. `candidate-attempts.mjs` resolves each
+  job to the attempt that executed it, so proofs, grants, artifacts and receipts
+  come from that execution and one run can mix attempts. Aggregate evidence
+  records each group's `storage` attempt; publication re-reads the fresh draft
+  and requires the signed aggregate to be the run's latest execution. Carried
+  grants run only while `PASEO_CANDIDATE_NATIVE_ENABLED` is set and no newer
+  candidate has issued. Known limit: an operator who re-enables the variable and
+  reruns a stopped run is not detected.
+- **Fewer failures.** Nix prefetches only the fixed outputs the build would
+  build (the desktop closure: npm-deps only), with three attempts. Eight limits
+  under 25% observed headroom were raised; the 300 s routine budget was not.
+  Cache-hit predecessor paths were never observed, so their limits are unmeasured.
+- **Noise.** Six completed probe/preflight workflows and their exclusive scripts
+  are deleted. Candidate and deep runs start only when a merge or PR changes
+  `.github/fork-release.json` or `.github/pending-candidate-replacement.json`;
+  candidate authority requires every accepted source to change one of them.
+  Deep verification for workflow PRs is now a manual `workflow_dispatch` on
+  `ci/github-workflows`; dispatch it before merging changes to the deep lanes.
+  Aggregate is skipped, not red, after a producer failure.
+- **Routine CI.** Hosted runners have 4 vCPUs: four vitest workers cut app units
+  from 139 s to 95 s. App runs as two shards and server as three; 24 of 24
+  repeated shard runs passed, and executed file counts sum to the unsharded
+  totals (app 633, server 427). Lanes restore installed `node_modules` (~0.9 GB,
+  16-23 s against 57-74 s for `npm ci`), written only by the current dev head.
+- **Release flow.** Prewarm the predecessor caches before a candidate: dispatch
+  `windows-product-runtime.yml` (arm64, x64) and `linux-product-runtime.yml`
+  (x64, arm64) on dev without a source, then confirm each key with
+  `gh cache list --key paseo-<os>-predecessor-v1-<arch>`. A candidate miss now
+  warns. Measured but not adopted: Gradle parallelism (no gain), a fixed-size
+  Dev Drive (creation cost cancels the install gain), Defender CPU (0-3 s).
+
 ### History sanitization and 0.1.1 replacement — complete
 
 The user authorized removal of personal-device details and local paths from
