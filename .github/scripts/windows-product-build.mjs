@@ -12,6 +12,8 @@ import {
 } from "./windows-speech-binding.mjs";
 import { inspectPe } from "./windows-pe.mjs";
 import { verifyWindowsJob } from "./windows-job-identity.mjs";
+import { fileDigest } from "./build-cache-provenance.mjs";
+import { moduleRoots } from "./windows-modules-cache.mjs";
 import { loadWindowsSources } from "./windows-product-sources.mjs";
 
 assert.equal(process.platform, "win32");
@@ -100,14 +102,46 @@ if (operation === "init") {
     const started = Date.now();
     // One run-local cache avoids downloading shared old/candidate inputs twice;
     // it is not uploaded to the repository's Actions cache.
-    npm(source, ["ci", "--timing", "--foreground-scripts", "--no-audit", "--no-fund"], 1780000, {
-      ...process.env,
-      npm_config_cache: join(root, "npm-cache"),
-    });
+    const env = { ...process.env, npm_config_cache: join(root, "npm-cache") };
+    const archive = join(process.env.RUNNER_TEMP, "paseo-windows-modules.tar");
+    const restored =
+      stage === "candidate" && /^[a-f0-9]{64}$/.test(process.env.PASEO_MODULES_DIGEST ?? "");
+    if (restored) {
+      // windows-modules-cache.mjs verified the attested archive; bind these bytes to it.
+      assert.equal(await fileDigest(archive), process.env.PASEO_MODULES_DIGEST);
+      for (const tree of moduleRoots(source)) assert.equal(existsSync(join(source, tree)), false);
+      run(
+        join(process.env.SystemRoot, "System32", "tar.exe"),
+        ["-xf", archive, "-C", source],
+        source,
+        600000,
+      );
+      // Reconciles workspace links to this volume and anything the release changed.
+      npm(
+        source,
+        [
+          "install",
+          "--prefer-offline",
+          "--timing",
+          "--foreground-scripts",
+          "--no-audit",
+          "--no-fund",
+        ],
+        1780000,
+        env,
+      );
+    } else
+      npm(
+        source,
+        ["ci", "--timing", "--foreground-scripts", "--no-audit", "--no-fund"],
+        1780000,
+        env,
+      );
     assert.equal(hash(join(source, "package-lock.json")), owner[`${stage}Lock`]);
     save(join(root, "evidence", `${stage}-install.json`), {
       elapsedMs: Date.now() - started,
       lockSha256: owner[`${stage}Lock`],
+      modules: restored ? { archiveSha256: process.env.PASEO_MODULES_DIGEST } : "npm ci",
     });
   } else if (operation === "binding") {
     // Exercise native ASAR path lookup before expensive compilation and packaging.

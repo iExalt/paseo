@@ -124,9 +124,75 @@ jobs:
           ./.github/scripts/windows-product-stage.ps1 init
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.github/scripts/windows-product-runtime.ps1 prepare
+      - name: Bind installed dependency cache recipe
+        id: modules
+        if: inputs.architecture == 'arm64'
+        run: |
+          . ./.github/scripts/windows-native-toolchain.ps1
+          $env:PASEO_NATIVE_COMPILER = Get-NativeCompiler
+          node .github/scripts/windows-modules-cache.mjs key
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      # Restore-only. Dispatched writers still install fresh with npm ci.
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        id: modules-cache
+        if: inputs.architecture == 'arm64'
+        timeout-minutes: 5
+        with:
+          path: ${{ steps.modules.outputs.archive }}
+          key: ${{ steps.modules.outputs.key }}
+      # A writer that finds its key rehearses the candidate's verification instead.
+      - name: Verify an existing installed dependency archive
+        if: inputs.source_sha == '' && steps.modules-cache.outputs.cache-hit == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PASEO_MODULES_KEY: ${{ steps.modules.outputs.key }}
+        run: node .github/scripts/windows-modules-cache.mjs self-verify
+      - name: Verify installed dependency provenance
+        id: modules-provenance
+        if: inputs.source_sha != '' && steps.modules-cache.outputs.cache-hit == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PASEO_MODULES_KEY: ${{ steps.modules.outputs.key }}
+        run: node .github/scripts/windows-modules-cache.mjs verify
+      - name: Report an installed dependency cache miss
+        if: inputs.architecture == 'arm64' && inputs.source_sha != '' && steps.modules-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: echo "::warning::Installed dependency cache missed; running npm ci. Prewarm with a no-source dispatch on dev."
       - name: Install candidate locked dependencies normally
         timeout-minutes: 30
+        env:
+          PASEO_MODULES_DIGEST: ${{ steps.modules-provenance.outputs.digest }}
         run: ./.github/scripts/windows-product-stage.ps1 install-candidate
+      - name: Archive freshly installed candidate dependencies
+        id: modules-archive
+        if: inputs.architecture == 'arm64' && inputs.source_sha == '' && steps.modules-cache.outputs.cache-hit != 'true'
+        run: node .github/scripts/windows-modules-cache.mjs archive
+      - name: Attest the installed dependency archive
+        if: steps.modules-archive.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.modules.outputs.archive }}
+          predicate-type: https://github.com/iExalt/paseo/attestations/build-cache/v1
+          predicate: ${{ format('{{"schemaVersion":1,"kind":"paseo-build-cache","key":"{0}"}}', steps.modules.outputs.key) }}
+          show-summary: false
+      - name: Verify the writer's own attestation
+        if: steps.modules-archive.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PASEO_MODULES_KEY: ${{ steps.modules.outputs.key }}
+        run: node .github/scripts/windows-modules-cache.mjs self-verify
+      - name: Check installed dependency cache headroom
+        id: modules-budget
+        if: steps.modules-archive.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/windows-modules-cache.mjs budget
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: steps.modules-budget.outputs.save == 'true'
+        timeout-minutes: 5
+        with:
+          path: ${{ steps.modules.outputs.archive }}
+          key: ${{ steps.modules.outputs.key }}
       - name: Build the pinned ARM Electron speech binding once
         timeout-minutes: 16
         run: ./.github/scripts/windows-product-stage.ps1 binding
