@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "kind": "release",
-  "version": "0.1.1",
-  "originalSha": "93e456d42126bbed9d4d2765ef1eed409499337c",
-  "currentSha": "93e456d42126bbed9d4d2765ef1eed409499337c"
+  "version": "0.1.2",
+  "originalSha": "45951f50633e3e8404a4973fb275d1de6f32cfed",
+  "currentSha": "45951f50633e3e8404a4973fb275d1de6f32cfed"
 }
