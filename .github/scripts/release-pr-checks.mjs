@@ -32,8 +32,11 @@ async function pages(request, endpoint, field) {
 export function latestPrRun(runs, workflow, pr, { merged = false } = {}) {
   // GitHub can erase the PR association after merge. Merged verification still
   // binds PR number, both SHAs and tested tree through the job's source receipt.
+  // A run whose every job was skipped (e.g. an unrelated label) executed nothing,
+  // so it never supersedes a proof; a newer failed or cancelled run still does.
   const matching = runs.filter(
     (run) =>
+      run.conclusion !== "skipped" &&
       run.path === `.github/workflows/${workflow}` &&
       run.event === "pull_request" &&
       run.head_sha === pr.head.sha &&
