@@ -220,10 +220,12 @@ test("merged authority binds the old checked tree and parent while dev advances"
     "package-lock.json": JSON.stringify({ version: fork.version, packages: { "": rootPackage } }),
     "CHANGELOG.fork.md": "# Fork release",
   };
+  const baseFiles = {
+    ".release-please-manifest.json": JSON.stringify({ ".": "0.0.0" }),
+    ".github/fork-release.json": JSON.stringify({ ...fork, version: "0.0.0" }),
+  };
   const read = async (sha, file) =>
-    sha === base && file === ".release-please-manifest.json"
-      ? JSON.stringify({ ".": "0.0.0" })
-      : (sourceFiles[file] ?? "trusted policy fixture");
+    (sha === base ? baseFiles[file] : undefined) ?? sourceFiles[file] ?? "trusted policy fixture";
   const entryEnv = {
     GITHUB_RUN_ID: "500",
     GITHUB_RUN_ATTEMPT: "1",
@@ -548,6 +550,13 @@ test("merged authority binds the old checked tree and parent while dev advances"
     ),
     /Policy changed/,
   );
+  // The candidate trigger's path filter relies on every release changing this file.
+  await assert.rejects(
+    currentCandidate(descriptor, dev, identity, setup().request, async (sha, file) =>
+      sha === base && file === ".github/fork-release.json" ? JSON.stringify(fork) : read(sha, file),
+    ),
+    /must change its release configuration/,
+  );
   for (const mutate of [
     (f) => {
       f.proofs[0].evidence.prNumber = 8;
@@ -701,6 +710,25 @@ test("current-head verifier requires both latest gates, signed source receipts a
       pr,
     ),
   );
+  // Fields as returned for the all-skipped ci-deep run 38506011584.
+  const skipped = {
+    ...good.runs[1],
+    id: 103,
+    run_attempt: 1,
+    status: "completed",
+    conclusion: "skipped",
+  };
+  assert.equal(latestPrRun([good.runs[1], skipped], "ci-deep.yml", pr), good.runs[1]);
+  for (const conclusion of ["failure", "cancelled"])
+    assert.throws(
+      () =>
+        latestPrRun(
+          [good.runs[1], skipped, { ...skipped, id: 104, conclusion }],
+          "ci-deep.yml",
+          pr,
+        ),
+      /did not succeed/,
+    );
   const merged = { ...pr, state: "closed", merged: true, merge_commit_sha: merge };
   const finalCommit = { sha: merge, parents: [{ sha: base }], tree: { sha: proof.treeSha } };
   const finalRefs = { returnedSha: merge, branchSha: merge };

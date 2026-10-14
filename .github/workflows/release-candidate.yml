@@ -4,6 +4,8 @@ on:
   pull_request_target:
     types: [closed]
     branches: [dev]
+    # Bound by candidateTriggerPaths: every accepted source changes one of them.
+    paths: [.github/fork-release.json, .github/pending-candidate-replacement.json]
   workflow_dispatch:
     inputs:
       release_id:
@@ -393,7 +395,9 @@ jobs:
         transfer-macos,
         transfer-android,
       ]
-    if: always() && !cancelled() && needs.issue.result == 'success'
+    # A failed producer leaves aggregate skipped rather than a second red job;
+    # "Re-run failed jobs" still reruns it as a dependent.
+    if: ${{ !failure() && !cancelled() && needs.issue.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:

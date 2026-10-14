@@ -11,11 +11,15 @@ import { validateDraft } from "./candidate-draft.mjs";
 import { assertReleasePr } from "./release-pr.mjs";
 
 export const replacementPath = ".github/pending-candidate-replacement.json";
+const releaseConfigPath = ".github/fork-release.json";
+// release-candidate.yml starts only on merges touching these files; every
+// accepted source must change one of them, so the filter never drops a candidate.
+export const candidateTriggerPaths = [releaseConfigPath, replacementPath];
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const unchanged = [
   "package-lock.json",
   "nix/npm-deps.hash",
-  ".github/fork-release.json",
+  releaseConfigPath,
   ".release-please-manifest.json",
   ".github/release-boundary.json",
   "release-please-config.json",
@@ -60,7 +64,7 @@ export async function replacementTree(record, readBase) {
   assert.equal(digest(lock), record.lockSha256);
   assert.equal((await readBase("nix/npm-deps.hash")).trim(), record.npmDepsHash);
   assert.equal(JSON.parse(lock).version, record.version);
-  assert.equal(JSON.parse(await readBase(".github/fork-release.json")).version, record.version);
+  assert.equal(JSON.parse(await readBase(releaseConfigPath)).version, record.version);
   assert.deepEqual(JSON.parse(await readBase(".release-please-manifest.json")), {
     ".": record.version,
   });
@@ -179,7 +183,15 @@ export async function replacementForSource(descriptor, read, request) {
   assert.deepEqual(Object.keys(parentManifest), ["."]);
   const order = compareForkVersions(descriptor.version, parentManifest["."]);
   assert.ok(order >= 0, "Candidate version regressed from its parent");
-  if (order > 0) return null;
+  if (order > 0) {
+    const parentConfig = JSON.parse(await read(descriptor.baseSha, releaseConfigPath));
+    assert.notEqual(
+      parentConfig.version,
+      descriptor.version,
+      "A release candidate must change its release configuration",
+    );
+    return null;
+  }
   const record = JSON.parse(await read(descriptor.sourceSha, replacementPath));
   assert.equal(record.version, descriptor.version);
   const diff = await request(
