@@ -363,6 +363,35 @@ test("merged authority binds the old checked tree and parent while dev advances"
     get: () => assert.fail("Readonly workers must not fetch drafts"),
   };
   assert.deepEqual(await workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant), context);
+  // A grant issued alongside its producers must still be live when used.
+  const signing = "android-sign";
+  const preIssued = { ...grant, group: signing, workers: grantGroups[signing].workers };
+  const signJob = { ...authJob, name: grantGroups[signing].job };
+  candidateProofs.push({ ...grantProof, slot: `grant-${signing}` });
+  const signEnv = {
+    ...grantedEnv,
+    CANDIDATE_GRANT_GROUP: signing,
+    CANDIDATE_EXPECTED_JOB: preIssued.workers[0],
+  };
+  const signRequest = async (url) =>
+    url.includes("/workflows/release-candidate.yml/runs")
+      ? { workflow_runs: [{ id: context.runId }] }
+      : (attemptRoute(url, [signJob], context.attempt) ?? setup().request(url));
+  await assert.rejects(
+    workerGate(signEnv, readonlyApi, signRequest, read, preIssued),
+    /live native authorization/,
+  );
+  assert.deepEqual(
+    await workerGate(
+      { ...signEnv, CANDIDATE_LIVE_NATIVE: "true" },
+      readonlyApi,
+      signRequest,
+      read,
+      preIssued,
+    ),
+    context,
+  );
+  candidateProofs.pop();
   for (const mutate of [
     (g) => {
       g.context.attempt++;
