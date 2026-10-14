@@ -331,8 +331,10 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
       job.steps.find((step) => step.run?.endsWith(`windows-product-stage.ps1 ${phase}`)).if,
       undefined,
     );
-  assert.ok(
-    workflow.jobs["cache-proof"].steps.some((step) => step.with?.["fail-on-cache-miss"] === true),
+  assert.deepEqual(Object.keys(workflow.jobs), ["authorize", "native"]);
+  assert.match(
+    job.steps.find((step) => step.name === "Report a predecessor cache miss").run,
+    /::warning::/,
   );
   const uploads = job.steps.filter(
     (step) => step.uses?.startsWith("actions/upload-artifact") && step.id !== "packages",
