@@ -249,8 +249,12 @@ test("candidate coordinator cannot sign before complete verification and keeps c
     "linux-products-arm64",
     "windows-x64",
     "windows-arm64",
-  ])
+  ]) {
     assert.equal(workflow.jobs[name].if, "needs.issue.outputs.native == 'true'");
+    // Native builds overlap re-verification; only aggregate signing waits for it.
+    assert.deepEqual(workflow.jobs[name].needs, ["issue"]);
+  }
+  assert.ok(workflow.jobs.aggregate.needs.includes("verify"));
   assert.equal(
     workflow.jobs.issue.outputs.native,
     "${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true' }}",
