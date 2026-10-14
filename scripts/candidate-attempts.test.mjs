@@ -120,3 +120,23 @@ test("fails closed on failed, missing, duplicate or ambiguous executions", async
   await reject(() => [], "f", /No execution/);
   assert.throws(() => attemptLedger({ runId: RUN, attempt: 11 }, fixture().request), /bound/);
 });
+
+test("a carried grant runs only while the candidate is still the live one", async () => {
+  const { assertCarriedGrantLive } = await import("../.github/scripts/candidate-worker.mjs");
+  const context = { runId: 500, attempt: 2 };
+  let runs = [{ id: 501 }, { id: 500 }, { id: 499 }];
+  let issued = false;
+  const request = async (route) => {
+    if (route.includes("/workflows/release-candidate.yml/runs")) return { workflow_runs: runs };
+    assert.match(route, /\/runs\/501\/jobs\?filter=latest/);
+    return { jobs: [{ name: "issue", conclusion: issued ? "success" : "skipped" }] };
+  };
+  const live = { CANDIDATE_LIVE_NATIVE: "true" };
+  await assertCarriedGrantLive(live, context, request);
+  // Stopping a candidate removes the variable, which reruns re-read.
+  await assert.rejects(assertCarriedGrantLive({}, context, request), /live native/);
+  issued = true;
+  await assert.rejects(assertCarriedGrantLive(live, context, request), /newer candidate/);
+  runs = Array.from({ length: 20 }, (_, index) => ({ id: 600 + index }));
+  await assert.rejects(assertCarriedGrantLive(live, context, request), /Too many/);
+});

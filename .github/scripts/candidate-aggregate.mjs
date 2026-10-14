@@ -33,6 +33,9 @@ function asset(release, runId, attempt, name) {
   return matches[0];
 }
 
+const storageOf = (transfers) =>
+  Object.fromEntries(Object.entries(transfers).map(([group, item]) => [group, item.attempt]));
+
 export function transferJob(group) {
   assert.ok(Object.hasOwn(producerGroups, group));
   const caller = { "macos-arm64": "transfer-macos", "android-arm64": "transfer-android" }[group];
@@ -130,9 +133,7 @@ export async function verifyAggregate(
       attempt,
       manifestSha256: digest(bytes),
       receipts,
-      storage: Object.fromEntries(
-        Object.entries(transfers).map(([group, transfer]) => [group, transfer.attempt]),
-      ),
+      storage: storageOf(transfers),
       verification: jobs
         .filter((job) => job.status === "completed" && job.conclusion === "success")
         .map(({ id, name }) => ({ id, name })),
@@ -179,13 +180,7 @@ export async function signAggregate(
   const manifest = JSON.parse(bytes);
   validateForkReleaseManifest(manifest);
   const { producers, transfers } = await resolveGroups(context, request);
-  assert.deepEqual(
-    proof.storage,
-    Object.fromEntries(
-      Object.entries(transfers).map(([group, transfer]) => [group, transfer.attempt]),
-    ),
-    "Draft storage changed after verification",
-  );
+  assert.deepEqual(proof.storage, storageOf(transfers), "Draft storage changed after verification");
   assert.deepEqual(
     aggregateCandidate(
       descriptor,
@@ -216,8 +211,45 @@ export async function signAggregate(
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
 }
 
+// The draft has no final state: a later rerun of any producer re-executes the
+// aggregate and supersedes the signed payload. Publication therefore recomputes
+// every group against the run's latest attempt and requires the signed
+// evidence to still describe it.
+export async function verifyPublishable(release, evidence, request = readGithub) {
+  assert.equal(evidence.kind, "paseo-complete-candidate");
+  const { runId, attempt } = evidence;
+  assert.deepEqual(
+    JSON.parse(release.body).activeAttempt,
+    { runId, attempt },
+    "A later attempt superseded the signed candidate",
+  );
+  const run = await request(`/repos/iExalt/paseo/actions/runs/${runId}`);
+  assert.equal(run.id, runId);
+  assert.equal(run.status, "completed");
+  const latest = { runId, attempt: run.run_attempt };
+  const ledger = attemptLedger(latest, request);
+  assert.equal(
+    (await ledger.producer("aggregate")).attempt,
+    attempt,
+    "The signed aggregate is not the run's latest execution",
+  );
+  const { producers, transfers } = await resolveGroups(latest, request);
+  assert.deepEqual(evidence.storage, storageOf(transfers), "Draft storage changed after signing");
+  for (const receipt of evidence.receipts) {
+    assert.equal(receipt.attempt, producers[receipt.group].attempt);
+    assert.equal(receipt.producerJobId, producers[receipt.group].job.id);
+  }
+  return evidence;
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   if (process.argv[2] === "verify") await verifyAggregate();
   else if (process.argv[2] === "sign") await signAggregate();
-  else throw new Error("Expected verify or sign");
+  else if (process.argv[2] === "publishable") {
+    const [release, evidence] = await Promise.all(
+      process.argv.slice(3, 5).map(async (file) => JSON.parse(await readFile(file, "utf8"))),
+    );
+    await verifyPublishable(release, evidence);
+    process.stdout.write("Signed candidate is the run's latest execution\n");
+  } else throw new Error("Expected verify, sign or publishable");
 }

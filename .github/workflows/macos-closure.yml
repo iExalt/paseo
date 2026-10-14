@@ -128,6 +128,7 @@ jobs:
       artifact_digest: ${{ steps.upload.outputs.artifact-digest }}
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: mac-build
       CANDIDATE_EXPECTED_JOB: paired / Build and verify macOS closure / Build and sign macOS closure
@@ -247,6 +248,7 @@ jobs:
       verified: ${{ steps.verify.outputs.verified }}
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize-import.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize-import.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: mac-import
       CANDIDATE_EXPECTED_JOB: paired / Build and verify macOS closure / Verify closure on a fresh runner

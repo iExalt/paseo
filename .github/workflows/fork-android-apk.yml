@@ -108,6 +108,7 @@ jobs:
       version_code: ${{ steps.version.outputs.version_code }}
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: android-build
       CANDIDATE_EXPECTED_JOB: paired / Build and sign Android APK / Build fork arm64 APK
@@ -405,6 +406,7 @@ jobs:
       verified: ${{ steps.signed.outputs.verified }}
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize-sign.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize-sign.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: android-sign
       CANDIDATE_EXPECTED_JOB: paired / Build and sign Android APK / Sign and publish fork APK artifact

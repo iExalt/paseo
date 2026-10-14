@@ -62,11 +62,39 @@ export async function workerGate(env, api, request, read, grant = null) {
         artifact: { id: env.CANDIDATE_GRANT_ID, digest: env.CANDIDATE_GRANT_DIGEST },
       },
     );
+    if (grant.context.attempt !== attempt) await assertCarriedGrantLive(env, context, request);
   } else {
     await currentCandidate(descriptor, env.GITHUB_SHA, releaseBotIdentity(env), request, read, api);
     await advanceAttempt(api, descriptor, releaseId, runId, attempt);
   }
   return context;
+}
+
+// Workers cannot read the draft, so a grant carried into a rerun attempt could
+// otherwise run signing jobs for a candidate that has since been stopped or
+// replaced. Stopping a candidate removes the native variable (re-read on every
+// attempt), and only a newer run's issue job can admit another candidate.
+export async function assertCarriedGrantLive(env, context, request) {
+  assert.equal(
+    env.CANDIDATE_LIVE_NATIVE,
+    "true",
+    "A carried grant needs live native authorization; start a new candidate run",
+  );
+  const { workflow_runs: runs } = await request(
+    "/repos/iExalt/paseo/actions/workflows/release-candidate.yml/runs?per_page=20",
+  );
+  assert.ok(Array.isArray(runs));
+  const newer = runs.filter((run) => run.id > context.runId);
+  assert.ok(newer.length < runs.length, "Too many newer candidate runs to rule out replacement");
+  for (const run of newer) {
+    const { jobs } = await request(
+      `/repos/iExalt/paseo/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
+    );
+    assert.ok(
+      !jobs.some((job) => job.name === "issue" && job.conclusion === "success"),
+      "A newer candidate run was issued; this run can no longer execute",
+    );
+  }
 }
 
 export async function readTrustedWorkerContext(env = process.env) {

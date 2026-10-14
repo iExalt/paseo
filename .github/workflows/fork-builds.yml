@@ -91,6 +91,7 @@ jobs:
       attestations: read
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: paired-identity
       CANDIDATE_EXPECTED_JOB: paired / Pin paired build identity
@@ -195,6 +196,7 @@ jobs:
       attempt: ${{ github.run_attempt }}
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize-complete.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize-complete.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: paired-complete
       CANDIDATE_EXPECTED_JOB: paired / Cross-check paired candidate artifacts
