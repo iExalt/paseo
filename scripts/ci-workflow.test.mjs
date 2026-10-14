@@ -21,6 +21,7 @@ import { candidateTriggerPaths } from "../.github/scripts/candidate-replacement.
 import { lanes as routineLanes } from "../.github/scripts/ci-routine.mjs";
 import { grantGroups } from "../.github/scripts/candidate-grant.mjs";
 import { preIssuedGroups } from "../.github/scripts/candidate-worker.mjs";
+import { prefix as androidCcachePrefix } from "../.github/scripts/android-build-cache.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 
@@ -202,6 +203,7 @@ test("only fork-owned workflows are installed", () => {
     .filter((name) => /\.ya?ml$/.test(name))
     .sort();
   assert.deepEqual(workflows, [
+    "android-build-cache.yml",
     "candidate-auth.yml",
     "candidate-runtime.yml",
     "candidate-transfer.yml",
@@ -718,6 +720,16 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.doesNotMatch(build, /PASEO_FORK_SIGNING_(?:KEY|CERT)/);
   assert.match(build, /apkanalyzer="\$ANDROID_HOME\/cmdline-tools\/latest\/bin\/apkanalyzer"/);
   assert.match(build, /Firebase client config failed validation/);
+  // Candidates restore the newest attested ccache, verify the entry they
+  // matched, and never save one; only android-build-cache.yml writes.
+  const buildSteps = load(source).jobs.build.steps;
+  const byId = (id) => buildSteps.find((step) => step.id === id);
+  assert.equal(byId("ccache-cache").with["restore-keys"], androidCcachePrefix);
+  assert.equal(
+    byId("ccache-provenance").env.PASEO_CACHE_KEY,
+    "${{ steps.ccache-cache.outputs.cache-matched-key }}",
+  );
+  assert.doesNotMatch(build, /actions\/cache\/save/);
   assert.doesNotMatch(sign, /npm |gradlew/);
   assert.doesNotMatch(
     sign,
