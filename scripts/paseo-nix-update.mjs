@@ -23,9 +23,6 @@ import {
   withOperationLock,
   verifySignedJsonBytes,
   assertMacArm,
-  assertApiAsset,
-  assetFromRelease,
-  releaseAssetBytes,
   downloadAsset,
   fetchHttps,
   assertFreeSpace,
@@ -79,60 +76,82 @@ export function macArtifact(manifest) {
   );
 }
 
-function releaseVersion(release) {
-  return release.draft || release.prerelease ? null : forkVersionFromTag(release.tag_name);
+const RELEASES = `https://github.com/${REPOSITORY}/releases`;
+const MAX_METADATA_BYTES = 1024 * 1024;
+
+// Unauthenticated REST calls share GitHub's 60-per-hour budget per IP address,
+// often a whole office's. Release pages and download URLs do not count against
+// it, so the updater resolves and downloads everything through them.
+export function releaseDownloadUrl(tag, name) {
+  assert.ok(forkVersionFromTag(tag) !== null, "Not a fork release tag");
+  assert.match(name, /^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Invalid release asset name");
+  return `${RELEASES}/download/${tag}/${name}`;
 }
 
-async function verifiedRelease(release) {
-  const [{ bytes }, { bytes: signatureBytes }] = await Promise.all([
-    releaseAssetBytes(release, RELEASE_MANIFEST_ASSET),
-    releaseAssetBytes(release, RELEASE_SIGNATURE_ASSET),
+export function httpFailure(what, response, now = Date.now()) {
+  const reset = Number(response.headers.get("x-ratelimit-reset"));
+  const retryAfter = Number(response.headers.get("retry-after"));
+  const limited =
+    response.status === 429 ||
+    (response.status === 403 && response.headers.get("x-ratelimit-remaining") === "0");
+  if (!limited) return new Error(`GitHub returned HTTP ${response.status} for ${what}.`);
+  let at = Number.NaN;
+  if (reset > 0) at = reset * 1000;
+  else if (retryAfter > 0) at = now + retryAfter * 1000;
+  return new Error(
+    `GitHub rate limit reached while fetching ${what}. ${
+      Number.isFinite(at) ? `Retry after ${new Date(at).toISOString()}.` : "Retry later."
+    }`,
+  );
+}
+
+export async function resolveLatestTag(fetchOnce = fetch) {
+  const response = await fetchOnce(`${RELEASES}/latest`, { redirect: "manual" });
+  if (![301, 302, 303, 307, 308].includes(response.status))
+    throw httpFailure("the latest release", response);
+  const location = new URL(response.headers.get("location") ?? "", `${RELEASES}/latest`);
+  const prefix = `/${REPOSITORY}/releases/tag/`;
+  assert.ok(
+    location.origin === "https://github.com" &&
+      location.pathname.startsWith(prefix) &&
+      !location.search,
+    "GitHub returned an unexpected latest release location",
+  );
+  const tag = decodeURIComponent(location.pathname.slice(prefix.length));
+  assert.ok(forkVersionFromTag(tag) !== null, `Latest GitHub release ${tag} is not a fork release`);
+  return tag;
+}
+
+async function fetchMetadata(url, what) {
+  const response = await fetchHttps(url, { Accept: "application/octet-stream" });
+  if (!response.ok || !response.body) throw httpFailure(what, response);
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of response.body) {
+    size += chunk.length;
+    assert.ok(size <= MAX_METADATA_BYTES, `GitHub ${what} exceeds its size limit`);
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks);
+}
+
+// GitHub's Latest is never a draft or prerelease. An invalid latest release
+// fails closed instead of falling back to an older one; high-water still
+// refuses anything at or below the newest activated version.
+export async function latestVerifiedRelease({
+  resolveTag = resolveLatestTag,
+  fetchBytes = fetchMetadata,
+  publicKey,
+} = {}) {
+  const tag = await resolveTag();
+  const [manifestBytes, signatureBytes] = await Promise.all([
+    fetchBytes(releaseDownloadUrl(tag, RELEASE_MANIFEST_ASSET), "the release manifest"),
+    fetchBytes(releaseDownloadUrl(tag, RELEASE_SIGNATURE_ASSET), "the release signature"),
   ]);
-  const manifest = verifyReleaseManifestBytes(bytes, signatureBytes);
-  assert.equal(manifest.releaseTag, release.tag_name);
-  const artifact = macArtifact(manifest);
-  for (const entry of [artifact, artifact.closureManifest]) {
-    const asset = assetFromRelease(release, entry.name);
-    assert.equal(asset.size, entry.bytes);
-  }
-  return { release, manifest, manifestBytes: bytes, signatureBytes };
-}
-
-export async function chooseHighestVerifiedStableRelease(releases, verify = verifiedRelease) {
-  const candidates = releases
-    .map((release) => ({ release, version: releaseVersion(release) }))
-    .filter((entry) => entry.version !== null)
-    .sort((a, b) => compareForkVersions(b.version, a.version));
-  const versions = new Set();
-  for (const candidate of candidates) {
-    assert.ok(!versions.has(candidate.version), "Duplicate published fork version");
-    versions.add(candidate.version);
-  }
-  for (const { release } of candidates) {
-    try {
-      const verified = await verify(release);
-      if (verified) return verified;
-    } catch {
-      /* Invalid or unavailable candidate cannot authorize an update. */
-    }
-  }
-  throw new Error("No valid signed stable fork release was found.");
-}
-
-async function listReleases() {
-  const releases = [];
-  for (let page = 1; page <= 10; page++) {
-    const response = await fetchHttps(
-      `https://api.github.com/repos/${REPOSITORY}/releases?per_page=100&page=${page}`,
-      { Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" },
-    );
-    assert.ok(response.ok, `GitHub releases API returned ${response.status}`);
-    const batch = await response.json();
-    assert.ok(Array.isArray(batch), "Invalid release list");
-    releases.push(...batch);
-    if (batch.length < 100) return releases;
-  }
-  throw new Error("Fork release lookup exceeded its page limit.");
+  const manifest = verifyReleaseManifestBytes(manifestBytes, signatureBytes, publicKey);
+  assert.equal(manifest.releaseTag, tag, "Signed release manifest names another release");
+  assert.ok(macArtifact(manifest), "Latest release has no macOS Nix desktop artifact");
+  return { tag, manifest, manifestBytes, signatureBytes };
 }
 
 export function validateNixClosureManifest(bytes, manifest) {
@@ -266,11 +285,9 @@ function targetFor(manifest) {
 
 async function stageRelease(verified) {
   const artifact = macArtifact(verified.manifest);
-  const archive = assetFromRelease(verified.release, artifact.name);
-  assertApiAsset(archive, verified.manifest.releaseTag);
-  const { bytes: nixManifestBytes } = await releaseAssetBytes(
-    verified.release,
-    artifact.closureManifest.name,
+  const nixManifestBytes = await fetchMetadata(
+    releaseDownloadUrl(verified.tag, artifact.closureManifest.name),
+    "the Nix closure manifest",
   );
   const closure = validateNixClosureManifest(nixManifestBytes, verified.manifest);
   await assertFreeSpace(
@@ -281,7 +298,8 @@ async function stageRelease(verified) {
   const directory = await mkdtemp(join(STATE_ROOT, "download-"));
   try {
     const file = join(directory, artifact.name);
-    await downloadAsset(archive, file, {
+    const url = releaseDownloadUrl(verified.tag, artifact.name);
+    await downloadAsset({ name: artifact.name, url, size: artifact.bytes }, file, {
       expectedBytes: artifact.bytes,
       expectedSha256: artifact.sha256,
       maxBytes: artifact.bytes,
@@ -421,13 +439,14 @@ async function executeMutation(command, state, staged, adapters) {
   return { state, staged };
 }
 
-function commandResult(command, state, staged, latest) {
+function commandResult(command, state, staged, latest, latestError) {
   return {
     ok: true,
     action: command,
     active: summary(state.current),
     staged: summary(staged),
     ...(latest ? { latest: summary(latest) } : {}),
+    ...(latestError ? { latestError } : {}),
     highWaterVersion: state.highWater?.version ?? null,
     canStage: Boolean(
       latest &&
@@ -453,10 +472,18 @@ export async function executeCommand(command, adapters) {
     (recovered?.switched && recovered.action === command) ||
     (command === "migrate" && state.highWater !== null && staged === null);
   let latest;
+  let latestError;
   if (!completedReplay && ["check", "stage", "migrate"].includes(command)) {
-    const candidate = await adapters.latest();
-    latest = targetFor(candidate.manifest);
-    if (command !== "check") {
+    let candidate;
+    try {
+      candidate = await adapters.latest();
+    } catch (error) {
+      // A failed lookup must not hide the local profile facts from check.
+      if (command !== "check") throw error;
+      latestError = error instanceof Error ? error.message : "Latest release lookup failed";
+    }
+    if (candidate) latest = targetFor(candidate.manifest);
+    if (candidate && command !== "check") {
       assert.ok(
         !state.highWater || compareForkVersions(latest.version, state.highWater.version) > 0,
         "Candidate does not exceed the fork semver high-water mark",
@@ -466,7 +493,7 @@ export async function executeCommand(command, adapters) {
   }
   if (!completedReplay)
     ({ state, staged } = await executeMutation(command, state, staged, adapters));
-  return commandResult(command, state, staged, latest);
+  return commandResult(command, state, staged, latest, latestError);
 }
 
 export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
@@ -522,7 +549,7 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
       clearStaged: () => rm(join(STATE_ROOT, "staged.json"), { force: true }),
       loadReceipt,
       legacySnapshot: readLegacyRecoverySnapshot,
-      latest: async () => chooseHighestVerifiedStableRelease(await listReleases()),
+      latest: () => latestVerifiedRelease(),
       stage: stageRelease,
     };
     const result = await executeCommand(command, adapters);
