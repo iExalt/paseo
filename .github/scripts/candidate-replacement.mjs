@@ -184,10 +184,11 @@ export async function replacementForSource(descriptor, read, request) {
   const order = compareForkVersions(descriptor.version, parentManifest["."]);
   assert.ok(order >= 0, "Candidate version regressed from its parent");
   if (order > 0) {
-    const parentConfig = JSON.parse(await read(descriptor.baseSha, releaseConfigPath));
-    assert.notEqual(
-      parentConfig.version,
-      descriptor.version,
+    // Parent differs and source matches, so the single source commit changed it.
+    const version = async (sha) => JSON.parse(await read(sha, releaseConfigPath)).version;
+    assert.ok(
+      (await version(descriptor.baseSha)) !== descriptor.version &&
+        (await version(descriptor.sourceSha)) === descriptor.version,
       "A release candidate must change its release configuration",
     );
     return null;
