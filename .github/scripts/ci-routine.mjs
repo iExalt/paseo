@@ -253,7 +253,7 @@ export const lanes = [
 function commandLane(step) {
   if (step.name === "server units") return "server";
   if (step.name === "app units") return "app";
-  if (step.name.endsWith(" units")) return "workspaces";
+  if (step.name.endsWith(" units") || step.name === "desktop Electron binary") return "workspaces";
   if (
     ["focused server integration", "worktree autoarchive", "versioned OpenCode runtime"].includes(
       step.name,
