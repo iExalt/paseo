@@ -191,6 +191,7 @@ export interface DesktopNixUpdateResult {
   highWaterVersion: string | null;
   canStage?: boolean;
   message?: string;
+  latestError?: string;
   running: { version: string; outputPath: string };
 }
 
