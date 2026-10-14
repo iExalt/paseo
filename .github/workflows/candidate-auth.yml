@@ -65,7 +65,7 @@ jobs:
           name: candidate-grant-${{ inputs.group }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/grant.json
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Bind step proof to this run attempt
         id: proof-subject
         if: steps.authenticate.outcome == 'success' && steps.upload.outcome == 'success'

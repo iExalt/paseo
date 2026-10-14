@@ -71,6 +71,9 @@ jobs:
       source_sha: ${{ steps.authority.outputs.source_sha }}
       version: ${{ steps.authority.outputs.version }}
       descriptor_digest: ${{ steps.authority.outputs.descriptor_digest }}
+      # Reruns re-read repository variables; carry the issued decision instead
+      # so one candidate run never mixes native and non-native attempts.
+      native: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -107,7 +110,7 @@ jobs:
 
   paired:
     needs: [issue, verify]
-    if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
+    if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/fork-builds.yml
     permissions:
       packages: read
@@ -140,12 +143,12 @@ jobs:
       source_sha: ${{ needs.issue.outputs.source_sha }}
       descriptor_digest: ${{ needs.issue.outputs.descriptor_digest }}
       candidate_pin: >-
-        ${{ format('{{"runId":"{0}","attempt":"{1}","sourceSha":"{2}","version":"{3}","artifactId":"{4}","artifactDigest":"{5}"}}', github.run_id, github.run_attempt, needs.issue.outputs.source_sha, needs.issue.outputs.version, needs.paired.outputs.artifact_id, needs.paired.outputs.artifact_digest) }}
+        ${{ format('{{"runId":"{0}","attempt":"{1}","sourceSha":"{2}","version":"{3}","artifactId":"{4}","artifactDigest":"{5}"}}', github.run_id, needs.paired.outputs.attempt, needs.issue.outputs.source_sha, needs.issue.outputs.version, needs.paired.outputs.artifact_id, needs.paired.outputs.artifact_digest) }}
 
   linux-nix-x64:
     name: linux-nix (x64)
     needs: [issue, verify]
-    if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
+    if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-nix-runtime.yml
     permissions:
       contents: write
@@ -180,7 +183,7 @@ jobs:
   linux-nix-arm64:
     name: linux-nix (arm64)
     needs: [issue, verify]
-    if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
+    if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-nix-runtime.yml
     permissions:
       contents: write
@@ -215,7 +218,7 @@ jobs:
   linux-products-x64:
     name: linux-products (x64)
     needs: [issue, verify]
-    if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
+    if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-product-runtime.yml
     permissions:
       contents: write
@@ -248,7 +251,7 @@ jobs:
   linux-products-arm64:
     name: linux-products (arm64)
     needs: [issue, verify]
-    if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
+    if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-product-runtime.yml
     permissions:
       contents: write
@@ -281,7 +284,7 @@ jobs:
   windows-x64:
     name: windows (x64)
     needs: [issue, verify]
-    if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
+    if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/windows-product-runtime.yml
     permissions:
       contents: write
@@ -314,7 +317,7 @@ jobs:
   windows-arm64:
     name: windows (arm64)
     needs: [issue, verify]
-    if: vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'
+    if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/windows-product-runtime.yml
     permissions:
       contents: write
@@ -358,7 +361,7 @@ jobs:
       descriptor_digest: ${{ needs.issue.outputs.descriptor_digest }}
       group: macos-arm64
       candidate_pin: >-
-        ${{ format('{{"runId":"{0}","attempt":"{1}","sourceSha":"{2}","version":"{3}","artifactId":"{4}","artifactDigest":"{5}"}}', github.run_id, github.run_attempt, needs.issue.outputs.source_sha, needs.issue.outputs.version, needs.paired.outputs.artifact_id, needs.paired.outputs.artifact_digest) }}
+        ${{ format('{{"runId":"{0}","attempt":"{1}","sourceSha":"{2}","version":"{3}","artifactId":"{4}","artifactDigest":"{5}"}}', github.run_id, needs.paired.outputs.attempt, needs.issue.outputs.source_sha, needs.issue.outputs.version, needs.paired.outputs.artifact_id, needs.paired.outputs.artifact_digest) }}
 
   transfer-android:
     needs: [issue, paired, native-runtime]
@@ -374,7 +377,7 @@ jobs:
       descriptor_digest: ${{ needs.issue.outputs.descriptor_digest }}
       group: android-arm64
       candidate_pin: >-
-        ${{ format('{{"runId":"{0}","attempt":"{1}","sourceSha":"{2}","version":"{3}","artifactId":"{4}","artifactDigest":"{5}"}}', github.run_id, github.run_attempt, needs.issue.outputs.source_sha, needs.issue.outputs.version, needs.paired.outputs.artifact_id, needs.paired.outputs.artifact_digest) }}
+        ${{ format('{{"runId":"{0}","attempt":"{1}","sourceSha":"{2}","version":"{3}","artifactId":"{4}","artifactDigest":"{5}"}}', github.run_id, needs.paired.outputs.attempt, needs.issue.outputs.source_sha, needs.issue.outputs.version, needs.paired.outputs.artifact_id, needs.paired.outputs.artifact_digest) }}
 
   aggregate:
     needs:
@@ -402,7 +405,7 @@ jobs:
       PASEO_CANDIDATE_SHA: ${{ needs.issue.outputs.source_sha }}
       CANDIDATE_RELEASE_ID: ${{ needs.issue.outputs.release_id }}
       CANDIDATE_DESCRIPTOR_DIGEST: ${{ needs.issue.outputs.descriptor_digest }}
-      CANDIDATE_NATIVE_ENABLED: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
+      CANDIDATE_NATIVE_ENABLED: ${{ needs.issue.outputs.native }}
       PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
       PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
       PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}

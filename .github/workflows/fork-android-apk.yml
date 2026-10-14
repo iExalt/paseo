@@ -377,7 +377,7 @@ jobs:
           name: ${{ steps.candidate.outputs.artifact_name }}
           path: ${{ runner.temp }}/fork-apk-candidate/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
 
   sign:
     needs: [build, authorize-sign]
@@ -492,6 +492,7 @@ jobs:
           SOURCE_SHA: ${{ inputs.source_sha }}
           FORK_VERSION: ${{ inputs.fork_version }}
           APPROVED_CERT_SHA256: 943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           umask 077
@@ -526,7 +527,9 @@ jobs:
           test "$(jq -r .runId "$metadata")" = "$GITHUB_RUN_ID"
           builder_attempt="$(jq -er '.runAttempt' "$metadata")"
           [[ "$builder_attempt" =~ ^[1-9][0-9]*$ ]]
-          (( builder_attempt == GITHUB_RUN_ATTEMPT ))
+          # A rerun may carry the build over from the attempt that executed it.
+          built_in="$(node .github/scripts/candidate-attempts.mjs 'paired / Build and sign Android APK / Build fork arm64 APK')"
+          (( builder_attempt == built_in ))
 
           android_home="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?Android SDK is not installed on this runner}}"
           apksigner="$android_home/build-tools/36.0.0/apksigner"
@@ -589,7 +592,7 @@ jobs:
           name: ${{ steps.signed.outputs.artifact_name }}
           path: ${{ steps.signed.outputs.final_dir }}/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Bind step proof to this run attempt
         id: proof-subject
         if: steps.authority.outcome == 'success' && steps.signed.outcome == 'success' && steps.remove-signing.outcome == 'success' && steps.upload-final.outcome == 'success'

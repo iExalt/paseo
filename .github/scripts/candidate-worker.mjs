@@ -4,7 +4,8 @@ import { appendFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { candidateGithub } from "./candidate-github.mjs";
-import { loadDescriptor, requireAttempt, requireCurrentRun } from "./candidate-draft.mjs";
+import { advanceAttempt, loadDescriptor, requireCurrentRun } from "./candidate-draft.mjs";
+import { attemptLedger } from "./candidate-attempts.mjs";
 import { currentCandidate, currentGrantedCandidate } from "./candidate-authority.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { releaseBotIdentity } from "./release-app-auth.mjs";
@@ -56,14 +57,14 @@ export async function workerGate(env, api, request, read, grant = null) {
         context,
         group: env.CANDIDATE_GRANT_GROUP,
         worker: env.CANDIDATE_EXPECTED_JOB,
-        jobs: await attemptJobs(context, request),
+        ledger: attemptLedger(context, request),
         pin: api.publicPin,
         artifact: { id: env.CANDIDATE_GRANT_ID, digest: env.CANDIDATE_GRANT_DIGEST },
       },
     );
   } else {
     await currentCandidate(descriptor, env.GITHUB_SHA, releaseBotIdentity(env), request, read, api);
-    await requireAttempt(api, descriptor, releaseId, runId, attempt);
+    await advanceAttempt(api, descriptor, releaseId, runId, attempt);
   }
   return context;
 }

@@ -159,7 +159,7 @@ jobs:
           name: candidate-linux-nix-${{ inputs.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.export.outputs.directory }}/
           compression-level: 0
-          retention-days: 1
+          retention-days: 3
           if-no-files-found: error
       - name: Bind step proof to this run attempt
         id: proof-subject
@@ -192,5 +192,5 @@ jobs:
         with:
           name: linux-nix-${{ inputs.architecture }}-${{ github.sha }}-${{ github.run_attempt }}
           path: .dev/github-workflows/linux-nix/
-          retention-days: 1
+          retention-days: 3
           if-no-files-found: error

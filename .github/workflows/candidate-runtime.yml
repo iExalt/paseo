@@ -148,7 +148,7 @@ jobs:
         with:
           name: native-android-${{ github.sha }}-${{ github.run_attempt }}
           path: .dev/github-workflows/native/android/
-          retention-days: 1
+          retention-days: 3
           if-no-files-found: error
   macos:
     needs: [authorize]
@@ -237,5 +237,5 @@ jobs:
         with:
           name: native-macos-${{ github.sha }}-${{ github.run_attempt }}
           path: .dev/github-workflows/native/macos/
-          retention-days: 1
+          retention-days: 3
           if-no-files-found: error

@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { readFile, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { fetchCandidate, hashFile, validateCandidate } from "./candidate-artifacts.mjs";
+import { fetchCandidate, hashFile, pairedJobs, validateCandidate } from "./candidate-artifacts.mjs";
 import { validateCandidateClosure } from "./macos-candidate-runtime.mjs";
 import { validateNixArtifactClosure } from "../../scripts/paseo-nix-update.mjs";
 import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
-import { readTrustedWorkerContext, attemptJobs } from "./candidate-worker.mjs";
+import { readTrustedWorkerContext } from "./candidate-worker.mjs";
+import { attemptLedger } from "./candidate-attempts.mjs";
 import { verifyCandidateProof } from "./step-proof.mjs";
 import { producerGroups, validateCellReceipt } from "./candidate-matrix.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
@@ -15,38 +16,30 @@ import { requireCurrentRun, requireAttempt, attemptWriter } from "./candidate-dr
 import { fileIdentity } from "./candidate-files.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
 
-// Each slot is signed only after that job's verification and cleanup steps succeed.
-export async function pairedRuntime(context, platform, jobs) {
+// Each slot is signed only after that job's verification and cleanup steps
+// succeed, in whichever attempt last executed that job.
+export async function pairedRuntime(context, platform, ledger) {
   assert.ok(["macos", "android"].includes(platform));
   async function completed(name, slot, workflow) {
-    const matches = jobs.filter((job) => job.name === name);
-    assert.equal(matches.length, 1, `Missing or duplicate ${name}`);
-    const job = matches[0];
-    assert.equal(job.status, "completed");
-    assert.equal(job.conclusion, "success");
-    assert.equal(job.run_id, context.runId);
-    assert.equal(job.run_attempt, context.attempt);
-    const proof = await verifyCandidateProof(context, slot, workflow);
+    const producer = await ledger.producer(name);
+    assert.equal(producer.job.run_id, context.runId);
+    const proof = await verifyCandidateProof(
+      { ...context, attempt: producer.attempt },
+      slot,
+      workflow,
+    );
     assert.equal(proof.evidence, null);
-    return job.id;
+    return producer;
   }
   if (platform === "macos") {
-    await completed(
-      "paired / Build and verify macOS closure / Build and sign macOS closure",
-      "paired-macos-build",
-      "macos-closure.yml",
-    );
+    await completed(pairedJobs.macos, "paired-macos-build", "macos-closure.yml");
     await completed(
       "paired / Build and verify macOS closure / Verify closure on a fresh runner",
       "paired-macos-import",
       "macos-closure.yml",
     );
   } else {
-    await completed(
-      "paired / Build and sign Android APK / Sign and publish fork APK artifact",
-      "paired-android-sign",
-      "fork-android-apk.yml",
-    );
+    await completed(pairedJobs.android, "paired-android-sign", "fork-android-apk.yml");
   }
   return completed(
     producerGroups[`${platform}-arm64`].job,
@@ -55,12 +48,12 @@ export async function pairedRuntime(context, platform, jobs) {
   );
 }
 
-export async function pairedReceipt(candidate, pin, context, platform, directory, producerJobId) {
-  validateCandidate(candidate, pin, true);
+export async function pairedReceipt(candidate, pin, context, platform, directory, producer, lanes) {
+  validateCandidate(candidate, pin, lanes);
   assert.equal(pin.sourceSha, context.descriptor.sourceSha);
   assert.equal(pin.version, context.descriptor.version);
   assert.equal(Number(pin.runId), context.runId);
-  assert.equal(Number(pin.attempt), context.attempt);
+  assert.equal(Number(pin.attempt), lanes.crossCheck);
   const version = context.descriptor.version;
   let artifact, files;
   async function asset(file, name, sha256) {
@@ -124,9 +117,9 @@ export async function pairedReceipt(candidate, pin, context, platform, directory
     assert.equal(metadata.packageId, candidate.android.packageId);
     assert.equal(metadata.abi, "arm64-v8a");
     assert.equal(String(metadata.runId), String(context.runId));
-    assert.equal(String(metadata.runAttempt), String(context.attempt));
+    assert.equal(String(metadata.runAttempt), String(lanes.androidBuild));
     assert.equal(String(metadata.signingRunId), String(context.runId));
-    assert.equal(String(metadata.signingRunAttempt), String(context.attempt));
+    assert.equal(String(metadata.signingRunAttempt), String(lanes.android));
     assert.equal(metadata.signingCertificateSha256, candidate.android.signingCertificateSha256);
     assert.equal(metadata.apkSha256, candidate.android.apkSha256);
     assert.ok(!Object.hasOwn(metadata, "releaseSequence"));
@@ -151,9 +144,9 @@ export async function pairedReceipt(candidate, pin, context, platform, directory
       treeSha: context.descriptor.treeSha,
       version,
       runId: context.runId,
-      attempt: context.attempt,
+      attempt: producer.attempt,
       group: `${platform}-arm64`,
-      producerJobId,
+      producerJobId: producer.job.id,
       cell: `${platform}/arm64/${artifact.kind}`,
       artifact,
       runtime: {
@@ -164,7 +157,7 @@ export async function pairedReceipt(candidate, pin, context, platform, directory
     },
     context.descriptor,
     context.runId,
-    context.attempt,
+    producer.attempt,
   );
   return { receipt, files };
 }
@@ -182,7 +175,15 @@ export async function transferPaired(
   const { descriptor, releaseId, runId, attempt } = context;
   const platform = env.CANDIDATE_PLATFORM;
   assert.ok(["macos", "android"].includes(platform));
-  const producerJobId = await pairedRuntime(context, platform, await attemptJobs(context, request));
+  const ledger = attemptLedger(context, request);
+  const producer = await pairedRuntime(context, platform, ledger);
+  const lanes = { crossCheck: (await ledger.producer(pairedJobs.crossCheck)).attempt };
+  for (const [lane, name] of [
+    ["android", pairedJobs.android],
+    ["androidBuild", pairedJobs.androidBuild],
+    ["macos", pairedJobs.macos],
+  ])
+    lanes[lane] = (await ledger.producer(name)).attempt;
   const pin = JSON.parse(env.CANDIDATE_PIN);
   const directory = join(
     env.RUNNER_TEMP,
@@ -195,7 +196,8 @@ export async function transferPaired(
     context,
     platform,
     directory,
-    producerJobId,
+    producer,
+    lanes,
   );
   const api = draftApi(env.GH_TOKEN);
   const writer = await attemptWriter(api, descriptor, releaseId, runId, attempt);

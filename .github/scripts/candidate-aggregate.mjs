@@ -14,6 +14,7 @@ import {
   attemptWriter,
 } from "./candidate-draft.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
+import { attemptLedger } from "./candidate-attempts.mjs";
 import {
   serializeForkReleaseManifest,
   validateForkReleaseManifest,
@@ -27,9 +28,33 @@ function asset(release, runId, attempt, name) {
   const matches = release.assets.filter(
     (item) => item.name === attemptAssetName(runId, attempt, name),
   );
-  assert.equal(matches.length, 1, `Missing or duplicate current-attempt ${name}`);
+  assert.equal(matches.length, 1, `Missing or duplicate attempt ${attempt} ${name}`);
   assert.equal(matches[0].state, "uploaded");
   return matches[0];
+}
+
+export function transferJob(group) {
+  assert.ok(Object.hasOwn(producerGroups, group));
+  const caller = { "macos-arm64": "transfer-macos", "android-arm64": "transfer-android" }[group];
+  return `${caller ?? `transfer-${group}`} / transfer`;
+}
+
+// Each group's draft assets come from the transfer execution that last ran, and
+// its receipts from the producer execution that last ran; after "Re-run failed
+// jobs" either may predate the aggregating attempt.
+export async function resolveGroups(context, request) {
+  const ledger = attemptLedger(context, request);
+  const producers = {};
+  const transfers = {};
+  for (const group of Object.keys(producerGroups)) {
+    producers[group] = await ledger.producer(producerGroups[group].job);
+    transfers[group] = await ledger.producer(transferJob(group));
+    assert.ok(
+      transfers[group].attempt >= producers[group].attempt,
+      "Transfer predates its producer execution",
+    );
+  }
+  return { producers, transfers };
 }
 
 export async function verifyAggregate(
@@ -50,15 +75,18 @@ export async function verifyAggregate(
   const api = draftApi(env.GH_TOKEN);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   const release = await api.get(releaseId);
+  const { producers, transfers } = await resolveGroups(context, request);
   const receipts = [];
+  const stored = new Map();
   for (const group of Object.keys(producerGroups)) {
     const bytes = await api.read(
-      asset(release, runId, attempt, `receipts-${group}.json`),
+      asset(release, runId, transfers[group].attempt, `receipts-${group}.json`),
       metadataLimit,
     );
     const values = JSON.parse(bytes);
     assert.ok(Array.isArray(values) && values.length === producerGroups[group].cells.length);
     assert.ok(values.every((receipt) => receipt.group === group));
+    for (const receipt of values) stored.set(receipt.artifact.name, transfers[group].attempt);
     receipts.push(...values);
   }
   const jobs = await attemptJobs(context, request);
@@ -66,15 +94,16 @@ export async function verifyAggregate(
     assert.equal(job.run_id, runId);
     assert.equal(job.run_attempt, attempt);
   }
-  const manifest = aggregateCandidate(descriptor, runId, attempt, receipts, jobs);
+  const manifest = aggregateCandidate(descriptor, runId, receipts, jobs, producers);
   // Re-download every admitted byte from draft storage. Producer-local files or
   // artifact ZIPs cannot substitute for the eventual publication payload.
   for (const entry of manifest.artifacts) {
+    const storedIn = stored.get(entry.name);
     await requireCurrentRun(env, request, context.descriptor);
-    await api.verifyFile(asset(release, runId, attempt, entry.name), entry);
+    await api.verifyFile(asset(release, runId, storedIn, entry.name), entry);
     if (entry.closureManifest) {
       const expected = entry.closureManifest;
-      const bytes = await api.read(asset(release, runId, attempt, expected.name), metadataLimit);
+      const bytes = await api.read(asset(release, runId, storedIn, expected.name), metadataLimit);
       assert.equal(bytes.length, expected.bytes);
       assert.equal(digest(bytes), expected.sha256);
       if (entry.platform === "macos") validateNixClosureManifest(bytes, manifest);
@@ -101,6 +130,9 @@ export async function verifyAggregate(
       attempt,
       manifestSha256: digest(bytes),
       receipts,
+      storage: Object.fromEntries(
+        Object.entries(transfers).map(([group, transfer]) => [group, transfer.attempt]),
+      ),
       verification: jobs
         .filter((job) => job.status === "completed" && job.conclusion === "success")
         .map(({ id, name }) => ({ id, name })),
@@ -146,13 +178,21 @@ export async function signAggregate(
   assert.equal(proof.manifestSha256, digest(bytes));
   const manifest = JSON.parse(bytes);
   validateForkReleaseManifest(manifest);
+  const { producers, transfers } = await resolveGroups(context, request);
+  assert.deepEqual(
+    proof.storage,
+    Object.fromEntries(
+      Object.entries(transfers).map(([group, transfer]) => [group, transfer.attempt]),
+    ),
+    "Draft storage changed after verification",
+  );
   assert.deepEqual(
     aggregateCandidate(
       descriptor,
       runId,
-      attempt,
       proof.receipts,
       await attemptJobs(context, request),
+      producers,
     ),
     manifest,
   );

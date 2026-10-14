@@ -10,7 +10,7 @@ import { downloadGrant } from "../.github/scripts/candidate-grant.mjs";
 
 test("worker grant transport binds immutable artifact bytes and root provenance", async () => {
   const directory = await mkdtemp(join(tmpdir(), "paseo-grant-"));
-  const grant = { context: { rootHeadSha: "a".repeat(40), rootBranch: "dev" } };
+  const grant = { context: { rootHeadSha: "a".repeat(40), rootBranch: "dev", attempt: 2 } };
   const zip = execFileSync("python3", [
     "-c",
     "import io,sys,zipfile;b=io.BytesIO();z=zipfile.ZipFile(b,'w');z.writestr('grant.json',sys.argv[1]);z.close();sys.stdout.buffer.write(b.getvalue())",
@@ -82,7 +82,11 @@ test("worker grant transport binds immutable artifact bytes and root provenance"
     assert.doesNotMatch(cli.stderr, /unsettled top-level await/);
     for (const delta of [
       { id: 457 },
+      // The issuing attempt in the name must match the grant, and never be later.
       { name: "candidate-grant-verification-123-1" },
+      { name: "candidate-grant-verification-123-3" },
+      { name: "candidate-grant-verification-123-02" },
+      { name: "candidate-grant-paired-identity-123-2" },
       { digest: `sha256:${"f".repeat(64)}` },
       { workflow_run: { ...metadata.workflow_run, id: 124 } },
       { workflow_run: { ...metadata.workflow_run, head_sha: "b".repeat(40) } },
@@ -140,15 +144,19 @@ test("paired runtime distinguishes current coordinator completion from historica
     status: "in_progress",
     conclusion: null,
   };
-  const job = {
-    id: 10,
-    run_id: 123,
-    run_attempt: 2,
-    name: "paired / Cross-check paired candidate artifacts",
-    status: "completed",
-    conclusion: "success",
-    steps: [],
-  };
+  const executions = (crossCheck) => ({
+    "paired / Cross-check paired candidate artifacts": crossCheck,
+    "paired / Build and sign Android APK / Sign and publish fork APK artifact": 1,
+    "paired / Build and sign Android APK / Build fork arm64 APK": 1,
+    "paired / Build and verify macOS closure / Build and sign macOS closure": crossCheck,
+  });
+  const ledger = (crossCheck = 2) => ({
+    async producer(name) {
+      const attempt = executions(crossCheck)[name];
+      assert.ok(attempt, name);
+      return { attempt, job: { id: attempt * 10, name, run_id: 123 } };
+    },
+  });
   const paired = { ...pin, artifactId: "55", artifactDigest: hash };
   const proofs = installStepProofs(t);
   const proof = {
@@ -160,7 +168,22 @@ test("paired runtime distinguishes current coordinator completion from historica
     evidence: { artifactId: 55, artifactDigest: hash },
   };
   proofs.add(proof);
-  await validateCoordinatedProducer(current, paired, context, [job]);
+  const check = (pinned, currentRun, value, ctx = context, jobs = [], at = ledger()) =>
+    validateCoordinatedProducer(pinned, currentRun, value, ctx, jobs, at);
+  assert.deepEqual(await check(current, current, paired), {
+    android: 1,
+    androidBuild: 1,
+    macos: 2,
+  });
+  // A cross-check carried over from attempt 1 is pinned, and proven, at attempt 1.
+  const carried = { ...current, run_attempt: 1, status: "completed", conclusion: "failure" };
+  await assert.rejects(
+    check(carried, current, { ...paired, attempt: "1" }, context, [], ledger(1)),
+  );
+  proofs.add({ ...proof, attempt: 1 });
+  await check(carried, current, { ...paired, attempt: "1" }, context, [], ledger(1));
+  await assert.rejects(check(current, current, paired, context, [], ledger(1)), /cross-check/);
+  await assert.rejects(check(carried, current, { ...paired, attempt: "1" }), /cross-check/);
   const live = {
     id: 11,
     run_id: 123,
@@ -170,42 +193,29 @@ test("paired runtime distinguishes current coordinator completion from historica
     conclusion: null,
   };
   const queued = { ...current, status: "queued" };
-  await validateCoordinatedProducer(queued, paired, context, [job, live]);
-  await assert.rejects(validateCoordinatedProducer(queued, paired, context, [job]));
-  await assert.rejects(
-    validateCoordinatedProducer(queued, paired, context, [job, { ...live, run_attempt: 1 }]),
-  );
+  await check(current, queued, paired, context, [live]);
+  await assert.rejects(check(current, queued, paired));
+  await assert.rejects(check(current, queued, paired, context, [{ ...live, run_attempt: 1 }]));
   const branch = "release-please--branches--dev--components--paseo";
-  await validateCoordinatedProducer(
-    { ...current, head_branch: branch },
-    paired,
-    { ...context, rootBranch: branch },
-    [job],
-  );
-  await assert.rejects(
-    validateCoordinatedProducer(current, paired, { ...context, rootBranch: branch }, [job]),
-  );
+  const renamed = { ...current, head_branch: branch };
+  await check(renamed, renamed, paired, { ...context, rootBranch: branch });
+  await assert.rejects(check(current, current, paired, { ...context, rootBranch: branch }));
   for (const delta of [{ run_attempt: 1 }, { status: "completed" }, { head_sha: sha }])
-    await assert.rejects(
-      validateCoordinatedProducer({ ...current, ...delta }, paired, context, [job]),
-    );
-  for (const delta of [{ run_attempt: 1 }, { conclusion: "failure" }])
-    await assert.rejects(
-      validateCoordinatedProducer(current, paired, context, [{ ...job, ...delta }]),
-    );
+    await assert.rejects(check(current, { ...current, ...delta }, paired));
   // Upload success is proven by the signed slot, which must name these exact bytes.
   for (const delta of [{ artifactId: "56" }, { artifactDigest: "c".repeat(64) }])
     await assert.rejects(
-      validateCoordinatedProducer(current, { ...paired, ...delta }, context, [job]),
+      check(current, current, { ...paired, ...delta }),
       /another artifact|other artifact bytes/,
     );
   proofs.remove(proof);
-  await assert.rejects(validateCoordinatedProducer(current, paired, context, [job]), /verify/);
+  await assert.rejects(check(current, current, paired), /verify/);
   const candidate = candidateFixture();
   candidate.android.artifactRunAttempt = "1";
   candidate.android.artifactName = `paseo-iexalt-201000-${sha}-attempt-1`;
   validateCandidate(candidate, pin);
-  assert.throws(() => validateCandidate(candidate, pin, true));
+  validateCandidate(candidate, pin, { android: 1, macos: 2 });
+  assert.throws(() => validateCandidate(candidate, pin, { android: 2, macos: 2 }));
 });
 
 test("artifact transport rejects a different or unsuccessful producer attempt", () => {

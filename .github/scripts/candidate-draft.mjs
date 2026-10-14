@@ -256,6 +256,33 @@ export async function requireAttempt(api, descriptor, id, runId, attempt) {
   return release;
 }
 
+// A rerun attempt of the admitted run inherits its admission. Only `issue`
+// admits a new run; every other trusted job may move its own run forward. The
+// read-compare-write is safe because the release-candidate concurrency group
+// (never cancel-in-progress) is the only writer, so no other run can interleave.
+export async function advanceAttempt(api, descriptor, id, runId, attempt) {
+  positive(runId);
+  positive(attempt);
+  for (let tries = 0; ; tries++) {
+    const release = await eligibleDraft(api, descriptor, id);
+    const active = JSON.parse(release.body).activeAttempt;
+    assert.equal(active?.runId, runId, "Candidate attempt is no longer admitted");
+    assert.ok(attempt >= active.attempt, "Cannot regress candidate attempt");
+    if (attempt === active.attempt) return release;
+    try {
+      await api.setBody(
+        id,
+        draftBody(descriptor, "active", { runId, attempt }),
+        descriptor,
+        release.body,
+      );
+    } catch (error) {
+      // Several jobs of the new attempt advance concurrently; a peer may win.
+      if (tries >= 2) throw error;
+    }
+  }
+}
+
 export async function requireCurrentRun(
   env,
   request,

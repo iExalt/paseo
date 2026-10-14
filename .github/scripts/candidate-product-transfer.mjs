@@ -5,12 +5,13 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { descriptorDigest } from "./candidate-descriptor.mjs";
 import { fileIdentity, packageLimit, withVerifiedFile } from "./candidate-files.mjs";
-import { producerGroups, validateCellReceipt, verifyProducerJob } from "./candidate-matrix.mjs";
+import { producerGroups, validateCellReceipt } from "./candidate-matrix.mjs";
 import { githubResponse, saveDownload, validateArtifact } from "./candidate-artifacts.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
 import { requireCurrentRun, requireAttempt, attemptWriter } from "./candidate-draft.mjs";
 import { readGithub } from "./release-pr-checks.mjs";
-import { readTrustedWorkerContext, attemptJobs } from "./candidate-worker.mjs";
+import { readTrustedWorkerContext } from "./candidate-worker.mjs";
+import { attemptLedger } from "./candidate-attempts.mjs";
 import { artifactEvidence, verifyCandidateProof } from "./step-proof.mjs";
 
 import { closureEntries } from "./candidate-nix-export.mjs";
@@ -38,14 +39,11 @@ export function productContract(descriptor, group) {
   });
 }
 
-export async function productProducer(context, group, jobs, artifact, expected) {
+export async function productProducer(context, group, ledger, artifact, expected) {
   const contracts = productContract(context.descriptor, group);
-  const matches = jobs.filter((job) => job.name === producerGroups[group].job);
-  assert.equal(matches.length, 1, "Missing or duplicate native producer");
-  const job = matches[0];
-  verifyProducerJob({ group, producerJobId: job.id }, jobs);
-  assert.equal(job.run_id, context.runId);
-  assert.equal(job.run_attempt, context.attempt);
+  const producer = await ledger.producer(producerGroups[group].job);
+  assert.equal(producer.job.run_id, context.runId);
+  const producing = { ...context, attempt: producer.attempt };
   const nix = group.startsWith("linux-nix-");
   const workflows = {
     "linux-nix": "linux-nix-runtime.yml",
@@ -55,10 +53,10 @@ export async function productProducer(context, group, jobs, artifact, expected) 
   const workflow = workflows[group.replace(/-(?:x64|arm64)$/, "")];
   assert.ok(workflow, "Unknown native producer workflow");
   // Signed only after verification, cleanup, export and transfer all succeed.
-  const proof = await verifyCandidateProof(context, `producer-${group}`, workflow);
+  const proof = await verifyCandidateProof(producing, `producer-${group}`, workflow);
   artifactEvidence(proof.evidence, expected);
   const { platform, arch } = contracts[0];
-  const name = `candidate-${platform}-${nix ? "nix" : "products"}-${arch}-${context.runId}-${context.attempt}`;
+  const name = `candidate-${platform}-${nix ? "nix" : "products"}-${arch}-${context.runId}-${producer.attempt}`;
   validateArtifact(
     artifact,
     { runId: context.runId, sourceSha: context.rootHeadSha, headBranch: context.rootBranch },
@@ -67,10 +65,10 @@ export async function productProducer(context, group, jobs, artifact, expected) 
   );
   assert.equal(artifact.workflow_run.repository_id, 1404390841);
   assert.equal(artifact.workflow_run.head_repository_id, 1404390841);
-  return job.id;
+  return producer;
 }
 
-export function productReceipts(bundle, context, group, producerJobId, manifests = new Map()) {
+export function productReceipts(bundle, context, group, producer, manifests = new Map()) {
   const nix = group.startsWith("linux-nix-");
   exact(bundle, [
     "schemaVersion",
@@ -90,7 +88,7 @@ export function productReceipts(bundle, context, group, producerJobId, manifests
     assert.equal(bundle[key], context.descriptor[key]);
   assert.equal(bundle.descriptorSha256, descriptorDigest(context.descriptor));
   assert.equal(bundle.runId, context.runId);
-  assert.equal(bundle.attempt, context.attempt);
+  assert.equal(bundle.attempt, producer.attempt);
   assert.equal(bundle.group, group);
   const contracts = productContract(context.descriptor, group);
   assert.equal(bundle.artifacts.length, contracts.length);
@@ -165,14 +163,14 @@ export function productReceipts(bundle, context, group, producerJobId, manifests
         runId: bundle.runId,
         attempt: bundle.attempt,
         group,
-        producerJobId,
+        producerJobId: producer.job.id,
         cell,
         artifact,
         runtime: { passed: true, cleanup: true, signature: nix ? "nix-pinned" : "not-applicable" },
       },
       context.descriptor,
       context.runId,
-      context.attempt,
+      producer.attempt,
     );
   });
 }
@@ -193,10 +191,10 @@ export async function transferProducts(
   const expected = { id: Number(env.CANDIDATE_ARTIFACT_ID), digest: env.CANDIDATE_ARTIFACT_DIGEST };
   assert.ok(Number.isSafeInteger(expected.id) && expected.id > 0);
   const artifact = await request(`/repos/iExalt/paseo/actions/artifacts/${expected.id}`);
-  const producerJobId = await productProducer(
+  const producer = await productProducer(
     context,
     group,
-    await attemptJobs(context, request),
+    attemptLedger(context, request),
     artifact,
     expected,
   );
@@ -243,7 +241,7 @@ export async function transferProducts(
     });
     manifests.set(name, JSON.parse(await readFile(file, "utf8")));
   }
-  const receipts = productReceipts(bundle, context, group, producerJobId, manifests);
+  const receipts = productReceipts(bundle, context, group, producer, manifests);
   const api = draftApi(env.GH_TOKEN);
   const writer = await attemptWriter(api, descriptor, releaseId, runId, attempt);
   for (const receipt of receipts) {

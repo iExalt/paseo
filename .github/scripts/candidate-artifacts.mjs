@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
 import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 import { hasLiveAttemptJob } from "./candidate-job-proof.mjs";
+import { attemptLedger } from "./candidate-attempts.mjs";
 import { artifactEvidence, verifyCandidateProof } from "./step-proof.mjs";
 import { retryingFetch } from "./github-retry.mjs";
 
@@ -42,33 +43,50 @@ export function validateProducer(run, pin) {
   assert.equal(run.conclusion, "success");
 }
 
-export async function validateCoordinatedProducer(run, pin, context, jobs) {
+export const pairedJobs = Object.freeze({
+  crossCheck: "paired / Cross-check paired candidate artifacts",
+  android: "paired / Build and sign Android APK / Sign and publish fork APK artifact",
+  androidBuild: "paired / Build and sign Android APK / Build fork arm64 APK",
+  macos: "paired / Build and verify macOS closure / Build and sign macOS closure",
+});
+
+// `pinned` is the run as of the pinned cross-check attempt, `current` the run as
+// of this job's attempt. After "Re-run failed jobs" the pinned cross-check may be
+// a carried-over execution, so the pin must name the attempt that executed it.
+export async function validateCoordinatedProducer(pinned, current, pin, context, jobs, ledger) {
+  const crossCheck = await ledger.producer(pairedJobs.crossCheck);
   assert.equal(integer(pin.runId), context.runId);
-  assert.equal(integer(pin.attempt), context.attempt);
+  assert.equal(integer(pin.attempt), crossCheck.attempt, "Pin names another cross-check execution");
   assert.equal(pin.sourceSha, context.descriptor.sourceSha);
   assert.equal(pin.version, context.descriptor.version);
-  assert.equal(run.id, context.runId);
-  assert.equal(run.run_attempt, context.attempt);
-  assert.equal(run.path, ".github/workflows/release-candidate.yml");
-  assert.equal(run.head_sha, context.rootHeadSha);
-  assert.equal(run.head_branch, context.rootBranch);
+  for (const [run, attempt] of [
+    [pinned, crossCheck.attempt],
+    [current, context.attempt],
+  ]) {
+    assert.equal(run.id, context.runId);
+    assert.equal(run.run_attempt, attempt);
+    assert.equal(run.path, ".github/workflows/release-candidate.yml");
+    assert.equal(run.head_sha, context.rootHeadSha);
+    assert.equal(run.head_branch, context.rootBranch);
+  }
   assert.ok(
-    run.status === "in_progress" || (run.status === "queued" && hasLiveAttemptJob(context, jobs)),
+    current.status === "in_progress" ||
+      (current.status === "queued" && hasLiveAttemptJob(context, jobs)),
     "Candidate root is not executing",
   );
-  assert.equal(run.conclusion, null);
-  const matches = jobs.filter(
-    (job) => job.name === "paired / Cross-check paired candidate artifacts",
-  );
-  assert.equal(matches.length, 1);
-  const job = matches[0];
-  assert.equal(job.run_id, context.runId);
-  assert.equal(job.run_attempt, context.attempt);
-  assert.equal(job.status, "completed");
-  assert.equal(job.conclusion, "success");
+  assert.equal(current.conclusion, null);
   // Signed after authentication, cross-checking and upload all succeed.
-  const proof = await verifyCandidateProof(context, "paired-manifest", "fork-builds.yml");
+  const proof = await verifyCandidateProof(
+    { ...context, attempt: crossCheck.attempt },
+    "paired-manifest",
+    "fork-builds.yml",
+  );
   artifactEvidence(proof.evidence, { id: pin.artifactId, digest: pin.artifactDigest });
+  return {
+    android: (await ledger.producer(pairedJobs.android)).attempt,
+    androidBuild: (await ledger.producer(pairedJobs.androidBuild)).attempt,
+    macos: (await ledger.producer(pairedJobs.macos)).attempt,
+  };
 }
 
 export function validateArtifact(artifact, pin, expected, maximum) {
@@ -83,7 +101,9 @@ export function validateArtifact(artifact, pin, expected, maximum) {
   assert.ok(artifact.size_in_bytes <= maximum, "Artifact exceeds download bound");
 }
 
-export function validateCandidate(candidate, pin, strictAttempt = false) {
+// `lanes` gives, for a coordinated candidate, the attempt that last executed each
+// platform producer; each lane's artifact must come from exactly that execution.
+export function validateCandidate(candidate, pin, lanes = null) {
   assert.equal(candidate.kind, "paseo-verification-candidate");
   assert.equal(candidate.schemaVersion, 2);
   assert.ok(!Object.hasOwn(candidate, "releaseSequence"));
@@ -95,9 +115,12 @@ export function validateCandidate(candidate, pin, strictAttempt = false) {
   const code = forkAndroidVersionCode(pin.version);
   const android = candidate.android;
   const mac = candidate.macOS;
-  for (const lane of [android, mac]) {
+  for (const [platform, lane] of [
+    ["android", android],
+    ["macos", mac],
+  ]) {
     assert.ok(integer(lane.artifactRunAttempt) <= integer(pin.attempt));
-    if (strictAttempt) assert.equal(integer(lane.artifactRunAttempt), integer(pin.attempt));
+    if (lanes) assert.equal(integer(lane.artifactRunAttempt), lanes[platform]);
     integer(lane.artifactId);
     digest(lane.artifactDigest);
   }
@@ -207,8 +230,21 @@ export async function fetchCandidate(
     "iExalt/paseo/.github/workflows/release-candidate.yml@refs/heads/dev";
   const context = coordinated ? (authenticatedContext ?? (await readWorkerContext())) : null;
   const run = await json(`actions/runs/${integer(pin.runId)}/attempts/${integer(pin.attempt)}`);
-  if (context) await validateCoordinatedProducer(run, pin, context, await attemptJobs(context));
-  else validateProducer(run, pin);
+  let lanes = null;
+  if (context) {
+    const ledger = attemptLedger(context, (path) =>
+      json(path.replace(/^\/repos\/iExalt\/paseo\//, "")),
+    );
+    const current = await json(`actions/runs/${context.runId}/attempts/${context.attempt}`);
+    lanes = await validateCoordinatedProducer(
+      run,
+      current,
+      pin,
+      context,
+      await attemptJobs(context),
+      ledger,
+    );
+  } else validateProducer(run, pin);
   forkAndroidVersionCode(pin.version);
   await mkdir(directory, { recursive: false });
   async function artifact(expected, subdirectory, names, maximum) {
@@ -249,7 +285,7 @@ export async function fetchCandidate(
   const candidate = validateCandidate(
     JSON.parse(await readFile(join(paired, "paired-candidate.json"), "utf8")),
     pin,
-    coordinated,
+    lanes,
   );
   for (const [name, lane, files, maximum] of [
     [
