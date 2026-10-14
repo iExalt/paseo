@@ -69,7 +69,6 @@ concurrency:
 
 jobs:
   authorize-import:
-    needs: [build-and-export]
     if: inputs.source_sha != ''
     uses: ./.github/workflows/candidate-auth.yml
     permissions:
