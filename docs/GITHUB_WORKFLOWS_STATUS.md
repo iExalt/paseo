@@ -2,7 +2,7 @@
 
 ## Current snapshot
 
-### History sanitization and 0.1.1 replacement — in progress
+### History sanitization and 0.1.1 replacement — published; retirement pending
 
 The user authorized removal of personal-device details and local paths from
 published history, followed by a fresh 0.1.1 release and retirement of 0.1.0.
@@ -67,6 +67,25 @@ the same workflow attempt could sign another slot; every such job runs only
 authenticated source, and job conclusions are still required. Recovering from a
 routine signing outage needs a full rerun, because re-running only failed jobs
 keeps the earlier planner receipt. Earlier attempts remain inadmissible.
+
+Two more transient failures each cost a candidate attempt. Nix's single-threaded
+xz pushed the desktop closure export to its 300-second command limit, so the export
+now compresses in parallel and keeps the same signed `.nar.xz` format; exports
+took 4.4 and 3.5 minutes instead of about 7. GitHub then answered valid reads with
+HTTP 500, so idempotent GET reads now retry twice, after 2 and 5 seconds, on 5xx
+responses or timeouts. Writes, 4xx and aborted requests are never retried, and
+callers still check every response.
+
+[Paseo 0.1.1](https://github.com/iExalt/paseo/releases/tag/paseo-v0.1.1) is
+stable/latest from verified source `93e456d42126bbed9d4d2765ef1eed409499337c`.
+Candidate run `38498613083` passed on its first attempt in 52.7 minutes with
+attested step proofs for every relied-on job. All 32 signed packages, receipts and
+metadata were copied from draft `412267116` without rebuilding or re-signing. Each
+was hash-verified before staging, after re-downloading the destination draft, and
+again after anonymous public download; the tag resolves to the source.
+Bookkeeping now records 0.1.1 as the release boundary at that source, and PR #107
+is `autorelease: tagged`. Retiring release 0.1.0 and the superseded tags, plus the
+fresh-clone verification, remain outstanding.
 
 - D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
   authorized deletion of all earlier releases/drafts, and requested removal of
