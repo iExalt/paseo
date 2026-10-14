@@ -411,6 +411,14 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   assert.equal(keyStep(refresh), keyStep(workflow.jobs.routine));
   assert.match(keyStep(refresh), /package-lock\.json.*patches\/\*\.patch/);
   assert.match(keyStep(refresh), /\$ImageVersion.*uname -m.*node --version.*npm --version/);
+  // The cached tree must be the one a lane's own install would produce.
+  const install = (job) => job.steps.find((step) => /^Install locked dependencies/.test(step.name));
+  assert.equal(install(refresh).run, "npm ci --prefer-offline");
+  assert.match(install(workflow.jobs.routine).run, /^time npm ci --prefer-offline$/);
+  for (const step of refresh.steps.filter((item) =>
+    /cache\/save|superseded/.test(item.uses ?? item.name),
+  ))
+    assert.match(step.if, /steps\.head\.outputs\.current == 'true'/);
   const setup = steps.find((step) => step.name === "Configure pinned npm installation");
   assert.match(setup.run, /npm_config_cache=\$RUNNER_TEMP\/npm-cache/);
   assert.match(setup.run, /v26\.11\.0/);
