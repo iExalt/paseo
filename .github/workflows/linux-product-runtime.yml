@@ -28,10 +28,6 @@ on:
         required: true
         default: x64
         options: [x64, arm64]
-      verify_cache_transfer:
-        description: Add one fresh-runner predecessor restore proof
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -66,8 +62,6 @@ jobs:
     outputs:
       artifact_id: ${{ steps.packages.outputs.artifact-id }}
       artifact_digest: ${{ steps.packages.outputs.artifact-digest }}
-      predecessor_key: ${{ steps.predecessor.outputs.key }}
-      cache_saved: ${{ steps.predecessor-save.outcome == 'success' }}
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
       CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
@@ -127,6 +121,9 @@ jobs:
         with:
           path: ${{ steps.predecessor.outputs.directory }}
           key: ${{ steps.predecessor.outputs.key }}
+      - name: Report a predecessor cache miss
+        if: inputs.source_sha != '' && steps.predecessor-cache.outputs.cache-hit != 'true'
+        run: echo "::warning::Predecessor cache missed; rebuilding it. Prewarm with a no-source dispatch on dev."
       - name: Build each exact source once and fan out native formats
         timeout-minutes: 30
         env:
@@ -205,48 +202,3 @@ jobs:
           path: ${{ runner.temp }}/paseo-products-${{ github.run_id }}-${{ github.run_attempt }}/evidence
           retention-days: 3
           if-no-files-found: error
-
-  cache-proof:
-    needs: native
-    if: always() && inputs.verify_cache_transfer && needs.native.outputs.cache_saved == 'true'
-    runs-on: ${{ inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
-    timeout-minutes: 5
-    env:
-      EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install_args: node@26.11.0
-          cache: false
-      - id: predecessor
-        run: node .github/scripts/linux-predecessor-cache.mjs prepare
-      - name: Require the same producer recipe
-        env:
-          PRODUCER_KEY: ${{ needs.native.outputs.predecessor_key }}
-          EXPECTED_KEY: ${{ steps.predecessor.outputs.key }}
-        run: test "$PRODUCER_KEY" = "$EXPECTED_KEY"
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        id: restored
-        timeout-minutes: 3
-        with:
-          path: ${{ steps.predecessor.outputs.directory }}
-          key: ${{ needs.native.outputs.predecessor_key }}
-          fail-on-cache-miss: true
-      - name: Validate and consume the actual restored archives
-        env:
-          PREDECESSOR_CACHE_HIT: ${{ steps.restored.outputs.cache-hit }}
-          PREDECESSOR_CACHE_MATCHED_KEY: ${{ steps.restored.outputs.cache-matched-key }}
-        run: |
-          test "$PREDECESSOR_CACHE_HIT" = true
-          sudo apt-get update -qq
-          sudo apt-get install -y rpm
-          root="$RUNNER_TEMP/paseo-cache-proof"
-          test ! -e "$root"
-          mkdir -p "$root/packages" "$root/evidence"
-          node .github/scripts/linux-predecessor-cache.mjs restore "$root"
-          cat "$root/evidence/predecessor-cache.json"

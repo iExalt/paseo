@@ -52,14 +52,13 @@ test("ARM source layout requires exact current-run storage ownership without fal
     assert.throws(() => windowsSourcePaths(env, { ...owner, volumeRoot }));
 });
 
-test("x64 and explicit standalone cache proof retain the existing C layout", () => {
+test("x64 retains the existing C layout", () => {
   const expected = {
     controller: env.GITHUB_WORKSPACE,
     candidate: env.GITHUB_WORKSPACE,
     previous: "C:\\runner\\temp\\paseo-windows-products-123-2\\previous-source",
   };
   assert.deepEqual(windowsSourcePaths({ ...env, EXPECTED_ARCHITECTURE: "x64" }), expected);
-  assert.deepEqual(windowsSourcePaths(env, undefined, { proof: true }), expected);
   const x64 = {
     ...env,
     EXPECTED_ARCHITECTURE: "x64",
@@ -71,6 +70,6 @@ test("x64 and explicit standalone cache proof retain the existing C layout", () 
     candidate: x64.GITHUB_WORKSPACE,
     previous: "D:\\a\\temp\\paseo-windows-products-123-2\\previous-source",
   });
-  assert.throws(() => windowsSourcePaths(env, owner, { proof: true }));
+  assert.throws(() => windowsSourcePaths({ ...env, EXPECTED_ARCHITECTURE: "x64" }, owner));
   assert.throws(() => windowsSourcePaths({ ...env, EXPECTED_ARCHITECTURE: "x86" }));
 });
