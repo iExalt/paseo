@@ -5,7 +5,7 @@ import { appendFileSync, existsSync, readFileSync, readdirSync, rmSync, statSync
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { assertNativeActor } from "./native-candidate-authority.mjs";
-import { fileDigest, verifyBuildCache } from "./build-cache-provenance.mjs";
+import { checkArchiveListing, fileDigest, verifyBuildCache } from "./build-cache-provenance.mjs";
 import { repositorySaveCeiling } from "./windows-predecessor-cache.mjs";
 import { loadWindowsSources } from "./windows-product-sources.mjs";
 
@@ -99,25 +99,6 @@ export function workspaceLinks(lock) {
     .filter(([, entry]) => entry.link)
     .map(([path]) => path)
     .sort();
-}
-
-// Regular files and directories only, all inside the install roots.
-export function checkArchiveListing(names, verbose, roots, links) {
-  assert.equal(names.length, verbose.length);
-  assert.ok(names.length > 0, "Empty installed dependency archive");
-  for (const [index, name] of names.entries()) {
-    assert.match(verbose[index], /^[d-]/, `Archive entry is not a file or directory: ${name}`);
-    assert.ok(!/^[a-z]:|^[\\/]/i.test(name), `Absolute archive entry: ${name}`);
-    assert.ok(!name.split(/[\\/]/).includes(".."), `Escaping archive entry: ${name}`);
-    assert.ok(
-      roots.some((root) => name === root || name.startsWith(`${root}/`)),
-      `Archive entry outside install roots: ${name}`,
-    );
-    assert.ok(
-      !links.some((link) => name === link || name.startsWith(`${link}/`)),
-      `Archive carries a workspace link target: ${name}`,
-    );
-  }
 }
 
 // The cache stores the archive compressed: 3.71 GB became a 0.93 GB entry (0.25)
