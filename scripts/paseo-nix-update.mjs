@@ -78,6 +78,8 @@ export function macArtifact(manifest) {
 
 const RELEASES = `https://github.com/${REPOSITORY}/releases`;
 const MAX_METADATA_BYTES = 1024 * 1024;
+const METADATA_TIMEOUT_MS = 30_000;
+const ARCHIVE_TIMEOUT_MS = 30 * 60_000;
 
 // Unauthenticated REST calls share GitHub's 60-per-hour budget per IP address,
 // often a whole office's. Release pages and download URLs do not count against
@@ -106,7 +108,10 @@ export function httpFailure(what, response, now = Date.now()) {
 }
 
 export async function resolveLatestTag(fetchOnce = fetch) {
-  const response = await fetchOnce(`${RELEASES}/latest`, { redirect: "manual" });
+  const response = await fetchOnce(`${RELEASES}/latest`, {
+    redirect: "manual",
+    signal: AbortSignal.timeout(METADATA_TIMEOUT_MS),
+  });
   if (![301, 302, 303, 307, 308].includes(response.status))
     throw httpFailure("the latest release", response);
   const location = new URL(response.headers.get("location") ?? "", `${RELEASES}/latest`);
@@ -123,7 +128,11 @@ export async function resolveLatestTag(fetchOnce = fetch) {
 }
 
 async function fetchMetadata(url, what) {
-  const response = await fetchHttps(url, { Accept: "application/octet-stream" });
+  const response = await fetchHttps(
+    url,
+    { Accept: "application/octet-stream" },
+    { signal: AbortSignal.timeout(METADATA_TIMEOUT_MS) },
+  );
   if (!response.ok || !response.body) throw httpFailure(what, response);
   const chunks = [];
   let size = 0;
@@ -303,6 +312,7 @@ async function stageRelease(verified) {
       expectedBytes: artifact.bytes,
       expectedSha256: artifact.sha256,
       maxBytes: artifact.bytes,
+      signal: AbortSignal.timeout(ARCHIVE_TIMEOUT_MS),
     });
     const cache = join(directory, "cache");
     await extractNixCacheTar(file, cache);
