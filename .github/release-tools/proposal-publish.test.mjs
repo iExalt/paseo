@@ -29,6 +29,17 @@ function fixture(options = {}) {
     commits: 1,
   };
   let pr, repositoryLabel;
+  let staleReads = options.staleReads ?? 0;
+  if (options.openBeforePush)
+    pr = {
+      ...structuredClone(previous),
+      number: 81,
+      state: "open",
+      merged: false,
+      labels: [{ name: pending }],
+      title: "old",
+      body: "old",
+    };
   const prepared = {
     branch: "dev",
     base,
@@ -90,6 +101,7 @@ function fixture(options = {}) {
     }
     if (route === "pulls/81") {
       if (method === "PATCH") Object.assign(pr, body);
+      if (head === sha && pr.head.sha !== sha && staleReads-- <= 0) pr.head.sha = sha;
       return structuredClone(pr);
     }
     return labelsRequest(route, method, body);
@@ -165,4 +177,20 @@ test("publisher stops on branch race, target movement and rejected predecessor a
   const forged = fixture();
   await assert.rejects(publishProposal({ ...forged.args, identity: { ...identity, botId: 1 } }));
   assert.deepEqual(forged.counts, { pushes: 0, creates: 0 });
+});
+
+test("publisher waits boundedly for the pulls API to report exactly the pushed head", async () => {
+  const waits = [];
+  const lagging = fixture({ openBeforePush: true, staleReads: 2 });
+  const result = await publishProposal({
+    ...lagging.args,
+    wait: async (ms) => waits.push(ms),
+  });
+  assert.equal(result.head.sha, sha);
+  assert.deepEqual(waits, [5000, 5000]);
+  const stuck = fixture({ openBeforePush: true, staleReads: 99 });
+  await assert.rejects(
+    publishProposal({ ...stuck.args, wait: async () => {} }),
+    /PR head changed; fresh verification required/,
+  );
 });

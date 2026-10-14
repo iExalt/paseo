@@ -49,6 +49,7 @@ export async function publishProposal({
   cwd,
   token,
   validate,
+  wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 }) {
   assert.equal(typeof validate, "function", "Proposal authorization is required");
   const { branch, base, sha, tree, expectedHead, title, body, previousPr } = prepared;
@@ -114,7 +115,16 @@ export async function publishProposal({
     }
   }
   await verifyPublished();
-  pr = await openPr();
+  // The pulls API can report the previous head for seconds after a push. Wait,
+  // boundedly, for exactly the pushed commit; any other head still fails below.
+  const pushedPr = async () => {
+    for (let attempt = 1; ; attempt++) {
+      const visible = await openPr();
+      if (!visible || visible.head.sha === sha || attempt === 6) return visible;
+      await wait(5000);
+    }
+  };
+  pr = await pushedPr();
   if (!pr) {
     try {
       await request(`${repository}/pulls`, "POST", {
@@ -127,7 +137,7 @@ export async function publishProposal({
     } catch (error) {
       if (!(await openPr())) throw error;
     }
-    pr = await openPr();
+    pr = await pushedPr();
     assert.ok(pr, "Created proposal is not visible; reconcile before retrying");
   }
   identityPr(pr, identity, branch, sha);
