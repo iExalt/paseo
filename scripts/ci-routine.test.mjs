@@ -396,7 +396,21 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   assert.equal(workflow.jobs.routine.strategy["max-parallel"], lanes.length);
   assert.ok(!workflow.jobs.plan.steps.some((step) => step.run?.includes("npm ci")));
   const steps = workflow.jobs.routine.steps;
-  assert.ok(!steps.some((step) => step.uses?.startsWith("actions/cache")));
+  // Routine lanes only restore installed dependencies; dev pushes alone write them.
+  const caches = steps.filter((step) => step.uses?.startsWith("actions/cache"));
+  assert.deepEqual(
+    caches.map((step) => [step.uses.split("@")[0], step.with.key]),
+    [["actions/cache/restore", "${{ steps.modules.outputs.key }}"]],
+  );
+  const refresh = workflow.jobs["install-cache"];
+  assert.match(refresh.if, /github.event_name == 'push' && github.ref == 'refs\/heads\/dev'/);
+  assert.equal(refresh.permissions.actions, "write");
+  for (const job of Object.keys(workflow.jobs).filter((name) => name !== "install-cache"))
+    assert.notEqual(workflow.jobs[job].permissions?.actions, "write");
+  const keyStep = (job) => job.steps.find((step) => step.id === "modules").run;
+  assert.equal(keyStep(refresh), keyStep(workflow.jobs.routine));
+  assert.match(keyStep(refresh), /package-lock\.json.*patches\/\*\.patch/);
+  assert.match(keyStep(refresh), /\$ImageVersion.*uname -m.*node --version.*npm --version/);
   const setup = steps.find((step) => step.name === "Configure pinned npm installation");
   assert.match(setup.run, /npm_config_cache=\$RUNNER_TEMP\/npm-cache/);
   assert.match(setup.run, /v26\.11\.0/);
