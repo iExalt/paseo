@@ -120,6 +120,7 @@ export const sourceGateFiles = Object.freeze([
   ".github/scripts/candidate-worker.mjs",
   ".github/scripts/candidate-job-proof.mjs",
   ".github/scripts/step-proof.mjs",
+  ".github/scripts/github-retry.mjs",
   ".github/scripts/candidate-grant.mjs",
   ".github/scripts/candidate-matrix.mjs",
   ".github/scripts/candidate-aggregate.mjs",
