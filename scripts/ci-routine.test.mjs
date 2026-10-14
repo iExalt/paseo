@@ -118,8 +118,10 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   const cli = commands.find((step) => step.name === "cli units");
   assert.ok(cli.args.includes("**/*.e2e.test.ts"));
   const desktop = commands.find((step) => step.name === "desktop units");
-  const electron = commands.findIndex((step) => step.name === "desktop Electron binary");
-  assert.ok(electron >= 0 && electron < commands.indexOf(desktop));
+  // Electron must be fetched in the lane that runs the desktop units, before them.
+  const workspaces = planLane(selectChecks(null, filters), "workspaces").map((step) => step.name);
+  const electron = workspaces.indexOf("desktop Electron binary");
+  assert.ok(electron >= 0 && electron < workspaces.indexOf("desktop units"));
   assert.ok(desktop.args.includes("scripts/after-pack.test.mjs"));
   assert.ok(desktop.args.includes("e2e/**"));
   assert.ok(desktop.args.includes("vitest"));
