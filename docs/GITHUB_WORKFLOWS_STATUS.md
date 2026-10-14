@@ -2,7 +2,7 @@
 
 ## Current snapshot
 
-### History sanitization and 0.1.1 replacement — published; retirement pending
+### History sanitization and 0.1.1 replacement — complete
 
 The user authorized removal of personal-device details and local paths from
 published history, followed by a fresh 0.1.1 release and retirement of 0.1.0.
@@ -84,8 +84,18 @@ metadata were copied from draft `412267116` without rebuilding or re-signing. Ea
 was hash-verified before staging, after re-downloading the destination draft, and
 again after anonymous public download; the tag resolves to the source.
 Bookkeeping now records 0.1.1 as the release boundary at that source, and PR #107
-is `autorelease: tagged`. Retiring release 0.1.0 and the superseded tags, plus the
-fresh-clone verification, remain outstanding.
+is `autorelease: tagged`. Production release preflight on dev reports the
+recorded boundary verified and finds no user-facing commits since that source.
+
+Release 0.1.0 and the six superseded tags, including `paseo-v0.1.0`, were then
+deleted by exact ID and exact-lease atomic push, after a dry run. Stable 0.1.1 and
+the `ci-upgrade-fixtures-v0.1.0` release were checked unchanged first. A fresh
+clone of every published branch and tag scanned 103,177 objects with no identified
+private strings, verified the signatures of all 228 reachable rewritten commits,
+confirmed all 5,840 upstream ancestors unchanged, and passed `git fsck`. Proposals,
+upstream sync and the dev rebase are back to their original state; native
+candidate execution stays disabled. Old objects remain reachable by SHA and
+through pull-request refs, which only GitHub Support can purge; this is accepted.
 
 - D3 authority update, 2026-10-13: the user explicitly selected stable **0.1.0**,
   authorized deletion of all earlier releases/drafts, and requested removal of
