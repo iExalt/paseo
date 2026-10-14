@@ -93,7 +93,7 @@ export function validateArtifact(artifact, pin, expected, maximum) {
   assert.equal(artifact.id, integer(expected.id));
   assert.equal(artifact.name, expected.name);
   assert.equal(artifact.digest, `sha256:${digest(expected.digest)}`);
-  assert.equal(artifact.expired, false);
+  assert.equal(artifact.expired, false, "Carried artifact expired; start a new candidate run");
   assert.equal(artifact.workflow_run?.id, integer(pin.runId));
   assert.equal(artifact.workflow_run?.head_sha, pin.sourceSha);
   assert.equal(artifact.workflow_run?.head_branch, pin.headBranch ?? "dev");

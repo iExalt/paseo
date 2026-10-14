@@ -77,6 +77,7 @@ jobs:
         shell: pwsh
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: windows-${{ inputs.architecture }}
       CANDIDATE_EXPECTED_JOB: windows (${{ inputs.architecture }}) / native
