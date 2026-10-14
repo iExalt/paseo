@@ -43,6 +43,7 @@ import {
   signAggregate,
   transferJob,
   verifyAggregate,
+  verifyPublishable,
 } from "../.github/scripts/candidate-aggregate.mjs";
 import { pairedRuntime, transferPaired } from "../.github/scripts/candidate-paired-transfer.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
@@ -1167,8 +1168,9 @@ test("candidate aggregate admits each cell from the attempt that last executed i
     ...Object.values(producerGroups).map((group) => group.job),
     ...Object.keys(producerGroups).map(transferJob),
     ...verificationJobs,
+    "aggregate",
   ];
-  const fresh = new Set([producerGroups[rerun].job, transferJob(rerun)]);
+  const fresh = new Set([producerGroups[rerun].job, transferJob(rerun), "aggregate"]);
   const execution = (name, id, attempt, started, conclusion = "success") => ({
     id,
     name,
@@ -1384,6 +1386,39 @@ test("candidate aggregate admits each cell from the attempt that last executed i
       true,
     );
     assert.equal(draft.draft, true);
+    // Publication recomputes every group against the run's latest attempt.
+    const evidence = JSON.parse(
+      data.get(draft.assets.find((asset) => asset.name.endsWith("candidate-evidence.json")).id),
+    );
+    assert.deepEqual(
+      evidence.storage,
+      Object.fromEntries(Object.keys(producerGroups).map((group) => [group, storedIn(group)])),
+    );
+    let latest = 2;
+    const finished = async (route) =>
+      route.endsWith("/actions/runs/500")
+        ? { id: 500, status: "completed", run_attempt: latest }
+        : request(route);
+    await verifyPublishable(draft, evidence, finished);
+    // A later single-job rerun of any producer supersedes the signed payload.
+    starts.push("2026-10-12T12:00:00Z");
+    attempts.push(
+      attempts[1].map((job) =>
+        [producerGroups["linux-nix-x64"].job, transferJob("linux-nix-x64"), "aggregate"].includes(
+          job.name,
+        )
+          ? execution(job.name, job.id + 3000, 3, "2026-10-12T12:05:00Z")
+          : Object.assign(structuredClone(job), { id: job.id + 5000, run_attempt: 3 }),
+      ),
+    );
+    latest = 3;
+    await assert.rejects(verifyPublishable(draft, evidence, finished), /latest execution/);
+    attempts.pop();
+    starts.pop();
+    latest = 2;
+    draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 3 });
+    await assert.rejects(verifyPublishable(draft, evidence, finished), /superseded/);
+    draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 2 });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
