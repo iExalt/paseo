@@ -119,7 +119,18 @@ export function registerNotificationHandlers(): void {
       activeNotifications.delete(notification);
     });
 
+    // macOS refuses a request (unsigned bundle, notifications turned off) only
+    // through "failed", after show() has returned.
+    const delivered = new Promise<boolean>((resolve) => {
+      notification.once("show", () => resolve(true));
+      notification.once("failed", (_failure, error) => {
+        console.warn(`[notifications] Delivery failed: ${error}`);
+        activeNotifications.delete(notification);
+        resolve(false);
+      });
+      setTimeout(() => resolve(true), 5_000);
+    });
     notification.show();
-    return true;
+    return delivered;
   });
 }
