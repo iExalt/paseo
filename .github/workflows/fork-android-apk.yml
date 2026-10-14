@@ -299,6 +299,54 @@ jobs:
           df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
           bash "$GITHUB_WORKSPACE/scripts/runner-swap.sh" enable
 
+      # ccache only skips compiles whose preprocessed input and compiler match,
+      # so a missing or rejected cache changes timing, not the APK.
+      - name: Install ccache
+        id: ccache-tool
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        run: command -v ccache >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ccache; }
+      - name: Bind Android ccache recipe
+        id: ccache
+        if: steps.ccache-tool.outcome == 'success'
+        run: node .github/scripts/android-build-cache.mjs key
+      - name: Restore the newest Android ccache
+        id: ccache-cache
+        if: steps.ccache.outcome == 'success'
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 3
+        with:
+          path: ${{ steps.ccache.outputs.archive }}
+          key: ${{ steps.ccache.outputs.key }}
+          restore-keys: paseo-android-ccache-v1-
+      - name: Verify Android ccache provenance
+        id: ccache-provenance
+        if: steps.ccache-cache.outputs.cache-matched-key != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PASEO_CACHE_KEY: ${{ steps.ccache-cache.outputs.cache-matched-key }}
+        run: node .github/scripts/android-build-cache.mjs verify
+      - name: Compile native code through ccache
+        if: steps.ccache.outcome == 'success'
+        shell: bash
+        env:
+          CCACHE_PATH_DIR: ${{ steps.ccache.outputs.ccache_dir }}
+          VERIFIED: ${{ steps.ccache-provenance.outputs.verified }}
+        run: |
+          set -euo pipefail
+          if [[ "$VERIFIED" != true ]]; then
+            rm -rf "$CCACHE_PATH_DIR"
+            echo "::warning::No attested Android ccache restored; compiling native code cold. Prewarm with android-build-cache.yml on dev."
+          fi
+          {
+            echo "CCACHE_DIR=$CCACHE_PATH_DIR"
+            echo "CCACHE_COMPILERCHECK=content"
+            echo "CCACHE_MAXSIZE=3G"
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+          } >> "$GITHUB_ENV"
+
       - name: Assemble arm64 release candidate
         shell: bash
         run: |
@@ -314,6 +362,7 @@ jobs:
             -Pkotlin.compiler.execution.strategy=in-process \
             -PreactNativeArchitectures=arm64-v8a
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
+          if [[ -n "${CCACHE_DIR:-}" ]]; then ccache --show-stats; fi
           df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
 
       - name: Disable and remove task-owned Android swap
