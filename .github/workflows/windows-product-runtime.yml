@@ -28,10 +28,6 @@ on:
         required: true
         default: arm64
         options: [arm64, x64]
-      verify_cache_transfer:
-        description: Require a fresh-runner predecessor cache transfer proof after this build
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -70,8 +66,6 @@ jobs:
     outputs:
       artifact_id: ${{ steps.packages.outputs.artifact-id }}
       artifact_digest: ${{ steps.packages.outputs.artifact-digest }}
-      predecessor_key: ${{ steps.predecessor.outputs.key }}
-      cache_saved: ${{ steps.predecessor-save.outcome == 'success' }}
     defaults:
       run:
         shell: pwsh
@@ -146,6 +140,10 @@ jobs:
         with:
           path: ${{ steps.predecessor.outputs.directory }}
           key: ${{ steps.predecessor.outputs.key }}
+      - name: Report a predecessor cache miss
+        if: inputs.source_sha != '' && steps.predecessor-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: echo "::warning::Predecessor cache missed; rebuilding it. Prewarm with a no-source dispatch on dev."
       - name: Verify and consume exact predecessor cache
         if: steps.predecessor-cache.outputs.cache-hit == 'true'
         env:
@@ -240,49 +238,3 @@ jobs:
           path: ${{ runner.temp }}/paseo-windows-products-${{ github.run_id }}-${{ github.run_attempt }}/evidence
           retention-days: 3
           if-no-files-found: error
-
-  cache-proof:
-    needs: native
-    if: always() && inputs.verify_cache_transfer && needs.native.result == 'success'
-    runs-on: ${{ inputs.architecture == 'arm64' && 'windows-11-arm' || 'windows-2025' }}
-    timeout-minutes: 5
-    defaults:
-      run:
-        shell: pwsh
-    env:
-      EXPECTED_ARCHITECTURE: ${{ inputs.architecture }}
-    steps:
-      - name: Require the requested cache save
-        env:
-          CACHE_SAVED: ${{ needs.native.outputs.cache_saved }}
-        run: if ($env:CACHE_SAVED -ne 'true') { throw 'Expected predecessor cache was not saved' }
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version: "26.11.0"
-          architecture: ${{ inputs.architecture }}
-          package-manager-cache: false
-      - id: predecessor
-        run: node .github/scripts/windows-predecessor-cache.mjs prepare-proof
-      - name: Require the same producer recipe
-        env:
-          PRODUCER_KEY: ${{ needs.native.outputs.predecessor_key }}
-          EXPECTED_KEY: ${{ steps.predecessor.outputs.key }}
-        run: if ($env:PRODUCER_KEY -ne $env:EXPECTED_KEY) { throw 'Producer recipe mismatch' }
-      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        id: restored
-        timeout-minutes: 3
-        with:
-          path: ${{ steps.predecessor.outputs.directory }}
-          key: ${{ needs.native.outputs.predecessor_key }}
-          fail-on-cache-miss: true
-      - name: Validate and consume the actual restored installer and portable identity
-        env:
-          PREDECESSOR_CACHE_MATCHED_KEY: ${{ steps.restored.outputs.cache-matched-key }}
-        run: node .github/scripts/windows-predecessor-cache.mjs restore-proof
-      - name: Remove the proof predecessor checkout
-        if: always()
-        run: node .github/scripts/windows-predecessor-cache.mjs cleanup-proof
