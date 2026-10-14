@@ -513,12 +513,13 @@ test("native candidate reader rejects legacy or mismatched closure identities", 
   }
 });
 
-test("Nix fixed-output prefetch retries only hash-pinned fetches", async () => {
+test("Nix fixed-output prefetch retries only the hash-pinned fetches the build needs", async () => {
   const directory = mkdtempSync(join(tmpdir(), "paseo-nix-fetch-"));
   try {
     for (const shape of ["wrapped", "flat"]) {
       const derivations = {
         "aaa-npm-deps.drv": { outputs: { out: { hash: "sha256-x", method: "nar" } } },
+        "ccc-source.tar.gz.drv": { outputs: { out: { hash: "sha256-y", method: "flat" } } },
         "bbb-paseo.drv": { outputs: { out: { path: "/nix/store/bbb-paseo" } } },
       };
       const shown =
@@ -528,28 +529,46 @@ test("Nix fixed-output prefetch retries only hash-pinned fetches", async () => {
               Object.entries(derivations).map(([key, value]) => [`/nix/store/${key}`, value]),
             );
       writeFileSync(join(directory, "shown.json"), JSON.stringify(shown));
+      // The source tarball is substitutable, so only npm-deps is built.
+      writeFileSync(
+        join(directory, "plan"),
+        [
+          "these 2 derivations will be built:",
+          "  /nix/store/aaa-npm-deps.drv",
+          "  /nix/store/bbb-paseo.drv",
+          "these 1 paths will be fetched (1 KiB download):",
+          "  /nix/store/ccc-source.tar.gz",
+          "",
+        ].join("\n"),
+      );
       writeFileSync(join(directory, "builds"), "");
       writeFileSync(
         join(directory, "nix"),
         `#!/usr/bin/env bash
 if [[ "$1" == derivation ]]; then cat "${directory}/shown.json"; exit; fi
+if [[ "$2" == --dry-run ]]; then cat "${directory}/plan" >&2; exit; fi
 echo "$*" >> "${directory}/builds"
 (( $(wc -l < "${directory}/builds") > 1 ))
 `,
       );
       chmodSync(join(directory, "nix"), 0o755);
-      const result = spawnSync("bash", [".github/scripts/nix-fetch-fixed-outputs.sh", ".#paseo"], {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: `${directory}:${process.env.PATH}`,
-          NIX_FETCH_RETRY_SECONDS: "0",
+      const result = spawnSync(
+        "bash",
+        [".github/scripts/nix-fetch-fixed-outputs.sh", "--option", "builders", "", "--", ".#paseo"],
+        {
+          encoding: "utf8",
+          env: {
+            ...process.env,
+            PATH: `${directory}:${process.env.PATH}`,
+            NIX_FETCH_RETRY_SECONDS: "0",
+          },
         },
-      });
+      );
       assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /to fetch: 1 of 2/);
       assert.equal(
         readFileSync(join(directory, "builds"), "utf8"),
-        "build --no-link /nix/store/aaa-npm-deps.drv^*\n".repeat(2),
+        "build --no-link /nix/store/aaa-npm-deps.drv^* --option builders \n".repeat(2),
       );
     }
   } finally {
