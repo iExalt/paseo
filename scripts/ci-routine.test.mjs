@@ -15,6 +15,7 @@ import {
   planLane,
   planMatrix,
   lanes,
+  shards,
   root,
   selectChecks,
   vitestHelpers,
@@ -203,13 +204,14 @@ test("parallel lanes partition every selected check, with only declared prerequi
       assert.equal(matrix.lane.includes(lane), commands.length > 0);
       for (const step of commands) {
         if (step.name === "app dependencies") {
-          assert.equal(lane, "app");
+          assert.match(lane, /^app-\d$/);
           assert.deepEqual(step.args, ["run", "build:app-deps"]);
           continue;
         }
         if (step.name === "workspace declarations" && lane !== "quality") continue;
-        if (step.name === "server units") {
-          assert.equal(step.args.at(-1), `--shard=${lane.at(-1)}/3`);
+        const sharded = { "server units": "server", "app units": "app" }[step.name];
+        if (sharded) {
+          assert.equal(step.args.at(-1), `--shard=${lane.at(-1)}/${shards[sharded]}`);
           assert.deepEqual(
             step.args.slice(0, -1),
             complete.find((item) => item.name === step.name).args,
@@ -219,14 +221,17 @@ test("parallel lanes partition every selected check, with only declared prerequi
             step,
             complete.find((item) => item.name === step.name),
           );
-        if (step.name !== "server units" || lane === "server-1") seen.push(step.name);
+        if (!sharded || lane.endsWith("-1")) seen.push(step.name);
       }
     }
     assert.deepEqual(seen.sort(), complete.map((step) => step.name).sort());
-    assert.deepEqual(
-      matrix.lane.filter((lane) => lane.startsWith("server-")),
-      selection.domains.includes("server") ? ["server-1", "server-2", "server-3"] : [],
-    );
+    for (const [group, count] of Object.entries(shards))
+      assert.deepEqual(
+        matrix.lane.filter((lane) => lane.startsWith(`${group}-`)),
+        selection.domains.includes(group)
+          ? Array.from({ length: count }, (_, index) => `${group}-${index + 1}`)
+          : [],
+      );
   }
   assert.throws(() => planLane(selectChecks(null, filters), "unknown"));
 });
