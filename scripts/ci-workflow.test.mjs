@@ -20,6 +20,7 @@ import { candidateIdentity } from "../.github/scripts/candidate-identity.mjs";
 import { candidateTriggerPaths } from "../.github/scripts/candidate-replacement.mjs";
 import { lanes as routineLanes } from "../.github/scripts/ci-routine.mjs";
 import { grantGroups } from "../.github/scripts/candidate-grant.mjs";
+import { preIssuedGroups } from "../.github/scripts/candidate-worker.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 
@@ -65,11 +66,20 @@ test("phase authentication is controller-only and every grant consumer remains r
       assert.equal(gate.uses, "./.github/workflows/candidate-auth.yml");
       assert.equal(gate.permissions.contents, "write");
       assert.equal(gate.with.group, worker.env.CANDIDATE_GRANT_GROUP);
-      for (const prior of worker.needs.filter((value) => value !== dependency))
-        assert.ok(
-          gate.needs.includes(prior),
-          "Later execution needs fresh admission after its producers",
+      // Pre-issued grants run off the critical path; their workers re-check
+      // liveness at use instead (candidate-worker.mjs).
+      if (preIssuedGroups.has(gate.with.group)) {
+        assert.equal(gate.needs, undefined);
+        assert.equal(
+          worker.env.CANDIDATE_LIVE_NATIVE,
+          "${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}",
         );
+      } else
+        for (const prior of worker.needs.filter((value) => value !== dependency))
+          assert.ok(
+            gate.needs.includes(prior),
+            "Later execution needs fresh admission after its producers",
+          );
     }
   }
 });

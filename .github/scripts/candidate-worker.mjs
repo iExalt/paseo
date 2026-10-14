@@ -62,13 +62,19 @@ export async function workerGate(env, api, request, read, grant = null) {
         artifact: { id: env.CANDIDATE_GRANT_ID, digest: env.CANDIDATE_GRANT_DIGEST },
       },
     );
-    if (grant.context.attempt !== attempt) await assertCarriedGrantLive(env, context, request);
+    if (grant.context.attempt !== attempt || preIssuedGroups.has(env.CANDIDATE_GRANT_GROUP))
+      await assertCarriedGrantLive(env, context, request);
   } else {
     await currentCandidate(descriptor, env.GITHUB_SHA, releaseBotIdentity(env), request, read, api);
     await advanceAttempt(api, descriptor, releaseId, runId, attempt);
   }
   return context;
 }
+
+// These grants are issued when their reusable workflow starts, alongside the
+// producers they follow, so their admission check is not fresh at use and
+// they always take the carried-grant liveness check.
+export const preIssuedGroups = new Set(["android-sign", "mac-import", "paired-complete"]);
 
 // Workers cannot read the draft, so a grant carried into a rerun attempt could
 // otherwise run signing jobs for a candidate that has since been stopped or
