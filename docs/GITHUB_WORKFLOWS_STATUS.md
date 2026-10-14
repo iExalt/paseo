@@ -2,7 +2,7 @@
 
 ## Current snapshot
 
-### Pipeline recovery, noise and speed (0.1.2/0.1.3) — in progress
+### Pipeline recovery, noise and speed (0.1.2/0.1.3) — complete
 
 Approved after the 0.1.1 retrospective (seven hours, six runs). 0.1.2 was
 published from run `38583967042`, cancelled deliberately at 38.6 minutes and
@@ -12,6 +12,14 @@ re-run workers used carried attempt-1 grants, and partial attempt-1 uploads were
 ignored. The Nix prefetch fetched only npm-deps (2 of 1,927 on Linux x64).
 Linux predecessor caches missed because a runner-image rollout split the
 prewarm and candidate images; Windows caches hit.
+
+0.1.3 was published from run `38614066606`, a clean first attempt that took
+53.7 minutes. Both Windows predecessor caches hit and removed the predecessor
+install, but Windows arm64 candidate `npm ci` took 1,343 s (745 s in 0.1.2), so
+Windows arm64 still ended the critical path at 47.9 minutes. Android assemble
+(1,290 s) kept the paired path at 46.5 minutes. The run is no faster than 0.1.1
+(52.0 and 52.7 minutes); the remaining time is install and Gradle variance on
+two independent paths, not pipeline structure.
 
 - **Mixed-attempt recovery.** "Re-run failed jobs" clones carried jobs into the
   new attempt with original timestamps. `candidate-attempts.mjs` resolves each
@@ -38,6 +46,11 @@ prewarm and candidate images; Windows caches hit.
   repeated shard runs passed, and executed file counts sum to the unsharded
   totals (app 633, server 427). Lanes restore installed `node_modules` (~0.9 GB,
   16-23 s against 57-74 s for `npm ci`), written only by the current dev head.
+  Release PRs change the lockfile and always miss. Desktop units install
+  Electron first; four workers otherwise race to extract it. One dev run timed
+  out both app shards and passed on rerun; watch for a repeat before adding
+  workers. Re-running failed lanes always fails the latency gate, which counts
+  from the first attempt; re-run all jobs instead.
 - **Release flow.** Prewarm the predecessor caches before a candidate: dispatch
   `windows-product-runtime.yml` (arm64, x64) and `linux-product-runtime.yml`
   (x64, arm64) on dev without a source, then confirm each key with
