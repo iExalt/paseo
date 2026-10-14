@@ -345,12 +345,16 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   assert.equal(uploads[0].if, "always() && steps.evidence.outcome == 'success'");
 });
 
-test("native product exports authenticate source before execution and follow successful cleanup without concurrent cache writes", () => {
+test("native product exports authenticate source before execution and follow successful cleanup without concurrent same-platform cache writes", () => {
   for (const platform of ["linux", "windows"]) {
     const workflow = load(
       readFileSync(new URL(`.github/workflows/${platform}-product-runtime.yml`, repoRoot), "utf8"),
     );
-    assert.match(workflow.concurrency.group, /paseo-predecessor-cache-writer/);
+    assert.ok(
+      workflow.concurrency.group.includes(
+        `format('paseo-predecessor-cache-writer-{0}-{1}', '${platform}', inputs.architecture)`,
+      ),
+    );
     assert.match(workflow.concurrency.group, /inputs.source_sha/);
     const job = workflow.jobs.native;
     assert.equal((job.permissions ?? workflow.permissions)["pull-requests"], "read");
