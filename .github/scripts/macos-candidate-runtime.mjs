@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -112,6 +112,19 @@ async function materialize(archive, manifest, cache) {
   return join(manifest.outputPath, "Applications", "Paseo.app");
 }
 
+// The bundle must keep the signature the build applied through NAR packing and
+// substitution; macOS refuses notifications from a bundle signed as Electron.
+export function assertPaseoSignature(app, run = spawnSync) {
+  const codesign = (args) => {
+    const result = run("/usr/bin/codesign", [...args, app], { encoding: "utf8", timeout: 120000 });
+    assert.equal(result.status, 0, `codesign ${args[0]} failed: ${result.stderr}`);
+    return result.stderr;
+  };
+  codesign(["--verify", "--deep", "--strict"]);
+  // codesign prints the signature details on stderr.
+  assert.match(codesign(["--display", "--verbose=2"]), /^Identifier=sh\.paseo\.desktop$/m);
+}
+
 async function main() {
   assert.equal(process.env.GITHUB_ACTIONS, "true");
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
@@ -176,6 +189,7 @@ async function main() {
       manifest,
       candidateCache,
     );
+    assertPaseoSignature(candidateApp);
     nix(localCacheCopyArgs(candidateCache, candidate.macOS.manifestPath));
     assert.deepEqual(
       await readFile(candidate.macOS.manifestPath),

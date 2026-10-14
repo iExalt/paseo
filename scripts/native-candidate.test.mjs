@@ -72,7 +72,10 @@ test("installed stage adapters bind candidate identity independently of the cont
     { timeout: 10000, stdio: "pipe" },
   );
 });
-import { validateCandidateClosure } from "../.github/scripts/macos-candidate-runtime.mjs";
+import {
+  assertPaseoSignature,
+  validateCandidateClosure,
+} from "../.github/scripts/macos-candidate-runtime.mjs";
 import terminalProof from "../packages/desktop/e2e/terminal-proof.cjs";
 import nixProfile from "../packages/desktop/e2e/nix-profile.cjs";
 import { closeNormally } from "../packages/desktop/e2e/normal-close.cjs";
@@ -560,4 +563,20 @@ echo "$*" >> "${directory}/builds"
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("installed macOS bundles must verify and sign as Paseo", () => {
+  const codesign =
+    (identifier, verified = true) =>
+    (_command, args) => ({
+      status: args[0] === "--verify" && !verified ? 1 : 0,
+      stderr:
+        args[0] === "--display"
+          ? `Executable=/x\nIdentifier=${identifier}\nFormat=app bundle\n`
+          : "",
+    });
+  assertPaseoSignature("/nix/store/x/Applications/Paseo.app", codesign("sh.paseo.desktop"));
+  assert.throws(() => assertPaseoSignature("/app", codesign("Electron")));
+  assert.throws(() => assertPaseoSignature("/app", codesign("sh.paseo.desktop.helper")));
+  assert.throws(() => assertPaseoSignature("/app", codesign("sh.paseo.desktop", false)));
 });
