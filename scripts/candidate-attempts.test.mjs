@@ -129,7 +129,10 @@ test("a carried grant runs only while the candidate is still the live one", asyn
   const request = async (route) => {
     if (route.includes("/workflows/release-candidate.yml/runs")) return { workflow_runs: runs };
     assert.match(route, /\/runs\/501\/jobs\?filter=latest/);
-    return { jobs: [{ name: "issue", conclusion: issued ? "success" : "skipped" }] };
+    return {
+      total_count: 1,
+      jobs: [{ name: "issue", conclusion: issued ? "success" : "skipped" }],
+    };
   };
   const live = { CANDIDATE_LIVE_NATIVE: "true" };
   await assertCarriedGrantLive(live, context, request);

@@ -87,9 +87,10 @@ export async function assertCarriedGrantLive(env, context, request) {
   const newer = runs.filter((run) => run.id > context.runId);
   assert.ok(newer.length < runs.length, "Too many newer candidate runs to rule out replacement");
   for (const run of newer) {
-    const { jobs } = await request(
+    const { total_count: count, jobs } = await request(
       `/repos/iExalt/paseo/actions/runs/${run.id}/jobs?filter=latest&per_page=100`,
     );
+    assert.ok(count <= jobs.length, "Newer candidate run has unread jobs");
     assert.ok(
       !jobs.some((job) => job.name === "issue" && job.conclusion === "success"),
       "A newer candidate run was issued; this run can no longer execute",

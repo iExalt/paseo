@@ -1390,6 +1390,7 @@ test("candidate aggregate admits each cell from the attempt that last executed i
     const evidence = JSON.parse(
       data.get(draft.assets.find((asset) => asset.name.endsWith("candidate-evidence.json")).id),
     );
+    const publishable = (route) => verifyPublishable(api, 42, route);
     assert.deepEqual(
       evidence.storage,
       Object.fromEntries(Object.keys(producerGroups).map((group) => [group, storedIn(group)])),
@@ -1399,7 +1400,7 @@ test("candidate aggregate admits each cell from the attempt that last executed i
       route.endsWith("/actions/runs/500")
         ? { id: 500, status: "completed", run_attempt: latest }
         : request(route);
-    await verifyPublishable(draft, evidence, finished);
+    await publishable(finished);
     // A later single-job rerun of any producer supersedes the signed payload.
     starts.push("2026-10-12T12:00:00Z");
     attempts.push(
@@ -1412,12 +1413,12 @@ test("candidate aggregate admits each cell from the attempt that last executed i
       ),
     );
     latest = 3;
-    await assert.rejects(verifyPublishable(draft, evidence, finished), /latest execution/);
+    await assert.rejects(publishable(finished), /latest execution/);
     attempts.pop();
     starts.pop();
     latest = 2;
     draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 3 });
-    await assert.rejects(verifyPublishable(draft, evidence, finished), /superseded/);
+    await assert.rejects(publishable(finished), /attempt 3 candidate-evidence/);
     draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 2 });
   } finally {
     await rm(directory, { recursive: true, force: true });

@@ -212,17 +212,18 @@ export async function signAggregate(
 }
 
 // The draft has no final state: a later rerun of any producer re-executes the
-// aggregate and supersedes the signed payload. Publication therefore recomputes
-// every group against the run's latest attempt and requires the signed
-// evidence to still describe it.
-export async function verifyPublishable(release, evidence, request = readGithub) {
+// aggregate and supersedes the signed payload. Publication therefore reads the
+// draft afresh, binds the evidence to the signed manifest bytes, and recomputes
+// every group against the run's latest attempt.
+export async function verifyPublishable(api, releaseId, request = readGithub) {
+  const release = await api.get(releaseId);
+  const { runId, attempt } = JSON.parse(release.body).activeAttempt;
+  const read = (name) => api.read(asset(release, runId, attempt, name), metadataLimit);
+  const evidence = JSON.parse(await read("candidate-evidence.json"));
   assert.equal(evidence.kind, "paseo-complete-candidate");
-  const { runId, attempt } = evidence;
-  assert.deepEqual(
-    JSON.parse(release.body).activeAttempt,
-    { runId, attempt },
-    "A later attempt superseded the signed candidate",
-  );
+  assert.equal(evidence.manifestSha256, digest(await read("paseo-release-manifest.json")));
+  assert.equal(evidence.runId, runId);
+  assert.equal(evidence.attempt, attempt, "A later attempt superseded the signed candidate");
   const run = await request(`/repos/iExalt/paseo/actions/runs/${runId}`);
   assert.equal(run.id, runId);
   assert.equal(run.status, "completed");
@@ -246,10 +247,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (process.argv[2] === "verify") await verifyAggregate();
   else if (process.argv[2] === "sign") await signAggregate();
   else if (process.argv[2] === "publishable") {
-    const [release, evidence] = await Promise.all(
-      process.argv.slice(3, 5).map(async (file) => JSON.parse(await readFile(file, "utf8"))),
-    );
-    await verifyPublishable(release, evidence);
+    await verifyPublishable(candidateGithub(process.env.GH_TOKEN), Number(process.argv[3]));
     process.stdout.write("Signed candidate is the run's latest execution\n");
   } else throw new Error("Expected verify, sign or publishable");
 }
