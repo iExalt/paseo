@@ -253,8 +253,9 @@ buildNpmPackage {
   # Info.plist unbound), and macOS then refuses every notification request
   # (UNErrorDomain error 1). Sign the finished bundle ad hoc as Paseo, after
   # fixup has rewritten its last file. Ad hoc signatures carry no timestamp, so
-  # the output stays deterministic. This uses the host codesign, as nixpkgs'
-  # sigtool cannot seal bundle resources.
+  # the output is deterministic for a given codesign. This uses the host
+  # codesign, as nixpkgs' sigtool cannot seal bundle resources; the candidate
+  # runtime re-verifies the signature on the imported store path.
   postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
     app="$out/Applications/Paseo.app"
     /usr/bin/codesign --force --deep --sign - --timestamp=none "$app"
