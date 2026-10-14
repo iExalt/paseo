@@ -36,7 +36,13 @@ function getStatusMessage(input: {
   return input.result?.message ?? input.t("settings.about.nixUpdates.ready");
 }
 
-function NixUpdateDetails({ result }: { result: DesktopNixUpdateResult | null }) {
+function NixUpdateDetails({
+  result,
+  appVersion,
+}: {
+  result: DesktopNixUpdateResult | null;
+  appVersion: string | null;
+}) {
   const { t } = useTranslation();
   const running = result?.running;
   const active = result?.active ?? null;
@@ -48,7 +54,8 @@ function NixUpdateDetails({ result }: { result: DesktopNixUpdateResult | null })
     <>
       <Text style={settingsStyles.rowHint}>
         {t("settings.about.nixUpdates.running", {
-          version: formatVersionWithPrefix(running?.version),
+          // The running version is local, so show it even when no updater call succeeded.
+          version: formatVersionWithPrefix(running?.version ?? appVersion),
         })}
       </Text>
       <Text style={settingsStyles.rowHint}>
@@ -127,7 +134,7 @@ function NixUpdateActions(props: NixUpdateActionsProps) {
   );
 }
 
-export function NixDesktopAppUpdateRow() {
+export function NixDesktopAppUpdateRow({ appVersion = null }: { appVersion?: string | null }) {
   const { t } = useTranslation();
   const { result, error, busy, run } = useNixDesktopUpdater();
   const isNixInvalid = getDesktopHost()?.installationMode === "nix-invalid";
@@ -162,7 +169,7 @@ export function NixDesktopAppUpdateRow() {
     <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="nix-desktop-update-row">
       <View style={settingsStyles.rowContent}>
         <Text style={settingsStyles.rowTitle}>{t("settings.about.nixUpdates.label")}</Text>
-        <NixUpdateDetails result={result} />
+        <NixUpdateDetails result={result} appVersion={appVersion} />
         <Text style={settingsStyles.rowHint} testID="nix-desktop-update-status">
           {statusMessage}
         </Text>
