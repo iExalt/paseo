@@ -33,7 +33,9 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ inputs.source_sha && format('candidate-products-{0}-{1}', 'windows', inputs.architecture) || 'paseo-predecessor-cache-writer' }}
+  # Writers for different platforms may run together: each reserves its own
+  # bounded entry against the shared ceiling before saving.
+  group: ${{ inputs.source_sha && format('candidate-products-{0}-{1}', 'windows', inputs.architecture) || format('paseo-predecessor-cache-writer-{0}-{1}', 'windows', inputs.architecture) }}
   cancel-in-progress: false
 
 jobs:
