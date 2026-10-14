@@ -38,9 +38,15 @@ import {
   transferProducts,
 } from "../.github/scripts/candidate-product-transfer.mjs";
 import { verifyWorkerJob } from "../.github/scripts/candidate-worker.mjs";
-import { verifyAggregate, signAggregate } from "../.github/scripts/candidate-aggregate.mjs";
+import {
+  resolveGroups,
+  signAggregate,
+  transferJob,
+  verifyAggregate,
+} from "../.github/scripts/candidate-aggregate.mjs";
 import { pairedRuntime, transferPaired } from "../.github/scripts/candidate-paired-transfer.mjs";
 import { verifyStream, withVerifiedFile } from "../.github/scripts/candidate-files.mjs";
+import { attemptRoute, ledgerFor } from "./candidate-ledger-fixture.mjs";
 import {
   aggregateCandidate,
   producerGroups,
@@ -57,6 +63,7 @@ import {
   verifyDescriptor,
 } from "../.github/scripts/candidate-descriptor.mjs";
 import {
+  advanceAttempt,
   attemptWriter,
   draftBody,
   ensureDraft,
@@ -492,10 +499,12 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
         evidence: { artifactId: 77, artifactDigest: env.CANDIDATE_ARTIFACT_DIGEST },
       };
       proofs.add(proof);
-      assert.equal(await productProducer(context, group, [job], artifact, expected), 123);
+      const producer = await productProducer(context, group, ledgerFor([job]), artifact, expected);
+      assert.equal(producer.job.id, 123);
+      assert.equal(producer.attempt, 2);
       for (const patch of [{ run_attempt: 1 }, { conclusion: "failure" }])
         await assert.rejects(
-          productProducer(context, group, [{ ...job, ...patch }], artifact, expected),
+          productProducer(context, group, ledgerFor([{ ...job, ...patch }]), artifact, expected),
         );
       // Verification, cleanup, export and transfer are proven only by the signed slot.
       for (const delta of [
@@ -507,16 +516,19 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
       ]) {
         proofs.remove(proof);
         proofs.add({ ...proof, ...delta });
-        await assert.rejects(productProducer(context, group, [job], artifact, expected));
+        await assert.rejects(productProducer(context, group, ledgerFor([job]), artifact, expected));
       }
       proofs.remove(proof);
-      await assert.rejects(productProducer(context, group, [job], artifact, expected), /verify/);
+      await assert.rejects(
+        productProducer(context, group, ledgerFor([job]), artifact, expected),
+        /verify/,
+      );
       proofs.add(proof);
       await assert.rejects(
         productProducer(
           context,
           group,
-          [job],
+          ledgerFor([job]),
           {
             ...artifact,
             workflow_run: { ...artifact.workflow_run, head_sha: descriptor.sourceSha },
@@ -524,19 +536,19 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
           expected,
         ),
       );
-      assert.throws(() => productReceipts({ ...bundle, attempt: 1 }, context, group, 123));
+      assert.throws(() => productReceipts({ ...bundle, attempt: 1 }, context, group, producer));
       assert.throws(() =>
         productReceipts(
           { ...bundle, artifacts: [{ ...payload, name: "../escape" }] },
           context,
           group,
-          123,
+          producer,
         ),
       );
       if (nix) {
         const wrong = structuredClone(manifests);
         wrong.values().next().value.sourceSha = "f".repeat(40);
-        assert.throws(() => productReceipts(bundle, context, group, 123, wrong));
+        assert.throws(() => productReceipts(bundle, context, group, producer, wrong));
       }
       const pair = generateKeyPairSync("ed25519");
       const pin = pair.publicKey.export({ format: "jwk" }).x;
@@ -595,15 +607,14 @@ for (const group of ["windows-arm64", "linux-nix-arm64"])
         draftApi: () => api,
         response: async () => new Response(zip),
         request: async (route) => {
-          if (route.includes("/jobs?")) return { jobs: [job] };
           if (route.includes("/artifacts/")) return artifact;
-          return root;
+          return attemptRoute(route, [job], 2) ?? root;
         },
       });
       const receipt = draft.assets.find((asset) => asset.name.endsWith(`receipts-${group}.json`));
       assert.deepEqual(
         JSON.parse(data.get(receipt.id)),
-        productReceipts(bundle, context, group, 123, manifests),
+        productReceipts(bundle, context, group, producer, manifests),
       );
       assert.deepEqual(
         data.get(draft.assets.find((asset) => asset.name.endsWith(artifacts[0].name)).id),
@@ -716,6 +727,8 @@ test("paired transfer binds signing, fresh import and native runtime before reta
     "paired / Build and sign Android APK / Sign and publish fork APK artifact",
     "native-runtime / macos",
     "native-runtime / android",
+    "paired / Build and sign Android APK / Build fork arm64 APK",
+    "paired / Cross-check paired candidate artifacts",
   ].map((name, index) => ({
     id: index + 1,
     name,
@@ -814,26 +827,26 @@ test("paired transfer binds signing, fresh import and native runtime before reta
       const missing = jobs.filter(
         (job) => !job.name.includes(platform === "macos" ? "fresh runner" : "Sign and publish"),
       );
-      await assert.rejects(pairedRuntime(context, platform, missing));
+      await assert.rejects(pairedRuntime(context, platform, ledgerFor(missing)));
       await assert.rejects(
         pairedRuntime(
           context,
           platform,
-          jobs.map((job) => ({ ...job, run_attempt: 1 })),
+          ledgerFor(jobs.map((job) => ({ ...job, run_attempt: 1 }))),
         ),
       );
       for (const slot of slots.filter((item) => item.slot.includes(platform))) {
         proofs.remove(slot);
-        await assert.rejects(pairedRuntime(context, platform, jobs), /verify/);
+        await assert.rejects(pairedRuntime(context, platform, ledgerFor(jobs)), /verify/);
         proofs.add({ ...slot, evidence: { unexpected: true } });
-        await assert.rejects(pairedRuntime(context, platform, jobs));
+        await assert.rejects(pairedRuntime(context, platform, ledgerFor(jobs)));
         proofs.remove(slot);
         proofs.add(slot);
       }
       await transferPaired(env, {
         authenticate: async () => context,
         draftApi: () => api,
-        request: async (route) => (route.includes("/jobs?") ? { jobs } : root),
+        request: async (route) => attemptRoute(route, jobs, 2) ?? root,
         download: async (_pin, destination) => {
           await mkdir(join(destination, platform), { recursive: true });
           await writeFile(
@@ -1143,22 +1156,54 @@ test("package transfer streams verified files and rejects truncation, mutation a
   }
 });
 
-test("candidate aggregate requires every same-attempt native cell and all source verification lanes", async () => {
+test("candidate aggregate admits each cell from the attempt that last executed its producer", async () => {
   const descriptor = candidateFixture();
-  const jobs = Object.entries(producerGroups).map(([, group], index) => ({
-    id: index + 1,
-    name: group.job,
+  // Attempt 1 ran everything but Windows arm64, whose native job failed and whose
+  // transfer was skipped. "Re-run failed jobs" executed both in attempt 2, which
+  // carries every other success over as a clone and runs this aggregate.
+  const rerun = "windows-arm64";
+  const starts = ["2026-10-12T10:00:00Z", "2026-10-12T11:00:00Z"];
+  const names = [
+    ...Object.values(producerGroups).map((group) => group.job),
+    ...Object.keys(producerGroups).map(transferJob),
+    ...verificationJobs,
+  ];
+  const fresh = new Set([producerGroups[rerun].job, transferJob(rerun)]);
+  const execution = (name, id, attempt, started, conclusion = "success") => ({
+    id,
+    name,
+    run_id: 500,
+    run_attempt: attempt,
     status: "completed",
-    conclusion: "success",
-  }));
-  jobs.push(
-    ...verificationJobs.map((name, index) => ({
-      id: 100 + index,
-      name,
-      status: "completed",
-      conclusion: "success",
-    })),
+    conclusion,
+    started_at: started,
+    completed_at: started.replace(/:05:00Z$/, ":06:00Z"),
+  });
+  const attempts = [
+    names.map((name, index) => {
+      if (name === transferJob(rerun))
+        return { ...execution(name, index + 1, 1, "2026-10-12T10:05:00Z", "skipped") };
+      return execution(
+        name,
+        index + 1,
+        1,
+        "2026-10-12T10:05:00Z",
+        name === producerGroups[rerun].job ? "failure" : "success",
+      );
+    }),
+  ];
+  attempts.push(
+    names.map((name, index) =>
+      fresh.has(name)
+        ? execution(name, 1000 + index, 2, "2026-10-12T11:05:00Z")
+        : Object.assign(structuredClone(attempts[0][index]), { id: 2000 + index, run_attempt: 2 }),
+    ),
   );
+  const genuine = (name) =>
+    fresh.has(name)
+      ? attempts[1].find((job) => job.name === name)
+      : attempts[0].find((job) => job.name === name);
+  const jobs = attempts[1];
   const receipts = forkReleaseManifestFixture().artifacts.map((artifact) => {
     const cell = `${artifact.platform}/${artifact.arch}/${artifact.kind}`;
     const [group, producer] = Object.entries(producerGroups).find(([, item]) =>
@@ -1175,14 +1220,15 @@ test("candidate aggregate requires every same-attempt native cell and all source
       treeSha: descriptor.treeSha,
       version: descriptor.version,
       runId: 500,
-      attempt: 2,
+      attempt: group === rerun ? 2 : 1,
       group,
-      producerJobId: jobs.find((job) => job.name === producer.job).id,
+      producerJobId: genuine(producer.job).id,
       cell,
       artifact,
       runtime: { passed: true, cleanup: true, signature },
     };
   });
+  const storedIn = (group) => (group === rerun ? 2 : 1);
 
   const directory = await mkdtemp(join(tmpdir(), "candidate-aggregate-"));
   const pair = generateKeyPairSync("ed25519"),
@@ -1219,10 +1265,11 @@ test("candidate aggregate requires every same-attempt native cell and all source
   );
   for (const receipt of receipts) {
     const artifact = receipt.artifact,
-      bytes = Buffer.from(artifact.name);
+      bytes = Buffer.from(artifact.name),
+      prefix = `run-500-attempt-${storedIn(receipt.group)}-`;
     artifact.bytes = bytes.length;
     artifact.sha256 = hash(bytes);
-    upload(42, `run-500-attempt-2-${artifact.name}`, bytes);
+    upload(42, `${prefix}${artifact.name}`, bytes);
     if (artifact.closureManifest) {
       const closure = Buffer.from(
         JSON.stringify({
@@ -1243,15 +1290,17 @@ test("candidate aggregate requires every same-attempt native cell and all source
       );
       artifact.closureManifest.bytes = closure.length;
       artifact.closureManifest.sha256 = hash(closure);
-      upload(42, `run-500-attempt-2-${artifact.closureManifest.name}`, closure);
+      upload(42, `${prefix}${artifact.closureManifest.name}`, closure);
     }
   }
   for (const group of Object.keys(producerGroups))
     upload(
       42,
-      `run-500-attempt-2-receipts-${group}.json`,
+      `run-500-attempt-${storedIn(group)}-receipts-${group}.json`,
       Buffer.from(JSON.stringify(receipts.filter((receipt) => receipt.group === group))),
     );
+  // A partial attempt-1 upload of the rerun group must never be admitted.
+  upload(42, `run-500-attempt-1-receipts-${rerun}.json`, Buffer.from("[]"));
   const api = {
     publicPin,
     get: async () => structuredClone(draft),
@@ -1292,15 +1341,14 @@ test("candidate aggregate requires every same-attempt native cell and all source
     GITHUB_EVENT_NAME: "workflow_dispatch",
     CANDIDATE_NATIVE_ENABLED: "true",
   };
-  const adapters = {
-    authenticate: async () => context,
-    draftApi: () => api,
-    publicPin,
-    request: async (route) =>
-      route.includes("/jobs?")
-        ? { jobs: jobs.map((job) => ({ ...job, run_id: 500, run_attempt: 2 })) }
-        : root,
+  const request = async (route) => {
+    const match = route.match(/\/runs\/500\/attempts\/(\d)(\/jobs)?/);
+    if (!match) return root;
+    const number = Number(match[1]);
+    if (match[2]) return { jobs: attempts[number - 1] };
+    return { id: 500, run_attempt: number, run_started_at: starts[number - 1] };
   };
+  const adapters = { authenticate: async () => context, draftApi: () => api, publicPin, request };
   try {
     await assert.rejects(
       verifyAggregate({ ...env, CANDIDATE_NATIVE_ENABLED: "false" }, adapters),
@@ -1339,7 +1387,12 @@ test("candidate aggregate requires every same-attempt native cell and all source
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
-  assert.equal(aggregateCandidate(descriptor, 500, 2, receipts, jobs).artifacts.length, 14);
+  const { producers } = await resolveGroups(context, request);
+  assert.equal(producers[rerun].attempt, 2);
+  assert.equal(producers["linux-nix-x64"].attempt, 1);
+  const aggregate = (rows, list = jobs, resolved = producers) =>
+    aggregateCandidate(descriptor, 500, rows, list, resolved);
+  assert.equal(aggregate(receipts).artifacts.length, 14);
   for (const change of [
     (rows) => rows.pop(),
     (rows) => rows.push(rows[0]),
@@ -1347,7 +1400,17 @@ test("candidate aggregate requires every same-attempt native cell and all source
       rows[1] = rows[0];
     },
     (rows) => {
-      rows[0].attempt = 1;
+      rows[0].attempt = 2;
+    },
+    // The failed attempt-1 Windows arm64 execution cannot authorize its cell.
+    (rows) => {
+      const row = rows.find((receipt) => receipt.group === rerun);
+      row.attempt = 1;
+      row.producerJobId = attempts[0].find((job) => job.name === producerGroups[rerun].job).id;
+    },
+    (rows) => {
+      rows.find((receipt) => receipt.group === rerun).producerJobId =
+        attempts[1].find((job) => job.name === producerGroups[rerun].job).id + 1;
     },
     (rows) => {
       rows[0].sourceSha = "f".repeat(40);
@@ -1376,30 +1439,78 @@ test("candidate aggregate requires every same-attempt native cell and all source
   ]) {
     const altered = structuredClone(receipts);
     change(altered);
-    assert.throws(() => aggregateCandidate(descriptor, 500, 2, altered, jobs));
+    assert.throws(() => aggregate(altered));
   }
-  for (const name of [producerGroups[receipts[0].group].job, verificationJobs[0]]) {
-    assert.throws(() =>
-      aggregateCandidate(
-        descriptor,
-        500,
-        2,
-        receipts,
-        jobs.filter((job) => job.name !== name),
+  assert.throws(() =>
+    aggregate(
+      receipts,
+      jobs.filter((job) => job.name !== verificationJobs[0]),
+    ),
+  );
+  assert.throws(() =>
+    aggregate(
+      receipts,
+      jobs.map((job) =>
+        job.name === verificationJobs[0] ? Object.assign({}, job, { conclusion: "failure" }) : job,
       ),
-    );
-    assert.throws(() =>
-      aggregateCandidate(
-        descriptor,
-        500,
-        2,
-        receipts,
-        jobs.map((job) =>
-          job.name === name ? Object.assign({}, job, { conclusion: "failure" }) : job,
-        ),
-      ),
-    );
+    ),
+  );
+  // A clone whose source execution differs, or a second genuine run of the
+  // producer in attempt 2, makes the carried-over provenance unusable.
+  for (const edit of [
+    (job) => ({ ...job, completed_at: "2026-10-12T10:07:00Z" }),
+    (job) => ({ ...job, started_at: "2026-10-12T11:05:00Z", conclusion: "failure" }),
+  ]) {
+    const original = attempts[1];
+    const name = producerGroups["linux-nix-x64"].job;
+    attempts[1] = original.map((job) => (job.name === name ? edit(job) : job));
+    await assert.rejects(resolveGroups(context, request));
+    attempts[1] = original;
   }
+});
+
+test("rerun admission only moves the admitted run forward", async () => {
+  const descriptor = candidateFixture();
+  const draft = {
+    id: 42,
+    draft: true,
+    prerelease: false,
+    name: draftTag(descriptor),
+    tag_name: draftTag(descriptor),
+    target_commitish: descriptor.sourceSha,
+    body: draftBody(descriptor, "active", { runId: 500, attempt: 1 }),
+    assets: [],
+  };
+  let writes = 0;
+  let peer = null;
+  const api = {
+    list: async () => [structuredClone(draft)],
+    ref: async () => null,
+    async setBody(_id, body, _descriptor, expected) {
+      // A peer job of the same attempt may advance between read and write.
+      if (peer) [draft.body, peer] = [peer, null];
+      assert.equal(draft.body, expected, "Admission changed before update");
+      writes++;
+      draft.body = body;
+    },
+  };
+  const active = () => JSON.parse(draft.body).activeAttempt;
+  await advanceAttempt(api, descriptor, 42, 500, 1);
+  assert.equal(writes, 0, "The current attempt is already admitted");
+  peer = draftBody(descriptor, "active", { runId: 500, attempt: 2 });
+  await advanceAttempt(api, descriptor, 42, 500, 2);
+  assert.deepEqual(active(), { runId: 500, attempt: 2 });
+  assert.equal(writes, 0, "A peer's identical advance is accepted");
+  await advanceAttempt(api, descriptor, 42, 500, 3);
+  assert.deepEqual(active(), { runId: 500, attempt: 3 });
+  await assert.rejects(advanceAttempt(api, descriptor, 42, 500, 2), /regress/);
+  // Only issue admits another run; an older run's rerun never displaces a newer run.
+  draft.body = draftBody(descriptor, "active", { runId: 600, attempt: 1 });
+  await assert.rejects(advanceAttempt(api, descriptor, 42, 500, 4), /no longer admitted/);
+  await assert.rejects(advanceAttempt(api, descriptor, 42, 700, 1), /no longer admitted/);
+  draft.body = draftBody(descriptor, "stopped", { runId: 500, attempt: 3 });
+  await assert.rejects(advanceAttempt(api, descriptor, 42, 500, 4), /stopped/);
+  assert.deepEqual(active(), { runId: 500, attempt: 3 });
 });
 
 function candidateFixture() {
