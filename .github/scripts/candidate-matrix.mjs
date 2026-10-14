@@ -83,19 +83,19 @@ export function validateCellReceipt(receipt, descriptor, runId, attempt) {
   return receipt;
 }
 
-// API provenance is supplied by the controller's fresh run-attempt jobs response,
-// never by fields asserted inside a producer-controlled bundle.
-export function verifyProducerJob(receipt, jobs) {
-  const matches = jobs.filter((job) => job.id === receipt.producerJobId);
-  assert.equal(matches.length, 1, "Missing or duplicate producer job");
-  const job = matches[0];
+// API provenance comes from the controller's own reading of the run's attempts,
+// never from fields asserted inside a producer-controlled bundle. A producer
+// may have executed in an earlier attempt than the one aggregating.
+export function verifyProducerJob(receipt, producer) {
+  const { job } = producer;
+  assert.equal(job.id, receipt.producerJobId, "Receipt names another producer execution");
   assert.equal(job.name, producerGroups[receipt.group].job);
   assert.equal(job.status, "completed");
   assert.equal(job.conclusion, "success");
-  assert.equal(jobs.filter((item) => item.name === job.name).length, 1, "Ambiguous producer name");
+  assert.equal(receipt.attempt, producer.attempt);
 }
 
-export function aggregateCandidate(descriptor, runId, attempt, receipts, jobs) {
+export function aggregateCandidate(descriptor, runId, receipts, jobs, producers) {
   validateDescriptor(descriptor);
   for (const name of verificationJobs) {
     const matches = jobs.filter((job) => job.name === name);
@@ -106,9 +106,11 @@ export function aggregateCandidate(descriptor, runId, attempt, receipts, jobs) {
   assert.equal(receipts.length, descriptor.cells.length, "Incomplete candidate matrix");
   const remaining = new Set(descriptor.cells);
   for (const receipt of receipts) {
-    validateCellReceipt(receipt, descriptor, runId, attempt);
+    const producer = producers[receipt.group];
+    assert.ok(producer, "Receipt from an unknown producer group");
+    validateCellReceipt(receipt, descriptor, runId, producer.attempt);
     assert.ok(remaining.delete(receipt.cell), "Duplicate or unexpected candidate cell");
-    verifyProducerJob(receipt, jobs);
+    verifyProducerJob(receipt, producer);
   }
   assert.equal(remaining.size, 0);
   const manifest = {

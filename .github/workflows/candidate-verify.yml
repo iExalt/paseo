@@ -144,4 +144,4 @@ jobs:
           name: candidate-deep-${{ matrix.lane }}-${{ inputs.source_sha }}-${{ github.run_attempt }}
           path: .dev/github-workflows/deep/${{ matrix.lane }}/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
