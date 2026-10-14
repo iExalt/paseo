@@ -96,6 +96,9 @@ jobs:
           PASEO_RELEASE_MANIFEST_PRIVATE_KEY: ${{ (github.event_name == 'pull_request_target' || (inputs.merged_pr != '' && inputs.release_id == '')) && secrets.PASEO_RELEASE_MANIFEST_PRIVATE_KEY || '' }}
         run: node .github/scripts/candidate-entry.mjs
 
+  # The release PR head already passed routine and deep CI before merge, so
+  # native groups start alongside this re-verification; only aggregate
+  # signing waits for it.
   verify:
     needs: issue
     uses: ./.github/workflows/candidate-verify.yml
@@ -111,7 +114,7 @@ jobs:
       descriptor_digest: ${{ needs.issue.outputs.descriptor_digest }}
 
   paired:
-    needs: [issue, verify]
+    needs: [issue]
     if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/fork-builds.yml
     permissions:
@@ -149,7 +152,7 @@ jobs:
 
   linux-nix-x64:
     name: linux-nix (x64)
-    needs: [issue, verify]
+    needs: [issue]
     if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-nix-runtime.yml
     permissions:
@@ -184,7 +187,7 @@ jobs:
 
   linux-nix-arm64:
     name: linux-nix (arm64)
-    needs: [issue, verify]
+    needs: [issue]
     if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-nix-runtime.yml
     permissions:
@@ -219,7 +222,7 @@ jobs:
 
   linux-products-x64:
     name: linux-products (x64)
-    needs: [issue, verify]
+    needs: [issue]
     if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-product-runtime.yml
     permissions:
@@ -252,7 +255,7 @@ jobs:
 
   linux-products-arm64:
     name: linux-products (arm64)
-    needs: [issue, verify]
+    needs: [issue]
     if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/linux-product-runtime.yml
     permissions:
@@ -285,7 +288,7 @@ jobs:
 
   windows-x64:
     name: windows (x64)
-    needs: [issue, verify]
+    needs: [issue]
     if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/windows-product-runtime.yml
     permissions:
@@ -318,7 +321,7 @@ jobs:
 
   windows-arm64:
     name: windows (arm64)
-    needs: [issue, verify]
+    needs: [issue]
     if: needs.issue.outputs.native == 'true'
     uses: ./.github/workflows/windows-product-runtime.yml
     permissions:
