@@ -144,7 +144,7 @@ export async function currentGrantedCandidate(
     proof.context,
     proof.group,
     proof.worker,
-    proof.jobs,
+    proof.ledger,
     proof.pin,
     proof.artifact,
   );

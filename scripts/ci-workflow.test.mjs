@@ -251,7 +251,11 @@ test("candidate coordinator cannot sign before complete verification and keeps c
     "windows-x64",
     "windows-arm64",
   ])
-    assert.equal(workflow.jobs[name].if, "vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true'");
+    assert.equal(workflow.jobs[name].if, "needs.issue.outputs.native == 'true'");
+  assert.equal(
+    workflow.jobs.issue.outputs.native,
+    "${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED == 'true' }}",
+  );
   const steps = workflow.jobs.aggregate.steps;
   const check = steps.findIndex((step) => step.id === "verified");
   const signing = steps.findIndex((step) => step.env?.PASEO_RELEASE_MANIFEST_PRIVATE_KEY);
@@ -332,7 +336,7 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   );
   assert.equal(uploads.length, 1);
   assert.ok(uploads[0].with.path.endsWith("/evidence"));
-  assert.equal(uploads[0].with["retention-days"], 1);
+  assert.equal(uploads[0].with["retention-days"], 3);
   assert.equal(uploads[0].if, "always() && steps.evidence.outcome == 'success'");
 });
 
@@ -454,7 +458,7 @@ test("native candidate runtime is manual, read-only and bounded to hosted verifi
   assert.match(source, /timeout-minutes: 10/);
   assert.match(source, /install_args: node@26\.11\.0/);
   assert.match(source, /cache: false/);
-  assert.match(source, /retention-days: 1/);
+  assert.match(source, /retention-days: 3/);
   assert.match(source, /macos-candidate-runtime\.mjs/);
   assert.match(source, /android-candidate-host\.sh/);
   assert.match(source, /timeout-minutes: 15/);
@@ -728,7 +732,7 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
   assert.match(sign, /test "\$\(jq -r \.forkVersion "\$metadata"\)" = "\$FORK_VERSION"/);
   assert.match(sign, /apkSha256/);
   assert.match(sign, /signingRunAttempt/);
-  assert.match(sign, /retention-days: 1/);
+  assert.match(sign, /retention-days: 3/);
   assert.match(sign, /artifact-ids: \$\{\{ needs\.build\.outputs\.artifact_id \}\}/);
   assert.match(sign, /steps\.upload-final\.outputs\.artifact-digest/);
   assert.match(sign, /verified=true/);
@@ -779,7 +783,7 @@ test("fork candidate orchestration shares one identity and only completes after 
   assert.match(candidate, /MACOS_MANIFEST_SHA256/);
   assert.match(candidate, /signingCertificateSha256/);
   assert.match(candidate, /\.signingRunId == \$runId/);
-  assert.match(candidate, /\.signingRunAttempt == \$runAttempt/);
+  assert.match(candidate, /\.signingRunAttempt == \$signingRunAttempt/);
   assert.match(candidate, /\.runAttempt \| type == "string"/);
   assert.doesNotMatch(candidate, /\.runAttempt == \$runAttempt/);
   assert.match(candidate, /paired-candidate\.json/);
@@ -906,6 +910,7 @@ test("candidate metadata rejects old, mixed, wrong-version and wrong-source inve
           FORK_VERSION: "0.1.0",
           GITHUB_RUN_ID: "1",
           android_artifact_attempt: "1",
+          android_built: "1",
           ANDROID_PACKAGE_ID: android.packageId,
           ANDROID_VERSION_CODE: android.versionCode,
           APPROVED_ANDROID_CERT_SHA256: android.signingCertificateSha256,
@@ -927,24 +932,30 @@ test("candidate metadata rejects old, mixed, wrong-version and wrong-source inve
   }
 });
 
-test("paired coordinator requires both platform artifacts from the admitted attempt", () => {
+test("paired coordinator requires each platform artifact from its producer's latest execution", () => {
   const source = readFileSync(forkBuildsWorkflowPath, "utf8");
   const start = source.indexOf("          android_artifact_attempt=");
   const end = source.indexOf("          android_dir=", start);
   assert.ok(start >= 0 && end > start);
-  const validation = `set -euo pipefail\n${source
+  // The ledger CLI is replaced by the attempts that last executed each producer.
+  const ledger = `node() { case "$2" in
+    *"Sign and publish"*) echo "$ANDROID_PRODUCED" ;;
+    *"Build and sign macOS"*) echo "$MACOS_PRODUCED" ;;
+    *) echo 1 ;;
+  esac; }\n`;
+  const validation = `set -euo pipefail\n${ledger}${source
     .slice(start, end)
     .split("\n")
     .map((line) => line.slice(10))
     .join("\n")}`;
   const sha = "a".repeat(40);
-  for (const [androidAttempt, macosAttempt, accepted] of [
-    ["2", "2", true],
-    ["1", "2", false],
-    ["2", "1", false],
-    ["3", "2", false],
-    ["1", "3", false],
-    ["0", "2", false],
+  for (const [androidAttempt, macosAttempt, androidProduced, macosProduced, accepted] of [
+    ["2", "2", "2", "2", true],
+    ["1", "2", "1", "2", true],
+    ["1", "2", "2", "2", false],
+    ["2", "1", "2", "2", false],
+    ["3", "2", "2", "2", false],
+    ["0", "2", "0", "2", false],
   ]) {
     const result = spawnSync("/bin/bash", ["-c", validation], {
       env: {
@@ -952,11 +963,17 @@ test("paired coordinator requires both platform artifacts from the admitted atte
         FORK_VERSION: "0.1.0",
         ANDROID_VERSION_CODE: "200001",
         GITHUB_RUN_ATTEMPT: "2",
+        ANDROID_PRODUCED: androidProduced,
+        MACOS_PRODUCED: macosProduced,
         ANDROID_ARTIFACT_NAME: `paseo-iexalt-200001-${sha}-attempt-${androidAttempt}`,
         MACOS_ARTIFACT_NAME: `paseo-nix-closure-${sha}-0.1.0-attempt-${macosAttempt}`,
       },
     });
-    assert.equal(result.status === 0, accepted, `${androidAttempt}/${macosAttempt}`);
+    assert.equal(
+      result.status === 0,
+      accepted,
+      `${androidAttempt}/${macosAttempt}: ${result.stderr}`,
+    );
   }
 });
 
