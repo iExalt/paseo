@@ -26,6 +26,9 @@ awk '/will be built:$/ { section = 1; next } !/^  / { section = 0 }
   section && $1 ~ /^\/nix\/store\/.*\.drv$/ { print $1 }' "$work/plan" | sort -u > "$work/built"
 fixed=()
 while IFS= read -r derivation; do fixed+=("$derivation^*"); done < <(comm -12 "$work/fixed" "$work/built")
+if ! grep -qE 'will be (built|fetched)' "$work/plan" && [[ -s "$work/fixed" ]]; then
+  echo '::warning::nix build --dry-run printed no recognizable plan; prefetch skipped' >&2
+fi
 echo "Fixed-output derivations to fetch: ${#fixed[@]} of $(wc -l < "$work/fixed" | tr -d ' ')"
 (( ${#fixed[@]} > 0 )) || exit 0
 for attempt in 1 2 3; do
