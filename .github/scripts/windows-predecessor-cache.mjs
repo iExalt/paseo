@@ -4,7 +4,6 @@ import { execFileSync } from "node:child_process";
 import {
   appendFileSync,
   copyFileSync,
-  existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
@@ -120,7 +119,7 @@ export function consumeCache(directory, recipe, root) {
   return identity;
 }
 
-function recipeForRunner(proof = false) {
+function recipeForRunner() {
   assert.equal(process.platform, "win32");
   assert.equal(process.version, "v26.11.0");
   assert.ok(["arm64", "x64"].includes(process.arch));
@@ -141,7 +140,7 @@ function recipeForRunner(proof = false) {
   const packages = JSON.parse(lock).packages;
   assert.equal(packages["node_modules/electron"].version, "44.6.0");
   assert.equal(packages["node_modules/electron-builder"].version, "26.15.3");
-  const { previous: previousSource } = loadWindowsSources({ proof });
+  const { previous: previousSource } = loadWindowsSources();
   assert.equal(
     execFileSync("git", ["-C", previousSource, "rev-parse", "HEAD"], {
       encoding: "utf8",
@@ -199,44 +198,20 @@ async function main() {
   const directory = join(process.env.RUNNER_TEMP, "paseo-windows-predecessor-cache");
   const recipeFile = join(process.env.RUNNER_TEMP, "paseo-windows-predecessor-recipe.json");
   const output = (name, value) => appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
-  if (operation === "cleanup-proof") {
-    const previousSource = join(root, "previous-source");
-    if (existsSync(previousSource))
-      execFileSync("git", ["worktree", "remove", previousSource], { timeout: 30000 });
-    assert.equal(existsSync(previousSource), false, "Proof worktree cleanup required");
-    return;
-  }
-  if (operation === "prepare" || operation === "prepare-proof") {
-    if (operation === "prepare-proof") {
-      mkdirSync(root);
-      mkdirSync(join(root, "evidence"));
-      const previousSource = join(root, "previous-source");
-      execFileSync("git", ["worktree", "add", "--detach", previousSource, previousSha], {
-        timeout: 30000,
-      });
-      assert.equal(
-        execFileSync("git", ["-C", previousSource, "status", "--porcelain"], {
-          encoding: "utf8",
-          timeout: 15000,
-        }).trim(),
-        "",
-      );
-    }
-    const recipe = recipeForRunner(operation === "prepare-proof");
-    if (operation === "prepare") {
-      const candidate = json(join(root, "candidate.json"));
-      assert.equal(candidate.sourceSha, process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA);
-      if (process.arch === "arm64")
-        assert.deepEqual(candidate.binding.provenance, recipe.bindingProvenance);
-    }
+  if (operation === "prepare") {
+    const recipe = recipeForRunner();
+    const candidate = json(join(root, "candidate.json"));
+    assert.equal(candidate.sourceSha, process.env.PASEO_CANDIDATE_SHA || process.env.GITHUB_SHA);
+    if (process.arch === "arm64")
+      assert.deepEqual(candidate.binding.provenance, recipe.bindingProvenance);
     save(recipeFile, recipe);
     output("key", cacheKey(recipe));
     output("directory", directory);
     return;
   }
   const recipe = json(recipeFile);
-  assert.deepEqual(recipe, recipeForRunner(operation === "restore-proof"));
-  if (operation === "restore" || operation === "restore-proof") {
+  assert.deepEqual(recipe, recipeForRunner());
+  if (operation === "restore") {
     assert.equal(
       process.env.PREDECESSOR_CACHE_MATCHED_KEY,
       cacheKey(recipe),

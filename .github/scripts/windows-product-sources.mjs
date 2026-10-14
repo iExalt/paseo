@@ -14,7 +14,7 @@ export function windowsStorageRoot(env) {
 
 // Layout selection does not establish disk ownership or antivirus state. The
 // storage controller independently checks those before writes and teardown.
-export function windowsSourcePaths(env, owner, { proof = false } = {}) {
+export function windowsSourcePaths(env, owner) {
   assert.ok(["arm64", "x64"].includes(env.EXPECTED_ARCHITECTURE));
   assert.match(env.GITHUB_RUN_ID, /^\d+$/);
   assert.match(env.GITHUB_RUN_ATTEMPT, /^\d+$/);
@@ -25,7 +25,7 @@ export function windowsSourcePaths(env, owner, { proof = false } = {}) {
     env.RUNNER_TEMP,
     `paseo-windows-products-${env.GITHUB_RUN_ID}-${env.GITHUB_RUN_ATTEMPT}`,
   );
-  if (proof || env.EXPECTED_ARCHITECTURE === "x64") {
+  if (env.EXPECTED_ARCHITECTURE === "x64") {
     assert.equal(owner, undefined, "Ordinary layout must not consume storage ownership");
     return {
       controller,
@@ -55,13 +55,13 @@ export function windowsSourcePaths(env, owner, { proof = false } = {}) {
   return { controller, candidate, previous };
 }
 
-export function loadWindowsSources({ proof = false, env = process.env } = {}) {
+export function loadWindowsSources({ env = process.env } = {}) {
   let owner;
-  if (!proof && env.EXPECTED_ARCHITECTURE === "arm64") {
+  if (env.EXPECTED_ARCHITECTURE === "arm64") {
     const filename = win32.join(windowsStorageRoot(env), "owner.json");
     const info = lstatSync(filename);
     assert.ok(info.isFile() && !info.isSymbolicLink(), "Regular storage ownership record required");
     owner = JSON.parse(readFileSync(filename, "utf8"));
   }
-  return windowsSourcePaths(env, owner, { proof });
+  return windowsSourcePaths(env, owner);
 }
