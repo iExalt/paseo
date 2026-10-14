@@ -72,6 +72,7 @@ jobs:
     timeout-minutes: 30
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: runtime
       CANDIDATE_EXPECTED_JOB: native-runtime / android
@@ -157,6 +158,7 @@ jobs:
     timeout-minutes: 30
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize.outputs.artifact_id }}
+      CANDIDATE_LIVE_NATIVE: ${{ vars.PASEO_CANDIDATE_NATIVE_ENABLED }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize.outputs.artifact_digest }}
       CANDIDATE_GRANT_GROUP: runtime
       CANDIDATE_EXPECTED_JOB: native-runtime / macos
