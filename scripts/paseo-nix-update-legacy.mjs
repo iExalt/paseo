@@ -148,7 +148,7 @@ function sequenceFromTag(tag) {
   return match ? BigInt(match[1]) : 0n;
 }
 
-async function fetchHttps(url, headers = {}) {
+async function fetchHttps(url, headers = {}, { signal } = {}) {
   let current = new URL(url);
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
     if (
@@ -160,7 +160,7 @@ async function fetchHttps(url, headers = {}) {
     ) {
       fail(`Refusing an unexpected GitHub download URL: ${current.origin}`);
     }
-    const response = await fetch(current, { headers, redirect: "manual" });
+    const response = await fetch(current, { headers, redirect: "manual", signal });
     if (![301, 302, 303, 307, 308].includes(response.status)) {
       return response;
     }
@@ -186,10 +186,15 @@ function assertApiAsset(asset, releaseId) {
   }
 }
 
-async function downloadAsset(asset, destination, { expectedBytes, expectedSha256, maxBytes }) {
-  const response = await fetchHttps(asset.url, { Accept: "application/octet-stream" });
+async function downloadAsset(
+  asset,
+  destination,
+  { expectedBytes, expectedSha256, maxBytes, signal },
+) {
+  const response = await fetchHttps(asset.url, { Accept: "application/octet-stream" }, { signal });
   if (!response.ok || !response.body) {
-    fail(`GitHub asset ${asset.name} download failed with HTTP ${response.status}.`);
+    const limited = response.status === 429 ? " (GitHub rate limit reached; retry later)" : "";
+    fail(`GitHub asset ${asset.name} download failed with HTTP ${response.status}${limited}.`);
   }
   const hash = createHash("sha256");
   let bytes = 0;

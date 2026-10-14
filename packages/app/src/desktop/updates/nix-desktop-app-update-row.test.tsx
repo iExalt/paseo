@@ -168,4 +168,20 @@ describe("Nix desktop About update row", () => {
     expect(screen.queryByText("missing:settings.about.nixUpdates.stageInProgress")).toBeNull();
     finishStage(result("stage", { staged: candidate, canStage: false }));
   });
+
+  it("keeps local versions visible when the release lookup or status fails", async () => {
+    const lookupError = "GitHub rate limit reached while fetching the latest release. Retry later.";
+    harness.bridge.check.mockResolvedValue(result("check", { latestError: lookupError }));
+    render(<NixDesktopAppUpdateRow appVersion="0.1.0" />);
+    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
+    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.check" }));
+    await screen.findByText(lookupError);
+    expect(screen.getByText('settings.about.nixUpdates.active {"version":"v0.1.0"}')).toBeTruthy();
+
+    cleanup();
+    harness.bridge.status.mockRejectedValue(new Error("requires explicit manual migration"));
+    render(<NixDesktopAppUpdateRow appVersion="0.1.0" />);
+    await screen.findByText("requires explicit manual migration");
+    expect(screen.getByText('settings.about.nixUpdates.running {"version":"v0.1.0"}')).toBeTruthy();
+  });
 });
