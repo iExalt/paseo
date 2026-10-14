@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { packageLimit, fileIdentity, verifyStream, withVerifiedFile } from "./candidate-files.mjs";
 import { validateDraft } from "./candidate-draft.mjs";
+import { retryingFetch } from "./github-retry.mjs";
 
 const root = "https://api.github.com/repos/iExalt/paseo";
 const uploads = "https://uploads.github.com/repos/iExalt/paseo";
@@ -42,7 +43,7 @@ async function bounded(response, maximum) {
 // Metadata is bounded in memory; package transfers hash streams end to end.
 export function candidateGithub(token, request = fetch) {
   assert.ok(typeof token === "string" && token.length > 0);
-  const transport = request;
+  const transport = retryingFetch(request);
   request = async (...args) => {
     const result = await transport(...args);
     candidateQuota(result.headers);

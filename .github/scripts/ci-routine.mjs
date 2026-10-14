@@ -12,6 +12,7 @@ export const coreTests = [
   "scripts/release-pr-checks.test.mjs",
   "scripts/candidate-descriptor.test.mjs",
   "scripts/step-proof.test.mjs",
+  "scripts/github-retry.test.mjs",
   "scripts/candidate-nix-export.test.mjs",
   "scripts/fork-release-config.test.mjs",
   "scripts/candidate-artifacts.test.mjs",

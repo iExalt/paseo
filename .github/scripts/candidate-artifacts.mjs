@@ -11,6 +11,7 @@ import { forkAndroidVersionCode } from "../../scripts/fork-version.mjs";
 import { readWorkerContext, attemptJobs } from "./candidate-worker.mjs";
 import { hasLiveAttemptJob } from "./candidate-job-proof.mjs";
 import { artifactEvidence, verifyCandidateProof } from "./step-proof.mjs";
+import { retryingFetch } from "./github-retry.mjs";
 
 const repository = "iExalt/paseo";
 const certificate = "943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459";
@@ -136,6 +137,7 @@ export async function hashFile(file) {
 // Authentication is sent only to the initial GitHub API request. Redirects are
 // bounded HTTPS requests without credentials, including on the same origin.
 export async function githubResponse(route, token, request = fetch) {
+  request = retryingFetch(request);
   let url = `https://api.github.com/repos/${repository}/${route}`;
   for (let redirects = 0; redirects <= 3; redirects++) {
     const response = await request(url, {
