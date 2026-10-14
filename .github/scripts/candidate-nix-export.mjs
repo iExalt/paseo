@@ -30,7 +30,7 @@ const options = [
 const command = (program, args, extra = {}) =>
   execFileSync(program, args, {
     encoding: "utf8",
-    timeout: 300_000,
+    timeout: 480_000,
     maxBuffer: 32 * 1024 ** 2,
     ...extra,
   }).trim();
