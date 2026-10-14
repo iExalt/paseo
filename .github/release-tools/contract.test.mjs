@@ -215,13 +215,28 @@ test("pending replacement is one selection commit over the exact repaired source
   assert.equal(
     await replacementForSource(
       descriptor,
+      async (sha, file) => {
+        if (sha !== record.repairBase) return readAt(sha, file);
+        if (file === ".release-please-manifest.json") return JSON.stringify({ ".": "0.0.0" });
+        if (file === ".github/fork-release.json")
+          return JSON.stringify({ ...JSON.parse(await readAt(sha, file)), version: "0.0.0" });
+        return readAt(sha, file);
+      },
+      compare,
+    ),
+    null,
+  );
+  // A version bump whose release configuration did not change cannot start a candidate.
+  await assert.rejects(
+    replacementForSource(
+      descriptor,
       async (sha, file) =>
         sha === record.repairBase && file === ".release-please-manifest.json"
           ? JSON.stringify({ ".": "0.0.0" })
           : readAt(sha, file),
       compare,
     ),
-    null,
+    /must change its release configuration/,
   );
   await assert.rejects(
     replacementForSource({ ...descriptor, version: "0.0.0" }, readAt, compare),
