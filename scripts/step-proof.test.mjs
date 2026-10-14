@@ -11,6 +11,7 @@ import {
   replaceStepProofVerifier,
   verifyStepProof,
 } from "../.github/scripts/step-proof.mjs";
+import { BUILD_CACHE_TYPE } from "../.github/scripts/build-cache-provenance.mjs";
 import { signedProof } from "./step-proof-fixture.mjs";
 
 const sha = "c".repeat(40);
@@ -235,6 +236,26 @@ const sites = {
   },
 };
 
+// Build cache archives are attested only by dispatched dev writers; a candidate
+// run never reaches the archive step those attestations gate on.
+const cacheWriters = {
+  "windows-product-runtime.yml/native": { archive: "modules-archive", key: "modules" },
+};
+function checkCacheSigner(site, steps, sign) {
+  const writer = cacheWriters[site];
+  assert.ok(writer, `${site} attests a build cache outside a known writer`);
+  const archive = steps.find((step) => step.id === writer.archive);
+  assert.match(archive.if, /inputs\.source_sha == ''/, `${site} archives in candidate runs`);
+  assert.equal(sign.uses, "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6");
+  assert.equal(sign.if, `steps.${writer.archive}.outcome == 'success'`);
+  assert.deepEqual(sign.with, {
+    "subject-path": `\${{ steps.${writer.key}.outputs.archive }}`,
+    "predicate-type": BUILD_CACHE_TYPE,
+    predicate: `\${{ format('{{"schemaVersion":1,"kind":"paseo-build-cache","key":"{0}"}}', steps.${writer.key}.outputs.key) }}`,
+    "show-summary": false,
+  });
+}
+
 test("every signed slot gates on its required step outcomes and nothing else signs", () => {
   const directory = new URL("../.github/workflows/", import.meta.url);
   const found = new Set();
@@ -243,7 +264,15 @@ test("every signed slot gates on its required step outcomes and nothing else sig
     for (const [key, job] of Object.entries(workflow.jobs)) {
       const steps = job.steps ?? [];
       const index = steps.findIndex((step) => step.id === "proof-subject");
-      const signers = steps.filter((step) => step.uses?.startsWith("actions/attest"));
+      const cacheSigners = steps.filter(
+        (step) =>
+          step.uses?.startsWith("actions/attest") &&
+          step.with?.["predicate-type"] === BUILD_CACHE_TYPE,
+      );
+      for (const step of cacheSigners) checkCacheSigner(`${file}/${key}`, steps, step);
+      const signers = steps.filter(
+        (step) => step.uses?.startsWith("actions/attest") && !cacheSigners.includes(step),
+      );
       if (index < 0) {
         assert.equal(signers.length, 0, `${file}/${key} signs outside a step proof`);
         continue;
