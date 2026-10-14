@@ -1,4 +1,4 @@
-import { parseForkVersion } from "@getpaseo/protocol/fork-version";
+import { forkReleaseTag, parseForkVersion } from "@getpaseo/protocol/fork-version";
 import { spawn } from "node:child_process";
 import type { DesktopInstallation } from "./nix-managed-install.js";
 
@@ -20,6 +20,7 @@ export interface NixUpdateResult {
   highWaterVersion: string | null;
   canStage?: boolean;
   message?: string;
+  latestError?: string;
   running: { version: string; outputPath: string };
 }
 
@@ -37,6 +38,14 @@ function sanitizeDiagnostic(value: string): string {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function sanitizeLatestError(value: Record<string, unknown>): void {
+  if (!("latestError" in value)) return;
+  if (typeof value.latestError !== "string" || !value.latestError) {
+    fail("The managed Nix updater returned an invalid release lookup error.");
+  }
+  value.latestError = sanitizeDiagnostic(value.latestError);
 }
 
 function parseResult(stdout: Buffer, command: NixUpdateCommand): Omit<NixUpdateResult, "running"> {
@@ -74,7 +83,7 @@ function parseResult(stdout: Buffer, command: NixUpdateCommand): Omit<NixUpdateR
     release === null ||
     (isObject(release) &&
       isVersion(release.version) &&
-      release.releaseTag === `v${release.version}` &&
+      release.releaseTag === forkReleaseTag(release.version) &&
       typeof release.outputPath === "string" &&
       /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(release.outputPath) &&
       release.outputPath.endsWith(`-paseo-desktop-${release.version}`));
@@ -87,6 +96,7 @@ function parseResult(stdout: Buffer, command: NixUpdateCommand): Omit<NixUpdateR
     fail("The managed Nix updater returned an invalid staged release.");
   }
   if (typeof value.message === "string") value.message = sanitizeDiagnostic(value.message);
+  sanitizeLatestError(value);
   return value as unknown as Omit<NixUpdateResult, "running">;
 }
 
