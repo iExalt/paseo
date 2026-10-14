@@ -33,7 +33,8 @@ jq -e -f .github/scripts/nix-build-environment.jq \
 ) > "$directory/resources.log" &
 monitor_pid=$!
 trap 'kill "$monitor_pid" 2>/dev/null || true; wait "$monitor_pid" 2>/dev/null || true' EXIT
-bash .github/scripts/nix-fetch-fixed-outputs.sh .#paseo .#desktop
+bash .github/scripts/nix-fetch-fixed-outputs.sh \
+  --option max-jobs 2 --option cores 2 -- .#paseo .#desktop
 started=$(date +%s)
 nix eval --raw --no-update-lock-file .#paseo.outPath > "$RUNNER_TEMP/linux-nix-daemon-path"
 nix eval --raw --no-update-lock-file .#desktop.outPath > "$RUNNER_TEMP/linux-nix-desktop-path"
