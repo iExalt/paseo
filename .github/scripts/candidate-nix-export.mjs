@@ -35,6 +35,13 @@ const command = (program, args, extra = {}) =>
     ...extra,
   }).trim();
 
+// Single-threaded xz left the desktop copy within seconds of its 300 s limit;
+// parallel xz keeps the same signed .nar.xz format that installers import.
+export function signedCacheUrl(cache, key) {
+  assert.match(key, /^\/[^?&#%]+$/);
+  return `${pathToFileURL(cache).href}?secret-key=${key}&parallel-compression=true`;
+}
+
 export function closureEntries(info, output) {
   assert.match(output, storePath);
   const entries = Object.entries(info)
@@ -141,7 +148,7 @@ export async function exportNix(env) {
       command("nix", [
         "copy",
         "--to",
-        `${pathToFileURL(cache).href}?secret-key=${key}`,
+        signedCacheUrl(cache, key),
         "--option",
         "builders",
         "",
