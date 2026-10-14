@@ -179,7 +179,6 @@ test("only fork-owned workflows are installed", () => {
     .filter((name) => /\.ya?ml$/.test(name))
     .sort();
   assert.deepEqual(workflows, [
-    "android-arm64-feasibility.yml",
     "candidate-auth.yml",
     "candidate-runtime.yml",
     "candidate-transfer.yml",
@@ -188,28 +187,15 @@ test("only fork-owned workflows are installed", () => {
     "ci.yml",
     "fork-android-apk.yml",
     "fork-builds.yml",
-    "linux-format-preflight.yml",
     "linux-nix-runtime.yml",
-    "linux-package-preflight.yml",
     "linux-product-runtime.yml",
     "macos-closure.yml",
-    "native-feasibility.yml",
     "rebase-dev.yml",
     "release-candidate.yml",
     "release-please.yml",
     "upstream-sync.yml",
-    "windows-arm64-feasibility.yml",
-    "windows-package-preflight.yml",
     "windows-product-runtime.yml",
   ]);
-  for (const name of workflows.filter((file) => file.endsWith("feasibility.yml"))) {
-    const workflow = load(readFileSync(new URL(`.github/workflows/${name}`, repoRoot), "utf8"));
-    assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
-    for (const job of Object.values(workflow.jobs)) {
-      assert.match(job.if, /github.ref == 'refs\/heads\/dev'/);
-      assert.match(job.if, /github.ref == 'refs\/heads\/ci\/github-workflows'/);
-    }
-  }
 });
 
 test("write-token product transfer executes only the trusted controller", () => {
@@ -377,26 +363,6 @@ test("native product exports authenticate source before execution and follow suc
       "${{ jobs.native.outputs.artifact_id }}",
     );
   }
-});
-
-test("Linux prerequisite canary evaluates without realizing packages", () => {
-  const workflow = readFileSync(
-    new URL(".github/workflows/linux-package-preflight.yml", repoRoot),
-    "utf8",
-  );
-  const script = readFileSync(
-    new URL(".github/scripts/linux-package-preflight.sh", repoRoot),
-    "utf8",
-  );
-  assert.match(workflow, /workflow_dispatch:/);
-  assert.doesNotMatch(
-    workflow,
-    /push:|pull_request:|: write|secrets\.|upload-artifact|actions\/cache/,
-  );
-  assert.match(workflow, /timeout-minutes: 10/);
-  assert.match(workflow, /github\.ref == 'refs\/heads\/dev'/);
-  assert.match(script, /nix build --dry-run --no-link/);
-  assert.match(script, /allow-import-from-derivation false/g);
 });
 
 test("Linux package verification selects and enforces the native architecture", () => {
