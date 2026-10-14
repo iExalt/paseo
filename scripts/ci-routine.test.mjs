@@ -118,6 +118,8 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   const cli = commands.find((step) => step.name === "cli units");
   assert.ok(cli.args.includes("**/*.e2e.test.ts"));
   const desktop = commands.find((step) => step.name === "desktop units");
+  const electron = commands.findIndex((step) => step.name === "desktop Electron binary");
+  assert.ok(electron >= 0 && electron < commands.indexOf(desktop));
   assert.ok(desktop.args.includes("scripts/after-pack.test.mjs"));
   assert.ok(desktop.args.includes("e2e/**"));
   assert.ok(desktop.args.includes("vitest"));
