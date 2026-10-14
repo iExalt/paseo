@@ -39,6 +39,7 @@ import {
 } from "../.github/scripts/candidate-product-transfer.mjs";
 import { verifyWorkerJob } from "../.github/scripts/candidate-worker.mjs";
 import {
+  eachBounded,
   resolveGroups,
   signAggregate,
   transferJob,
@@ -1865,4 +1866,29 @@ test("replacement authenticates retired signed authorities and rejects active, m
   );
   record.authorities[0].descriptorSha256 = "0".repeat(64);
   await assert.rejects(verifyHistory(), /inventory changed/);
+});
+
+test("aggregate downloads stay within their concurrency bound and surface failures", async () => {
+  let active = 0;
+  let peak = 0;
+  const seen = [];
+  await eachBounded([1, 2, 3, 4, 5, 6, 7], 3, async (item) => {
+    peak = Math.max(peak, ++active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    seen.push(item);
+    active--;
+  });
+  assert.equal(peak, 3);
+  assert.deepEqual(seen.toSorted(), [1, 2, 3, 4, 5, 6, 7]);
+  const started = [];
+  await assert.rejects(
+    eachBounded([1, 2, 3, 4, 5], 2, async (item) => {
+      started.push(item);
+      await new Promise((resolve) => setTimeout(resolve, item === 2 ? 1 : 5));
+      if (item === 2) throw new Error("changed bytes");
+    }),
+    /changed bytes/,
+  );
+  // The failure stops scheduling; only work already in flight finishes.
+  assert.deepEqual(started, [1, 2]);
 });

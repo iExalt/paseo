@@ -33,6 +33,28 @@ function asset(release, runId, attempt, name) {
   return matches[0];
 }
 
+// Sequential downloads put about four minutes on the critical path; a few at a
+// time stays well inside GitHub's download limits.
+const downloadConcurrency = 4;
+
+// Stops scheduling after the first failure and rethrows it once in-flight work
+// settles, so no download outlives the verdict.
+export async function eachBounded(items, limit, action) {
+  let next = 0;
+  let failure = null;
+  const worker = async () => {
+    while (!failure && next < items.length) {
+      try {
+        await action(items[next++]);
+      } catch (error) {
+        failure ??= { error };
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  if (failure) throw failure.error;
+}
+
 const storageOf = (transfers) =>
   Object.fromEntries(Object.entries(transfers).map(([group, item]) => [group, item.attempt]));
 
@@ -100,7 +122,8 @@ export async function verifyAggregate(
   const manifest = aggregateCandidate(descriptor, runId, receipts, jobs, producers);
   // Re-download every admitted byte from draft storage. Producer-local files or
   // artifact ZIPs cannot substitute for the eventual publication payload.
-  for (const entry of manifest.artifacts) {
+  const largestFirst = manifest.artifacts.toSorted((a, b) => b.bytes - a.bytes);
+  await eachBounded(largestFirst, downloadConcurrency, async (entry) => {
     const storedIn = stored.get(entry.name);
     await requireCurrentRun(env, request, context.descriptor);
     await api.verifyFile(asset(release, runId, storedIn, entry.name), entry);
@@ -119,7 +142,7 @@ export async function verifyAggregate(
         assert.equal(closure.system, entry.system);
       }
     }
-  }
+  });
   await requireCurrentRun(env, request, context.descriptor);
   await requireAttempt(api, descriptor, releaseId, runId, attempt);
   const bytes = Buffer.from(serializeForkReleaseManifest(manifest));
