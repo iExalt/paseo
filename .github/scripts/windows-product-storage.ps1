@@ -60,12 +60,15 @@ function Assert-OwnedVolume {
     $partition = Get-Partition -DriveLetter $owner.volumeRoot.Substring(0, 1)
     if ($partition.DiskNumber -ne $disk.Number -or (Get-Volume -DriveLetter $partition.DriveLetter).FileSystem -ne 'ReFS') { throw 'Volume no longer belongs to owned ReFS disk' }
 }
-function Assert-UntrustedVolume {
+# A trusted Dev Drive keeps Defender attached in performance mode (scans are
+# deferred rather than blocking each write); untrusted, npm ci took 11-22 min.
+function Assert-TrustedVolume {
     $owner = Read-OwnedStorage
     if (!$owner.ready) { throw 'Storage is not ready' }
     Assert-OwnedVolume
     $trust = (fsutil devdrv query $owner.volumeRoot | Out-String)
-    if ($LASTEXITCODE -ne 0 -or $trust -notmatch '(?i)\buntrusted\b|\bnot\s+(?:a\s+)?trusted\b') { throw 'Explicit untrusted status required' }
+    if ($LASTEXITCODE -ne 0 -or $trust -notmatch '(?i)\bis a trusted developer volume\b' -or
+        $trust -match '(?i)\buntrusted\b|\bnot\s+(?:a\s+)?trusted\b') { throw 'Explicit trusted status required' }
     $filters = (fltmc instances -v $owner.volumeRoot.TrimEnd('\') | Out-String)
     if ($LASTEXITCODE -ne 0 -or $filters -notmatch '\bWdFilter\b') { throw 'Antivirus filter attachment not verified' }
 }
@@ -149,7 +152,7 @@ if ($Phase -eq 'cleanup') {
     if ($failure) { throw $failure }
     exit 0
 }
-if ($Phase -eq 'check') { Assert-UntrustedVolume; exit 0 }
+if ($Phase -eq 'check') { Assert-TrustedVolume; exit 0 }
 
 if (Test-Path -LiteralPath $root) { throw 'Refuse reused storage identity' }
 if ((Invoke-SourceGit @('rev-parse', 'HEAD')) -ne $sourceSha -or (Invoke-SourceGit @('status', '--porcelain'))) { throw 'Exact clean source required' }
@@ -178,10 +181,10 @@ if ($owner.volumeRoot -notmatch '^[D-Z]:\\$') { throw 'Unexpected volume letter'
 $owner.candidate = Join-Path $owner.volumeRoot 'paseo-candidate'
 $owner.previous = Join-Path $owner.volumeRoot 'paseo-previous'
 $owner | ConvertTo-Json | Set-Content -LiteralPath $ownerFile
-# The new volume is empty until its default trust is removed and freshly checked.
-fsutil devdrv untrust /f $owner.volumeRoot
-if ($LASTEXITCODE -ne 0) { throw 'Could not untrust empty volume' }
+# Trust is set explicitly on the empty volume and freshly checked.
+fsutil devdrv trust /f $owner.volumeRoot
+if ($LASTEXITCODE -ne 0) { throw 'Could not trust empty volume' }
 $owner.ready = $true
 $owner | ConvertTo-Json | Set-Content -LiteralPath $ownerFile
-Assert-UntrustedVolume
-@{ storageReady = $true; fileSystem = 'ReFS'; trust = 'untrusted'; sourceSha = $sourceSha; volumeRoot = $owner.volumeRoot } | ConvertTo-Json -Compress | Write-Output
+Assert-TrustedVolume
+@{ storageReady = $true; fileSystem = 'ReFS'; trust = 'trusted'; sourceSha = $sourceSha; volumeRoot = $owner.volumeRoot } | ConvertTo-Json -Compress | Write-Output
