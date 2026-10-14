@@ -26,6 +26,8 @@ on:
         value: ${{ jobs.candidate-complete.outputs.artifact_id }}
       artifact_digest:
         value: ${{ jobs.candidate-complete.outputs.artifact_digest }}
+      attempt:
+        value: ${{ jobs.candidate-complete.outputs.attempt }}
 
 permissions:
   contents: read
@@ -189,6 +191,8 @@ jobs:
       artifact_id: ${{ steps.upload-manifest.outputs.artifact-id }}
       artifact_digest: ${{ steps.upload-manifest.outputs.artifact-digest }}
       manifest_sha256: ${{ steps.manifest.outputs.manifest_sha256 }}
+      # Consumers verify this against the run's attempts; a rerun may carry it.
+      attempt: ${{ github.run_attempt }}
     env:
       CANDIDATE_GRANT_ID: ${{ needs.authorize-complete.outputs.artifact_id }}
       CANDIDATE_GRANT_DIGEST: ${{ needs.authorize-complete.outputs.artifact_digest }}
@@ -259,6 +263,7 @@ jobs:
           MACOS_ARTIFACT_NAME: ${{ needs.build-macos.outputs.artifact_name }}
           MACOS_ARTIFACT_ID: ${{ needs.build-macos.outputs.artifact_id }}
           MACOS_ARTIFACT_DIGEST: ${{ needs.build-macos.outputs.artifact_digest }}
+          GH_TOKEN: ${{ github.token }}
           APPROVED_ANDROID_CERT_SHA256: 943626cd89e2d0b763d432db9100110b878953356db9d3e46497be2179989459
         run: |
           set -euo pipefail
@@ -279,11 +284,16 @@ jobs:
           test -n "$MACOS_ARTIFACT_ID" && test -n "$MACOS_ARTIFACT_DIGEST"
           android_artifact_attempt="${ANDROID_ARTIFACT_NAME##*-attempt-}"
           macos_artifact_attempt="${MACOS_ARTIFACT_NAME##*-attempt-}"
-          for lane_attempt in "$android_artifact_attempt" "$macos_artifact_attempt"; do
+          # Each lane may be carried over from the attempt that last executed it.
+          android_produced="$(node .github/scripts/candidate-attempts.mjs 'paired / Build and sign Android APK / Sign and publish fork APK artifact')"
+          macos_produced="$(node .github/scripts/candidate-attempts.mjs 'paired / Build and verify macOS closure / Build and sign macOS closure')"
+          android_built="$(node .github/scripts/candidate-attempts.mjs 'paired / Build and sign Android APK / Build fork arm64 APK')"
+          for lane in "$android_artifact_attempt:$android_produced" "$macos_artifact_attempt:$macos_produced"; do
+            lane_attempt="${lane%%:*}"
             [[ "$lane_attempt" =~ ^[1-9][0-9]*$ ]] \
               || { echo "Invalid platform artifact attempt." >&2; exit 1; }
-            (( lane_attempt == GITHUB_RUN_ATTEMPT )) \
-              || { echo "Platform artifact must belong to the admitted attempt." >&2; exit 1; }
+            (( lane_attempt == ${lane##*:} )) \
+              || { echo "Platform artifact must come from its producer's latest execution." >&2; exit 1; }
           done
           test "$ANDROID_ARTIFACT_NAME" = "paseo-iexalt-${ANDROID_VERSION_CODE}-${SOURCE_SHA}-attempt-${android_artifact_attempt}"
           test "$MACOS_ARTIFACT_NAME" = "paseo-nix-closure-${SOURCE_SHA}-${FORK_VERSION}-attempt-${macos_artifact_attempt}"
@@ -303,7 +313,8 @@ jobs:
 
           jq -e \
             --arg sourceSha "$SOURCE_SHA" --arg forkVersion "$FORK_VERSION" \
-            --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$android_artifact_attempt" \
+            --arg runId "$GITHUB_RUN_ID" --arg runAttempt "$android_built" \
+            --arg signingRunAttempt "$android_artifact_attempt" \
             --arg packageId "$ANDROID_PACKAGE_ID" --arg versionCode "$ANDROID_VERSION_CODE" \
             --arg certSha "$APPROVED_ANDROID_CERT_SHA256" --arg apkSha "$ANDROID_APK_SHA256" \
             '.kind == "paseo-verification-candidate" and .schemaVersion == 2
@@ -311,7 +322,7 @@ jobs:
               and .sourceSha == $sourceSha and .forkVersion == $forkVersion
               and .runId == $runId and .signingRunId == $runId
               and (.runAttempt | type == "string" and test("^[1-9][0-9]*$") and . == $runAttempt)
-              and .signingRunAttempt == $runAttempt
+              and .signingRunAttempt == $signingRunAttempt
               and .packageId == $packageId and .versionCode == $versionCode
               and .signingCertificateSha256 == $certSha and .apkSha256 == $apkSha
               and .abi == "arm64-v8a"' "$android_metadata" >/dev/null
@@ -367,7 +378,7 @@ jobs:
           name: paseo-paired-candidate-${{ needs.identity.outputs.fork_version }}-${{ needs.identity.outputs.source_sha }}-attempt-${{ github.run_attempt }}
           path: ${{ runner.temp }}/paired-candidate/
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
       - name: Bind step proof to this run attempt
         id: proof-subject
         if: steps.authority.outcome == 'success' && steps.manifest.outcome == 'success' && steps.upload-manifest.outcome == 'success'

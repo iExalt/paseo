@@ -209,7 +209,7 @@ jobs:
           name: ${{ steps.export.outputs.artifact_name }}
           path: ${{ runner.temp }}/paseo-nix-release-artifact/*
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 3
           compression-level: 0
       - name: Bind step proof to this run attempt
         id: proof-subject
