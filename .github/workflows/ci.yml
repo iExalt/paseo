@@ -182,6 +182,11 @@ jobs:
             packages/*/node_modules
       - name: Install locked dependencies
         if: steps.lookup.outputs.cache-hit != 'true'
+        env:
+          npm_config_fetch_timeout: "30000"
+          npm_config_fetch_retries: "2"
+          npm_config_fetch_retry_mintimeout: "1000"
+          npm_config_fetch_retry_maxtimeout: "5000"
         run: npm ci --prefer-offline
       # Dev pushes run concurrently; only the current head may replace the entry,
       # or a slower older push would delete the newer lockfile's cache.
