@@ -182,9 +182,18 @@ jobs:
             packages/*/node_modules
       - name: Install locked dependencies
         if: steps.lookup.outputs.cache-hit != 'true'
-        run: node scripts/npm-retry.mjs ci --prefer-offline
+        run: npm ci --prefer-offline
+      # Dev pushes run concurrently; only the current head may replace the entry,
+      # or a slower older push would delete the newer lockfile's cache.
+      - name: Require the current dev head
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/dev" --jq .object.sha)"
+          echo "current=$([[ "$head" == "$GITHUB_SHA" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
       - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        if: steps.lookup.outputs.cache-hit != 'true'
+        if: steps.lookup.outputs.cache-hit != 'true' && steps.head.outputs.current == 'true'
         with:
           key: ${{ steps.modules.outputs.key }}
           path: |
@@ -192,6 +201,7 @@ jobs:
             packages/*/node_modules
       # One rolling entry keeps the shared 10 GB budget for predecessor caches.
       - name: Remove superseded dependency caches
+        if: steps.head.outputs.current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           CURRENT: ${{ steps.modules.outputs.key }}
