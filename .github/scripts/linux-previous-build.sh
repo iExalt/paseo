@@ -17,6 +17,9 @@ for package in daemon desktop; do
   nix eval --impure --raw --no-update-lock-file --expr "($expression).$package.outPath" \
     > "$RUNNER_TEMP/linux-nix-previous-$package-path"
 done
+for package in daemon desktop; do
+  bash .github/scripts/nix-fetch-fixed-outputs.sh --impure --expr "($expression).$package"
+done
 started=$(date +%s)
 nix build --impure --no-link --no-update-lock-file --json \
   --option max-jobs 2 --option cores 2 \

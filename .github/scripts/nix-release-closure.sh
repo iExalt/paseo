@@ -270,6 +270,7 @@ build() {
   [[ "$(git rev-parse HEAD)" == "$source_sha" && "$(shasum -a 256 flake.lock | awk '{print $1}')" == "$lock_hash" ]] \
     || fail "Source or lock changed after preparation."
 
+  bash .github/scripts/nix-fetch-fixed-outputs.sh "$desktop_attr"
   build_started="$(date +%s)"
   output_path="$(nix build -L --no-link --print-out-paths --no-update-lock-file \
     --option builders '' "$desktop_attr")"

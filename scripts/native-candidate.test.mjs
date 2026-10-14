@@ -31,8 +31,8 @@ test("native coordinator exception requires the exact caller and matching worker
   ])
     assert.throws(() => assertNativeActor({ ...env, ...patch }, read));
 });
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { chmodSync, readFileSync } from "node:fs";
 test("DEB semver upgrade does not permit a package downgrade", () => {
   const source = readFileSync(
     new URL("../.github/scripts/linux-product-runtime.sh", import.meta.url),
@@ -510,5 +510,49 @@ test("native candidate reader rejects legacy or mismatched closure identities", 
     { closure: [] },
   ]) {
     assert.throws(() => validateCandidateClosure({ ...manifest, ...delta }, candidate));
+  }
+});
+
+test("Nix fixed-output prefetch retries only hash-pinned fetches", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "paseo-nix-fetch-"));
+  try {
+    for (const shape of ["wrapped", "flat"]) {
+      const derivations = {
+        "aaa-npm-deps.drv": { outputs: { out: { hash: "sha256-x", method: "nar" } } },
+        "bbb-paseo.drv": { outputs: { out: { path: "/nix/store/bbb-paseo" } } },
+      };
+      const shown =
+        shape === "wrapped"
+          ? { version: 4, derivations }
+          : Object.fromEntries(
+              Object.entries(derivations).map(([key, value]) => [`/nix/store/${key}`, value]),
+            );
+      writeFileSync(join(directory, "shown.json"), JSON.stringify(shown));
+      writeFileSync(join(directory, "builds"), "");
+      writeFileSync(
+        join(directory, "nix"),
+        `#!/usr/bin/env bash
+if [[ "$1" == derivation ]]; then cat "${directory}/shown.json"; exit; fi
+echo "$*" >> "${directory}/builds"
+(( $(wc -l < "${directory}/builds") > 1 ))
+`,
+      );
+      chmodSync(join(directory, "nix"), 0o755);
+      const result = spawnSync("bash", [".github/scripts/nix-fetch-fixed-outputs.sh", ".#paseo"], {
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          PATH: `${directory}:${process.env.PATH}`,
+          NIX_FETCH_RETRY_SECONDS: "0",
+        },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(
+        readFileSync(join(directory, "builds"), "utf8"),
+        "build --no-link /nix/store/aaa-npm-deps.drv^*\n".repeat(2),
+      );
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
   }
 });
