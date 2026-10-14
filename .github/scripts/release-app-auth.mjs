@@ -3,12 +3,13 @@ import { createSign } from "node:crypto";
 import { appendFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { retryingFetch } from "./github-retry.mjs";
 
 export const RELEASE_REPOSITORY_ID = 1404390841;
 export const RELEASE_REPOSITORY = "iExalt/paseo";
 
 export async function githubRequest(path, token) {
-  const response = await fetch(`https://api.github.com${path}`, {
+  const response = await retryingFetch(fetch)(`https://api.github.com${path}`, {
     headers: {
       Accept: "application/vnd.github+json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
