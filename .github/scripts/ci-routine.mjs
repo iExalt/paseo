@@ -178,7 +178,15 @@ export function planCommands(selection, cwd = root) {
   if (selection.domains.includes("cli"))
     unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
   if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"]);
-  if (selection.domains.includes("desktop"))
+  if (selection.domains.includes("desktop")) {
+    // Install scripts are skipped, so fetch Electron once before parallel workers
+    // would each try to extract it on first import.
+    add("desktop Electron binary", "npm", [
+      "exec",
+      "--workspace=@getpaseo/desktop",
+      "--",
+      "install-electron",
+    ]);
     add("desktop units", "npm", [
       "exec",
       "--workspace=@getpaseo/desktop",
@@ -191,6 +199,7 @@ export function planCommands(selection, cwd = root) {
       "scripts/after-pack.test.mjs",
       "--maxWorkers=4",
     ]);
+  }
   if (selection.domains.includes("server")) {
     const integration = (name, files, args = []) =>
       add(name, "npm", [
