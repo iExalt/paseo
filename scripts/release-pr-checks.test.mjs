@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { attemptRoute } from "./candidate-ledger-fixture.mjs";
 import test from "node:test";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
@@ -9,7 +10,8 @@ import { currentCandidate, candidateRoute } from "../.github/scripts/candidate-a
 import { descriptorDigest } from "../.github/scripts/candidate-descriptor.mjs";
 import { draftBody } from "../.github/scripts/candidate-draft.mjs";
 import { workerGate, readTrustedWorkerContext } from "../.github/scripts/candidate-worker.mjs";
-import { grantGroups } from "../.github/scripts/candidate-grant.mjs";
+import { grantGroups, validateGrant } from "../.github/scripts/candidate-grant.mjs";
+import { attemptLedger } from "../.github/scripts/candidate-attempts.mjs";
 import { sourceReceipt, validateSourceReceipt } from "../.github/scripts/ci-source-receipt.mjs";
 import { stepProofSubject, replaceStepProofVerifier } from "../.github/scripts/step-proof.mjs";
 import { signedProof } from "./step-proof-fixture.mjs";
@@ -332,6 +334,8 @@ test("merged authority binds the old checked tree and parent while dev advances"
     run_attempt: context.attempt,
     status: "completed",
     conclusion: "success",
+    started_at: "2026-10-12T12:00:00Z",
+    completed_at: "2026-10-12T12:01:00Z",
     steps: [],
   };
   const grantProof = {
@@ -351,7 +355,7 @@ test("merged authority binds the old checked tree and parent while dev advances"
     CANDIDATE_GRANT_DIGEST: "7".repeat(64),
   };
   const grantedRequest = async (url) =>
-    url.includes("/jobs?") ? { jobs: [authJob] } : setup().request(url);
+    attemptRoute(url, [authJob], context.attempt) ?? setup().request(url);
   const readonlyApi = {
     publicPin: api.publicPin,
     get: () => assert.fail("Readonly workers must not fetch drafts"),
@@ -403,6 +407,40 @@ test("merged authority binds the old checked tree and parent while dev advances"
   candidateProofs.length = 0;
   await assert.rejects(workerGate(grantedEnv, readonlyApi, grantedRequest, read, grant), /verify/);
   candidateProofs.push(grantProof);
+  // A worker rerun in attempt 2 keeps the grant from the authentication job's
+  // last execution: a clone carries attempt 1, a genuine rerun supersedes it.
+  const rerunAttempts = (second) => {
+    const starts = ["2026-10-12T11:00:00Z", "2026-10-12T13:00:00Z"];
+    const lists = [[authJob], [{ ...authJob, id: 901, run_attempt: 2, ...second }]];
+    return attemptLedger({ runId: context.runId, attempt: 2 }, async (url) => {
+      const [, number, jobs] = url.match(/\/attempts\/(\d)(\/jobs)?/);
+      return jobs
+        ? { jobs: lists[number - 1] }
+        : { id: context.runId, run_attempt: Number(number), run_started_at: starts[number - 1] };
+    });
+  };
+  const later = { ...context, attempt: 2 };
+  const grantArtifact = { id: "77", digest: "7".repeat(64) };
+  const check = (value, ledger) =>
+    validateGrant(value, later, group, grant.workers[0], ledger, api.publicPin, grantArtifact);
+  assert.equal(context.attempt, 1);
+  await check(grant, rerunAttempts({}));
+  await assert.rejects(check({ ...grant, context: later }, rerunAttempts({})), /latest/);
+  const reauthenticated = {
+    started_at: "2026-10-12T13:05:00Z",
+    completed_at: "2026-10-12T13:06:00Z",
+  };
+  await assert.rejects(check(grant, rerunAttempts(reauthenticated)), /latest/);
+  await assert.rejects(
+    check({ ...grant, context: later, authenticationJobId: 901 }, rerunAttempts(reauthenticated)),
+    /verify/,
+  );
+  candidateProofs.push({ ...grantProof, attempt: 2 });
+  await check(
+    { ...grant, context: later, authenticationJobId: 901 },
+    rerunAttempts(reauthenticated),
+  );
+  candidateProofs.pop();
   await assert.rejects(
     readTrustedWorkerContext({ CANDIDATE_GRANT_ID: "456" }),
     /cannot use a worker grant/,
@@ -428,18 +466,16 @@ test("merged authority binds the old checked tree and parent while dev advances"
   await assert.rejects(
     workerGate({ ...workerEnv, GITHUB_RUN_ATTEMPT: "2" }, api, setup().request, read),
   );
-  await assert.rejects(
-    workerGate(
-      { ...workerEnv, GITHUB_RUN_ATTEMPT: "2" },
-      api,
-      async (url) => {
-        const response = await setup().request(url);
-        return url.endsWith("/actions/runs/500") ? { ...response, run_attempt: 2 } : response;
-      },
-      read,
-    ),
-    /no longer admitted/,
-  );
+  // A trusted job executing a rerun attempt of the admitted run advances it;
+  // the attempt never moves back.
+  const rerun = async (url) => {
+    const response = await setup().request(url);
+    return url.endsWith("/actions/runs/500") ? { ...response, run_attempt: 2 } : response;
+  };
+  await workerGate({ ...workerEnv, GITHUB_RUN_ATTEMPT: "2" }, api, rerun, read);
+  assert.deepEqual(JSON.parse((await api.get(42)).body).activeAttempt, { runId: 500, attempt: 2 });
+  await assert.rejects(workerGate(workerEnv, api, setup().request, read), /regress/);
+  draft.body = draftBody(descriptor, "active", { runId: 500, attempt: 1 });
   const retryEvent = { repository: repo, sender: { id: 7889894 }, inputs: { release_id: "42" } };
   const retryEnv = {
     ...issueEnv,

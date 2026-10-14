@@ -169,7 +169,7 @@ jobs:
           name: candidate-linux-products-${{ inputs.architecture }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ steps.export.outputs.directory }}/
           compression-level: 0
-          retention-days: 1
+          retention-days: 3
           if-no-files-found: error
       - name: Bind step proof to this run attempt
         id: proof-subject
@@ -202,7 +202,7 @@ jobs:
         with:
           name: linux-products-${{ inputs.architecture }}-${{ github.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/paseo-products-${{ github.run_id }}-${{ github.run_attempt }}/evidence
-          retention-days: 1
+          retention-days: 3
           if-no-files-found: error
 
   cache-proof:
