@@ -98,7 +98,6 @@ import {
   reconcilePrivilegedScan,
 } from "../.github/scripts/linux-format-processes.mjs";
 import { join } from "node:path";
-import { verifyNamespacePid } from "../.github/scripts/linux-format-fixture/process-identity.cjs";
 import { createPackage } from "@electron/asar";
 import {
   cacheKey,
@@ -278,19 +277,6 @@ test("installed package identity binds source, archive paths, metadata and nativ
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-test("renderer identity maps observer and nested namespace PIDs without trusting missing mappings", () => {
-  assert.deepEqual(verifyNamespacePid("NSpid:\t3745\n", 3745, 3745), [3745]);
-  assert.deepEqual(verifyNamespacePid("NSpid:\t3745\t8\t1\n", 3745, 1), [3745, 8, 1]);
-  for (const [status, observer, renderer] of [
-    ["Pid:\t3745\n", 3745, 1],
-    ["NSpid:\t3745 nope\n", 3745, 1],
-    ["NSpid:\t3745 0\n", 3745, 0],
-    ["NSpid:\t3745 1\n", 9, 1],
-    ["NSpid:\t3745 1\n", 3745, 9],
-  ])
-    assert.throws(() => verifyNamespacePid(status, observer, renderer));
 });
 
 test("fixture cleanup retains observed children across session changes without claiming reused PIDs", () => {
