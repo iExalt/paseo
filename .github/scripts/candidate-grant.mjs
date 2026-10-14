@@ -64,28 +64,26 @@ export function grantName(group, runId, attempt) {
   return `candidate-grant-${group}-${runId}-${attempt}`;
 }
 
-export async function validateGrant(grant, context, group, worker, jobs, pin, artifact) {
+// A worker rerun in a later attempt keeps the grant its authentication job
+// issued when it last executed; clones of that job never issue a new one.
+export async function validateGrant(grant, context, group, worker, ledger, pin, artifact) {
   assert.equal(grant.kind, "paseo-worker-grant");
   assert.equal(grant.schemaVersion, 1);
   assert.equal(grant.group, group);
-  assert.deepEqual(grant.context, context);
   const expected = grantGroups[group];
   assert.ok(expected, "Unknown authentication group");
+  const { attempt, job } = await ledger.producer(expected.job);
+  const issued = { ...context, attempt };
+  assert.deepEqual(grant.context, issued, "Grant was not issued by the latest authentication");
   assert.deepEqual(grant.workers, expected.workers);
   assert.ok(expected.workers.includes(worker), "Worker outside grant scope");
   assert.deepEqual(
     verifyDescriptor(Buffer.from(grant.descriptor), grant.signature, pin),
     context.descriptor,
   );
-  const matches = jobs.filter((job) => job.name === expected.job);
-  assert.equal(matches.length, 1, "Missing or duplicate authentication job");
-  const job = matches[0];
   assert.equal(job.id, grant.authenticationJobId);
   assert.equal(job.run_id, context.runId);
-  assert.equal(job.run_attempt, context.attempt);
-  assert.equal(job.status, "completed");
-  assert.equal(job.conclusion, "success");
-  const proof = await verifyCandidateProof(context, `grant-${group}`, "candidate-auth.yml");
+  const proof = await verifyCandidateProof(issued, `grant-${group}`, "candidate-auth.yml");
   artifactEvidence(proof.evidence, artifact);
 }
 
@@ -98,7 +96,15 @@ export async function downloadGrant(env, request = fetch) {
       await githubResponse(`actions/artifacts/${id}`, env.GH_TOKEN, request)
     ).json();
     const runId = Number(env.GITHUB_RUN_ID),
-      attempt = Number(env.GITHUB_RUN_ATTEMPT);
+      current = Number(env.GITHUB_RUN_ATTEMPT);
+    // The issuing attempt is read from the name here and bound to the latest
+    // genuine authentication execution by validateGrant.
+    const prefix = grantName(env.CANDIDATE_GRANT_GROUP, runId, 1).slice(0, -1);
+    const issuedIn = String(metadata.name).slice(prefix.length);
+    assert.ok(String(metadata.name).startsWith(prefix), "Grant belongs to another group or run");
+    assert.match(issuedIn, /^[1-9]\d*$/, "Malformed grant artifact name");
+    const attempt = Number(issuedIn);
+    assert.ok(attempt <= current, "Grant is from a later attempt");
     const name = grantName(env.CANDIDATE_GRANT_GROUP, runId, attempt);
     // API root identity is rechecked independently by workerGate after decoding.
     validateArtifact(
@@ -134,6 +140,7 @@ export async function downloadGrant(env, request = fetch) {
     const grant = JSON.parse(await readFile(join(output, "grant.json"), "utf8"));
     assert.equal(metadata.workflow_run.head_sha, grant.context.rootHeadSha);
     assert.equal(metadata.workflow_run.head_branch, grant.context.rootBranch);
+    assert.equal(grant.context.attempt, attempt);
     return grant;
   } finally {
     await rm(directory, { recursive: true, force: true });
