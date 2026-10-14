@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.1.2](https://github.com/iExalt/paseo/compare/paseo-v0.1.1...paseo-v0.1.2) (2026-10-14)
+
+
+### Features
+
+* **ci:** recover failed candidate jobs by rerunning them in the same run ([591f37c](https://github.com/iExalt/paseo/commit/591f37cbf694d94610b5a8b0e726082dea6642aa))
+
+
+### Bug Fixes
+
+* **ci:** bind publish checks to fresh draft bytes ([f3c8064](https://github.com/iExalt/paseo/commit/f3c80649b3c1051f00c7ed2c91fd5bf151c414ba))
+* **ci:** prefetch only the fixed outputs the Nix build will build ([ab6b9e8](https://github.com/iExalt/paseo/commit/ab6b9e89a40d5094b27bd0a125887857b5e89154))
+* **ci:** refresh the dependency cache only from the current dev head ([42ce214](https://github.com/iExalt/paseo/commit/42ce2144705c02efd0ec26131f315483573456b5))
+* **ci:** refuse carried grants once a candidate is no longer live ([1bb0fe9](https://github.com/iExalt/paseo/commit/1bb0fe9f77164ea943ccc17f50648cb1ad1169f8))
+* **ci:** require release sources to change their release configuration ([dc79a6c](https://github.com/iExalt/paseo/commit/dc79a6cbb228b32b1b535f2a0db8b27ab927b6ec))
+* **ci:** retry hash-pinned Nix fetches before candidate builds ([9e86318](https://github.com/iExalt/paseo/commit/9e863181409baefb772be439884526a9d8eaf0a6))
+* **ci:** retry npm fetches when refreshing the dependency cache ([043f160](https://github.com/iExalt/paseo/commit/043f160f8202c2fc96be4e1c8b8ebec34d51f055))
+* **ci:** start candidate and deep runs only for release changes ([7d63781](https://github.com/iExalt/paseo/commit/7d63781f66e86785a770cdf87a77ea1c327c034f))
+* **ci:** widen limits with under 25% observed headroom ([5b6ede7](https://github.com/iExalt/paseo/commit/5b6ede7f1f1b9190ce97453403deb64221beef4e))
+* **nix:** bound updater fetches and keep the running version visible ([35af442](https://github.com/iExalt/paseo/commit/35af4427ef02fd4af15768eaea94e81052fb7cfb))
+* **nix:** check desktop updates without the rate-limited releases API ([2270b08](https://github.com/iExalt/paseo/commit/2270b08b74369306285e74eedc4caee131e1b7d1))
+
+
+### Performance Improvements
+
+* **ci:** let predecessor caches for different platforms prewarm together ([40060ee](https://github.com/iExalt/paseo/commit/40060eef479720467c4d639f1c80605db4e1d5b9))
+* **ci:** restore installed dependencies in routine lanes ([ea33b42](https://github.com/iExalt/paseo/commit/ea33b421b8d4071997402513c2d8e0587ca3c9bf))
+* **ci:** shard app units and use four vitest workers per lane ([3222fac](https://github.com/iExalt/paseo/commit/3222facab2656418bb9756aaec667d070172e17a))
+
+
+### Miscellaneous Chores
+
+* **release:** release 0.1.2 ([24838d3](https://github.com/iExalt/paseo/commit/24838d3ef9554e70bdf73539185c9c7a4a308739))
+
 ## [0.1.1](https://github.com/iExalt/paseo/compare/paseo-v0.1.0...paseo-v0.1.1) (2026-10-13)
 
 
