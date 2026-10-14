@@ -236,16 +236,25 @@ const sites = {
   },
 };
 
-// Build cache archives are attested only by dispatched dev writers; a candidate
-// run never reaches the archive step those attestations gate on.
+// Build cache archives are attested only by dispatched dev writers: either a
+// dispatch-only workflow, or a job whose archive step is guarded off for
+// candidate runs by an exact leading conjunction.
 const cacheWriters = {
-  "windows-product-runtime.yml/native": { archive: "modules-archive", key: "modules" },
+  "windows-product-runtime.yml/native": {
+    archive: "modules-archive",
+    key: "modules",
+    guard: "inputs.architecture == 'arm64' && inputs.source_sha == '' && ",
+  },
+  "android-build-cache.yml/write": { archive: "ccache-archive", key: "ccache" },
 };
-function checkCacheSigner(site, steps, sign) {
+function checkCacheSigner(site, workflow, steps, sign) {
   const writer = cacheWriters[site];
   assert.ok(writer, `${site} attests a build cache outside a known writer`);
   const archive = steps.find((step) => step.id === writer.archive);
-  assert.match(archive.if, /inputs\.source_sha == ''/, `${site} archives in candidate runs`);
+  if (writer.guard) {
+    assert.ok(archive.if.startsWith(writer.guard), `${site} archives in candidate runs`);
+    assert.doesNotMatch(archive.if, /\|\|/, `${site} archive guard has an alternative`);
+  } else assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.equal(sign.uses, "actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6");
   assert.equal(sign.if, `steps.${writer.archive}.outcome == 'success'`);
   assert.deepEqual(sign.with, {
@@ -269,7 +278,7 @@ test("every signed slot gates on its required step outcomes and nothing else sig
           step.uses?.startsWith("actions/attest") &&
           step.with?.["predicate-type"] === BUILD_CACHE_TYPE,
       );
-      for (const step of cacheSigners) checkCacheSigner(`${file}/${key}`, steps, step);
+      for (const step of cacheSigners) checkCacheSigner(`${file}/${key}`, workflow, steps, step);
       const signers = steps.filter(
         (step) => step.uses?.startsWith("actions/attest") && !cacheSigners.includes(step),
       );

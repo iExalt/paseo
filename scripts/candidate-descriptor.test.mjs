@@ -274,6 +274,7 @@ test("policy covers invoked native ownership and UI controls before active worke
     "linux-format-launch.mjs",
     "windows-modules-cache.mjs",
     "build-cache-provenance.mjs",
+    "android-build-cache.mjs",
   ])
     assert.ok(
       sourceGateFiles.includes(`.github/scripts/${file}`),
