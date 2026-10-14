@@ -55,6 +55,26 @@ export function acceptsBuildCache(result, expected, digest) {
   );
 }
 
+// Archives hold regular files and directories only, all inside their roots and
+// none under an excluded link.
+export function checkArchiveListing(names, verbose, roots, links = []) {
+  assert.equal(names.length, verbose.length);
+  assert.ok(names.length > 0, "Empty installed dependency archive");
+  for (const [index, name] of names.entries()) {
+    assert.match(verbose[index], /^[d-]/, `Archive entry is not a file or directory: ${name}`);
+    assert.ok(!/^[a-z]:|^[\\/]/i.test(name), `Absolute archive entry: ${name}`);
+    assert.ok(!name.split(/[\\/]/).includes(".."), `Escaping archive entry: ${name}`);
+    assert.ok(
+      roots.some((root) => name === root || name.startsWith(`${root}/`)),
+      `Archive entry outside its roots: ${name}`,
+    );
+    assert.ok(
+      !links.some((link) => name === link || name.startsWith(`${link}/`)),
+      `Archive carries a workspace link target: ${name}`,
+    );
+  }
+}
+
 function verifyWithGh(file, expected) {
   return JSON.parse(
     execFileSync(
