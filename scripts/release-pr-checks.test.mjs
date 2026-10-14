@@ -557,6 +557,15 @@ test("merged authority binds the old checked tree and parent while dev advances"
     ),
     /must change its release configuration/,
   );
+  await assert.rejects(
+    currentCandidate(descriptor, dev, identity, setup().request, async (sha, file) =>
+      sha === source && file === ".github/fork-release.json"
+        ? JSON.stringify({ ...fork, version: "0.0.0" })
+        : read(sha, file),
+    ),
+    // sourceVersion rejects this first; replacementForSource repeats it locally.
+    /differs from fork version|must change its release configuration/,
+  );
   for (const mutate of [
     (f) => {
       f.proofs[0].evidence.prNumber = 8;
