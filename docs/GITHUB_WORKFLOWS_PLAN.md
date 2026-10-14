@@ -309,10 +309,13 @@ is a G3 blocker to resolve, not permission to omit it or invent an unverified
 split format. Drafts are transport, not private storage.
 
 Routine and untrusted PR evidence uses logs/job summaries. Phase A's controlled
-comparison found no net npm-cache benefit, so routine/rebase use isolated local
-download directories without Actions cache transfers. Existing packaging caches
-remain under the enforced 10 GB repository ceiling; future caches require measured
-net savings. PR code receives no release write token or trusted cache-save path. Actions artifact uploads stay
+comparison found no net npm download-cache benefit, and a 2026-10-14 rerun agreed
+(under 15 s). Restoring the installed `node_modules` trees instead takes 16-23 s
+against 57-74 s for `npm ci`, so routine lanes restore one ~0.9 GB entry keyed on
+the lockfile, patches, runner image and toolchain. Only dev pushes write it, and
+they delete superseded entries; candidate verification and rebase stay cold.
+Existing packaging caches remain under the enforced 10 GB repository ceiling;
+future caches require measured net savings. PR code receives no release write token or trusted cache-save path. Actions artifact uploads stay
 disabled until free allowance and hard no-overage evidence are established;
 retention alone is insufficient. Deep screenshot/trace evidence must use a
 verified free path before its gate can pass.
