@@ -99,6 +99,7 @@ export const sourceGateFiles = Object.freeze([
   ".github/scripts/linux-predecessor-cache.mjs",
   ".github/scripts/windows-predecessor-cache.mjs",
   ".github/scripts/linux-product-build.sh",
+  ".github/scripts/nix-fetch-fixed-outputs.sh",
   ".github/scripts/linux-product-cleanup.sh",
   ".github/scripts/linux-product-package.mjs",
   ".github/scripts/linux-product-runtime.sh",
