@@ -18,6 +18,8 @@ import { fileURLToPath } from "node:url";
 import { load } from "js-yaml";
 import { candidateIdentity } from "../.github/scripts/candidate-identity.mjs";
 import { candidateTriggerPaths } from "../.github/scripts/candidate-replacement.mjs";
+import { lanes as routineLanes } from "../.github/scripts/ci-routine.mjs";
+import { grantGroups } from "../.github/scripts/candidate-grant.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 
@@ -120,7 +122,16 @@ test("candidate issuance isolates signing from keyless planning and executes onl
   );
   assert.deepEqual(Object.keys(verification.on), ["workflow_call"]);
   const job = verification.jobs.verify;
-  assert.equal(job.strategy.matrix.include.length, 10);
+  assert.deepEqual(
+    job.strategy.matrix.include.filter((cell) => cell.kind === "routine").map((cell) => cell.lane),
+    routineLanes,
+  );
+  assert.equal(job.strategy.matrix.include.length, routineLanes.length + 3);
+  // Every verification cell must hold a grant, or the candidate fails at admission.
+  assert.deepEqual(
+    job.strategy.matrix.include.map((cell) => `verify / ${cell.kind} (${cell.lane})`).sort(),
+    [...grantGroups.verification.workers].sort(),
+  );
   assert.ok(!JSON.stringify(verification).includes("secrets."));
   const gate = job.steps.findIndex(
     (step) => step.run === "node .github/scripts/candidate-worker.mjs",
