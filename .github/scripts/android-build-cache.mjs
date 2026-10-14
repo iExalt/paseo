@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { checkArchiveListing, verifyBuildCache } from "./build-cache-provenance.mjs";
 import { assertNativeActor } from "./native-candidate-authority.mjs";
 import { normalizeLock } from "./windows-modules-cache.mjs";
+import { repositorySaveCeiling } from "./windows-predecessor-cache.mjs";
 
 // ccache objects for the fork APK's native code. ccache keys every object on
 // its preprocessed input and compiler, so a near key only lowers the hit rate.
@@ -17,8 +18,6 @@ import { normalizeLock } from "./windows-modules-cache.mjs";
 export const writer = "android-build-cache.yml";
 export const prefix = "paseo-android-ccache-v1-";
 export const roots = ["ccache"];
-// About 53 MB in the spike; the whole archive is reserved against the ceiling.
-const repositorySaveCeiling = 8_000_000_000;
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export function androidRecipe(source, ccacheVersion) {
@@ -34,6 +33,7 @@ export function androidRecipe(source, ccacheVersion) {
 
 export const androidKey = (recipe) => `${prefix}${sha256(JSON.stringify(recipe))}`;
 
+// About 53 MB in the spike; the whole archive is reserved against the ceiling.
 export const androidSaveAllowed = (usage, bytes) => usage + bytes <= repositorySaveCeiling;
 
 async function main() {
