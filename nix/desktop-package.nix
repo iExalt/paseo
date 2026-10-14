@@ -132,8 +132,8 @@ buildNpmPackage {
       chmod -R u+w "$electron_dist/Electron.app"
       (
         cd packages/desktop
-        # The Nix output is not a distributable DMG, so leave it unsigned and
-        # disable the hardened runtime that requires a matching signature.
+        # The Nix output is not a distributable DMG: skip Developer ID signing
+        # and the hardened runtime that requires it. postFixup signs ad hoc.
         CSC_IDENTITY_AUTO_DISCOVERY=false \
           ../../node_modules/.bin/electron-builder \
             --config electron-builder.yml \
@@ -247,6 +247,23 @@ buildNpmPackage {
     ''}
 
     runHook postInstall
+  '';
+
+  # Repackaging leaves Electron's executable signature (identifier "Electron",
+  # Info.plist unbound), and macOS then refuses every notification request
+  # (UNErrorDomain error 1). Sign the finished bundle ad hoc as Paseo, after
+  # fixup has rewritten its last file. Ad hoc signatures carry no timestamp, so
+  # the output stays deterministic. This uses the host codesign, as nixpkgs'
+  # sigtool cannot seal bundle resources.
+  postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
+    app="$out/Applications/Paseo.app"
+    /usr/bin/codesign --force --deep --sign - --timestamp=none "$app"
+    /usr/bin/codesign --verify --deep --strict "$app"
+    signature="$(/usr/bin/codesign --display --verbose=2 "$app" 2>&1)"
+    case "$signature" in
+      *$'\n'Identifier=sh.paseo.desktop$'\n'*) ;;
+      *) echo "Paseo.app is not signed as sh.paseo.desktop" >&2; exit 1 ;;
+    esac
   '';
 
   desktopItems = lib.optionals stdenv.hostPlatform.isLinux [
