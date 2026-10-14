@@ -4,8 +4,14 @@
 
 ### Pipeline recovery, noise and speed (0.1.2/0.1.3) — in progress
 
-Approved after the 0.1.1 retrospective (seven hours, six runs). Implemented and
-reviewer-accepted at code level; live proof is due in the 0.1.2 candidate.
+Approved after the 0.1.1 retrospective (seven hours, six runs). 0.1.2 was
+published from run `38583967042`, cancelled deliberately at 38.6 minutes and
+recovered with "Re-run failed jobs": attempt 2 took 33 minutes, carried 38 jobs
+and re-ran 12. Signed storage mixes attempts (four groups at 1, four at 2); two
+re-run workers used carried attempt-1 grants, and partial attempt-1 uploads were
+ignored. The Nix prefetch fetched only npm-deps (2 of 1,927 on Linux x64).
+Linux predecessor caches missed because a runner-image rollout split the
+prewarm and candidate images; Windows caches hit.
 
 - **Mixed-attempt recovery.** "Re-run failed jobs" clones carried jobs into the
   new attempt with original timestamps. `candidate-attempts.mjs` resolves each
