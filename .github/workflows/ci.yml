@@ -106,7 +106,24 @@ jobs:
           test "$(node --version)" = v26.11.0
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+      - name: Bind installed dependency cache key
+        id: modules
+        run: |
+          inputs="$(cat package-lock.json scripts/postinstall-patches.mjs scripts/postinstall-patches-target.mjs patches/*.patch | sha256sum | cut -d' ' -f1)"
+          echo "key=routine-modules-v1-$ImageOS-$ImageVersion-$(uname -m)-node$(node --version)-npm$(npm --version)-$inputs" >> "$GITHUB_OUTPUT"
+      # Written only by trusted dev pushes (install-cache below). No workflow may
+      # run pull request code with dev-scope cache access (pull_request_target).
+      - name: Restore installed dependencies from dev
+        id: restore-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 3
+        with:
+          key: ${{ steps.modules.outputs.key }}
+          path: |
+            node_modules
+            packages/*/node_modules
       - name: Install locked dependencies once
+        if: steps.restore-modules.outputs.cache-hit != 'true'
         env:
           npm_config_fetch_timeout: "30000"
           npm_config_fetch_retries: "2"
@@ -124,6 +141,65 @@ jobs:
           else
             mise run --skip-tools ci:routine --lane "$ROUTINE_LANE"
           fi
+
+  # Measured: restoring installed dependencies takes 16-23 s against 57-74 s for
+  # npm ci; caching only npm's download directory saved under 15 s.
+  install-cache:
+    name: Refresh installed dependency cache
+    if: >-
+      github.repository == 'iExalt/paseo' && !github.event.repository.private &&
+      github.event_name == 'push' && github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    permissions:
+      contents: read
+      actions: write
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-tools
+      - name: Configure pinned npm installation
+        run: echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+      - name: Bind installed dependency cache key
+        id: modules
+        run: |
+          inputs="$(cat package-lock.json scripts/postinstall-patches.mjs scripts/postinstall-patches-target.mjs patches/*.patch | sha256sum | cut -d' ' -f1)"
+          echo "key=routine-modules-v1-$ImageOS-$ImageVersion-$(uname -m)-node$(node --version)-npm$(npm --version)-$inputs" >> "$GITHUB_OUTPUT"
+      - name: Look up current dependency cache
+        id: lookup
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          key: ${{ steps.modules.outputs.key }}
+          lookup-only: true
+          path: |
+            node_modules
+            packages/*/node_modules
+      - name: Install locked dependencies
+        if: steps.lookup.outputs.cache-hit != 'true'
+        run: node scripts/npm-retry.mjs ci --prefer-offline
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        if: steps.lookup.outputs.cache-hit != 'true'
+        with:
+          key: ${{ steps.modules.outputs.key }}
+          path: |
+            node_modules
+            packages/*/node_modules
+      # One rolling entry keeps the shared 10 GB budget for predecessor caches.
+      - name: Remove superseded dependency caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT: ${{ steps.modules.outputs.key }}
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --ref refs/heads/dev --key routine-modules- --limit 100 --json id,key \
+            --jq '.[] | select(.key != env.CURRENT) | .id' | while read -r id; do
+            gh cache delete --repo "$GITHUB_REPOSITORY" "$id"
+          done
 
   required:
     name: Routine CI required
