@@ -18,8 +18,11 @@ import {
   verifyReleaseManifestBytes,
   validateNixClosureManifest,
   validateNixArtifactClosure,
-  chooseHighestVerifiedStableRelease,
+  httpFailure,
+  latestVerifiedRelease,
   macArtifact,
+  releaseDownloadUrl,
+  resolveLatestTag,
 } from "./paseo-nix-update.mjs";
 
 const legacy = {
@@ -114,18 +117,67 @@ test("V2 verification binds exact signed bytes and producer closure metadata wit
   assert.throws(() =>
     validateNixClosureManifest(Buffer.concat([closure, Buffer.from(" ")]), manifest),
   );
-  const selected = await chooseHighestVerifiedStableRelease(
-    [
-      { tag_name: "paseo-fork-v0.11.0-r200008-" + "d".repeat(40) },
-      { tag_name: "v0.1.1" },
-      { tag_name: "paseo-v0.1.10" },
-      { tag_name: "paseo-v0.1.2" },
-      { tag_name: "paseo-v1.0.0", draft: true },
-    ],
-    async (release) =>
-      release.tag_name === "paseo-v0.1.10" ? null : { manifest: { version: "0.1.2" } },
+  const fetched = [];
+  const fetchBytes = async (url) => {
+    fetched.push(url);
+    return url.endsWith(".sig") ? signature : bytes;
+  };
+  const latest = await latestVerifiedRelease({
+    resolveTag: async () => manifest.releaseTag,
+    fetchBytes,
+    publicKey,
+  });
+  assert.equal(latest.tag, manifest.releaseTag);
+  assert.deepEqual(latest.manifest, manifest);
+  assert.deepEqual(fetched, [
+    `https://github.com/iExalt/paseo/releases/download/${manifest.releaseTag}/paseo-release-manifest.json`,
+    `https://github.com/iExalt/paseo/releases/download/${manifest.releaseTag}/paseo-release-manifest.sig`,
+  ]);
+  await assert.rejects(
+    latestVerifiedRelease({ resolveTag: async () => "paseo-v9.9.9", fetchBytes, publicKey }),
+    /names another release/,
   );
-  assert.equal(selected.manifest.version, "0.1.2");
+});
+
+test("latest release resolves through the non-API redirect and reports rate limits", async () => {
+  const redirect =
+    (location, status = 302) =>
+    async (url, init) => {
+      assert.equal(url, "https://github.com/iExalt/paseo/releases/latest");
+      assert.equal(init.redirect, "manual");
+      return new Response(null, { status, headers: location ? { location } : {} });
+    };
+  assert.equal(
+    await resolveLatestTag(redirect("https://github.com/iExalt/paseo/releases/tag/paseo-v0.1.3")),
+    "paseo-v0.1.3",
+  );
+  for (const location of [
+    "https://github.com/iExalt/paseo/releases/tag/v0.1.3",
+    "https://github.com/iExalt/paseo/releases/tag/ci-upgrade-fixtures-v0.1.0",
+    "https://example.com/iExalt/paseo/releases/tag/paseo-v0.1.3",
+    "https://github.com/other/paseo/releases/tag/paseo-v0.1.3",
+  ])
+    await assert.rejects(resolveLatestTag(redirect(location)), /latest (GitHub )?release/i);
+  await assert.rejects(resolveLatestTag(redirect(null, 404)), /HTTP 404 for the latest release/);
+  const limited = new Response(null, {
+    status: 403,
+    headers: { "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1791955320" },
+  });
+  assert.equal(
+    httpFailure("the release list", limited).message,
+    "GitHub rate limit reached while fetching the release list. Retry after 2026-10-14T05:22:00.000Z.",
+  );
+  assert.match(
+    httpFailure("x", new Response(null, { status: 429, headers: { "retry-after": "60" } }), 0)
+      .message,
+    /Retry after 1970-01-01T00:01:00.000Z/,
+  );
+  assert.equal(
+    httpFailure("x", new Response(null, { status: 403 })).message,
+    "GitHub returned HTTP 403 for x.",
+  );
+  assert.throws(() => releaseDownloadUrl("paseo-v0.1.3", "../escape"), /asset name/);
+  assert.throws(() => releaseDownloadUrl("v0.1.3", "x.json"), /fork release tag/);
 });
 
 test("command orchestration preserves legacy bytes, retries interrupted migration, and retains high-water across recovery", async () => {
@@ -152,6 +204,7 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
   let failClear = false;
   let legacyPending = true;
   let candidateVersion = "0.1.0";
+  let latestFailure = null;
   let selections = 0;
   let lastGeneration = 4;
   const adapters = {
@@ -187,7 +240,10 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     loadReceipt: async (value) => {
       assert.ok(value.identity);
     },
-    latest: async () => ({ manifest: forkReleaseManifestFixture(candidateVersion) }),
+    latest: async () => {
+      if (latestFailure) throw new Error(latestFailure);
+      return { manifest: forkReleaseManifestFixture(candidateVersion) };
+    },
     stage: async () => {
       const value = target(candidateVersion);
       await writeFile(files.staged, JSON.stringify(value));
@@ -247,6 +303,12 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     assert.equal(reactivated.active.version, "0.1.1");
     assert.equal(reactivated.highWaterVersion, "0.1.1");
     assert.equal(selected.generation, 6);
+    latestFailure = "GitHub rate limit reached while fetching the latest release. Retry later.";
+    const offline = await executeCommand("check", adapters);
+    assert.equal(offline.active.version, "0.1.1", "A failed lookup keeps local facts");
+    assert.equal(offline.latestError, latestFailure);
+    assert.equal(offline.canStage, false);
+    await assert.rejects(executeCommand("stage", adapters), /rate limit/);
     assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
   } finally {
     await rm(root, { recursive: true, force: true });

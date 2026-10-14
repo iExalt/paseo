@@ -65,6 +65,40 @@ describe("Nix updater command bridge", () => {
     );
   });
 
+  it("accepts fork release tags and keeps local facts when the release lookup fails", async () => {
+    const child = fakeChild();
+    const run = createNixUpdaterCommandRunner({
+      installation,
+      runningVersion: "0.1.1",
+      spawnProcess: vi.fn(() => child) as never,
+    });
+    const active = {
+      releaseTag: "paseo-v0.1.1",
+      version: "0.1.1",
+      outputPath: `/nix/store/${"a".repeat(32)}-paseo-desktop-0.1.1`,
+    };
+
+    const resultPromise = run("check");
+    child.stdout.end(
+      JSON.stringify({
+        ok: true,
+        action: "check",
+        active,
+        staged: null,
+        highWaterVersion: "0.1.1",
+        canStage: false,
+        latestError: "GitHub rate limit reached while fetching the latest release. Retry later.",
+      }),
+    );
+    child.stderr.end();
+    child.emit("close", 0);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      active,
+      latestError: "GitHub rate limit reached while fetching the latest release. Retry later.",
+    });
+  });
+
   it("rejects an unexpected command result instead of exposing it to the renderer", async () => {
     const child = fakeChild();
     const run = createNixUpdaterCommandRunner({

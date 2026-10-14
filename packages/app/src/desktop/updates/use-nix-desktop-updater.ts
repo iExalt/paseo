@@ -24,7 +24,9 @@ export function useNixDesktopUpdater(): NixDesktopUpdaterState {
     setBusy(action);
     setError(null);
     try {
-      setResult(await method());
+      const next = await method();
+      setResult(next);
+      if (next.latestError) setError(next.latestError);
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : String(updateError));
     } finally {
