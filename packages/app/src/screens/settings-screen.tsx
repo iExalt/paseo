@@ -457,8 +457,12 @@ interface AboutSectionProps {
   daemonIds: readonly string[];
 }
 
-function renderAboutDesktopUpdateRow(isNixManagedApp: boolean, isDesktopApp: boolean): ReactNode {
-  if (isNixManagedApp) return <NixDesktopAppUpdateRow />;
+function renderAboutDesktopUpdateRow(
+  isNixManagedApp: boolean,
+  isDesktopApp: boolean,
+  appVersion: string | null,
+): ReactNode {
+  if (isNixManagedApp) return <NixDesktopAppUpdateRow appVersion={appVersion} />;
   if (isDesktopApp) return <DesktopAppUpdateRow />;
   return null;
 }
@@ -484,7 +488,7 @@ function AboutSection({
             <Text style={styles.aboutValue}>{appVersionText}</Text>
           </View>
           <WhatsNewRow />
-          {renderAboutDesktopUpdateRow(isNixManagedApp, isDesktopApp)}
+          {renderAboutDesktopUpdateRow(isNixManagedApp, isDesktopApp, appVersion)}
           <ForkAndroidUpdateRow />
           {preferencesTransferMode ? (
             <PreferencesTransferRow mode={preferencesTransferMode} daemonIds={daemonIds} />
