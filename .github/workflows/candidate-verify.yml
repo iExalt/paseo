@@ -41,12 +41,13 @@ jobs:
     timeout-minutes: ${{ matrix.kind == 'routine' && 8 || 15 }}
     strategy:
       fail-fast: false
-      max-parallel: 10
+      max-parallel: 11
       matrix:
         include:
           - { kind: routine, lane: quality }
           - { kind: routine, lane: workspaces }
-          - { kind: routine, lane: app }
+          - { kind: routine, lane: app-1 }
+          - { kind: routine, lane: app-2 }
           - { kind: routine, lane: server-1 }
           - { kind: routine, lane: server-2 }
           - { kind: routine, lane: server-3 }

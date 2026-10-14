@@ -6,6 +6,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { descriptorBytes, verifyDescriptor } from "./candidate-descriptor.mjs";
 import { candidateGithub } from "./candidate-github.mjs";
 import { requireAttempt } from "./candidate-draft.mjs";
+import { lanes } from "./ci-routine.mjs";
 import { attemptJobs, readTrustedWorkerContext } from "./candidate-worker.mjs";
 import { githubResponse, saveDownload, validateArtifact } from "./candidate-artifacts.mjs";
 import { artifactEvidence, verifyCandidateProof } from "./step-proof.mjs";
@@ -17,9 +18,7 @@ export const grantGroups = {
   verification: {
     job: "verify / authorize / authenticate",
     workers: [
-      ...["quality", "workspaces", "app", "server-1", "server-2", "server-3", "integration"].map(
-        (lane) => `verify / routine (${lane})`,
-      ),
+      ...lanes.map((lane) => `verify / routine (${lane})`),
       ...["browser", "integration", "electron"].map((lane) => `verify / deep (${lane})`),
     ],
   },
