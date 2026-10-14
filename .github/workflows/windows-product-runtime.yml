@@ -190,7 +190,7 @@ jobs:
       - name: Remove owned build worktrees and isolated storage
         id: remove-storage
         if: always()
-        timeout-minutes: 3
+        timeout-minutes: 5
         run: ./.github/scripts/windows-product-storage.ps1 cleanup
       - name: Export verified candidate packages
         if: success() && inputs.source_sha != ''

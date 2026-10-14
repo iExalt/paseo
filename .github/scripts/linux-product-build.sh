@@ -58,7 +58,7 @@ for stage in candidate previous; do
   started=$(date +%s)
   (
     cd "$source"
-    timeout --kill-after=10s 180s npm ci --no-audit --no-fund
+    timeout --kill-after=10s 300s npm ci --no-audit --no-fund
     timeout --kill-after=10s 600s npm run build:desktop -- --linux dir "--$EXPECTED_ARCHITECTURE" --publish never
   ) 2>&1 | tee "$root/evidence/$stage-build.log"
   printf '%s\n' "$(( $(date +%s) - started ))" > "$root/evidence/$stage-build-seconds.txt"

@@ -223,7 +223,7 @@ export async function transferProducts(
       String(expandedLimit),
       JSON.stringify([bundleName, ...contracts.map(({ name }) => name), ...manifestNames]),
     ],
-    { timeout: 120000, stdio: "pipe" },
+    { timeout: 300000, stdio: "pipe" },
   );
   const metadata = join(extracted, bundleName);
   assert.ok((await stat(metadata)).size <= metadataLimit);

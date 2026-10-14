@@ -169,7 +169,7 @@ export async function githubResponse(route, token, request = fetch) {
           ? { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
           : {},
       redirect: "manual",
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(300_000),
     });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
       const next = new URL(response.headers.get("location"), url);
