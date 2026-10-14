@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.3](https://github.com/iExalt/paseo/compare/paseo-v0.1.2...paseo-v0.1.3) (2026-10-14)
+
+
+### Bug Fixes
+
+* **ci:** install Electron before parallel desktop units ([4385eda](https://github.com/iExalt/paseo/commit/4385eda742a038a2b130060bccd0f4145b8ee135))
+* **release:** wait for the pulls API to report the pushed proposal head ([9f99ffe](https://github.com/iExalt/paseo/commit/9f99ffea89eb873d243979c5140c5620f4c30668))
+
+
+### Performance Improvements
+
+* **ci:** keep one dependency cache across runner image rollouts ([b1792e5](https://github.com/iExalt/paseo/commit/b1792e5e6a22fe3edb6c7fd5d4e0f467ef601391))
+
 ## [0.1.2](https://github.com/iExalt/paseo/compare/paseo-v0.1.1...paseo-v0.1.2) (2026-10-14)
 
 
