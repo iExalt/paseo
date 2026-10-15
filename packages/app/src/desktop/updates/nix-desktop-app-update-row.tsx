@@ -1,190 +1,102 @@
-import { compareForkVersions } from "@getpaseo/protocol/fork-version";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { StyleSheet, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { Button } from "@/components/ui/button";
-import { getDesktopHost, type DesktopNixUpdateResult } from "@/desktop/host";
-import { confirmDialog } from "@/utils/confirm-dialog";
+import { getDesktopHost } from "@/desktop/host";
 import { settingsStyles } from "@/styles/settings";
 import { formatVersionWithPrefix } from "./desktop-updates";
-import { useNixDesktopUpdater, type NixUpdateAction } from "./use-nix-desktop-updater";
+import { confirmAndRunNixUpdate } from "./nix-update-flow";
+import {
+  applyNixUpdate,
+  checkForNixUpdate,
+  refreshNixUpdateStatus,
+  useNixUpdatePhase,
+  useNixUpdateStore,
+  type NixUpdateBusy,
+  type NixUpdatePhase,
+} from "./nix-updates";
 
-const progressTranslationKeys: Record<NixUpdateAction, string> = {
-  check: "checkingInProgress",
-  status: "checkingInProgress",
-  stage: "stagingInProgress",
-  activate: "activatingInProgress",
-  rollback: "rollbackInProgress",
-};
+type Translate = ReturnType<typeof useTranslation>["t"];
 
-const styles = StyleSheet.create({
-  actions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
-});
-
-function getStatusMessage(input: {
-  isNixInvalid: boolean;
+function describeState(input: {
+  t: Translate;
+  phase: NixUpdatePhase;
+  busy: NixUpdateBusy | null;
   error: string | null;
-  busy: NixUpdateAction | null;
-  result: DesktopNixUpdateResult | null;
-  t: (key: string) => string;
+  lastCheckedAt: number | null;
 }): string {
-  if (input.isNixInvalid) return input.t("settings.about.nixUpdates.invalidMarker");
-  if (input.error) return input.error;
-  if (input.busy) {
-    return input.t(`settings.about.nixUpdates.${progressTranslationKeys[input.busy]}`);
+  const { t, phase, busy } = input;
+  const version =
+    phase.kind === "unknown" || phase.kind === "current"
+      ? ""
+      : formatVersionWithPrefix(phase.release.version);
+  if (busy === "checking") return t("desktop.updates.nix.checking");
+  if (busy === "downloading") return t("desktop.updates.nix.downloading", { version });
+  if (busy === "applying") return t("desktop.updates.nix.applying", { version });
+  if (busy === "restarting") return t("desktop.updates.nix.restarting");
+  if (input.error) return t("desktop.updates.nix.failed", { error: input.error });
+  if (phase.kind === "available") return t("desktop.updates.nix.available", { version });
+  if (phase.kind === "ready") return t("desktop.updates.nix.ready", { version });
+  if (phase.kind === "restart") return t("desktop.updates.nix.restartRequired", { version });
+  if (phase.kind === "current" && input.lastCheckedAt !== null) {
+    const time = new Date(input.lastCheckedAt).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    return t("desktop.updates.nix.upToDate", { time });
   }
-  return input.result?.message ?? input.t("settings.about.nixUpdates.ready");
+  return t("desktop.updates.nix.notChecked");
 }
 
-function NixUpdateDetails({
-  result,
-  appVersion,
-}: {
-  result: DesktopNixUpdateResult | null;
-  appVersion: string | null;
-}) {
-  const { t } = useTranslation();
-  const running = result?.running;
-  const active = result?.active ?? null;
-  const staged = result?.staged ?? null;
-  const latest = result?.latest ?? null;
-  const restartRequired = Boolean(active && running && active.outputPath !== running.outputPath);
-
-  return (
-    <>
-      <Text style={settingsStyles.rowHint}>
-        {t("settings.about.nixUpdates.running", {
-          // The running version is local, so show it even when no updater call succeeded.
-          version: formatVersionWithPrefix(running?.version ?? appVersion),
-        })}
-      </Text>
-      <Text style={settingsStyles.rowHint}>
-        {t("settings.about.nixUpdates.active", {
-          version: formatVersionWithPrefix(active?.version),
-        })}
-      </Text>
-      <Text style={settingsStyles.rowHint}>
-        {t("settings.about.nixUpdates.staged", {
-          version: formatVersionWithPrefix(staged?.version),
-        })}
-      </Text>
-      {latest ? (
-        <Text style={settingsStyles.rowHint}>
-          {t("settings.about.nixUpdates.latest", {
-            version: formatVersionWithPrefix(latest.version),
-          })}
-        </Text>
-      ) : null}
-      {restartRequired ? (
-        <Text style={settingsStyles.rowHint}>{t("settings.about.nixUpdates.restartRequired")}</Text>
-      ) : null}
-    </>
-  );
-}
-
-interface NixUpdateActionsProps {
-  busy: NixUpdateAction | null;
-  isNixInvalid: boolean;
-  canStage: boolean;
-  canActivate: boolean;
-  canRollback: boolean;
-  onCheck(): void;
-  onStage(): void;
-  onActivate(): void;
-  onRollback(): void;
-}
-
-function NixUpdateActions(props: NixUpdateActionsProps) {
-  const { t } = useTranslation();
-  return (
-    <View style={styles.actions}>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={props.busy !== null || props.isNixInvalid}
-        onPress={props.onCheck}
-      >
-        {t("settings.about.nixUpdates.check")}
-      </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={props.busy !== null || !props.canStage}
-        onPress={props.onStage}
-      >
-        {t("settings.about.nixUpdates.stage")}
-      </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={props.busy !== null || !props.canActivate}
-        onPress={props.onActivate}
-      >
-        {t("settings.about.nixUpdates.activate")}
-      </Button>
-      <Button
-        variant="secondary"
-        size="sm"
-        disabled={props.busy !== null || !props.canRollback}
-        onPress={props.onRollback}
-      >
-        {t("settings.about.nixUpdates.rollback")}
-      </Button>
-    </View>
-  );
+function actionFor(phase: NixUpdatePhase): "check" | "update" | "restart" {
+  if (phase.kind === "available" || phase.kind === "ready") return "update";
+  if (phase.kind === "restart") return "restart";
+  return "check";
 }
 
 export function NixDesktopAppUpdateRow({ appVersion = null }: { appVersion?: string | null }) {
   const { t } = useTranslation();
-  const { result, error, busy, run } = useNixDesktopUpdater();
+  const phase = useNixUpdatePhase();
+  const busy = useNixUpdateStore((state) => state.busy);
+  const error = useNixUpdateStore((state) => state.error);
+  const lastCheckedAt = useNixUpdateStore((state) => state.lastCheckedAt);
+  const runningVersion = useNixUpdateStore((state) => state.result?.running.version ?? null);
   const isNixInvalid = getDesktopHost()?.installationMode === "nix-invalid";
-  const active = result?.active ?? null;
-  const staged = result?.staged ?? null;
-  const latest = result?.latest ?? null;
-  const canReplaceStaged =
-    staged === null || (latest !== null && compareForkVersions(latest.version, staged.version) > 0);
-  const canStage = !isNixInvalid && result?.canStage === true && canReplaceStaged;
-  const canActivate = !isNixInvalid && staged !== null;
-  const canRollback = !isNixInvalid && active !== null;
+  const action = actionFor(phase);
 
-  const confirmAndRun = useCallback(
-    async (action: "activate" | "rollback") => {
-      const confirmed = await confirmDialog({
-        title: t(`settings.about.nixUpdates.${action}ConfirmTitle`),
-        message: t(`settings.about.nixUpdates.${action}ConfirmMessage`),
-        confirmLabel: t(`settings.about.nixUpdates.${action}`),
-        cancelLabel: t("common.actions.cancel"),
-      });
-      if (confirmed) await run(action);
-    },
-    [run, t],
-  );
-  const onCheck = useCallback(() => void run("check"), [run]);
-  const onStage = useCallback(() => void run("stage"), [run]);
-  const onActivate = useCallback(() => void confirmAndRun("activate"), [confirmAndRun]);
-  const onRollback = useCallback(() => void confirmAndRun("rollback"), [confirmAndRun]);
-  const statusMessage = getStatusMessage({ isNixInvalid, error, busy, result, t });
+  useEffect(() => {
+    if (!isNixInvalid) void refreshNixUpdateStatus();
+  }, [isNixInvalid]);
+
+  const onPress = useCallback(() => {
+    if (action === "update") void applyNixUpdate();
+    else if (action === "restart") void confirmAndRunNixUpdate();
+    else void checkForNixUpdate({ userInitiated: true });
+  }, [action]);
+
+  const state = isNixInvalid
+    ? t("settings.about.nixUpdates.invalidMarker")
+    : describeState({ t, phase, busy, error, lastCheckedAt });
+  // The running version is local, so show it even when no updater call succeeded.
+  const version = formatVersionWithPrefix(runningVersion ?? appVersion);
 
   return (
     <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="nix-desktop-update-row">
       <View style={settingsStyles.rowContent}>
         <Text style={settingsStyles.rowTitle}>{t("settings.about.nixUpdates.label")}</Text>
-        <NixUpdateDetails result={result} appVersion={appVersion} />
         <Text style={settingsStyles.rowHint} testID="nix-desktop-update-status">
-          {statusMessage}
+          {`${version} · ${state}`}
         </Text>
-        <NixUpdateActions
-          busy={busy}
-          isNixInvalid={isNixInvalid}
-          canStage={canStage}
-          canActivate={canActivate}
-          canRollback={canRollback}
-          onCheck={onCheck}
-          onStage={onStage}
-          onActivate={onActivate}
-          onRollback={onRollback}
-        />
       </View>
+      <Button
+        variant="secondary"
+        size="sm"
+        disabled={busy !== null || isNixInvalid}
+        onPress={onPress}
+        testID="nix-desktop-update-action"
+      >
+        {t(`desktop.updates.nix.${action}Action`)}
+      </Button>
     </View>
   );
 }

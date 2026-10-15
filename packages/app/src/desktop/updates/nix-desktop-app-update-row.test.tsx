@@ -11,16 +11,9 @@ const harness = vi.hoisted(() => ({
     status: vi.fn(),
     stage: vi.fn(),
     activate: vi.fn(),
-    rollback: vi.fn(),
   },
-  confirmDialog: vi.fn(),
+  daemonStatus: vi.fn(),
 }));
-const progressKeys = new Set([
-  "settings.about.nixUpdates.checkingInProgress",
-  "settings.about.nixUpdates.stagingInProgress",
-  "settings.about.nixUpdates.activatingInProgress",
-  "settings.about.nixUpdates.rollbackInProgress",
-]);
 
 vi.mock("react-native", async () => {
   const actual = await vi.importActual<typeof import("react-native")>("react-native");
@@ -38,12 +31,8 @@ vi.mock("react-i18next", async () => {
   return {
     ...actual,
     useTranslation: () => ({
-      t: (key: string, options?: Record<string, unknown>) => {
-        if (key.endsWith("InProgress")) {
-          return progressKeys.has(key) ? `translated:${key}` : `missing:${key}`;
-        }
-        return options ? `${key} ${JSON.stringify(options)}` : key;
-      },
+      t: (key: string, options?: Record<string, unknown>) =>
+        options ? `${key} ${JSON.stringify(options)}` : key,
     }),
   };
 });
@@ -66,14 +55,17 @@ vi.mock("@/components/ui/button", async () => {
 
 vi.mock("@/desktop/host", () => ({
   getDesktopHost: () => ({ installationMode: "nix", nixUpdates: harness.bridge }),
-  isElectronRuntime: () => true,
 }));
-vi.mock("@/utils/confirm-dialog", () => ({ confirmDialog: harness.confirmDialog }));
+vi.mock("@/desktop/daemon/desktop-daemon", () => ({
+  getDesktopDaemonStatus: harness.daemonStatus,
+}));
+vi.mock("./nix-update-flow", () => ({ confirmAndRunNixUpdate: vi.fn() }));
 vi.mock("@/styles/settings", () => ({
   settingsStyles: { row: {}, rowBorder: {}, rowContent: {}, rowTitle: {}, rowHint: {} },
 }));
 
 import { NixDesktopAppUpdateRow } from "./nix-desktop-app-update-row";
+import { useNixUpdateStore } from "./nix-updates";
 
 const prior = {
   releaseTag: "paseo-v0.1.0",
@@ -85,12 +77,8 @@ const candidate = {
   version: "0.1.1",
   outputPath: "/nix/store/23456789012345678901234567890123-paseo-desktop-0.1.1",
 };
-const olderStaged = { ...candidate, releaseTag: "paseo-v0.0.9", version: "0.0.9" };
 
-function result(
-  action: "check" | "status" | "stage" | "activate" | "rollback",
-  overrides: Record<string, unknown> = {},
-) {
+function result(action: "check" | "status" | "stage" | "activate", overrides = {}) {
   return {
     ok: true as const,
     action,
@@ -102,25 +90,26 @@ function result(
   };
 }
 
+const button = (action: string) =>
+  screen.findByRole("button", { name: `desktop.updates.nix.${action}Action` });
+
 describe("Nix desktop About update row", () => {
   beforeEach(() => {
+    useNixUpdateStore.setState({
+      result: null,
+      latest: null,
+      daemon: null,
+      canStage: false,
+      busy: null,
+      error: null,
+      failed: false,
+      lastCheckedAt: null,
+    });
+    harness.daemonStatus.mockResolvedValue({ status: "stopped" });
     harness.bridge.status.mockResolvedValue(result("status"));
-    harness.bridge.check.mockResolvedValue(
-      result("check", {
-        latest: candidate,
-        staged: olderStaged,
-        canStage: true,
-        message: "Update available",
-      }),
-    );
-    harness.bridge.stage.mockResolvedValue(result("stage", { staged: candidate, canStage: false }));
-    harness.bridge.activate.mockResolvedValue(
-      result("activate", { active: candidate, staged: null, highWaterVersion: "0.1.1" }),
-    );
-    harness.bridge.rollback.mockResolvedValue(
-      result("rollback", { active: prior, staged: null, highWaterVersion: "0.1.1" }),
-    );
-    harness.confirmDialog.mockResolvedValue(true);
+    harness.bridge.check.mockResolvedValue(result("check", { latest: candidate, canStage: true }));
+    harness.bridge.stage.mockResolvedValue(result("stage", { staged: candidate }));
+    harness.bridge.activate.mockResolvedValue(result("activate", { active: candidate }));
   });
 
   afterEach(() => {
@@ -128,60 +117,24 @@ describe("Nix desktop About update row", () => {
     vi.clearAllMocks();
   });
 
-  it("checks, stages, confirms activation, and offers rollback without restarting", async () => {
+  it("offers one button that moves from Check to Update to Restart", async () => {
     render(<NixDesktopAppUpdateRow />);
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
-
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.check" }));
-    await screen.findByText('settings.about.nixUpdates.latest {"version":"v0.1.1"}');
-    expect(
-      screen.getByRole<HTMLButtonElement>("button", {
-        name: "settings.about.nixUpdates.stage",
-      }).disabled,
-    ).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.stage" }));
-    await screen.findByText('settings.about.nixUpdates.staged {"version":"v0.1.1"}');
-
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.activate" }));
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.1"}');
-    expect(harness.confirmDialog).toHaveBeenCalledOnce();
-    expect(screen.getByText("settings.about.nixUpdates.restartRequired")).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.rollback" }));
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
-    expect(harness.confirmDialog).toHaveBeenCalledTimes(2);
-    expect(harness.bridge.status).toHaveBeenCalledOnce();
-  });
-
-  it("uses an existing translated label while a command is running", async () => {
-    render(<NixDesktopAppUpdateRow />);
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.check" }));
-    await screen.findByText('settings.about.nixUpdates.latest {"version":"v0.1.1"}');
-
-    let finishStage!: (value: ReturnType<typeof result>) => void;
-    harness.bridge.stage.mockImplementation(
-      () => new Promise((resolve) => (finishStage = resolve)),
+    fireEvent.click(await button("check"));
+    fireEvent.click(await button("update"));
+    await button("restart");
+    expect(harness.bridge.stage).toHaveBeenCalledOnce();
+    expect(harness.bridge.activate).toHaveBeenCalledOnce();
+    expect(screen.getByTestId("nix-desktop-update-status").textContent).toBe(
+      'v0.1.0 · desktop.updates.nix.restartRequired {"version":"v0.1.1"}',
     );
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.stage" }));
-    await screen.findByText("translated:settings.about.nixUpdates.stagingInProgress");
-    expect(screen.queryByText("missing:settings.about.nixUpdates.stageInProgress")).toBeNull();
-    finishStage(result("stage", { staged: candidate, canStage: false }));
   });
 
-  it("keeps local versions visible when the release lookup or status fails", async () => {
-    const lookupError = "GitHub rate limit reached while fetching the latest release. Retry later.";
-    harness.bridge.check.mockResolvedValue(result("check", { latestError: lookupError }));
-    render(<NixDesktopAppUpdateRow appVersion="0.1.0" />);
-    await screen.findByText('settings.about.nixUpdates.active {"version":"v0.1.0"}');
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.nixUpdates.check" }));
-    await screen.findByText(lookupError);
-    expect(screen.getByText('settings.about.nixUpdates.active {"version":"v0.1.0"}')).toBeTruthy();
-
-    cleanup();
+  it("keeps the running version visible when the updater fails", async () => {
     harness.bridge.status.mockRejectedValue(new Error("requires explicit manual migration"));
     render(<NixDesktopAppUpdateRow appVersion="0.1.0" />);
-    await screen.findByText("requires explicit manual migration");
-    expect(screen.getByText('settings.about.nixUpdates.running {"version":"v0.1.0"}')).toBeTruthy();
+    await screen.findByText(
+      'v0.1.0 · desktop.updates.nix.failed {"error":"requires explicit manual migration"}',
+    );
+    expect((await button("check")).hasAttribute("disabled")).toBe(false);
   });
 });

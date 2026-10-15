@@ -153,5 +153,7 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     stage: () => ipcRenderer.invoke("paseo:invoke", "nix_update_stage"),
     activate: () => ipcRenderer.invoke("paseo:invoke", "nix_update_activate"),
     rollback: () => ipcRenderer.invoke("paseo:invoke", "nix_update_rollback"),
+    restart: (confirmedDaemon?: { pid: number; startedAt: string }) =>
+      ipcRenderer.invoke("paseo:invoke", "nix_update_restart", confirmedDaemon),
   },
 });

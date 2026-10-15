@@ -1,9 +1,12 @@
 import { SidebarViewSlot } from "@/plugins/sidebar-view";
 import { useAddHost } from "@/hosts/add-host";
 import {
+  CircleAlert,
+  CircleArrowUp,
   CircleGauge,
   FolderPlus,
   GitBranch,
+  LoaderCircle,
   Server,
   Settings,
   type LucideIcon,
@@ -53,6 +56,14 @@ import {
   mapLayout,
   TOOLBAR_CONTROL_SIZES,
 } from "@/components/ui/control-geometry";
+import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
+import { handleNixUpdatePress } from "@/desktop/updates/nix-update-flow";
+import {
+  useNixUpdatePhase,
+  useNixUpdateStore,
+  type NixUpdateBusy,
+  type NixUpdatePhase,
+} from "@/desktop/updates/nix-updates";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
@@ -295,11 +306,14 @@ function FooterIconButton({
   icon,
   iconSizeAdjustment = 0,
   shortcutKeys,
+  iconColor,
 }: {
   onPress: () => void;
   testID: string;
   label: string;
   icon: LucideIcon;
+  /** Overrides the muted/hover colors for a glyph that signals state. */
+  iconColor?: "accent" | "destructive";
   /** Only for a glyph that reads larger than the others at the same size. */
   iconSizeAdjustment?: number;
   shortcutKeys?: ReturnType<typeof useShortcutKeys>;
@@ -326,7 +340,7 @@ function FooterIconButton({
                 icon={icon}
                 size="md"
                 sizeAdjustment={iconSizeAdjustment}
-                color={hovered ? "foreground" : "foregroundMuted"}
+                color={iconColor ?? (hovered ? "foreground" : "foregroundMuted")}
               />
             </>
           )}
@@ -431,6 +445,10 @@ function SidebarFooter({
   const newAgentKeys = useShortcutKeys("new-agent");
   const settingsKeys = useShortcutKeys("toggle-settings");
   const isCompactLayout = useIsCompactFormFactor();
+  const phase = useNixUpdatePhase();
+  const failed = useNixUpdateStore((state) => state.failed);
+  const showUpdate = isSidebarUpdateVisible(phase.kind, failed);
+  const controlSize = TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)];
   const [rowWidth, setRowWidth] = useState(0);
   const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
     setRowWidth(event.nativeEvent.layout.width);
@@ -438,12 +456,12 @@ function SidebarFooter({
   const { inline, overflow } = useMemo(
     () =>
       resolveSidebarFooterLayout({
-        rowWidth,
-        controlSize: TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)],
+        rowWidth: Math.max(0, rowWidth - (showUpdate ? controlSize : 0)),
+        controlSize,
         rowPadding: FOOTER_ROW_PADDING,
         actions: SIDEBAR_FOOTER_ACTIONS,
       }),
-    [rowWidth, isCompactLayout],
+    [rowWidth, controlSize, showUpdate],
   );
   const isInline = (action: SidebarFooterAction) => inline.includes(action);
 
@@ -476,6 +494,7 @@ function SidebarFooter({
             />
           ) : null}
           <View style={styles.footerSpacer} />
+          {rowWidth > 0 && showUpdate ? <SidebarUpdateButton /> : null}
           {isInline("help") ? <SidebarHelpMenu /> : null}
           {overflow.length > 0 ? (
             <SidebarFooterOverflowMenu
@@ -500,6 +519,57 @@ function SidebarFooter({
       </View>
     </UsageSidebarRoot>
   );
+}
+
+function isSidebarUpdateVisible(phase: NixUpdatePhase["kind"], failed: boolean) {
+  return phase === "available" || phase === "ready" || phase === "restart" || failed;
+}
+
+function SidebarUpdateButton() {
+  const { t } = useTranslation();
+  const phase = useNixUpdatePhase();
+  const busy = useNixUpdateStore((state) => state.busy);
+  const failed = useNixUpdateStore((state) => state.failed);
+  const onPress = useCallback(() => {
+    if (!busy) void handleNixUpdatePress();
+  }, [busy]);
+
+  if (!isSidebarUpdateVisible(phase.kind, failed)) {
+    return null;
+  }
+  const version =
+    phase.kind === "unknown" || phase.kind === "current" ? null : phase.release.version;
+  const label = resolveUpdateButtonLabel({ t, phase: phase.kind, busy, failed, version });
+  return (
+    <FooterIconButton
+      onPress={onPress}
+      testID="sidebar-update"
+      label={label}
+      icon={resolveUpdateButtonIcon(failed, busy)}
+      iconColor={failed ? "destructive" : "accent"}
+    />
+  );
+}
+
+function resolveUpdateButtonIcon(failed: boolean, busy: NixUpdateBusy | null) {
+  if (failed) return CircleAlert;
+  return busy ? LoaderCircle : CircleArrowUp;
+}
+
+function resolveUpdateButtonLabel(input: {
+  t: ReturnType<typeof useTranslation>["t"];
+  phase: NixUpdatePhase["kind"];
+  busy: NixUpdateBusy | null;
+  failed: boolean;
+  version: string | null;
+}): string {
+  const version = formatVersionWithPrefix(input.version);
+  if (input.failed) return input.t("desktop.updates.nix.failedTooltip");
+  if (input.busy === "downloading") return input.t("desktop.updates.nix.downloading", { version });
+  if (input.busy === "applying") return input.t("desktop.updates.nix.applying", { version });
+  if (input.busy === "restarting") return input.t("desktop.updates.nix.restarting");
+  if (input.phase === "restart") return input.t("desktop.updates.nix.restartTooltip", { version });
+  return input.t("desktop.updates.nix.updateTooltip", { version });
 }
 
 function SidebarUsageIcon({ label }: { label: string }) {

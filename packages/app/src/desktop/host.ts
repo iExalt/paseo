@@ -174,6 +174,8 @@ export interface DesktopNixUpdateBridge {
   stage?: () => Promise<DesktopNixUpdateResult>;
   activate?: () => Promise<DesktopNixUpdateResult>;
   rollback?: () => Promise<DesktopNixUpdateResult>;
+  /** Stops the confirmed local daemon, then quits and relaunches the active release. */
+  restart?: (confirmedDaemon?: { pid: number; startedAt: string }) => Promise<void>;
 }
 
 export interface DesktopNixReleaseSummary {
