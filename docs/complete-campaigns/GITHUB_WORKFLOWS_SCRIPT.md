@@ -1,5 +1,11 @@
 # GitHub workflows execution script
 
+> **Superseded 2026-10-15.** The owner replaced the release candidate pipeline
+> with `release.yml` (builds plus smoke).
+> The status and evidence this document cites were in `GITHUB_WORKFLOWS_STATUS.md`
+> before `ci: delete the retired release candidate pipeline`; read them in git
+> history. Current operation: [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md).
+
 **Four serial threads take the fork from its current workflows to a verified
 GitHub release. Phases A–C are complete; Phase D1/D2 / G5 is complete; D3 / G6 remains.**
 
@@ -28,7 +34,7 @@ flowchart LR
 This is the critical path; no independent thread is presently scheduled.
 Thread A runs in the requested sibling worktree on `ci/github-workflows`;
 B continues in that worktree; C/D wait on their predecessors and phase approval. Current implementation
-and evidence are in [project status](GITHUB_WORKFLOWS_STATUS.md). Refresh Git and
+and evidence are in [project status](../GITHUB_WORKFLOWS_STATUS.md). Refresh Git and
 live state before each phase. Preserve unrelated edits, installed state,
 signing identities and published releases.
 
@@ -70,7 +76,7 @@ deviation that changes later threads.
 ## B. Verify journeys and every package — steps 4–6
 
 **State:** complete and reviewer-accepted, 2026-10-11. G2/G3 proofs cover the
-named contributors in [status](GITHUB_WORKFLOWS_STATUS.md). Continue reviewing
+named contributors in [status](../GITHUB_WORKFLOWS_STATUS.md). Continue reviewing
 all CI times as a stretch goal at subsequent approved gates.
 
 ```text
@@ -144,7 +150,7 @@ Full unpublished trial `38420127176` passed all 14 cells; signed draft
 Personal-device installation/recovery remains unperformed. C is complete. Approval covers reviewed
 commits/pushes and bounded free-runner signing, draft transfers and native trials
 under the confirmed $0 stop control. The separate D3 publication/device
-authorization boundary are recorded in [status](GITHUB_WORKFLOWS_STATUS.md).
+authorization boundary are recorded in [status](../GITHUB_WORKFLOWS_STATUS.md).
 
 ```text
 Use $keep-me-in-the-loop to run thread D in docs/GITHUB_WORKFLOWS_SCRIPT.md.
