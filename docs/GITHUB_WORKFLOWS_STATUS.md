@@ -58,8 +58,11 @@ only restore it.
      `app.asar`, so the job builds nothing.
 
 **Dry run:** dispatch with `publish=false` (the default) from any `dev` commit.
-It uploads all five assets to a draft tagged `paseo-dryrun-<run_id>`, never
-tags and never marks latest. Delete the draft when done.
+It uploads all six assets to a draft tagged `paseo-dryrun-<run_id>`, never
+tags and never marks latest. Delete the draft when done. A dry run restores the
+latest release's pinned caches and saves its own entries, but its draft pin is
+never read, so those entries expire unused; delete them after a dry run if the
+cache budget is tight.
 
 While a merged version is unpublished, `release-please.yml` proposes nothing
 and logs "Merged version X awaits publication".
@@ -141,16 +144,23 @@ override. Typical causes and fixes:
 
 ## Caches
 
-- **Android build cache:** `release.yml` restores and saves ccache plus the
-  Gradle build cache with plain `actions/cache` under
-  `paseo-android-release-v1-`. Only release runs save it, so after seven idle
-  days GitHub evicts it and the next release builds cold (accepted). The
-  entries carry no provenance: any job running on `refs/heads/dev` can save
-  under that prefix, and their objects feed the signed APK. Accepted for a
-  one-user audience.
-- **Gradle dependency cache:** `release.yml` only restores the
-  `setup-java-Linux-x64-gradle-*` entry. No job saves it any more, so it misses
-  once the old entry expires (accepted).
+- **Android caches are pinned by the release that wrote them.** Any job on
+  `refs/heads/dev` can save cache entries, so a release build restores only the
+  two entries named in the latest published release's
+  `paseo-X-android-cache-pin.json` asset, and only after each tar matches its
+  pinned sha256 (`.github/scripts/android-cache-pin.mjs`). Writing that asset
+  needs `contents: write`. Someone can create a pinned key first, but not with
+  the pinned bytes, so a squatted, missing or corrupted entry builds that cache
+  cold instead of failing.
+  - `paseo-android-build-v2-<sha256>`: ccache plus the Gradle build cache,
+    about 190 MB.
+  - `paseo-gradle-deps-v2-<inputs>-<sha256>`: `~/.gradle/caches` and
+    `wrapper`, about 2.3 GB. `<inputs>` hashes the Gradle wrapper properties and
+    `package-lock.json`. The pinned entry is restored even when the inputs
+    changed, because Gradle only downloads what is missing. With unchanged
+    inputs the run re-pins the same entry instead of saving 2.3 GB again.
+  - GitHub evicts entries unused for seven days, so a release more than a week
+    after the last one builds cold, about 10 minutes slower (accepted).
 - **Routine dependency cache:** `routine-modules-v1-*`, one rolling entry
   written by `dev` pushes.
 
