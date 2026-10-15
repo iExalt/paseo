@@ -99,8 +99,11 @@ pins this for `release.yml`). `PASEO_CANDIDATE_NATIVE_ENABLED` is no longer read
 updaters trust. Schema 3 (`packages/protocol/src/release-manifest-v2.ts`)
 carries exactly two cells, `macos/arm64/nix-desktop` and `android/arm64/apk`,
 with the version, source SHA, upstream base and release tag. Clients also
-accept schema 2, the 14-cell manifest earlier releases used, so older releases
-stay installable. `.github/fork-release.json` holds the version and upstream
+accept schema 2, the 14-cell manifest releases before 0.2.0 used. Clients
+older than 0.2.0 reject schema 3: install 0.2.0 by hand once (sideload the APK;
+run `scripts/paseo-nix-update.mjs` from a checkout on macOS). Until then an old
+Android client reports "No signed published Paseo fork release could be
+verified". `.github/fork-release.json` holds the version and upstream
 base that `release.yml` reads.
 
 ## Release boundary
@@ -134,7 +137,10 @@ override. Typical causes and fixes:
 - **Android build cache:** `release.yml` restores and saves ccache plus the
   Gradle build cache with plain `actions/cache` under
   `paseo-android-release-v1-`. Only release runs save it, so after seven idle
-  days GitHub evicts it and the next release builds cold (accepted).
+  days GitHub evicts it and the next release builds cold (accepted). The
+  entries carry no provenance: any job running on `refs/heads/dev` can save
+  under that prefix, and their objects feed the signed APK. Accepted for a
+  one-user audience.
 - **Gradle dependency cache:** `release.yml` only restores the
   `setup-java-Linux-x64-gradle-*` entry. No job saves it any more, so it misses
   once the old entry expires (accepted).
