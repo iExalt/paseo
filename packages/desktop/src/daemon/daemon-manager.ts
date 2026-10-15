@@ -29,7 +29,10 @@ import {
 import {
   createNixUpdaterCommandRunner,
   NIX_UPDATE_COMMANDS,
+  parseConfirmedDaemonInstance,
+  restartIntoActiveNixRelease,
   type NixUpdateCommand,
+  type NixUpdateResult,
 } from "../features/nix-managed-updater.js";
 import {
   resolveDesktopInstallation,
@@ -480,7 +483,7 @@ async function resolveRequestedReleaseChannel(
 export function createDaemonCommandHandlers(
   input: {
     installation?: DesktopInstallation;
-    runNixUpdate?: (command: NixUpdateCommand) => Promise<unknown>;
+    runNixUpdate?: (command: NixUpdateCommand) => Promise<NixUpdateResult>;
   } = {},
 ): Record<string, DesktopCommandHandler> {
   const installation = input.installation ?? resolveDesktopInstallation(process.resourcesPath);
@@ -503,9 +506,7 @@ export function createDaemonCommandHandlers(
     stop_desktop_daemon: (args) =>
       stopDesktopDaemon(
         parseDesktopDaemonStopReason(args),
-        typeof args?.pid === "number" && typeof args.startedAt === "string"
-          ? { pid: args.pid, startedAt: args.startedAt }
-          : undefined,
+        parseConfirmedDaemonInstance(args) ?? undefined,
       ),
     restart_desktop_daemon: () => restartDaemon(),
     desktop_daemon_logs: () => getDaemonLogs(),
@@ -570,6 +571,18 @@ export function createDaemonCommandHandlers(
     for (const command of NIX_UPDATE_COMMANDS) {
       handlers[`nix_update_${command}`] = () => runNixUpdate(command);
     }
+    handlers.nix_update_restart = (args) =>
+      restartIntoActiveNixRelease({
+        runNixUpdate,
+        confirmedDaemon: parseConfirmedDaemonInstance(args),
+        stopDaemon: (confirmed) => stopDesktopDaemon("manual_ipc", confirmed),
+        relaunch: (execPath) => {
+          app.relaunch({ execPath });
+          // Quit after the IPC reply is sent; the relaunch happens when this process exits.
+          setImmediate(() => app.quit());
+        },
+        platform: process.platform,
+      });
   }
   return handlers;
 }
