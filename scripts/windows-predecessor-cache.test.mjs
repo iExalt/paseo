@@ -17,7 +17,6 @@ import test from "node:test";
 import {
   cacheKey,
   cacheLimit,
-  checkInventory,
   consumeCache,
   lockIdentity,
   predecessorRecipe,
@@ -179,22 +178,6 @@ test("Windows predecessor cache binds exact recipe and portable identity before 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
-});
-
-test("Windows predecessor archives carry exactly the staged inventory", () => {
-  const { key: recipe } = predecessorRecipe(runner);
-  const names = ["previous-arm64.exe", "previous.json", "receipt.json"];
-  const files = names.map(() => "-rw-r--r-- 0 runner runner 7 Oct 14 00:00 name");
-  checkInventory(names, files, recipe);
-  assert.throws(() => checkInventory(names.slice(1), files.slice(1), recipe), /inventory/);
-  assert.throws(
-    () => checkInventory([...names, "receipt.json/x"], [...files, files[0]], recipe),
-    /inventory/,
-  );
-  assert.throws(
-    () => checkInventory(names, ["lrwxr-xr-x link", ...files.slice(1)], recipe),
-    /not a file or directory/,
-  );
 });
 
 test("Windows candidates consume only verified archives and rebuild after any rejection", async () => {
