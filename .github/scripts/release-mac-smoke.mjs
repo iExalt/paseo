@@ -74,15 +74,27 @@ export async function linkClosureBuilds(app, repoRoot, scratch) {
   } catch (error) {
     // The asar header still lists unpacked prebuilds the closure omits (other
     // platforms' node-pty, the agent SDK binary); only those may be missing.
-    const failures = [...String(error.message).matchAll(/^Error: (.*)$/gm)].map(([, line]) => line);
-    const expected = `ENOENT: no such file or directory, open '${archive}.unpacked/`;
-    if (!failures.length || failures.some((line) => !line.startsWith(expected))) throw error;
+    // asar joins each collected error's stack with blank lines after this header.
+    const [head, ...failures] = String(error.message).split("\n\n");
+    const expected = `Error: ENOENT: no such file or directory, open '${archive}.unpacked/`;
+    if (
+      head !== "Unable to extract some files:" ||
+      !failures.length ||
+      failures.some((stack) => !stack.startsWith(expected))
+    ) {
+      throw error;
+    }
     console.log(
       `Extracted app.asar; ${failures.length} listed unpacked files are not in the closure`,
     );
   }
+  for (const file of [
+    "node_modules/@getpaseo/client/dist/daemon-client.js",
+    "node_modules/@getpaseo/server/dist/server/server/plugins/builtin/index.js",
+  ]) {
+    assert.ok(existsSync(join(extracted, file)), `app.asar has no ${file}`);
+  }
   for (const [target, link] of links) {
-    assert.ok(existsSync(target), `app.asar has no ${target.slice(extracted.length + 1)}`);
     await mkdir(dirname(link), { recursive: true });
     await symlink(target, link, "dir");
   }
