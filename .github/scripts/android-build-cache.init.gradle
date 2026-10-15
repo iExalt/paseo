@@ -1,0 +1,9 @@
+// Point Gradle's local build cache at the attested Android build cache
+// directory, kept apart from the dependency cache in ~/.gradle/caches.
+settingsEvaluated { settings ->
+  settings.buildCache {
+    local {
+      directory = new File(System.getenv("PASEO_GRADLE_BUILD_CACHE"))
+    }
+  }
+}

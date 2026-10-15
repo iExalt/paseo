@@ -116,6 +116,7 @@ export const sourceGateFiles = Object.freeze([
   ".github/scripts/windows-modules-cache.mjs",
   ".github/scripts/build-cache-provenance.mjs",
   ".github/scripts/android-build-cache.mjs",
+  ".github/scripts/android-build-cache.init.gradle",
   ".github/scripts/candidate-entry.mjs",
   ".github/scripts/candidate-authority.mjs",
   ".github/scripts/candidate-replacement.mjs",

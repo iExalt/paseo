@@ -299,7 +299,7 @@ jobs:
           df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
           bash "$GITHUB_WORKSPACE/scripts/runner-swap.sh" enable
 
-      # ccache only skips compiles whose preprocessed input and compiler match,
+      # ccache and the Gradle build cache only reuse outputs whose inputs match,
       # so a missing or rejected cache changes timing, not the APK.
       - name: Install ccache
         id: ccache-tool
@@ -307,11 +307,11 @@ jobs:
         timeout-minutes: 3
         shell: bash
         run: command -v ccache >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ccache; }
-      - name: Bind Android ccache recipe
+      - name: Bind Android build cache recipe
         id: ccache
         if: steps.ccache-tool.outcome == 'success'
         run: node .github/scripts/android-build-cache.mjs key
-      - name: Restore the newest Android ccache
+      - name: Restore the newest Android build caches
         id: ccache-cache
         if: steps.ccache.outcome == 'success'
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -319,28 +319,29 @@ jobs:
         with:
           path: ${{ steps.ccache.outputs.archive }}
           key: ${{ steps.ccache.outputs.key }}
-          restore-keys: paseo-android-ccache-v1-
-      - name: Verify Android ccache provenance
+          restore-keys: paseo-android-build-v1-
+      - name: Verify Android build cache provenance
         id: ccache-provenance
         if: steps.ccache-cache.outputs.cache-matched-key != ''
         env:
           GH_TOKEN: ${{ github.token }}
           PASEO_CACHE_KEY: ${{ steps.ccache-cache.outputs.cache-matched-key }}
         run: node .github/scripts/android-build-cache.mjs verify
-      - name: Compile native code through ccache
+      - name: Use the Android build caches
         if: steps.ccache.outcome == 'success'
         shell: bash
         env:
-          CCACHE_PATH_DIR: ${{ steps.ccache.outputs.ccache_dir }}
+          CACHE_DIR: ${{ steps.ccache.outputs.directory }}
           VERIFIED: ${{ steps.ccache-provenance.outputs.verified }}
         run: |
           set -euo pipefail
           if [[ "$VERIFIED" != true ]]; then
-            rm -rf "$CCACHE_PATH_DIR"
-            echo "::warning::No attested Android ccache restored; compiling native code cold. Prewarm with android-build-cache.yml on dev."
+            rm -rf "$CACHE_DIR"
+            echo "::warning::No attested Android build cache restored; building cold. Prewarm with android-build-cache.yml on dev."
           fi
           {
-            echo "CCACHE_DIR=$CCACHE_PATH_DIR"
+            echo "CCACHE_DIR=$CACHE_DIR/ccache"
+            echo "PASEO_GRADLE_BUILD_CACHE=$CACHE_DIR/gradle"
             echo "CCACHE_COMPILERCHECK=content"
             echo "CCACHE_MAXSIZE=3G"
             echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
@@ -354,13 +355,17 @@ jobs:
           wrapper="packages/app/android/gradle/wrapper/gradle-wrapper.properties"
           grep -qF 'gradle-9.3.1-bin.zip' "$wrapper"
           started_at=$SECONDS
+          cache_args=()
+          if [[ -n "${PASEO_GRADLE_BUILD_CACHE:-}" ]]; then
+            cache_args=(--build-cache --init-script "$GITHUB_WORKSPACE/.github/scripts/android-build-cache.init.gradle")
+          fi
           cd packages/app/android
           JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew --version
           bash "$GITHUB_WORKSPACE/scripts/gradle-resource-watch.sh" -- \
             env JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew :app:assembleRelease \
             --no-daemon --max-workers=1 -Dorg.gradle.parallel=false \
             -Pkotlin.compiler.execution.strategy=in-process \
-            -PreactNativeArchitectures=arm64-v8a
+            -PreactNativeArchitectures=arm64-v8a "${cache_args[@]}"
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
           if [[ -n "${CCACHE_DIR:-}" ]]; then ccache --show-stats; fi
           df -h "$ANDROID_HOME" "$RUNNER_TEMP" .
