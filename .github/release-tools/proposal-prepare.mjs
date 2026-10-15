@@ -13,9 +13,10 @@ import {
 } from "./proposal-tree.mjs";
 import { proposalCommit, proposalRef } from "./proposal-git.mjs";
 import { proposalRequest } from "./proposal-publish.mjs";
-import { releaseBotIdentity } from "../scripts/release-app-auth.mjs";
+import { githubRequest, releaseBotIdentity } from "../scripts/release-app-auth.mjs";
 import { assertReleasePr } from "../scripts/release-pr.mjs";
 import { replacementTree } from "../scripts/candidate-replacement.mjs";
+import { deriveReleaseBoundary } from "../../scripts/release-boundary.mjs";
 
 export async function prefetchProposalLock(lock) {
   const pin = JSON.parse(await readFile(new URL("../../flake.lock", import.meta.url), "utf8")).nodes
@@ -52,6 +53,11 @@ export async function prefetchProposalLock(lock) {
   }
 }
 
+export function releaseManifest(github, branch, lastReleaseSha) {
+  assert.match(lastReleaseSha, /^[a-f0-9]{40}$/);
+  return Manifest.fromManifest(github, branch, undefined, undefined, { lastReleaseSha });
+}
+
 export async function prepareProposal({
   cwd,
   branch,
@@ -61,6 +67,7 @@ export async function prepareProposal({
   replacement,
   request = proposalRequest(token),
   prefetch = prefetchProposalLock,
+  deriveBoundary = deriveReleaseBoundary,
 }) {
   const repository = "/repos/iExalt/paseo";
   const ref = proposalRef(branch).slice("refs/heads/".length);
@@ -74,6 +81,7 @@ export async function prepareProposal({
   const expectedHead = (await request(`${repository}/git/ref/heads/${ref}`))?.object.sha ?? "";
   const read = async (file) => readFile(resolve(cwd, file), "utf8");
   let materialized, title, body, previousPr;
+  let lastReleaseSha = null;
   if (replacement) {
     assert.equal(branch, "dev");
     assert.equal(replacement.repairBase, base);
@@ -83,13 +91,22 @@ export async function prepareProposal({
     body = `Replace unpublished version ${replacement.version} from PR #${replacement.supersededPr} with the repaired source at ${base}.\n\nThe selection record preserves publication history and binds the stopped signed predecessor authorities. Fresh routine, deep and complete native verification are required before publication.`;
     previousPr = replacement.supersededPr;
   } else {
+    // Rebased history may not contain the published tag commit; bound
+    // release-please's walk at that release's commit as mapped onto the target.
+    const boundary = await deriveBoundary({
+      repositoryPath: cwd,
+      head: base,
+      token,
+      request: githubRequest,
+    });
+    lastReleaseSha = boundary.lastReleaseSha;
     const github = await GitHub.create({
       owner: "iExalt",
       repo: "paseo",
       defaultBranch: branch,
       token,
     });
-    const manifest = await Manifest.fromManifest(github, branch);
+    const manifest = await releaseManifest(github, branch, lastReleaseSha);
     const proposals = await manifest.buildPullRequests();
     if (!proposals.length) {
       await currentBase();
@@ -120,9 +137,11 @@ export async function prepareProposal({
       else {
         assert.equal(prior.state, "closed");
         assert.equal(prior.merged, true);
-        const boundary = JSON.parse(await read(".github/release-boundary.json"));
-        assert.equal(boundary.kind, "release");
-        assert.equal(prior.merge_commit_sha, boundary.originalSha);
+        assert.equal(
+          prior.merge_commit_sha,
+          boundary.tagSha,
+          "Merged proposal is not the latest release",
+        );
       }
       previousPr = prior.number;
     }
@@ -143,6 +162,7 @@ export async function prepareProposal({
     body,
     previousPr,
     replacement,
+    lastReleaseSha,
     files: [...materialized.files],
     lockSha256: materialized.lockSha256 ?? lockDigest(await read("package-lock.json")),
     npmDepsHash: materialized.npmDepsHash ?? replacement.npmDepsHash,

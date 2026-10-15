@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { Manifest } from "release-please";
+import { releaseManifest } from "./proposal-prepare.mjs";
 import { inspectForkRelease } from "../../scripts/fork-release-config.mjs";
 import { releaseVersionSelectors } from "../scripts/release-version-selectors.mjs";
 import { composeProposalTree, lockDigest, verifyProposalLock } from "./proposal-tree.mjs";
@@ -37,7 +38,6 @@ const files = new Map(
       "CHANGELOG.fork.md",
       "package.json",
       "nix/npm-deps.hash",
-      ".github/release-boundary.json",
       ...rootPackage.workspaces.map((directory) => `${directory}/package.json`),
     ].map(async (file) => [file, await read(file)]),
   ),
@@ -83,7 +83,7 @@ async function proposal(contents, boundary, previousRelease) {
       yield commit(oldUpstreamSha, "feat: forbidden upstream history");
     },
   };
-  const manifest = await Manifest.fromManifest(github, "dev");
+  const manifest = await releaseManifest(github, "dev", boundary);
   const proposals = await manifest.buildPullRequests();
   assert.equal(proposals.length, 1);
   assert.equal(stopped, false, "Engine must stop at the explicit boundary");
@@ -111,6 +111,9 @@ async function proposal(contents, boundary, previousRelease) {
       },
     },
     "dev",
+    undefined,
+    undefined,
+    { lastReleaseSha: boundary },
   );
   const releases = await tagManifest.buildReleases();
   assert.equal(releases.length, 1);
@@ -152,7 +155,6 @@ test("pinned release engine composes all version edits and bounds both proposals
   // Rehearse the bootstrap even after the real manifest has advanced.
   const bootstrap = structuredClone(initialConfig);
   bootstrap.packages["."]["release-as"] = "0.1.0";
-  bootstrap["last-release-sha"] = bootstrap["bootstrap-sha"];
   contents.set("release-please-config.json", JSON.stringify(bootstrap));
   contents.set(".release-please-manifest.json", JSON.stringify({ ".": "0.0.0" }));
   const first = await proposal(contents, initialConfig["bootstrap-sha"]);
@@ -160,7 +162,6 @@ test("pinned release engine composes all version edits and bounds both proposals
   assert.equal(first.headRefName, "release-please--branches--dev--components--paseo");
   const config = JSON.parse(contents.get("release-please-config.json"));
   delete config.packages["."]["release-as"];
-  config["last-release-sha"] = mergeSha;
   contents.set("release-please-config.json", JSON.stringify(config));
   const rehearsalContents = new Map(contents);
   const second = await proposal(contents, mergeSha, {

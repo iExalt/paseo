@@ -1,85 +1,151 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { parseForkVersion } from "./fork-version.mjs";
-import {
-  validateForkConfig,
-  FORK_CONFIG_PATH,
-  FORK_CHANGELOG_PATH,
-} from "./fork-release-config.mjs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { compareForkVersions, forkVersionFromTag } from "./fork-version.mjs";
+import { validateForkConfig, FORK_CONFIG_PATH } from "./fork-release-config.mjs";
+import { latestVerifiedRelease } from "./paseo-nix-update.mjs";
 
-export const RELEASE_BOUNDARY_PATH = ".github/release-boundary.json";
 export const RELEASE_CONFIG_PATH = "release-please-config.json";
-export const changelogDigest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+const RELEASES_PATH = "/repos/iExalt/paseo/releases";
+const PAGE_SIZE = 100;
+const MAX_PAGES = 10;
 
-export function validateReleaseBoundary(value) {
-  const keys = ["currentSha", "kind", "originalSha", "schemaVersion", "version"];
-  if (value.kind === "bootstrap") keys.push("forkVersion", "changelogSha256");
-  assert.deepEqual(Object.keys(value).sort(), keys.sort());
-  assert.equal(value.schemaVersion, 1);
-  assert.ok(value.kind === "bootstrap" || value.kind === "release");
-  parseForkVersion(value.version);
-  if (value.kind === "bootstrap") {
-    assert.equal(value.version, "0.0.0");
-    assert.equal(value.forkVersion, "0.1.0");
-    assert.match(value.changelogSha256, /^[a-f0-9]{64}$/);
-  } else assert.notEqual(value.version, "0.0.0");
-  assert.match(value.originalSha, /^[a-f0-9]{40}$/);
-  assert.match(value.currentSha, /^[a-f0-9]{40}$/);
-  return value;
-}
-
-export async function readReleaseBoundary(read) {
-  const boundary = validateReleaseBoundary(JSON.parse(await read(RELEASE_BOUNDARY_PATH)));
-  const config = JSON.parse(await read(RELEASE_CONFIG_PATH));
-  assert.equal(
-    config["last-release-sha"],
-    boundary.currentSha,
-    "Release history must stop at the recorded boundary",
-  );
-  if (boundary.kind === "bootstrap") assert.equal(config["bootstrap-sha"], boundary.currentSha);
-  return { boundary, config };
-}
-
-export async function rebindReleaseBoundary(before, rewritten, isAncestor) {
-  const currentSha = rewritten.get(before.boundary.currentSha) ?? before.boundary.currentSha;
-  assert.ok(
-    await isAncestor(currentSha),
-    "Release boundary is missing from the signed replay; refusing an unrestricted history scan",
-  );
-  const boundary = { ...before.boundary, currentSha };
-  const config = { ...before.config, "last-release-sha": currentSha };
-  if (boundary.kind === "bootstrap") config["bootstrap-sha"] = currentSha;
-  return { boundary, config };
-}
-
-export async function verifyBoundaryHistory(boundary, { isAncestor, readAt }) {
-  assert.ok(
-    await isAncestor(boundary.currentSha),
-    "Recorded release boundary is not an ancestor of the target",
-  );
-  const bootstrap = boundary.kind === "bootstrap";
-  const expectedVersion = bootstrap ? boundary.forkVersion : boundary.version;
-  const commits = bootstrap ? [boundary.currentSha] : [boundary.originalSha, boundary.currentSha];
-  for (const sha of new Set(commits)) {
-    const config = validateForkConfig(JSON.parse(await readAt(sha, FORK_CONFIG_PATH)));
-    assert.equal(config.version, expectedVersion, "Release boundary source version differs");
-    if (boundary.kind === "release")
-      assert.equal(
-        JSON.parse(await readAt(sha, ".release-please-manifest.json"))["."],
-        boundary.version,
-      );
+// The release boundary is derived from the newest published fork release, not
+// from committed state. Other tags (fixtures, dry runs, candidates, upstream)
+// share the Releases API but never name a fork version.
+export function latestForkReleaseTag(releases) {
+  let latest = null;
+  for (const release of releases) {
+    if (release.draft !== false || release.prerelease !== false) continue;
+    const version = forkVersionFromTag(release.tag_name);
+    if (version === null) continue;
+    assert.notEqual(latest?.version, version, `Duplicate published release ${release.tag_name}`);
+    if (latest === null || compareForkVersions(version, latest.version) > 0)
+      latest = { tag: release.tag_name, version };
   }
-  if (bootstrap) {
+  assert.ok(latest, "No published paseo-v<semver> release exists");
+  return latest.tag;
+}
+
+async function listReleases(request, token) {
+  const releases = [];
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const rows = await request(`${RELEASES_PATH}?per_page=${PAGE_SIZE}&page=${page}`, token);
+    assert.ok(Array.isArray(rows), "Releases API returned an unexpected response");
+    releases.push(...rows);
+    if (rows.length < PAGE_SIZE) return releases;
+  }
+  throw new Error("Release history exceeds the bounded Releases API scan");
+}
+
+// release-please proposals merge as "release"; an explicitly replaced pending
+// version is published from its "replace pending release" selection commit.
+function releaseCommitSubjects(version) {
+  return [`chore(dev): release ${version}`, `chore(dev): replace pending release ${version}`];
+}
+
+function gitIn(repositoryPath) {
+  return (...args) =>
+    execFileSync("git", args, {
+      cwd: repositoryPath,
+      encoding: "utf8",
+      maxBuffer: 256 * 1024 * 1024,
+    });
+}
+
+// Zero context keeps the identity to the changed lines, so unrelated upstream
+// edits near a version field cannot change it across a replay.
+function patchId(git, sha) {
+  const diff = git(
+    "diff-tree",
+    "--patch",
+    "--unified=0",
+    "--no-color",
+    "--no-ext-diff",
+    "--full-index",
+    "--root",
+    sha,
+  );
+  const result = execFileSync("git", ["patch-id", "--stable"], { input: diff, encoding: "utf8" });
+  const id = result.trim().split(/\s+/)[0];
+  assert.match(id ?? "", /^[a-f0-9]{40,64}$/, `Release commit ${sha} has no patch`);
+  return id;
+}
+
+// rebase-dev replays fork commits onto upstream, so the published tag may name
+// a commit outside dev. The replay keeps messages byte-for-byte and patches
+// stable, so the release commit is identified by its exact subject and
+// confirmed by full message and stable patch-id. Anything else fails closed.
+export function mapReleaseCommit({ repositoryPath, head, version, tagSha }) {
+  const git = gitIn(repositoryPath);
+  assert.match(head, /^[a-f0-9]{40}$/);
+  assert.match(tagSha, /^[a-f0-9]{40}$/);
+  const subject = git("log", "-1", "--format=%s", tagSha).trim();
+  assert.ok(
+    releaseCommitSubjects(version).includes(subject),
+    `Release ${version} tag names commit ${tagSha} ("${subject}"), not a release commit`,
+  );
+  const candidates = git(
+    "log",
+    "--format=%H%x00%s",
+    "--fixed-strings",
+    `--grep=${subject}`,
+    head,
+    "--",
+  )
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.split("\0"))
+    .filter(([, candidateSubject]) => candidateSubject === subject)
+    .map(([sha]) => sha);
+  assert.equal(
+    candidates.length,
+    1,
+    candidates.length === 0
+      ? `No commit on ${head} has subject "${subject}"; cannot map release ${version}`
+      : `Commits ${candidates.join(", ")} all have subject "${subject}"; release ${version} is ambiguous`,
+  );
+  const [mapped] = candidates;
+  const tagOnTarget =
+    spawnSync("git", ["merge-base", "--is-ancestor", tagSha, head], { cwd: repositoryPath })
+      .status === 0;
+  if (tagOnTarget)
+    assert.equal(mapped, tagSha, `Release ${version} tag commit is on the target but not mapped`);
+  else {
+    const message = (sha) => git("cat-file", "commit", sha).replace(/^[\s\S]*?\n\n/, "");
+    assert.equal(message(mapped), message(tagSha), `Release ${version} commit message changed`);
     assert.equal(
-      changelogDigest(await readAt(boundary.currentSha, FORK_CHANGELOG_PATH)),
-      boundary.changelogSha256,
-      "Replayed bootstrap changed fork changelog history",
+      patchId(git, mapped),
+      patchId(git, tagSha),
+      `Release ${version} commit ${mapped} has a different patch than ${tagSha}`,
     );
-    return;
   }
-  assert.equal(
-    await readAt(boundary.currentSha, FORK_CHANGELOG_PATH),
-    await readAt(boundary.originalSha, FORK_CHANGELOG_PATH),
-    "Replayed boundary changed fork changelog history",
-  );
+  const readAt = (file) => git("show", `${mapped}:${file}`);
+  assert.equal(validateForkConfig(JSON.parse(readAt(FORK_CONFIG_PATH))).version, version);
+  assert.deepEqual(JSON.parse(readAt(".release-please-manifest.json")), { ".": version });
+  return mapped;
+}
+
+export async function deriveReleaseBoundary({
+  repositoryPath,
+  head,
+  token,
+  request,
+  fetchBytes,
+  publicKey,
+}) {
+  const tag = latestForkReleaseTag(await listReleases(request, token));
+  const { manifest } = await latestVerifiedRelease({
+    resolveTag: async () => tag,
+    fetchBytes,
+    publicKey,
+  });
+  const tagSha = gitIn(repositoryPath)("rev-parse", "--verify", `refs/tags/${tag}^{commit}`).trim();
+  assert.equal(tagSha, manifest.sourceSha, `Tag ${tag} does not name the signed source commit`);
+  const lastReleaseSha = mapReleaseCommit({
+    repositoryPath,
+    head,
+    version: manifest.version,
+    tagSha,
+  });
+  return { tag, version: manifest.version, tagSha, lastReleaseSha };
 }
