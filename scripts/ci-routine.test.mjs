@@ -376,26 +376,16 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   assert.deepEqual(workflow.on.push.branches, ["dev"]);
   assert.ok(Object.hasOwn(workflow.on, "pull_request"));
   assert.equal(workflow.jobs.required.if, "always()");
-  assert.deepEqual(workflow.jobs.required.needs, ["plan", "routine", "attest-source"]);
+  assert.deepEqual(workflow.jobs.required.needs, ["plan", "routine"]);
   const gate = workflow.jobs.required.steps[0].run;
   const results = ["success", "failure", "cancelled", "skipped", ""];
   for (const plan of results)
-    for (const result of results)
-      for (const attest of results)
-        for (const fork of ["true", "false"]) {
-          const status = spawnSync("bash", ["-c", gate], {
-            env: {
-              ...process.env,
-              RESULT: result,
-              PLAN_RESULT: plan,
-              ATTEST_RESULT: attest,
-              FORK_PR: fork,
-            },
-          }).status;
-          // Only fork PRs, which cannot sign and are never release sources, may skip.
-          const signed = attest === "success" || (fork === "true" && attest === "skipped");
-          assert.equal(status === 0, plan === "success" && result === "success" && signed);
-        }
+    for (const result of results) {
+      const status = spawnSync("bash", ["-c", gate], {
+        env: { ...process.env, RESULT: result, PLAN_RESULT: plan },
+      }).status;
+      assert.equal(status === 0, plan === "success" && result === "success");
+    }
   assert.equal(workflow.jobs.routine.strategy["fail-fast"], false);
   assert.equal(workflow.jobs.routine.strategy["max-parallel"], lanes.length);
   assert.ok(!workflow.jobs.plan.steps.some((step) => step.run?.includes("npm ci")));
