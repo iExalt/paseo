@@ -1,4 +1,5 @@
 # Discovery only: callers enforce trusted hosted-run and native-architecture guards.
+# Bump predecessorFormat when this changes the predecessor's bytes.
 function Get-NativeCompiler {
     if (!$IsWindows -or $env:EXPECTED_ARCHITECTURE -notin @('arm64', 'x64')) { throw 'Native Windows architecture required' }
     $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'

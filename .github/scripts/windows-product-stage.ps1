@@ -71,6 +71,7 @@ if ($env:PASEO_WINDOWS_DEADLINE -notmatch '^\d+$' -or
     ([long]$env:PASEO_WINDOWS_DEADLINE - [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()) -lt ($seconds + 120)) {
     throw 'Insufficient whole-job budget for this stage and cleanup'
 }
+# Bump predecessorFormat when this changes the predecessor's bytes (install-previous, build-previous).
 $specFile = Join-Path $root "$Phase-spec.json"
 if (Test-Path -LiteralPath $specFile) { throw "Do not repeat producer stage $Phase" }
 $receiptFile = Join-Path $evidence "$Phase-job.json"
