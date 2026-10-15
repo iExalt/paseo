@@ -17,7 +17,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { load } from "js-yaml";
 import { candidateIdentity } from "../.github/scripts/candidate-identity.mjs";
-import { candidateTriggerPaths } from "../.github/scripts/candidate-replacement.mjs";
 import { lanes as routineLanes } from "../.github/scripts/ci-routine.mjs";
 import { grantGroups } from "../.github/scripts/candidate-grant.mjs";
 import { preIssuedGroups } from "../.github/scripts/candidate-worker.mjs";
@@ -89,11 +88,8 @@ test("candidate issuance isolates signing from keyless planning and executes onl
   const workflow = load(
     readFileSync(new URL(".github/workflows/release-candidate.yml", repoRoot), "utf8"),
   );
-  assert.deepEqual(workflow.on.pull_request_target, {
-    types: ["closed"],
-    branches: ["dev"],
-    paths: candidateTriggerPaths,
-  });
+  // Retired in favour of release.yml: a merged release PR must not issue a candidate.
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), ["release_id", "merged_pr"]);
   const initialKey = workflow.jobs.issue.steps.find(
     (step) => step.env?.PASEO_RELEASE_MANIFEST_PRIVATE_KEY,
