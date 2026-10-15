@@ -100,12 +100,12 @@ export function planCommands(selection, cwd = root) {
   const commands = [];
   const add = (name, command, args) => commands.push({ name, command, args });
   const npm = (name, script, args = []) => add(name, "npm", ["run", script, ...args]);
-  const unit = (workspace, script = "test", args = []) =>
+  const unit = (workspace, script = "test", args = [], workers = 4) =>
     npm(`${workspace} units`, script, [
       `--workspace=@getpaseo/${workspace}`,
       "--",
       ...args,
-      "--maxWorkers=4",
+      `--maxWorkers=${workers}`,
     ]);
   if (selection.files === null) npm("format", "format:check");
   else {
@@ -166,7 +166,8 @@ export function planCommands(selection, cwd = root) {
   }
   if (selection.domains.includes("cli"))
     unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
-  if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"]);
+  // Four app workers starved live tests' 10 s hooks on 4-vCPU runners; three do not.
+  if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"], 3);
   if (selection.domains.includes("desktop")) {
     // Install scripts are skipped, so fetch Electron once before parallel workers
     // would each try to extract it on first import.

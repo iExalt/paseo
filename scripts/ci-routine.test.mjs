@@ -115,6 +115,9 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   assert.equal(commands.filter((step) => step.args.includes("build:server")).length, 1);
   const app = commands.find((step) => step.name === "app units");
   assert.ok(app.args.includes("unit"));
+  // Four workers starved the app's live-test hooks; the other units keep four.
+  assert.ok(app.args.includes("--maxWorkers=3"));
+  assert.ok(commands.find((step) => step.name === "server units").args.includes("--maxWorkers=4"));
   const cli = commands.find((step) => step.name === "cli units");
   assert.ok(cli.args.includes("**/*.e2e.test.ts"));
   const desktop = commands.find((step) => step.name === "desktop units");
