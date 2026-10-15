@@ -109,12 +109,15 @@ buildNpmPackage {
     npm run build --workspace=@getpaseo/expo-two-way-audio
 
     # Expo web export for the Electron renderer
-    # Hosted macOS has 7 GiB RAM. Keep Metro in one process and give its
-    # export a 4 GiB old-space limit; this is not a total process RSS limit.
+    # Hosted macOS has 7 GiB RAM and three cores. Two Metro workers bundle in
+    # 120-138 s against 186-227 s for one, peak at about 4 GiB of node RSS with
+    # no swap, and emit the same files; three are slower than two, and the
+    # runner's default count ran out of memory (42627fc1a). The 4 GiB
+    # old-space limit is per process, not a total RSS limit.
     (
       cd packages/app
       ${lib.optionalString stdenv.hostPlatform.isDarwin "NODE_OPTIONS=--max-old-space-size=4096"} \
-        PASEO_WEB_PLATFORM=electron npx expo export --platform web ${lib.optionalString stdenv.hostPlatform.isDarwin "--max-workers 1"}
+        PASEO_WEB_PLATFORM=electron npx expo export --platform web ${lib.optionalString stdenv.hostPlatform.isDarwin "--max-workers 2"}
     )
 
     # Desktop main process
