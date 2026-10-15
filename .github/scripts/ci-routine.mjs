@@ -19,6 +19,7 @@ export const coreTests = [
   "scripts/sync-upstream-workflow.test.mjs",
   "scripts/release-version-utils.test.mjs",
   ".github/scripts/rebase-dev.test.mjs",
+  ".github/scripts/release-mac-smoke-deps.test.mjs",
 ];
 export const helperTests = [
   "packages/desktop/scripts/after-pack.test.mjs",

@@ -159,9 +159,7 @@ jobs:
           name: release-macos
           path: ${{ runner.temp }}/paseo-release-macos
       - name: Install smoke harness dependencies
-        run: |
-          node scripts/npm-retry.mjs ci --cache "$RUNNER_TEMP/npm-cache"
-          npm run build:server
+        run: node .github/scripts/release-mac-smoke-deps.mjs "$RUNNER_TEMP/paseo-smoke-deps"
       - name: Import with the release key alone, then check signature, CLI and launch
         timeout-minutes: 10
         env:
@@ -290,6 +288,7 @@ jobs:
             --no-daemon --max-workers=1 -Dorg.gradle.parallel=false \
             -Pkotlin.compiler.execution.strategy=in-process \
             -PreactNativeArchitectures=arm64-v8a \
+            -PreactNativeDevServerIp=localhost \
             --build-cache --init-script "$GITHUB_WORKSPACE/.github/scripts/android-build-cache.init.gradle"
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
           ccache --show-stats

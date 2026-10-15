@@ -2,15 +2,18 @@
 // publishing. It installs the exported cache the way the in-app updater
 // stages a release (client tar extractor, only the release key trusted,
 // substituters disabled), then checks the bundle signature, the bundled CLI and
-// updater, and launches the packaged app once.
+// updater, and launches the packaged app once. The launch's builtin-plugin check
+// imports the client and server builds; they come from the closure's own app.asar,
+// so the job installs only release-mac-smoke-deps.mjs and builds nothing.
 // Usage: node release-mac-smoke.mjs <directory with tar and closure json>
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { existsSync, lstatSync } from "node:fs";
+import { appendFile, mkdir, mkdtemp, readFile, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   extractNixCacheTar,
   localCacheCopyArgs,
@@ -33,6 +36,7 @@ const trustOnlyRelease = [
   "trusted-public-keys",
   NIX_RELEASE_PUBLIC_KEY,
 ];
+const root = fileURLToPath(new URL("../../", import.meta.url));
 const run = (command, args) =>
   execFileSync(command, args, { encoding: "utf8", timeout: 600_000, maxBuffer: 64 * 1024 ** 2 });
 
@@ -46,6 +50,43 @@ function assertPaseoSignature(app) {
   };
   codesign(["--verify", "--deep", "--strict"]);
   assert.match(codesign(["--display", "--verbose=2"]), /^Identifier=sh\.paseo\.desktop$/m);
+}
+
+// Links the client and server builds packed in app.asar to where
+// packaged-app-smoke.js imports them from the checkout.
+export async function linkClosureBuilds(app, repoRoot, scratch) {
+  const { extractAll } = await import("@electron/asar");
+  const archive = join(app, "Contents/Resources/app.asar");
+  const extracted = join(scratch, "app");
+  const links = [
+    [
+      join(extracted, "node_modules/@getpaseo/client"),
+      join(repoRoot, "node_modules/@getpaseo/client"),
+    ],
+    [join(extracted, "node_modules/@getpaseo/server/dist"), join(repoRoot, "packages/server/dist")],
+  ];
+  // A clean checkout has neither; never replace a developer's builds.
+  for (const [, link] of links) {
+    assert.throws(() => lstatSync(link), { code: "ENOENT" }, `${link} already exists`);
+  }
+  try {
+    extractAll(archive, extracted);
+  } catch (error) {
+    // The asar header still lists unpacked prebuilds the closure omits (other
+    // platforms' node-pty, the agent SDK binary); only those may be missing.
+    const failures = [...String(error.message).matchAll(/^Error: (.*)$/gm)].map(([, line]) => line);
+    const expected = `ENOENT: no such file or directory, open '${archive}.unpacked/`;
+    if (!failures.length || failures.some((line) => !line.startsWith(expected))) throw error;
+    console.log(
+      `Extracted app.asar; ${failures.length} listed unpacked files are not in the closure`,
+    );
+  }
+  for (const [target, link] of links) {
+    assert.ok(existsSync(target), `app.asar has no ${target.slice(extracted.length + 1)}`);
+    await mkdir(dirname(link), { recursive: true });
+    await symlink(target, link, "dir");
+  }
+  return links;
 }
 
 async function main() {
@@ -68,7 +109,8 @@ async function main() {
   );
   assert.ok(!existsSync(outputPath), "A fresh runner must not already hold the release output");
 
-  const cache = join(await mkdtemp(join(process.env.RUNNER_TEMP, "paseo-release-")), "cache");
+  const scratch = await mkdtemp(join(process.env.RUNNER_TEMP, "paseo-release-"));
+  const cache = join(scratch, "cache");
   await extractNixCacheTar(join(directory, `${base}.tar`), cache);
   run("nix", localCacheCopyArgs(cache, outputPath));
   run("nix", localCacheCopySignaturesArgs(cache, outputPath));
@@ -119,12 +161,21 @@ async function main() {
   );
   console.log(`Bundle signed as sh.paseo.desktop; bundled CLI ${cliVersion}; updater runs`);
 
+  const artifactDir = process.env.PASEO_DESKTOP_SMOKE_ARTIFACT_DIR;
+  const links = await linkClosureBuilds(app, root, scratch);
+  await mkdir(artifactDir, { recursive: true });
+  await appendFile(
+    join(artifactDir, "provenance.txt"),
+    links.map(([target, link]) => `${link} -> ${target} (from ${outputPath} app.asar)\n`).join(""),
+  );
   const require = createRequire(import.meta.url);
   const { smokePackagedDesktopApp } = require("../../packages/desktop/e2e/packaged-app-smoke.js");
   await smokePackagedDesktopApp({
     appPath: app,
-    artifactDir: process.env.PASEO_DESKTOP_SMOKE_ARTIFACT_DIR,
+    artifactDir,
   });
 }
 
-await main();
+if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+  await main();
+}

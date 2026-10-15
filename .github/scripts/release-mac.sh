@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds, signs and exports the macOS Nix desktop closure for release.yml.
 #   build:  build the desktop output (dependencies from cache.nixos.org), write the closure manifest
-#   export: sign the closure with the Nix release key and pack a file:// binary cache as plain ustar
+#   export: sign the closure with the Nix release key and pack a zstd file:// binary cache as plain ustar
 # Inputs: VERSION, SOURCE_SHA, RUNNER_TEMP, GITHUB_OUTPUT;
 # NIX_RELEASE_SIGNING_KEY for export only.
 set -euo pipefail
@@ -76,7 +76,9 @@ export_closure() {
   # Store paths keep only their original cache signatures; sign every path so a
   # fresh store can verify the closure with the release key alone.
   nix store sign --key-file "$key_file" --recursive "$output_path"
-  nix copy --to "file://$cache_dir?secret-key=$key_file" --option builders '' "$output_path"
+  # zstd instead of the default xz: xz took most of the ~280 s export. The
+  # installing host's nix decompresses; the client's extractor ignores the format.
+  nix copy --to "file://$cache_dir?secret-key=$key_file&compression=zstd" --option builders '' "$output_path"
   rm -f "$key_file"
   trap - EXIT
   # The client's extractor accepts plain ustar only: no AppleDouble members.
