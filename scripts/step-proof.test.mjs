@@ -240,15 +240,18 @@ const sites = {
 // dispatch-only workflow, or a job whose archive step is guarded off for
 // candidate runs by an exact leading conjunction.
 const cacheWriters = {
-  "windows-product-runtime.yml/native": {
-    archive: "modules-archive",
-    key: "modules",
-    guard: "inputs.architecture == 'arm64' && inputs.source_sha == '' && ",
-  },
-  "android-build-cache.yml/write": { archive: "ccache-archive", key: "ccache" },
+  "windows-product-runtime.yml/native": [
+    {
+      archive: "modules-archive",
+      key: "modules",
+      guard: "inputs.architecture == 'arm64' && inputs.source_sha == '' && ",
+    },
+    { archive: "predecessor-archive", key: "predecessor", guard: "inputs.source_sha == '' && " },
+  ],
+  "android-build-cache.yml/write": [{ archive: "ccache-archive", key: "ccache" }],
 };
 function checkCacheSigner(site, workflow, steps, sign) {
-  const writer = cacheWriters[site];
+  const writer = cacheWriters[site]?.find((entry) => sign.if?.includes(`steps.${entry.archive}.`));
   assert.ok(writer, `${site} attests a build cache outside a known writer`);
   const archive = steps.find((step) => step.id === writer.archive);
   if (writer.guard) {
