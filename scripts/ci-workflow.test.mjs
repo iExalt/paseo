@@ -530,7 +530,7 @@ test("native candidate runtime is manual, read-only and bounded to hosted verifi
   assert.match(source, /runs-on: ubuntu-24\.04-arm/);
   assert.match(source, /timeout-minutes: 30/);
   assert.match(source, /timeout-minutes: 10/);
-  assert.match(source, /install_args: node@26\.11\.0/);
+  assert.match(source, /install_args: node@26\.11\.1/);
   assert.match(source, /cache: false/);
   assert.match(source, /retention-days: 3/);
   assert.match(source, /macos-candidate-runtime\.mjs/);
