@@ -37,7 +37,11 @@ only restore it.
 
 1. Merge conventional commits into `dev`. With `PASEO_RELEASE_PROPOSALS_ENABLED`
    set, `release-please.yml` keeps one bot-authored release PR current.
-   Deep CI runs on it.
+   Deep CI runs on it. The version follows the commits: a `feat` bumps the
+   minor. A `Release-As: X.Y.Z` footer in a conventional commit on `dev` sets
+   the version of every proposal until a release containing that commit is
+   published; a newer footer overrides it. Rebase-merge it, since the footer
+   must be in the commit message.
 2. Merge the release PR. Merging publishes nothing.
 3. **Immediately** dispatch `release.yml` on `dev` with `publish=true`. It must
    run while `dev`'s head is the release commit: the `resolve` job refuses any
