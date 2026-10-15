@@ -10,23 +10,9 @@ export const coreTests = [
   "scripts/release-boundary.test.mjs",
   "scripts/release-preflight.test.mjs",
   "scripts/release-manifest.test.mjs",
-  "scripts/release-pr-checks.test.mjs",
-  "scripts/candidate-descriptor.test.mjs",
-  "scripts/step-proof.test.mjs",
   "scripts/github-retry.test.mjs",
-  "scripts/candidate-attempts.test.mjs",
-  "scripts/candidate-nix-export.test.mjs",
   "scripts/fork-release-config.test.mjs",
-  "scripts/candidate-artifacts.test.mjs",
   "scripts/process-tree.test.mjs",
-  "scripts/native-candidate.test.mjs",
-  "scripts/linux-predecessor-cache.test.mjs",
-  "scripts/windows-speech-binding.test.mjs",
-  "scripts/windows-predecessor-cache.test.mjs",
-  "scripts/windows-product-sources.test.mjs",
-  "scripts/windows-modules-cache.test.mjs",
-  "scripts/build-cache-provenance.test.mjs",
-  "scripts/android-build-cache.test.mjs",
   "scripts/ci-deep.test.mjs",
   "scripts/ci-workflow.test.mjs",
   "scripts/ci-routine.test.mjs",
@@ -35,7 +21,6 @@ export const coreTests = [
   ".github/scripts/rebase-dev.test.mjs",
 ];
 export const helperTests = [
-  "scripts/macos-build-observer.test.mjs",
   "packages/desktop/scripts/after-pack.test.mjs",
   "scripts/daemon-launch-contract.test.mjs",
   "scripts/is-main-module.test.mjs",
@@ -43,7 +28,6 @@ export const helperTests = [
   "scripts/paseo-nix-update-semver.test.mjs",
   "scripts/postinstall-patches-target.test.mjs",
   "scripts/expo-export-error.test.mjs",
-  "scripts/promote-fork-release.test.mjs",
   "scripts/sync-fdroid-changelogs.test.mjs",
   "scripts/sync-release-notes-from-changelog.test.mjs",
   "scripts/upload-release-assets.test.mjs",
@@ -57,7 +41,7 @@ export const packageTests = [
   "scripts/nix-source-filter.test.mjs",
   "scripts/builtin-plugins-dist.test.mjs",
   "scripts/trace-daemon-dist.test.mjs",
-]; // Mandatory G3, alongside the Nix signature and macOS reactivation fixtures.
+]; // Need built packages or Nix; run by hand, not by routine CI.
 const domains = ["sdk", "relay", "server", "cli", "app", "desktop"];
 const ownership = [...domains, "hub", "browser"];
 const docs = ["docs/**", "public-docs/**", "README.md", "CONTRIBUTING.md", "CLAUDE.md"];

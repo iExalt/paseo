@@ -163,7 +163,7 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   );
 });
 
-test("new Node test files require an explicit routine or G3 classification", () => {
+test("new Node test files require an explicit routine or package classification", () => {
   const actual = readdirSync(join(root, "scripts"))
     .filter((name) => name.endsWith(".test.mjs"))
     .map((name) => `scripts/${name}`)
