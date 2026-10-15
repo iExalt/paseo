@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { publishProposal } from "./proposal-publish.mjs";
+import { proposalHistory, publishProposal } from "./proposal-publish.mjs";
 
 const identity = { botId: 341220930, botLogin: "paseo-release[bot]" };
 const base = "a".repeat(40),
@@ -183,4 +183,20 @@ test("publisher waits boundedly for the refs and pulls APIs to report exactly th
     publishProposal({ ...stuck.args, wait: async () => {} }),
     /PR head changed; fresh verification required/,
   );
+});
+
+test("proposal history reads every page and stops a runaway listing", async () => {
+  const pages = [];
+  const listing = (total) => async (route) => {
+    const page = Number(new URL(route, "https://x").searchParams.get("page"));
+    pages.push(page);
+    return Array.from({ length: Math.max(0, Math.min(100, total - (page - 1) * 100)) }, (_, i) => ({
+      number: (page - 1) * 100 + i,
+    }));
+  };
+  const rows = await proposalHistory(listing(250), "/repos/iExalt/paseo/pulls?state=all");
+  assert.equal(rows.length, 250);
+  assert.deepEqual(pages, [1, 2, 3]);
+  assert.equal((await proposalHistory(listing(200), "/r?x")).length, 200);
+  await assert.rejects(proposalHistory(listing(Infinity), "/r?x", 3), /exceeds bound/);
 });

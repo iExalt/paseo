@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import { GitHub, Manifest } from "release-please";
 import { composeProposalTree, validateNpmHash, verifyProposalLock } from "./proposal-tree.mjs";
 import { proposalCommit, proposalRef } from "./proposal-git.mjs";
-import { proposalRequest } from "./proposal-publish.mjs";
+import { proposalHistory, proposalRequest } from "./proposal-publish.mjs";
 import { githubRequest, releaseBotIdentity } from "../scripts/release-app-auth.mjs";
 import { assertReleasePr } from "../scripts/release-pr.mjs";
 import { deriveReleaseBoundary } from "../../scripts/release-boundary.mjs";
@@ -103,10 +103,10 @@ export async function prepareProposal({
   const title = `chore(dev): release ${proposal.version.toString()}`;
   const body = proposal.body.toString();
   if (expectedHead) {
-    const rows = await request(
-      `${repository}/pulls?state=all&head=iExalt:${encodeURIComponent(ref)}&base=${encodeURIComponent(branch)}&per_page=100`,
+    const rows = await proposalHistory(
+      request,
+      `${repository}/pulls?state=all&head=iExalt:${encodeURIComponent(ref)}&base=${encodeURIComponent(branch)}`,
     );
-    assert.ok(Array.isArray(rows) && rows.length < 100, "Proposal history exceeds bound");
     const matching = rows.filter((row) => row.head.sha === expectedHead);
     assert.equal(matching.length, 1, "Existing branch requires one authentic proposal");
     const prior = await request(`${repository}/pulls/${matching[0].number}`);

@@ -33,6 +33,18 @@ export function proposalRequest(token) {
     return JSON.parse(Buffer.concat(chunks).toString("utf8"));
   };
 }
+// Every proposal ever opened stays in the branch's PR history, so read all of
+// it. The page cap only stops a runaway listing.
+export async function proposalHistory(request, route, maxPages = 20) {
+  const rows = [];
+  for (let page = 1; ; page++) {
+    const batch = await request(`${route}&per_page=100&page=${page}`);
+    assert.ok(Array.isArray(batch), "Proposal history is not a list");
+    rows.push(...batch);
+    if (batch.length < 100) return rows;
+    assert.ok(page < maxPages, "Proposal history exceeds bound");
+  }
+}
 function identityPr(pr, identity, branch, head) {
   // Creation precedes its label event. Never relax identity or head checks while
   // reconciling that small interval; labeling triggers the deep release gate.
