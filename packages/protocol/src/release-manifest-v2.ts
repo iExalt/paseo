@@ -1,4 +1,4 @@
-/** Portable signed release inventory. Verify the original bytes before parsing. */
+/** Portable signed release inventory, schemas 2 and 3. Verify the original bytes before parsing. */
 import { forkAndroidVersionCode, forkReleaseTag, parseForkVersion } from "./fork-version.ts";
 import { PASEO_RELEASE_MANIFEST_KEY_ID } from "./release-manifest.ts";
 import type { ReleaseManifestAsset } from "./release-manifest.ts";
@@ -32,8 +32,7 @@ export type ForkReleaseArtifact = ReleaseManifestAsset &
       }
   );
 
-export interface ForkReleaseManifest {
-  schemaVersion: 2;
+interface ForkReleaseManifestFields {
   keyId: typeof PASEO_RELEASE_MANIFEST_KEY_ID;
   repository: typeof FORK_RELEASE_REPOSITORY;
   lineage: typeof FORK_RELEASE_LINEAGE;
@@ -44,6 +43,18 @@ export interface ForkReleaseManifest {
   artifacts: ForkReleaseArtifact[];
 }
 
+/** Schema 2 carries the 14-cell matrix in FORK_RELEASE_CELLS. */
+export interface ForkReleaseManifestV2 extends ForkReleaseManifestFields {
+  schemaVersion: 2;
+}
+
+/** Schema 3 carries exactly the macOS Nix desktop and Android APK cells in FORK_RELEASE_CELLS_V3. */
+export interface ForkReleaseManifestV3 extends ForkReleaseManifestFields {
+  schemaVersion: 3;
+}
+
+export type ForkReleaseManifest = ForkReleaseManifestV2 | ForkReleaseManifestV3;
+
 const cells = new Set(["macos/arm64/nix-desktop", "android/arm64/apk"]);
 for (const arch of ["x64", "arm64"]) {
   for (const kind of ["nix-daemon", "nix-desktop", "deb", "rpm", "appimage"]) {
@@ -52,6 +63,14 @@ for (const arch of ["x64", "arm64"]) {
   cells.add(`windows/${arch}/nsis`);
 }
 export const FORK_RELEASE_CELLS: readonly string[] = Object.freeze([...cells].sort());
+export const FORK_RELEASE_CELLS_V3: readonly string[] = Object.freeze([
+  "android/arm64/apk",
+  "macos/arm64/nix-desktop",
+]);
+const cellsBySchema = new Map<unknown, readonly string[]>([
+  [2, FORK_RELEASE_CELLS],
+  [3, FORK_RELEASE_CELLS_V3],
+]);
 const digestPattern = /^[a-f0-9]{64}$/;
 const commitPattern = /^[a-f0-9]{40}$/;
 const assetKeys = ["name", "bytes", "sha256"];
@@ -109,8 +128,9 @@ export function validateForkReleaseManifest(value: unknown): asserts value is Fo
     "releaseTag",
     "artifacts",
   ]);
+  const expectedCells = cellsBySchema.get(manifest.schemaVersion);
   if (
-    manifest.schemaVersion !== 2 ||
+    !expectedCells ||
     manifest.keyId !== PASEO_RELEASE_MANIFEST_KEY_ID ||
     manifest.repository !== FORK_RELEASE_REPOSITORY ||
     manifest.lineage !== FORK_RELEASE_LINEAGE
@@ -124,10 +144,10 @@ export function validateForkReleaseManifest(value: unknown): asserts value is Fo
     !matches(manifest.upstreamBase, commitPattern)
   )
     throw new Error("Invalid fork release tag or source identity.");
-  if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length !== cells.size) {
+  if (!Array.isArray(manifest.artifacts) || manifest.artifacts.length !== expectedCells.length) {
     throw new Error("Release inventory must contain the complete artifact matrix.");
   }
-  const remaining = new Set(cells);
+  const remaining = new Set(expectedCells);
   const names = new Set<string>();
   for (const entry of manifest.artifacts) {
     const artifact = object(entry);
