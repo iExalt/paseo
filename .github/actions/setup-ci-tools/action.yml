@@ -9,7 +9,7 @@ runs:
   steps:
     - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: "26.11.0"
+        node-version: "26.11.1"
         architecture: x64
         package-manager-cache: false
     - name: Verify hosted runtime
@@ -18,7 +18,7 @@ runs:
       run: |
         test "$(uname -s)" = Linux
         test "$(uname -m)" = x86_64
-        test "$(node --version)" = v26.11.0
+        test "$(node --version)" = v26.11.1
         test "$(npm --version)" = 11.20.0
         node_root="$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
         echo "root=$node_root" >> "$GITHUB_OUTPUT"
@@ -32,10 +32,10 @@ runs:
       env:
         NODE_ROOT: ${{ steps.runtime.outputs.root }}
       run: |
-        mise link node@26.11.0 "$NODE_ROOT"
+        mise link node@26.11.1 "$NODE_ROOT"
         test "$(readlink -f "$(mise which node)")" = "$NODE_ROOT/bin/node"
-        test "$(mise exec node@26.11.0 -- node --version)" = v26.11.0
-        test "$(mise exec node@26.11.0 -- npm --version)" = 11.20.0
+        test "$(mise exec node@26.11.1 -- node --version)" = v26.11.1
+        test "$(mise exec node@26.11.1 -- npm --version)" = 11.20.0
     - name: Install pinned workflow linter
       if: inputs.actionlint == 'true'
       shell: bash
