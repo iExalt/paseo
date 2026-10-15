@@ -1,9 +1,10 @@
 import type {
   ForkReleaseArtifact,
-  ForkReleaseManifest,
+  ForkReleaseManifestV2,
+  ForkReleaseManifestV3,
 } from "@getpaseo/protocol/release-manifest-v2";
 
-export function forkReleaseManifestFixture(version = "0.1.0"): ForkReleaseManifest {
+export function forkReleaseManifestFixture(version = "0.1.0"): ForkReleaseManifestV2 {
   const [major, minor, patch] = version.split(".").map(Number);
   const artifacts: ForkReleaseArtifact[] = [];
   const asset = (name: string) => ({ name, bytes: 123, sha256: "a".repeat(64) });
@@ -54,5 +55,19 @@ export function forkReleaseManifestFixture(version = "0.1.0"): ForkReleaseManife
     upstreamBase: "c".repeat(40),
     releaseTag: `paseo-v${version}`,
     artifacts,
+  };
+}
+
+/** Schema 3 keeps only the macOS Nix desktop and Android APK cells of the v2 matrix. */
+export function forkReleaseManifestV3Fixture(version = "0.1.0"): ForkReleaseManifestV3 {
+  const v2 = forkReleaseManifestFixture(version);
+  return {
+    ...v2,
+    schemaVersion: 3,
+    artifacts: v2.artifacts.filter(
+      (artifact) =>
+        artifact.kind === "apk" ||
+        (artifact.platform === "macos" && artifact.kind === "nix-desktop"),
+    ),
   };
 }
