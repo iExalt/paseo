@@ -730,6 +730,12 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
     "${{ steps.ccache-cache.outputs.cache-matched-key }}",
   );
   assert.doesNotMatch(build, /actions\/cache\/save/);
+  // The Gradle build cache applies only once the attested cache directory is
+  // bound; an unverified restore leaves it empty, so the build runs cold.
+  assert.match(
+    build,
+    /if \[\[ -n "\$\{PASEO_GRADLE_BUILD_CACHE:-\}" \]\]; then\n\s+cache_args=\(--build-cache --init-script "\$GITHUB_WORKSPACE\/\.github\/scripts\/android-build-cache\.init\.gradle"\)/,
+  );
   assert.doesNotMatch(sign, /npm |gradlew/);
   assert.doesNotMatch(
     sign,
