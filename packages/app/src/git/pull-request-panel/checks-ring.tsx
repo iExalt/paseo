@@ -1,6 +1,6 @@
-import { isNative } from "@/constants/platform";
 import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
+import { svgHiddenFromAccessibility } from "@/components/svg-accessibility";
 import type { Theme } from "@/styles/theme";
 import type { CheckPresentation } from "@/git/check-presentation";
 import type { ChecksSummary } from "./checks-summary";
@@ -76,9 +76,7 @@ function ChecksRingSvg({
       height={size}
       viewBox={`0 0 ${VIEW_BOX} ${VIEW_BOX}`}
       style={ringStyles.svg}
-      {...(isNative
-        ? { accessibilityElementsHidden: true, importantForAccessibility: "no-hide-descendants" }
-        : { "aria-hidden": true })}
+      {...svgHiddenFromAccessibility}
     >
       <Circle
         cx={CENTER}
