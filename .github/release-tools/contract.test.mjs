@@ -7,13 +7,6 @@ import { releaseManifest } from "./proposal-prepare.mjs";
 import { inspectForkRelease } from "../../scripts/fork-release-config.mjs";
 import { releaseVersionSelectors } from "../scripts/release-version-selectors.mjs";
 import { composeProposalTree, lockDigest, verifyProposalLock } from "./proposal-tree.mjs";
-import {
-  replacementPath,
-  replacementTree,
-  verifyReplacementTree,
-  validateReplacement,
-  replacementForSource,
-} from "../scripts/candidate-replacement.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const read = (file) => readFile(`${root}${file}`, "utf8");
@@ -183,100 +176,4 @@ test("pinned release engine composes all version edits and bounds both proposals
     if (key.startsWith("node_modules/"))
       assert.deepEqual(afterLock.packages[key], value, `External resolution changed: ${key}`);
   }
-});
-
-test("pending replacement is one selection commit over the exact repaired source", async () => {
-  const contents = new Map(files);
-  const version = JSON.parse(contents.get("package.json")).version;
-  contents.set(".release-please-manifest.json", JSON.stringify({ ".": version }));
-  const record = {
-    schemaVersion: 1,
-    version,
-    supersededPr: 74,
-    supersededSource: "b".repeat(40),
-    repairBase: "a".repeat(40),
-    lockSha256: lockDigest(contents.get("package-lock.json")),
-    npmDepsHash: contents.get("nix/npm-deps.hash").trim(),
-    authorities: [{ releaseId: 500, descriptorSha256: "d".repeat(64) }],
-  };
-  const updates = await replacementTree(record, async (file) => contents.get(file));
-  assert.deepEqual([...updates.keys()], [replacementPath]);
-  const source = "c".repeat(40);
-  const readAt = async (sha, file) =>
-    sha === source && updates.has(file) ? updates.get(file) : contents.get(file);
-  await verifyReplacementTree(record, source, record.repairBase, [replacementPath], readAt);
-  const descriptor = { sourceSha: source, baseSha: record.repairBase, version };
-  const compare = async () => ({
-    status: "ahead",
-    total_commits: 1,
-    base_commit: { sha: record.repairBase },
-    files: [{ filename: replacementPath }],
-  });
-  assert.deepEqual(await replacementForSource(descriptor, readAt, compare), record);
-  assert.equal(
-    await replacementForSource(
-      descriptor,
-      async (sha, file) => {
-        if (sha !== record.repairBase) return readAt(sha, file);
-        if (file === ".release-please-manifest.json") return JSON.stringify({ ".": "0.0.0" });
-        if (file === ".github/fork-release.json")
-          return JSON.stringify({ ...JSON.parse(await readAt(sha, file)), version: "0.0.0" });
-        return readAt(sha, file);
-      },
-      compare,
-    ),
-    null,
-  );
-  // A version bump whose release configuration did not change cannot start a candidate.
-  await assert.rejects(
-    replacementForSource(
-      descriptor,
-      async (sha, file) =>
-        sha === record.repairBase && file === ".release-please-manifest.json"
-          ? JSON.stringify({ ".": "0.0.0" })
-          : readAt(sha, file),
-      compare,
-    ),
-    /must change its release configuration/,
-  );
-  await assert.rejects(
-    replacementForSource({ ...descriptor, version: "0.0.0" }, readAt, compare),
-    /regressed/,
-  );
-  await assert.rejects(
-    replacementForSource(
-      descriptor,
-      async (sha, file) => (file === replacementPath ? "{}" : readAt(sha, file)),
-      compare,
-    ),
-  );
-
-  await assert.rejects(
-    verifyReplacementTree(record, source, "e".repeat(40), [replacementPath], readAt),
-  );
-  await assert.rejects(
-    verifyReplacementTree(
-      record,
-      source,
-      record.repairBase,
-      [replacementPath, "package.json"],
-      readAt,
-    ),
-  );
-  await assert.rejects(
-    verifyReplacementTree(
-      record,
-      source,
-      record.repairBase,
-      [replacementPath],
-      async (sha, file) =>
-        sha === source && file === ".github/release-boundary.json" ? "{}" : readAt(sha, file),
-    ),
-  );
-  await assert.rejects(
-    replacementTree({ ...record, lockSha256: "e".repeat(64) }, async (file) => contents.get(file)),
-  );
-  assert.throws(() =>
-    validateReplacement({ ...record, authorities: [...record.authorities, ...record.authorities] }),
-  );
 });

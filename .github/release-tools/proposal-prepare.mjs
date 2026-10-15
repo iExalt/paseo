@@ -5,17 +5,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { GitHub, Manifest } from "release-please";
-import {
-  composeProposalTree,
-  lockDigest,
-  validateNpmHash,
-  verifyProposalLock,
-} from "./proposal-tree.mjs";
+import { composeProposalTree, validateNpmHash, verifyProposalLock } from "./proposal-tree.mjs";
 import { proposalCommit, proposalRef } from "./proposal-git.mjs";
 import { proposalRequest } from "./proposal-publish.mjs";
 import { githubRequest, releaseBotIdentity } from "../scripts/release-app-auth.mjs";
 import { assertReleasePr } from "../scripts/release-pr.mjs";
-import { replacementTree } from "../scripts/candidate-replacement.mjs";
 import { deriveReleaseBoundary } from "../../scripts/release-boundary.mjs";
 
 export async function prefetchProposalLock(lock) {
@@ -64,7 +58,6 @@ export async function prepareProposal({
   base,
   token,
   identity,
-  replacement,
   request = proposalRequest(token),
   prefetch = prefetchProposalLock,
   deriveBoundary = deriveReleaseBoundary,
@@ -80,71 +73,60 @@ export async function prepareProposal({
   await currentBase();
   const expectedHead = (await request(`${repository}/git/ref/heads/${ref}`))?.object.sha ?? "";
   const read = async (file) => readFile(resolve(cwd, file), "utf8");
-  let materialized, title, body, previousPr;
-  let lastReleaseSha = null;
-  if (replacement) {
-    assert.equal(branch, "dev");
-    assert.equal(replacement.repairBase, base);
-    materialized = { files: await replacementTree(replacement, read) };
-    assert.equal(await prefetch(await read("package-lock.json")), replacement.npmDepsHash);
-    title = `chore(dev): replace pending release ${replacement.version}`;
-    body = `Replace unpublished version ${replacement.version} from PR #${replacement.supersededPr} with the repaired source at ${base}.\n\nThe selection record preserves publication history and binds the stopped signed predecessor authorities. Fresh routine, deep and complete native verification are required before publication.`;
-    previousPr = replacement.supersededPr;
-  } else {
-    // Rebased history may not contain the published tag commit; bound
-    // release-please's walk at that release's commit as mapped onto the target.
-    const boundary = await deriveBoundary({
-      repositoryPath: cwd,
-      head: base,
-      token,
-      request: githubRequest,
-    });
-    lastReleaseSha = boundary.lastReleaseSha;
-    const github = await GitHub.create({
-      owner: "iExalt",
-      repo: "paseo",
-      defaultBranch: branch,
-      token,
-    });
-    const manifest = await releaseManifest(github, branch, lastReleaseSha);
-    const proposals = await manifest.buildPullRequests();
-    if (!proposals.length) {
-      await currentBase();
-      return null;
-    }
-    assert.equal(proposals.length, 1);
-    const proposal = proposals[0];
-    assert.equal(proposal.headRefName, ref);
-    materialized = await composeProposalTree(proposal, read, prefetch);
-    verifyProposalLock(materialized);
-    title = `chore(dev): release ${proposal.version.toString()}`;
-    body = proposal.body.toString();
-    if (expectedHead) {
-      const rows = await request(
-        `${repository}/pulls?state=all&head=iExalt:${encodeURIComponent(ref)}&base=${encodeURIComponent(branch)}&per_page=100`,
+  let previousPr;
+  // Rebased history may not contain the published tag commit; bound
+  // release-please's walk at that release's commit as mapped onto the target.
+  const boundary = await deriveBoundary({
+    repositoryPath: cwd,
+    head: base,
+    token,
+    request: githubRequest,
+  });
+  const { lastReleaseSha } = boundary;
+  const github = await GitHub.create({
+    owner: "iExalt",
+    repo: "paseo",
+    defaultBranch: branch,
+    token,
+  });
+  const manifest = await releaseManifest(github, branch, lastReleaseSha);
+  const proposals = await manifest.buildPullRequests();
+  if (!proposals.length) {
+    await currentBase();
+    return null;
+  }
+  assert.equal(proposals.length, 1);
+  const proposal = proposals[0];
+  assert.equal(proposal.headRefName, ref);
+  const materialized = await composeProposalTree(proposal, read, prefetch);
+  verifyProposalLock(materialized);
+  const title = `chore(dev): release ${proposal.version.toString()}`;
+  const body = proposal.body.toString();
+  if (expectedHead) {
+    const rows = await request(
+      `${repository}/pulls?state=all&head=iExalt:${encodeURIComponent(ref)}&base=${encodeURIComponent(branch)}&per_page=100`,
+    );
+    assert.ok(Array.isArray(rows) && rows.length < 100, "Proposal history exceeds bound");
+    const matching = rows.filter((row) => row.head.sha === expectedHead);
+    assert.equal(matching.length, 1, "Existing branch requires one authentic proposal");
+    const prior = await request(`${repository}/pulls/${matching[0].number}`);
+    assertReleasePr(
+      { ...prior, state: "open", labels: [{ name: "autorelease: pending" }] },
+      identity,
+      expectedHead,
+    );
+    if (prior.state === "open")
+      assert.ok(prior.labels.some((label) => label.name === "autorelease: pending"));
+    else {
+      assert.equal(prior.state, "closed");
+      assert.equal(prior.merged, true);
+      assert.equal(
+        prior.merge_commit_sha,
+        boundary.tagSha,
+        "Merged proposal is not the latest release",
       );
-      assert.ok(Array.isArray(rows) && rows.length < 100, "Proposal history exceeds bound");
-      const matching = rows.filter((row) => row.head.sha === expectedHead);
-      assert.equal(matching.length, 1, "Existing branch requires one authentic proposal");
-      const prior = await request(`${repository}/pulls/${matching[0].number}`);
-      assertReleasePr(
-        { ...prior, state: "open", labels: [{ name: "autorelease: pending" }] },
-        identity,
-        expectedHead,
-      );
-      if (prior.state === "open")
-        assert.ok(prior.labels.some((label) => label.name === "autorelease: pending"));
-      else {
-        assert.equal(prior.state, "closed");
-        assert.equal(prior.merged, true);
-        assert.equal(
-          prior.merge_commit_sha,
-          boundary.tagSha,
-          "Merged proposal is not the latest release",
-        );
-      }
-      previousPr = prior.number;
     }
+    previousPr = prior.number;
   }
   const commit = await proposalCommit({ cwd, base, files: materialized.files, title, identity });
   await currentBase();
@@ -161,25 +143,20 @@ export async function prepareProposal({
     title,
     body,
     previousPr,
-    replacement,
     lastReleaseSha,
     files: [...materialized.files],
-    lockSha256: materialized.lockSha256 ?? lockDigest(await read("package-lock.json")),
-    npmDepsHash: materialized.npmDepsHash ?? replacement.npmDepsHash,
+    lockSha256: materialized.lockSha256,
+    npmDepsHash: materialized.npmDepsHash,
   };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const replacement = process.env.REPLACEMENT_RECORD
-    ? JSON.parse(process.env.REPLACEMENT_RECORD)
-    : undefined;
   const result = await prepareProposal({
     cwd: process.env.TARGET_DIRECTORY,
     branch: process.env.TARGET_BRANCH,
     base: process.env.TARGET_SHA,
     token: process.env.GITHUB_TOKEN,
     identity: releaseBotIdentity(process.env),
-    replacement,
   });
   if (result)
     await writeFile(process.env.PREPARED_PROPOSAL, `${JSON.stringify(result)}\n`, {

@@ -1,13 +1,13 @@
 name: Deep verification
 
 on:
-  # Only release and replacement PRs need deep proof; both change one of these
-  # files (candidateTriggerPaths). release-please labels each new PR right after
-  # opening, so the labeled event replaces a separate opened run.
+  # Only release PRs need deep proof; each bumps the fork release version.
+  # release-please labels each new PR right after opening, so the labeled event
+  # replaces a separate opened run.
   pull_request:
     types: [synchronize, reopened, labeled]
     branches: [dev]
-    paths: [.github/fork-release.json, .github/pending-candidate-replacement.json]
+    paths: [.github/fork-release.json]
   workflow_dispatch:
 
 permissions:

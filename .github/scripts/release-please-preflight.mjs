@@ -15,7 +15,6 @@ export async function releasePreflight({
   branch,
   expectedSha,
   token,
-  replacement,
   request = githubRequest,
   fetchBytes,
   publicKey,
@@ -62,23 +61,12 @@ export async function releasePreflight({
   const { lastReleaseSha } = boundary;
   if (manifest["."] !== boundary.version) {
     assert.equal(manifest["."], fork.config.version, "Unrecognized pending version");
-    if (replacement) {
-      assert.equal(branch, "dev");
-      assert.equal(replacement.version, manifest["."]);
-      assert.equal(replacement.repairBase, expectedSha);
-      return {
-        ready: true,
-        lastReleaseSha,
-        reason: "Explicit pending replacement; signed predecessor authorization still required",
-      };
-    }
     return {
       ready: false,
       lastReleaseSha,
       reason: `Merged version ${manifest["."]} awaits publication; latest release is ${boundary.tag}`,
     };
   }
-  assert.equal(replacement, undefined, "Replacement requires an unpublished merged version");
   return {
     ready: true,
     lastReleaseSha,
@@ -92,9 +80,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     branch: process.env.TARGET_BRANCH,
     expectedSha: process.env.TARGET_SHA,
     token: process.env.GITHUB_TOKEN,
-    replacement: process.env.REPLACEMENT_RECORD
-      ? JSON.parse(process.env.REPLACEMENT_RECORD)
-      : undefined,
   });
   await appendFile(
     process.env.GITHUB_OUTPUT,

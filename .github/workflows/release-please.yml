@@ -10,10 +10,6 @@ on:
         type: choice
         options: [dev, ci/release-please-rehearsal]
         default: dev
-      replacement_record:
-        description: Explicit reviewed pending-candidate replacement record (owner only)
-        type: string
-        default: ""
 
 permissions:
   contents: read
@@ -33,7 +29,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     env:
-      REPLACEMENT_RECORD: ${{ github.event_name == 'workflow_dispatch' && inputs.replacement_record || '' }}
       TARGET_BRANCH: ${{ inputs.target || 'dev' }}
       PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
       PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
