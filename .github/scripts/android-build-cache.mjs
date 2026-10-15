@@ -47,7 +47,9 @@ async function main() {
   const output = (name, value) => appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
   const [operation] = process.argv.slice(2);
   if (operation === "key") {
-    const version = execFileSync("ccache", ["--print-version"], { encoding: "utf8" }).trim();
+    // Ubuntu 24.04 ships ccache 4.9, which predates --print-version.
+    const banner = execFileSync("ccache", ["--version"], { encoding: "utf8" });
+    const version = /^ccache version (\S+)$/m.exec(banner)?.[1] ?? "";
     const key = androidKey(androidRecipe(process.cwd(), version));
     output("key", key);
     output("archive", archive);
