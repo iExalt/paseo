@@ -123,7 +123,6 @@ test("deep configuration cannot inherit paid-provider or deployment projects", (
 });
 
 test("deep workflow runs only for open release PRs or trusted dispatches", async () => {
-  const { candidateTriggerPaths } = await import("../.github/scripts/candidate-replacement.mjs");
   const workflow = load(
     readFileSync(new URL("../.github/workflows/ci-deep.yml", import.meta.url), "utf8"),
   );
@@ -133,7 +132,7 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
   assert.deepEqual(workflow.on.pull_request, {
     types: ["synchronize", "reopened", "labeled"],
     branches: ["dev"],
-    paths: candidateTriggerPaths,
+    paths: [".github/fork-release.json"],
   });
   const guard = (expression) =>
     new Function(

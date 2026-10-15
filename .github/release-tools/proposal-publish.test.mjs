@@ -7,16 +7,14 @@ const base = "a".repeat(40),
   oldHead = "b".repeat(40),
   sha = "c".repeat(40),
   tree = "d".repeat(40);
-const pending = "autorelease: pending",
-  superseded = "autorelease: superseded";
+const pending = "autorelease: pending";
 const repo = { id: 1404390841, full_name: "iExalt/paseo", private: false };
 const branch = "release-please--branches--dev--components--paseo";
 function fixture(options = {}) {
   let head = oldHead,
     currentBase = base,
     pushes = 0,
-    creates = 0,
-    interrupted = false;
+    creates = 0;
   const previous = {
     number: 74,
     user: { id: identity.botId, login: identity.botLogin, type: "Bot" },
@@ -28,7 +26,7 @@ function fixture(options = {}) {
     labels: [{ name: pending }],
     commits: 1,
   };
-  let pr, repositoryLabel;
+  let pr;
   let staleReads = options.staleReads ?? 0;
   if (options.openBeforePush)
     pr = {
@@ -46,33 +44,14 @@ function fixture(options = {}) {
     sha,
     tree,
     expectedHead: oldHead,
-    title: "chore(dev): replace pending release 0.1.0",
-    body: "Replace unpublished candidate with repaired source.",
+    title: "chore(dev): release 0.1.0",
+    body: "Release notes.",
     previousPr: 74,
-    replacement: { supersededPr: 74, supersededSource: previous.merge_commit_sha },
   };
   const labelsRequest = async (route, method, body) => {
     if (route === "issues/81/labels") {
       pr.labels = body.labels.map((name) => ({ name }));
       return pr.labels;
-    }
-    if (route === `labels/${encodeURIComponent(superseded)}`) return repositoryLabel ?? null;
-    if (route === "labels" && method === "POST") {
-      repositoryLabel = { name: body.name };
-      if (options.lostCreate) throw new Error("Lost label creation response");
-      return repositoryLabel;
-    }
-    if (route === "issues/74/labels" && method === "POST") {
-      previous.labels.push({ name: superseded });
-      if (options.interruptLabels && !interrupted) {
-        interrupted = true;
-        throw new Error("Interrupted supersession");
-      }
-      return previous.labels;
-    }
-    if (route === `issues/74/labels/${encodeURIComponent(pending)}` && method === "DELETE") {
-      previous.labels = previous.labels.filter((label) => label.name !== pending);
-      return null;
     }
     throw new Error(`Unexpected labels API ${method} ${route}`);
   };
@@ -138,13 +117,11 @@ function fixture(options = {}) {
   };
 }
 
-test("publisher reconciles lost push/create replies and interrupted supersession without duplicates", async () => {
-  const state = fixture({ lostPush: true, lostCreate: true, interruptLabels: true });
-  await assert.rejects(publishProposal(state.args), /Interrupted supersession/);
-  assert.deepEqual(state.labels, [pending, superseded]);
+test("publisher reconciles lost push/create replies without duplicates", async () => {
+  const state = fixture({ lostPush: true, lostCreate: true });
   const result = await publishProposal(state.args);
   assert.equal(result.number, 81);
-  assert.deepEqual(state.labels, [superseded]);
+  assert.deepEqual(result.labels, [{ name: pending }]);
   assert.deepEqual(state.counts, { pushes: 1, creates: 1 });
 });
 

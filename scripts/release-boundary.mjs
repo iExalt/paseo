@@ -37,8 +37,9 @@ async function listReleases(request, token) {
   throw new Error("Release history exceeds the bounded Releases API scan");
 }
 
-// release-please proposals merge as "release"; an explicitly replaced pending
-// version is published from its "replace pending release" selection commit.
+// release-please proposals merge as "release". A merged version whose release
+// commit could not ship is published from a hand-made "replace pending release"
+// repair commit (paseo-v0.1.1 was), so both subjects identify a release commit.
 function releaseCommitSubjects(version) {
   return [`chore(dev): release ${version}`, `chore(dev): replace pending release ${version}`];
 }
