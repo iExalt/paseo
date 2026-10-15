@@ -1,0 +1,14 @@
+// TEMP(W4/W5): dry-run override of React Native's hermesFlags, read from
+// PASEO_HERMES_FLAGS (space-separated). The prebuild-generated app/build.gradle
+// leaves hermesFlags at its default, so this is the only setter.
+def flags = System.getenv("PASEO_HERMES_FLAGS")?.trim()
+if (flags) {
+  allprojects {
+    pluginManager.withPlugin("com.facebook.react") {
+      afterEvaluate {
+        extensions.getByName("react").hermesFlags.set(flags.split(/\s+/).toList())
+        logger.lifecycle("hermesFlags overridden: ${flags}")
+      }
+    }
+  }
+}
