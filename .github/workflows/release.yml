@@ -186,11 +186,14 @@ jobs:
       packages: read
     outputs:
       build_sha256: ${{ steps.pack.outputs.build_sha256 }}
-      deps_inputs: ${{ steps.pack.outputs.deps_inputs }}
+      deps_inputs: ${{ steps.pin.outputs.deps_inputs }}
       deps_sha256: ${{ steps.pack.outputs.deps_sha256 }}
+      modules_inputs: ${{ steps.pin.outputs.modules_inputs }}
+      modules_sha256: ${{ steps.modules.outputs.modules_sha256 }}
     env:
       VERSION: ${{ needs.resolve.outputs.version }}
       PASEO_ANDROID_VERSION_CODE: ${{ needs.resolve.outputs.version_code }}
+      LEFTHOOK: "0"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -202,12 +205,68 @@ jobs:
           package-manager-cache: false
           registry-url: https://npm.pkg.github.com
           scope: "@boudra"
+      # Restore only the cache entries the latest published release pinned, each
+      # checked against its pinned sha256; anything else builds that cache cold.
+      # Never fall back to routine CI's node_modules: any dev push writes those.
+      # See android-cache-pin.mjs. Save and restore use the same tar paths.
+      - name: Read the Android cache pin
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: NPM_VERSION="$(npm --version)" node .github/scripts/android-cache-pin.mjs plan
+      - name: Restore the pinned node_modules
+        if: steps.pin.outputs.modules_key != ''
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 3
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/modules.tar.zst
+          key: ${{ steps.pin.outputs.modules_key }}
+      # A restored tree keeps node_modules/.package-lock.json from the release
+      # that saved it; nothing reads it, and workspaces resolve through symlinks.
       - name: Install JavaScript dependencies
-        run: node scripts/npm-retry.mjs ci
+        id: modules
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
+          INPUTS: ${{ steps.pin.outputs.modules_inputs }}
+          PINNED_SHA256: ${{ steps.pin.outputs.modules_sha256 }}
+          npm_config_fetch_timeout: "30000"
+          npm_config_fetch_retries: "2"
+          npm_config_fetch_retry_mintimeout: "1000"
+          npm_config_fetch_retry_maxtimeout: "5000"
+        run: |
+          set -euo pipefail
+          tar_file="$RUNNER_TEMP/android-cache/modules.tar.zst"
+          mkdir -p "$RUNNER_TEMP/android-cache"
+          if [[ -n "$PINNED_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$tar_file" "$PINNED_SHA256" | grep -qx ok=true; then
+            zstd -dcq "$tar_file" | tar -xf -
+            rm -f "$tar_file"
+            echo "restored pinned node_modules, sha256 verified"
+            sha256="$PINNED_SHA256" save=false
+          else
+            node scripts/npm-retry.mjs ci
+            # Pack before anything builds into node_modules (Gradle writes android/build there).
+            tar -cf - node_modules packages/*/node_modules | zstd -T0 -3 -q -o "$tar_file"
+            sha256="$(sha256sum "$tar_file" | cut -d' ' -f1)" save=true
+            ls -l "$tar_file"
+          fi
+          {
+            echo "modules_sha256=$sha256"
+            echo "modules_key=paseo-node-modules-v1-$INPUTS-$sha256"
+            echo "save_modules=$save"
+          } | tee -a "$GITHUB_OUTPUT"
+      - name: Save the node_modules cache
+        if: steps.modules.outputs.save_modules == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/modules.tar.zst
+          key: ${{ steps.modules.outputs.modules_key }}
       - name: Build app dependencies
-        run: npm run build:app-deps
+        run: |
+          rm -f "$RUNNER_TEMP/android-cache/modules.tar.zst"
+          npm run build:app-deps
       - name: Build terminal WebView assets
         run: npm --prefix packages/app run build:terminal-webview
       - name: Prepare Firebase client config
@@ -241,18 +300,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "25.0.4"
-      # Restore only the cache entries the latest published release pinned, each
-      # checked against its pinned sha256; anything else builds that cache cold.
-      # See android-cache-pin.mjs. Save and restore use the same tar paths.
-      - name: Read the Android cache pin
-        id: pin
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          inputs="$(cat packages/app/android/gradle/wrapper/gradle-wrapper.properties package-lock.json | sha256sum | cut -d' ' -f1)"
-          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
-          node .github/scripts/android-cache-pin.mjs plan "$inputs"
       - name: Restore the pinned Android build cache
         if: steps.pin.outputs.build_key != ''
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -330,7 +377,7 @@ jobs:
       - name: Pack the Android caches
         id: pack
         env:
-          INPUTS: ${{ steps.pin.outputs.inputs }}
+          INPUTS: ${{ steps.pin.outputs.deps_inputs }}
           DEPS_RESTORED: ${{ steps.unpack.outputs.deps_restored }}
           DEPS_INPUTS_MATCH: ${{ steps.pin.outputs.deps_inputs_match }}
           PINNED_DEPS_SHA256: ${{ steps.pin.outputs.deps_sha256 }}
@@ -350,7 +397,6 @@ jobs:
           {
             echo "build_sha256=$build_sha256"
             echo "build_key=paseo-android-build-v2-$build_sha256"
-            echo "deps_inputs=$INPUTS"
             echo "deps_sha256=$deps_sha256"
             echo "deps_key=paseo-gradle-deps-v2-$INPUTS-$deps_sha256"
             echo "save_deps=$save_deps"
@@ -499,6 +545,8 @@ jobs:
           BUILD_SHA256: ${{ needs.android-build.outputs.build_sha256 }}
           DEPS_INPUTS: ${{ needs.android-build.outputs.deps_inputs }}
           DEPS_SHA256: ${{ needs.android-build.outputs.deps_sha256 }}
+          MODULES_INPUTS: ${{ needs.android-build.outputs.modules_inputs }}
+          MODULES_SHA256: ${{ needs.android-build.outputs.modules_sha256 }}
         run: |
           node .github/scripts/android-cache-pin.mjs pin \
             "$RUNNER_TEMP/release-assets/paseo-$VERSION-android-cache-pin.json" "$VERSION"

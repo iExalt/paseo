@@ -159,10 +159,21 @@ override. Typical causes and fixes:
   - `paseo-android-build-v2-<sha256>`: ccache plus the Gradle build cache,
     about 190 MB.
   - `paseo-gradle-deps-v2-<inputs>-<sha256>`: `~/.gradle/caches` and
-    `wrapper`, about 2.3 GB. `<inputs>` hashes the Gradle wrapper properties and
-    `package-lock.json`. The pinned entry is restored even when the inputs
-    changed, because Gradle only downloads what is missing. With unchanged
-    inputs the run re-pins the same entry instead of saving 2.3 GB again.
+    `wrapper`, about 2.3 GB. `<inputs>` hashes `package-lock.json`, which also
+    fixes the Gradle wrapper Expo generates. The pinned entry is restored even
+    when the inputs changed, because Gradle only downloads what is missing.
+    With unchanged inputs the run re-pins the same entry instead of saving
+    2.3 GB again.
+  - `paseo-node-modules-v1-<inputs>-<sha256>`: `node_modules` and
+    `packages/*/node_modules` as a zstd tar, packed straight after `npm ci`. It
+    replaces `npm ci`, so it is restored only when `<inputs>` match: routine
+    CI's install inputs (lockfile, postinstall patches, runner image, arch,
+    Node and npm). Never restore routine CI's `routine-modules-*` instead; any
+    dev push writes those.
+  - `<inputs>` uses the lockfile without the root and workspace versions and
+    the workspaces' specs for each other, so a release commit's version bump
+    keeps both entries. A restored `node_modules/.package-lock.json` therefore
+    names the older workspace versions; nothing reads it.
   - GitHub evicts entries unused for seven days. A release that follows a week
     with no release or dry run restoring the pinned entries builds cold, about
     10 minutes slower (accepted).
