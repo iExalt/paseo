@@ -39,6 +39,7 @@ if (stage === "candidate") {
   assert.equal(config.deb.compression, "gz");
   assert.equal(config.rpm.compression, "gzip");
 }
+// Bump predecessorFormat when this changes the predecessor's bytes.
 // Rebuild the fixed predecessor with the same archive policy, leaving its payload unchanged.
 config.deb.compression = "gz";
 config.rpm.compression = "gzip";

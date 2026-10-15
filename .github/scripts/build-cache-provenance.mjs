@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, existsSync, mkdirSync, statSync } from "node:fs";
 import { setTimeout as sleep } from "node:timers/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -73,6 +73,49 @@ export function checkArchiveListing(names, verbose, roots, links = []) {
       `Archive carries a workspace link target: ${name}`,
     );
   }
+}
+
+// Predecessor caches archive a flat staging directory holding exactly these files.
+export function checkExactListing(names, verbose, inventory) {
+  checkArchiveListing(names, verbose, inventory);
+  assert.deepEqual([...names].sort(), [...inventory].sort(), "Exact archive inventory required");
+}
+
+function checkExactArchive(archive, inventory, tar) {
+  const list = (flags) =>
+    execFileSync(tar, [flags, archive], { encoding: "utf8", timeout: 60_000 })
+      .split(/\r?\n/)
+      .filter(Boolean);
+  checkExactListing(
+    list("-tf").map((name) => name.replace(/\/$/, "")),
+    list("-tvf"),
+    inventory,
+  );
+}
+
+export function writeExactArchive(directory, archive, { inventory, limit, tar }) {
+  assert.equal(existsSync(archive), false);
+  execFileSync(tar, ["-cf", archive, "-C", directory, ...inventory], { timeout: 600_000 });
+  checkExactArchive(archive, inventory, tar);
+  const bytes = statSync(archive).size;
+  assert.ok(bytes <= limit, "Archive exceeds its cache reservation");
+  return bytes;
+}
+
+// Throws on any rejection; callers turn that into a miss and remove what was extracted.
+export async function extractAttested(
+  archive,
+  directory,
+  { key, writer, inventory, limit, tar },
+  verify = verifyBuildCache,
+) {
+  assert.ok(statSync(archive).size <= limit, "Archive exceeds its cache reservation");
+  const digest = await verify(archive, { key, writer });
+  checkExactArchive(archive, inventory, tar);
+  assert.equal(existsSync(directory), false, "Refuse an existing extraction directory");
+  mkdirSync(directory, { recursive: true });
+  execFileSync(tar, ["-xf", archive, "-C", directory], { timeout: 600_000 });
+  return digest;
 }
 
 function verifyWithGh(file, expected) {

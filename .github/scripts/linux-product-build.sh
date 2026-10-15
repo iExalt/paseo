@@ -10,9 +10,6 @@ case "$EXPECTED_ARCHITECTURE:$(uname -sm)" in
   *) exit 1 ;;
 esac
 test "$(git rev-parse HEAD)" = "${PASEO_CANDIDATE_SHA:-$GITHUB_SHA}"
-if [ -n "${PREDECESSOR_CACHE_MATCHED_KEY:-}" ]; then
-  test "${PREDECESSOR_CACHE_HIT:-}" = true
-fi
 test -z "$(git status --porcelain)"
 test ! -e /opt/Paseo
 test ! -e /usr/bin/Paseo
@@ -48,11 +45,17 @@ sudo apt-get install -y rpm libfuse2t64 xvfb xauth libgtk-3-0t64 libnss3 libasou
 test -c /dev/fuse
 previous=b6e0474aec58b2c169f61b81b20de890d4138e30
 git worktree add --detach "$root/previous-source" "$previous"
-if [ "${PREDECESSOR_CACHE_HIT:-}" = true ]; then
-  node .github/scripts/linux-predecessor-cache.mjs restore "$root"
+cached=false
+if [ "${PREDECESSOR_CACHE_VERIFIED:-}" = true ]; then
+  if node .github/scripts/linux-predecessor-cache.mjs restore "$root"; then
+    cached=true
+  else
+    echo "::warning::Predecessor cache entry was rejected; rebuilding it."
+  fi
 fi
+# Bump predecessorFormat when this changes the predecessor's bytes.
 for stage in candidate previous; do
-  if [ "$stage" = previous ] && [ "${PREDECESSOR_CACHE_HIT:-}" = true ]; then continue; fi
+  if [ "$stage" = previous ] && [ "$cached" = true ]; then continue; fi
   source="$GITHUB_WORKSPACE"
   if [ "$stage" = previous ]; then source="$root/previous-source"; fi
   started=$(date +%s)

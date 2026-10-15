@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   BUILD_CACHE_TYPE,
   buildCachePredicate,
+  checkExactListing,
   fileDigest,
   verifyBuildCache,
 } from "../.github/scripts/build-cache-provenance.mjs";
@@ -87,4 +88,19 @@ test("build caches restore only archives attested by their dispatched dev writer
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("predecessor archives carry exactly their staged inventory", () => {
+  const names = ["previous-arm64.exe", "previous.json", "receipt.json"];
+  const files = names.map(() => "-rw-r--r-- 0 runner runner 7 Oct 14 00:00 name");
+  checkExactListing(names, files, names);
+  assert.throws(() => checkExactListing(names.slice(1), files.slice(1), names), /inventory/);
+  assert.throws(
+    () => checkExactListing([...names, "receipt.json/x"], [...files, files[0]], names),
+    /inventory/,
+  );
+  assert.throws(
+    () => checkExactListing(names, ["lrwxr-xr-x link", ...files.slice(1)], names),
+    /not a file or directory/,
+  );
 });

@@ -15,7 +15,7 @@ import {
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkArchiveListing, verifyBuildCache } from "./build-cache-provenance.mjs";
+import { extractAttested, verifyBuildCache, writeExactArchive } from "./build-cache-provenance.mjs";
 import { bindingProvenance, digest } from "./windows-speech-binding.mjs";
 import { loadWindowsSources } from "./windows-product-sources.mjs";
 
@@ -165,40 +165,18 @@ export function consumeCache(directory, recipe, root) {
 
 const tarBinary = () =>
   process.platform === "win32" ? join(process.env.SystemRoot, "System32", "tar.exe") : "tar";
-
-// The archive holds exactly the three staged files and nothing else.
-export function checkInventory(names, verbose, recipe) {
-  checkArchiveListing(names, verbose, inventory(recipe));
-  assert.deepEqual([...names].sort(), inventory(recipe), "Exact predecessor archive inventory");
-}
-
-function checkArchive(archive, recipe, tar) {
-  const list = (flags) =>
-    execFileSync(tar, [flags, archive], { encoding: "utf8", timeout: 60_000 })
-      .split(/\r?\n/)
-      .filter(Boolean);
-  checkInventory(
-    list("-tf").map((name) => name.replace(/\/$/, "")),
-    list("-tvf"),
-    recipe,
-  );
-}
+const archiveShape = (recipe, tar) => ({ inventory: inventory(recipe), limit: cacheLimit, tar });
 
 export function writeArchive(directory, archive, recipe, tar = tarBinary()) {
   validateCache(directory, recipe);
-  assert.equal(existsSync(archive), false);
-  execFileSync(tar, ["-cf", archive, "-C", directory, ...inventory(recipe)], { timeout: 300_000 });
-  checkArchive(archive, recipe, tar);
-  const bytes = statSync(archive).size;
-  assert.ok(bytes <= cacheLimit, "Predecessor archive exceeds 200 MiB");
-  return bytes;
+  return writeExactArchive(directory, archive, archiveShape(recipe, tar));
 }
 
 // Any failure is a miss: remove what this attempt created so the rebuild runs clean.
 export async function restoreArchive(
   { archive, directory, root },
   loadRecipe,
-  { verify = verifyBuildCache, tar = tarBinary() } = {},
+  { verify, tar = tarBinary() } = {},
 ) {
   const consumed = [
     join(root, "packages", "previous"),
@@ -206,18 +184,19 @@ export async function restoreArchive(
     join(root, "evidence", "previous-packaging.json"),
     join(root, "evidence", "predecessor-cache.json"),
   ];
-  const existing = new Set([...consumed, directory].filter((path) => existsSync(path)));
+  const existing = new Set(consumed.filter((path) => existsSync(path)));
   try {
     const recipe = loadRecipe();
-    assert.ok(statSync(archive).size <= cacheLimit, "Predecessor archive exceeds 200 MiB");
-    const archiveSha256 = await verify(archive, { key: cacheKey(recipe), writer });
-    checkArchive(archive, recipe, tar);
-    assert.equal(existsSync(directory), false, "Refuse existing predecessor cache directory");
-    mkdirSync(directory, { recursive: true });
-    execFileSync(tar, ["-xf", archive, "-C", directory], { timeout: 300_000 });
+    const archiveSha256 = await extractAttested(
+      archive,
+      directory,
+      { key: cacheKey(recipe), writer, ...archiveShape(recipe, tar) },
+      verify,
+    );
     return { verified: true, archiveSha256, identity: consumeCache(directory, recipe, root) };
   } catch (error) {
-    for (const path of [directory, ...consumed])
+    rmSync(directory, { recursive: true, force: true });
+    for (const path of consumed)
       if (!existing.has(path)) rmSync(path, { recursive: true, force: true });
     return { verified: false, error };
   } finally {

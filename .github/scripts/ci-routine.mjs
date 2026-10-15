@@ -19,6 +19,7 @@ export const coreTests = [
   "scripts/candidate-artifacts.test.mjs",
   "scripts/process-tree.test.mjs",
   "scripts/native-candidate.test.mjs",
+  "scripts/linux-predecessor-cache.test.mjs",
   "scripts/windows-speech-binding.test.mjs",
   "scripts/windows-predecessor-cache.test.mjs",
   "scripts/windows-product-sources.test.mjs",
