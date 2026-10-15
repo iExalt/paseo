@@ -49,6 +49,13 @@ only restore it.
    runner, signs the APK and the manifest, uploads everything to a draft,
    re-downloads and re-hashes each asset, then publishes the draft as latest
    and tags `paseo-vX` at the release commit.
+   - The closure tar is a zstd-compressed `file://` binary cache. The
+     installing host's own `nix` decompresses it, so the device's Nix must
+     read `.nar.zst`; the client's tar extractor ignores the format.
+   - The smoke installs only `playwright`, `@electron/asar` and `ws` at their
+     lockfile versions (`release-mac-smoke-deps.mjs`). Its built-in plugin
+     check uses the client and server builds packed in the closure's own
+     `app.asar`, so the job builds nothing.
 
 **Dry run:** dispatch with `publish=false` (the default) from any `dev` commit.
 It uploads all five assets to a draft tagged `paseo-dryrun-<run_id>`, never
