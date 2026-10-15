@@ -4,7 +4,10 @@ import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { forkReleaseManifestFixture } from "./test-fixtures/fork-release-manifest.ts";
+import {
+  forkReleaseManifestFixture,
+  forkReleaseManifestV3Fixture,
+} from "./test-fixtures/fork-release-manifest.ts";
 import { FORK_RELEASE_LINEAGE } from "../packages/protocol/src/release-manifest-v2.ts";
 import {
   emptyState,
@@ -71,9 +74,9 @@ test("semver transaction reducer distinguishes source, target, rollback and conf
   );
 });
 
-test("V2 verification binds exact signed bytes and producer closure metadata without accepting V1", async () => {
-  const manifest = forkReleaseManifestFixture();
+async function assertSignedReleaseVerification(manifest) {
   const artifact = macArtifact(manifest);
+  assert.equal(artifact.system, "aarch64-darwin");
   const closure = Buffer.from(
     JSON.stringify({
       schemaVersion: 2,
@@ -137,7 +140,13 @@ test("V2 verification binds exact signed bytes and producer closure metadata wit
     latestVerifiedRelease({ resolveTag: async () => "paseo-v9.9.9", fetchBytes, publicKey }),
     /names another release/,
   );
-});
+}
+
+test("V2 verification binds exact signed bytes and producer closure metadata without accepting V1", () =>
+  assertSignedReleaseVerification(forkReleaseManifestFixture()));
+
+test("V3 verification binds the two-cell manifest to the same macOS Nix artifact checks", () =>
+  assertSignedReleaseVerification(forkReleaseManifestV3Fixture()));
 
 test("latest release resolves through the non-API redirect and reports rate limits", async () => {
   const redirect =
@@ -242,7 +251,10 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     },
     latest: async () => {
       if (latestFailure) throw new Error(latestFailure);
-      return { manifest: forkReleaseManifestFixture(candidateVersion) };
+      // 0.1.0 is the last v2 release; 0.1.1 crosses over to the v3 two-cell manifest.
+      const fixture =
+        candidateVersion === "0.1.0" ? forkReleaseManifestFixture : forkReleaseManifestV3Fixture;
+      return { manifest: fixture(candidateVersion) };
     },
     stage: async () => {
       const value = target(candidateVersion);

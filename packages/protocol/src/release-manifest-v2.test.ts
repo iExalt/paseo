@@ -1,6 +1,10 @@
-import { forkReleaseManifestFixture as manifest } from "../../../scripts/test-fixtures/fork-release-manifest";
+import {
+  forkReleaseManifestFixture as manifest,
+  forkReleaseManifestV3Fixture as manifestV3,
+} from "../../../scripts/test-fixtures/fork-release-manifest";
 import { describe, expect, it } from "vitest";
 import {
+  FORK_RELEASE_CELLS_V3,
   serializeForkReleaseManifest,
   validateForkReleaseManifest,
   type ForkReleaseManifest,
@@ -110,6 +114,47 @@ describe("fork semver release inventory", () => {
       if (!("closureManifest" in first)) throw new Error("fixture must start with Nix");
       value.artifacts[1].name = (nested ? first.closureManifest.name : first.name).toUpperCase();
       expect(() => validateForkReleaseManifest(value)).toThrow(/Duplicate/);
+    }
+  });
+
+  it("accepts schema 3 with exactly the macOS Nix desktop and Android APK cells", () => {
+    const value = manifestV3("0.2.0");
+    expect(value.artifacts.map((a) => `${a.platform}/${a.arch}/${a.kind}`).sort()).toEqual(
+      FORK_RELEASE_CELLS_V3,
+    );
+    expect(() =>
+      validateForkReleaseManifest(JSON.parse(serializeForkReleaseManifest(value))),
+    ).not.toThrow();
+    const linux = manifest("0.2.0").artifacts[0];
+    const mutations: ((value: ForkReleaseManifest) => void)[] = [
+      (m) => {
+        m.artifacts.push(linux);
+      },
+      (m) => {
+        m.artifacts = m.artifacts.filter((a) => a.kind !== "apk");
+      },
+      (m) => {
+        m.artifacts = manifest("0.2.0").artifacts;
+      },
+      (m) => {
+        m.schemaVersion = 2;
+      },
+      (m) => {
+        Object.assign(
+          m.artifacts.find((a) => a.kind === "apk")!,
+          { versionCode: 1000 },
+        );
+      },
+      (m) => {
+        const nix = m.artifacts.find((a) => a.kind === "nix-desktop")!;
+        if (!("closureManifest" in nix)) throw new Error("fixture must carry a Nix closure");
+        m.artifacts.find((a) => a.kind === "apk")!.name = nix.closureManifest.name;
+      },
+    ];
+    for (const mutate of mutations) {
+      const mutated = manifestV3("0.2.0");
+      mutate(mutated);
+      expect(() => validateForkReleaseManifest(mutated)).toThrow();
     }
   });
 });
