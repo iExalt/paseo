@@ -15,8 +15,10 @@ const relativePath = (root: string, spec: TestSpecification) =>
 // same complete partition, so each file still runs exactly once.
 export function assignShards(files: string[], count: number): string[][] {
   const shards = Array.from({ length: count }, () => ({ load: 0, files: [] as string[] }));
+  // Plain code-unit order keeps ties independent of the runner's locale data.
+  const byPath = (a: string, b: string) => Number(a > b) - Number(a < b);
   const ordered = [...files].sort(
-    (a, b) => (weights[b] ?? unrecorded) - (weights[a] ?? unrecorded) || a.localeCompare(b),
+    (a, b) => (weights[b] ?? unrecorded) - (weights[a] ?? unrecorded) || byPath(a, b),
   );
   for (const file of ordered) {
     const lightest = shards.reduce((best, shard) => (shard.load < best.load ? shard : best));
