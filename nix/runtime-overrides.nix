@@ -1,7 +1,7 @@
 { final, prev }:
 let
-  # Keep the pinned nixpkgs build setup while matching the project runtimes.
-  nodeVersion = "26.11.0";
+  # Node comes from the pinned nixpkgs so the binary cache serves it; only
+  # Electron is pinned to the project runtime.
   electronVersion = "44.6.0";
   electronArchives = {
     aarch64-darwin = {
@@ -24,29 +24,6 @@ let
   archive = electronArchives.${prev.stdenv.hostPlatform.system};
 in
 {
-  nodejs-slim_26 = prev.nodejs-slim_26.overrideAttrs (old: {
-    version = nodeVersion;
-    src = prev.fetchurl {
-      url = "https://nodejs.org/dist/v${nodeVersion}/node-v${nodeVersion}.tar.xz";
-      sha256 = "aaad9242704524109e88d48be7bb7b7943486d931e740a352c02e97e107f18c9";
-    };
-    # Node 26.11 enables V8's system-ICU path without private ICU headers.
-    patches = builtins.filter
-      (patch: builtins.baseNameOf (toString patch) != "fix-temporal-integration-with-shared-icu.patch")
-      old.patches
-      ++ prev.lib.optionals prev.stdenv.hostPlatform.isDarwin [ ./node-dns-lookupservice-test.patch ];
-    passthru = old.passthru // {
-      tests = old.passthru.tests // {
-        version = prev.testers.testVersion {
-          package = final.nodejs-slim_26;
-          version = "v${nodeVersion}";
-        };
-      };
-    };
-    meta = old.meta // { changelog = "https://github.com/nodejs/node/releases/tag/v${nodeVersion}"; };
-  });
-  nodejs_26 = prev.nodejs_26.override { nodejs-slim = final.nodejs-slim_26; };
-
   electron = prev.electron_44-bin.overrideAttrs (old: {
     version = electronVersion;
     src = prev.fetchurl {

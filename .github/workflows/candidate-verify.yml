@@ -115,7 +115,7 @@ jobs:
           npm_config_fetch_retry_mintimeout: "1000"
           npm_config_fetch_retry_maxtimeout: "5000"
         run: |
-          test "$(node --version)" = v26.11.0
+          test "$(node --version)" = v26.11.1
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
           npm ci --cache "$RUNNER_TEMP/npm-cache"

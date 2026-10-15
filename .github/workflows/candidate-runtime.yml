@@ -95,7 +95,7 @@ jobs:
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
-          install_args: node@26.11.0
+          install_args: node@26.11.1
           cache: false
       - name: Authenticate candidate and admitted attempt
         id: candidate
@@ -181,7 +181,7 @@ jobs:
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
-          install_args: node@26.11.0
+          install_args: node@26.11.1
           cache: false
       - name: Authenticate candidate and admitted attempt
         id: candidate
@@ -197,7 +197,7 @@ jobs:
             experimental-features = nix-command flakes
       - name: Install locked harness dependencies
         run: |
-          test "$(node --version)" = v26.11.0
+          test "$(node --version)" = v26.11.1
           test "$(npm --version)" = 11.20.0
           npm ci --cache "$RUNNER_TEMP/npm-cache"
           npm run build:server

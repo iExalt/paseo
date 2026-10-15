@@ -19,7 +19,7 @@ import { loadWindowsSources } from "./windows-product-sources.mjs";
 assert.equal(process.platform, "win32");
 assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
 assert.ok(["x64", "arm64"].includes(process.arch));
-assert.equal(process.version, "v26.11.0");
+assert.equal(process.version, "v26.11.1");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 assert.equal(process.env.GITHUB_REPOSITORY, "iExalt/paseo");
