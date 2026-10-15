@@ -149,7 +149,7 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
     commands.find((step) => step.name === "versioned OpenCode runtime").args.at(-1),
     "versioned runtime",
   );
-  const docs = planCommands(selectChecks(["docs/GITHUB_WORKFLOWS_PLAN.md"], filters));
+  const docs = planCommands(selectChecks(["docs/GITHUB_WORKFLOWS_STATUS.md"], filters));
   assert.deepEqual(
     docs.map((step) => step.name),
     ["format", "workflow expressions", "workflow and helper contracts"],
