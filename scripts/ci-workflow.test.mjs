@@ -218,9 +218,43 @@ test("only fork-owned workflows are installed", () => {
     "rebase-dev.yml",
     "release-candidate.yml",
     "release-please.yml",
+    "release.yml",
     "upstream-sync.yml",
     "windows-product-runtime.yml",
   ]);
+});
+
+test("release keeps each secret in its job and publishes only on request", () => {
+  const workflow = load(readFileSync(new URL(".github/workflows/release.yml", repoRoot), "utf8"));
+  const secrets = Object.fromEntries(
+    Object.entries(workflow.jobs).map(([name, job]) => [
+      name,
+      [...JSON.stringify(job).matchAll(/secrets\.(\w+)/g)].map((match) => match[1]).sort(),
+    ]),
+  );
+  assert.deepEqual(secrets, {
+    resolve: [],
+    "macos-build": ["PASEO_NIX_RELEASE_SIGNING_KEY"],
+    "macos-smoke": [],
+    "android-build": ["PASEO_FORK_GOOGLE_SERVICES_JSON"],
+    "android-sign": ["PASEO_FORK_SIGNING_CERT_PEM", "PASEO_FORK_SIGNING_KEY_PKCS8_PEM"],
+    publish: ["PASEO_RELEASE_MANIFEST_PRIVATE_KEY"],
+  });
+  assert.deepEqual(workflow.permissions, {});
+  for (const [name, job] of Object.entries(workflow.jobs))
+    assert.equal(job.permissions.contents, name === "publish" ? "write" : "read", name);
+  // A dry run uploads a draft under a paseo-dryrun- tag and never reaches publication.
+  const publishing = workflow.jobs.publish.steps.filter((step) =>
+    step.run?.includes("release-publish.sh publish"),
+  );
+  assert.deepEqual(
+    publishing.map((step) => step.if),
+    ["inputs.publish"],
+  );
+  assert.match(
+    workflow.jobs.resolve.steps.at(-1).run,
+    /tag="paseo-v\$version"[\s\S]*else\s+tag="paseo-dryrun-\$GITHUB_RUN_ID"/,
+  );
 });
 
 test("write-token product transfer executes only the trusted controller", () => {
