@@ -136,26 +136,26 @@ test.describe("Settings toggle tab regression", () => {
       await expect(page).toHaveURL(/\/settings\/general$/);
 
       const defaultSendTrigger = page.getByRole("button", {
-        name: "Default send: Steer",
-        exact: true,
-      });
-      await expect(defaultSendTrigger).toBeVisible();
-      await expect(page.getByRole("menuitem", { name: "Queue", exact: true })).toHaveCount(0);
-
-      await defaultSendTrigger.click();
-      await expect(page.getByRole("menuitem", { name: "Steer", exact: true })).toHaveAttribute(
-        "aria-checked",
-        "true",
-      );
-      await page.getByRole("menuitem", { name: "Queue", exact: true }).click();
-      await expectSendBehavior(page, "queue");
-      const queuedDefaultSendTrigger = page.getByRole("button", {
         name: "Default send: Queue",
         exact: true,
       });
-      await expect(queuedDefaultSendTrigger).toBeVisible();
+      await expect(defaultSendTrigger).toBeVisible();
+      await expect(page.getByRole("menuitem", { name: "Steer", exact: true })).toHaveCount(0);
 
-      await queuedDefaultSendTrigger.click();
+      await defaultSendTrigger.click();
+      await expect(page.getByRole("menuitem", { name: "Queue", exact: true })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+      await page.getByRole("menuitem", { name: "Steer", exact: true }).click();
+      await expectSendBehavior(page, "steer");
+      const steerDefaultSendTrigger = page.getByRole("button", {
+        name: "Default send: Steer",
+        exact: true,
+      });
+      await expect(steerDefaultSendTrigger).toBeVisible();
+
+      await steerDefaultSendTrigger.click();
       await page.getByRole("menuitem", { name: "Interrupt", exact: true }).click();
       await expectSendBehavior(page, "interrupt");
 
