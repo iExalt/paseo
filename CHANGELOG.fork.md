@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.2.0](https://github.com/iExalt/paseo/compare/paseo-v0.1.4...paseo-v0.2.0) (2026-10-15)
+
+
+### Features
+
+* **ci:** derive the release boundary from the latest signed release ([8bdc5fd](https://github.com/iExalt/paseo/commit/8bdc5fd1173c0d63a80537c1e19482395cc40fce))
+* **protocol:** accept two-cell fork release manifest schema 3 ([4727d61](https://github.com/iExalt/paseo/commit/4727d61cb3acc857aa0e3793381aefe9eb41f840))
+
+
+### Performance Improvements
+
+* **ci:** attest Linux predecessor caches and key them on the fixture alone ([9ab7fac](https://github.com/iExalt/paseo/commit/9ab7fac797ac35ea30173e0959a438003894d4c2))
+* **ci:** attest Windows predecessor caches and key them on the fixture alone ([af76c56](https://github.com/iExalt/paseo/commit/af76c56325268ac60a660b6c6f85ac611eb82ad4))
+
+
+### Miscellaneous Chores
+
+* release 0.2.0 ([c283986](https://github.com/iExalt/paseo/commit/c283986612fd1d0c34ceb6dc279bff03ea16cbec))
+
 ## [0.1.4](https://github.com/iExalt/paseo/compare/paseo-v0.1.3...paseo-v0.1.4) (2026-10-15)
 
 
