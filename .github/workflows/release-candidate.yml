@@ -1,11 +1,8 @@
 name: Fork release candidate
 
+# Retired: release.yml builds releases now, and this pipeline no longer builds
+# (its macOS closure expects the seeded Node 26.11.0). Dispatch only until removal.
 on:
-  pull_request_target:
-    types: [closed]
-    branches: [dev]
-    # Bound by candidateTriggerPaths: every accepted source changes one of them.
-    paths: [.github/fork-release.json, .github/pending-candidate-replacement.json]
   workflow_dispatch:
     inputs:
       release_id:

@@ -96,6 +96,7 @@ async function main() {
   }).trim();
   const control = verify(other);
   assert.notEqual(control.status, 0, "The closure verified under an unrelated key");
+  assert.match(control.stderr, /lacks a signature|untrusted|signature/i, control.stderr);
   const real = verify(NIX_RELEASE_PUBLIC_KEY);
   assert.equal(real.status, 0, `Release key verification failed: ${real.stderr}`);
   for (const result of [control, real])
