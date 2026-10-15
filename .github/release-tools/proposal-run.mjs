@@ -52,6 +52,8 @@ const validate = async () => {
     replacement: prepared.replacement,
   });
   assert.equal(preflight.ready, true);
+  if (!prepared.replacement)
+    assert.equal(preflight.lastReleaseSha, prepared.lastReleaseSha, "Latest release changed");
   if (prepared.replacement)
     await verifyReplacementHistory(prepared.replacement, { api, request, identity });
 };
