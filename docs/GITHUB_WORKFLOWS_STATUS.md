@@ -159,8 +159,9 @@ override. Typical causes and fixes:
     `package-lock.json`. The pinned entry is restored even when the inputs
     changed, because Gradle only downloads what is missing. With unchanged
     inputs the run re-pins the same entry instead of saving 2.3 GB again.
-  - GitHub evicts entries unused for seven days, so a release more than a week
-    after the last one builds cold, about 10 minutes slower (accepted).
+  - GitHub evicts entries unused for seven days. A release that follows a week
+    with no release or dry run restoring the pinned entries builds cold, about
+    10 minutes slower (accepted).
 - **Routine dependency cache:** `routine-modules-v1-*`, one rolling entry
   written by `dev` pushes.
 
