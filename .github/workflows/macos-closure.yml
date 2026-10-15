@@ -141,7 +141,7 @@ jobs:
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
-          install_args: node@26.11.0
+          install_args: node@26.11.1
           cache: false
       - name: Authenticate candidate and admitted attempt
         id: authority
@@ -261,7 +261,7 @@ jobs:
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
-          install_args: node@26.11.0
+          install_args: node@26.11.1
           cache: false
       - name: Authenticate candidate and admitted attempt
         id: authority

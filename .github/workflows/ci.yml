@@ -103,7 +103,7 @@ jobs:
           actionlint: "true"
       - name: Configure pinned npm installation
         run: |
-          test "$(node --version)" = v26.11.0
+          test "$(node --version)" = v26.11.1
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
       # Weekly image versions are omitted so rollouts do not split the cache; node,

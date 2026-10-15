@@ -53,7 +53,7 @@ export function predecessorRecipe(runner) {
       // fpm drives the image's dpkg-deb and the apt-installed rpmbuild, which are
       // not pinned; imageOS bounds them without keying on every image release.
       imageOS: runner.imageOS,
-      node: "26.11.0",
+      node: "26.11.1",
       npm: "11.20.0",
       electron: "44.6.0",
       builder: "26.15.3",
@@ -184,7 +184,7 @@ function output(name, value) {
 
 function recipeForRunner() {
   assert.equal(process.platform, "linux");
-  assert.equal(process.version, "v26.11.0");
+  assert.equal(process.version, "v26.11.1");
   assert.equal(execFileSync("npm", ["--version"], { encoding: "utf8" }).trim(), "11.20.0");
   assert.ok(["x64", "arm64"].includes(process.arch));
   assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);

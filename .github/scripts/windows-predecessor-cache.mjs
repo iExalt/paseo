@@ -52,7 +52,7 @@ export function predecessorRecipe(runner) {
       ...runner.lock,
       architecture: runner.architecture,
       imageOS: runner.imageOS,
-      node: "26.11.0",
+      node: "26.11.1",
       npm: "11.20.0",
       electron: "44.6.0",
       builder: "26.15.3",
@@ -206,7 +206,7 @@ export async function restoreArchive(
 
 function recipeForRunner() {
   assert.equal(process.platform, "win32");
-  assert.equal(process.version, "v26.11.0");
+  assert.equal(process.version, "v26.11.1");
   assert.ok(["arm64", "x64"].includes(process.arch));
   assert.equal(process.arch, process.env.EXPECTED_ARCHITECTURE);
   assert.ok(process.env.ImageOS && process.env.ImageVersion);

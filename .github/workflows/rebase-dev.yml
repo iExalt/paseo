@@ -31,7 +31,7 @@ jobs:
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           version: "2026.10.3"
-          install_args: node@26.11.0 actionlint@1.7.12
+          install_args: node@26.11.1 actionlint@1.7.12
           cache: false
 
       - name: Rebase captured dev on captured upstream and import known resolutions
@@ -43,7 +43,7 @@ jobs:
 
       - name: Configure pinned npm installation
         run: |
-          test "$(node --version)" = v26.11.0
+          test "$(node --version)" = v26.11.1
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
       - name: Install locked dependencies once

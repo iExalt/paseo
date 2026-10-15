@@ -427,7 +427,7 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
     assert.match(step.if, /steps\.head\.outputs\.current == 'true'/);
   const setup = steps.find((step) => step.name === "Configure pinned npm installation");
   assert.match(setup.run, /npm_config_cache=\$RUNNER_TEMP\/npm-cache/);
-  assert.match(setup.run, /v26\.11\.0/);
+  assert.match(setup.run, /v26\.11\.1/);
   assert.match(setup.run, /11\.20\.0/);
   assert.ok(!steps.some((step) => step.uses?.includes("upload-artifact")));
   const tools = steps.find((step) => step.uses === "./.github/actions/setup-ci-tools");
@@ -436,13 +436,13 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
     readFileSync(new URL("../.github/actions/setup-ci-tools/action.yml", import.meta.url), "utf8"),
   );
   const node = action.runs.steps.find((step) => step.uses?.startsWith("actions/setup-node@"));
-  assert.equal(node.with["node-version"], "26.11.0");
+  assert.equal(node.with["node-version"], "26.11.1");
   assert.equal(node.with["package-manager-cache"], false);
   const mise = action.runs.steps.find((step) => step.uses?.startsWith("jdx/mise-action@"));
   assert.equal(mise.with.install, false);
   assert.equal(mise.with.cache, false);
   const activate = action.runs.steps.find((step) => step.name === "Activate exact mise runtime");
-  assert.match(activate.run, /mise link node@26\.11\.0/);
+  assert.match(activate.run, /mise link node@26\.11\.1/);
   assert.match(activate.run, /readlink -f/);
   assert.match(activate.run, /11\.20\.0/);
 });
