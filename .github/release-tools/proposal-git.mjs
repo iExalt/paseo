@@ -24,7 +24,7 @@ const safeGit = [
 // invoking filters, hooks, dependency scripts, or release-engine updaters.
 export async function proposalCommit({ cwd, base, files, title, identity }) {
   assert.match(base, shaPattern);
-  assert.match(title, /^chore\(dev\): (release|replace pending release) [0-9]+\.[0-9]+\.[0-9]+$/);
+  assert.match(title, /^chore\(dev\): release [0-9]+\.[0-9]+\.[0-9]+$/);
   assert.ok(files instanceof Map && files.size > 0);
   assert.match(identity.botLogin, /^[a-z0-9-]+\[bot\]$/);
   assert.ok(Number.isSafeInteger(identity.botId) && identity.botId > 0);
