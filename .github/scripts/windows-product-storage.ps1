@@ -62,15 +62,34 @@ function Assert-OwnedVolume {
 }
 # A trusted Dev Drive keeps Defender attached in performance mode (scans are
 # deferred rather than blocking each write); untrusted, npm ci took 11-22 min.
-function Assert-TrustedVolume {
+# Defender sometimes detaches from a trusted volume minutes after attaching, so
+# a check that finds it detached revokes trust and requires it attached again:
+# the build continues slower but never unscanned.
+function Get-VolumeTrust([string]$VolumeRoot) {
+    $trust = (fsutil devdrv query $VolumeRoot | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw 'Dev Drive trust query failed' }
+    if ($trust -match '(?i)\buntrusted\b|\bnot\s+(?:a\s+)?trusted\b') { return 'untrusted' }
+    if ($trust -match '(?i)\bis a trusted developer volume\b') { return 'trusted' }
+    throw 'Unrecognized Dev Drive trust status'
+}
+function Test-DefenderAttached([string]$VolumeRoot) {
+    $filters = (fltmc instances -v $VolumeRoot.TrimEnd('\') | Out-String)
+    return $LASTEXITCODE -eq 0 -and $filters -match '\bWdFilter\b'
+}
+function Assert-ProtectedVolume {
     $owner = Read-OwnedStorage
     if (!$owner.ready) { throw 'Storage is not ready' }
     Assert-OwnedVolume
-    $trust = (fsutil devdrv query $owner.volumeRoot | Out-String)
-    if ($LASTEXITCODE -ne 0 -or $trust -notmatch '(?i)\bis a trusted developer volume\b' -or
-        $trust -match '(?i)\buntrusted\b|\bnot\s+(?:a\s+)?trusted\b') { throw 'Explicit trusted status required' }
-    $filters = (fltmc instances -v $owner.volumeRoot.TrimEnd('\') | Out-String)
-    if ($LASTEXITCODE -ne 0 -or $filters -notmatch '\bWdFilter\b') { throw 'Antivirus filter attachment not verified' }
+    $trust = Get-VolumeTrust $owner.volumeRoot
+    if (Test-DefenderAttached $owner.volumeRoot) { return $trust }
+    if ($trust -ne 'trusted') { throw 'Antivirus filter attachment not verified' }
+    Write-Host '::warning::Defender detached from the trusted build volume; revoking trust and continuing untrusted.'
+    fsutil devdrv untrust /f $owner.volumeRoot | Out-Host
+    if ($LASTEXITCODE -ne 0) { throw 'Could not revoke volume trust' }
+    if ((Get-VolumeTrust $owner.volumeRoot) -ne 'untrusted') { throw 'Volume trust was not revoked' }
+    for ($attempt = 0; $attempt -lt 30 -and !(Test-DefenderAttached $owner.volumeRoot); $attempt++) { Start-Sleep -Seconds 2 }
+    if (!(Test-DefenderAttached $owner.volumeRoot)) { throw 'Antivirus filter attachment not verified' }
+    return 'untrusted'
 }
 function Invoke-SourceGit([string[]]$Arguments) {
     $result = & git -C $controller @Arguments
@@ -152,7 +171,7 @@ if ($Phase -eq 'cleanup') {
     if ($failure) { throw $failure }
     exit 0
 }
-if ($Phase -eq 'check') { Assert-TrustedVolume; exit 0 }
+if ($Phase -eq 'check') { $null = Assert-ProtectedVolume; exit 0 }
 
 if (Test-Path -LiteralPath $root) { throw 'Refuse reused storage identity' }
 if ((Invoke-SourceGit @('rev-parse', 'HEAD')) -ne $sourceSha -or (Invoke-SourceGit @('status', '--porcelain'))) { throw 'Exact clean source required' }
@@ -186,5 +205,5 @@ fsutil devdrv trust /f $owner.volumeRoot
 if ($LASTEXITCODE -ne 0) { throw 'Could not trust empty volume' }
 $owner.ready = $true
 $owner | ConvertTo-Json | Set-Content -LiteralPath $ownerFile
-Assert-TrustedVolume
-@{ storageReady = $true; fileSystem = 'ReFS'; trust = 'trusted'; sourceSha = $sourceSha; volumeRoot = $owner.volumeRoot } | ConvertTo-Json -Compress | Write-Output
+$trust = Assert-ProtectedVolume
+@{ storageReady = $true; fileSystem = 'ReFS'; trust = $trust; sourceSha = $sourceSha; volumeRoot = $owner.volumeRoot } | ConvertTo-Json -Compress | Write-Output
