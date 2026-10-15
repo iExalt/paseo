@@ -4,7 +4,6 @@ import { assertReleasePr } from "../scripts/release-pr.mjs";
 
 const repository = "/repos/iExalt/paseo";
 const pending = "autorelease: pending";
-const superseded = "autorelease: superseded";
 export function proposalRequest(token) {
   assert.ok(token);
   return async (route, method = "GET", body) => {
@@ -154,41 +153,5 @@ export async function publishProposal({
   assert.equal(pr.commits, 1);
   await verifyPublished();
   await validate();
-  if (prepared.replacement) await supersedeProposal(prepared, identity, request);
   return pr;
-}
-
-async function supersedeProposal(prepared, identity, request) {
-  const { previousPr, branch } = prepared;
-  assert.equal(previousPr, prepared.replacement.supersededPr);
-  const old = await request(`${repository}/pulls/${previousPr}`);
-  identityPr(old, identity, branch, old.head.sha);
-  assert.equal(old.state, "closed");
-  assert.equal(old.merged, true);
-  assert.equal(old.merge_commit_sha, prepared.replacement.supersededSource);
-  assert.ok(old.labels.some((label) => [pending, superseded].includes(label.name)));
-  const labelRoute = `${repository}/labels/${encodeURIComponent(superseded)}`;
-  if (!(await request(labelRoute))) {
-    try {
-      await request(`${repository}/labels`, "POST", {
-        name: superseded,
-        color: "ededed",
-        description: "Unpublished version proposal replaced by a verified successor",
-      });
-    } catch (error) {
-      if ((await request(labelRoute))?.name !== superseded) throw error;
-    }
-    assert.equal((await request(labelRoute))?.name, superseded);
-  }
-  if (!old.labels.some((label) => label.name === superseded))
-    await request(`${repository}/issues/${previousPr}/labels`, "POST", { labels: [superseded] });
-  if (old.labels.some((label) => label.name === pending))
-    await request(
-      `${repository}/issues/${previousPr}/labels/${encodeURIComponent(pending)}`,
-      "DELETE",
-    );
-  const labels = new Set(
-    (await request(`${repository}/pulls/${previousPr}`)).labels.map((label) => label.name),
-  );
-  assert.ok(labels.has(superseded) && !labels.has(pending));
 }
