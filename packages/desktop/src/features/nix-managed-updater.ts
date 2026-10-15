@@ -196,3 +196,37 @@ export function createNixUpdaterCommandRunner(input: {
     });
   };
 }
+
+export interface ConfirmedDaemonInstance {
+  pid: number;
+  startedAt: string;
+}
+
+export function nixReleaseExecutable(outputPath: string, platform: NodeJS.Platform): string {
+  return platform === "darwin"
+    ? `${outputPath}/Applications/Paseo.app/Contents/MacOS/Paseo`
+    : `${outputPath}/bin/paseo-desktop`;
+}
+
+export function parseConfirmedDaemonInstance(
+  args: Record<string, unknown> | undefined,
+): ConfirmedDaemonInstance | null {
+  return typeof args?.pid === "number" && typeof args.startedAt === "string"
+    ? { pid: args.pid, startedAt: args.startedAt }
+    : null;
+}
+
+// Restart into the active profile generation. The daemon goes first because it keeps
+// running after the app quits, and only the instance the user confirmed may be stopped.
+export async function restartIntoActiveNixRelease(input: {
+  runNixUpdate: (command: NixUpdateCommand) => Promise<NixUpdateResult>;
+  confirmedDaemon: ConfirmedDaemonInstance | null;
+  stopDaemon: (confirmed: ConfirmedDaemonInstance) => Promise<unknown>;
+  relaunch: (execPath: string) => void;
+  platform: NodeJS.Platform;
+}): Promise<void> {
+  const { active } = await input.runNixUpdate("status");
+  if (!active) fail("There is no active Nix release to restart into.");
+  if (input.confirmedDaemon) await input.stopDaemon(input.confirmedDaemon);
+  input.relaunch(nixReleaseExecutable(active.outputPath, input.platform));
+}
