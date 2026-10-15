@@ -20,7 +20,6 @@ jobs:
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
-      receipt: ${{ steps.plan.outputs.receipt }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,54 +27,17 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-tools
       - id: plan
-        name: Plan checks and record source
+        name: Plan checks
         env:
           EVENT_NAME: ${{ github.event_name }}
           PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          node .github/scripts/ci-source-receipt.mjs
           args=()
           if [[ "$EVENT_NAME" == pull_request ]]; then
             args+=(--changed-from "$PR_BASE_SHA")
           fi
           matrix="$(node .github/scripts/ci-routine.mjs --matrix "${args[@]}")"
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
-
-  # Signing runs beside the lanes, off the routine critical path. It starts only
-  # after every planner step succeeds and binds the receipt to this attempt.
-  # Fork pull requests receive no OIDC token and are never release sources.
-  attest-source:
-    name: Attest routine source
-    needs: plan
-    if: >-
-      github.repository == 'iExalt/paseo' && !github.event.repository.private &&
-      (github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 3
-    permissions:
-      id-token: write
-      attestations: write
-    steps:
-      - name: Bind step proof to this run attempt
-        id: proof-subject
-        env:
-          PROOF_SLOT: ci-source-routine
-        shell: bash
-        run: |
-          [[ "$PROOF_SLOT" =~ ^[a-z0-9][a-z0-9-]{0,79}$ ]]
-          subject="$RUNNER_TEMP/paseo-step-proof-$PROOF_SLOT"
-          printf 'paseo-step-proof-v1\n%s\n%s\n%s\n%s\n' "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$GITHUB_RUN_ATTEMPT" "$PROOF_SLOT" > "$subject"
-          { echo "subject=$subject"; echo "slot=$PROOF_SLOT"; } >> "$GITHUB_OUTPUT"
-      - name: Sign step proof
-        if: steps.proof-subject.outcome == 'success'
-        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
-        with:
-          subject-path: ${{ steps.proof-subject.outputs.subject }}
-          predicate-type: https://github.com/iExalt/paseo/attestations/step-proof/v1
-          predicate: ${{ format('{{"schemaVersion":1,"kind":"paseo-step-proof","repository":"{0}","runId":{1},"attempt":{2},"slot":"{3}","evidence":{4}}}', github.repository, github.run_id, github.run_attempt, steps.proof-subject.outputs.slot, needs.plan.outputs.receipt) }}
-          show-summary: false
 
   routine:
     name: routine (${{ matrix.lane }})
@@ -225,7 +187,7 @@ jobs:
       actions: read
       contents: read
     if: always()
-    needs: [plan, routine, attest-source]
+    needs: [plan, routine]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
@@ -233,11 +195,7 @@ jobs:
         env:
           RESULT: ${{ needs.routine.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
-          ATTEST_RESULT: ${{ needs.attest-source.result }}
-          FORK_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-        run: >-
-          test "$PLAN_RESULT" = success && test "$RESULT" = success &&
-          { test "$ATTEST_RESULT" = success || { test "$FORK_PR" = true && test "$ATTEST_RESULT" = skipped; }; }
+        run: test "$PLAN_RESULT" = success && test "$RESULT" = success
       - name: Enforce complete routine latency
         env:
           GH_TOKEN: ${{ github.token }}
