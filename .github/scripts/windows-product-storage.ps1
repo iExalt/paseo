@@ -64,7 +64,7 @@ function Assert-OwnedVolume {
 # deferred rather than blocking each write); untrusted, npm ci took 11-22 min.
 # Defender sometimes detaches from a trusted volume minutes after attaching, so
 # a check that finds it detached revokes trust and requires it attached again:
-# the build continues slower but never unscanned.
+# the build continues slower but never proceeds past a check without Defender.
 function Get-VolumeTrust([string]$VolumeRoot) {
     $trust = (fsutil devdrv query $VolumeRoot | Out-String)
     if ($LASTEXITCODE -ne 0) { throw 'Dev Drive trust query failed' }

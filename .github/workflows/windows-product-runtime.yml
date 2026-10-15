@@ -124,9 +124,11 @@ jobs:
           ./.github/scripts/windows-product-stage.ps1 init
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ./.github/scripts/windows-product-runtime.ps1 prepare
+      # A candidate treats any cache failure as a miss; writers fail hard.
       - name: Bind installed dependency cache recipe
         id: modules
         if: inputs.architecture == 'arm64'
+        continue-on-error: ${{ inputs.source_sha != '' }}
         run: |
           . ./.github/scripts/windows-native-toolchain.ps1
           $env:PASEO_NATIVE_COMPILER = Get-NativeCompiler
@@ -136,6 +138,7 @@ jobs:
       - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         id: modules-cache
         if: inputs.architecture == 'arm64'
+        continue-on-error: ${{ inputs.source_sha != '' }}
         timeout-minutes: 5
         with:
           path: ${{ steps.modules.outputs.archive }}

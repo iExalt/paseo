@@ -24,6 +24,7 @@ export const coreTests = [
   "scripts/windows-product-sources.test.mjs",
   "scripts/windows-modules-cache.test.mjs",
   "scripts/build-cache-provenance.test.mjs",
+  "scripts/android-build-cache.test.mjs",
   "scripts/ci-deep.test.mjs",
   "scripts/ci-workflow.test.mjs",
   "scripts/ci-routine.test.mjs",
