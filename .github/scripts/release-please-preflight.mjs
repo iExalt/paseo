@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { inspectForkRelease } from "../../scripts/fork-release-config.mjs";
-import { readReleaseBoundary, verifyBoundaryHistory } from "../../scripts/release-boundary.mjs";
+import { deriveReleaseBoundary, RELEASE_CONFIG_PATH } from "../../scripts/release-boundary.mjs";
 import { releaseVersionSelectors } from "./release-version-selectors.mjs";
 import { githubRequest } from "./release-app-auth.mjs";
-import { forkReleaseTag } from "../../scripts/fork-version.mjs";
 
 export const REHEARSAL_BRANCH = "ci/release-please-rehearsal";
 
@@ -18,6 +17,9 @@ export async function releasePreflight({
   token,
   replacement,
   request = githubRequest,
+  fetchBytes,
+  publicKey,
+  deriveBoundary = deriveReleaseBoundary,
 }) {
   assert.ok(branch === "dev" || branch === REHEARSAL_BRANCH);
   assert.match(expectedSha, /^[a-f0-9]{40}$/);
@@ -27,14 +29,15 @@ export async function releasePreflight({
   assert.equal(git("status", "--porcelain"), "", "Release target must be clean");
   const read = (file) => readFile(resolve(repositoryPath, file), "utf8");
   const fork = await inspectForkRelease(read);
-  const state = await readReleaseBoundary(read);
-  await verifyBoundaryHistory(state.boundary, {
-    isAncestor: async (sha) =>
-      spawnSync("git", ["merge-base", "--is-ancestor", sha, expectedSha], { cwd: repositoryPath })
-        .status === 0,
-    readAt: async (sha, file) =>
-      execFileSync("git", ["show", `${sha}:${file}`], { cwd: repositoryPath, encoding: "utf8" }),
+  const boundary = await deriveBoundary({
+    repositoryPath,
+    head: expectedSha,
+    token,
+    request,
+    fetchBytes,
+    publicKey,
   });
+  const config = JSON.parse(await read(RELEASE_CONFIG_PATH));
   const root = JSON.parse(await read("package.json"));
   const packages = [
     ["", root],
@@ -51,19 +54,13 @@ export async function releasePreflight({
       "utf8",
     ),
   );
-  expected["bootstrap-sha"] = state.config["bootstrap-sha"];
-  expected["last-release-sha"] = state.boundary.currentSha;
+  expected["bootstrap-sha"] = config["bootstrap-sha"];
   expected.packages["."]["extra-files"] = releaseVersionSelectors(packages);
-  if (state.boundary.kind === "release") delete expected.packages["."]["release-as"];
-  else expected.packages["."]["release-as"] = "0.1.0";
-  assert.deepEqual(
-    state.config,
-    expected,
-    "Target release configuration differs from reviewed policy",
-  );
+  assert.deepEqual(config, expected, "Target release configuration differs from reviewed policy");
   const manifest = JSON.parse(await read(".release-please-manifest.json"));
   assert.deepEqual(Object.keys(manifest), ["."]);
-  if (manifest["."] !== state.boundary.version) {
+  const { lastReleaseSha } = boundary;
+  if (manifest["."] !== boundary.version) {
     assert.equal(manifest["."], fork.config.version, "Unrecognized pending version");
     if (replacement) {
       assert.equal(branch, "dev");
@@ -71,33 +68,21 @@ export async function releasePreflight({
       assert.equal(replacement.repairBase, expectedSha);
       return {
         ready: true,
+        lastReleaseSha,
         reason: "Explicit pending replacement; signed predecessor authorization still required",
       };
     }
     return {
       ready: false,
-      reason: "A merged version proposal awaits verified publication and boundary handoff",
+      lastReleaseSha,
+      reason: `Merged version ${manifest["."]} awaits publication; latest release is ${boundary.tag}`,
     };
   }
   assert.equal(replacement, undefined, "Replacement requires an unpublished merged version");
-  if (state.boundary.kind === "release" && branch === "dev") {
-    const tag = forkReleaseTag(state.boundary.version);
-    const release = await request(`/repos/iExalt/paseo/releases/tags/${tag}`, token);
-    assert.equal(release.draft, false);
-    assert.equal(release.prerelease, false);
-    assert.equal(release.tag_name, tag);
-    assert.equal(
-      git("rev-parse", `refs/tags/${tag}^{commit}`),
-      state.boundary.originalSha,
-      "Published tag does not bind the original release boundary",
-    );
-  }
   return {
     ready: true,
-    reason:
-      branch === REHEARSAL_BRANCH
-        ? "Isolated rehearsal; release boundary may be simulated"
-        : "Recorded release boundary verified",
+    lastReleaseSha,
+    reason: `Latest release ${boundary.tag} maps to ${lastReleaseSha}`,
   };
 }
 
@@ -111,6 +96,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       ? JSON.parse(process.env.REPLACEMENT_RECORD)
       : undefined,
   });
-  await appendFile(process.env.GITHUB_OUTPUT, `ready=${result.ready}\n`);
+  await appendFile(
+    process.env.GITHUB_OUTPUT,
+    `ready=${result.ready}\nlast_release_sha=${result.lastReleaseSha}\n`,
+  );
   console.log(result.reason);
 }

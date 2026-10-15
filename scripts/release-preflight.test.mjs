@@ -5,9 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import { releasePreflight } from "../.github/scripts/release-please-preflight.mjs";
-import { changelogDigest } from "./release-boundary.mjs";
 
-test("clean target preflight bounds bootstrap, pauses merged proposals and rejects nonancestor history", async () => {
+test("preflight proposes only when the manifest equals the latest published version", async () => {
   const directory = await mkdtemp(join(tmpdir(), "paseo-release-preflight-"));
   const git = (...args) =>
     execFileSync(
@@ -48,123 +47,34 @@ test("clean target preflight bounds bootstrap, pauses merged proposals and rejec
       ...root.workspaces.map((workspace) => `${workspace}/package.json`),
     ])
       await write(file, await read(file));
-    // Bootstrap is a historical fixture even after the real source advances.
-    const packages = await Promise.all(
-      ["", ...root.workspaces].map(async (workspace) => [
-        workspace,
-        JSON.parse(await read(workspace ? `${workspace}/package.json` : "package.json")),
-      ]),
-    );
-    const names = new Set(packages.map(([, pkg]) => pkg.name));
-    const normalize = (pkg) => {
-      pkg.version = "0.1.0";
-      for (const field of [
-        "dependencies",
-        "devDependencies",
-        "optionalDependencies",
-        "peerDependencies",
-      ])
-        for (const name of Object.keys(pkg[field] ?? {}))
-          if (names.has(name) && pkg[field][name] !== "*") pkg[field][name] = "0.1.0";
-    };
-    for (const [workspace, pkg] of packages) {
-      normalize(pkg);
-      await write(workspace ? `${workspace}/package.json` : "package.json", JSON.stringify(pkg));
-    }
-    const lock = JSON.parse(await read("package-lock.json"));
-    lock.version = "0.1.0";
-    for (const [workspace] of packages) normalize(lock.packages[workspace]);
-    await write("package-lock.json", JSON.stringify(lock));
-    const fork = JSON.parse(await read(".github/fork-release.json"));
-    fork.version = "0.1.0";
-    await write(".github/fork-release.json", JSON.stringify(fork));
-    const sourceSha = commit();
-    const mappedSha = git(
-      "commit-tree",
-      `${sourceSha}^{tree}`,
-      "-m",
-      "test: replayed bootstrap root",
-    );
-    git("reset", "--hard", mappedSha);
-    const config = JSON.parse(await read("release-please-config.json"));
-    config["bootstrap-sha"] = mappedSha;
-    config["last-release-sha"] = mappedSha;
-    config.packages["."]["release-as"] = "0.1.0";
-    await write("release-please-config.json", JSON.stringify(config));
-    const boundary = {
-      schemaVersion: 1,
-      kind: "bootstrap",
-      forkVersion: "0.1.0",
-      changelogSha256: changelogDigest(await read("CHANGELOG.fork.md")),
-      version: "0.0.0",
-      originalSha: sourceSha,
-      currentSha: mappedSha,
-    };
-    await write(".github/release-boundary.json", JSON.stringify(boundary));
-    await write(".release-please-manifest.json", JSON.stringify({ ".": "0.0.0" }));
-    let expectedSha = commit();
-    const check = () =>
+    await write("release-please-config.json", await read("release-please-config.json"));
+    const version = root.version;
+    await write(".release-please-manifest.json", JSON.stringify({ ".": version }));
+    const expectedSha = commit();
+    const lastReleaseSha = "a".repeat(40);
+    const check = (latest) =>
       releasePreflight({
         repositoryPath: directory,
         branch: "dev",
         expectedSha,
-        request: async () => {
-          throw new Error("Bootstrap must not request release API");
+        token: "token",
+        deriveBoundary: async (options) => {
+          assert.equal(options.repositoryPath, directory);
+          assert.equal(options.head, expectedSha);
+          assert.equal(options.token, "token");
+          return { tag: `paseo-v${latest}`, version: latest, lastReleaseSha };
         },
       });
-    assert.equal((await check()).ready, true);
-    const fresh = join(directory, "fresh");
-    git("clone", "--quiet", "--no-local", directory, fresh);
-    assert.throws(() =>
-      execFileSync("git", ["-C", fresh, "cat-file", "-e", sourceSha], { stdio: "pipe" }),
-    );
-    assert.equal(
-      (await releasePreflight({ repositoryPath: fresh, branch: "dev", expectedSha })).ready,
-      true,
-    );
-    await rm(fresh, { recursive: true, force: true });
-    await write(".release-please-manifest.json", JSON.stringify({ ".": "0.1.0" }));
-    expectedSha = commit();
-    assert.equal((await check()).ready, false);
-    const releaseSha = expectedSha;
-    Object.assign(boundary, {
-      kind: "release",
-      version: "0.1.0",
-      originalSha: releaseSha,
-      currentSha: releaseSha,
+    assert.deepEqual(await check(version), {
+      ready: true,
+      lastReleaseSha,
+      reason: `Latest release paseo-v${version} maps to ${lastReleaseSha}`,
     });
-    delete boundary.forkVersion;
-    delete boundary.changelogSha256;
-    config["last-release-sha"] = releaseSha;
-    delete config.packages["."]["release-as"];
-    await write(".github/release-boundary.json", JSON.stringify(boundary));
-    await write("release-please-config.json", JSON.stringify(config));
-    expectedSha = commit();
-    git("tag", "paseo-v0.1.0", releaseSha);
-    const release = { draft: false, prerelease: false, tag_name: "paseo-v0.1.0" };
-    const published = () =>
-      releasePreflight({
-        repositoryPath: directory,
-        branch: "dev",
-        expectedSha,
-        request: async (url) => {
-          assert.equal(url, "/repos/iExalt/paseo/releases/tags/paseo-v0.1.0");
-          return release;
-        },
-      });
-    assert.equal((await published()).ready, true);
-    release.draft = true;
-    await assert.rejects(published());
-    release.draft = false;
-    git("tag", "--force", "paseo-v0.1.0", sourceSha);
-    await assert.rejects(published(), /Published tag/);
-    boundary.currentSha = "f".repeat(40);
-    config["bootstrap-sha"] = boundary.currentSha;
-    config["last-release-sha"] = boundary.currentSha;
-    await write(".github/release-boundary.json", JSON.stringify(boundary));
-    await write("release-please-config.json", JSON.stringify(config));
-    expectedSha = commit();
-    await assert.rejects(check(), /not an ancestor/);
+    assert.deepEqual(await check("0.0.9"), {
+      ready: false,
+      lastReleaseSha,
+      reason: `Merged version ${version} awaits publication; latest release is paseo-v0.0.9`,
+    });
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
