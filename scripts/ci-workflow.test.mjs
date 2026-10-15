@@ -251,6 +251,11 @@ test("release keeps each secret in its job and publishes only on request", () =>
     workflow.jobs.resolve.steps.at(-1).run,
     /tag="paseo-v\$version"[\s\S]*else\s+tag="paseo-dryrun-\$GITHUB_RUN_ID"/,
   );
+  // Publishing tags the release commit itself, which the next boundary maps back.
+  assert.match(
+    workflow.jobs.resolve.steps.at(-1).run,
+    /tag="paseo-v\$version"\s+#[^\n]*\n\s+subject="\$\(git log -1 --format=%s HEAD\)"\n\s+if \[\[ "\$subject" != "chore\(dev\): release \$version"/,
+  );
 });
 
 test("write-token product transfer executes only the trusted controller", () => {
