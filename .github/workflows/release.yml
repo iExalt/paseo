@@ -17,20 +17,6 @@ on:
         description: Publish the release (false uploads a draft dry run only)
         type: boolean
         default: false
-      # TEMP(W4/W5): dry-run tuning inputs; removed before 0.2.1 publishes.
-      android_gradle_workers:
-        description: Dry runs only. Gradle --max-workers for the APK build
-        type: choice
-        options: ["1", "2", "4"]
-        default: "1"
-      ccache_debug:
-        description: Dry runs only. Upload ccache debug logs for cache misses
-        type: boolean
-        default: false
-      hermes_source_map:
-        description: Dry runs only. Let hermesc write its source map (React Native's default)
-        type: boolean
-        default: true
 
 permissions: {}
 
@@ -52,9 +38,6 @@ jobs:
       version_code: ${{ steps.identity.outputs.version_code }}
       upstream_base: ${{ steps.identity.outputs.upstream_base }}
       tag: ${{ steps.identity.outputs.tag }}
-      gradle_workers: ${{ steps.identity.outputs.gradle_workers }} # TEMP(W4/W5)
-      ccache_debug: ${{ steps.identity.outputs.ccache_debug }} # TEMP(W4/W5)
-      hermes_source_map: ${{ steps.identity.outputs.hermes_source_map }} # TEMP(W4/W5)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,16 +52,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PUBLISH: ${{ inputs.publish }}
-          GRADLE_WORKERS: ${{ inputs.android_gradle_workers }} # TEMP(W4/W5)
-          CCACHE_DEBUG_INPUT: ${{ inputs.ccache_debug }} # TEMP(W4/W5)
-          HERMES_SOURCE_MAP: ${{ inputs.hermes_source_map }} # TEMP(W4/W5)
         run: |
           set -euo pipefail
-          # TEMP(W4/W5): tuning inputs apply to dry runs only.
-          if [[ "$PUBLISH" == true && ( "$GRADLE_WORKERS" != 1 || "$CCACHE_DEBUG_INPUT" == true || "$HERMES_SOURCE_MAP" != true ) ]]; then
-            echo "::error::android_gradle_workers, ccache_debug and hermes_source_map are for dry runs; publish with the defaults."
-            exit 1
-          fi
           version="$(jq -er .version package.json)"
           [[ "$(jq -er .version .github/fork-release.json)" == "$version" ]]
           upstream_base="$(jq -er .upstreamBase .github/fork-release.json)"
@@ -109,9 +84,6 @@ jobs:
             echo "version_code=$version_code"
             echo "upstream_base=$upstream_base"
             echo "tag=$tag"
-            echo "gradle_workers=$GRADLE_WORKERS" # TEMP(W4/W5)
-            echo "ccache_debug=$CCACHE_DEBUG_INPUT" # TEMP(W4/W5)
-            echo "hermes_source_map=$HERMES_SOURCE_MAP" # TEMP(W4/W5)
           } >> "$GITHUB_OUTPUT"
           echo "Release $version ($tag) from $GITHUB_SHA; Android versionCode $version_code."
 
@@ -301,78 +273,27 @@ jobs:
           key: paseo-android-release-v1-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: paseo-android-release-v1-
       - name: Assemble arm64 release APK
-        env:
-          GRADLE_WORKERS: ${{ needs.resolve.outputs.gradle_workers }} # TEMP(W4/W5)
-          CCACHE_DEBUG_RUN: ${{ needs.resolve.outputs.ccache_debug }} # TEMP(W4/W5)
-          HERMES_SOURCE_MAP: ${{ needs.resolve.outputs.hermes_source_map }} # TEMP(W4/W5)
         run: |
           set -euo pipefail
           cache="$RUNNER_TEMP/android-build-cache"
           export CCACHE_DIR="$cache/ccache" PASEO_GRADLE_BUILD_CACHE="$cache/gradle"
           export CCACHE_COMPILERCHECK=content CCACHE_MAXSIZE=3G
-          # TEMP(W4/W5): worker count and ccache debugging for tuning dry runs.
-          [[ "$GRADLE_WORKERS" =~ ^[124]$ ]]
-          parallel=false
-          [[ "$GRADLE_WORKERS" == 1 ]] || parallel=true
-          ccache --version | head -1
-          if [[ "$CCACHE_DEBUG_RUN" == true ]]; then
-            export CCACHE_DEBUG=1 CCACHE_DEBUGLEVEL=2 CCACHE_DEBUGDIR="$RUNNER_TEMP/ccache-debug"
-          fi
-          hermes_init=()
-          if [[ "$HERMES_SOURCE_MAP" == false ]]; then
-            export PASEO_HERMES_FLAGS="-O"
-            hermes_init=(--init-script "$GITHUB_WORKSPACE/.github/scripts/android-hermes-flags.init.gradle")
-          fi
-          # The restored cache carries earlier runs' counters; report this build's alone.
-          ccache --zero-stats > /dev/null
           export CMAKE_C_COMPILER_LAUNCHER=ccache CMAKE_CXX_COMPILER_LAUNCHER=ccache
           mkdir -p "$CCACHE_DIR" "$PASEO_GRADLE_BUILD_CACHE"
+          # The restored cache carries earlier runs' counters; report this build's alone.
+          ccache --zero-stats > /dev/null
           grep -qF 'gradle-9.3.1-bin.zip' packages/app/android/gradle/wrapper/gradle-wrapper.properties
           cd packages/app/android
           started_at=$SECONDS
-          bash "$GITHUB_WORKSPACE/scripts/gradle-resource-watch.sh" --interval-seconds 10 -- \
+          bash "$GITHUB_WORKSPACE/scripts/gradle-resource-watch.sh" -- \
             env JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew :app:assembleRelease \
-            --no-daemon --max-workers="$GRADLE_WORKERS" -Dorg.gradle.parallel="$parallel" \
+            --no-daemon --max-workers=1 -Dorg.gradle.parallel=false \
             -Pkotlin.compiler.execution.strategy=in-process \
             -PreactNativeArchitectures=arm64-v8a \
             -PreactNativeDevServerIp=localhost \
-            --build-cache --init-script "$GITHUB_WORKSPACE/.github/scripts/android-build-cache.init.gradle" \
-            "${hermes_init[@]}"
+            --build-cache --init-script "$GITHUB_WORKSPACE/.github/scripts/android-build-cache.init.gradle"
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
           ccache --show-stats
-          # TEMP(W4/W5)
-          if [[ "$CCACHE_DEBUG_RUN" == true ]]; then
-            ccache --show-stats -v
-            ccache --print-stats > "$RUNNER_TEMP/ccache-debug/print-stats.txt"
-          fi
-      # TEMP(W4/W5): logs for every compile; input text only for misses, capped.
-      - name: Pack ccache debug logs
-        id: ccache-debug
-        if: always() && needs.resolve.outputs.ccache_debug == 'true'
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          debug="$RUNNER_TEMP/ccache-debug"
-          du -sh "$debug"
-          mkdir -p "$RUNNER_TEMP/ccache-debug-upload"
-          misses="$RUNNER_TEMP/ccache-misses.txt"
-          grep -rlE 'Result: (cache_miss|direct_cache_miss|preprocessed_cache_miss)' --include='*.ccache-log' "$debug" > "$misses" || true
-          echo "logs with a miss: $(wc -l < "$misses")"
-          {
-            find "$debug" -name '*.ccache-log' -o -name 'print-stats.txt'
-            sed 's/\.ccache-log$/.ccache-input-text/' "$misses" | while read -r f; do [[ -f "$f" ]] && echo "$f"; done
-          } | tar -czf "$RUNNER_TEMP/ccache-debug-upload/ccache-debug.tgz" -T -
-          ls -l "$RUNNER_TEMP/ccache-debug-upload"
-          [[ "$(stat -c%s "$RUNNER_TEMP/ccache-debug-upload/ccache-debug.tgz")" -le 524288000 ]]
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && steps.ccache-debug.outcome == 'success'
-        continue-on-error: true
-        with:
-          name: ccache-debug
-          path: ${{ runner.temp }}/ccache-debug-upload/
-          if-no-files-found: ignore
-          retention-days: 3
-          compression-level: 0
       - name: Save Android build caches
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         timeout-minutes: 5
@@ -390,7 +311,6 @@ jobs:
           set -euo pipefail
           apk=packages/app/android/app/build/outputs/apk/release/app-release.apk
           bash .github/scripts/release-apk-identity.sh "$apk"
-          echo "bundle_sha256=$(unzip -p "$apk" assets/index.android.bundle | sha256sum | cut -d' ' -f1)" # TEMP(W4/W5)
           mkdir -p "$RUNNER_TEMP/release-android-unsigned"
           cp "$apk" "$RUNNER_TEMP/release-android-unsigned/unsigned.apk"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
