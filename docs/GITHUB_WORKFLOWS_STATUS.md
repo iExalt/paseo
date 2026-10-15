@@ -154,6 +154,17 @@ override. Typical causes and fixes:
 - **Routine dependency cache:** `routine-modules-v1-*`, one rolling entry
   written by `dev` pushes.
 
+## Android build time
+
+A warm APK build spends about 100 s configuring Gradle, then runs Metro and
+`hermesc`. `hermesc` peaks near 14.7 GB on the 16 GB runner and swaps up to
+10 GB for 2–4 minutes, so its time varies by about 2 minutes with the runner's
+disk. ccache already hits every native compile on a warm run. The 0.2.1 dry
+runs showed that neither more Gradle workers (2 or 4) nor dropping
+`-output-source-map` helps: workers saved 30 s at most, and dropping the
+source map left the memory unchanged but grew the bundle by 4.5 MB. Gradle
+stays at `--max-workers=1`.
+
 ## Toolchain
 
 Node is 26.11.1 and npm 11.20.0 everywhere: workflows, `.tool-versions` and
