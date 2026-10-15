@@ -1,5 +1,6 @@
 import path from "node:path";
 import { defineConfig } from "vitest/config";
+import DurationSequencer from "./vitest.sequencer";
 
 export default defineConfig({
   resolve: {
@@ -17,6 +18,7 @@ export default defineConfig({
     globals: true,
     environment: "node",
     setupFiles: [path.resolve(__dirname, "./src/test-utils/vitest-setup.ts")],
+    sequence: { sequencer: DurationSequencer },
     pool: "forks",
     fileParallelism: false,
     // Even two concurrent Git-heavy suites can exhaust Windows test deadlines.
