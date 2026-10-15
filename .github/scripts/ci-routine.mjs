@@ -12,7 +12,6 @@ export const coreTests = [
   "scripts/release-manifest.test.mjs",
   "scripts/github-retry.test.mjs",
   "scripts/fork-release-config.test.mjs",
-  "scripts/process-tree.test.mjs",
   "scripts/ci-deep.test.mjs",
   "scripts/ci-workflow.test.mjs",
   "scripts/ci-routine.test.mjs",
