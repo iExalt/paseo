@@ -9,12 +9,6 @@ const { extractFile } = require("@electron/asar");
 const { WebSocket } = require("ws");
 const assert = require("node:assert/strict");
 const { terminalHookCommand, hasTerminalOutput } = require("./terminal-proof.cjs");
-const { closeProfileWindow, recordStoragePaths } = require("./normal-close.cjs");
-const {
-  captureProcessTree,
-  refreshProcessTree,
-  waitForProcessTreeExit,
-} = require("./process-tree.cjs");
 
 const EXECUTABLE_NAME = "Paseo";
 const SMOKE_TIMEOUT_MS = 60_000;
@@ -295,15 +289,8 @@ function formatLogs({ stdout, stderr, userData, daemonHome }) {
   ].join("\n\n");
 }
 
-async function writeSmokeArtifacts({
-  page,
-  stdout,
-  stderr,
-  userData,
-  daemonHome,
-  error,
-  artifactDir = process.env.PASEO_DESKTOP_SMOKE_ARTIFACT_DIR?.trim(),
-}) {
+async function writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome, error }) {
+  const artifactDir = process.env.PASEO_DESKTOP_SMOKE_ARTIFACT_DIR?.trim();
   if (!artifactDir) {
     return;
   }
@@ -599,8 +586,8 @@ function getCliShimScript(cliShimPath, args) {
   return `${shellQuote(cliShimPath)} ${commandArgs}`;
 }
 
-async function runCliShimCommand({ appPath, cliPath, env, args, label }) {
-  const cliShimPath = cliPath ?? getCliShimPath(appPath);
+async function runCliShimCommand({ appPath, env, args, label }) {
+  const cliShimPath = getCliShimPath(appPath);
   assertExecutable(cliShimPath, "Bundled CLI shim");
 
   return await runShellCommand({
@@ -610,10 +597,9 @@ async function runCliShimCommand({ appPath, cliPath, env, args, label }) {
   });
 }
 
-async function runCliShimJsonCommand({ appPath, cliPath, env, args, label }) {
+async function runCliShimJsonCommand({ appPath, env, args, label }) {
   const result = await runCliShimCommand({
     appPath,
-    cliPath,
     env,
     args: [...args, "--json"],
     label,
@@ -630,11 +616,10 @@ async function runCliShimJsonCommand({ appPath, cliPath, env, args, label }) {
   }
 }
 
-async function smokeCliShim({ appPath, cliPath, env }) {
+async function smokeCliShim({ appPath, env }) {
   console.log("Packaged desktop smoke: running bundled CLI shim daemon status");
   const result = await runCliShimCommand({
     appPath,
-    cliPath,
     env,
     args: ["daemon", "status"],
     label: "Bundled CLI shim daemon status",
@@ -642,23 +627,18 @@ async function smokeCliShim({ appPath, cliPath, env }) {
   assertCleanDaemonStatusOutput(`${result.stdout}\n${result.stderr}`);
 }
 
-async function smokeColdCliDaemonStart({ appPath, cliPath, strict = false, windowsOwned }) {
-  const home = windowsOwned
-    ? fs.mkdtempSync(path.join(windowsOwned.stateRoot, "cold-cli-"))
-    : createTempDir("paseo-smoke-cli-daemon-home-");
+async function smokeColdCliDaemonStart({ appPath }) {
+  const home = createTempDir("paseo-smoke-cli-daemon-home-");
   const pidPath = path.join(home, "paseo.pid");
-  let identities = [];
-  let env;
-  try {
-    const port = await reserveLocalTcpPort();
-    const listen = `127.0.0.1:${port}`;
-    env = createDefaultDaemonEnv({ HOME: home, USERPROFILE: home });
-    configureIsolatedDaemonHome(home, listen);
+  const port = await reserveLocalTcpPort();
+  const listen = `127.0.0.1:${port}`;
+  const env = createDefaultDaemonEnv({ HOME: home, USERPROFILE: home });
+  configureIsolatedDaemonHome(home, listen);
 
+  try {
     console.log("Packaged desktop smoke: cold-starting daemon through bundled CLI shim");
     await runCliShimCommand({
       appPath,
-      cliPath,
       env,
       args: ["daemon", "start", "--home", home],
       label: "Bundled CLI shim cold daemon start",
@@ -676,7 +656,6 @@ async function smokeColdCliDaemonStart({ appPath, cliPath, strict = false, windo
         label: "Cold CLI daemon supervisor",
       });
       const childPids = await waitForChildPids(pidInfo.pid);
-      if (strict) identities = captureProcessTree(pidInfo.pid);
       for (const childPid of childPids) {
         assertDarwinProcessDoesNotUseMainAppExecutable({
           appPath,
@@ -686,56 +665,17 @@ async function smokeColdCliDaemonStart({ appPath, cliPath, strict = false, windo
       }
     }
   } finally {
-    await cleanupColdDaemon({
-      strict,
-      pidPath,
-      appPath,
-      cliPath,
-      env,
-      home,
-      identities,
-      windowsOwned,
-    });
-  }
-}
-
-async function cleanupColdDaemon({
-  strict,
-  pidPath,
-  appPath,
-  cliPath,
-  env,
-  home,
-  identities,
-  windowsOwned,
-}) {
-  try {
     if (fs.existsSync(pidPath)) {
-      if (strict && !windowsOwned && !identities.length) {
-        const { pid } = JSON.parse(fs.readFileSync(pidPath, "utf8"));
-        identities = captureProcessTree(pid);
-      }
-      if (strict && !windowsOwned) identities = refreshProcessTree(identities);
       await runCliShimCommand({
         appPath,
-        cliPath,
         env,
         args: ["daemon", "stop", "--home", home, "--force"],
         label: "Bundled CLI shim cold daemon stop",
       }).catch((error) => {
-        if (strict) throw error;
         console.warn(`Packaged desktop smoke: failed to stop cold CLI daemon: ${error}`);
       });
     }
-    if (strict && !windowsOwned) await waitForProcessTreeExit(identities);
-  } finally {
-    // Windows state is removed by the controller only after the outer Job is empty.
-    if (windowsOwned) {
-      assert.ok(strict);
-    } else if (strict) {
-      const { removeOwnedTree } = await import("./remove-owned-tree.mjs");
-      await removeOwnedTree(home);
-    } else await removeTempDir(home);
+    await removeTempDir(home);
   }
 }
 
@@ -752,7 +692,7 @@ function assertCleanDaemonStatusOutput(output) {
   }
 }
 
-async function smokeCliTerminal({ appPath, cliPath, env }) {
+async function smokeCliTerminal({ appPath, env }) {
   const cwd = createTempDir("paseo-smoke-terminal-cwd-");
   const marker = `paseo-packaged-terminal-smoke-${Date.now()}`;
   const name = `packaged-smoke-${process.pid}-${Date.now()}`;
@@ -762,7 +702,6 @@ async function smokeCliTerminal({ appPath, cliPath, env }) {
     console.log("Packaged desktop smoke: creating terminal through bundled CLI shim");
     const created = await runCliShimJsonCommand({
       appPath,
-      cliPath,
       env,
       args: ["terminal", "create", "--cwd", cwd, "--name", name],
       label: "Bundled CLI shim terminal create",
@@ -774,7 +713,6 @@ async function smokeCliTerminal({ appPath, cliPath, env }) {
 
     const terminals = await runCliShimJsonCommand({
       appPath,
-      cliPath,
       env,
       args: ["terminal", "ls", "--all"],
       label: "Bundled CLI shim terminal ls",
@@ -785,7 +723,6 @@ async function smokeCliTerminal({ appPath, cliPath, env }) {
 
     await runCliShimJsonCommand({
       appPath,
-      cliPath,
       env,
       args: ["terminal", "send-keys", terminalId, terminalHookCommand(marker), "Enter"],
       label: "Bundled CLI shim terminal hook command",
@@ -794,7 +731,6 @@ async function smokeCliTerminal({ appPath, cliPath, env }) {
     for (let attempt = 1; attempt <= TERMINAL_CAPTURE_ATTEMPTS; attempt += 1) {
       const capture = await runCliShimJsonCommand({
         appPath,
-        cliPath,
         env,
         args: ["terminal", "capture", terminalId, "--scrollback"],
         label: "Bundled CLI shim terminal capture",
@@ -815,7 +751,6 @@ async function smokeCliTerminal({ appPath, cliPath, env }) {
     if (terminalId) {
       await runCliShimJsonCommand({
         appPath,
-        cliPath,
         env,
         args: ["terminal", "kill", terminalId],
         label: "Bundled CLI shim terminal kill",
@@ -827,24 +762,22 @@ async function smokeCliTerminal({ appPath, cliPath, env }) {
   }
 }
 
-async function stopCliDaemon({ appPath, cliPath, env }) {
+async function stopCliDaemon({ appPath, env }) {
   console.log("Packaged desktop smoke: stopping daemon through bundled CLI shim");
   await runCliShimCommand({
     appPath,
-    cliPath,
     env,
     args: ["daemon", "stop", "--force"],
     label: "Bundled CLI shim daemon stop",
   });
 }
 
-async function openSmokeWorkspace({ appPath, cliPath, env, page, daemonHome }) {
+async function openSmokeWorkspace({ appPath, env, page, daemonHome }) {
   const projectPath = path.join(daemonHome, "sandbox-smoke-project");
   fs.mkdirSync(projectPath);
   fs.writeFileSync(path.join(projectPath, "README.md"), "Packaged Linux sandbox smoke\n");
   const workspace = await runCliShimJsonCommand({
     appPath,
-    cliPath,
     env,
     args: [
       "workspace",
@@ -918,228 +851,28 @@ function assertLinuxDesktopIdentity(appPath) {
   }
 }
 
-async function prepareSmokeSession(ownedSession) {
-  if (ownedSession) return ownedSession;
-  const session = {
-    userData: createTempDir("paseo-smoke-user-data-"),
-    daemonHome: createTempDir("paseo-smoke-daemon-home-"),
-    port: await reserveLocalTcpPort(),
-  };
-  configureIsolatedDaemonHome(session.daemonHome, `127.0.0.1:${session.port}`);
-  return session;
-}
-
-async function finishSmokeSession({
-  ownedSession,
-  stopDaemonForCleanup,
-  browser,
-  child,
-  userData,
-  daemonHome,
-}) {
-  let cleanupError;
-  if (ownedSession) {
-    try {
-      await stopDaemonForCleanup();
-    } catch (error) {
-      cleanupError = error;
-    }
-  }
-  await browser?.close().catch(() => undefined);
-  if (isRunning(child)) {
-    terminateChild(child);
-    if (!(await waitForChildExit(child))) {
-      terminateChild(child, "SIGKILL");
-      await waitForChildExit(child);
-    }
-  }
-  releaseChildHandles(child);
-  if (ownedSession) {
-    assert.ok(!isRunning(child), "Packaged app process must exit before replacement");
-    if (cleanupError) throw cleanupError;
-  } else {
-    await removeTempDir(userData);
-    await removeTempDir(daemonHome);
-  }
-}
-
-function prepareInstalledLaunch(installedLayout, ownedSession, predecessor) {
-  let appPath, executablePath, cliPath, installedIdentity;
-  assert.equal(process.platform, "linux");
-  assert.notEqual(process.getuid(), 0);
-  assert.ok(ownedSession);
-  const { format, expected, architecture, stableFile } = installedLayout;
-  const { verifyInstalledPackage, digest } = require("./linux-installed-layout.cjs");
-  if (format === "appimage") {
-    executablePath = stableFile;
-    cliPath = path.join(ownedSession.daemonHome, ".local/bin/paseo");
-    assert.equal(digest(stableFile), expected.artifacts.appimage.sha256);
-    if (!predecessor)
-      assert.equal(fs.readlinkSync(cliPath), stableFile, "Retain the old CLI symlink");
-  } else {
-    installedIdentity = verifyInstalledPackage(format, expected, architecture);
-    appPath = "/opt/Paseo";
-    executablePath = "/usr/bin/Paseo";
-    cliPath = getCliShimPath(appPath);
-  }
-  return { appPath, executablePath, cliPath, installedIdentity };
-}
-
-async function verifyInstalledLaunch({
-  installedLayout,
-  installedIdentity,
-  appPath,
-  browser,
-  page,
-  predecessor,
-  cliPath,
-  artifactDir,
-  stdout,
-  stderr,
-}) {
-  if (installedLayout.format === "appimage") {
-    const { verifyMountedPayload } = require("./linux-installed-layout.cjs");
-    installedIdentity = await verifyMountedPayload(
-      browser,
-      installedLayout.stableFile,
-      installedLayout.mountsRoot,
-      installedLayout.expected,
-      installedLayout.architecture,
-    );
-    appPath = installedIdentity.directory;
-    if (predecessor) {
-      const result = await page.evaluate(() => window.paseoDesktop.invoke("install_cli"));
-      assert.equal(result.installed, true);
-    }
-    assert.equal(fs.readlinkSync(cliPath), installedLayout.stableFile);
-    // The fixed predecessor's AppImage link starts Chromium for CLI commands.
-    // Seed/stop it through the verified live payload; candidate proof must use
-    // the untouched installed link, including before the candidate GUI starts.
-    if (predecessor) cliPath = getCliShimPath(appPath);
-  }
-  fs.writeFileSync(
-    path.join(artifactDir, "installed-identity.json"),
-    JSON.stringify(installedIdentity),
-  );
-  const diagnostics = await page.evaluate(() =>
-    window.paseoDesktop.invoke("desktop_sandbox_diagnostics"),
-  );
-  assert.equal(typeof diagnostics.enabled, "boolean");
-  if (diagnostics.enabled)
-    assert.ok(
-      ["user namespaces available", "root-owned SUID helper available"].includes(
-        diagnostics.reason,
-      ),
-    );
-  else
-    assert.ok(
-      diagnostics.reason.startsWith("user namespaces unavailable") ||
-        (installedLayout.format === "appimage" &&
-          diagnostics.reason === "requested by --no-sandbox" &&
-          installedIdentity.namespaceProbe.status > 0),
-    );
-  await assertSandboxState({
-    browser,
-    page,
-    expectedSandbox: diagnostics.enabled,
-    stdout,
-    stderr,
-  });
-  fs.writeFileSync(path.join(artifactDir, "sandbox.json"), JSON.stringify(diagnostics));
-  return { appPath, installedIdentity, cliPath };
-}
-
-async function waitInstalledMountGone(installedIdentity) {
-  if (installedIdentity?.mount) {
-    const mountDeadline = Date.now() + 10000;
-    while (fs.existsSync(installedIdentity.mount.target) && Date.now() < mountDeadline)
-      await delay(100);
-    assert.equal(
-      fs.existsSync(installedIdentity.mount.target),
-      false,
-      "AppImage mount must disappear before replacement",
-    );
-  }
-}
-
-async function reserveDesktopDebugPort(daemonPort) {
-  let port = await reserveLocalTcpPort();
-  for (let attempt = 0; port === daemonPort && attempt < 10; attempt += 1) {
-    port = await reserveLocalTcpPort();
-  }
-  if (port === daemonPort)
-    throw new Error("Failed to reserve distinct TCP ports for the daemon and CDP");
-  return port;
-}
-
-async function finishInstalledAwareSession(options, installedIdentity, primaryError) {
-  const errors = [];
-  try {
-    await finishSmokeSession(options);
-  } catch (error) {
-    errors.push(error);
-  }
-  try {
-    await waitInstalledMountGone(installedIdentity);
-  } catch (error) {
-    errors.push(error);
-  }
-  if (errors.length)
-    throw new AggregateError(
-      [primaryError, ...errors].filter(Boolean),
-      "Packaged smoke cleanup failed",
-    );
-}
-
 async function smokePackagedDesktopApp({
   appPath,
-  executablePath,
-  nixLayout,
-  nixProfile,
-  installedLayout,
-  windowsLayout,
+  executablePath = getExecutablePath(appPath),
   launchArgs = [],
   expectedSandbox,
-  ownedSession,
-  predecessor = false,
-  artifactDir,
-  inspectState = async () => {},
 }) {
-  let cliPath;
-  let installedIdentity;
-  const windowsOwned = await authorizeWindowsLayout(windowsLayout, predecessor, ownedSession);
-  cliPath = windowsLayout?.cliPath;
-  const trackPosixProcesses = shouldTrackPosixProcesses(ownedSession, windowsOwned);
-  if (installedLayout) {
-    ({ appPath, executablePath, cliPath, installedIdentity } = prepareInstalledLaunch(
-      installedLayout,
-      ownedSession,
-      predecessor,
-    ));
-  } else if (nixLayout) {
-    const { nixLinuxLaunchPaths } = require("./nix-linux-layout.cjs");
-    assert.equal(executablePath, undefined, "Nix must launch its canonical wrapper");
-    ({ executablePath, cliPath } = nixLinuxLaunchPaths({
-      desktop: appPath,
-      ...nixLayout,
-      profile: nixProfile,
-    }));
-  } else {
-    executablePath ??= getExecutablePath(appPath);
-    assertLinuxDesktopIdentity(appPath);
-  }
   assertExecutable(executablePath, "Packaged app executable");
-  if (!predecessor)
-    await smokeColdCliDaemonStart({
-      appPath,
-      cliPath,
-      strict: Boolean(ownedSession),
-      windowsOwned,
-    });
+  assertLinuxDesktopIdentity(appPath);
+  await smokeColdCliDaemonStart({ appPath });
 
-  const { userData, daemonHome, port: daemonPort } = await prepareSmokeSession(ownedSession);
-  const cdpPort = await reserveDesktopDebugPort(daemonPort);
+  const userData = createTempDir("paseo-smoke-user-data-");
+  const daemonHome = createTempDir("paseo-smoke-daemon-home-");
+  const daemonPort = await reserveLocalTcpPort();
+  let cdpPort = await reserveLocalTcpPort();
+  for (let attempt = 0; cdpPort === daemonPort && attempt < 10; attempt += 1) {
+    cdpPort = await reserveLocalTcpPort();
+  }
+  if (cdpPort === daemonPort) {
+    throw new Error("Failed to reserve distinct TCP ports for the daemon and CDP");
+  }
   const listen = `127.0.0.1:${daemonPort}`;
+  configureIsolatedDaemonHome(daemonHome, listen);
   const env = createIsolatedDesktopEnv({
     home: daemonHome,
     listen,
@@ -1166,17 +899,13 @@ async function smokePackagedDesktopApp({
   let browser = null;
   let page = null;
   let daemonStopped = false;
-  let daemonIdentity;
-  let primaryError;
 
   const stopDaemonForCleanup = async () => {
     if (daemonStopped) {
       return;
     }
 
-    if (trackPosixProcesses && daemonIdentity) daemonIdentity = refreshProcessTree(daemonIdentity);
-    await stopCliDaemon({ appPath, cliPath, env });
-    if (trackPosixProcesses && daemonIdentity) await waitForProcessTreeExit(daemonIdentity);
+    await stopCliDaemon({ appPath, env });
     daemonStopped = true;
   };
 
@@ -1192,20 +921,6 @@ async function smokePackagedDesktopApp({
     });
     page = await waitForPackagedAppPage(browser, deadline);
     await assertPackagedRendererLoaded(page, deadline);
-    if (installedLayout) {
-      ({ appPath, installedIdentity, cliPath } = await verifyInstalledLaunch({
-        installedLayout,
-        installedIdentity,
-        appPath,
-        browser,
-        page,
-        predecessor,
-        cliPath,
-        artifactDir,
-        stdout,
-        stderr,
-      }));
-    }
     console.log("Packaged desktop smoke: real app renderer and preload bridge loaded");
     const status = await waitForRendererStartedDaemon({
       page,
@@ -1217,49 +932,25 @@ async function smokePackagedDesktopApp({
       deadline,
     });
     console.log("Packaged desktop smoke: renderer-started desktop daemon reported running");
-    if (trackPosixProcesses) {
-      daemonIdentity = captureProcessTree(status.pid);
-    }
-    if (!predecessor) {
-      await assertBuiltinPluginsStarted(listen);
-      console.log("Packaged desktop smoke: every built-in plugin started");
-      await smokeCliShim({ appPath, cliPath, env });
-      await smokeCliTerminal({ appPath, cliPath, env });
-    }
-    await inspectState({ appPath, cliPath, env, page, daemonHome, browser, userData });
+    await assertBuiltinPluginsStarted(listen);
+    console.log("Packaged desktop smoke: every built-in plugin started");
+    await smokeCliShim({ appPath, env });
+    await smokeCliTerminal({ appPath, env });
     if (expectedSandbox !== undefined) {
       await assertSandboxState({ browser, page, expectedSandbox, stdout, stderr });
-      if (!nixProfile) await openSmokeWorkspace({ appPath, cliPath, env, page, daemonHome });
+      await openSmokeWorkspace({ appPath, env, page, daemonHome });
     }
-    if (nixLayout && !nixProfile)
-      await page.screenshot({ path: path.join(artifactDir, "workspace.png") });
-    await writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome, artifactDir });
+    await writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome });
     await stopDaemonForCleanup();
-    await closeProfileWindow({
-      nixProfile,
-      installedFormat: hasInstalledLayout(installedLayout, windowsOwned),
-      ownedSession,
-      page,
-      child,
-      artifactDir,
-      waitForExit: (timeout) => waitForChildExit(child, timeout),
-    });
     console.log(
-      `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; ${predecessor ? "predecessor state seeded" : "CLI shim daemon status and terminal smoke succeeded"}`,
+      `Packaged desktop smoke passed: real renderer and preload loaded; renderer-started desktop daemon pid ${status.pid}, listen ${status.listen}; CLI shim daemon status and terminal smoke succeeded`,
     );
   } catch (error) {
-    primaryError = error;
-    await writeSmokeArtifacts({
-      page,
-      stdout,
-      stderr,
-      userData,
-      daemonHome,
-      error,
-      artifactDir,
-    }).catch((artifactError) => {
-      console.warn(`Packaged desktop smoke: failed to write failure artifacts: ${artifactError}`);
-    });
+    await writeSmokeArtifacts({ page, stdout, stderr, userData, daemonHome, error }).catch(
+      (artifactError) => {
+        console.warn(`Packaged desktop smoke: failed to write failure artifacts: ${artifactError}`);
+      },
+    );
     if (!daemonStopped) {
       try {
         await stopDaemonForCleanup();
@@ -1267,422 +958,22 @@ async function smokePackagedDesktopApp({
     }
     throw error;
   } finally {
-    await finishInstalledAwareSession(
-      {
-        ownedSession,
-        stopDaemonForCleanup,
-        browser,
-        child,
-        userData,
-        daemonHome,
-      },
-      installedIdentity,
-      primaryError,
-    );
-  }
-}
-
-async function inspectUpgradeState({
-  stage,
-  stageDir,
-  appPath,
-  cliPath,
-  env,
-  page,
-  daemonHome,
-  browser,
-  userData,
-  workspaceId,
-  title,
-  theme,
-  storageDiagnostics,
-}) {
-  const recordStorage = async (name) => {
-    const storage = await page.evaluate(() => ({
-      origin: location.origin,
-      theme: JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme ?? null,
-    }));
-    fs.writeFileSync(path.join(stageDir, `${name}-storage.json`), JSON.stringify(storage));
-    return storage;
-  };
-  if (storageDiagnostics) {
-    await recordStorage("entry");
-    await recordStoragePaths({ browser, userData, artifactDir: stageDir });
-  }
-  if (stage === "previous") {
-    const project = path.join(daemonHome, "persisted-project");
-    fs.mkdirSync(project);
-    fs.writeFileSync(path.join(project, "README.md"), "Persisted package-upgrade fixture\n");
-    const workspace = await runCliShimJsonCommand({
-      appPath,
-      cliPath,
-      env,
-      args: ["workspace", "create", "--isolation", "local", "--path", project, "--title", title],
-      label: "Seed predecessor workspace",
-    });
-    workspaceId = workspace.workspaceId;
-    assert.equal(typeof workspaceId, "string");
-  }
-  await page.getByRole("button", { name: title, exact: true }).click();
-  await page.waitForURL((url) => url.pathname.endsWith(`/workspace/${workspaceId}`));
-  await page.screenshot({ path: path.join(stageDir, "workspace.png") });
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  await page.getByRole("button", { name: "Appearance", exact: true }).click();
-  if (stage === "previous") {
-    await page.getByLabel("Theme: System", { exact: true }).click();
-    await page.getByText(theme, { exact: true }).click();
-  }
-  await page.getByLabel(`Theme: ${theme}`, { exact: true }).waitFor({ state: "visible" });
-  if (storageDiagnostics) {
-    await page.waitForFunction(
-      () =>
-        JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "null")?.theme === "pureBlack",
-      undefined,
-      { timeout: 5000 },
-    );
-    await recordStorage("selected");
-  }
-  await page.screenshot({ path: path.join(stageDir, "theme.png") });
-  fs.writeFileSync(
-    path.join(stageDir, "state.json"),
-    JSON.stringify({ appPath, workspaceId, theme }),
-  );
-  return workspaceId;
-}
-
-async function smokePackagedDesktopUpgrade({
-  previousApp,
-  candidateApp,
-  artifactDir,
-  nixPackages,
-}) {
-  assert.equal(process.platform, nixPackages ? "linux" : "darwin");
-  const previous = fs.realpathSync(previousApp);
-  const candidate = fs.realpathSync(candidateApp);
-  for (const app of [previous, candidate])
-    assert.match(
-      app,
-      nixPackages
-        ? /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/
-        : /^\/nix\/store\/[a-z0-9]{32}-[^/]+\/Applications\/Paseo\.app$/,
-    );
-  assert.notEqual(previous, candidate, "Upgrade requires two distinct pinned package outputs");
-  assert.ok(path.isAbsolute(artifactDir));
-  const root = createTempDir("paseo-upgrade-");
-  const profile = path.join(root, "nix-profile");
-  const { changeProfile } = require("./nix-profile.cjs");
-  try {
-    const ownedSession = {
-      userData: path.join(root, "profile"),
-      daemonHome: path.join(root, "daemon"),
-      port: await reserveLocalTcpPort(),
-    };
-    fs.mkdirSync(ownedSession.userData);
-    fs.mkdirSync(ownedSession.daemonHome);
-    configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
-    let workspaceId;
-    const title = "Persisted upgrade workspace";
-    const theme = "Pure black";
-    for (const [stage, appPath] of [
-      ["previous", previous],
-      ["candidate", candidate],
-    ]) {
-      const stageDir = path.join(artifactDir, stage);
-      fs.mkdirSync(stageDir, { recursive: true });
-      const nixLayout = nixPackages?.[stage];
-      if (nixLayout) {
-        const { validateNixLinuxLayout } = require("./nix-linux-layout.cjs");
-        validateNixLinuxLayout({ desktop: appPath, ...nixLayout });
-        if (stage === "candidate") {
-          changeProfile(
-            profile,
-            "remove",
-            [previous, nixPackages.previous.daemon],
-            path.join(stageDir, "profile-before-install.json"),
-          );
-        }
-        changeProfile(
-          profile,
-          "add",
-          [appPath, nixLayout.daemon],
-          path.join(stageDir, "profile.json"),
-        );
+    await browser?.close().catch(() => undefined);
+    if (isRunning(child)) {
+      terminateChild(child);
+      if (!(await waitForChildExit(child))) {
+        terminateChild(child, "SIGKILL");
+        await waitForChildExit(child);
       }
-      await smokePackagedDesktopApp({
-        appPath,
-        nixLayout,
-        nixProfile: nixLayout ? profile : undefined,
-        expectedSandbox: nixLayout ? false : undefined,
-        ownedSession,
-        predecessor: stage === "previous",
-        artifactDir: stageDir,
-        inspectState: async (context) => {
-          workspaceId = await inspectUpgradeState({
-            ...context,
-            stage,
-            stageDir,
-            appPath,
-            workspaceId,
-            title,
-            theme,
-            storageDiagnostics: Boolean(nixLayout),
-          });
-        },
-      });
     }
-    if (nixPackages) {
-      changeProfile(
-        profile,
-        "remove",
-        [candidate, nixPackages.candidate.daemon],
-        path.join(artifactDir, "uninstalled-profile.json"),
-      );
-      for (const binary of ["paseo", "paseo-desktop"])
-        assert.equal(fs.existsSync(path.join(profile, "bin", binary)), false);
-    }
-  } finally {
-    const { removeOwnedTree } = await import("./remove-owned-tree.mjs");
-    await removeOwnedTree(root);
-    assert.equal(fs.existsSync(root), false, "Owned profile generations and state removed");
+    releaseChildHandles(child);
+    await removeTempDir(userData);
+    await removeTempDir(daemonHome);
   }
-}
-
-async function smokeNixLinuxDesktop({ desktop, daemon, version, artifactDir }) {
-  assert.equal(process.platform, "linux");
-  const root = createTempDir("paseo-nix-linux-");
-  try {
-    const ownedSession = {
-      userData: path.join(root, "profile"),
-      daemonHome: path.join(root, "daemon"),
-      port: await reserveLocalTcpPort(),
-    };
-    fs.mkdirSync(ownedSession.userData);
-    fs.mkdirSync(ownedSession.daemonHome);
-    configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
-    await smokePackagedDesktopApp({
-      appPath: desktop,
-      nixLayout: { daemon, version },
-      ownedSession,
-      expectedSandbox: false, // The shipped Nix wrapper explicitly uses --no-sandbox.
-      artifactDir,
-    });
-  } finally {
-    const { removeOwnedTree } = await import("./remove-owned-tree.mjs");
-    await removeOwnedTree(root);
-  }
-}
-
-async function smokeInstalledLinuxStage({
-  expectedSourceSha,
-  manifest,
-  manifestSha256,
-  format,
-  stage,
-  root,
-  artifactDir,
-  stableFile,
-}) {
-  assert.equal(process.platform, "linux");
-  assert.notEqual(process.getuid(), 0);
-  assert.ok(["deb", "rpm", "appimage"].includes(format));
-  assert.ok(["previous", "candidate"].includes(stage));
-  assert.match(manifestSha256, /^[a-f0-9]{64}$/);
-  assert.equal(fs.realpathSync(root), root, "Owned state root must be canonical");
-  assert.equal(fs.statSync(root).uid, process.getuid());
-  const { validateManifest } = require("./linux-installed-layout.cjs");
-  validateManifest(manifest, expectedSourceSha, process.arch);
-  const directory = path.join(root, format);
-  const stateFile = path.join(directory, "previous.json");
-  const stageDir = path.join(artifactDir, format, stage);
-  fs.mkdirSync(stageDir, { recursive: true });
-  let previous;
-  let ownedSession;
-  if (stage === "previous") {
-    assert.equal(fs.existsSync(directory), false, "Do not reuse a prior format session");
-    fs.mkdirSync(directory);
-    ownedSession = {
-      userData: path.join(directory, "profile"),
-      daemonHome: path.join(directory, "daemon"),
-      port: await reserveLocalTcpPort(),
-    };
-    fs.mkdirSync(ownedSession.userData);
-    fs.mkdirSync(ownedSession.daemonHome);
-    configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
-  } else {
-    previous = JSON.parse(fs.readFileSync(stateFile, "utf8"));
-    assert.equal(previous.completed, true, "Predecessor must finish before upgrade");
-    assert.equal(previous.manifestSha256, manifestSha256);
-    assert.equal(previous.format, format);
-    assert.equal(previous.architecture, process.arch);
-    assert.match(previous.workspaceId, /^wks_[a-zA-Z0-9]+$/);
-    ownedSession = previous.ownedSession;
-    assert.equal(ownedSession.userData, path.join(directory, "profile"));
-    assert.equal(ownedSession.daemonHome, path.join(directory, "daemon"));
-    assert.ok(
-      Number.isInteger(ownedSession.port) && ownedSession.port > 0 && ownedSession.port < 65536,
-    );
-    for (const filename of [ownedSession.userData, ownedSession.daemonHome])
-      assert.equal(fs.realpathSync(filename), filename);
-  }
-  const linkIdentity = () => {
-    const filename = path.join(ownedSession.daemonHome, ".local/bin/paseo");
-    const stat = fs.lstatSync(filename);
-    assert.ok(stat.isSymbolicLink());
-    assert.equal(fs.readlinkSync(filename), stableFile);
-    return { filename, target: stableFile, inode: stat.ino, modified: stat.mtimeMs };
-  };
-  if (format === "appimage" && stage === "candidate")
-    assert.deepEqual(linkIdentity(), previous.cliLink);
-  let workspaceId = previous?.workspaceId;
-  await smokePackagedDesktopApp({
-    installedLayout: {
-      format,
-      stage,
-      expected: manifest[stage],
-      architecture: process.arch,
-      stableFile,
-      mountsRoot: process.env.TMPDIR,
-    },
-    ownedSession,
-    predecessor: stage === "previous",
-    artifactDir: stageDir,
-    inspectState: async (context) => {
-      workspaceId = await inspectUpgradeState({
-        ...context,
-        stage,
-        stageDir,
-        workspaceId,
-        title: "Persisted upgrade workspace",
-        theme: "Pure black",
-        storageDiagnostics: true,
-      });
-    },
-  });
-  const cliLink = format === "appimage" ? linkIdentity() : undefined;
-  if (previous && cliLink)
-    assert.deepEqual(cliLink, previous.cliLink, "Upgrade must not recreate the CLI link");
-  const receipt = {
-    completed: true,
-    manifestSha256,
-    format,
-    architecture: process.arch,
-    ownedSession,
-    workspaceId,
-    cliLink,
-    predecessorCli: format === "appimage" ? "verified-mounted-bundled-shim" : undefined,
-  };
-  fs.writeFileSync(path.join(directory, `${stage}.json`), JSON.stringify(receipt));
-  fs.writeFileSync(path.join(stageDir, "stage.json"), JSON.stringify(receipt));
-}
-
-function shouldTrackPosixProcesses(ownedSession, windowsOwned) {
-  return Boolean(ownedSession && !windowsOwned);
-}
-
-function hasInstalledLayout(installedLayout, windowsOwned) {
-  return Boolean(installedLayout || windowsOwned);
-}
-
-async function authorizeWindowsLayout(layout, predecessor, ownedSession) {
-  if (!layout) return undefined;
-  const { verifyWindowsJob } = await import("../../../.github/scripts/windows-job-identity.mjs");
-  const identity = verifyWindowsJob();
-  assert.equal(identity.stage, predecessor ? "runtime-previous" : "runtime-candidate");
-  assert.ok(ownedSession);
-  const expectedRoot = path.join(
-    process.env.RUNNER_TEMP,
-    `paseo-windows-products-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`,
-    "state",
-  );
-  assert.equal(layout.stateRoot, expectedRoot);
-  return { ...identity, stateRoot: expectedRoot };
-}
-
-async function smokeInstalledWindowsStage({
-  expectedSourceSha,
-  stage,
-  root,
-  appPath,
-  artifactDir,
-}) {
-  assert.match(expectedSourceSha, /^[a-f0-9]{40}$/);
-  const { verifyWindowsJob } = await import("../../../.github/scripts/windows-job-identity.mjs");
-  assert.equal(verifyWindowsJob().stage, `runtime-${stage}`);
-  assert.ok(["previous", "candidate"].includes(stage));
-  const stateRoot = path.join(root, "state");
-  const previousFile = path.join(stateRoot, "previous.json");
-  const previous = stage === "candidate" ? JSON.parse(fs.readFileSync(previousFile)) : null;
-  const ownedSession = previous?.ownedSession ?? {
-    userData: path.join(stateRoot, "profile"),
-    daemonHome: path.join(stateRoot, "daemon"),
-    port: await reserveLocalTcpPort(),
-  };
-  assert.equal(ownedSession.userData, path.join(stateRoot, "profile"));
-  assert.equal(ownedSession.daemonHome, path.join(stateRoot, "daemon"));
-  if (!previous) {
-    fs.mkdirSync(ownedSession.userData);
-    fs.mkdirSync(ownedSession.daemonHome);
-    configureIsolatedDaemonHome(ownedSession.daemonHome, `127.0.0.1:${ownedSession.port}`);
-  } else {
-    assert.equal(previous.completed, true);
-    assert.equal(previous.sourceSha, expectedSourceSha);
-    assert.equal(previous.architecture, process.arch);
-  }
-  const cliPath = path.join(ownedSession.daemonHome, ".local", "bin", "paseo.cmd");
-  const cliIdentity = () => {
-    const stat = fs.lstatSync(cliPath);
-    assert.ok(stat.isFile() && !stat.isSymbolicLink());
-    const contents = fs.readFileSync(cliPath, "utf8");
-    assert.ok(contents.includes(`set "BUNDLED_CLI=${getCliShimPath(appPath)}"`));
-    return { contents, modified: stat.mtimeMs, bytes: stat.size };
-  };
-  if (previous) assert.deepEqual(cliIdentity(), previous.cli);
-  let workspaceId = previous?.workspaceId;
-  fs.mkdirSync(artifactDir, { recursive: true });
-  await smokePackagedDesktopApp({
-    appPath,
-    windowsLayout: { stateRoot, cliPath },
-    ownedSession,
-    predecessor: stage === "previous",
-    artifactDir,
-    inspectState: async (context) => {
-      if (!previous) {
-        const result = await context.page.evaluate(() => window.paseoDesktop.invoke("install_cli"));
-        assert.equal(result.installed, true);
-        cliIdentity();
-      }
-      workspaceId = await inspectUpgradeState({
-        ...context,
-        stage,
-        stageDir: artifactDir,
-        workspaceId,
-        title: "Persisted upgrade workspace",
-        theme: "Pure black",
-        storageDiagnostics: true,
-      });
-    },
-  });
-  const cli = cliIdentity();
-  if (previous)
-    assert.deepEqual(cli, previous.cli, "Upgrade must preserve the original CLI trampoline");
-  const receipt = {
-    completed: true,
-    sourceSha: expectedSourceSha,
-    architecture: process.arch,
-    ownedSession,
-    workspaceId,
-    cli,
-  };
-  fs.writeFileSync(path.join(stateRoot, `${stage}.json`), JSON.stringify(receipt), { flag: "wx" });
-  fs.writeFileSync(path.join(artifactDir, "stage.json"), JSON.stringify(receipt));
 }
 
 module.exports = {
-  smokeInstalledWindowsStage,
-  smokeInstalledLinuxStage,
-  smokeNixLinuxDesktop,
   smokePackagedDesktopApp,
-  smokePackagedDesktopUpgrade,
 };
 
 if (require.main === module) {
