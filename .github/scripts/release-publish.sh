@@ -33,7 +33,7 @@ create() {
     echo "::warning::GitHub returned HTTP $code (attempt $attempt): $(head -c 2000 "$body" 2>/dev/null)" >&2
     grep -iE '^(retry-after|x-ratelimit-[a-z]+|x-github-request-id):' "$response" >&2 || true
     [[ "$attempt" == 1 && ( "$code" == 403 || "$code" == 429 ) ]] || return 1
-    sleep "$(awk -F': *' 'tolower($1) == "retry-after" { print $2 + 0 }' "$response" | grep -m1 -E '^[0-9]+$' || echo 60)"
+    sleep "$(awk -F': *' 'tolower($1) == "retry-after" { delay = $2 + 0 } END { print delay > 0 ? delay : 60 }' "$response")"
   done
 }
 
