@@ -172,35 +172,21 @@ Its FCM V1 service-account credential must be assigned to Android app
 `sh.paseo.iexalt` separately from the client config. The service-account key
 must remain server-side and must never be bundled into the app.
 
-## Trusted-dev fork APK
+## Fork release APK
 
-`.github/workflows/fork-builds.yml` starts paired builds on build-relevant pushes
-to `dev` by `iExalt` in `iExalt/paseo`. It calls the reusable
-`fork-android-apk.yml` lane with the same immutable source SHA and release sequence
-as the Mac lane. The caller assigns `200000 + GITHUB_RUN_NUMBER` as the Android
-code and shared sequence; the floor keeps this new workflow above the initial
-standalone candidate's code 100001. Preserve this caller's counter identity or
-explicitly raise the floor when replacing it. The Android lane verifies package,
-ABI, version code, and
-non-debuggable manifest before signing. Reruns of one workflow keep the same
-version code. The final metadata records the source SHA, build run ID/number/
-attempt, and signing run ID/attempt; artifact names include the signing
-attempt, including when a failed signer job is rerun against the same candidate.
-The signing job has no
-checkout and verifies the approved fork certificate before uploading the final
-APK, `SHA256SUMS`, and build metadata. The unsigned candidate expires after one
-day and must not be distributed; the final artifact expires after seven days.
+`.github/workflows/release.yml` builds the fork APK (`APP_VARIANT=fork`, arm64)
+at the release commit. Its version code is `forkAndroidVersionCode` in
+`packages/protocol/src/fork-version.ts`: the package version plus a fixed
+200000 offset that keeps same-certificate installs above legacy code 200008.
+Never derive it from run numbers or release history.
 
-The workflow requires repository secrets `PASEO_FORK_GOOGLE_SERVICES_JSON`,
-`PASEO_FORK_SIGNING_KEY_PKCS8_PEM`, and `PASEO_FORK_SIGNING_CERT_PEM`. The build
-job validates the client config against the pinned `paseo-18157` project and
-`sh.paseo.iexalt`; it never receives signing material. The separate signer job
-receives only the PKCS#8 key and certificate, not the Firebase Admin SDK key.
-The Admin SDK key stays server-side for Expo FCM V1. This workflow creates a
-candidate artifact only. The paired completion job checks both platform artifacts
-and writes a normalized candidate manifest; promotion, publication, and install/device validation
-are separate steps. Any future promotion must select an exact source SHA and
-run attempt and reject version codes at or below the last published fork code.
+The build job receives only `PASEO_FORK_GOOGLE_SERVICES_JSON`, validated against
+project `paseo-18157` and `sh.paseo.iexalt`. A separate signer job receives only
+`PASEO_FORK_SIGNING_KEY_PKCS8_PEM` and `PASEO_FORK_SIGNING_CERT_PEM`, and fails
+unless the APK's single signer matches `FORK_ANDROID_CERTIFICATE_SHA256`, the
+certificate clients pin. The Firebase Admin SDK key stays server-side for Expo
+FCM V1. See [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md) for the release
+procedure.
 
 ## Running on an emulator against a worktree daemon
 

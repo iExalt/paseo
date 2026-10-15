@@ -21,13 +21,10 @@ This is an npm workspace monorepo:
 
 Active fork-specific plans and notes live at the top level of `docs/`; completed campaigns live in `docs/complete-campaigns/`. Paseo's bundled documentation and evidence live in `docs/upstream/`.
 
-The confirmed [GitHub workflows plan](docs/GITHUB_WORKFLOWS_PLAN.md),
-[roadmap](docs/GITHUB_WORKFLOWS_ROADMAP.md), and
-[execution script](docs/GITHUB_WORKFLOWS_SCRIPT.md) describe the new fork CI and
-release campaign. [Project status](docs/GITHUB_WORKFLOWS_STATUS.md) records phase
-approval and current evidence; later phases retain their approval gates. When executing a
-confirmed roadmap, tick each completed step and its plan gate in the same commit
-with the required evidence.
+[GitHub workflows](docs/GITHUB_WORKFLOWS_STATUS.md) is the operating doc for fork
+CI and releases: what each workflow does, the release procedure, secrets, caches
+and recovery. The superseded campaign that built the old candidate pipeline is in
+`docs/complete-campaigns/GITHUB_WORKFLOWS_*.md`.
 
 The [completed fork automated-update plan](docs/complete-campaigns/PASEO_FORK_AUTO_UPDATE_PLAN.md) records
 the macOS Nix and Android APK delivery decisions, feasibility probe, and device
