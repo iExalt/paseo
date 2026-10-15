@@ -50,26 +50,32 @@ export async function startNpmRegistry(packages: FixturePackage[]) {
     `registry=${url}/\n//127.0.0.1:${address.port}/:_authToken=fixture-token\ncache=${root}/cache\n`,
   );
   try {
-    for (const [index, pkg] of packages.entries()) {
-      const directory = path.join(root, String(index));
-      await mkdir(directory);
-      const manifest = {
-        name: pkg.name,
-        version: pkg.version,
-        dependencies: pkg.dependencies,
-        peerDependencies: pkg.peerDependencies,
-        scripts: pkg.scripts,
-      };
-      await writeFile(path.join(directory, "package.json"), JSON.stringify(manifest));
-      for (const [file, content] of Object.entries(pkg.files)) {
-        await mkdir(path.dirname(path.join(directory, file)), { recursive: true });
-        await writeFile(path.join(directory, file), content);
-      }
-      const { stdout } = await execCommand("npm", ["pack", "--ignore-scripts", "--json"], {
-        cwd: directory,
-      });
-      const packed: Array<{ filename: string }> = JSON.parse(stdout);
-      const artifact = await readFile(path.join(directory, packed[0].filename));
+    // Pack concurrently, then publish in order so later fixtures win dist-tags.
+    const packed = await Promise.all(
+      packages.map(async (pkg, index) => {
+        const directory = path.join(root, String(index));
+        await mkdir(directory);
+        const manifest = {
+          name: pkg.name,
+          version: pkg.version,
+          dependencies: pkg.dependencies,
+          peerDependencies: pkg.peerDependencies,
+          scripts: pkg.scripts,
+        };
+        await writeFile(path.join(directory, "package.json"), JSON.stringify(manifest));
+        for (const [file, content] of Object.entries(pkg.files)) {
+          await mkdir(path.dirname(path.join(directory, file)), { recursive: true });
+          await writeFile(path.join(directory, file), content);
+        }
+        const { stdout } = await execCommand("npm", ["pack", "--ignore-scripts", "--json"], {
+          cwd: directory,
+        });
+        const [{ filename }]: Array<{ filename: string }> = JSON.parse(stdout);
+        return { manifest, artifact: await readFile(path.join(directory, filename)) };
+      }),
+    );
+    for (const [index, { manifest, artifact }] of packed.entries()) {
+      const pkg = packages[index];
       const artifactPath = `/artifacts/${index}.tgz`;
       artifacts.set(artifactPath, artifact);
       const published = {
