@@ -103,6 +103,7 @@ describe("Nix desktop About update row", () => {
       busy: null,
       error: null,
       failed: false,
+      flowActive: false,
       lastCheckedAt: null,
     });
     harness.daemonStatus.mockResolvedValue({ status: "stopped" });

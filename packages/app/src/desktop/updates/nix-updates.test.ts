@@ -113,6 +113,7 @@ describe("Nix update operations", () => {
       busy: null,
       error: null,
       failed: false,
+      flowActive: false,
       lastCheckedAt: null,
     });
     harness.daemonStatus.mockResolvedValue(daemon);
@@ -147,6 +148,16 @@ describe("Nix update operations", () => {
       pid: 42,
       startedAt: daemon.startedAt,
     });
+  });
+
+  it("runs one flow when the sidebar and Settings both start it", async () => {
+    await checkForNixUpdate({ userInitiated: false });
+    harness.confirmDialog.mockResolvedValue(true);
+
+    await Promise.all([confirmAndRunNixUpdate(), confirmAndRunNixUpdate()]);
+
+    expect(harness.confirmDialog).toHaveBeenCalledOnce();
+    expect(harness.bridge.restart).toHaveBeenCalledOnce();
   });
 
   it("asks again when an agent starts while the update is applied", async () => {

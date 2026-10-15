@@ -58,6 +58,7 @@ export function NixDesktopAppUpdateRow({ appVersion = null }: { appVersion?: str
   const { t } = useTranslation();
   const phase = useNixUpdatePhase();
   const busy = useNixUpdateStore((state) => state.busy);
+  const flowActive = useNixUpdateStore((state) => state.flowActive);
   const error = useNixUpdateStore((state) => state.error);
   const lastCheckedAt = useNixUpdateStore((state) => state.lastCheckedAt);
   const runningVersion = useNixUpdateStore((state) => state.result?.running.version ?? null);
@@ -91,7 +92,7 @@ export function NixDesktopAppUpdateRow({ appVersion = null }: { appVersion?: str
       <Button
         variant="secondary"
         size="sm"
-        disabled={busy !== null || isNixInvalid}
+        disabled={busy !== null || flowActive || isNixInvalid}
         onPress={onPress}
         testID="nix-desktop-update-action"
       >

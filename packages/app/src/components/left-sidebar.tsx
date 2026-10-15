@@ -530,9 +530,10 @@ function SidebarUpdateButton() {
   const phase = useNixUpdatePhase();
   const busy = useNixUpdateStore((state) => state.busy);
   const failed = useNixUpdateStore((state) => state.failed);
+  const flowActive = useNixUpdateStore((state) => state.flowActive);
   const onPress = useCallback(() => {
-    if (!busy) void handleNixUpdatePress();
-  }, [busy]);
+    if (!busy && !flowActive) void handleNixUpdatePress();
+  }, [busy, flowActive]);
 
   if (!isSidebarUpdateVisible(phase.kind, failed)) {
     return null;

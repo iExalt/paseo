@@ -71,7 +71,21 @@ function confirmRestart(input: {
  * Confirms, applies any pending update, and restarts Paseo with its daemon.
  * If an agent starts while the update downloads, asks again before restarting.
  */
-export async function confirmAndRunNixUpdate(): Promise<void> {
+export function confirmAndRunNixUpdate(): Promise<void> {
+  // The sidebar and Settings can both start this; a second restart would find the
+  // daemon already stopped and fail while the app quits.
+  if (inFlight) return inFlight;
+  useNixUpdateStore.setState({ flowActive: true });
+  inFlight = runUpdateFlow().finally(() => {
+    inFlight = null;
+    useNixUpdateStore.setState({ flowActive: false });
+  });
+  return inFlight;
+}
+
+let inFlight: Promise<void> | null = null;
+
+async function runUpdateFlow(): Promise<void> {
   const phase = getNixUpdatePhase();
   if (phase.kind !== "available" && phase.kind !== "ready" && phase.kind !== "restart") return;
   const restartOnly = phase.kind === "restart";
@@ -87,11 +101,13 @@ export async function confirmAndRunNixUpdate(): Promise<void> {
   if (!restartOnly && !(await applyNixUpdate())) return;
 
   const target = restartOnly ? confirmedTarget : await captureRestartTarget();
+  const applied = getNixUpdatePhase();
+  // A background download can land a newer release while the dialog is open.
+  const version = applied.kind === "restart" ? applied.release.version : phase.release.version;
   const confirmedIds = new Set(confirmedTarget.agents.map((agent) => agent.id));
-  if (
-    target.agents.some((agent) => !confirmedIds.has(agent.id)) &&
-    !(await confirmRestart({ version: phase.release.version, restartOnly: true, target }))
-  ) {
+  const changed =
+    version !== phase.release.version || target.agents.some((agent) => !confirmedIds.has(agent.id));
+  if (changed && !(await confirmRestart({ version, restartOnly: true, target }))) {
     return;
   }
   await restartIntoNixUpdate(target.daemon);
