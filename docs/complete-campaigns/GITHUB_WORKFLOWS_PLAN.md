@@ -1,8 +1,14 @@
 # GitHub workflows plan
 
+> **Superseded 2026-10-15.** The owner replaced the release candidate pipeline
+> with `release.yml` (builds plus smoke).
+> The status and evidence this document cites were in `GITHUB_WORKFLOWS_STATUS.md`
+> before `ci: delete the retired release candidate pipeline`; read them in git
+> history. Current operation: [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md).
+
 Status: **Phases A–C / G0–G4 and D1/D2 / G5 complete; stable 0.1.0 published; personal migration / G6 remains, 2026-10-13**.
 
-Current evidence and remaining gates: [project status](GITHUB_WORKFLOWS_STATUS.md).
+Current evidence and remaining gates: [project status](../GITHUB_WORKFLOWS_STATUS.md).
 
 This is the decision ledger for a clean-slate fork CI and release campaign. The
 [roadmap](GITHUB_WORKFLOWS_ROADMAP.md) and [script](GITHUB_WORKFLOWS_SCRIPT.md)
@@ -79,23 +85,23 @@ the release PR. PR success alone is not proof of the final packaged revision.
 - GitHub reports a public repository with default branch `dev`. No live
   configuration was modified during planning. `docs/PASEO_WISHLIST.md` has an
   unrelated local edit and must not be included in campaign commits.
-- [Completed delivery campaign](complete-campaigns/PASEO_FORK_AUTO_UPDATE_PLAN.md)
+- [Completed delivery campaign](PASEO_FORK_AUTO_UPDATE_PLAN.md)
   records prior signed Mac/Android delivery and recovery evidence. Those are
   historical proofs, not validation of the new matrix.
-- [Release manifest](../packages/protocol/src/release-manifest.ts) validates
+- [Release manifest](../../packages/protocol/src/release-manifest.ts) validates
   a Mac/Android pair and tags containing package version, sequence, and source
-  SHA. [Promotion](../scripts/promote-fork-release.mjs) already validates
+  SHA. [Promotion](../../scripts/promote-fork-release.mjs) already validates
   monotonic releases, artifact provenance, drafts, and publication. Preserve
   its useful guarantees while replacing manual orchestration.
 - GitHub's latest three releases inspected during grounding were fork sequences
   200008, 200007, and 200006. Sequence 200008 is a historical floor, not a value
   to hardcode; implementation must inspect current published state.
-- [Electron packaging](../packages/desktop/electron-builder.yml) declares NSIS
+- [Electron packaging](../../packages/desktop/electron-builder.yml) declares NSIS
   for both Windows architectures and Linux formats, but also unselected ZIP and
   tarball outputs. Configuration presence does not prove these builds work.
-- [Nix flake](../flake.nix) declares both Linux architectures; each still needs
+- [Nix flake](../../flake.nix) declares both Linux architectures; each still needs
   real build/import/runtime evidence.
-- [Mobile testing](upstream/mobile-testing.md) has native scripts and harnesses,
+- [Mobile testing](../upstream/mobile-testing.md) has native scripts and harnesses,
   including terminal and keyboard flows. Headless CI setup and the shipped
   ARM64 APK's install/runtime proof remain unverified. An x86 emulator test
   artifact must never be reported as proof of the shipped ARM64 APK.
@@ -348,20 +354,20 @@ state; installer success alone is insufficient.
       metadata interface, bot event route, zero-cost transport, and native-architecture
       proof strategy are recorded. Remaining unsupported requirements are reported
       for a decision, not represented as green. Initial version is selected.
-      Verified contracts and native run receipts: [A1 status](GITHUB_WORKFLOWS_STATUS.md).
+      Verified contracts and native run receipts: [A1 status](../GITHUB_WORKFLOWS_STATUS.md).
 - [x] **G1: Establish shared routine CI.** Gate: real PR/dev events and rebased
       candidate use one entrypoint; injected failure blocks rebase publication;
       measured command/baseline/budget are accepted, stable checks are visible.
       Verified at `72300136d`: complete PR/dev gates 4m15s/4m18s; live timing
       enforcement and atomic rebase fixtures pass. Two-minute stretch unmet;
-      runner-work tradeoff and receipts are in [status](GITHUB_WORKFLOWS_STATUS.md).
+      runner-work tradeoff and receipts are in [status](../GITHUB_WORKFLOWS_STATUS.md).
 - [x] **G2: Verify critical journeys.** Gate: selected deep checks run on a safe
       test PR and are callable by exact SHA; G4 proves real release-please PR routing.
       Deterministic fixtures, assertions,
       bounded diagnostics and native-vs-emulator limits are explicit.
       Accepted browser negative/restored, Electron, CLI/relay/provider and
       native Android `38107787799` evidence is reconciled in
-      [status](GITHUB_WORKFLOWS_STATUS.md).
+      [status](../GITHUB_WORKFLOWS_STATUS.md).
 - [x] **G3: Verify every package.** Gate: each format/architecture in §1 is built
       from the candidate and passes installation/import, startup, terminal/daemon
       and disposable-state upgrade checks appropriate to it; installed legacy-client
@@ -371,7 +377,7 @@ state; installer success alone is insufficient.
       `db2316365`, Windows ARM/x64 `b065b31e5` and x64 cache proof `c787e125c`.
       This is contributor-based closure, not a universal same-SHA release matrix;
       exact initial 0.1.0 release coordination remains G5/G6. Receipts and limitations
-      are in [status](GITHUB_WORKFLOWS_STATUS.md).
+      are in [status](../GITHUB_WORKFLOWS_STATUS.md).
 - [x] **G4: Prepare compatible releases automatically.** Gate: a real bot-created
       release PR triggers required checks; independent semver, workspace versions,
       new-client semver ordering and manual-migration fixtures pass; no public release is created.
@@ -379,13 +385,13 @@ state; installer success alone is insufficient.
       proposals #65 (0.1.0) and #67 (0.1.1), current-head routine/deep proofs,
       forged identity and stale checks rejected, and exact rehearsal rebase
       merge/tree verified. Campaign refs removed; publication and installed
-      migration remain G5/G6. See [status](GITHUB_WORKFLOWS_STATUS.md) for receipts.
+      migration remain G5/G6. See [status](../GITHUB_WORKFLOWS_STATUS.md) for receipts.
 - [x] **G5: Enforce complete publication.** Gate: a missing/failed platform,
       stale SHA, wrong signature, partial upload, concurrent or retried attempt cannot
       publish. The all-green same-SHA rehearsal succeeds without making assets public.
       Verified 2026-10-13 by run `38420127176` attempt 1 at `dba97434b`: signed
       14-cell / 32-asset draft `411807759`, independent byte verification, strict
-      cleanup and unchanged public inventory. Failure mapping is in [status](GITHUB_WORKFLOWS_STATUS.md).
+      cleanup and unchanged public inventory. Failure mapping is in [status](../GITHUB_WORKFLOWS_STATUS.md).
 - [ ] **G6: Deliver and operate the first release.** Gate: explicit publication
       authorization, complete GH assets, download verification, and actual legacy
       Mac/Android manual migration/state/recovery evidence; all selected platform proofs,

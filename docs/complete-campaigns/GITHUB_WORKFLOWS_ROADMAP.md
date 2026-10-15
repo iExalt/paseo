@@ -1,7 +1,13 @@
 # GitHub workflows roadmap
 
+> **Superseded 2026-10-15.** The owner replaced the release candidate pipeline
+> with `release.yml` (builds plus smoke).
+> The status and evidence this document cites were in `GITHUB_WORKFLOWS_STATUS.md`
+> before `ci: delete the retired release candidate pipeline`; read them in git
+> history. Current operation: [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md).
+
 Status: **Phases A–C / G0–G4 complete; Phase D1/D2 / G5 complete; D3 active / G6 remains, 2026-10-13**.
-Current evidence: [project status](GITHUB_WORKFLOWS_STATUS.md).
+Current evidence: [project status](../GITHUB_WORKFLOWS_STATUS.md).
 The [plan](GITHUB_WORKFLOWS_PLAN.md) owns scope, decisions and gates. The
 [script](GITHUB_WORKFLOWS_SCRIPT.md) groups these steps into execution threads.
 When a step passes, tick it and its plan gate in the same scoped commit with a
@@ -53,7 +59,7 @@ set of end-to-end journeys at release gates. Existing suite names do not establi
 their fidelity; audit tests that hide integration or network work in unit suites.
 
 Baseline: the measured `63315404a` cold/warm pair is recorded in
-[project status](GITHUB_WORKFLOWS_STATUS.md). The user rejected 15 minutes and
+[project status](../GITHUB_WORKFLOWS_STATUS.md). The user rejected 15 minutes and
 requires the complete blocking PR gate in under five minutes, with two minutes
 preferred; parallel optimization is authorized, with total runner work reported.
 Step 2 records one cold and one warm
@@ -84,7 +90,7 @@ explicitly required before publication, even if absent from routine CI.
     representative proof per unknown lane, or a recorded blocker requiring
     explicit scope resolution. Free-only execution controls verified.
   - Ticks: G0; W1.
-  - Evidence: [A1 native receipts and contracts](GITHUB_WORKFLOWS_STATUS.md);
+  - Evidence: [A1 native receipts and contracts](../GITHUB_WORKFLOWS_STATUS.md);
     Windows requires the custom ARM64 binding and colocated DLL layout; hosted
     Android requires the pinned ashmem module and software-rendered container.
     Full candidate packages and lifecycle/upgrade checks remain G3.
@@ -131,7 +137,7 @@ explicitly required before publication, even if absent from routine CI.
   - Ticks: G2; W4.
   - Verified: browser positive/negative/restored runs, final deep run
     `10591c783`, and native Android `38107787799`; receipts and hosted-runtime
-    limits are in [status](GITHUB_WORKFLOWS_STATUS.md).
+    limits are in [status](../GITHUB_WORKFLOWS_STATUS.md).
 
 - [x] **5. Preserve Mac/Android candidate packages.** Adapt existing reusable
       lanes to the candidate interface. Preserve keys, production identities,
@@ -166,7 +172,7 @@ explicitly required before publication, even if absent from routine CI.
     Windows x64 repeated product proof plus fresh-runner predecessor-cache transfer
     passed in `38180882993` at `c787e125c`. Contributor-based integration accepted;
     exact release-SHA coordination, ARM cache transport and full-hit timing remain
-    separate later gates/measurements, as recorded in [status](GITHUB_WORKFLOWS_STATUS.md).
+    separate later gates/measurements, as recorded in [status](../GITHUB_WORKFLOWS_STATUS.md).
 
 - [x] **7. Implement independent versioning and updater transition.** Apply
       step 1's settled interface and initial 0.1.0 version. Synchronize workspace,
@@ -230,7 +236,7 @@ explicitly required before publication, even if absent from routine CI.
     all 14 cells and ten verification lanes. Draft `411807759` has exactly 32
     verified assets at the G5 gate; D3 subsequently published those exact bytes as
     stable `paseo-v0.1.0`. Failure/recovery mapping, signatures,
-    timings and unchanged public/cache inventories are in [status](GITHUB_WORKFLOWS_STATUS.md).
+    timings and unchanged public/cache inventories are in [status](../GITHUB_WORKFLOWS_STATUS.md).
 
 - [ ] **11. Publish first approved release and hand off operation.** Publish
       the reviewed candidate without rebuilding different bytes. Verify downloads
