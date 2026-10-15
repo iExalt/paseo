@@ -157,6 +157,7 @@ if (operation === "init") {
   } else throw new Error(`Unknown product build operation: ${operation}`);
 }
 
+// Bump predecessorFormat when this changes the predecessor's bytes.
 function packageStage(stage, owner) {
   const source = stage === "candidate" ? repository : previousSource;
   const expectedSha = stage === "candidate" ? owner.sourceSha : previousSha;
