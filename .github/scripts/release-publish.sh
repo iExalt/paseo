@@ -17,6 +17,8 @@ headers="$RUNNER_TEMP/github-api-headers"
 (umask 077 && printf 'Authorization: Bearer %s\nX-GitHub-Api-Version: 2022-11-28\n' "${GH_TOKEN:?}" > "$headers")
 trap 'rm -f "$headers"' EXIT
 request() { curl --fail-with-body --silent --show-error --retry 3 --header "@$headers" "$@"; }
+# Creating calls are not retried: a retried 5xx that had succeeded would duplicate them.
+create() { curl --fail-with-body --silent --show-error --header "@$headers" "$@"; }
 
 expected_assets() {
   printf '%s\n' paseo-release-manifest.json paseo-release-manifest.sig \
@@ -38,12 +40,12 @@ draft() {
     --rawfile body "$RUNNER_TEMP/release-notes.md" \
     '{tag_name: $tag, target_commitish: $sha, name: $name, body: $body,
       draft: true, prerelease: false, make_latest: "false"}' \
-    | request --request POST --data-binary @- "$api/releases" | jq -er .id)"
+    | create --request POST --data-binary @- "$api/releases" | jq -er .id)"
   echo "release_id=$id" >> "$GITHUB_OUTPUT"
   echo "Draft release $id ($TAG)"
 
   while IFS= read -r file; do
-    request --request POST --header "Content-Type: application/octet-stream" \
+    create --request POST --header "Content-Type: application/octet-stream" \
       --data-binary "@$ASSETS/$file" \
       "https://uploads.github.com/repos/$repo/releases/$id/assets?name=$file" > /dev/null
     echo "Uploaded $file"

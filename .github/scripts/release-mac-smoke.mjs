@@ -72,15 +72,34 @@ async function main() {
   await extractNixCacheTar(join(directory, `${base}.tar`), cache);
   run("nix", localCacheCopyArgs(cache, outputPath));
   run("nix", localCacheCopySignaturesArgs(cache, outputPath));
-  run("nix", [
-    "store",
-    "verify",
-    "--recursive",
-    "--sigs-needed",
-    "1",
-    ...trustOnlyRelease,
-    outputPath,
-  ]);
+  // A daemon that ignores client trust options would fall back to its own keys,
+  // so first prove the options bind: another key must not verify the closure.
+  const verify = (trusted) =>
+    spawnSync(
+      "nix",
+      [
+        "store",
+        "verify",
+        "--recursive",
+        "--sigs-needed",
+        "1",
+        ...trustOnlyRelease.slice(0, -1),
+        trusted,
+        outputPath,
+      ],
+      { encoding: "utf8", timeout: 600_000 },
+    );
+  const secret = run("nix", ["key", "generate-secret", "--key-name", "paseo-negative-control"]);
+  const other = execFileSync("nix", ["key", "convert-secret-to-public"], {
+    input: secret,
+    encoding: "utf8",
+  }).trim();
+  const control = verify(other);
+  assert.notEqual(control.status, 0, "The closure verified under an unrelated key");
+  const real = verify(NIX_RELEASE_PUBLIC_KEY);
+  assert.equal(real.status, 0, `Release key verification failed: ${real.stderr}`);
+  for (const result of [control, real])
+    assert.doesNotMatch(result.stderr, /ignoring the client-specified setting/);
   const imported = Object.entries(
     JSON.parse(run("nix", ["path-info", "--json", "--recursive", ...trustOnlyRelease, outputPath])),
   )
