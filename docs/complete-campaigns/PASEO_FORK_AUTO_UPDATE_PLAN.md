@@ -566,8 +566,8 @@ before changing the active generation. Import known store paths directly; do not
 run a source build as a hidden fallback. Reject wrong platforms, malformed paths,
 unsafe archive entries, stale release sequences, and partial manifests.
 
-A dedicated profile owns the app version and retains its generations as GC
-roots. Home Manager may provide an optional stable launcher, but must not also
+A dedicated profile owns the app version and roots the generations recovery can
+select. Home Manager may provide an optional stable launcher, but must not also
 pin the app version. Determine Nix daemon trust configuration during bootstrap;
 do not disable `require-sigs` or grant broad trusted-user privileges as a shortcut.
 
@@ -607,8 +607,16 @@ readback retained signature enforcement and root-only trusted users.
 The isolated two-existing-output fixture proved that `nix-env --set` creates a
 profile generation linked directly to the exact store output, retains the prior
 generation, and rolls back to it. No user-environment derivation was needed;
-builders, substitutes, and local builds are disabled. All generations remain
-rooted, including any running version; no automatic GC or process restart occurs.
+builders, substitutes, and local builds are disabled. After each switch the
+updater keeps only the active generation and the high-water release, plus the
+newest older generation while those two coincide, so after an upgrade you can
+roll back once and after a rollback you can reactivate. It deletes every other
+profile generation, older staging generations, and the dead pre-migration staging
+profile. No automatic GC or process restart occurs, and Nix GC never collects a
+store path a running app still holds. After each switch the updater also registers the active `Paseo.app` with LaunchServices
+and unregisters every other Paseo store output. macOS opens `sh.paseo.desktop`
+(notification clicks included) from the highest registered version, so a retained
+legacy 0.11.0 or high-water bundle would otherwise launch next to the active app.
 Rollback does not restore app data. Retain the absolute 200008 helper path before
 rolling back: older releases' helpers lack explicit reactivation. Use the same
 packaged helper for the entire recovery cycle:

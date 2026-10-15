@@ -15,6 +15,7 @@ import {
   assertCurrent,
   planTransaction,
   recoverTransaction,
+  retainedState,
 } from "./paseo-nix-update-state.mjs";
 import {
   executeCommand,
@@ -26,6 +27,7 @@ import {
   macArtifact,
   releaseDownloadUrl,
   resolveLatestTag,
+  staleLaunchServicesBundles,
 } from "./paseo-nix-update.mjs";
 
 const legacy = {
@@ -189,6 +191,49 @@ test("latest release resolves through the non-API redirect and reports rate limi
   assert.throws(() => releaseDownloadUrl("v0.1.3", "x.json"), /fork release tag/);
 });
 
+test("retention keeps current, high-water and the rollback target only while they coincide", () => {
+  const v = (version, generation) => target(version, generation);
+  const state = (current, generations, legacyRecovery = null) =>
+    validateState({
+      ...emptyState(),
+      highWater: generations.at(-1),
+      current,
+      generations,
+      legacyRecovery,
+    });
+  const kept = (value) =>
+    [value.legacyRecovery, ...value.generations].filter(Boolean).map((entry) => entry.generation);
+  const upgraded = state(v("0.3.0", 7), [v("0.1.0", 5), v("0.2.0", 6), v("0.3.0", 7)], legacy);
+  assert.deepEqual(kept(retainedState(upgraded)), [6, 7], "Upgrade keeps previous and current");
+  const rolledBack = state(v("0.2.0", 6), [v("0.1.0", 5), v("0.2.0", 6), v("0.3.0", 7)], legacy);
+  assert.deepEqual(kept(retainedState(rolledBack)), [6, 7], "Rollback keeps current and the next");
+  const migrated = state(v("0.1.0", 5), [v("0.1.0", 5)], legacy);
+  assert.deepEqual(retainedState(migrated), migrated, "Migration keeps legacy as its rollback");
+  const onLegacy = { ...migrated, current: legacy };
+  assert.deepEqual(retainedState(onLegacy), onLegacy);
+  assert.deepEqual(retainedState(emptyState()), emptyState());
+});
+
+test("LaunchServices cleanup selects only inactive Paseo Nix bundles", () => {
+  const output = (hash, version) => `/nix/store/${hash.repeat(32)}-paseo-desktop-${version}`;
+  const entry = (path, id) =>
+    `path:                       ${path} (0x${id})\nidentifier: sh.paseo.desktop\n`;
+  const dump = [
+    entry(`${output("a", "0.2.0")}/Applications/Paseo.app`, "1b4c"),
+    entry(`${output("d", "0.11.0")}/Applications/Paseo.app`, "18f8"),
+    entry(`${output("d", "0.11.0")}/Applications/Paseo.app`, "18f9"),
+    entry(
+      `${output("d", "0.11.0")}/Applications/Paseo.app/Contents/Frameworks/Paseo Helper.app`,
+      "18fc",
+    ),
+    entry(`/nix/store/${"e".repeat(32)}-other-app-1.0/Applications/Paseo.app`, "1900"),
+    entry("/Users/me/dev/paseo/release/mac-arm64/Paseo.app", "1738"),
+  ].join("");
+  assert.deepEqual(staleLaunchServicesBundles(dump, output("a", "0.2.0")), [
+    `${output("d", "0.11.0")}/Applications/Paseo.app`,
+  ]);
+});
+
 test("command orchestration preserves legacy bytes, retries interrupted migration, and retains high-water across recovery", async () => {
   const root = await mkdtemp(join(tmpdir(), "paseo-semver-commands-"));
   const files = {
@@ -216,6 +261,8 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
   let latestFailure = null;
   let selections = 0;
   let lastGeneration = 4;
+  const synced = [];
+  const pruned = [];
   const adapters = {
     current: async () => selected,
     readState: () => read(files.state),
@@ -239,6 +286,12 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
       if (failSelect) throw new Error("profile switch interrupted");
       selections++;
       selected = actual({ ...value, generation: value.generation ?? ++lastGeneration });
+    },
+    async pruneGenerations(keep) {
+      pruned.push(keep.join(","));
+    },
+    async syncLaunchServices(outputPath) {
+      synced.push(outputPath.slice(outputPath.lastIndexOf("-") + 1));
     },
     async assertNoLegacyJournal() {
       assert.equal(legacyPending, false, "legacy pending journal");
@@ -321,6 +374,26 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     assert.equal(offline.latestError, latestFailure);
     assert.equal(offline.canStage, false);
     await assert.rejects(executeCommand("stage", adapters), /rate limit/);
+    assert.deepEqual(
+      synced,
+      ["0.1.0", "0.1.0", "0.11.0", "0.1.0", "0.1.1", "0.1.0", "0.1.1"],
+      "Every completed switch or replay registers the active bundle; failures and reads do not",
+    );
+    assert.deepEqual(
+      pruned,
+      ["4,5", "4,5", "4,5", "4,5", "5,6", "5,6", "5,6"],
+      "Pruning runs with every registration and keeps only the retained generations",
+    );
+    const finalState = await read(files.state);
+    assert.deepEqual(
+      finalState.generations.map((entry) => entry.generation),
+      [5, 6],
+    );
+    assert.equal(
+      finalState.legacyRecovery,
+      null,
+      "An upgrade past migration drops legacy recovery",
+    );
     assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
   } finally {
     await rm(root, { recursive: true, force: true });

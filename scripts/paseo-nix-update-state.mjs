@@ -98,6 +98,30 @@ export function validateState(state) {
   return state;
 }
 
+/**
+ * Retention after a completed switch: the active generation, the high-water
+ * release that reactivation returns to, and, while those coincide, the newest
+ * older generation so rollback still has a target. Everything else is dropped.
+ */
+export function retainedState(state) {
+  validateState(state);
+  if (state.current === null) return state;
+  const kept = [state.current, state.highWater];
+  if (state.highWater === null || equal(state.current, state.highWater)) {
+    const previous = [state.legacyRecovery, ...state.generations]
+      .filter((entry) => entry && entry.generation < state.current.generation)
+      .sort((a, b) => b.generation - a.generation)[0];
+    if (previous) kept.push(previous);
+  }
+  const keep = (entry) => kept.some((target) => equal(target, entry));
+  return validateState({
+    ...state,
+    generations: state.generations.filter(keep),
+    legacyRecovery:
+      state.legacyRecovery && keep(state.legacyRecovery) ? state.legacyRecovery : null,
+  });
+}
+
 export function assertCurrent(state, actual) {
   validateState(state);
   assert.ok(
