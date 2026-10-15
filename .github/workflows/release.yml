@@ -375,7 +375,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/release-android"
           apk="$RUNNER_TEMP/release-android/paseo-$VERSION-android-arm64.apk"
           "$apksigner" sign --key "$key_der" --cert "$cert" --out "$apk" "$RUNNER_TEMP/release-android-unsigned/unsigned.apk"
-          rm -f "$key_pem" "$key_der" "$cert"
+          # The v4 .idsig sidecar only serves incremental adb installs; clients get the APK alone.
+          rm -f "$key_pem" "$key_der" "$cert" "$apk.idsig"
           "$apksigner" verify --verbose "$apk"
           report="$("$apksigner" verify --print-certs "$apk")"
           [[ "$(grep -c '^Signer #[0-9]* certificate SHA-256 digest: ' <<< "$report")" == 1 ]]
