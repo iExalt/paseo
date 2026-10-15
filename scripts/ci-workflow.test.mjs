@@ -332,31 +332,12 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   );
   assert.equal(cleanup.if, "always()");
   assert.equal(cleanup["timeout-minutes"], 3);
-  const restore = job.steps.find((step) => step.id === "predecessor-cache");
-  assert.ok(restore.uses.startsWith("actions/cache/restore@"));
-  assert.equal(restore.with["restore-keys"], undefined);
-  const save = job.steps.find((step) => step.id === "predecessor-save");
-  assert.equal(save.if, "steps.cache-budget.outputs.save == 'true'");
   const stage = job.steps.find((step) => step.id === "predecessor-stage");
   assert.equal(
     stage.if,
     "success() && inputs.source_sha == '' && steps.predecessor-cache.outputs.cache-hit != 'true'",
   );
   assert.ok(job.steps.indexOf(stage) > job.steps.indexOf(cleanup));
-  // A candidate treats any rejected predecessor entry as a miss; writers fail hard.
-  const provenance = job.steps.find((step) => step.id === "predecessor-provenance");
-  assert.equal(provenance["continue-on-error"], true);
-  assert.equal(
-    provenance.if,
-    "inputs.source_sha != '' && steps.predecessor-cache.outputs.cache-hit == 'true'",
-  );
-  const writerSteps = job.steps.filter(
-    (step) =>
-      step.run?.match(/windows-predecessor-cache\.mjs (self-verify|stage|archive|budget)$/) ||
-      step.id === "predecessor-save",
-  );
-  assert.equal(writerSteps.length, 6);
-  for (const step of writerSteps) assert.equal(step["continue-on-error"], undefined, step.name);
   for (const phase of ["install-previous", "build-previous"])
     assert.equal(
       job.steps.find((step) => step.run?.endsWith(`windows-product-stage.ps1 ${phase}`)).if,
@@ -368,12 +349,6 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
       undefined,
     );
   assert.deepEqual(Object.keys(workflow.jobs), ["authorize", "native"]);
-  const miss = job.steps.find((step) => step.name === "Report a predecessor cache miss");
-  assert.equal(
-    miss.if,
-    "inputs.source_sha != '' && steps.predecessor-provenance.outputs.verified != 'true'",
-  );
-  assert.match(miss.run, /::warning::/);
   const uploads = job.steps.filter(
     (step) => step.uses?.startsWith("actions/upload-artifact") && step.id !== "packages",
   );
@@ -416,10 +391,45 @@ test("native product exports authenticate source before execution and follow suc
     );
     for (const id of ["export", "packages"])
       assert.equal(job.steps[index(id)].if, "success() && inputs.source_sha != ''");
-    assert.match(
-      job.steps[index(platform === "linux" ? "cache-budget" : "predecessor-stage")].if,
-      /inputs.source_sha == ''/,
+    // Predecessor caches restore by exact key; a candidate treats any rejected
+    // entry as a miss and rebuilds, while dispatched writers fail hard and
+    // archive only after the verified runtime and its cleanup.
+    const restore = job.steps[index("predecessor-cache")];
+    assert.ok(restore.uses.startsWith("actions/cache/restore@"));
+    assert.equal(restore.with["restore-keys"], undefined);
+    const provenance = job.steps[index("predecessor-provenance")];
+    assert.equal(provenance["continue-on-error"], true);
+    assert.equal(
+      provenance.if,
+      "inputs.source_sha != '' && steps.predecessor-cache.outputs.cache-hit == 'true'",
     );
+    const miss = job.steps.find((step) => step.name === "Report a predecessor cache miss");
+    assert.equal(
+      miss.if,
+      "inputs.source_sha != '' && steps.predecessor-provenance.outputs.verified != 'true'",
+    );
+    assert.match(miss.run, /::warning::/);
+    assert.ok(
+      index("predecessor-archive") > cleanup && index("predecessor-archive") < index("export"),
+    );
+    assert.equal(
+      job.steps[index("predecessor-save")].if,
+      "steps.cache-budget.outputs.save == 'true'",
+    );
+    const writerSteps = job.steps.filter(
+      (step) =>
+        /predecessor-cache\.mjs (self-verify|stage|archive|budget)$/.test(step.run ?? "") ||
+        step.id === "predecessor-save",
+    );
+    assert.equal(writerSteps.length, platform === "linux" ? 5 : 6);
+    for (const step of writerSteps) assert.equal(step["continue-on-error"], undefined, step.name);
+    if (platform === "linux") {
+      const build = job.steps.find((step) => step.run?.endsWith("linux-product-build.sh"));
+      assert.equal(build.if, undefined);
+      assert.deepEqual(build.env, {
+        PREDECESSOR_CACHE_VERIFIED: "${{ steps.predecessor-provenance.outputs.verified }}",
+      });
+    }
     assert.equal(job.env.PASEO_CANDIDATE_SHA, "${{ inputs.source_sha || github.sha }}");
     assert.equal(job.env.GITHUB_SHA, undefined);
     assert.equal(
