@@ -9,6 +9,7 @@ export const coreTests = [
   "scripts/release-auth.test.mjs",
   "scripts/release-boundary.test.mjs",
   "scripts/release-preflight.test.mjs",
+  "scripts/release-manifest.test.mjs",
   "scripts/release-pr-checks.test.mjs",
   "scripts/candidate-descriptor.test.mjs",
   "scripts/step-proof.test.mjs",
