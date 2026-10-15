@@ -248,6 +248,9 @@ const cacheWriters = {
     },
     { archive: "predecessor-archive", key: "predecessor", guard: "inputs.source_sha == '' && " },
   ],
+  "linux-product-runtime.yml/native": [
+    { archive: "predecessor-archive", key: "predecessor", guard: "inputs.source_sha == '' && " },
+  ],
   "android-build-cache.yml/write": [{ archive: "ccache-archive", key: "ccache" }],
 };
 function checkCacheSigner(site, workflow, steps, sign) {
