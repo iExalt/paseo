@@ -33,7 +33,7 @@ create() {
     echo "::warning::GitHub returned HTTP $code (attempt $attempt): $(head -c 2000 "$body" 2>/dev/null)" >&2
     grep -iE '^(retry-after|x-ratelimit-[a-z]+|x-github-request-id):' "$response" >&2 || true
     [[ "$attempt" == 1 && ( "$code" == 403 || "$code" == 429 ) ]] || return 1
-    sleep "$(awk -F': *' 'tolower($1) == "retry-after" { delay = $2 + 0 } END { print delay > 0 ? delay : 60 }' "$response")"
+    sleep "$(awk -F': *' 'tolower($1) == "retry-after" { delay = $2 + 0 } END { print (delay > 0 ? delay : 60) }' "$response")"
   done
 }
 
@@ -53,11 +53,13 @@ draft() {
     [[ "$TAG" == paseo-dryrun-* ]] || fail "Dry runs must use a paseo-dryrun- tag."
     name="Dry run: Paseo $VERSION ($SOURCE_SHA)"
   fi
-  id="$(jq -n --arg tag "$TAG" --arg sha "$SOURCE_SHA" --arg name "$name" \
+  # A file, not stdin, so create() can resend it on a retry.
+  local payload="$RUNNER_TEMP/release-create.json"
+  jq -n --arg tag "$TAG" --arg sha "$SOURCE_SHA" --arg name "$name" \
     --rawfile body "$RUNNER_TEMP/release-notes.md" \
     '{tag_name: $tag, target_commitish: $sha, name: $name, body: $body,
-      draft: true, prerelease: false, make_latest: "false"}' \
-    | create --request POST --data-binary @- "$api/releases" | jq -er .id)"
+      draft: true, prerelease: false, make_latest: "false"}' > "$payload"
+  id="$(create --request POST --data-binary "@$payload" "$api/releases" | jq -er .id)"
   echo "release_id=$id" >> "$GITHUB_OUTPUT"
   echo "Draft release $id ($TAG)"
 
