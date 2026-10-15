@@ -2,7 +2,7 @@
 # Realize the fixed-output derivations (npm-deps and other downloads) that the
 # real build would have to build, retrying transient network failures. Their
 # outputs are pinned by hash, so a retry cannot change bytes; without it one
-# dropped connection fails a whole candidate attempt. Anything the configured
+# dropped connection fails a whole release build. Anything the configured
 # substituters already serve is left to the build, which never fetches it.
 # Usage: nix-fetch-fixed-outputs.sh [nix options...] -- <installable arguments...>
 # Options apply to every nix command, matching the build that follows.
