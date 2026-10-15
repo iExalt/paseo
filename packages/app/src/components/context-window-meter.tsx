@@ -13,6 +13,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
+import { svgHiddenFromAccessibility } from "@/components/svg-accessibility";
 import { useHostReportsUsage } from "@/usage";
 import type { Theme } from "@/styles/theme";
 import { TOOLBAR_DISC_SIZE, type ToolbarRing } from "@/components/ui/control-geometry";
@@ -115,14 +116,7 @@ const ContextWindowRing = withUnistyles(function ContextWindowRing({
   const center = size / 2;
   const circumference = 2 * Math.PI * radius;
   return (
-    <Svg
-      width={size}
-      height={size}
-      viewBox={`0 0 ${size} ${size}`}
-      {...(isNative
-        ? { accessibilityElementsHidden: true, importantForAccessibility: "no-hide-descendants" }
-        : { "aria-hidden": true })}
-    >
+    <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} {...svgHiddenFromAccessibility}>
       <Circle
         cx={center}
         cy={center}
