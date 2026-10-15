@@ -8,8 +8,8 @@ name: Release
 # release tagged paseo-dryrun-<run_id> for inspection and never creates a tag
 # or marks a release latest. Delete the draft when done.
 #
-# TODO: run this from the release PR merge (today a push trigger in
-# release-candidate.yml) once release-candidate.yml is retired.
+# TODO: start this from the release PR merge. Until then, dispatch it with
+# publish=true right after merging, while dev's head is the release commit.
 on:
   workflow_dispatch:
     inputs:
