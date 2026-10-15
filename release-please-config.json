@@ -7,7 +7,7 @@
   "tag-separator": "-",
   "skip-github-release": true,
   "pull-request-header": "Proposed independent fork release.",
-  "pull-request-footer": "Publication follows separate candidate verification and approval gates.",
+  "pull-request-footer": "Merging publishes nothing; dispatch the Release workflow with publish=true right after merging.",
   "packages": {
     ".": {
       "release-type": "node",
