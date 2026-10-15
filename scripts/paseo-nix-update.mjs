@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
@@ -31,6 +32,7 @@ import {
   setProfile,
   extractNixCacheTar,
   nix,
+  nixEnv,
   nixOptions,
   isNixClosureEntry,
   localCacheCopyArgs,
@@ -47,6 +49,7 @@ import {
   validateTarget,
   executeTransaction,
   reconcileTransaction,
+  retainedState,
 } from "./paseo-nix-update-state.mjs";
 
 export {
@@ -330,6 +333,65 @@ async function stageRelease(verified) {
   }
 }
 
+const LSREGISTER =
+  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
+const appBundle = (outputPath) => join(outputPath, "Applications", "Paseo.app");
+
+// macOS launches sh.paseo.desktop for notification clicks and `open -b` from the
+// highest registered bundle version, and every retained generation stays
+// registered. Fork semver restarted below the legacy 0.11.0 builds, and rollback
+// selects a version below high-water, so a retained bundle would otherwise start
+// beside the active app. Only Paseo Nix outputs are unregistered, and
+// LaunchServices re-registers whichever one is opened again.
+export function staleLaunchServicesBundles(dump, activeOutputPath) {
+  const active = appBundle(activeOutputPath);
+  const pattern =
+    /^path:\s+(\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/\s]+\/Applications\/Paseo\.app) \(0x[0-9a-f]+\)$/gm;
+  const stale = new Set();
+  for (const [, bundle] of dump.matchAll(pattern)) if (bundle !== active) stale.add(bundle);
+  return [...stale];
+}
+
+function lsregister(args) {
+  const result = spawnSync(LSREGISTER, args, {
+    encoding: "utf8",
+    maxBuffer: 256 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (result.error) throw result.error;
+  assert.equal(result.status, 0, `lsregister ${args[0]} failed: ${result.stderr.trim()}`);
+  return result.stdout;
+}
+
+function syncLaunchServices(outputPath) {
+  try {
+    lsregister(["-f", appBundle(outputPath)]);
+    for (const bundle of staleLaunchServicesBundles(lsregister(["-dump"]), outputPath))
+      lsregister(["-u", bundle]);
+  } catch (error) {
+    // The profile switch already succeeded; a registration failure must not undo or fail it.
+    process.stderr.write(`Could not update LaunchServices registrations: ${error.message}\n`);
+  }
+}
+
+// Deleting a generation only drops its GC root; Nix still keeps any store path a
+// running process holds, so an app left running on a pruned version survives GC.
+async function pruneGenerations(keep) {
+  const stale = (await profileGenerations(ACTIVE_PROFILE))
+    .filter((entry) => !entry.current && !keep.includes(entry.generation))
+    .map((entry) => String(entry.generation));
+  if (stale.length > 0)
+    nixEnv(["--profile", ACTIVE_PROFILE, "--delete-generations", ...stale], { quiet: true });
+  if (await exists(STAGING_PROFILE))
+    nixEnv(["--profile", STAGING_PROFILE, "--delete-generations", "old"], { quiet: true });
+  // Fork state exists, so legacy commands refuse to run and their staging profile is dead.
+  for (const name of await readdir(DATA_ROOT)) {
+    const link = join(DATA_ROOT, name);
+    if (/^staging-profile(-[1-9][0-9]*-link)?$/.test(name) && (await lstat(link)).isSymbolicLink())
+      await rm(link);
+  }
+}
+
 async function current() {
   const generations = await profileGenerations(ACTIVE_PROFILE);
   return generations.find((entry) => entry.current) ?? null;
@@ -378,6 +440,8 @@ function productionAdapters() {
       }
     },
     selectTarget: (target) => setProfile(ACTIVE_PROFILE, target.outputPath, { quiet: true }),
+    pruneGenerations,
+    syncLaunchServices,
   };
 }
 
@@ -449,6 +513,22 @@ async function executeMutation(command, state, staged, adapters) {
   return { state, staged };
 }
 
+const SWITCHES = new Set(["activate", "migrate", "rollback", "reactivate-high-water"]);
+
+// Runs after replays too, so a retry after an interrupted command still prunes and registers.
+async function finishSwitch(command, state, adapters) {
+  if (!SWITCHES.has(command) || state.current === null) return state;
+  const retained = retainedState(state);
+  const kept = [retained.legacyRecovery, ...retained.generations].filter(Boolean);
+  // State drops pruned targets before their profile generations go, so a crash
+  // in between leaves only unrecorded generations, which the next switch deletes.
+  if (kept.length !== [state.legacyRecovery, ...state.generations].filter(Boolean).length)
+    await adapters.writeState(retained);
+  await adapters.pruneGenerations(kept.map((entry) => entry.generation));
+  await adapters.syncLaunchServices(retained.current.outputPath);
+  return retained;
+}
+
 function commandResult(command, state, staged, latest, latestError) {
   return {
     ok: true,
@@ -503,6 +583,7 @@ export async function executeCommand(command, adapters) {
   }
   if (!completedReplay)
     ({ state, staged } = await executeMutation(command, state, staged, adapters));
+  state = await finishSwitch(command, state, adapters);
   return commandResult(command, state, staged, latest, latestError);
 }
 
