@@ -162,7 +162,7 @@ const digest = (...parts) => {
 // installed tree without changing the lock, and the ABI native addons build for.
 export async function cacheInputs(root = ".", env = process.env) {
   const lock = normalizedLock(JSON.parse(await readFile(`${root}/package-lock.json`, "utf8")));
-  const patches = (await readdir(`${root}/patches`))
+  const patches = (await readdir(`${root}/patches`).catch(() => []))
     .filter((name) => name.endsWith(".patch"))
     .sort();
   const installFiles = [
@@ -232,7 +232,13 @@ async function planCommand() {
     warn(`No usable Android cache pin (${error.message})`);
   }
   const restore = planRestore(pin, { deps, modules });
-  if (pin && !restore.modules) warn("The pinned node_modules does not match this lockfile");
+  if (pin && !restore.modules) {
+    warn(
+      pin.modules
+        ? "The pinned node_modules does not match this lockfile"
+        : `The ${pin.version} pin has no node_modules entry`,
+    );
+  }
   await output({
     deps_inputs: deps,
     modules_inputs: modules,
