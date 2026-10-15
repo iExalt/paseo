@@ -32,6 +32,9 @@ export function androidRecipe(source, ccacheVersion) {
   };
 }
 
+// Ubuntu 24.04 ships ccache 4.9, which predates --print-version.
+export const ccacheVersion = (banner) => /^ccache version (\S+)$/m.exec(banner)?.[1] ?? "";
+
 export const androidKey = (recipe) => `${prefix}${sha256(JSON.stringify(recipe))}`;
 
 // About 150 MB in the spike; the whole archive is reserved against the ceiling.
@@ -47,9 +50,7 @@ async function main() {
   const output = (name, value) => appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
   const [operation] = process.argv.slice(2);
   if (operation === "key") {
-    // Ubuntu 24.04 ships ccache 4.9, which predates --print-version.
-    const banner = execFileSync("ccache", ["--version"], { encoding: "utf8" });
-    const version = /^ccache version (\S+)$/m.exec(banner)?.[1] ?? "";
+    const version = ccacheVersion(execFileSync("ccache", ["--version"], { encoding: "utf8" }));
     const key = androidKey(androidRecipe(process.cwd(), version));
     output("key", key);
     output("archive", archive);
