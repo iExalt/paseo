@@ -63,6 +63,16 @@ export async function publishProposal({
       "Target moved; regenerate the proposal",
     );
   const head = async () => (await request(headRoute))?.object.sha ?? "";
+  // The refs API can report the replaced head for seconds after a push, and
+  // failing then strands a pushed branch with no PR. Wait, boundedly, only
+  // while it still reports the leased head; any other head is returned as is.
+  const settledHead = async () => {
+    for (let attempt = 1; ; attempt++) {
+      const current = await head();
+      if (current !== expectedHead || attempt === 6) return current;
+      await wait(5000);
+    }
+  };
   const openPr = async () => {
     const rows = await request(
       `${repository}/pulls?state=open&head=iExalt:${encodeURIComponent(headRef)}&base=${encodeURIComponent(branch)}&per_page=100`,
@@ -110,8 +120,9 @@ export async function publishProposal({
     } catch (error) {
       // A lost push response can be reconciled, but a lease failure never grants
       // permission to overwrite the writer that won the race.
-      if ((await head()) !== sha) throw error;
+      if ((await settledHead()) !== sha) throw error;
     }
+    await settledHead();
   }
   await verifyPublished();
   // The pulls API can report the previous head for seconds after a push. Wait,

@@ -28,6 +28,7 @@ function fixture(options = {}) {
   };
   let pr;
   let staleReads = options.staleReads ?? 0;
+  let staleRefReads = options.staleRefReads ?? 0;
   if (options.openBeforePush)
     pr = {
       ...structuredClone(previous),
@@ -58,7 +59,8 @@ function fixture(options = {}) {
   const request = async (full, method = "GET", body) => {
     const route = full.replace("/repos/iExalt/paseo/", "");
     if (route === "git/ref/heads/dev") return { object: { sha: currentBase } };
-    if (route === `git/ref/heads/${branch}`) return { object: { sha: head } };
+    if (route === `git/ref/heads/${branch}`)
+      return { object: { sha: head === sha && staleRefReads-- > 0 ? oldHead : head } };
     if (route === `git/commits/${sha}`)
       return { sha, tree: { sha: tree }, parents: [{ sha: base }] };
     if (route.startsWith("pulls?")) return pr ? [{ number: pr.number }] : [];
@@ -156,7 +158,18 @@ test("publisher stops on branch race, target movement and rejected predecessor a
   assert.deepEqual(forged.counts, { pushes: 0, creates: 0 });
 });
 
-test("publisher waits boundedly for the pulls API to report exactly the pushed head", async () => {
+test("publisher waits boundedly for the refs and pulls APIs to report exactly the pushed head", async () => {
+  const refWaits = [];
+  const refLag = fixture({ staleRefReads: 2 });
+  await publishProposal({ ...refLag.args, wait: async (ms) => refWaits.push(ms) });
+  assert.deepEqual(refWaits, [5000, 5000]);
+  const lostPushLag = fixture({ lostPush: true, staleRefReads: 2 });
+  assert.equal((await publishProposal({ ...lostPushLag.args, wait: async () => {} })).number, 81);
+  const refStuck = fixture({ staleRefReads: 99 });
+  await assert.rejects(
+    publishProposal({ ...refStuck.args, wait: async () => {} }),
+    /Proposal branch changed/,
+  );
   const waits = [];
   const lagging = fixture({ openBeforePush: true, staleReads: 2 });
   const result = await publishProposal({
