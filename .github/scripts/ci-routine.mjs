@@ -166,7 +166,7 @@ export function planCommands(selection, cwd = root) {
   }
   if (selection.domains.includes("cli"))
     unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
-  // Four app workers starved live tests' 10 s hooks on 4-vCPU runners; three do not.
+  // Four app workers starved live tests' 10 s hooks on 4-vCPU runners; three is the agreed response; watch for recurrence.
   if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"], 3);
   if (selection.domains.includes("desktop")) {
     // Install scripts are skipped, so fetch Electron once before parallel workers
