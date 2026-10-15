@@ -1,5 +1,15 @@
 import { router } from "expo-router";
-import { CircleGauge, FolderPlus, GitBranch, Server, Settings, X } from "lucide-react-native";
+import {
+  CircleAlert,
+  CircleArrowUp,
+  CircleGauge,
+  FolderPlus,
+  GitBranch,
+  LoaderCircle,
+  Server,
+  Settings,
+  X,
+} from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
@@ -25,6 +35,14 @@ import { SidebarDisplayPreferencesMenu } from "@/components/sidebar/display-pref
 import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarNavRows } from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
+import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
+import { handleNixUpdatePress } from "@/desktop/updates/nix-update-flow";
+import {
+  useNixUpdatePhase,
+  useNixUpdateStore,
+  type NixUpdateBusy,
+  type NixUpdatePhase,
+} from "@/desktop/updates/nix-updates";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { buttonControlHeight } from "@/components/ui/control-geometry";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -284,11 +302,14 @@ function FooterIconButton({
   iconSizeAdjustment = 0,
   shortcutKeys,
   theme,
+  iconColor,
 }: {
   onPress: () => void;
   testID: string;
   label: string;
   icon: typeof FolderPlus;
+  /** Overrides the muted/hover colors for a glyph that signals state. */
+  iconColor?: string;
   /** Only for a glyph that reads larger than the others at the same size. */
   iconSizeAdjustment?: number;
   shortcutKeys?: ReturnType<typeof useShortcutKeys>;
@@ -315,7 +336,9 @@ function FooterIconButton({
           {({ hovered }) => (
             <Icon
               size={iconSize + iconSizeAdjustment}
-              color={hovered ? theme.colors.foreground : theme.colors.foregroundMuted}
+              color={
+                iconColor ?? (hovered ? theme.colors.foreground : theme.colors.foregroundMuted)
+              }
             />
           )}
         </Pressable>
@@ -446,6 +469,7 @@ function SidebarFooter({
             onOpenHostSettings={handleOpenHostSettings}
           />
           <View style={styles.footerSpacer} />
+          <SidebarUpdateButton theme={theme} />
           <SidebarHelpMenu />
           <FooterIconButton
             onPress={handleSettings}
@@ -459,6 +483,54 @@ function SidebarFooter({
       </View>
     </UsageSidebarRoot>
   );
+}
+
+function SidebarUpdateButton({ theme }: { theme: SidebarTheme }) {
+  const { t } = useTranslation();
+  const phase = useNixUpdatePhase();
+  const busy = useNixUpdateStore((state) => state.busy);
+  const failed = useNixUpdateStore((state) => state.failed);
+  const onPress = useCallback(() => {
+    if (!busy) void handleNixUpdatePress();
+  }, [busy]);
+
+  if (phase.kind !== "available" && phase.kind !== "ready" && phase.kind !== "restart" && !failed) {
+    return null;
+  }
+  const version =
+    phase.kind === "unknown" || phase.kind === "current" ? null : phase.release.version;
+  const label = resolveUpdateButtonLabel({ t, phase: phase.kind, busy, failed, version });
+  return (
+    <FooterIconButton
+      onPress={onPress}
+      testID="sidebar-update"
+      label={label}
+      icon={resolveUpdateButtonIcon(failed, busy)}
+      iconColor={failed ? theme.colors.destructive : theme.colors.accent}
+      theme={theme}
+    />
+  );
+}
+
+function resolveUpdateButtonIcon(failed: boolean, busy: NixUpdateBusy | null) {
+  if (failed) return CircleAlert;
+  return busy ? LoaderCircle : CircleArrowUp;
+}
+
+function resolveUpdateButtonLabel(input: {
+  t: ReturnType<typeof useTranslation>["t"];
+  phase: NixUpdatePhase["kind"];
+  busy: NixUpdateBusy | null;
+  failed: boolean;
+  version: string | null;
+}): string {
+  const version = formatVersionWithPrefix(input.version);
+  if (input.failed) return input.t("desktop.updates.nix.failedTooltip");
+  if (input.busy === "downloading") return input.t("desktop.updates.nix.downloading", { version });
+  if (input.busy === "applying") return input.t("desktop.updates.nix.applying", { version });
+  if (input.busy === "restarting") return input.t("desktop.updates.nix.restarting");
+  if (input.phase === "restart") return input.t("desktop.updates.nix.restartTooltip", { version });
+  return input.t("desktop.updates.nix.updateTooltip", { version });
 }
 
 function SidebarUsageIcon({ label, theme }: { label: string; theme: SidebarTheme }) {
