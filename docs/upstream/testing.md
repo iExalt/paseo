@@ -200,7 +200,7 @@ Test suites in this repo are heavy. Running them in bulk freezes the machine, es
 
 ## Pull-request test routing
 
-Fork PR checks use `.github/ci-paths.json` ownership and dependent-consumer rules; unknown and shared configuration changes select the full routine gate. Independent lanes run in parallel, including three server-unit shards. Dev pushes and rebased candidates retain the complete routine gate. See [workflow status](../GITHUB_WORKFLOWS_STATUS.md) for the measured budget and later package gates.
+Fork PR checks use `.github/ci-paths.json` ownership and dependent-consumer rules; unknown and shared configuration changes select the full routine gate. Independent lanes run in parallel, including three server-unit shards. Dev pushes and rebased `dev` retain the complete routine gate. See [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md) for the latency budget and rerun advice.
 
 Required matrix legs are declared as statically named jobs. Their shared steps use YAML anchors, while job-level `if` conditions let GitHub report an unaffected leg as genuinely skipped without allocating a runner or losing the exact required-check name.
 
