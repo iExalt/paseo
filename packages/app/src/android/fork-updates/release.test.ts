@@ -1,6 +1,9 @@
 import nacl from "tweetnacl";
 import { describe, expect, it } from "vitest";
-import { forkReleaseManifestFixture as manifestFor } from "../../../../../scripts/test-fixtures/fork-release-manifest";
+import {
+  forkReleaseManifestFixture as manifestFor,
+  forkReleaseManifestV3Fixture as manifestV3For,
+} from "../../../../../scripts/test-fixtures/fork-release-manifest";
 import { approvedAndroidArtifact } from "./release";
 import {
   findHighestVerifiedForkRelease,
@@ -60,6 +63,30 @@ describe("fork release verification", () => {
     );
     expect(result.release.tag_name).toBe(valid.tag_name);
     expect(result.verified.version).toBe("0.1.1");
+  });
+
+  it("selects a v3 release when it is the only published release", async () => {
+    const keyPair = nacl.sign.keyPair();
+    const base64Url = (bytes: Uint8Array) =>
+      btoa(String.fromCharCode(...bytes))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/g, "");
+    const manifestBytes = new TextEncoder().encode(JSON.stringify(manifestV3For("0.2.0")));
+    const signatureText = base64Url(nacl.sign.detached(manifestBytes, keyPair.secretKey));
+    const only = releaseFor("0.2.0");
+    const result = await findHighestVerifiedForkRelease([only], async (release) =>
+      verifyReleaseBinding(
+        release,
+        verifySignedManifest(manifestBytes, signatureText, base64Url(keyPair.publicKey)),
+      ),
+    );
+    expect(result.release).toBe(only);
+    expect(result.verified.manifest.schemaVersion).toBe(3);
+    expect(result.verified.android.versionCode).toBe(200000 + 2000);
+    expect(result.verified.apkUrl).toBe(
+      "https://github.com/iExalt/paseo/releases/download/paseo-v0.2.0/paseo.apk",
+    );
   });
 
   it("verifies detached bytes before accepting the schema and release binding", () => {
