@@ -333,6 +333,7 @@ jobs:
           fi
       # TEMP(W4/W5): logs for every compile; input text only for misses, capped.
       - name: Pack ccache debug logs
+        id: ccache-debug
         if: always() && needs.resolve.outputs.ccache_debug == 'true'
         continue-on-error: true
         run: |
@@ -350,7 +351,7 @@ jobs:
           ls -l "$RUNNER_TEMP/ccache-debug-upload"
           [[ "$(stat -c%s "$RUNNER_TEMP/ccache-debug-upload/ccache-debug.tgz")" -le 524288000 ]]
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always() && needs.resolve.outputs.ccache_debug == 'true'
+        if: always() && steps.ccache-debug.outcome == 'success'
         continue-on-error: true
         with:
           name: ccache-debug
