@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.2.1](https://github.com/iExalt/paseo/compare/paseo-v0.2.0...paseo-v0.2.1) (2026-10-15)
+
+
+### Features
+
+* **app:** default first-use send to queue and tool calls to summary ([52b653d](https://github.com/iExalt/paseo/commit/52b653d1751afdea1e63b062e6a0e2c74a2a056a))
+
+
+### Bug Fixes
+
+* **ci:** count every asar extraction failure in the macOS smoke ([eb19932](https://github.com/iExalt/paseo/commit/eb19932c9478dbecf166e020dcb0bf1bae945d98))
+* **ci:** parse retry-after without a pipeline ([225c370](https://github.com/iExalt/paseo/commit/225c3701294a91fd8e9992fe0c95984a6d718d05))
+* **ci:** report GitHub's response when creating a release or asset fails ([51b77d1](https://github.com/iExalt/paseo/commit/51b77d1d8f8d3330cbb5519e74ed1ebb72daeab5))
+* **ci:** resend the release payload from a file on a create retry ([7e39089](https://github.com/iExalt/paseo/commit/7e390898d4164886ca6bc28f9add788355d886d6))
+* **ci:** upload ccache debug logs only when packing succeeded ([942f117](https://github.com/iExalt/paseo/commit/942f117ab1a6aaf7dc779b81c9de00ecf2b4155f))
+* **nix-update:** register only the active bundle and prune old generations ([b69859c](https://github.com/iExalt/paseo/commit/b69859c98c13887e6571b8e4e9d36dd2dfb38b51))
+
+
+### Documentation
+
+* **ci:** explain how to ship a release at a chosen version ([bf4e4d2](https://github.com/iExalt/paseo/commit/bf4e4d22b26b51f8be5fe831f04411db167bfa06))
+
 ## [0.2.0](https://github.com/iExalt/paseo/compare/paseo-v0.1.4...paseo-v0.2.0) (2026-10-15)
 
 
