@@ -29,6 +29,26 @@
   </a>
 </p>
 
+> [!NOTE]
+> **This is the `iExalt/paseo` fork.** Its releases are published at
+> [iExalt/paseo releases](https://github.com/iExalt/paseo/releases), not on paseo.sh.
+>
+> **macOS (Apple silicon):** the desktop app ships as a signed Nix closure, installed and
+> updated by the fork updater from an up-to-date `dev` checkout:
+>
+> ```bash
+> mise exec -- node scripts/paseo-nix-update.mjs check     # show the latest verified release
+> mise exec -- node scripts/paseo-nix-update.mjs stage     # download and verify it
+> mise exec -- node scripts/paseo-nix-update.mjs activate  # switch to it (quit Paseo first)
+> open ~/Library/Application\ Support/Paseo/nix-update/profile/Applications/Paseo.app
+> ```
+>
+> The app runs from that profile. Link to it rather than copying it into `/Applications`, or
+> the copy will not follow updates. `rollback` returns to the previous release. An older
+> checkout may not recognise newer release manifests, so pull `dev` before `check`.
+>
+> **Android:** install the `paseo-<version>-android-arm64.apk` attached to the release.
+
 <p align="center">One interface for Claude Code, Codex, Copilot, OpenCode, Pi, Antigravity, and Muse Code agents.</p>
 
 <p align="center">
