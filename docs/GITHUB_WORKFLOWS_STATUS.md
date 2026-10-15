@@ -90,6 +90,14 @@ candidate pipeline.
   the release is marked **Latest**; fix the flag by hand if not. Do not rerun,
   since the tag now exists and `resolve` will refuse.
 - **Dry-run drafts** are never cleaned up automatically.
+- **Every proposal run fails with "Existing branch requires one authentic
+  proposal (0 !== 1)":** a run pushed the proposal branch and stopped before
+  opening its PR. Check that the head of
+  `release-please--branches--dev--components--paseo` is a
+  `paseo-release[bot]` commit whose parent is on `dev` and that no PR has that
+  head. Then delete the ref, requiring that head, and push to `dev` or dispatch
+  `release-please.yml`. The next run creates the branch fresh. Prepare never
+  adopts a branch head without a PR, because the author field proves nothing.
 
 ## Secrets and variables
 
