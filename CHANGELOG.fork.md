@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.2](https://github.com/iExalt/paseo/compare/paseo-v0.2.1...paseo-v0.2.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **app:** hide decorative SVGs from accessibility with web-safe props ([c823dff](https://github.com/iExalt/paseo/commit/c823dffbd1a467d1d66fb0c56a07af3b66cd0264))
+* **app:** stop showing the worktree setup callout ([bf31f96](https://github.com/iExalt/paseo/commit/bf31f961a4e9938ab4fba784616a61372fcdcd46))
+* **app:** stop withUnistyles forwarding uniProps to DOM elements on web ([96f079e](https://github.com/iExalt/paseo/commit/96f079e75d1c38a6c572b97c361a0e01083ab23a))
+* **ci:** wait out a stale proposal ref read after the push ([95ebcde](https://github.com/iExalt/paseo/commit/95ebcde9c496156cf20ab3870533dc42bdb45df5))
+
+
+### Performance Improvements
+
+* **nix:** bundle the macOS web export with two Metro workers ([2bdfc6d](https://github.com/iExalt/paseo/commit/2bdfc6dc08d2d3acb7535756dbcbbbbf5a677fa5))
+
 ## [0.2.1](https://github.com/iExalt/paseo/compare/paseo-v0.2.0...paseo-v0.2.1) (2026-10-15)
 
 
