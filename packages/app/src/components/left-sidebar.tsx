@@ -1,8 +1,11 @@
 import { router } from "expo-router";
 import {
+  CircleAlert,
+  CircleArrowUp,
   CircleGauge,
   FolderPlus,
   GitBranch,
+  LoaderCircle,
   Server,
   Settings,
   X,
@@ -34,6 +37,14 @@ import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarNavRows } from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarFooterIconHighlight } from "@/components/sidebar/sidebar-footer-icon-highlight";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
+import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
+import { handleNixUpdatePress } from "@/desktop/updates/nix-update-flow";
+import {
+  useNixUpdatePhase,
+  useNixUpdateStore,
+  type NixUpdateBusy,
+  type NixUpdatePhase,
+} from "@/desktop/updates/nix-updates";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
@@ -294,11 +305,14 @@ function FooterIconButton({
   icon,
   iconSizeAdjustment = 0,
   shortcutKeys,
+  iconColor,
 }: {
   onPress: () => void;
   testID: string;
   label: string;
   icon: LucideIcon;
+  /** Overrides the muted/hover colors for a glyph that signals state. */
+  iconColor?: "accent" | "destructive";
   /** Only for a glyph that reads larger than the others at the same size. */
   iconSizeAdjustment?: number;
   shortcutKeys?: ReturnType<typeof useShortcutKeys>;
@@ -325,7 +339,7 @@ function FooterIconButton({
                 icon={icon}
                 size="md"
                 sizeAdjustment={iconSizeAdjustment}
-                color={hovered ? "foreground" : "foregroundMuted"}
+                color={iconColor ?? (hovered ? "foreground" : "foregroundMuted")}
               />
             </>
           )}
@@ -450,6 +464,7 @@ function SidebarFooter({
             onOpenHostSettings={handleOpenHostSettings}
           />
           <View style={styles.footerSpacer} />
+          <SidebarUpdateButton />
           <SidebarHelpMenu />
           <FooterIconButton
             onPress={handleSettings}
@@ -462,6 +477,53 @@ function SidebarFooter({
       </View>
     </UsageSidebarRoot>
   );
+}
+
+function SidebarUpdateButton() {
+  const { t } = useTranslation();
+  const phase = useNixUpdatePhase();
+  const busy = useNixUpdateStore((state) => state.busy);
+  const failed = useNixUpdateStore((state) => state.failed);
+  const onPress = useCallback(() => {
+    if (!busy) void handleNixUpdatePress();
+  }, [busy]);
+
+  if (phase.kind !== "available" && phase.kind !== "ready" && phase.kind !== "restart" && !failed) {
+    return null;
+  }
+  const version =
+    phase.kind === "unknown" || phase.kind === "current" ? null : phase.release.version;
+  const label = resolveUpdateButtonLabel({ t, phase: phase.kind, busy, failed, version });
+  return (
+    <FooterIconButton
+      onPress={onPress}
+      testID="sidebar-update"
+      label={label}
+      icon={resolveUpdateButtonIcon(failed, busy)}
+      iconColor={failed ? "destructive" : "accent"}
+    />
+  );
+}
+
+function resolveUpdateButtonIcon(failed: boolean, busy: NixUpdateBusy | null) {
+  if (failed) return CircleAlert;
+  return busy ? LoaderCircle : CircleArrowUp;
+}
+
+function resolveUpdateButtonLabel(input: {
+  t: ReturnType<typeof useTranslation>["t"];
+  phase: NixUpdatePhase["kind"];
+  busy: NixUpdateBusy | null;
+  failed: boolean;
+  version: string | null;
+}): string {
+  const version = formatVersionWithPrefix(input.version);
+  if (input.failed) return input.t("desktop.updates.nix.failedTooltip");
+  if (input.busy === "downloading") return input.t("desktop.updates.nix.downloading", { version });
+  if (input.busy === "applying") return input.t("desktop.updates.nix.applying", { version });
+  if (input.busy === "restarting") return input.t("desktop.updates.nix.restarting");
+  if (input.phase === "restart") return input.t("desktop.updates.nix.restartTooltip", { version });
+  return input.t("desktop.updates.nix.updateTooltip", { version });
 }
 
 function SidebarUsageIcon({ label }: { label: string }) {
