@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.1.4](https://github.com/iExalt/paseo/compare/paseo-v0.1.3...paseo-v0.1.4) (2026-10-15)
+
+
+### Bug Fixes
+
+* **ci:** degrade candidate cache failures to a miss ([e29298c](https://github.com/iExalt/paseo/commit/e29298c0a652676fa324522a83317055cfd561aa))
+* **ci:** fetch Electron in the lane that runs the desktop units ([b3d289a](https://github.com/iExalt/paseo/commit/b3d289a8b7b97d0e3cb5d87a2310f3d4b6f984ec))
+* **ci:** key the Android build cache on the lock alone ([8cb5517](https://github.com/iExalt/paseo/commit/8cb551762b4a4592e2002f4684c977bafb955852))
+* **ci:** read the ccache version Ubuntu 24.04 ships ([05bbbe0](https://github.com/iExalt/paseo/commit/05bbbe0a1852e5dc0dd29e432286d3376acffb72))
+* **ci:** revoke Dev Drive trust when Defender detaches ([5899667](https://github.com/iExalt/paseo/commit/5899667c929b8fa56c722c4f88c2ed9f0611c782))
+* **desktop:** sign the Nix macOS bundle as Paseo so notifications deliver ([faeb8e8](https://github.com/iExalt/paseo/commit/faeb8e8110f3ed6f9901bccbaa17a0c13827ee5a))
+
+
+### Performance Improvements
+
+* **ci:** balance server test shards by recorded duration ([30b3a49](https://github.com/iExalt/paseo/commit/30b3a494a3fd2afcc6352e0c1821a9e3be4f1d50))
+* **ci:** compile the fork APK's native code through an attested ccache ([70ac61a](https://github.com/iExalt/paseo/commit/70ac61afb518bd5bef690bcac52ee1ec004fbb47))
+* **ci:** issue signing, import and cross-check grants alongside their producers ([7bd0fbe](https://github.com/iExalt/paseo/commit/7bd0fbe9af4948846d598d4cc04f0ec8afa42f8c))
+* **ci:** order shard ties by code unit, not locale ([e14ff89](https://github.com/iExalt/paseo/commit/e14ff89ad5905d0f223711d3f68a659b19010964))
+* **ci:** restore attested installed dependencies for Windows arm64 candidates ([851bff1](https://github.com/iExalt/paseo/commit/851bff14ec3c10643ef22868dffdca3218445ba2))
+* **ci:** reuse attested Gradle build outputs for the fork APK ([a76f747](https://github.com/iExalt/paseo/commit/a76f747db88ce8ed4f70a3d62a7b8072189e7869))
+* **ci:** start native candidate builds alongside re-verification ([089472f](https://github.com/iExalt/paseo/commit/089472f8a0886e145acc3ff74421a929c9b71b4d))
+* **ci:** trust the Windows arm64 build Dev Drive ([9f64b94](https://github.com/iExalt/paseo/commit/9f64b94fd675c9c4c91d8f5ce8b1db0d326f4bff))
+* **ci:** verify candidate draft assets four at a time ([bea6d1d](https://github.com/iExalt/paseo/commit/bea6d1d9436d6c8014990ad086d7c90cd424124e))
+
 ## [0.1.3](https://github.com/iExalt/paseo/compare/paseo-v0.1.2...paseo-v0.1.3) (2026-10-14)
 
 
