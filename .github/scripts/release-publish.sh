@@ -17,8 +17,25 @@ headers="$RUNNER_TEMP/github-api-headers"
 (umask 077 && printf 'Authorization: Bearer %s\nX-GitHub-Api-Version: 2022-11-28\n' "${GH_TOKEN:?}" > "$headers")
 trap 'rm -f "$headers"' EXIT
 request() { curl --fail-with-body --silent --show-error --retry 3 --header "@$headers" "$@"; }
-# Creating calls are not retried: a retried 5xx that had succeeded would duplicate them.
-create() { curl --fail-with-body --silent --show-error --header "@$headers" "$@"; }
+# Creating calls retry only a 403/429 rejection, which created nothing; a retried
+# 5xx that had succeeded would duplicate the release or asset. Failures print
+# GitHub's response, which names rate limits and permission errors.
+create() {
+  local body="$RUNNER_TEMP/github-create-body" response="$RUNNER_TEMP/github-create-headers"
+  local code attempt
+  for attempt in 1 2; do
+    code="$(curl --silent --show-error --header "@$headers" --dump-header "$response" \
+      --output "$body" --write-out '%{http_code}' "$@")" || code=000
+    if [[ "$code" == 2?? ]]; then
+      cat "$body"
+      return 0
+    fi
+    echo "::warning::GitHub returned HTTP $code (attempt $attempt): $(head -c 2000 "$body" 2>/dev/null)" >&2
+    grep -iE '^(retry-after|x-ratelimit-[a-z]+|x-github-request-id):' "$response" >&2 || true
+    [[ "$attempt" == 1 && ( "$code" == 403 || "$code" == 429 ) ]] || return 1
+    sleep "$(awk -F': *' 'tolower($1) == "retry-after" { print $2 + 0 }' "$response" | grep -m1 -E '^[0-9]+$' || echo 60)"
+  done
+}
 
 expected_assets() {
   printf '%s\n' paseo-release-manifest.json paseo-release-manifest.sig \
