@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GitHub release steps for release.yml.
-#   draft:   create a draft release, upload the five assets, re-download and re-hash them
+#   draft:   create a draft release, upload the six assets, re-download and re-hash them
 #   publish: publish the verified draft as latest, creating TAG at SOURCE_SHA
 #   discard: delete RELEASE_ID if it is still a draft
 # Reads GH_TOKEN, GITHUB_REPOSITORY, VERSION, SOURCE_SHA, TAG, ASSETS, PUBLISH, RELEASE_ID.
@@ -40,7 +40,7 @@ create() {
 expected_assets() {
   printf '%s\n' paseo-release-manifest.json paseo-release-manifest.sig \
     "paseo-$VERSION-macos-arm64-nix-desktop.tar" "paseo-$VERSION-macos-arm64-nix-desktop.json" \
-    "paseo-$VERSION-android-arm64.apk" | sort
+    "paseo-$VERSION-android-arm64.apk" "paseo-$VERSION-android-cache-pin.json" | sort
 }
 
 draft() {

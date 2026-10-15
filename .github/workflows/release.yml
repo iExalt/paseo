@@ -184,6 +184,10 @@ jobs:
     permissions:
       contents: read
       packages: read
+    outputs:
+      build_sha256: ${{ steps.pack.outputs.build_sha256 }}
+      deps_inputs: ${{ steps.pack.outputs.deps_inputs }}
+      deps_sha256: ${{ steps.pack.outputs.deps_sha256 }}
     env:
       VERSION: ${{ needs.resolve.outputs.version }}
       PASEO_ANDROID_VERSION_CODE: ${{ needs.resolve.outputs.version_code }}
@@ -237,18 +241,55 @@ jobs:
         with:
           distribution: temurin
           java-version: "25.0.4"
-      # Match setup-java v4.7.1's absolute paths and exact key, without its save hook.
-      - name: Resolve Gradle cache home
-        id: gradle-home
-        run: echo "home=$HOME" >> "$GITHUB_OUTPUT"
-      - name: Restore Gradle dependencies
+      # Restore only the cache entries the latest published release pinned, each
+      # checked against its pinned sha256; anything else builds that cache cold.
+      # See android-cache-pin.mjs. Save and restore use the same tar paths.
+      - name: Read the Android cache pin
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          inputs="$(cat packages/app/android/gradle/wrapper/gradle-wrapper.properties package-lock.json | sha256sum | cut -d' ' -f1)"
+          echo "inputs=$inputs" >> "$GITHUB_OUTPUT"
+          node .github/scripts/android-cache-pin.mjs plan "$inputs"
+      - name: Restore the pinned Android build cache
+        if: steps.pin.outputs.build_key != ''
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         timeout-minutes: 3
+        continue-on-error: true
         with:
-          key: setup-java-Linux-x64-gradle-${{ hashFiles('packages/app/android/gradle/wrapper/gradle-wrapper.properties') }}
-          path: |
-            ${{ steps.gradle-home.outputs.home }}/.gradle/caches
-            ${{ steps.gradle-home.outputs.home }}/.gradle/wrapper
+          path: ${{ runner.temp }}/android-cache/build.tar
+          key: ${{ steps.pin.outputs.build_key }}
+      - name: Restore the pinned Gradle dependency cache
+        if: steps.pin.outputs.deps_key != ''
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/deps.tar
+          key: ${{ steps.pin.outputs.deps_key }}
+      - name: Verify and unpack the pinned caches
+        id: unpack
+        env:
+          BUILD_SHA256: ${{ steps.pin.outputs.build_sha256 }}
+          DEPS_SHA256: ${{ steps.pin.outputs.deps_sha256 }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/android-cache"
+          mkdir -p "$dir" "$RUNNER_TEMP/android-build-cache" "$HOME/.gradle"
+          if [[ -n "$BUILD_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$dir/build.tar" "$BUILD_SHA256" | grep -qx ok=true; then
+            tar -xf "$dir/build.tar" -C "$RUNNER_TEMP/android-build-cache"
+            echo "restored pinned build cache, sha256 verified"
+          fi
+          deps=false
+          if [[ -n "$DEPS_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$dir/deps.tar" "$DEPS_SHA256" | grep -qx ok=true; then
+            tar -xf "$dir/deps.tar" -C "$HOME/.gradle"
+            deps=true
+            echo "restored pinned Gradle dependency cache, sha256 verified"
+          fi
+          rm -f "$dir/build.tar" "$dir/deps.tar"
+          echo "deps_restored=$deps" >> "$GITHUB_OUTPUT"
       - name: Install Android SDK packages and runner swap
         run: |
           set -euo pipefail
@@ -258,20 +299,9 @@ jobs:
           set -o pipefail
           "$sdkmanager" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
           bash scripts/runner-swap.sh enable
-      # ccache and the Gradle build cache key every entry on its inputs, so the
-      # newest entry under the prefix only changes timing, never the APK. Each
-      # run saves a fresh key so the cache rolls forward.
       - name: Install ccache
         timeout-minutes: 3
         run: command -v ccache > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ccache; }
-      - name: Restore Android build caches
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        timeout-minutes: 3
-        continue-on-error: true
-        with:
-          path: ${{ runner.temp }}/android-build-cache
-          key: paseo-android-release-v1-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: paseo-android-release-v1-
       - name: Assemble arm64 release APK
         run: |
           set -euo pipefail
@@ -294,13 +324,55 @@ jobs:
             --build-cache --init-script "$GITHUB_WORKSPACE/.github/scripts/android-build-cache.init.gradle"
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
           ccache --show-stats
-      - name: Save Android build caches
+      # Each save is keyed by its tar's sha256 so the publish job can pin it. The
+      # dependency cache is re-pinned instead of saved when the pinned entry was
+      # restored and its inputs are unchanged.
+      - name: Pack the Android caches
+        id: pack
+        env:
+          INPUTS: ${{ steps.pin.outputs.inputs }}
+          DEPS_RESTORED: ${{ steps.unpack.outputs.deps_restored }}
+          DEPS_INPUTS_MATCH: ${{ steps.pin.outputs.deps_inputs_match }}
+          PINNED_DEPS_SHA256: ${{ steps.pin.outputs.deps_sha256 }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/android-cache"
+          mkdir -p "$dir"
+          tar -cf "$dir/build.tar" -C "$RUNNER_TEMP/android-build-cache" .
+          build_sha256="$(sha256sum "$dir/build.tar" | cut -d' ' -f1)"
+          if [[ "$DEPS_RESTORED" == true && "$DEPS_INPUTS_MATCH" == true ]]; then
+            deps_sha256="$PINNED_DEPS_SHA256" save_deps=false
+          else
+            # Gradle rewrites its lock and GC files on every start; --no-daemon leaves none held.
+            tar -cf "$dir/deps.tar" -C "$HOME/.gradle" --exclude='*.lock' --exclude=gc.properties caches wrapper
+            deps_sha256="$(sha256sum "$dir/deps.tar" | cut -d' ' -f1)" save_deps=true
+          fi
+          {
+            echo "build_sha256=$build_sha256"
+            echo "build_key=paseo-android-build-v2-$build_sha256"
+            echo "deps_inputs=$INPUTS"
+            echo "deps_sha256=$deps_sha256"
+            echo "deps_key=paseo-gradle-deps-v2-$INPUTS-$deps_sha256"
+            echo "save_deps=$save_deps"
+          } | tee -a "$GITHUB_OUTPUT"
+          ls -l "$dir"
+      # An existing key (a rerun, or one squatted first) fails the save; the pin
+      # still names it and the next restore's digest check falls back to cold.
+      - name: Save the Android build cache
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         timeout-minutes: 5
         continue-on-error: true
         with:
-          path: ${{ runner.temp }}/android-build-cache
-          key: paseo-android-release-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/android-cache/build.tar
+          key: ${{ steps.pack.outputs.build_key }}
+      - name: Save the Gradle dependency cache
+        if: steps.pack.outputs.save_deps == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 10
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/deps.tar
+          key: ${{ steps.pack.outputs.deps_key }}
       - name: Disable runner swap and remove Firebase config
         if: always()
         run: |
@@ -397,7 +469,7 @@ jobs:
 
   publish:
     name: ${{ inputs.publish && 'Publish release' || 'Upload dry-run draft' }}
-    needs: [resolve, macos-build, macos-smoke, android-sign]
+    needs: [resolve, macos-build, macos-smoke, android-build, android-sign]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -422,6 +494,14 @@ jobs:
           pattern: release-{macos,android}
           path: ${{ runner.temp }}/release-assets
           merge-multiple: true
+      - name: Pin the Android caches this run saved
+        env:
+          BUILD_SHA256: ${{ needs.android-build.outputs.build_sha256 }}
+          DEPS_INPUTS: ${{ needs.android-build.outputs.deps_inputs }}
+          DEPS_SHA256: ${{ needs.android-build.outputs.deps_sha256 }}
+        run: |
+          node .github/scripts/android-cache-pin.mjs pin \
+            "$RUNNER_TEMP/release-assets/paseo-$VERSION-android-cache-pin.json" "$VERSION"
       - name: Build, sign and verify the release manifest
         env:
           UPSTREAM_BASE: ${{ needs.resolve.outputs.upstream_base }}
