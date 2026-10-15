@@ -577,6 +577,8 @@ export function createDaemonCommandHandlers(
         confirmedDaemon: parseConfirmedDaemonInstance(args),
         stopDaemon: (confirmed) => stopDesktopDaemon("manual_ipc", confirmed),
         relaunch: (execPath) => {
+          // Launch the store path directly: LaunchServices resolves the bundle id to the
+          // highest registered CFBundleVersion, which can be a stale store bundle.
           app.relaunch({ execPath });
           // Quit after the IPC reply is sent; the relaunch happens when this process exits.
           setImmediate(() => app.quit());

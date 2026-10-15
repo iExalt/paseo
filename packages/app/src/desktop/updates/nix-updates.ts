@@ -36,6 +36,8 @@ interface NixUpdateState extends NixUpdateFacts {
   error: string | null;
   /** Set when an update the user asked for failed, so the sidebar can flag it. */
   failed: boolean;
+  /** A confirm-apply-restart flow is open; other entry points and background checks wait. */
+  flowActive: boolean;
   lastCheckedAt: number | null;
 }
 
@@ -47,6 +49,7 @@ export const useNixUpdateStore = create<NixUpdateState>(() => ({
   busy: null,
   error: null,
   failed: false,
+  flowActive: false,
   lastCheckedAt: null,
 }));
 
@@ -164,6 +167,7 @@ export function refreshNixUpdateStatus(): Promise<void> {
 /** Checks for a release and, when one is newer, downloads it without applying it. */
 export function checkForNixUpdate({ userInitiated }: { userInitiated: boolean }): Promise<void> {
   return enqueue(async () => {
+    if (!userInitiated && useNixUpdateStore.getState().flowActive) return;
     try {
       useNixUpdateStore.setState({ failed: false });
       await step("checking", "check");
