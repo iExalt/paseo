@@ -9,15 +9,16 @@ import { assertNativeActor } from "./native-candidate-authority.mjs";
 import { normalizeLock } from "./windows-modules-cache.mjs";
 import { repositorySaveCeiling } from "./windows-predecessor-cache.mjs";
 
-// ccache objects for the fork APK's native code. ccache keys every object on
-// its preprocessed input and compiler, so a near key only lowers the hit rate.
+// ccache objects and Gradle build-cache entries for the fork APK. Both key each
+// output on its inputs, so a near key only lowers the hit rate; a version bump
+// still restores every native object and about 500 Gradle tasks.
 // Only a dispatched dev writer may produce them; the candidate verifies the
 // attestation of the entry it actually restored before extracting. Entries are
 // immutable: replace a bad one with `gh cache delete <key>` and another writer
 // dispatch.
 export const writer = "android-build-cache.yml";
-export const prefix = "paseo-android-ccache-v1-";
-export const roots = ["ccache"];
+export const prefix = "paseo-android-build-v1-";
+export const roots = ["ccache", "gradle"];
 const sha256 = (value) => createHash("sha256").update(value).digest("hex");
 
 export function androidRecipe(source, ccacheVersion) {
@@ -33,7 +34,7 @@ export function androidRecipe(source, ccacheVersion) {
 
 export const androidKey = (recipe) => `${prefix}${sha256(JSON.stringify(recipe))}`;
 
-// About 53 MB in the spike; the whole archive is reserved against the ceiling.
+// About 150 MB in the spike; the whole archive is reserved against the ceiling.
 export const androidSaveAllowed = (usage, bytes) => usage + bytes <= repositorySaveCeiling;
 
 async function main() {
@@ -42,7 +43,7 @@ async function main() {
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   assertNativeActor(process.env);
   const directory = join(process.env.RUNNER_TEMP, "android-build-cache");
-  const archive = join(process.env.RUNNER_TEMP, "paseo-android-ccache.tar");
+  const archive = join(process.env.RUNNER_TEMP, "paseo-android-build-cache.tar");
   const output = (name, value) => appendFileSync(process.env.GITHUB_OUTPUT, `${name}=${value}\n`);
   const [operation] = process.argv.slice(2);
   if (operation === "key") {
@@ -50,8 +51,8 @@ async function main() {
     const key = androidKey(androidRecipe(process.cwd(), version));
     output("key", key);
     output("archive", archive);
-    output("ccache_dir", join(directory, "ccache"));
-    console.log(`Android ccache key ${key}`);
+    output("directory", directory);
+    console.log(`Android build cache key ${key}`);
   } else if (operation === "archive") {
     assert.equal(process.env.GITHUB_EVENT_NAME, "workflow_dispatch");
     assert.equal(
@@ -69,7 +70,7 @@ async function main() {
       list("-tvf"),
       roots,
     );
-    console.log(`Archived Android ccache (${statSync(archive).size} bytes)`);
+    console.log(`Archived Android build caches (${statSync(archive).size} bytes)`);
   } else if (operation === "budget") {
     const bytes = statSync(archive).size;
     let usage;
@@ -83,14 +84,16 @@ async function main() {
       assert.ok(Number.isSafeInteger(usage) && usage >= 0);
     } catch {
       output("save", "false");
-      console.log("::warning::Cache usage unavailable; Android ccache not saved.");
+      console.log("::warning::Cache usage unavailable; Android build caches not saved.");
       return;
     }
     const allowed = androidSaveAllowed(usage, bytes);
     output("save", String(allowed));
     console.log(JSON.stringify({ usage, bytes, save: allowed }));
     if (!allowed)
-      console.log("::warning::Repository cache headroom is too low; Android ccache not saved.");
+      console.log(
+        "::warning::Repository cache headroom is too low; Android build caches not saved.",
+      );
   } else if (operation === "self-verify") {
     const digest = await verifyBuildCache(archive, { key: process.env.PASEO_CACHE_KEY, writer });
     console.log(`Writer attestation verifies for ${digest}`);
@@ -104,17 +107,17 @@ async function main() {
       mkdirSync(directory, { recursive: true });
       execFileSync("tar", ["-xf", archive, "-C", directory], { timeout: 300_000 });
       output("verified", "true");
-      console.log(`Restored attested Android ccache ${key} (${digest})`);
+      console.log(`Restored attested Android build caches ${key} (${digest})`);
     } catch (error) {
       rmSync(directory, { recursive: true, force: true });
       output("verified", "false");
       console.log(
-        `::warning::Android ccache failed provenance (${error.message}); building without it.`,
+        `::warning::Android build caches failed provenance (${error.message}); building without it.`,
       );
     } finally {
       rmSync(archive, { force: true });
     }
-  } else throw new Error(`Unknown Android ccache operation: ${operation}`);
+  } else throw new Error(`Unknown Android build cache operation: ${operation}`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
