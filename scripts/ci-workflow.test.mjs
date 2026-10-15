@@ -296,6 +296,12 @@ test("Windows product trials retain trusted native runners, bounded cleanup and 
   assert.deepEqual(Object.keys(workflow.on), ["workflow_call", "workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
   const job = workflow.jobs.native;
+  // Candidates treat a modules-cache failure as a miss; dispatched writers fail.
+  for (const id of ["modules", "modules-cache"])
+    assert.equal(
+      job.steps.find((step) => step.id === id)["continue-on-error"],
+      "${{ inputs.source_sha != '' }}",
+    );
   assert.deepEqual(job.permissions, {
     contents: "read",
     actions: "read",
@@ -730,6 +736,13 @@ test("fork Android APK workflow is a trusted reusable lane with explicit release
     "${{ steps.ccache-cache.outputs.cache-matched-key }}",
   );
   assert.doesNotMatch(build, /actions\/cache\/save/);
+  // A cache failure only costs time: candidates treat it as a miss.
+  for (const id of ["ccache", "ccache-cache"]) assert.equal(byId(id)["continue-on-error"], true);
+  const writer = load(
+    readFileSync(new URL(".github/workflows/android-build-cache.yml", repoRoot), "utf8"),
+  );
+  for (const job of Object.values(writer.jobs))
+    for (const step of job.steps) assert.equal(step["continue-on-error"], undefined);
   // The Gradle build cache applies only once the attested cache directory is
   // bound; an unverified restore leaves it empty, so the build runs cold.
   assert.match(
