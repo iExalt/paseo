@@ -155,7 +155,7 @@ import { useWorkspaceRecovery } from "@/workspace-recovery/use-workspace-recover
 import type { WorkspaceRecoveryModel } from "@/workspace-recovery/model";
 import {
   buildWorkspaceTabSnapshot,
-  deriveWorkspaceAgentVisibility,
+  createWorkspaceAgentVisibilitySelector,
   workspaceAgentVisibilityEqual,
 } from "@/workspace-tabs/agent-visibility";
 import { deriveWorkspacePaneState } from "@/screens/workspace/workspace-pane-state";
@@ -1670,10 +1670,11 @@ function WorkspaceScreenContent({
     ),
   });
 
+  const [selectWorkspaceAgentVisibility] = useState(createWorkspaceAgentVisibilitySelector);
   const workspaceAgentVisibility = useStoreWithEqualityFn(
     useSessionStore,
     (state) =>
-      deriveWorkspaceAgentVisibility({
+      selectWorkspaceAgentVisibility({
         sessionAgents: state.sessions[normalizedServerId]?.agents,
         agentDetails: state.sessions[normalizedServerId]?.agentDetails,
         workspaceId: normalizedWorkspaceId,
