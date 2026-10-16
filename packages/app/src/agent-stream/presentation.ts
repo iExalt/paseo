@@ -51,11 +51,13 @@ const NO_COLLAPSED_TURNS: StreamPresentation["turns"] = collapseTurns({
   expandedHostIds: new Set(),
   getGroupedCalls: () => undefined,
 });
+// Shared by every presentation instance. Rows are a function of their source item, and a chat
+// view mounts fresh on Android whenever it leaves the small retained set, so per-instance caches
+// rebuild every user message projection on every such switch.
+const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
 
 /** Source messages reach plugins before display projection. */
 export function createStreamPresentation() {
-  const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
-
   function presentUserMessage(item: UserMessageItem): UserMessageItem {
     const cached = userMessageCache.get(item);
     if (cached) return cached;
