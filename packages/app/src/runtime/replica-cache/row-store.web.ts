@@ -135,7 +135,7 @@ export function createIndexedDbReplicaRowStore(
     const transaction = getDatabase().transaction(ROWS_STORE, "readonly");
     const completion = transactionComplete(transaction);
     const hosts = new Map<string, ReplicaStoredRowIndex[]>();
-    await new Promise<void>((resolve, reject) => {
+    const scan = new Promise<void>((resolve, reject) => {
       const request = transaction.objectStore(ROWS_STORE).openCursor();
       request.addEventListener("error", () =>
         reject(request.error ?? new Error("Replica row store request failed")),
@@ -158,7 +158,8 @@ export function createIndexedDbReplicaRowStore(
         cursor.continue();
       });
     });
-    await completion;
+    // A failed scan also aborts the transaction; awaiting both keeps that rejection handled.
+    await Promise.all([scan, completion]);
     return Array.from(hosts, ([serverId, rows]) => ({ serverId, rows }));
   }
 
