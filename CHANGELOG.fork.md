@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.0](https://github.com/iExalt/paseo/compare/paseo-v0.2.2...paseo-v0.3.0) (2026-10-16)
+
+
+### Features
+
+* **desktop:** one-button Nix updates with an hourly background download ([4cc0b0a](https://github.com/iExalt/paseo/commit/4cc0b0a8f6ddb6dc211e76d3463e606fa3c4367e))
+
+
+### Bug Fixes
+
+* **ci:** read every page of the proposal PR history ([83de49c](https://github.com/iExalt/paseo/commit/83de49c19c67a0ca9ee5483cd4ed37fce67fb15b))
+* **desktop:** run one Nix update flow at a time ([befbcff](https://github.com/iExalt/paseo/commit/befbcff6b2770482846c3330cf3c1ce6782aeca7))
+
 ## [0.2.2](https://github.com/iExalt/paseo/compare/paseo-v0.2.1...paseo-v0.2.2) (2026-10-15)
 
 
