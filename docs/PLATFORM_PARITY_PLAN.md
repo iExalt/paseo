@@ -11,14 +11,14 @@ These stay desktop-only. The parity manifest
 (`packages/app/src/platform-parity/manifest.ts`) records each one with its reason.
 Settings sections hidden in a plain web browser (not Electron) are out of scope.
 
-| Difference                                                             | Reason                                           |
-| ---------------------------------------------------------------------- | ------------------------------------------------ |
-| iOS update notice                                                      | The App Store and TestFlight deliver iOS updates |
-| Browser automation tools                                               | They drive Electron's browser                    |
-| Interface font family                                                  | Native cannot load arbitrary system fonts        |
-| Remote SSH host onboarding                                             | Needs a local SSH client                         |
-| Open in editor or file manager, CLI install, OS permissions, daemon UI | Need the local filesystem or Electron            |
-| Window chrome, favicon status, quitting overlay                        | Desktop window concepts                          |
+| Difference                                                                  | Reason                                                |
+| --------------------------------------------------------------------------- | ----------------------------------------------------- |
+| iOS update notice                                                           | The App Store and TestFlight deliver iOS updates      |
+| Browser automation tools                                                    | They drive Electron's browser; recorded when F1 lands |
+| Interface font family                                                       | Native cannot load arbitrary system fonts             |
+| Remote SSH host onboarding                                                  | Needs a local SSH client                              |
+| Open in editor or file manager, CLI install, open location, built-in daemon | Need the local filesystem or Electron                 |
+| Window chrome, favicon status, quitting overlay                             | Desktop window concepts                               |
 
 ## Chunks
 

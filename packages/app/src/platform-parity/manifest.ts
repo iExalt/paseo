@@ -110,6 +110,30 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
   },
   runtimeGates: {
+    "android/fork-updates/store.ts": {
+      kind: "deliberate",
+      reason: "iOS updates come from the App Store and TestFlight",
+    },
+    "app/_layout.tsx": {
+      kind: "deliberate",
+      reason: "Window chrome, favicon status and the quitting overlay are desktop window concepts",
+    },
+    "components/add-host-method-modal.tsx": {
+      kind: "deliberate",
+      reason: "Remote SSH onboarding needs a local SSH client",
+    },
+    "screens/settings-screen.tsx": {
+      kind: "deliberate",
+      reason: "Open location and built-in daemon controls need Electron",
+    },
+    "workspace/open-in-editor/button.tsx": {
+      kind: "deliberate",
+      reason: "Opening an editor needs the local machine",
+    },
+    "workspace/open-in-file-manager/menu-item.tsx": {
+      kind: "deliberate",
+      reason: "Opening a file manager needs the local machine",
+    },
     "keyboard/availability.ts": {
       kind: "gap",
       chunk: "E1",
