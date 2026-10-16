@@ -96,9 +96,28 @@ Evidence state: verified on Paseo Debug, with the limits below.
 - iOS is unverified. Its Markdown spans report no lines, so a jump stops at
   the row, and Next inside a visible block jumps that row to the top.
 
+### C2: find in the file view on mobile
+
+Evidence state: accepted on code review and unit tests; the device checks wait
+for the batch session.
+
+- Line positions come from wrapped rows of a measured monospace cell, which
+  also fixes opening a file at a line far down (rows were assumed 20 px).
+- Pending on the device: a link to line ~1000 lands centred; in a file of
+  long wrapping lines, line ~1000 and a match near the end land centred within
+  a few rows; a tab-indented file draws 4-column indents and a deep line lands
+  centred; "N of M" matches the tints, every match is tinted and the current
+  one strong, Next and Previous wrap, É finds é, typing stays responsive in a
+  ~5 MB file, the bar sits above the keyboard; Back and switching tabs close
+  it; Find is absent for a too-large file and a non-source preview.
+- Not modelled: line breaks at punctuation other than hyphens, and characters
+  wider than one cell (CJK, emoji).
+
 ## Current boundary
 
-- B2 and chunks C2 to F are not implemented.
+- B2 and chunks C3 to F are not implemented. C2 waits for the device batch.
+- Device checks are batched: the user asked for one phone session per large
+  chunk instead of a check per increment. Plan boxes stay open until then.
 - B2's push checks wait for the first fork release that contains it.
 - Native behaviour is checked on Paseo Debug on the user's Android phone. iOS
   and physical tablets are not available.
