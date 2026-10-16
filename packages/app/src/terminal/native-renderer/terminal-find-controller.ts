@@ -64,8 +64,10 @@ export function createTerminalFindController(source: TerminalFindSource) {
       const at = result.matches.findIndex((match) => compare(match, anchor) >= 0);
       const exact = at >= 0 && compare(result.matches[at]!, anchor) === 0;
       let next: number;
-      if (direction === 1) next = exact ? at + 1 : at;
-      else next = at < 0 ? count - 1 : at - 1;
+      // Nothing at or after the anchor (output cleared it): Next wraps to the first.
+      if (at < 0) next = direction === 1 ? 0 : count - 1;
+      else if (direction === 1) next = exact ? at + 1 : at;
+      else next = at - 1;
       return select(result, ((next % count) + count) % count);
     },
     clear(): void {

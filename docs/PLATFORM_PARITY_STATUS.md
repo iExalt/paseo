@@ -113,9 +113,31 @@ for the batch session.
 - Not modelled: line breaks at punctuation other than hyphens, and characters
   wider than one cell (CJK, emoji).
 
+### C3: terminal find on mobile
+
+Evidence state: accepted on code review and unit tests; the device checks wait
+for the batch session.
+
+- The native renderer searches its headless buffer like web terminal find:
+  literal, without case, across soft wraps, capped at 20,000. Next and
+  Previous step from the selected match's position, so scrollback trimmed by
+  new output does not shift them.
+- Pending on the device: in a busy terminal with scrollback, a term deep in
+  history is found, Next and Previous wrap, and the count matches the
+  highlights; a match across a soft wrap and one ending on a wrapped row's
+  last column paint on both rows; output arriving while scrolled to a match
+  does not move the view; after scrollback trims, Next lands on the right
+  match; the current match is not under the bar; with the keyboard up the bar
+  shows above the key bar, typing in it sends nothing to the shell, and
+  closing it gives input back; Back closes it. Time a full scan of a full
+  scrollback: above about 50 ms, scan in chunks.
+- Not handled, as on web: a wide character pushed to the next row leaves a
+  blank cell, so a match across that wrap is not found.
+
 ## Current boundary
 
-- B2 and chunks C3 to F are not implemented. C2 waits for the device batch.
+- B2 and chunks D to F are not implemented. C2 and C3 wait for the device
+  batch.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
 - B2's push checks wait for the first fork release that contains it.

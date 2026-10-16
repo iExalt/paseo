@@ -38,6 +38,16 @@ describe("terminal find controller", () => {
     expect(next.startRow).toBe(row + 1);
   });
 
+  it("wraps Next to the first match when output cleared everything after the anchor", async () => {
+    const { controller, write, line } = setup();
+    for (let index = 0; index < 8; index += 1) await write(line(index));
+    controller.search("match", 0);
+    const last = controller.step(-1);
+    expect(last.current).toBe(last.matches.length - 1);
+    await write("\x1b[2J\x1b[H");
+    expect(controller.step(1).current).toBe(0);
+  });
+
   it("reuses the scan while nothing was written", async () => {
     const { controller, write, line } = setup();
     await write(line(0));
