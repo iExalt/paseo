@@ -1011,8 +1011,15 @@ export class ReplicaCache {
     return { workspace, ...(project ? { project } : {}) };
   }
 
-  async readDirectory(serverId: string): Promise<CachedDirectory> {
-    const rows = await this.readRows(serverId, ["agent", "workspace", "project", "checkpoint"]);
+  /** Resolves undefined when the read kept losing to commits: not cached, rather than empty. */
+  async readDirectory(serverId: string): Promise<CachedDirectory | undefined> {
+    const rows = await this.readRowsOrMiss(serverId, [
+      "agent",
+      "workspace",
+      "project",
+      "checkpoint",
+    ]);
+    if (!rows) return undefined;
     const result: DirectoryReadAccumulator = {
       agents: new Map(),
       workspaces: new Map(),
@@ -1058,6 +1065,15 @@ export class ReplicaCache {
     kinds: readonly ReplicaRowKind[],
     ids?: readonly string[],
   ): Promise<ReplicaRow[]> {
+    return (await this.readRowsOrMiss(serverId, kinds, ids)) ?? [];
+  }
+
+  /** Resolves null when every attempt lost a race with a commit to the requested rows. */
+  private async readRowsOrMiss(
+    serverId: string,
+    kinds: readonly ReplicaRowKind[],
+    ids?: readonly string[],
+  ): Promise<ReplicaRow[] | null> {
     if (!this.activeServerIds.has(serverId)) return [];
     this.activeReads += 1;
     try {
@@ -1085,7 +1101,7 @@ export class ReplicaCache {
         const rows = await this.rowStore.read(serverId, kinds, ids);
         if (this.canReadRowsSince(serverId, kinds, ids, snapshot)) return rows;
       }
-      return [];
+      return this.activeServerIds.has(serverId) ? null : [];
     } catch {
       return [];
     } finally {
