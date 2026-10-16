@@ -1717,10 +1717,9 @@ it.each(["before", "during", "before-metadata", "damaged"] as const)(
       expect(client.workspaceSyncRequests).toEqual(cacheFirst ? [cursor] : [{}, {}]);
       expect.soft(visibleIds(), "after overlapping refresh").toEqual(["A", "B"]);
       await cache.flush();
-      expect([...(await cache.readDirectory(serverId)).workspaces.keys()].sort()).toEqual([
-        "A",
-        "B",
-      ]);
+      const stored = await cache.readDirectory(serverId);
+      if (!stored) throw new Error("directory read missed");
+      expect([...stored.workspaces.keys()].sort()).toEqual(["A", "B"]);
 
       await directory.refreshAll();
       await cache.flush();
@@ -1728,6 +1727,7 @@ it.each(["before", "during", "before-metadata", "damaged"] as const)(
       useSessionStore.getState().clearSession(serverId);
       restartedCache.setHosts([serverId]);
       const persisted = await restartedCache.readDirectory(serverId);
+      if (!persisted) throw new Error("directory read missed");
       expect(persisted.checkpoint?.workspaces).toEqual(cursor);
       expect
         .soft([...persisted.workspaces.keys()].sort(), "persisted baseline")
