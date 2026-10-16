@@ -583,7 +583,8 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
         <DesktopWindowControlsSync />
         <OfferLinkListener />
         <HostSessionManager />
-        <FaviconStatusSync />
+        {/* The favicon and dock badge exist only on web and desktop. */}
+        {isNative ? null : <FaviconStatusSync />}
         {children}
       </VoiceProvider>
     </AppearanceProvider>
