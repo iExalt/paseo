@@ -17,7 +17,7 @@ import { FONT_SIZE } from "@/styles/theme";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { EditorVisualTheme } from "../editor/extensions.web";
 import { FileFindBar, useFileFind } from "../find/index.native";
-import { sourceLineOffsets, type SourceCellSize } from "./line-layout";
+import { expandRunTabs, expandTabs, sourceLineOffsets, type SourceCellSize } from "./line-layout";
 import { selectSourcePresentation } from "./presentation";
 
 interface FileSourceViewProps {
@@ -80,12 +80,14 @@ function VirtualizedSource({
   presentation: "highlighted" | "plain";
 }) {
   const listRef = useRef<FlatList<SourceLine>>(null);
-  const texts = useMemo(() => content.split("\n"), [content]);
+  // Tabs are expanded once here, so the drawn text, the layout model and find's match
+  // offsets all read the same characters.
+  const texts = useMemo(() => content.split("\n").map((line) => expandTabs(line)), [content]);
   const lines = useMemo(() => {
     if (presentation === "highlighted")
       return highlightCode(content, filename).map((tokens, index) => ({
         number: index + 1,
-        tokens,
+        tokens: expandRunTabs(tokens),
       }));
     return texts.map((text, index) => ({ number: index + 1, tokens: [{ text, style: null }] }));
   }, [content, filename, presentation, texts]);
@@ -184,7 +186,8 @@ const SourceLineView = memo(function SourceLineView({
   return (
     <View style={styles.line}>
       <Text style={styles.gutter}>{line.number}</Text>
-      <Text selectable style={styles.text}>
+      {/* The layout model wraps greedily, as the simple strategy does. */}
+      <Text selectable textBreakStrategy="simple" style={styles.text}>
         {runs.map((run) => {
           const start = offset;
           offset += run.text.length;

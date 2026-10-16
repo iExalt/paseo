@@ -1,5 +1,9 @@
-/** Columns a tab advances to, the way the source view's monospace text lays it out. */
-const TAB_COLUMNS = 8;
+/**
+ * Tabs are expanded to spaces before the source view draws them: Android advances a tab
+ * by a fixed pixel step, not by columns, so the drawn width and this model would drift.
+ * Four columns matches CodeMirror's default on web.
+ */
+const TAB_COLUMNS = 4;
 
 /** The measured size of one monospace character in the source view. */
 export interface SourceCellSize {
@@ -7,28 +11,44 @@ export interface SourceCellSize {
   lineHeight: number;
 }
 
-function expandTabs(text: string): string {
+/** The text with tabs expanded, starting at `column` of its line. */
+export function expandTabs(text: string, column = 0): string {
   if (!text.includes("\t")) return text;
   let out = "";
   for (const char of text) {
-    out += char === "\t" ? " ".repeat(TAB_COLUMNS - (out.length % TAB_COLUMNS)) : char;
+    out += char === "\t" ? " ".repeat(TAB_COLUMNS - ((column + out.length) % TAB_COLUMNS)) : char;
   }
   return out;
 }
 
+/** Expands tabs across a line's styled runs, carrying the column from run to run. */
+export function expandRunTabs<Run extends { text: string }>(runs: readonly Run[]): Run[] {
+  let column = 0;
+  return runs.map((run) => {
+    const text = expandTabs(run.text, column);
+    column += text.length;
+    return text === run.text ? run : { ...run, text };
+  });
+}
+
 /**
- * Rows a source line wraps to at `columns` characters per row. Lines wrap greedily at
- * spaces, as Android's simple break strategy does, and a word longer than a row breaks
- * inside it. Characters wider than one cell, such as CJK and emoji, count as one, so
- * lines full of them come out short.
+ * Rows a tab-expanded source line wraps to at `columns` characters per row. Lines wrap
+ * greedily, as the view's `textBreakStrategy="simple"` does: after spaces and after
+ * hyphens, and inside a word longer than a row. Other punctuation breaks and characters
+ * wider than one cell, such as CJK and emoji, are not modelled, so lines full of them
+ * come out off by a row.
  */
 export function sourceLineRows(text: string, columns: number): number {
   const width = Math.max(1, columns);
   let rows = 1;
   let column = 0;
-  for (const [, word, spaces] of expandTabs(text).matchAll(/(\S*)(\s*)/g)) {
-    if (!word && !spaces) break;
-    let length = word!.length;
+  for (const [piece] of text.matchAll(/\s+|[^\s-]*-+|[^\s-]+/g)) {
+    if (/^\s/.test(piece)) {
+      // Spaces hang past the edge instead of opening a row.
+      column += piece.length;
+      continue;
+    }
+    let length = piece.length;
     if (column > 0 && column + length > width) {
       rows += 1;
       column = 0;
@@ -37,8 +57,7 @@ export function sourceLineRows(text: string, columns: number): number {
       rows += 1;
       length -= width;
     }
-    // Trailing spaces hang past the edge instead of opening a row.
-    column += length + spaces!.length;
+    column += length;
   }
   return rows;
 }

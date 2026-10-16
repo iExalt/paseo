@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sourceLineOffsets, sourceLineRows } from "./line-layout";
+import { expandRunTabs, expandTabs, sourceLineOffsets, sourceLineRows } from "./line-layout";
 
 describe("sourceLineRows", () => {
   it("keeps short and empty lines on one row", () => {
@@ -18,9 +18,20 @@ describe("sourceLineRows", () => {
     expect(sourceLineRows(`ab ${"c".repeat(12)}`, 10)).toBe(3);
   });
 
-  it("expands tabs to the next tab stop", () => {
-    expect(sourceLineRows("\tx", 8)).toBe(2);
-    expect(sourceLineRows("ab\tx", 9)).toBe(1);
+  it("breaks after hyphens", () => {
+    expect(sourceLineRows("aaaa-bbbbbbb", 10)).toBe(2);
+    expect(sourceLineRows("aaaaaaaaaaaa-b", 10)).toBe(2);
+  });
+});
+
+describe("expandTabs", () => {
+  it("expands to the next stop and carries the column across runs", () => {
+    expect(expandTabs("\tx")).toBe("    x");
+    expect(expandTabs("ab\tx")).toBe("ab  x");
+    expect(expandRunTabs([{ text: "abc" }, { text: "\tx" }]).map((run) => run.text)).toEqual([
+      "abc",
+      " x",
+    ]);
   });
 });
 

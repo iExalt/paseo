@@ -13,7 +13,10 @@ export function fileFindPattern(query: string): RegExp | null {
   return new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
 }
 
-/** Every match in reading order, up to the cap; `limited` says more were left uncounted. */
+/**
+ * Every match in reading order, up to the cap; `limited` says more were left uncounted.
+ * Native passes tab-expanded lines, so a query holding a literal tab finds nothing there.
+ */
 export function findLineMatches(
   lines: readonly string[],
   query: string,
