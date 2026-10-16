@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.2](https://github.com/iExalt/paseo/compare/paseo-v0.3.1...paseo-v0.3.2) (2026-10-16)
+
+
+### Bug Fixes
+
+* **app:** spin the update icon and show transfer progress on its button ([671b571](https://github.com/iExalt/paseo/commit/671b571a0fb4b94eb9f530771b5bd5c17dfede82))
+
 ## [0.3.1](https://github.com/iExalt/paseo/compare/paseo-v0.3.0...paseo-v0.3.1) (2026-10-16)
 
 
