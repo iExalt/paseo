@@ -70,6 +70,13 @@ export interface CachedTimeline {
   hasOlder: boolean;
 }
 
+// A commit carries the store's tail and live head by reference. Commits land once per frame per
+// streaming agent, while a persist serializes only the newest items once a second, so joining
+// them is left to serialization.
+export interface CommittedTimeline extends CachedTimeline {
+  head?: readonly StreamItem[];
+}
+
 const PERSIST_DELAY_MS = 1_000;
 const MAX_TIMELINE_ITEMS = 50;
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
@@ -371,7 +378,7 @@ type StructuredReplicaUpsert =
   | { serverId: string; kind: "agent"; id: string; value: Agent }
   | { serverId: string; kind: "workspace"; id: string; value: WorkspaceDescriptor }
   | { serverId: string; kind: "project"; id: string; value: ProjectDescriptor }
-  | { serverId: string; kind: "timeline"; id: string; value: CachedTimeline }
+  | { serverId: string; kind: "timeline"; id: string; value: CommittedTimeline }
   | { serverId: string; kind: "checkpoint"; id: string; value: DirectoryCheckpoint };
 
 const DirectoryCursorSchema = z.strictObject({
@@ -758,47 +765,44 @@ function isTimelineItemStoredLosslessly(item: StreamItem): boolean {
   }
 }
 
-// Coverage is only ever claimed for a window within the item limit, so a longer timeline only
-// needs its stored tail serialized. Serializing everything first cost a pass over the whole
-// session's history per streaming agent on every persist.
-function serializeTimelineItems(canonicalItems: StreamItem[]): StoredTimelineItem[] {
-  if (canonicalItems.length <= MAX_TIMELINE_ITEMS) {
-    return canonicalItems.map(serializeTimelineItem).filter((item) => item !== null);
-  }
+// Coverage is only ever claimed for a window within the item limit, so only the newest items are
+// visited, from the end. Filtering or copying the whole history first cost a pass over the
+// session per streaming agent on every persist.
+function serializeTimeline(timeline: CommittedTimeline): StoredTimeline | null {
   const items: StoredTimelineItem[] = [];
-  for (
-    let index = canonicalItems.length - 1;
-    index >= 0 && items.length < MAX_TIMELINE_ITEMS;
-    index -= 1
-  ) {
-    const item = serializeTimelineItem(canonicalItems[index]!);
-    if (item !== null) items.push(item);
+  const visited: StreamItem[] = [];
+  let visitedAll = true;
+  visit: for (const segment of [timeline.head ?? [], timeline.items]) {
+    for (let index = segment.length - 1; index >= 0; index -= 1) {
+      const item = segment[index]!;
+      if (item.kind === "user_message" && isUnreconciledLocalUserMessage(item)) continue;
+      if (items.length >= MAX_TIMELINE_ITEMS) {
+        visitedAll = false;
+        break visit;
+      }
+      visited.push(item);
+      const stored = serializeTimelineItem(item);
+      if (stored !== null) items.push(stored);
+    }
   }
-  return items.toReversed();
-}
-
-function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
-  const canonicalItems = timeline.items.filter(
-    (item) => item.kind !== "user_message" || !isUnreconciledLocalUserMessage(item),
-  );
-  const items = serializeTimelineItems(canonicalItems);
   const range = timeline.range;
   const canPersistCoverage =
     range !== null &&
     range.retainedRanges === undefined &&
-    canonicalItems.length <= MAX_TIMELINE_ITEMS &&
-    items.length === canonicalItems.length &&
-    canonicalItems.every(
+    visitedAll &&
+    visited.length <= MAX_TIMELINE_ITEMS &&
+    items.length === visited.length &&
+    visited.every(
       (item) =>
         isTimelineItemStoredLosslessly(item) &&
         item.timelineCursor?.epoch === range.epoch &&
         item.timelineCursor.seq >= range.startSeq &&
         item.timelineCursor.seq <= range.endSeq,
     ) &&
-    canonicalItems.some((item) => item.timelineCursor?.seq === range.endSeq);
+    visited.some((item) => item.timelineCursor?.seq === range.endSeq);
   return {
     agentId: timeline.agentId,
-    items: items.slice(-MAX_TIMELINE_ITEMS),
+    items: items.toReversed(),
     range: canPersistCoverage
       ? { epoch: range.epoch, startSeq: range.startSeq, endSeq: range.endSeq }
       : null,
@@ -1228,7 +1232,7 @@ export class ReplicaCache {
     this.schedulePersist();
   }
 
-  commitTimeline(serverId: string, agentId: string, timeline: CachedTimeline): void {
+  commitTimeline(serverId: string, agentId: string, timeline: CommittedTimeline): void {
     if (!this.activeServerIds.has(serverId)) return;
     if (timeline.agentId !== agentId) throw new Error("Timeline cache key does not match payload");
     this.queueUpsert({ serverId, kind: "timeline", id: agentId, value: timeline });
