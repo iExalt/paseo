@@ -14,7 +14,16 @@ vi.mock("expo-notifications", () => ({
   AndroidImportance: { DEFAULT: 3 },
 }));
 vi.mock("expo-constants", () => ({ default: { easConfig: { projectId: "project" } } }));
-vi.mock("react-native", () => ({ Platform: { OS: "android" } }));
+const appStateListeners = vi.hoisted(() => new Set<(state: string) => void>());
+vi.mock("react-native", () => ({
+  Platform: { OS: "android" },
+  AppState: {
+    addEventListener: (_event: string, listener: (state: string) => void) => {
+      appStateListeners.add(listener);
+      return { remove: () => appStateListeners.delete(listener) };
+    },
+  },
+}));
 vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
     getItem: async (key: string) => storage.get(key) ?? null,
@@ -51,6 +60,7 @@ describe("push subscription registration status", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storage.clear();
+    appStateListeners.clear();
     usePushRegistrationStore.setState({}, true);
     notifications.getPermissionsAsync.mockResolvedValue({ status: "granted", canAskAgain: true });
     notifications.getExpoPushTokenAsync.mockResolvedValue({ data: "ExponentPushToken[a]" });
@@ -68,6 +78,18 @@ describe("push subscription registration status", () => {
 
     stop();
     expect(usePushRegistrationStore.getState().host).toBeUndefined();
+  });
+
+  it("retries a missing permission when the app returns from system settings", async () => {
+    notifications.getPermissionsAsync.mockResolvedValue({ status: "denied", canAskAgain: false });
+    startSubscription({ client: fakeClient(true) as never, serverId: "host" });
+    await settle();
+    notifications.getPermissionsAsync.mockResolvedValue({ status: "granted", canAskAgain: true });
+
+    for (const listener of appStateListeners) listener("active");
+    await settle();
+
+    expect(usePushRegistrationStore.getState().host).toBe("sent");
   });
 
   it("reports a missing permission, then re-registers on request", async () => {

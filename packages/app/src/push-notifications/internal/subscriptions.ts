@@ -1,10 +1,15 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
-import { PUSH_CHANNEL_ID, provideReregister, setPushRegistrationStatus } from "../registration";
+import {
+  PUSH_CHANNEL_ID,
+  provideReregister,
+  setPushRegistrationStatus,
+  usePushRegistrationStore,
+} from "../registration";
 import type { RevokePushNotificationsInput, StartPushNotificationsInput } from "./types";
 
 const STORAGE_PREFIX = "@paseo:expo-push-token:";
@@ -95,11 +100,18 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
   resolve();
   const stopReregister = provideReregister(serverId, resolve);
   const unsubscribe = input.client.subscribeConnectionStatus(() => register());
+  // Notification access is usually granted in system settings, outside the app.
+  const appState = AppState.addEventListener("change", (state) => {
+    if (state === "active" && usePushRegistrationStore.getState()[serverId] === "no-permission") {
+      resolve();
+    }
+  });
 
   return () => {
     stopped = true;
     stopReregister();
     unsubscribe();
+    appState.remove();
   };
 }
 
