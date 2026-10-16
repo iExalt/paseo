@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/iExalt/paseo/compare/paseo-v0.4.2...paseo-v0.5.0) (2026-10-16)
+
+
+### Features
+
+* **app:** show Android fork updates in the sidebar and remember them ([2754cfb](https://github.com/iExalt/paseo/commit/2754cfb4a6a9cfa5dde054f5f978365ec941e6a3))
+
 ## [0.4.2](https://github.com/iExalt/paseo/compare/paseo-v0.4.1...paseo-v0.4.2) (2026-10-16)
 
 
