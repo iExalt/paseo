@@ -184,6 +184,19 @@ unit tests and a browser test; the device checks wait for the batch session.
   still works and the bar is closed once the editor is back; Mod-f from a
   hardware keyboard opens it (keyboard only).
 
+### E: tablets
+
+Evidence state: E0 spike done; E2a implemented with unit tests.
+Device checks wait for a tablet emulator batch.
+
+- Wide native means a window at least 576 dp wide: tablets and unfolded
+  foldables. Android 16 ignores the portrait lock at 600 dp and wider, so
+  these layouts rotate; C2's and D1's rotation cases join the tablet batch.
+- E2a: side-by-side diff was gated to web by two checks the manifest did not
+  list (`panels/diff-panel.tsx`, `git/diff-pane.tsx`). Both now follow width
+  only. Pending on the tablet: the layout toggle shows, split columns scroll
+  and select.
+
 ## Current boundary
 
 - Chunks E and F are not implemented. C2, C3 and D1 wait for the device batch.
