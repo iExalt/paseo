@@ -1057,7 +1057,14 @@ export class ReplicaCache {
     return (await this.readRowsOrMiss(serverId, kinds, ids)) ?? [];
   }
 
-  /** Resolves null when every attempt lost a race with a commit to the requested rows. */
+  /**
+   * Resolves null — a miss — when the store cannot answer for the requested rows: every attempt
+   * lost a race with a commit to them, their accepted commits cannot be persisted, or the store
+   * failed. A miss is not an empty result. Directory sync accepts an empty directory as hydrated
+   * (an empty sidebar, dropped cursors) but waits for the network on a miss. With a broken store
+   * and no connection at startup that wait has no end; "loading" is the accurate state there, so
+   * keep these paths a miss. Only an inactive host answers empty, because it has no rows.
+   */
   private async readRowsOrMiss(
     serverId: string,
     kinds: readonly ReplicaRowKind[],
@@ -1081,7 +1088,7 @@ export class ReplicaCache {
           // fail closed rather than re-attempt the write on every pass. A write rejected for
           // other rows leaves these stored rows readable.
           if (!(await this.syncPending()) && this.hasPendingRowChanges(serverId, kinds, ids)) {
-            return [];
+            return null;
           }
         } else {
           // Other rows' pending commits stay on their debounce; only in-flight writes must land.
@@ -1092,7 +1099,7 @@ export class ReplicaCache {
       }
       return this.activeServerIds.has(serverId) ? null : [];
     } catch {
-      return [];
+      return null;
     } finally {
       this.activeReads -= 1;
       if (this.activeReads === 0) this.rowChangeSequences.clear();
