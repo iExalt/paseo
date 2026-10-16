@@ -80,6 +80,12 @@ import {
   type NixUpdateBusy,
   type NixUpdatePhase,
 } from "@/desktop/updates/nix-updates";
+import {
+  hasPendingForkUpdate,
+  isForkUpdaterShown,
+  updateToPendingForkRelease,
+  useForkUpdateStore,
+} from "@/android/fork-updates/store";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
@@ -464,6 +470,9 @@ function SidebarFooter({
   const phase = useNixUpdatePhase();
   const failed = useNixUpdateStore((state) => state.failed);
   const showUpdate = isSidebarUpdateVisible(phase.kind, failed);
+  const pendingForkUpdate = useForkUpdateStore(hasPendingForkUpdate);
+  const showForkUpdate = isForkUpdaterShown() && pendingForkUpdate;
+  const updateSlots = Number(showUpdate) + Number(showForkUpdate);
   const controlSize = TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)];
   const [rowWidth, setRowWidth] = useState(0);
   const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
@@ -472,12 +481,12 @@ function SidebarFooter({
   const { inline, overflow } = useMemo(
     () =>
       resolveSidebarFooterLayout({
-        rowWidth: Math.max(0, rowWidth - (showUpdate ? controlSize : 0)),
+        rowWidth: Math.max(0, rowWidth - updateSlots * controlSize),
         controlSize,
         rowPadding: FOOTER_ROW_PADDING,
         actions: SIDEBAR_FOOTER_ACTIONS,
       }),
-    [rowWidth, controlSize, showUpdate],
+    [rowWidth, controlSize, updateSlots],
   );
   const isInline = (action: SidebarFooterAction) => inline.includes(action);
 
@@ -511,6 +520,7 @@ function SidebarFooter({
           ) : null}
           <View style={styles.footerSpacer} />
           {rowWidth > 0 && showUpdate ? <SidebarUpdateButton /> : null}
+          {rowWidth > 0 && showForkUpdate ? <SidebarForkUpdateButton /> : null}
           {isInline("help") ? <SidebarHelpMenu /> : null}
           {overflow.length > 0 ? (
             <SidebarFooterOverflowMenu
@@ -564,6 +574,30 @@ function SidebarUpdateButton() {
       label={label}
       icon={resolveUpdateButtonIcon(failed, busy)}
       iconColor={failed ? "destructive" : "accent"}
+    />
+  );
+}
+
+function SidebarForkUpdateButton() {
+  const { t } = useTranslation();
+  const pending = useForkUpdateStore(hasPendingForkUpdate);
+  const status = useForkUpdateStore((state) => state.status);
+  const version = useForkUpdateStore((state) => state.update?.manifest.version ?? null);
+  const onPress = useCallback(() => void updateToPendingForkRelease(), []);
+  if (!pending) return null;
+  const downloading = status === "downloading";
+  const formattedVersion = formatVersionWithPrefix(version);
+  return (
+    <FooterIconButton
+      onPress={onPress}
+      testID="sidebar-fork-update"
+      label={
+        downloading
+          ? t("desktop.updates.nix.downloading", { version: formattedVersion })
+          : t("desktop.updates.nix.updateTooltip", { version: formattedVersion })
+      }
+      icon={downloading ? SpinningLoaderIcon : CircleArrowUp}
+      iconColor="accent"
     />
   );
 }
