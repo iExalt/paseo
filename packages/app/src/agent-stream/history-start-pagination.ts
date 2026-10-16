@@ -9,6 +9,8 @@ export type HistoryStartPaginationState =
 
 export interface HistoryStartPaginationInput {
   distanceFromHistoryStart: number;
+  /** How close to the history start a load begins; defaults to HISTORY_START_THRESHOLD_PX. */
+  historyStartThresholdPx?: number;
   hasOlderHistory: boolean;
   isLoadingOlderHistory: boolean;
   isReady: boolean;
@@ -48,6 +50,12 @@ export function abandonHistoryStartPaginationRequest(
   return { status: "latched" };
 }
 
+function isWithinHistoryStartThreshold(input: HistoryStartPaginationInput): boolean {
+  return (
+    input.distanceFromHistoryStart <= (input.historyStartThresholdPx ?? HISTORY_START_THRESHOLD_PX)
+  );
+}
+
 export function evaluateHistoryStartPagination(
   state: HistoryStartPaginationState,
   input: HistoryStartPaginationInput,
@@ -82,7 +90,7 @@ export function evaluateHistoryStartPagination(
     return { state, shouldLoad: false };
   }
 
-  const isAtHistoryStart = input.distanceFromHistoryStart <= HISTORY_START_THRESHOLD_PX;
+  const isAtHistoryStart = isWithinHistoryStartThreshold(input);
   if (!isAtHistoryStart) {
     return state.status === "ready"
       ? { state, shouldLoad: false }
@@ -114,7 +122,7 @@ export function settleHistoryStartPagination(
   if (state.status !== "settling") {
     return { state, shouldLoad: false };
   }
-  const isAtHistoryStart = input.distanceFromHistoryStart <= HISTORY_START_THRESHOLD_PX;
+  const isAtHistoryStart = isWithinHistoryStartThreshold(input);
   if (
     !isAtHistoryStart ||
     !input.isReady ||
