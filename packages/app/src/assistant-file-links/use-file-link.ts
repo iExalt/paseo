@@ -143,13 +143,22 @@ export function useFileLink(source: AssistantFileLinkSource): UseFileLinkResult 
   );
 }
 
+// Every assistant Markdown row calls this, so it opens links directly instead of going through
+// useFileLink, whose query observer each row would create and tear down as the list scrolls.
 export function useAssistantFileLinkActions(): AssistantFileLinkActions {
+  const { t } = useTranslation();
   const context = useAssistantFileLinkResolverContext();
-  const actionLink = useFileLink(ACTION_LINK_SOURCE);
+  const queryClient = useQueryClient();
 
   const open = useStableEvent(
     (source: AssistantFileLinkSource, disposition: OpenFileDisposition) => {
-      actionLink.open(source, disposition);
+      openAssistantFileLink({
+        source,
+        disposition,
+        context,
+        queryClient,
+        formatNoFileFoundMessage: (token) => t("common.errors.noFileFound", { token }),
+      });
     },
   );
   const canOpen = useCallback(
@@ -353,7 +362,3 @@ async function dispatchUnresolvedError(input: {
     testID: "assistant-file-link-not-found-toast",
   });
 }
-
-const ACTION_LINK_SOURCE: AssistantFileLinkSource = {
-  href: "",
-};
