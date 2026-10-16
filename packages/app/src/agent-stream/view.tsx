@@ -1097,6 +1097,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [expandedToolCallGroupIds, isMobile, presentation.historyGroupUpdatesByHostId],
     );
 
+    const findRows = useMemo(
+      () => [...baseRenderModel.history, ...baseRenderModel.segments.liveHead],
+      [baseRenderModel.history, baseRenderModel.segments.liveHead],
+    );
     const findItems = useMemo(
       () => [...effectiveStreamItems, ...(effectiveStreamHead ?? [])],
       [effectiveStreamItems, effectiveStreamHead],
@@ -1107,6 +1111,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         serverId={resolvedServerId}
         epoch={timelineEpoch}
         items={findItems}
+        rows={findRows}
         viewportRef={viewportRef}
         revealLoadedMessage={revealLoadedHistory}
         visibleMessageIds={visibleMessageIds}

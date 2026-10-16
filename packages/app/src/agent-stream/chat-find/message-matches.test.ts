@@ -2,22 +2,23 @@ import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
 import { locateMessageMatch } from "./message-matches";
 
-function assistant(id: string, text: string, blockGroupId?: string): StreamItem {
+function assistant(id: string, text: string, blockGroupId?: string, blockIndex = 0): StreamItem {
   return {
     kind: "assistant_message",
     id,
     text,
     timestamp: new Date(0),
-    ...(blockGroupId ? { blockGroupId } : {}),
+    ...(blockGroupId ? { blockGroupId, blockIndex } : {}),
   } as StreamItem;
 }
 
 describe("locateMessageMatch", () => {
+  // Native holds rows newest first, a message's own block rows included.
   const items = [
-    assistant("a-1", "nothing here", "a"),
-    assistant("a-2", "one **match** and `match`", "a"),
+    assistant("a-3", "last match", "a", 2),
     assistant("b", "match elsewhere"),
-    assistant("a-3", "last match", "a"),
+    assistant("a-2", "one **match** and `match`", "a", 1),
+    assistant("a-1", "nothing here", "a", 0),
     { kind: "user_message", id: "u", text: "**match** as typed" } as StreamItem,
   ];
 

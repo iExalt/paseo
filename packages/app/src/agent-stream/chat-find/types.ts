@@ -7,6 +7,8 @@ export interface ChatFindProps {
   serverId: string;
   epoch: string | null;
   items: StreamItem[];
+  /** The rows the stream draws: user text as shown, assistant messages one row per block. */
+  rows: readonly StreamItem[];
   viewportRef: RefObject<StreamViewportHandle | null>;
   revealLoadedMessage(messageId: string): boolean;
   visibleMessageIds: ReadonlySet<string>;

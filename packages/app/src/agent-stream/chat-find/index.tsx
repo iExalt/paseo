@@ -39,6 +39,7 @@ export function ChatFind({
   serverId,
   epoch,
   items,
+  rows,
   viewportRef,
   revealLoadedMessage,
   visibleMessageIds,
@@ -48,8 +49,8 @@ export function ChatFind({
   const widget = useRef<PaneFindHandle>(null);
   const root = useRef<View>(null);
   const overlay = useRef<View>(null);
-  const bindings = useRef({ items, viewportRef, revealLoadedMessage, visibleMessageIds });
-  bindings.current = { items, viewportRef, revealLoadedMessage, visibleMessageIds };
+  const bindings = useRef({ items, rows, viewportRef, revealLoadedMessage, visibleMessageIds });
+  bindings.current = { items, rows, viewportRef, revealLoadedMessage, visibleMessageIds };
   const active = useRetainedPanelActive();
   const model = useMemo(
     () =>
@@ -94,7 +95,7 @@ export function ChatFind({
                 return;
               }
               signal.removeEventListener("abort", cancelled);
-              const match = locateMessageMatch(current.items, messageId, query, occurrence);
+              const match = locateMessageMatch(current.rows, messageId, query, occurrence);
               setChatFindHighlight(
                 match ? { messageId, itemId: match.itemId, query, index: match.index } : null,
               );
