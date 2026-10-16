@@ -13,10 +13,12 @@ import {
   deriveSharedKey,
   encrypt,
   decrypt,
+  decryptInSlices,
   type KeyPair,
   type SharedKey,
 } from "./crypto.js";
 import { arrayBufferToBase64, base64ToArrayBuffer } from "./base64.js";
+import { createTimeBudgetScheduler, SLICED_OPEN_MIN_BYTES } from "./sliced-open.js";
 
 export interface Transport {
   send(data: string | ArrayBuffer): void | Promise<void>;
@@ -326,6 +328,11 @@ export class EncryptedChannel {
   private pendingSends: Array<string | ArrayBuffer> = [];
   private onOpenCallbacks: Array<() => void> = [];
   private onCloseCallbacks: Array<() => void> = [];
+  // Messages are handled one at a time in arrival order: a large frame decrypts across several
+  // tasks, and nothing after it, handshake traffic included, may overtake it. Frames still queued
+  // when the channel closes are dropped; the reconnect's catch-up recovers them. Do not queue
+  // onclose behind this chain to deliver them: the client transport emits its close directly.
+  private receiveChain: Promise<void> = Promise.resolve();
 
   constructor(
     transport: Transport,
@@ -339,7 +346,11 @@ export class EncryptedChannel {
     this.options = options;
 
     Object.assign(transport, {
-      onmessage: (message: TransportMessage) => this.handleMessage(message),
+      onmessage: (message: TransportMessage) => {
+        this.receiveChain = this.receiveChain
+          .then(() => this.handleMessage(message))
+          .catch(() => undefined);
+      },
       onclose: (code: number, reason: string) => {
         this.state = "closed";
         this.events.onclose?.(code, reason);
@@ -441,7 +452,11 @@ export class EncryptedChannel {
       })();
 
       if (ciphertext) {
-        const plaintextBytes = decrypt(this.sharedKey, ciphertext.data);
+        const plaintextBytes =
+          ciphertext.data.byteLength >= SLICED_OPEN_MIN_BYTES
+            ? await decryptInSlices(this.sharedKey, ciphertext.data, createTimeBudgetScheduler())
+            : decrypt(this.sharedKey, ciphertext.data);
+        if (this.state !== "open") return;
         const plaintext = decodePlaintext(plaintextBytes, ciphertext.isBinary);
         this.events.onmessage?.(plaintext);
       }
