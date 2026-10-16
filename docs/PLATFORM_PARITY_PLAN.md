@@ -32,7 +32,7 @@ Tick a box in the same commit that delivers it.
       or deliberate with a reason. `check.test.ts` fails on an unclassified or
       stale entry. Runtime gates inside shared files are listed by hand; the
       test cannot find new ones.
-- [ ] A2. The sidebar notice slot is one cross-platform component and renders
+- [x] A2. The sidebar notice slot is one cross-platform component and renders
       in the mobile drawer as well as the desktop sidebar.
 
 Acceptance: the pure check fails on synthetic unclassified, stale and
@@ -42,16 +42,26 @@ runs on native today.
 
 ### B. Notification settings on mobile (P2)
 
-- [ ] B1. Settings → Notifications on native: permission status, request or
-      open system settings, per-host push registration with re-register.
-      Settings → Permissions on native shows notification and microphone
-      permission status.
-- [ ] B2. A test notification that travels from the daemon to the phone.
-      Sound links to Android's channel settings.
+- [x] B1. Settings → Notifications on native: permission status, request or
+      open system settings, a link to the push channel's sound settings, and
+      per-host push registration with re-register. Settings → Permissions on
+      native shows microphone permission status.
+- [ ] B2. A test notification that travels from the daemon to the phone
+      (`push.send_test.request`), shown even while the app is open.
 
-Acceptance: unit tests for the status model; on Paseo Debug the section shows
-status and a test notification arrives. A new RPC follows the protocol
-compatibility rule: optional fields, and an old daemon still works.
+Acceptance: unit tests for the status model; on Paseo Debug the sections show
+status. A new RPC follows the protocol compatibility rule: optional fields,
+and an old daemon still works.
+
+Paseo Debug has no Firebase config, so push cannot reach it. The push checks
+move to the release gate below.
+
+**Release gate (first fork release containing B1 and B2, on the installed
+app):** the host row reads "Sent to host"; a test notification arrives with
+the app in the foreground and in the background; tapping it does not
+navigate; "Send test notification" is hidden for a host without `pushTest`.
+If Expo lacks FCM credentials for the fork package, the first push revokes
+the token; that goes to the user.
 
 ### C. Find on mobile (P3)
 
