@@ -62,17 +62,30 @@ export function useSidebarProjectStatusBucket(input: {
     workspaceEqualityFns.deep,
   );
 
-  const selector = useCallback(
-    (state: { sessions: Record<string, ProjectStatusSession | undefined> }) => {
+  // Stream commits replace sessions once per frame per streaming agent without touching
+  // workspaces or their agent activity, so the bucket is derived again only when those change.
+  const selector = useMemo(() => {
+    const serverIds = [...new Set(workspaces.map((placement) => placement.serverId))];
+    let previousInputs: unknown[] | null = null;
+    let previousBucket: SidebarStateBucket | null = null;
+    return (state: { sessions: Record<string, ProjectStatusSession | undefined> }) => {
       if (!enabled) return null;
-      return deriveProjectStatusBucket({
+      const inputs = serverIds.flatMap((serverId) => [
+        state.sessions[serverId]?.workspaces,
+        state.sessions[serverId]?.workspaceAgentActivity,
+      ]);
+      if (previousInputs?.every((previous, index) => previous === inputs[index])) {
+        return previousBucket;
+      }
+      previousInputs = inputs;
+      previousBucket = deriveProjectStatusBucket({
         workspaces,
         sessions: state.sessions,
         pendingCreateAttempts,
       });
-    },
-    [enabled, pendingCreateAttempts, workspaces],
-  );
+      return previousBucket;
+    };
+  }, [enabled, pendingCreateAttempts, workspaces]);
 
   return useStoreWithEqualityFn(useSessionStore, selector, Object.is);
 }
