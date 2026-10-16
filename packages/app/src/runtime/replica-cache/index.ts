@@ -838,11 +838,19 @@ function pendingKeyMatches(
 }
 
 // Budget accounting runs over every stored row of a touched host on each persist. Rows are
-// immutable once stored, so their size is computed once. The count itself avoids the JS Buffer
-// polyfill, which materialises the whole byte array just to measure it.
+// immutable once stored, so their size is computed once. A streaming agent still writes a new
+// row of up to 50 items, megabytes with tool output, every persist, and the stored index counts
+// every row once per launch. A native encoder (it has encodeInto; the Buffer-backed polyfill
+// does not) counts that in native code; the JS loop is ~500x slower on an interpreter and stays
+// only as the fallback, because the polyfill materialises the bytes through Buffer.
 const rowBytesCache = new WeakMap<ReplicaRow, number>();
+const nativeTextEncoder =
+  typeof TextEncoder === "function" && typeof TextEncoder.prototype.encodeInto === "function"
+    ? new TextEncoder()
+    : null;
 
 function utf8ByteLength(text: string): number {
+  if (nativeTextEncoder) return nativeTextEncoder.encode(text).byteLength;
   let bytes = 0;
   for (let index = 0; index < text.length; index += 1) {
     const code = text.charCodeAt(index);
