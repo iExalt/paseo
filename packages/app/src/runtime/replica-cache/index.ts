@@ -71,6 +71,9 @@ export interface CachedTimeline {
 const PERSIST_DELAY_MS = 1_000;
 const MAX_TIMELINE_ITEMS = 50;
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
+// A read that keeps losing to writes of the rows it asked for reports a miss instead; the caller
+// falls back to the network, which is always correct.
+const MAX_READ_ATTEMPTS = 3;
 const IsoDateSchema = z.iso.datetime();
 const TimelinePositionSchema = z.strictObject({
   epoch: z.string(),
@@ -787,6 +790,20 @@ function pendingRowKey(key: ReplicaRowKey): string {
   return `${key.serverId}\u0000${rowKey(key)}`;
 }
 
+function pendingKeyMatches(
+  pendingKey: string,
+  serverId: string,
+  kinds: readonly ReplicaRowKind[],
+  ids: readonly string[] | undefined,
+): boolean {
+  if (ids) {
+    return kinds.some((kind) =>
+      ids.some((id) => pendingKey === pendingRowKey({ serverId, kind, id })),
+    );
+  }
+  return kinds.some((kind) => pendingKey.startsWith(`${serverId}\u0000${kind}\u0000`));
+}
+
 // Budget accounting runs over every stored row of a touched host on each persist. Rows are
 // immutable once stored, so their size is computed once. The count itself avoids the JS Buffer
 // polyfill, which materialises the whole byte array just to measure it.
@@ -882,7 +899,13 @@ function directoryEntityForRow(row: ReplicaRow): keyof DirectoryCheckpoint | und
 
 export class ReplicaCache {
   private readonly activeServerIds = new Set<string>();
-  private readonly hostRevisions = new Map<string, number>();
+  // Reads validate against change sequences scoped to the rows they asked for. A host-wide
+  // revision made every streaming agent's per-frame timeline commit invalidate an unrelated read,
+  // so opening a chat while another agent streamed retried forever, forcing a persist each pass.
+  private changeSequence = 0;
+  private readonly hostChangeSequences = new Map<string, number>();
+  private readonly rowChangeSequences = new Map<string, number>();
+  private activeReads = 0;
   private readonly storedRows = new Map<string, Map<string, ReplicaRow>>();
   private readonly hostBytes = new Map<string, number>();
   private readonly hostWriteOrder = new Map<string, true>();
@@ -997,21 +1020,38 @@ export class ReplicaCache {
     ids?: readonly string[],
   ): Promise<ReplicaRow[]> {
     if (!this.activeServerIds.has(serverId)) return [];
+    this.activeReads += 1;
     try {
       await this.prepareStore();
-      while (this.activeServerIds.has(serverId)) {
-        // A read may only answer from rows the store already holds, so it waits for this host's
-        // accepted commits to land. A store that rejects them will keep rejecting them: fail closed
-        // rather than re-attempt the write on every pass. A write rejected for another host leaves
-        // this host's stored rows readable.
-        if (!(await this.syncPending()) && this.hasPendingHostChanges(serverId)) return [];
-        const revision = this.hostRevisions.get(serverId) ?? 0;
+      for (
+        let attempt = 0;
+        attempt < MAX_READ_ATTEMPTS && this.activeServerIds.has(serverId);
+        attempt += 1
+      ) {
+        // Snapshot before draining: a matching change queued after this point, even one a
+        // concurrent persist is already writing, invalidates the rows read below.
+        const snapshot = this.changeSequence;
+        if (this.hasPendingRowChanges(serverId, kinds, ids)) {
+          // A read may only answer from rows the store already holds, so it waits for accepted
+          // commits of these rows to land. A store that rejects them will keep rejecting them:
+          // fail closed rather than re-attempt the write on every pass. A write rejected for
+          // other rows leaves these stored rows readable.
+          if (!(await this.syncPending()) && this.hasPendingRowChanges(serverId, kinds, ids)) {
+            return [];
+          }
+        } else {
+          // Other rows' pending commits stay on their debounce; only in-flight writes must land.
+          await this.writeQueue;
+        }
         const rows = await this.rowStore.read(serverId, kinds, ids);
-        if (this.canReadHostRevision(serverId, revision)) return rows;
+        if (this.canReadRowsSince(serverId, kinds, ids, snapshot)) return rows;
       }
       return [];
     } catch {
       return [];
+    } finally {
+      this.activeReads -= 1;
+      if (this.activeReads === 0) this.rowChangeSequences.clear();
     }
   }
 
@@ -1092,7 +1132,6 @@ export class ReplicaCache {
   ): void {
     if (!this.activeServerIds.has(serverId)) return;
     if (this.invalidatedHosts.has(serverId)) return;
-    this.advanceHostRevision(serverId);
     for (const mutation of mutations) {
       if (mutation.type === "delete") {
         this.queueEntityDelete(serverId, mutation.kind, mutation.id);
@@ -1118,7 +1157,7 @@ export class ReplicaCache {
 
   replaceDirectoryBaseline(serverId: string, directory: CachedDirectory): void {
     if (!this.activeServerIds.has(serverId)) return;
-    this.advanceHostRevision(serverId);
+    this.invalidateHostReads(serverId);
     // Replacing the directory must not discard independently accepted timeline changes.
     for (const [key, row] of this.pendingUpserts) {
       if (row.serverId === serverId && row.kind !== "timeline") this.pendingUpserts.delete(key);
@@ -1150,7 +1189,6 @@ export class ReplicaCache {
   commitTimeline(serverId: string, agentId: string, timeline: CachedTimeline): void {
     if (!this.activeServerIds.has(serverId)) return;
     if (timeline.agentId !== agentId) throw new Error("Timeline cache key does not match payload");
-    this.advanceHostRevision(serverId);
     this.queueUpsert({ serverId, kind: "timeline", id: agentId, value: timeline });
     this.schedulePersist();
   }
@@ -1159,7 +1197,7 @@ export class ReplicaCache {
     const next = new Set(serverIds);
     const removed = [...this.activeServerIds].filter((serverId) => !next.has(serverId));
     const added = [...next].filter((serverId) => !this.activeServerIds.has(serverId));
-    for (const serverId of [...removed, ...added]) this.advanceHostRevision(serverId);
+    for (const serverId of [...removed, ...added]) this.invalidateHostReads(serverId);
     this.activeServerIds.clear();
     for (const serverId of next) this.activeServerIds.add(serverId);
     for (const serverId of removed) {
@@ -1171,8 +1209,8 @@ export class ReplicaCache {
   }
 
   reconcileServerId(oldServerId: string, newServerId: string): void {
-    this.advanceHostRevision(oldServerId);
-    this.advanceHostRevision(newServerId);
+    this.invalidateHostReads(oldServerId);
+    this.invalidateHostReads(newServerId);
     const rows = this.storedRows.get(oldServerId);
     if (rows) {
       const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaRow>();
@@ -1251,14 +1289,28 @@ export class ReplicaCache {
 
   private queueUpsert(row: StructuredReplicaUpsert): void {
     const key = pendingRowKey(row);
+    this.recordRowChange(key);
     this.pendingDeletes.delete(key);
     this.pendingUpserts.set(key, row);
   }
 
   private queueDelete(key: ReplicaRowKey): void {
     const pendingKey = pendingRowKey(key);
+    this.recordRowChange(pendingKey);
     this.pendingUpserts.delete(pendingKey);
     this.pendingDeletes.set(pendingKey, key);
+  }
+
+  private recordRowChange(pendingKey: string): void {
+    // Only an in-flight read compares against row changes; with none, there is nothing to record.
+    if (this.activeReads === 0) return;
+    this.changeSequence += 1;
+    this.rowChangeSequences.set(pendingKey, this.changeSequence);
+  }
+
+  private invalidateHostReads(serverId: string): void {
+    this.changeSequence += 1;
+    this.hostChangeSequences.set(serverId, this.changeSequence);
   }
 
   private hasPendingChanges(): boolean {
@@ -1267,27 +1319,37 @@ export class ReplicaCache {
     );
   }
 
-  private canReadHostRevision(serverId: string, revision: number): boolean {
-    return (
-      this.activeServerIds.has(serverId) &&
-      (this.hostRevisions.get(serverId) ?? 0) === revision &&
-      !this.hasPendingHostChanges(serverId)
-    );
+  private canReadRowsSince(
+    serverId: string,
+    kinds: readonly ReplicaRowKind[],
+    ids: readonly string[] | undefined,
+    snapshot: number,
+  ): boolean {
+    if (!this.activeServerIds.has(serverId)) return false;
+    if ((this.hostChangeSequences.get(serverId) ?? 0) > snapshot) return false;
+    if (this.hasPendingRowChanges(serverId, kinds, ids)) return false;
+    for (const [key, sequence] of this.rowChangeSequences) {
+      if (sequence > snapshot && pendingKeyMatches(key, serverId, kinds, ids)) return false;
+    }
+    return true;
   }
 
-  private hasPendingHostChanges(serverId: string): boolean {
-    if (this.pendingBaselines.has(serverId)) return true;
-    for (const row of this.pendingUpserts.values()) {
-      if (row.serverId === serverId) return true;
+  private hasPendingRowChanges(
+    serverId: string,
+    kinds: readonly ReplicaRowKind[],
+    ids: readonly string[] | undefined,
+  ): boolean {
+    // A pending baseline replaces every directory row of the host.
+    if (this.pendingBaselines.has(serverId) && kinds.some((kind) => kind !== "timeline")) {
+      return true;
     }
-    for (const row of this.pendingDeletes.values()) {
-      if (row.serverId === serverId) return true;
+    for (const key of this.pendingUpserts.keys()) {
+      if (pendingKeyMatches(key, serverId, kinds, ids)) return true;
+    }
+    for (const key of this.pendingDeletes.keys()) {
+      if (pendingKeyMatches(key, serverId, kinds, ids)) return true;
     }
     return false;
-  }
-
-  private advanceHostRevision(serverId: string): void {
-    this.hostRevisions.set(serverId, (this.hostRevisions.get(serverId) ?? 0) + 1);
   }
 
   private drainPendingChanges(): PendingReplicaChanges {
