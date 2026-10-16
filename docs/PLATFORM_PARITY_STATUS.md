@@ -202,7 +202,10 @@ Device checks wait for a tablet emulator batch.
   jumps there; nothing magnifies, since touch has no hover. Pending on the
   tablet: the rail shows in landscape only, scrubbing previews, lifting jumps
   (also to a prompt outside the loaded window), the active tick follows
-  scrolling, and a vertical scrub does not scroll the transcript.
+  scrolling, and a vertical scrub does not scroll the transcript; with the
+  soft keyboard up the first touch previews the right prompt; with the
+  sidebar collapsed and gesture navigation on, a scrub does not trigger
+  Back; TalkBack steps through prompts.
 
 ## Current boundary
 

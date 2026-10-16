@@ -1,5 +1,11 @@
-import { memo, useCallback, useRef, useState, useSyncExternalStore } from "react";
-import { Text, View, type GestureResponderEvent } from "react-native";
+import { memo, useCallback, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  Text,
+  View,
+  type AccessibilityActionEvent,
+  type GestureResponderEvent,
+  type LayoutChangeEvent,
+} from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { useContainerWidthBelow } from "@/hooks/use-container-width";
@@ -32,30 +38,25 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
   const activeSeq = useSyncExternalStore(activePrompt.subscribe, activePrompt.getActiveSeq);
   const { onLayout, isBelow: isPanelNarrow } = useContainerWidthBelow(MIN_PANEL_WIDTH);
   const [touchedIndex, setTouchedIndex] = useState<number | null>(null);
-  const rail = useRef<View>(null);
-  const bounds = useRef({ top: 0, height: 0 });
-
-  const measureRail = useCallback(() => {
-    rail.current?.measureInWindow((_x, top, _width, height) => {
-      bounds.current = { top, height };
-    });
+  // Slots ignore touches, so every touch lands on the rail and `locationY` is relative to
+  // it, wherever the keyboard shift has moved the pane.
+  const railHeight = useRef(0);
+  const handleRailLayout = useCallback((event: LayoutChangeEvent) => {
+    railHeight.current = event.nativeEvent.layout.height;
   }, []);
   const indexAt = useCallback(
     (event: GestureResponderEvent) =>
       railIndexAt({
-        y: event.nativeEvent.pageY - bounds.current.top,
-        height: bounds.current.height,
+        y: event.nativeEvent.locationY,
+        height: railHeight.current,
         count: prompts.length,
         slotHeight: SLOT_HEIGHT,
       }),
     [prompts.length],
   );
   const handleGrant = useCallback(
-    (event: GestureResponderEvent) => {
-      measureRail();
-      setTouchedIndex(indexAt(event));
-    },
-    [indexAt, measureRail],
+    (event: GestureResponderEvent) => setTouchedIndex(indexAt(event)),
+    [indexAt],
   );
   const handleMove = useCallback(
     (event: GestureResponderEvent) => setTouchedIndex(indexAt(event)),
@@ -70,15 +71,28 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
     [indexAt, onJumpToPrompt, prompts],
   );
   const handleTerminate = useCallback(() => setTouchedIndex(null), []);
+  // Screen readers step through prompts from the one being read.
+  const activeIndex = prompts.findIndex((prompt) => prompt.seq === activeSeq);
+  const accessibilityValue = useMemo(
+    () => ({ min: 1, max: prompts.length, now: activeIndex >= 0 ? activeIndex + 1 : undefined }),
+    [activeIndex, prompts.length],
+  );
+  const handleAccessibilityAction = useCallback(
+    (event: AccessibilityActionEvent) => {
+      const step = event.nativeEvent.actionName === "increment" ? 1 : -1;
+      const prompt = prompts[Math.max(0, Math.min(prompts.length - 1, activeIndex + step))];
+      if (prompt) onJumpToPrompt(prompt.seq);
+    },
+    [activeIndex, onJumpToPrompt, prompts],
+  );
 
   if (isCompact || prompts.length < 2) return null;
   return (
     <View style={styles.panelMeasure} pointerEvents="box-none" onLayout={onLayout}>
       {isPanelNarrow ? null : (
         <View
-          ref={rail}
           style={styles.rail}
-          onLayout={measureRail}
+          onLayout={handleRailLayout}
           onStartShouldSetResponder={returnTrue}
           // Keep the touch when the finger slides vertically, so the transcript does not scroll.
           onResponderTerminationRequest={returnFalse}
@@ -87,10 +101,13 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
           onResponderRelease={handleRelease}
           onResponderTerminate={handleTerminate}
           accessibilityRole="adjustable"
+          accessibilityActions={RAIL_ACTIONS}
+          onAccessibilityAction={handleAccessibilityAction}
+          accessibilityValue={accessibilityValue}
           testID="chat-outline-rail"
         >
           {prompts.map((prompt, index) => (
-            <View key={prompt.seq} style={styles.slot}>
+            <View key={prompt.seq} style={styles.slot} pointerEvents="none">
               <View
                 style={[
                   styles.pill,
@@ -112,6 +129,8 @@ export const ChatOutlineRail = memo(function ChatOutlineRail({
     </View>
   );
 });
+
+const RAIL_ACTIONS = [{ name: "increment" }, { name: "decrement" }];
 
 function returnTrue() {
   return true;
