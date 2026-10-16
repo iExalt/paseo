@@ -40,6 +40,7 @@ class MemoryStorage implements ReplicaRowStore {
   cleanups = 0;
   nextWriteFailure: Error | null = null;
   persistentWriteFailure: Error | null = null;
+  nextIndexFailure: Error | null = null;
   readGate: Promise<void> | null = null;
   onRead: (() => void) | null = null;
   /** Throws once a read goes past this count, so a non-terminating read loop fails the test. */
@@ -75,6 +76,11 @@ class MemoryStorage implements ReplicaRowStore {
   }
 
   async readIndex(): Promise<ReplicaHostIndex[]> {
+    if (this.nextIndexFailure) {
+      const error = this.nextIndexFailure;
+      this.nextIndexFailure = null;
+      throw error;
+    }
     const hosts = new Map<string, ReplicaStoredRowIndex[]>();
     for (const row of this.rows.values()) {
       const rows = hosts.get(row.serverId) ?? [];
@@ -977,6 +983,21 @@ describe("ReplicaCache", () => {
       "checkpoint",
       "project",
       "workspace",
+    ]);
+  });
+
+  it("retries loading the stored index after it fails once", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    storage.nextIndexFailure = new Error("disk busy");
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("First"));
+    await cache.flush();
+    expect(storage.writes).toBe(0);
+
+    await cache.flush();
+
+    expect((await cache.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([
+      timelineItem("First"),
     ]);
   });
 
