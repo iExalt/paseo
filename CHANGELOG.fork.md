@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.4.2](https://github.com/iExalt/paseo/compare/paseo-v0.4.1...paseo-v0.4.2) (2026-10-16)
+
+
+### Performance Improvements
+
+* **app:** draw plain SVG icons straight to the hardware canvas on Android ([ca00020](https://github.com/iExalt/paseo/commit/ca0002056368bafebf85300d2444430fb32d93b5))
+* **app:** load older chat history two screens before the top on mobile ([9512251](https://github.com/iExalt/paseo/commit/951225129c55f726f6341d56f8403af93b365ed5))
+* **app:** skip Reanimated work for events no worklet handles on Android ([9678cbb](https://github.com/iExalt/paseo/commit/9678cbb480ccd09e09eb6812aaa473f4acfc84f9))
+
 ## [0.4.1](https://github.com/iExalt/paseo/compare/paseo-v0.4.0...paseo-v0.4.1) (2026-10-16)
 
 
