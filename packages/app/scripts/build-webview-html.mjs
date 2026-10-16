@@ -18,7 +18,7 @@ const WEBVIEWS = [
     output: "src/terminal/webview/terminal-emulator-webview-html.ts",
     exportName: "terminalEmulatorWebViewHtml",
     minify: false,
-    sources: null,
+    sources: "terminalEmulatorWebViewSources",
   },
   {
     name: "file editor",
