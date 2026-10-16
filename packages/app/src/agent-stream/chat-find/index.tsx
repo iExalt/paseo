@@ -168,9 +168,11 @@ export function ChatFindExpansion({ children }: ChatFindExpansionProps) {
 
 const styles = StyleSheet.create((theme) => ({
   root: { flex: 1, minHeight: 0 },
+  // Bottom, not top: the keyboard shift translates the pane up while the find field
+  // has focus, which would carry a top bar off screen.
   overlay: {
     position: "absolute",
-    top: theme.spacing[2],
+    bottom: theme.spacing[2],
     left: theme.spacing[2],
     right: theme.spacing[2],
     zIndex: 10,

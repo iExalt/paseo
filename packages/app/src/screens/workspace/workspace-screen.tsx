@@ -528,6 +528,7 @@ function MobileWorkspaceTabOption({
   onCloseTabsAbove,
   onCloseTabsBelow,
   onCloseOtherTabs,
+  onFind,
 }: {
   tab: WorkspaceTabDescriptor;
   tabIndex: number;
@@ -547,6 +548,7 @@ function MobileWorkspaceTabOption({
   onCloseTabsAbove: (tabId: string) => Promise<void> | void;
   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
+  onFind: (tab: WorkspaceTabDescriptor) => void;
 }) {
   const { t } = useTranslation();
   const tabMenuLabels = useMemo<WorkspaceTabMenuLabels>(
@@ -584,7 +586,7 @@ function MobileWorkspaceTabOption({
     onCloseTabsBefore: onCloseTabsAbove,
     onCloseTabsAfter: onCloseTabsBelow,
     onCloseOtherTabs,
-    onFind: openPaneFindForTab,
+    onFind,
     labels: tabMenuLabels,
   });
 
@@ -673,6 +675,11 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
     Keyboard.dismiss();
     setIsOpen(true);
   }, []);
+  // Find opens a bar in the pane, so the switcher sheet has to get out of the way.
+  const handleFind = useCallback((tab: WorkspaceTabDescriptor) => {
+    setIsOpen(false);
+    openPaneFindForTab(tab);
+  }, []);
 
   const renderTabOption = useCallback(
     ({
@@ -714,10 +721,12 @@ const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitcher({
           onCloseTabsAbove={onCloseTabsAbove}
           onCloseTabsBelow={onCloseTabsBelow}
           onCloseOtherTabs={onCloseOtherTabs}
+          onFind={handleFind}
         />
       );
     },
     [
+      handleFind,
       tabByKey,
       tabIndexByKey,
       tabs.length,
