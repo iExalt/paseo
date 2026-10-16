@@ -24,6 +24,8 @@ import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useKeyboardStreamInset } from "@/keyboard/shift";
 import { useRevisedHistoryRows } from "./history-row-revision";
+import { ChatFindRowFrame } from "./chat-find/row-frame";
+import { getStreamItemMessageId } from "./presentation";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -341,6 +343,38 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     bottomAnchorController.prepareForStickyContentChange();
   }, [bottomAnchorController, historyRows, segments.liveHead]);
 
+  // A jump detaches from the bottom so streaming output does not pull the reader back.
+  // The list is inverted, so viewPosition 1 puts the message's start at the top.
+  const scrollToIndexRetriesRef = useRef(0);
+  const scrollToMessage = useStableEvent((messageId: string) => {
+    scrollToIndexRetriesRef.current = 0;
+    bottomAnchorController.detachByUser();
+    onNearBottomChange(false);
+    const index = historyRows.findIndex((row) => getStreamItemMessageId(row) === messageId);
+    // Live rows live in the list header, at offset zero of the inverted list.
+    if (index < 0) {
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      return;
+    }
+    programmaticScrollEventBudgetRef.current = 3;
+    flatListRef.current?.scrollToIndex({ index, viewPosition: 1, animated: true });
+  });
+  const handleScrollToIndexFailed = useStableEvent(
+    (info: { index: number; averageItemLength: number }) => {
+      // Rows far from the window have no measured layout yet: jump near the estimate,
+      // let them render, then aim again. Bounded so an unreachable row cannot loop.
+      if (scrollToIndexRetriesRef.current >= 10) return;
+      scrollToIndexRetriesRef.current += 1;
+      flatListRef.current?.scrollToOffset({
+        offset: info.averageItemLength * info.index,
+        animated: false,
+      });
+      requestAnimationFrame(() =>
+        flatListRef.current?.scrollToIndex({ index: info.index, viewPosition: 1, animated: true }),
+      );
+    },
+  );
+
   useEffect(() => {
     const handle: StreamViewportHandle = {
       scrollToBottom: (reason = "jump-to-bottom") => {
@@ -353,6 +387,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
         markNativeViewportSettling();
       },
+      scrollToMessage: (messageId) => scrollToMessage(messageId),
     };
     viewportRef.current = handle;
     return () => {
@@ -360,7 +395,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [agentId, bottomAnchorController, markNativeViewportSettling, viewportRef]);
+  }, [agentId, bottomAnchorController, markNativeViewportSettling, scrollToMessage, viewportRef]);
 
   const isScrollEventNearBottom = useStableEvent(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -518,6 +553,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const renderItem = useStableEvent(
     ({ item, index }: ListRenderItemInfo<StreamItem>): ReactElement | null => {
       const rendered = renderHistoryMountedRow(item, index, historyItems);
+      if (rendered && (item.kind === "user_message" || item.kind === "assistant_message")) {
+        return (
+          <ChatFindRowFrame messageId={getStreamItemMessageId(item)}>{rendered}</ChatFindRowFrame>
+        );
+      }
       return (rendered ?? null) as ReactElement | null;
     },
   );
@@ -590,6 +630,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       onMomentumScrollEnd={handleMomentumScrollEnd}
       scrollEventThrottle={16}
       onContentSizeChange={handleContentSizeChange}
+      onScrollToIndexFailed={handleScrollToIndexFailed}
       maintainVisibleContentPosition={maintainVisibleContentPosition}
       initialNumToRender={12}
       windowSize={10}

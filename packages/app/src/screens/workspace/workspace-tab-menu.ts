@@ -19,6 +19,7 @@ export interface WorkspaceTabMenuLabels {
   reloadAgent: string;
   reloadAgentTooltip: string;
   close: string;
+  find?: string;
 }
 
 export const DEFAULT_WORKSPACE_TAB_MENU_LABELS: WorkspaceTabMenuLabels = {
@@ -49,6 +50,7 @@ export type WorkspaceTabMenuEntry =
         | "arrow-right-to-line"
         | "copy-x"
         | "pencil"
+        | "search"
         | "x";
       hint?: string;
       tooltip?: string;
@@ -78,6 +80,8 @@ interface BuildWorkspaceTabMenuEntriesInput {
   onCloseTabsBefore: (tabId: string) => Promise<void> | void;
   onCloseTabsAfter: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
+  /** Opens the tab's find bar; touch devices have no Cmd/Ctrl+F. */
+  onFind?: (tab: WorkspaceTabDescriptor) => void;
   labels?: WorkspaceTabMenuLabels;
 }
 
@@ -163,6 +167,16 @@ function getCloseButtonTestId(tab: WorkspaceTabDescriptor): string {
   return `workspace-file-close-${encodeFilePathForPathSegment(tab.target.path)}`;
 }
 
+/** The find target a tab's pane registers, or null when the pane has no find. */
+export function paneFindTarget(tab: WorkspaceTabDescriptor): string | null {
+  switch (tab.target.kind) {
+    case "agent":
+      return `agent:${tab.target.agentId}`;
+    default:
+      return null;
+  }
+}
+
 export function buildWorkspaceTabMenuEntries(
   input: BuildWorkspaceTabMenuEntriesInput,
 ): WorkspaceTabMenuEntry[] {
@@ -182,12 +196,24 @@ export function buildWorkspaceTabMenuEntries(
     onCloseTabsBefore,
     onCloseTabsAfter,
     onCloseOtherTabs,
+    onFind,
   } = input;
   const labels = input.labels ?? DEFAULT_WORKSPACE_TAB_MENU_LABELS;
   const isFirstTab = index === 0;
   const isLastTab = index === tabCount - 1;
   const isOnlyTab = tabCount <= 1;
   const entries: WorkspaceTabMenuEntry[] = [];
+
+  if (onFind && paneFindTarget(tab) !== null) {
+    entries.push({
+      kind: "item",
+      key: "find",
+      label: labels.find ?? i18n.t("paneFind.title"),
+      icon: "search",
+      testID: `${menuTestIDBase}-find`,
+      onSelect: () => onFind(tab),
+    });
+  }
 
   if (tab.target.kind === "agent") {
     const { agentId } = tab.target;

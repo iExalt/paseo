@@ -131,10 +131,12 @@ import {
 } from "@/screens/workspace/workspace-desktop-tabs-row";
 import {
   buildWorkspaceTabMenuEntries,
+  paneFindTarget,
   type WorkspaceTabMenuLabels,
 } from "@/screens/workspace/workspace-tab-menu";
 import { useDesktopBrowserNewTabRequests } from "@/desktop/browser/new-tab-requests";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
+import { requestPaneFind } from "@/pane-find/open-requests";
 import {
   resolveWorkspaceExplorerToggleOwner,
   WorkspaceExplorerToggle,
@@ -582,6 +584,7 @@ function MobileWorkspaceTabOption({
     onCloseTabsBefore: onCloseTabsAbove,
     onCloseTabsAfter: onCloseTabsBelow,
     onCloseOtherTabs,
+    onFind: openPaneFindForTab,
     labels: tabMenuLabels,
   });
 
@@ -1066,6 +1069,11 @@ function WorkspaceHeaderTitleBar({
       </View>
     </View>
   );
+}
+
+function openPaneFindForTab(tab: WorkspaceTabDescriptor): void {
+  const target = paneFindTarget(tab);
+  if (target) requestPaneFind(target);
 }
 
 type PaneDirection = "left" | "right" | "up" | "down";
