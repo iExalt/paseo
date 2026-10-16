@@ -7,7 +7,7 @@ import {
 } from "@/runtime/replica-cache/row-store-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentStreamEventPayload } from "@getpaseo/protocol/messages";
-import type { CachedTimeline } from "@/runtime/replica-cache";
+import type { CachedTimeline, CommittedTimeline } from "@/runtime/replica-cache";
 import {
   selectAgentTimelineState,
   selectAgentTimelineTurnPresentation,
@@ -26,6 +26,11 @@ import {
   type ViewedTimelineOwner,
   type ViewedTimelineOwnerPorts,
 } from "./viewed-timeline-sync";
+
+// What a storage read returns for a commit: the replica joins the live head after the tail.
+function joinCommitted({ head, ...timeline }: CommittedTimeline): CachedTimeline {
+  return { ...timeline, items: [...timeline.items, ...(head ?? [])] };
+}
 
 const SERVER_ID = "timeline-replica-host";
 const AGENT_ID = "agent-1";
@@ -303,7 +308,7 @@ describe("viewed timeline persistence", () => {
     const storage: TimelineReplicaStorage = {
       readTimeline: async () => durable,
       commitTimeline: (_serverId, _agentId, timeline) => {
-        pending = timeline;
+        pending = joinCommitted(timeline);
       },
     };
     const first = createOwner(storage);
@@ -491,7 +496,7 @@ describe("viewed timeline persistence", () => {
     const commits: CachedTimeline[] = [];
     const owner = createOwner({
       readTimeline: async () => undefined,
-      commitTimeline: (_serverId, _agentId, timeline) => commits.push(timeline),
+      commitTimeline: (_serverId, _agentId, timeline) => commits.push(joinCommitted(timeline)),
     });
     owner.applyStreamEvent(AGENT_ID, {
       event: {
