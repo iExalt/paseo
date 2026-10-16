@@ -28,7 +28,9 @@ import {
   type ReplicaRowKey,
   type ReplicaRowKind,
   type ReplicaRowStore,
+  type ReplicaStoredRowIndex,
 } from "./row-store";
+import { utf8ByteLength } from "./utf8-byte-length";
 
 export type DirectoryReplicaMutation =
   | { kind: "agent"; type: "upsert"; id: string; value: Agent }
@@ -826,30 +828,16 @@ function pendingKeyMatches(
   return kinds.some((kind) => pendingKey.startsWith(`${serverId}\u0000${kind}\u0000`));
 }
 
-// Budget accounting runs over every stored row of a touched host on each persist. Rows are
-// immutable once stored, so their size is computed once. A streaming agent still writes a new
-// row of up to 50 items, megabytes with tool output, every persist, and the stored index counts
-// every row once per launch. A native encoder (it has encodeInto; the Buffer-backed polyfill
-// does not) counts that in native code; the JS loop is ~500x slower on an interpreter and stays
-// only as the fallback, because the polyfill materialises the bytes through Buffer.
+// A streaming agent writes a new timeline row of up to 50 items, megabytes with tool output, on
+// every persist; its size is counted once per row object.
 const rowBytesCache = new WeakMap<ReplicaRow, number>();
-const nativeTextEncoder =
-  typeof TextEncoder === "function" && typeof TextEncoder.prototype.encodeInto === "function"
-    ? new TextEncoder()
-    : null;
+function indexRow(row: ReplicaRow): ReplicaStoredRowIndex {
+  return { serverId: row.serverId, kind: row.kind, id: row.id, bytes: rowBytes(row) };
+}
 
-function utf8ByteLength(text: string): number {
-  if (nativeTextEncoder) return nativeTextEncoder.encode(text).byteLength;
+function sumBytes(rows: Iterable<ReplicaStoredRowIndex>): number {
   let bytes = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code < 0x80) bytes += 1;
-    else if (code < 0x800) bytes += 2;
-    else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      index += 1;
-    } else bytes += 3;
-  }
+  for (const row of rows) bytes += row.bytes;
   return bytes;
 }
 
@@ -936,7 +924,8 @@ export class ReplicaCache {
   private readonly hostChangeSequences = new Map<string, number>();
   private readonly rowChangeSequences = new Map<string, number>();
   private activeReads = 0;
-  private readonly storedRows = new Map<string, Map<string, ReplicaRow>>();
+  // Identity and size of every stored row; payloads stay in the row store.
+  private readonly storedRows = new Map<string, Map<string, ReplicaStoredRowIndex>>();
   private readonly hostBytes = new Map<string, number>();
   private readonly hostWriteOrder = new Map<string, true>();
   private pendingUpserts = new Map<string, StructuredReplicaUpsert>();
@@ -1259,13 +1248,13 @@ export class ReplicaCache {
     this.invalidateHostReads(newServerId);
     const rows = this.storedRows.get(oldServerId);
     if (rows) {
-      const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaRow>();
+      const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaStoredRowIndex>();
       this.totalBytes -=
         (this.hostBytes.get(oldServerId) ?? 0) + (this.hostBytes.get(newServerId) ?? 0);
       this.storedRows.delete(oldServerId);
       for (const [key, row] of rows) newRows.set(key, { ...row, serverId: newServerId });
       this.storedRows.set(newServerId, newRows);
-      const bytes = [...newRows.values()].reduce((sum, row) => sum + rowBytes(row), 0);
+      const bytes = sumBytes(newRows.values());
       this.hostBytes.delete(oldServerId);
       this.hostBytes.set(newServerId, bytes);
       this.totalBytes += bytes;
@@ -1492,17 +1481,19 @@ export class ReplicaCache {
       const previous = rows?.get(rowKey(key));
       if (previous) {
         rows?.delete(rowKey(key));
-        this.adjustHostBytes(key.serverId, -rowBytes(previous));
+        this.adjustHostBytes(key.serverId, -previous.bytes);
       }
       touchedServerIds.add(key.serverId);
     }
     for (const row of changes.upserts) {
-      const rows = this.storedRows.get(row.serverId) ?? new Map<string, ReplicaRow>();
+      const rows = this.storedRows.get(row.serverId) ?? new Map<string, ReplicaStoredRowIndex>();
       const previous = rows.get(rowKey(row));
-      const previousBytes = previous ? rowBytes(previous) : 0;
-      rows.set(rowKey(row), row);
+      // Subtract the size that was added, so the store's count and a JS recount can never drift.
+      const previousBytes = previous ? previous.bytes : 0;
+      const stored = indexRow(row);
+      rows.set(rowKey(row), stored);
       this.storedRows.set(row.serverId, rows);
-      this.adjustHostBytes(row.serverId, rowBytes(row) - previousBytes);
+      this.adjustHostBytes(row.serverId, stored.bytes - previousBytes);
       touchedServerIds.add(row.serverId);
     }
     for (const serverId of touchedServerIds) {
@@ -1531,7 +1522,7 @@ export class ReplicaCache {
     for (const key of changes.deletes) touchedServerIds.add(key.serverId);
     for (const row of changes.upserts) touchedServerIds.add(row.serverId);
 
-    const projectedRows = new Map<string, Map<string, ReplicaRow>>();
+    const projectedRows = new Map<string, Map<string, ReplicaStoredRowIndex>>();
     const projectedBytes = new Map(this.hostBytes);
     for (const serverId of touchedServerIds) {
       projectedRows.set(serverId, new Map(this.storedRows.get(serverId)));
@@ -1540,13 +1531,10 @@ export class ReplicaCache {
       projectedRows.get(key.serverId)?.delete(rowKey(key));
     }
     for (const row of changes.upserts) {
-      projectedRows.get(row.serverId)?.set(rowKey(row), row);
+      projectedRows.get(row.serverId)?.set(rowKey(row), indexRow(row));
     }
     for (const [serverId, rows] of projectedRows) {
-      projectedBytes.set(
-        serverId,
-        [...rows.values()].reduce((sum, row) => sum + rowBytes(row), 0),
-      );
+      projectedBytes.set(serverId, sumBytes(rows.values()));
     }
 
     const writeOrder = [...this.hostWriteOrder.keys()].filter(
@@ -1617,7 +1605,7 @@ export class ReplicaCache {
   }
 
   private ensureStoredIndex(): Promise<void> {
-    this.storedIndexPromise ??= this.rowStore.readAll().then(async (hosts) => {
+    this.storedIndexPromise ??= this.rowStore.readIndex().then(async (hosts) => {
       this.storedRows.clear();
       this.hostBytes.clear();
       this.hostWriteOrder.clear();
@@ -1628,7 +1616,7 @@ export class ReplicaCache {
           continue;
         }
         const rows = new Map(host.rows.map((row) => [rowKey(row), row]));
-        const bytes = host.rows.reduce((sum, row) => sum + rowBytes(row), 0);
+        const bytes = sumBytes(host.rows);
         this.storedRows.set(host.serverId, rows);
         this.hostBytes.set(host.serverId, bytes);
         this.totalBytes += bytes;

@@ -8,8 +8,20 @@ export interface ReplicaRowStoreHarness {
 
 export type CreateReplicaRowStoreHarness = () => Promise<ReplicaRowStoreHarness>;
 
+const ALL_KINDS: ReplicaRow["kind"][] = ["agent", "checkpoint", "project", "timeline", "workspace"];
+
 function row(serverId: string, kind: ReplicaRow["kind"], id: string, payload: string): ReplicaRow {
   return { serverId, kind, id, payload };
+}
+
+/** Every stored row grouped by host: the index names the hosts, read() returns their payloads. */
+async function readStore(
+  store: ReplicaRowStore,
+): Promise<{ serverId: string; rows: ReplicaRow[] }[]> {
+  const index = await store.readIndex();
+  return Promise.all(
+    index.map(async ({ serverId }) => ({ serverId, rows: await store.read(serverId, ALL_KINDS) })),
+  );
 }
 
 export function runReplicaRowStoreContract(
@@ -27,7 +39,7 @@ export function runReplicaRowStoreContract(
     });
 
     it("reads an empty store", async () => {
-      expect(await store.readAll()).toEqual([]);
+      expect(await readStore(store)).toEqual([]);
     });
 
     it("round-trips opaque payloads grouped by server", async () => {
@@ -40,7 +52,7 @@ export function runReplicaRowStoreContract(
         deletes: [],
       });
 
-      expect(await store.readAll()).toEqual([
+      expect(await readStore(store)).toEqual([
         {
           serverId: "server-a",
           rows: [
@@ -51,6 +63,37 @@ export function runReplicaRowStoreContract(
         {
           serverId: "server-b",
           rows: [row("server-b", "checkpoint", "singleton", '{"cursor":2}')],
+        },
+      ]);
+    });
+
+    it("indexes each row's UTF-8 size without its payload", async () => {
+      await store.apply({
+        upserts: [
+          row("server-b", "agent", "empty", ""),
+          row("server-a", "timeline", "ascii", "abc"),
+          row("server-a", "agent", "two-byte", "é"),
+          row("server-a", "project", "three-byte", "€"),
+          row("server-a", "workspace", "four-byte", "😀"),
+          row("server-a", "checkpoint", "mixed", "aé€😀"),
+        ],
+        deletes: [],
+      });
+
+      expect(await store.readIndex()).toStrictEqual([
+        {
+          serverId: "server-a",
+          rows: [
+            { serverId: "server-a", kind: "agent", id: "two-byte", bytes: 2 },
+            { serverId: "server-a", kind: "checkpoint", id: "mixed", bytes: 10 },
+            { serverId: "server-a", kind: "project", id: "three-byte", bytes: 3 },
+            { serverId: "server-a", kind: "timeline", id: "ascii", bytes: 3 },
+            { serverId: "server-a", kind: "workspace", id: "four-byte", bytes: 4 },
+          ],
+        },
+        {
+          serverId: "server-b",
+          rows: [{ serverId: "server-b", kind: "agent", id: "empty", bytes: 0 }],
         },
       ]);
     });
@@ -81,7 +124,7 @@ export function runReplicaRowStoreContract(
         deletes: [],
       });
 
-      expect(await store.readAll()).toEqual([
+      expect(await readStore(store)).toEqual([
         {
           serverId: "server-a",
           rows: [row("server-a", "agent", "agent-1", "new")],
@@ -102,7 +145,7 @@ export function runReplicaRowStoreContract(
         deletes: [{ serverId: "server-a", kind: "agent", id: "same-id" }],
       });
 
-      expect(await store.readAll()).toEqual([
+      expect(await readStore(store)).toEqual([
         {
           serverId: "server-a",
           rows: [row("server-a", "workspace", "same-id", "workspace")],
@@ -122,7 +165,7 @@ export function runReplicaRowStoreContract(
           deletes: [],
         }),
       ).rejects.toBeInstanceOf(Error);
-      expect(await store.readAll()).toEqual([]);
+      expect(await readStore(store)).toEqual([]);
     });
 
     it("deletes every row belonging to one host", async () => {
@@ -137,7 +180,7 @@ export function runReplicaRowStoreContract(
 
       await store.deleteHost("server-a");
 
-      expect(await store.readAll()).toEqual([
+      expect(await readStore(store)).toEqual([
         { serverId: "server-b", rows: [row("server-b", "agent", "agent-2", "b")] },
       ]);
     });
@@ -155,7 +198,7 @@ export function runReplicaRowStoreContract(
 
       await store.renameHost("temporary", "canonical");
 
-      expect(await store.readAll()).toEqual([
+      expect(await readStore(store)).toEqual([
         {
           serverId: "canonical",
           rows: [
@@ -178,7 +221,7 @@ export function runReplicaRowStoreContract(
 
       await store.clear();
 
-      expect(await store.readAll()).toEqual([]);
+      expect(await readStore(store)).toEqual([]);
     });
 
     it("wipes cached rows when the schema version changes on open", async () => {
@@ -189,7 +232,7 @@ export function runReplicaRowStoreContract(
 
       const upgradedStore = await harness.openWithSchemaVersion(2);
 
-      expect(await upgradedStore.readAll()).toEqual([]);
+      expect(await readStore(upgradedStore)).toEqual([]);
     });
   });
 }
