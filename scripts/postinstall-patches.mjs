@@ -53,6 +53,10 @@ const patchedPackages = [
     cwd: "packages/app",
   },
   {
+    nodeModulesPath: "node_modules/react-native-reanimated",
+    patchPrefix: "react-native-reanimated+",
+  },
+  {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
   },
