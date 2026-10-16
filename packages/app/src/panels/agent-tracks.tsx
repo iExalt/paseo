@@ -3,7 +3,7 @@ import { WorkspaceDiffStatPill } from "@/composer/diff-stat-pill";
 import { useWorkspaceHasDiffStat } from "@/composer/workspace-diff-stat";
 import { AgentTaskList } from "@/composer/task-list";
 import { ComposerTrackBar } from "@/composer/tracks";
-import { supportsDesktopPaneSplits, useIsCompactFormFactor } from "@/constants/layout";
+import { paneSplitsAvailable, useIsCompactFormFactor } from "@/constants/layout";
 import { usePaneContext } from "@/panels/pane-context";
 import { useSettings } from "@/hooks/use-settings";
 import { PluginComposerPills } from "@/plugins";
@@ -52,7 +52,7 @@ export const AgentTracks = memo(function AgentTracks({
   const { tabId, openTab } = usePaneContext();
   const hasWorkspaceDiffStat = useWorkspaceHasDiffStat(serverId, workspaceId);
   const isCompact = useIsCompactFormFactor();
-  const canSplit = supportsDesktopPaneSplits() && !isCompact;
+  const canSplit = paneSplitsAvailable({ isCompact });
   const openInSidePane = useSettings((settings) => settings.openInSidePane);
   const workspaceKey = buildWorkspaceTabPersistenceKey({ serverId, workspaceId });
   const canDetachSubagents = useSessionStore(

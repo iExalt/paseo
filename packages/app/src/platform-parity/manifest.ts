@@ -1,6 +1,8 @@
 import type { ParityManifest } from "./check";
 
 const equivalent = { kind: "equivalent" } as const;
+const PANE_DRAG_WEB_ONLY =
+  "Drag-to-split and tab drag are web-only: touch drags compete with scrolling and swipe gestures; menu actions split panes instead";
 
 /**
  * How each platform difference in the app is classified. check.test.ts fails when a
@@ -39,6 +41,14 @@ export const PARITY_MANIFEST: ParityManifest = {
     "components/markdown/fence/mermaid/host": equivalent,
     "components/project-icon-image": equivalent,
     "components/sortable-inline-list": equivalent,
+    "components/split-dnd": {
+      kind: "deliberate",
+      reason: PANE_DRAG_WEB_ONLY,
+    },
+    "components/split-drop-zone": {
+      kind: "deliberate",
+      reason: PANE_DRAG_WEB_ONLY,
+    },
     "components/terminal-emulator": equivalent,
     "components/status-ring/clock": equivalent,
     "components/status-ring/index": equivalent,
@@ -144,11 +154,6 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "gap",
       chunk: "E1",
       reason: "Shortcuts are off on native, including tablets with keyboards",
-    },
-    "constants/layout.ts": {
-      kind: "gap",
-      chunk: "E2",
-      reason: "Pane splits require isWeb",
     },
     "terminal/find/index.tsx": {
       kind: "gap",

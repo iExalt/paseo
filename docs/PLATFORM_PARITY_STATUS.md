@@ -196,6 +196,14 @@ Device checks wait for a tablet emulator batch.
   list (`panels/diff-panel.tsx`, `git/diff-pane.tsx`). Both now follow width
   only. Pending on the tablet: the layout toggle shows, split columns scroll
   and select.
+- E2b: wide native layouts split panes like web. Split right and Split down
+  come from the tab menu; the divider resizes by touch; touching a pane
+  focuses it. Drag-to-split and tab drag stay web-only by design: dnd-kit is
+  DOM-only, and touch drags compete with scrolling and swipe gestures. Every
+  visible pane now streams its agent, as on web. Pending on the tablet: split
+  right and down, resize, focus by touch, several agent panes streaming
+  without lag, rotation keeps the layout, and the explorer pane opens files
+  beside it.
 - E3: native gets a touch outline rail under the web rule: a wide layout and a
   chat panel at least 918 dp wide, so landscape tablets show it and portrait
   ones do not. A finger on the rail previews the prompt under it and lifting

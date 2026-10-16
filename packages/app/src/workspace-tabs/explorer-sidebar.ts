@@ -1,4 +1,4 @@
-import { supportsDesktopPaneSplits } from "@/constants/layout";
+import { paneSplitsAvailable } from "@/constants/layout";
 import { selectIsCompactFileExplorerOpen, usePanelStore } from "@/stores/panel-store";
 import type { ExplorerCheckoutContext } from "@/stores/explorer-checkout-context";
 import {
@@ -32,7 +32,7 @@ export function resolveExplorerSidebarPresentation(
   if (input.isCompact) {
     return "overlay";
   }
-  return (input.supportsPaneSplits ?? supportsDesktopPaneSplits()) ? "pane" : "dock";
+  return (input.supportsPaneSplits ?? paneSplitsAvailable(input)) ? "pane" : "dock";
 }
 
 export function usesCompactExplorerSidebar(
