@@ -51,6 +51,7 @@ import type {
 } from "./strategy";
 import { createStreamStrategy, isNearBottomForStreamRenderStrategy } from "./strategy";
 import {
+  HISTORY_START_THRESHOLD_PX,
   isHistoryStartLoadingOperation,
   type HistoryStartPaginationInput,
 } from "./history-start-pagination";
@@ -73,6 +74,7 @@ const historyStartSlotStyle: ViewStyle = {
   flexShrink: 0,
 };
 const HISTORY_START_SETTLE_FRAMES = 2;
+const NATIVE_HISTORY_PREFETCH_VIEWPORTS = 2;
 // Rendered distance on each side of the viewport. Smaller values blank the viewport while a fling
 // crosses rows that were never measured (docs/agent-stream-disclosure.md).
 const NATIVE_STREAM_DRAW_DISTANCE = 2000;
@@ -216,6 +218,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         offsetY: metrics.offsetY,
         topOverlayInset,
       }),
+      historyStartThresholdPx: Math.max(
+        HISTORY_START_THRESHOLD_PX,
+        metrics.viewportHeight * NATIVE_HISTORY_PREFETCH_VIEWPORTS,
+      ),
       hasOlderHistory,
       isLoadingOlderHistory,
       isReady:

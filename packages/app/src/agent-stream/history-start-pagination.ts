@@ -2,6 +2,8 @@ export const HISTORY_START_THRESHOLD_PX = 96;
 
 export interface HistoryStartPaginationInput {
   distanceFromHistoryStart: number;
+  /** Defaults to HISTORY_START_THRESHOLD_PX; native callers prefetch before the top. */
+  historyStartThresholdPx?: number;
   isUnderfilled: boolean;
   hasOlderHistory: boolean;
   isLoadingOlderHistory: boolean;
@@ -79,7 +81,7 @@ export function createHistoryStartPagination(input: {
       return;
     }
     if (state.status === "settling" || state.status === "failed" || !geometry.isReady) return;
-    const atStart = geometry.distanceFromHistoryStart <= HISTORY_START_THRESHOLD_PX;
+    const atStart = geometry.distanceFromHistoryStart <= (geometry.historyStartThresholdPx ?? HISTORY_START_THRESHOLD_PX);
     if (state.status === "dormant" && !geometry.isUnderfilled) {
       publish("dormant", true);
       return;
@@ -124,7 +126,7 @@ export function createHistoryStartPagination(input: {
       clear();
       if (fill && !geometry.isUnderfilled) {
         publish("dormant", true);
-      } else if (geometry.distanceFromHistoryStart > HISTORY_START_THRESHOLD_PX) {
+      } else if (geometry.distanceFromHistoryStart > (geometry.historyStartThresholdPx ?? HISTORY_START_THRESHOLD_PX)) {
         publish("ready", true);
       } else if (!geometry.hasOlderHistory) {
         publish("dormant", true);

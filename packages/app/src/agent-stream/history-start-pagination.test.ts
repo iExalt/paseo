@@ -308,3 +308,29 @@ it.each([null, { ...initial, isReady: false }])(
     }
   },
 );
+
+
+it("loads from as far away as the caller's threshold allows without changing the default", () => {
+  for (const threshold of [undefined, 1600]) {
+    const h = harness(true);
+    h.set({ isUnderfilled: false, distanceFromHistoryStart: 1500, historyStartThresholdPx: threshold });
+    expect(h.requests).toHaveLength(0);
+    h.pagination.rearm();
+    expect(h.requests).toHaveLength(threshold === undefined ? 0 : 1);
+    h.pagination.dispose();
+  }
+});
+
+it.each([1500, 1700])("settles within the caller threshold and rearms beyond it at %s", async (distance) => {
+  const h = harness(true);
+  h.set({ isUnderfilled: false, distanceFromHistoryStart: 1500, historyStartThresholdPx: 1600 });
+  h.pagination.rearm();
+  h.requests[0](true);
+  await Promise.resolve();
+  h.set({ progressKey: "10", distanceFromHistoryStart: distance });
+  h.pagination.settle();
+  expect(h.requests).toHaveLength(distance <= 1600 ? 2 : 1);
+  h.set({ distanceFromHistoryStart: 1500 });
+  expect(h.requests).toHaveLength(2);
+  h.pagination.dispose();
+});
