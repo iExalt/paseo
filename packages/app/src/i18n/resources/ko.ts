@@ -3,6 +3,7 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ko: TranslationResources = {
   nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
   nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "이 채팅을 검색할 수 없습니다. 호스트 연결을 확인하고 다시 시도하세요.",

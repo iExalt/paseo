@@ -16,6 +16,9 @@ export const en = {
     },
     openSettings: "Open settings",
   },
+  nativeEditor: {
+    unavailable: "The editor can't run here, so this file is read-only.",
+  },
   nativeNotifications: {
     sound: "Sound and alerts",
     soundHint: "Choose how Paseo notifications sound and appear",

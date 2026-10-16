@@ -3,6 +3,7 @@ import { pluginSettings } from "./plugin-settings";
 
 export const es: TranslationResources = {
   nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
   nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:

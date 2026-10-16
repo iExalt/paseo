@@ -3,6 +3,7 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ar: TranslationResources = {
   nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
   nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "تعذر البحث في هذه المحادثة. تحقق من الاتصال بالمضيف وأعد المحاولة.",
