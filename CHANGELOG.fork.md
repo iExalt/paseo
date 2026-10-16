@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/iExalt/paseo/compare/paseo-v0.3.0...paseo-v0.3.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **app:** style Transfer preferences like the other About rows ([77c4bb6](https://github.com/iExalt/paseo/commit/77c4bb68a5baf4e32c6bcbbd82b39c612a04e402))
+
 ## [0.3.0](https://github.com/iExalt/paseo/compare/paseo-v0.2.2...paseo-v0.3.0) (2026-10-16)
 
 
