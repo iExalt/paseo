@@ -83,6 +83,7 @@ export const PARITY_MANIFEST: ParityManifest = {
       reason: "Only iOS submits the composer from a hardware keyboard",
     },
     "panels/retained-chat-content": equivalent,
+    "permissions/platform-permissions": equivalent,
     "plugins/react-native/clipboard": equivalent,
     "projects/icon-cache-storage": equivalent,
     "push-notifications/index": {
@@ -93,6 +94,7 @@ export const PARITY_MANIFEST: ParityManifest = {
     "runtime/replica-cache/row-store": equivalent,
     "runtime/replica-cache/row-store-factory": equivalent,
     "runtime/websocket-factory": equivalent,
+    "screens/settings/notifications/notifications-section": equivalent,
     "styles/install-web-scrollbar-styles": equivalent,
     "styles/unistyles-inline-style": equivalent,
   },
@@ -106,15 +108,10 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
     integrations: { kind: "deliberate", reason: "Installs the CLI on the local machine" },
     notifications: {
-      kind: "gap",
-      chunk: "B1",
-      reason: "Native has no notification status or test",
+      kind: "equivalent",
+      note: "Hidden only in a plain browser; native has its own section",
     },
-    permissions: {
-      kind: "gap",
-      chunk: "B1",
-      reason: "Native shows no notification or microphone permission status",
-    },
+    permissions: { kind: "equivalent", note: "Hidden only in a plain browser" },
   },
   runtimeGates: {
     "android/fork-updates/store.ts": {

@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
+import { PUSH_CHANNEL_ID, provideReregister, setPushRegistrationStatus } from "../registration";
 import type { RevokePushNotificationsInput, StartPushNotificationsInput } from "./types";
 
 const STORAGE_PREFIX = "@paseo:expo-push-token:";
@@ -28,16 +29,22 @@ async function ensurePushPermission(): Promise<boolean> {
   return requested.status === Notifications.PermissionStatus.GRANTED;
 }
 
-async function resolveToken(serverId: string): Promise<string | null> {
+type ResolvedToken = { token: string } | { token: null; reason: "no-permission" | "no-token" };
+
+function resolved(token: string | null): ResolvedToken {
+  return token ? { token } : { token: null, reason: "no-token" };
+}
+
+async function resolveToken(serverId: string): Promise<ResolvedToken> {
   const key = storageKey(serverId);
   const cached = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
   if (!(await ensurePushPermission())) {
     await AsyncStorage.removeItem(key);
-    return null;
+    return { token: null, reason: "no-permission" };
   }
 
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
+    await Notifications.setNotificationChannelAsync(PUSH_CHANNEL_ID, {
       name: "default",
       importance: Notifications.AndroidImportance.DEFAULT,
     });
@@ -46,40 +53,52 @@ async function resolveToken(serverId: string): Promise<string | null> {
   const projectId = getExpoProjectId();
   if (!projectId) {
     console.warn("[PushNotifications] Missing EAS projectId; cannot fetch Expo push token");
-    return cached;
+    return resolved(cached);
   }
 
   const result = await Notifications.getExpoPushTokenAsync({ projectId });
   const token = result.data.trim();
-  if (!token) return cached;
+  if (!token) return resolved(cached);
   await AsyncStorage.setItem(key, token);
-  return token;
+  return { token };
 }
 
 export function startSubscription(input: StartPushNotificationsInput): () => void {
+  const { serverId } = input;
   let stopped = false;
   let token: string | null = null;
   const register = () => {
-    if (!stopped && token && input.client.isConnected) {
-      input.client.registerPushToken(token);
+    if (stopped || !token) return;
+    if (!input.client.isConnected) {
+      setPushRegistrationStatus(serverId, "not-connected");
+      return;
     }
+    input.client.registerPushToken(token);
+    setPushRegistrationStatus(serverId, "sent");
+  };
+  const resolve = () => {
+    setPushRegistrationStatus(serverId, "pending");
+    void resolveToken(serverId)
+      .then((result) => {
+        if (stopped) return undefined;
+        token = result.token;
+        if (result.token === null) setPushRegistrationStatus(serverId, result.reason);
+        register();
+        return undefined;
+      })
+      .catch((error) => {
+        if (!stopped) setPushRegistrationStatus(serverId, "failed");
+        console.warn("[PushNotifications] Failed to register push token", error);
+      });
   };
 
-  void resolveToken(input.serverId)
-    .then((resolved) => {
-      if (stopped) return undefined;
-      token = resolved;
-      register();
-      return undefined;
-    })
-    .catch((error) => console.warn("[PushNotifications] Failed to register push token", error));
-
-  const unsubscribe = input.client.subscribeConnectionStatus((state) => {
-    if (state.status === "connected") register();
-  });
+  resolve();
+  const stopReregister = provideReregister(serverId, resolve);
+  const unsubscribe = input.client.subscribeConnectionStatus(() => register());
 
   return () => {
     stopped = true;
+    stopReregister();
     unsubscribe();
   };
 }
