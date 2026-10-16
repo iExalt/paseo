@@ -138,6 +138,7 @@ import {
 import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
 import { isNative, isWeb } from "@/constants/platform";
+import { isSettingsSectionAvailable } from "@/screens/settings/section-availability";
 
 // ---------------------------------------------------------------------------
 // View model
@@ -147,8 +148,6 @@ interface SidebarSectionItem {
   id: SettingsSectionSlug;
   labelKey: string;
   icon: ComponentType<{ size: number; color: string; strokeWidth?: number }>;
-  desktopOnly?: boolean;
-  webOnly?: boolean;
   /** The page body, for pages that need nothing from the settings screen. */
   Content?: ComponentType;
 }
@@ -178,42 +177,36 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
     id: "browser",
     labelKey: "settings.sections.browser",
     icon: Globe,
-    desktopOnly: true,
     Content: BrowserDataSection,
   },
   {
     id: "editor",
     labelKey: "settings.sections.editor",
     icon: Code2,
-    webOnly: true,
     Content: EditorSection,
   },
   {
     id: "shortcuts",
     labelKey: "settings.sections.shortcuts",
     icon: Keyboard,
-    desktopOnly: true,
     Content: KeyboardShortcutsSection,
   },
   {
     id: "integrations",
     labelKey: "settings.sections.integrations",
     icon: Puzzle,
-    desktopOnly: true,
     Content: IntegrationsSection,
   },
   {
     id: "notifications",
     labelKey: "settings.sections.notifications",
     icon: Bell,
-    desktopOnly: true,
     Content: DesktopNotificationsSection,
   },
   {
     id: "permissions",
     labelKey: "settings.sections.permissions",
     icon: Shield,
-    desktopOnly: true,
     Content: DesktopPermissionsSection,
   },
   { id: "diagnostics", labelKey: "settings.sections.diagnostics", icon: Stethoscope },
@@ -221,7 +214,7 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
 ];
 
 function isSectionAvailable(item: SidebarSectionItem, isDesktopApp: boolean): boolean {
-  return (!item.desktopOnly || isDesktopApp) && (!item.webOnly || isWeb);
+  return isSettingsSectionAvailable(item.id, { isDesktopApp, isWeb });
 }
 
 interface HostSectionItem {
