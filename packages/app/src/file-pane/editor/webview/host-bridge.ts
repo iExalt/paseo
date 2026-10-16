@@ -4,6 +4,7 @@ import type { EditorVisualTheme } from "../visual-theme";
 import {
   documentChecksum,
   FILE_EDITOR_WEBVIEW_PROTOCOL,
+  type FileEditorFindState,
   type FileEditorHostMessage,
   type FileEditorWebViewMessage,
 } from "./protocol";
@@ -25,6 +26,8 @@ export interface FileEditorBridgeEvents {
   onEditorReady(): void;
   onCursorChange(position: { line: number; column: number }): void;
   onVimModeChange(mode: string | null): void;
+  onFindState(state: FileEditorFindState): void;
+  onFindRequest(): void;
 }
 
 /**
@@ -109,6 +112,12 @@ export class FileEditorBridge {
         return;
       case "vimMode":
         this.events.onVimModeChange(message.mode);
+        return;
+      case "findState":
+        this.events.onFindState(message.state);
+        return;
+      case "findRequest":
+        this.events.onFindRequest();
         return;
     }
   }

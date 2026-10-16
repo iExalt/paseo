@@ -62,6 +62,8 @@ function setup(content: string) {
       onEditorReady: () => (events.ready += 1),
       onCursorChange: () => {},
       onVimModeChange: () => {},
+      onFindState: () => {},
+      onFindRequest: () => {},
     },
   });
   const receive = (message: FileEditorWebViewMessage) => bridge.receive(message, view);

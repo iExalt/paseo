@@ -157,8 +157,15 @@ unit tests and a browser test; the device checks wait for the batch session.
   paste; rotate with the keyboard up and the cursor stays visible; an external
   change while clean reloads, and while dirty raises the conflict, where
   Overwrite keeps the last keystrokes; a deleted file; vim normal, insert and
-  visual mode; type then close the tab at once, and the text survives; kill the
-  renderer and the content survives; start time on a 1 MB file.
+  visual mode; type then close the tab at once, and the text survives;
+  backgrounding the app saves; one renderer kill recovers to an editable view,
+  and three before ready show the notice and the read-only view; start time on
+  a 1 MB file.
+- Find in the editor runs the web FileFindModel in the page, replace included,
+  under a native bottom bar. Pending on the device: find, replace and replace
+  all on a long file, and the edit saves; the current match stays above the bar
+  with the keyboard up; Back closes find; Mod-f from a hardware keyboard opens
+  it (keyboard only).
 
 ## Current boundary
 

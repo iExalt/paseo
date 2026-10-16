@@ -6,7 +6,7 @@ import type { EditorVisualTheme } from "../visual-theme";
  * Bump it when a message changes shape; the host falls back to the read-only view when
  * the bundled WebView reports another version.
  */
-export const FILE_EDITOR_WEBVIEW_PROTOCOL = 1;
+export const FILE_EDITOR_WEBVIEW_PROTOCOL = 2;
 
 /** `ChangeSet.toJSON()`: what one edit did to the WebView's document. */
 export type FileEditorChangesJSON = ReturnType<ChangeSet["toJSON"]>;
@@ -35,7 +35,25 @@ export type FileEditorHostMessage =
   /** Send any edit still waiting in the WebView, then answer `flushed`. */
   | { type: "flush"; requestId: number }
   /** The host's copy drifted: send the whole document. */
-  | { type: "requestSync" };
+  | { type: "requestSync" }
+  | { type: "find"; op: FileEditorFindOp }
+  | { type: "findQuery"; query: string }
+  | { type: "findReplacement"; replacement: string }
+  /** Height the host's find bar covers at the bottom, so matches are revealed above it. */
+  | { type: "findWidgetSize"; height: number };
+
+export type FileEditorFindOp = "open" | "close" | "next" | "previous" | "replace" | "replaceAll";
+
+/** Find as the page's FileFindModel sees it. */
+export interface FileEditorFindState {
+  open: boolean;
+  query: string;
+  replacement: string;
+  current: number;
+  total: number;
+  limited: boolean;
+  readOnly: boolean;
+}
 
 /** WebView to host. Documents and checksums are of the WebView's `\n`-joined text. */
 export type FileEditorWebViewMessage =
@@ -52,7 +70,10 @@ export type FileEditorWebViewMessage =
   | { type: "flushed"; requestId: number; checksum: string }
   | { type: "save"; checksum: string }
   | { type: "cursor"; line: number; column: number }
-  | { type: "vimMode"; mode: string | null };
+  | { type: "vimMode"; mode: string | null }
+  | { type: "findState"; state: FileEditorFindState }
+  /** Mod-f from a hardware keyboard inside the page. */
+  | { type: "findRequest" };
 
 export const FILE_EDITOR_WEBVIEW_RECEIVE = "__PASEO_FILE_EDITOR_WEBVIEW_RECEIVE__";
 
@@ -89,6 +110,8 @@ const WEBVIEW_MESSAGE_TYPES = new Set<string>([
   "save",
   "cursor",
   "vimMode",
+  "findState",
+  "findRequest",
 ]);
 
 /** The WebView's message, or null for anything else the page might post. */

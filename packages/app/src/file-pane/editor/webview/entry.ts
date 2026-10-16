@@ -1,8 +1,9 @@
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
-import { EditorView, drawSelection } from "@codemirror/view";
+import { EditorView, drawSelection, keymap } from "@codemirror/view";
 import { getLanguageForFile } from "@getpaseo/highlight";
 import { getCM, vim } from "@replit/codemirror-vim";
 import { isRenderedMarkdownFile } from "@/components/file-pane-render-mode";
+import { FileFindModel } from "../../find/model.web";
 import { editorBaseExtensions, editorTheme } from "../extensions.web";
 import type { EditorVisualTheme } from "../visual-theme";
 import { EditBatcher } from "./edit-batcher";
@@ -10,6 +11,7 @@ import {
   documentChecksum,
   FILE_EDITOR_WEBVIEW_PROTOCOL,
   FILE_EDITOR_WEBVIEW_RECEIVE,
+  type FileEditorFindOp,
   type FileEditorHostMessage,
   type FileEditorWebViewMessage,
 } from "./protocol";
@@ -52,6 +54,21 @@ function webTheme(theme: EditorVisualTheme) {
 
 class FileEditorPage {
   private view: EditorView | null = null;
+  // The host draws the find bar over the bottom edge; this stand-in has its size,
+  // so revealed matches land above it.
+  private readonly find = new FileFindModel("bottom");
+  private readonly findWidget = document.createElement("div");
+
+  constructor() {
+    this.findWidget.className = "paseo-find-widget";
+    document.body.append(this.findWidget);
+    this.find.setWidgetNode(this.findWidget);
+    this.find.subscribe(() => {
+      const { placement: _placement, ...state } = this.find.getSnapshot();
+      post({ type: "findState", state });
+    });
+  }
+
   private remoteRev = 0;
   private stopVimModes: (() => void) | null = null;
   private readonly batcher = new EditBatcher((changes, length) =>
@@ -106,10 +123,29 @@ class FileEditorPage {
         this.batcher.reset();
         post({ type: "sync", content: view.state.doc.toString(), baseRemoteRev: this.remoteRev });
         return;
+      case "find":
+        this.runFind(view, message.op);
+        return;
+      case "findQuery":
+        this.find.setSearch(message.query);
+        return;
+      case "findReplacement":
+        this.find.setReplacement(message.replacement);
+        return;
+      case "findWidgetSize":
+        this.findWidget.style.height = `${message.height}px`;
+        return;
     }
   };
 
   flush = (): void => this.batcher.flush();
+
+  private runFind(view: EditorView, op: FileEditorFindOp): void {
+    if (op === "open") this.find.open(view);
+    // Closing from the host's bar keeps the touch keyboard down.
+    else if (op === "close") this.find.close({ focus: false });
+    else this.find[op]();
+  }
 
   private mount(message: Extract<FileEditorHostMessage, { type: "mount" }>): void {
     this.view?.destroy();
@@ -121,6 +157,14 @@ class FileEditorPage {
         doc: message.content,
         extensions: [
           vimCompartment.of(message.vim ? vim() : []),
+          this.find.extension,
+          keymap.of([
+            {
+              key: "Mod-f",
+              preventDefault: true,
+              run: () => (post({ type: "findRequest" }), true),
+            },
+          ]),
           selectionCompartment.of(selectionFor(message.vim)),
           ...editorBaseExtensions(this.save, { drawSelection: false }),
           languageCompartment.of(getLanguageForFile(message.filename)?.extension ?? []),
@@ -214,6 +258,10 @@ style.textContent = `
 html, body { width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden; }
 body { display: flex; }
 body > .cm-editor { flex: 1; min-width: 0; min-height: 0; }
+.paseo-find-widget {
+  position: fixed; left: 0; right: 0; bottom: 0; height: 0;
+  visibility: hidden; pointer-events: none;
+}
 `;
 document.head.append(style);
 

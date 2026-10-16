@@ -11,6 +11,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { useTranslation } from "react-i18next";
 import { FileSourceView } from "../source/view";
+import { EditorFindBar, useEditorFind } from "./find";
 import type { FileEditorViewProps } from "./view-contract";
 import { htmlPreviewNavigationKind } from "../html-preview-navigation";
 import { FileEditorBridge } from "./webview/host-bridge";
@@ -20,6 +21,7 @@ import {
   FILE_EDITOR_WEBVIEW_RECEIVE,
   parseWebViewMessage,
   serializeHostMessage,
+  type FileEditorFindState,
   type FileEditorHostMessage,
 } from "./webview/protocol";
 
@@ -54,8 +56,12 @@ export function FileEditorView({
   const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
   const view = useRef({ filename, theme, vim: vimEnabled });
   view.current = { filename, theme, vim: vimEnabled };
-  const callbacks = useRef({ onCursorChange, onVimModeChange });
-  callbacks.current = { onCursorChange, onVimModeChange };
+  const callbacks = useRef({
+    onCursorChange,
+    onVimModeChange,
+    onFindState: (_state: FileEditorFindState) => {},
+    onFindRequest: () => {},
+  });
 
   const [bridge] = useState(
     () =>
@@ -76,10 +82,19 @@ export function FileEditorView({
           },
           onCursorChange: (position) => callbacks.current.onCursorChange(position),
           onVimModeChange: (mode) => callbacks.current.onVimModeChange(mode),
+          onFindState: (state) => callbacks.current.onFindState(state),
+          onFindRequest: () => callbacks.current.onFindRequest(),
         },
       }),
   );
   useEffect(() => () => bridge.dispose(), [bridge]);
+  const find = useEditorFind({ bridge, path: location.path, ready });
+  callbacks.current = {
+    onCursorChange,
+    onVimModeChange,
+    onFindState: find.receiveState,
+    onFindRequest: find.open,
+  };
   useImperativeHandle(ref, () => ({ flush: () => bridge.flush() }), [bridge]);
 
   const resetWebView = useCallback(() => {
@@ -186,6 +201,7 @@ export function FileEditorView({
           onContentProcessDidTerminate={handleProcessGone}
           onRenderProcessGone={handleProcessGone}
         />
+        <EditorFindBar find={find} bridge={bridge} />
       </View>
     </View>
   );
