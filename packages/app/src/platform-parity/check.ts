@@ -1,6 +1,5 @@
 /** Chunks of docs/PLATFORM_PARITY_PLAN.md that own a gap. */
 export type ParityChunk =
-  | "A2"
   | "B1"
   | "B2"
   | "C1"

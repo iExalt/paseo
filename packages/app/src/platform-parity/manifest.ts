@@ -39,11 +39,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     "components/markdown-text": equivalent,
     "components/markdown/fence/mermaid/host": equivalent,
     "components/project-icon-image": equivalent,
-    "components/sidebar-callout-slot": {
-      kind: "gap",
-      chunk: "A2",
-      reason: "Native renders no sidebar notices",
-    },
     "components/sortable-inline-list": equivalent,
     "components/status-ring/clock": equivalent,
     "components/status-ring/index": equivalent,
