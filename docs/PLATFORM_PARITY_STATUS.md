@@ -13,8 +13,8 @@ checklist, to current evidence. It is not a second checklist.
 | ---------------------------- | ------------------------------------------------------------------------ |
 | Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                |
 | Branch                       | `feat/platform-parity`                                                   |
-| Current chunk                | A: stop silent gaps and show sidebar notices                             |
-| Overall state                | A and B1 accepted; B2 and C next                                         |
+| Current chunk                | D: editing on mobile                                                     |
+| Overall state                | A, B1 and C1 accepted; C2, C3 and D1 wait for the device batch           |
 | Product or release readiness | No chunk is released                                                     |
 | Routine CI budget            | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
 
@@ -134,10 +134,36 @@ for the batch session.
 - Not handled, as on web: a wide character pushed to the next row leaves a
   blank cell, so a match across that wrap is not found.
 
+### D1: file editing on mobile
+
+Evidence state: the bridge, page and native host are accepted on code review,
+unit tests and a browser test; the device checks wait for the batch session.
+
+- Native runs the web CodeMirror editor in a WebView page built by
+  `npm run build:webviews`. The page sends ChangeSets; the host keeps
+  `FileEditorModel` as the source of truth, checks a checksum before saving
+  and asks for the whole document when the copies drift. Edits go across at
+  once below 100,000 characters and every 100 ms above.
+- The read-only view shows the file until the editor reports ready. Three
+  renderer crashes or start timeouts, or a protocol mismatch, leave the file
+  read-only.
+- The committed editor page is 1.4 MB (minified, all highlight languages). A
+  unit test fails when it is older than its sources or bundled package
+  versions.
+- CodeMirror 6.43.14 uses Android's EditContext input on Chrome 126 and later,
+  so the keyboard checks below exercise that path.
+- Pending on the device: type and see autosave in the bar; Gboard composition,
+  autocorrect replacing a word mid-line, and emoji; selection handles, copy and
+  paste; rotate with the keyboard up and the cursor stays visible; an external
+  change while clean reloads, and while dirty raises the conflict, where
+  Overwrite keeps the last keystrokes; a deleted file; vim normal, insert and
+  visual mode; type then close the tab at once, and the text survives; kill the
+  renderer and the content survives; start time on a 1 MB file.
+
 ## Current boundary
 
-- B2 and chunks D to F are not implemented. C2 and C3 wait for the device
-  batch.
+- B2, the rest of chunk D, and chunks E and F are not implemented. C2, C3 and
+  D1 wait for the device batch.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
 - B2's push checks wait for the first fork release that contains it.

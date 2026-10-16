@@ -8,8 +8,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appRoot = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(appRoot, "../..");
 
-// Each WebView page is one bundled script in a committed HTML string. `sources` exports the
-// hash of the page's app sources, which a unit test recomputes to catch a stale bundle.
+// Each WebView page is one bundled script in a committed HTML string. `sources` exports a
+// hash of the page's app sources and bundled package versions, which a unit test
+// recomputes to catch a stale bundle. Workspace packages count by version only.
 const WEBVIEWS = [
   {
     name: "terminal",
@@ -66,6 +67,18 @@ const aliasPlugin = {
   },
 };
 
+/** The package an input outside the app's sources belongs to, such as `../../node_modules/@scope/name`. */
+function packageDir(input) {
+  const parts = input.split("/");
+  const modules = parts.lastIndexOf("node_modules");
+  if (modules >= 0) {
+    const scoped = parts[modules + 1].startsWith("@");
+    return parts.slice(0, modules + (scoped ? 3 : 2)).join("/");
+  }
+  // A workspace package, such as `../highlight/dist/index.js`.
+  return parts.slice(0, parts.lastIndexOf("..") + 2).join("/");
+}
+
 async function buildWebView(webview) {
   const result = await esbuild.build({
     entryPoints: [path.join(appRoot, webview.entry)],
@@ -108,13 +121,16 @@ async function buildWebView(webview) {
 export const ${webview.exportName} = ${JSON.stringify(html)};
 `;
   if (webview.sources) {
-    const files = Object.keys(result.metafile.inputs)
-      .map((input) => path.relative(appRoot, path.resolve(appRoot, input)))
-      .filter((file) => file.startsWith("src/"))
-      .sort();
-    const hash = await hashWebViewSources(appRoot, files);
+    const inputs = Object.keys(result.metafile.inputs).map((input) =>
+      path.relative(appRoot, path.resolve(process.cwd(), input)),
+    );
+    const files = inputs.filter((file) => file.startsWith("src/")).sort();
+    const packages = [
+      ...new Set(inputs.filter((file) => !file.startsWith("src/")).map(packageDir)),
+    ].sort();
+    const hash = await hashWebViewSources(appRoot, files, packages);
     contents += `
-export const ${webview.sources} = ${JSON.stringify({ files, hash }, null, 2)};
+export const ${webview.sources} = ${JSON.stringify({ files, packages, hash }, null, 2)};
 `;
   }
 

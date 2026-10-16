@@ -59,7 +59,7 @@ export const PARITY_MANIFEST: ParityManifest = {
     "file-pane/editor/view": {
       kind: "gap",
       chunk: "D1",
-      reason: "Native shows a placeholder instead of the editor",
+      reason: "The native WebView editor awaits its device checks",
     },
     "file-pane/html-preview": equivalent,
     "file-pane/find/index": {
@@ -103,7 +103,6 @@ export const PARITY_MANIFEST: ParityManifest = {
   },
   settingsSections: {
     browser: { kind: "gap", chunk: "F1", reason: "Browser data settings need browser tabs" },
-    editor: { kind: "gap", chunk: "D1", reason: "Editor settings need the native editor" },
     shortcuts: {
       kind: "gap",
       chunk: "E1",
@@ -146,7 +145,6 @@ export const PARITY_MANIFEST: ParityManifest = {
       chunk: "E1",
       reason: "Shortcuts are off on native, including tablets with keyboards",
     },
-    "file-pane/pane.tsx": { kind: "gap", chunk: "D1", reason: "Editing requires isWeb" },
     "constants/layout.ts": {
       kind: "gap",
       chunk: "E2",

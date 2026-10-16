@@ -127,6 +127,11 @@ export class FileEditorBridge {
     });
   }
 
+  /** A view change for a mounted editor; until then the next mount carries current values. */
+  update(message: FileEditorHostMessage): void {
+    if (this.mounted) this.send(message);
+  }
+
   /** The WebView reloaded: its document is gone until the next mount. */
   reset(): void {
     this.mounted = false;

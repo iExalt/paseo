@@ -8,7 +8,11 @@ import { fileEditorWebViewSources } from "./file-editor-webview-html";
 const appRoot = fileURLToPath(new URL("../../../../", import.meta.url));
 
 test("the committed editor WebView was built from the current sources", async () => {
-  const hash = await hashWebViewSources(appRoot, fileEditorWebViewSources.files);
+  const hash = await hashWebViewSources(
+    appRoot,
+    fileEditorWebViewSources.files,
+    fileEditorWebViewSources.packages,
+  );
   expect(hash, "The editor WebView is stale: run `npm run build:webviews`").toBe(
     fileEditorWebViewSources.hash,
   );
