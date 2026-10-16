@@ -47,6 +47,16 @@ So arrival sets a _target_ and the reveal rate is derived from the backlog inste
   make the next reply progressively more expensive to display. Reuse unchanged history work
   while text arrives, and release obsolete window caches as the reader reveals more history;
   window caches must stay bounded while their source timeline remains loaded.
+- **The rendered history keeps its identity across live ticks.** Ordering, turn timing, history
+  layout and the row memos above all key on the rendered tail array. Once a chat outgrows the mounted
+  window, that array is a slice of the tail; `buildAgentStreamRenderModel` caches that slice per
+  tail, because a fresh slice per tick rebuilt every one of those caches and re-rendered every
+  completed-turn footer row. Anything new between the tail and the viewport must preserve identity
+  the same way.
+- **Presentation caches outlive the view.** A native chat view unmounts as soon as it leaves the
+  small retained set, so user message projections and the plugin timeline transform are shared
+  module-wide and keyed by source item or plugin snapshot. Per-instance caches made every switch
+  back to a long chat re-project its whole history.
 
 ## Native parsing cost
 

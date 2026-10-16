@@ -174,6 +174,11 @@ range describes those exact items: `startSeq` drives older pagination and `endSe
 catch-up. The owner requests `after endSeq`, and requests `before startSeq` when the user loads older
 history. Code outside the owner does not distinguish cached and network timelines.
 
+A replica read only waits for, and only retries on, changes to the rows it asked for. Every
+streaming agent commits its timeline on every reducer frame, so a read that retried on any change
+to its host never finished while another agent streamed, and forced a full persist on each pass.
+After three lost races a read reports a miss, and the owner falls back to the network.
+
 The first resume request is bounded. If it reports more newer history, fetch one latest complete-turn tail
 instead of replaying every missed page. Live gap recovery still pages forward until current.
 
