@@ -7,6 +7,8 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
+import { Button } from "@/components/ui/button";
+import { settingsStyles } from "@/styles/settings";
 import { applyPreferencesMigration } from "./journal";
 import { reconcileImportedPreferences } from "./reconcile";
 import {
@@ -33,15 +35,18 @@ const ALL_SECTIONS = Object.keys(SECTION_KEYS) as TransferSection[];
 const CHECKED_STATE = { checked: true } as const;
 const UNCHECKED_STATE = { checked: false } as const;
 const styles = StyleSheet.create((theme) => ({
-  container: { gap: theme.spacing[2], paddingVertical: theme.spacing[3] },
-  copy: { gap: theme.spacing[1], flex: 1 },
+  // Status and the import preview sit under the row, on the row's content inset.
+  details: {
+    gap: theme.spacing[2],
+    paddingHorizontal: theme.spacing[4],
+    paddingBottom: theme.spacing[4],
+  },
   title: {
     color: theme.colors.foreground,
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.medium,
   },
   hint: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.sm },
-  actionText: { color: theme.colors.accent, fontSize: theme.fontSize.sm },
   error: { color: theme.colors.statusDanger, fontSize: theme.fontSize.sm },
   warning: { color: theme.colors.statusWarning, fontSize: theme.fontSize.sm },
   preview: {
@@ -51,7 +56,7 @@ const styles = StyleSheet.create((theme) => ({
     borderColor: theme.colors.border,
     borderRadius: theme.borderRadius.md,
   },
-  actions: { flexDirection: "row", gap: theme.spacing[3] },
+  actions: { flexDirection: "row", gap: theme.spacing[2] },
 }));
 
 function SectionToggle({
@@ -213,88 +218,98 @@ export function PreferencesTransferRow({
 
   const preview = transfer ? createPreferencesImportPreview(transfer, daemonIds) : null;
 
+  const showDetails = busy || error !== null || (preview !== null && transfer !== null);
+
   return (
-    <View style={styles.container} testID="preferences-transfer-row">
-      <View style={styles.copy}>
-        <Text style={styles.title}>{t("settings.about.preferenceTransfer.title")}</Text>
-        <Text style={styles.hint}>{t("settings.about.preferenceTransfer.description")}</Text>
+    <View style={settingsStyles.rowBorder} testID="preferences-transfer-row">
+      <View style={settingsStyles.row}>
+        <View style={settingsStyles.rowContent}>
+          <Text style={settingsStyles.rowTitle}>
+            {t("settings.about.preferenceTransfer.title")}
+          </Text>
+          <Text style={settingsStyles.rowHint}>
+            {t(
+              mode === "bridge"
+                ? "settings.about.preferenceTransfer.exportDisclosure"
+                : "settings.about.preferenceTransfer.description",
+            )}
+          </Text>
+        </View>
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={busy}
+          onPress={mode === "bridge" ? exportPreferences : chooseImport}
+          testID={mode === "bridge" ? "preferences-export" : "preferences-import"}
+        >
+          {t(
+            mode === "bridge"
+              ? "settings.about.preferenceTransfer.export"
+              : "settings.about.preferenceTransfer.import",
+          )}
+        </Button>
       </View>
-      {mode === "bridge" ? (
-        <Text style={styles.hint}>{t("settings.about.preferenceTransfer.exportDisclosure")}</Text>
-      ) : null}
-      {mode === "bridge" ? (
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={exportPreferences}
-          testID="preferences-export"
-        >
-          <Text style={styles.actionText}>{t("settings.about.preferenceTransfer.export")}</Text>
-        </Pressable>
-      ) : null}
-      {mode === "receiver" ? (
-        <Pressable
-          accessibilityRole="button"
-          disabled={busy}
-          onPress={chooseImport}
-          testID="preferences-import"
-        >
-          <Text style={styles.actionText}>{t("settings.about.preferenceTransfer.import")}</Text>
-        </Pressable>
-      ) : null}
-      {busy ? <ActivityIndicator /> : null}
-      {error ? (
-        <Text accessibilityRole="alert" style={styles.error}>
-          {error}
-        </Text>
-      ) : null}
-      {preview && transfer ? (
-        <View style={styles.preview} testID="preferences-import-preview">
-          <Text style={styles.title}>
-            {t("settings.about.preferenceTransfer.preview", { source: transfer.sourceLabel })}
-          </Text>
-          <Text style={styles.hint}>
-            {t("settings.about.preferenceTransfer.daemonMatch", {
-              matched: preview.matchedDaemonIds.length,
-              skipped: preview.unmatchedDaemonIds.length,
-            })}
-          </Text>
-          <Text style={styles.hint}>
-            {t("settings.about.preferenceTransfer.personalPaths", {
-              count: preview.personalPathCount,
-            })}
-          </Text>
-          <Text style={styles.warning}>{t("settings.about.preferenceTransfer.exclusions")}</Text>
-          {preview.availableSections.map((section) => (
-            <SectionToggle
-              key={section}
-              section={section}
-              label={t(SECTION_KEYS[section])}
-              checked={selected.includes(section)}
-              onToggle={toggleSection}
-            />
-          ))}
-          <Text style={styles.warning}>{t("settings.about.preferenceTransfer.sourceWins")}</Text>
-          <View style={styles.actions}>
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy || selected.length === 0}
-              onPress={confirmImport}
-              testID="preferences-confirm-import"
-            >
-              <Text style={styles.actionText}>
-                {t("settings.about.preferenceTransfer.confirm")}
+      {showDetails ? (
+        <View style={styles.details}>
+          {busy ? <ActivityIndicator /> : null}
+          {error ? (
+            <Text accessibilityRole="alert" style={styles.error}>
+              {error}
+            </Text>
+          ) : null}
+          {preview && transfer ? (
+            <View style={styles.preview} testID="preferences-import-preview">
+              <Text style={styles.title}>
+                {t("settings.about.preferenceTransfer.preview", { source: transfer.sourceLabel })}
               </Text>
-            </Pressable>
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy}
-              onPress={cancelImport}
-              testID="preferences-cancel-import"
-            >
-              <Text style={styles.actionText}>{t("common.actions.cancel")}</Text>
-            </Pressable>
-          </View>
+              <Text style={styles.hint}>
+                {t("settings.about.preferenceTransfer.daemonMatch", {
+                  matched: preview.matchedDaemonIds.length,
+                  skipped: preview.unmatchedDaemonIds.length,
+                })}
+              </Text>
+              <Text style={styles.hint}>
+                {t("settings.about.preferenceTransfer.personalPaths", {
+                  count: preview.personalPathCount,
+                })}
+              </Text>
+              <Text style={styles.warning}>
+                {t("settings.about.preferenceTransfer.exclusions")}
+              </Text>
+              {preview.availableSections.map((section) => (
+                <SectionToggle
+                  key={section}
+                  section={section}
+                  label={t(SECTION_KEYS[section])}
+                  checked={selected.includes(section)}
+                  onToggle={toggleSection}
+                />
+              ))}
+              <Text style={styles.warning}>
+                {t("settings.about.preferenceTransfer.sourceWins")}
+              </Text>
+              <View style={styles.actions}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy || selected.length === 0}
+                  onPress={confirmImport}
+                  testID="preferences-confirm-import"
+                >
+                  {t("settings.about.preferenceTransfer.confirm")}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onPress={cancelImport}
+                  testID="preferences-cancel-import"
+                >
+                  {t("common.actions.cancel")}
+                </Button>
+              </View>
+            </View>
+          ) : null}
         </View>
       ) : null}
     </View>
