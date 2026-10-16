@@ -48,10 +48,14 @@ function isReusableBlock(block: AssistantMessageItem, source: AssistantMessageIt
   );
 }
 
+// Shared by every presentation instance. Rows are a function of their source item, and a chat
+// view mounts fresh on Android whenever it leaves the small retained set, so per-instance caches
+// re-split the whole history's Markdown on every such switch.
+const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
+const blocksBySource = new WeakMap<AssistantMessageItem, AssistantMessageItem[]>();
+
 /** Source messages reach plugins before any Markdown splitting or Overview grouping. */
 export function createStreamPresentation() {
-  const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
-
   function presentUserMessage(item: UserMessageItem): UserMessageItem {
     const cached = userMessageCache.get(item);
     if (cached) return cached;
@@ -67,7 +71,6 @@ export function createStreamPresentation() {
     return projected;
   }
 
-  const blocksBySource = new WeakMap<AssistantMessageItem, AssistantMessageItem[]>();
   let liveSources = new Map<string, AssistantMessageItem>();
   let historySource: StreamItem[] | undefined;
   let historyTransform: TimelineItemTransform | undefined;

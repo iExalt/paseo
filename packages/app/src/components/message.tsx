@@ -1491,6 +1491,11 @@ function MarkdownListView({
   );
 }
 
+// Parsing is stateless per call, so every message shares one parser of each kind. A parser per
+// row rebuilt markdown-it and recompiled linkify-it's Unicode regexes on every list cell mount.
+const assistantMarkdownParser = createAssistantMarkdownParser();
+const streamingAssistantMarkdownParser = createAssistantMarkdownParser({ streaming: true });
+
 export const AssistantMessage = memo(function AssistantMessage({
   renderFullContent = false,
   occurrenceKey,
@@ -1503,11 +1508,6 @@ export const AssistantMessage = memo(function AssistantMessage({
   phase,
 }: AssistantMessageProps) {
   const { t } = useTranslation();
-  const markdownParser = useMemo(createAssistantMarkdownParser, []);
-  const streamingMarkdownParser = useMemo(
-    () => createAssistantMarkdownParser({ streaming: true }),
-    [],
-  );
   const renderedMessage = useMemo(
     () =>
       renderFullContent ? { text: message, capped: false } : capAssistantMessageForRender(message),
@@ -1800,7 +1800,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           );
         }
 
-        const inlineCodeLinkUrl = getInlineCodeAutoLinkUrl(markdownParser, content);
+        const inlineCodeLinkUrl = getInlineCodeAutoLinkUrl(assistantMarkdownParser, content);
         if (inlineCodeLinkUrl) {
           const source = getInlineCodeAutoLinkSource({
             href: inlineCodeLinkUrl,
@@ -1955,7 +1955,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         );
       },
     };
-  }, [client, fileLinkActions, markdownParser, occurrenceKey, phase, serverId, workspaceRoot]);
+  }, [client, fileLinkActions, occurrenceKey, phase, serverId, workspaceRoot]);
 
   const blocks = useMemo(() => splitMarkdownBlocks(revealedMessage), [revealedMessage]);
   const keyedBlocks = useMemo(
@@ -1998,8 +1998,8 @@ export const AssistantMessage = memo(function AssistantMessage({
             rules={markdownRules}
             parser={
               phase === "streaming" && index === keyedBlocks.length - 1
-                ? streamingMarkdownParser
-                : markdownParser
+                ? streamingAssistantMarkdownParser
+                : assistantMarkdownParser
             }
             onLinkPress={handleMarkdownLinkPress}
           />

@@ -47,6 +47,10 @@ const EMPTY_AUXILIARY: StreamRenderAuxiliary = {
   turnFooter: null,
 };
 
+// Every downstream cache (ordering, history split, turn timing, history layout, row identity) is
+// keyed by the rendered tail's identity. A fresh slice per call made each live-head tick rebuild
+// all of them, and re-render every completed-turn footer row, for any chat past one window.
+const renderedTailCache = new WeakMap<StreamItem[], Map<number, StreamItem[]>>();
 const orderedTailCache = new WeakMap<StreamItem[], Map<string, StreamItem[]>>();
 const orderedHeadCache = new WeakMap<StreamItem[], Map<string, StreamItem[]>>();
 const splitHistoryCache = new WeakMap<
@@ -57,6 +61,23 @@ const turnTimingCache = new WeakMap<
   StreamItem[],
   WeakMap<StreamItem[], Map<string, StreamTurnTiming>>
 >();
+
+function getRenderedTail(tail: StreamItem[], historyStart: number | undefined): StreamItem[] {
+  if (!historyStart) {
+    return tail;
+  }
+  let byStart = renderedTailCache.get(tail);
+  if (!byStart) {
+    byStart = new Map();
+    renderedTailCache.set(tail, byStart);
+  }
+  let rendered = byStart.get(historyStart);
+  if (!rendered) {
+    rendered = tail.slice(historyStart);
+    byStart.set(historyStart, rendered);
+  }
+  return rendered;
+}
 
 function getOrderedItems(params: {
   cache: WeakMap<StreamItem[], Map<string, StreamItem[]>>;
@@ -163,7 +184,7 @@ export function buildAgentStreamRenderModel(
     isMobileBreakpoint: input.isMobileBreakpoint,
   });
   const orderingCacheKey = `${input.platform}:${input.isMobileBreakpoint}`;
-  const renderedTail = input.historyStart ? input.tail.slice(input.historyStart) : input.tail;
+  const renderedTail = getRenderedTail(input.tail, input.historyStart);
   const orderedTail = getOrderedItems({
     cache: orderedTailCache,
     source: renderedTail,
