@@ -70,10 +70,13 @@ export function useStreamHistoryWindow(input: {
     boundaryItemId: initialBoundaryItemId,
     initialized: items.length > 0,
   }));
-  const boundaryIndex =
-    window.agentId === agentId && window.boundaryItemId !== null
-      ? items.findIndex((item) => item.id === window.boundaryItemId)
-      : -1;
+  const boundaryIndex = useMemo(
+    () =>
+      window.agentId === agentId && window.boundaryItemId !== null
+        ? items.findIndex((item) => item.id === window.boundaryItemId)
+        : -1,
+    [agentId, items, window.agentId, window.boundaryItemId],
+  );
   let start = initialStart;
   if (window.agentId === agentId && window.initialized) {
     if (window.boundaryItemId === null) {

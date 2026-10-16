@@ -44,6 +44,16 @@ export interface ChatOutline {
   reportReadingPosition: (seq: number | null) => void;
 }
 
+function findLatestPromptSeq(items: StreamItem[], timelineEpoch: string | null): number {
+  return items.reduce(
+    (latest, item) =>
+      item.kind === "user_message" && item.timelineCursor?.epoch === timelineEpoch
+        ? Math.max(latest, item.timelineCursor.seq)
+        : latest,
+    -1,
+  );
+}
+
 export function useChatOutline({
   agentId,
   serverId,
@@ -62,17 +72,26 @@ export function useChatOutline({
   const readingSeqRef = useRef<number | null>(null);
   const nextJumpRequestIdRef = useRef(0);
   const nextIndexRequestIdRef = useRef(0);
-  const loadedItems = useMemo(() => [...tail, ...(head ?? NO_STREAM_ITEMS)], [head, tail]);
+  // Tail and head are read separately: the head changes on every streamed chunk, and joining
+  // them, or scanning the tail, on each of those renders was a pass over the whole history.
+  const findLoadedItem = useCallback(
+    (seq: number) => {
+      const matches = (item: StreamItem) => item.timelineCursor?.seq === seq;
+      return tail.find(matches) ?? (head ?? NO_STREAM_ITEMS).find(matches);
+    },
+    [head, tail],
+  );
   const prompts = enabled ? (index?.prompts ?? NO_PROMPTS) : NO_PROMPTS;
 
   // The viewed timeline already owns live delivery and reconnect catch-up. Its complete
   // loaded items (including rows outside the mounted window) invalidate the prompt index.
-  const latestPromptSeq = loadedItems.reduce(
-    (latest, item) =>
-      item.kind === "user_message" && item.timelineCursor?.epoch === timelineEpoch
-        ? Math.max(latest, item.timelineCursor.seq)
-        : latest,
-    -1,
+  const tailPromptSeq = useMemo(
+    () => findLatestPromptSeq(tail, timelineEpoch),
+    [tail, timelineEpoch],
+  );
+  const latestPromptSeq = Math.max(
+    tailPromptSeq,
+    findLatestPromptSeq(head ?? NO_STREAM_ITEMS, timelineEpoch),
   );
 
   useEffect(() => setIndex(null), [agentId, enabled, serverId, timelineEpoch]);
@@ -135,7 +154,7 @@ export function useChatOutline({
 
   useEffect(() => {
     if (pendingJump === null) return;
-    const target = loadedItems.find((item) => item.timelineCursor?.seq === pendingJump.seq);
+    const target = findLoadedItem(pendingJump.seq);
     if (target) {
       if (pendingJump.hasScrolled) return;
       if (visibleMessageIds?.has(target.id) === false) {
@@ -150,13 +169,13 @@ export function useChatOutline({
       return;
     }
     if (pendingJump.fetchSettled) setPendingJump(null);
-  }, [loadedItems, pendingJump, revealLoadedMessage, viewportRef, visibleMessageIds]);
+  }, [findLoadedItem, pendingJump, revealLoadedMessage, viewportRef, visibleMessageIds]);
 
   const jumpToPrompt = useCallback(
     (seq: number) => {
       nextJumpRequestIdRef.current += 1;
       setPendingJump(null);
-      const loaded = loadedItems.find((item) => item.timelineCursor?.seq === seq);
+      const loaded = findLoadedItem(seq);
       if (loaded) {
         if (revealLoadedMessage?.(loaded.id)) {
           const requestId = nextJumpRequestIdRef.current;
@@ -182,7 +201,7 @@ export function useChatOutline({
           });
         });
     },
-    [agentId, index, loadedItems, onJumpError, revealLoadedMessage, serverId, viewportRef],
+    [agentId, findLoadedItem, index, onJumpError, revealLoadedMessage, serverId, viewportRef],
   );
 
   return { prompts, activePrompt, jumpToPrompt, reportReadingPosition };

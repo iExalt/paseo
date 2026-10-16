@@ -1,3 +1,43 @@
+diff --git a/node_modules/react-native-markdown-display/src/index.js b/node_modules/react-native-markdown-display/src/index.js
+index 59afec7..1d5c6db 100644
+--- a/node_modules/react-native-markdown-display/src/index.js
++++ b/node_modules/react-native-markdown-display/src/index.js
+@@ -36,9 +36,34 @@ export {
+   textStyleProps,
+ };
+ 
++// Building the style sheet flattens and copies every style key twice. Hosts that theme the
++// style prop hand over a fresh but equal object on every render and every mount, so the
++// result is cached by content instead of identity.
++const STYLE_CACHE_LIMIT = 16;
++const styleCache = new Map();
++
++const getStyle = (mergeStyle, style) => {
++  let key;
++  try {
++    key = `${mergeStyle}:${JSON.stringify(style)}`;
++  } catch {
++    return buildStyle(mergeStyle, style);
++  }
++  const cached = styleCache.get(key);
++  if (cached) {
++    return cached;
++  }
++  const built = buildStyle(mergeStyle, style);
++  if (styleCache.size >= STYLE_CACHE_LIMIT) {
++    styleCache.delete(styleCache.keys().next().value);
++  }
++  styleCache.set(key, built);
++  return built;
++};
++
+ // we use StyleSheet.flatten here to make sure we have an object, in case someone
+ // passes in a StyleSheet.create result to the style prop
+-const getStyle = (mergeStyle, style) => {
++const buildStyle = (mergeStyle, style) => {
+   let useStyles = {};
+ 
+   if (mergeStyle === true && style !== null) {
 diff --git a/node_modules/react-native-markdown-display/src/lib/AstRenderer.js b/node_modules/react-native-markdown-display/src/lib/AstRenderer.js
 index 608e945..edafe12 100644
 --- a/node_modules/react-native-markdown-display/src/lib/AstRenderer.js
