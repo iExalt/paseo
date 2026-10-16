@@ -894,16 +894,40 @@ describe("ReplicaCache", () => {
     expect(storage.writes).toBe(0);
   });
 
-  it("reports a directory that keeps changing during its read as a miss, not as empty", async () => {
+  it.each([
+    {
+      label: "keeps changing during its read",
+      arrange: (storage: MemoryStorage, cache: ReplicaCache) => {
+        storage.readLimit = 3;
+        storage.onRead = () => commitDirectory(cache, SERVER_ID, directory());
+      },
+      maxReads: 3,
+    },
+    {
+      label: "has an accepted change the store keeps rejecting",
+      arrange: (storage: MemoryStorage, cache: ReplicaCache) => {
+        storage.persistentWriteFailure = new Error("QuotaExceededError");
+        deleteDirectory(cache, SERVER_ID);
+      },
+      maxReads: 1,
+    },
+    {
+      label: "cannot be read from the store",
+      arrange: (storage: MemoryStorage) => {
+        storage.readLimit = 0;
+      },
+      maxReads: 1,
+    },
+  ])("reports a directory that $label as a miss, not as empty", async ({ arrange, maxReads }) => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
     commitDirectory(cache, SERVER_ID, directory());
     await cache.flush();
     storage.reads.length = 0;
-    storage.readLimit = 3;
-    storage.onRead = () => commitDirectory(cache, SERVER_ID, directory());
+    arrange(storage, cache);
 
     expect(await cache.readDirectory(SERVER_ID)).toBeUndefined();
+    expect(storage.reads.length).toBeLessThanOrEqual(maxReads);
   });
 
   it("reports a miss when the requested timeline keeps changing during its read", async () => {
