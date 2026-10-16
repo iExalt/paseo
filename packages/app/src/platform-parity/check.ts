@@ -1,5 +1,5 @@
 /** Chunks of docs/PLATFORM_PARITY_PLAN.md that own a gap. */
-export type ParityChunk = "B2" | "C1" | "C2" | "C3" | "D1" | "E1" | "E2" | "E3" | "F1" | "F2";
+export type ParityChunk = "B2" | "C2" | "C3" | "D1" | "E1" | "E2" | "E3" | "F1" | "F2";
 
 export type ParityEntry =
   /** The same feature, implemented per platform. */

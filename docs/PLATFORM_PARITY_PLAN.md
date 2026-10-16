@@ -65,7 +65,7 @@ the token; that goes to the user.
 
 ### C. Find on mobile (P3)
 
-- [ ] C1. Chat find on native: header-menu entry, host-backed search, scroll to
+- [x] C1. Chat find on native: header-menu entry, host-backed search, scroll to
       the match and highlight it.
 - [ ] C2. Find in the read-only file view.
 - [ ] C3. Terminal find in the native grid renderer with an on-screen trigger.
@@ -74,6 +74,8 @@ Acceptance: model tests per surface; on Paseo Debug find steps through matches
 in a long chat, a file and a busy terminal. Perfetto frame stats for the
 scroll-up journey stay at the 0.4.2 level (2–4 frames over 33 ms), with the
 find bar closed and open.
+The end-to-end pass also covers a match deep in a code block taller than the
+screen, which no reachable chat had when C1 closed.
 
 ### D. File editing on mobile (P4)
 

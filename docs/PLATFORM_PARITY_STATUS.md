@@ -73,22 +73,32 @@ Evidence state: verified on Paseo Debug, except "Sent to host".
   (`Default FirebaseApp is not initialized`). "Sent to host" moves to the B2
   release gate in the plan.
 
-### C1: chat find on mobile (first increment)
+### C1: chat find on mobile
 
-Evidence state: the bar, search and jump verified on Paseo Debug; in-text
-highlighting and scrolling to the occurrence are still to come.
+Evidence state: verified on Paseo Debug, with the limits below.
 
-- Find in the tab menu opens a bottom-anchored bar above the composer and the
-  keyboard. a two-match search found 1 of 2, Next jumped, and Back closed the bar.
+- Find in the tab menu opens a full-width bar above the composer and the
+  keyboard; Back closes it.
+- The selected occurrence is marked in plain and bold text, inline code, code
+  blocks and user messages, and the count matches the marks. Path-link code
+  and auto-linked code are marked too; diagrams count nothing.
+- Next and Previous step within a message and across messages. A visible
+  match does not scroll; one off screen or behind the bar is centred, by its
+  line: a match on the third line of a wrapped bullet and on the second line
+  of a code block land on that line, not the block's top.
 - Perfetto, same chat, two runs each, frames over 33 ms: before C1 8 and 8;
   C1 with the bar closed 9 and 11; with it open 9 and 10. Max frame and longest
   JS busy are unchanged. This chat is not the 0.4.2 baseline chat.
-- Not verified on the device: streaming not pulling the view back after a
-  jump. The reviewer accepted it from the code.
+- Accepted from the code, not seen on the device: streaming not pulling the
+  view back after a jump; the offset restart after a hard line break.
+- Not seen on the device: a match deep in a code block taller than the
+  screen. It moves to the chunk C end-to-end pass.
+- iOS is unverified. Its Markdown spans report no lines, so a jump stops at
+  the row, and Next inside a visible block jumps that row to the top.
 
 ## Current boundary
 
-- B2, the rest of C1 and chunks C2 to F are not implemented.
+- B2 and chunks C2 to F are not implemented.
 - B2's push checks wait for the first fork release that contains it.
 - Native behaviour is checked on Paseo Debug on the user's Android phone. iOS
   and physical tablets are not available.
@@ -100,3 +110,6 @@ highlighting and scrolling to the occurrence are still to come.
   release gate because Paseo Debug cannot receive push.
 - 2026-10-16: C1's first increment accepted: native chat find with jump to
   the message.
+- 2026-10-16: C1 accepted after device checks: marks and scrolling to the
+  occurrence. B2's push proof deferral to its first fork release confirmed by
+  the user.

@@ -12,9 +12,8 @@ const equivalent = { kind: "equivalent" } as const;
 export const PARITY_MANIFEST: ParityManifest = {
   splitModules: {
     "agent-stream/chat-find/index": {
-      kind: "gap",
-      chunk: "C1",
-      reason: "Native renders no chat find bar",
+      kind: "equivalent",
+      note: "Web marks DOM ranges; native marks Markdown nodes and measures Text lines",
     },
     "agent-stream/chat-outline/rail": {
       kind: "gap",
