@@ -98,8 +98,9 @@ export function workspaceAgentVisibilityEqual(
   b: WorkspaceAgentVisibility,
 ): boolean {
   return (
-    setsEqual(a.activeAgentIds, b.activeAgentIds) &&
-    setsEqual(a.autoOpenAgentIds, b.autoOpenAgentIds)
+    a === b ||
+    (setsEqual(a.activeAgentIds, b.activeAgentIds) &&
+      setsEqual(a.autoOpenAgentIds, b.autoOpenAgentIds))
   );
 }
 
