@@ -60,6 +60,10 @@ export function ChatFind({
         // the text the reader sees.
         reveal(messageId, query, occurrence, signal) {
           return new Promise((resolve, reject) => {
+            if (signal.aborted) {
+              reject(new Error("Search cancelled"));
+              return;
+            }
             const deadline = Date.now() + REVEAL_DEADLINE_MS;
             let frame = 0;
             const cancelled = () => {

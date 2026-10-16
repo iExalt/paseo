@@ -26,6 +26,7 @@ import { useKeyboardStreamInset } from "@/keyboard/shift";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { getStreamItemMessageId } from "./presentation";
+import { messageStartIndex } from "./message-start-index";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -350,7 +351,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     scrollToIndexRetriesRef.current = 0;
     bottomAnchorController.detachByUser();
     onNearBottomChange(false);
-    const index = historyRows.findIndex((row) => getStreamItemMessageId(row) === messageId);
+    const index = messageStartIndex(historyRows, messageId);
     // Live rows live in the list header, at offset zero of the inverted list.
     if (index < 0) {
       flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -365,6 +366,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       // let them render, then aim again. Bounded so an unreachable row cannot loop.
       if (scrollToIndexRetriesRef.current >= 10) return;
       scrollToIndexRetriesRef.current += 1;
+      programmaticScrollEventBudgetRef.current = 3;
       flatListRef.current?.scrollToOffset({
         offset: info.averageItemLength * info.index,
         animated: false,
