@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePendingArchiveAgentIds } from "@/hooks/use-archive-agent";
 import equal from "fast-deep-equal";
 import { useStoreWithEqualityFn } from "zustand/traditional";
@@ -97,6 +97,39 @@ export function selectSubagentsForParent(
   return rows;
 }
 
+// Every panel, hidden ones included, runs this on each session-store write, and stream commits
+// land once per frame per streaming agent without touching the agents map. Rescan only when the
+// agents map, the pending archive set or the parent changes.
+export function createSubagentsForParentSelector(): typeof selectSubagentsForParent {
+  let previous: {
+    agents: Map<string, Agent> | undefined;
+    serverId: string;
+    parentAgentId: string;
+    pendingArchiveIds: ReadonlySet<string>;
+    rows: SubagentRow[];
+  } | null = null;
+  return (state, params, pendingArchiveIds) => {
+    const agents = state.sessions[params.serverId]?.agents;
+    if (
+      previous?.agents === agents &&
+      previous.serverId === params.serverId &&
+      previous.parentAgentId === params.parentAgentId &&
+      previous.pendingArchiveIds === pendingArchiveIds
+    ) {
+      return previous.rows;
+    }
+    const rows = selectSubagentsForParent(state, params, pendingArchiveIds);
+    previous = {
+      agents,
+      serverId: params.serverId,
+      parentAgentId: params.parentAgentId,
+      pendingArchiveIds,
+      rows,
+    };
+    return rows;
+  };
+}
+
 export function selectProviderSubagentsForParent(
   state: ProviderSubagentStoreSnapshot,
   params: SelectSubagentsParams,
@@ -134,9 +167,10 @@ export function selectProviderSubagentsForParent(
 
 export function useSubagentsForParent(params: SelectSubagentsParams): SubagentRow[] {
   const pendingArchiveIds = usePendingArchiveAgentIds(params.serverId);
+  const [selectPaseoRows] = useState(createSubagentsForParentSelector);
   const paseoRows = useStoreWithEqualityFn(
     useSessionStore,
-    (state) => selectSubagentsForParent(state, params, pendingArchiveIds),
+    (state) => selectPaseoRows(state, params, pendingArchiveIds),
     equal,
   );
   const supported = useSessionStore(
