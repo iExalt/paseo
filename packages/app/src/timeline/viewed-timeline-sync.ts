@@ -3,7 +3,7 @@ import {
   planTimelineResumeFetch,
   type ProjectedTimelineForwardFetchPlan,
 } from "./timeline-sync-plan";
-import type { CachedTimeline } from "@/runtime/replica-cache";
+import type { CachedTimeline, CommittedTimeline } from "@/runtime/replica-cache";
 import {
   selectAgentTimelineState,
   useSessionStore,
@@ -30,7 +30,7 @@ import { replaceWithCanonicalStream } from "@/types/stream";
 
 export interface TimelineReplicaStorage {
   readTimeline(serverId: string, agentId: string): Promise<CachedTimeline | undefined>;
-  commitTimeline(serverId: string, agentId: string, timeline: CachedTimeline): void;
+  commitTimeline(serverId: string, agentId: string, timeline: CommittedTimeline): void;
 }
 
 async function prepareCachedTimeline(input: {
@@ -147,7 +147,8 @@ class TimelineReplicaOwner implements TimelineReplica {
     if (timeline.status === "synced") this.cachedRanges.delete(agentId);
     this.storage.commitTimeline(this.serverId, agentId, {
       agentId,
-      items: [...timeline.items, ...(session?.agentStreamHead.get(agentId) ?? [])],
+      items: timeline.items,
+      head: session?.agentStreamHead.get(agentId),
       range: timeline.status === "synced" ? timeline.range : null,
       hasOlder: timeline.status === "synced" && timeline.older === "available",
     });
