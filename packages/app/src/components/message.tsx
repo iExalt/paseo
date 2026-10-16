@@ -67,7 +67,12 @@ import { resolveToolCallIcon } from "@/utils/tool-call-icon";
 import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
+import { HighlightedCodeBlock, type CodeFindMatch } from "@/components/highlighted-code-block";
+import { searchPattern } from "@getpaseo/protocol/chat-search-text";
+import { useChatFindItemHighlight } from "@/agent-stream/chat-find/highlight-store";
+import { findMarkdownMatches } from "@/agent-stream/chat-find/markdown-matches";
+import { renderMatchParts } from "@/find-highlight/match-parts";
+import { splitTextForMatches, type MatchPart } from "@/find-highlight/split";
 import { MarkdownFenceBlock } from "@/components/markdown/fence";
 import type { MarkdownPhase } from "@/components/markdown/fence/types";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
@@ -132,6 +137,8 @@ interface UserMessageProps {
   isLastInGroup?: boolean;
   isPending?: boolean;
   disableOuterSpacing?: boolean;
+  /** The stream item this renders, so native chat find can mark its occurrence. */
+  findItemId?: string;
 }
 
 const MessageOuterSpacingContext = createContext(false);
@@ -440,6 +447,7 @@ export const UserMessage = memo(function UserMessage({
   isLastInGroup = true,
   isPending = false,
   disableOuterSpacing,
+  findItemId,
 }: UserMessageProps) {
   const isCompact = useIsCompactFormFactor();
   const { t } = useTranslation();
@@ -451,6 +459,18 @@ export const UserMessage = memo(function UserMessage({
     [lightboxMetadata],
   );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
+  const findHighlight = useChatFindItemHighlight(findItemId);
+  const messageText = useMemo(
+    () =>
+      findHighlight
+        ? renderMatchParts(
+            splitTextForMatches(message, searchPattern(findHighlight.query)),
+            findHighlight.index,
+            Text,
+          )
+        : message,
+    [findHighlight, message],
+  );
   const hasText = message.trim().length > 0;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
@@ -546,7 +566,7 @@ export const UserMessage = memo(function UserMessage({
           ) : null}
           {hasText ? (
             <Text selectable style={userMessageStylesheet.text} dataSet={MESSAGE_TEXT_DATASET}>
-              {message}
+              {messageText}
             </Text>
           ) : null}
         </View>
@@ -759,6 +779,36 @@ interface AssistantMessageProps {
   client?: DaemonClient | null;
   spacing?: "default" | "compactTop" | "compactBottom" | "compactBoth";
   phase: MarkdownPhase;
+  /** The stream item this renders, so native chat find can mark its occurrence. */
+  findItemId?: string;
+}
+
+/** Chat find's selected occurrence within one rendered Markdown block. */
+interface MarkdownBlockFind {
+  parts: ReadonlyMap<string, MatchPart[]>;
+  current: number;
+}
+
+function markdownBlockCodeFind(find: MarkdownBlockFind | null, key: string): CodeFindMatch | null {
+  const parts = find?.parts.get(key);
+  return parts && find ? { parts, current: find.current } : null;
+}
+
+function markdownBlockWithMatch(
+  blocks: readonly ReadonlyMap<string, MatchPart[]>[],
+  match: number,
+): number {
+  return blocks.findIndex((parts) => {
+    for (const nodeParts of parts.values()) {
+      if (nodeParts.some((part) => part.match === match)) return true;
+    }
+    return false;
+  });
+}
+
+function markdownBlockText(find: MarkdownBlockFind | null, key: string, text: string): ReactNode {
+  const parts = find?.parts.get(key);
+  return parts && find ? renderMatchParts(parts, find.current, MarkdownTextSpan) : text;
 }
 
 export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
@@ -1506,6 +1556,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   client,
   spacing = "default",
   phase,
+  findItemId,
 }: AssistantMessageProps) {
   const { t } = useTranslation();
   const renderedMessage = useMemo(
@@ -1528,8 +1579,8 @@ export const AssistantMessage = memo(function AssistantMessage({
     return false;
   });
 
-  const markdownRules = useMemo<RenderRules>(() => {
-    return {
+  const createMarkdownRules = useCallback(
+    (find: MarkdownBlockFind | null): RenderRules => ({
       heading1: (
         node: ASTNode,
         children: ReactNode[],
@@ -1639,7 +1690,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           inheritedStyles={inheritedStyles}
           textStyle={styles.text}
         >
-          {node.content}
+          {markdownBlockText(find, node.key, node.content)}
         </MarkdownInheritedText>
       ),
       textgroup: (
@@ -1753,6 +1804,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           language={null}
           inheritedStyles={inheritedStyles}
           textStyle={styles.code_block}
+          findMatch={markdownBlockCodeFind(find, node.key)}
         />
       ),
       fence: (
@@ -1769,6 +1821,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           phase={phase}
           inheritedStyles={inheritedStyles}
           textStyle={styles.fence}
+          findMatch={markdownBlockCodeFind(find, node.key)}
         />
       ),
       code_inline: (
@@ -1827,7 +1880,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             textStyle={styles.code_inline}
             monoSurface
           >
-            {content}
+            {markdownBlockText(find, node.key, content)}
           </MarkdownInheritedText>
         );
       },
@@ -1954,8 +2007,32 @@ export const AssistantMessage = memo(function AssistantMessage({
           />
         );
       },
-    };
-  }, [client, fileLinkActions, occurrenceKey, phase, serverId, workspaceRoot]);
+    }),
+    [client, fileLinkActions, occurrenceKey, phase, serverId, workspaceRoot],
+  );
+  const markdownRules = useMemo(() => createMarkdownRules(null), [createMarkdownRules]);
+
+  // Native chat find marks its selected occurrence. Only the block holding it gets
+  // rules of its own; every other block, and every other message, keeps the shared ones.
+  // Path and linked inline code and diagrams count but render unmarked.
+  const findHighlight = useChatFindItemHighlight(findItemId);
+  const findQuery = findHighlight?.query ?? null;
+  const findCurrent = findHighlight?.index ?? -1;
+  const findMatches = useMemo(
+    () =>
+      findQuery !== null && revealedMessage === renderedMessage.text
+        ? findMarkdownMatches(revealedMessage, searchPattern(findQuery))
+        : null,
+    [findQuery, renderedMessage.text, revealedMessage],
+  );
+  const findBlockIndex = useMemo(
+    () => (findMatches ? markdownBlockWithMatch(findMatches.blocks, findCurrent) : -1),
+    [findCurrent, findMatches],
+  );
+  const findRules = useMemo(() => {
+    const parts = findMatches?.blocks[findBlockIndex];
+    return parts ? createMarkdownRules({ parts, current: findCurrent }) : null;
+  }, [createMarkdownRules, findBlockIndex, findCurrent, findMatches]);
 
   const blocks = useMemo(() => splitMarkdownBlocks(revealedMessage), [revealedMessage]);
   const keyedBlocks = useMemo(
@@ -1995,7 +2072,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         >
           <MemoizedMarkdownBlock
             text={block}
-            rules={markdownRules}
+            rules={findRules && index === findBlockIndex ? findRules : markdownRules}
             parser={
               phase === "streaming" && index === keyedBlocks.length - 1
                 ? streamingAssistantMarkdownParser

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { useChatFindHighlight } from "./highlight-store";
+import { useChatFindMessageSelected } from "./highlight-store";
 
 /** Frames a stream row while chat find has selected its message. */
 export function ChatFindRowFrame({
@@ -11,7 +11,7 @@ export function ChatFindRowFrame({
   messageId: string;
   children: ReactNode;
 }) {
-  const selected = useChatFindHighlight(messageId) !== null;
+  const selected = useChatFindMessageSelected(messageId);
   return <View style={selected ? styles.selected : undefined}>{children}</View>;
 }
 

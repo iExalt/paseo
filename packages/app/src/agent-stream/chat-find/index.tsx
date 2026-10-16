@@ -9,7 +9,7 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelinePromptJump } from "@/timeline/timeline-sync-plan";
 import { setChatFindHighlight } from "./highlight-store";
-import { countMessageMatches } from "./message-matches";
+import { locateMessageMatch } from "./message-matches";
 import { ChatFindModel, type ChatFindFailure } from "./model";
 import type { ChatFindExpansionProps, ChatFindProps } from "./types";
 
@@ -19,6 +19,7 @@ const FAILURE_TEXT: Record<ChatFindFailure, string> = {
   reveal: "paneFind.revealFailure",
 };
 const REVEAL_DEADLINE_MS = 5000;
+const NO_MATCH = { occurrence: 0, count: 0 };
 
 // Native frames the selected message through the highlight store (row-frame.tsx), so
 // no component needs the selected id from context.
@@ -56,8 +57,8 @@ export function ChatFind({
             planTimelinePromptJump({ epoch: targetEpoch, seq }),
           );
         },
-        // Wait for the message to load, scroll to it, then count its occurrences from
-        // the text the reader sees.
+        // Wait for the message to load, scroll to it, then find the occurrence in the
+        // text the rows draw.
         reveal(messageId, query, occurrence, signal) {
           return new Promise((resolve, reject) => {
             if (signal.aborted) {
@@ -84,13 +85,12 @@ export function ChatFind({
                 return;
               }
               signal.removeEventListener("abort", cancelled);
-              const count = countMessageMatches(current.items, messageId, query);
-              const index = occurrence < 0 ? count - 1 : Math.min(occurrence, count - 1);
+              const match = locateMessageMatch(current.items, messageId, query, occurrence);
               current.viewportRef.current?.scrollToMessage?.(messageId);
               setChatFindHighlight(
-                count > 0 ? { messageId, query, occurrence: Math.max(index, 0) } : null,
+                match ? { messageId, itemId: match.itemId, query, index: match.index } : null,
               );
-              resolve({ occurrence: Math.max(index, 0), count });
+              resolve(match ? { occurrence: match.occurrence, count: match.count } : NO_MATCH);
             };
             signal.addEventListener("abort", cancelled, { once: true });
             frame = requestAnimationFrame(poll);
@@ -140,6 +140,7 @@ export function ChatFind({
         <View style={styles.overlay}>
           <PaneFind
             ref={widget}
+            fill
             query={state.query}
             status={status}
             canNavigate={state.phase === "ready" && state.count > 0}

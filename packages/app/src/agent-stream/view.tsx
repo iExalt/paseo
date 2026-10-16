@@ -697,6 +697,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             serverId={resolvedServerId}
             agentId={agentId}
             messageId={item.messageId}
+            findItemId={item.id}
             message={item.text}
             images={item.images}
             attachments={item.attachments}
@@ -737,6 +738,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   client={client}
                   spacing={layoutItem.assistantSpacing}
                   phase={layoutItem.phase}
+                  findItemId={item.id}
                 />
               )}
             </ChatFindExpansion>

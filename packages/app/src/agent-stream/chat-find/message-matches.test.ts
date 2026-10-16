@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
-import { countMessageMatches } from "./message-matches";
+import { locateMessageMatch } from "./message-matches";
 
 function assistant(id: string, text: string, blockGroupId?: string): StreamItem {
   return {
@@ -12,25 +12,33 @@ function assistant(id: string, text: string, blockGroupId?: string): StreamItem 
   } as StreamItem;
 }
 
-describe("countMessageMatches", () => {
-  it("counts what the reader sees, not Markdown syntax or link targets", () => {
-    const items = [assistant("a", "**Paseo** links [here](https://paseo.sh) and `paseo`")];
-    expect(countMessageMatches(items, "a", "paseo")).toBe(2);
+describe("locateMessageMatch", () => {
+  const items = [
+    assistant("a-1", "nothing here", "a"),
+    assistant("a-2", "one **match** and `match`", "a"),
+    assistant("b", "match elsewhere"),
+    assistant("a-3", "last match", "a"),
+    { kind: "user_message", id: "u", text: "**match** as typed" } as StreamItem,
+  ];
+
+  it("maps a message occurrence onto the item that draws it, skipping items without one", () => {
+    expect(locateMessageMatch(items, "a", "match", 0)).toEqual({
+      count: 3,
+      occurrence: 0,
+      itemId: "a-2",
+      index: 0,
+    });
+    expect(locateMessageMatch(items, "a", "match", 1)).toMatchObject({ itemId: "a-2", index: 1 });
+    expect(locateMessageMatch(items, "a", "match", 2)).toMatchObject({ itemId: "a-3", index: 0 });
   });
 
-  it("matches across any whitespace and counts code blocks", () => {
-    const items = [assistant("a", "find  me\n\n```\nfind me\n```")];
-    expect(countMessageMatches(items, "a", "find me")).toBe(2);
+  it("counts from the end for -1 and clamps past the last occurrence", () => {
+    expect(locateMessageMatch(items, "a", "match", -1)).toMatchObject({ occurrence: 2 });
+    expect(locateMessageMatch(items, "a", "match", 9)).toMatchObject({ occurrence: 2 });
   });
 
-  it("adds up every block row of one message and ignores other messages", () => {
-    const items = [
-      assistant("a-1", "one match", "a"),
-      assistant("a-2", "another match", "a"),
-      assistant("b", "match"),
-      { kind: "user_message", id: "u", text: "**match** as typed" } as StreamItem,
-    ];
-    expect(countMessageMatches(items, "a", "match")).toBe(2);
-    expect(countMessageMatches(items, "u", "**match**")).toBe(1);
+  it("searches user text as written and returns null without a match", () => {
+    expect(locateMessageMatch(items, "u", "**match**", 0)).toMatchObject({ itemId: "u" });
+    expect(locateMessageMatch(items, "a", "absent", 0)).toBeNull();
   });
 });
