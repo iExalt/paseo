@@ -196,6 +196,13 @@ Device checks wait for a tablet emulator batch.
   list (`panels/diff-panel.tsx`, `git/diff-pane.tsx`). Both now follow width
   only. Pending on the tablet: the layout toggle shows, split columns scroll
   and select.
+- E3: native gets a touch outline rail under the web rule: a wide layout and a
+  chat panel at least 918 dp wide, so landscape tablets show it and portrait
+  ones do not. A finger on the rail previews the prompt under it and lifting
+  jumps there; nothing magnifies, since touch has no hover. Pending on the
+  tablet: the rail shows in landscape only, scrubbing previews, lifting jumps
+  (also to a prompt outside the loaded window), the active tick follows
+  scrolling, and a vertical scrub does not scroll the transcript.
 
 ## Current boundary
 

@@ -18,7 +18,7 @@ export const PARITY_MANIFEST: ParityManifest = {
     "agent-stream/chat-outline/rail": {
       kind: "gap",
       chunk: "E3",
-      reason: "Native renders no outline rail, even on wide layouts",
+      reason: "The native touch rail awaits its tablet checks",
     },
     "appearance/apply-root-font": {
       kind: "deliberate",
