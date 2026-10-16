@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/iExalt/paseo/compare/paseo-v0.4.0...paseo-v0.4.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* **desktop:** offer a newer release over a stale staged download ([4da57a7](https://github.com/iExalt/paseo/commit/4da57a7c0b69aec37086f861fb04433c91923dfe))
+
 ## [0.4.0](https://github.com/iExalt/paseo/compare/paseo-v0.3.2...paseo-v0.4.0) (2026-10-16)
 
 
