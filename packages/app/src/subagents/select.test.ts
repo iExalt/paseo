@@ -1,6 +1,10 @@
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { afterEach, describe, expect, it } from "vitest";
-import { selectProviderSubagentsForParent, selectSubagentsForParent } from "./select";
+import {
+  createSubagentsForParentSelector,
+  selectProviderSubagentsForParent,
+  selectSubagentsForParent,
+} from "./select";
 import { useProviderSubagentStore } from "./provider-store";
 import { useSessionStore, type Agent } from "@/stores/session-store";
 
@@ -68,6 +72,28 @@ afterEach(() => {
 });
 
 describe("selectSubagentsForParent", () => {
+  it("rescans only when the agents map, pending archives or parent change", () => {
+    setAgents([makeAgent({ id: "child", parentAgentId: "parent-a" })]);
+    const select = createSubagentsForParentSelector();
+    const params = { serverId: SERVER_ID, parentAgentId: "parent-a" };
+    const first = select(useSessionStore.getState(), params, EMPTY_PENDING_ARCHIVE_IDS);
+
+    // A stream commit replaces the session without touching its agents map.
+    useSessionStore.setState((state) => ({
+      sessions: { ...state.sessions, [SERVER_ID]: { ...state.sessions[SERVER_ID]! } },
+    }));
+    expect(select(useSessionStore.getState(), params, EMPTY_PENDING_ARCHIVE_IDS)).toBe(first);
+    expect(select(useSessionStore.getState(), params, new Set(["child"]))).toEqual([]);
+
+    setAgents([
+      makeAgent({ id: "child", parentAgentId: "parent-a" }),
+      makeAgent({ id: "sibling", parentAgentId: "parent-a" }),
+    ]);
+    expect(
+      select(useSessionStore.getState(), params, EMPTY_PENDING_ARCHIVE_IDS).map((row) => row.id),
+    ).toEqual(["child", "sibling"]);
+  });
+
   it("hides cached provider children when the host does not support them", () => {
     useProviderSubagentStore.getState().applyUpdate(SERVER_ID, {
       kind: "upsert",
