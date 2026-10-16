@@ -1,0 +1,34 @@
+diff --git a/node_modules/react-native-reanimated/Common/cpp/reanimated/Events/UIEventHandlerRegistry.cpp b/node_modules/react-native-reanimated/Common/cpp/reanimated/Events/UIEventHandlerRegistry.cpp
+index d700769..30757fe 100644
+--- a/node_modules/react-native-reanimated/Common/cpp/reanimated/Events/UIEventHandlerRegistry.cpp
++++ b/node_modules/react-native-reanimated/Common/cpp/reanimated/Events/UIEventHandlerRegistry.cpp
+@@ -87,6 +87,11 @@ void UIEventHandlerRegistry::processEvent(
+ 
+ bool UIEventHandlerRegistry::isAnyHandlerWaitingForEvent(const std::string &eventName, const int emitterReactTag) {
+   const std::lock_guard<std::mutex> lock(instanceMutex);
++  // processEvent also runs handlers registered without a tag, so they count as waiting.
++  auto withoutTagIt = eventMappingsWithoutTag.find(eventName);
++  if (withoutTagIt != eventMappingsWithoutTag.end() && !withoutTagIt->second.empty()) {
++    return true;
++  }
+   const auto eventHash = std::make_pair(emitterReactTag, eventName);
+   auto it = eventMappingsWithTag.find(eventHash);
+   return it != eventMappingsWithTag.end() && !it->second.empty();
+diff --git a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt
+index 67a85b8..a0b4920 100644
+--- a/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt
++++ b/node_modules/react-native-reanimated/android/src/main/java/com/swmansion/reanimated/NodesManager.kt
+@@ -205,6 +205,13 @@ class NodesManager(
+             // Events can be dispatched from any thread so we have to make sure handleEvent is run from
+             // the UI thread.
+             if (UiThreadUtil.isOnUiThread()) {
++                // Most events (layout, scroll, SVG layout) have no worklet handler. Serializing each
++                // one to JSON for the UI runtime and flushing operations afterwards cost a third of
++                // the main thread while a chat mounted. Skip them as the off-UI-thread path does.
++                val eventName = mCustomEventNamesResolver.resolveCustomEventName(event.eventName) ?: event.eventName
++                if (!mNativeProxy!!.isAnyHandlerWaitingForEvent(eventName, event.viewTag)) {
++                    return
++                }
+                 // Ensure draw-pass tracking is attached before event handling; the backend reads
+                 // isInDrawPass during receiveEvent.
+                 mDrawPassDetector.initialize()
