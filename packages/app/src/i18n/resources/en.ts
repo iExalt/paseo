@@ -34,6 +34,14 @@ export const en = {
       noToken: "No push token",
       failed: "Failed",
     },
+    test: {
+      send: "Send test",
+      sending: "Sending a test notification…",
+      accepted: "Test notification sent. It should arrive shortly.",
+      noToken: "This host has no push token from this device. Re-register first.",
+      failed: "Test notification failed: {{error}}",
+      updateHost: "Update this host to send a test notification",
+    },
   },
   paneFind: {
     connectionFailure: "Could not search this chat. Check the host connection and retry.",

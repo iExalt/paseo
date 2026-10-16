@@ -73,6 +73,21 @@ Evidence state: verified on Paseo Debug, except "Sent to host".
   (`Default FirebaseApp is not initialized`). "Sent to host" moves to the B2
   release gate in the plan.
 
+### B2: test notification
+
+Evidence state: accepted on code review and unit tests; its push checks wait
+for the first fork release that contains it.
+
+- `push.send_test.request` sends to the token this connection registered and
+  returns Expo's answer: `accepted` (a ticket, not proof of delivery),
+  `no_token` or `failed` with Expo's reason. Event pushes keep logging their
+  errors as before.
+- Each host row has Send test. A host without `pushTest` says to update it.
+  Test notifications show while the app is open and do nothing when tapped;
+  other notifications stay silent in the foreground.
+- Paseo Debug cannot receive push, so its row shows the failure Expo or
+  Firebase reports.
+
 ### C1: chat find on mobile
 
 Evidence state: verified on Paseo Debug, with the limits below.
@@ -171,8 +186,7 @@ unit tests and a browser test; the device checks wait for the batch session.
 
 ## Current boundary
 
-- B2, the rest of chunk D, and chunks E and F are not implemented. C2, C3 and
-  D1 wait for the device batch.
+- Chunks E and F are not implemented. C2, C3 and D1 wait for the device batch.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
 - B2's push checks wait for the first fork release that contains it.

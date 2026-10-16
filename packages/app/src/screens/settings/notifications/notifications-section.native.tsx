@@ -1,7 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Linking, Platform, Text, View } from "react-native";
-import { withUnistyles } from "react-native-unistyles";
+import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
 import { RotateCw } from "lucide-react-native";
@@ -16,7 +16,9 @@ import {
   usePushRegistrationStore,
   type PushRegistrationStatus,
 } from "@/push-notifications/registration";
-import { useHosts } from "@/runtime/host-runtime";
+import { testPushMessage, type TestPushState } from "@/push-notifications/test-push";
+import { useHostFeature } from "@/runtime/host-features";
+import { useHostRuntimeClient, useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { settingsStyles } from "@/styles/settings";
 import type { HostProfile } from "@/types/host-connection";
 import { resolveSoundSettingsTarget } from "./sound-settings";
@@ -60,6 +62,24 @@ function HostRegistrationRow({ host, showBorder }: { host: HostProfile; showBord
   const { t } = useTranslation();
   const status = usePushRegistrationStore((state) => state[host.serverId]);
   const handleReregister = useCallback(() => reregisterPushToken(host.serverId), [host.serverId]);
+  const client = useHostRuntimeClient(host.serverId);
+  const connected = useHostRuntimeIsConnected(host.serverId);
+  const supported = useHostFeature(host.serverId, "pushTest");
+  const [testState, setTestState] = useState<TestPushState>({ kind: "idle" });
+  const handleSendTest = useCallback(() => {
+    if (!client) return;
+    setTestState({ kind: "sending" });
+    client.sendTestPush().then(
+      (result) => setTestState({ kind: "done", ...result }),
+      (error: unknown) =>
+        setTestState({
+          kind: "done",
+          outcome: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+    );
+  }, [client]);
+  const testMessage = testPushMessage({ connected, supported, state: testState });
   const rowStyle = useMemo(
     () => [settingsStyles.row, showBorder && settingsStyles.rowBorder],
     [showBorder],
@@ -71,16 +91,33 @@ function HostRegistrationRow({ host, showBorder }: { host: HostProfile; showBord
         <Text style={settingsStyles.rowHint}>
           {t(STATUS_LABEL_KEYS[status ?? "not-connected"])}
         </Text>
+        {testMessage ? (
+          <Text style={settingsStyles.rowHint}>
+            {t(testMessage.key, { error: testMessage.error })}
+          </Text>
+        ) : null}
       </View>
-      <Button
-        variant="outline"
-        size="sm"
-        onPress={handleReregister}
-        disabled={status === undefined || status === "pending"}
-        testID={`push-registration-${host.serverId}`}
-      >
-        {t("nativeNotifications.reregister")}
-      </Button>
+      <View style={styles.actions}>
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={handleSendTest}
+          // One request at a time, so repeated taps do not stack notifications.
+          disabled={!connected || !supported || testState.kind === "sending"}
+          testID={`push-test-${host.serverId}`}
+        >
+          {t("nativeNotifications.test.send")}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onPress={handleReregister}
+          disabled={status === undefined || status === "pending"}
+          testID={`push-registration-${host.serverId}`}
+        >
+          {t("nativeNotifications.reregister")}
+        </Button>
+      </View>
     </View>
   );
 }
@@ -170,3 +207,7 @@ export function NotificationsSection() {
     </>
   );
 }
+
+const styles = StyleSheet.create((theme) => ({
+  actions: { flexDirection: "row", gap: theme.spacing[2] },
+}));

@@ -3085,6 +3085,31 @@ export const PushUnregisterResponseSchema = z.object({
   }),
 });
 
+/** Send a test notification to the push token this connection registered. */
+export const PushSendTestRequestSchema = z.object({
+  type: z.literal("push.send_test.request"),
+  requestId: z.string(),
+});
+
+/** `data.kind` of a test notification, which the app shows in the foreground and never opens. */
+export const PUSH_TEST_NOTIFICATION_KIND = "push_test";
+
+/**
+ * `accepted`: Expo took the notification, which does not prove the device got it.
+ * `no_token`: this connection registered no push token. `failed`: Expo refused it, with
+ * its reason in `error`. A string, so a later outcome cannot break an older app.
+ */
+export type PushSendTestOutcome = "accepted" | "no_token" | "failed";
+
+export const PushSendTestResponseSchema = z.object({
+  type: z.literal("push.send_test.response"),
+  payload: z.object({
+    requestId: z.string(),
+    outcome: z.string(),
+    error: z.string().optional(),
+  }),
+});
+
 // ============================================================================
 // Terminal Messages
 // ============================================================================
@@ -3549,6 +3574,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ListCommandsRequestSchema,
   RegisterPushTokenMessageSchema,
   PushUnregisterRequestSchema,
+  PushSendTestRequestSchema,
   ListTerminalsRequestSchema,
   SubscribeTerminalsRequestSchema,
   UnsubscribeTerminalsRequestSchema,
@@ -3817,6 +3843,8 @@ export const ServerInfoStatusPayloadSchema = z
         relayConfig: z.boolean().optional(),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: z.boolean().optional(),
+        // COMPAT(pushTest): added in v0.5.1, remove gate after 2027-04-16.
+        pushTest: z.boolean().optional(),
         // COMPAT(plugins): added in v0.3.0, remove gate after 2027-08-07.
         plugins: z.boolean().optional(),
         // COMPAT(pluginManagement): added in v0.4.0, remove gate after 2027-08-14.
@@ -7138,6 +7166,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   StatusMessageSchema,
   PongMessageSchema,
   PushUnregisterResponseSchema,
+  PushSendTestResponseSchema,
   RpcErrorMessageSchema,
   ArtifactMessageSchema,
   AgentUpdateMessageSchema,
@@ -7760,6 +7789,8 @@ export type ListCommandsResponse = z.infer<typeof ListCommandsResponseSchema>;
 export type RegisterPushTokenMessage = z.infer<typeof RegisterPushTokenMessageSchema>;
 export type PushUnregisterRequest = z.infer<typeof PushUnregisterRequestSchema>;
 export type PushUnregisterResponse = z.infer<typeof PushUnregisterResponseSchema>;
+export type PushSendTestRequest = z.infer<typeof PushSendTestRequestSchema>;
+export type PushSendTestResponse = z.infer<typeof PushSendTestResponseSchema>;
 
 // Terminal message types
 export type ListTerminalsRequest = z.infer<typeof ListTerminalsRequestSchema>;

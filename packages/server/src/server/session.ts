@@ -10,6 +10,7 @@ import type {
   UsageReportEntry,
   ProviderUsage,
 } from "@getpaseo/protocol/messages";
+import { PUSH_TEST_NOTIFICATION_KIND } from "@getpaseo/protocol/messages";
 import { relative } from "node:path";
 import { isAbsolute } from "node:path";
 import { CreationService, type CreatedAgent } from "./creation/index.js";
@@ -3656,7 +3657,23 @@ export class Session {
           payload: { requestId: msg.requestId },
         });
         return;
+      case "push.send_test.request":
+        await this.handlePushSendTestRequest(msg.requestId);
+        return;
     }
+  }
+
+  /** A test notification to this connection's own device, with Expo's answer. */
+  private async handlePushSendTestRequest(requestId: string): Promise<void> {
+    const token = this.currentClientMetadata().pushToken?.trim();
+    const result = token
+      ? await this.pushNotifications.sendTest(token, {
+          title: "Paseo",
+          body: "Test notification from this host",
+          data: { kind: PUSH_TEST_NOTIFICATION_KIND },
+        })
+      : { outcome: "no_token" as const };
+    this.emit({ type: "push.send_test.response", payload: { requestId, ...result } });
   }
 
   public resetPeakInflight(): void {
