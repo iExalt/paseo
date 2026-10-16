@@ -201,9 +201,15 @@ Device checks wait for a tablet emulator batch.
   focuses it. Drag-to-split and tab drag stay web-only by design: dnd-kit is
   DOM-only, and touch drags compete with scrolling and swipe gestures. Every
   visible pane now streams its agent, as on web. Pending on the tablet: split
-  right and down, resize, focus by touch, several agent panes streaming
-  without lag, rotation keeps the layout, and the explorer pane opens files
-  beside it.
+  right and down from the tab menu; resize by touch without fighting either
+  pane's scroll; close a split; the layout survives a restart and rotation;
+  no drag-to-split or tab drag; a tap on a button in an unfocused pane fires
+  once and focuses it; two agent panes stream while the other scrolls
+  (record frame stats as for C1); the explorer pane opens files beside it,
+  and a split-screen resize to compact and back keeps it reachable.
+- Follow-up after the campaign: the compact explorer dock
+  (`NativeExplorerSidebarDock`) is now reachable only from a test override;
+  remove it.
 - E3: native gets a touch outline rail under the web rule: a wide layout and a
   chat panel at least 918 dp wide, so landscape tablets show it and portrait
   ones do not. A finger on the rail previews the prompt under it and lifting
