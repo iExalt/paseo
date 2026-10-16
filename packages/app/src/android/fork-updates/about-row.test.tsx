@@ -16,7 +16,6 @@ const harness = vi.hoisted(() => ({
   launchForkUpdateInstaller: vi.fn(),
   recordInstalledForkUpdate: vi.fn(),
   restoreStagedForkUpdate: vi.fn(),
-  confirmDialog: vi.fn(),
   nativeListener: vi.fn(),
 }));
 
@@ -61,7 +60,6 @@ vi.mock("@/components/ui/button", async () => {
   };
 });
 
-vi.mock("@/utils/confirm-dialog", () => ({ confirmDialog: harness.confirmDialog }));
 vi.mock("@/styles/settings", () => ({
   settingsStyles: { row: {}, rowBorder: {}, rowContent: {}, rowTitle: {}, rowHint: {} },
 }));
@@ -84,8 +82,8 @@ vi.mock("./client", () => ({
   clearStagedForkUpdate: vi.fn(),
 }));
 
-import { ForkAndroidUpdateRow } from "./about-row";
-import { ForkManualMigrationRequired } from "./client";
+let ForkAndroidUpdateRow: typeof import("./about-row").ForkAndroidUpdateRow;
+let ForkManualMigrationRequired: typeof import("./client").ForkManualMigrationRequired;
 
 const update = {
   manifest: {
@@ -96,7 +94,11 @@ const update = {
 } as never;
 
 describe("fork Android update row", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // The updater state lives in modules; start every test from a fresh copy.
+    vi.resetModules();
+    ({ ForkAndroidUpdateRow } = await import("./about-row"));
+    ({ ForkManualMigrationRequired } = await import("./client"));
     harness.installedVersion = "0.1.0";
     harness.allowInstall = false;
     harness.checkForForkUpdate.mockResolvedValue({ update, installedVersion: "0.1.0" });
@@ -106,7 +108,6 @@ describe("fork Android update row", () => {
     harness.launchForkUpdateInstaller.mockResolvedValue(undefined);
     harness.recordInstalledForkUpdate.mockResolvedValue(undefined);
     harness.restoreStagedForkUpdate.mockResolvedValue(null);
-    harness.confirmDialog.mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -133,7 +134,6 @@ describe("fork Android update row", () => {
     await screen.findByText('settings.about.forkUpdates.downloaded {"version":"0.1.1"}');
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.install" }));
     await screen.findByText("settings.about.forkUpdates.installer");
-    expect(harness.confirmDialog).toHaveBeenCalledTimes(2);
     expect(harness.launchForkUpdateInstaller).toHaveBeenCalledOnce();
 
     harness.activeListener?.("active");
@@ -145,6 +145,19 @@ describe("fork Android update row", () => {
     harness.activeListener?.("active");
     await screen.findByText('settings.about.forkUpdates.installed {"version":"0.1.1"}');
     expect(harness.recordInstalledForkUpdate).toHaveBeenCalledWith("0.1.1");
+  });
+
+  it("remembers a found update after the About screen closes", async () => {
+    const first = render(<ForkAndroidUpdateRow />);
+    fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.check" }));
+    await screen.findByText('settings.about.forkUpdates.available {"version":"0.1.1"}');
+    first.unmount();
+
+    render(<ForkAndroidUpdateRow />);
+    expect(
+      screen.getByText('settings.about.forkUpdates.available {"version":"0.1.1"}'),
+    ).toBeTruthy();
+    expect(harness.checkForForkUpdate).toHaveBeenCalledOnce();
   });
 
   it("shows a retryable error when installer-return persistence fails", async () => {

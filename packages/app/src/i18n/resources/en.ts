@@ -2453,10 +2453,6 @@ export const en = {
         downloadingAction: "Downloading…",
         install: "Install",
         continue: "Continue",
-        installTitle: "Open Android installer?",
-        installMessage:
-          "Android will ask you to confirm this verified Paseo update. Paseo will not install it automatically.",
-        installConfirm: "Open installer",
       },
     },
     appearance: {

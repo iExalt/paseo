@@ -60,6 +60,12 @@ import {
   type NixUpdateBusy,
   type NixUpdatePhase,
 } from "@/desktop/updates/nix-updates";
+import {
+  hasPendingForkUpdate,
+  isForkUpdaterShown,
+  updateToPendingForkRelease,
+  useForkUpdateStore,
+} from "@/android/fork-updates/store";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { buttonControlHeight } from "@/components/ui/control-geometry";
 import { Shortcut } from "@/components/ui/shortcut";
@@ -487,6 +493,7 @@ function SidebarFooter({
           />
           <View style={styles.footerSpacer} />
           <SidebarUpdateButton theme={theme} />
+          {isForkUpdaterShown() ? <SidebarForkUpdateButton theme={theme} /> : null}
           <SidebarHelpMenu />
           <FooterIconButton
             onPress={handleSettings}
@@ -525,6 +532,31 @@ function SidebarUpdateButton({ theme }: { theme: SidebarTheme }) {
       label={label}
       icon={resolveUpdateButtonIcon(failed, busy)}
       iconColor={failed ? theme.colors.destructive : theme.colors.accent}
+      theme={theme}
+    />
+  );
+}
+
+function SidebarForkUpdateButton({ theme }: { theme: SidebarTheme }) {
+  const { t } = useTranslation();
+  const pending = useForkUpdateStore(hasPendingForkUpdate);
+  const status = useForkUpdateStore((state) => state.status);
+  const version = useForkUpdateStore((state) => state.update?.manifest.version ?? null);
+  const onPress = useCallback(() => void updateToPendingForkRelease(), []);
+  if (!pending) return null;
+  const downloading = status === "downloading";
+  const formattedVersion = formatVersionWithPrefix(version);
+  return (
+    <FooterIconButton
+      onPress={onPress}
+      testID="sidebar-fork-update"
+      label={
+        downloading
+          ? t("desktop.updates.nix.downloading", { version: formattedVersion })
+          : t("desktop.updates.nix.updateTooltip", { version: formattedVersion })
+      }
+      icon={downloading ? SpinningLoaderIcon : CircleArrowUp}
+      iconColor={theme.colors.accent}
       theme={theme}
     />
   );
