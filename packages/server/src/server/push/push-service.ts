@@ -28,6 +28,7 @@ type BatchResult = { tickets: ExpoPushTicket[] } | { error: string };
 
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const MAX_BATCH_SIZE = 100;
+const EXPO_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * Service for sending Expo push notifications.
@@ -87,6 +88,8 @@ export class PushService {
           Accept: "application/json",
         },
         body: JSON.stringify(messages),
+        // A hung Expo request must not hold a test request open after the app gave up.
+        signal: AbortSignal.timeout(EXPO_REQUEST_TIMEOUT_MS),
       });
 
       if (!response.ok) {

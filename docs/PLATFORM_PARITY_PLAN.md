@@ -59,7 +59,9 @@ move to the release gate below.
 **Release gate (first fork release containing B1 and B2, on the installed
 app):** the host row reads "Sent to host"; a test notification arrives with
 the app in the foreground and in the background; tapping it does not
-navigate; "Send test notification" is hidden for a host without `pushTest`.
+navigate, from a cold start too; a host without `pushTest` shows the update
+prompt; with notifications denied the row reports no token. Watch the daemon
+log for `InvalidCredentials`, which revokes the token.
 If Expo lacks FCM credentials for the fork package, the first push revokes
 the token; that goes to the user.
 
