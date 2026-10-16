@@ -23,9 +23,9 @@ describe("findRevealDelta", () => {
     expect(findRevealDelta({ ...band, matchTop: 200, matchHeight: 20 })).toBe(0);
   });
 
-  it("moves content up for a match below the band and down for one above it", () => {
-    expect(findRevealDelta({ ...band, matchTop: 600, matchHeight: 20 })).toBe(130);
-    expect(findRevealDelta({ ...band, matchTop: 40, matchHeight: 20 })).toBe(-70);
+  it("centres a match below or above the band", () => {
+    expect(findRevealDelta({ ...band, matchTop: 600, matchHeight: 20 })).toBe(310);
+    expect(findRevealDelta({ ...band, matchTop: 40, matchHeight: 20 })).toBe(-250);
   });
 
   it("aligns the top of a match taller than the band", () => {

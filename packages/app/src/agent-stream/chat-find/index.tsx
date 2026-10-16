@@ -26,7 +26,8 @@ const NO_MATCH = { occurrence: 0, count: 0 };
 // already mounted, longer after jumping to a row that has to mount first.
 const ANCHOR_SETTLE_FRAMES = 6;
 const ANCHOR_JUMP_FRAMES = 30;
-const REVEAL_MARGIN = 8;
+// Clears the jump-to-bottom button that floats above the find bar.
+const REVEAL_MARGIN = 48;
 
 // Native frames the selected message through the highlight store (row-frame.tsx), so
 // no component needs the selected id from context.
