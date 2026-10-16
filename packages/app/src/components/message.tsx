@@ -1726,6 +1726,22 @@ function ExpandableBadgeLabelRow({
 const LUCIDE_TOOL_ICON_NUDGE_LEFT: ViewStyle = { marginLeft: -1 };
 const LUCIDE_CHEVRON_NUDGE_LEFT: ViewStyle = { marginLeft: -4 };
 
+type BadgeIcon = ComponentType<{ size?: number; color?: string }>;
+type ThemedBadgeIcon = ComponentType<{ size?: number; uniProps?: typeof foregroundColorMapping }>;
+
+// One themed wrapper per icon component, shared by every badge. Tool call rows mount and unmount
+// constantly while a long chat scrolls, and each mount used to build its own wrapper component.
+const themedBadgeIcons = new WeakMap<BadgeIcon, ThemedBadgeIcon>();
+
+function getThemedBadgeIcon(icon: BadgeIcon): ThemedBadgeIcon {
+  let themed = themedBadgeIcons.get(icon);
+  if (!themed) {
+    themed = withUnistyles(icon);
+    themedBadgeIcons.set(icon, themed);
+  }
+  return themed;
+}
+
 function renderExpandableBadgeIcon({
   isError,
   isActive,
@@ -1733,7 +1749,7 @@ function renderExpandableBadgeIcon({
 }: {
   isError: boolean;
   isActive: boolean;
-  ThemedIcon: ComponentType<{ size?: number; uniProps?: typeof foregroundColorMapping }> | null;
+  ThemedIcon: ThemedBadgeIcon | null;
 }): ReactNode {
   if (isError) {
     return (
@@ -2131,7 +2147,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     [isExpanded],
   );
 
-  const ThemedIcon = useMemo(() => (icon ? withUnistyles(icon) : null), [icon]);
+  const ThemedIcon = icon ? getThemedBadgeIcon(icon) : null;
   const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
   const iconSlotNode = renderExpandableBadgeIconSlot({
     showChevron: isInteractive && (isHovered || isExpanded),
