@@ -9,7 +9,7 @@ import { PARITY_MANIFEST } from "./manifest";
 const emptyManifest: ParityManifest = { splitModules: {}, settingsSections: {}, runtimeGates: {} };
 
 describe("findSplitModules", () => {
-  it("pairs web and electron files with native, ios, android and plain fallbacks", () => {
+  it("finds modules that resolve to different files on web and native", () => {
     expect(
       findSplitModules([
         "a.native.tsx",
@@ -23,8 +23,10 @@ describe("findSplitModules", () => {
         "e.tsx",
         "e.web.tsx",
         "e.electron.tsx",
+        "f.ts",
+        "f.native.ts",
       ]),
-    ).toEqual(["a", "b", "c", "d", "e"]);
+    ).toEqual(["a", "b", "c", "d", "e", "f"]);
   });
 
   it("ignores single-platform modules, tests and declarations", () => {

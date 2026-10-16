@@ -39,25 +39,31 @@ export interface ParityTree {
 const SOURCE_FILE = /^(.*?)(?:\.(native|ios|android|web|electron))?\.(ts|tsx)$/;
 const IGNORED_FILE = /\.(test|spec)\.tsx?$|\.d\.ts$/;
 const WEB_PLATFORMS = new Set(["web", "electron"]);
+const NATIVE_PLATFORMS = new Set(["native", "ios", "android"]);
+
+function platformGroup(platform: string | undefined): "web" | "native" | "base" {
+  if (platform && WEB_PLATFORMS.has(platform)) return "web";
+  if (platform && NATIVE_PLATFORMS.has(platform)) return "native";
+  return "base";
+}
 
 /**
- * Modules Metro resolves to different files per platform: a `.web`/`.electron` file
- * beside a `.native`/`.ios`/`.android` file or a plain fallback.
+ * Modules Metro resolves to different files per platform: any two of a
+ * `.web`/`.electron` file, a `.native`/`.ios`/`.android` file and a plain file.
  */
 export function findSplitModules(files: readonly string[]): string[] {
-  const variants = new Map<string, { web: boolean; other: boolean }>();
+  const groups = new Map<string, Set<string>>();
   for (const file of files) {
     if (IGNORED_FILE.test(file)) continue;
     const match = SOURCE_FILE.exec(file);
     if (!match) continue;
     const [, base, platform] = match;
-    const entry = variants.get(base) ?? { web: false, other: false };
-    if (platform && WEB_PLATFORMS.has(platform)) entry.web = true;
-    else entry.other = true;
-    variants.set(base, entry);
+    const entry = groups.get(base) ?? new Set<string>();
+    entry.add(platformGroup(platform));
+    groups.set(base, entry);
   }
-  return [...variants]
-    .filter(([, entry]) => entry.web && entry.other)
+  return [...groups]
+    .filter(([, entry]) => entry.size > 1)
     .map(([base]) => base)
     .sort();
 }
