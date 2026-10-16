@@ -111,7 +111,7 @@ export interface DirectoryConnection {
 export interface DirectoryCheckpointStorage {
   readAgent(serverId: string, agentId: string): Promise<Agent | undefined>;
   readWorkspace(serverId: string, workspaceId: string): Promise<CachedWorkspace | undefined>;
-  readDirectory(serverId: string): Promise<CachedDirectory>;
+  readDirectory(serverId: string): Promise<CachedDirectory | undefined>;
   commitDirectoryMutations(
     serverId: string,
     mutations: readonly DirectoryReplicaMutation[],
@@ -438,7 +438,9 @@ export class DirectorySync {
     this.cacheLoad ??= (async () => {
       const revision = this.revision;
       const cached = await checkpoints.readDirectory(this.serverId);
-      if (this.cacheAccepted) return;
+      // A miss is not an empty directory: accepting it would paint an empty sidebar and drop
+      // the cursors, turning the next refresh into a full one.
+      if (!cached || this.cacheAccepted) return;
       if (!useSessionStore.getState().sessions[this.serverId]) return;
       this.agents.commitCached(cached.agents);
       this.workspaces.commitCached(cached);
