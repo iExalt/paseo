@@ -1614,7 +1614,8 @@ export class ReplicaCache {
   }
 
   private ensureStoredIndex(): Promise<void> {
-    this.storedIndexPromise ??= this.rowStore.readIndex().then(async (hosts) => {
+    if (this.storedIndexPromise) return this.storedIndexPromise;
+    const load = this.rowStore.readIndex().then(async (hosts) => {
       this.storedRows.clear();
       this.hostBytes.clear();
       this.hostWriteOrder.clear();
@@ -1633,7 +1634,12 @@ export class ReplicaCache {
       }
       return undefined;
     });
-    return this.storedIndexPromise;
+    // A failed load must not fail every later persist of the session; the next one retries it.
+    load.catch(() => {
+      if (this.storedIndexPromise === load) this.storedIndexPromise = null;
+    });
+    this.storedIndexPromise = load;
+    return load;
   }
 
   private queueOperation(operation: () => Promise<void>): Promise<void> {
