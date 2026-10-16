@@ -576,6 +576,7 @@ interface SessionStoreActions {
       head?: StreamItem[];
       acknowledgedClientMessageIds?: readonly string[];
       taskSnapshot?: TodoEntry[];
+      timelineCursor?: AgentTimelineCursorState;
     },
   ) => void;
   beginAgentMessageSubmission: (
@@ -1127,7 +1128,23 @@ export const useSessionStore = create<SessionStore>()(
           const agentTasks = updateAgentTasks(session.agentTasks, agentId, state.taskSnapshot);
           const changedTasks = agentTasks !== session.agentTasks;
 
-          if (!changedTail && !changedHead && !changedSubmissions && !changedTasks) {
+          let agentTimelineCursor = session.agentTimelineCursor;
+          if (
+            state.timelineCursor !== undefined &&
+            session.agentTimelineCursor.get(agentId) !== state.timelineCursor
+          ) {
+            agentTimelineCursor = new Map(session.agentTimelineCursor);
+            agentTimelineCursor.set(agentId, state.timelineCursor);
+          }
+          const changedCursor = agentTimelineCursor !== session.agentTimelineCursor;
+
+          if (
+            !changedTail &&
+            !changedHead &&
+            !changedSubmissions &&
+            !changedTasks &&
+            !changedCursor
+          ) {
             return prev;
           }
 
@@ -1151,6 +1168,7 @@ export const useSessionStore = create<SessionStore>()(
                 agentStreamHead: nextHead,
                 agentTasks,
                 messageSubmissions,
+                agentTimelineCursor,
               },
             },
           };
