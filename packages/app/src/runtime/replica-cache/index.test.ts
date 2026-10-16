@@ -758,6 +758,37 @@ describe("ReplicaCache", () => {
     expect(stored?.range).toBeNull();
   });
 
+  it.each([
+    { label: "within the item limit", tailLength: 30, coverage: true },
+    { label: "past the item limit", tailLength: 60, coverage: false },
+  ])("stores a committed live head after its tail $label", async ({ tailLength, coverage }) => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    const item = (seq: number): StreamItem => ({
+      ...timelineItem(`Message ${seq}`),
+      id: `message-${seq}`,
+      timelineCursor: { epoch: "epoch-1", seq },
+    });
+    const tail = Array.from({ length: tailLength }, (_, index) => item(index + 1));
+    const head = [item(tailLength + 1), item(tailLength + 2)];
+
+    cache.commitTimeline(SERVER_ID, "agent-1", {
+      agentId: "agent-1",
+      items: tail,
+      head,
+      range: { epoch: "epoch-1", startSeq: 1, endSeq: tailLength + 2 },
+      hasOlder: false,
+    });
+    const stored = await cache.readTimeline(SERVER_ID, "agent-1");
+
+    expect(stored?.items.map((storedItem) => storedItem.id)).toEqual(
+      [...tail, ...head].slice(-50).map((expected) => expected.id),
+    );
+    expect(stored?.range).toEqual(
+      coverage ? { epoch: "epoch-1", startSeq: 1, endSeq: tailLength + 2 } : null,
+    );
+  });
+
   it("never reads a timeline older than an accepted deferred replacement", async () => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
