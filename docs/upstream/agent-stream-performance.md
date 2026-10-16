@@ -57,6 +57,22 @@ So arrival sets a _target_ and the reveal rate is derived from the backlog inste
   small retained set, so user message projections and the plugin timeline transform are shared
   module-wide and keyed by source item or plugin snapshot. Per-instance caches made every switch
   back to a long chat re-project its whole history.
+- **A stream commit is one store write that touches no agent maps.** Every session-store write
+  reruns every mounted selector, and commits land once per frame per streaming agent, so the
+  reducer queue writes the head, tail and timeline cursor together. Selectors that scan agents or
+  workspaces (workspace agent visibility, subagent rows) memoize on their input maps and cost
+  nothing on a stream commit. The replica commit carries the tail and head by reference; only the
+  once-a-second persist joins them, and it walks just the newest stored items.
+- **A hidden native chat does not render for its own agent.** Native cannot suspend hidden chats
+  (see [mobile-panels.md](mobile-panels.md)), so the panel's tail, head, turn and pending-submission
+  selectors go through `useRetainedSessionSelector`, which keeps the last visible value while the
+  retained panel is inactive. Reveal re-renders the panel, which reads live state again.
+- **Relay frames decrypt in pure JavaScript, so large ones are sliced.** The phone opens every relay
+  frame with tweetnacl, about 330 ms per MB on Hermes, far above parsing (about 1 ms per MB) or
+  protocol validation. Frames of 64 KB or more open through `decryptInSlices`
+  (`packages/relay/src/sliced-open.ts`), which verifies the authenticator first and then yields
+  every 8 ms; `EncryptedChannel` handles inbound messages through one chain so nothing overtakes a
+  sliced frame. This bounds stalls, not CPU: native crypto or a worker runtime would cut the cost.
 
 ## Native parsing cost
 
@@ -70,6 +86,12 @@ Completion restores one native text view per Mermaid-delimited segment, so selec
 - **Reproducing bursty arrival:** the `bursty-stream` model in `mock-load-test-agent.ts` emits uneven runs of tokens separated by idle gaps. Burst sizes come from a seeded generator, so a run repeats exactly.
 - **Rate policy in isolation:** `computeRevealStep` in `packages/app/src/agent-stream/text-reveal.ts` is pure; `text-reveal.test.ts` covers convergence and burst flattening without a renderer.
 - **Per-delta cost on a long timeline:** `npx vitest bench --project unit src/agent-stream/stream-tick.bench.ts` from `packages/app` replays 200 deltas over a 2,000-item timeline through the pure model and layout pipeline, with the default mounted window and with history fully revealed. It measures the JS work per delta, not paint.
+- **Hermes cost of pure functions:** bundle a probe with esbuild, lower it with Babel `preset-env`
+  for the `hermes` CLI from the facebook/hermes releases, and time it there. Reducer, presentation,
+  validation, Markdown and crypto costs measured this way (2026-10, Hermes 0.13 on an M-series Mac,
+  so a phone is slower): 40-row history page reduced onto a 2,000-row tail 9 ms, cold presentation
+  of 1,200 rows 45 ms and warm 2 ms, protocol validation of a 138 KB page 0.3 ms, Markdown parse
+  of one six-block message 0.8 ms, tweetnacl open 330 ms per MB.
 
 Healthy numbers (2026-08, Expo web against a local dev daemon, real Claude Haiku agent, ~8.5s samples during active streaming). Setting `TEXT_REVEAL_HORIZON_MS` to 0 makes the reveal paint on arrival, which is how the baseline column was taken:
 
