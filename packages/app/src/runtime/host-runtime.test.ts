@@ -27,7 +27,8 @@ import {
   type HostRuntimeControllerDeps,
   type HostRuntimeStorage,
 } from "./host-runtime";
-import type { ReplicaRow, ReplicaRowStore } from "./replica-cache/row-store";
+import type { ReplicaRow, ReplicaRowStore, ReplicaStoredRowIndex } from "./replica-cache/row-store";
+import { utf8ByteLength } from "./replica-cache/utf8-byte-length";
 
 import { subscriptionFixture } from "./subscription-fixture";
 import { readDesktopManagedLocalCredential } from "@/desktop/daemon/local-credential";
@@ -598,11 +599,16 @@ function createMemoryReplicaRowStore(): ReplicaRowStore {
           (!acceptedIds || acceptedIds.has(row.id)),
       );
     },
-    readAll: async () => {
-      const hosts = new Map<string, ReplicaRow[]>();
+    readIndex: async () => {
+      const hosts = new Map<string, ReplicaStoredRowIndex[]>();
       for (const row of rows.values()) {
         const hostRows = hosts.get(row.serverId) ?? [];
-        hostRows.push(row);
+        hostRows.push({
+          serverId: row.serverId,
+          kind: row.kind,
+          id: row.id,
+          bytes: utf8ByteLength(row.payload),
+        });
         hosts.set(row.serverId, hostRows);
       }
       return [...hosts].map(([serverId, hostRows]) => ({ serverId, rows: hostRows }));
