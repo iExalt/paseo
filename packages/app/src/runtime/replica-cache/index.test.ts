@@ -9,7 +9,14 @@ import type { StreamItem } from "@/types/stream";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import { ReplicaCache } from ".";
 import type { DirectoryCheckpoint } from "@/runtime/replica-cache";
-import type { ReplicaHostRows, ReplicaRow, ReplicaRowChanges, ReplicaRowStore } from "./row-store";
+import type {
+  ReplicaHostIndex,
+  ReplicaRow,
+  ReplicaRowChanges,
+  ReplicaRowStore,
+  ReplicaStoredRowIndex,
+} from "./row-store";
+import { utf8ByteLength } from "./utf8-byte-length";
 
 const SERVER_ID = "cached-host";
 
@@ -67,11 +74,16 @@ class MemoryStorage implements ReplicaRowStore {
     );
   }
 
-  async readAll(): Promise<ReplicaHostRows[]> {
-    const hosts = new Map<string, ReplicaRow[]>();
+  async readIndex(): Promise<ReplicaHostIndex[]> {
+    const hosts = new Map<string, ReplicaStoredRowIndex[]>();
     for (const row of this.rows.values()) {
       const rows = hosts.get(row.serverId) ?? [];
-      rows.push(row);
+      rows.push({
+        serverId: row.serverId,
+        kind: row.kind,
+        id: row.id,
+        bytes: utf8ByteLength(row.payload),
+      });
       hosts.set(row.serverId, rows);
     }
     return [...hosts].map(([serverId, rows]) => ({ serverId, rows }));
