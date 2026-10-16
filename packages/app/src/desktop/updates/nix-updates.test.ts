@@ -80,6 +80,11 @@ describe("Nix update phase", () => {
       "ready",
     ],
     [
+      "a release newer than the staged one was published",
+      { result: result("check", { staged: v023 }), latest: release("0.2.4", "c"), daemon },
+      "available",
+    ],
+    [
       "the app runs an older release than the active one",
       { result: result("activate", { active: v023 }), latest: v023, daemon },
       "restart",
