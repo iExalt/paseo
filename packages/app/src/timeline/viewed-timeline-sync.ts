@@ -392,7 +392,6 @@ export function createViewedTimelineOwner(input: {
   const streamQueue = createSessionAgentStreamReducerQueue({
     serverId: input.serverId,
     setAgentStreamState: (...args) => useSessionStore.getState().setAgentStreamState(...args),
-    setAgentTimelineCursor: (...args) => useSessionStore.getState().setAgentTimelineCursor(...args),
     recoverTimelineGap: (agentId, cursor) => sync.recoverGap(agentId, cursor),
     onCommitted: (agentId) => input.replica.timelineUpdated(agentId),
   });
