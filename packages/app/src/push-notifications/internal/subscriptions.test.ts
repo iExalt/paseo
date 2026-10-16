@@ -92,6 +92,23 @@ describe("push subscription registration status", () => {
     expect(usePushRegistrationStore.getState().host).toBe("sent");
   });
 
+  it("never prompts for notification access when the app returns to the foreground", async () => {
+    notifications.getPermissionsAsync.mockResolvedValue({ status: "denied", canAskAgain: true });
+    notifications.requestPermissionsAsync.mockResolvedValue({
+      status: "denied",
+      canAskAgain: true,
+    });
+    startSubscription({ client: fakeClient(true) as never, serverId: "host" });
+    await settle();
+    notifications.requestPermissionsAsync.mockClear();
+
+    for (const listener of appStateListeners) listener("active");
+    await settle();
+
+    expect(notifications.requestPermissionsAsync).not.toHaveBeenCalled();
+    expect(usePushRegistrationStore.getState().host).toBe("no-permission");
+  });
+
   it("reports a missing permission, then re-registers on request", async () => {
     notifications.getPermissionsAsync.mockResolvedValue({ status: "denied", canAskAgain: false });
     const client = fakeClient(true);

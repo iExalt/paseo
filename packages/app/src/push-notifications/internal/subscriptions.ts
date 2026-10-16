@@ -26,10 +26,10 @@ function getExpoProjectId(): string | null {
   return fromExtra.success ? fromExtra.data : null;
 }
 
-async function ensurePushPermission(): Promise<boolean> {
+async function ensurePushPermission(prompt: boolean): Promise<boolean> {
   const existing = await Notifications.getPermissionsAsync();
   if (existing.status === Notifications.PermissionStatus.GRANTED) return true;
-  if (!existing.canAskAgain) return false;
+  if (!prompt || !existing.canAskAgain) return false;
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status === Notifications.PermissionStatus.GRANTED;
 }
@@ -40,10 +40,10 @@ function resolved(token: string | null): ResolvedToken {
   return token ? { token } : { token: null, reason: "no-token" };
 }
 
-async function resolveToken(serverId: string): Promise<ResolvedToken> {
+async function resolveToken(serverId: string, prompt: boolean): Promise<ResolvedToken> {
   const key = storageKey(serverId);
   const cached = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
-  if (!(await ensurePushPermission())) {
+  if (!(await ensurePushPermission(prompt))) {
     await AsyncStorage.removeItem(key);
     return { token: null, reason: "no-permission" };
   }
@@ -81,9 +81,9 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
     input.client.registerPushToken(token);
     setPushRegistrationStatus(serverId, "sent");
   };
-  const resolve = () => {
+  const resolve = ({ prompt }: { prompt: boolean }) => {
     setPushRegistrationStatus(serverId, "pending");
-    void resolveToken(serverId)
+    void resolveToken(serverId, prompt)
       .then((result) => {
         if (stopped) return undefined;
         token = result.token;
@@ -97,13 +97,14 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
       });
   };
 
-  resolve();
-  const stopReregister = provideReregister(serverId, resolve);
+  resolve({ prompt: true });
+  const stopReregister = provideReregister(serverId, () => resolve({ prompt: true }));
   const unsubscribe = input.client.subscribeConnectionStatus(() => register());
-  // Notification access is usually granted in system settings, outside the app.
+  // Notification access is usually granted in system settings, outside the app. Only
+  // read it here: Android's prompt pauses the app, so prompting on resume would loop.
   const appState = AppState.addEventListener("change", (state) => {
     if (state === "active" && usePushRegistrationStore.getState()[serverId] === "no-permission") {
-      resolve();
+      resolve({ prompt: false });
     }
   });
 
