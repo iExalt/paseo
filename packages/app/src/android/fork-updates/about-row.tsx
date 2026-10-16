@@ -1,43 +1,23 @@
-import { compareForkVersions } from "@getpaseo/protocol/fork-version";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { AppState, Platform, Text, View } from "react-native";
-import Constants from "expo-constants";
+import { useCallback, useEffect } from "react";
+import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { Button } from "@/components/ui/button";
-import { confirmDialog } from "@/utils/confirm-dialog";
 import { settingsStyles } from "@/styles/settings";
+import { forkUpdatesNative } from "./client";
+import type { VerifiedForkUpdate } from "./release";
 import {
-  ForkManualMigrationRequired,
-  canInstallForkUpdate,
-  checkForForkUpdate,
-  clearStagedForkUpdate,
-  downloadForkUpdate,
-  forkUpdatesNative,
-  launchForkUpdateInstaller,
-  openForkUpdateInstallSettings,
-  recordInstalledForkUpdate,
-  restoreStagedForkUpdate,
-} from "./client";
-import { isForkAndroidUpdaterEnabled, type VerifiedForkUpdate } from "./release";
-
-type UpdateStatus =
-  | "idle"
-  | "checking"
-  | "up-to-date"
-  | "available"
-  | "downloading"
-  | "downloaded"
-  | "permission"
-  | "installing"
-  | "installed"
-  | "canceled"
-  | "error"
-  | "migration-required";
+  isForkUpdaterEnabled,
+  isForkUpdaterShown,
+  runForkUpdateAction,
+  startForkUpdates,
+  useForkUpdateStore,
+  type ForkUpdateStatus,
+} from "./store";
 
 function getStatusMessage(
   t: TFunction,
-  status: UpdateStatus,
+  status: ForkUpdateStatus,
   update: VerifiedForkUpdate | null,
   downloadedBytes: number,
 ): string {
@@ -76,7 +56,7 @@ function getStatusMessage(
   }
 }
 
-function getActionLabel(t: TFunction, status: UpdateStatus, hasStagedApk: boolean): string {
+function getActionLabel(t: TFunction, status: ForkUpdateStatus, hasStagedApk: boolean): string {
   switch (status) {
     case "checking":
       return t("settings.about.forkUpdates.checkingAction");
@@ -100,171 +80,18 @@ function getActionLabel(t: TFunction, status: UpdateStatus, hasStagedApk: boolea
 
 export function ForkAndroidUpdateRow() {
   const { t } = useTranslation();
-  const enabled = isForkAndroidUpdaterEnabled(
-    Platform.OS,
-    Constants.expoConfig?.extra?.forkUpdatesEnabled,
-    forkUpdatesNative !== null,
-  );
-  const [status, setStatus] = useState<UpdateStatus>("idle");
-  const [update, setUpdate] = useState<VerifiedForkUpdate | null>(null);
-  const [apkPath, setApkPath] = useState<string | null>(null);
-  const [installedVersion, setInstalledVersion] = useState<string | null>(null);
-  const [downloadedBytes, setDownloadedBytes] = useState(0);
-  const updateRef = useRef(update);
-  const beforeInstallerVersionRef = useRef<string | null>(null);
-  const installerPendingRef = useRef(false);
-  const permissionSettingsPendingRef = useRef(false);
-  updateRef.current = update;
+  const enabled = isForkUpdaterEnabled();
+  const status = useForkUpdateStore((state) => state.status);
+  const update = useForkUpdateStore((state) => state.update);
+  const apkPath = useForkUpdateStore((state) => state.apkPath);
+  const downloadedBytes = useForkUpdateStore((state) => state.downloadedBytes);
 
-  const reconcileInstallerReturn = useCallback(async () => {
-    const candidate = updateRef.current;
-    if (!candidate || !forkUpdatesNative) return;
-    const currentVersion = forkUpdatesNative.getInstalledVersion();
-    setInstalledVersion(currentVersion);
-    if (
-      currentVersion === candidate.manifest.version &&
-      compareForkVersions(currentVersion, beforeInstallerVersionRef.current ?? currentVersion) > 0
-    ) {
-      await recordInstalledForkUpdate(candidate.manifest.version);
-      setStatus("installed");
-      return;
-    }
-    if (compareForkVersions(currentVersion, candidate.manifest.version) > 0) {
-      await clearStagedForkUpdate();
-      setStatus("up-to-date");
-      return;
-    }
-    setStatus("canceled");
-  }, []);
+  useEffect(() => startForkUpdates(), []);
+  const onPress = useCallback(() => {
+    if (enabled) void runForkUpdateAction();
+  }, [enabled]);
 
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      if (nextState !== "active") return;
-      if (installerPendingRef.current) {
-        installerPendingRef.current = false;
-        void reconcileInstallerReturn().catch((error) =>
-          setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error"),
-        );
-      } else if (permissionSettingsPendingRef.current) {
-        permissionSettingsPendingRef.current = false;
-        void canInstallForkUpdate()
-          .then((allowed) => setStatus(allowed ? "downloaded" : "permission"))
-          .catch((error) =>
-            setStatus(
-              error instanceof ForkManualMigrationRequired ? "migration-required" : "error",
-            ),
-          );
-      }
-    });
-    return () => subscription.remove();
-  }, [reconcileInstallerReturn]);
-
-  useEffect(() => {
-    if (!forkUpdatesNative) return undefined;
-    const subscription = forkUpdatesNative.addListener("onDownloadProgress", (event) => {
-      setDownloadedBytes(event.downloadedBytes);
-    });
-    void restoreStagedForkUpdate()
-      .then((staged) => {
-        if (!staged) return undefined;
-        setUpdate(staged.update);
-        updateRef.current = staged.update;
-        setApkPath(staged.path);
-        setInstalledVersion(staged.installedVersion);
-        setStatus("downloaded");
-        setDownloadedBytes(staged.update.android.bytes);
-        return undefined;
-      })
-      .catch((error) =>
-        setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error"),
-      );
-    return () => subscription.remove();
-  }, []);
-
-  const check = useCallback(async () => {
-    setStatus("checking");
-    try {
-      const result = await checkForForkUpdate();
-      setInstalledVersion(result.installedVersion);
-      setUpdate(result.update);
-      updateRef.current = result.update;
-      setApkPath(null);
-      setDownloadedBytes(0);
-      setStatus(result.update ? "available" : "up-to-date");
-    } catch (error) {
-      setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error");
-    }
-  }, []);
-
-  const download = useCallback(async () => {
-    if (!update) return;
-    setStatus("downloading");
-    setDownloadedBytes(0);
-    try {
-      const path = await downloadForkUpdate(update);
-      setApkPath(path);
-      setStatus("downloaded");
-    } catch (error) {
-      setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error");
-    }
-  }, [update]);
-
-  const openInstallFlow = useCallback(async () => {
-    if (!update || !apkPath) return;
-    try {
-      const confirmed = await confirmDialog({
-        title: t("settings.about.forkUpdates.installTitle"),
-        message: t("settings.about.forkUpdates.installMessage"),
-        confirmLabel: t("settings.about.forkUpdates.installConfirm"),
-        cancelLabel: t("common.actions.cancel"),
-      });
-      if (!confirmed) return;
-      if (!(await canInstallForkUpdate())) {
-        permissionSettingsPendingRef.current = true;
-        setStatus("permission");
-        await openForkUpdateInstallSettings();
-        return;
-      }
-      beforeInstallerVersionRef.current = installedVersion;
-      installerPendingRef.current = true;
-      setStatus("installing");
-      await launchForkUpdateInstaller(update, apkPath);
-    } catch {
-      installerPendingRef.current = false;
-      setStatus("error");
-    }
-  }, [apkPath, installedVersion, t, update]);
-
-  const action = useCallback(() => {
-    if (!enabled) return;
-    if (status === "available") {
-      void download();
-    } else if (
-      status === "downloaded" ||
-      status === "canceled" ||
-      (status === "error" && apkPath)
-    ) {
-      void openInstallFlow();
-    } else if (status === "permission") {
-      void canInstallForkUpdate()
-        .then((allowed) => {
-          if (allowed) {
-            setStatus("downloaded");
-            return undefined;
-          } else {
-            permissionSettingsPendingRef.current = true;
-            return openForkUpdateInstallSettings();
-          }
-        })
-        .catch((error) =>
-          setStatus(error instanceof ForkManualMigrationRequired ? "migration-required" : "error"),
-        );
-    } else {
-      void check();
-    }
-  }, [apkPath, check, download, enabled, openInstallFlow, status]);
-
-  if (Platform.OS !== "android" || Constants.expoConfig?.extra?.forkUpdatesEnabled !== true) {
+  if (!isForkUpdaterShown()) {
     return null;
   }
 
@@ -280,7 +107,7 @@ export function ForkAndroidUpdateRow() {
         <Text style={settingsStyles.rowTitle}>{t("settings.about.forkUpdates.label")}</Text>
         <Text style={settingsStyles.rowHint}>{statusText}</Text>
       </View>
-      <Button variant="outline" size="sm" onPress={action} disabled={!enabled || busy}>
+      <Button variant="outline" size="sm" onPress={onPress} disabled={!enabled || busy}>
         {buttonLabel}
       </Button>
     </View>
