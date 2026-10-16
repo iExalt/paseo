@@ -7,7 +7,8 @@ import { getCM, vim } from "@replit/codemirror-vim";
 import { isRenderedMarkdownFile } from "@/components/file-pane-render-mode";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { FileEditorModel } from "./model";
-import { editorBaseExtensions, editorTheme, type EditorVisualTheme } from "./extensions.web";
+import { editorBaseExtensions, editorTheme } from "./extensions.web";
+import type { EditorVisualTheme } from "./visual-theme";
 
 interface FileEditorViewProps {
   model: FileEditorModel;

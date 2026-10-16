@@ -15,7 +15,7 @@ import { findMatchStyles } from "@/find-highlight/match-parts";
 import { overlayMatchParts, type MatchPart } from "@/find-highlight/split";
 import { FONT_SIZE } from "@/styles/theme";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
-import type { EditorVisualTheme } from "../editor/extensions.web";
+import type { EditorVisualTheme } from "../editor/visual-theme";
 import { FileFindBar, useFileFind } from "../find/index.native";
 import { expandRunTabs, expandTabs, sourceLineOffsets, type SourceCellSize } from "./line-layout";
 import { selectSourcePresentation } from "./presentation";
