@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { AgentStreamEventPayload } from "@getpaseo/protocol/messages";
 import type { AgentTimelineItem, ToolCallDetail } from "@getpaseo/protocol/agent-types";
 import {
@@ -7,8 +7,11 @@ import {
   type AgentToolCallItem,
   type StreamItem,
 } from "@/types/stream";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { useSessionStore } from "@/stores/session-store";
 import {
   createAgentStreamReducerQueue,
+  createSessionAgentStreamReducerQueue,
   deriveAgentStreamTurnLiveness,
   processTimelineResponse,
   processAgentStreamEvent,
@@ -4474,5 +4477,54 @@ describe("createAgentStreamReducerQueue", () => {
 
     expect(commits).toEqual(["agent-1:queued"]);
     expect(scheduler.size).toBe(0);
+  });
+});
+
+describe("createSessionAgentStreamReducerQueue", () => {
+  const serverId = "server-commit";
+  const agentId = "agent-commit";
+
+  afterEach(() => {
+    useSessionStore.getState().clearSession(serverId);
+  });
+
+  it("commits the live head and timeline cursor in one store write", () => {
+    const store = useSessionStore.getState();
+    store.initializeSession(serverId, null as unknown as DaemonClient);
+    useSessionStore.setState((state) => {
+      const session = state.sessions[serverId]!;
+      return {
+        sessions: {
+          ...state.sessions,
+          [serverId]: {
+            ...session,
+            agentAuthoritativeHistoryApplied: new Map([[agentId, true]]),
+            agentTimelineCursor: new Map([[agentId, { epoch: "epoch-1", startSeq: 1, endSeq: 1 }]]),
+          },
+        },
+      };
+    });
+    const queue = createSessionAgentStreamReducerQueue({
+      serverId,
+      setAgentStreamState: (...args) => useSessionStore.getState().setAgentStreamState(...args),
+      recoverTimelineGap: () => {
+        throw new Error("Unexpected gap recovery");
+      },
+    });
+    const writes: Array<{ headLength: number; endSeq: number | undefined }> = [];
+    const unsubscribe = useSessionStore.subscribe((state) => {
+      const session = state.sessions[serverId];
+      writes.push({
+        headLength: session?.agentStreamHead.get(agentId)?.length ?? 0,
+        endSeq: session?.agentTimelineCursor.get(agentId)?.endSeq,
+      });
+    });
+
+    queue.enqueue(agentId, makeStreamReducerEvent(makeTimelineEvent("Hello"), 2));
+    queue.flush();
+    unsubscribe();
+    queue.dispose();
+
+    expect(writes).toEqual([{ headLength: 1, endSeq: 2 }]);
   });
 });
