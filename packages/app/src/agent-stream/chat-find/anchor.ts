@@ -31,14 +31,14 @@ export function useChatFindAnchorText(target: ChatFindAnchorTarget | null) {
       measure: () =>
         new Promise((resolve) => {
           const text = textRef.current;
-          if (!text) {
+          // A host that has not laid out its lines yet, such as one that just
+          // remounted to carry the anchor, would measure as its whole height.
+          const line = lineAtOffset(lines.current, offset);
+          if (!text || !line) {
             resolve(null);
             return;
           }
-          text.measureInWindow((_x, y, _width, height) => {
-            const line = lineAtOffset(lines.current, offset) ?? { y: 0, height };
-            resolve({ top: y + line.y, height: line.height });
-          });
+          text.measureInWindow((_x, y) => resolve({ top: y + line.y, height: line.height }));
         }),
     });
   }, [index, itemId, offset]);

@@ -373,6 +373,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     ),
   );
   const scrollByWindowDelta = useStableEvent((delta: number) => {
+    bottomAnchorController.detachByUser();
+    onNearBottomChange(false);
     programmaticScrollEventBudgetRef.current = 3;
     flatListRef.current?.scrollToOffset({
       offset: scrollOffsetForDelta(scrollOffsetYRef.current, delta, true),
