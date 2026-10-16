@@ -37,6 +37,7 @@ import {
   abandonHistoryStartPaginationRequest,
   createHistoryStartPaginationState,
   evaluateHistoryStartPagination,
+  HISTORY_START_THRESHOLD_PX,
   isHistoryStartLoadingOperation,
   rearmHistoryStartPagination,
   settleHistoryStartPagination,
@@ -48,6 +49,8 @@ import {
   createHistoryStartSettleScheduler,
   type HistoryStartSettleScheduler,
 } from "./history-start-settle-scheduler";
+
+const NATIVE_HISTORY_PREFETCH_VIEWPORTS = 2;
 
 const DEFAULT_MAINTAIN_VISIBLE_CONTENT_POSITION = Object.freeze({
   minIndexForVisible: 0,
@@ -133,6 +136,12 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       metrics.contentMeasuredForKey === metrics.containerKey;
     return {
       distanceFromHistoryStart: metrics.contentHeight - metrics.viewportHeight - metrics.offsetY,
+      // Request older history while the reader is still a screen or two away, so the round
+      // trip and first render finish before they reach the top.
+      historyStartThresholdPx: Math.max(
+        HISTORY_START_THRESHOLD_PX,
+        metrics.viewportHeight * NATIVE_HISTORY_PREFETCH_VIEWPORTS,
+      ),
       hasOlderHistory,
       isLoadingOlderHistory,
       isReady: historyStartReadyRef.current && hasMeasuredViewport,
