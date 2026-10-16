@@ -181,6 +181,36 @@ describe("agent task state", () => {
       todo.items,
     );
   });
+
+  it("prefers live head tasks and keeps the task map when a response leaves them unchanged", () => {
+    initializeTestSession();
+    const todo = (id: string, text: string): StreamItem => ({
+      kind: "todo_list",
+      id,
+      provider: "codex",
+      timestamp: new Date("2026-08-11T10:00:00.000Z"),
+      activity: { type: "started", task: text },
+      items: [{ text, status: "in_progress", completed: false }],
+    });
+    const apply = (head: StreamItem[]) =>
+      useSessionStore.getState().applyAgentTimelineResponseState("test-server", "agent-1", {
+        items: [todo("tail", "Tail")],
+        head,
+        range: null,
+        older: "none",
+        newer: false,
+        synchronized: true,
+        acknowledgedClientMessageIds: [],
+      });
+    const agentTasks = () => useSessionStore.getState().sessions["test-server"]?.agentTasks;
+
+    apply([todo("head", "Head")]);
+    const afterFirst = agentTasks();
+    apply([todo("head", "Head")]);
+
+    expect(taskTexts(afterFirst?.get("agent-1") ?? [])).toEqual(["Head"]);
+    expect(agentTasks()).toBe(afterFirst);
+  });
 });
 
 describe("agent timeline state", () => {
