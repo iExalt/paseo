@@ -73,9 +73,22 @@ Evidence state: verified on Paseo Debug, except "Sent to host".
   (`Default FirebaseApp is not initialized`). "Sent to host" moves to the B2
   release gate in the plan.
 
+### C1: chat find on mobile (first increment)
+
+Evidence state: the bar, search and jump verified on Paseo Debug; in-text
+highlighting and scrolling to the occurrence are still to come.
+
+- Find in the tab menu opens a bottom-anchored bar above the composer and the
+  keyboard. a two-match search found 1 of 2, Next jumped, and Back closed the bar.
+- Perfetto, same chat, two runs each, frames over 33 ms: before C1 8 and 8;
+  C1 with the bar closed 9 and 11; with it open 9 and 10. Max frame and longest
+  JS busy are unchanged. This chat is not the 0.4.2 baseline chat.
+- Not verified on the device: streaming not pulling the view back after a
+  jump. The reviewer accepted it from the code.
+
 ## Current boundary
 
-- B2 and chunks C to F are not implemented.
+- B2, the rest of C1 and chunks C2 to F are not implemented.
 - B2's push checks wait for the first fork release that contains it.
 - Native behaviour is checked on Paseo Debug on the user's Android phone. iOS
   and physical tablets are not available.
@@ -85,3 +98,5 @@ Evidence state: verified on Paseo Debug, except "Sent to host".
 - 2026-10-16: plan written from the desktop/mobile survey; baseline recorded.
 - 2026-10-16: A and B1 accepted after device checks; B2 push proof moved to a
   release gate because Paseo Debug cannot receive push.
+- 2026-10-16: C1's first increment accepted: native chat find with jump to
+  the message.
