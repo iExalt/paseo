@@ -37,6 +37,10 @@ const patchedPackages = [
     patchPrefix: "react-native-svg+",
   },
   {
+    nodeModulesPath: "node_modules/react-native-reanimated",
+    patchPrefix: "react-native-reanimated+",
+  },
+  {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
   },
