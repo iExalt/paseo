@@ -62,6 +62,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       reason: "Native shows a placeholder instead of the editor",
     },
     "file-pane/html-preview": equivalent,
+    "file-pane/find/index": {
+      kind: "equivalent",
+      note: "Web drives CodeMirror search; native scans lines and marks Text runs",
+    },
     "file-pane/source/view": {
       kind: "gap",
       chunk: "C2",

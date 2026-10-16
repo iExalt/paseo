@@ -13,6 +13,11 @@ export function requestPaneFind(target: string): boolean {
   return handler !== undefined;
 }
 
+/** Whether a mounted pane can open find for the target now, so menus offer only working entries. */
+export function canRequestPaneFind(target: string | null): boolean {
+  return target !== null && handlers.has(target);
+}
+
 export function usePaneFindRequest(target: string | null, handler: () => void): void {
   useEffect(() => {
     if (!target) return undefined;

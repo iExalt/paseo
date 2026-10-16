@@ -136,7 +136,7 @@ import {
 } from "@/screens/workspace/workspace-tab-menu";
 import { useDesktopBrowserNewTabRequests } from "@/desktop/browser/new-tab-requests";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
-import { requestPaneFind } from "@/pane-find/open-requests";
+import { canRequestPaneFind, requestPaneFind } from "@/pane-find/open-requests";
 import {
   resolveWorkspaceExplorerToggleOwner,
   WorkspaceExplorerToggle,
@@ -586,7 +586,8 @@ function MobileWorkspaceTabOption({
     onCloseTabsBefore: onCloseTabsAbove,
     onCloseTabsAfter: onCloseTabsBelow,
     onCloseOtherTabs,
-    onFind,
+    // Only a mounted pane that draws a find bar answers, e.g. not a file too large to show.
+    onFind: canRequestPaneFind(paneFindTarget(tab)) ? onFind : undefined,
     labels: tabMenuLabels,
   });
 
