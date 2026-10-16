@@ -21,7 +21,6 @@ const harness = vi.hoisted(() => ({
 vi.mock("react-native", async () => {
   const ReactModule = await vi.importActual<typeof import("react")>("react");
   return {
-    ActivityIndicator: () => ReactModule.createElement("span", { "data-testid": "busy" }),
     Pressable: ({
       children,
       onPress,
@@ -62,16 +61,24 @@ vi.mock("@/components/ui/button", async () => {
       children,
       onPress,
       disabled,
+      loading,
       testID,
     }: {
       children: React.ReactNode;
       onPress?: () => void;
       disabled?: boolean;
+      loading?: boolean;
       testID?: string;
     }) =>
       ReactModule.createElement(
         "button",
-        { type: "button", onClick: onPress, disabled, "data-testid": testID },
+        {
+          type: "button",
+          onClick: onPress,
+          disabled: disabled || loading,
+          "aria-busy": loading,
+          "data-testid": testID,
+        },
         children,
       ),
   };
@@ -227,6 +234,30 @@ describe("preferences transfer row", () => {
     fireEvent.click(screen.getByTestId("preferences-export"));
     await screen.findByText("cache cleanup failed");
     expect((screen.getByTestId("preferences-export") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("shows import progress on the Import button instead of under the row", async () => {
+    let pick: (value: { canceled: true; assets: [] }) => void = () => undefined;
+    harness.picker.mockReturnValue(new Promise((resolve) => (pick = resolve)));
+    const queryClient = new QueryClient();
+    render(
+      <QueryClientProvider client={queryClient}>
+        <PreferencesTransferRow mode="receiver" daemonIds={[]} />
+      </QueryClientProvider>,
+    );
+    const row = screen.getByTestId("preferences-transfer-row");
+    const childrenBefore = row.childElementCount;
+
+    fireEvent.click(screen.getByTestId("preferences-import"));
+    await waitFor(() =>
+      expect(screen.getByTestId("preferences-import").getAttribute("aria-busy")).toBe("true"),
+    );
+    expect(row.childElementCount).toBe(childrenBefore);
+
+    pick({ canceled: true, assets: [] });
+    await waitFor(() =>
+      expect(screen.getByTestId("preferences-import").getAttribute("aria-busy")).toBe("false"),
+    );
   });
 
   it("rejects an import whose copied file size is unknown before reading its contents", async () => {
