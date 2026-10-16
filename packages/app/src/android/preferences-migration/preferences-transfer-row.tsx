@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, Text, View } from "react-native";
+import { Pressable, Text, View } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
 import * as Sharing from "expo-sharing";
@@ -35,7 +35,7 @@ const ALL_SECTIONS = Object.keys(SECTION_KEYS) as TransferSection[];
 const CHECKED_STATE = { checked: true } as const;
 const UNCHECKED_STATE = { checked: false } as const;
 const styles = StyleSheet.create((theme) => ({
-  // Status and the import preview sit under the row, on the row's content inset.
+  // Errors and the import preview sit under the row, on the row's content inset.
   details: {
     gap: theme.spacing[2],
     paddingHorizontal: theme.spacing[4],
@@ -103,11 +103,12 @@ export function PreferencesTransferRow({
   const queryClient = useQueryClient();
   const [transfer, setTransfer] = useState<ReturnType<typeof parseTransferForPreview> | null>(null);
   const [selected, setSelected] = useState<TransferSection[]>(ALL_SECTIONS);
-  const [busy, setBusy] = useState(false);
+  // Which button shows the spinner; every action is disabled while one runs.
+  const [busy, setBusy] = useState<"transfer" | "confirm" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const exportPreferences = useCallback(async () => {
-    setBusy(true);
+    setBusy("transfer");
     setError(null);
     let file: File | null = null;
     let operationError: string | null = null;
@@ -135,14 +136,14 @@ export function PreferencesTransferRow({
       } catch (cause) {
         cleanupError = cause instanceof Error ? cause.message : String(cause);
       } finally {
-        setBusy(false);
+        setBusy(null);
         if (operationError || cleanupError) setError(operationError ?? cleanupError);
       }
     }
   }, [daemonIds, t]);
 
   const chooseImport = useCallback(async () => {
-    setBusy(true);
+    setBusy("transfer");
     setError(null);
     let copiedFile: File | null = null;
     let operationError: string | null = null;
@@ -175,7 +176,7 @@ export function PreferencesTransferRow({
       } catch (cause) {
         cleanupError = cause instanceof Error ? cause.message : String(cause);
       } finally {
-        setBusy(false);
+        setBusy(null);
         if (operationError || cleanupError) setError(operationError ?? cleanupError);
       }
     }
@@ -183,7 +184,7 @@ export function PreferencesTransferRow({
 
   const confirmImport = useCallback(async () => {
     if (!transfer || selected.length === 0) return;
-    setBusy(true);
+    setBusy("confirm");
     setError(null);
     try {
       const writes = await buildSelectedPreferencesImport({
@@ -203,7 +204,7 @@ export function PreferencesTransferRow({
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }, [daemonIds, queryClient, selected, transfer]);
 
@@ -218,7 +219,7 @@ export function PreferencesTransferRow({
 
   const preview = transfer ? createPreferencesImportPreview(transfer, daemonIds) : null;
 
-  const showDetails = busy || error !== null || (preview !== null && transfer !== null);
+  const showDetails = error !== null || (preview !== null && transfer !== null);
 
   return (
     <View style={settingsStyles.rowBorder} testID="preferences-transfer-row">
@@ -238,7 +239,8 @@ export function PreferencesTransferRow({
         <Button
           variant="outline"
           size="sm"
-          disabled={busy}
+          disabled={busy !== null}
+          loading={busy === "transfer"}
           onPress={mode === "bridge" ? exportPreferences : chooseImport}
           testID={mode === "bridge" ? "preferences-export" : "preferences-import"}
         >
@@ -251,7 +253,6 @@ export function PreferencesTransferRow({
       </View>
       {showDetails ? (
         <View style={styles.details}>
-          {busy ? <ActivityIndicator /> : null}
           {error ? (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}
@@ -292,7 +293,8 @@ export function PreferencesTransferRow({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={busy || selected.length === 0}
+                  disabled={busy !== null || selected.length === 0}
+                  loading={busy === "confirm"}
                   onPress={confirmImport}
                   testID="preferences-confirm-import"
                 >
@@ -301,7 +303,7 @@ export function PreferencesTransferRow({
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={busy}
+                  disabled={busy !== null}
                   onPress={cancelImport}
                   testID="preferences-cancel-import"
                 >
