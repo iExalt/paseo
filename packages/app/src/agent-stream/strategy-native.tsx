@@ -26,6 +26,7 @@ import { useKeyboardStreamInset } from "@/keyboard/shift";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { getStreamItemMessageId } from "./presentation";
+import { scrollOffsetForDelta } from "@/find-highlight/reveal";
 import { messageStartIndex } from "./message-start-index";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
@@ -347,18 +348,36 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   // A jump detaches from the bottom so streaming output does not pull the reader back.
   // The list is inverted, so viewPosition 1 puts the message's start at the top.
   const scrollToIndexRetriesRef = useRef(0);
-  const scrollToMessage = useStableEvent((messageId: string) => {
+  const scrollToIndexAnimatedRef = useRef(true);
+  const jumpToRow = useStableEvent((index: number, animated: boolean) => {
     scrollToIndexRetriesRef.current = 0;
+    scrollToIndexAnimatedRef.current = animated;
     bottomAnchorController.detachByUser();
     onNearBottomChange(false);
-    const index = messageStartIndex(historyRows, messageId);
     // Live rows live in the list header, at offset zero of the inverted list.
     if (index < 0) {
-      flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+      flatListRef.current?.scrollToOffset({ offset: 0, animated });
       return;
     }
     programmaticScrollEventBudgetRef.current = 3;
-    flatListRef.current?.scrollToIndex({ index, viewPosition: 1, animated: true });
+    flatListRef.current?.scrollToIndex({ index, viewPosition: 1, animated });
+  });
+  const scrollToMessage = useStableEvent((messageId: string) =>
+    jumpToRow(messageStartIndex(historyRows, messageId), true),
+  );
+  // Find measures right after it jumps, so its jumps land at once instead of animating.
+  const scrollToItem = useStableEvent((itemId: string) =>
+    jumpToRow(
+      historyRows.findIndex((row) => row.id === itemId),
+      false,
+    ),
+  );
+  const scrollByWindowDelta = useStableEvent((delta: number) => {
+    programmaticScrollEventBudgetRef.current = 3;
+    flatListRef.current?.scrollToOffset({
+      offset: scrollOffsetForDelta(scrollOffsetYRef.current, delta, true),
+      animated: false,
+    });
   });
   const handleScrollToIndexFailed = useStableEvent(
     (info: { index: number; averageItemLength: number }) => {
@@ -372,7 +391,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         animated: false,
       });
       requestAnimationFrame(() =>
-        flatListRef.current?.scrollToIndex({ index: info.index, viewPosition: 1, animated: true }),
+        flatListRef.current?.scrollToIndex({
+          index: info.index,
+          viewPosition: 1,
+          animated: scrollToIndexAnimatedRef.current,
+        }),
       );
     },
   );
@@ -390,6 +413,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         markNativeViewportSettling();
       },
       scrollToMessage: (messageId) => scrollToMessage(messageId),
+      scrollToItem: (itemId) => scrollToItem(itemId),
+      scrollByWindowDelta: (delta) => scrollByWindowDelta(delta),
     };
     viewportRef.current = handle;
     return () => {
@@ -397,7 +422,15 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [agentId, bottomAnchorController, markNativeViewportSettling, scrollToMessage, viewportRef]);
+  }, [
+    agentId,
+    bottomAnchorController,
+    markNativeViewportSettling,
+    scrollByWindowDelta,
+    scrollToItem,
+    scrollToMessage,
+    viewportRef,
+  ]);
 
   const isScrollEventNearBottom = useStableEvent(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {

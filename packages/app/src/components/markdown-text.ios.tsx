@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode, type Ref } from "react";
 import {
   Text,
   View,
@@ -29,6 +29,10 @@ interface MarkdownTextSpanProps {
   // AssistantLinkPressProvider (see assistant-file-links/link-press-context).
   onPress?: TextProps["onPress"];
   accessibilityRole?: TextProps["accessibilityRole"];
+  // Accepted for parity and ignored: a UITextView span reports no lines, so chat find
+  // stops at the row on iOS.
+  textRef?: Ref<Text>;
+  onTextLayout?: TextProps["onTextLayout"];
 }
 
 // Inline span backed by UITextView so iOS gets native word-selection handles.

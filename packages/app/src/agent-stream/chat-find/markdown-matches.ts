@@ -13,6 +13,18 @@ import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 export interface MarkdownMatches {
   count: number;
   blocks: ReadonlyMap<string, MatchPart[]>[];
+  /** Where each match starts, by match number; see `MatchAnchor`. */
+  anchors: (MatchAnchor | null)[];
+}
+
+/**
+ * Where a match starts within the root Text that draws it: a textgroup for inline
+ * runs, the block itself for code. Scrolling measures that Text's lines to find it.
+ */
+export interface MatchAnchor {
+  blockIndex: number;
+  hostKey: string;
+  offset: number;
 }
 
 const assistantParser = createAssistantMarkdownParser();
@@ -24,6 +36,20 @@ const INLINE_BLOCK_TYPES = new Set(["hardbreak", "image", "blocklink", "textgrou
 interface Run {
   key: string | null;
   text: string;
+  /** The root Text this run is drawn in, and where in its string the run starts. */
+  host: { key: string; offset: number } | null;
+}
+
+interface RunCursor {
+  runs: Run[];
+  /** The textgroup being walked and its length so far. */
+  host: { key: string; length: number } | null;
+}
+
+function pushRun(current: RunCursor, key: string | null, text: string) {
+  const host = current.host;
+  current.runs.push({ key, text, host: host ? { key: host.key, offset: host.length } : null });
+  if (host) host.length += text.length;
 }
 
 /**
@@ -33,21 +59,32 @@ interface Run {
  * grouping keeps the count the host reported and lets a match span `**bold**` edges.
  * Diagrams are the exception: they draw no text, so they count nothing here.
  */
-function collectRuns(nodes: readonly ASTNode[], groups: Run[][], current: { runs: Run[] }) {
+function collectRuns(nodes: readonly ASTNode[], groups: Run[][], current: RunCursor) {
   for (const node of nodes) {
     if (node.type === "fence" || node.type === "code_block") {
-      if (isFindMarkedNode(node)) groups.push([{ key: node.key, text: node.content }]);
+      if (isFindMarkedNode(node)) {
+        groups.push([{ key: node.key, text: node.content, host: { key: node.key, offset: 0 } }]);
+      }
       continue;
     }
     if (node.type === "text" || node.type === "code_inline") {
-      current.runs.push({ key: node.key, text: node.content });
+      pushRun(current, node.key, node.content);
       continue;
     }
     if (node.type === "softbreak" || node.type === "hardbreak") {
-      current.runs.push({ key: null, text: "\n" });
+      pushRun(current, null, "\n");
       continue;
     }
     if (node.type === "image") continue;
+    if (node.type === "textgroup") {
+      // Each textgroup is its own root Text, so offsets restart here even though the
+      // count keeps grouping the whole paragraph.
+      const outer = current.host;
+      current.host = { key: node.key, length: 0 };
+      collectRuns(node.children, groups, current);
+      current.host = outer;
+      continue;
+    }
     if (node.block === true && !INLINE_BLOCK_TYPES.has(node.type)) {
       if (current.runs.length > 0) groups.push(current.runs);
       current.runs = [];
@@ -67,16 +104,29 @@ function blockAst(block: string): ASTNode[] {
 /** Pre-pass over the renderer's own parse; `text` is the text the message renders. */
 export function findMarkdownMatches(text: string, pattern: RegExp): MarkdownMatches {
   let count = 0;
-  const blocks = splitMarkdownBlocks(text).map((block) => {
+  const anchors: (MatchAnchor | null)[] = [];
+  const blocks = splitMarkdownBlocks(text).map((block, blockIndex) => {
     const groups: Run[][] = [];
-    const current = { runs: [] as Run[] };
+    const current: RunCursor = { runs: [], host: null };
     collectRuns(blockAst(block), groups, current);
     if (current.runs.length > 0) groups.push(current.runs);
     const parts = new Map<string, MatchPart[]>();
     for (const group of groups) {
       let last = -1;
+      let run: Run | null = null;
+      let runOffset = 0;
       for (const piece of splitRunsForMatches(group, pattern)) {
-        if (piece.match !== null) last = Math.max(last, piece.match);
+        // Pieces carry their run's host object, so a new host object means a new run.
+        if (run?.host !== piece.host || run?.key !== piece.key) runOffset = 0;
+        run = piece;
+        const pieceOffset = runOffset;
+        runOffset += piece.text.length;
+        if (piece.match !== null && piece.match > last) {
+          last = piece.match;
+          anchors[count + piece.match] = piece.host
+            ? { blockIndex, hostKey: piece.host.key, offset: piece.host.offset + pieceOffset }
+            : null;
+        }
         if (piece.key === null) continue;
         const match = piece.match === null ? null : count + piece.match;
         const nodeParts = parts.get(piece.key);
@@ -87,5 +137,5 @@ export function findMarkdownMatches(text: string, pattern: RegExp): MarkdownMatc
     }
     return parts;
   });
-  return { count, blocks };
+  return { count, blocks, anchors };
 }

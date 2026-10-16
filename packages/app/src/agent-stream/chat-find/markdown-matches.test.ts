@@ -95,4 +95,18 @@ describe("findMarkdownMatches", () => {
       }
     });
   });
+
+  it("anchors each match in the root Text that draws it, restarting after a hard break", () => {
+    const text = "a **bold** `code` x\nx  \nafter x\n\n```\nline\nx\n```";
+    const { anchors, blocks } = findMarkdownMatches(text, searchPattern("x"));
+    const hostType = (match: number) => anchors[match]!.hostKey.split("_").at(-1);
+    // "a bold code x" then a soft break, so the second x sits at 14 of the first textgroup.
+    expect(anchors.slice(0, 2).map((anchor) => anchor?.offset)).toEqual([12, 14]);
+    expect(hostType(0)).toBe("textgroup");
+    // The hard break starts a second textgroup in the same paragraph.
+    expect(anchors[2]).toMatchObject({ offset: 6 });
+    expect(anchors[2]!.hostKey).not.toBe(anchors[0]!.hostKey);
+    expect(anchors[3]).toMatchObject({ blockIndex: blocks.length - 1, offset: 5 });
+    expect(hostType(3)).toBe("fence");
+  });
 });

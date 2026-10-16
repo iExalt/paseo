@@ -11,6 +11,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { highlightToKeyedLines, type KeyedLine } from "@/utils/highlight-cache";
+import { useChatFindAnchorText, type ChatFindAnchorTarget } from "@/agent-stream/chat-find/anchor";
 import { findMatchStyles } from "@/find-highlight/match-parts";
 import { overlayMatchParts, type MatchPart } from "@/find-highlight/split";
 import {
@@ -31,6 +32,8 @@ interface HighlightedCodeBlockProps {
 export interface CodeFindMatch {
   parts: readonly MatchPart[];
   current: number;
+  /** Set when this block draws the occurrence reveal scrolls to. */
+  anchor?: ChatFindAnchorTarget | null;
 }
 
 // Fence info strings ("```ts", "```typescript", "```ts {1,3}") map to the
@@ -88,6 +91,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
     [renderedCode, language],
   );
 
+  const anchorText = useChatFindAnchorText(findMatch?.anchor ?? null);
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
@@ -105,7 +109,12 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      <MarkdownTextSpan style={innerTextStyle} copyTag="code">
+      <MarkdownTextSpan
+        style={innerTextStyle}
+        copyTag="code"
+        textRef={findMatch?.anchor ? anchorText.textRef : undefined}
+        onTextLayout={findMatch?.anchor ? anchorText.onTextLayout : undefined}
+      >
         {renderCode(keyedLines, renderedCode, findMatch)}
       </MarkdownTextSpan>
       <CopyButton getCode={getCode} visible={controlsVisible} />

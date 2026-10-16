@@ -35,3 +35,24 @@ export function useChatFindItemHighlight(
   );
   return useMemo(() => (query === null ? null : { query, index }), [index, query]);
 }
+
+/** The selected occurrence's root Text, which can measure where on screen it sits. */
+export interface ChatFindAnchor {
+  itemId: string;
+  index: number;
+  measure(): Promise<{ top: number; height: number } | null>;
+}
+
+// Read only when reveal scrolls, so nothing renders from it.
+let currentAnchor: ChatFindAnchor | null = null;
+
+export function setChatFindAnchor(anchor: ChatFindAnchor): () => void {
+  currentAnchor = anchor;
+  return () => {
+    if (currentAnchor === anchor) currentAnchor = null;
+  };
+}
+
+export function getChatFindAnchor(itemId: string, index: number): ChatFindAnchor | null {
+  return currentAnchor?.itemId === itemId && currentAnchor.index === index ? currentAnchor : null;
+}

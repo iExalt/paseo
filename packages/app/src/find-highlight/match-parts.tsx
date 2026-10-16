@@ -35,3 +35,13 @@ export function renderMatchParts(
     );
   });
 }
+
+/** Where a match starts in the text the parts split; the text's length when absent. */
+export function matchPartsOffset(parts: readonly MatchPart[], match: number): number {
+  let offset = 0;
+  for (const part of parts) {
+    if (part.match === match) return offset;
+    offset += part.text.length;
+  }
+  return offset;
+}
