@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.4.0](https://github.com/iExalt/paseo/compare/paseo-v0.3.2...paseo-v0.4.0) (2026-10-16)
+
+
+### Features
+
+* **app:** keep running status rings still under reduced motion ([b973bd7](https://github.com/iExalt/paseo/commit/b973bd73fa4c8767d31106a4cdaf3155d52c73c8))
+
+
+### Bug Fixes
+
+* **app:** report a lost replica directory read as a miss ([0bc7f83](https://github.com/iExalt/paseo/commit/0bc7f838f518c5f98b39e12739415d050906478f))
+* **app:** report unanswerable replica directory reads as misses ([c635af9](https://github.com/iExalt/paseo/commit/c635af90643cc23ec896c038116e09e8e5dc2e02))
+* **app:** retry a failed replica index load and handle scan errors ([1b6efaf](https://github.com/iExalt/paseo/commit/1b6efafaf733ac3fb79e1fea18b02ab059600d50))
+* **app:** scope replica cache read conflicts to the rows being read ([a0bd352](https://github.com/iExalt/paseo/commit/a0bd35228bf8eaf5a8a242a833a8d911c89ab0f6))
+
+
+### Performance Improvements
+
+* **app:** apply non-layout animated props without a shadow-tree commit on Android ([622cbaf](https://github.com/iExalt/paseo/commit/622cbafd8220fb3e31f57796b20d30bc0abed46c))
+* **app:** commit the stream state and timeline cursor in one store write ([7b01025](https://github.com/iExalt/paseo/commit/7b0102552acaea5586627b06e94cb9a5b312f1d6))
+* **app:** count replica row bytes with a native encoder ([5bcdeeb](https://github.com/iExalt/paseo/commit/5bcdeeba39d0b37253109248d4a5ed933ff6db4f))
+* **app:** drop per-row component and query churn from chat rows ([6df8687](https://github.com/iExalt/paseo/commit/6df86876941eead2b230c52b0ae2bcf6a19ab6f3))
+* **app:** index replica rows by size without loading payloads ([b85da98](https://github.com/iExalt/paseo/commit/b85da9814c1c97c53e448c45aeb02d149cdda9cc))
+* **app:** join the live head into replica timelines only when persisting ([bac7296](https://github.com/iExalt/paseo/commit/bac72967fbb8ead75d3bec17e83762a1ed51cdef))
+* **app:** keep chat presentation caches warm across ticks and remounts ([3b707b1](https://github.com/iExalt/paseo/commit/3b707b1f23651e5a48676da11868c408ef9f0c64))
+* **app:** restore timeline tasks without copying the history ([5b7cb22](https://github.com/iExalt/paseo/commit/5b7cb22781788ecc64fae8dc19df9bdd9cecc47b))
+* **app:** skip collapsed project status rescans on stream commits ([f42fc7f](https://github.com/iExalt/paseo/commit/f42fc7f5126cc67bd259a83ec49e08b5b0905a1c))
+* **app:** skip per-frame selector rescans for agent visibility, subagents and favicon ([69a489b](https://github.com/iExalt/paseo/commit/69a489b75b14ffcf8246c0ef26da9700c989c967))
+* **app:** skip the definition re-parse for blocks that cannot be definitions ([4e7fa81](https://github.com/iExalt/paseo/commit/4e7fa8112c192c3e90705e5c6e9a0eba94c63758))
+* **app:** stop hidden chats from rendering on their agent's stream commits ([0c804eb](https://github.com/iExalt/paseo/commit/0c804ebc200d04911a7210cfcee2a682c8e4e6f9))
+* **app:** stop hidden status rings from driving a per-frame UI-thread commit ([50bda1b](https://github.com/iExalt/paseo/commit/50bda1bfe977559b96eda5781de46efb6cfa580b))
+* **app:** trim per-render and per-persist history scans ([09da314](https://github.com/iExalt/paseo/commit/09da314cbca3e74451a91ddd1e7929dc928939b4))
+* **relay:** add a sliced NaCl box open that yields between slices ([a4649a9](https://github.com/iExalt/paseo/commit/a4649a91ba6aa59fbbd08da96c574f7047a10645))
+* **relay:** decode base64 frames with the runtime's native decoder ([1713e3b](https://github.com/iExalt/paseo/commit/1713e3bab0fcaf80f4993021672ff202167a679a))
+* **relay:** decrypt large frames in slices behind an ordered receive chain ([03ce16e](https://github.com/iExalt/paseo/commit/03ce16e1c8d09647fcdbd1bf570424a9bbdaae77))
+
 ## [0.3.2](https://github.com/iExalt/paseo/compare/paseo-v0.3.1...paseo-v0.3.2) (2026-10-16)
 
 
