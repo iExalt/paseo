@@ -8,10 +8,18 @@ import {
   LoaderCircle,
   Server,
   Settings,
-  type LucideIcon,
 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type RefObject,
+} from "react";
 import {
   Pressable,
   StyleSheet as RNStyleSheet,
@@ -20,7 +28,15 @@ import {
   View,
 } from "react-native";
 import { Gesture } from "react-native-gesture-handler";
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
+import Animated, {
+  cancelAnimation,
+  Easing,
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -303,7 +319,7 @@ function FooterIconButton({
   onPress: () => void;
   testID: string;
   label: string;
-  icon: LucideIcon;
+  icon: ComponentType<{ size: number; color: string }>;
   /** Overrides the muted/hover colors for a glyph that signals state. */
   iconColor?: "accent" | "destructive";
   /** Only for a glyph that reads larger than the others at the same size. */
@@ -501,7 +517,25 @@ function SidebarUpdateButton() {
 
 function resolveUpdateButtonIcon(failed: boolean, busy: NixUpdateBusy | null) {
   if (failed) return CircleAlert;
-  return busy ? LoaderCircle : CircleArrowUp;
+  return busy ? SpinningLoaderIcon : CircleArrowUp;
+}
+
+function SpinningLoaderIcon({ size, color }: { size: number; color: string }) {
+  const rotation = useSharedValue(0);
+  useEffect(() => {
+    rotation.value = withRepeat(
+      withTiming(360, { duration: 1000, easing: Easing.linear }),
+      -1,
+      false,
+    );
+    return () => cancelAnimation(rotation);
+  }, [rotation]);
+  const spin = useAnimatedStyle(() => ({ transform: [{ rotate: `${rotation.value}deg` }] }));
+  return (
+    <Animated.View style={spin}>
+      <LoaderCircle size={size} color={color} />
+    </Animated.View>
+  );
 }
 
 function resolveUpdateButtonLabel(input: {
