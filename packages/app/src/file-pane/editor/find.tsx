@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import { PaneFind, type PaneFindHandle, type PaneFindProps } from "@/pane-find";
 import { usePaneFindRequest } from "@/pane-find/open-requests";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { findOpMessages } from "./find-messages";
 import type { FileEditorBridge } from "./webview/host-bridge";
 import type { FileEditorFindOp, FileEditorFindState } from "./webview/protocol";
 
@@ -60,16 +61,34 @@ export function useEditorFind({
   const [replacement, setReplacementState] = useState("");
 
   const wasOpen = useRef(false);
+  // The query the page searches for, and the field's text, read when an action is sent.
+  const sentQuery = useRef("");
+  const queryRef = useRef(query);
+  queryRef.current = query;
+  const queryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelQuery = useCallback(() => {
+    if (queryTimer.current) clearTimeout(queryTimer.current);
+    queryTimer.current = null;
+  }, []);
   const receiveState = useCallback((next: FileEditorFindState) => {
     // Opening seeds the query from the selection, as on web.
     if (next.open && !wasOpen.current) {
       setQueryState(next.query);
       setReplacementState(next.replacement);
+      sentQuery.current = next.query;
     }
     wasOpen.current = next.open;
     setState(next);
   }, []);
-  const run = useCallback((op: FileEditorFindOp) => bridge.update({ type: "find", op }), [bridge]);
+  const run = useCallback(
+    (op: FileEditorFindOp) => {
+      cancelQuery();
+      for (const message of findOpMessages(op, queryRef.current, sentQuery.current))
+        bridge.update(message);
+      sentQuery.current = queryRef.current;
+    },
+    [bridge, cancelQuery],
+  );
   const open = useCallback(() => run("open"), [run]);
   const setReplacement = useCallback(
     (value: string) => {
@@ -80,10 +99,19 @@ export function useEditorFind({
   );
 
   useEffect(() => {
-    if (!state.open || query === state.query) return undefined;
-    const timer = setTimeout(() => bridge.update({ type: "findQuery", query }), QUERY_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [bridge, query, state.open, state.query]);
+    if (!state.open || query === sentQuery.current) return undefined;
+    queryTimer.current = setTimeout(() => {
+      queryTimer.current = null;
+      sentQuery.current = query;
+      bridge.update({ type: "findQuery", query });
+    }, QUERY_DEBOUNCE_MS);
+    return cancelQuery;
+  }, [bridge, cancelQuery, query, state.open]);
+
+  // A renderer reset takes the page's find with it; the next page starts closed.
+  useEffect(() => {
+    if (!ready) receiveState(CLOSED);
+  }, [ready, receiveState]);
 
   useEffect(() => {
     if (state.open) widget.current?.focus();
@@ -93,14 +121,14 @@ export function useEditorFind({
     if (!active && state.open) run("close");
   }, [active, run, state.open]);
   useEffect(() => {
-    if (!state.open) return undefined;
+    if (!ready || !state.open) return undefined;
     // Android back closes the find bar before it leaves the file.
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
       run("close");
       return true;
     });
     return () => subscription.remove();
-  }, [run, state.open]);
+  }, [ready, run, state.open]);
 
   const next = useCallback(() => run("next"), [run]);
   const previous = useCallback(() => run("previous"), [run]);

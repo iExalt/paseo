@@ -164,8 +164,10 @@ unit tests and a browser test; the device checks wait for the batch session.
 - Find in the editor runs the web FileFindModel in the page, replace included,
   under a native bottom bar. Pending on the device: find, replace and replace
   all on a long file, and the edit saves; the current match stays above the bar
-  with the keyboard up; Back closes find; Mod-f from a hardware keyboard opens
-  it (keyboard only).
+  with the keyboard up; Back closes find; typing a query and tapping Replace
+  all at once uses the new query; after a renderer kill with find open, Back
+  still works and the bar is closed once the editor is back; Mod-f from a
+  hardware keyboard opens it (keyboard only).
 
 ## Current boundary
 
