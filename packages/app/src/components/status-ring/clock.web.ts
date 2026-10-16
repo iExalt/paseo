@@ -1,5 +1,6 @@
 import { useCallback, useLayoutEffect, useRef, type RefCallback } from "react";
 import type { View as NativeView } from "react-native";
+import { useReducedMotion } from "react-native-reanimated";
 import { STATUS_RING_PERIOD_MS } from "@/components/status-ring/geometry";
 
 const STATUS_RING_KEYFRAMES: PropertyIndexedKeyframes = {
@@ -17,10 +18,12 @@ export function useStatusRingAnimationRef(): RefCallback<NativeView> {
   const setArcElement = useCallback((instance: NativeView | null) => {
     arcElement.current = instance instanceof HTMLElement ? instance : null;
   }, []);
+  // Under reduced motion the ring stays a still arc, like SyncedLoader's dots.
+  const reduceMotion = useReducedMotion();
 
   useLayoutEffect(() => {
     const element = arcElement.current;
-    if (!element) {
+    if (!element || reduceMotion) {
       return;
     }
 
@@ -29,7 +32,7 @@ export function useStatusRingAnimationRef(): RefCallback<NativeView> {
     return () => {
       animation.cancel();
     };
-  }, []);
+  }, [reduceMotion]);
 
   return setArcElement;
 }
