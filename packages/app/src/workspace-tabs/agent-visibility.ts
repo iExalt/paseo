@@ -47,6 +47,31 @@ export function deriveWorkspaceAgentVisibility(input: {
   return { activeAgentIds, autoOpenAgentIds };
 }
 
+type WorkspaceAgentVisibilityInput = Parameters<typeof deriveWorkspaceAgentVisibility>[0];
+
+// Every session-store write reruns store selectors, and stream commits land once per frame per
+// streaming agent without touching the agent maps. Reuse the result until an input changes.
+export function createWorkspaceAgentVisibilitySelector(): (
+  input: WorkspaceAgentVisibilityInput,
+) => WorkspaceAgentVisibility {
+  let previousInput: WorkspaceAgentVisibilityInput | null = null;
+  let previousVisibility: WorkspaceAgentVisibility | null = null;
+  return (input) => {
+    if (
+      previousVisibility &&
+      previousInput &&
+      previousInput.sessionAgents === input.sessionAgents &&
+      previousInput.agentDetails === input.agentDetails &&
+      previousInput.workspaceId === input.workspaceId
+    ) {
+      return previousVisibility;
+    }
+    previousInput = input;
+    previousVisibility = deriveWorkspaceAgentVisibility(input);
+    return previousVisibility;
+  };
+}
+
 export function buildWorkspaceTabSnapshot(input: {
   agentVisibility: WorkspaceAgentVisibility;
   agentsHydrated: boolean;
