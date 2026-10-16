@@ -1,4 +1,10 @@
-import type { ReplicaHostRows, ReplicaRow, ReplicaRowChanges, ReplicaRowStore } from "./row-store";
+import type {
+  ReplicaHostIndex,
+  ReplicaRow,
+  ReplicaRowChanges,
+  ReplicaRowStore,
+  ReplicaStoredRowIndex,
+} from "./row-store";
 
 export type SqliteValue = string | number | null;
 
@@ -39,6 +45,13 @@ interface StoredRow {
   kind: ReplicaRow["kind"];
   id: string;
   payload: string;
+}
+
+interface StoredRowIndex {
+  server_id: string;
+  kind: ReplicaRow["kind"];
+  id: string;
+  bytes: number;
 }
 
 export function createSqliteReplicaRowStore(
@@ -89,18 +102,21 @@ export function createSqliteReplicaRowStore(
     }
   }
 
-  async function readAll(): Promise<ReplicaHostRows[]> {
-    const storedRows = await getConnection().all<StoredRow>(
-      "SELECT server_id, kind, id, payload FROM rows ORDER BY server_id, kind, id",
+  async function readIndex(): Promise<ReplicaHostIndex[]> {
+    // octet_length reads only the record header for overflowing payloads; length(CAST(... AS
+    // BLOB)) would still load every payload from disk. Both count bytes in the database encoding,
+    // which expo-sqlite opens as UTF-8.
+    const storedRows = await getConnection().all<StoredRowIndex>(
+      "SELECT server_id, kind, id, octet_length(payload) AS bytes FROM rows ORDER BY server_id, kind, id",
     );
-    const hosts = new Map<string, ReplicaRow[]>();
+    const hosts = new Map<string, ReplicaStoredRowIndex[]>();
     for (const storedRow of storedRows) {
       const rows = hosts.get(storedRow.server_id) ?? [];
       rows.push({
         serverId: storedRow.server_id,
         kind: storedRow.kind,
         id: storedRow.id,
-        payload: storedRow.payload,
+        bytes: storedRow.bytes,
       });
       hosts.set(storedRow.server_id, rows);
     }
@@ -169,5 +185,5 @@ export function createSqliteReplicaRowStore(
     await getConnection().run("DELETE FROM rows");
   }
 
-  return { open, read, readAll, apply, deleteHost, renameHost, clear };
+  return { open, read, readIndex, apply, deleteHost, renameHost, clear };
 }

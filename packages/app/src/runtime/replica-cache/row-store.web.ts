@@ -1,8 +1,15 @@
-import type { ReplicaHostRows, ReplicaRow, ReplicaRowChanges, ReplicaRowStore } from "./row-store";
+import type {
+  ReplicaHostIndex,
+  ReplicaRow,
+  ReplicaRowChanges,
+  ReplicaRowStore,
+  ReplicaStoredRowIndex,
+} from "./row-store";
 import { REPLICA_ROW_STORE_SCHEMA_VERSION } from "./row-store-schema";
+import { utf8ByteLength } from "./utf8-byte-length";
 
 export type {
-  ReplicaHostRows,
+  ReplicaHostIndex,
   ReplicaRow,
   ReplicaRowChanges,
   ReplicaRowKey,
@@ -122,18 +129,37 @@ export function createIndexedDbReplicaRowStore(
     }
   }
 
-  async function readAll(): Promise<ReplicaHostRows[]> {
+  async function readIndex(): Promise<ReplicaHostIndex[]> {
+    // IndexedDB has no projection, so a cursor visits each row and keeps only its size; payloads
+    // are released one at a time instead of being held together.
     const transaction = getDatabase().transaction(ROWS_STORE, "readonly");
     const completion = transactionComplete(transaction);
-    const rows = await requestResult<ReplicaRow[]>(transaction.objectStore(ROWS_STORE).getAll());
+    const hosts = new Map<string, ReplicaStoredRowIndex[]>();
+    await new Promise<void>((resolve, reject) => {
+      const request = transaction.objectStore(ROWS_STORE).openCursor();
+      request.addEventListener("error", () =>
+        reject(request.error ?? new Error("Replica row store request failed")),
+      );
+      request.addEventListener("success", () => {
+        const cursor = request.result;
+        if (!cursor) {
+          resolve();
+          return;
+        }
+        const row = cursor.value as ReplicaRow;
+        const rows = hosts.get(row.serverId) ?? [];
+        rows.push({
+          serverId: row.serverId,
+          kind: row.kind,
+          id: row.id,
+          bytes: utf8ByteLength(row.payload),
+        });
+        hosts.set(row.serverId, rows);
+        cursor.continue();
+      });
+    });
     await completion;
-    const hosts = new Map<string, ReplicaRow[]>();
-    for (const row of rows) {
-      const hostRows = hosts.get(row.serverId) ?? [];
-      hostRows.push(row);
-      hosts.set(row.serverId, hostRows);
-    }
-    return Array.from(hosts, ([serverId, hostRows]) => ({ serverId, rows: hostRows }));
+    return Array.from(hosts, ([serverId, rows]) => ({ serverId, rows }));
   }
 
   async function read(
@@ -207,7 +233,7 @@ export function createIndexedDbReplicaRowStore(
     });
   }
 
-  return { open, read, readAll, apply, deleteHost, renameHost, clear };
+  return { open, read, readIndex, apply, deleteHost, renameHost, clear };
 }
 
 export function createReplicaRowStore(): ReplicaRowStore {
