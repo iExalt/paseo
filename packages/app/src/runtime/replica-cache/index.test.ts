@@ -796,7 +796,46 @@ describe("ReplicaCache", () => {
     ]);
   });
 
-  it("retries a timeline read invalidated by a concurrent directory commit", async () => {
+  it("answers a timeline read while other agents keep committing their timelines", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
+    await cache.flush();
+    storage.writes = 0;
+    storage.reads.length = 0;
+    storage.readLimit = 1;
+    // A streaming agent commits on every reducer frame, so every read races one.
+    let frame = 0;
+    storage.onRead = () => {
+      frame += 1;
+      cache.commitTimeline(SERVER_ID, "agent-2", {
+        ...timeline(`Streaming ${frame}`),
+        agentId: "agent-2",
+      });
+    };
+    cache.commitTimeline(SERVER_ID, "agent-2", { ...timeline("Streaming 0"), agentId: "agent-2" });
+
+    expect((await cache.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([
+      timelineItem("Persisted timeline"),
+    ]);
+    // Another agent's pending timeline stays on its debounce instead of being forced to disk.
+    expect(storage.writes).toBe(0);
+  });
+
+  it("reports a miss when the requested timeline keeps changing during its read", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
+    await cache.flush();
+    storage.reads.length = 0;
+    storage.readLimit = 3;
+    storage.onRead = () => cache.commitTimeline(SERVER_ID, "agent-1", timeline("Newer"));
+
+    expect(await cache.readTimeline(SERVER_ID, "agent-1")).toBeUndefined();
+    expect(storage.reads.length).toBe(3);
+  });
+
+  it("reads a timeline while a concurrent directory commit lands", async () => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
     cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
