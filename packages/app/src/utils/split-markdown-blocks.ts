@@ -7,6 +7,9 @@ markdownBlockParser.core.ruler.disable("inline");
 // The renderer decides what counts as a definition, so ask the same parser: a block
 // that produces no tokens but registers references is nothing but definitions.
 function isLinkReferenceDefinitionBlock(block: string): boolean {
+  // A definition opens with its label, indented at most three spaces. Checking that first keeps
+  // every other block from being parsed a second time.
+  if (!/^ {0,3}\[/.test(block)) return false;
   const env: Env = {};
   const tokens = markdownBlockParser.parse(block, env);
   return tokens.length === 0 && Object.keys(env.references ?? {}).length > 0;
