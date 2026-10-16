@@ -68,7 +68,7 @@ the token; that goes to the user.
 - [x] C1. Chat find on native: header-menu entry, host-backed search, scroll to
       the match and highlight it.
 - [ ] C2. Find in the read-only file view.
-- [ ] C3. Terminal find in the native grid renderer with an on-screen trigger.
+- [ ] C3. Terminal find in the native grid renderer, opened from the tab menu like chat and file find.
 
 Acceptance: model tests per surface; on Paseo Debug find steps through matches
 in a long chat, a file and a busy terminal. Perfetto frame stats for the
