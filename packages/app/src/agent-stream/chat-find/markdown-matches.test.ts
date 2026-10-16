@@ -1,6 +1,11 @@
 import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
 import { countMatches, searchableBlocks, searchPattern } from "@getpaseo/protocol/chat-search-text";
+import type { ASTNode } from "react-native-markdown-display";
+import parser from "react-native-markdown-display/src/lib/parser";
+import { isFindMarkedNode } from "@/find-highlight/markdown-nodes";
+import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser";
+import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
 import { findMarkdownMatches } from "./markdown-matches";
 
 const MIXED = [
@@ -32,6 +37,18 @@ function hostCount(text: string, query: string): number {
   );
 }
 
+const assistantMarkdownIt = createAssistantMarkdownParser();
+
+function nodesByKey(block: string): Map<string, ASTNode> {
+  const nodes = new Map<string, ASTNode>();
+  const visit = (node: ASTNode) => {
+    nodes.set(node.key, node);
+    for (const child of node.children) visit(child);
+  };
+  for (const node of parser(block, (ast) => ast, assistantMarkdownIt)) visit(node);
+  return nodes;
+}
+
 describe("findMarkdownMatches", () => {
   it("numbers every match the host counts, once each, in reading order", () => {
     const { count, blocks } = findMarkdownMatches(MIXED, searchPattern("find"));
@@ -59,5 +76,23 @@ describe("findMarkdownMatches", () => {
     const [firstKeys, secondKeys] = blocks.map((parts) => [...parts.keys()]);
     expect(firstKeys).toEqual(secondKeys);
     expect(blocks[1]!.get(secondKeys![0]!)!.find((part) => part.match !== null)!.match).toBe(1);
+  });
+
+  it("numbers only nodes the message rules mark, and nothing in a diagram", () => {
+    const text = [
+      "find [the `find` link](https://x.dev) and `src/find.ts` and `https://find.dev`",
+      "",
+      "```mermaid",
+      "graph TD; find --> find",
+      "```",
+    ].join("\n");
+    const { count, blocks } = findMarkdownMatches(text, searchPattern("find"));
+    expect(count).toBe(4);
+    splitMarkdownBlocks(text).forEach((block, index) => {
+      const nodes = nodesByKey(block);
+      for (const key of blocks[index]!.keys()) {
+        expect(isFindMarkedNode(nodes.get(key)!), key).toBe(true);
+      }
+    });
   });
 });

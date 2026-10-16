@@ -72,6 +72,7 @@ import { searchPattern } from "@getpaseo/protocol/chat-search-text";
 import { useChatFindItemHighlight } from "@/agent-stream/chat-find/highlight-store";
 import { findMarkdownMatches } from "@/agent-stream/chat-find/markdown-matches";
 import { renderMatchParts } from "@/find-highlight/match-parts";
+import { isFindMarkedNode } from "@/find-highlight/markdown-nodes";
 import { splitTextForMatches, type MatchPart } from "@/find-highlight/split";
 import { MarkdownFenceBlock } from "@/components/markdown/fence";
 import type { MarkdownPhase } from "@/components/markdown/fence/types";
@@ -789,8 +790,18 @@ interface MarkdownBlockFind {
   current: number;
 }
 
-function markdownBlockCodeFind(find: MarkdownBlockFind | null, key: string): CodeFindMatch | null {
-  const parts = find?.parts.get(key);
+function markdownBlockFindParts(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): MatchPart[] | undefined {
+  return find && isFindMarkedNode(node) ? find.parts.get(node.key) : undefined;
+}
+
+function markdownBlockCodeFind(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): CodeFindMatch | null {
+  const parts = markdownBlockFindParts(find, node);
   return parts && find ? { parts, current: find.current } : null;
 }
 
@@ -806,8 +817,8 @@ function markdownBlockWithMatch(
   });
 }
 
-function markdownBlockText(find: MarkdownBlockFind | null, key: string, text: string): ReactNode {
-  const parts = find?.parts.get(key);
+function markdownBlockText(find: MarkdownBlockFind | null, node: ASTNode, text: string): ReactNode {
+  const parts = markdownBlockFindParts(find, node);
   return parts && find ? renderMatchParts(parts, find.current, MarkdownTextSpan) : text;
 }
 
@@ -1690,7 +1701,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           inheritedStyles={inheritedStyles}
           textStyle={styles.text}
         >
-          {markdownBlockText(find, node.key, node.content)}
+          {markdownBlockText(find, node, node.content)}
         </MarkdownInheritedText>
       ),
       textgroup: (
@@ -1804,7 +1815,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           language={null}
           inheritedStyles={inheritedStyles}
           textStyle={styles.code_block}
-          findMatch={markdownBlockCodeFind(find, node.key)}
+          findMatch={markdownBlockCodeFind(find, node)}
         />
       ),
       fence: (
@@ -1821,7 +1832,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           phase={phase}
           inheritedStyles={inheritedStyles}
           textStyle={styles.fence}
-          findMatch={markdownBlockCodeFind(find, node.key)}
+          findMatch={markdownBlockCodeFind(find, node)}
         />
       ),
       code_inline: (
@@ -1849,7 +1860,9 @@ export const AssistantMessage = memo(function AssistantMessage({
               inheritedStyles={inheritedStyles}
               codeInlineStyle={styles.code_inline}
               linkStyle={styles.link}
-            />
+            >
+              {markdownBlockText(find, node, content)}
+            </AssistantInlineCodePathLink>
           );
         }
 
@@ -1867,7 +1880,7 @@ export const AssistantMessage = memo(function AssistantMessage({
               codeInlineStyle={styles.code_inline}
               linkStyle={styles.link}
             >
-              {content}
+              {markdownBlockText(find, node, content)}
             </AssistantMarkdownCodeLink>
           );
         }
@@ -1880,7 +1893,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             textStyle={styles.code_inline}
             monoSurface
           >
-            {markdownBlockText(find, node.key, content)}
+            {markdownBlockText(find, node, content)}
           </MarkdownInheritedText>
         );
       },
@@ -2014,16 +2027,18 @@ export const AssistantMessage = memo(function AssistantMessage({
 
   // Native chat find marks its selected occurrence. Only the block holding it gets
   // rules of its own; every other block, and every other message, keeps the shared ones.
-  // Path and linked inline code and diagrams count but render unmarked.
+  // The pre-pass and these rules mark the same node types (find-highlight/markdown-nodes).
+  // The last block of a streaming message parses with the streaming parser, whose keys
+  // can differ from the pre-pass, so marks wait for the message to complete.
   const findHighlight = useChatFindItemHighlight(findItemId);
   const findQuery = findHighlight?.query ?? null;
   const findCurrent = findHighlight?.index ?? -1;
   const findMatches = useMemo(
     () =>
-      findQuery !== null && revealedMessage === renderedMessage.text
+      findQuery !== null && phase === "complete" && revealedMessage === renderedMessage.text
         ? findMarkdownMatches(revealedMessage, searchPattern(findQuery))
         : null,
-    [findQuery, renderedMessage.text, revealedMessage],
+    [findQuery, phase, renderedMessage.text, revealedMessage],
   );
   const findBlockIndex = useMemo(
     () => (findMatches ? markdownBlockWithMatch(findMatches.blocks, findCurrent) : -1),

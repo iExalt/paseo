@@ -1,5 +1,6 @@
 import type { ASTNode } from "react-native-markdown-display";
 import parser from "react-native-markdown-display/src/lib/parser";
+import { isFindMarkedNode } from "@/find-highlight/markdown-nodes";
 import { splitRunsForMatches, type MatchPart } from "@/find-highlight/split";
 import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
@@ -30,11 +31,12 @@ interface Run {
  * `@getpaseo/protocol/chat-search-text`: one per paragraph-like inline run (text, inline
  * code and line breaks; image alt text never), one per code block. Keeping the host's
  * grouping keeps the count the host reported and lets a match span `**bold**` edges.
+ * Diagrams are the exception: they draw no text, so they count nothing here.
  */
 function collectRuns(nodes: readonly ASTNode[], groups: Run[][], current: { runs: Run[] }) {
   for (const node of nodes) {
     if (node.type === "fence" || node.type === "code_block") {
-      groups.push([{ key: node.key, text: node.content }]);
+      if (isFindMarkedNode(node)) groups.push([{ key: node.key, text: node.content }]);
       continue;
     }
     if (node.type === "text" || node.type === "code_inline") {

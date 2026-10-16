@@ -130,6 +130,8 @@ export function AssistantMarkdownCodeLink({
 
 interface AssistantInlineCodePathLinkProps {
   content: string;
+  /** What to draw in place of `content`, such as the text split at a find match. */
+  children?: ReactNode;
   inheritedStyles: TextStyle;
   codeInlineStyle: TextStyle;
   linkStyle: TextStyle;
@@ -137,6 +139,7 @@ interface AssistantInlineCodePathLinkProps {
 
 export function AssistantInlineCodePathLink({
   content,
+  children,
   inheritedStyles,
   codeInlineStyle,
   linkStyle,
@@ -157,7 +160,7 @@ export function AssistantInlineCodePathLink({
       codeInlineStyle={codeInlineStyle}
       linkStyle={linkStyle}
     >
-      {content}
+      {children ?? content}
     </AssistantMarkdownCodeLink>
   );
 }
