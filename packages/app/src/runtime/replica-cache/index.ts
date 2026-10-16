@@ -766,18 +766,31 @@ function isTimelineItemStoredLosslessly(item: StreamItem): boolean {
   }
 }
 
+// Coverage is only ever claimed for a window within the item limit, so a longer timeline only
+// needs its stored tail serialized. Serializing everything first cost a pass over the whole
+// session's history per streaming agent on every persist.
+function serializeTimelineItems(canonicalItems: StreamItem[]): StoredTimelineItem[] {
+  if (canonicalItems.length <= MAX_TIMELINE_ITEMS) {
+    return canonicalItems.map(serializeTimelineItem).filter((item) => item !== null);
+  }
+  const start = findMountedWindowStart({ items: canonicalItems, minMountedCount: MAX_TIMELINE_ITEMS });
+  const items: StoredTimelineItem[] = [];
+  for (
+    let index = canonicalItems.length - 1;
+    index >= start;
+    index -= 1
+  ) {
+    const item = serializeTimelineItem(canonicalItems[index]!);
+    if (item !== null) items.push(item);
+  }
+  return items.toReversed();
+}
+
 function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
   const canonicalItems = timeline.items.filter(
     (item) => item.kind !== "user_message" || !isUnreconciledLocalUserMessage(item),
   );
-  const start = findMountedWindowStart({
-    items: canonicalItems,
-    minMountedCount: MAX_TIMELINE_ITEMS,
-  });
-  const items = canonicalItems
-    .slice(start)
-    .map(serializeTimelineItem)
-    .filter((item) => item !== null);
+  const items = serializeTimelineItems(canonicalItems);
   const range = timeline.range;
   const canPersistCoverage =
     range !== null &&

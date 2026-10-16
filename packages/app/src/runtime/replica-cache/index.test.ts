@@ -716,6 +716,39 @@ describe("ReplicaCache", () => {
     expect(storage.reads).toHaveLength(2);
   });
 
+  it("stores the newest serializable items of a timeline past the item limit", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    const items: StreamItem[] = Array.from({ length: 120 }, (_, index) => ({
+      ...timelineItem(`Message ${index}`),
+      id: `message-${index}`,
+    }));
+    // Orchestrator tool calls are not stored, so the stored tail reaches past them.
+    items.splice(110, 0, {
+      kind: "tool_call",
+      id: "orchestrator-tool",
+      timestamp: new Date("2026-07-18T08:02:00.000Z"),
+      payload: {
+        source: "orchestrator",
+        data: {
+          toolCallId: "orchestrator-tool",
+          toolName: "Shell",
+          arguments: "echo hi",
+          result: null,
+          status: "completed",
+        },
+      },
+    });
+
+    cache.commitTimeline(SERVER_ID, "agent-1", { ...timeline(), items });
+    const stored = await cache.readTimeline(SERVER_ID, "agent-1");
+
+    expect(stored?.items.map((item) => item.id)).toEqual(
+      items.slice(-51).flatMap((item) => (item.kind === "tool_call" ? [] : [item.id])),
+    );
+    expect(stored?.range).toBeNull();
+  });
+
   it("never reads a timeline older than an accepted deferred replacement", async () => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
