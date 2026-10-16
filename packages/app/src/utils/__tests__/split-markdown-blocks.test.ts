@@ -115,6 +115,16 @@ describe("splitMarkdownBlocks", () => {
     expect(splitMarkdownBlocks(source)).toEqual(["See [docs].", "[docs]: docs\\ folder/readme"]);
   });
 
+  it.each([
+    { indent: "   ", folded: true },
+    { indent: "    ", folded: false },
+  ])("folds a definition indented by $indent.length spaces: $folded", ({ indent, folded }) => {
+    const source = `See the [docs][d].\n\n${indent}[d]: https://example.com`;
+    expect(splitMarkdownBlocks(source)).toEqual(
+      folded ? [source] : ["See the [docs][d].", `${indent}[d]: https://example.com`],
+    );
+  });
+
   it("leaves a definition-only message as its own block", () => {
     expect(splitMarkdownBlocks("[d]: https://example.com")).toEqual(["[d]: https://example.com"]);
   });
