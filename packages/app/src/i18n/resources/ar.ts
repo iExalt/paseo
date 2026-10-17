@@ -330,6 +330,7 @@ export const ar: TranslationResources = {
     actions: {
       copyCode: "نسخ الرمز",
       copyTurn: "نسخ بدوره",
+      selectText: "تحديد النص",
       copyMessage: "انسخ الرسالة",
       forkMenu: "تفريع الرسالة",
       forkInNewTab: "تفريع في تبويب جديد",

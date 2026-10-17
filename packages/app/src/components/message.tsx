@@ -45,6 +45,7 @@ import {
   Scissors,
   MicVocal,
   FileSymlink,
+  TextCursor,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
@@ -85,6 +86,7 @@ import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser
 import { formatDuration, formatMessageTimestamp } from "@/utils/time";
 import { getTurnDurationLabel } from "./assistant-turn-footer-label";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
+import { TurnSourceSheet } from "@/components/turn-source-sheet";
 import { getDefaultMarkdownClipboardEnvironment } from "@/utils/rich-clipboard-default-environment";
 import { setAssistantMarkdownBlockHeight } from "@/utils/assistant-message-height-estimate";
 import { isRenderProfileEnabled } from "@/utils/render-profiler";
@@ -724,6 +726,12 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
         getContent={getContent}
         containerStyle={assistantTurnFooterStylesheet.copyButton}
       />
+      {isNative ? (
+        <TurnSelectTextButton
+          getContent={getContent}
+          containerStyle={assistantTurnFooterStylesheet.copyButton}
+        />
+      ) : null}
       {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
       {primaryLabel ? (
         <Pressable
@@ -1121,6 +1129,43 @@ interface TurnCopyButtonProps {
   accessibilityLabel?: string;
   copiedAccessibilityLabel?: string;
 }
+
+/**
+ * Native only: rendered text selection copies plain text, so this opens the turn's
+ * Markdown source, where any part selected keeps its syntax.
+ */
+const TurnSelectTextButton = memo(function TurnSelectTextButton({
+  getContent,
+  containerStyle,
+}: {
+  getContent: () => string;
+  containerStyle?: StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  const [content, setContent] = useState<string | null>(null);
+  const handleOpen = useCallback(() => setContent(getContent()), [getContent]);
+  const handleClose = useCallback(() => setContent(null), []);
+  const pressableStyle = useMemo(
+    () => [turnCopyButtonStylesheet.container, containerStyle],
+    [containerStyle],
+  );
+  return (
+    <>
+      <Pressable
+        onPress={handleOpen}
+        style={pressableStyle}
+        accessibilityRole="button"
+        accessibilityLabel={t("message.actions.selectText")}
+        testID="turn-select-text"
+      >
+        <TextCursor size={ICON_SIZE.sm} color={turnCopyButtonStylesheet.iconColor.color} />
+      </Pressable>
+      {content === null ? null : (
+        <TurnSourceSheet visible content={content} onClose={handleClose} />
+      )}
+    </>
+  );
+});
 
 export const TurnCopyButton = memo(function TurnCopyButton({
   getContent,

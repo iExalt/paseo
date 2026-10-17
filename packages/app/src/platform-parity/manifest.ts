@@ -29,7 +29,8 @@ export const PARITY_MANIFEST: ParityManifest = {
     "assistant-selection-copy/surface": {
       kind: "gap",
       chunk: "F2",
-      reason: "Native copies a reply selection as plain text",
+      reason:
+        "Native copies part of a reply with its Markdown from Select text; awaits device checks",
     },
     "attachments/use-workspace-file-drag-source": {
       kind: "equivalent",

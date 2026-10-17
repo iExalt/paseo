@@ -239,6 +239,17 @@ Device checks wait for a tablet emulator batch.
   sidebar collapsed and gesture navigation on, a scrub does not trigger
   Back; TalkBack steps through prompts.
 
+### F: browser tabs and copy
+
+- F2: copying a whole reply already copies its Markdown source on native. A
+  new Select text action under each native reply opens the reply's Markdown
+  in a read-only input, so a selection of any part keeps its syntax. Very
+  long replies show their first 50,000 characters there, and Copy turn copies
+  all of it. Selecting the rendered text directly still copies plain text,
+  since React Native exposes no selection range. Pending on the phone: select
+  across a heading, a list and a code fence, paste, and the markers survive;
+  Copy turn on a long reply.
+
 ## Current boundary
 
 - Chunks E and F are not implemented. C2, C3 and D1 wait for the device batch.
