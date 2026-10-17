@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.6.0](https://github.com/iExalt/paseo/compare/paseo-v0.5.0...paseo-v0.6.0) (2026-10-17)
+
+
+### Features
+
+* **app:** close desktop and mobile parity gaps ([#161](https://github.com/iExalt/paseo/issues/161)) ([669d95c](https://github.com/iExalt/paseo/commit/669d95cd2b4cce80655d79555258b31955add7fa))
+
+
+### Bug Fixes
+
+* **desktop:** install the Nix app as a real /Applications copy ([#163](https://github.com/iExalt/paseo/issues/163)) ([bd240c0](https://github.com/iExalt/paseo/commit/bd240c0f8385fc4b26e8ed6aeaff96663e48d782))
+* **server:** defer a steer the provider cannot take instead of interrupting ([#165](https://github.com/iExalt/paseo/issues/165)) ([dd7346c](https://github.com/iExalt/paseo/commit/dd7346ca153182677afe4995c32b5226f282780e))
+
 ## [0.5.0](https://github.com/iExalt/paseo/compare/paseo-v0.4.2...paseo-v0.5.0) (2026-10-16)
 
 
