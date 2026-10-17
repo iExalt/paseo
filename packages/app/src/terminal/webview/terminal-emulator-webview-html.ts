@@ -28,5 +28,5 @@ export const terminalEmulatorWebViewSources = {
     "../../node_modules/@xterm/xterm",
     "../protocol",
   ],
-  hash: "59687e76dccba0fe7b3ab711c04e39f149e8993ec05792de7448c33a6c1450b4",
+  hash: "07d6a91ec5f5cacac545fd262017c1c5a0db1a9dff2647510e47ac4873f36d1c",
 };
