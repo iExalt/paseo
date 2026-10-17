@@ -19,6 +19,10 @@ export const en = {
   nativeEditor: {
     unavailable: "The editor can't run here, so this file is read-only.",
   },
+  nativeBrowser: {
+    dataDescription:
+      "Clears cookies and site data for every web view in Paseo, including browser tabs.",
+  },
   nativeNotifications: {
     sound: "Sound and alerts",
     soundHint: "Choose how Paseo notifications sound and appear",

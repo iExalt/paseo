@@ -186,6 +186,7 @@ import {
 import { findAdjacentPane } from "@/utils/split-navigation";
 import { paneSplitsAvailable, useIsCompactFormFactor } from "@/constants/layout";
 import { getIsElectron, isNative, isWeb } from "@/constants/platform";
+import { getBrowserTabsAvailable } from "@/desktop/browser/availability";
 import type { SurfaceBackdrop } from "@/styles/surface-backdrop";
 import { buildHostRootRoute, buildSettingsHostRoute } from "@/utils/host-routes";
 import { useWorkspaceTerminals } from "@/screens/workspace/terminals/use-workspace-terminals";
@@ -977,7 +978,7 @@ interface WorkspaceHeaderTitleBarProps {
   onOpenSetupTab: () => void;
   onScriptTerminalStarted: (terminalId: string) => void;
   onViewScriptTerminal: (terminalId: string) => void;
-  onOpenUrlInBrowserTab: (url: string) => void;
+  onOpenUrlInBrowserTab?: (url: string) => void;
 }
 
 function WorkspaceHeaderTitleBar({
@@ -2419,7 +2420,7 @@ function WorkspaceScreenContent({
 
   const handleCreateBrowserTab = useCallback(
     (input?: { paneId?: string }) => {
-      if (!persistenceKey || !getIsElectron()) {
+      if (!persistenceKey || !getBrowserTabsAvailable()) {
         return;
       }
       const { browserId } = createWorkspaceBrowser();
@@ -2480,7 +2481,7 @@ function WorkspaceScreenContent({
 
   const handleOpenUrlInBrowserTab = useCallback(
     (url: string) => {
-      if (!persistenceKey || !getIsElectron()) {
+      if (!persistenceKey || !getBrowserTabsAvailable()) {
         return;
       }
       const { browserId } = createWorkspaceBrowser({ initialUrl: url });
@@ -2492,6 +2493,9 @@ function WorkspaceScreenContent({
     },
     [openWorkspaceTabFocused, persistenceKey],
   );
+
+  // Absent in a plain browser, so service links open externally there.
+  const openUrlInBrowserTab = getBrowserTabsAvailable() ? handleOpenUrlInBrowserTab : undefined;
 
   useDesktopBrowserNewTabRequests({
     enabled: Boolean(persistenceKey),
@@ -3591,9 +3595,11 @@ function WorkspaceScreenContent({
           });
         },
         onOpenImportSheet: openImportSheet,
+        onOpenUrlInBrowserTab: openUrlInBrowserTab,
       }),
     [
       handleCloseTabById,
+      openUrlInBrowserTab,
       fileNavigationRevisionByTabId,
       handleOpenWorkspaceFileFromPane,
       navigateToTabId,
@@ -3749,7 +3755,7 @@ function WorkspaceScreenContent({
             liveTerminalIds={liveTerminalIds}
             onScriptTerminalStarted={handleScriptTerminalStarted}
             onViewTerminal={handleViewScriptTerminal}
-            onOpenUrlInBrowserTab={handleOpenUrlInBrowserTab}
+            onOpenUrlInBrowserTab={openUrlInBrowserTab}
             hideLabels
           />
         ) : null}
@@ -3797,7 +3803,7 @@ function WorkspaceScreenContent({
       liveTerminalIds,
       handleScriptTerminalStarted,
       handleViewScriptTerminal,
-      handleOpenUrlInBrowserTab,
+      openUrlInBrowserTab,
       handleToggleExplorerSidebar,
       explorerSidebarToggleLabel,
       explorerSidebarToggleAccessibilityState,
@@ -3833,7 +3839,7 @@ function WorkspaceScreenContent({
     () => createTerminalMutation.isPending || pendingTerminalCreateInput !== null,
     [createTerminalMutation.isPending, pendingTerminalCreateInput],
   );
-  const showCreateBrowserTab = getIsElectron();
+  const showCreateBrowserTab = getBrowserTabsAvailable();
   const newTabLauncher = useMemo<NewTabLauncher>(
     () => ({
       showChanges: isGitCheckout,
@@ -3892,7 +3898,7 @@ function WorkspaceScreenContent({
                 onOpenSetupTab={handleOpenSetupTab}
                 onScriptTerminalStarted={handleScriptTerminalStarted}
                 onViewScriptTerminal={handleViewScriptTerminal}
-                onOpenUrlInBrowserTab={handleOpenUrlInBrowserTab}
+                onOpenUrlInBrowserTab={openUrlInBrowserTab}
               />
             </>
           }
@@ -3910,7 +3916,7 @@ function WorkspaceScreenContent({
       handleCreateTerminal,
       handleCreateTerminalWithProfile,
       handleOpenSetupTab,
-      handleOpenUrlInBrowserTab,
+      openUrlInBrowserTab,
       handleScriptTerminalStarted,
       handleViewScriptTerminal,
       headerRight,

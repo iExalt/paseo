@@ -38,6 +38,7 @@ export interface BuildWorkspacePaneContentModelInput {
   onSetCurrentTabState: (state: WorkspaceTabDescriptor["state"]) => void;
   onOpenWorkspaceFile: (request: WorkspaceFileOpenRequest) => void;
   onOpenImportSheet: () => void;
+  onOpenUrlInBrowserTab?: (url: string) => void;
 }
 
 export function buildWorkspacePaneContentModel({
@@ -54,6 +55,7 @@ export function buildWorkspacePaneContentModel({
   onSetCurrentTabState,
   onOpenWorkspaceFile,
   onOpenImportSheet,
+  onOpenUrlInBrowserTab,
 }: BuildWorkspacePaneContentModelInput): WorkspacePaneContentModel {
   ensurePanelsRegistered();
   const registration = getPanelRegistration(tab.kind);
@@ -77,6 +79,7 @@ export function buildWorkspacePaneContentModel({
       setCurrentTabState: onSetCurrentTabState,
       openFileInWorkspace: onOpenWorkspaceFile,
       openImportSheet: onOpenImportSheet,
+      openUrlInBrowserTab: onOpenUrlInBrowserTab,
     },
   };
 }
@@ -103,6 +106,9 @@ export function WorkspacePaneContent({
   const setCurrentTabState = useStableEvent(paneContextValue.setCurrentTabState);
   const openFileInWorkspace = useStableEvent(paneContextValue.openFileInWorkspace);
   const openImportSheet = useStableEvent(paneContextValue.openImportSheet);
+  const openUrlInBrowserTab = useStableEvent(
+    paneContextValue.openUrlInBrowserTab ?? (() => undefined),
+  );
   const stablePaneContextValue = useMemo(
     () => ({
       serverId: paneContextValue.serverId,
@@ -120,11 +126,13 @@ export function WorkspacePaneContent({
       setCurrentTabState,
       openFileInWorkspace,
       openImportSheet,
+      openUrlInBrowserTab: paneContextValue.openUrlInBrowserTab ? openUrlInBrowserTab : undefined,
     }),
     [
       closeCurrentTab,
       openFileInWorkspace,
       openImportSheet,
+      openUrlInBrowserTab,
       openTab,
       openPreferredTarget,
       openTargetToSide,
@@ -136,6 +144,7 @@ export function WorkspacePaneContent({
       paneContextValue.workspaceId,
       paneContextValue.host,
       paneContextValue.openTargetToSide,
+      paneContextValue.openUrlInBrowserTab,
       retargetCurrentTab,
       setCurrentTabState,
     ],

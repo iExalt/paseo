@@ -4,6 +4,7 @@ import { pluginSettings } from "./plugin-settings";
 export const ptBR: TranslationResources = {
   nativePermissions: en.nativePermissions,
   nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
   nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:

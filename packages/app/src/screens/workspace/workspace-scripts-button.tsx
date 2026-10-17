@@ -17,6 +17,7 @@ import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 import { useSessionStore } from "@/stores/session-store";
+import { isNative } from "@/constants/platform";
 import { useHostRuntimeSnapshot } from "@/runtime/host-runtime";
 import {
   DropdownMenu,
@@ -399,7 +400,11 @@ function ScriptRow({
   const isRunning = script.lifecycle === "running";
   const isService = (script.type ?? "service") === "service";
   const exitCode = script.exitCode ?? null;
-  const serviceLink = resolveWorkspaceScriptLink({ script, activeConnection });
+  const serviceLink = resolveWorkspaceScriptLink({
+    script,
+    activeConnection,
+    reachesHostLoopback: !isNative,
+  });
   const selectedLink =
     isService && isRunning
       ? (serviceLink.targets.find((target) => target.kind === preferredRouteKind) ??

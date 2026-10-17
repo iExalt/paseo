@@ -13,8 +13,8 @@ checklist, to current evidence. It is not a second checklist.
 | ---------------------------- | ------------------------------------------------------------------------ |
 | Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                |
 | Branch                       | `feat/platform-parity`                                                   |
-| Current chunk                | D: editing on mobile                                                     |
-| Overall state                | A, B1 and C1 accepted; C2, C3 and D1 wait for the device batch           |
+| Current chunk                | F: browser tabs and copy                                                 |
+| Overall state                | A–F2 accepted in review; device checks for C2–F wait for batches         |
 | Product or release readiness | No chunk is released                                                     |
 | Routine CI budget            | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
 
@@ -241,6 +241,22 @@ Device checks wait for a tablet emulator batch.
 
 ### F: browser tabs and copy
 
+- F1: native opens browser tabs in a WebView pane with an address bar, back,
+  forward and reload; Android Back steps back through its history. Service
+  links open in a tab on native and Electron, and externally in a plain
+  browser. Over relay a native device gets only a service's public URL, since
+  loopback and `*.localhost` targets point at the phone itself; a LAN host
+  stays reachable. Top-level loads allow http, https and about:blank; mailto:
+  and tel: go to the system; other schemes show the unsupported-protocol row.
+  Popups open as new tabs without `window.opener`, so OAuth flows that need
+  the opener fail. Browser data settings clear every in-app WebView's
+  cookies and storage through `paseo-webview-data`; Android keeps the HTTP
+  cache. Devtools, annotation, automation, viewport presets and downloads stay
+  Electron-only. Pending on the phone: open a tab from the new-tab menu and a
+  service link; type a URL, go back and forward, reload; Back leaves the tab
+  history before the screen; a popup opens a tab; title and favicon show in
+  the tab; a mailto: link opens the mail app; clear data signs a site out and
+  reloads open tabs; a hidden tab stops interfering with the visible one.
 - F2: copying a whole reply already copies its Markdown source on native. A
   new Select text action under each native reply opens the reply's Markdown
   in a read-only input, so a selection of any part keeps its syntax. Very
@@ -253,7 +269,8 @@ Device checks wait for a tablet emulator batch.
 
 ## Current boundary
 
-- Chunks E and F are not implemented. C2, C3 and D1 wait for the device batch.
+- All chunks are implemented. C2, C3, D1, F1 and F2 wait for the phone batch;
+  E and the rotation cases wait for the tablet emulator batch.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
 - B2's push checks wait for the first fork release that contains it.

@@ -4,6 +4,7 @@ import { pluginSettings } from "./plugin-settings";
 export const zhCN: TranslationResources = {
   nativePermissions: en.nativePermissions,
   nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
   nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "无法搜索此聊天。请检查主机连接后重试。",

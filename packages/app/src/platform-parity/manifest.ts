@@ -65,7 +65,14 @@ export const PARITY_MANIFEST: ParityManifest = {
     "desktop/browser/pane/index": {
       kind: "gap",
       chunk: "F1",
-      reason: "Native shows an unavailable message instead of a browser tab",
+      reason:
+        "The native WebView browser tab awaits device checks; plain web stays unavailable, and native has no devtools, annotation, automation, viewport presets or downloads",
+    },
+    "desktop/browser/settings/clear-browser-data": {
+      kind: "gap",
+      chunk: "F1",
+      reason:
+        "Native clears the process-wide web view store through PaseoWebviewData; awaits device checks",
     },
     "file-pane/editor/view": {
       kind: "gap",
@@ -112,7 +119,12 @@ export const PARITY_MANIFEST: ParityManifest = {
     "styles/unistyles-inline-style": equivalent,
   },
   settingsSections: {
-    browser: { kind: "gap", chunk: "F1", reason: "Browser data settings need browser tabs" },
+    browser: {
+      kind: "gap",
+      chunk: "F1",
+      reason:
+        "Native clears every in-app web view's data; hidden in a plain browser; awaits device checks",
+    },
     shortcuts: {
       kind: "gap",
       chunk: "E1",

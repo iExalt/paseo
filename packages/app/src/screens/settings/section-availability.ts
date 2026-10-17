@@ -10,7 +10,7 @@ import type { SettingsSectionSlug } from "@/utils/host-routes";
 export type SettingsSectionGate = "desktop" | "desktop-or-native" | "desktop-or-native-shortcuts";
 
 export const SETTINGS_SECTION_GATES: Partial<Record<SettingsSectionSlug, SettingsSectionGate>> = {
-  browser: "desktop",
+  browser: "desktop-or-native",
   shortcuts: "desktop-or-native-shortcuts",
   integrations: "desktop",
   notifications: "desktop-or-native",
