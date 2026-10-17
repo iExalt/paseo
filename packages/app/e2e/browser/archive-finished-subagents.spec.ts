@@ -1,4 +1,4 @@
-import { test } from "../support/fixtures";
+import { expect, test } from "../support/fixtures";
 import { openAgentRoute } from "../support/helpers/mock-agent";
 import { seedWorkspace, type SeededWorkspace } from "../support/helpers/seed-client";
 import {
@@ -13,6 +13,8 @@ import {
   openSubagentsTrack,
   rejectNextManagedSubagentArchiveRequest,
   seedParentWithSubagent,
+  seedRunningSubagent,
+  showFinishedSubagents,
 } from "../support/helpers/subagents";
 
 test.describe("Archive finished subagents", () => {
@@ -24,6 +26,34 @@ test.describe("Archive finished subagents", () => {
 
   test.afterAll(async () => {
     await workspace?.cleanup();
+  });
+
+  test("keeps working children in view and folds finished ones behind a toggle", async ({
+    page,
+  }) => {
+    const agents = await seedParentWithSubagent(workspace, {
+      parentTitle: "Fold parent",
+      childTitle: "Finished child",
+    });
+    await workspace.client.waitForAgentUpsert(
+      agents.child.id,
+      (snapshot) => snapshot.status === "idle",
+    );
+    const working = await seedRunningSubagent(workspace, {
+      parentId: agents.parent.id,
+      title: "Working child",
+    });
+
+    await openAgentRoute(page, { workspaceId: agents.workspaceId, agentId: agents.parent.id });
+    await page.getByTestId("subagents-track-header").click();
+    await expectSubagentRowVisible(page, working.id);
+    await expect(page.getByTestId(`subagents-track-row-${agents.child.id}`)).toHaveCount(0);
+
+    await showFinishedSubagents(page);
+    await expectSubagentRowVisible(page, agents.child.id);
+    await page.getByRole("button", { name: "Hide finished" }).click();
+    await expectSubagentRowGone(page, agents.child.id);
+    await expectSubagentRowVisible(page, working.id);
   });
 
   test("archives a finished managed child from the track", async ({ page }) => {
