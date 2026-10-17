@@ -331,6 +331,7 @@ export const ar: TranslationResources = {
       copyCode: "نسخ الرمز",
       copyTurn: "نسخ بدوره",
       selectText: "تحديد النص",
+      selectTextTruncated: "يتم عرض أول 50,000 حرف. نسخ بدوره ينسخ كل شيء.",
       copyMessage: "انسخ الرسالة",
       forkMenu: "تفريع الرسالة",
       forkInNewTab: "تفريع في تبويب جديد",

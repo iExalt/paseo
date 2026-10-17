@@ -335,6 +335,7 @@ export const ptBR: TranslationResources = {
       copyCode: "Copiar código",
       copyTurn: "Copiar turno",
       selectText: "Selecionar texto",
+      selectTextTruncated: "Mostrando os primeiros 50.000 caracteres. Copiar turno copia tudo.",
       copyMessage: "Copiar mensagem",
       forkMenu: "Bifurcar mensagem",
       forkInNewTab: "Bifurcar em uma nova aba",

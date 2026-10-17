@@ -248,7 +248,8 @@ Device checks wait for a tablet emulator batch.
   all of it. Selecting the rendered text directly still copies plain text,
   since React Native exposes no selection range. Pending on the phone: select
   across a heading, a list and a code fence, paste, and the markers survive;
-  Copy turn on a long reply.
+  tapping the input raises no keyboard; it scrolls inside the sheet; a reply
+  over the limit says so and Copy turn copies all of it.
 
 ## Current boundary
 

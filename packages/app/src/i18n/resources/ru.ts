@@ -335,6 +335,7 @@ export const ru: TranslationResources = {
       copyCode: "Скопировать код",
       copyTurn: "Скопировать ответ",
       selectText: "Выделить текст",
+      selectTextTruncated: "Показаны первые 50 000 символов. «Скопировать ответ» копирует всё.",
       copyMessage: "Копировать сообщение",
       forkMenu: "Форкнуть чат отсюда",
       forkInNewTab: "Создать форк в новой вкладке",

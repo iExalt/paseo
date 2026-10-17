@@ -369,6 +369,7 @@ export const en = {
       copyCode: "Copy code",
       copyTurn: "Copy turn",
       selectText: "Select text",
+      selectTextTruncated: "Showing the first 50,000 characters. Copy turn copies all of it.",
       copyMessage: "Copy message",
       forkMenu: "Fork chat from here",
       forkInNewTab: "Fork in a new tab",

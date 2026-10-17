@@ -331,6 +331,7 @@ export const zhCN: TranslationResources = {
       copyCode: "复制代码",
       copyTurn: "复制回合",
       selectText: "选择文本",
+      selectTextTruncated: "显示前 50,000 个字符。复制回合会复制全部内容。",
       copyMessage: "复制消息",
       forkMenu: "分叉消息",
       forkInNewTab: "分叉到新标签页",

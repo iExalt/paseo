@@ -336,6 +336,7 @@ export const fr: TranslationResources = {
       copyCode: "Copier le code",
       copyTurn: "Copier l’échange",
       selectText: "Sélectionner le texte",
+      selectTextTruncated: "Affichage des 50 000 premiers caractères. Copier l’échange copie tout.",
       copyMessage: "Copier le message",
       forkMenu: "Forker la conversation à partir d’ici",
       forkInNewTab: "Forker dans un nouvel onglet",

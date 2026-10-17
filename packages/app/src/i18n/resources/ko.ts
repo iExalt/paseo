@@ -332,6 +332,7 @@ export const ko: TranslationResources = {
       copyCode: "코드 복사",
       copyTurn: "턴 복사",
       selectText: "텍스트 선택",
+      selectTextTruncated: "처음 50,000자를 표시합니다. 턴 복사는 전체를 복사합니다.",
       copyMessage: "메시지 복사",
       forkMenu: "여기에서 채팅 분기",
       forkInNewTab: "새 탭으로 분기",

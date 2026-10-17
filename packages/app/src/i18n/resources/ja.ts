@@ -336,6 +336,8 @@ export const ja: TranslationResources = {
       copyCode: "コードをコピー",
       copyTurn: "ターンをコピー",
       selectText: "テキストを選択",
+      selectTextTruncated:
+        "最初の50,000文字を表示しています。ターンをコピーですべてコピーされます。",
       copyMessage: "メッセージをコピー",
       forkMenu: "メッセージをフォーク",
       forkInNewTab: "新しいタブにフォーク",

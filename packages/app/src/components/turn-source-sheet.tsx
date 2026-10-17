@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react";
+import { Text } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-modal-sheet";
@@ -50,6 +51,9 @@ export function TurnSourceSheet({
       footer={footer}
       testID="turn-source-sheet"
     >
+      {display.truncated ? (
+        <Text style={styles.hint}>{t("message.actions.selectTextTruncated")}</Text>
+      ) : null}
       <EditingTextInput
         initialValue={display.text}
         readOnly
@@ -64,6 +68,11 @@ export function TurnSourceSheet({
 }
 
 const styles = StyleSheet.create((theme) => ({
+  hint: {
+    paddingHorizontal: theme.spacing[3],
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+  },
   source: {
     flex: 1,
     color: theme.colors.foreground,

@@ -336,6 +336,8 @@ export const es: TranslationResources = {
       copyCode: "Copiar código",
       copyTurn: "Copiar turno",
       selectText: "Seleccionar texto",
+      selectTextTruncated:
+        "Se muestran los primeros 50.000 caracteres. Copiar turno lo copia todo.",
       copyMessage: "Copiar mensaje",
       forkMenu: "Bifurcar mensaje",
       forkInNewTab: "Bifurcar en una pestaña nueva",
