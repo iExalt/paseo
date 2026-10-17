@@ -436,6 +436,20 @@ if [ -f "$ACTIVE_SWAP_FILE" ]; then cat "$ACTIVE_SWAP_FILE"; fi
     assert.equal(existsSync(ownerDirectory), false);
     assert.equal(existsSync(swapFile), false);
 
+    // The release workflow runs from release-please's tag push, as its app.
+    const cleanupAs = (environment) =>
+      spawnSync("bash", [runnerSwapPath, "cleanup"], {
+        encoding: "utf8",
+        env: { ...baseEnvironment, GITHUB_ACTOR: "paseo-release[bot]", ...environment },
+        timeout: 5000,
+      }).status;
+    assert.equal(cleanupAs({ GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/tags/paseo-v0.6.0" }), 0);
+    assert.equal(cleanupAs({ GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/tags/v0.6.0" }), 1);
+    assert.equal(
+      cleanupAs({ GITHUB_EVENT_NAME: "pull_request", GITHUB_REF: "refs/tags/paseo-v0.6.0" }),
+      1,
+    );
+
     writeFileSync(swapFile, "pre-existing runner file");
     const existingPath = spawnSync("bash", [runnerSwapPath, "enable"], {
       encoding: "utf8",
