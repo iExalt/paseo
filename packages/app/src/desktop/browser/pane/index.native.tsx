@@ -35,7 +35,6 @@ type ShouldStartLoadRequest = Parameters<
   NonNullable<WebViewProps["onShouldStartLoadWithRequest"]>
 >[0];
 type WebViewErrorEvent = Parameters<NonNullable<WebViewProps["onError"]>>[0];
-type WebViewHttpErrorEvent = Parameters<NonNullable<WebViewProps["onHttpError"]>>[0];
 type WebViewOpenWindowEvent = Parameters<NonNullable<WebViewProps["onOpenWindow"]>>[0];
 
 // Every scheme must reach onShouldStartLoadWithRequest: react-native-webview hands
@@ -262,19 +261,6 @@ export function BrowserPane({
     [browserId, errorLabels.failedToLoad, updateBrowser],
   );
 
-  const handleHttpError = useCallback(
-    ({ nativeEvent }: WebViewHttpErrorEvent) => {
-      const description = nativeEvent.description?.trim();
-      const status = description
-        ? `${nativeEvent.statusCode} ${description}`
-        : `${nativeEvent.statusCode}`;
-      updateBrowser(browserId, {
-        lastError: `${errorLabels.failedToLoad} (${status}): ${nativeEvent.url}`,
-      });
-    },
-    [browserId, errorLabels.failedToLoad, updateBrowser],
-  );
-
   const handleShouldStartLoad = useCallback(
     ({ url, isTopFrame }: ShouldStartLoadRequest) => {
       const decision = decideNativeBrowserNavigation({ url, isTopFrame });
@@ -283,7 +269,7 @@ export function BrowserPane({
       }
       if (decision === "open-externally") {
         void Linking.openURL(url).catch(() => undefined);
-      } else if (isTopFrame) {
+      } else if (isTopFrame !== false) {
         updateBrowser(browserId, {
           lastError: getUnsafeNavigationMessage(url, errorLabels) ?? errorLabels.invalidUrl,
         });
@@ -381,7 +367,6 @@ export function BrowserPane({
           onLoadStart={handleLoadStart}
           onLoadEnd={handleLoadEnd}
           onError={handleError}
-          onHttpError={handleHttpError}
           renderError={renderError}
           setSupportMultipleWindows
           onOpenWindow={handleOpenWindow}

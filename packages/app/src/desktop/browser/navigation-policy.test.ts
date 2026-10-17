@@ -57,6 +57,16 @@ describe("browser navigation policy", () => {
       "block",
     ]);
   });
+
+  it("applies the top-level rule without the OS hand-off when the frame is unknown", () => {
+    const decide = (url: string) => decideNativeBrowserNavigation({ url, isTopFrame: undefined });
+    expect(["https://a.test", "mailto:a@b.test", "tel:1", "data:text/html,x"].map(decide)).toEqual([
+      "allow",
+      "block",
+      "block",
+      "block",
+    ]);
+  });
 });
 
 describe("isAbortedNativeLoadError", () => {

@@ -248,14 +248,23 @@ Device checks wait for a tablet emulator batch.
   loopback and `*.localhost` targets point at the phone itself; a LAN host
   stays reachable. Top-level loads allow http, https and about:blank; mailto:
   and tel: go to the system; other schemes show the unsupported-protocol row.
+  react-native-webview never told Android's guard which frame loads, so a
+  patch passes `isForMainFrame`; a frame it cannot name gets the top-level
+  rule without the system hand-off. On Android the guard is defence in depth:
+  it fails open when JS misses its 250 ms answer, and the hard limits are
+  `allowFileAccess={false}` and WebView's own refusal of unknown schemes.
   Popups open as new tabs without `window.opener`, so OAuth flows that need
-  the opener fail. Browser data settings clear every in-app WebView's
-  cookies and storage through `paseo-webview-data`; Android keeps the HTTP
-  cache. Devtools, annotation, automation, viewport presets and downloads stay
-  Electron-only. Pending on the phone: open a tab from the new-tab menu and a
+  the opener fail. Native asks before opening a link each time, since the
+  setting that remembers the answer is Electron-only. A direct connection
+  through a loopback tunnel such as `adb reverse` gets no local service link.
+  Browser data settings clear every in-app WebView's cookies, storage and
+  cache through `paseo-webview-data`. HTTP error statuses show the server's
+  page without an error row, as on Electron. Devtools, annotation,
+  automation, viewport presets and downloads stay Electron-only. Pending on the phone: open a tab from the new-tab menu and a
   service link; type a URL, go back and forward, reload; Back leaves the tab
   history before the screen; a popup opens a tab; title and favicon show in
-  the tab; a mailto: link opens the mail app; clear data signs a site out and
+  the tab; a mailto: link opens the mail app; an iframe with a tel: source
+  does nothing; a top-level data: link is blocked with an error; clear data signs a site out and
   reloads open tabs; a hidden tab stops interfering with the visible one.
 - F2: copying a whole reply already copies its Markdown source on native. A
   new Select text action under each native reply opens the reply's Markdown

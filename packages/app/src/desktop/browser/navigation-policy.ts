@@ -58,23 +58,27 @@ export function getUnsafeNavigationMessage(
 /**
  * The native pane's onShouldStartLoadWithRequest decision. Top-level loads follow
  * the browser tab rule, with mailto: and tel: passed to the OS; subframes may also
- * hold about:, data: and blob: documents but never reach the OS.
+ * hold about:, data: and blob: documents but never reach the OS. A WebView that does
+ * not report the frame gets the top-level rule without the OS hand-off, so a
+ * subframe can never launch another app.
  */
 export function decideNativeBrowserNavigation(input: {
   url: string;
-  isTopFrame: boolean;
+  isTopFrame: boolean | undefined;
 }): NativeBrowserNavigationDecision {
   const parsed = parseUrl(input.url);
   if (!parsed) {
     return "block";
   }
-  if (!input.isTopFrame) {
+  if (input.isTopFrame === false) {
     return ALLOWED_SUBFRAME_PROTOCOLS.has(parsed.protocol) ? "allow" : "block";
   }
   if (isAllowedBrowserUrl(input.url)) {
     return "allow";
   }
-  return EXTERNAL_BROWSER_PROTOCOLS.has(parsed.protocol) ? "open-externally" : "block";
+  return input.isTopFrame && EXTERNAL_BROWSER_PROTOCOLS.has(parsed.protocol)
+    ? "open-externally"
+    : "block";
 }
 
 /**
