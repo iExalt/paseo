@@ -2,6 +2,27 @@ import type { MarkdownStyle } from "react-native-enriched-markdown";
 import type { Theme } from "@/styles/theme";
 import { isWeb } from "@/constants/platform";
 
+/**
+ * The native code block's box. Chat find draws its own copy of the block in JS
+ * (markdown/find.tsx), which must lay out to the same height.
+ */
+export function createCodeBlockStyle(theme: Theme, compact = false) {
+  const paragraphFontSize = compact ? theme.fontSize.base : theme.fontSize.content;
+  return {
+    fontSize: theme.fontSize.code,
+    // The native block takes the paragraph's line height, not one scaled from its own font.
+    lineHeight: Math.round(paragraphFontSize * 1.4),
+    color: theme.colors.foreground,
+    marginTop: 0,
+    marginBottom: theme.spacing[3],
+    backgroundColor: theme.colors.surface2,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+  };
+}
+
 export function createMarkdownStyles(
   theme: Theme,
   compact = false,
@@ -70,13 +91,8 @@ export function createMarkdownStyles(
         borderColor: "transparent",
       },
       codeBlock: {
-        ...paragraph,
+        ...createCodeBlockStyle(theme, compact),
         fontFamily: theme.fontFamily.mono === "ui-monospace" && !isWeb ? "" : theme.fontFamily.mono,
-        fontSize: theme.fontSize.code,
-        backgroundColor: theme.colors.surface2,
-        borderColor: theme.colors.border,
-        borderRadius: 8,
-        padding: 12,
       },
       table: {
         ...paragraph,
