@@ -807,7 +807,7 @@ describe("sendQueuedComposerMessageNow", () => {
     expect(submitted).toEqual([]);
   });
 
-  it("removes the queued entry and submits its text + attachments", async () => {
+  it("removes the queued entry and steers its text + attachments into the active turn", async () => {
     const review = reviewWorkspaceAttachment("Queued for send.");
     const queue = createFakeQueue(
       new Map([["agent", [{ id: "msg-1", text: "send me", attachments: [review] }]]]),
@@ -823,7 +823,9 @@ describe("sendQueuedComposerMessageNow", () => {
     });
     expect(result).toEqual({ status: "submitted" });
     expect(queue.state.get("agent")).toEqual([]);
-    expect(submitted).toEqual([{ text: "send me", attachments: [review] }]);
+    expect(submitted).toEqual([
+      { text: "send me", attachments: [review], activeTurnBehavior: "steer" },
+    ]);
   });
 
   it("restores the queued entry to the front and surfaces the error message on failure", async () => {

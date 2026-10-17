@@ -295,7 +295,11 @@ export interface SendQueuedComposerMessageNowInput {
   agentId: string;
   messageId: string;
   queue: QueueWriter;
-  submitMessage: (input: { text: string; attachments: ComposerAttachment[] }) => Promise<void>;
+  submitMessage: (input: {
+    text: string;
+    attachments: ComposerAttachment[];
+    activeTurnBehavior: "steer";
+  }) => Promise<void>;
   failedToSendMessage?: string;
 }
 
@@ -304,6 +308,10 @@ export type SendQueuedComposerMessageNowResult =
   | { status: "submitted" }
   | { status: "failed"; errorMessage: string };
 
+/**
+ * Sends a queued message without waiting for the turn to end. It always steers, whatever the
+ * default send setting: a queued message only asked to go sooner, never to stop the agent.
+ */
 export async function sendQueuedComposerMessageNow(
   input: SendQueuedComposerMessageNowInput,
 ): Promise<SendQueuedComposerMessageNowResult> {
@@ -318,7 +326,11 @@ export async function sendQueuedComposerMessageNow(
     return next;
   });
   try {
-    await input.submitMessage({ text: item.text, attachments: item.attachments });
+    await input.submitMessage({
+      text: item.text,
+      attachments: item.attachments,
+      activeTurnBehavior: "steer",
+    });
     return { status: "submitted" };
   } catch (error) {
     input.queue.write((prev) => {

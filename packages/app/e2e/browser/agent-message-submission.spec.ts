@@ -414,12 +414,15 @@ async function expectInterruptedTurnOrderAfterReconnect(
   try {
     await openAgentRoute(page, { workspaceId: agent.workspaceId, agentId: agent.agentId });
     await expectComposerVisible(page);
+    await configureInterruptInSettings(page);
+    await page.goBack();
+    await expectComposerVisible(page);
     await agent.client.sendAgentMessage(agent.agentId, "Start the turn that will be interrupted.");
     await expect(page.getByRole("button", { name: /stop|cancel/i }).first()).toBeVisible();
     await expect(page.getByText("Cycle 1", { exact: true })).toBeVisible();
-    await queueMessage(page, prompt);
+    await fillComposerDraft(page, prompt);
     gate.setAgentStreamSuppressed(true);
-    await page.getByRole("button", { name: "Send queued message now" }).click();
+    await composerLocator(page).press("Enter");
     const promptRow = page.getByTestId("user-message").filter({ hasText: prompt });
     await expect(promptRow).toBeVisible();
     await gate.waitForServerMessage("send_agent_message_response");
@@ -632,12 +635,15 @@ async function expectLegacyAssistantStartsAfterInterruptedPrompt(
   try {
     await openAgentRoute(page, { workspaceId: agent.workspaceId, agentId: agent.agentId });
     await expectComposerVisible(page);
+    await configureInterruptInSettings(page);
+    await page.goBack();
+    await expectComposerVisible(page);
     await agent.client.sendAgentMessage(agent.agentId, "Start the interrupted answer.");
     await expect(page.getByText("Cycle 1", { exact: true })).toBeVisible();
-    await queueMessage(page, prompt);
+    await fillComposerDraft(page, prompt);
     gate.setAssistantMessageIdsStripped(true);
     gate.setAgentStreamEventSuppressed("turn_canceled", true);
-    await page.getByRole("button", { name: "Send queued message now" }).click();
+    await composerLocator(page).press("Enter");
     const promptRow = page.getByTestId("user-message").filter({ hasText: prompt });
     const replacementAnswer = page.getByText("(end of synthetic stream)", { exact: true }).last();
     await expect(promptRow).toBeVisible();
@@ -1290,6 +1296,30 @@ test.describe("Agent message submission", () => {
     }
   });
 
+  test("steers when a send skips the queue under the default Queue setting", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const gate = await gateNextAgentMessage(page);
+    const agent = await startRunningMockAgent(page, {
+      prefix: `queue-skip-steers-${testInfo.workerIndex}-`,
+      model: "one-minute-stream",
+      prompt: "Keep this turn active while the user skips the queue.",
+    });
+    try {
+      const prompt = "Skip the queue without interrupting.";
+      await fillComposerDraft(page, prompt);
+      await composerLocator(page).press("Control+Enter");
+
+      const request = await gate.waitForRequest();
+      expect(request.activeTurnBehavior).toBe("steer");
+      gate.accept();
+      await expect(page.getByTestId("user-message").filter({ hasText: prompt })).toHaveCount(1);
+    } finally {
+      await agent.cleanup();
+    }
+  });
+
   test("replays Claude-shaped steering inside one active turn", async ({ page }, testInfo) => {
     test.setTimeout(120_000);
     await replaySteeredSleepTurnInBrowser(page, testInfo, "claude");
@@ -1300,7 +1330,7 @@ test.describe("Agent message submission", () => {
     await replaySteeredSleepTurnInBrowser(page, testInfo, "codex");
   });
 
-  test("restores overlapping queued sends when their connection fails", async ({
+  test("steers overlapping queued sends and restores them when their connection fails", async ({
     page,
   }, testInfo) => {
     test.setTimeout(120_000);
@@ -1314,10 +1344,11 @@ test.describe("Agent message submission", () => {
     try {
       await queueMessage(page, prompts[0]);
       await queueMessage(page, prompts[1]);
+      // Sending a queued message early steers into the running turn instead of interrupting it.
       await page.getByRole("button", { name: "Send queued message now" }).first().click();
-      await gate.waitForRequest(1);
+      expect(await gate.waitForRequest(1)).toMatchObject({ activeTurnBehavior: "steer" });
       await page.getByRole("button", { name: "Send queued message now" }).first().click();
-      await gate.waitForRequest(2);
+      expect(await gate.waitForRequest(2)).toMatchObject({ activeTurnBehavior: "steer" });
       await gate.disconnect();
       await expectQueuedSendFailuresRestored(page, prompts);
     } finally {

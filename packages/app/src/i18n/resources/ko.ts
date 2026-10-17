@@ -2317,7 +2317,7 @@ export const ko: TranslationResources = {
           steer:
             "에이전트가 실행 중일 때 Enter는 현재 턴에 지시합니다. Command/Ctrl+Enter는 대기열에 추가합니다.",
           queue:
-            "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다. Command/Ctrl+Enter는 제출합니다.",
+            "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다. Command/Ctrl+Enter는 현재 턴에 지시합니다.",
         },
         options: {
           interrupt: "중단",
