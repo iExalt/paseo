@@ -396,13 +396,8 @@ export interface AgentManagerOptions {
 
 export type ActiveTurnSteerDispatchResult =
   | { status: "inactive" | "steered" }
-  | { status: "replaced"; iterator: AsyncGenerator<AgentStreamEvent> };
-
-function stripSteerOptions(options?: AgentSteerOptions): AgentRunOptions | undefined {
-  if (!options) return undefined;
-  const { clearPendingPermissions: _, ...runOptions } = options;
-  return runOptions;
-}
+  /** The provider could not take the steer; it must wait for this turn to end. */
+  | { status: "busy"; turnId: string };
 
 export interface WaitForAgentOptions {
   signal?: AbortSignal;
@@ -3520,7 +3515,11 @@ export class AgentManager {
     return result;
   }
 
-  async steerOrReplaceActiveTurn(
+  /**
+   * Delivers a steer into the active turn, or reports which turn it has to wait for. A steer
+   * never interrupts: the user chose to add to the work in progress, not to stop it.
+   */
+  async steerOrDeferBehindActiveTurn(
     agentId: string,
     prompt: AgentPromptInput,
     options?: AgentSteerOptions,
@@ -3556,23 +3555,18 @@ export class AgentManager {
       return { status: "steered" };
     }
 
-    // Providers without autonomous steering keep their existing dispatch behavior. The shared
-    // admission may recognize the turn, but only an accepted steer can own it without replacement.
-    if (agent.activeForegroundTurnId === null && agent.activeTurnId === expectedTurnId) {
-      return { status: "inactive" };
-    }
-
     await this.beforeSteerUnavailableFallback?.({ agentId, expectedTurnId });
-    this.assertSteerAdmissionOwnsTurn(agent, expectedTurnId);
-    return {
-      status: "replaced",
-      iterator: await this.replaceAdmittedForegroundTurn(
-        agent,
-        expectedTurnId,
-        prompt,
-        stripSteerOptions(options),
-      ),
-    };
+    this.logger.info(
+      {
+        agentId,
+        provider: agent.provider,
+        turnId: expectedTurnId,
+        autonomous: agent.activeForegroundTurnId !== expectedTurnId,
+        reason: agent.session.steerActiveTurn ? "provider_declined" : "provider_cannot_steer",
+      },
+      "agent.steer.deferred_behind_turn",
+    );
+    return { status: "busy", turnId: expectedTurnId };
   }
 
   private assertSteerAdmissionOwnsTurn(agent: ActiveManagedAgent, expectedTurnId: string): void {
@@ -3629,18 +3623,6 @@ export class AgentManager {
         tails.delete(agentId);
       }
     }
-  }
-
-  private async replaceAdmittedForegroundTurn(
-    agent: ActiveManagedAgent,
-    expectedTurnId: string,
-    prompt: AgentPromptInput,
-    options?: AgentRunOptions,
-  ): Promise<AsyncGenerator<AgentStreamEvent>> {
-    this.assertSteerAdmissionOwnsTurn(agent, expectedTurnId);
-    return this.replaceRunInForegroundLane(agent.id, prompt, options, (live) =>
-      this.assertSteerAdmissionOwnsTurn(live, expectedTurnId),
-    );
   }
 
   /**
