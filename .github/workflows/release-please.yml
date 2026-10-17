@@ -1,129 +1,86 @@
-name: Fork version proposals
+name: Release Please
 
+# Keeps one release PR open that bumps the version and writes CHANGELOG.fork.md
+# from the Conventional Commits on dev. Merging it makes the paseo-v* tag and a
+# draft release with the changelog as its notes; the tag starts release.yml,
+# which builds, fills and publishes the draft. The release App's token is used,
+# not GITHUB_TOKEN: what GITHUB_TOKEN makes starts no workflows, so the release
+# PR would get no checks and the tag no release.
 on:
   push:
     branches: [dev]
-  workflow_dispatch:
-    inputs:
-      target:
-        description: Trusted target for an unpublished version proposal
-        type: choice
-        options: [dev, ci/release-please-rehearsal]
-        default: dev
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-please-${{ inputs.target || 'dev' }}
+  group: release-please
   cancel-in-progress: false
 
 jobs:
-  propose:
-    if: >-
-      github.repository == 'iExalt/paseo' && !github.event.repository.private &&
-      github.ref == 'refs/heads/dev' &&
-      ((github.event_name == 'push' && vars.PASEO_RELEASE_PROPOSALS_ENABLED == 'true') ||
-       (github.event_name == 'workflow_dispatch' && github.actor == 'iExalt' &&
-        (inputs.target == 'ci/release-please-rehearsal' || vars.PASEO_RELEASE_PROPOSALS_ENABLED == 'true')))
+  release-please:
+    if: github.repository == 'iExalt/paseo'
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    env:
-      TARGET_BRANCH: ${{ inputs.target || 'dev' }}
-      PASEO_RELEASE_APP_ID: ${{ vars.PASEO_RELEASE_APP_ID }}
-      PASEO_RELEASE_APP_CLIENT_ID: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
-      PASEO_RELEASE_BOT_ID: ${{ vars.PASEO_RELEASE_BOT_ID }}
-      PASEO_RELEASE_BOT_LOGIN: ${{ vars.PASEO_RELEASE_BOT_LOGIN }}
+    outputs:
+      pr: ${{ steps.release.outputs.pr }}
     steps:
-      - name: Read trusted workflow source
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
-        with:
-          version: "2026.10.3"
-          install_args: node@26.11.1
-          cache: false
-      - name: Verify pinned release engine output
-        run: |
-          npm ci --prefix .github/release-tools --ignore-scripts --no-audit --no-fund
-          node --test .github/release-tools/*.test.mjs
-      - name: Capture target tree
-        id: target
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          sha="$(gh api "repos/iExalt/paseo/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)"
-          [[ "$sha" =~ ^[a-f0-9]{40}$ ]]
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-      - name: Read target data without running its code
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ steps.target.outputs.sha }}
-          path: .dev/release-target
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Verify version and bounded history
-        id: boundary
-        env:
-          TARGET_DIRECTORY: .dev/release-target
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-          GITHUB_TOKEN: ${{ github.token }}
-        run: node .github/scripts/release-please-preflight.mjs
-      - name: Install pinned dependency fetcher runtime
-        if: steps.boundary.outputs.ready == 'true'
-        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
-      - name: Freeze proposal and refresh dependency hash without App credentials
-        id: prepare
-        if: steps.boundary.outputs.ready == 'true'
-        env:
-          TARGET_DIRECTORY: .dev/release-target
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-          GITHUB_TOKEN: ${{ github.token }}
-          PREPARED_PROPOSAL: ${{ runner.temp }}/paseo-prepared-proposal.json
-        run: node .github/release-tools/proposal-prepare.mjs
-      - name: Verify configured App and installation identity
-        id: identity
-        if: steps.prepare.outputs.ready == 'true' && vars.PASEO_RELEASE_APP_CLIENT_ID != ''
-        env:
-          PASEO_RELEASE_APP_PRIVATE_KEY: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
-        run: node .github/scripts/release-app-auth.mjs app
-      - name: Mint repository-scoped bot token
-        id: app
-        if: steps.identity.outcome == 'success'
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
         with:
           client-id: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
-          owner: iExalt
-          repositories: paseo
+          repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
-      - name: Verify minted scope
-        if: steps.app.outcome == 'success'
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          token: ${{ steps.token.outputs.token }}
+          target-branch: dev
+
+  # Every version bump changes package-lock.json, and with it the Nix dependency
+  # hash. release-please rewrites its branch whenever it updates the PR, so this
+  # adds the hash back each time.
+  nix-hash:
+    needs: release-please
+    if: needs.release-please.outputs.pr != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      BRANCH: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
+        with:
+          client-id: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.BRANCH }}
+          token: ${{ steps.token.outputs.token }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - run: bash scripts/update-nix.sh
+      - name: Push the refreshed hash
         env:
-          RELEASE_APP_TOKEN: ${{ steps.app.outputs.token }}
-          TOKEN_INSTALLATION_ID: ${{ steps.app.outputs.installation-id }}
-          TOKEN_APP_SLUG: ${{ steps.app.outputs.app-slug }}
-          VERIFIED_INSTALLATION_ID: ${{ steps.identity.outputs.installation_id }}
-          VERIFIED_APP_SLUG: ${{ steps.identity.outputs.slug }}
-        run: node .github/scripts/release-app-auth.mjs token
-      - name: Reject target movement before proposing
-        if: steps.app.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ github.token }}
-          EXPECTED_SHA: ${{ steps.target.outputs.sha }}
-        run: test "$(gh api "repos/iExalt/paseo/git/ref/heads/$TARGET_BRANCH" --jq .object.sha)" = "$EXPECTED_SHA"
-      - name: Publish leased authentic proposal without creating a release
-        if: steps.app.outcome == 'success'
-        env:
-          TARGET_DIRECTORY: .dev/release-target
-          TARGET_SHA: ${{ steps.target.outputs.sha }}
-          RELEASE_APP_TOKEN: ${{ steps.app.outputs.token }}
-          PREPARED_PROPOSAL: ${{ runner.temp }}/paseo-prepared-proposal.json
-        run: node .github/release-tools/proposal-run.mjs
-      - name: Record missing setup
-        if: vars.PASEO_RELEASE_APP_CLIENT_ID == ''
-        run: echo 'Bot event proof is pending narrowly scoped App configuration.' >> "$GITHUB_STEP_SUMMARY"
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+        run: |
+          git diff --quiet package-lock.json nix/npm-deps.hash && exit 0
+          bot="$APP_SLUG[bot]"
+          git config user.name "$bot"
+          git config user.email "$(gh api "/users/$bot" --jq .id)+$bot@users.noreply.github.com"
+          git commit -m "chore(nix): refresh the npm dependency hash" -- package-lock.json nix/npm-deps.hash
+          git push origin "HEAD:refs/heads/$BRANCH"

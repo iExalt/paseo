@@ -23,8 +23,10 @@ import {
   exportResolutions,
   importResolutions,
   parseDeletionResolutions,
+  parseReleaseTags,
   publishRebase,
   rebaseDev,
+  releaseBoundary,
   validateRebase,
 } from "./rebase-dev.mjs";
 
@@ -484,6 +486,7 @@ test("known rerere resolution is imported and resumes while preserving adapted c
   const fixture = await makeFixture("known", { adaptedContext: true, initiallyEmpty: true });
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  git(fixture.remote, "tag", "paseo-v0.1.0", fixture.devSha);
   const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
 
   await assert.rejects(
@@ -524,7 +527,7 @@ test("known rerere resolution is imported and resumes while preserving adapted c
     clone,
     "rev-list",
     "--reverse",
-    `${fixture.upstreamSha}..HEAD^`,
+    `${fixture.upstreamSha}..HEAD~2`,
   ).split("\n");
   assert.equal(rewrittenCommits.length, originalCommits.length);
   const allowedSigners = join(fixture.directory, "allowed-signers");
@@ -571,6 +574,11 @@ test("known rerere resolution is imported and resumes while preserving adapted c
   }
   assert.ok(snapshots.signedCommits > 0);
   assert.equal(snapshots.provenanceCommits, 1);
+  assert.equal(snapshots.boundaryCommits, 1);
+  assert.equal(
+    JSON.parse(readFileSync(join(clone, "release-please-config.json")))["last-release-sha"],
+    rewrittenCommits.at(-1),
+  );
   assert.equal(
     JSON.parse(readFileSync(join(clone, ".github/fork-release.json"))).upstreamBase,
     fixture.upstreamSha,
@@ -603,6 +611,35 @@ test("known rerere resolution is imported and resumes while preserving adapted c
     0,
     "Unchanged upstream must not add provenance commits",
   );
+  assert.equal(unchanged.boundaryCommits, 0, "An unmoved release commit needs no new boundary");
+});
+
+test("release boundary maps the newest tagged or configured replay commit", () => {
+  const sha = (character) => character.repeat(40);
+  const tags = parseReleaseTags(
+    [
+      `${sha("1")}\trefs/tags/paseo-v0.1.0`,
+      `${sha("2")}\trefs/tags/paseo-v0.2.0`,
+      `${sha("3")}\trefs/tags/paseo-v0.2.0^{}`,
+      `${sha("4")}\trefs/tags/paseo-dryrun-12`,
+      `${sha("5")}\trefs/tags/v9.9.9`,
+    ].join("\n"),
+  );
+  assert.deepEqual([...tags].sort(), [sha("1"), sha("3")]);
+
+  const original = [sha("1"), sha("a"), sha("3"), sha("b")];
+  const rebased = [sha("c"), sha("d"), sha("e"), sha("f")];
+  assert.deepEqual(releaseBoundary(original, rebased, tags), {
+    original: sha("3"),
+    rewritten: sha("e"),
+  });
+  // A boundary an earlier rebase recorded moves again; a newer tag wins over it.
+  assert.deepEqual(releaseBoundary(original, rebased, [sha("a"), undefined]), {
+    original: sha("a"),
+    rewritten: sha("d"),
+  });
+  assert.equal(releaseBoundary(original, rebased, [sha("9")]), null);
+  assert.throws(() => releaseBoundary(original, rebased.slice(1), tags), /every replayed commit/);
 });
 
 test("upstream version changes and missing fork authority stop before publication", async () => {

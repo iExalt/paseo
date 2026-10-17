@@ -28,6 +28,7 @@ const CACHE_PREFIX = "resolutions/";
 const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
 const DELETIONS_PATH = "deletions.json";
+const RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json";
 const SIGNING_EMAIL = "clliaw@nvidia.com";
 const SIGNING_PUBLIC_KEY =
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEScQeKzAdwWjNsrJ7xQNq2BAKGSkXP6FPbBD7PZrM9J";
@@ -612,6 +613,58 @@ async function signRebasedCommits(
   }
 }
 
+// The newest replayed commit that release-please may treat as the last release
+// (a paseo-v* tag or the configured last-release-sha) and its rewritten SHA.
+export function releaseBoundary(originalCommits, rebasedCommits, boundaryShas) {
+  if (originalCommits.length !== rebasedCommits.length)
+    throw new Error("Release boundary needs every replayed commit mapped");
+  const candidates = new Set(boundaryShas);
+  for (let index = originalCommits.length - 1; index >= 0; index -= 1) {
+    if (candidates.has(originalCommits[index]))
+      return { original: originalCommits[index], rewritten: rebasedCommits[index] };
+  }
+  return null;
+}
+
+export function parseReleaseTags(text) {
+  const commits = new Map();
+  for (const line of text.trim().split("\n")) {
+    const match = /^([0-9a-f]{40})\trefs\/tags\/(paseo-v\d+\.\d+\.\d+)(\^\{\})?$/.exec(line);
+    // An annotated tag's peeled row names its commit; prefer it over the tag object.
+    if (match && (match[3] || !commits.has(match[2]))) commits.set(match[2], match[1]);
+  }
+  return new Set(commits.values());
+}
+
+async function releaseTagCommits(repositoryPath, remote) {
+  return parseReleaseTags(
+    await gitChecked(repositoryPath, ["ls-remote", "--tags", remote, "refs/tags/paseo-v*"]),
+  );
+}
+
+// Adds one signed commit on HEAD that writes path, with the replay's committer.
+async function commitSignedFile(
+  repositoryPath,
+  { path, contents, message, signingKey, publicKey },
+) {
+  const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
+  await writeFile(join(repositoryPath, path), contents);
+  await gitChecked(repositoryPath, ["add", "--", path]);
+  const tree = (await gitChecked(repositoryPath, ["write-tree"])).trim();
+  const unsigned = (
+    await gitChecked(repositoryPath, ["commit-tree", tree, "-p", parent, "-m", message], {
+      env: {
+        GIT_AUTHOR_NAME: "Clement Liaw",
+        GIT_AUTHOR_EMAIL: SIGNING_EMAIL,
+        GIT_COMMITTER_NAME: "Clement Liaw",
+        GIT_COMMITTER_EMAIL: SIGNING_EMAIL,
+      },
+    })
+  ).trim();
+  await gitChecked(repositoryPath, ["reset", "--hard", unsigned]);
+  return signRebasedCommits(repositoryPath, parent, [unsigned], signingKey, publicKey);
+}
+
 async function writeDiagnostics(path, snapshots, message, repositoryPath) {
   if (!path) return;
   const status = await git(repositoryPath, ["status", "--short", "--branch"]);
@@ -804,6 +857,11 @@ export async function rebaseDev({
       signingKey,
       publicKey,
     );
+    const rebasedCommits = await replayCommitIds(
+      repositoryPath,
+      snapshots.upstream,
+      (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim(),
+    );
     const readRelease = () =>
       inspectForkRelease((file) => readFile(join(repositoryPath, file), "utf8"));
     assertForkReleasePreserved(before, await readRelease());
@@ -811,35 +869,39 @@ export async function rebaseDev({
     if (before.config.upstreamBase !== snapshots.upstream) {
       // Keep replayed author/message metadata intact. Provenance is a separate,
       // signed commit, and the downstream routine gate validates this final HEAD.
-      const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
-      await writeFile(
-        join(repositoryPath, FORK_CONFIG_PATH),
-        `${JSON.stringify({ ...before.config, upstreamBase: snapshots.upstream }, null, 2)}\n`,
-      );
-      await gitChecked(repositoryPath, ["add", "--", FORK_CONFIG_PATH]);
-      const tree = (await gitChecked(repositoryPath, ["write-tree"])).trim();
-      const unsigned = (
-        await gitChecked(
-          repositoryPath,
-          ["commit-tree", tree, "-p", parent, "-m", "chore(rebase): capture incorporated upstream"],
-          {
-            env: {
-              GIT_AUTHOR_NAME: "Clement Liaw",
-              GIT_AUTHOR_EMAIL: SIGNING_EMAIL,
-              GIT_COMMITTER_NAME: "Clement Liaw",
-              GIT_COMMITTER_EMAIL: SIGNING_EMAIL,
-            },
-          },
-        )
-      ).trim();
-      await gitChecked(repositoryPath, ["reset", "--hard", unsigned]);
-      provenanceCommits = await signRebasedCommits(
-        repositoryPath,
-        parent,
-        [unsigned],
+      provenanceCommits = await commitSignedFile(repositoryPath, {
+        path: FORK_CONFIG_PATH,
+        contents: `${JSON.stringify({ ...before.config, upstreamBase: snapshots.upstream }, null, 2)}\n`,
+        message: "chore(rebase): capture incorporated upstream",
         signingKey,
         publicKey,
-      );
+      });
+    }
+    // release-please finds the last release by walking dev for its tagged commit,
+    // which the replay just rewrote. Point it at the rewritten copy instead.
+    let boundaryCommits = 0;
+    const releaseConfig = JSON.parse(
+      await readFile(join(repositoryPath, RELEASE_PLEASE_CONFIG_PATH), "utf8").catch((error) => {
+        if (error.code === "ENOENT") return "{}";
+        throw error;
+      }),
+    );
+    const boundary = releaseBoundary(originalCommits, rebasedCommits, [
+      ...(await releaseTagCommits(repositoryPath, remote)),
+      releaseConfig["last-release-sha"],
+    ]);
+    if (
+      boundary &&
+      boundary.rewritten !== boundary.original &&
+      boundary.rewritten !== releaseConfig["last-release-sha"]
+    ) {
+      boundaryCommits = await commitSignedFile(repositoryPath, {
+        path: RELEASE_PLEASE_CONFIG_PATH,
+        contents: `${JSON.stringify({ ...releaseConfig, "last-release-sha": boundary.rewritten }, null, 2)}\n`,
+        message: "chore(rebase): point release-please at the rebased release",
+        signingKey,
+        publicKey,
+      });
     }
     assertForkReleasePreserved(before, await readRelease(), snapshots.upstream);
     await writeDiagnostics(
@@ -848,7 +910,7 @@ export async function rebaseDev({
       "Rebase completed; this snapshot will aid diagnosis if a later validation or publication step fails.",
       repositoryPath,
     );
-    return { ...snapshots, signedCommits, provenanceCommits };
+    return { ...snapshots, signedCommits, provenanceCommits, boundaryCommits };
   } catch (error) {
     await writeDiagnostics(diagnosticsPath, snapshots, error.message, repositoryPath);
     throw error;

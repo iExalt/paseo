@@ -5,9 +5,11 @@
   "include-component-in-tag": true,
   "include-v-in-tag": true,
   "tag-separator": "-",
-  "skip-github-release": true,
-  "pull-request-header": "Proposed independent fork release.",
-  "pull-request-footer": "Merging publishes nothing; dispatch the Release workflow with publish=true right after merging.",
+  "draft": true,
+  "force-tag-creation": true,
+  "pull-request-title-pattern": "chore${scope}: release ${version}",
+  "pull-request-header": "Proposed fork release.",
+  "pull-request-footer": "Merging tags the release; the Release workflow then builds and publishes it.",
   "packages": {
     ".": {
       "release-type": "node",

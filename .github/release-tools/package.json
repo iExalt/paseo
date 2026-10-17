@@ -1,8 +1,0 @@
-{
-  "name": "paseo-release-tools",
-  "version": "1.0.0",
-  "private": true,
-  "dependencies": {
-    "release-please": "17.6.0"
-  }
-}
