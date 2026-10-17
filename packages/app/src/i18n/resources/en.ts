@@ -2032,6 +2032,8 @@ export const en = {
     archiveTooltip: "Archive subagent",
     archiveFinishedAction: "Archive finished subagents",
     archiveFinishedRetry: "Retry ({{failed}}/{{total}})",
+    showFinished: "Show {{count}} finished",
+    hideFinished: "Hide finished",
   },
   panels: {
     draft: {

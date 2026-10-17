@@ -1996,6 +1996,8 @@ export const ptBR: TranslationResources = {
     archiveTooltip: "Arquivar subagente",
     archiveFinishedAction: "Arquivar subagentes concluídos",
     archiveFinishedRetry: "Tentar novamente ({{failed}}/{{total}})",
+    showFinished: "Mostrar {{count}} concluídos",
+    hideFinished: "Ocultar concluídos",
   },
   panels: {
     draft: {
