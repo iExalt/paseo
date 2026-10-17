@@ -92,15 +92,14 @@ describe("desktop packaging", () => {
       "utf8",
     );
     const format = nixPackage.match(
-      /printf '([^']*)'\s*\\\s*"\$version" \$\{lib\.escapeShellArg buildVersion\}/,
+      /printf '([^']*)'\s*\\\s*"\$version" \$\{lib\.escapeShellArg buildVersion\} "\$out"/,
     )?.[1];
     expect(format).toBeDefined();
 
+    const outputPath = `/nix/store/${"a".repeat(32)}-paseo-desktop-0.11.0`;
     const markerBytes = Buffer.from(
-      execFileSync("printf", [format!, "0.11.0", "1.2.3.4"], { encoding: "utf8" }),
+      execFileSync("printf", [format!, "0.11.0", "1.2.3.4", outputPath], { encoding: "utf8" }),
     );
-    const marker = JSON.parse(markerBytes.toString("utf8"));
-    const outputPath = `/nix/store/${"a".repeat(32)}-paseo-desktop-${marker.packageVersion}`;
     const resourcesPath = `${outputPath}/Applications/Paseo.app/Contents/Resources`;
     const cliPath = `${outputPath}/bin/paseo-nix-update`;
     const installation = resolveDesktopInstallation(resourcesPath, {
@@ -118,6 +117,7 @@ describe("desktop packaging", () => {
         managedBy: "nix",
         packageVersion: "0.11.0",
         buildVersion: "1.2.3.4",
+        outputPath,
       },
     });
   });
