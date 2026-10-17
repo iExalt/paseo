@@ -7,6 +7,10 @@ export const ko: TranslationResources = {
     empty: "결과 없음",
     failed: "검색 실패: {{message}}",
   },
+  nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "이 채팅을 검색할 수 없습니다. 호스트 연결을 확인하고 다시 시도하세요.",
     historyChangedFailure: "검색 중에 채팅이 변경되었습니다. 다시 검색하세요.",
@@ -338,6 +342,8 @@ export const ko: TranslationResources = {
     actions: {
       copyCode: "코드 복사",
       copyTurn: "턴 복사",
+      selectText: "텍스트 선택",
+      selectTextTruncated: "처음 50,000자를 표시합니다. 턴 복사는 전체를 복사합니다.",
       copyMessage: "메시지 복사",
       forkMenu: "여기에서 채팅 분기",
       forkInNewTab: "새 탭으로 분기",
@@ -2352,7 +2358,7 @@ export const ko: TranslationResources = {
     editor: {
       title: "편집기",
       vimKeybindings: "Vim 키 바인딩",
-      vimHint: "웹 및 데스크톱의 소스 파일에 적용됩니다.",
+      vimHint: "편집기의 소스 파일에 적용됩니다.",
     },
     files: {
       title: "파일",
@@ -2699,7 +2705,6 @@ export const ko: TranslationResources = {
     shortcuts: {
       dialogTitle: "단축키",
       searchPlaceholder: "검색 단축키",
-      unavailableOnMobile: "키보드 단축키는 데스크톱에서만 사용할 수 있습니다",
       capturePrompt: "단축키를 누르세요...",
       captureIndexPrompt: "마지막에 1부터 9까지의 숫자를 입력하세요.",
       unassigned: "설정되지 않음",

@@ -83,3 +83,30 @@ export function createActivePromptPublisher(): ActivePromptPublisher {
     },
   };
 }
+
+/**
+ * The prompt under a finger at `y` on a rail `height` tall. Slots keep their height until
+ * the rail runs out of room and are centred, so the band they fill is mapped, clamped to
+ * the first and last prompt.
+ */
+export function railIndexAt(input: {
+  y: number;
+  height: number;
+  count: number;
+  slotHeight: number;
+}): number {
+  const band = Math.min(input.count * input.slotHeight, input.height);
+  if (input.count === 0 || band <= 0) return 0;
+  const offset = (input.height - band) / 2;
+  const index = Math.floor(((input.y - offset) / band) * input.count);
+  return Math.max(0, Math.min(input.count - 1, index));
+}
+
+/** The outline needs a host that indexes prompts, the setting, and a wide layout. */
+export function chatOutlineAvailable(input: {
+  supported: boolean;
+  enabled: boolean;
+  isCompact: boolean;
+}): boolean {
+  return input.supported && input.enabled && !input.isCompact;
+}

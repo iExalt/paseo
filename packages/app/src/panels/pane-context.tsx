@@ -22,6 +22,8 @@ export interface PaneContextValue {
   setCurrentTabState: (state: JsonValue) => void;
   openFileInWorkspace: (request: WorkspaceFileOpenRequest) => void;
   openImportSheet: () => void;
+  /** Opens a URL in a new browser tab; absent where browser tabs are unavailable. */
+  openUrlInBrowserTab?: (url: string) => void;
 }
 
 export interface PaneFocusContextValue {

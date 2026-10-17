@@ -14,7 +14,6 @@ const runtime = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("@/constants/platform", () => ({ isWeb: true }));
 vi.mock("@/runtime/host-runtime", () => ({
   getHostRuntimeStore: () => ({
     getClient: () => runtime,

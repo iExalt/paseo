@@ -16,6 +16,7 @@ import {
 } from "../../../modules/paseo-terminal";
 import {
   createTerminalCellStyleResolver,
+  parseTerminalColor,
   DEFAULT_TERMINAL_THEME,
   NATIVE_TERMINAL_SELECTION_COLORS,
 } from "./colors";
@@ -25,6 +26,7 @@ import {
   resolveTerminalGridMetricsMeasurement,
   type TerminalGridCellMetrics,
 } from "./terminal-grid-metrics";
+import type { TerminalFindMatch } from "./terminal-buffer-search";
 import { buildTerminalFrame } from "./terminal-frame";
 import type { TerminalSelectionRange } from "./terminal-selection";
 
@@ -37,6 +39,8 @@ export interface TerminalGridViewProps {
   fontSize?: number;
   style?: StyleProp<ViewStyle>;
   selection?: TerminalSelectionRange | null;
+  /** Find matches in absolute rows; only those on screen need passing. */
+  find?: { matches: readonly TerminalFindMatch[]; current: TerminalFindMatch | null } | null;
   onCellMetricsChange?: (metrics: TerminalGridCellMetrics) => void;
 }
 
@@ -61,6 +65,7 @@ export function TerminalGridView({
   fontSize = DEFAULT_FONT_SIZE,
   style,
   selection = null,
+  find = null,
   onCellMetricsChange,
 }: TerminalGridViewProps) {
   const { fontScale } = useWindowDimensions();
@@ -81,10 +86,38 @@ export function TerminalGridView({
     [resolver],
   );
   const columns = resolveVisibleCols({ viewportWidth, cellWidth, gridCols: state.cols });
-  const frame = useMemo(
-    () => buildTerminalFrame({ state, columns, resolver, selection }),
-    [columns, resolver, selection, state],
-  );
+  const frame = useMemo(() => {
+    if (!find) return buildTerminalFrame({ state, columns, resolver, selection });
+    const highlights = new Map<object, number>();
+    const mark = (match: TerminalFindMatch, color: number) => {
+      const first = Math.max(match.startRow, state.firstRow);
+      const last = Math.min(match.endRow, state.firstRow + state.grid.length - 1);
+      for (let row = first; row <= last; row += 1) {
+        const cells = state.grid[row - state.firstRow]!;
+        const start = row === match.startRow ? match.startCol : 0;
+        const end = row === match.endRow ? match.endCol : columns;
+        for (let col = 0; col < Math.min(columns, cells.length); col += 1) {
+          const cell = cells[col]!;
+          if (col < end && col + Math.max(1, cell.width ?? 1) > start) highlights.set(cell, color);
+        }
+      }
+    };
+    const matchColor = parseTerminalColor(xtermTheme.yellow, 0xffb58900);
+    const currentColor = parseTerminalColor(xtermTheme.blue, 0xff268bd2);
+    for (const match of find.matches) mark(match, matchColor);
+    if (find.current) mark(find.current, currentColor);
+    const findResolver = {
+      ...resolver,
+      resolve: (cell: Parameters<typeof resolver.resolve>[0]) => {
+        const style = resolver.resolve(cell);
+        const background = highlights.get(cell);
+        return background === undefined ? style : {
+          ...style, background, foreground: resolver.backgroundColor,
+        };
+      },
+    };
+    return buildTerminalFrame({ state, columns, resolver: findResolver, selection });
+  }, [columns, find, resolver, selection, state, xtermTheme]);
 
   const handleCellMetrics = useCallback(
     (metrics: PaseoTerminalCellMetrics) => {

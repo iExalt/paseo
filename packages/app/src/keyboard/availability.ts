@@ -7,3 +7,6 @@ export function useHardwareKeyboardPresent(): boolean {
     () => false,
   );
 }
+
+/** Settings follow the shared observed keyboard capability. */
+export const useKeyboardShortcutsAvailable = useHardwareKeyboardPresent;

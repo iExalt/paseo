@@ -7,6 +7,10 @@ export const ja: TranslationResources = {
     empty: "結果がありません",
     failed: "検索に失敗しました: {{message}}",
   },
+  nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "このチャットを検索できませんでした。ホストへの接続を確認して再試行してください。",
@@ -342,6 +346,9 @@ export const ja: TranslationResources = {
     actions: {
       copyCode: "コードをコピー",
       copyTurn: "ターンをコピー",
+      selectText: "テキストを選択",
+      selectTextTruncated:
+        "最初の50,000文字を表示しています。ターンをコピーですべてコピーされます。",
       copyMessage: "メッセージをコピー",
       forkMenu: "メッセージをフォーク",
       forkInNewTab: "新しいタブにフォーク",
@@ -2364,7 +2371,7 @@ export const ja: TranslationResources = {
     editor: {
       title: "エディター",
       vimKeybindings: "Vim キーバインド",
-      vimHint: "Web とデスクトップのソースファイルに適用されます。",
+      vimHint: "エディターのソースファイルに適用されます。",
     },
     files: {
       title: "ファイル",
@@ -2710,7 +2717,6 @@ export const ja: TranslationResources = {
     shortcuts: {
       dialogTitle: "ショートカット",
       searchPlaceholder: "ショートカットを検索",
-      unavailableOnMobile: "キーボードショートカットはデスクトップでのみ利用できます",
       capturePrompt: "ショートカットを押してください...",
       captureIndexPrompt: "最後に1〜9の数字を入力してください。",
       unassigned: "未設定",

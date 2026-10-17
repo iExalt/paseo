@@ -1,4 +1,5 @@
 import MarkdownIt from "markdown-it";
+import { countMatches, searchableBlocks, searchPattern } from "@getpaseo/protocol/chat-search-text";
 import { setImmediate } from "node:timers/promises";
 import type { AgentTimelineRow } from "../agent-timeline-store-types.js";
 import { projectTimelineRows } from "../timeline-projection.js";
@@ -18,44 +19,7 @@ interface SearchInput {
 
 // Discovery is deliberately approximate. Only the client can verify displayed text, so
 // `count` estimates rendered occurrences and the client replaces it with the rendered
-// count once the message is on screen. Blocks are counted separately, and the Markdown
-// source is never searched whole, because a match the client cannot highlight — across
-// a block boundary, or on syntax the reader never sees — still inflates the total until
-// navigation reaches that message and drops it.
-function searchableBlocks(text: string): string[] {
-  return markdown
-    .parse(text, {})
-    .map((token) => {
-      if (token.type === "inline") {
-        return (token.children ?? [])
-          .map((child) => {
-            if (child.type === "text" || child.type === "code_inline") return child.content;
-            if (child.type === "softbreak" || child.type === "hardbreak") return "\n";
-            return "";
-          })
-          .join("");
-      }
-      if (token.type === "fence" || token.type === "code_block") return token.content;
-      return "";
-    })
-    .filter(Boolean);
-}
-
-function searchPattern(query: string): RegExp {
-  const source = query
-    .trim()
-    .split(/\s+/)
-    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .join("\\s+");
-  return new RegExp(source, "giu");
-}
-
-function countMatches(text: string, pattern: RegExp): number {
-  let count = 0;
-  for (const _ of text.matchAll(pattern)) count += 1;
-  return count;
-}
-
+// count once the message is on screen.
 export async function searchTimeline({ rows, query, cursor = 0 }: SearchInput) {
   const locations: SearchLocation[] = [];
   if (!query.trim()) return { locations, nextCursor: null };
@@ -66,7 +30,8 @@ export async function searchTimeline({ rows, query, cursor = 0 }: SearchInput) {
     const item = entry.item;
     if (item.type !== "user_message" && item.type !== "assistant_message") continue;
     const raw = item.text.replace(/\r/g, "");
-    const blocks = item.type === "assistant_message" ? searchableBlocks(raw) : [raw];
+    const blocks =
+      item.type === "assistant_message" ? searchableBlocks(markdown.parse(raw, {})) : [raw];
     const count = blocks.reduce((sum, block) => sum + countMatches(block, pattern), 0);
     if (count) {
       if (locations.length === PAGE_SIZE) {

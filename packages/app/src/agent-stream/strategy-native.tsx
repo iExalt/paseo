@@ -33,6 +33,10 @@ import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
+import { ChatFindRowFrame } from "./chat-find/row-frame";
+import { getStreamItemMessageId } from "./presentation";
+import { scrollOffsetForDelta } from "@/find-highlight/reveal";
+import { messageStartIndex } from "./message-start-index";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
 import {
@@ -454,6 +458,33 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     };
   }, [clearPendingUserScrollEnd, disposeHistoryStart, evaluateHistoryStart]);
 
+  const holdReadingPosition = useStableEvent(() => {
+    cancelDisclosureHold();
+    bottomAnchorController.detachByUser();
+  });
+  const jumpToRow = useStableEvent((index: number, animated: boolean) => {
+    if (index < 0) return;
+    holdReadingPosition();
+    onNearBottomChange(false);
+    programmaticScrollEventBudgetRef.current = 3;
+    listRef.current?.scrollToIndex({ index, viewPosition: 0, animated });
+  });
+  const scrollToMessage = useStableEvent((messageId: string) =>
+    jumpToRow(messageStartIndex(rows, messageId), true),
+  );
+  const scrollToItem = useStableEvent((itemId: string) =>
+    jumpToRow(rows.findIndex((row) => row.id === itemId), false),
+  );
+  const scrollByWindowDelta = useStableEvent((delta: number) => {
+    holdReadingPosition();
+    onNearBottomChange(false);
+    programmaticScrollEventBudgetRef.current = 3;
+    listRef.current?.scrollToOffset({
+      offset: scrollOffsetForDelta(scrollOffsetYRef.current, delta, false),
+      animated: false,
+    });
+  });
+
   useEffect(() => {
     const handle: StreamViewportHandle = {
       scrollToBottom: (reason = "jump-to-bottom") => {
@@ -466,6 +497,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
       },
       holdRow,
+      holdReadingPosition,
+      scrollToMessage,
+      scrollToItem,
+      scrollByWindowDelta,
     };
     viewportRef.current = handle;
     return () => {
@@ -473,7 +508,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [agentId, bottomAnchorController, holdRow, viewportRef]);
+  }, [agentId, bottomAnchorController, holdRow, holdReadingPosition, scrollToMessage, scrollToItem, scrollByWindowDelta, viewportRef]);
 
   // The scroll-to-bottom button shows whenever following would not resume on its own. A detached
   // list resumes only from the end, so the button shows anywhere short of it. While following, the
@@ -696,13 +731,18 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   // reply gaining its completed footer when the next prompt arrives) and keeps its row's item.
   // StreamRow's memo limits that pass to the rows whose layout item changed.
   const renderItem = useStableEvent(
-    ({ item, index }: LegendListRenderItemProps<StreamItem>): ReactElement => (
-      <RowLayoutSync rowId={item.id} registry={rowLayoutSyncRegistry}>
-        {liveRowIds.has(item.id)
-          ? renderLiveHeadRow(item, index - historyRows.length, segments.liveHead)
-          : renderHistoryMountedRow(item, index, historyItems)}
-      </RowLayoutSync>
-    ),
+    ({ item, index }: LegendListRenderItemProps<StreamItem>): ReactElement => {
+      const rendered = liveRowIds.has(item.id)
+        ? renderLiveHeadRow(item, index - historyRows.length, segments.liveHead)
+        : renderHistoryMountedRow(item, index, historyItems);
+      return (
+        <RowLayoutSync rowId={item.id} registry={rowLayoutSyncRegistry}>
+          {rendered && (item.kind === "user_message" || item.kind === "assistant_message") ? (
+            <ChatFindRowFrame messageId={getStreamItemMessageId(item)}>{rendered}</ChatFindRowFrame>
+          ) : rendered}
+        </RowLayoutSync>
+      );
+    },
   );
 
   const liveAuxiliaryContent = useMemo(() => {

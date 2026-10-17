@@ -4,7 +4,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { getLanguageForFile } from "@getpaseo/highlight";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
-import type { EditorVisualTheme } from "../editor/extensions.web";
+import type { EditorVisualTheme } from "../editor/visual-theme";
 import { editorTheme } from "../editor/extensions.web";
 import { FilePanelLoading } from "../../loading";
 import type { SourcePresentation } from "./presentation";

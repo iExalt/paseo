@@ -83,6 +83,7 @@ interface ShortcutRowContainerProps {
   displayChord: ShortcutKey[][] | null;
   hasOverride: boolean;
   hasDefault: boolean;
+  isEditable: boolean;
   isCapturing: boolean;
   capturedCombos: string[];
   heldModifiers: string | null;
@@ -99,6 +100,7 @@ function ShortcutRowContainer({
   displayChord,
   hasOverride,
   hasDefault,
+  isEditable,
   isCapturing,
   capturedCombos,
   heldModifiers,
@@ -127,6 +129,7 @@ function ShortcutRowContainer({
       displayChord={displayChord}
       hasOverride={hasOverride}
       hasDefault={hasDefault}
+      isEditable={isEditable}
       isCapturing={isCapturing}
       capturedCombos={capturedCombos}
       heldModifiers={heldModifiers}
@@ -245,6 +248,7 @@ function ShortcutRow({
   displayChord,
   hasOverride,
   hasDefault,
+  isEditable,
   isCapturing,
   capturedCombos,
   heldModifiers,
@@ -259,6 +263,7 @@ function ShortcutRow({
   displayChord: ShortcutKey[][] | null;
   hasOverride: boolean;
   hasDefault: boolean;
+  isEditable: boolean;
   isCapturing: boolean;
   capturedCombos: string[];
   heldModifiers: string | null;
@@ -271,7 +276,7 @@ function ShortcutRow({
   const { t } = useTranslation();
   const rowStyle = useMemo(() => [styles.row, isCapturing && styles.rowCapturing], [isCapturing]);
 
-  const isBindable = bindingId !== null;
+  const isBindable = isEditable && bindingId !== null;
   const showDone = isCapturing && capturedCombos.length > 0;
   const captureComplete =
     bindingId !== null && isShortcutCaptureComplete(bindingId, capturedCombos);
@@ -469,6 +474,8 @@ export function KeyboardShortcutsSection() {
                       displayChord={displayChord}
                       hasOverride={hasOverride}
                       hasDefault={hasDefault}
+                      // Capture reads DOM key events; native shows the bindings read-only.
+                      isEditable={!isNative}
                       isCapturing={capturingBindingId === bindingId}
                       capturedCombos={
                         capturingBindingId === bindingId ? capturedCombos : EMPTY_CAPTURED_COMBOS

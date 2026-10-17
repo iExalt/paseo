@@ -7,6 +7,10 @@ export const fr: TranslationResources = {
     empty: "Aucun résultat",
     failed: "Échec de la recherche : {{message}}",
   },
+  nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "Impossible de rechercher dans cette conversation. Vérifiez la connexion à l’hôte et réessayez.",
@@ -342,6 +346,8 @@ export const fr: TranslationResources = {
     actions: {
       copyCode: "Copier le code",
       copyTurn: "Copier l’échange",
+      selectText: "Sélectionner le texte",
+      selectTextTruncated: "Affichage des 50 000 premiers caractères. Copier l’échange copie tout.",
       copyMessage: "Copier le message",
       forkMenu: "Forker la conversation à partir d’ici",
       forkInNewTab: "Forker dans un nouvel onglet",
@@ -2391,7 +2397,7 @@ export const fr: TranslationResources = {
     editor: {
       title: "Éditeur",
       vimKeybindings: "Raccourcis Vim",
-      vimHint: "S’applique aux fichiers source dans l’app web et l’app de bureau.",
+      vimHint: "S’applique aux fichiers source dans l’éditeur.",
     },
     files: {
       title: "Fichiers",
@@ -2746,7 +2752,6 @@ export const fr: TranslationResources = {
     shortcuts: {
       dialogTitle: "Raccourcis",
       searchPlaceholder: "Rechercher des raccourcis",
-      unavailableOnMobile: "Les raccourcis clavier ne sont disponibles que sur l’app de bureau",
       capturePrompt: "Appuyez sur le raccourci…",
       captureIndexPrompt: "Terminez par un chiffre de 1 à 9.",
       unassigned: "Non attribué",

@@ -1,3 +1,4 @@
+import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import {
   Platform,
@@ -299,13 +300,20 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       [blurNativeInput, focusNativeInput, showNativeKeyboard],
     );
 
+    const releaseTypingScopeRef = useRef<(() => void) | null>(null);
+    useEffect(() => () => releaseTypingScopeRef.current?.(), []);
+
     const handleFocus = useCallback(() => {
       isFocusedRef.current = true;
+      releaseTypingScopeRef.current?.();
+      releaseTypingScopeRef.current = claimNativeTypingScope("terminal");
       onFocus?.();
     }, [onFocus]);
 
     const handleBlur = useCallback(() => {
       isFocusedRef.current = false;
+      releaseTypingScopeRef.current?.();
+      releaseTypingScopeRef.current = null;
       resetNativeInput();
     }, [resetNativeInput]);
 

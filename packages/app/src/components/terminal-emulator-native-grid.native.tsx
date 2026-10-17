@@ -61,7 +61,14 @@ import {
   type NativeTerminalSizeClaimAction,
 } from "../terminal/native-renderer/terminal-input-resize-policy";
 import { encodeTerminalPaste } from "../terminal/runtime/terminal-paste";
-import type { TerminalOutputData } from "../terminal/runtime/terminal-emulator-runtime";
+import type {
+  TerminalFindHandle,
+  TerminalOutputData,
+} from "../terminal/runtime/terminal-emulator-runtime";
+import {
+  createTerminalFindController,
+  type TerminalFindState,
+} from "../terminal/native-renderer/terminal-find-controller";
 import {
   createTerminalResizePolicy,
   updateTerminalResizePolicy,
@@ -80,6 +87,8 @@ const DEFAULT_XTERM_THEME: ITheme = {
   foreground: "#e6e6e6",
   cursor: "#e6e6e6",
 };
+const FIND_DEBOUNCE_MS = 150;
+
 function initialNativeTerminalSize(): TerminalMeasuredSize {
   return { rows: MIN_NATIVE_TERMINAL_ROWS, cols: MIN_NATIVE_TERMINAL_COLS };
 }
@@ -102,6 +111,7 @@ function NativeTerminalEmulator({
   onSelectionChange,
   onRendererReadyChange,
   onFocus,
+  onFindResult,
   focusRequestToken = 0,
   resizeRequestToken = 0,
 }: TerminalEmulatorProps) {
@@ -151,6 +161,7 @@ function NativeTerminalEmulator({
     onSelectionChange,
     onRendererReadyChange,
     onResize,
+    onFindResult,
   });
   callbacksRef.current = {
     onFocus,
@@ -160,7 +171,14 @@ function NativeTerminalEmulator({
     onSelectionChange,
     onRendererReadyChange,
     onResize,
+    onFindResult,
   };
+  // Bumped on every write so find rescans only after output changed the buffer.
+  const writeRevisionRef = useRef(0);
+  const findControllerRef = useRef<ReturnType<typeof createTerminalFindController> | null>(null);
+  const findBarHeightRef = useRef(0);
+  const findDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [findState, setFindState] = useState<TerminalFindState | null>(null);
 
   const getInputModeState = useCallback((): TerminalInputModeState => {
     return inputModeTrackerRef.current.getState();
@@ -272,6 +290,7 @@ function NativeTerminalEmulator({
         write: async (chunk) => {
           inputModeTrackerRef.current.feed(chunk);
           await terminal.write(chunk);
+          writeRevisionRef.current += 1;
           emitInputModeChange();
         },
         restoreSize: () => terminal.resize(terminalSizeRef.current),
@@ -279,6 +298,7 @@ function NativeTerminalEmulator({
           inputModeTrackerRef.current.reset();
           if (size) terminal.resize(size);
           terminal.reset();
+          writeRevisionRef.current += 1;
           emitInputModeChange();
         },
         getViewportState: () => {
@@ -374,6 +394,12 @@ function NativeTerminalEmulator({
       characterWidths,
     });
     terminalRef.current = terminal;
+    findControllerRef.current = createTerminalFindController({
+      search: (query) => terminal.search(query),
+      revision: () => writeRevisionRef.current,
+      coordinateEpoch: () => terminal.getBufferBounds().coordinateEpoch,
+    });
+    setFindState(null);
     screenModelRef.current = createNativeTerminalScreenModel({ terminal });
     const outputDrain = createOutputDrain(terminal);
     outputDrainRef.current = outputDrain;
@@ -397,6 +423,76 @@ function NativeTerminalEmulator({
     outputDrainRef.current?.enqueueText(text);
   }, []);
 
+  // Shows a find result: centres the current match in the rows above the find bar and
+  // reports the position the bar displays.
+  const showFindState = useCallback(
+    (state: TerminalFindState) => {
+      setFindState(state);
+      const terminal = terminalRef.current;
+      const model = screenModelRef.current;
+      const match = state.matches[state.current];
+      if (terminal && model && match) {
+        const cellHeight = metricsRef.current?.cellHeight ?? 0;
+        const coveredRows = cellHeight > 0 ? Math.ceil(findBarHeightRef.current / cellHeight) : 0;
+        commitTerminalScreen(
+          model.scrollToRow({
+            visibleRows: resolveVisibleRows(terminal),
+            row: match.startRow,
+            coveredRows,
+          }),
+        );
+      }
+      callbacksRef.current.onFindResult?.({
+        resultIndex: state.current,
+        resultCount: state.matches.length,
+        limited: state.limited,
+        placement: "bottom",
+      });
+    },
+    [commitTerminalScreen, resolveVisibleRows],
+  );
+
+  const find = useMemo<TerminalFindHandle>(
+    () => ({
+      setWidgetSize: (size) => {
+        findBarHeightRef.current = size.height;
+      },
+      search: (query, direction) => {
+        const controller = findControllerRef.current;
+        if (!controller) return;
+        if (findDebounceRef.current) clearTimeout(findDebounceRef.current);
+        if (direction) {
+          showFindState(controller.step(direction === "next" ? 1 : -1));
+          return;
+        }
+        findDebounceRef.current = setTimeout(() => {
+          findDebounceRef.current = null;
+          const firstRow = terminalScreenRef.current?.viewport.firstRow ?? 0;
+          showFindState(controller.search(query, firstRow));
+        }, FIND_DEBOUNCE_MS);
+      },
+      clear: () => {
+        if (findDebounceRef.current) clearTimeout(findDebounceRef.current);
+        findDebounceRef.current = null;
+        findControllerRef.current?.clear();
+        setFindState(null);
+        callbacksRef.current.onFindResult?.({
+          resultIndex: -1,
+          resultCount: 0,
+          limited: false,
+          placement: "bottom",
+        });
+      },
+    }),
+    [showFindState],
+  );
+  useEffect(
+    () => () => {
+      if (findDebounceRef.current) clearTimeout(findDebounceRef.current);
+    },
+    [],
+  );
+
   const claimActiveTerminalSize = useCallback(() => {
     activeResizeClaimTokenRef.current += 1;
     emitMeasuredSize({ source: "claim", claimToken: activeResizeClaimTokenRef.current });
@@ -414,6 +510,7 @@ function NativeTerminalEmulator({
   useImperativeHandle(
     ref,
     (): TerminalEmulatorHandle => ({
+      find,
       writeOutput: (data: TerminalOutputData) => {
         const text = outputDecoderRef.current.decode(data, { stream: true });
         enqueueOutputText(text);
@@ -462,6 +559,7 @@ function NativeTerminalEmulator({
       },
     }),
     [
+      find,
       enqueueOutputText,
       claimActiveTerminalSize,
       claimActiveTerminalSizeForAction,
@@ -695,6 +793,17 @@ function NativeTerminalEmulator({
   );
 
   const terminalState = terminalScreen?.viewport ?? null;
+  const visibleFind = useMemo(() => {
+    if (!findState || !terminalState || findState.matches.length === 0) return null;
+    const firstRow = terminalState.firstRow;
+    const lastRow = firstRow + terminalState.grid.length - 1;
+    return {
+      matches: findState.matches.filter(
+        (match) => match.endRow >= firstRow && match.startRow <= lastRow,
+      ),
+      current: findState.matches[findState.current] ?? null,
+    };
+  }, [findState, terminalState]);
   const isScrolled = terminalScreen?.scroll.mode === "scrolled";
   const viewport = resolveSelectionViewport();
   const handles =
@@ -709,6 +818,7 @@ function NativeTerminalEmulator({
       fontSize={fontSize}
       style={styles.nativeGrid}
       selection={selectionRange}
+      find={visibleFind}
       onCellMetricsChange={handleCellMetricsChange}
     />
   ) : null;
