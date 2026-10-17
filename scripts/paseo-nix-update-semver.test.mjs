@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, createHash } from "node:crypto";
 import {
   chmod,
+  cp,
   lstat,
   mkdir,
   mkdtemp,
@@ -318,7 +319,13 @@ test("installed app copy replaces a profile link, preserves links, and never lea
     await symlink(source, destination);
     await mkdir(join(applications, ".Paseo.app.staging-crashed"));
 
-    await installAppCopy(source, destination);
+    // ditto exists only on macOS; CI runs this on Linux.
+    const portableCopy = (from, to) => cp(from, to, { recursive: true, verbatimSymlinks: true });
+    await installAppCopy(
+      source,
+      destination,
+      process.platform === "darwin" ? undefined : { copy: portableCopy },
+    );
     assert.deepEqual(await inspectInstalledApp(destination), {
       kind: "directory",
       managed: true,
