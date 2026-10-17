@@ -12,10 +12,17 @@ fail() {
   return 1
 }
 
+# Trusted builds are iExalt's runs on dev and the release workflow's paseo-v* tag
+# push, which release-please makes as its app rather than as iExalt.
 require_github_linux_context() {
+  local trusted_ref=false
+  if [[ "${GITHUB_REF:-}" == refs/heads/dev && "${GITHUB_ACTOR:-}" == iExalt ]]; then
+    trusted_ref=true
+  elif [[ "${GITHUB_EVENT_NAME:-}" == push && "${GITHUB_REF:-}" == refs/tags/paseo-v* ]]; then
+    trusted_ref=true
+  fi
   if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_OS:-}" != Linux || \
-    "${GITHUB_REPOSITORY:-}" != iExalt/paseo || "${GITHUB_REF:-}" != refs/heads/dev || \
-    "${GITHUB_ACTOR:-}" != iExalt ]]; then
+    "${GITHUB_REPOSITORY:-}" != iExalt/paseo || "$trusted_ref" != true ]]; then
     fail "Runner swap is restricted to the trusted Paseo GitHub Linux build."
   fi
 }
