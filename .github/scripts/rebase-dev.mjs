@@ -40,9 +40,14 @@ const WEB_FLOW_EMAIL = "noreply@github.com";
 const SIGNING_PUBLIC_KEY =
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEScQeKzAdwWjNsrJ7xQNq2BAKGSkXP6FPbBD7PZrM9J";
 
+// Commits and rebases start detached auto-maintenance, whose rerere-gc task takes
+// MERGE_RR.lock and races the next pick's rerere, failing it with "Unable to create
+// MERGE_RR.lock: File exists".
+const NO_AUTO_MAINTENANCE = ["-c", "maintenance.auto=false"];
+
 async function git(repositoryPath, args, options = {}) {
   try {
-    const result = await execFileAsync("git", args, {
+    const result = await execFileAsync("git", [...NO_AUTO_MAINTENANCE, ...args], {
       cwd: repositoryPath,
       encoding: "utf8",
       env: { ...process.env, LC_ALL: "C", ...options.env },
