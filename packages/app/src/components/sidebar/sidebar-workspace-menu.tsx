@@ -36,6 +36,7 @@ import { Shortcut } from "@/components/ui/shortcut";
 import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
 import { resolveSidebarWorkspaceAccessibilityLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { WorkspaceNotificationsMenuItem } from "@/workspace-notifications/menu-item";
+import { CopyProviderSessionIdMenuItem } from "@/workspace/copy-provider-session-id/menu-item";
 import {
   workspaceServiceLabelKey,
   type WorkspaceServiceSummary,
@@ -178,6 +179,14 @@ function SidebarWorkspaceMenuItems({
         >
           {t("sidebar.workspace.actions.copyBranchName")}
         </WorkspaceMenuItem>
+      ) : null}
+      {serverId && workspaceId ? (
+        <CopyProviderSessionIdMenuItem
+          serverId={serverId}
+          workspaceId={workspaceId}
+          testID={`sidebar-workspace-menu-copy-provider-session-id-${workspaceKey}`}
+          leading={copyLeadingIcon}
+        />
       ) : null}
       {onRename ? (
         <WorkspaceMenuItem
