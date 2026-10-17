@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from "react";
+import { View } from "react-native";
 import { EnrichedMarkdownText, type LinkPressEvent } from "react-native-enriched-markdown";
 import { withUnistyles } from "react-native-unistyles";
 import {
@@ -6,6 +7,7 @@ import {
   useAssistantFileLinkEnvironment,
 } from "@/assistant-file-links";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { useChatFindAnchorView } from "@/agent-stream/chat-find/anchor";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
 import { isWeb } from "@/constants/platform";
@@ -17,9 +19,13 @@ import { splitStreamingMarkdown } from "./streaming";
 import { useMarkdownSource, type MarkdownImageContext } from "./images";
 
 import { MermaidFence, MermaidStreamingContext, splitMermaidFences } from "./fence/mermaid";
+import { FindCodeBlock } from "./find";
+import { splitMarkdownForFind, type MarkdownFind } from "./find-split";
 
 const ThemedMarkdown = withUnistyles(EnrichedMarkdownText);
 const MD4C_FLAGS = { latexMath: false, hardSoftBreaks: true, admonitions: true };
+// Only a part carrying chat find's mark parses `==`; elsewhere it stays literal text.
+const FIND_MD4C_FLAGS = { ...MD4C_FLAGS, highlight: true };
 
 const regularStyle = (theme: Theme) => createMarkdownStyles(theme);
 const compactStyle = (theme: Theme) => createMarkdownStyles(theme, true);
@@ -30,6 +36,8 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
   compact?: boolean;
   streaming?: boolean;
   onLinkPress?: (url: string) => unknown;
+  /** Native chat find's selected occurrence; ignored while streaming. */
+  find?: MarkdownFind | null;
 }
 
 /** All Markdown surfaces share the same engine and source adaptation. */
@@ -41,6 +49,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
     () => splitStreamingMarkdown(completeLines, true).head.length,
     [completeLines],
   );
+  if (props.find && !streaming) return <MarkdownFindParts {...props} find={props.find} />;
   if (!streaming || boundary === 0) return <MarkdownPart {...props} />;
   return (
     <>
@@ -50,14 +59,39 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
   );
 });
 
+/**
+ * Draws the block holding chat find's occurrence apart from the rest, so reveal can
+ * measure it: Markdown with the occurrence highlighted, or a code block that marks it.
+ */
+function MarkdownFindParts({ find, ...props }: MarkdownRendererProps & { find: MarkdownFind }) {
+  const split = useMemo(() => splitMarkdownForFind(props.text, find.match), [props.text, find]);
+  // A code block measures the occurrence's own line; natively drawn Markdown cannot.
+  const anchorRef = useChatFindAnchorView(split.code ? null : find.anchor, split.fraction);
+  return (
+    <>
+      {split.head ? <MarkdownPart {...props} text={split.head} continues /> : null}
+      <View ref={anchorRef} collapsable={false}>
+        {split.code ? (
+          <FindCodeBlock {...split.code} anchor={find.anchor} />
+        ) : (
+          <MarkdownPart {...props} text={split.block} continues={!!split.tail} highlight />
+        )}
+      </View>
+      {split.tail ? <MarkdownPart {...props} text={split.tail} /> : null}
+    </>
+  );
+}
+
 const MarkdownPart = memo(function MarkdownPart({
   text,
   continues = false,
+  highlight = false,
   compact = false,
   streaming = false,
   onLinkPress,
+  find: _find,
   ...imageContext
-}: MarkdownRendererProps & { continues?: boolean }) {
+}: MarkdownRendererProps & { continues?: boolean; highlight?: boolean }) {
   const environment = useAssistantFileLinkEnvironment();
   const actions = useAssistantFileLinkActions();
   const client =
@@ -100,7 +134,7 @@ const MarkdownPart = memo(function MarkdownPart({
             flavor="github"
             selectable
             allowTrailingMargin={continues && segment === segments[segments.length - 1]}
-            md4cFlags={MD4C_FLAGS}
+            md4cFlags={highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS}
             linkRecognition={linkRecognition}
             enableTaskListItemToggle={false}
             enableLinkPreview={false}

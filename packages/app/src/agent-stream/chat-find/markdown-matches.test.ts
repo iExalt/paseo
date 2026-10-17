@@ -1,12 +1,8 @@
 import MarkdownIt from "markdown-it";
 import { describe, expect, it } from "vitest";
 import { countMatches, searchableBlocks, searchPattern } from "@getpaseo/protocol/chat-search-text";
-import type { ASTNode } from "react-native-markdown-display";
-import parser from "react-native-markdown-display/src/lib/parser";
-import { isFindMarkedNode } from "@/find-highlight/markdown-nodes";
-import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser";
-import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
-import { findMarkdownMatches } from "./markdown-matches";
+import { splitMarkdownForFind } from "@/components/markdown/find-split";
+import { findMarkdownMatches, highlightMarkdown } from "./markdown-matches";
 
 const MIXED = [
   "# Find heading",
@@ -37,76 +33,79 @@ function hostCount(text: string, query: string): number {
   );
 }
 
-const assistantMarkdownIt = createAssistantMarkdownParser();
-
-function nodesByKey(block: string): Map<string, ASTNode> {
-  const nodes = new Map<string, ASTNode>();
-  const visit = (node: ASTNode) => {
-    nodes.set(node.key, node);
-    for (const child of node.children) visit(child);
-  };
-  for (const node of parser(block, (ast) => ast, assistantMarkdownIt)) visit(node);
-  return nodes;
+function marked(text: string, query: string, occurrence: number): string {
+  const match = findMarkdownMatches(text, searchPattern(query)).matches[occurrence]!;
+  return match.kind === "inline" ? highlightMarkdown(text, match.marks) : "";
 }
 
 describe("findMarkdownMatches", () => {
-  it("numbers every match the host counts, once each, in reading order", () => {
-    const { count, blocks } = findMarkdownMatches(MIXED, searchPattern("find"));
+  it("counts every match the host counts, in reading order", () => {
+    const { count, matches } = findMarkdownMatches(MIXED, searchPattern("find"));
     expect(count).toBe(hostCount(MIXED, "find"));
-    const emitted = blocks
-      .flatMap((parts) => [...parts.values()].flat())
-      .flatMap((part) => (part.match === null ? [] : [part.match]));
-    expect([...new Set(emitted)]).toEqual([...Array(count).keys()]);
+    const kinds = matches.map((match) => match.kind);
+    expect(kinds.filter((kind) => kind === "code")).toHaveLength(2);
+    expect(kinds.lastIndexOf("code")).toBe(kinds.length - 2);
   });
 
-  it("numbers a match that spans bold edges and a line break once, on every piece", () => {
-    const { count, blocks } = findMarkdownMatches(
-      "say **hello\nthere** now",
-      searchPattern("hello there"),
+  it("highlights text, a code span whole, and a match across bold edges and a break", () => {
+    expect(marked("one find here", "find", 0)).toBe("one ==find== here");
+    expect(marked("see `a find` too", "find", 0)).toBe("see ==`a find`== too");
+    expect(marked("say **hello\nthere** now", "hello there", 0)).toBe(
+      "say **==hello\nthere==** now",
     );
+  });
+
+  it("keeps escapes inside a mark and escapes every other equals sign", () => {
+    expect(marked("a == b and \\*find\\* x=1", "*find*", 0)).toBe(
+      "a \\=\\= b and ==\\*find\\*== x\\=1",
+    );
+  });
+
+  it("drops whitespace at a piece's edge, which a delimiter cannot hug", () => {
+    expect(marked("go find **it** now", "find it", 0)).toBe("go ==find== **==it==** now");
+  });
+
+  it("counts nothing in a diagram and never marks image alt text", () => {
+    const text = ["![find](x.png) find", "", "```mermaid", "graph TD; find --> find", "```"].join(
+      "\n",
+    );
+    const { count } = findMarkdownMatches(text, searchPattern("find"));
     expect(count).toBe(1);
-    const pieces = [...blocks[0]!.values()].flat().filter((part) => part.match !== null);
-    expect(pieces.map((part) => part.text)).toEqual(["hello", "there"]);
-    expect(pieces.every((part) => part.match === 0)).toBe(true);
+    expect(marked(text, "find", 0).split("\n")[0]).toBe("![find](x.png) ==find==");
   });
+});
 
-  it("keeps node keys per rendered block, which repeat across blocks", () => {
-    const { blocks } = findMarkdownMatches("first x\n\nsecond x", searchPattern("x"));
-    expect(blocks).toHaveLength(2);
-    const [firstKeys, secondKeys] = blocks.map((parts) => [...parts.keys()]);
-    expect(firstKeys).toEqual(secondKeys);
-    expect(blocks[1]!.get(secondKeys![0]!)!.find((part) => part.match !== null)!.match).toBe(1);
-  });
-
-  it("numbers only nodes the message rules mark, and nothing in a diagram", () => {
-    const text = [
-      "find [the `find` link](https://x.dev) and `src/find.ts` and `https://find.dev`",
-      "",
-      "```mermaid",
-      "graph TD; find --> find",
-      "```",
-    ].join("\n");
-    const { count, blocks } = findMarkdownMatches(text, searchPattern("find"));
-    expect(count).toBe(4);
-    splitMarkdownBlocks(text).forEach((block, index) => {
-      const nodes = nodesByKey(block);
-      for (const key of blocks[index]!.keys()) {
-        expect(isFindMarkedNode(nodes.get(key)!), key).toBe(true);
-      }
+describe("splitMarkdownForFind", () => {
+  it("draws the block holding the match apart and places the match in it", () => {
+    const text = "intro\n\npara with find inside\n\noutro";
+    const match = findMarkdownMatches(text, searchPattern("find")).matches[0]!;
+    const split = splitMarkdownForFind(text, match);
+    expect(split).toMatchObject({
+      head: "intro\n\n",
+      block: "para with ==find== inside\n\n",
+      tail: "outro",
+      code: null,
     });
+    expect(split.fraction).toBeCloseTo(10 / "para with find inside\n\n".length);
   });
 
-  it("anchors each match in the root Text that draws it, restarting after a hard break", () => {
-    const text = "a **bold** `code` x\nx  \nafter x\n\n```\nline\nx\n```";
-    const { anchors, blocks } = findMarkdownMatches(text, searchPattern("x"));
-    const hostType = (match: number) => anchors[match]!.hostKey.split("_").at(-1);
-    // "a bold code x" then a soft break, so the second x sits at 14 of the first textgroup.
-    expect(anchors.slice(0, 2).map((anchor) => anchor?.offset)).toEqual([12, 14]);
-    expect(hostType(0)).toBe("textgroup");
-    // The hard break starts a second textgroup in the same paragraph.
-    expect(anchors[2]).toMatchObject({ offset: 6 });
-    expect(anchors[2]!.hostKey).not.toBe(anchors[0]!.hostKey);
-    expect(anchors[3]).toMatchObject({ blockIndex: blocks.length - 1, offset: 5 });
-    expect(hostType(3)).toBe("fence");
+  it("draws a code block in place of the fence, numbered within the code", () => {
+    const text = "find\n\n```ts\nfind(); find();\n```\n";
+    const match = findMarkdownMatches(text, searchPattern("find")).matches[2]!;
+    const split = splitMarkdownForFind(text, match);
+    expect(split.head).toBe("find\n\n");
+    expect(split.tail).toBe("");
+    expect(split.code).toMatchObject({ code: "find(); find();", language: "ts", current: 1 });
+  });
+
+  it("keeps a message with definitions whole, so references still resolve", () => {
+    const text = "see [ref] find\n\n```\nfind\n```\n\n[ref]: https://x.dev";
+    const { matches } = findMarkdownMatches(text, searchPattern("find"));
+    expect(matches.map((match) => match.block)).toEqual([
+      { start: 0, end: text.length },
+      { start: 0, end: text.length },
+    ]);
+    // Code drawn natively cannot be marked, but the occurrence still counts.
+    expect(matches[1]).toEqual({ kind: "inline", block: matches[1]!.block, marks: [] });
   });
 });

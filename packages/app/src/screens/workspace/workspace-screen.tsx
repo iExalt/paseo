@@ -130,10 +130,8 @@ import {
   useWorkspaceTabRename,
   WorkspaceTabRenameModal,
 } from "@/screens/workspace/use-workspace-tab-rename";
-import { paneFindTarget } from "@/screens/workspace/workspace-tab-menu";
 import { useDesktopBrowserNewTabRequests } from "@/desktop/browser/new-tab-requests";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
-import { canRequestPaneFind, requestPaneFind } from "@/pane-find/open-requests";
 import {
   resolveWorkspaceExplorerToggleOwner,
   EXPLORER_TOGGLE_KEYS,
@@ -513,11 +511,6 @@ function WorkspaceHeaderTitleBar({
       </View>
     </View>
   );
-}
-
-function openPaneFindForTab(tab: WorkspaceTabDescriptor): void {
-  const target = paneFindTarget(tab);
-  if (target) requestPaneFind(target);
 }
 
 type PaneDirection = "left" | "right" | "up" | "down";
@@ -2979,11 +2972,7 @@ function WorkspaceScreenContent({
         normalizedWorkspaceId,
         host:
           input.host ??
-          (canRenderDesktopPaneSplits &&
-          input.paneId !== null &&
-          input.paneId === explorerSidebarPaneId
-            ? "explorer"
-            : "main"),
+          (input.paneId !== null && input.paneId === explorerSidebarPaneId ? "explorer" : "main"),
         fileNavigationRevision: fileNavigationRevisionByTabId[input.tab.tabId] ?? 0,
         onOpenTab: (target) => {
           if (!persistenceKey) {
@@ -3374,7 +3363,7 @@ function WorkspaceScreenContent({
       liveTerminalIds,
       onScriptTerminalStarted: handleScriptTerminalStarted,
       onViewTerminal: handleViewScriptTerminal,
-      onOpenUrlInBrowserTab: handleOpenUrlInBrowserTab,
+      onOpenUrlInBrowserTab: openUrlInBrowserTab,
     }),
     [
       normalizedServerId,
@@ -3383,7 +3372,7 @@ function WorkspaceScreenContent({
       liveTerminalIds,
       handleScriptTerminalStarted,
       handleViewScriptTerminal,
-      handleOpenUrlInBrowserTab,
+      openUrlInBrowserTab,
     ],
   );
   const compactWorkspaceHeader = useMemo(
