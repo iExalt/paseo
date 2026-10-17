@@ -126,6 +126,34 @@ function initRepo(path) {
   git(path, "config", "commit.gpgsign", "false");
 }
 
+// A side branch merged into dev, with committers from the user's other verified email and
+// from GitHub's web merges.
+function addMergeHistory(seed, mergeHistory) {
+  if (!mergeHistory) return;
+  const metadata = (committerName, committerEmail, date) => ({
+    ...devMetadata("Side Author", "side@example.invalid", date, committerName, date),
+    GIT_COMMITTER_EMAIL: committerEmail,
+  });
+  git(seed, "checkout", "-b", "side");
+  writeFileSync(join(seed, "side.txt"), "side\n");
+  commit(seed, "side edit", metadata("Clement Liaw", "cman101202@gmail.com", "1700000600 +0000"));
+  git(seed, "checkout", "dev");
+  writeFileSync(join(seed, "web.txt"), "web\n");
+  commit(seed, "web merge", metadata("GitHub", "noreply@github.com", "1700000700 +0000"));
+  const mergeMetadata = devMetadata(
+    "Side Author",
+    "side@example.invalid",
+    "1700000800 +0000",
+    "Clement Liaw",
+    "1700000800 +0000",
+  );
+  gitWithEnv(seed, mergeMetadata, "merge", "--no-ff", "--no-commit", "side");
+  if (mergeHistory === "hand-edited")
+    writeFileSync(join(seed, "side.txt"), "edited in the merge\n");
+  git(seed, "add", "-A");
+  gitWithEnv(seed, mergeMetadata, "commit", "-m", "merge side");
+}
+
 async function makeFixture(
   name,
   {
@@ -134,6 +162,7 @@ async function makeFixture(
     initiallyEmpty = false,
     newlyEmpty = false,
     deletion = false,
+    mergeHistory,
   } = {},
 ) {
   const directory = join(root, name);
@@ -228,6 +257,7 @@ async function makeFixture(
       ),
     );
   }
+  addMergeHistory(seed, mergeHistory);
   git(seed, "push", "origin", "HEAD:refs/heads/dev");
   const devSha = git(seed, "rev-parse", "HEAD");
 
@@ -692,6 +722,42 @@ test("unknown conflict stops without publishing any refs", async () => {
   const diagnosticText = readFileSync(diagnostics, "utf8");
   assert.match(diagnosticText, /Starting refs:/);
   assert.match(diagnosticText, /diff --cc shared\.txt/);
+});
+
+test("clean merges drop like rebase and web-flow committers become the signing identity", async () => {
+  const fixture = await makeFixture("mixed-history", { mergeHistory: "clean" });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+
+  const replayed = `${fixture.upstreamSha}..HEAD~1`;
+  assert.equal(git(clone, "rev-list", "--merges", replayed), "");
+  assert.equal(git(clone, "show", "HEAD:side.txt"), "side");
+  const committers = git(clone, "log", "--format=%s|%cn <%ce> %cd", "--date=raw", replayed);
+  assert.deepEqual(
+    committers
+      .split("\n")
+      .filter((line) => !line.startsWith("dev "))
+      .sort(),
+    [
+      "side edit|Clement Liaw <cman101202@gmail.com> 1700000600 +0000",
+      `web merge|Clement Liaw <${devMetadata().GIT_COMMITTER_EMAIL}> 1700000700 +0000`,
+    ],
+  );
+});
+
+test("a merge carrying hand edits stops before the replay", async () => {
+  const fixture = await makeFixture("hand-edited-merge", { mergeHistory: "hand-edited" });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
+
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
+    /is not Git's clean merge of its parents/,
+  );
+  assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
 });
 
 test("a newly empty replay stops with rebase state intact", async () => {

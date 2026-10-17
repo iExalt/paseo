@@ -29,7 +29,13 @@ const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
 const DELETIONS_PATH = "deletions.json";
 const RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json";
+const SIGNING_NAME = "Clement Liaw";
 const SIGNING_EMAIL = "clliaw@nvidia.com";
+// Every verified email of the GitHub account that registered the signing key. GitHub marks a
+// replayed commit verified only when its committer email is one of these.
+const SIGNING_EMAILS = new Set([SIGNING_EMAIL, "cman101202@gmail.com"]);
+// GitHub's web merges commit as GitHub and carry GitHub's signature, which no replay can keep.
+const WEB_FLOW_EMAIL = "noreply@github.com";
 const SIGNING_PUBLIC_KEY =
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEScQeKzAdwWjNsrJ7xQNq2BAKGSkXP6FPbBD7PZrM9J";
 
@@ -366,7 +372,12 @@ async function continueKnownResolutions(
 
 async function replayCommitCount(repositoryPath, upstreamSha, devSha) {
   const output = (
-    await gitChecked(repositoryPath, ["rev-list", "--count", `${upstreamSha}..${devSha}`])
+    await gitChecked(repositoryPath, [
+      "rev-list",
+      "--count",
+      "--no-merges",
+      `${upstreamSha}..${devSha}`,
+    ])
   ).trim();
   if (!/^(0|[1-9]\d*)$/.test(output)) {
     throw new Error(`Git returned an invalid replay commit count: ${JSON.stringify(output)}`);
@@ -378,13 +389,50 @@ async function replayCommitCount(repositoryPath, upstreamSha, devSha) {
   return count;
 }
 
+// A merge whose tree differs from Git's own merge of its parents holds hand edits that a
+// replay, which drops merges, would silently lose.
+async function assertCleanMerge(repositoryPath, sha) {
+  const parents = (await gitChecked(repositoryPath, ["rev-list", "--parents", "-n", "1", sha]))
+    .trim()
+    .split(" ")
+    .slice(1);
+  const merged = await git(repositoryPath, ["merge-tree", "--write-tree", ...parents]);
+  const tree = (await gitChecked(repositoryPath, ["rev-parse", `${sha}^{tree}`])).trim();
+  if (parents.length !== 2 || merged.code !== 0 || merged.stdout.split("\n")[0] !== tree) {
+    throw new Error(`Merge ${sha} is not Git's clean merge of its parents; linearize it by hand`);
+  }
+}
+
+// The commits rebase replays, in its order: merges dropped, the rest topologically sorted.
 async function replayCommitIds(repositoryPath, upstreamSha, devSha) {
   const range = `${upstreamSha}..${devSha}`;
   const merges = (await gitChecked(repositoryPath, ["rev-list", "--merges", range])).trim();
-  if (merges)
-    throw new Error("Rebase signing supports linear dev history only; merge commits found");
-  const output = await gitChecked(repositoryPath, ["rev-list", "--reverse", range]);
+  for (const merge of merges ? merges.split("\n") : [])
+    await assertCleanMerge(repositoryPath, merge);
+  const output = await gitChecked(repositoryPath, [
+    "rev-list",
+    "--reverse",
+    "--topo-order",
+    "--no-merges",
+    range,
+  ]);
   return output.trim() ? output.trim().split("\n") : [];
+}
+
+function replayCommitter(original, sha) {
+  if (SIGNING_EMAILS.has(original.committer.email)) return original.committer;
+  if (original.committer.email !== WEB_FLOW_EMAIL) {
+    throw new Error(
+      `Cannot sign replay of ${sha} from unrecognized committer email ${original.committer.email}`,
+    );
+  }
+  const { date } = original.committer;
+  return {
+    line: `committer ${SIGNING_NAME} <${SIGNING_EMAIL}> ${date}`,
+    name: SIGNING_NAME,
+    email: SIGNING_EMAIL,
+    date,
+  };
 }
 
 function parseCommitObject(raw, sha) {
@@ -517,12 +565,7 @@ async function signRebasedCommits(
         `Rebase changed the author or message while mapping ${originalCommits[index]}`,
       );
     }
-    if (original.committer.email !== SIGNING_EMAIL) {
-      throw new Error(
-        `Cannot sign replay from unrecognized committer email ${original.committer.email}`,
-      );
-    }
-    originals.push(original);
+    originals.push({ ...original, committer: replayCommitter(original, originalCommits[index]) });
     rebased.push(rebasedCommits[index]);
   }
 
@@ -549,7 +592,7 @@ async function signRebasedCommits(
     if (derivedPublicKey !== trustedPublicKey) {
       throw new Error("PASEO_REBASE_SSH_SIGNING_KEY does not match the trusted public key");
     }
-    await writeFile(allowedSignersPath, `${SIGNING_EMAIL} ${trustedPublicKey}\n`, {
+    await writeFile(allowedSignersPath, `${[...SIGNING_EMAILS].join(",")} ${trustedPublicKey}\n`, {
       flag: "wx",
       mode: 0o600,
     });
@@ -585,7 +628,7 @@ async function signRebasedCommits(
         !signed.message.equals(original.message)
       ) {
         throw new Error(
-          `Signing changed preserved metadata or message for ${originalCommits[index]}`,
+          `Signing changed replayed metadata or message for ${originalCommits[index]}`,
         );
       }
       await gitChecked(repositoryPath, [
