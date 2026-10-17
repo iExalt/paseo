@@ -32,6 +32,9 @@ import {
 } from "./rebase-dev.mjs";
 
 const yaml = createRequire(import.meta.url)("js-yaml");
+// Detached auto-maintenance runs rerere-gc, which takes MERGE_RR.lock and races the
+// fixture's own rebase picks.
+const NO_AUTO_MAINTENANCE = ["-c", "maintenance.auto=false"];
 process.env.GIT_CONFIG_GLOBAL = "/dev/null";
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 process.env.GIT_AUTHOR_NAME = "Rebase fixture";
@@ -55,6 +58,7 @@ function git(cwd, ...args) {
   return execFileSync(
     "git",
     [
+      ...NO_AUTO_MAINTENANCE,
       "-c",
       "commit.gpgsign=false",
       "-c",
@@ -75,6 +79,7 @@ function gitWithEnv(cwd, extraEnv, ...args) {
   return execFileSync(
     "git",
     [
+      ...NO_AUTO_MAINTENANCE,
       "-c",
       "commit.gpgsign=false",
       "-c",
@@ -175,10 +180,14 @@ function commitPatchOnlyEdit(seed, enabled) {
 // The patch-only edit stops on its own modify/delete conflict, which leaves it empty.
 function resolvePatchOnlyEdit(recorder, enabled, recordDeletion) {
   if (!enabled) return;
-  const stopped = spawnSync("git", ["-c", "core.editor=true", "rebase", "--continue"], {
-    cwd: recorder,
-    encoding: "utf8",
-  });
+  const stopped = spawnSync(
+    "git",
+    [...NO_AUTO_MAINTENANCE, "-c", "core.editor=true", "rebase", "--continue"],
+    {
+      cwd: recorder,
+      encoding: "utf8",
+    },
+  );
   assert.notEqual(stopped.status, 0, "fixture must stop on the patch-only edit");
   recordDeletion();
   git(recorder, "commit", "--allow-empty", "-C", "REBASE_HEAD");
@@ -318,6 +327,7 @@ async function makeFixture(
   const initialRebase = spawnSync(
     "git",
     [
+      ...NO_AUTO_MAINTENANCE,
       "-c",
       "rerere.enabled=true",
       "-c",
