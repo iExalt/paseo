@@ -995,13 +995,15 @@ export async function rebaseDev({
     );
     const readRelease = () =>
       inspectForkRelease((file) => readFile(join(repositoryPath, file), "utf8"));
-    assertForkReleasePreserved(before, await readRelease());
+    // The fixup may repair what the replay left inconsistent, such as a lockfile whose
+    // package.json changed on both sides, so check the release after it.
     const fixupCommits = await applyUpstreamFixup(repositoryPath, {
       resolutionSha: snapshots.resolutions,
       upstreamSha: snapshots.upstream,
       signingKey,
       publicKey,
     });
+    assertForkReleasePreserved(before, await readRelease());
     let provenanceCommits = 0;
     if (before.config.upstreamBase !== snapshots.upstream) {
       // Keep replayed author/message metadata intact. Provenance is a separate,
