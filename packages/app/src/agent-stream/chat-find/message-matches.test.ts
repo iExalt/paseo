@@ -2,35 +2,25 @@ import { describe, expect, it } from "vitest";
 import type { StreamItem } from "@/types/stream";
 import { locateMessageMatch } from "./message-matches";
 
-function assistant(id: string, text: string, blockGroupId?: string, blockIndex = 0): StreamItem {
-  return {
-    kind: "assistant_message",
-    id,
-    text,
-    timestamp: new Date(0),
-    ...(blockGroupId ? { blockGroupId, blockIndex } : {}),
-  } as StreamItem;
+function assistant(id: string, text: string): StreamItem {
+  return { kind: "assistant_message", id, text, timestamp: new Date(0) } as StreamItem;
 }
 
 describe("locateMessageMatch", () => {
-  // Native holds rows newest first, a message's own block rows included.
   const items = [
-    assistant("a-3", "last match", "a", 2),
     assistant("b", "match elsewhere"),
-    assistant("a-2", "one **match** and `match`", "a", 1),
-    assistant("a-1", "nothing here", "a", 0),
+    assistant("a", "one **match** and `match`, then\n\n```\nmatch\n```"),
     { kind: "user_message", id: "u", text: "**match** as typed" } as StreamItem,
   ];
 
-  it("maps a message occurrence onto the item that draws it, skipping items without one", () => {
+  it("numbers a message's occurrences in reading order, code blocks included", () => {
     expect(locateMessageMatch(items, "a", "match", 0)).toEqual({
       count: 3,
       occurrence: 0,
-      itemId: "a-2",
+      itemId: "a",
       index: 0,
     });
-    expect(locateMessageMatch(items, "a", "match", 1)).toMatchObject({ itemId: "a-2", index: 1 });
-    expect(locateMessageMatch(items, "a", "match", 2)).toMatchObject({ itemId: "a-3", index: 0 });
+    expect(locateMessageMatch(items, "a", "match", 2)).toMatchObject({ itemId: "a", index: 2 });
   });
 
   it("counts from the end for -1 and clamps past the last occurrence", () => {
