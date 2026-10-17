@@ -46,5 +46,5 @@ export const fileEditorWebViewSources = {
     "../../node_modules/w3c-keyname",
     "../highlight",
   ],
-  hash: "ba547d5b3d97cc108bdc10fb2f13a4e7c1289b6dede1b8e2bef36935a553b05c",
+  hash: "6f9028d9304f555ff920d5b0795cfe95f3633476820a73360181409414b540f3",
 };

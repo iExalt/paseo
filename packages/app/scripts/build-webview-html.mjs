@@ -10,7 +10,7 @@ const repoRoot = path.resolve(appRoot, "../..");
 
 // Each WebView page is one bundled script in a committed HTML string. `sources` exports a
 // hash of the page's app sources and bundled package versions, which a unit test
-// recomputes to catch a stale bundle. Workspace packages count by version only.
+// recomputes to catch a stale bundle. Workspace packages count by name only.
 const WEBVIEWS = [
   {
     name: "terminal",
