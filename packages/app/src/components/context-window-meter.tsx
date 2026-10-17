@@ -1,5 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
-import { Pressable, Text, View, useWindowDimensions } from "react-native";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { type LayoutChangeEvent, Pressable, Text, View, useWindowDimensions } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import { svgHiddenFromAccessibility } from "@/components/svg-accessibility";
 import { useHostReportsUsage } from "@/usage";
+import { useToolbarSpareWidth } from "@/composer/input/toolbar-space";
 import type { Theme } from "@/styles/theme";
 import { ContextWindowDetails } from "./context-window-details";
 import { ContextWindowSheet } from "./context-window-sheet";
@@ -58,6 +59,49 @@ function formatSessionCost(value: number): string | null {
     return `$${value.toFixed(4)}`;
   }
   return `$${value.toFixed(2)}`;
+}
+
+/** The label's short form when the toolbar is out of room: rounded whole dollars. */
+function formatWholeDollars(value: number): string {
+  const dollars = Math.round(value);
+  return dollars < 1 ? "<$1" : `$${dollars}`;
+}
+
+/**
+ * Drops the cents once the toolbar's left controls have no room to spare, and brings them back
+ * once the slack covers the width they add. Comparing measured label widths keeps it from
+ * flipping back and forth.
+ */
+function useCostLabelPrecision(showsCost: boolean) {
+  const spareWidth = useToolbarSpareWidth();
+  const [wholeDollars, setWholeDollars] = useState(false);
+  const [widths, setWidths] = useState<{ cents: number | null; dollars: number | null }>({
+    cents: null,
+    dollars: null,
+  });
+  const onCostLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const width = event.nativeEvent.layout.width;
+      setWidths((current) =>
+        wholeDollars ? { ...current, dollars: width } : { ...current, cents: width },
+      );
+    },
+    [wholeDollars],
+  );
+  useEffect(() => {
+    if (!showsCost || spareWidth === null) return;
+    if (!wholeDollars && spareWidth < 0.5) {
+      setWholeDollars(true);
+    } else if (
+      wholeDollars &&
+      widths.cents !== null &&
+      widths.dollars !== null &&
+      spareWidth >= widths.cents - widths.dollars + 0.5
+    ) {
+      setWholeDollars(false);
+    }
+  }, [showsCost, spareWidth, wholeDollars, widths]);
+  return { wholeDollars, onCostLayout };
 }
 
 function getProgressColor(percentage: number, theme: Theme): string {
@@ -175,8 +219,11 @@ export function ContextWindowMeter({
   );
   const formattedSessionCost =
     typeof totalCostUsd === "number" ? formatSessionCost(totalCostUsd) : null;
-  const containerStyle = geometry.containerStyle;
-  const ring = (
+  // The cost sits left of the ring inside the same trigger, so pressing it opens the details too.
+  const showsCost = formattedSessionCost !== null && !showPercentage;
+  const { wholeDollars, onCostLayout } = useCostLabelPrecision(showsCost);
+  const containerStyle = showsCost ? styles.containerWithCost : geometry.containerStyle;
+  const ringGlyph = (
     <ContextWindowRing
       size={geometry.svgSize}
       radius={geometry.radius}
@@ -185,13 +232,25 @@ export function ContextWindowMeter({
       uniProps={meterColors}
     />
   );
+  // Keep the ring in its usual square so it stays on the toolbar's icon rail.
+  const ring = showsCost ? <View style={styles.container}>{ringGlyph}</View> : ringGlyph;
+  const costLabel = showsCost ? (
+    <Text style={styles.costLabel} testID="context-window-cost" onLayout={onCostLayout}>
+      {wholeDollars && typeof totalCostUsd === "number"
+        ? formatWholeDollars(totalCostUsd)
+        : formattedSessionCost}
+    </Text>
+  ) : null;
   const percentageLabel =
     showPercentage && context ? (
       <Text style={styles.percentageLabel}>{`${context.percentage}%`}</Text>
     ) : null;
-  const accessibilityLabel = context
+  const contextLabel = context
     ? t("contextWindow.accessibility", { percentage: context.percentage })
     : t("contextWindow.accessibilityNoData");
+  const accessibilityLabel = formattedSessionCost
+    ? `${contextLabel}, ${t("contextWindow.sessionCost", { cost: formattedSessionCost })}`
+    : contextLabel;
 
   if (isCompact) {
     return (
@@ -203,6 +262,7 @@ export function ContextWindowMeter({
           accessibilityLabel={accessibilityLabel}
           onPress={openSheet}
         >
+          {costLabel}
           {ring}
           {percentageLabel}
         </Pressable>
@@ -236,6 +296,7 @@ export function ContextWindowMeter({
             accessibilityRole="image"
             accessibilityLabel={accessibilityLabel}
           >
+            {costLabel}
             {ring}
             {percentageLabel}
           </Pressable>
@@ -270,6 +331,7 @@ export function ContextWindowMeter({
           accessibilityRole="image"
           accessibilityLabel={accessibilityLabel}
         >
+          {costLabel}
           {ring}
           {percentageLabel}
         </View>
@@ -310,6 +372,18 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     gap: theme.spacing[1],
     borderRadius: theme.borderRadius.full,
+  },
+  containerWithCost: {
+    height: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: theme.spacing[1.5],
+    borderRadius: theme.borderRadius.full,
+  },
+  costLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontVariant: ["tabular-nums"],
   },
   percentageLabel: {
     color: theme.colors.foregroundMuted,

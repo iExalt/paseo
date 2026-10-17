@@ -111,6 +111,34 @@ test.describe("context window meter", () => {
 
 const DESKTOP = { width: 1440, height: 900 };
 const COMPACT = { width: 390, height: 844 };
+
+test("drops the cents from the cost label while the toolbar is out of room", async ({ page }) => {
+  test.setTimeout(180_000);
+  // At 360 px the cents would crowd the agent picker, so the label keeps whole dollars.
+  const agent = await seedMockAgentWorkspace({
+    repoPrefix: "context-window-cost-narrow-",
+    title: "Context window narrow cost e2e",
+    initialPrompt: "emit 32000 byte file agent stream payload costing $123.45",
+  });
+  try {
+    await page.setViewportSize({ width: 360, height: 844 });
+    await openAgent(page, agent);
+    const cost = page.getByTestId("context-window-cost");
+    await expect(cost).toHaveText("$123", { timeout: 30_000 });
+    await qaScreenshot(page, "context-cost-narrow");
+
+    await cost.click();
+    await expect(
+      contextWindowDetails(page).getByText("Session cost $123.45", { exact: true }),
+    ).toBeVisible();
+    await closeContextWindowSheet(page);
+
+    await page.setViewportSize(DESKTOP);
+    await expect(cost).toHaveText("$123.45");
+  } finally {
+    await agent.cleanup();
+  }
+});
 const LOGIN_EXPIRED = /^Login expired .*Run claude to refresh it\.$/;
 
 for (const layout of [
@@ -127,6 +155,40 @@ for (const layout of [
     close: closeContextWindowSheet,
   },
 ]) {
+  test(`shows the session cost left of the ring and in its details (${layout.name})`, async ({
+    page,
+  }) => {
+    test.setTimeout(180_000);
+    const agent = await seedMockAgentWorkspace({
+      repoPrefix: "context-window-cost-",
+      title: "Context window cost e2e",
+      initialPrompt: "emit 32000 byte file agent stream payload costing $1.25",
+    });
+    try {
+      await page.setViewportSize(layout.viewport);
+      await openAgent(page, agent);
+      const cost = page.getByTestId("context-window-cost");
+      await expect(cost).toHaveText("$1.25", { timeout: 30_000 });
+      const costBox = await cost.boundingBox();
+      const ringBox = await page.getByTestId("context-window-meter").locator("svg").boundingBox();
+      expect(costBox!.x + costBox!.width).toBeLessThanOrEqual(ringBox!.x);
+      // The wider meter pushes the toolbar over instead of spilling under its neighbour.
+      const micBox = await page
+        .getByRole("button", { name: "Start dictation", exact: true })
+        .boundingBox();
+      expect(ringBox!.x + ringBox!.width).toBeLessThanOrEqual(micBox!.x);
+
+      // The label belongs to the meter's trigger, so pressing it opens the details.
+      await cost.click();
+      const details = contextWindowDetails(page);
+      await expect(details).toBeVisible();
+      await expect(details.getByText("Session cost $1.25", { exact: true })).toBeVisible();
+      await qaScreenshot(page, `context-cost-${layout.name}`);
+    } finally {
+      await agent.cleanup();
+    }
+  });
+
   test(`shows account usage before the first turn (${layout.name})`, async ({ page }) => {
     test.setTimeout(180_000);
     const source = await installLoginUsage({
