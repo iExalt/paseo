@@ -521,7 +521,7 @@ async function listCheckoutFileChanges(
     { cwd, envOverlay: READ_ONLY_GIT_ENV },
   );
   const nameStatusFields = nameStatusOut.split("\0");
-  for (let index = 0; index < nameStatusFields.length; ) {
+  for (let index = 0; index < nameStatusFields.length;) {
     const rawStatus = nameStatusFields[index++];
     if (!rawStatus) continue;
 

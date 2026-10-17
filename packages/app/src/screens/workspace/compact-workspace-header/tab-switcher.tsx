@@ -14,8 +14,10 @@ import {
 import { MobileTabTrailingAccessory } from "@/screens/workspace/workspace-tab-trailing-accessory";
 import {
   buildWorkspaceTabMenuEntries,
+  paneFindTarget,
   type WorkspaceTabMenuLabels,
 } from "@/screens/workspace/workspace-tab-menu";
+import { canRequestPaneFind, requestPaneFind } from "@/pane-find/open-requests";
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
 
 // The trigger draws at 32pt beside its island neighbours, so only vertical slop is free.
@@ -161,6 +163,7 @@ function MobileWorkspaceTabOption({
   onCloseTabsAbove,
   onCloseTabsBelow,
   onCloseOtherTabs,
+  onFind,
 }: {
   tab: WorkspaceTabDescriptor;
   tabIndex: number;
@@ -180,6 +183,7 @@ function MobileWorkspaceTabOption({
   onCloseTabsAbove: (tabId: string) => Promise<void> | void;
   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
+  onFind: (tab: WorkspaceTabDescriptor) => void;
 }) {
   const { t } = useTranslation();
   const tabMenuLabels = useMemo<WorkspaceTabMenuLabels>(
@@ -217,6 +221,8 @@ function MobileWorkspaceTabOption({
     onCloseTabsBefore: onCloseTabsAbove,
     onCloseTabsAfter: onCloseTabsBelow,
     onCloseOtherTabs,
+    // Only a mounted pane that draws a find bar answers, e.g. not a file too large to show.
+    onFind: canRequestPaneFind(paneFindTarget(tab)) ? onFind : undefined,
     labels: tabMenuLabels,
   });
 
@@ -334,6 +340,13 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
     setIsOpen(true);
   }, []);
 
+  // Find opens a bar in the pane, so the switcher sheet has to get out of the way.
+  const handleFind = useCallback((tab: WorkspaceTabDescriptor) => {
+    setIsOpen(false);
+    const target = paneFindTarget(tab);
+    if (target) requestPaneFind(target);
+  }, []);
+
   const handleNewAgent = useCallback(() => {
     setIsOpen(false);
     onCreateDraftTab();
@@ -411,10 +424,12 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
           onCloseTabsAbove={onCloseTabsAbove}
           onCloseTabsBelow={onCloseTabsBelow}
           onCloseOtherTabs={onCloseOtherTabs}
+          onFind={handleFind}
         />
       );
     },
     [
+      handleFind,
       tabByKey,
       tabIndexByKey,
       tabs.length,

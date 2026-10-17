@@ -365,6 +365,22 @@
         ]
       }
     },
+    "replyRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "flags": {
+            "type": "string"
+          }
+        },
+        "required": ["source", "flags"],
+        "additionalProperties": false
+      }
+    },
     "worktrees": {
       "type": "object",
       "properties": {

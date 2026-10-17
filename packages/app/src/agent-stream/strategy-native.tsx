@@ -27,7 +27,6 @@ import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { getStreamItemMessageId } from "./presentation";
 import { scrollOffsetForDelta } from "@/find-highlight/reveal";
-import { messageStartIndex } from "./message-start-index";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -372,7 +371,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     flatListRef.current?.scrollToIndex({ index, viewPosition: 1, animated });
   });
   const scrollToMessage = useStableEvent((messageId: string) =>
-    jumpToRow(messageStartIndex(historyRows, messageId), true),
+    jumpToRow(
+      historyRows.findIndex((row) => getStreamItemMessageId(row) === messageId),
+      true,
+    ),
   );
   // Find measures right after it jumps, so its jumps land at once instead of animating.
   const scrollToItem = useStableEvent((itemId: string) =>

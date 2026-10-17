@@ -1,4 +1,4 @@
-import { bench, describe } from "vitest";
+import { test } from "vitest";
 import type { StreamItem, ToolCallItem } from "@/types/stream";
 import {
   prepareToolCallHistory,
@@ -122,11 +122,13 @@ const defaultWindowStart = findMountedWindowStart({
   minMountedCount: getMountedRecentStreamItems(),
 });
 
-describe(`${TICKS} streamed deltas over a ${TIMELINE_ITEMS}-item timeline`, () => {
-  bench("default mounted window (recent items only)", () => {
-    runTicks({ tail, historyStart: defaultWindowStart, heads });
-  });
-  bench("history fully revealed (scrolled to top)", () => {
-    runTicks({ tail, historyStart: 0, heads });
-  });
+test(`${TICKS} streamed deltas over a ${TIMELINE_ITEMS}-item timeline`, async ({ bench }) => {
+  await bench.compare(
+    bench("default mounted window (recent items only)", () => {
+      runTicks({ tail, historyStart: defaultWindowStart, heads });
+    }),
+    bench("history fully revealed (scrolled to top)", () => {
+      runTicks({ tail, historyStart: 0, heads });
+    }),
+  );
 });

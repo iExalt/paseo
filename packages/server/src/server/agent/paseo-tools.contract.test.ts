@@ -3768,7 +3768,7 @@ describe("create_agent native tool", () => {
         undefined,
         { workspaceId: "wks_parent" },
       );
-      const server = await createAgentMcpServer({
+      const server = await createAgentToolCatalog({
         agentManager,
         agentStorage: storage,
         callerAgentId: parent.id,

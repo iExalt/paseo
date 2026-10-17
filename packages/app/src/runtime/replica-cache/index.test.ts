@@ -305,7 +305,7 @@ async function expectLegacyWorkspaceRefresh({
   baseline,
   reader,
 }: Awaited<ReturnType<typeof cacheWithoutBackgroundVisibility>>): Promise<void> {
-  const restored = await reader.readDirectory(SERVER_ID);
+  const restored = await readCachedDirectory(reader);
   expect(restored.workspaces.size).toBe(0);
   expect(restored.checkpoint).toEqual({
     agents: baseline.checkpoint.agents,
@@ -314,9 +314,7 @@ async function expectLegacyWorkspaceRefresh({
   expect(restored.agents).toEqual(baseline.agents);
   expect(restored.projects).toEqual(baseline.projects);
   expect(await reader.readTimeline(SERVER_ID, "agent-1")).toEqual(timeline());
-  expect((await createCache(storage).readDirectory(SERVER_ID)).checkpoint).toEqual(
-    restored.checkpoint,
-  );
+  expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(restored.checkpoint);
 
   baseline.workspaces.set(
     "workspace-1",
@@ -324,7 +322,7 @@ async function expectLegacyWorkspaceRefresh({
   );
   reader.replaceDirectoryBaseline(SERVER_ID, baseline);
   await reader.flush();
-  const refreshed = await createCache(storage).readDirectory(SERVER_ID);
+  const refreshed = await readCachedDirectory(createCache(storage));
   expect(refreshed.workspaces.get("workspace-1")?.background).toBe(true);
   expect(refreshed.checkpoint).toEqual(baseline.checkpoint);
 }
@@ -344,9 +342,9 @@ describe("ReplicaCache", () => {
       await writer.flush();
 
       const reader = createCache(storage);
-      expect(
-        (await reader.readDirectory(SERVER_ID)).workspaces.get("workspace-1")?.background,
-      ).toBe(background ?? false);
+      expect((await readCachedDirectory(reader)).workspaces.get("workspace-1")?.background).toBe(
+        background ?? false,
+      );
       expect((await reader.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.background).toBe(
         background ?? false,
       );
@@ -1235,7 +1233,8 @@ describe("ReplicaCache", () => {
         const { cache, expectReads } = await streamingCache();
 
         expect((await cache.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.name).toBe("main");
-        expectReads(2, 1);
+        // The streamed rows are not the ones read, so their commits stay on the persist debounce.
+        expectReads(2);
         await cache.flush();
       });
 
@@ -1260,7 +1259,7 @@ describe("ReplicaCache", () => {
     replacement.agents.set("agent-2", agent("agent-2"));
     cache.replaceDirectoryBaseline(SERVER_ID, replacement);
 
-    const read = await cache.readDirectory(SERVER_ID);
+    const read = await readCachedDirectory(cache);
 
     expect([...read.agents.keys()].sort()).toEqual(["agent-1", "agent-2"]);
     expect(read.projects.size).toBe(0);
