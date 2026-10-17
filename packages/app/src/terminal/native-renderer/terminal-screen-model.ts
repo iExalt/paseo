@@ -27,6 +27,13 @@ export interface TerminalScreenModel {
   scrollUp(input: TerminalScreenScrollInput): TerminalScreenState;
   scrollDown(input: TerminalScreenScrollInput): TerminalScreenState;
   returnToBottom(input: TerminalScreenSyncInput): TerminalScreenState;
+  /**
+   * Centres a row in the first `visibleRows - coveredRows` rows, the part a bottom
+   * overlay such as the find bar leaves uncovered.
+   */
+  scrollToRow(
+    input: TerminalScreenSyncInput & { row: number; coveredRows: number },
+  ): TerminalScreenState;
   reset(): void;
 }
 
@@ -102,6 +109,19 @@ export function createNativeTerminalScreenModel(
     },
     scrollDown(input: TerminalScreenScrollInput): TerminalScreenState {
       return scrollBy({ ...input, direction: 1 });
+    },
+    scrollToRow(input): TerminalScreenState {
+      const screen = render(input);
+      const uncovered = Math.max(1, screen.scroll.visibleRows - Math.max(0, input.coveredRows));
+      const firstRow = clamp(
+        input.row - Math.floor(uncovered / 2),
+        screen.scroll.oldestRow,
+        screen.scroll.bottomViewport.firstRow,
+      );
+      // At the bottom the view follows output, as xterm does; above it the row stays put.
+      const mode = firstRow >= screen.scroll.bottomViewport.firstRow ? "following" : "scrolled";
+      scrollState = { mode, firstRow };
+      return render(input);
     },
     returnToBottom(input: TerminalScreenSyncInput): TerminalScreenState {
       scrollState = { mode: "following", firstRow: 0 };

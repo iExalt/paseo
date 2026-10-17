@@ -17,6 +17,9 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { highlightToKeyedLines, type KeyedLine } from "@/utils/highlight-cache";
+import { useChatFindAnchorText, type ChatFindAnchorTarget } from "@/agent-stream/chat-find/anchor";
+import { findMatchStyles } from "@/find-highlight/match-parts";
+import { overlayMatchParts, type MatchPart } from "@/find-highlight/split";
 import {
   markdownCopyCodeBlockDataSet,
   markdownCopyDataSet,
@@ -28,6 +31,15 @@ interface HighlightedCodeBlockProps {
   language: string | null | undefined;
   inheritedStyles: TextStyle;
   textStyle: TextStyle;
+  /** Chat find's selected occurrence in this block, over the unstripped code. */
+  findMatch?: CodeFindMatch | null;
+}
+
+export interface CodeFindMatch {
+  parts: readonly MatchPart[];
+  current: number;
+  /** Set when this block draws the occurrence reveal scrolls to. */
+  anchor?: ChatFindAnchorTarget | null;
 }
 
 // Fence info strings ("```ts", "```typescript", "```ts {1,3}") map to the
@@ -65,6 +77,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   language,
   inheritedStyles,
   textStyle,
+  findMatch,
 }: HighlightedCodeBlockProps) {
   // Box styles (bg / padding / border / radius / margin) go on the wrapper View
   // so the absolute copy button positions relative to the visible code area,
@@ -84,6 +97,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
     [renderedCode, language],
   );
 
+  const anchorText = useChatFindAnchorText(findMatch?.anchor ?? null);
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
@@ -101,15 +115,14 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      {keyedLines ? (
-        <Text style={innerTextStyle} dataSet={markdownCopyDataSet.code}>
-          {renderCodeSegments(keyedLines)}
-        </Text>
-      ) : (
-        <Text style={innerTextStyle} dataSet={markdownCopyDataSet.code}>
-          {renderedCode}
-        </Text>
-      )}
+      <Text
+        ref={findMatch?.anchor ? anchorText.textRef : undefined}
+        style={innerTextStyle}
+        dataSet={markdownCopyDataSet.code}
+        onTextLayout={findMatch?.anchor ? anchorText.onTextLayout : undefined}
+      >
+        {renderCode(keyedLines, renderedCode, findMatch)}
+      </Text>
       <CopyButton getCode={getCode} visible={controlsVisible} />
     </View>
   );
@@ -127,6 +140,45 @@ function renderCodeSegments(keyedLines: KeyedLine[]): React.ReactNode[] {
     }
   }
   return segments;
+}
+
+function renderCode(
+  keyedLines: KeyedLine[] | null,
+  code: string,
+  findMatch: CodeFindMatch | null | undefined,
+): React.ReactNode {
+  if (findMatch) return renderFindSegments(keyedLines, code, findMatch);
+  return keyedLines ? renderCodeSegments(keyedLines) : code;
+}
+
+/** The code cut at the selected match; only the block holding it renders this way. */
+function renderFindSegments(
+  keyedLines: KeyedLine[] | null,
+  code: string,
+  findMatch: CodeFindMatch,
+): React.ReactNode[] {
+  const runs: { text: string; style: HighlightToken["style"] | null }[] = keyedLines
+    ? keyedLines.flatMap((line, lineIndex) => [
+        ...(lineIndex > 0 ? [{ text: "\n", style: null }] : []),
+        ...line.tokens.map(({ token }) => ({ text: token.text, style: token.style ?? null })),
+      ])
+    : [{ text: code, style: null }];
+  let offset = 0;
+  return overlayMatchParts(runs, findMatch.parts).map((run) => {
+    const start = offset;
+    offset += run.text.length;
+    return (
+      <Text
+        key={start}
+        style={[
+          run.style ? syntaxTokenStyleFor(run.style) : undefined,
+          run.match === findMatch.current ? findMatchStyles.current : undefined,
+        ]}
+      >
+        {run.text}
+      </Text>
+    );
+  });
 }
 
 interface TokenSpanProps {

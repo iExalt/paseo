@@ -15,6 +15,8 @@ export type DesktopPermissionState =
 export interface DesktopPermissionStatus {
   state: DesktopPermissionState;
   detail: string;
+  /** What the row's button does; rows request any permission that is not granted when unset. */
+  action?: "none" | "request" | "open-settings";
 }
 
 export interface DesktopPermissionSnapshot {
