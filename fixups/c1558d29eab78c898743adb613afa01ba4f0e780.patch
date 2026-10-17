@@ -54,6 +54,16 @@ index d107547dc..3ec4d6393 100644
 +    ...StyleSheet.absoluteFill,
    },
  });
+diff --git a/packages/app/src/polyfills/install-navigator-polyfill.ts b/packages/app/src/polyfills/install-navigator-polyfill.ts
+deleted file mode 100644
+index 8f96cd670..000000000
+--- a/packages/app/src/polyfills/install-navigator-polyfill.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-import { polyfillNavigator } from "./navigator";
+-
+-// Eager terminal imports read these fields before the root layout executes.
+-polyfillNavigator();
 diff --git a/packages/app/src/runtime/replica-cache/index.test.ts b/packages/app/src/runtime/replica-cache/index.test.ts
 index 71054feeb..29d95bac6 100644
 --- a/packages/app/src/runtime/replica-cache/index.test.ts
@@ -132,6 +142,25 @@ index edc02a4eb..121299a7c 100644
      const target = resolveAssistantImageSource({ source, workspaceRoot });
      expect(target?.kind).toBe("file_rpc");
      if (target?.kind !== "file_rpc") throw new Error("Expected a local image read target");
+diff --git a/packages/server/src/server/hub/relationship-execution.test.ts b/packages/server/src/server/hub/relationship-execution.test.ts
+index 752ac8010..dcb5f216a 100644
+--- a/packages/server/src/server/hub/relationship-execution.test.ts
++++ b/packages/server/src/server/hub/relationship-execution.test.ts
+@@ -288,8 +288,12 @@ describe("Hub relationship owned execution", () => {
+     const second = await relationship.ownedCreateResult("second-create");
+ 
+     expect(relationship.relationshipFile()?.relationship.daemonId).toBe(daemonId);
+-    expect(first).toMatchObject({ payload: { success: true, executionId: "first-execution" } });
+-    expect(second).toMatchObject({ payload: { success: true, executionId: "second-execution" } });
++    expect(first).toMatchObject({
++      payload: { success: true, executionId: "first-execution", error: null },
++    });
++    expect(second).toMatchObject({
++      payload: { success: true, executionId: "second-execution", error: null },
++    });
+     expect(await relationship.durableOwnedAgentIds()).toHaveLength(2);
+   });
+ 
 diff --git a/packages/server/src/utils/checkout-git.ts b/packages/server/src/utils/checkout-git.ts
 index ce0070290..b8d4e75f8 100644
 --- a/packages/server/src/utils/checkout-git.ts
