@@ -7,5 +7,14 @@
       { "mode": "100644", "oid": "f64f09ebc741be449c3d154b202d3ce3686fb1ed", "stage": 1 },
       { "mode": "100644", "oid": "43ca6100860aee0c0b73d101de0f0577f5c27396", "stage": 3 }
     ]
+  },
+  {
+    "upstream": "c1558d29eab78c898743adb613afa01ba4f0e780",
+    "commit": "0c49e5149cdb375de0ab626f00e2ee21f0051fc7",
+    "path": "packages/server/src/server/agent/mcp-parity.e2e.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "3ae70680b688de7f6e67a13d43a5d900b956b88c", "stage": 1 },
+      { "mode": "100644", "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d", "stage": 2 }
+    ]
   }
 ]
