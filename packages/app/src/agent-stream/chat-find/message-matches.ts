@@ -14,10 +14,6 @@ export interface MessageMatch {
   index: number;
 }
 
-function blockIndex(row: StreamItem): number {
-  return row.kind === "assistant_message" ? (row.blockIndex ?? 0) : 0;
-}
-
 /** The text a row draws: native never expands a capped message. */
 function itemMatchCount(item: StreamItem, pattern: RegExp): number {
   if (item.kind === "user_message") return countMatches(item.text, pattern);
@@ -29,9 +25,8 @@ function itemMatchCount(item: StreamItem, pattern: RegExp): number {
 
 /**
  * Finds an occurrence in a message, counted the way the host's chat search counts
- * them. Pass the rows the stream draws: an assistant message is one row per Markdown
- * block, so the occurrence is numbered across its rows in block order, whatever order
- * the list holds them in. Null when there is none.
+ * them, numbered across the message's rows in reading order. Pass the rows the stream
+ * draws. Null when there is none.
  */
 export function locateMessageMatch(
   rows: readonly StreamItem[],
@@ -43,7 +38,6 @@ export function locateMessageMatch(
   const pattern = searchPattern(query);
   const counts = rows
     .filter((row) => getStreamItemMessageId(row) === messageId)
-    .sort((a, b) => blockIndex(a) - blockIndex(b))
     .map((row) => ({ itemId: row.id, count: itemMatchCount(row, pattern) }));
   const count = counts.reduce((total, entry) => total + entry.count, 0);
   if (count === 0) return null;

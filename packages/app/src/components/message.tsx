@@ -8,6 +8,14 @@ import {
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
+import type { MarkdownFind } from "@/components/markdown/find-split";
+import { TurnSourceSheet } from "@/components/turn-source-sheet";
+import { useChatFindAnchorText } from "@/agent-stream/chat-find/anchor";
+import { useChatFindItemHighlight } from "@/agent-stream/chat-find/highlight-store";
+import { findMarkdownMatches } from "@/agent-stream/chat-find/markdown-matches";
+import { matchPartsOffset, renderMatchParts } from "@/find-highlight/match-parts";
+import { splitTextForMatches } from "@/find-highlight/split";
+import { searchPattern } from "@getpaseo/protocol/chat-search-text";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
@@ -43,6 +51,7 @@ import {
   MicVocal,
   Plus,
   Scissors,
+  TextCursor,
   TriangleAlertIcon,
   XCircle,
 } from "lucide-react-native";
@@ -760,55 +769,6 @@ interface AssistantMessageProps {
   findItemId?: string;
 }
 
-/** Chat find's selected occurrence within one rendered Markdown block. */
-interface MarkdownBlockFind {
-  parts: ReadonlyMap<string, MatchPart[]>;
-  current: number;
-  /** The root Text that draws the current occurrence, measured to scroll to it. */
-  anchor: (ChatFindAnchorTarget & { hostKey: string }) | null;
-}
-
-function markdownBlockAnchor(
-  find: MarkdownBlockFind | null,
-  node: ASTNode,
-): ChatFindAnchorTarget | null {
-  return find?.anchor?.hostKey === node.key ? find.anchor : null;
-}
-
-function markdownBlockFindParts(
-  find: MarkdownBlockFind | null,
-  node: ASTNode,
-): MatchPart[] | undefined {
-  return find && isFindMarkedNode(node) ? find.parts.get(node.key) : undefined;
-}
-
-function markdownBlockCodeFind(
-  find: MarkdownBlockFind | null,
-  node: ASTNode,
-): CodeFindMatch | null {
-  const parts = markdownBlockFindParts(find, node);
-  return parts && find
-    ? { parts, current: find.current, anchor: markdownBlockAnchor(find, node) }
-    : null;
-}
-
-function markdownBlockWithMatch(
-  blocks: readonly ReadonlyMap<string, MatchPart[]>[],
-  match: number,
-): number {
-  return blocks.findIndex((parts) => {
-    for (const nodeParts of parts.values()) {
-      if (nodeParts.some((part) => part.match === match)) return true;
-    }
-    return false;
-  });
-}
-
-function markdownBlockText(find: MarkdownBlockFind | null, node: ASTNode, text: string): ReactNode {
-  const parts = markdownBlockFindParts(find, node);
-  return parts && find ? renderMatchParts(parts, find.current, MarkdownTextSpan) : text;
-}
-
 export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
   container: {
     paddingVertical: theme.spacing[3],
@@ -1304,6 +1264,25 @@ export const AssistantMessage = memo(function AssistantMessage({
     [occurrenceKey, revealedMessage.length],
   );
 
+  // Native chat find marks its selected occurrence once the message has fully revealed;
+  // web marks the DOM it searched instead (chat-find/index.web.tsx).
+  const findHighlight = useChatFindItemHighlight(isNative ? findItemId : undefined);
+  const findQuery = findHighlight?.query ?? null;
+  const findCurrent = findHighlight?.index ?? -1;
+  const findComplete = phase === "complete" && revealedMessage === renderedMessage.text;
+  const findMatches = useMemo(
+    () =>
+      findQuery !== null && findComplete
+        ? findMarkdownMatches(revealedMessage, searchPattern(findQuery))
+        : null,
+    [findComplete, findQuery, revealedMessage],
+  );
+  const find = useMemo<MarkdownFind | null>(() => {
+    const match = findMatches?.matches[findCurrent];
+    if (!match || findItemId === undefined) return null;
+    return { match, anchor: { itemId: findItemId, index: findCurrent, offset: 0 } };
+  }, [findCurrent, findItemId, findMatches]);
+
   const measureMessage = useStableEvent((event: import("react-native").LayoutChangeEvent) => {
     setAssistantMessageHeight({ markdown: revealedMessage, ...event.nativeEvent.layout });
   });
@@ -1320,6 +1299,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         client={client}
         workspaceRoot={workspaceRoot}
         serverId={serverId}
+        find={find}
       />
       {fullMessageByteLength !== null ? (
         <Text

@@ -1,10 +1,10 @@
 import { useLayoutEffect } from "react";
-import { supportsDesktopPaneSplits, useIsCompactFormFactor } from "@/constants/layout";
+import { paneSplitsAvailable, useIsCompactFormFactor } from "@/constants/layout";
 import { useWorkspaceLayoutStore, type WorkspaceLayoutMode } from "@/stores/workspace-layout-store";
 
 function resolveWorkspaceLayoutMode(isCompact: boolean): WorkspaceLayoutMode {
   if (isCompact) return "compact";
-  return supportsDesktopPaneSplits() ? "split-panes" : "single-pane";
+  return paneSplitsAvailable({ isCompact }) ? "split-panes" : "single-pane";
 }
 
 /**

@@ -20,10 +20,15 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@expo/cli",
     patchPrefix: "@expo+cli+",
   },
+  // npm nests or hoists this package depending on the rest of the tree; patch either.
   {
     nodeModulesPath: "packages/app/node_modules/react-native-enriched-markdown",
     patchPrefix: "react-native-enriched-markdown+",
     cwd: "packages/app",
+  },
+  {
+    nodeModulesPath: "node_modules/react-native-enriched-markdown",
+    patchPrefix: "react-native-enriched-markdown+",
   },
   // Remove after react-native-unistyles ships
   // https://github.com/jpudysz/react-native-unistyles/pull/1203.

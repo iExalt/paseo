@@ -13,10 +13,7 @@ function needsDocumentContext(node: Nodes): boolean {
   return "children" in node && node.children.some(needsDocumentContext);
 }
 
-/** The last parsed block and unfinished line are mutable; earlier blocks are closed. */
-export function splitStreamingMarkdown(text: string, streaming: boolean) {
-  if (!streaming) return { head: text, tail: "" };
-  const completeLines = text.slice(0, text.lastIndexOf("\n") + 1);
+function closedBoundary(completeLines: string): number {
   const tree = fromMarkdown(completeLines, {
     extensions: [gfmTable()],
     mdastExtensions: [gfmTableFromMarkdown()],
@@ -26,7 +23,23 @@ export function splitStreamingMarkdown(text: string, streaming: boolean) {
     if (needsDocumentContext(tree.children[index])) break;
     // mdast starts some nodes after their indentation; the next parser needs it too.
     const nextStart = tree.children[index + 1].position!.start.offset!;
-    boundary = text.lastIndexOf("\n", nextStart - 1) + 1;
+    boundary = completeLines.lastIndexOf("\n", nextStart - 1) + 1;
   }
-  return { head: text.slice(0, boundary), tail: text.slice(boundary) };
+  return boundary;
+}
+
+// The boundary depends only on the complete lines, which stay the same for every
+// character streamed into the unfinished line, so the last parse is reused.
+let lastLines: string | null = null;
+let lastBoundary = 0;
+
+/** The last parsed block and unfinished line are mutable; earlier blocks are closed. */
+export function splitStreamingMarkdown(text: string, streaming: boolean) {
+  if (!streaming) return { head: text, tail: "" };
+  const completeLines = text.slice(0, text.lastIndexOf("\n") + 1);
+  if (completeLines !== lastLines) {
+    lastBoundary = closedBoundary(completeLines);
+    lastLines = completeLines;
+  }
+  return { head: text.slice(0, lastBoundary), tail: text.slice(lastBoundary) };
 }
