@@ -8955,7 +8955,8 @@ export class Session {
                 agentStorage: this.agentStorage,
                 childAgentId: agentId,
                 callerAgentId: msg.sourceAgentId,
-                waitForTurnStart: nextDisposition === "turn_started",
+                waitForTurnStart:
+                  nextDisposition === "turn_started" || nextDisposition === "deferred",
                 logger: this.sessionLogger,
               });
             }
@@ -8999,7 +9000,9 @@ export class Session {
           agentId,
           accepted: true,
           error: null,
-          disposition,
+          // The wire enum has no "deferred"; an accepted send with no disposition is the honest
+          // answer for a steer that will start its own turn later.
+          disposition: disposition === "deferred" ? undefined : disposition,
         },
       });
     } catch (error) {

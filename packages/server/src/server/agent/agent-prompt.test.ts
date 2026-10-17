@@ -112,7 +112,7 @@ function createFinishNotificationScenario(
   });
   Reflect.set(agentManager, "tryRunOutOfBand", () => false);
   Reflect.set(agentManager, "hasInFlightRun", () => Boolean(options?.parentPromptError));
-  Reflect.set(agentManager, "steerOrReplaceActiveTurn", async () => {
+  Reflect.set(agentManager, "steerOrDeferBehindActiveTurn", async () => {
     steerAttemptCount += 1;
     return { status: "inactive" };
   });
@@ -120,6 +120,7 @@ function createFinishNotificationScenario(
     parentPrompted = true;
     parentPrompts.push(prompt);
     resolveParentPrompt?.(prompt);
+    if (options?.parentPromptError) throw options.parentPromptError;
     return (async function* noop() {})();
   });
   Reflect.set(agentManager, "replaceAgentRun", async (_agentId: string, prompt: string) => {
