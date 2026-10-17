@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, View } from "react-native";
+import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { PaneFind, type PaneFindHandle } from "@/pane-find";
 import { usePaneFindRequest } from "@/pane-find/open-requests";
+import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import type { MatchPart } from "@/find-highlight/split";
 import { findLineMatches, type LineMatch } from "./line-matches";
@@ -96,15 +97,7 @@ export function useFileFind({
   useEffect(() => {
     if (!active) close();
   }, [active, close]);
-  useEffect(() => {
-    if (!open) return undefined;
-    // Android back closes the find bar before it leaves the file.
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      close();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [close, open]);
+  useBackClosesFind(open, close);
 
   const count = result.matches.length;
   const step = useCallback(

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BackHandler, View, type LayoutChangeEvent } from "react-native";
+import { View, type LayoutChangeEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { PaneFind, type PaneFindHandle, type PaneFindProps } from "@/pane-find";
 import { usePaneFindRequest } from "@/pane-find/open-requests";
+import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { findOpMessages } from "./find-messages";
 import type { FileEditorBridge } from "./webview/host-bridge";
@@ -120,19 +121,11 @@ export function useEditorFind({
   useEffect(() => {
     if (!active && state.open) run("close");
   }, [active, run, state.open]);
-  useEffect(() => {
-    if (!ready || !state.open) return undefined;
-    // Android back closes the find bar before it leaves the file.
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      run("close");
-      return true;
-    });
-    return () => subscription.remove();
-  }, [ready, run, state.open]);
 
   const next = useCallback(() => run("next"), [run]);
   const previous = useCallback(() => run("previous"), [run]);
   const close = useCallback(() => run("close"), [run]);
+  useBackClosesFind(ready && state.open, close);
   const replace = useMemo(
     () =>
       state.readOnly

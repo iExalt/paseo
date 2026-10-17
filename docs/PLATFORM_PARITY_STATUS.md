@@ -216,7 +216,9 @@ Device checks wait for a tablet emulator batch.
   composer on Android as on iPad. Settings lists shortcuts on native
   read-only; rebinding stays a gap, deferred past this campaign, since
   capture reads DOM key events. Also deferred: shortcut badges while a
-  modifier is held. Known limits: the second key of a two-key shortcut is
+  modifier is held, and Electron's browser shortcuts (Mod+L focuses the
+  address bar, Mod+R reloads); on native a focused browser tab counts as a
+  text field, so Mod+L focuses the composer. Known limits: the second key of a two-key shortcut is
   also typed into a focused field; the system may take some combos first.
   Pending on the tablet with a keyboard: Ctrl+K from the composer; Alt+arrow
   and Ctrl+Backspace still edit in it; Ctrl+F in the file editor opens one

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from "react";
-import { BackHandler, Text, View } from "react-native";
+import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { PaneFind, type PaneFindHandle } from "@/pane-find";
 import { usePaneFindRequest } from "@/pane-find/open-requests";
+import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { Button } from "@/components/ui/button";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
@@ -135,15 +136,7 @@ export function ChatFind({
     widget.current?.focus();
   }, [model]);
   usePaneFindRequest(active ? `agent:${agentId}` : null, openFind);
-  useEffect(() => {
-    if (!state.open) return undefined;
-    // Android back closes the find bar before it leaves the screen.
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      model.close();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [model, state.open]);
+  useBackClosesFind(state.open, model.close);
 
   let status = "";
   if (state.phase === "searching") status = t("paneFind.searching");

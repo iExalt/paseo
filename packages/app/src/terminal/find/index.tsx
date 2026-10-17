@@ -7,11 +7,12 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { BackHandler, View, type LayoutChangeEvent } from "react-native";
+import { View, type LayoutChangeEvent } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { PaneFind, findShortcutPlatform, isFindShortcut, type PaneFindHandle } from "@/pane-find";
 import { usePaneFindRequest } from "@/pane-find/open-requests";
+import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { isWeb } from "@/constants/platform";
 import { hasActiveWebOverlay } from "@/lib/overlay-root";
 import { isImeComposingKeyboardEvent } from "@/utils/keyboard-ime";
@@ -101,15 +102,8 @@ export const TerminalFind = forwardRef<
     setOpen(false);
     focusTerminal();
   }, [focusTerminal, terminal]);
-  useEffect(() => {
-    if (!open || isWeb) return undefined;
-    // Android back closes the find bar before it leaves the terminal.
-    const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
-      close();
-      return true;
-    });
-    return () => subscription.remove();
-  }, [close, open]);
+  // A hidden terminal keeps its bar open, as on web, but leaves Back to the visible pane.
+  useBackClosesFind(open && active && !isWeb, close);
   if (!open || !terminal.current?.find) return null;
   const total = `${result.resultCount}${result.limited ? "+" : ""}`;
   let status = "";
