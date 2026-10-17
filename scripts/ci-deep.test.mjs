@@ -134,16 +134,7 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
     branches: ["dev"],
     paths: [".github/fork-release.json"],
   });
-  const guard = (expression) =>
-    new Function(
-      "github",
-      "needs",
-      "cancelled",
-      "startsWith",
-      `return (${expression.replaceAll("needs.authorize-release", "needs.authorizeRelease")});`,
-    );
-  const authorize = guard(workflow.jobs["authorize-release"].if);
-  const browser = guard(workflow.jobs.browser.if);
+  const runs = new Function("github", "startsWith", `return (${workflow.jobs.browser.if});`);
   const startsWith = (value, prefix) => value.startsWith(prefix);
   const pr = {
     repository: "iExalt/paseo",
@@ -158,7 +149,7 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
       },
     },
   };
-  const admitted = (github) => Boolean(authorize(github, {}, () => false, startsWith));
+  const admitted = (github) => Boolean(runs(github, startsWith));
   assert.equal(admitted(pr), true);
   for (const mutate of [
     (x) => {
@@ -182,20 +173,16 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
     assert.equal(admitted(rejected), false);
   }
   assert.equal(admitted({ ...pr, event: { ...pr.event, action: "synchronize" } }), true);
-  const runs = (github, allowed) =>
-    Boolean(browser(github, { authorizeRelease: { outputs: { allowed } } }, () => false));
-  assert.equal(runs(pr, "true"), true);
-  assert.equal(runs(pr, undefined), false);
   const dispatch = {
     repository: "iExalt/paseo",
     event_name: "workflow_dispatch",
     event: { repository: { private: false } },
-    ref: "refs/heads/ci/github-workflows",
+    ref: "refs/heads/dev",
     actor: "iExalt",
   };
-  assert.equal(runs(dispatch), true);
-  assert.equal(runs({ ...dispatch, actor: "other" }), false);
-  assert.equal(runs({ ...dispatch, ref: "refs/heads/other" }), false);
+  assert.equal(admitted(dispatch), true);
+  assert.equal(admitted({ ...dispatch, actor: "other" }), false);
+  assert.equal(admitted({ ...dispatch, ref: "refs/heads/other" }), false);
 });
 
 test("deep verification requires exact source and isolated harness configuration", () => {
