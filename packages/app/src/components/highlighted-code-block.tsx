@@ -1,9 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
+  ScrollView,
   View,
   Text,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type StyleProp,
+  type TextLayoutEventData,
+  type TextLayoutLine,
   type TextStyle,
   type ViewStyle,
 } from "react-native";
@@ -18,7 +24,8 @@ import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { highlightToKeyedLines, type KeyedLine } from "@/utils/highlight-cache";
 import { useChatFindAnchorText, type ChatFindAnchorTarget } from "@/agent-stream/chat-find/anchor";
-import { findMatchStyles } from "@/find-highlight/match-parts";
+import { findMatchStyles, matchPartsOffset } from "@/find-highlight/match-parts";
+import { findRevealDelta, monospaceRangeX } from "@/find-highlight/reveal";
 import { overlayMatchParts, type MatchPart } from "@/find-highlight/split";
 import {
   markdownCopyCodeBlockDataSet,
@@ -98,6 +105,17 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   );
 
   const anchorText = useChatFindAnchorText(findMatch?.anchor ?? null);
+  const anchorTextLayout = findMatch?.anchor ? anchorText.onTextLayout : undefined;
+  // Native Markdown draws code blocks unwrapped in a pane that scrolls sideways. The
+  // find block does the same, so swapping it in does not change the block's height.
+  const scroller = useFindCodeScroller(isNative ? findMatch : null, textStyle);
+  const handleTextLayout = useCallback(
+    (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+      anchorTextLayout?.(event);
+      scroller?.onTextLayout(event);
+    },
+    [anchorTextLayout, scroller],
+  );
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
@@ -108,25 +126,104 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   // fence; pasting any of them into a terminal runs the last line.
   const getCode = useCallback(() => code.replace(TRAILING_CODE_LINE_BREAKS, ""), [code]);
 
+  const text = (
+    <Text
+      ref={findMatch?.anchor ? anchorText.textRef : undefined}
+      style={innerTextStyle}
+      dataSet={markdownCopyDataSet.code}
+      onTextLayout={anchorTextLayout || scroller ? handleTextLayout : undefined}
+    >
+      {renderCode(keyedLines, renderedCode, findMatch)}
+    </Text>
+  );
+
   return (
     <View
-      style={containerStyle}
+      style={scroller ? [containerStyle, scroller.containerStyle] : containerStyle}
       dataSet={copyDataSet}
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      <Text
-        ref={findMatch?.anchor ? anchorText.textRef : undefined}
-        style={innerTextStyle}
-        dataSet={markdownCopyDataSet.code}
-        onTextLayout={findMatch?.anchor ? anchorText.onTextLayout : undefined}
-      >
-        {renderCode(keyedLines, renderedCode, findMatch)}
-      </Text>
+      {scroller ? (
+        <ScrollView
+          ref={scroller.scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator
+          contentContainerStyle={scroller.contentStyle}
+          onLayout={scroller.onLayout}
+          onScroll={scroller.onScroll}
+          scrollEventThrottle={16}
+        >
+          {text}
+        </ScrollView>
+      ) : (
+        text
+      )}
       <CopyButton getCode={getCode} visible={controlsVisible} />
     </View>
   );
 });
+
+// Keeps the selected occurrence this far from the pane's edges.
+const FIND_SCROLL_MARGIN = 24;
+
+/**
+ * Scrolls the find block's pane sideways to the selected occurrence. Its horizontal
+ * padding moves inside the pane, as in the native block, so code scrolls to the border.
+ */
+function useFindCodeScroller(findMatch: CodeFindMatch | null | undefined, textStyle: TextStyle) {
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollX = useRef(0);
+  const [lines, setLines] = useState<readonly TextLayoutLine[]>([]);
+  const [paneWidth, setPaneWidth] = useState(0);
+  const enabled = !!findMatch;
+  const range = useMemo(() => {
+    if (!findMatch) return null;
+    const start = matchPartsOffset(findMatch.parts, findMatch.current);
+    let length = 0;
+    for (const part of findMatch.parts) {
+      if (part.match === findMatch.current) length += part.text.length;
+    }
+    return { start, end: start + length };
+  }, [findMatch]);
+  const padding = textStyle.paddingHorizontal ?? textStyle.padding;
+  const inset = typeof padding === "number" ? padding : 0;
+
+  useEffect(() => {
+    if (!range || paneWidth === 0) return;
+    const match = monospaceRangeX(lines, range.start, range.end);
+    if (!match) return;
+    const delta = findRevealDelta({
+      visibleTop: scrollX.current,
+      visibleBottom: scrollX.current + paneWidth,
+      matchTop: inset + match.x,
+      matchHeight: match.width,
+      margin: FIND_SCROLL_MARGIN,
+    });
+    if (delta === 0) return;
+    scrollRef.current?.scrollTo({ x: Math.max(0, scrollX.current + delta), animated: false });
+  }, [inset, lines, paneWidth, range]);
+
+  const onTextLayout = useCallback((event: NativeSyntheticEvent<TextLayoutEventData>) => {
+    setLines(event.nativeEvent.lines);
+  }, []);
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    setPaneWidth(event.nativeEvent.layout.width);
+  }, []);
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollX.current = event.nativeEvent.contentOffset.x;
+  }, []);
+  const containerStyle = useMemo<ViewStyle>(() => ({ paddingHorizontal: 0 }), []);
+  const contentStyle = useMemo<ViewStyle>(() => ({ paddingHorizontal: inset }), [inset]);
+
+  return useMemo(
+    () =>
+      enabled
+        ? { scrollRef, onTextLayout, onLayout, onScroll, containerStyle, contentStyle }
+        : null,
+    [enabled, onTextLayout, onLayout, onScroll, containerStyle, contentStyle],
+  );
+}
 
 function renderCodeSegments(keyedLines: KeyedLine[]): React.ReactNode[] {
   const segments: React.ReactNode[] = [];
