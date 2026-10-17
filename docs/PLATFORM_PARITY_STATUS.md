@@ -12,10 +12,10 @@ checklist, to current evidence. It is not a second checklist.
 | Field                        | Status                                                                   |
 | ---------------------------- | ------------------------------------------------------------------------ |
 | Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                |
-| Branch                       | `feat/platform-parity`                                                   |
+| Branch                       | Merged to `dev` as `669d95cd2` (#161)                                    |
 | Current chunk                | F: browser tabs and copy                                                 |
 | Overall state                | C–F device-checked on the phone; E accepted on review only (user choice) |
-| Product or release readiness | No chunk is released                                                     |
+| Product or release readiness | Released in `paseo-v0.6.0`                                               |
 | Routine CI budget            | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
 
 ### Routine CI baseline
@@ -75,8 +75,14 @@ Evidence state: verified on Paseo Debug, except "Sent to host".
 
 ### B2: test notification
 
-Evidence state: accepted on code review and unit tests; its push checks wait
-for the first fork release that contains it.
+Evidence state: verified on the installed 0.6.0 app by the user, with waivers.
+
+- The user checked: the host row reads "Sent to host"; the test notification
+  arrives with the app in the foreground and in the background; tapping it
+  does not navigate, from a cold start too.
+- Waived by the user: the update prompt for a host without `pushTest`, the
+  no-token row with notifications denied, and the daemon log check for
+  `InvalidCredentials`.
 
 - `push.send_test.request` sends to the token this connection registered and
   returns Expo's answer: `accepted` (a ticket, not proof of delivery),
@@ -296,7 +302,8 @@ The pending cases below stay unverified.
   accepted without device checks, by the user's choice.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
-- B2's push checks wait for the first fork release that contains it.
+- Everything shipped in `paseo-v0.6.0`. B2 passed its release gate on the
+  installed app, with three checks waived by the user.
 - Native behaviour is checked on Paseo Debug on the user's Android phone. iOS
   and physical tablets are not available.
 
@@ -313,3 +320,6 @@ The pending cases below stay unverified.
 - 2026-10-16: phone batch on Paseo Debug for C2, C3, D1, F1 and F2. It found
   six bugs, fixed and re-checked on the device. The tablet checks were
   skipped by the user.
+- 2026-10-17: merged as #161 and released in `paseo-v0.6.0`. The user ran
+  B2's release gate on the installed app: Send test, foreground and background
+  delivery, and tapping all pass; the other three checks are waived.

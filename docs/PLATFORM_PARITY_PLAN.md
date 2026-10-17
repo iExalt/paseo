@@ -46,7 +46,7 @@ runs on native today.
       open system settings, a link to the push channel's sound settings, and
       per-host push registration with re-register. Settings → Permissions on
       native shows microphone permission status.
-- [ ] B2. A test notification that travels from the daemon to the phone
+- [x] B2. A test notification that travels from the daemon to the phone
       (`push.send_test.request`), shown even while the app is open.
 
 Acceptance: unit tests for the status model; on Paseo Debug the sections show
