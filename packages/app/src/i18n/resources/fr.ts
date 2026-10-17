@@ -2343,7 +2343,7 @@ export const fr: TranslationResources = {
           steer:
             "Quand l’agent est en cours d’exécution, Entrée réoriente le tour en cours. Cmd/Ctrl+Entrée met en file d’attente.",
           queue:
-            "Quand l’agent est en cours d’exécution, Entrée met en file d’attente. Cmd/Ctrl+Entrée envoie.",
+            "Quand l’agent est en cours d’exécution, Entrée met en file d’attente. Cmd/Ctrl+Entrée réoriente le tour en cours.",
         },
         options: {
           interrupt: "Interrompre",

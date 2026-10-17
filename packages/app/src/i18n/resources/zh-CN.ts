@@ -2268,7 +2268,7 @@ export const zhCN: TranslationResources = {
         descriptions: {
           interrupt: "Agent 运行时，Enter 会中断。Command/Ctrl+Enter 会排队。",
           steer: "Agent 运行时，Enter 会引导当前回合。Command/Ctrl+Enter 会排队。",
-          queue: "Agent 运行时，Enter 会排队。Command/Ctrl+Enter 会提交。",
+          queue: "Agent 运行时，Enter 会排队。Command/Ctrl+Enter 会引导当前回合。",
         },
         options: {
           interrupt: "中断",
