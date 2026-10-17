@@ -2330,7 +2330,6 @@ export const zhCN: TranslationResources = {
     shortcuts: {
       dialogTitle: "快捷键",
       searchPlaceholder: "搜索快捷键",
-      unavailableOnMobile: "键盘快捷键仅在桌面端可用",
       capturePrompt: "按下快捷键...",
       unassigned: "未设置",
       actions: {

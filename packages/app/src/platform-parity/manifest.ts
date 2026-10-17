@@ -90,10 +90,9 @@ export const PARITY_MANIFEST: ParityManifest = {
     "hooks/use-dictation-audio-source": equivalent,
     "hooks/use-keyboard-visibility": equivalent,
     "keyboard/shift/internal/translate": equivalent,
-    "native/ios-hardware-keyboard-submit": {
-      kind: "gap",
-      chunk: "E1",
-      reason: "Only iOS submits the composer from a hardware keyboard",
+    "native/hardware-keyboard": {
+      kind: "equivalent",
+      note: "Web reads DOM key events; native gets hardware keys from the PaseoHardwareKeyboard module",
     },
     "panels/retained-chat-content": equivalent,
     "permissions/platform-permissions": equivalent,
@@ -114,9 +113,8 @@ export const PARITY_MANIFEST: ParityManifest = {
   settingsSections: {
     browser: { kind: "gap", chunk: "F1", reason: "Browser data settings need browser tabs" },
     shortcuts: {
-      kind: "gap",
-      chunk: "E1",
-      reason: "Shortcuts need hardware keyboard support on native",
+      kind: "equivalent",
+      note: "Hidden in a plain browser and on native without shortcuts; native lists bindings read-only",
     },
     integrations: { kind: "deliberate", reason: "Installs the CLI on the local machine" },
     notifications: {
@@ -149,11 +147,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     "workspace/open-in-file-manager/menu-item.tsx": {
       kind: "deliberate",
       reason: "Opening a file manager needs the local machine",
-    },
-    "keyboard/availability.ts": {
-      kind: "gap",
-      chunk: "E1",
-      reason: "Shortcuts are off on native, including tablets with keyboards",
     },
     "terminal/find/index.tsx": {
       kind: "gap",

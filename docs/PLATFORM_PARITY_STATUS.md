@@ -207,6 +207,18 @@ Device checks wait for a tablet emulator batch.
   once and focuses it; two agent panes stream while the other scrolls
   (record frame stats as for C1); the explorer pane opens files beside it,
   and a split-screen resize to compact and back keeps it reachable.
+- E1: with a hardware keyboard on a wide native layout, the shortcut registry
+  runs as on web. `paseo-hardware-keyboard` now covers Android through a
+  `MainActivity` plugin. JS publishes which combos fire while typing and
+  which only outside a field, from web's focus-scope rules. Native consumes
+  a combo only when that allows it, so text editing keeps its keys. Enter
+  submits the composer on Android as on iPad. Settings lists shortcuts on
+  native, read-only, since rebinding captures DOM key events. Deferred:
+  shortcut badges while a modifier is held. Pending on the tablet: Mod+K
+  from the composer, Alt+arrow still moves by word in it, Mod+F in the file
+  editor opens only the editor's find, Ctrl+D in the terminal is not taken,
+  Enter and Shift+Enter in the composer, a keyboard connected after launch,
+  and Escape not also acting as Back.
 - Follow-up after the campaign: the compact explorer dock
   (`NativeExplorerSidebarDock`) is now reachable only from a test override;
   remove it.

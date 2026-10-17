@@ -2398,7 +2398,6 @@ export const ru: TranslationResources = {
     shortcuts: {
       dialogTitle: "Сочетания клавиш",
       searchPlaceholder: "Поиск сочетаний клавиш",
-      unavailableOnMobile: "Сочетания клавиш доступны только на рабочем столе.",
       capturePrompt: "Нажмите сочетание клавиш...",
       unassigned: "Не задано",
       actions: {

@@ -139,6 +139,7 @@ import { useLastWorkspaceSelection } from "@/stores/navigation-active-workspace-
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
 import { isNative, isWeb } from "@/constants/platform";
 import { isSettingsSectionAvailable } from "@/screens/settings/section-availability";
+import { useKeyboardShortcutsAvailable } from "@/keyboard/availability";
 
 // ---------------------------------------------------------------------------
 // View model
@@ -213,8 +214,12 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
   { id: "about", labelKey: "settings.sections.about", icon: Info },
 ];
 
-function isSectionAvailable(item: SidebarSectionItem, isDesktopApp: boolean): boolean {
-  return isSettingsSectionAvailable(item.id, { isDesktopApp, isWeb });
+function isSectionAvailable(
+  item: SidebarSectionItem,
+  isDesktopApp: boolean,
+  keyboardShortcutsAvailable: boolean,
+): boolean {
+  return isSettingsSectionAvailable(item.id, { isDesktopApp, isWeb, keyboardShortcutsAvailable });
 }
 
 interface HostSectionItem {
@@ -962,7 +967,10 @@ function SettingsSidebar({
   const hasHosts = sortedHosts.length > 0;
   const enableBuiltInDaemonOption = useEnableBuiltInDaemonOption();
   const isDesktopApp = isElectronRuntime();
-  const items = SIDEBAR_SECTION_ITEMS.filter((item) => isSectionAvailable(item, isDesktopApp));
+  const shortcutsAvailable = useKeyboardShortcutsAvailable();
+  const items = SIDEBAR_SECTION_ITEMS.filter((item) =>
+    isSectionAvailable(item, isDesktopApp, shortcutsAvailable),
+  );
   const insets = useSafeAreaInsets();
   const isDesktop = layout === "desktop";
   const outerContainerStyle = useMemo(
@@ -1112,6 +1120,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   const [playbackTestResult, setPlaybackTestResult] = useState<string | null>(null);
   const lastOpenedAddHostIntentRef = useRef<string | null>(null);
   const isDesktopApp = isElectronRuntime();
+  const shortcutsAvailable = useKeyboardShortcutsAvailable();
   const isNixManagedApp = isNixManagedDesktopInstallation();
   const preferencesTransferMode = preferencesMigrationMode();
   const appVersion = resolveAppVersion();
@@ -1375,7 +1384,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     }
     if (view.kind === "section") {
       const item = SIDEBAR_SECTION_ITEMS.find((candidate) => candidate.id === view.section);
-      if (!item || !isSectionAvailable(item, isDesktopApp)) return null;
+      if (!item || !isSectionAvailable(item, isDesktopApp, shortcutsAvailable)) return null;
       switch (view.section) {
         case "general":
           return (

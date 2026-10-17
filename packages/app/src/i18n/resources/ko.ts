@@ -2368,7 +2368,6 @@ export const ko: TranslationResources = {
     shortcuts: {
       dialogTitle: "단축키",
       searchPlaceholder: "검색 단축키",
-      unavailableOnMobile: "키보드 단축키는 데스크톱에서만 사용할 수 있습니다",
       capturePrompt: "단축키를 누르세요...",
       unassigned: "설정되지 않음",
       actions: {
