@@ -28,8 +28,15 @@ const CACHE_PREFIX = "resolutions/";
 const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
 const DELETIONS_PATH = "deletions.json";
+const FIXUPS_PREFIX = "fixups/";
 const RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json";
+const SIGNING_NAME = "Clement Liaw";
 const SIGNING_EMAIL = "clliaw@nvidia.com";
+// Every verified email of the GitHub account that registered the signing key. GitHub marks a
+// replayed commit verified only when its committer email is one of these.
+const SIGNING_EMAILS = new Set([SIGNING_EMAIL, "cman101202@gmail.com"]);
+// GitHub's web merges commit as GitHub and carry GitHub's signature, which no replay can keep.
+const WEB_FLOW_EMAIL = "noreply@github.com";
 const SIGNING_PUBLIC_KEY =
   "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEScQeKzAdwWjNsrJ7xQNq2BAKGSkXP6FPbBD7PZrM9J";
 
@@ -144,6 +151,14 @@ function parseTree(text) {
   return entries;
 }
 
+function assertFixupEntries(entries) {
+  for (const entry of entries.filter(({ path }) => path.startsWith(FIXUPS_PREFIX))) {
+    if (!/^fixups\/[0-9a-f]{40}\.patch$/.test(entry.path) || entry.mode !== "100644") {
+      throw new Error(`Unsupported path or file mode in resolution branch: ${entry.path}`);
+    }
+  }
+}
+
 export async function importResolutions(repositoryPath, resolutionSha) {
   if (!/^[0-9a-f]{40}$/.test(resolutionSha ?? "")) {
     throw new Error("A captured resolution-branch SHA is required");
@@ -170,8 +185,10 @@ export async function importResolutions(repositoryPath, resolutionSha) {
       throw new Error("Unsupported path or file mode: deletions.json");
     parseDeletionResolutions(await gitChecked(repositoryPath, ["cat-file", "blob", deletions.oid]));
   }
+  assertFixupEntries(entries);
   const cacheEntries = entries.filter(
-    (entry) => ![SCHEMA_PATH, DELETIONS_PATH].includes(entry.path),
+    (entry) =>
+      ![SCHEMA_PATH, DELETIONS_PATH].includes(entry.path) && !entry.path.startsWith(FIXUPS_PREFIX),
   );
   const pairs = new Map();
   for (const entry of cacheEntries) {
@@ -288,7 +305,7 @@ async function rebaseProgress(repositoryPath) {
   return `${head}:${current.code === 0 ? current.stdout.trim() : "none"}:${staged}:${unmerged}`;
 }
 
-function isReusableRerereStop(result, paths, indexPaths, deletions = 0) {
+function isReusableRerereStop(result, paths, resolved, deletions = 0) {
   const diagnostics = `${result.stdout}\n${result.stderr}`;
   const reusedRecords = diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? [];
   return (
@@ -297,7 +314,7 @@ function isReusableRerereStop(result, paths, indexPaths, deletions = 0) {
     /could not apply [0-9a-f]+/.test(diagnostics) &&
     (reusedRecords.length > 0 || deletions > 0) &&
     paths.length === 0 &&
-    indexPaths.length > 0
+    resolved
   );
 }
 
@@ -331,10 +348,28 @@ async function continueKnownResolutions(
         : 0;
     const conflicts = await unmergedPaths(repositoryPath);
     const staged = await stagedPaths(repositoryPath);
+    // A commit that only changed paths upstream deleted is empty once they are deleted.
+    // Keep it empty, with its own author and message, so the replay still maps 1:1.
+    const emptied = deletions > 0 && conflicts.length === 0 && staged.length === 0;
+    if (emptied) {
+      await gitChecked(repositoryPath, [
+        "-c",
+        "user.name=Rebase staging",
+        "-c",
+        "user.email=rebase-staging@users.noreply.github.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--allow-empty",
+        "--no-verify",
+        "-C",
+        "REBASE_HEAD",
+      ]);
+    }
     if (
       state.code !== 0 ||
       !directoryExists ||
-      !isReusableRerereStop(result, conflicts, staged, deletions)
+      !isReusableRerereStop(result, conflicts, staged.length > 0 || emptied, deletions)
     ) {
       throw new Error(
         `Rebase stopped without a safely reusable completed resolution:\n${result.stdout}\n${result.stderr}`,
@@ -366,7 +401,12 @@ async function continueKnownResolutions(
 
 async function replayCommitCount(repositoryPath, upstreamSha, devSha) {
   const output = (
-    await gitChecked(repositoryPath, ["rev-list", "--count", `${upstreamSha}..${devSha}`])
+    await gitChecked(repositoryPath, [
+      "rev-list",
+      "--count",
+      "--no-merges",
+      `${upstreamSha}..${devSha}`,
+    ])
   ).trim();
   if (!/^(0|[1-9]\d*)$/.test(output)) {
     throw new Error(`Git returned an invalid replay commit count: ${JSON.stringify(output)}`);
@@ -378,13 +418,50 @@ async function replayCommitCount(repositoryPath, upstreamSha, devSha) {
   return count;
 }
 
+// A merge whose tree differs from Git's own merge of its parents holds hand edits that a
+// replay, which drops merges, would silently lose.
+async function assertCleanMerge(repositoryPath, sha) {
+  const parents = (await gitChecked(repositoryPath, ["rev-list", "--parents", "-n", "1", sha]))
+    .trim()
+    .split(" ")
+    .slice(1);
+  const merged = await git(repositoryPath, ["merge-tree", "--write-tree", ...parents]);
+  const tree = (await gitChecked(repositoryPath, ["rev-parse", `${sha}^{tree}`])).trim();
+  if (parents.length !== 2 || merged.code !== 0 || merged.stdout.split("\n")[0] !== tree) {
+    throw new Error(`Merge ${sha} is not Git's clean merge of its parents; linearize it by hand`);
+  }
+}
+
+// The commits rebase replays, in its order: merges dropped, the rest topologically sorted.
 async function replayCommitIds(repositoryPath, upstreamSha, devSha) {
   const range = `${upstreamSha}..${devSha}`;
   const merges = (await gitChecked(repositoryPath, ["rev-list", "--merges", range])).trim();
-  if (merges)
-    throw new Error("Rebase signing supports linear dev history only; merge commits found");
-  const output = await gitChecked(repositoryPath, ["rev-list", "--reverse", range]);
+  for (const merge of merges ? merges.split("\n") : [])
+    await assertCleanMerge(repositoryPath, merge);
+  const output = await gitChecked(repositoryPath, [
+    "rev-list",
+    "--reverse",
+    "--topo-order",
+    "--no-merges",
+    range,
+  ]);
   return output.trim() ? output.trim().split("\n") : [];
+}
+
+function replayCommitter(original, sha) {
+  if (SIGNING_EMAILS.has(original.committer.email)) return original.committer;
+  if (original.committer.email !== WEB_FLOW_EMAIL) {
+    throw new Error(
+      `Cannot sign replay of ${sha} from unrecognized committer email ${original.committer.email}`,
+    );
+  }
+  const { date } = original.committer;
+  return {
+    line: `committer ${SIGNING_NAME} <${SIGNING_EMAIL}> ${date}`,
+    name: SIGNING_NAME,
+    email: SIGNING_EMAIL,
+    date,
+  };
 }
 
 function parseCommitObject(raw, sha) {
@@ -478,6 +555,17 @@ async function validateSigningKey(signingKey, publicKey) {
   }
 }
 
+// A pick that stopped on a conflict is committed with message cleanup, which ends the
+// message with a newline; GitHub web merges have none. Signing writes the original bytes.
+function sameMessage(original, rewritten) {
+  const trim = (message) => {
+    let end = message.length;
+    while (end > 0 && message[end - 1] === 0x0a) end -= 1;
+    return message.subarray(0, end);
+  };
+  return trim(original).equals(trim(rewritten));
+}
+
 async function signRebasedCommits(
   repositoryPath,
   upstreamSha,
@@ -511,18 +599,13 @@ async function signRebasedCommits(
     );
     if (
       original.author.line !== rewritten.author.line ||
-      !original.message.equals(rewritten.message)
+      !sameMessage(original.message, rewritten.message)
     ) {
       throw new Error(
         `Rebase changed the author or message while mapping ${originalCommits[index]}`,
       );
     }
-    if (original.committer.email !== SIGNING_EMAIL) {
-      throw new Error(
-        `Cannot sign replay from unrecognized committer email ${original.committer.email}`,
-      );
-    }
-    originals.push(original);
+    originals.push({ ...original, committer: replayCommitter(original, originalCommits[index]) });
     rebased.push(rebasedCommits[index]);
   }
 
@@ -549,7 +632,7 @@ async function signRebasedCommits(
     if (derivedPublicKey !== trustedPublicKey) {
       throw new Error("PASEO_REBASE_SSH_SIGNING_KEY does not match the trusted public key");
     }
-    await writeFile(allowedSignersPath, `${SIGNING_EMAIL} ${trustedPublicKey}\n`, {
+    await writeFile(allowedSignersPath, `${[...SIGNING_EMAILS].join(",")} ${trustedPublicKey}\n`, {
       flag: "wx",
       mode: 0o600,
     });
@@ -585,7 +668,7 @@ async function signRebasedCommits(
         !signed.message.equals(original.message)
       ) {
         throw new Error(
-          `Signing changed preserved metadata or message for ${originalCommits[index]}`,
+          `Signing changed replayed metadata or message for ${originalCommits[index]}`,
         );
       }
       await gitChecked(repositoryPath, [
@@ -647,9 +730,40 @@ async function commitSignedFile(
   repositoryPath,
   { path, contents, message, signingKey, publicKey },
 ) {
-  const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
   await writeFile(join(repositoryPath, path), contents);
   await gitChecked(repositoryPath, ["add", "--", path]);
+  return commitSignedIndex(repositoryPath, { message, signingKey, publicKey });
+}
+
+// Upstream code can break the fork without any textual conflict, for example a new upstream
+// file written for an older toolchain than the fork pins. A reviewed patch keyed to the exact
+// captured upstream adapts it in one signed commit; a patch that does not apply stops the run.
+async function applyUpstreamFixup(
+  repositoryPath,
+  { resolutionSha, upstreamSha, signingKey, publicKey },
+) {
+  const path = `${FIXUPS_PREFIX}${upstreamSha}.patch`;
+  if (!(await gitChecked(repositoryPath, ["ls-tree", resolutionSha, "--", path]))) return 0;
+  const directory = await mkdtemp(join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-fixup-"));
+  try {
+    const patchPath = join(directory, "fixup.patch");
+    await writeFile(patchPath, await gitBlob(repositoryPath, `${resolutionSha}:${path}`));
+    const applied = await git(repositoryPath, ["apply", "--index", patchPath]);
+    if (applied.code !== 0) {
+      throw new Error(`Upstream fixup ${path} does not apply: ${applied.stderr.trim()}`);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  return commitSignedIndex(repositoryPath, {
+    message: "chore(rebase): adapt incorporated upstream to the fork",
+    signingKey,
+    publicKey,
+  });
+}
+
+async function commitSignedIndex(repositoryPath, { message, signingKey, publicKey }) {
+  const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
   const tree = (await gitChecked(repositoryPath, ["write-tree"])).trim();
   const unsigned = (
     await gitChecked(repositoryPath, ["commit-tree", tree, "-p", parent, "-m", message], {
@@ -794,6 +908,22 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
   return completed.length;
 }
 
+// Apple Git 2.54 fails partway through this replay: a pick that reuses a rerere
+// resolution cannot create MERGE_RR.lock. 2.55, which GitHub runners ship, replays it.
+const MIN_GIT_VERSION = [2, 55];
+
+export function assertGitVersion(versionText) {
+  const match = /^git version (\d+)\.(\d+)/.exec(versionText.trim());
+  if (!match) throw new Error(`Unrecognized git version: ${versionText.trim()}`);
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  const [minMajor, minMinor] = MIN_GIT_VERSION;
+  if (major < minMajor || (major === minMajor && minor < minMinor)) {
+    throw new Error(
+      `${versionText.trim()} cannot replay dev; use git ${minMajor}.${minMinor} or later`,
+    );
+  }
+}
+
 export async function rebaseDev({
   repositoryPath,
   remote = "origin",
@@ -806,6 +936,7 @@ export async function rebaseDev({
   try {
     if (signingKey && !signingKey.endsWith("\n")) signingKey += "\n";
     await validateSigningKey(signingKey, publicKey);
+    assertGitVersion(await gitChecked(repositoryPath, ["--version"]));
     const status = await gitChecked(repositoryPath, ["status", "--porcelain"]);
     if (status) throw new Error("Refusing to rebase a worktree with local changes");
     snapshots = await snapshotRefs(repositoryPath, remote);
@@ -864,6 +995,14 @@ export async function rebaseDev({
     );
     const readRelease = () =>
       inspectForkRelease((file) => readFile(join(repositoryPath, file), "utf8"));
+    // The fixup may repair what the replay left inconsistent, such as a lockfile whose
+    // package.json changed on both sides, so check the release after it.
+    const fixupCommits = await applyUpstreamFixup(repositoryPath, {
+      resolutionSha: snapshots.resolutions,
+      upstreamSha: snapshots.upstream,
+      signingKey,
+      publicKey,
+    });
     assertForkReleasePreserved(before, await readRelease());
     let provenanceCommits = 0;
     if (before.config.upstreamBase !== snapshots.upstream) {
@@ -910,7 +1049,7 @@ export async function rebaseDev({
       "Rebase completed; this snapshot will aid diagnosis if a later validation or publication step fails.",
       repositoryPath,
     );
-    return { ...snapshots, signedCommits, provenanceCommits, boundaryCommits };
+    return { ...snapshots, signedCommits, fixupCommits, provenanceCommits, boundaryCommits };
   } catch (error) {
     await writeDiagnostics(diagnosticsPath, snapshots, error.message, repositoryPath);
     throw error;
