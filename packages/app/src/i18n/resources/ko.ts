@@ -2119,7 +2119,7 @@ export const ko: TranslationResources = {
     editor: {
       title: "편집기",
       vimKeybindings: "Vim 키 바인딩",
-      vimHint: "웹 및 데스크톱의 소스 파일에 적용됩니다.",
+      vimHint: "편집기의 소스 파일에 적용됩니다.",
     },
     notifications: {
       title: "알림",

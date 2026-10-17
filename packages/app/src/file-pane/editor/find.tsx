@@ -6,7 +6,7 @@ import { PaneFind, type PaneFindHandle, type PaneFindProps } from "@/pane-find";
 import { usePaneFindRequest } from "@/pane-find/open-requests";
 import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import { findOpMessages } from "./find-messages";
+import { findActionsEnabled, findOpMessages } from "./find-messages";
 import type { FileEditorBridge } from "./webview/host-bridge";
 import type { FileEditorFindOp, FileEditorFindState } from "./webview/protocol";
 
@@ -170,6 +170,7 @@ export function EditorFindBar({ find, bridge }: { find: EditorFind; bridge: File
   );
   if (!state.open) return null;
   const total = `${state.total}${state.limited ? "+" : ""}`;
+  const canNavigate = findActionsEnabled(state, find.query);
   let status = "";
   if (state.query) {
     if (state.total === 0) status = t("paneFind.noMatches");
@@ -183,7 +184,7 @@ export function EditorFindBar({ find, bridge }: { find: EditorFind; bridge: File
         fill
         query={find.query}
         status={status}
-        canNavigate={state.total > 0}
+        canNavigate={canNavigate}
         onQueryChange={find.setQuery}
         onNext={find.next}
         onPrevious={find.previous}

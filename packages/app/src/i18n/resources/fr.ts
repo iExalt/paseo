@@ -2155,7 +2155,7 @@ export const fr: TranslationResources = {
     editor: {
       title: "Éditeur",
       vimKeybindings: "Raccourcis Vim",
-      vimHint: "S’applique aux fichiers source dans l’app web et l’app de bureau.",
+      vimHint: "S’applique aux fichiers source dans l’éditeur.",
     },
     notifications: {
       title: "Notifications",

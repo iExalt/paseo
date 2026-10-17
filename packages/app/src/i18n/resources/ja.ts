@@ -2131,7 +2131,7 @@ export const ja: TranslationResources = {
     editor: {
       title: "エディター",
       vimKeybindings: "Vim キーバインド",
-      vimHint: "Web とデスクトップのソースファイルに適用されます。",
+      vimHint: "エディターのソースファイルに適用されます。",
     },
     notifications: {
       title: "通知",

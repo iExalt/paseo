@@ -2142,7 +2142,7 @@ export const ptBR: TranslationResources = {
     editor: {
       title: "Editor",
       vimKeybindings: "Atalhos do Vim",
-      vimHint: "Aplica-se a arquivos-fonte na web e no desktop.",
+      vimHint: "Aplica-se a arquivos-fonte no editor.",
     },
     notifications: {
       title: "Notificações",

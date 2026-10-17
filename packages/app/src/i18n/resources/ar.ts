@@ -2109,7 +2109,7 @@ export const ar: TranslationResources = {
     editor: {
       title: "المحرر",
       vimKeybindings: "اختصارات Vim",
-      vimHint: "تنطبق على ملفات المصدر في الويب وسطح المكتب.",
+      vimHint: "تنطبق على ملفات المصدر في المحرر.",
     },
     notifications: {
       title: "الإشعارات",

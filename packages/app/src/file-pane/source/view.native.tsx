@@ -8,12 +8,14 @@ import {
   type NativeSyntheticEvent,
   type TextLayoutEventData,
 } from "react-native";
+import Animated from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { highlightCode, type HighlightToken } from "@getpaseo/highlight";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { findMatchStyles } from "@/find-highlight/match-parts";
 import { overlayMatchParts, type MatchPart } from "@/find-highlight/split";
 import { FONT_SIZE } from "@/styles/theme";
+import { useKeyboardShiftStyle } from "@/keyboard/shift";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { EditorVisualTheme } from "../editor/visual-theme";
 import { FileFindBar, useFileFind } from "../find/index.native";
@@ -150,23 +152,42 @@ function VirtualizedSource({
     [find.current, find.partsByLine],
   );
 
+  // While find is open its field raises the keyboard: the list ends above it, so the
+  // bar sits on the keyboard and centred matches stay in sight.
+  const { style: keyboardPaddingStyle } = useKeyboardShiftStyle({
+    mode: "padding",
+    enabled: find.open,
+  });
+  const rootStyle = useMemo(() => [styles.root, keyboardPaddingStyle], [keyboardPaddingStyle]);
+  // Room past the last line, so a match near the end can be centred clear of the bar.
+  const footerStyle = useMemo(() => ({ height: viewport.height / 2 }), [viewport.height]);
+  const footer = useMemo(
+    () => (find.open ? <View style={footerStyle} /> : null),
+    [find.open, footerStyle],
+  );
+
   return (
-    <View style={styles.root} onLayout={handleLayout}>
-      <FlatList
-        ref={listRef}
-        data={lines}
-        keyExtractor={sourceLineKey}
-        initialNumToRender={24}
-        windowSize={9}
-        getItemLayout={getItemLayout}
-        renderItem={renderItem}
-        extraData={renderItem}
-      />
-      <Text style={styles.probe} onTextLayout={handleProbeLayout} aria-hidden>
-        {PROBE_TEXT}
-      </Text>
-      <FileFindBar find={find} />
-    </View>
+    <Animated.View style={rootStyle}>
+      {/* The bar is absolute, which ignores the padding, so it anchors to this box. */}
+      <View style={styles.content}>
+        <FlatList
+          ref={listRef}
+          onLayout={handleLayout}
+          data={lines}
+          keyExtractor={sourceLineKey}
+          initialNumToRender={24}
+          windowSize={9}
+          getItemLayout={getItemLayout}
+          renderItem={renderItem}
+          extraData={renderItem}
+          ListFooterComponent={footer}
+        />
+        <Text style={styles.probe} onTextLayout={handleProbeLayout} aria-hidden>
+          {PROBE_TEXT}
+        </Text>
+        <FileFindBar find={find} />
+      </View>
+    </Animated.View>
   );
 }
 
@@ -216,6 +237,7 @@ function sourceLineKey(line: SourceLine): string {
 
 const styles = StyleSheet.create((theme) => ({
   root: { flex: 1, minHeight: 0 },
+  content: { flex: 1, minHeight: 0 },
   unsupported: {
     flex: 1,
     alignItems: "center",

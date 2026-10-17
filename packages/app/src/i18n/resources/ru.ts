@@ -2142,7 +2142,7 @@ export const ru: TranslationResources = {
     editor: {
       title: "Редактор",
       vimKeybindings: "Сочетания клавиш Vim",
-      vimHint: "Применяется к исходным файлам в веб- и настольной версии.",
+      vimHint: "Применяется к исходным файлам в редакторе.",
     },
     notifications: {
       title: "Уведомления",

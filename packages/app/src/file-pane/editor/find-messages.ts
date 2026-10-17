@@ -17,3 +17,12 @@ export function findOpMessages(
       ]
     : [{ type: "find", op }];
 }
+
+/**
+ * Whether the bar's actions are enabled. A query the page has not searched yet may
+ * match, and actions send it first, so a tap right after typing is not lost to the
+ * previous query's count.
+ */
+export function findActionsEnabled(page: { query: string; total: number }, query: string): boolean {
+  return page.total > 0 || (query !== "" && query !== page.query);
+}

@@ -252,13 +252,11 @@ export function BrowserPane({
       if (isAbortedNativeLoadError(nativeEvent)) {
         return;
       }
-      const description = nativeEvent.description?.trim() || errorLabels.failedToLoad;
-      updateBrowser(browserId, {
-        isLoading: false,
-        lastError: nativeEvent.url ? `${description}: ${nativeEvent.url}` : description,
-      });
+      // renderError below says what failed: Android starts the error page as a load of
+      // its own, which would clear an error row straight away.
+      updateBrowser(browserId, { isLoading: false });
     },
-    [browserId, errorLabels.failedToLoad, updateBrowser],
+    [browserId, updateBrowser],
   );
 
   const handleShouldStartLoad = useCallback(
@@ -296,9 +294,20 @@ export function BrowserPane({
     [onOpenUrlInNewTab],
   );
 
-  // The error row above says what failed; this only replaces the library's default
-  // error page, which would repeat it in English.
-  const renderError = useCallback(() => <View style={styles.errorState} />, []);
+  // Replaces the library's English error page; the library keeps it up until the next
+  // load of the page finishes.
+  const renderError = useCallback(
+    (_domain: string | undefined, _code: number, description: string) => (
+      <View style={styles.errorState}>
+        <Text style={styles.errorStateText}>
+          {description.trim()
+            ? `${errorLabels.failedToLoad}: ${description.trim()}`
+            : errorLabels.failedToLoad}
+        </Text>
+      </View>
+    ),
+    [errorLabels.failedToLoad],
+  );
 
   const isLoading = Boolean(browser?.isLoading);
 
@@ -452,9 +461,10 @@ const styles = StyleSheet.create((theme) => ({
     minHeight: 0,
     overflow: "hidden",
   },
+  // A page without its own background shows the web's default white, as in Electron.
   webView: {
     flex: 1,
-    backgroundColor: theme.colors.surface0,
+    backgroundColor: "#ffffff",
   },
   errorState: {
     position: "absolute",
@@ -462,6 +472,14 @@ const styles = StyleSheet.create((theme) => ({
     right: 0,
     bottom: 0,
     left: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: theme.spacing[4],
     backgroundColor: theme.colors.surface0,
+  },
+  errorStateText: {
+    fontSize: theme.fontSize.sm,
+    color: theme.colors.foregroundMuted,
+    textAlign: "center",
   },
 }));

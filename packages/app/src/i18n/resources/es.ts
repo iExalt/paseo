@@ -2158,7 +2158,7 @@ export const es: TranslationResources = {
     editor: {
       title: "Editor",
       vimKeybindings: "Atajos de Vim",
-      vimHint: "Se aplica a archivos fuente en web y escritorio.",
+      vimHint: "Se aplica a archivos fuente en el editor.",
     },
     notifications: {
       title: "Notificaciones",

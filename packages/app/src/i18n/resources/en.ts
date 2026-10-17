@@ -2216,7 +2216,7 @@ export const en = {
     editor: {
       title: "Editor",
       vimKeybindings: "Vim keybindings",
-      vimHint: "Applies to source files on web and desktop.",
+      vimHint: "Applies to source files in the editor.",
     },
     notifications: {
       title: "Notifications",

@@ -2087,7 +2087,7 @@ export const zhCN: TranslationResources = {
     editor: {
       title: "编辑器",
       vimKeybindings: "Vim 键位",
-      vimHint: "适用于网页和桌面端的源文件。",
+      vimHint: "适用于编辑器中的源文件。",
     },
     notifications: {
       title: "通知",

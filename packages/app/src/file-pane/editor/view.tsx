@@ -2,14 +2,17 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { AppState, Text, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
 import { useTranslation } from "react-i18next";
+import { useKeyboardShiftStyle } from "@/keyboard/shift";
 import { FileSourceView } from "../source/view";
 import { EditorFindBar, useEditorFind } from "./find";
 import type { FileEditorViewProps } from "./view-contract";
@@ -154,6 +157,13 @@ export function FileEditorView({
     [bridge],
   );
   const handleProcessGone = useCallback(() => resetWebView(), [resetWebView]);
+  // The find field raises the keyboard over a WebView that does not have focus, so the
+  // page would not move for it: end the page above the keyboard while find is open.
+  const { style: keyboardPaddingStyle } = useKeyboardShiftStyle({
+    mode: "padding",
+    enabled: find.state.open,
+  });
+  const rootStyle = useMemo(() => [styles.root, keyboardPaddingStyle], [keyboardPaddingStyle]);
 
   const readOnly = (
     <FileSourceView
@@ -174,7 +184,7 @@ export function FileEditorView({
       </View>
     );
   return (
-    <View style={styles.root}>
+    <Animated.View style={rootStyle}>
       {ready ? null : readOnly}
       {/* Transparent and untouchable over the read-only view until the editor is ready. */}
       <View style={ready ? styles.fill : styles.loading} pointerEvents={ready ? "auto" : "none"}>
@@ -203,7 +213,7 @@ export function FileEditorView({
         />
         <EditorFindBar find={find} bridge={bridge} />
       </View>
-    </View>
+    </Animated.View>
   );
 }
 
