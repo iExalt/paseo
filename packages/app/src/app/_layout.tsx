@@ -21,7 +21,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { AppState, useWindowDimensions, View } from "react-native";
+import { AppState, Platform, useWindowDimensions, View } from "react-native";
 import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -888,6 +888,15 @@ const ROOT_STACK_SCREEN_OPTIONS = {
   animation: "none" as const,
 };
 const ROOT_STACK_NESTED_NAVIGATOR_SCREENS = ["h/[serverId]"] as const;
+/**
+ * Settings pages pushed from the settings list slide in on Android.
+ *
+ * With no animation, Android draws the outgoing list's lucide icons for one frame stretched
+ * across the lower screen, which reads as grey scribbles flashing on every tap. A real push
+ * keeps the list on screen until the new page covers it, and that frame never appears.
+ */
+const SETTINGS_PAGE_SCREEN_OPTIONS =
+  Platform.OS === "android" ? { animation: "slide_from_right" as const } : undefined;
 
 function RootStack() {
   const storeReady = useStoreReady();
@@ -900,7 +909,7 @@ function RootStack() {
       <Stack.Protected guard={storeReady}>
         <Stack.Screen name="welcome" />
         <Stack.Screen name="settings/index" />
-        <Stack.Screen name="settings/[section]" />
+        <Stack.Screen name="settings/[section]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
         <Stack.Screen name="new" />
         <Stack.Screen name="open-project" />
         <Stack.Screen name="sessions" />
@@ -908,11 +917,23 @@ function RootStack() {
         <Stack.Screen name="pair-scan" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />
-      <Stack.Screen name="settings/hosts/[serverId]/index" />
-      <Stack.Screen name="settings/hosts/[serverId]/[hostSection]" />
-      <Stack.Screen name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]" />
-      <Stack.Screen name="settings/hosts/[serverId]/projects/index" />
-      <Stack.Screen name="settings/hosts/[serverId]/projects/[projectId]" />
+      <Stack.Screen name="settings/hosts/[serverId]/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/[hostSection]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/projects/index"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/projects/[projectId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
     </ThemedStack>
   );
 }
