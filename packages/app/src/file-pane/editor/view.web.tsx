@@ -1,24 +1,15 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useImperativeHandle, useRef, useState, useSyncExternalStore } from "react";
 import { FileFind, FileFindModel } from "../find/index.web";
 import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { getLanguageForFile } from "@getpaseo/highlight";
 import { getCM, vim } from "@replit/codemirror-vim";
 import { isRenderedMarkdownFile } from "@/components/file-pane-render-mode";
-import type { WorkspaceFileLocation } from "@/workspace/file-open";
-import type { FileEditorModel } from "./model";
-import { editorBaseExtensions, editorTheme, type EditorVisualTheme } from "./extensions.web";
+import { editorBaseExtensions, editorTheme } from "./extensions.web";
+import type { FileEditorHandle, FileEditorViewProps } from "./view-contract";
 
-interface FileEditorViewProps {
-  model: FileEditorModel;
-  filename: string;
-  location: WorkspaceFileLocation;
-  navigationRevision: number;
-  vimEnabled: boolean;
-  theme: EditorVisualTheme;
-  onCursorChange(position: { line: number; column: number }): void;
-  onVimModeChange(mode: string | null): void;
-}
+// Edits reach the model in the same transaction, so nothing ever waits.
+const SYNCHRONOUS_HANDLE: FileEditorHandle = { flush: () => Promise.resolve() };
 
 const languageCompartment = new Compartment();
 const wrappingCompartment = new Compartment();
@@ -30,6 +21,7 @@ function wrappingForFile(filename: string) {
 }
 
 export function FileEditorView({
+  ref,
   model,
   filename,
   location,
@@ -39,6 +31,7 @@ export function FileEditorView({
   onCursorChange,
   onVimModeChange,
 }: FileEditorViewProps) {
+  useImperativeHandle(ref, () => SYNCHRONOUS_HANDLE, []);
   const [find] = useState(() => new FileFindModel());
   const hostRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);

@@ -3,19 +3,9 @@ import { getDesktopHost, type DesktopBrowserNewTabRequestEvent } from "@/desktop
 import { collectAllTabs, type WorkspaceLayout } from "@/stores/workspace-layout-store";
 import { getIsElectron } from "@/constants/platform";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { isAllowedBrowserUrl } from "../navigation-policy";
 
 export type BrowserNewTabRequest = DesktopBrowserNewTabRequestEvent;
-
-function isAllowedBrowserNewTabUrl(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    return (
-      parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.href === "about:blank"
-    );
-  } catch {
-    return false;
-  }
-}
 
 function readDesktopBrowserNewTabRequest(payload: unknown): BrowserNewTabRequest | null {
   if (!payload || typeof payload !== "object") {
@@ -25,7 +15,7 @@ function readDesktopBrowserNewTabRequest(payload: unknown): BrowserNewTabRequest
   if (typeof candidate.sourceBrowserId !== "string" || !candidate.sourceBrowserId.trim()) {
     return null;
   }
-  if (typeof candidate.url !== "string" || !isAllowedBrowserNewTabUrl(candidate.url)) {
+  if (typeof candidate.url !== "string" || !isAllowedBrowserUrl(candidate.url)) {
     return null;
   }
   return {

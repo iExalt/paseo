@@ -22,7 +22,6 @@ import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useAppActivelyVisible } from "@/hooks/use-app-visible";
 import { isFileQueryEnabled } from "@/components/file-pane-enabled";
-import { isWeb } from "@/constants/platform";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useLiveFile } from "./live-file/hook";
 import { useFilePreview } from "./preview-lifecycle/hook";
@@ -33,6 +32,7 @@ import { FileMarkdownPreview } from "./markdown-preview";
 import { FileEditorModel, getFileConflictCallout, type FileConflictCallout } from "./editor/model";
 import { createFileObservationSource } from "./editor/observation-source";
 import { FileEditorView } from "./editor/view";
+import type { FileEditorHandle } from "./editor/view-contract";
 import { FileSourceView } from "./source/view";
 import type { FileConflictAlertState } from "./conflict-alert";
 import type { LiveFileModel } from "./live-file/model";
@@ -342,10 +342,7 @@ function isEditableTextFile(input: {
   supportsEditing: boolean;
 }): boolean {
   return Boolean(
-    isWeb &&
-    input.supportsEditing &&
-    input.preview?.kind === "text" &&
-    input.preview.size <= 1024 * 1024,
+    input.supportsEditing && input.preview?.kind === "text" && input.preview.size <= 1024 * 1024,
   );
 }
 
@@ -591,7 +588,14 @@ function EditableFilePane({
       if (confirmed) void model.reload();
     })();
   }, [model, snapshot.modified, t]);
-  const handleOverwrite = useCallback(() => void model.overwrite(), [model]);
+  const editor = useRef<FileEditorHandle>(null);
+  // The native editor may still hold the last keystrokes; the overwrite must include them.
+  const handleOverwrite = useCallback(() => {
+    void (async () => {
+      await editor.current?.flush();
+      await model.overwrite();
+    })();
+  }, [model]);
   const conflict = fileConflictAlertState({
     callout: getFileConflictCallout(snapshot),
     onOverwrite: handleOverwrite,
@@ -628,6 +632,7 @@ function EditableFilePane({
       />
       {showSource ? (
         <FileEditorView
+          ref={editor}
           model={model}
           filename={filename}
           location={location}

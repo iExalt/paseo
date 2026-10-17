@@ -15,6 +15,7 @@ import {
   type NativeSyntheticEvent,
   type TextInputKeyPressEventData,
   type TextInputProps,
+  type ViewStyle,
 } from "react-native";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -64,6 +65,8 @@ export interface PaneFindProps {
   onNext(): void;
   onPrevious(): void;
   onClose(): void;
+  /** Span the container instead of the fixed desktop width, as a phone's bottom bar does. */
+  fill?: boolean;
   replace?: {
     value: string;
     onChange(value: string): void;
@@ -137,7 +140,7 @@ const FindField = forwardRef<
 
 /** Pane-local chrome. The content owner supplies search state and commands. */
 export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneFind(
-  { query, status, canNavigate, onQueryChange, onNext, onPrevious, onClose, replace },
+  { query, status, canNavigate, onQueryChange, onNext, onPrevious, onClose, fill, replace },
   ref,
 ) {
   const { t } = useTranslation();
@@ -198,6 +201,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
     [focus, onClose, onNext, onPrevious],
   );
   const toggleReplace = useCallback(() => setReplaceExpanded((expanded) => !expanded), []);
+  const widgetStyle = useMemo(() => (fill ? [styles.widget, WIDGET_FILL] : styles.widget), [fill]);
   const gutterStyle = useMemo(
     () => [styles.gutter, { width: controlSize, height: rowHeight }],
     [controlSize, rowHeight],
@@ -218,7 +222,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
 
   return (
     <View
-      style={styles.widget}
+      style={widgetStyle}
       accessibilityLabel={t("paneFind.title")}
       {...(isWeb
         ? {
@@ -319,6 +323,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
 /** Desktop find rows run one step tighter than a form field — this is pane chrome. */
 const COLLAPSED_FIELD_HEIGHT = 28;
 const FIND_WIDGET_WIDTH = 340;
+const WIDGET_FILL: ViewStyle = { width: "100%" };
 
 const styles = StyleSheet.create((theme) => {
   const geometry = createControlGeometry(theme);
