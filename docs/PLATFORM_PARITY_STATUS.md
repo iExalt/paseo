@@ -96,7 +96,8 @@ Evidence state: verified on the installed 0.6.0 app by the user, with waivers.
 
 ### C1: chat find on mobile
 
-Evidence state: verified on Paseo Debug, with the limits below.
+Evidence state: verified on Paseo Debug before the renderer rebase; assistant
+marks need a new device check (below).
 
 - Find in the tab menu opens a full-width bar above the composer and the
   keyboard; Back closes it.
@@ -114,8 +115,13 @@ Evidence state: verified on Paseo Debug, with the limits below.
   view back after a jump; the offset restart after a hard line break.
 - Not seen on the device: a match deep in a code block taller than the
   screen. It moves to the chunk C end-to-end pass.
-- iOS is unverified. Its Markdown spans report no lines, so a jump stops at
-  the row, and Next inside a visible block jumps that row to the top.
+- iOS is unverified.
+- Since the rebase onto upstream's enriched-markdown renderer, the evidence
+  above covers user messages and the find bar only; assistant marks and
+  scrolling are reimplemented and await a device check. Prose is drawn by the
+  library, which reports no lines, so reveal measures the occurrence's block
+  and estimates its line from where it starts in the block's source. Code
+  blocks still measure the line.
 
 ### C2: find in the file view on mobile
 

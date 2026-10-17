@@ -15,7 +15,7 @@ export const PARITY_MANIFEST: ParityManifest = {
   splitModules: {
     "agent-stream/chat-find/index": {
       kind: "equivalent",
-      note: "Web marks DOM ranges; native marks Markdown nodes and measures Text lines",
+      note: "Web marks DOM ranges; native highlights the occurrence in the Markdown source it draws",
     },
     "agent-stream/chat-outline/rail": {
       kind: "gap",
@@ -27,6 +27,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "deliberate",
       reason: "Native has no global font cascade for the interface font",
     },
+    "appearance/system-bars": {
+      kind: "equivalent",
+      note: "Only Android's edge-to-edge bars take their icon style from the theme",
+    },
     "assistant-selection-copy/surface": {
       kind: "equivalent",
       note: "Native copies part of a reply with its Markdown from Select text",
@@ -36,8 +40,16 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Native adds explorer files to chat from a menu instead of dragging",
     },
     "audio/audio-engine": equivalent,
+    "components/assistant-message-render-limit": {
+      kind: "deliberate",
+      reason:
+        "Web caps very long replies to bound DOM size; native hands the whole reply to its parser, so it shows all of it",
+    },
     "components/draggable-list": equivalent,
-    "components/markdown-text": equivalent,
+    "components/markdown/renderers": {
+      kind: "equivalent",
+      note: "Web draws code blocks and link tooltips in JS; native draws code blocks in the library",
+    },
     "components/markdown/fence/mermaid/host": equivalent,
     "components/project-icon-image": equivalent,
     "components/sortable-inline-list": equivalent,
@@ -58,8 +70,16 @@ export const PARITY_MANIFEST: ParityManifest = {
     "components/ui/scroll-view": equivalent,
     "components/ui/text-input/text-input": equivalent,
     "components/zoomable-viewport/index": equivalent,
+    "composer/dock/internal/fullscreen": {
+      kind: "equivalent",
+      note: "Native reserves the soft keyboard's space; web has none to reserve",
+    },
     "composer/dock/index": equivalent,
     "composer/dock/internal/background": equivalent,
+    "composer/input/fullscreen-exit": {
+      kind: "equivalent",
+      note: "Back leaves the fullscreen composer on native; Escape does on web",
+    },
     "composer/input/height": equivalent,
     "desktop/browser/pane/index": {
       kind: "deliberate",
