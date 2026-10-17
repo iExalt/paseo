@@ -16,5 +16,122 @@
       { "mode": "100644", "oid": "3ae70680b688de7f6e67a13d43a5d900b956b88c", "stage": 1 },
       { "mode": "100644", "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d", "stage": 2 }
     ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "490cb81af7d69b38005fcbf2b72df80aae806a32",
+    "path": "packages/app/src/utils/split-markdown-blocks.ts",
+    "stages": [
+      { "mode": "100644", "oid": "8282fc3ca936c19c33544099058d80e729abeb4d", "stage": 1 },
+      { "mode": "100644", "oid": "f5bafd878e78df2ac8c36fdfb8bc4a78399c3d1a", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "490cb81af7d69b38005fcbf2b72df80aae806a32",
+    "path": "packages/app/src/utils/streaming-markdown/index.ts",
+    "stages": [
+      { "mode": "100644", "oid": "b70b464d76c27e3ff766914ae58d7d414a97904e", "stage": 1 },
+      { "mode": "100644", "oid": "60c52af5506bc9190d1160b6102d24aef08dda46", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "0740677709440a5e309f439f398005f76b064cfb",
+    "path": "packages/app/src/utils/__tests__/split-markdown-blocks.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "22eddf8152e9fab4a0d34e04937571b60a0230bc", "stage": 1 },
+      { "mode": "100644", "oid": "0fe7f210260cdcee8e8568ff029a03fc0f6a9ecf", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "0c49e5149cdb375de0ab626f00e2ee21f0051fc7",
+    "path": "packages/server/src/server/agent/mcp-parity.e2e.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "3ae70680b688de7f6e67a13d43a5d900b956b88c", "stage": 1 },
+      { "mode": "100644", "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d", "stage": 2 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "09da314cbca3e74451a91ddd1e7929dc928939b4",
+    "path": "patches/react-native-markdown-display+7.0.2.patch",
+    "stages": [
+      { "mode": "100644", "oid": "ad8ac0bf66e1aaa284aac4e76755a0bef97345ca", "stage": 1 },
+      { "mode": "100644", "oid": "0a14b508fe4901afdad2c65b334661a1cfd8d761", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "4e7fa8112c192c3e90705e5c6e9a0eba94c63758",
+    "path": "packages/app/src/utils/__tests__/split-markdown-blocks.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "0fe7f210260cdcee8e8568ff029a03fc0f6a9ecf", "stage": 1 },
+      { "mode": "100644", "oid": "9012d0d531f21f79ef894143289354a6fcbd33e9", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "4e7fa8112c192c3e90705e5c6e9a0eba94c63758",
+    "path": "packages/app/src/utils/split-markdown-blocks.ts",
+    "stages": [
+      { "mode": "100644", "oid": "f5bafd878e78df2ac8c36fdfb8bc4a78399c3d1a", "stage": 1 },
+      { "mode": "100644", "oid": "772121ddc76670dd9fc9001fbccc3133dfc0df7b", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
+    "path": "packages/app/src/assistant-file-links/link.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "4b8e944ee34bb72a8d5d2e39e81b29f9e97a4830", "stage": 1 },
+      { "mode": "100644", "oid": "c675b16e33d431ccbe546719b5d595f7bff39780", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
+    "path": "packages/app/src/components/markdown-text.android.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "f444d916bd95a0a060638ad5f0e3675d86a9aa76", "stage": 1 },
+      { "mode": "100644", "oid": "edcfe04a51367f708a9f237624ec20bc7f08f44b", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
+    "path": "packages/app/src/components/markdown-text.ios.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "1b2eb405c4bcd9d2a90e589b785ae93b545bc9b3", "stage": 1 },
+      { "mode": "100644", "oid": "6afdcad47aa1077b980d17b0ef8fc932acb1ca65", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
+    "path": "packages/app/src/components/markdown-text.web.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "0cb89f0cfff9dc6e35e4003194b25ebeff26c1c6", "stage": 1 },
+      { "mode": "100644", "oid": "29d1f0a87b88c69458f3cc4be3147c8df1945594", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
+    "path": "packages/app/src/components/markdown/fence/index.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "846aa91355a38e4698accc27b12fb255189e9d33", "stage": 1 },
+      { "mode": "100644", "oid": "a4480a1f1deb7ce775b3f34947776f147c4d024e", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "88a7aec1b89ede815387d3d378e01470d170c1ae",
+    "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
+    "path": "packages/app/src/types/react-native-markdown-display.d.ts",
+    "stages": [
+      { "mode": "100644", "oid": "1b9f8044ac9f2592080a0ff44fb4246d181896d9", "stage": 1 },
+      { "mode": "100644", "oid": "9e898c4a11ddaa6eada543a9be89e25018098069", "stage": 3 }
+    ]
   }
 ]

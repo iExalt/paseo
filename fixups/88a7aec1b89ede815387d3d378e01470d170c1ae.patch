@@ -1,0 +1,1815 @@
+diff --git a/docs/PLATFORM_PARITY_STATUS.md b/docs/PLATFORM_PARITY_STATUS.md
+index 2f6d7627d..f14ef1458 100644
+--- a/docs/PLATFORM_PARITY_STATUS.md
++++ b/docs/PLATFORM_PARITY_STATUS.md
+@@ -96,7 +96,8 @@ Evidence state: verified on the installed 0.6.0 app by the user, with waivers.
+ 
+ ### C1: chat find on mobile
+ 
+-Evidence state: verified on Paseo Debug, with the limits below.
++Evidence state: verified on Paseo Debug before the renderer rebase; assistant
++marks need a new device check (below).
+ 
+ - Find in the tab menu opens a full-width bar above the composer and the
+   keyboard; Back closes it.
+@@ -114,8 +115,13 @@ Evidence state: verified on Paseo Debug, with the limits below.
+   view back after a jump; the offset restart after a hard line break.
+ - Not seen on the device: a match deep in a code block taller than the
+   screen. It moves to the chunk C end-to-end pass.
+-- iOS is unverified. Its Markdown spans report no lines, so a jump stops at
+-  the row, and Next inside a visible block jumps that row to the top.
++- iOS is unverified.
++- Since the rebase onto upstream's enriched-markdown renderer, the evidence
++  above covers user messages and the find bar only; assistant marks and
++  scrolling are reimplemented and await a device check. Prose is drawn by the
++  library, which reports no lines, so reveal measures the occurrence's block
++  and estimates its line from where it starts in the block's source. Code
++  blocks still measure the line.
+ 
+ ### C2: find in the file view on mobile
+ 
+diff --git a/docs/markdown-renderer.md b/docs/markdown-renderer.md
+index 418095730..ff10f6539 100644
+--- a/docs/markdown-renderer.md
++++ b/docs/markdown-renderer.md
+@@ -16,7 +16,7 @@ The pinned nightly has the same React Native package and core source trees as up
+ 
+ Math and video are disabled. Task lists and admonitions are enabled; task checkboxes are read-only. Source adaptation spaces adjacent empty GFM table delimiters before escaping prose spoiler delimiters and decodes entity text before the engine can discard it. Code spans and fences keep their literal source. Comment HTML is normalized to Markdown before parsing; details show their summary and body expanded.
+ 
+-Mermaid fences use the existing isolated diagram runtime and fullscreen viewer. Web dispatches them through the library’s code-block override. Native has no block-renderer hook, so the renderer extracts only Mermaid fences and places the existing WebView host between library-rendered segments. This is the only block exception; see [native selection limitations](native-text-selection.md) for diagram grouping and leading inline images. Streaming keeps the last valid diagram visible while the next revision renders.
++Mermaid fences use the existing isolated diagram runtime and fullscreen viewer. Web dispatches them through the library’s code-block override. Native has no block-renderer hook, so the renderer extracts only Mermaid fences and places the existing WebView host between library-rendered segments. Native chat find is the other exception: while it marks an occurrence, the message draws the occurrence's top-level block as its own segment, so selection cannot cross that block's edges until find moves on. Prose marks use the library's `==` highlight, enabled only on that segment with every other `=` escaped; a code block holding the occurrence draws as `HighlightedCodeBlock`, since native code cannot be marked. A message with link definitions or HTML is not split. See [native selection limitations](native-text-selection.md) for diagram grouping and leading inline images. Streaming keeps the last valid diagram visible while the next revision renders.
+ 
+ Native code blocks use the library's copy control and compiled grammars. Web code blocks use `HighlightedCodeBlock` through the library's `renderers.codeBlock` override. The patch also preserves web list numbering and link titles, marks pending parses with `aria-busy` so Find waits for rendered text, and carries link syntax through native and web tap events. Web inline code inside a link inherits only the link colour; its code font, size and background stay intact. Keep link variants colour-only: native pills replace text runs and prevent paths from wrapping; Android pills also use the surrounding block’s font size. The package patch is tracked by [upstream PR #997](https://github.com/software-mansion/enriched-markdown/pull/997); remove the patch when the pinned release includes it.
+ 
+diff --git a/package-lock.json b/package-lock.json
+index 23f6a716d..730ab76a6 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -16774,15 +16774,6 @@
+         "url": "https://github.com/sponsors/sindresorhus"
+       }
+     },
+-    "node_modules/camelize": {
+-      "version": "1.0.1",
+-      "resolved": "https://registry.npmjs.org/camelize/-/camelize-1.0.1.tgz",
+-      "integrity": "sha512-dU+Tx2fsypxTgtLoE36npi3UqcjSSMNYfkqgmoEhtZrraP5VWq0K7FkWVTYa8eMPtnU/G2txVsfdCJTn9uzpuQ==",
+-      "license": "MIT",
+-      "funding": {
+-        "url": "https://github.com/sponsors/ljharb"
+-      }
+-    },
+     "node_modules/caniuse-lite": {
+       "version": "1.0.30001815",
+       "resolved": "https://registry.npmjs.org/caniuse-lite/-/caniuse-lite-1.0.30001815.tgz",
+@@ -17799,15 +17790,6 @@
+         "node": ">=8"
+       }
+     },
+-    "node_modules/css-color-keywords": {
+-      "version": "1.0.0",
+-      "resolved": "https://registry.npmjs.org/css-color-keywords/-/css-color-keywords-1.0.0.tgz",
+-      "integrity": "sha512-FyyrDHZKEjXDpNJYvVsV960FiqQyXc/LlYmsxl2BcdMb2WPx0OGRVgTg55rPSyLSNMqP52R9r8geSp7apN3Ofg==",
+-      "license": "ISC",
+-      "engines": {
+-        "node": ">=4"
+-      }
+-    },
+     "node_modules/css-in-js-utils": {
+       "version": "3.1.0",
+       "resolved": "https://registry.npmjs.org/css-in-js-utils/-/css-in-js-utils-3.1.0.tgz",
+@@ -17900,17 +17882,6 @@
+         "url": "https://github.com/fb55/entities?sponsor=1"
+       }
+     },
+-    "node_modules/css-to-react-native": {
+-      "version": "3.2.0",
+-      "resolved": "https://registry.npmjs.org/css-to-react-native/-/css-to-react-native-3.2.0.tgz",
+-      "integrity": "sha512-e8RKaLXMOFii+02mOlqwjbD00KSEKqblnpO9e++1aXS1fPQOpS1YoqdVHBqPjHNoxeF2mimzVqawm2KCbEdtHQ==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "camelize": "^1.0.0",
+-        "css-color-keywords": "^1.0.0",
+-        "postcss-value-parser": "^4.0.2"
+-      }
+-    },
+     "node_modules/css-tree": {
+       "version": "3.2.1",
+       "resolved": "https://registry.npmjs.org/css-tree/-/css-tree-3.2.1.tgz",
+@@ -33969,6 +33940,7 @@
+       "version": "15.8.1",
+       "resolved": "https://registry.npmjs.org/prop-types/-/prop-types-15.8.1.tgz",
+       "integrity": "sha512-oj87CgZICdulUohogVAR7AjlC0327U4el4L6eAvOqCeudMDVU0NThNaV+b9Df4dXgSP1gXMTnPdhfe/2qDH5cg==",
++      "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "loose-envify": "^1.4.0",
+@@ -33980,6 +33952,7 @@
+       "version": "16.13.1",
+       "resolved": "https://registry.npmjs.org/react-is/-/react-is-16.13.1.tgz",
+       "integrity": "sha512-24e6ynE2H+OKt4kqsOvNd8kBpV65zoxbA4BVsEOB3ARVWQki/DHzaUoC5KuON/BiccDaCCTZBuOcfZs70kR8bQ==",
++      "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/proper-lockfile": {
+@@ -34714,13 +34687,21 @@
+         "react-native": "*"
+       }
+     },
+-    "node_modules/react-native-fit-image": {
+-      "version": "1.5.5",
+-      "resolved": "https://registry.npmjs.org/react-native-fit-image/-/react-native-fit-image-1.5.5.tgz",
+-      "integrity": "sha512-Wl3Vq2DQzxgsWKuW4USfck9zS7YzhvLNPpkwUUCF90bL32e1a0zOVQ3WsJILJOwzmPdHfzZmWasiiAUNBkhNkg==",
+-      "license": "Beerware",
+-      "dependencies": {
+-        "prop-types": "^15.5.10"
++    "node_modules/react-native-enriched-markdown": {
++      "version": "1.2.0-nightly-20261014-766fc0e67",
++      "resolved": "https://registry.npmjs.org/react-native-enriched-markdown/-/react-native-enriched-markdown-1.2.0-nightly-20261014-766fc0e67.tgz",
++      "integrity": "sha512-PyYAAVJAyjlcqHXgSnzxok13MDmyxs/nt46hHIOBdCc0prfaL2Ef6nYkZu7fFCeaETOJXd/xQr4n2/79I+gvdA==",
++      "hasInstallScript": true,
++      "license": "MIT",
++      "peerDependencies": {
++        "katex": ">=0.16.0",
++        "react": "*",
++        "react-native": "*"
++      },
++      "peerDependenciesMeta": {
++        "katex": {
++          "optional": true
++        }
+       }
+     },
+     "node_modules/react-native-gesture-handler": {
+@@ -34763,74 +34744,6 @@
+         "react-native-reanimated": ">=3.0.0"
+       }
+     },
+-    "node_modules/react-native-markdown-display": {
+-      "version": "7.0.2",
+-      "resolved": "https://registry.npmjs.org/react-native-markdown-display/-/react-native-markdown-display-7.0.2.tgz",
+-      "integrity": "sha512-Mn4wotMvMfLAwbX/huMLt202W5DsdpMO/kblk+6eUs55S57VVNni1gzZCh5qpznYLjIQELNh50VIozEfY6fvaQ==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "css-to-react-native": "^3.0.0",
+-        "markdown-it": "^10.0.0",
+-        "prop-types": "^15.7.2",
+-        "react-native-fit-image": "^1.5.5"
+-      },
+-      "peerDependencies": {
+-        "react": ">=16.2.0",
+-        "react-native": ">=0.50.4"
+-      }
+-    },
+-    "node_modules/react-native-markdown-display/node_modules/argparse": {
+-      "version": "1.0.10",
+-      "resolved": "https://registry.npmjs.org/argparse/-/argparse-1.0.10.tgz",
+-      "integrity": "sha512-o5Roy6tNG4SL/FOkCAN6RzjiakZS25RLYFrcMttJqbdd8BWrnA+fGz57iN5Pb06pvBGvl5gQ0B48dJlslXvoTg==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "sprintf-js": "~1.0.2"
+-      }
+-    },
+-    "node_modules/react-native-markdown-display/node_modules/entities": {
+-      "version": "2.0.3",
+-      "resolved": "https://registry.npmjs.org/entities/-/entities-2.0.3.tgz",
+-      "integrity": "sha512-MyoZ0jgnLvB2X3Lg5HqpFmn1kybDiIfEQmKzTb5apr51Rb+T3KdmMiqa70T+bhGnyv7bQ6WMj2QMHpGMmlrUYQ==",
+-      "license": "BSD-2-Clause"
+-    },
+-    "node_modules/react-native-markdown-display/node_modules/linkify-it": {
+-      "version": "2.2.0",
+-      "resolved": "https://registry.npmjs.org/linkify-it/-/linkify-it-2.2.0.tgz",
+-      "integrity": "sha512-GnAl/knGn+i1U/wjBz3akz2stz+HrHLsxMwHQGofCDfPvlf+gDKN58UtfmUquTY4/MXeE2x7k19KQmeoZi94Iw==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "uc.micro": "^1.0.1"
+-      }
+-    },
+-    "node_modules/react-native-markdown-display/node_modules/markdown-it": {
+-      "version": "10.0.0",
+-      "resolved": "https://registry.npmjs.org/markdown-it/-/markdown-it-10.0.0.tgz",
+-      "integrity": "sha512-YWOP1j7UbDNz+TumYP1kpwnP0aEa711cJjrAQrzd0UXlbJfc5aAq0F/PZHjiioqDC1NKgvIMX+o+9Bk7yuM2dg==",
+-      "license": "MIT",
+-      "dependencies": {
+-        "argparse": "^1.0.7",
+-        "entities": "~2.0.0",
+-        "linkify-it": "^2.0.0",
+-        "mdurl": "^1.0.1",
+-        "uc.micro": "^1.0.5"
+-      },
+-      "bin": {
+-        "markdown-it": "bin/markdown-it.js"
+-      }
+-    },
+-    "node_modules/react-native-markdown-display/node_modules/mdurl": {
+-      "version": "1.0.1",
+-      "resolved": "https://registry.npmjs.org/mdurl/-/mdurl-1.0.1.tgz",
+-      "integrity": "sha512-/sKlQJCBYVY9Ers9hqzKou4H6V5UWc/M59TH2dvkt+84itfnq7uFOMLpOiOS4ujvHP4etln18fmIxA5R5fll0g==",
+-      "license": "MIT"
+-    },
+-    "node_modules/react-native-markdown-display/node_modules/uc.micro": {
+-      "version": "1.0.6",
+-      "resolved": "https://registry.npmjs.org/uc.micro/-/uc.micro-1.0.6.tgz",
+-      "integrity": "sha512-8Y75pvTYkLJW2hWQHXxoqRgV7qb9B+9vFEtidML+7koHUFapnVJAZ6cKs+Qjz5Aw3aZWHMC6u0wJE3At+nSGwA==",
+-      "license": "MIT"
+-    },
+     "node_modules/react-native-nitro-modules": {
+       "version": "0.35.5",
+       "resolved": "https://registry.npmjs.org/react-native-nitro-modules/-/react-native-nitro-modules-0.35.5.tgz",
+@@ -34946,19 +34859,6 @@
+         "node": ">=0.10.0"
+       }
+     },
+-    "node_modules/react-native-uitextview": {
+-      "version": "2.7.1",
+-      "resolved": "https://registry.npmjs.org/react-native-uitextview/-/react-native-uitextview-2.7.1.tgz",
+-      "integrity": "sha512-BT4agx2Gg/idbbqUyCudg/Ml0qB7ar0pwKImgSrzspPAaYNCz6fFh9zypF0GUMGUbGrrlq1PHtXHh1oTSXCYkg==",
+-      "license": "MIT",
+-      "workspaces": [
+-        "example"
+-      ],
+-      "peerDependencies": {
+-        "react": "*",
+-        "react-native": ">=0.81.5"
+-      }
+-    },
+     "node_modules/react-native-unistyles": {
+       "version": "3.5.1",
+       "resolved": "https://registry.npmjs.org/react-native-unistyles/-/react-native-unistyles-3.5.1.tgz",
+@@ -37479,6 +37379,7 @@
+       "version": "1.0.3",
+       "resolved": "https://registry.npmjs.org/sprintf-js/-/sprintf-js-1.0.3.tgz",
+       "integrity": "sha512-D9cPgkvLlV3t3IzL0D0YLvGA9Ahk4PcvVwUbN0dSGr1aP0Nrt4AEnTUbuGvquEC0mA64Gqt1fzirlRs5ibXx8g==",
++      "devOptional": true,
+       "license": "BSD-3-Clause"
+     },
+     "node_modules/srvx": {
+@@ -41733,7 +41634,11 @@
+         "i18next": "^26.3.0",
+         "lucide-react-native": "^1.50.0",
+         "markdown-it": "^15.0.2",
++        "mdast-util-from-markdown": "2.1.0",
++        "mdast-util-gfm-table": "^2.0.0",
+         "mermaid": "^12.1.0",
++        "micromark-extension-gfm-table": "^2.1.2",
++        "micromark-util-decode-string": "2.0.1",
+         "mnemonic-id": "^4.1.0",
+         "qrcode": "^1.5.4",
+         "react": "19.2.3",
+@@ -41743,15 +41648,14 @@
+         "react-native": "0.86.3",
+         "react-native-draggable-flatlist": "^4.0.3",
+         "react-native-edge-to-edge": "^1.7.0",
++        "react-native-enriched-markdown": "1.2.0-nightly-20261014-766fc0e67",
+         "react-native-gesture-handler": "~2.32.0",
+         "react-native-keyboard-controller": "1.21.12",
+-        "react-native-markdown-display": "^7.0.2",
+         "react-native-nitro-modules": "0.35.5",
+         "react-native-reanimated": "4.5.1",
+         "react-native-safe-area-context": "~5.7.0",
+         "react-native-screens": "~4.26.0",
+         "react-native-svg": "15.15.5",
+-        "react-native-uitextview": "^2.7.1",
+         "react-native-unistyles": "^3.5.1",
+         "react-native-web": "~0.21.0",
+         "react-native-webview": "13.16.1",
+diff --git a/packages/app/package.json b/packages/app/package.json
+index 8c6fb3605..8ddf6d25f 100644
+--- a/packages/app/package.json
++++ b/packages/app/package.json
+@@ -104,7 +104,7 @@
+     "i18next": "^26.3.0",
+     "lucide-react-native": "^1.50.0",
+     "markdown-it": "^15.0.2",
+-    "mdast-util-from-markdown": "2.0.3",
++    "mdast-util-from-markdown": "2.1.0",
+     "mdast-util-gfm-table": "^2.0.0",
+     "mermaid": "^12.1.0",
+     "micromark-extension-gfm-table": "^2.1.2",
+diff --git a/packages/app/src/agent-stream/chat-find/anchor.ts b/packages/app/src/agent-stream/chat-find/anchor.ts
+index f77919145..b16f80b1f 100644
+--- a/packages/app/src/agent-stream/chat-find/anchor.ts
++++ b/packages/app/src/agent-stream/chat-find/anchor.ts
+@@ -1,5 +1,5 @@
+ import { useCallback, useEffect, useRef } from "react";
+-import type { NativeSyntheticEvent, Text, TextLayoutEventData } from "react-native";
++import type { NativeSyntheticEvent, Text, TextLayoutEventData, View } from "react-native";
+ import { lineAtOffset, type TextLine } from "@/find-highlight/reveal";
+ import { setChatFindAnchor } from "./highlight-store";
+ 
+@@ -44,3 +44,44 @@ export function useChatFindAnchorText(target: ChatFindAnchorTarget | null) {
+   }, [index, itemId, offset]);
+   return { textRef, onTextLayout };
+ }
++
++// About one line of chat text; the occurrence's own line is not measurable here.
++const ESTIMATED_LINE_HEIGHT = 24;
++
++/**
++ * A ref for a View that draws the selected occurrence where its lines cannot be read,
++ * such as natively drawn Markdown. Reveal measures the View and places the occurrence
++ * `fraction` of the way down it, which is exact for a one-line block and close for a
++ * paragraph.
++ */
++export function useChatFindAnchorView(target: ChatFindAnchorTarget | null, fraction: number) {
++  const viewRef = useRef<View>(null);
++  const itemId = target?.itemId ?? null;
++  const index = target?.index ?? -1;
++  useEffect(() => {
++    if (itemId === null) return undefined;
++    return setChatFindAnchor({
++      itemId,
++      index,
++      measure: () =>
++        new Promise((resolve) => {
++          const view = viewRef.current;
++          if (!view) {
++            resolve(null);
++            return;
++          }
++          view.measureInWindow((_x, y, _width, height) => {
++            // Not laid out yet: an unmeasured View reports no height.
++            if (height <= 0) {
++              resolve(null);
++              return;
++            }
++            const lineHeight = Math.min(height, ESTIMATED_LINE_HEIGHT);
++            const offset = Math.min(Math.max(height * fraction, 0), height - lineHeight);
++            resolve({ top: y + offset, height: lineHeight });
++          });
++        }),
++    });
++  }, [fraction, index, itemId]);
++  return viewRef;
++}
+diff --git a/packages/app/src/agent-stream/chat-find/markdown-matches.test.ts b/packages/app/src/agent-stream/chat-find/markdown-matches.test.ts
+index dece8ff1c..cdda7b714 100644
+--- a/packages/app/src/agent-stream/chat-find/markdown-matches.test.ts
++++ b/packages/app/src/agent-stream/chat-find/markdown-matches.test.ts
+@@ -1,12 +1,8 @@
+ import MarkdownIt from "markdown-it";
+ import { describe, expect, it } from "vitest";
+ import { countMatches, searchableBlocks, searchPattern } from "@getpaseo/protocol/chat-search-text";
+-import type { ASTNode } from "react-native-markdown-display";
+-import parser from "react-native-markdown-display/src/lib/parser";
+-import { isFindMarkedNode } from "@/find-highlight/markdown-nodes";
+-import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser";
+-import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
+-import { findMarkdownMatches } from "./markdown-matches";
++import { splitMarkdownForFind } from "@/components/markdown/find-split";
++import { findMarkdownMatches, highlightMarkdown } from "./markdown-matches";
+ 
+ const MIXED = [
+   "# Find heading",
+@@ -37,76 +33,79 @@ function hostCount(text: string, query: string): number {
+   );
+ }
+ 
+-const assistantMarkdownIt = createAssistantMarkdownParser();
+-
+-function nodesByKey(block: string): Map<string, ASTNode> {
+-  const nodes = new Map<string, ASTNode>();
+-  const visit = (node: ASTNode) => {
+-    nodes.set(node.key, node);
+-    for (const child of node.children) visit(child);
+-  };
+-  for (const node of parser(block, (ast) => ast, assistantMarkdownIt)) visit(node);
+-  return nodes;
++function marked(text: string, query: string, occurrence: number): string {
++  const match = findMarkdownMatches(text, searchPattern(query)).matches[occurrence]!;
++  return match.kind === "inline" ? highlightMarkdown(text, match.marks) : "";
+ }
+ 
+ describe("findMarkdownMatches", () => {
+-  it("numbers every match the host counts, once each, in reading order", () => {
+-    const { count, blocks } = findMarkdownMatches(MIXED, searchPattern("find"));
++  it("counts every match the host counts, in reading order", () => {
++    const { count, matches } = findMarkdownMatches(MIXED, searchPattern("find"));
+     expect(count).toBe(hostCount(MIXED, "find"));
+-    const emitted = blocks
+-      .flatMap((parts) => [...parts.values()].flat())
+-      .flatMap((part) => (part.match === null ? [] : [part.match]));
+-    expect([...new Set(emitted)]).toEqual([...Array(count).keys()]);
++    const kinds = matches.map((match) => match.kind);
++    expect(kinds.filter((kind) => kind === "code")).toHaveLength(2);
++    expect(kinds.lastIndexOf("code")).toBe(kinds.length - 2);
+   });
+ 
+-  it("numbers a match that spans bold edges and a line break once, on every piece", () => {
+-    const { count, blocks } = findMarkdownMatches(
+-      "say **hello\nthere** now",
+-      searchPattern("hello there"),
++  it("highlights text, a code span whole, and a match across bold edges and a break", () => {
++    expect(marked("one find here", "find", 0)).toBe("one ==find== here");
++    expect(marked("see `a find` too", "find", 0)).toBe("see ==`a find`== too");
++    expect(marked("say **hello\nthere** now", "hello there", 0)).toBe(
++      "say **==hello\nthere==** now",
+     );
+-    expect(count).toBe(1);
+-    const pieces = [...blocks[0]!.values()].flat().filter((part) => part.match !== null);
+-    expect(pieces.map((part) => part.text)).toEqual(["hello", "there"]);
+-    expect(pieces.every((part) => part.match === 0)).toBe(true);
+   });
+ 
+-  it("keeps node keys per rendered block, which repeat across blocks", () => {
+-    const { blocks } = findMarkdownMatches("first x\n\nsecond x", searchPattern("x"));
+-    expect(blocks).toHaveLength(2);
+-    const [firstKeys, secondKeys] = blocks.map((parts) => [...parts.keys()]);
+-    expect(firstKeys).toEqual(secondKeys);
+-    expect(blocks[1]!.get(secondKeys![0]!)!.find((part) => part.match !== null)!.match).toBe(1);
++  it("keeps escapes inside a mark and escapes every other equals sign", () => {
++    expect(marked("a == b and \\*find\\* x=1", "*find*", 0)).toBe(
++      "a \\=\\= b and ==\\*find\\*== x\\=1",
++    );
++  });
++
++  it("drops whitespace at a piece's edge, which a delimiter cannot hug", () => {
++    expect(marked("go find **it** now", "find it", 0)).toBe("go ==find== **==it==** now");
++  });
++
++  it("counts nothing in a diagram and never marks image alt text", () => {
++    const text = ["![find](x.png) find", "", "```mermaid", "graph TD; find --> find", "```"].join(
++      "\n",
++    );
++    const { count } = findMarkdownMatches(text, searchPattern("find"));
++    expect(count).toBe(1);
++    expect(marked(text, "find", 0).split("\n")[0]).toBe("![find](x.png) ==find==");
+   });
++});
+ 
+-  it("numbers only nodes the message rules mark, and nothing in a diagram", () => {
+-    const text = [
+-      "find [the `find` link](https://x.dev) and `src/find.ts` and `https://find.dev`",
+-      "",
+-      "```mermaid",
+-      "graph TD; find --> find",
+-      "```",
+-    ].join("\n");
+-    const { count, blocks } = findMarkdownMatches(text, searchPattern("find"));
+-    expect(count).toBe(4);
+-    splitMarkdownBlocks(text).forEach((block, index) => {
+-      const nodes = nodesByKey(block);
+-      for (const key of blocks[index]!.keys()) {
+-        expect(isFindMarkedNode(nodes.get(key)!), key).toBe(true);
+-      }
++describe("splitMarkdownForFind", () => {
++  it("draws the block holding the match apart and places the match in it", () => {
++    const text = "intro\n\npara with find inside\n\noutro";
++    const match = findMarkdownMatches(text, searchPattern("find")).matches[0]!;
++    const split = splitMarkdownForFind(text, match);
++    expect(split).toMatchObject({
++      head: "intro\n\n",
++      block: "para with ==find== inside\n\n",
++      tail: "outro",
++      code: null,
+     });
++    expect(split.fraction).toBeCloseTo(10 / "para with find inside\n\n".length);
++  });
++
++  it("draws a code block in place of the fence, numbered within the code", () => {
++    const text = "find\n\n```ts\nfind(); find();\n```\n";
++    const match = findMarkdownMatches(text, searchPattern("find")).matches[2]!;
++    const split = splitMarkdownForFind(text, match);
++    expect(split.head).toBe("find\n\n");
++    expect(split.tail).toBe("");
++    expect(split.code).toMatchObject({ code: "find(); find();", language: "ts", current: 1 });
+   });
+ 
+-  it("anchors each match in the root Text that draws it, restarting after a hard break", () => {
+-    const text = "a **bold** `code` x\nx  \nafter x\n\n```\nline\nx\n```";
+-    const { anchors, blocks } = findMarkdownMatches(text, searchPattern("x"));
+-    const hostType = (match: number) => anchors[match]!.hostKey.split("_").at(-1);
+-    // "a bold code x" then a soft break, so the second x sits at 14 of the first textgroup.
+-    expect(anchors.slice(0, 2).map((anchor) => anchor?.offset)).toEqual([12, 14]);
+-    expect(hostType(0)).toBe("textgroup");
+-    // The hard break starts a second textgroup in the same paragraph.
+-    expect(anchors[2]).toMatchObject({ offset: 6 });
+-    expect(anchors[2]!.hostKey).not.toBe(anchors[0]!.hostKey);
+-    expect(anchors[3]).toMatchObject({ blockIndex: blocks.length - 1, offset: 5 });
+-    expect(hostType(3)).toBe("fence");
++  it("keeps a message with definitions whole, so references still resolve", () => {
++    const text = "see [ref] find\n\n```\nfind\n```\n\n[ref]: https://x.dev";
++    const { matches } = findMarkdownMatches(text, searchPattern("find"));
++    expect(matches.map((match) => match.block)).toEqual([
++      { start: 0, end: text.length },
++      { start: 0, end: text.length },
++    ]);
++    // Code drawn natively cannot be marked, but the occurrence still counts.
++    expect(matches[1]).toEqual({ kind: "inline", block: matches[1]!.block, marks: [] });
+   });
+ });
+diff --git a/packages/app/src/agent-stream/chat-find/markdown-matches.ts b/packages/app/src/agent-stream/chat-find/markdown-matches.ts
+index cb9f97491..7567c969c 100644
+--- a/packages/app/src/agent-stream/chat-find/markdown-matches.ts
++++ b/packages/app/src/agent-stream/chat-find/markdown-matches.ts
+@@ -1,141 +1,266 @@
+-import type { ASTNode } from "react-native-markdown-display";
+-import parser from "react-native-markdown-display/src/lib/parser";
+-import { isFindMarkedNode } from "@/find-highlight/markdown-nodes";
+-import { splitRunsForMatches, type MatchPart } from "@/find-highlight/split";
+-import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser";
+-import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
++import { fromMarkdown } from "mdast-util-from-markdown";
++import { gfmTable } from "micromark-extension-gfm-table";
++import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
++import type { Nodes, RootContent } from "mdast";
++import { splitRunsForMatches, splitTextForMatches, type MatchPart } from "@/find-highlight/split";
+ 
+-/**
+- * Where the query occurs in one assistant message as the native renderer draws it.
+- * `blocks[i]` maps an AST node key of rendered block `i` to its text split at matches;
+- * match numbers run across the whole message in reading order.
+- */
+-export interface MarkdownMatches {
+-  count: number;
+-  blocks: ReadonlyMap<string, MatchPart[]>[];
+-  /** Where each match starts, by match number; see `MatchAnchor`. */
+-  anchors: (MatchAnchor | null)[];
++/** A source range, as offsets into the Markdown text. */
++export interface SourceRange {
++  start: number;
++  end: number;
+ }
+ 
+-/**
+- * Where a match starts within the root Text that draws it: a textgroup for inline
+- * runs, the block itself for code. Scrolling measures that Text's lines to find it.
+- */
+-export interface MatchAnchor {
+-  blockIndex: number;
+-  hostKey: string;
+-  offset: number;
+-}
+-
+-const assistantParser = createAssistantMarkdownParser();
++/** Where one occurrence sits in the Markdown source, so the renderer can draw it. */
++export type MarkdownMatch =
++  | {
++      kind: "inline";
++      /**
++       * The source the renderer draws apart to place the occurrence: its top-level
++       * block from the start of its first line, or the whole message when a block
++       * needs the rest of the document to render the same.
++       */
++      block: SourceRange;
++      /** Source ranges to wrap in a highlight: text pieces, or whole code spans. */
++      marks: SourceRange[];
++    }
++  | {
++      kind: "code";
++      block: SourceRange;
++      code: string;
++      language: string | null;
++      /** The code split at its matches, numbered within the code block. */
++      parts: MatchPart[];
++      /** Which match in `parts` this occurrence is. */
++      current: number;
++    };
+ 
+-// The inline nodes the library promotes to blocks; markdown-it keeps them inside the
+-// inline run the host searches as one string.
+-const INLINE_BLOCK_TYPES = new Set(["hardbreak", "image", "blocklink", "textgroup"]);
++export interface MarkdownMatches {
++  count: number;
++  /** By occurrence number, in reading order. */
++  matches: MarkdownMatch[];
++}
+ 
+ interface Run {
+-  key: string | null;
+   text: string;
+-  /** The root Text this run is drawn in, and where in its string the run starts. */
+-  host: { key: string; offset: number } | null;
++  /** Source offset of each character of `text`; null where the source spells it differently. */
++  offsets: (number | null)[];
++  /** Set for a code span, which is highlighted whole. */
++  span: SourceRange | null;
+ }
+ 
+-interface RunCursor {
+-  runs: Run[];
+-  /** The textgroup being walked and its length so far. */
+-  host: { key: string; length: number } | null;
++function parse(text: string) {
++  return fromMarkdown(text, {
++    extensions: [gfmTable()],
++    mdastExtensions: [gfmTableFromMarkdown()],
++  });
+ }
+ 
+-function pushRun(current: RunCursor, key: string | null, text: string) {
+-  const host = current.host;
+-  current.runs.push({ key, text, host: host ? { key: host.key, offset: host.length } : null });
+-  if (host) host.length += text.length;
++function range(node: Nodes): SourceRange | null {
++  const start = node.position?.start.offset;
++  const end = node.position?.end.offset;
++  return start === undefined || end === undefined ? null : { start, end };
+ }
+ 
+ /**
+- * Groups the AST into the searchable strings of `searchableBlocks` in
+- * `@getpaseo/protocol/chat-search-text`: one per paragraph-like inline run (text, inline
+- * code and line breaks; image alt text never), one per code block. Keeping the host's
+- * grouping keeps the count the host reported and lets a match span `**bold**` edges.
+- * Diagrams are the exception: they draw no text, so they count nothing here.
++ * Maps each character of a text node's value to the source character that spells it.
++ * The value is the source minus syntax the reader never sees: backslash escapes,
++ * container markers and indentation on continued lines. Entities decode to other
++ * characters, so the first character that cannot be found ends the mapping.
+  */
+-function collectRuns(nodes: readonly ASTNode[], groups: Run[][], current: RunCursor) {
+-  for (const node of nodes) {
+-    if (node.type === "fence" || node.type === "code_block") {
+-      if (isFindMarkedNode(node)) {
+-        groups.push([{ key: node.key, text: node.content, host: { key: node.key, offset: 0 } }]);
+-      }
+-      continue;
+-    }
+-    if (node.type === "text" || node.type === "code_inline") {
+-      pushRun(current, node.key, node.content);
+-      continue;
+-    }
+-    if (node.type === "softbreak" || node.type === "hardbreak") {
+-      pushRun(current, null, "\n");
+-      continue;
++function valueOffsets(source: string, value: string, start: number, end: number) {
++  const offsets: (number | null)[] = [];
++  let cursor = start;
++  for (const character of value) {
++    while (cursor < end && source[cursor] !== character) cursor += 1;
++    if (cursor >= end) {
++      while (offsets.length < value.length) offsets.push(null);
++      break;
+     }
+-    if (node.type === "image") continue;
+-    if (node.type === "textgroup") {
+-      // Each textgroup is its own root Text, so offsets restart here even though the
+-      // count keeps grouping the whole paragraph.
+-      const outer = current.host;
+-      current.host = { key: node.key, length: 0 };
+-      collectRuns(node.children, groups, current);
+-      current.host = outer;
++    offsets.push(cursor);
++    for (let extra = 1; extra < character.length; extra += 1) offsets.push(cursor + extra);
++    cursor += character.length;
++  }
++  return offsets;
++}
++
++/**
++ * The text a reader sees in an inline container, as chat search reads it
++ * (`searchableBlocks` in `@getpaseo/protocol/chat-search-text`): text and inline code,
++ * line breaks as newlines, never image alt text or raw HTML.
++ */
++function inlineRuns(source: string, nodes: readonly Nodes[], runs: Run[]) {
++  for (const node of nodes) {
++    const nodeRange = range(node);
++    if (node.type === "text") {
++      runs.push({
++        text: node.value,
++        offsets: nodeRange
++          ? valueOffsets(source, node.value, nodeRange.start, nodeRange.end)
++          : node.value.split("").map(() => null),
++        span: null,
++      });
++    } else if (node.type === "inlineCode") {
++      runs.push({
++        text: node.value,
++        offsets: node.value.split("").map(() => null),
++        span: nodeRange,
++      });
++    } else if (node.type === "break") {
++      runs.push({ text: "\n", offsets: [null], span: null });
++    } else if (node.type === "image" || node.type === "imageReference" || node.type === "html") {
+       continue;
++    } else if ("children" in node) {
++      inlineRuns(source, node.children, runs);
+     }
+-    if (node.block === true && !INLINE_BLOCK_TYPES.has(node.type)) {
+-      if (current.runs.length > 0) groups.push(current.runs);
+-      current.runs = [];
+-      collectRuns(node.children, groups, current);
+-      if (current.runs.length > 0) groups.push(current.runs);
+-      current.runs = [];
++  }
++}
++
++/** Highlight ranges for one occurrence's pieces, trimmed to what a delimiter can hug. */
++/** A piece of a run that a match covers; `at` is where the piece starts in its run. */
++type Piece = Run & { at: number };
++
++function markRanges(pieces: readonly Piece[], source: string): SourceRange[] {
++  const marks: SourceRange[] = [];
++  for (const piece of pieces) {
++    if (piece.span) {
++      if (!marks.some((mark) => mark.start === piece.span!.start)) marks.push(piece.span);
+       continue;
+     }
+-    collectRuns(node.children, groups, current);
++    // A highlight delimiter cannot sit next to whitespace, so drop the piece's edges.
++    const leading = piece.text.length - piece.text.trimStart().length;
++    const trimmed = piece.text.trim();
++    if (!trimmed) continue;
++    const first = piece.offsets[piece.at + leading];
++    const last = piece.offsets[piece.at + leading + trimmed.length - 1];
++    if (first === null || first === undefined || last === null || last === undefined) continue;
++    // Keep a backslash escape inside the mark, or the delimiter would split it.
++    const escaped = /[!-/:-@[-`{-~]/.test(source[first] ?? "") && source[first - 1] === "\\";
++    marks.push({ start: escaped ? first - 1 : first, end: last + 1 });
+   }
++  return marks;
++}
++
++function needsWholeMessage(node: Nodes): boolean {
++  if (node.type === "definition" || node.type === "html") return true;
++  return "children" in node && node.children.some(needsWholeMessage);
+ }
+ 
+-function blockAst(block: string): ASTNode[] {
+-  return parser(block, (ast) => ast, assistantParser);
++function lineStart(text: string, offset: number): number {
++  return text.lastIndexOf("\n", offset - 1) + 1;
+ }
+ 
+-/** Pre-pass over the renderer's own parse; `text` is the text the message renders. */
++/**
++ * Finds every occurrence chat find numbers in a message, in reading order, and where
++ * the renderer draws it. Counting follows chat search's rules per searchable block, so
++ * a match may span `**bold**` edges and line breaks but never two blocks. Diagrams
++ * draw no text, so they hold no occurrences.
++ */
+ export function findMarkdownMatches(text: string, pattern: RegExp): MarkdownMatches {
+-  let count = 0;
+-  const anchors: (MatchAnchor | null)[] = [];
+-  const blocks = splitMarkdownBlocks(text).map((block, blockIndex) => {
+-    const groups: Run[][] = [];
+-    const current: RunCursor = { runs: [], host: null };
+-    collectRuns(blockAst(block), groups, current);
+-    if (current.runs.length > 0) groups.push(current.runs);
+-    const parts = new Map<string, MatchPart[]>();
+-    for (const group of groups) {
+-      let last = -1;
+-      let run: Run | null = null;
+-      let runOffset = 0;
+-      for (const piece of splitRunsForMatches(group, pattern)) {
+-        // Pieces carry their run's host object, so a new host object means a new run.
+-        if (run?.host !== piece.host || run?.key !== piece.key) runOffset = 0;
+-        run = piece;
+-        const pieceOffset = runOffset;
+-        runOffset += piece.text.length;
+-        if (piece.match !== null && piece.match > last) {
+-          last = piece.match;
+-          anchors[count + piece.match] = piece.host
+-            ? { blockIndex, hostKey: piece.host.key, offset: piece.host.offset + pieceOffset }
+-            : null;
++  const matches: MarkdownMatch[] = [];
++  const tree = parse(text);
++  const children = tree.children;
++  // Definitions and HTML resolve against the whole message, so a part drawn apart could
++  // render differently. Without definitions, a bracketed shortcut is plain text anywhere.
++  const whole = children.some(needsWholeMessage) ? { start: 0, end: text.length } : null;
++  children.forEach((child, index) => {
++    const childRange = range(child);
++    if (!childRange) return;
++    const next = children[index + 1];
++    const nextRange = next ? range(next) : null;
++    const block = whole ?? {
++      start: lineStart(text, childRange.start),
++      end: nextRange ? lineStart(text, nextRange.start) : text.length,
++    };
++    const visit = (node: Nodes | RootContent) => {
++      if (node.type === "code") {
++        // The renderer draws these as diagrams (fence/mermaid/segments.ts).
++        if (node.lang?.toLowerCase() === "mermaid") return;
++        const parts = splitTextForMatches(node.value, pattern);
++        const found = new Set(parts.flatMap((part) => (part.match === null ? [] : [part.match])));
++        for (const current of [...found].sort((a, b) => a - b)) {
++          // Code drawn natively cannot be marked; only a block drawn apart can.
++          if (whole) {
++            matches.push({ kind: "inline", block, marks: [] });
++            continue;
++          }
++          matches.push({
++            kind: "code",
++            block,
++            code: node.value,
++            language: node.lang ?? null,
++            parts,
++            current,
++          });
+         }
+-        if (piece.key === null) continue;
+-        const match = piece.match === null ? null : count + piece.match;
+-        const nodeParts = parts.get(piece.key);
+-        if (nodeParts) nodeParts.push({ text: piece.text, match });
+-        else parts.set(piece.key, [{ text: piece.text, match }]);
++        return;
+       }
+-      count += last + 1;
+-    }
+-    return parts;
++      if (node.type === "paragraph" || node.type === "heading" || node.type === "tableCell") {
++        const runs: Run[] = [];
++        inlineRuns(text, node.children, runs);
++        const byMatch = new Map<number, Piece[]>();
++        // Pieces keep their run's fields; walking them in order recovers where each starts.
++        let run: Run | null = null;
++        let at = 0;
++        for (const piece of splitRunsForMatches(runs, pattern)) {
++          if (piece.offsets !== run?.offsets) {
++            run = piece;
++            at = 0;
++          }
++          if (piece.match !== null) {
++            const list = byMatch.get(piece.match) ?? [];
++            list.push({ ...piece, at });
++            byMatch.set(piece.match, list);
++          }
++          at += piece.text.length;
++        }
++        for (const [, matchPieces] of [...byMatch].sort(([a], [b]) => a - b)) {
++          matches.push({ kind: "inline", block, marks: markRanges(matchPieces, text) });
++        }
++        return;
++      }
++      if ("children" in node) node.children.forEach(visit);
++    };
++    visit(child);
+   });
+-  return { count, blocks, anchors };
++  return { count: matches.length, matches };
++}
++
++/**
++ * Text node characters that would read as highlight delimiters once the renderer
++ * parses `==`, so they can be escaped while one occurrence is highlighted.
++ */
++function equalsSigns(text: string): number[] {
++  const offsets: number[] = [];
++  const visit = (node: Nodes) => {
++    const nodeRange = range(node);
++    if (node.type === "text" && nodeRange) {
++      valueOffsets(text, node.value, nodeRange.start, nodeRange.end).forEach((offset, index) => {
++        if (offset !== null && node.value[index] === "=" && text[offset - 1] !== "\\") {
++          offsets.push(offset);
++        }
++      });
++      return;
++    }
++    if ("children" in node) node.children.forEach(visit);
++  };
++  visit(parse(text));
++  return offsets;
++}
++
++/**
++ * The Markdown with `marks` wrapped in highlight delimiters (`==`), for a renderer that
++ * parses them. Every other `=` in text is escaped, so only the marks highlight.
++ */
++export function highlightMarkdown(text: string, marks: readonly SourceRange[]): string {
++  const edits: { at: number; text: string }[] = [];
++  for (const offset of equalsSigns(text)) edits.push({ at: offset, text: "\\" });
++  for (const mark of marks) {
++    edits.push({ at: mark.start, text: "==" });
++    edits.push({ at: mark.end, text: "==" });
++  }
++  let result = text;
++  for (const edit of edits.sort((a, b) => b.at - a.at)) {
++    result = result.slice(0, edit.at) + edit.text + result.slice(edit.at);
++  }
++  return result;
+ }
+diff --git a/packages/app/src/agent-stream/chat-find/message-matches.test.ts b/packages/app/src/agent-stream/chat-find/message-matches.test.ts
+index cd8a2117f..7a901a5f5 100644
+--- a/packages/app/src/agent-stream/chat-find/message-matches.test.ts
++++ b/packages/app/src/agent-stream/chat-find/message-matches.test.ts
+@@ -2,35 +2,25 @@ import { describe, expect, it } from "vitest";
+ import type { StreamItem } from "@/types/stream";
+ import { locateMessageMatch } from "./message-matches";
+ 
+-function assistant(id: string, text: string, blockGroupId?: string, blockIndex = 0): StreamItem {
+-  return {
+-    kind: "assistant_message",
+-    id,
+-    text,
+-    timestamp: new Date(0),
+-    ...(blockGroupId ? { blockGroupId, blockIndex } : {}),
+-  } as StreamItem;
++function assistant(id: string, text: string): StreamItem {
++  return { kind: "assistant_message", id, text, timestamp: new Date(0) } as StreamItem;
+ }
+ 
+ describe("locateMessageMatch", () => {
+-  // Native holds rows newest first, a message's own block rows included.
+   const items = [
+-    assistant("a-3", "last match", "a", 2),
+     assistant("b", "match elsewhere"),
+-    assistant("a-2", "one **match** and `match`", "a", 1),
+-    assistant("a-1", "nothing here", "a", 0),
++    assistant("a", "one **match** and `match`, then\n\n```\nmatch\n```"),
+     { kind: "user_message", id: "u", text: "**match** as typed" } as StreamItem,
+   ];
+ 
+-  it("maps a message occurrence onto the item that draws it, skipping items without one", () => {
++  it("numbers a message's occurrences in reading order, code blocks included", () => {
+     expect(locateMessageMatch(items, "a", "match", 0)).toEqual({
+       count: 3,
+       occurrence: 0,
+-      itemId: "a-2",
++      itemId: "a",
+       index: 0,
+     });
+-    expect(locateMessageMatch(items, "a", "match", 1)).toMatchObject({ itemId: "a-2", index: 1 });
+-    expect(locateMessageMatch(items, "a", "match", 2)).toMatchObject({ itemId: "a-3", index: 0 });
++    expect(locateMessageMatch(items, "a", "match", 2)).toMatchObject({ itemId: "a", index: 2 });
+   });
+ 
+   it("counts from the end for -1 and clamps past the last occurrence", () => {
+diff --git a/packages/app/src/agent-stream/chat-find/message-matches.ts b/packages/app/src/agent-stream/chat-find/message-matches.ts
+index 26498f7dc..3f422c1de 100644
+--- a/packages/app/src/agent-stream/chat-find/message-matches.ts
++++ b/packages/app/src/agent-stream/chat-find/message-matches.ts
+@@ -14,10 +14,6 @@ export interface MessageMatch {
+   index: number;
+ }
+ 
+-function blockIndex(row: StreamItem): number {
+-  return row.kind === "assistant_message" ? (row.blockIndex ?? 0) : 0;
+-}
+-
+ /** The text a row draws: native never expands a capped message. */
+ function itemMatchCount(item: StreamItem, pattern: RegExp): number {
+   if (item.kind === "user_message") return countMatches(item.text, pattern);
+@@ -29,9 +25,8 @@ function itemMatchCount(item: StreamItem, pattern: RegExp): number {
+ 
+ /**
+  * Finds an occurrence in a message, counted the way the host's chat search counts
+- * them. Pass the rows the stream draws: an assistant message is one row per Markdown
+- * block, so the occurrence is numbered across its rows in block order, whatever order
+- * the list holds them in. Null when there is none.
++ * them, numbered across the message's rows in reading order. Pass the rows the stream
++ * draws. Null when there is none.
+  */
+ export function locateMessageMatch(
+   rows: readonly StreamItem[],
+@@ -43,7 +38,6 @@ export function locateMessageMatch(
+   const pattern = searchPattern(query);
+   const counts = rows
+     .filter((row) => getStreamItemMessageId(row) === messageId)
+-    .sort((a, b) => blockIndex(a) - blockIndex(b))
+     .map((row) => ({ itemId: row.id, count: itemMatchCount(row, pattern) }));
+   const count = counts.reduce((total, entry) => total + entry.count, 0);
+   if (count === 0) return null;
+diff --git a/packages/app/src/agent-stream/chat-find/types.ts b/packages/app/src/agent-stream/chat-find/types.ts
+index d2aed0cb6..2b0849c7a 100644
+--- a/packages/app/src/agent-stream/chat-find/types.ts
++++ b/packages/app/src/agent-stream/chat-find/types.ts
+@@ -10,7 +10,7 @@ export interface ChatFindProps {
+   serverId: string;
+   epoch: string | null;
+   items: StreamItem[];
+-  /** The rows the stream draws: user text as shown, assistant messages one row per block. */
++  /** The rows the stream draws, newest first on native. */
+   rows: readonly StreamItem[];
+   viewportRef: RefObject<StreamViewportHandle | null>;
+   revealLoadedMessage(messageId: string): boolean;
+diff --git a/packages/app/src/agent-stream/stream-tick.bench.ts b/packages/app/src/agent-stream/stream-tick.bench.ts
+index dc1fecb88..6d4d86733 100644
+--- a/packages/app/src/agent-stream/stream-tick.bench.ts
++++ b/packages/app/src/agent-stream/stream-tick.bench.ts
+@@ -1,4 +1,4 @@
+-import { bench, describe } from "vitest";
++import { test } from "vitest";
+ import type { StreamItem, ToolCallItem } from "@/types/stream";
+ import {
+   prepareToolCallHistory,
+@@ -122,11 +122,13 @@ const defaultWindowStart = findMountedWindowStart({
+   minMountedCount: getMountedRecentStreamItems(),
+ });
+ 
+-describe(`${TICKS} streamed deltas over a ${TIMELINE_ITEMS}-item timeline`, () => {
+-  bench("default mounted window (recent items only)", () => {
+-    runTicks({ tail, historyStart: defaultWindowStart, heads });
+-  });
+-  bench("history fully revealed (scrolled to top)", () => {
+-    runTicks({ tail, historyStart: 0, heads });
+-  });
++test(`${TICKS} streamed deltas over a ${TIMELINE_ITEMS}-item timeline`, async ({ bench }) => {
++  await bench.compare(
++    bench("default mounted window (recent items only)", () => {
++      runTicks({ tail, historyStart: defaultWindowStart, heads });
++    }),
++    bench("history fully revealed (scrolled to top)", () => {
++      runTicks({ tail, historyStart: 0, heads });
++    }),
++  );
+ });
+diff --git a/packages/app/src/assistant-file-links/resolver.test.ts b/packages/app/src/assistant-file-links/resolver.test.ts
+index 384c3b685..6b21704a4 100644
+--- a/packages/app/src/assistant-file-links/resolver.test.ts
++++ b/packages/app/src/assistant-file-links/resolver.test.ts
+@@ -26,7 +26,7 @@ it("opens the existing non-ASCII file named by a rendered markdown link", async
+     const tokens = new MarkdownIt().parseInline("[报告](docs/reports/开户赠金.md)", {});
+     const href = tokens[0].children?.find((token) => token.type === "link_open")?.attrGet("href");
+     expect(href).toBe("docs/reports/%E5%BC%80%E6%88%B7%E8%B5%A0%E9%87%91.md");
+-    const resolution = classifyForResolution({ href: href! }, { workspaceRoot });
++    const resolution = classifyForResolution({ href: String(href) }, { workspaceRoot });
+     expect(resolution.kind).toBe("resolved");
+     if (resolution.kind !== "resolved" || resolution.value.kind !== "file") {
+       throw new Error("Expected a directly resolved file link");
+diff --git a/packages/app/src/components/markdown/fence/diagram.ts b/packages/app/src/components/markdown/fence/diagram.ts
+deleted file mode 100644
+index 07d700276..000000000
+--- a/packages/app/src/components/markdown/fence/diagram.ts
++++ /dev/null
+@@ -1,12 +0,0 @@
+-import { getMarkdownFenceLanguage } from "./language";
+-
+-/** Fence languages drawn as diagrams instead of code. */
+-export const DIAGRAM_FENCE_LANGUAGES = ["mermaid"] as const;
+-export type DiagramFenceLanguage = (typeof DIAGRAM_FENCE_LANGUAGES)[number];
+-
+-export function getDiagramFenceLanguage(
+-  info: string | null | undefined,
+-): DiagramFenceLanguage | null {
+-  const language = getMarkdownFenceLanguage(info);
+-  return DIAGRAM_FENCE_LANGUAGES.find((diagram) => diagram === language) ?? null;
+-}
+diff --git a/packages/app/src/components/markdown/find-split.ts b/packages/app/src/components/markdown/find-split.ts
+new file mode 100644
+index 000000000..ae6f95b46
+--- /dev/null
++++ b/packages/app/src/components/markdown/find-split.ts
+@@ -0,0 +1,55 @@
++import type { ChatFindAnchorTarget } from "@/agent-stream/chat-find/anchor";
++import { highlightMarkdown, type MarkdownMatch } from "@/agent-stream/chat-find/markdown-matches";
++import { matchPartsOffset } from "@/find-highlight/match-parts";
++import type { MatchPart } from "@/find-highlight/split";
++/** Chat find's selected occurrence in a message, and where reveal looks for it. */
++export interface MarkdownFind {
++  match: MarkdownMatch;
++  /** `offset` is ignored: the renderer works out where the occurrence is drawn. */
++  anchor: ChatFindAnchorTarget;
++}
++
++export interface FindCode {
++  code: string;
++  language: string | null;
++  parts: MatchPart[];
++  current: number;
++}
++
++export interface MarkdownFindSplit {
++  head: string;
++  /** The block to draw apart, with the occurrence highlighted; empty for code. */
++  block: string;
++  /** Set when the occurrence is in a code block, drawn in place of `block`. */
++  code: FindCode | null;
++  tail: string;
++  /** How far down the drawn block the occurrence starts, from 0 to 1. */
++  fraction: number;
++}
++
++/** Cuts a message around the block holding the occurrence and marks it there. */
++export function splitMarkdownForFind(text: string, match: MarkdownMatch): MarkdownFindSplit {
++  const { start, end } = match.block;
++  const head = text.slice(0, start);
++  const tail = text.slice(end);
++  if (match.kind === "code") {
++    const { code, language, parts, current } = match;
++    return {
++      head,
++      block: "",
++      code: { code, language, parts, current },
++      tail,
++      fraction: code.length > 0 ? matchPartsOffset(parts, current) / code.length : 0,
++    };
++  }
++  const source = text.slice(start, end);
++  const marks = match.marks.map((mark) => ({ start: mark.start - start, end: mark.end - start }));
++  const first = marks.length > 0 ? Math.min(...marks.map((mark) => mark.start)) : 0;
++  return {
++    head,
++    block: highlightMarkdown(source, marks),
++    code: null,
++    tail,
++    fraction: source.length > 0 ? first / source.length : 0,
++  };
++}
+diff --git a/packages/app/src/components/markdown/find.tsx b/packages/app/src/components/markdown/find.tsx
+new file mode 100644
+index 000000000..631feb193
+--- /dev/null
++++ b/packages/app/src/components/markdown/find.tsx
+@@ -0,0 +1,55 @@
++import { memo, useMemo } from "react";
++import { withUnistyles } from "react-native-unistyles";
++import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
++import type { ChatFindAnchorTarget } from "@/agent-stream/chat-find/anchor";
++import { matchPartsOffset } from "@/find-highlight/match-parts";
++import type { Theme } from "@/styles/theme";
++import { isWeb } from "@/constants/platform";
++import type { FindCode } from "./find-split";
++
++const ThemedCodeBlock = withUnistyles(HighlightedCodeBlock);
++
++// Matches the native renderer's code block (markdown/styles.ts) so the block does not
++// shift while find marks it.
++const codeBlockStyle = (theme: Theme) => ({
++  inheritedStyles: {
++    color: theme.colors.foreground,
++    fontFamily:
++      theme.fontFamily.mono === "ui-monospace" && !isWeb ? undefined : theme.fontFamily.mono,
++    fontSize: theme.fontSize.code,
++  },
++  textStyle: {
++    backgroundColor: theme.colors.surface2,
++    borderColor: theme.colors.border,
++    borderWidth: 1,
++    borderRadius: 8,
++    padding: 12,
++    marginBottom: theme.spacing[3],
++  },
++});
++
++/** A code block drawn in JS so it can mark the occurrence and measure its line. */
++export const FindCodeBlock = memo(function FindCodeBlock({
++  code,
++  language,
++  parts,
++  current,
++  anchor,
++}: FindCode & { anchor: ChatFindAnchorTarget }) {
++  const findMatch = useMemo(
++    () => ({
++      parts,
++      current,
++      anchor: { ...anchor, offset: matchPartsOffset(parts, current) },
++    }),
++    [anchor, current, parts],
++  );
++  return (
++    <ThemedCodeBlock
++      code={code}
++      language={language}
++      findMatch={findMatch}
++      uniProps={codeBlockStyle}
++    />
++  );
++});
+diff --git a/packages/app/src/components/markdown/renderer.tsx b/packages/app/src/components/markdown/renderer.tsx
+index c4a832342..1fe90c026 100644
+--- a/packages/app/src/components/markdown/renderer.tsx
++++ b/packages/app/src/components/markdown/renderer.tsx
+@@ -1,4 +1,5 @@
+ import { memo, useMemo, useState } from "react";
++import { View } from "react-native";
+ import { EnrichedMarkdownText, type LinkPressEvent } from "react-native-enriched-markdown";
+ import { withUnistyles } from "react-native-unistyles";
+ import {
+@@ -6,6 +7,7 @@ import {
+   useAssistantFileLinkEnvironment,
+ } from "@/assistant-file-links";
+ import { useStableEvent } from "@/hooks/use-stable-event";
++import { useChatFindAnchorView } from "@/agent-stream/chat-find/anchor";
+ import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
+ import type { Theme } from "@/styles/theme";
+ import { isWeb } from "@/constants/platform";
+@@ -17,9 +19,13 @@ import { splitStreamingMarkdown } from "./streaming";
+ import { useMarkdownSource, type MarkdownImageContext } from "./images";
+ 
+ import { MermaidFence, MermaidStreamingContext, splitMermaidFences } from "./fence/mermaid";
++import { FindCodeBlock } from "./find";
++import { splitMarkdownForFind, type MarkdownFind } from "./find-split";
+ 
+ const ThemedMarkdown = withUnistyles(EnrichedMarkdownText);
+ const MD4C_FLAGS = { latexMath: false, hardSoftBreaks: true, admonitions: true };
++// Only a part carrying chat find's mark parses `==`; elsewhere it stays literal text.
++const FIND_MD4C_FLAGS = { ...MD4C_FLAGS, highlight: true };
+ 
+ const regularStyle = (theme: Theme) => createMarkdownStyles(theme);
+ const compactStyle = (theme: Theme) => createMarkdownStyles(theme, true);
+@@ -30,6 +36,8 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
+   compact?: boolean;
+   streaming?: boolean;
+   onLinkPress?: (url: string) => unknown;
++  /** Native chat find's selected occurrence; ignored while streaming. */
++  find?: MarkdownFind | null;
+ }
+ 
+ /** All Markdown surfaces share the same engine and source adaptation. */
+@@ -41,6 +49,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
+     () => splitStreamingMarkdown(completeLines, true).head.length,
+     [completeLines],
+   );
++  if (props.find && !streaming) return <MarkdownFindParts {...props} find={props.find} />;
+   if (!streaming || boundary === 0) return <MarkdownPart {...props} />;
+   return (
+     <>
+@@ -50,14 +59,39 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
+   );
+ });
+ 
++/**
++ * Draws the block holding chat find's occurrence apart from the rest, so reveal can
++ * measure it: Markdown with the occurrence highlighted, or a code block that marks it.
++ */
++function MarkdownFindParts({ find, ...props }: MarkdownRendererProps & { find: MarkdownFind }) {
++  const split = useMemo(() => splitMarkdownForFind(props.text, find.match), [props.text, find]);
++  // A code block measures the occurrence's own line; natively drawn Markdown cannot.
++  const anchorRef = useChatFindAnchorView(split.code ? null : find.anchor, split.fraction);
++  return (
++    <>
++      {split.head ? <MarkdownPart {...props} text={split.head} continues /> : null}
++      <View ref={anchorRef} collapsable={false}>
++        {split.code ? (
++          <FindCodeBlock {...split.code} anchor={find.anchor} />
++        ) : (
++          <MarkdownPart {...props} text={split.block} continues={!!split.tail} highlight />
++        )}
++      </View>
++      {split.tail ? <MarkdownPart {...props} text={split.tail} /> : null}
++    </>
++  );
++}
++
+ const MarkdownPart = memo(function MarkdownPart({
+   text,
+   continues = false,
++  highlight = false,
+   compact = false,
+   streaming = false,
+   onLinkPress,
++  find: _find,
+   ...imageContext
+-}: MarkdownRendererProps & { continues?: boolean }) {
++}: MarkdownRendererProps & { continues?: boolean; highlight?: boolean }) {
+   const environment = useAssistantFileLinkEnvironment();
+   const actions = useAssistantFileLinkActions();
+   const client =
+@@ -100,7 +134,7 @@ const MarkdownPart = memo(function MarkdownPart({
+             flavor="github"
+             selectable
+             allowTrailingMargin={continues && segment === segments[segments.length - 1]}
+-            md4cFlags={MD4C_FLAGS}
++            md4cFlags={highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS}
+             linkRecognition={linkRecognition}
+             enableTaskListItemToggle={false}
+             enableLinkPreview={false}
+diff --git a/packages/app/src/components/message.tsx b/packages/app/src/components/message.tsx
+index 976328c56..bb8229978 100644
+--- a/packages/app/src/components/message.tsx
++++ b/packages/app/src/components/message.tsx
+@@ -8,6 +8,14 @@ import {
+   AttachmentThumbnail,
+ } from "@/components/attachment-pill";
+ import { MarkdownRenderer } from "@/components/markdown/renderer";
++import type { MarkdownFind } from "@/components/markdown/find-split";
++import { TurnSourceSheet } from "@/components/turn-source-sheet";
++import { useChatFindAnchorText } from "@/agent-stream/chat-find/anchor";
++import { useChatFindItemHighlight } from "@/agent-stream/chat-find/highlight-store";
++import { findMarkdownMatches } from "@/agent-stream/chat-find/markdown-matches";
++import { matchPartsOffset, renderMatchParts } from "@/find-highlight/match-parts";
++import { splitTextForMatches } from "@/find-highlight/split";
++import { searchPattern } from "@getpaseo/protocol/chat-search-text";
+ import { useRetainedPanelActive } from "@/components/retained-panel";
+ import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
+ import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
+@@ -42,6 +50,7 @@ import {
+   MicVocal,
+   Plus,
+   Scissors,
++  TextCursor,
+   TriangleAlertIcon,
+   XCircle,
+ } from "lucide-react-native";
+@@ -759,55 +768,6 @@ interface AssistantMessageProps {
+   findItemId?: string;
+ }
+ 
+-/** Chat find's selected occurrence within one rendered Markdown block. */
+-interface MarkdownBlockFind {
+-  parts: ReadonlyMap<string, MatchPart[]>;
+-  current: number;
+-  /** The root Text that draws the current occurrence, measured to scroll to it. */
+-  anchor: (ChatFindAnchorTarget & { hostKey: string }) | null;
+-}
+-
+-function markdownBlockAnchor(
+-  find: MarkdownBlockFind | null,
+-  node: ASTNode,
+-): ChatFindAnchorTarget | null {
+-  return find?.anchor?.hostKey === node.key ? find.anchor : null;
+-}
+-
+-function markdownBlockFindParts(
+-  find: MarkdownBlockFind | null,
+-  node: ASTNode,
+-): MatchPart[] | undefined {
+-  return find && isFindMarkedNode(node) ? find.parts.get(node.key) : undefined;
+-}
+-
+-function markdownBlockCodeFind(
+-  find: MarkdownBlockFind | null,
+-  node: ASTNode,
+-): CodeFindMatch | null {
+-  const parts = markdownBlockFindParts(find, node);
+-  return parts && find
+-    ? { parts, current: find.current, anchor: markdownBlockAnchor(find, node) }
+-    : null;
+-}
+-
+-function markdownBlockWithMatch(
+-  blocks: readonly ReadonlyMap<string, MatchPart[]>[],
+-  match: number,
+-): number {
+-  return blocks.findIndex((parts) => {
+-    for (const nodeParts of parts.values()) {
+-      if (nodeParts.some((part) => part.match === match)) return true;
+-    }
+-    return false;
+-  });
+-}
+-
+-function markdownBlockText(find: MarkdownBlockFind | null, node: ASTNode, text: string): ReactNode {
+-  const parts = markdownBlockFindParts(find, node);
+-  return parts && find ? renderMatchParts(parts, find.current, MarkdownTextSpan) : text;
+-}
+-
+ export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
+   container: {
+     paddingVertical: theme.spacing[3],
+@@ -1299,6 +1259,25 @@ export const AssistantMessage = memo(function AssistantMessage({
+     [occurrenceKey, revealedMessage.length],
+   );
+ 
++  // Native chat find marks its selected occurrence once the message has fully revealed;
++  // web marks the DOM it searched instead (chat-find/index.web.tsx).
++  const findHighlight = useChatFindItemHighlight(isNative ? findItemId : undefined);
++  const findQuery = findHighlight?.query ?? null;
++  const findCurrent = findHighlight?.index ?? -1;
++  const findComplete = phase === "complete" && revealedMessage === renderedMessage.text;
++  const findMatches = useMemo(
++    () =>
++      findQuery !== null && findComplete
++        ? findMarkdownMatches(revealedMessage, searchPattern(findQuery))
++        : null,
++    [findComplete, findQuery, revealedMessage],
++  );
++  const find = useMemo<MarkdownFind | null>(() => {
++    const match = findMatches?.matches[findCurrent];
++    if (!match || findItemId === undefined) return null;
++    return { match, anchor: { itemId: findItemId, index: findCurrent, offset: 0 } };
++  }, [findCurrent, findItemId, findMatches]);
++
+   const measureMessage = useStableEvent((event: import("react-native").LayoutChangeEvent) => {
+     setAssistantMessageHeight({ markdown: revealedMessage, ...event.nativeEvent.layout });
+   });
+@@ -1315,6 +1294,7 @@ export const AssistantMessage = memo(function AssistantMessage({
+         client={client}
+         workspaceRoot={workspaceRoot}
+         serverId={serverId}
++        find={find}
+       />
+       {fullMessageByteLength !== null ? (
+         <Text
+diff --git a/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx b/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx
+index d107547dc..3ec4d6393 100644
+--- a/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx
++++ b/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx
+@@ -86,6 +86,6 @@ const styles = StyleSheet.create({
+     minHeight: 0,
+   },
+   host: {
+-    ...StyleSheet.absoluteFillObject,
++    ...StyleSheet.absoluteFill,
+   },
+ });
+diff --git a/packages/app/src/find-highlight/markdown-nodes.ts b/packages/app/src/find-highlight/markdown-nodes.ts
+deleted file mode 100644
+index bd0a355bc..000000000
+--- a/packages/app/src/find-highlight/markdown-nodes.ts
++++ /dev/null
+@@ -1,14 +0,0 @@
+-import type { ASTNode } from "react-native-markdown-display";
+-import { getDiagramFenceLanguage } from "@/components/markdown/fence/diagram";
+-
+-/**
+- * The Markdown nodes whose text chat find numbers and marks. The pre-pass and the
+- * assistant message rules both read this, so every counted occurrence can be drawn.
+- */
+-export const FIND_MARKED_NODE_TYPES = new Set(["text", "code_inline", "code_block", "fence"]);
+-
+-/** Diagrams draw no text to mark, so they hold no occurrences. */
+-export function isFindMarkedNode(node: Pick<ASTNode, "type" | "sourceInfo">): boolean {
+-  if (!FIND_MARKED_NODE_TYPES.has(node.type)) return false;
+-  return node.type !== "fence" || getDiagramFenceLanguage(node.sourceInfo) === null;
+-}
+diff --git a/packages/app/src/platform-parity/manifest.ts b/packages/app/src/platform-parity/manifest.ts
+index 48aefd3a3..5c5f05f13 100644
+--- a/packages/app/src/platform-parity/manifest.ts
++++ b/packages/app/src/platform-parity/manifest.ts
+@@ -15,7 +15,7 @@ export const PARITY_MANIFEST: ParityManifest = {
+   splitModules: {
+     "agent-stream/chat-find/index": {
+       kind: "equivalent",
+-      note: "Web marks DOM ranges; native marks Markdown nodes and measures Text lines",
++      note: "Web marks DOM ranges; native highlights the occurrence in the Markdown source it draws",
+     },
+     "agent-stream/chat-outline/rail": {
+       kind: "gap",
+@@ -27,6 +27,10 @@ export const PARITY_MANIFEST: ParityManifest = {
+       kind: "deliberate",
+       reason: "Native has no global font cascade for the interface font",
+     },
++    "appearance/system-bars": {
++      kind: "equivalent",
++      note: "Only Android's edge-to-edge bars take their icon style from the theme",
++    },
+     "assistant-selection-copy/surface": {
+       kind: "equivalent",
+       note: "Native copies part of a reply with its Markdown from Select text",
+@@ -36,8 +40,16 @@ export const PARITY_MANIFEST: ParityManifest = {
+       note: "Native adds explorer files to chat from a menu instead of dragging",
+     },
+     "audio/audio-engine": equivalent,
++    "components/assistant-message-render-limit": {
++      kind: "deliberate",
++      reason:
++        "Web caps very long replies to bound DOM size; native hands the whole reply to its parser, so it shows all of it",
++    },
+     "components/draggable-list": equivalent,
+-    "components/markdown-text": equivalent,
++    "components/markdown/renderers": {
++      kind: "equivalent",
++      note: "Web draws code blocks and link tooltips in JS; native draws code blocks in the library",
++    },
+     "components/markdown/fence/mermaid/host": equivalent,
+     "components/project-icon-image": equivalent,
+     "components/sortable-inline-list": equivalent,
+@@ -58,8 +70,16 @@ export const PARITY_MANIFEST: ParityManifest = {
+     "components/ui/scroll-view": equivalent,
+     "components/ui/text-input/text-input": equivalent,
+     "components/zoomable-viewport/index": equivalent,
++    "composer/dock/internal/fullscreen": {
++      kind: "equivalent",
++      note: "Native reserves the soft keyboard's space; web has none to reserve",
++    },
+     "composer/dock/index": equivalent,
+     "composer/dock/internal/background": equivalent,
++    "composer/input/fullscreen-exit": {
++      kind: "equivalent",
++      note: "Back leaves the fullscreen composer on native; Escape does on web",
++    },
+     "composer/input/height": equivalent,
+     "desktop/browser/pane/index": {
+       kind: "deliberate",
+diff --git a/packages/app/src/polyfills/install-navigator-polyfill.ts b/packages/app/src/polyfills/install-navigator-polyfill.ts
+deleted file mode 100644
+index 8f96cd670..000000000
+--- a/packages/app/src/polyfills/install-navigator-polyfill.ts
++++ /dev/null
+@@ -1,4 +0,0 @@
+-import { polyfillNavigator } from "./navigator";
+-
+-// Eager terminal imports read these fields before the root layout executes.
+-polyfillNavigator();
+diff --git a/packages/app/src/runtime/replica-cache/index.test.ts b/packages/app/src/runtime/replica-cache/index.test.ts
+index 71054feeb..29d95bac6 100644
+--- a/packages/app/src/runtime/replica-cache/index.test.ts
++++ b/packages/app/src/runtime/replica-cache/index.test.ts
+@@ -305,7 +305,7 @@ async function expectLegacyWorkspaceRefresh({
+   baseline,
+   reader,
+ }: Awaited<ReturnType<typeof cacheWithoutBackgroundVisibility>>): Promise<void> {
+-  const restored = await reader.readDirectory(SERVER_ID);
++  const restored = await readCachedDirectory(reader);
+   expect(restored.workspaces.size).toBe(0);
+   expect(restored.checkpoint).toEqual({
+     agents: baseline.checkpoint.agents,
+@@ -314,9 +314,7 @@ async function expectLegacyWorkspaceRefresh({
+   expect(restored.agents).toEqual(baseline.agents);
+   expect(restored.projects).toEqual(baseline.projects);
+   expect(await reader.readTimeline(SERVER_ID, "agent-1")).toEqual(timeline());
+-  expect((await createCache(storage).readDirectory(SERVER_ID)).checkpoint).toEqual(
+-    restored.checkpoint,
+-  );
++  expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(restored.checkpoint);
+ 
+   baseline.workspaces.set(
+     "workspace-1",
+@@ -324,7 +322,7 @@ async function expectLegacyWorkspaceRefresh({
+   );
+   reader.replaceDirectoryBaseline(SERVER_ID, baseline);
+   await reader.flush();
+-  const refreshed = await createCache(storage).readDirectory(SERVER_ID);
++  const refreshed = await readCachedDirectory(createCache(storage));
+   expect(refreshed.workspaces.get("workspace-1")?.background).toBe(true);
+   expect(refreshed.checkpoint).toEqual(baseline.checkpoint);
+ }
+@@ -344,9 +342,9 @@ describe("ReplicaCache", () => {
+       await writer.flush();
+ 
+       const reader = createCache(storage);
+-      expect(
+-        (await reader.readDirectory(SERVER_ID)).workspaces.get("workspace-1")?.background,
+-      ).toBe(background ?? false);
++      expect((await readCachedDirectory(reader)).workspaces.get("workspace-1")?.background).toBe(
++        background ?? false,
++      );
+       expect((await reader.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.background).toBe(
+         background ?? false,
+       );
+@@ -1235,7 +1233,8 @@ describe("ReplicaCache", () => {
+         const { cache, expectReads } = await streamingCache();
+ 
+         expect((await cache.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.name).toBe("main");
+-        expectReads(2, 1);
++        // The streamed rows are not the ones read, so their commits stay on the persist debounce.
++        expectReads(2);
+         await cache.flush();
+       });
+ 
+@@ -1260,7 +1259,7 @@ describe("ReplicaCache", () => {
+     replacement.agents.set("agent-2", agent("agent-2"));
+     cache.replaceDirectoryBaseline(SERVER_ID, replacement);
+ 
+-    const read = await cache.readDirectory(SERVER_ID);
++    const read = await readCachedDirectory(cache);
+ 
+     expect([...read.agents.keys()].sort()).toEqual(["agent-1", "agent-2"]);
+     expect(read.projects.size).toBe(0);
+diff --git a/packages/app/src/screens/workspace/compact-workspace-header/tab-switcher.tsx b/packages/app/src/screens/workspace/compact-workspace-header/tab-switcher.tsx
+index 970e77aaa..9cbc373b8 100644
+--- a/packages/app/src/screens/workspace/compact-workspace-header/tab-switcher.tsx
++++ b/packages/app/src/screens/workspace/compact-workspace-header/tab-switcher.tsx
+@@ -14,8 +14,10 @@ import {
+ import { MobileTabTrailingAccessory } from "@/screens/workspace/workspace-tab-trailing-accessory";
+ import {
+   buildWorkspaceTabMenuEntries,
++  paneFindTarget,
+   type WorkspaceTabMenuLabels,
+ } from "@/screens/workspace/workspace-tab-menu";
++import { canRequestPaneFind, requestPaneFind } from "@/pane-find/open-requests";
+ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
+ 
+ // The trigger draws at 32pt beside its island neighbours, so only vertical slop is free.
+@@ -161,6 +163,7 @@ function MobileWorkspaceTabOption({
+   onCloseTabsAbove,
+   onCloseTabsBelow,
+   onCloseOtherTabs,
++  onFind,
+ }: {
+   tab: WorkspaceTabDescriptor;
+   tabIndex: number;
+@@ -180,6 +183,7 @@ function MobileWorkspaceTabOption({
+   onCloseTabsAbove: (tabId: string) => Promise<void> | void;
+   onCloseTabsBelow: (tabId: string) => Promise<void> | void;
+   onCloseOtherTabs: (tabId: string) => Promise<void> | void;
++  onFind: (tab: WorkspaceTabDescriptor) => void;
+ }) {
+   const { t } = useTranslation();
+   const tabMenuLabels = useMemo<WorkspaceTabMenuLabels>(
+@@ -217,6 +221,8 @@ function MobileWorkspaceTabOption({
+     onCloseTabsBefore: onCloseTabsAbove,
+     onCloseTabsAfter: onCloseTabsBelow,
+     onCloseOtherTabs,
++    // Only a mounted pane that draws a find bar answers, e.g. not a file too large to show.
++    onFind: canRequestPaneFind(paneFindTarget(tab)) ? onFind : undefined,
+     labels: tabMenuLabels,
+   });
+ 
+@@ -334,6 +340,13 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
+     setIsOpen(true);
+   }, []);
+ 
++  // Find opens a bar in the pane, so the switcher sheet has to get out of the way.
++  const handleFind = useCallback((tab: WorkspaceTabDescriptor) => {
++    setIsOpen(false);
++    const target = paneFindTarget(tab);
++    if (target) requestPaneFind(target);
++  }, []);
++
+   const handleNewAgent = useCallback(() => {
+     setIsOpen(false);
+     onCreateDraftTab();
+@@ -411,10 +424,12 @@ export const MobileWorkspaceTabSwitcher = memo(function MobileWorkspaceTabSwitch
+           onCloseTabsAbove={onCloseTabsAbove}
+           onCloseTabsBelow={onCloseTabsBelow}
+           onCloseOtherTabs={onCloseOtherTabs}
++          onFind={handleFind}
+         />
+       );
+     },
+     [
++      handleFind,
+       tabByKey,
+       tabIndexByKey,
+       tabs.length,
+diff --git a/packages/app/src/screens/workspace/scripts/use-workspace-script-actions.ts b/packages/app/src/screens/workspace/scripts/use-workspace-script-actions.ts
+index fb7809990..d1819604d 100644
+--- a/packages/app/src/screens/workspace/scripts/use-workspace-script-actions.ts
++++ b/packages/app/src/screens/workspace/scripts/use-workspace-script-actions.ts
+@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
+ import type { WorkspaceDescriptor } from "@/stores/session-store";
+ import { useSessionStore } from "@/stores/session-store";
+ import { useHostRuntimeSnapshot } from "@/runtime/host-runtime";
++import { isNative } from "@/constants/platform";
+ import { useToast } from "@/contexts/toast-context";
+ import {
+   resolveWorkspaceScriptLink,
+@@ -158,7 +159,11 @@ export function useWorkspaceScriptActions({
+ 
+   const resolveLinks = useCallback(
+     (script: WorkspaceScript): WorkspaceScriptLinks => {
+-      const link = resolveWorkspaceScriptLink({ script, activeConnection });
++      const link = resolveWorkspaceScriptLink({
++        script,
++        activeConnection,
++        reachesHostLoopback: !isNative,
++      });
+       const selected =
+         link.targets.find((target) => target.kind === preferredRouteKind) ?? link.primary;
+       return { selected, targets: link.targets };
+diff --git a/packages/app/src/screens/workspace/scripts/workspace-scripts-menu-pages.tsx b/packages/app/src/screens/workspace/scripts/workspace-scripts-menu-pages.tsx
+index 3d14d9faf..c9cf520ee 100644
+--- a/packages/app/src/screens/workspace/scripts/workspace-scripts-menu-pages.tsx
++++ b/packages/app/src/screens/workspace/scripts/workspace-scripts-menu-pages.tsx
+@@ -62,7 +62,8 @@ export interface UseWorkspaceScriptsMenuPagesInput {
+   liveTerminalIds: readonly string[];
+   onScriptTerminalStarted: (terminalId: string) => void;
+   onViewTerminal: (terminalId: string) => void;
+-  onOpenUrlInBrowserTab: (url: string) => void;
++  /** Absent where the app cannot open a browser tab; links then open externally. */
++  onOpenUrlInBrowserTab?: (url: string) => void;
+ }
+ 
+ export interface WorkspaceScriptsMenuPages {
+@@ -246,7 +247,8 @@ interface ScriptPageProps {
+   actions: WorkspaceScriptActions;
+   liveTerminalId: string | null;
+   onViewTerminal: (terminalId: string) => void;
+-  onOpenUrlInBrowserTab: (url: string) => void;
++  /** Absent where the app cannot open a browser tab; links then open externally. */
++  onOpenUrlInBrowserTab?: (url: string) => void;
+ }
+ 
+ function ScriptPage(props: ScriptPageProps): ReactElement {
+diff --git a/packages/app/src/screens/workspace/workspace-screen.tsx b/packages/app/src/screens/workspace/workspace-screen.tsx
+index e47d6ba1d..330861551 100644
+--- a/packages/app/src/screens/workspace/workspace-screen.tsx
++++ b/packages/app/src/screens/workspace/workspace-screen.tsx
+@@ -130,10 +130,8 @@ import {
+   useWorkspaceTabRename,
+   WorkspaceTabRenameModal,
+ } from "@/screens/workspace/use-workspace-tab-rename";
+-import { paneFindTarget } from "@/screens/workspace/workspace-tab-menu";
+ import { useDesktopBrowserNewTabRequests } from "@/desktop/browser/new-tab-requests";
+ import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
+-import { canRequestPaneFind, requestPaneFind } from "@/pane-find/open-requests";
+ import {
+   resolveWorkspaceExplorerToggleOwner,
+   EXPLORER_TOGGLE_KEYS,
+@@ -515,11 +513,6 @@ function WorkspaceHeaderTitleBar({
+   );
+ }
+ 
+-function openPaneFindForTab(tab: WorkspaceTabDescriptor): void {
+-  const target = paneFindTarget(tab);
+-  if (target) requestPaneFind(target);
+-}
+-
+ type PaneDirection = "left" | "right" | "up" | "down";
+ 
+ function parsePaneDirection(actionId: string): PaneDirection | null {
+@@ -2979,11 +2972,7 @@ function WorkspaceScreenContent({
+         normalizedWorkspaceId,
+         host:
+           input.host ??
+-          (canRenderDesktopPaneSplits &&
+-          input.paneId !== null &&
+-          input.paneId === explorerSidebarPaneId
+-            ? "explorer"
+-            : "main"),
++          (input.paneId !== null && input.paneId === explorerSidebarPaneId ? "explorer" : "main"),
+         fileNavigationRevision: fileNavigationRevisionByTabId[input.tab.tabId] ?? 0,
+         onOpenTab: (target) => {
+           if (!persistenceKey) {
+@@ -3374,7 +3363,7 @@ function WorkspaceScreenContent({
+       liveTerminalIds,
+       onScriptTerminalStarted: handleScriptTerminalStarted,
+       onViewTerminal: handleViewScriptTerminal,
+-      onOpenUrlInBrowserTab: handleOpenUrlInBrowserTab,
++      onOpenUrlInBrowserTab: openUrlInBrowserTab,
+     }),
+     [
+       normalizedServerId,
+@@ -3383,7 +3372,7 @@ function WorkspaceScreenContent({
+       liveTerminalIds,
+       handleScriptTerminalStarted,
+       handleViewScriptTerminal,
+-      handleOpenUrlInBrowserTab,
++      openUrlInBrowserTab,
+     ],
+   );
+   const compactWorkspaceHeader = useMemo(
+diff --git a/packages/app/src/types/react-native-markdown-display-parser.d.ts b/packages/app/src/types/react-native-markdown-display-parser.d.ts
+deleted file mode 100644
+index 0538829de..000000000
+--- a/packages/app/src/types/react-native-markdown-display-parser.d.ts
++++ /dev/null
+@@ -1,11 +0,0 @@
+-// The parser on its own, without the package entry's JSX, so plain TypeScript and
+-// tests can run the exact parse the renderer runs. No top-level import or export,
+-// so this declares the module instead of augmenting one.
+-declare module "react-native-markdown-display/src/lib/parser" {
+-  import type { ASTNode, MarkdownParser } from "react-native-markdown-display";
+-  export default function parser<T>(
+-    source: string,
+-    renderer: (ast: ASTNode[]) => T,
+-    markdownIt: MarkdownParser,
+-  ): T;
+-}
+diff --git a/packages/app/src/utils/assistant-markdown-image-source.test.ts b/packages/app/src/utils/assistant-markdown-image-source.test.ts
+index edc02a4eb..121299a7c 100644
+--- a/packages/app/src/utils/assistant-markdown-image-source.test.ts
++++ b/packages/app/src/utils/assistant-markdown-image-source.test.ts
+@@ -49,7 +49,7 @@ describe("local assistant Markdown images", () => {
+       .flatMap((token) => token.children ?? [])
+       .find((token) => token.type === "image");
+     expect(image).toBeDefined();
+-    const source = localFileSourceToPath(image!.attrGet("src")!, { decodeHref: true });
++    const source = localFileSourceToPath(String(image!.attrGet("src")), { decodeHref: true });
+     const target = resolveAssistantImageSource({ source, workspaceRoot });
+     expect(target?.kind).toBe("file_rpc");
+     if (target?.kind !== "file_rpc") throw new Error("Expected a local image read target");
+diff --git a/packages/app/src/workspace-tabs/layout-mode-publisher.tsx b/packages/app/src/workspace-tabs/layout-mode-publisher.tsx
+index 03df9b695..e5833c634 100644
+--- a/packages/app/src/workspace-tabs/layout-mode-publisher.tsx
++++ b/packages/app/src/workspace-tabs/layout-mode-publisher.tsx
+@@ -1,10 +1,10 @@
+ import { useLayoutEffect } from "react";
+-import { supportsDesktopPaneSplits, useIsCompactFormFactor } from "@/constants/layout";
++import { paneSplitsAvailable, useIsCompactFormFactor } from "@/constants/layout";
+ import { useWorkspaceLayoutStore, type WorkspaceLayoutMode } from "@/stores/workspace-layout-store";
+ 
+ function resolveWorkspaceLayoutMode(isCompact: boolean): WorkspaceLayoutMode {
+   if (isCompact) return "compact";
+-  return supportsDesktopPaneSplits() ? "split-panes" : "single-pane";
++  return paneSplitsAvailable({ isCompact }) ? "split-panes" : "single-pane";
+ }
+ 
+ /**
+diff --git a/packages/server/src/server/hub/relationship-execution.test.ts b/packages/server/src/server/hub/relationship-execution.test.ts
+index 752ac8010..dcb5f216a 100644
+--- a/packages/server/src/server/hub/relationship-execution.test.ts
++++ b/packages/server/src/server/hub/relationship-execution.test.ts
+@@ -288,8 +288,12 @@ describe("Hub relationship owned execution", () => {
+     const second = await relationship.ownedCreateResult("second-create");
+ 
+     expect(relationship.relationshipFile()?.relationship.daemonId).toBe(daemonId);
+-    expect(first).toMatchObject({ payload: { success: true, executionId: "first-execution" } });
+-    expect(second).toMatchObject({ payload: { success: true, executionId: "second-execution" } });
++    expect(first).toMatchObject({
++      payload: { success: true, executionId: "first-execution", error: null },
++    });
++    expect(second).toMatchObject({
++      payload: { success: true, executionId: "second-execution", error: null },
++    });
+     expect(await relationship.durableOwnedAgentIds()).toHaveLength(2);
+   });
+ 
+diff --git a/packages/server/src/utils/checkout-git.ts b/packages/server/src/utils/checkout-git.ts
+index ce0070290..b8d4e75f8 100644
+--- a/packages/server/src/utils/checkout-git.ts
++++ b/packages/server/src/utils/checkout-git.ts
+@@ -521,7 +521,7 @@ async function listCheckoutFileChanges(
+     { cwd, envOverlay: READ_ONLY_GIT_ENV },
+   );
+   const nameStatusFields = nameStatusOut.split("\0");
+-  for (let index = 0; index < nameStatusFields.length; ) {
++  for (let index = 0; index < nameStatusFields.length;) {
+     const rawStatus = nameStatusFields[index++];
+     if (!rawStatus) continue;
+ 
+diff --git a/scripts/postinstall-patches.mjs b/scripts/postinstall-patches.mjs
+index f5af4a0bf..8a719e6a2 100644
+--- a/scripts/postinstall-patches.mjs
++++ b/scripts/postinstall-patches.mjs
+@@ -14,11 +14,16 @@ const patchedPackages = [
+     nodeModulesPath: "node_modules/@expo/cli",
+     patchPrefix: "@expo+cli+",
+   },
++  // npm nests or hoists this package depending on the rest of the tree; patch either.
+   {
+     nodeModulesPath: "packages/app/node_modules/react-native-enriched-markdown",
+     patchPrefix: "react-native-enriched-markdown+",
+     cwd: "packages/app",
+   },
++  {
++    nodeModulesPath: "node_modules/react-native-enriched-markdown",
++    patchPrefix: "react-native-enriched-markdown+",
++  },
+   // Remove after react-native-unistyles ships
+   // https://github.com/jpudysz/react-native-unistyles/pull/1203.
+   {

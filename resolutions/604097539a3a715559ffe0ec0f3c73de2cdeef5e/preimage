@@ -1,0 +1,110 @@
+import type { TimelineItemTransform } from "@/plugins/timeline/model";
+import { projectPluginTimelineItems } from "@/plugins/timeline/projection";
+import {
+  prepareToolCallHistory,
+  projectToolCallDetailLevel,
+  type PreparedToolCallHistory,
+  type ToolCallDetailLevel,
+} from "@/tool-calls/detail-level/projection";
+import type { StreamItem, UserMessageItem } from "@/types/stream";
+
+interface PresentationInput {
+  tail: StreamItem[];
+  head: StreamItem[];
+  transform: TimelineItemTransform | undefined;
+  level: ToolCallDetailLevel;
+  isTurnActive: boolean;
+}
+
+/** Find and scrolling address a plugin row by the source it replaces. */
+export function getStreamItemMessageId(item: StreamItem): string {
+  if (item.kind === "plugin") return item.sourceId ?? item.id;
+  return item.id;
+}
+
+<<<<<<<
+/**
+ * A block is reusable only when it still stands for the same source state. Text and
+ * turn are what the reader sees; cursor and timestamp are what the timeline reads back
+ * through the row — a reused block carrying a pre-canonical cursor reports a stale
+ * reading position and weakens fork-boundary resolution.
+ */
+function isReusableBlock(block: AssistantMessageItem, source: AssistantMessageItem, id: string) {
+  return (
+    block.id === id &&
+    block.turnId === source.turnId &&
+    block.timestamp.getTime() === source.timestamp.getTime() &&
+    block.timelineCursor?.epoch === source.timelineCursor?.epoch &&
+    block.timelineCursor?.seq === source.timelineCursor?.seq
+  );
+}
+
+// Shared by every presentation instance. Rows are a function of their source item, and a chat
+// view mounts fresh on Android whenever it leaves the small retained set, so per-instance caches
+// re-split the whole history's Markdown on every such switch.
+const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
+const blocksBySource = new WeakMap<AssistantMessageItem, AssistantMessageItem[]>();
+
+/** Source messages reach plugins before any Markdown splitting or Overview grouping. */
+=======
+/** Source messages reach plugins before display projection. */
+>>>>>>>
+export function createStreamPresentation() {
+  function presentUserMessage(item: UserMessageItem): UserMessageItem {
+    const cached = userMessageCache.get(item);
+    if (cached) return cached;
+
+    // Recognize the complete voice envelope, including older messages without the
+    // instruction suffix. Leave quoted examples and unrelated XML untouched.
+    const spokenInput =
+      /^\s*<spoken-input>([\s\S]*?)<\/spoken-input>(?:\s*<instruction>This message was spoken by the user\.[\s\S]*?<\/instruction>)?\s*$/.exec(
+        item.text,
+      );
+    const projected = spokenInput ? { ...item, text: spokenInput[1].trim() } : item;
+    userMessageCache.set(item, projected);
+    return projected;
+  }
+
+<<<<<<<
+=======
+  let liveSources = new Map<string, AssistantMessageItem>();
+>>>>>>>
+  let historySource: StreamItem[] | undefined;
+  let historyTransform: TimelineItemTransform | undefined;
+  let historyRows: StreamItem[] = [];
+  let preparedTail: StreamItem[] | undefined;
+  let preparedLevel: ToolCallDetailLevel | undefined;
+  let preparedHistory: PreparedToolCallHistory | null = null;
+
+  function presentRows(item: StreamItem): StreamItem[] {
+    return [item.kind === "user_message" ? presentUserMessage(item) : item];
+  }
+
+  return (input: PresentationInput) => {
+    // Retained history is not reprojected or regrouped on each live text update.
+    if (historySource !== input.tail || historyTransform !== input.transform) {
+      historyRows = projectPluginTimelineItems(input.tail, input.transform).flatMap<StreamItem>(
+        (item) => presentRows(item),
+      );
+      historySource = input.tail;
+      historyTransform = input.transform;
+    }
+    const head: StreamItem[] = [];
+    for (const item of projectPluginTimelineItems(input.head, input.transform, "streaming")) {
+      const blocks = presentRows(item);
+      head.push(...blocks);
+    }
+    if (preparedTail !== historyRows || preparedLevel !== input.level) {
+      preparedHistory = prepareToolCallHistory(input.level, historyRows);
+      preparedTail = historyRows;
+      preparedLevel = input.level;
+    }
+    return projectToolCallDetailLevel({
+      level: input.level,
+      tail: historyRows,
+      head,
+      preparedHistory,
+      isTurnActive: input.isTurnActive,
+    });
+  };
+}
