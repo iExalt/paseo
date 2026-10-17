@@ -11,6 +11,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * A passthrough fake would keep context and quietly pass every test in this file — which is
  * exactly what happened, and why the menu sheet shipped broken.
  */
+const sheetCallbacks = vi.hoisted(() => ({
+  onChange: null as ((index: number, position: number, type: number) => void) | null,
+}));
+
 const portalStore = vi.hoisted(() => {
   const listeners = new Set<() => void>();
   let node: React.ReactNode = null;
@@ -47,12 +51,25 @@ vi.mock("@gorhom/bottom-sheet", async () => {
     BottomSheetModalProvider: ({ children }: { children?: React.ReactNode }) =>
       React.createElement("div", { "data-bottom-sheet-provider": true }, children),
     BottomSheetModal: React.forwardRef(
-      ({ children, stackBehavior }: { children?: React.ReactNode; stackBehavior?: string }, _ref) =>
-        React.createElement(
+      (
+        {
+          children,
+          stackBehavior,
+          onChange,
+        }: {
+          children?: React.ReactNode;
+          stackBehavior?: string;
+          onChange?: (index: number, position: number, type: number) => void;
+        },
+        _ref,
+      ) => {
+        sheetCallbacks.onChange = onChange ?? null;
+        return React.createElement(
           Portal,
           null,
           React.createElement("div", { "data-stack-behavior": stackBehavior }, children),
-        ),
+        );
+      },
     ),
   };
 });
@@ -198,5 +215,45 @@ describe("IsolatedBottomSheetModal context bridging", () => {
         node.getAttribute("data-inside-bottom-sheet"),
       ),
     ).toEqual(["false", "true"]);
+  });
+});
+
+describe("IsolatedBottomSheetModal settling", () => {
+  let container: HTMLDivElement;
+  let root: Root;
+
+  beforeEach(() => {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
+
+  afterEach(() => {
+    act(() => root.unmount());
+    container.remove();
+    portalStore.reset();
+    sheetCallbacks.onChange = null;
+  });
+
+  it("commits a host change when the sheet settles and still reports the change", () => {
+    const onChange = vi.fn();
+    act(() => {
+      root.render(
+        <>
+          <IsolatedBottomSheetModal contextBridge={null} onChange={onChange}>
+            Menu
+          </IsolatedBottomSheetModal>
+          <PortalHostProbe />
+        </>,
+      );
+    });
+    const settleMarker = () => container.querySelector("[id^='sheet-settle-']")?.id;
+    const before = settleMarker();
+
+    act(() => sheetCallbacks.onChange?.(0, 120, 1));
+
+    expect(onChange).toHaveBeenCalledWith(0, 120, 1);
+    expect(settleMarker()).toBeDefined();
+    expect(settleMarker()).not.toBe(before);
   });
 });
