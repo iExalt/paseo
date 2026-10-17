@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.7.0](https://github.com/iExalt/paseo/compare/paseo-v0.6.0...paseo-v0.7.0) (2026-10-17)
+
+
+### Features
+
+* **app:** copy session ID from workspace menus ([#172](https://github.com/iExalt/paseo/issues/172)) ([868ac7b](https://github.com/iExalt/paseo/commit/868ac7bd60163672eae0e84695431c50e8023002))
+* **app:** fold finished subagents out of the subagents track ([#177](https://github.com/iExalt/paseo/issues/177)) ([f513d0b](https://github.com/iExalt/paseo/commit/f513d0beba9fcb57c45f42c27729194e4f7cb7b2))
+
+
+### Bug Fixes
+
+* **app:** fire the first tap in Android bottom sheets ([#178](https://github.com/iExalt/paseo/issues/178)) ([f7fa329](https://github.com/iExalt/paseo/commit/f7fa32946b2bc3dba82906f269b9547b4b50d948))
+* **app:** keep the find code block unwrapped so marking a match does not shift it ([#181](https://github.com/iExalt/paseo/issues/181)) ([faf5215](https://github.com/iExalt/paseo/commit/faf5215d96c71e723ae8e49b3b186499547e3346))
+* **app:** let the Android soft keyboard Return insert a newline ([#174](https://github.com/iExalt/paseo/issues/174)) ([0a63f57](https://github.com/iExalt/paseo/commit/0a63f5703bd060161838061c5de35a567158c423))
+* **app:** read sheet focus from expo-router so compact sheets open ([#182](https://github.com/iExalt/paseo/issues/182)) ([9df6b7b](https://github.com/iExalt/paseo/commit/9df6b7be8cb67f3815460ae2a9fb2cc452699947))
+* **app:** steer instead of interrupting when a send skips the queue ([#175](https://github.com/iExalt/paseo/issues/175)) ([486ff1c](https://github.com/iExalt/paseo/commit/486ff1cffd9308fb7457f366e8dacfa0ac761a4f))
+* **app:** stop the settings icon flash on Android ([#179](https://github.com/iExalt/paseo/issues/179)) ([5287c2b](https://github.com/iExalt/paseo/commit/5287c2b44379836a4411584dd892cce5dddd5e44))
+* **ci:** allow runner swap on release tag pushes ([#168](https://github.com/iExalt/paseo/issues/168)) ([ea76afd](https://github.com/iExalt/paseo/commit/ea76afd4dd1597ea4beb6572c7d3cf59129af8b1))
+* **ci:** deflake rebase-dev rerere and repair submission browser specs ([#183](https://github.com/iExalt/paseo/issues/183)) ([9747c6b](https://github.com/iExalt/paseo/commit/9747c6b9880d4b50b5aa3c5fca8135ad376d67a8))
+* **ci:** unblock rebase-dev on current dev and upstream ([#164](https://github.com/iExalt/paseo/issues/164)) ([421cefb](https://github.com/iExalt/paseo/commit/421cefb728e12c841fbf278367da8f3cdbe7aa56))
+* **server:** rewind Claude conversations in place instead of forking ([#173](https://github.com/iExalt/paseo/issues/173)) ([935c093](https://github.com/iExalt/paseo/commit/935c09372b142807727f94a5c64180fc49813c2e))
+
 ## [0.6.0](https://github.com/iExalt/paseo/compare/paseo-v0.5.0...paseo-v0.6.0) (2026-10-17)
 
 
