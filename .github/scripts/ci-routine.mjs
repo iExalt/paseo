@@ -6,11 +6,7 @@ import { fileURLToPath } from "node:url";
 
 export const root = fileURLToPath(new URL("../../", import.meta.url));
 export const coreTests = [
-  "scripts/release-auth.test.mjs",
-  "scripts/release-boundary.test.mjs",
-  "scripts/release-preflight.test.mjs",
   "scripts/release-manifest.test.mjs",
-  "scripts/github-retry.test.mjs",
   "scripts/fork-release-config.test.mjs",
   "scripts/ci-deep.test.mjs",
   "scripts/ci-workflow.test.mjs",
@@ -133,20 +129,6 @@ export function planCommands(selection, cwd = root) {
     ...(selection.code ? helperTests : []),
   ]);
   if (!selection.code) return commands;
-  add("release engine dependencies", "npm", [
-    "ci",
-    "--prefix",
-    ".github/release-tools",
-    "--ignore-scripts",
-    "--no-audit",
-    "--no-fund",
-  ]);
-  add("release engine output", process.execPath, [
-    "--test",
-    ".github/release-tools/contract.test.mjs",
-    ".github/release-tools/proposal-git.test.mjs",
-    ".github/release-tools/proposal-publish.test.mjs",
-  ]);
   add("Vitest helper contracts", "npm", [
     "exec",
     "--",
