@@ -14,7 +14,7 @@ checklist, to current evidence. It is not a second checklist.
 | Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                |
 | Branch                       | `feat/platform-parity`                                                   |
 | Current chunk                | F: browser tabs and copy                                                 |
-| Overall state                | A–F2 accepted in review; device checks for C2–F wait for batches         |
+| Overall state                | C–F device-checked on the phone; E accepted on review only (user choice) |
 | Product or release readiness | No chunk is released                                                     |
 | Routine CI budget            | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
 
@@ -113,46 +113,47 @@ Evidence state: verified on Paseo Debug, with the limits below.
 
 ### C2: find in the file view on mobile
 
-Evidence state: accepted on code review and unit tests; the device checks wait
-for the batch session.
+Evidence state: verified on Paseo Debug at the batch build, after two fixes.
 
+- Since D1, the read-only view shows files over the editor's 1 MiB limit and
+  editable files until the editor is ready. The batch found its bar hidden
+  by the keyboard (an absolute bar ignores its parent's padding) and the last
+  match hidden under the bar. Now the view ends above the keyboard while find
+  is open and leaves half a screen past the last line. Seen: a 5.3 MB file
+  finds its last line, typing stays responsive, the bar sits on the keyboard
+  and Back closes it. Opening that file takes about 15 s before find can run.
 - Line positions come from wrapped rows of a measured monospace cell, which
   also fixes opening a file at a line far down (rows were assumed 20 px).
-- Pending on the device: a link to line ~1000 lands centred; in a file of
-  long wrapping lines, line ~1000 and a match near the end land centred within
-  a few rows; a tab-indented file draws 4-column indents and a deep line lands
-  centred; "N of M" matches the tints, every match is tinted and the current
-  one strong, Next and Previous wrap, É finds é, typing stays responsive in a
-  ~5 MB file, the bar sits above the keyboard; Back and switching tabs close
-  it; Find is absent for a too-large file and a non-source preview.
+- Not seen on the device, since small files now open in the editor: a link
+  to line ~1000, long wrapping lines and tab indents in the read-only view.
 - Not modelled: line breaks at punctuation other than hyphens, and characters
   wider than one cell (CJK, emoji).
 
 ### C3: terminal find on mobile
 
-Evidence state: accepted on code review and unit tests; the device checks wait
-for the batch session.
+Evidence state: verified on Paseo Debug at the batch build.
 
 - The native renderer searches its headless buffer like web terminal find:
   literal, without case, across soft wraps, capped at 20,000. Next and
   Previous step from the selected match's position, so scrollback trimmed by
   new output does not shift them.
-- Pending on the device: in a busy terminal with scrollback, a term deep in
-  history is found, Next and Previous wrap, and the count matches the
-  highlights; a match across a soft wrap and one ending on a wrapped row's
-  last column paint on both rows; output arriving while scrolled to a match
-  does not move the view; after scrollback trims, Next lands on the right
-  match; the current match is not under the bar; with the keyboard up the bar
-  shows above the key bar, typing in it sends nothing to the shell, and
-  closing it gives input back; Back closes it. Time a full scan of a full
-  scrollback: above about 50 ms, scan in chunks.
+- Seen on the device, over 3,000 rows: a term at the start of history is
+  found; 11 matches count and paint, Next and Previous wrap; a match across a
+  soft wrap and one ending on the last column paint on both rows; the current
+  match stays clear of the bar; with the keyboard up the bar sits above the
+  key bar, typing in it sends nothing to the shell, and closing it gives input
+  back; Back closes it.
+- After the app restarts, find covers only the scrollback the host replays on
+  reattach, so early rows are no longer found.
+- Not seen: output arriving while scrolled to a match, Next after scrollback
+  trims, and the full-scan timing.
 - Not handled, as on web: a wide character pushed to the next row leaves a
   blank cell, so a match across that wrap is not found.
 
 ### D1: file editing on mobile
 
-Evidence state: the bridge, page and native host are accepted on code review,
-unit tests and a browser test; the device checks wait for the batch session.
+Evidence state: verified on Paseo Debug at the batch build, with the limits
+below.
 
 - Native runs the web CodeMirror editor in a WebView page built by
   `npm run build:webviews`. The page sends ChangeSets; the host keeps
@@ -167,27 +168,30 @@ unit tests and a browser test; the device checks wait for the batch session.
   versions.
 - CodeMirror 6.43.14 uses Android's EditContext input on Chrome 126 and later,
   so the keyboard checks below exercise that path.
-- Pending on the device: type and see autosave in the bar; Gboard composition,
-  autocorrect replacing a word mid-line, and emoji; selection handles, copy and
-  paste; rotate with the keyboard up and the cursor stays visible; an external
-  change while clean reloads, and while dirty raises the conflict, where
-  Overwrite keeps the last keystrokes; a deleted file; vim normal, insert and
-  visual mode; type then close the tab at once, and the text survives;
-  backgrounding the app saves; one renderer kill recovers to an editable view,
-  and three before ready show the notice and the read-only view; start time on
-  a 1 MB file.
+- Seen on the device: typing autosaves and the cursor stays above the
+  keyboard; paste; an external change while clean reloads, and while dirty
+  raises the conflict, where Overwrite keeps the last keystrokes; a deleted
+  file keeps the open copy; vim normal, insert and visual mode; backgrounding
+  the app saves at once; a 980 KB file is editable within about 6 s of
+  opening.
+- Not seen: Gboard composition, autocorrect and emoji (adb input bypasses the
+  keyboard), closing the tab before autosave, and renderer kills (the shell
+  cannot kill the WebView renderer). Phones are portrait-locked, so rotation
+  belongs to the tablet checks.
 - Find in the editor runs the web FileFindModel in the page, replace included,
-  under a native bottom bar. Pending on the device: find, replace and replace
-  all on a long file, and the edit saves; the current match stays above the bar
-  with the keyboard up; Back closes find; typing a query and tapping Replace
-  all at once uses the new query; after a renderer kill with find open, Back
-  still works and the bar is closed once the editor is back; Mod-f from a
-  hardware keyboard opens it (keyboard only).
+  under a native bottom bar. The batch found two bugs, now fixed: the bar sat
+  under the keyboard, and Replace all right after typing did nothing, because
+  the previous query's zero count disabled it. Seen: matches fold accents,
+  replace all saves, a query typed and replaced at once uses the new query,
+  and Back closes find. Opening the replace row can leave the current match
+  under the taller bar until the next step.
 
 ### E: tablets
 
-Evidence state: E0 spike done; E2a implemented with unit tests.
-Device checks wait for a tablet emulator batch.
+Evidence state: accepted on code review, unit tests and an Android release
+build. The user chose to skip the tablet checks: dev-station has no KVM, so an
+emulator there would be unusable, and running one on the Mac was declined.
+The pending cases below stay unverified.
 
 - Wide native means a window at least 576 dp wide: tablets and unfolded
   foldables. Android 16 ignores the portrait lock at 600 dp and wider, so
@@ -243,7 +247,7 @@ Device checks wait for a tablet emulator batch.
 
 ### F: browser tabs and copy
 
-- F1: native opens browser tabs in a WebView pane with an address bar, back,
+- F1, verified on Paseo Debug except a service link: native opens browser tabs in a WebView pane with an address bar, back,
   forward and reload; Android Back steps back through its history. Service
   links open in a tab on native and Electron, and externally in a plain
   browser. Over relay a native device gets only a service's public URL, since
@@ -262,26 +266,34 @@ Device checks wait for a tablet emulator batch.
   Browser data settings clear every in-app WebView's cookies, storage and
   cache through `paseo-webview-data`. HTTP error statuses show the server's
   page without an error row, as on Electron. Devtools, annotation,
-  automation, viewport presets and downloads stay Electron-only. Pending on the phone: open a tab from the new-tab menu and a
-  service link; type a URL, go back and forward, reload; Back leaves the tab
-  history before the screen; a popup opens a tab; title and favicon show in
-  the tab; a mailto: link opens the mail app; an iframe with a tel: source
-  does nothing; a top-level data: link is blocked with an error; clear data signs a site out and
-  reloads open tabs; a hidden tab stops interfering with the visible one.
+  automation, viewport presets and downloads stay Electron-only. Seen: a tab
+  from the workspace menu; typed URLs, back, forward; Android Back steps
+  through the tab's history; a popup opens a tab; title and favicon; mailto:
+  opens the system chooser; an iframe with a tel: source does nothing;
+  intent: shows the blocked row; clearing data signs the page out and reloads
+  it. Chromium itself drops a page's top-level data: link, so it shows no
+  row. The batch fixed two bugs: unstyled pages drew black text on the dark
+  theme (the page base is now white, as in Electron), and a failed load showed
+  a blank pane (Android starts its error page as a load, which cleared the
+  row; the pane now says what failed). Not seen: a workspace service link,
+  which needs a project with a service script.
 - F2: copying a whole reply already copies its Markdown source on native. A
   new Select text action under each native reply opens the reply's Markdown
   in a read-only input, so a selection of any part keeps its syntax. Very
   long replies show their first 50,000 characters there, and Copy turn copies
   all of it. Selecting the rendered text directly still copies plain text,
-  since React Native exposes no selection range. Pending on the phone: select
-  across a heading, a list and a code fence, paste, and the markers survive;
-  tapping the input raises no keyboard; it scrolls inside the sheet; a reply
-  over the limit says so and Copy turn copies all of it.
+  since React Native exposes no selection range. Android shows the source as
+  selectable Text: the batch found the read-only input there disabled, so it
+  could neither select nor scroll. Seen on the device: a selection across a
+  bold heading and a list item pastes with its markers; no keyboard; the
+  sheet scrolls. iOS keeps the read-only input, unverified. Not seen: a reply
+  over 50,000 characters.
 
 ## Current boundary
 
-- All chunks are implemented. C2, C3, D1, F1 and F2 wait for the phone batch;
-  E and the rotation cases wait for the tablet emulator batch.
+- All chunks are implemented. C2, C3, D1, F1 and F2 passed the phone batch
+  with the limits in their sections; F1 stays open for a service link. E is
+  accepted without device checks, by the user's choice.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
 - B2's push checks wait for the first fork release that contains it.
@@ -298,3 +310,6 @@ Device checks wait for a tablet emulator batch.
 - 2026-10-16: C1 accepted after device checks: marks and scrolling to the
   occurrence. B2's push proof deferral to its first fork release confirmed by
   the user.
+- 2026-10-16: phone batch on Paseo Debug for C2, C3, D1, F1 and F2. It found
+  six bugs, fixed and re-checked on the device. The tablet checks were
+  skipped by the user.

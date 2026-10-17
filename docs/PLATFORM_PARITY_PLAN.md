@@ -69,8 +69,8 @@ the token; that goes to the user.
 
 - [x] C1. Chat find on native: header-menu entry, host-backed search, scroll to
       the match and highlight it.
-- [ ] C2. Find in the read-only file view.
-- [ ] C3. Terminal find in the native grid renderer, opened from the tab menu like chat and file find.
+- [x] C2. Find in the read-only file view.
+- [x] C3. Terminal find in the native grid renderer, opened from the tab menu like chat and file find.
 
 Acceptance: model tests per surface; on Paseo Debug find steps through matches
 in a long chat, a file and a busy terminal. Perfetto frame stats for the
@@ -81,7 +81,7 @@ screen, which no reachable chat had when C1 closed.
 
 ### D. File editing on mobile (P4)
 
-- [ ] D1. CodeMirror hosted in a WebView, bridged to the shared
+- [x] D1. CodeMirror hosted in a WebView, bridged to the shared
       `FileEditorModel`; Editor settings shown on native.
 
 Acceptance: bridge tests; on Paseo Debug edit, save, conflict and rotation
@@ -102,7 +102,7 @@ dev-station shows each feature.
 ### F. Browser tabs and copy (P6)
 
 - [ ] F1. Browser tabs on native through a WebView, without automation tools.
-- [ ] F2. Copying part or all of an assistant reply keeps its Markdown.
+- [x] F2. Copying part or all of an assistant reply keeps its Markdown.
 
 Acceptance: unit tests for the tab model; on Paseo Debug a browser tab opens
 a workspace service URL and a reply copies as Markdown.

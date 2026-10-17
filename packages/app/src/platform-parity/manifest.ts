@@ -18,19 +18,16 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Web marks DOM ranges; native marks Markdown nodes and measures Text lines",
     },
     "agent-stream/chat-outline/rail": {
-      kind: "gap",
-      chunk: "E3",
-      reason: "The native touch rail awaits its tablet checks",
+      kind: "equivalent",
+      note: "Native scrubs the rail by touch; nothing magnifies, since touch has no hover",
     },
     "appearance/apply-root-font": {
       kind: "deliberate",
       reason: "Native has no global font cascade for the interface font",
     },
     "assistant-selection-copy/surface": {
-      kind: "gap",
-      chunk: "F2",
-      reason:
-        "Native copies part of a reply with its Markdown from Select text; awaits device checks",
+      kind: "equivalent",
+      note: "Native copies part of a reply with its Markdown from Select text",
     },
     "attachments/use-workspace-file-drag-source": {
       kind: "equivalent",
@@ -63,21 +60,17 @@ export const PARITY_MANIFEST: ParityManifest = {
     "composer/dock/internal/background": equivalent,
     "composer/input/height": equivalent,
     "desktop/browser/pane/index": {
-      kind: "gap",
-      chunk: "F1",
+      kind: "deliberate",
       reason:
-        "The native WebView browser tab awaits device checks; plain web stays unavailable, and native has no devtools, annotation, automation, viewport presets or downloads",
+        "A plain browser cannot host other sites in a tab; native tabs have no devtools, annotation, automation, viewport presets or downloads, which drive Electron's browser",
     },
     "desktop/browser/settings/clear-browser-data": {
-      kind: "gap",
-      chunk: "F1",
-      reason:
-        "Native clears the process-wide web view store through PaseoWebviewData; awaits device checks",
+      kind: "equivalent",
+      note: "Native clears the process-wide web view store through PaseoWebviewData",
     },
     "file-pane/editor/view": {
-      kind: "gap",
-      chunk: "D1",
-      reason: "The native WebView editor awaits its device checks",
+      kind: "equivalent",
+      note: "Native runs the web CodeMirror editor in a WebView page",
     },
     "file-pane/html-preview": equivalent,
     "file-pane/find/index": {
@@ -85,9 +78,8 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Web drives CodeMirror search; native scans lines and marks Text runs",
     },
     "file-pane/source/view": {
-      kind: "gap",
-      chunk: "C2",
-      reason: "The native source view has no find",
+      kind: "equivalent",
+      note: "Native draws large read-only files as a virtualized Text list with its own find",
     },
     "git/diff-document/horizontal-scroll": equivalent,
     "git/diff-document/paint": equivalent,
@@ -120,10 +112,8 @@ export const PARITY_MANIFEST: ParityManifest = {
   },
   settingsSections: {
     browser: {
-      kind: "gap",
-      chunk: "F1",
-      reason:
-        "Native clears every in-app web view's data; hidden in a plain browser; awaits device checks",
+      kind: "equivalent",
+      note: "Hidden only in a plain browser; native clears every in-app web view's data",
     },
     shortcuts: {
       kind: "gap",
@@ -161,11 +151,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     "workspace/open-in-file-manager/menu-item.tsx": {
       kind: "deliberate",
       reason: "Opening a file manager needs the local machine",
-    },
-    "terminal/find/index.tsx": {
-      kind: "gap",
-      chunk: "C3",
-      reason: "Terminal find opens only from a web keyboard listener",
     },
   },
 };
