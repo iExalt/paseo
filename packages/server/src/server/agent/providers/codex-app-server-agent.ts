@@ -951,6 +951,15 @@ interface CodexModel {
   serviceTiers?: CodexServiceTier[];
 }
 
+// `account/usage/read` with a thread ID (seen in Codex 0.163). Builds without it reject the
+// request, and the cost stays unknown.
+const CodexThreadUsageResponseSchema = z.object({
+  threadUsage: z
+    .object({ estimatedUsageUsdMicros: z.number().nonnegative().nullable().optional() })
+    .nullable()
+    .optional(),
+});
+
 const CodexModelListResponseSchema = z.object({
   data: z
     .array(
@@ -3602,6 +3611,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         await this.ensureThreadLoaded();
         await this.loadPersistedHistory(this.client);
         await this.applyDefaultModelAndThinking();
+        void this.refreshThreadCost();
       }
 
       if (this.closed) {
@@ -6127,6 +6137,33 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.pendingForegroundTurnIdentification = null;
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.resetTurnTrackingState();
+    void this.refreshThreadCost();
+  }
+
+  /**
+   * Codex prices the thread itself (`account/usage/read`), so Paseo carries no price table.
+   * The estimate covers the whole thread, including turns from before a resume.
+   */
+  private async refreshThreadCost(): Promise<void> {
+    const client = this.client;
+    const threadId = this.currentThreadId;
+    if (!client || !threadId) return;
+    let usdMicros: number | null | undefined;
+    try {
+      usdMicros = CodexThreadUsageResponseSchema.parse(
+        await client.request("account/usage/read", { threadId }),
+      ).threadUsage?.estimatedUsageUsdMicros;
+    } catch (error) {
+      this.logger.debug({ err: error, threadId }, "Failed to read Codex thread cost");
+      return;
+    }
+    if (usdMicros == null || this.closed || threadId !== this.currentThreadId) return;
+    this.latestUsage = { ...this.latestUsage, totalCostUsd: usdMicros / 1_000_000 };
+    this.notifySubscribers({
+      type: "usage_updated",
+      provider: CODEX_PROVIDER,
+      usage: this.latestUsage,
+    });
   }
 
   private resetTurnTrackingState(): void {
@@ -6179,7 +6216,10 @@ export class CodexAppServerAgentSession implements AgentSession {
   private handleTokenUsageUpdatedNotification(
     parsed: Extract<ParsedCodexNotification, { kind: "token_usage_updated" }>,
   ): void {
-    this.latestUsage = toAgentUsage(parsed.tokenUsage);
+    const usage = toAgentUsage(parsed.tokenUsage);
+    // Token readings carry no cost; keep the thread's last estimate alongside them.
+    const totalCostUsd = this.latestUsage?.totalCostUsd;
+    this.latestUsage = usage && totalCostUsd !== undefined ? { ...usage, totalCostUsd } : usage;
     if (this.latestUsage) {
       this.notifySubscribers({
         type: "usage_updated",

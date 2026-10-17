@@ -227,6 +227,8 @@ type CycleEvent =
 interface LargeAgentStreamPayloadRequest {
   bytes: number;
   kind: "diff" | "file" | "image";
+  /** Session cost the turn reports, from an optional "costing $1.25" clause. */
+  totalCostUsd?: number;
 }
 
 interface AgentStreamStressRequest {
@@ -453,9 +455,11 @@ function parseLargeAgentStreamPayloadPrompt(
   if (kindValue !== "diff" && kindValue !== "file" && kindValue !== "image") {
     return null;
   }
+  const cost = Number(/costing\s+\$(\d+(?:\.\d+)?)/i.exec(text)?.[1]);
   return {
     bytes: Math.min(bytes, 1_000_000),
     kind: kindValue,
+    ...(Number.isFinite(cost) ? { totalCostUsd: cost } : {}),
   };
 }
 
@@ -1548,6 +1552,9 @@ export class MockLoadTestAgentSession implements AgentSession {
       outputTokens: largePayload.bytes,
       contextWindowUsedTokens: largePayload.bytes,
       contextWindowMaxTokens: 128_000,
+      ...(largePayload.totalCostUsd === undefined
+        ? {}
+        : { totalCostUsd: largePayload.totalCostUsd }),
     };
     this.emit({
       type: "turn_completed",

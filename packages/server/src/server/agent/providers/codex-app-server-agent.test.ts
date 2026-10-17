@@ -6369,6 +6369,40 @@ describe("Codex app-server provider", () => {
     });
   });
 
+  test("reads the thread cost after a turn and keeps it through later token readings", async () => {
+    const session = createSession();
+    const request = vi.fn(async (method: string, params: unknown) => {
+      expect(method).toBe("account/usage/read");
+      expect(params).toEqual({ threadId: "test-thread" });
+      return { threadUsage: { threadId: "test-thread", estimatedUsageUsdMicros: 2_845_750 } };
+    });
+    session.client = { request };
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const tokenUsage = {
+      model_context_window: 200000,
+      last: { total_tokens: 50000, inputTokens: 30000, cachedInputTokens: 5000, outputTokens: 50 },
+    };
+
+    asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
+    asInternals(session).handleNotification("turn/completed", {
+      turn: { status: "completed", error: null },
+    });
+    await vi.waitFor(() => {
+      expect(events.at(-1)).toMatchObject({
+        type: "usage_updated",
+        usage: { contextWindowUsedTokens: 50000, totalCostUsd: 2.84575 },
+      });
+    });
+    asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
+
+    expect(events.at(-1)).toMatchObject({
+      type: "usage_updated",
+      usage: { contextWindowUsedTokens: 50000, totalCostUsd: 2.84575 },
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   test("streams Codex assistant message deltas and does not replay completed text", () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
