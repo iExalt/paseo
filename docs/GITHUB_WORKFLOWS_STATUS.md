@@ -46,6 +46,10 @@ only restore it.
    the PR, and the job adds the commit back each time.
 3. Merge the release PR. On that push release-please tags `paseo-vX` at the
    merge commit and opens a draft release with the changelog as its notes.
+   - A commit that adds nothing to the changelog (`test`, `ci`, `docs`) leaves
+     the release PR untouched, so its checks still test the old `dev`. Closing
+     and reopening it reuses the stale merge ref. Run
+     `gh pr update-branch <N> --rebase` and wait for the new checks.
 4. The tag starts `release.yml`. It builds both artifacts, smoke-tests the
    closure on a fresh macOS runner, signs the APK and the manifest, uploads
    everything to the draft, re-downloads and re-hashes each asset, then
