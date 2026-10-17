@@ -756,6 +756,7 @@ export const ja: TranslationResources = {
         importSession: "セッションをインポート",
         copyPath: "ワークスペースパスをコピー",
         copyBranchName: "ブランチ名をコピー",
+        copyProviderSessionId: "セッション ID をコピー",
         showSetup: "セットアップを表示",
       },
       toasts: {
@@ -764,6 +765,7 @@ export const ja: TranslationResources = {
         terminalQueued: "ワークスペースを準備中、準備ができたらターミナルを開きます...",
         workspacePathCopiedLabel: "ワークスペースパス",
         branchNameCopiedLabel: "ブランチ名",
+        providerSessionIdCopiedLabel: "セッション ID",
       },
     },
     scripts: {

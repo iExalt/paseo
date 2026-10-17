@@ -758,6 +758,7 @@ export const ru: TranslationResources = {
         importSession: "Импортировать сессию",
         copyPath: "Скопировать путь к рабочему пространству",
         copyBranchName: "Скопировать название ветки",
+        copyProviderSessionId: "Копировать ID сессии",
         showSetup: "Показать настройку рабочего пространства",
       },
       toasts: {
@@ -767,6 +768,7 @@ export const ru: TranslationResources = {
           "Рабочее пространство подготавливается. Терминал откроется, когда оно будет готово...",
         workspacePathCopiedLabel: "Путь к рабочему пространству",
         branchNameCopiedLabel: "Имя ветки",
+        providerSessionIdCopiedLabel: "ID сессии",
       },
     },
     scripts: {

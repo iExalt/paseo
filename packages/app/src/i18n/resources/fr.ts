@@ -759,6 +759,7 @@ export const fr: TranslationResources = {
         importSession: "Importer une session",
         copyPath: "Copier le chemin de l’espace de travail",
         copyBranchName: "Copier le nom de la branche",
+        copyProviderSessionId: "Copier l'ID de session",
         showSetup: "Afficher la configuration",
       },
       toasts: {
@@ -768,6 +769,7 @@ export const fr: TranslationResources = {
           "Préparation de l’espace de travail, le terminal s’ouvrira dès qu’il sera prêt…",
         workspacePathCopiedLabel: "Chemin de l’espace de travail",
         branchNameCopiedLabel: "Nom de la branche",
+        providerSessionIdCopiedLabel: "ID de session",
       },
     },
     scripts: {
