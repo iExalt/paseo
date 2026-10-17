@@ -222,7 +222,8 @@ Device checks wait for a tablet emulator batch.
   and Ctrl+Backspace still edit in it; Ctrl+F in the file editor opens one
   find; Enter submits and Shift+Enter adds a line, and neither submits
   during composition or from the find bar; Ctrl+D reaches the shell in both
-  terminals; Escape and Back still work; a keyboard connected after launch
+  terminals; after the WebView terminal, Cmd+Shift+Left in the find bar
+  selects text (iPad); Escape and Back still work; a keyboard connected after launch
   enables shortcuts and unplugging it hides the section.
 - Follow-up after the campaign: the compact explorer dock
   (`NativeExplorerSidebarDock`) is now reachable only from a test override;
