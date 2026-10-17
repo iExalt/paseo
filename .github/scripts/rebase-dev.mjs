@@ -555,6 +555,17 @@ async function validateSigningKey(signingKey, publicKey) {
   }
 }
 
+// A pick that stopped on a conflict is committed with message cleanup, which ends the
+// message with a newline; GitHub web merges have none. Signing writes the original bytes.
+function sameMessage(original, rewritten) {
+  const trim = (message) => {
+    let end = message.length;
+    while (end > 0 && message[end - 1] === 0x0a) end -= 1;
+    return message.subarray(0, end);
+  };
+  return trim(original).equals(trim(rewritten));
+}
+
 async function signRebasedCommits(
   repositoryPath,
   upstreamSha,
@@ -588,7 +599,7 @@ async function signRebasedCommits(
     );
     if (
       original.author.line !== rewritten.author.line ||
-      !original.message.equals(rewritten.message)
+      !sameMessage(original.message, rewritten.message)
     ) {
       throw new Error(
         `Rebase changed the author or message while mapping ${originalCommits[index]}`,

@@ -263,9 +263,12 @@ async function makeFixture(
     git(seed, "mv", "old.patch", "renamed.patch");
     writeFileSync(join(seed, "renamed.patch"), content({ target: "updated patch" }));
   }
-  commit(
+  // Like a GitHub squash merge, the message has no final newline, which a conflicted
+  // pick adds back.
+  git(seed, "add", "-A");
+  writeFileSync(join(directory, "message"), "dev target edit\n\nconflicting replay body");
+  gitWithEnv(
     seed,
-    "dev target edit\n\nconflicting replay body\nwith second line\n",
     devMetadata(
       "Zoë Author",
       "zoe@example.invalid",
@@ -273,6 +276,10 @@ async function makeFixture(
       "Clement Liaw",
       "1700000301 -0330",
     ),
+    "commit",
+    "--cleanup=verbatim",
+    "-F",
+    join(directory, "message"),
   );
   commitPatchOnlyEdit(seed, deletionOnly);
   if (unknown) {
