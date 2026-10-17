@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, sign, createHash } from "node:crypto";
-import { mkdtemp, readFile, writeFile, rm } from "node:fs/promises";
+import {
+  chmod,
+  cp,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  symlink,
+  writeFile,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { test } from "node:test";
 import {
   forkReleaseManifestFixture,
@@ -27,8 +38,19 @@ import {
   macArtifact,
   releaseDownloadUrl,
   resolveLatestTag,
-  staleLaunchServicesBundles,
 } from "./paseo-nix-update.mjs";
+import {
+  INSTALLED_APP,
+  bundleProcesses,
+  installAppCopy,
+  inspectInstalledApp,
+  makeWritable,
+  markerOutputPath,
+  migrateDockTiles,
+  planAppInstall,
+  rewriteDockPlist,
+  staleLaunchServicesBundles,
+} from "./paseo-nix-update-macos.mjs";
 
 const legacy = {
   lineage: "legacy-v1",
@@ -214,7 +236,7 @@ test("retention keeps current, high-water and the rollback target only while the
   assert.deepEqual(retainedState(emptyState()), emptyState());
 });
 
-test("LaunchServices cleanup selects only inactive Paseo Nix bundles", () => {
+test("LaunchServices cleanup keeps only the bundle the app launches from", () => {
   const output = (hash, version) => `/nix/store/${hash.repeat(32)}-paseo-desktop-${version}`;
   const entry = (path, id) =>
     `path:                       ${path} (0x${id})\nidentifier: sh.paseo.desktop\n`;
@@ -229,9 +251,104 @@ test("LaunchServices cleanup selects only inactive Paseo Nix bundles", () => {
     entry(`/nix/store/${"e".repeat(32)}-other-app-1.0/Applications/Paseo.app`, "1900"),
     entry("/Users/me/dev/paseo/release/mac-arm64/Paseo.app", "1738"),
   ].join("");
-  assert.deepEqual(staleLaunchServicesBundles(dump, output("a", "0.2.0")), [
+  assert.deepEqual(
+    staleLaunchServicesBundles(dump, `${output("a", "0.2.0")}/Applications/Paseo.app`),
+    [`${output("d", "0.11.0")}/Applications/Paseo.app`],
+  );
+  assert.deepEqual(staleLaunchServicesBundles(dump, INSTALLED_APP), [
+    `${output("a", "0.2.0")}/Applications/Paseo.app`,
     `${output("d", "0.11.0")}/Applications/Paseo.app`,
   ]);
+});
+
+test("installed app plan replaces only updater-owned apps, and only while none runs", () => {
+  const active = `/nix/store/${"a".repeat(32)}-paseo-desktop-0.6.0`;
+  const older = `/nix/store/${"b".repeat(32)}-paseo-desktop-0.5.0`;
+  const marker = (outputPath) =>
+    markerOutputPath(JSON.stringify({ schemaVersion: 1, managedBy: "nix", outputPath }));
+  assert.deepEqual(marker(active), { managed: true, outputPath: active });
+  assert.deepEqual(marker("/Applications/Paseo.app"), { managed: true, outputPath: null });
+  assert.deepEqual(markerOutputPath("{}"), { managed: false, outputPath: null });
+  const plan = (installed, { activeMarker = marker(active), busy = false } = {}) =>
+    planAppInstall({ installed, activeOutputPath: active, activeMarker, busy }).action;
+  const profileLink = {
+    kind: "symlink",
+    target: "/Users/me/Library/Application Support/Paseo/nix-update/profile/Applications/Paseo.app",
+  };
+  assert.equal(plan({ kind: "missing" }), "install");
+  assert.equal(plan(profileLink), "install");
+  assert.equal(plan({ kind: "symlink", target: `${older}/Applications/Paseo.app` }), "install");
+  assert.equal(plan({ kind: "directory", ...marker(older) }), "install");
+  assert.equal(plan({ kind: "directory", ...marker(active) }), "current");
+  assert.equal(plan({ kind: "directory", ...marker(active) }, { busy: true }), "current");
+  assert.equal(plan({ kind: "directory", ...marker(older) }, { busy: true }), "defer");
+  // A plain Electron install, a foreign link, or a release without outputPath stays put.
+  assert.equal(plan({ kind: "directory", managed: false, outputPath: null }), "skip");
+  assert.equal(plan({ kind: "symlink", target: "/opt/Paseo.app" }), "skip");
+  assert.equal(plan({ kind: "other" }), "skip");
+  assert.equal(plan(profileLink, { activeMarker: marker(undefined) }), "skip");
+  assert.deepEqual(
+    bundleProcesses(
+      [
+        "  101 /Applications/Paseo.app/Contents/MacOS/Paseo",
+        "  102 /Applications/Paseo.app/Contents/Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper --type=gpu",
+        "  103 /Applications/Paseo.app.staging/Contents/MacOS/Paseo",
+        "  104 /nix/store/x/Applications/Paseo.app/Contents/MacOS/Paseo",
+      ].join("\n"),
+      INSTALLED_APP,
+    ),
+    [101, 102],
+  );
+});
+
+test("installed app copy replaces a profile link, preserves links, and never leaves the path empty", async () => {
+  const root = await mkdtemp(join(tmpdir(), "paseo-installed-app-"));
+  try {
+    const source = join(root, "store", "Paseo.app");
+    const markerFile = join(source, "Contents", "Resources", "paseo-nix-managed.json");
+    await mkdir(dirname(markerFile), { recursive: true });
+    const outputPath = `/nix/store/${"a".repeat(32)}-paseo-desktop-0.6.0`;
+    await writeFile(markerFile, JSON.stringify({ managedBy: "nix", outputPath }));
+    await symlink("Resources", join(source, "Contents", "Current"));
+    // Store outputs are read-only; the copy must still be replaceable later.
+    for (const path of [markerFile, dirname(markerFile), join(source, "Contents"), source])
+      await chmod(path, path === markerFile ? 0o444 : 0o555);
+    const applications = join(root, "Applications");
+    await mkdir(applications);
+    const destination = join(applications, "Paseo.app");
+    await symlink(source, destination);
+    await mkdir(join(applications, ".Paseo.app.staging-crashed"));
+
+    // ditto exists only on macOS; CI runs this on Linux.
+    const portableCopy = (from, to) => cp(from, to, { recursive: true, verbatimSymlinks: true });
+    await installAppCopy(
+      source,
+      destination,
+      process.platform === "darwin" ? undefined : { copy: portableCopy },
+    );
+    assert.deepEqual(await inspectInstalledApp(destination), {
+      kind: "directory",
+      managed: true,
+      outputPath,
+    });
+    assert.ok((await lstat(join(destination, "Contents", "Current"))).isSymbolicLink());
+    assert.deepEqual(await readdir(applications), ["Paseo.app"]);
+
+    const installed = await inspectInstalledApp(destination);
+    const failingCopies = [
+      [async () => Promise.reject(new Error("disk full")), /disk full/],
+      // Nothing staged: the swap fails after the old app moved aside, which is restored.
+      [async () => {}, /ENOENT/],
+    ];
+    for (const [copy, error] of failingCopies) {
+      await assert.rejects(installAppCopy(source, destination, { copy }), error);
+      assert.deepEqual(await inspectInstalledApp(destination), installed);
+      assert.deepEqual(await readdir(applications), ["Paseo.app"]);
+    }
+  } finally {
+    await makeWritable(root);
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("command orchestration preserves legacy bytes, retries interrupted migration, and retains high-water across recovery", async () => {
@@ -290,7 +407,7 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     async pruneGenerations(keep) {
       pruned.push(keep.join(","));
     },
-    async syncLaunchServices(outputPath) {
+    async syncDesktopApp(outputPath) {
       synced.push(outputPath.slice(outputPath.lastIndexOf("-") + 1));
     },
     async assertNoLegacyJournal() {
@@ -397,5 +514,78 @@ test("command orchestration preserves legacy bytes, retries interrupted migratio
     assert.equal(await readFile(legacyFile, "utf8"), legacyBytes);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("Dock migration repoints store-pinned Paseo tiles at the installed app and keeps one", () => {
+  const tile = (url, book = "") => `
+\t\t<dict>
+\t\t\t<key>GUID</key>
+\t\t\t<integer>1</integer>
+\t\t\t<key>tile-data</key>
+\t\t\t<dict>${book ? `\n\t\t\t\t<key>book</key>\n\t\t\t\t<data>\n\t\t\t\t${book}\n\t\t\t\t</data>` : ""}
+\t\t\t\t<key>file-data</key>
+\t\t\t\t<dict>
+\t\t\t\t\t<key>_CFURLString</key>
+\t\t\t\t\t<string>${url}</string>
+\t\t\t\t\t<key>_CFURLStringType</key>
+\t\t\t\t\t<integer>15</integer>
+\t\t\t\t</dict>
+\t\t\t</dict>
+\t\t</dict>`;
+  const plist = (...tiles) => `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+\t<key>persistent-apps</key>
+\t<array>${tiles.join("")}
+\t</array>
+\t<key>tilesize</key>
+\t<real>48</real>
+\t<key>wvous-br-corner</key>
+\t<true/>
+</dict>
+</plist>
+`;
+  const store = (hash, version) =>
+    `file:///nix/store/${hash.repeat(32)}-paseo-desktop-${version}/Applications/Paseo.app/`;
+  const finder = tile("file:///System/Applications/Mail.app/", "AAAA");
+  const installed = "file:///Applications/Paseo.app/";
+  const before = plist(
+    finder,
+    tile(store("m", "0.4.0"), "Ym9vaw=="),
+    tile(store("7", "0.3.0")),
+    tile(installed),
+    tile(
+      "file:///Users/me/Library/Application%20Support/Paseo/nix-update/profile/Applications/Paseo.app/",
+    ),
+    tile("file:///Users/me/dev/paseo/release/mac-arm64/Paseo.app/"),
+  );
+  const result = rewriteDockPlist(before);
+  assert.equal(result.changed, true);
+  assert.equal(
+    result.xml,
+    plist(finder, tile(installed), tile("file:///Users/me/dev/paseo/release/mac-arm64/Paseo.app/")),
+  );
+  assert.deepEqual(rewriteDockPlist(result.xml), { xml: result.xml, changed: false });
+  const untouched = plist(finder, tile(installed));
+  assert.deepEqual(rewriteDockPlist(untouched), { xml: untouched, changed: false });
+
+  const calls = [];
+  const adapters = (xml) => ({
+    exportDock: () => xml,
+    importDock: (value) => calls.push(["import", value]),
+    restartDock: () => calls.push(["restart"]),
+  });
+  assert.equal(migrateDockTiles(adapters(untouched)), false);
+  assert.deepEqual(calls, []);
+  assert.equal(migrateDockTiles(adapters(before)), true);
+  assert.deepEqual(calls, [["import", result.xml], ["restart"]]);
+  const stderr = process.stderr.write;
+  process.stderr.write = () => true;
+  try {
+    assert.equal(migrateDockTiles(adapters("<plist><dict>")), false);
+  } finally {
+    process.stderr.write = stderr;
   }
 });

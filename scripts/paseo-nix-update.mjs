@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -51,6 +50,12 @@ import {
   reconcileTransaction,
   retainedState,
 } from "./paseo-nix-update-state.mjs";
+import {
+  appBundle,
+  launchDesktopApp,
+  syncDesktopApp,
+  waitForExit,
+} from "./paseo-nix-update-macos.mjs";
 
 export {
   DATA_ROOT,
@@ -333,47 +338,6 @@ async function stageRelease(verified) {
   }
 }
 
-const LSREGISTER =
-  "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
-const appBundle = (outputPath) => join(outputPath, "Applications", "Paseo.app");
-
-// macOS launches sh.paseo.desktop for notification clicks and `open -b` from the
-// highest registered bundle version, and every retained generation stays
-// registered. Fork semver restarted below the legacy 0.11.0 builds, and rollback
-// selects a version below high-water, so a retained bundle would otherwise start
-// beside the active app. Only Paseo Nix outputs are unregistered, and
-// LaunchServices re-registers whichever one is opened again.
-export function staleLaunchServicesBundles(dump, activeOutputPath) {
-  const active = appBundle(activeOutputPath);
-  const pattern =
-    /^path:\s+(\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/\s]+\/Applications\/Paseo\.app) \(0x[0-9a-f]+\)$/gm;
-  const stale = new Set();
-  for (const [, bundle] of dump.matchAll(pattern)) if (bundle !== active) stale.add(bundle);
-  return [...stale];
-}
-
-function lsregister(args) {
-  const result = spawnSync(LSREGISTER, args, {
-    encoding: "utf8",
-    maxBuffer: 256 * 1024 * 1024,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  if (result.error) throw result.error;
-  assert.equal(result.status, 0, `lsregister ${args[0]} failed: ${result.stderr.trim()}`);
-  return result.stdout;
-}
-
-function syncLaunchServices(outputPath) {
-  try {
-    lsregister(["-f", appBundle(outputPath)]);
-    for (const bundle of staleLaunchServicesBundles(lsregister(["-dump"]), outputPath))
-      lsregister(["-u", bundle]);
-  } catch (error) {
-    // The profile switch already succeeded; a registration failure must not undo or fail it.
-    process.stderr.write(`Could not update LaunchServices registrations: ${error.message}\n`);
-  }
-}
-
 // Deleting a generation only drops its GC root; Nix still keeps any store path a
 // running process holds, so an app left running on a pruned version survives GC.
 async function pruneGenerations(keep) {
@@ -441,7 +405,7 @@ function productionAdapters() {
     },
     selectTarget: (target) => setProfile(ACTIVE_PROFILE, target.outputPath, { quiet: true }),
     pruneGenerations,
-    syncLaunchServices,
+    syncDesktopApp,
   };
 }
 
@@ -525,7 +489,7 @@ async function finishSwitch(command, state, adapters) {
   if (kept.length !== [state.legacyRecovery, ...state.generations].filter(Boolean).length)
     await adapters.writeState(retained);
   await adapters.pruneGenerations(kept.map((entry) => entry.generation));
-  await adapters.syncLaunchServices(retained.current.outputPath);
+  await adapters.syncDesktopApp(retained.current.outputPath);
   return retained;
 }
 
@@ -587,6 +551,35 @@ export async function executeCommand(command, adapters) {
   return commandResult(command, state, staged, latest, latestError);
 }
 
+// The desktop app hands its restart to this command: once the app has exited,
+// nothing runs from /Applications/Paseo.app and the copy can be replaced.
+async function installApp(args) {
+  const pid = args[0] === "--after-exit" && args.length === 2 ? Number(args[1]) : null;
+  assert.ok(
+    args.length === 0 || (Number.isSafeInteger(pid) && pid > 0),
+    "Expected only optional --after-exit <pid>",
+  );
+  assertMacArm();
+  if (pid !== null && !(await waitForExit(pid, 30_000)))
+    process.stderr.write(`Process ${pid} is still running.\n`);
+  const active = await current();
+  assert.ok(active, "There is no active Nix release to install");
+  // A busy lock or failed copy must still bring the app back after a restart.
+  let bundle = appBundle(active.outputPath);
+  try {
+    await withOperationLock(join(DATA_ROOT, "operation.lock"), async () => {
+      bundle = await syncDesktopApp(active.outputPath, {
+        waitForQuitMs: pid === null ? 0 : 30_000,
+      });
+    });
+  } catch (error) {
+    if (pid === null) throw error;
+    process.stderr.write(`${error.message}\n`);
+  }
+  if (pid !== null) launchDesktopApp(bundle);
+  else process.stdout.write(`${bundle}\n`);
+}
+
 export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
   const [command = "help", ...rest] = argv;
   const commands = [
@@ -601,14 +594,21 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
     "legacy-rollback",
     "legacy-reactivate-high-water",
   ];
+  if (command === "help" || command === "--help") {
+    process.stdout.write(
+      `Usage: paseo-nix-update <${commands.join("|")}> [--json]\n` +
+        "       paseo-nix-update install-app [--after-exit <pid>]\n",
+    );
+    return;
+  }
+  if (command === "install-app") {
+    await installApp(rest);
+    return;
+  }
   assert.ok(
     rest.length === 0 || (rest.length === 1 && rest[0] === "--json"),
     "Expected only optional --json",
   );
-  if (command === "help" || command === "--help") {
-    process.stdout.write(`Usage: paseo-nix-update <${commands.join("|")}> [--json]\n`);
-    return;
-  }
   assert.ok(commands.includes(command), "Unsupported updater command");
   assertMacArm();
   await mkdir(DATA_ROOT, { recursive: true, mode: 0o700 });

@@ -216,17 +216,48 @@ export function parseConfirmedDaemonInstance(
     : null;
 }
 
+export type NixRelaunch =
+  | { kind: "exec"; execPath: string }
+  | { kind: "handoff"; command: string; args: string[] };
+
+// On macOS the running app's updater takes over: once this process exits it
+// replaces /Applications/Paseo.app, which nothing runs from by then, and opens it.
+// Launching by bundle id could pick a stale registered store bundle.
+export function nixRelaunch(input: {
+  activeOutputPath: string;
+  cliPath: string;
+  pid: number;
+  platform: NodeJS.Platform;
+}): NixRelaunch {
+  return input.platform === "darwin"
+    ? {
+        kind: "handoff",
+        command: input.cliPath,
+        args: ["install-app", "--after-exit", String(input.pid)],
+      }
+    : { kind: "exec", execPath: nixReleaseExecutable(input.activeOutputPath, input.platform) };
+}
+
 // Restart into the active profile generation. The daemon goes first because it keeps
 // running after the app quits, and only the instance the user confirmed may be stopped.
 export async function restartIntoActiveNixRelease(input: {
   runNixUpdate: (command: NixUpdateCommand) => Promise<NixUpdateResult>;
   confirmedDaemon: ConfirmedDaemonInstance | null;
   stopDaemon: (confirmed: ConfirmedDaemonInstance) => Promise<unknown>;
-  relaunch: (execPath: string) => void;
+  relaunch: (target: NixRelaunch) => void;
+  cliPath: string;
+  pid: number;
   platform: NodeJS.Platform;
 }): Promise<void> {
   const { active } = await input.runNixUpdate("status");
   if (!active) fail("There is no active Nix release to restart into.");
   if (input.confirmedDaemon) await input.stopDaemon(input.confirmedDaemon);
-  input.relaunch(nixReleaseExecutable(active.outputPath, input.platform));
+  input.relaunch(
+    nixRelaunch({
+      activeOutputPath: active.outputPath,
+      cliPath: input.cliPath,
+      pid: input.pid,
+      platform: input.platform,
+    }),
+  );
 }

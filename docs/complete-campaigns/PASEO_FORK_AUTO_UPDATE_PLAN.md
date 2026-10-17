@@ -613,10 +613,27 @@ newest older generation while those two coincide, so after an upgrade you can
 roll back once and after a rollback you can reactivate. It deletes every other
 profile generation, older staging generations, and the dead pre-migration staging
 profile. No automatic GC or process restart occurs, and Nix GC never collects a
-store path a running app still holds. After each switch the updater also registers the active `Paseo.app` with LaunchServices
-and unregisters every other Paseo store output. macOS opens `sh.paseo.desktop`
-(notification clicks included) from the highest registered version, so a retained
-legacy 0.11.0 or high-water bundle would otherwise launch next to the active app.
+store path a running app still holds.
+
+After each switch the updater copies the active bundle to `/Applications/Paseo.app`
+(`scripts/paseo-nix-update-macos.mjs`). A symlink does not work: macOS resolves it,
+so the Dock pinned `/nix/store/…-paseo-desktop-0.4.0/…/Paseo.app` beside the running
+0.5.0, and clicking that stale pin launched 0.4.0, which lost Electron's
+single-instance lock and opened an extra window in the running app. The copy is
+staged beside the target with `ditto`, which keeps the ad hoc signature, and
+swapped in by rename, restoring the old app if the swap fails. The copy is
+replaced only while nothing runs from it; otherwise the switch defers it and the
+in-app restart hands off to `paseo-nix-update install-app --after-exit <pid>`,
+which replaces the copy once the app has exited and opens it. The bundle marker
+records its store `outputPath`, which skips the copy when it is current and lets
+the copied app find its updater. Releases without that field (0.5.0 and older)
+keep running from the store, and a user's non-Nix `/Applications/Paseo.app` is
+left alone. With the copy in place, the updater registers it with LaunchServices,
+unregisters every Paseo store bundle, and once rewrites Dock tiles pinned to a
+store or profile bundle to the copy, keeping one Paseo tile. macOS opens
+`sh.paseo.desktop` (notification clicks included) from the highest registered
+version, so a registered retained bundle would otherwise launch next to the
+active app. These steps report failures on stderr and never fail the switch.
 Rollback does not restore app data. Retain the absolute 200008 helper path before
 rolling back: older releases' helpers lack explicit reactivation. Use the same
 packaged helper for the entire recovery cycle:
