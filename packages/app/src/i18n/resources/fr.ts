@@ -2018,6 +2018,8 @@ export const fr: TranslationResources = {
     archiveTooltip: "Archiver le sous-agent",
     archiveFinishedAction: "Archiver les sous-agents terminés",
     archiveFinishedRetry: "Réessayer ({{failed}}/{{total}})",
+    showFinished: "Afficher les terminés ({{count}})",
+    hideFinished: "Masquer les terminés",
   },
   panels: {
     draft: {

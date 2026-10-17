@@ -1992,6 +1992,8 @@ export const ja: TranslationResources = {
     archiveTooltip: "サブエージェントをアーカイブ",
     archiveFinishedAction: "完了したサブエージェントをアーカイブ",
     archiveFinishedRetry: "再試行 ({{failed}}/{{total}})",
+    showFinished: "完了した{{count}}件を表示",
+    hideFinished: "完了したものを隠す",
   },
   panels: {
     draft: {
