@@ -7,6 +7,7 @@ import {
   AgentSnapshotPayloadSchema,
   AgentTimelineItemPayloadSchema,
   ServerInfoStatusPayloadSchema,
+  SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WSHelloMessageSchema,
   WorkspaceSetupSnapshotSchema,
@@ -587,4 +588,14 @@ test("speech config reads remain compatible with clients before features and fut
       features: { voiceMode: { stt: { provider: "future", region: "eu" } } },
     }).features?.voiceMode?.stt,
   ).toEqual({ provider: "future", region: "eu" });
+});
+
+test("test notification responses carry outcomes a newer daemon may add, and the request round-trips", () => {
+  const request = { type: "push.send_test.request", requestId: "push-test" };
+  expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  const response = {
+    type: "push.send_test.response",
+    payload: { requestId: "push-test", outcome: "some_future_outcome", error: "why" },
+  };
+  expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
 });

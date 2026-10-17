@@ -54,7 +54,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
-import { useIosHardwareKeyboardSubmit } from "@/hooks/use-ios-hardware-keyboard-submit";
+import { useHardwareKeyboardSubmit } from "@/hooks/use-hardware-keyboard-submit";
+import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
 import { formatShortcut, type ShortcutKey } from "@/utils/format-shortcut";
 import { getShortcutOs } from "@/utils/shortcut-platform";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
@@ -1822,7 +1823,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         defaultSendBehavior,
         isAgentRunning,
       });
-    useIosHardwareKeyboardSubmit({
+    useHardwareKeyboardSubmit({
       isEnabled: isInputFocused && !isSendButtonDisabled,
       onSubmit: handleDefaultSendAction,
     });
@@ -1869,10 +1870,13 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [onChangeText, updateComposerHeightForText, updateLiveTextPresence],
     );
 
+    const releaseNativeTypingScopeRef = useRef<(() => void) | null>(null);
     const handleInputFocus = useCallback(() => {
       focusIntentRef.current = true;
       isInputFocusedRef.current = true;
       setIsInputFocused(true);
+      releaseNativeTypingScopeRef.current?.();
+      releaseNativeTypingScopeRef.current = claimNativeTypingScope("message-input");
       onFocusChange?.(true);
     }, [onFocusChange]);
 
@@ -1881,8 +1885,12 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       if (paneFocusedRef.current) focusIntentRef.current = false;
       isInputFocusedRef.current = false;
       setIsInputFocused(false);
+      releaseNativeTypingScopeRef.current?.();
+      releaseNativeTypingScopeRef.current = null;
       onFocusChange?.(false);
     }, [onFocusChange]);
+
+    useEffect(() => () => releaseNativeTypingScopeRef.current?.(), []);
 
     const handlePasteError = useCallback(
       (message: string) => {

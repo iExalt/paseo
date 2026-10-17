@@ -5,8 +5,14 @@ import {
   type Terminal as HeadlessTerminalInstance,
 } from "@xterm/headless";
 import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
+import { searchTerminalBuffer, type TerminalFindMatch } from "./terminal-buffer-search";
 
 export type NativeTerminalWriteData = Uint8Array | string;
+
+export interface TerminalBufferSearchResult {
+  matches: TerminalFindMatch[];
+  limited: boolean;
+}
 export interface NativeTerminalCell extends TerminalCell {
   width?: number;
 }
@@ -26,6 +32,8 @@ export interface NativeHeadlessTerminal {
   getInputModeState(): NativeHeadlessTerminalInputModeState;
   getBufferBounds(): TerminalBufferBounds;
   getBufferWindow(input: TerminalBufferWindowInput): TerminalBufferWindow;
+  /** Find matches in absolute rows; see `searchTerminalBuffer`. */
+  search(query: string, limit?: number): TerminalBufferSearchResult;
   resize(input: { rows: number; cols: number }): void;
   reset(): void;
   dispose(): void;
@@ -399,6 +407,13 @@ export function createNativeHeadlessTerminal(
     },
     getBufferWindow(input: TerminalBufferWindowInput): TerminalBufferWindow {
       return extractBufferWindow(terminal, getActiveCoordinateStorage().oldestRow, input);
+    },
+    search(query: string, limit?: number): TerminalBufferSearchResult {
+      return searchTerminalBuffer(terminal.buffer.active, query, {
+        oldestRow: getActiveCoordinateStorage().oldestRow,
+        cell: terminal.buffer.active.getNullCell(),
+        limit,
+      });
     },
     resize(input: { rows: number; cols: number }): void {
       coordinateEpoch += 1;

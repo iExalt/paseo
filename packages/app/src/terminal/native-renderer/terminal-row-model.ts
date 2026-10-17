@@ -3,6 +3,7 @@ import type { TerminalCell } from "@getpaseo/protocol/messages";
 
 import type { TerminalCellStyleResolver } from "./colors";
 import { resolveTerminalCustomGlyph, type TerminalCustomGlyph } from "./terminal-custom-glyph";
+import type { TerminalFindMatch } from "./terminal-buffer-search";
 import type { TerminalSelectionRange } from "./terminal-selection";
 
 const WIDE_CHAR_RANGES: ReadonlyArray<readonly [number, number]> = [
@@ -51,6 +52,32 @@ export interface TerminalRowModel {
 }
 
 type TerminalRenderableCell = TerminalCell & { width?: number };
+
+/** Find matches to paint on the visible rows; selection paints over them. */
+export interface TerminalRowFindStyle {
+  matches: readonly TerminalFindMatch[];
+  current: TerminalFindMatch | null;
+  firstRow: number;
+  match: { backgroundColor: string; foregroundColor: string };
+  currentMatch: { backgroundColor: string; foregroundColor: string };
+}
+
+function cellFindColors(input: {
+  find: TerminalRowFindStyle;
+  row: number;
+  col: number;
+  cellCount: number;
+}): TerminalRowFindStyle["match"] | null {
+  const absoluteRow = input.find.firstRow + input.row;
+  const covers = (match: TerminalFindMatch) => {
+    if (absoluteRow < match.startRow || absoluteRow > match.endRow) return false;
+    const startCol = absoluteRow === match.startRow ? match.startCol : 0;
+    const endCol = absoluteRow === match.endRow ? match.endCol : Number.POSITIVE_INFINITY;
+    return input.col + input.cellCount > startCol && input.col < endCol;
+  };
+  if (input.find.current && covers(input.find.current)) return input.find.currentMatch;
+  return input.find.matches.some(covers) ? input.find.match : null;
+}
 
 interface TerminalRowSelectionStyle {
   range: TerminalSelectionRange;
@@ -184,6 +211,7 @@ function buildRowModel(input: {
   index: number;
   resolver: TerminalCellStyleResolver;
   selection?: TerminalRowSelectionStyle;
+  find?: TerminalRowFindStyle;
 }): TerminalRowModel {
   const runs: TerminalRun[] = [];
   let hash = 2166136261;
@@ -198,6 +226,14 @@ function buildRowModel(input: {
     let styleKey = resolvedStyle.key;
     let style = resolvedStyle.style;
     let foregroundColor = resolvedStyle.foregroundColor;
+    const findColors = input.find
+      ? cellFindColors({ find: input.find, row: input.index, col, cellCount })
+      : null;
+    if (findColors) {
+      styleKey = `${resolvedStyle.key}|find:${findColors.foregroundColor}:${findColors.backgroundColor}`;
+      style = selectedCellStyle({ style: resolvedStyle.style, ...findColors });
+      foregroundColor = findColors.foregroundColor;
+    }
     if (
       selection &&
       cellIntersectsSelection({
@@ -246,8 +282,15 @@ export function buildRows(input: {
   grid: TerminalRenderableCell[][];
   resolver: TerminalCellStyleResolver;
   selection?: TerminalRowSelectionStyle;
+  find?: TerminalRowFindStyle;
 }): TerminalRowModel[] {
   return input.grid.map((cells, index) =>
-    buildRowModel({ cells, index, resolver: input.resolver, selection: input.selection }),
+    buildRowModel({
+      cells,
+      index,
+      resolver: input.resolver,
+      selection: input.selection,
+      find: input.find,
+    }),
   );
 }

@@ -728,6 +728,8 @@ function MobileSidebar({
           />
         )}
 
+        <SidebarCalloutSlot />
+
         <SidebarFooter
           handleOpenProject={handleOpenProject}
           handleSettings={handleSettings}

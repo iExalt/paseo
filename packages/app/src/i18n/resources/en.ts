@@ -1,4 +1,52 @@
 export const en = {
+  nativePermissions: {
+    notifications: {
+      granted: "Notifications are allowed.",
+      prompt: "Paseo has not asked for notification access yet.",
+      notGranted: "Notifications are not allowed yet.",
+      blocked: "Notifications are blocked. Allow them in system settings.",
+      unavailable: "This build has no push notifications.",
+    },
+    microphone: {
+      granted: "Microphone access is allowed.",
+      prompt: "Paseo has not asked for microphone access yet.",
+      notGranted: "Microphone access is not allowed yet.",
+      blocked: "Microphone access is blocked. Allow it in system settings.",
+      unavailable: "Microphone status is unavailable.",
+    },
+    openSettings: "Open settings",
+  },
+  nativeEditor: {
+    unavailable: "The editor can't run here, so this file is read-only.",
+  },
+  nativeBrowser: {
+    dataDescription:
+      "Clears cookies and site data for every web view in Paseo, including browser tabs.",
+  },
+  nativeNotifications: {
+    sound: "Sound and alerts",
+    soundHint: "Choose how Paseo notifications sound and appear",
+    open: "Open",
+    hostsTitle: "Push registration",
+    hostsHint: "Each host sends notifications to the push token this device gives it.",
+    reregister: "Re-register",
+    status: {
+      pending: "Registering…",
+      sent: "Sent to host",
+      notConnected: "Not connected",
+      noPermission: "No permission",
+      noToken: "No push token",
+      failed: "Failed",
+    },
+    test: {
+      send: "Send test",
+      sending: "Sending a test notification…",
+      accepted: "Test notification sent. It should arrive shortly.",
+      noToken: "This host has no push token from this device. Re-register first.",
+      failed: "Test notification failed: {{error}}",
+      updateHost: "Update this host to send a test notification",
+    },
+  },
   paneFind: {
     connectionFailure: "Could not search this chat. Check the host connection and retry.",
     historyChangedFailure: "The chat changed while searching. Search again.",
@@ -329,6 +377,8 @@ export const en = {
     actions: {
       copyCode: "Copy code",
       copyTurn: "Copy turn",
+      selectText: "Select text",
+      selectTextTruncated: "Showing the first 50,000 characters. Copy turn copies all of it.",
       copyMessage: "Copy message",
       forkMenu: "Fork chat from here",
       forkInNewTab: "Fork in a new tab",
@@ -2300,7 +2350,7 @@ export const en = {
     editor: {
       title: "Editor",
       vimKeybindings: "Vim keybindings",
-      vimHint: "Applies to source files on web and desktop.",
+      vimHint: "Applies to source files in the editor.",
     },
     files: {
       title: "Files",
@@ -2746,7 +2796,6 @@ export const en = {
     shortcuts: {
       dialogTitle: "Shortcuts",
       searchPlaceholder: "Search shortcuts",
-      unavailableOnMobile: "Keyboard shortcuts are only available on desktop",
       capturePrompt: "Press shortcut...",
       captureIndexPrompt: "End with a number from 1 to 9.",
       unassigned: "Not set",
