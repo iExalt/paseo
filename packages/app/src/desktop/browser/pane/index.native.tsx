@@ -248,8 +248,10 @@ export function BrowserPane({
   }, [browserId, updateBrowser]);
 
   const handleError = useCallback(
-    ({ nativeEvent }: WebViewErrorEvent) => {
-      if (isAbortedNativeLoadError(nativeEvent)) {
+    (event: WebViewErrorEvent) => {
+      if (isAbortedNativeLoadError(event.nativeEvent)) {
+        // Keeps the library from swapping the page for its error view.
+        event.preventDefault();
         return;
       }
       // renderError below says what failed: Android starts the error page as a load of
@@ -297,10 +299,10 @@ export function BrowserPane({
   // Replaces the library's English error page; the library keeps it up until the next
   // load of the page finishes.
   const renderError = useCallback(
-    (_domain: string | undefined, _code: number, description: string) => (
+    (_domain: string | undefined, _code: number, description: string | undefined) => (
       <View style={styles.errorState}>
         <Text style={styles.errorStateText}>
-          {description.trim()
+          {description?.trim()
             ? `${errorLabels.failedToLoad}: ${description.trim()}`
             : errorLabels.failedToLoad}
         </Text>

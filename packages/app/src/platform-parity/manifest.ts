@@ -18,8 +18,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Web marks DOM ranges; native marks Markdown nodes and measures Text lines",
     },
     "agent-stream/chat-outline/rail": {
-      kind: "equivalent",
-      note: "Native scrubs the rail by touch; nothing magnifies, since touch has no hover",
+      kind: "gap",
+      chunk: "E3",
+      reason:
+        "Tablet checks skipped (no device); scrubbing and the landscape-only rail are unverified on hardware",
     },
     "appearance/apply-root-font": {
       kind: "deliberate",
