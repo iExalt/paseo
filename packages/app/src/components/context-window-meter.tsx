@@ -175,8 +175,10 @@ export function ContextWindowMeter({
   );
   const formattedSessionCost =
     typeof totalCostUsd === "number" ? formatSessionCost(totalCostUsd) : null;
-  const containerStyle = geometry.containerStyle;
-  const ring = (
+  // The cost sits left of the ring inside the same trigger, so pressing it opens the details too.
+  const showsCost = formattedSessionCost !== null && !showPercentage;
+  const containerStyle = showsCost ? styles.containerWithCost : geometry.containerStyle;
+  const ringGlyph = (
     <ContextWindowRing
       size={geometry.svgSize}
       radius={geometry.radius}
@@ -185,13 +187,23 @@ export function ContextWindowMeter({
       uniProps={meterColors}
     />
   );
+  // Keep the ring in its usual square so it stays on the toolbar's icon rail.
+  const ring = showsCost ? <View style={styles.container}>{ringGlyph}</View> : ringGlyph;
+  const costLabel = showsCost ? (
+    <Text style={styles.costLabel} testID="context-window-cost">
+      {formattedSessionCost}
+    </Text>
+  ) : null;
   const percentageLabel =
     showPercentage && context ? (
       <Text style={styles.percentageLabel}>{`${context.percentage}%`}</Text>
     ) : null;
-  const accessibilityLabel = context
+  const contextLabel = context
     ? t("contextWindow.accessibility", { percentage: context.percentage })
     : t("contextWindow.accessibilityNoData");
+  const accessibilityLabel = formattedSessionCost
+    ? `${contextLabel}, ${t("contextWindow.sessionCost", { cost: formattedSessionCost })}`
+    : contextLabel;
 
   if (isCompact) {
     return (
@@ -203,6 +215,7 @@ export function ContextWindowMeter({
           accessibilityLabel={accessibilityLabel}
           onPress={openSheet}
         >
+          {costLabel}
           {ring}
           {percentageLabel}
         </Pressable>
@@ -236,6 +249,7 @@ export function ContextWindowMeter({
             accessibilityRole="image"
             accessibilityLabel={accessibilityLabel}
           >
+            {costLabel}
             {ring}
             {percentageLabel}
           </Pressable>
@@ -270,6 +284,7 @@ export function ContextWindowMeter({
           accessibilityRole="image"
           accessibilityLabel={accessibilityLabel}
         >
+          {costLabel}
           {ring}
           {percentageLabel}
         </View>
@@ -310,6 +325,18 @@ const styles = StyleSheet.create((theme) => ({
     justifyContent: "center",
     gap: theme.spacing[1],
     borderRadius: theme.borderRadius.full,
+  },
+  containerWithCost: {
+    height: 28,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: theme.spacing[1.5],
+    borderRadius: theme.borderRadius.full,
+  },
+  costLabel: {
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+    fontVariant: ["tabular-nums"],
   },
   percentageLabel: {
     color: theme.colors.foregroundMuted,
