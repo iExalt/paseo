@@ -113,8 +113,9 @@ export const PARITY_MANIFEST: ParityManifest = {
   settingsSections: {
     browser: { kind: "gap", chunk: "F1", reason: "Browser data settings need browser tabs" },
     shortcuts: {
-      kind: "equivalent",
-      note: "Hidden in a plain browser and on native without shortcuts; native lists bindings read-only",
+      kind: "gap",
+      chunk: "E1",
+      reason: "Native lists bindings read-only; rebinding captures DOM key events (deferred)",
     },
     integrations: { kind: "deliberate", reason: "Installs the CLI on the local machine" },
     notifications: {

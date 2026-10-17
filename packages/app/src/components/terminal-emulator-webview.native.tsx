@@ -16,6 +16,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
 import type { ITheme } from "@xterm/xterm";
 import type { TerminalState } from "@getpaseo/protocol/messages";
 import type { TerminalInputModeState } from "@getpaseo/protocol/terminal-input-mode";
@@ -186,6 +187,15 @@ export default function WebViewTerminalEmulator({
   resizeRequestToken = 0,
 }: TerminalEmulatorProps) {
   const webViewRef = useRef<WebView>(null);
+  // The page reports no focus changes, so the terminal scope is claimed when the
+  // terminal takes focus and held until it blurs, unmounts or another input claims.
+  // Hardware shortcuts web disables in a terminal then reach the shell.
+  const releaseTypingScopeRef = useRef<(() => void) | null>(null);
+  const claimTerminalScope = useCallback(() => {
+    releaseTypingScopeRef.current?.();
+    releaseTypingScopeRef.current = claimNativeTypingScope("terminal");
+  }, []);
+  useEffect(() => () => releaseTypingScopeRef.current?.(), []);
   const [webViewEpoch, setWebViewEpoch] = useState(0);
   const [bridgeReadyVersion, setBridgeReadyVersion] = useState(0);
   const bridgeReadyRef = useRef(false);
@@ -365,17 +375,20 @@ export default function WebViewTerminalEmulator({
         sendToWebView({ type: "resize", streamKey, forceClaim: true });
       },
       showKeyboard: () => {
+        claimTerminalScope();
         sendToWebView({ type: "focus", streamKey, forceRefocus: true });
         webViewRef.current?.requestFocus();
       },
       blur: () => {
+        releaseTypingScopeRef.current?.();
+        releaseTypingScopeRef.current = null;
         webViewRef.current?.injectJavaScript(
           "window.__PASEO_TERMINAL_WEBVIEW_BLUR__ && window.__PASEO_TERMINAL_WEBVIEW_BLUR__(); true;",
         );
         Keyboard.dismiss();
       },
     }),
-    [sendToWebView, streamKey],
+    [claimTerminalScope, sendToWebView, streamKey],
   );
 
   useEffect(() => {
@@ -642,9 +655,10 @@ export default function WebViewTerminalEmulator({
       return;
     }
     webViewRef.current?.requestFocus();
+    claimTerminalScope();
     callbacksRef.current.onFocus?.();
     sendToWebView({ type: "focus", streamKey, forceRefocus: true });
-  }, [sendToWebView, streamKey]);
+  }, [claimTerminalScope, sendToWebView, streamKey]);
 
   const handleWebViewTouchCancel = useCallback(() => {
     pendingTapRef.current = null;
