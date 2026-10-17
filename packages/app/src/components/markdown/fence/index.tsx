@@ -1,14 +1,17 @@
 import type { ComponentType } from "react";
-import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
+import { HighlightedCodeBlock, type CodeFindMatch } from "@/components/highlighted-code-block";
+import { getDiagramFenceLanguage, type DiagramFenceLanguage } from "./diagram";
 import { getMarkdownFenceLanguage } from "./language";
 import { MermaidFence } from "./mermaid";
 import type { MarkdownFenceRendererProps } from "./types";
 
 export interface MarkdownFenceBlockProps extends MarkdownFenceRendererProps {
   info: string | null | undefined;
+  /** Chat find's selected occurrence; diagrams render without it. */
+  findMatch?: CodeFindMatch | null;
 }
 
-const diagramFences: Partial<Record<string, ComponentType<MarkdownFenceRendererProps>>> = {
+const diagramFences: Record<DiagramFenceLanguage, ComponentType<MarkdownFenceRendererProps>> = {
   mermaid: MermaidFence,
 };
 
@@ -18,9 +21,11 @@ export function MarkdownFenceBlock({
   phase,
   inheritedStyles,
   textStyle,
+  findMatch,
 }: MarkdownFenceBlockProps) {
   const language = getMarkdownFenceLanguage(info);
-  const DiagramFence = language ? diagramFences[language] : undefined;
+  const diagram = getDiagramFenceLanguage(info);
+  const DiagramFence = diagram ? diagramFences[diagram] : undefined;
   if (DiagramFence) {
     return (
       <DiagramFence
@@ -37,6 +42,7 @@ export function MarkdownFenceBlock({
       language={language}
       inheritedStyles={inheritedStyles}
       textStyle={textStyle}
+      findMatch={findMatch}
     />
   );
 }

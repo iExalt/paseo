@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode, type Ref } from "react";
 import {
   Text,
   View,
@@ -20,6 +20,9 @@ interface MarkdownTextSpanProps {
   // harmlessly.
   onPress?: TextProps["onPress"];
   accessibilityRole?: TextProps["accessibilityRole"];
+  // Accepted for parity; web chat find measures DOM ranges instead.
+  textRef?: Ref<Text>;
+  onTextLayout?: TextProps["onTextLayout"];
 }
 
 // react-native-web renders Text as <span>/<div> with `user-select: text`

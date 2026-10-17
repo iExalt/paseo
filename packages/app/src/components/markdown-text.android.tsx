@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from "react";
+import { useMemo, type ReactNode, type Ref } from "react";
 import {
   Text,
   View,
@@ -16,6 +16,9 @@ interface MarkdownTextSpanProps {
   children: ReactNode;
   onPress?: TextProps["onPress"];
   accessibilityRole?: TextProps["accessibilityRole"];
+  /** The root span of a Text tree; chat find measures its lines to scroll to a match. */
+  textRef?: Ref<Text>;
+  onTextLayout?: TextProps["onTextLayout"];
 }
 
 // Android's <Text selectable> enables per-text-node selection natively. Each
@@ -27,9 +30,18 @@ export function MarkdownTextSpan({
   children,
   onPress,
   accessibilityRole,
+  textRef,
+  onTextLayout,
 }: MarkdownTextSpanProps) {
   return (
-    <Text selectable style={style} onPress={onPress} accessibilityRole={accessibilityRole}>
+    <Text
+      ref={textRef}
+      selectable
+      style={style}
+      onPress={onPress}
+      accessibilityRole={accessibilityRole}
+      onTextLayout={onTextLayout}
+    >
       {children}
     </Text>
   );

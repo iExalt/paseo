@@ -11,6 +11,7 @@ import {
   type LayoutChangeEvent,
   StyleProp,
   ViewStyle,
+  type TextProps,
   type TextStyle,
 } from "react-native";
 import { useTranslation } from "react-i18next";
@@ -27,7 +28,7 @@ import {
   createContext,
   useContext,
 } from "react";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, ReactNode, Ref } from "react";
 import type { MarkdownIt as MarkdownItType } from "markdown-it";
 import { type ASTNode, type RenderRules } from "react-native-markdown-display";
 import MaskedView from "@react-native-masked-view/masked-view";
@@ -44,6 +45,7 @@ import {
   Scissors,
   MicVocal,
   FileSymlink,
+  TextCursor,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
@@ -67,7 +69,14 @@ import { resolveToolCallIcon } from "@/utils/tool-call-icon";
 import { getMarkdownListMarker, getMarkdownListSpacing } from "@/utils/markdown-list";
 import { markdownNodeContainsType } from "@/utils/markdown-ast";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { HighlightedCodeBlock } from "@/components/highlighted-code-block";
+import { HighlightedCodeBlock, type CodeFindMatch } from "@/components/highlighted-code-block";
+import { searchPattern } from "@getpaseo/protocol/chat-search-text";
+import { useChatFindItemHighlight } from "@/agent-stream/chat-find/highlight-store";
+import { findMarkdownMatches } from "@/agent-stream/chat-find/markdown-matches";
+import { matchPartsOffset, renderMatchParts } from "@/find-highlight/match-parts";
+import { useChatFindAnchorText, type ChatFindAnchorTarget } from "@/agent-stream/chat-find/anchor";
+import { isFindMarkedNode } from "@/find-highlight/markdown-nodes";
+import { splitTextForMatches, type MatchPart } from "@/find-highlight/split";
 import { MarkdownFenceBlock } from "@/components/markdown/fence";
 import type { MarkdownPhase } from "@/components/markdown/fence/types";
 import { splitMarkdownBlocks } from "@/utils/split-markdown-blocks";
@@ -77,6 +86,7 @@ import { createAssistantMarkdownParser } from "@/utils/assistant-markdown-parser
 import { formatDuration, formatMessageTimestamp } from "@/utils/time";
 import { getTurnDurationLabel } from "./assistant-turn-footer-label";
 import { writeMarkdownToRichClipboard } from "@/utils/rich-clipboard";
+import { TurnSourceSheet } from "@/components/turn-source-sheet";
 import { getDefaultMarkdownClipboardEnvironment } from "@/utils/rich-clipboard-default-environment";
 import { setAssistantMarkdownBlockHeight } from "@/utils/assistant-message-height-estimate";
 import { isRenderProfileEnabled } from "@/utils/render-profiler";
@@ -132,6 +142,8 @@ interface UserMessageProps {
   isLastInGroup?: boolean;
   isPending?: boolean;
   disableOuterSpacing?: boolean;
+  /** The stream item this renders, so native chat find can mark its occurrence. */
+  findItemId?: string;
 }
 
 const MessageOuterSpacingContext = createContext(false);
@@ -440,6 +452,7 @@ export const UserMessage = memo(function UserMessage({
   isLastInGroup = true,
   isPending = false,
   disableOuterSpacing,
+  findItemId,
 }: UserMessageProps) {
   const isCompact = useIsCompactFormFactor();
   const { t } = useTranslation();
@@ -451,6 +464,28 @@ export const UserMessage = memo(function UserMessage({
     [lightboxMetadata],
   );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
+  const findHighlight = useChatFindItemHighlight(findItemId);
+  const findParts = useMemo(
+    () => (findHighlight ? splitTextForMatches(message, searchPattern(findHighlight.query)) : null),
+    [findHighlight, message],
+  );
+  const messageText = useMemo(
+    () =>
+      findParts && findHighlight ? renderMatchParts(findParts, findHighlight.index, Text) : message,
+    [findHighlight, findParts, message],
+  );
+  const findAnchor = useMemo(
+    () =>
+      findParts && findHighlight && findItemId !== undefined
+        ? {
+            itemId: findItemId,
+            index: findHighlight.index,
+            offset: matchPartsOffset(findParts, findHighlight.index),
+          }
+        : null,
+    [findHighlight, findItemId, findParts],
+  );
+  const findAnchorText = useChatFindAnchorText(findAnchor);
   const hasText = message.trim().length > 0;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
@@ -545,8 +580,14 @@ export const UserMessage = memo(function UserMessage({
             </View>
           ) : null}
           {hasText ? (
-            <Text selectable style={userMessageStylesheet.text} dataSet={MESSAGE_TEXT_DATASET}>
-              {message}
+            <Text
+              ref={findAnchorText.textRef}
+              selectable
+              style={userMessageStylesheet.text}
+              dataSet={MESSAGE_TEXT_DATASET}
+              onTextLayout={findAnchor ? findAnchorText.onTextLayout : undefined}
+            >
+              {messageText}
             </Text>
           ) : null}
         </View>
@@ -685,6 +726,12 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
         getContent={getContent}
         containerStyle={assistantTurnFooterStylesheet.copyButton}
       />
+      {isNative ? (
+        <TurnSelectTextButton
+          getContent={getContent}
+          containerStyle={assistantTurnFooterStylesheet.copyButton}
+        />
+      ) : null}
       {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
       {primaryLabel ? (
         <Pressable
@@ -759,6 +806,57 @@ interface AssistantMessageProps {
   client?: DaemonClient | null;
   spacing?: "default" | "compactTop" | "compactBottom" | "compactBoth";
   phase: MarkdownPhase;
+  /** The stream item this renders, so native chat find can mark its occurrence. */
+  findItemId?: string;
+}
+
+/** Chat find's selected occurrence within one rendered Markdown block. */
+interface MarkdownBlockFind {
+  parts: ReadonlyMap<string, MatchPart[]>;
+  current: number;
+  /** The root Text that draws the current occurrence, measured to scroll to it. */
+  anchor: (ChatFindAnchorTarget & { hostKey: string }) | null;
+}
+
+function markdownBlockAnchor(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): ChatFindAnchorTarget | null {
+  return find?.anchor?.hostKey === node.key ? find.anchor : null;
+}
+
+function markdownBlockFindParts(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): MatchPart[] | undefined {
+  return find && isFindMarkedNode(node) ? find.parts.get(node.key) : undefined;
+}
+
+function markdownBlockCodeFind(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): CodeFindMatch | null {
+  const parts = markdownBlockFindParts(find, node);
+  return parts && find
+    ? { parts, current: find.current, anchor: markdownBlockAnchor(find, node) }
+    : null;
+}
+
+function markdownBlockWithMatch(
+  blocks: readonly ReadonlyMap<string, MatchPart[]>[],
+  match: number,
+): number {
+  return blocks.findIndex((parts) => {
+    for (const nodeParts of parts.values()) {
+      if (nodeParts.some((part) => part.match === match)) return true;
+    }
+    return false;
+  });
+}
+
+function markdownBlockText(find: MarkdownBlockFind | null, node: ASTNode, text: string): ReactNode {
+  const parts = markdownBlockFindParts(find, node);
+  return parts && find ? renderMatchParts(parts, find.current, MarkdownTextSpan) : text;
 }
 
 export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
@@ -1031,6 +1129,43 @@ interface TurnCopyButtonProps {
   accessibilityLabel?: string;
   copiedAccessibilityLabel?: string;
 }
+
+/**
+ * Native only: rendered text selection copies plain text, so this opens the turn's
+ * Markdown source, where any part selected keeps its syntax.
+ */
+const TurnSelectTextButton = memo(function TurnSelectTextButton({
+  getContent,
+  containerStyle,
+}: {
+  getContent: () => string;
+  containerStyle?: StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  const [content, setContent] = useState<string | null>(null);
+  const handleOpen = useCallback(() => setContent(getContent()), [getContent]);
+  const handleClose = useCallback(() => setContent(null), []);
+  const pressableStyle = useMemo(
+    () => [turnCopyButtonStylesheet.container, containerStyle],
+    [containerStyle],
+  );
+  return (
+    <>
+      <Pressable
+        onPress={handleOpen}
+        style={pressableStyle}
+        accessibilityRole="button"
+        accessibilityLabel={t("message.actions.selectText")}
+        testID="turn-select-text"
+      >
+        <TextCursor size={ICON_SIZE.sm} color={turnCopyButtonStylesheet.iconColor.color} />
+      </Pressable>
+      {content === null ? null : (
+        <TurnSourceSheet visible content={content} onClose={handleClose} />
+      )}
+    </>
+  );
+});
 
 export const TurnCopyButton = memo(function TurnCopyButton({
   getContent,
@@ -1421,6 +1556,8 @@ interface MarkdownInheritedTextProps {
   monoSurface?: boolean;
   copyTag?: MarkdownCopyInlineTag;
   children: ReactNode;
+  textRef?: Ref<Text>;
+  onTextLayout?: TextProps["onTextLayout"];
 }
 
 function MarkdownInheritedText({
@@ -1430,6 +1567,8 @@ function MarkdownInheritedText({
   monoSurface,
   copyTag,
   children,
+  textRef,
+  onTextLayout,
 }: MarkdownInheritedTextProps) {
   const style = useMemo(
     () => [inheritedStyles, textStyle, overrideStyle],
@@ -1448,10 +1587,21 @@ function MarkdownInheritedText({
       style={style}
       onPress={linkPress?.onPress}
       accessibilityRole={linkPress?.accessibilityRole}
+      textRef={textRef}
+      onTextLayout={onTextLayout}
     >
       {children}
     </MarkdownTextSpan>
   );
+}
+
+/** A textgroup that draws chat find's selected occurrence, so reveal can measure it. */
+function MarkdownAnchoredText({
+  anchor,
+  ...props
+}: MarkdownInheritedTextProps & { anchor: ChatFindAnchorTarget }) {
+  const anchorText = useChatFindAnchorText(anchor);
+  return <MarkdownInheritedText {...props} {...anchorText} />;
 }
 
 interface MarkdownListItemContentProps {
@@ -1506,6 +1656,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   client,
   spacing = "default",
   phase,
+  findItemId,
 }: AssistantMessageProps) {
   const { t } = useTranslation();
   const renderedMessage = useMemo(
@@ -1528,8 +1679,8 @@ export const AssistantMessage = memo(function AssistantMessage({
     return false;
   });
 
-  const markdownRules = useMemo<RenderRules>(() => {
-    return {
+  const createMarkdownRules = useCallback(
+    (find: MarkdownBlockFind | null): RenderRules => ({
       heading1: (
         node: ASTNode,
         children: ReactNode[],
@@ -1639,7 +1790,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           inheritedStyles={inheritedStyles}
           textStyle={styles.text}
         >
-          {node.content}
+          {markdownBlockText(find, node, node.content)}
         </MarkdownInheritedText>
       ),
       textgroup: (
@@ -1648,15 +1799,27 @@ export const AssistantMessage = memo(function AssistantMessage({
         _parent: ASTNode[],
         styles: MarkdownStyles,
         inheritedStyles: TextStyle = {},
-      ) => (
-        <MarkdownInheritedText
-          key={node.key}
-          inheritedStyles={inheritedStyles}
-          textStyle={styles.textgroup}
-        >
-          {children}
-        </MarkdownInheritedText>
-      ),
+      ) => {
+        const anchor = markdownBlockAnchor(find, node);
+        return anchor ? (
+          <MarkdownAnchoredText
+            key={node.key}
+            anchor={anchor}
+            inheritedStyles={inheritedStyles}
+            textStyle={styles.textgroup}
+          >
+            {children}
+          </MarkdownAnchoredText>
+        ) : (
+          <MarkdownInheritedText
+            key={node.key}
+            inheritedStyles={inheritedStyles}
+            textStyle={styles.textgroup}
+          >
+            {children}
+          </MarkdownInheritedText>
+        );
+      },
       // strong/em/s have no custom rule in react-native-markdown-display's
       // defaults beyond wrapping children in a plain RN <Text>. On iOS the
       // paragraph/textgroup are native UITextViews (see markdown-text.ios.tsx),
@@ -1753,6 +1916,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           language={null}
           inheritedStyles={inheritedStyles}
           textStyle={styles.code_block}
+          findMatch={markdownBlockCodeFind(find, node)}
         />
       ),
       fence: (
@@ -1769,6 +1933,7 @@ export const AssistantMessage = memo(function AssistantMessage({
           phase={phase}
           inheritedStyles={inheritedStyles}
           textStyle={styles.fence}
+          findMatch={markdownBlockCodeFind(find, node)}
         />
       ),
       code_inline: (
@@ -1796,7 +1961,9 @@ export const AssistantMessage = memo(function AssistantMessage({
               inheritedStyles={inheritedStyles}
               codeInlineStyle={styles.code_inline}
               linkStyle={styles.link}
-            />
+            >
+              {markdownBlockText(find, node, content)}
+            </AssistantInlineCodePathLink>
           );
         }
 
@@ -1814,7 +1981,7 @@ export const AssistantMessage = memo(function AssistantMessage({
               codeInlineStyle={styles.code_inline}
               linkStyle={styles.link}
             >
-              {content}
+              {markdownBlockText(find, node, content)}
             </AssistantMarkdownCodeLink>
           );
         }
@@ -1827,7 +1994,7 @@ export const AssistantMessage = memo(function AssistantMessage({
             textStyle={styles.code_inline}
             monoSurface
           >
-            {content}
+            {markdownBlockText(find, node, content)}
           </MarkdownInheritedText>
         );
       },
@@ -1954,8 +2121,42 @@ export const AssistantMessage = memo(function AssistantMessage({
           />
         );
       },
-    };
-  }, [client, fileLinkActions, occurrenceKey, phase, serverId, workspaceRoot]);
+    }),
+    [client, fileLinkActions, occurrenceKey, phase, serverId, workspaceRoot],
+  );
+  const markdownRules = useMemo(() => createMarkdownRules(null), [createMarkdownRules]);
+
+  // Native chat find marks its selected occurrence. Only the block holding it gets
+  // rules of its own; every other block, and every other message, keeps the shared ones.
+  // The pre-pass and these rules mark the same node types (find-highlight/markdown-nodes).
+  // The last block of a streaming message parses with the streaming parser, whose keys
+  // can differ from the pre-pass, so marks wait for the message to complete.
+  const findHighlight = useChatFindItemHighlight(findItemId);
+  const findQuery = findHighlight?.query ?? null;
+  const findCurrent = findHighlight?.index ?? -1;
+  const findMatches = useMemo(
+    () =>
+      findQuery !== null && phase === "complete" && revealedMessage === renderedMessage.text
+        ? findMarkdownMatches(revealedMessage, searchPattern(findQuery))
+        : null,
+    [findQuery, phase, renderedMessage.text, revealedMessage],
+  );
+  const findBlockIndex = useMemo(
+    () => (findMatches ? markdownBlockWithMatch(findMatches.blocks, findCurrent) : -1),
+    [findCurrent, findMatches],
+  );
+  const findRules = useMemo(() => {
+    const parts = findMatches?.blocks[findBlockIndex];
+    if (!parts || findItemId === undefined) return null;
+    const anchor = findMatches?.anchors[findCurrent];
+    return createMarkdownRules({
+      parts,
+      current: findCurrent,
+      anchor: anchor
+        ? { hostKey: anchor.hostKey, itemId: findItemId, index: findCurrent, offset: anchor.offset }
+        : null,
+    });
+  }, [createMarkdownRules, findBlockIndex, findCurrent, findItemId, findMatches]);
 
   const blocks = useMemo(() => splitMarkdownBlocks(revealedMessage), [revealedMessage]);
   const keyedBlocks = useMemo(
@@ -1995,7 +2196,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         >
           <MemoizedMarkdownBlock
             text={block}
-            rules={markdownRules}
+            rules={findRules && index === findBlockIndex ? findRules : markdownRules}
             parser={
               phase === "streaming" && index === keyedBlocks.length - 1
                 ? streamingAssistantMarkdownParser

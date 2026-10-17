@@ -2,6 +2,10 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const ja: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "このチャットを検索できませんでした。ホストへの接続を確認して再試行してください。",
@@ -332,6 +336,9 @@ export const ja: TranslationResources = {
     actions: {
       copyCode: "コードをコピー",
       copyTurn: "ターンをコピー",
+      selectText: "テキストを選択",
+      selectTextTruncated:
+        "最初の50,000文字を表示しています。ターンをコピーですべてコピーされます。",
       copyMessage: "メッセージをコピー",
       forkMenu: "メッセージをフォーク",
       forkInNewTab: "新しいタブにフォーク",
@@ -2124,7 +2131,7 @@ export const ja: TranslationResources = {
     editor: {
       title: "エディター",
       vimKeybindings: "Vim キーバインド",
-      vimHint: "Web とデスクトップのソースファイルに適用されます。",
+      vimHint: "エディターのソースファイルに適用されます。",
     },
     notifications: {
       title: "通知",
@@ -2376,7 +2383,6 @@ export const ja: TranslationResources = {
     shortcuts: {
       dialogTitle: "ショートカット",
       searchPlaceholder: "ショートカットを検索",
-      unavailableOnMobile: "キーボードショートカットはデスクトップでのみ利用できます",
       capturePrompt: "ショートカットを押してください...",
       unassigned: "未設定",
       actions: {

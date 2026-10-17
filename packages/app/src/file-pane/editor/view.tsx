@@ -1,36 +1,230 @@
-import { Text, View } from "react-native";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { AppState, Text, View } from "react-native";
+import Animated from "react-native-reanimated";
 import { StyleSheet } from "react-native-unistyles";
-import type { HighlightStyle } from "@getpaseo/highlight";
-import type { WorkspaceFileLocation } from "@/workspace/file-open";
-import type { FileEditorModel } from "./model";
+import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import { useTranslation } from "react-i18next";
+import { useKeyboardShiftStyle } from "@/keyboard/shift";
+import { FileSourceView } from "../source/view";
+import { EditorFindBar, useEditorFind } from "./find";
+import type { FileEditorViewProps } from "./view-contract";
+import { htmlPreviewNavigationKind } from "../html-preview-navigation";
+import { FileEditorBridge } from "./webview/host-bridge";
+import { HEALTHY_RENDERER, nextRendererHealth } from "./webview/renderer-health";
+import { fileEditorWebViewHtml } from "./webview/file-editor-webview-html";
+import {
+  FILE_EDITOR_WEBVIEW_RECEIVE,
+  parseWebViewMessage,
+  serializeHostMessage,
+  type FileEditorFindState,
+  type FileEditorHostMessage,
+} from "./webview/protocol";
 
-export function FileEditorView(_props: {
-  model: FileEditorModel;
-  filename: string;
-  location: WorkspaceFileLocation;
-  navigationRevision: number;
-  vimEnabled: boolean;
-  theme: {
-    background: string;
-    foreground: string;
-    foregroundMuted: string;
-    border: string;
-    selection: string;
-    monoFont: string;
-    codeFontSize: number;
-    syntax: Record<HighlightStyle, string>;
+// An inert base URL, so only inert URLs pass as the initial document; see html-preview.tsx.
+const SOURCE = { html: fileEditorWebViewHtml, baseUrl: "about:blank" };
+// Matching everything sends every scheme through the navigation guard below.
+const ORIGIN_WHITELIST = ["*"];
+const READY_TIMEOUT_MS = 10_000;
+
+/**
+ * CodeMirror in a WebView, as on web. The read-only source view shows the file until the
+ * editor is ready, and stays when the editor cannot run.
+ */
+export function FileEditorView({
+  ref,
+  model,
+  filename,
+  location,
+  navigationRevision,
+  vimEnabled,
+  theme,
+  onCursorChange,
+  onVimModeChange,
+}: FileEditorViewProps) {
+  const { t } = useTranslation();
+  const webViewRef = useRef<WebView>(null);
+  const [epoch, setEpoch] = useState(0);
+  const [ready, setReady] = useState(false);
+  const [health, setHealth] = useState(HEALTHY_RENDERER);
+  const [mismatch, setMismatch] = useState(false);
+  const unavailable = health.unavailable || mismatch;
+  const snapshot = useSyncExternalStore(model.subscribe, model.getSnapshot, model.getSnapshot);
+  const view = useRef({ filename, theme, vim: vimEnabled });
+  view.current = { filename, theme, vim: vimEnabled };
+  const callbacks = useRef({
+    onCursorChange,
+    onVimModeChange,
+    onFindState: (_state: FileEditorFindState) => {},
+    onFindRequest: () => {},
+  });
+
+  const [bridge] = useState(
+    () =>
+      new FileEditorBridge({
+        model,
+        send: (message: FileEditorHostMessage) =>
+          webViewRef.current?.injectJavaScript(
+            `window.${FILE_EDITOR_WEBVIEW_RECEIVE}?.(${serializeHostMessage(message)});true;`,
+          ),
+        events: {
+          onProtocolMismatch: (protocol) => {
+            console.warn(`[file-editor] WebView speaks protocol ${protocol}; editing is off`);
+            setMismatch(true);
+          },
+          onEditorReady: () => {
+            setReady(true);
+            setHealth((current) => nextRendererHealth(current, "ready"));
+          },
+          onCursorChange: (position) => callbacks.current.onCursorChange(position),
+          onVimModeChange: (mode) => callbacks.current.onVimModeChange(mode),
+          onFindState: (state) => callbacks.current.onFindState(state),
+          onFindRequest: () => callbacks.current.onFindRequest(),
+        },
+      }),
+  );
+  useEffect(() => () => bridge.dispose(), [bridge]);
+  const find = useEditorFind({ bridge, path: location.path, ready });
+  callbacks.current = {
+    onCursorChange,
+    onVimModeChange,
+    onFindState: find.receiveState,
+    onFindRequest: find.open,
   };
-  onCursorChange(position: { line: number; column: number }): void;
-  onVimModeChange(mode: string | null): void;
-}) {
+  useImperativeHandle(ref, () => ({ flush: () => bridge.flush() }), [bridge]);
+
+  const resetWebView = useCallback(() => {
+    bridge.reset();
+    setReady(false);
+    setHealth((current) => {
+      const next = nextRendererHealth(current, "failure");
+      if (next.unavailable && !current.unavailable)
+        console.warn("[file-editor] The editor renderer keeps failing; editing is off");
+      return next;
+    });
+    setEpoch((value) => value + 1);
+  }, [bridge]);
+
+  // The page is the editor, not a browser: a stray link or dropped URL must not
+  // replace it and take pending edits with it.
+  const loadedEpoch = useRef<number | null>(null);
+  const allowOnlyEditorPage = useCallback(
+    ({ url }: { url: string }) => {
+      const kind = htmlPreviewNavigationKind(url);
+      if (kind === "fragment") return true;
+      if (kind === "blocked" || loadedEpoch.current === epoch) return false;
+      loadedEpoch.current = epoch;
+      return true;
+    },
+    [epoch],
+  );
+
+  useEffect(() => {
+    if (ready || unavailable) return undefined;
+    const timer = setTimeout(resetWebView, READY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [epoch, ready, resetWebView, unavailable]);
+
+  useEffect(() => bridge.update({ type: "setFilename", filename }), [bridge, filename]);
+  useEffect(() => bridge.update({ type: "setTheme", theme }), [bridge, theme]);
+  useEffect(() => bridge.update({ type: "setVim", enabled: vimEnabled }), [bridge, vimEnabled]);
+  useEffect(() => {
+    if (!ready || !location.lineStart) return;
+    bridge.update({ type: "reveal", lineStart: location.lineStart, lineEnd: location.lineEnd });
+  }, [bridge, location.lineEnd, location.lineStart, navigationRevision, ready]);
+
+  // Backgrounding may stop the renderer: bring its edits over and save them.
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") return;
+      void bridge.flush().then(() => model.save());
+    });
+    return () => subscription.remove();
+  }, [bridge, model]);
+
+  const handleMessage = useCallback(
+    (event: WebViewMessageEvent) => {
+      const message = parseWebViewMessage(event.nativeEvent.data);
+      if (message) bridge.receive(message, view.current);
+    },
+    [bridge],
+  );
+  const handleProcessGone = useCallback(() => resetWebView(), [resetWebView]);
+  // The find field raises the keyboard over a WebView that does not have focus, so the
+  // page would not move for it: end the page above the keyboard while find is open.
+  const { style: keyboardPaddingStyle } = useKeyboardShiftStyle({
+    mode: "padding",
+    enabled: find.state.open,
+  });
+  const rootStyle = useMemo(() => [styles.root, keyboardPaddingStyle], [keyboardPaddingStyle]);
+
+  const readOnly = (
+    <FileSourceView
+      content={snapshot.content}
+      filename={filename}
+      location={location}
+      navigationRevision={navigationRevision}
+      size={snapshot.content.length}
+      theme={theme}
+      tooLargeMessage={t("panels.file.tooLargeToDisplay")}
+    />
+  );
+  if (unavailable)
+    return (
+      <View style={styles.root}>
+        <Text style={styles.notice}>{t("nativeEditor.unavailable")}</Text>
+        {readOnly}
+      </View>
+    );
   return (
-    <View style={styles.container}>
-      <Text style={styles.text}>Source editing is available on web and desktop.</Text>
-    </View>
+    <Animated.View style={rootStyle}>
+      {ready ? null : readOnly}
+      {/* Transparent and untouchable over the read-only view until the editor is ready. */}
+      <View style={ready ? styles.fill : styles.loading} pointerEvents={ready ? "auto" : "none"}>
+        <WebView
+          key={epoch}
+          ref={webViewRef}
+          source={SOURCE}
+          style={[styles.fill, { backgroundColor: theme.background }]}
+          containerStyle={styles.fill}
+          originWhitelist={ORIGIN_WHITELIST}
+          onShouldStartLoadWithRequest={allowOnlyEditorPage}
+          bounces={false}
+          overScrollMode="never"
+          keyboardDisplayRequiresUserAction={false}
+          hideKeyboardAccessoryView
+          automaticallyAdjustContentInsets={false}
+          contentInsetAdjustmentBehavior="never"
+          allowsLinkPreview={false}
+          setSupportMultipleWindows={false}
+          setBuiltInZoomControls={false}
+          setDisplayZoomControls={false}
+          textZoom={100}
+          onMessage={handleMessage}
+          onContentProcessDidTerminate={handleProcessGone}
+          onRenderProcessGone={handleProcessGone}
+        />
+        <EditorFindBar find={find} bridge={bridge} />
+      </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
-  container: { flex: 1, alignItems: "center", justifyContent: "center" },
-  text: { color: theme.colors.foregroundMuted, fontSize: theme.fontSize.base },
+  root: { flex: 1, minHeight: 0, minWidth: 0 },
+  fill: { flex: 1 },
+  loading: { position: "absolute", top: 0, right: 0, bottom: 0, left: 0, opacity: 0 },
+  notice: {
+    paddingHorizontal: theme.spacing[3],
+    paddingVertical: theme.spacing[2],
+    color: theme.colors.foregroundMuted,
+    fontSize: theme.fontSize.sm,
+  },
 }));

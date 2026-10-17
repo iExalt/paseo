@@ -751,6 +751,8 @@ function MobileSidebar({
           />
         )}
 
+        <SidebarCalloutSlot />
+
         <SidebarFooter
           theme={theme}
           handleOpenProject={handleOpenProject}

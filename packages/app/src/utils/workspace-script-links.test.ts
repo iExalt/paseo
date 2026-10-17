@@ -20,8 +20,9 @@ const runningService: WorkspaceScriptPayload = {
 function resolveLink(
   activeConnection: ActiveConnection | null,
   script: WorkspaceScriptPayload = runningService,
+  reachesHostLoopback = true,
 ) {
-  return resolveWorkspaceScriptLink({ script, activeConnection });
+  return resolveWorkspaceScriptLink({ script, activeConnection, reachesHostLoopback });
 }
 
 describe("resolveWorkspaceScriptLink", () => {
@@ -168,6 +169,37 @@ describe("resolveWorkspaceScriptLink", () => {
         },
         { kind: "direct", label: "localhost:3000", url: "http://localhost:3000" },
       ],
+    });
+  });
+
+  it("never offers loopback or *.localhost targets to a device without the host's loopback", () => {
+    const relay: ActiveConnection = {
+      type: "relay",
+      endpoint: "relay.paseo.sh:443",
+      display: "relay",
+    };
+    expect(resolveLink(relay, runningService, false)).toEqual({ primary: null, targets: [] });
+
+    const publicUrl = "https://web--feature--paseo.services.example.com";
+    expect(
+      resolveLink(
+        relay,
+        { ...runningService, publicProxyUrl: publicUrl, proxyUrl: publicUrl },
+        false,
+      ).targets,
+    ).toEqual([
+      { kind: "public", label: "web--feature--paseo.services.example.com", url: publicUrl },
+    ]);
+
+    expect(
+      resolveLink(
+        { type: "directTcp", endpoint: "192.168.1.20:6767", display: "lan" },
+        runningService,
+        false,
+      ),
+    ).toEqual({
+      primary: { kind: "direct", label: "192.168.1.20:3000", url: "http://192.168.1.20:3000" },
+      targets: [{ kind: "direct", label: "192.168.1.20:3000", url: "http://192.168.1.20:3000" }],
     });
   });
 

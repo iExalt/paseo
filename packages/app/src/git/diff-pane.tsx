@@ -1,4 +1,5 @@
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { canUseSplitDiffLayout } from "@/git/split-diff-layout";
 import { floatingActionsClearance } from "@/components/ui/floating-action-button";
 import { useState, useCallback, useMemo, type ReactElement, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -91,7 +92,6 @@ import { FOCUSED_PANE_PLACEMENT, useWorkspaceLayoutStore } from "@/stores/worksp
 import type { WorkspaceTabPlacement } from "@/stores/workspace-layout-actions";
 import type { WorkspaceTabTarget } from "@/workspace-tabs/model";
 import { buildWorkspaceTabPersistenceKey } from "@/workspace-tabs/model";
-import { isWeb } from "@/constants/platform";
 import { usePublishWorkingDiffAttachment, useWorkingDiff } from "@/git/use-working-diff";
 import type { CheckoutStatusPayload } from "@/git/use-status-query";
 import { DiffTooLargeState } from "@/git/diff-too-large-state";
@@ -1457,7 +1457,7 @@ export function ChangesSurface({
   const { preferences, updatePreferences } = useChangesPreferences();
   const { t } = useTranslation();
   const isMobile = useIsCompactFormFactor();
-  const canUseSplitLayout = isWeb && !isMobile;
+  const canUseSplitLayout = canUseSplitDiffLayout({ isCompact: isMobile });
   const instanceState = changesState ?? defaultChangesState;
   const updateState = onStateChange ?? noopStateChange;
   const wrapLines = preferences.wrapLines;

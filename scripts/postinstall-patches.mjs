@@ -40,6 +40,11 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/react-native-reanimated",
     patchPrefix: "react-native-reanimated+",
   },
+  // Android's onShouldStartLoadWithRequest reports isTopFrame; see the browser pane.
+  {
+    nodeModulesPath: "node_modules/react-native-webview",
+    patchPrefix: "react-native-webview+",
+  },
   {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",

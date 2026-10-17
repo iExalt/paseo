@@ -4,6 +4,7 @@ import {
   AgentSnapshotPayloadSchema,
   AgentTimelineItemPayloadSchema,
   ServerInfoStatusPayloadSchema,
+  SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WSHelloMessageSchema,
   WorkspaceSetupSnapshotSchema,
@@ -435,4 +436,14 @@ test("usage login errors are additive and older reports still parse", () => {
   expect(SessionOutboundMessageSchema.parse(oldMessage)).toEqual(oldMessage);
   expect(SessionOutboundMessageSchema.parse(newMessage)).toEqual(newMessage);
   expect(legacy.parse(newMessage)).toEqual(oldMessage);
+});
+
+test("test notification responses carry outcomes a newer daemon may add, and the request round-trips", () => {
+  const request = { type: "push.send_test.request", requestId: "push-test" };
+  expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  const response = {
+    type: "push.send_test.response",
+    payload: { requestId: "push-test", outcome: "some_future_outcome", error: "why" },
+  };
+  expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
 });

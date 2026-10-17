@@ -41,6 +41,18 @@ import {
   useActiveWorkspaceSelection,
 } from "@/stores/navigation-active-workspace-store";
 import { dispatchTopWebOverlayKeyDown } from "@/lib/overlay-root";
+import {
+  buildNativeShortcutPolicy,
+  EMPTY_NATIVE_SHORTCUT_POLICY,
+  parseNativeShortcutKeyEvent,
+  resolveNativeKeyboardFocusScope,
+} from "@/keyboard/native-shortcut-policy";
+import { getNativeTypingScope, subscribeNativeTypingScope } from "@/keyboard/native-typing-scope";
+import {
+  addNativeShortcutKeyListener,
+  setNativeShortcutPolicy,
+  useHasHardwareKeyboard,
+} from "@/native/hardware-keyboard";
 
 export function useKeyboardShortcuts({
   enabled,
@@ -65,7 +77,12 @@ export function useKeyboardShortcuts({
   const resetModifiers = useKeyboardShortcutsStore((s) => s.resetModifiers);
   const { overrides } = useKeyboardShortcutOverrides();
   const bindings = useMemo(() => buildEffectiveBindings(overrides), [overrides]);
-  const shortcutsAvailable = keyboardShortcutsAvailable({ isNative, isCompact: isMobile });
+  const hasHardwareKeyboard = useHasHardwareKeyboard();
+  const shortcutsAvailable = keyboardShortcutsAvailable({
+    isNative,
+    isCompact: isMobile,
+    hasHardwareKeyboard,
+  });
   const isDesktopApp = getIsElectronRuntime();
   const isMac = getShortcutOs() === "mac";
   const chordStateRef = useRef<ChordState>({
@@ -92,6 +109,27 @@ export function useKeyboardShortcuts({
     },
     [bindings, enabled, isDesktopApp, isMac, shortcutsAvailable],
   );
+
+  // Native decides inside its key dispatch which keys are Paseo's, so it needs
+  // the combos that can match right now. Reads the store and chord state when
+  // called, so callers republish whenever either changes.
+  const publishNativeShortcutPolicy = useStableEvent(() => {
+    if (!isNative) {
+      return;
+    }
+    const store = useKeyboardShortcutsStore.getState();
+    setNativeShortcutPolicy(
+      enabled && shortcutsAvailable && !store.capturingShortcut
+        ? buildNativeShortcutPolicy({
+            bindings,
+            chordState: chordStateRef.current,
+            isMac,
+            commandCenterOpen: store.commandCenterOpen,
+            typingScope: getNativeTypingScope(),
+          })
+        : EMPTY_NATIVE_SHORTCUT_POLICY,
+    );
+  });
 
   useEffect(() => {
     if (activeWorkspaceSelection) {
@@ -268,6 +306,7 @@ export function useKeyboardShortcuts({
           timeoutId: null,
         };
         publishBrowserShortcutPolicy();
+        publishNativeShortcutPolicy();
       },
       bindings,
     });
@@ -280,6 +319,9 @@ export function useKeyboardShortcuts({
       })
     ) {
       publishBrowserShortcutPolicy(result.nextChordState);
+    }
+    if (isNative && (previousChordState.step > 0 || result.nextChordState.step > 0)) {
+      publishNativeShortcutPolicy();
     }
 
     if (result.preventDefault && input.domEvent) {
@@ -382,7 +424,58 @@ export function useKeyboardShortcuts({
     });
   });
 
+  const handleNativeShortcutKey = useStableEvent((payload: unknown) => {
+    const input = parseNativeShortcutKeyEvent(payload);
+    if (!input) {
+      return;
+    }
+    const store = useKeyboardShortcutsStore.getState();
+    if (store.capturingShortcut) {
+      return;
+    }
+    resolveAndPerformShortcut({
+      event: input.event,
+      focusScope: resolveNativeKeyboardFocusScope({
+        typing: input.typing,
+        typingScope: getNativeTypingScope(),
+        commandCenterOpen: store.commandCenterOpen,
+      }),
+      domEvent: null,
+    });
+  });
+
   useEffect(() => {
+    if (!isNative) return;
+    publishNativeShortcutPolicy();
+  }, [bindings, enabled, isMac, publishNativeShortcutPolicy, shortcutsAvailable]);
+
+  useEffect(() => {
+    if (!isNative || !enabled || !shortcutsAvailable) return;
+
+    const keySubscription = addNativeShortcutKeyListener(handleNativeShortcutKey);
+    const unsubscribeTypingScope = subscribeNativeTypingScope(publishNativeShortcutPolicy);
+    const unsubscribeStore = useKeyboardShortcutsStore.subscribe((state, previous) => {
+      if (
+        state.commandCenterOpen !== previous.commandCenterOpen ||
+        state.capturingShortcut !== previous.capturingShortcut
+      ) {
+        publishNativeShortcutPolicy();
+      }
+    });
+    return () => {
+      keySubscription.remove();
+      unsubscribeTypingScope();
+      unsubscribeStore();
+      if (chordStateRef.current.timeoutId !== null) {
+        clearTimeout(chordStateRef.current.timeoutId);
+      }
+      chordStateRef.current = { candidateIndices: [], step: 0, timeoutId: null };
+      setNativeShortcutPolicy(EMPTY_NATIVE_SHORTCUT_POLICY);
+    };
+  }, [enabled, handleNativeShortcutKey, publishNativeShortcutPolicy, shortcutsAvailable]);
+
+  useEffect(() => {
+    if (isNative) return;
     if (!enabled) return;
     if (!shortcutsAvailable) return;
 
