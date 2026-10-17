@@ -33,7 +33,7 @@ test("only fork-owned workflows are installed", () => {
   ]);
 });
 
-test("release keeps each secret in its job and publishes only on request", () => {
+test("release keeps each secret in its job and publishes only release tags", () => {
   const workflow = load(readFileSync(new URL(".github/workflows/release.yml", repoRoot), "utf8"));
   const secrets = Object.fromEntries(
     Object.entries(workflow.jobs).map(([name, job]) => [
@@ -52,22 +52,19 @@ test("release keeps each secret in its job and publishes only on request", () =>
   assert.deepEqual(workflow.permissions, {});
   for (const [name, job] of Object.entries(workflow.jobs))
     assert.equal(job.permissions.contents, name === "publish" ? "write" : "read", name);
-  // A dry run uploads a draft under a paseo-dryrun- tag and never reaches publication.
+  assert.deepEqual(workflow.on.push, { tags: ["paseo-v*"] });
+  // A dispatch without a tag uploads a draft under a paseo-dryrun- tag and never
+  // reaches publication; a tag must name the version it points at.
   const publishing = workflow.jobs.publish.steps.filter((step) =>
     step.run?.includes("release-publish.sh publish"),
   );
   assert.deepEqual(
     publishing.map((step) => step.if),
-    ["inputs.publish"],
+    ["needs.resolve.outputs.publish == 'true'"],
   );
   assert.match(
     workflow.jobs.resolve.steps.at(-1).run,
-    /tag="paseo-v\$version"[\s\S]*else\s+tag="paseo-dryrun-\$GITHUB_RUN_ID"/,
-  );
-  // Publishing tags the release commit itself, which the next boundary maps back.
-  assert.match(
-    workflow.jobs.resolve.steps.at(-1).run,
-    /tag="paseo-v\$version"\s+#[^\n]*\n\s+subject="\$\(git log -1 --format=%s HEAD\)"\n\s+if \[\[ "\$subject" != "chore\(dev\): release \$version"/,
+    /if \[\[ -n "\$TAG" \]\]; then\s+publish=true\s+if \[\[ "\$TAG" != "paseo-v\$version" \]\][\s\S]*else\s+publish=false\s+tag="paseo-dryrun-\$GITHUB_RUN_ID"/,
   );
 });
 
