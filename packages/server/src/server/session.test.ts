@@ -6267,3 +6267,43 @@ test("session cleanup aborts active voice playback and suppresses its response",
     }),
   );
 });
+
+test("a test notification goes to the connection's own device and reports Expo's answer", async () => {
+  const sent: Array<{ token: string; kind: unknown }> = [];
+  const outcomes = [
+    { outcome: "accepted" as const },
+    { outcome: "failed" as const, error: "DeviceNotRegistered" },
+  ];
+  const messages: SessionOutboundMessage[] = [];
+  const session = createSessionForTest({
+    messages,
+    pushNotifications: asPushNotifications({
+      renew: () => undefined,
+      sendTest: async (token: string, payload: { data?: { kind?: unknown } }) => {
+        sent.push({ token, kind: payload.data?.kind });
+        return outcomes.shift();
+      },
+    }),
+  });
+
+  await session.handleMessage({ type: "push.send_test.request", requestId: "before-token" });
+  await session.handleMessage({ type: "register_push_token", token: "ExponentPushToken[phone]" });
+  await session.handleMessage({ type: "push.send_test.request", requestId: "accepted" });
+  await session.handleMessage({ type: "push.send_test.request", requestId: "refused" });
+
+  expect(sent).toEqual([
+    { token: "ExponentPushToken[phone]", kind: "push_test" },
+    { token: "ExponentPushToken[phone]", kind: "push_test" },
+  ]);
+  expect(messages).toEqual([
+    {
+      type: "push.send_test.response",
+      payload: { requestId: "before-token", outcome: "no_token" },
+    },
+    { type: "push.send_test.response", payload: { requestId: "accepted", outcome: "accepted" } },
+    {
+      type: "push.send_test.response",
+      payload: { requestId: "refused", outcome: "failed", error: "DeviceNotRegistered" },
+    },
+  ]);
+});

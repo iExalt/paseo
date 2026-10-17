@@ -101,6 +101,8 @@ interface UserMessageProps {
   isLastInGroup?: boolean;
   isPending?: boolean;
   disableOuterSpacing?: boolean;
+  /** The stream item this renders, so native chat find can mark its occurrence. */
+  findItemId?: string;
 }
 
 const MessageOuterSpacingContext = createContext(false);
@@ -399,6 +401,7 @@ export const UserMessage = memo(function UserMessage({
   isLastInGroup = true,
   isPending = false,
   disableOuterSpacing,
+  findItemId,
 }: UserMessageProps) {
   const isCompact = useIsCompactFormFactor();
   const { t } = useTranslation();
@@ -410,6 +413,28 @@ export const UserMessage = memo(function UserMessage({
     [lightboxMetadata],
   );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
+  const findHighlight = useChatFindItemHighlight(findItemId);
+  const findParts = useMemo(
+    () => (findHighlight ? splitTextForMatches(message, searchPattern(findHighlight.query)) : null),
+    [findHighlight, message],
+  );
+  const messageText = useMemo(
+    () =>
+      findParts && findHighlight ? renderMatchParts(findParts, findHighlight.index, Text) : message,
+    [findHighlight, findParts, message],
+  );
+  const findAnchor = useMemo(
+    () =>
+      findParts && findHighlight && findItemId !== undefined
+        ? {
+            itemId: findItemId,
+            index: findHighlight.index,
+            offset: matchPartsOffset(findParts, findHighlight.index),
+          }
+        : null,
+    [findHighlight, findItemId, findParts],
+  );
+  const findAnchorText = useChatFindAnchorText(findAnchor);
   const hasText = message.trim().length > 0;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
@@ -504,8 +529,14 @@ export const UserMessage = memo(function UserMessage({
             </View>
           ) : null}
           {hasText ? (
-            <Text selectable style={userMessageStylesheet.text} dataSet={MESSAGE_TEXT_DATASET}>
-              {message}
+            <Text
+              ref={findAnchorText.textRef}
+              selectable
+              style={userMessageStylesheet.text}
+              dataSet={MESSAGE_TEXT_DATASET}
+              onTextLayout={findAnchor ? findAnchorText.onTextLayout : undefined}
+            >
+              {messageText}
             </Text>
           ) : null}
         </View>
@@ -644,6 +675,12 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
         getContent={getContent}
         containerStyle={assistantTurnFooterStylesheet.copyButton}
       />
+      {isNative ? (
+        <TurnSelectTextButton
+          getContent={getContent}
+          containerStyle={assistantTurnFooterStylesheet.copyButton}
+        />
+      ) : null}
       {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
       {primaryLabel ? (
         <Pressable
@@ -718,6 +755,57 @@ interface AssistantMessageProps {
   client?: DaemonClient | null;
   spacing?: "default" | "compactTop" | "compactBottom" | "compactBoth";
   phase: MarkdownPhase;
+  /** The stream item this renders, so native chat find can mark its occurrence. */
+  findItemId?: string;
+}
+
+/** Chat find's selected occurrence within one rendered Markdown block. */
+interface MarkdownBlockFind {
+  parts: ReadonlyMap<string, MatchPart[]>;
+  current: number;
+  /** The root Text that draws the current occurrence, measured to scroll to it. */
+  anchor: (ChatFindAnchorTarget & { hostKey: string }) | null;
+}
+
+function markdownBlockAnchor(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): ChatFindAnchorTarget | null {
+  return find?.anchor?.hostKey === node.key ? find.anchor : null;
+}
+
+function markdownBlockFindParts(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): MatchPart[] | undefined {
+  return find && isFindMarkedNode(node) ? find.parts.get(node.key) : undefined;
+}
+
+function markdownBlockCodeFind(
+  find: MarkdownBlockFind | null,
+  node: ASTNode,
+): CodeFindMatch | null {
+  const parts = markdownBlockFindParts(find, node);
+  return parts && find
+    ? { parts, current: find.current, anchor: markdownBlockAnchor(find, node) }
+    : null;
+}
+
+function markdownBlockWithMatch(
+  blocks: readonly ReadonlyMap<string, MatchPart[]>[],
+  match: number,
+): number {
+  return blocks.findIndex((parts) => {
+    for (const nodeParts of parts.values()) {
+      if (nodeParts.some((part) => part.match === match)) return true;
+    }
+    return false;
+  });
+}
+
+function markdownBlockText(find: MarkdownBlockFind | null, node: ASTNode, text: string): ReactNode {
+  const parts = markdownBlockFindParts(find, node);
+  return parts && find ? renderMatchParts(parts, find.current, MarkdownTextSpan) : text;
 }
 
 export const assistantMessageStylesheet = StyleSheet.create((theme) => ({
@@ -796,6 +884,43 @@ interface TurnCopyButtonProps {
   accessibilityLabel?: string;
   copiedAccessibilityLabel?: string;
 }
+
+/**
+ * Native only: rendered text selection copies plain text, so this opens the turn's
+ * Markdown source, where any part selected keeps its syntax.
+ */
+const TurnSelectTextButton = memo(function TurnSelectTextButton({
+  getContent,
+  containerStyle,
+}: {
+  getContent: () => string;
+  containerStyle?: StyleProp<ViewStyle>;
+}) {
+  const { t } = useTranslation();
+  const [content, setContent] = useState<string | null>(null);
+  const handleOpen = useCallback(() => setContent(getContent()), [getContent]);
+  const handleClose = useCallback(() => setContent(null), []);
+  const pressableStyle = useMemo(
+    () => [turnCopyButtonStylesheet.container, containerStyle],
+    [containerStyle],
+  );
+  return (
+    <>
+      <Pressable
+        onPress={handleOpen}
+        style={pressableStyle}
+        accessibilityRole="button"
+        accessibilityLabel={t("message.actions.selectText")}
+        testID="turn-select-text"
+      >
+        <TextCursor size={ICON_SIZE.sm} color={turnCopyButtonStylesheet.iconColor.color} />
+      </Pressable>
+      {content === null ? null : (
+        <TurnSourceSheet visible content={content} onClose={handleClose} />
+      )}
+    </>
+  );
+});
 
 export const TurnCopyButton = memo(function TurnCopyButton({
   getContent,
@@ -1137,6 +1262,7 @@ export const AssistantMessage = memo(function AssistantMessage({
   client,
   spacing = "default",
   phase,
+  findItemId,
 }: AssistantMessageProps) {
   const { t } = useTranslation();
   const renderedMessage = useMemo(

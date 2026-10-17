@@ -16,6 +16,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { WebView, type WebViewMessageEvent } from "react-native-webview";
+import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
 import type { ITheme } from "@xterm/xterm";
 import type { TerminalState } from "@getpaseo/protocol/messages";
 import type { TerminalInputModeState } from "@getpaseo/protocol/terminal-input-mode";
@@ -109,7 +110,8 @@ type BridgeOutboundMessage =
     }
   | { type: "swipeLeft"; streamKey: string }
   | { type: "swipeRight"; streamKey: string }
-  | { type: "debug"; message: string; details?: unknown };
+  | { type: "debug"; message: string; details?: unknown }
+  | { type: "focusChange"; focused: boolean };
 
 const TERMINAL_WEBVIEW_SOURCE = { html: terminalEmulatorWebViewHtml };
 const TERMINAL_WEBVIEW_ORIGIN_WHITELIST = ["*"];
@@ -186,6 +188,18 @@ export default function WebViewTerminalEmulator({
   resizeRequestToken = 0,
 }: TerminalEmulatorProps) {
   const webViewRef = useRef<WebView>(null);
+  // Hardware shortcuts web disables in a terminal must reach the shell. The page
+  // reports focus changes; a tap or showKeyboard claims at once as a fast path.
+  const releaseTypingScopeRef = useRef<(() => void) | null>(null);
+  const claimTerminalScope = useCallback(() => {
+    releaseTypingScopeRef.current?.();
+    releaseTypingScopeRef.current = claimNativeTypingScope("terminal");
+  }, []);
+  const releaseTerminalScope = useCallback(() => {
+    releaseTypingScopeRef.current?.();
+    releaseTypingScopeRef.current = null;
+  }, []);
+  useEffect(() => () => releaseTypingScopeRef.current?.(), []);
   const [webViewEpoch, setWebViewEpoch] = useState(0);
   const [bridgeReadyVersion, setBridgeReadyVersion] = useState(0);
   const bridgeReadyRef = useRef(false);
@@ -365,17 +379,19 @@ export default function WebViewTerminalEmulator({
         sendToWebView({ type: "resize", streamKey, forceClaim: true });
       },
       showKeyboard: () => {
+        claimTerminalScope();
         sendToWebView({ type: "focus", streamKey, forceRefocus: true });
         webViewRef.current?.requestFocus();
       },
       blur: () => {
+        releaseTerminalScope();
         webViewRef.current?.injectJavaScript(
           "window.__PASEO_TERMINAL_WEBVIEW_BLUR__ && window.__PASEO_TERMINAL_WEBVIEW_BLUR__(); true;",
         );
         Keyboard.dismiss();
       },
     }),
-    [sendToWebView, streamKey],
+    [claimTerminalScope, releaseTerminalScope, sendToWebView, streamKey],
   );
 
   useEffect(() => {
@@ -574,6 +590,11 @@ export default function WebViewTerminalEmulator({
         handleLifecycleMessage(message);
         return;
       }
+      if (message.type === "focusChange") {
+        if (message.focused) claimTerminalScope();
+        else releaseTerminalScope();
+        return;
+      }
       if (
         !shouldHandleTerminalBridgeMessage(message, {
           desiredStreamKey: streamKey,
@@ -592,7 +613,13 @@ export default function WebViewTerminalEmulator({
       }
       handleTerminalMessage(message);
     },
-    [handleLifecycleMessage, handleTerminalMessage, streamKey],
+    [
+      claimTerminalScope,
+      handleLifecycleMessage,
+      handleTerminalMessage,
+      releaseTerminalScope,
+      streamKey,
+    ],
   );
 
   const handleLoadStart = useCallback<NonNullable<WebViewProps["onLoadStart"]>>(() => {
@@ -642,9 +669,10 @@ export default function WebViewTerminalEmulator({
       return;
     }
     webViewRef.current?.requestFocus();
+    claimTerminalScope();
     callbacksRef.current.onFocus?.();
     sendToWebView({ type: "focus", streamKey, forceRefocus: true });
-  }, [sendToWebView, streamKey]);
+  }, [claimTerminalScope, sendToWebView, streamKey]);
 
   const handleWebViewTouchCancel = useCallback(() => {
     pendingTapRef.current = null;

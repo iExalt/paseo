@@ -34,6 +34,7 @@ import {
   type TerminalRowModel,
   type TerminalRun,
 } from "./terminal-row-model";
+import type { TerminalFindMatch } from "./terminal-buffer-search";
 import type { TerminalSelectionRange } from "./terminal-selection";
 
 const MEASURE_TEXT = "mmmmmmmmmm";
@@ -74,6 +75,8 @@ export interface TerminalGridViewProps {
   fontSize?: number;
   style?: StyleProp<ViewStyle>;
   selection?: TerminalSelectionRange | null;
+  /** Find matches in absolute rows; only those on screen need passing. */
+  find?: { matches: readonly TerminalFindMatch[]; current: TerminalFindMatch | null } | null;
   onCellMetricsChange?: (metrics: TerminalGridCellMetrics) => void;
 }
 
@@ -299,6 +302,7 @@ export function TerminalGridView({
   fontSize = DEFAULT_FONT_SIZE,
   style,
   selection = null,
+  find = null,
   onCellMetricsChange,
 }: TerminalGridViewProps) {
   const [metrics, setMetrics] = useState<CellMetrics>(() => estimateCellMetrics(fontSize));
@@ -334,8 +338,24 @@ export function TerminalGridView({
               foregroundColor: NATIVE_TERMINAL_SELECTION_COLORS.foreground,
             }
           : undefined,
+        // The match and active-match colours web terminal find draws its borders in.
+        find: find
+          ? {
+              matches: find.matches,
+              current: find.current,
+              firstRow: state.firstRow,
+              match: {
+                backgroundColor: xtermTheme.yellow ?? "#b58900",
+                foregroundColor: resolver.backgroundColor,
+              },
+              currentMatch: {
+                backgroundColor: xtermTheme.blue ?? "#268bd2",
+                foregroundColor: resolver.backgroundColor,
+              },
+            }
+          : undefined,
       }),
-    [projectedGrid, resolver, selection, state.firstRow],
+    [find, projectedGrid, resolver, selection, state.firstRow, xtermTheme],
   );
 
   const containerStyle = useMemo<StyleProp<ViewStyle>>(

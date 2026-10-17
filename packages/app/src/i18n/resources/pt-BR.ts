@@ -2,6 +2,10 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const ptBR: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "Não foi possível pesquisar nesta conversa. Verifique a conexão com o host e tente novamente.",
@@ -333,6 +337,8 @@ export const ptBR: TranslationResources = {
     actions: {
       copyCode: "Copiar código",
       copyTurn: "Copiar turno",
+      selectText: "Selecionar texto",
+      selectTextTruncated: "Mostrando os primeiros 50.000 caracteres. Copiar turno copia tudo.",
       copyMessage: "Copiar mensagem",
       forkMenu: "Bifurcar mensagem",
       forkInNewTab: "Bifurcar em uma nova aba",
@@ -2150,7 +2156,7 @@ export const ptBR: TranslationResources = {
     editor: {
       title: "Editor",
       vimKeybindings: "Atalhos do Vim",
-      vimHint: "Aplica-se a arquivos-fonte na web e no desktop.",
+      vimHint: "Aplica-se a arquivos-fonte no editor.",
     },
     notifications: {
       title: "Notificações",
@@ -2404,7 +2410,6 @@ export const ptBR: TranslationResources = {
     shortcuts: {
       dialogTitle: "Atalhos",
       searchPlaceholder: "Pesquisar atalhos",
-      unavailableOnMobile: "Atalhos de teclado estão disponíveis apenas no desktop",
       capturePrompt: "Pressione o atalho...",
       unassigned: "Não definido",
       actions: {

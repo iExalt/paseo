@@ -5,6 +5,10 @@ import { PortalProvider } from "@gorhom/portal";
 import { LucideProvider } from "lucide-react-native";
 import * as Linking from "expo-linking";
 import * as Notifications from "expo-notifications";
+import {
+  foregroundNotificationBehavior,
+  isPushTestNotification,
+} from "@/push-notifications/test-push";
 import { Stack, useNavigationContainerRef, usePathname, useRouter } from "expo-router";
 import {
   createContext,
@@ -226,14 +230,10 @@ function PushNotificationRouter() {
     }
 
     Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        // When the app is open, don't show OS banners.
-        shouldShowAlert: false,
-        shouldShowBanner: false,
-        shouldShowList: false,
-        shouldPlaySound: false,
-        shouldSetBadge: false,
-      }),
+      handleNotification: async (notification) =>
+        foregroundNotificationBehavior(
+          notification.request.content.data as Record<string, unknown> | undefined,
+        ),
     });
 
     const openFromResponse = (response: Notifications.NotificationResponse) => {
@@ -246,6 +246,8 @@ function PushNotificationRouter() {
       const data = response.notification.request.content.data as
         | Record<string, unknown>
         | undefined;
+      // A test notification has nothing to open.
+      if (isPushTestNotification(data)) return;
       openNotification(data);
     };
 

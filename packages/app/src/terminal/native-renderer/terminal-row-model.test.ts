@@ -117,4 +117,34 @@ describe("terminal row model", () => {
     ]);
     expect(row.runs.map((run) => run.text).join("")).toBe(mascot);
   });
+
+  test("paints find matches and the current one apart, across a wrapped row", () => {
+    const resolver = createTerminalCellStyleResolver(DEFAULT_TERMINAL_THEME);
+    const row = (text: string) => [...text].map((char) => cell(char));
+    const rows = buildRows({
+      grid: [row("ab-cd"), row("ef-gh")],
+      resolver,
+      find: {
+        firstRow: 10,
+        matches: [
+          { startRow: 10, startCol: 0, endRow: 10, endCol: 2 },
+          { startRow: 10, startCol: 3, endRow: 11, endCol: 2 },
+        ],
+        current: { startRow: 10, startCol: 3, endRow: 11, endCol: 2 },
+        match: { backgroundColor: "#111111", foregroundColor: "#eeeeee" },
+        currentMatch: { backgroundColor: "#222222", foregroundColor: "#dddddd" },
+      },
+    });
+    const paint = (index: number) =>
+      rows[index]!.runs.map((run) => [run.text, run.style.backgroundColor ?? null]);
+    expect(paint(0)).toEqual([
+      ["ab", "#111111"],
+      ["-", null],
+      ["cd", "#222222"],
+    ]);
+    expect(paint(1)).toEqual([
+      ["ef", "#222222"],
+      ["-gh", null],
+    ]);
+  });
 });

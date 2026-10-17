@@ -14,6 +14,7 @@ export interface DesktopPermissionRowProps {
     granted: string;
     request: string;
     requesting: string;
+    openSettings: string;
   };
   showBorder?: boolean;
   onRequest: () => void;
@@ -34,6 +35,8 @@ export function DesktopPermissionRow({
 }: DesktopPermissionRowProps) {
   const state = status?.state ?? "unknown";
   const isGranted = state === "granted";
+  const action = status?.action ?? (isGranted ? "none" : "request");
+  const actionLabel = action === "open-settings" ? labels.openSettings : labels.request;
   const shouldShowDetail =
     status !== null &&
     status.detail.trim().length > 0 &&
@@ -57,11 +60,12 @@ export function DesktopPermissionRow({
             <ThemedCheck />
             <Text style={styles.permissionStatusText}>{labels.granted}</Text>
           </View>
-        ) : (
+        ) : null}
+        {!isGranted && action !== "none" ? (
           <Button variant="outline" size="sm" onPress={onRequest} disabled={isRequesting}>
-            {isRequesting ? labels.requesting : labels.request}
+            {isRequesting ? labels.requesting : actionLabel}
           </Button>
-        )}
+        ) : null}
         {shouldShowDetail ? (
           <Text style={styles.permissionDetailText}>{status?.detail}</Text>
         ) : null}

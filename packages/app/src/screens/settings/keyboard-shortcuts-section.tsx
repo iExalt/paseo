@@ -79,6 +79,7 @@ interface ShortcutRowContainerProps {
   displayChord: ShortcutKey[][] | null;
   hasOverride: boolean;
   hasDefault: boolean;
+  isEditable: boolean;
   isCapturing: boolean;
   capturedCombos: string[];
   heldModifiers: string | null;
@@ -95,6 +96,7 @@ function ShortcutRowContainer({
   displayChord,
   hasOverride,
   hasDefault,
+  isEditable,
   isCapturing,
   capturedCombos,
   heldModifiers,
@@ -123,6 +125,7 @@ function ShortcutRowContainer({
       displayChord={displayChord}
       hasOverride={hasOverride}
       hasDefault={hasDefault}
+      isEditable={isEditable}
       isCapturing={isCapturing}
       capturedCombos={capturedCombos}
       heldModifiers={heldModifiers}
@@ -241,6 +244,7 @@ function ShortcutRow({
   displayChord,
   hasOverride,
   hasDefault,
+  isEditable,
   isCapturing,
   capturedCombos,
   heldModifiers,
@@ -255,6 +259,7 @@ function ShortcutRow({
   displayChord: ShortcutKey[][] | null;
   hasOverride: boolean;
   hasDefault: boolean;
+  isEditable: boolean;
   isCapturing: boolean;
   capturedCombos: string[];
   heldModifiers: string | null;
@@ -267,7 +272,7 @@ function ShortcutRow({
   const { t } = useTranslation();
   const rowStyle = useMemo(() => [styles.row, isCapturing && styles.rowCapturing], [isCapturing]);
 
-  const isBindable = bindingId !== null;
+  const isBindable = isEditable && bindingId !== null;
   const showDone = isCapturing && capturedCombos.length > 0;
   const showClear = displayChord !== null;
   // Reset restores the default, so it is only meaningful when there is a
@@ -427,21 +432,12 @@ export function KeyboardShortcutsSection() {
     [removeOverride],
   );
 
-  if (isNative) {
-    return (
-      <SettingsSection title={t("settings.sections.shortcuts")}>
-        <View style={[settingsStyles.card, styles.mobileCard]}>
-          <Text style={styles.mobileText}>{t("settings.shortcuts.unavailableOnMobile")}</Text>
-        </View>
-      </SettingsSection>
-    );
-  }
-
-  const resetAllButton = hasOverrides ? (
-    <Button variant="ghost" size="sm" onPress={handleResetAll}>
-      {t("settings.shortcuts.actions.resetAll")}
-    </Button>
-  ) : undefined;
+  const resetAllButton =
+    hasOverrides && !isNative ? (
+      <Button variant="ghost" size="sm" onPress={handleResetAll}>
+        {t("settings.shortcuts.actions.resetAll")}
+      </Button>
+    ) : undefined;
 
   return (
     <>
@@ -471,6 +467,8 @@ export function KeyboardShortcutsSection() {
                       displayChord={displayChord}
                       hasOverride={hasOverride}
                       hasDefault={hasDefault}
+                      // Capture reads DOM key events; native shows the bindings read-only.
+                      isEditable={!isNative}
                       isCapturing={capturingBindingId === bindingId}
                       capturedCombos={
                         capturingBindingId === bindingId ? capturedCombos : EMPTY_CAPTURED_COMBOS
@@ -546,12 +544,5 @@ const styles = StyleSheet.create((theme) => ({
   separator: {
     height: 1,
     backgroundColor: theme.colors.border,
-  },
-  mobileCard: {
-    padding: theme.spacing[4],
-  },
-  mobileText: {
-    fontSize: theme.fontSize.base,
-    color: theme.colors.foregroundMuted,
   },
 }));

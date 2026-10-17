@@ -7,6 +7,7 @@ const withAndroidProfileable = require("./plugins/with-android-profileable");
 const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
+const withAndroidHardwareKeyboard = require("./modules/paseo-hardware-keyboard/app.plugin");
 const { getNativeReleaseVersion } = require("./native-release-version");
 const {
   resolveAppVariant,
@@ -187,6 +188,7 @@ export default {
       "expo-router",
       withPasteInput,
       withAndroidScroll,
+      withAndroidHardwareKeyboard,
       [withAndroidAsyncStorageSize, 64],
       ...buildProfile.cameraPlugins,
       withAndroidOptionalCamera,

@@ -90,7 +90,9 @@ type OutboundMessage =
     }
   | { type: "swipeLeft"; streamKey: string }
   | { type: "swipeRight"; streamKey: string }
-  | { type: "debug"; message: string; details?: unknown };
+  | { type: "debug"; message: string; details?: unknown }
+  /** Keyboard focus entered or left the page, so the host can scope hardware shortcuts. */
+  | { type: "focusChange"; focused: boolean };
 
 declare global {
   interface Window {
@@ -563,6 +565,12 @@ root.appendChild(host);
 document.body.appendChild(root);
 
 const bridge = new TerminalWebViewBridge(root, host);
+// The host claims the terminal shortcut scope only while the page holds keyboard focus.
+document.addEventListener("focusin", () => sendToNative({ type: "focusChange", focused: true }));
+document.addEventListener("focusout", (event) => {
+  if (!event.relatedTarget) sendToNative({ type: "focusChange", focused: false });
+});
+window.addEventListener("blur", () => sendToNative({ type: "focusChange", focused: false }));
 window.__PASEO_TERMINAL_WEBVIEW_RECEIVE__ = bridge.receive;
 window.__PASEO_TERMINAL_WEBVIEW_BLUR__ = bridge.blur;
 sendToNative({ type: "bridgeReady" });

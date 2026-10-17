@@ -10,22 +10,8 @@ import {
   type SetStateAction,
 } from "react";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import {
-  DndContext,
-  DragOverlay,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  pointerWithin,
-  useSensor,
-  useSensors,
-  type CollisionDetection,
-  type DragEndEvent,
-  type DragMoveEvent,
-  type DragOverEvent,
-  type DragStartEvent,
-} from "@dnd-kit/core";
-import { arrayMove, sortableKeyboardCoordinates } from "@dnd-kit/sortable";
+import type { DragEndEvent, DragMoveEvent, DragOverEvent, DragStartEvent } from "@dnd-kit/core";
+import { arrayMove } from "@dnd-kit/sortable";
 import { View, Text, type LayoutChangeEvent } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -58,11 +44,12 @@ import {
   computeTabDropPreview,
   type TabDropPreview,
 } from "@/components/split-container-tab-drop-preview";
+import { SplitDropZone } from "@/components/split-drop-zone";
 import {
-  SplitDropZone,
   resolveSplitDropPosition,
   type SplitDropZoneHover,
-} from "@/components/split-drop-zone";
+} from "@/components/split-drop-zone-position";
+import { SplitDndProvider } from "@/components/split-dnd";
 import {
   deriveWorkspacePaneState,
   getWorkspacePaneDescriptors,
@@ -286,25 +273,6 @@ function computePaneOverDropPreview(input: {
   };
 }
 
-const dropCollisionDetection: CollisionDetection = (args) => {
-  const pointerHits = pointerWithin(args);
-  const tabHits = pointerHits.filter(
-    (entry) => entry.data?.droppableContainer.data.current?.kind === "workspace-tab",
-  );
-  if (tabHits.length > 0) {
-    return tabHits;
-  }
-
-  const paneHits = pointerHits.filter(
-    (entry) => entry.data?.droppableContainer.data.current?.kind === "split-pane-drop",
-  );
-  if (paneHits.length > 0) {
-    return paneHits;
-  }
-
-  return closestCenter(args);
-};
-
 export function SplitContainer({
   layout,
   renderMainHeader,
@@ -353,17 +321,6 @@ export function SplitContainer({
     maximizedPane?.workspaceKey === workspaceKey ? maximizedPane.paneId : null;
   const explorerSidebarPaneId = useWorkspaceLayoutStore(
     (state) => state.explorerSidebarPaneIdByWorkspace[workspaceKey] ?? null,
-  );
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
   );
 
   const panesById = useMemo(() => collectPanesById(layout.root), [layout.root]);
@@ -630,11 +587,23 @@ export function SplitContainer({
     [applyTabDropEnd, applyPaneDropEnd],
   );
 
+  const dragOverlay = useMemo(
+    () =>
+      activeDragTabId ? (
+        <DragOverlayTabChip
+          tabId={activeDragTabId}
+          uiTabs={uiTabs}
+          normalizedServerId={normalizedServerId}
+          normalizedWorkspaceId={normalizedWorkspaceId}
+        />
+      ) : null,
+    [activeDragTabId, normalizedServerId, normalizedWorkspaceId, uiTabs],
+  );
+
   return (
     <RenderProfile id="SplitContainer">
-      <DndContext
-        sensors={sensors}
-        collisionDetection={dropCollisionDetection}
+      <SplitDndProvider
+        overlay={dragOverlay}
         onDragStart={handleDragStart}
         onDragMove={updateDropPreview}
         onDragOver={updateDropPreview}
@@ -736,17 +705,7 @@ export function SplitContainer({
             </>
           ) : null}
         </View>
-        <DragOverlay dropAnimation={null}>
-          {activeDragTabId ? (
-            <DragOverlayTabChip
-              tabId={activeDragTabId}
-              uiTabs={uiTabs}
-              normalizedServerId={normalizedServerId}
-              normalizedWorkspaceId={normalizedWorkspaceId}
-            />
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+      </SplitDndProvider>
     </RenderProfile>
   );
 }
@@ -1215,6 +1174,14 @@ function SplitPaneView({
     };
   }, [stableOnFocusPane, pane.id]);
 
+  // Native has no DOM focus events, so a touch anywhere in an unfocused pane focuses
+  // it. Touches in the focused pane change nothing, so they cost no store update.
+  const handlePaneTouchStart = useCallback(() => {
+    if (!isFocused) {
+      stableOnFocusPane(pane.id);
+    }
+  }, [isFocused, pane.id, stableOnFocusPane]);
+
   const paneId = pane.id;
   const handleCloseTabsToLeft = useCallback(
     (tabId: string) => onCloseTabsToLeft(tabId, paneTabs),
@@ -1256,6 +1223,7 @@ function SplitPaneView({
         collapsable={false}
         style={styles.pane}
         testID={`workspace-pane-${pane.id}`}
+        onTouchStart={isNative ? handlePaneTouchStart : undefined}
       >
         <WindowChromeSafeArea placement="inline" style={styles.paneTabs}>
           <TitlebarDragRegion />
