@@ -230,8 +230,10 @@ buildNpmPackage {
       fi
       mkdir -p "$out/Applications"
       cp -R "$app" "$out/Applications/Paseo.app"
-      printf '{"schemaVersion":1,"managedBy":"nix","packageVersion":"%s","buildVersion":"%s"}\n' \
-        "$version" ${lib.escapeShellArg buildVersion} \
+      # outputPath lets the updater's /Applications/Paseo.app copy, which runs
+      # outside the store, find its updater and recognise when it is current.
+      printf '{"schemaVersion":1,"managedBy":"nix","packageVersion":"%s","buildVersion":"%s","outputPath":"%s"}\n' \
+        "$version" ${lib.escapeShellArg buildVersion} "$out" \
         > "$out/Applications/Paseo.app/Contents/Resources/paseo-nix-managed.json"
       ln -s ../Applications/Paseo.app/Contents/MacOS/Paseo "$out/bin/paseo-desktop"
 
@@ -241,7 +243,8 @@ buildNpmPackage {
       updater_root="$out/libexec/paseo-nix-update"
       mkdir -p "$updater_root/scripts" "$updater_root/packages/protocol/src"
       cp scripts/paseo-nix-update.mjs scripts/paseo-nix-update-legacy.mjs \
-        scripts/paseo-nix-update-state.mjs "$updater_root/scripts/"
+        scripts/paseo-nix-update-state.mjs scripts/paseo-nix-update-macos.mjs \
+        "$updater_root/scripts/"
       cp packages/protocol/src/release-manifest.ts packages/protocol/src/release-manifest-v2.ts \
         packages/protocol/src/fork-version.ts "$updater_root/packages/protocol/src/"
       printf '%s\n' '{ "type": "module" }' > "$updater_root/package.json"
