@@ -2222,7 +2222,8 @@ export const ptBR: TranslationResources = {
             "Quando o agente está em execução, Enter interrompe. Command/Ctrl+Enter enfileira.",
           steer:
             "Quando o agente está em execução, Enter orienta o turno ativo. Command/Ctrl+Enter enfileira.",
-          queue: "Quando o agente está em execução, Enter enfileira. Command/Ctrl+Enter envia.",
+          queue:
+            "Quando o agente está em execução, Enter enfileira. Command/Ctrl+Enter orienta o turno ativo.",
         },
         options: {
           interrupt: "Interromper",

@@ -113,7 +113,7 @@ import {
 } from "@/attachments/service";
 import { resolveAgentControlsMode } from "@/composer/agent-controls/mode";
 import { resolveComposerInputMode, type ComposerInputMode } from "@/composer/input-mode";
-import { resolveActiveSendBehavior } from "./input/state";
+import { resolveActiveSendBehavior, resolveImmediateTurnBehavior } from "./input/state";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
@@ -1518,7 +1518,11 @@ function ComposerContentImpl({
   }, [focusInput, onFocusInput]);
 
   const submitMessage = useCallback(
-    async (text: string, submitAttachments: ComposerAttachment[]) => {
+    async (
+      text: string,
+      submitAttachments: ComposerAttachment[],
+      activeTurnBehavior = resolveImmediateTurnBehavior(appSettings.sendBehavior),
+    ) => {
       onMessageSent?.();
       if (onSubmitMessageRef.current) {
         await onSubmitMessageRef.current({ text, attachments: submitAttachments, cwd });
@@ -1531,7 +1535,7 @@ function ComposerContentImpl({
         agentIdRef.current,
         text,
         submitAttachments,
-        appSettings.sendBehavior === "steer" ? "steer" : "interrupt",
+        activeTurnBehavior,
       );
     },
     [appSettings.sendBehavior, cwd, onMessageSent, t],
@@ -1930,13 +1934,12 @@ function ComposerContentImpl({
   const handleSendQueuedNow = useCallback(
     async (id: string) => {
       if (!sendAgentMessageRef.current && !onSubmitMessageRef.current) return;
-      // Reuse the regular send path; server-side send atomically interrupts any active run.
       const result = await sendQueuedComposerMessageNow({
         agentId,
         messageId: id,
         queue: queueWriter,
-        submitMessage: ({ text, attachments: queuedAttachments }) =>
-          submitMessage(text, queuedAttachments),
+        submitMessage: ({ text, attachments: queuedAttachments, activeTurnBehavior }) =>
+          submitMessage(text, queuedAttachments, activeTurnBehavior),
         failedToSendMessage: t("composer.errors.failedToSend"),
       });
       if (result.status === "failed") {
