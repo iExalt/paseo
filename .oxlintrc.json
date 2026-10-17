@@ -331,6 +331,11 @@
                 "message": "Use EditingTextInput from @/components/ui/text-input. Raw TextInput bypasses editing-surface authority and IME safety."
               },
               {
+                "name": "@react-navigation/native",
+                "allowTypeImports": true,
+                "message": "Import navigation hooks from expo-router. expo-router 57 bundles its own React Navigation, so @react-navigation/native finds no navigation object."
+              },
+              {
                 "name": "@tanstack/react-query",
                 "importNames": ["useQuery", "useInfiniteQuery", "useQueries"],
                 "message": "App reads must go through useReplicaQuery/useFetchQuery from @/data/query. Grandfathered files may only leave the override burn-down list."
@@ -360,6 +365,11 @@
                 "name": "react-native",
                 "importNames": ["TextInput"],
                 "message": "Use EditingTextInput from @/components/ui/text-input. Raw TextInput bypasses editing-surface authority and IME safety."
+              },
+              {
+                "name": "@react-navigation/native",
+                "allowTypeImports": true,
+                "message": "Import navigation hooks from expo-router. expo-router 57 bundles its own React Navigation, so @react-navigation/native finds no navigation object."
               },
               {
                 "name": "react-native-unistyles",
@@ -412,6 +422,11 @@
                 "name": "react-native",
                 "importNames": ["TextInput"],
                 "message": "Use EditingTextInput from @/components/ui/text-input. Raw TextInput bypasses editing-surface authority and IME safety."
+              },
+              {
+                "name": "@react-navigation/native",
+                "allowTypeImports": true,
+                "message": "Import navigation hooks from expo-router. expo-router 57 bundles its own React Navigation, so @react-navigation/native finds no navigation object."
               },
               {
                 "name": "react-native-unistyles",
@@ -504,6 +519,11 @@
                 "message": "Use EditingTextInput from @/components/ui/text-input. Raw TextInput bypasses editing-surface authority and IME safety."
               },
               {
+                "name": "@react-navigation/native",
+                "allowTypeImports": true,
+                "message": "Import navigation hooks from expo-router. expo-router 57 bundles its own React Navigation, so @react-navigation/native finds no navigation object."
+              },
+              {
                 "name": "@tanstack/react-query",
                 "importNames": ["useQuery", "useInfiniteQuery", "useQueries"],
                 "message": "App reads must go through useReplicaQuery/useFetchQuery from @/data/query. Grandfathered files may only leave the override burn-down list."
@@ -532,6 +552,11 @@
                 "name": "react-native",
                 "importNames": ["TextInput"],
                 "message": "Use EditingTextInput from @/components/ui/text-input. Raw TextInput bypasses editing-surface authority and IME safety."
+              },
+              {
+                "name": "@react-navigation/native",
+                "allowTypeImports": true,
+                "message": "Import navigation hooks from expo-router. expo-router 57 bundles its own React Navigation, so @react-navigation/native finds no navigation object."
               }
             ]
           }
