@@ -973,6 +973,74 @@ index d2aed0cb6..2b0849c7a 100644
    rows: readonly StreamItem[];
    viewportRef: RefObject<StreamViewportHandle | null>;
    revealLoadedMessage(messageId: string): boolean;
+diff --git a/packages/app/src/agent-stream/message-start-index.test.ts b/packages/app/src/agent-stream/message-start-index.test.ts
+deleted file mode 100644
+index 40a6183c6..000000000
+--- a/packages/app/src/agent-stream/message-start-index.test.ts
++++ /dev/null
+@@ -1,21 +0,0 @@
+-import { describe, expect, it } from "vitest";
+-import type { StreamItem } from "@/types/stream";
+-import { messageStartIndex } from "./message-start-index";
+-
+-function block(id: string, blockGroupId: string): StreamItem {
+-  return {
+-    kind: "assistant_message",
+-    id,
+-    blockGroupId,
+-    text: id,
+-    timestamp: new Date(0),
+-  } as StreamItem;
+-}
+-
+-describe("messageStartIndex", () => {
+-  it("finds the first block of a message held newest first", () => {
+-    const rows = [block("b-1", "b"), block("a-3", "a"), block("a-2", "a"), block("a-1", "a")];
+-    expect(messageStartIndex(rows, "a")).toBe(3);
+-    expect(messageStartIndex(rows, "missing")).toBe(-1);
+-  });
+-});
+diff --git a/packages/app/src/agent-stream/message-start-index.ts b/packages/app/src/agent-stream/message-start-index.ts
+deleted file mode 100644
+index 93e296885..000000000
+--- a/packages/app/src/agent-stream/message-start-index.ts
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import type { StreamItem } from "@/types/stream";
+-import { getStreamItemMessageId } from "./presentation";
+-
+-/**
+- * The row where a message starts on screen in the inverted native list. Rows are held
+- * newest first, including a message's own block rows, so its first block is the last
+- * row of that message.
+- */
+-export function messageStartIndex(rows: readonly StreamItem[], messageId: string): number {
+-  return rows.findLastIndex((row) => getStreamItemMessageId(row) === messageId);
+-}
+diff --git a/packages/app/src/agent-stream/strategy-native.tsx b/packages/app/src/agent-stream/strategy-native.tsx
+index c37fc5db5..a227f8924 100644
+--- a/packages/app/src/agent-stream/strategy-native.tsx
++++ b/packages/app/src/agent-stream/strategy-native.tsx
+@@ -27,7 +27,6 @@ import { useRevisedHistoryRows } from "./history-row-revision";
+ import { ChatFindRowFrame } from "./chat-find/row-frame";
+ import { getStreamItemMessageId } from "./presentation";
+ import { scrollOffsetForDelta } from "@/find-highlight/reveal";
+-import { messageStartIndex } from "./message-start-index";
+ import { useBottomAnchorController } from "./bottom-anchor-controller";
+ import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
+ import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
+@@ -372,7 +371,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
+     flatListRef.current?.scrollToIndex({ index, viewPosition: 1, animated });
+   });
+   const scrollToMessage = useStableEvent((messageId: string) =>
+-    jumpToRow(messageStartIndex(historyRows, messageId), true),
++    jumpToRow(
++      historyRows.findIndex((row) => getStreamItemMessageId(row) === messageId),
++      true,
++    ),
+   );
+   // Find measures right after it jumps, so its jumps land at once instead of animating.
+   const scrollToItem = useStableEvent((itemId: string) =>
 diff --git a/packages/app/src/agent-stream/stream-tick.bench.ts b/packages/app/src/agent-stream/stream-tick.bench.ts
 index dc1fecb88..6d4d86733 100644
 --- a/packages/app/src/agent-stream/stream-tick.bench.ts
@@ -1760,6 +1828,45 @@ index 03df9b695..e5833c634 100644
  }
  
  /**
+diff --git a/packages/app/vitest-environment.test.ts b/packages/app/vitest-environment.test.ts
+index 95b9b9343..2e2a8ceea 100644
+--- a/packages/app/vitest-environment.test.ts
++++ b/packages/app/vitest-environment.test.ts
+@@ -9,9 +9,9 @@ const appDir = fileURLToPath(new URL(".", import.meta.url));
+ const rootDir = path.resolve(appDir, "../..");
+ const require = createRequire(import.meta.url);
+ const vitestEntry = path.join(path.dirname(require.resolve("vitest/package.json")), "vitest.mjs");
+-const tsgoEntry = path.join(
+-  path.dirname(require.resolve("@typescript/native-preview/package.json")),
+-  "bin/tsgo.js",
++const tscEntry = path.join(
++  path.dirname(require.resolve("@typescript/native/package.json")),
++  "bin/tsc",
+ );
+ 
+ it("the test configuration typechecks with Expo's generated environment declaration", () => {
+@@ -28,7 +28,7 @@ it("the test configuration typechecks with Expo's generated environment declarat
+     );
+     const result = spawnSync(
+       process.execPath,
+-      [tsgoEntry, "--noEmit", "--project", path.join(fixtureDir, "tsconfig.json")],
++      [tscEntry, "--noEmit", "--project", path.join(fixtureDir, "tsconfig.json")],
+       { cwd: appDir, encoding: "utf8", timeout: 30_000 },
+     );
+ 
+diff --git a/packages/server/src/server/agent/paseo-tools.contract.test.ts b/packages/server/src/server/agent/paseo-tools.contract.test.ts
+index 8017e4f06..b3132f2de 100644
+--- a/packages/server/src/server/agent/paseo-tools.contract.test.ts
++++ b/packages/server/src/server/agent/paseo-tools.contract.test.ts
+@@ -3768,7 +3768,7 @@ describe("create_agent native tool", () => {
+         undefined,
+         { workspaceId: "wks_parent" },
+       );
+-      const server = await createAgentMcpServer({
++      const server = await createAgentToolCatalog({
+         agentManager,
+         agentStorage: storage,
+         callerAgentId: parent.id,
 diff --git a/packages/server/src/server/hub/relationship-execution.test.ts b/packages/server/src/server/hub/relationship-execution.test.ts
 index 752ac8010..dcb5f216a 100644
 --- a/packages/server/src/server/hub/relationship-execution.test.ts
@@ -1792,6 +1899,33 @@ index ce0070290..b8d4e75f8 100644
      const rawStatus = nameStatusFields[index++];
      if (!rawStatus) continue;
  
+diff --git a/packages/website/public/schemas/paseo.config.v1.json b/packages/website/public/schemas/paseo.config.v1.json
+index eaa4c02ad..450d00a85 100644
+--- a/packages/website/public/schemas/paseo.config.v1.json
++++ b/packages/website/public/schemas/paseo.config.v1.json
+@@ -365,6 +365,22 @@
+         ]
+       }
+     },
++    "replyRules": {
++      "type": "array",
++      "items": {
++        "type": "object",
++        "properties": {
++          "source": {
++            "type": "string"
++          },
++          "flags": {
++            "type": "string"
++          }
++        },
++        "required": ["source", "flags"],
++        "additionalProperties": false
++      }
++    },
+     "worktrees": {
+       "type": "object",
+       "properties": {
 diff --git a/scripts/postinstall-patches.mjs b/scripts/postinstall-patches.mjs
 index f5af4a0bf..8a719e6a2 100644
 --- a/scripts/postinstall-patches.mjs
