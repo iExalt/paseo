@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { DesktopInstallation } from "./nix-managed-install.js";
 import {
   createNixUpdaterCommandRunner,
+  nixRelaunch,
   restartIntoActiveNixRelease,
 } from "./nix-managed-updater.js";
 
@@ -171,19 +172,31 @@ describe("Nix restart into the active release", () => {
     running: { version: "0.2.2", outputPath },
   };
 
-  it("stops only the confirmed daemon, then relaunches the active app bundle", async () => {
+  it("stops only the confirmed daemon, then hands the macOS restart to the running updater", async () => {
     const calls: string[] = [];
     await restartIntoActiveNixRelease({
       runNixUpdate: async () => status,
       confirmedDaemon: { pid: 42, startedAt: "2026-10-15T00:00:00.000Z" },
       stopDaemon: async (confirmed) => calls.push(`stop ${confirmed.pid}`),
-      relaunch: (execPath) => calls.push(`relaunch ${execPath}`),
+      relaunch: (target) => calls.push(`relaunch ${JSON.stringify(target)}`),
+      cliPath: installation.cliPath,
+      pid: 7,
       platform: "darwin",
     });
     expect(calls).toEqual([
       "stop 42",
-      `relaunch ${active.outputPath}/Applications/Paseo.app/Contents/MacOS/Paseo`,
+      `relaunch ${JSON.stringify({
+        kind: "handoff",
+        command: installation.cliPath,
+        args: ["install-app", "--after-exit", "7"],
+      })}`,
     ]);
+  });
+
+  it("relaunches the active store executable directly on Linux", () => {
+    expect(
+      nixRelaunch({ activeOutputPath: active.outputPath, cliPath: "", pid: 7, platform: "linux" }),
+    ).toEqual({ kind: "exec", execPath: `${active.outputPath}/bin/paseo-desktop` });
   });
 
   it("refuses to restart when no release is active", async () => {
@@ -194,6 +207,8 @@ describe("Nix restart into the active release", () => {
         confirmedDaemon: null,
         stopDaemon: vi.fn(),
         relaunch,
+        cliPath: installation.cliPath,
+        pid: 7,
         platform: "darwin",
       }),
     ).rejects.toThrow("no active Nix release");
