@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import {
+  assertGitVersion,
   exportResolutions,
   importResolutions,
   parseDeletionResolutions,
@@ -126,6 +127,63 @@ function initRepo(path) {
   git(path, "config", "commit.gpgsign", "false");
 }
 
+// A side branch merged into dev, with committers from the user's other verified email and
+// from GitHub's web merges.
+function addMergeHistory(seed, mergeHistory) {
+  if (!mergeHistory) return;
+  const metadata = (committerName, committerEmail, date) => ({
+    ...devMetadata("Side Author", "side@example.invalid", date, committerName, date),
+    GIT_COMMITTER_EMAIL: committerEmail,
+  });
+  git(seed, "checkout", "-b", "side");
+  writeFileSync(join(seed, "side.txt"), "side\n");
+  commit(seed, "side edit", metadata("Clement Liaw", "cman101202@gmail.com", "1700000600 +0000"));
+  git(seed, "checkout", "dev");
+  writeFileSync(join(seed, "web.txt"), "web\n");
+  commit(seed, "web merge", metadata("GitHub", "noreply@github.com", "1700000700 +0000"));
+  const mergeMetadata = devMetadata(
+    "Side Author",
+    "side@example.invalid",
+    "1700000800 +0000",
+    "Clement Liaw",
+    "1700000800 +0000",
+  );
+  gitWithEnv(seed, mergeMetadata, "merge", "--no-ff", "--no-commit", "side");
+  if (mergeHistory === "hand-edited")
+    writeFileSync(join(seed, "side.txt"), "edited in the merge\n");
+  git(seed, "add", "-A");
+  gitWithEnv(seed, mergeMetadata, "commit", "-m", "merge side");
+}
+
+// A dev edit to a file upstream deleted, and nothing else.
+function commitPatchOnlyEdit(seed, enabled) {
+  if (!enabled) return;
+  writeFileSync(join(seed, "renamed.patch"), content({ target: "patch-only edit" }));
+  commit(
+    seed,
+    "dev patch-only edit",
+    devMetadata(
+      "Patch Author",
+      "patch@example.invalid",
+      "1700000350 +0000",
+      "Clement Liaw",
+      "1700000351 +0000",
+    ),
+  );
+}
+
+// The patch-only edit stops on its own modify/delete conflict, which leaves it empty.
+function resolvePatchOnlyEdit(recorder, enabled, recordDeletion) {
+  if (!enabled) return;
+  const stopped = spawnSync("git", ["-c", "core.editor=true", "rebase", "--continue"], {
+    cwd: recorder,
+    encoding: "utf8",
+  });
+  assert.notEqual(stopped.status, 0, "fixture must stop on the patch-only edit");
+  recordDeletion();
+  git(recorder, "commit", "--allow-empty", "-C", "REBASE_HEAD");
+}
+
 async function makeFixture(
   name,
   {
@@ -134,6 +192,8 @@ async function makeFixture(
     initiallyEmpty = false,
     newlyEmpty = false,
     deletion = false,
+    deletionOnly = false,
+    mergeHistory,
   } = {},
 ) {
   const directory = join(root, name);
@@ -203,9 +263,12 @@ async function makeFixture(
     git(seed, "mv", "old.patch", "renamed.patch");
     writeFileSync(join(seed, "renamed.patch"), content({ target: "updated patch" }));
   }
-  commit(
+  // Like a GitHub squash merge, the message has no final newline, which a conflicted
+  // pick adds back.
+  git(seed, "add", "-A");
+  writeFileSync(join(directory, "message"), "dev target edit\n\nconflicting replay body");
+  gitWithEnv(
     seed,
-    "dev target edit\n\nconflicting replay body\nwith second line\n",
     devMetadata(
       "Zoë Author",
       "zoe@example.invalid",
@@ -213,7 +276,12 @@ async function makeFixture(
       "Clement Liaw",
       "1700000301 -0330",
     ),
+    "commit",
+    "--cleanup=verbatim",
+    "-F",
+    join(directory, "message"),
   );
+  commitPatchOnlyEdit(seed, deletionOnly);
   if (unknown) {
     writeFileSync(join(seed, "shared.txt"), content({ target: "dev target", far: "dev far" }));
     commit(
@@ -228,6 +296,7 @@ async function makeFixture(
       ),
     );
   }
+  addMergeHistory(seed, mergeHistory);
   git(seed, "push", "origin", "HEAD:refs/heads/dev");
   const devSha = git(seed, "rev-parse", "HEAD");
 
@@ -267,20 +336,28 @@ async function makeFixture(
     },
   );
   assert.notEqual(initialRebase.status, 0, "fixture must record a real rebase conflict");
-  let deletionRecord;
-  if (deletion) {
+  const deletionRecords = [];
+  const recordDeletion = () => {
     const stages = git(recorder, "ls-files", "-u", "--", "renamed.patch")
       .split("\n")
       .map((line) => {
         const [mode, oid, stage] = line.split(/\s+/);
         return { mode, oid, stage: Number(stage) };
       });
-    deletionRecord = { upstream: upstreamSha, commit: devSha, path: "renamed.patch", stages };
+    const replayed = git(recorder, "rev-parse", "REBASE_HEAD");
+    deletionRecords.push({
+      upstream: upstreamSha,
+      commit: replayed,
+      path: "renamed.patch",
+      stages,
+    });
     git(recorder, "rm", "renamed.patch");
-  }
+  };
+  if (deletion) recordDeletion();
   const resolution = content({ target: "resolved target" });
   writeFileSync(join(recorder, "shared.txt"), resolution);
   git(recorder, "add", "shared.txt");
+  resolvePatchOnlyEdit(recorder, deletionOnly, recordDeletion);
   git(recorder, "-c", "core.editor=true", "rebase", "--continue");
 
   const cache = join(recorder, ".git", "rr-cache");
@@ -302,8 +379,8 @@ async function makeFixture(
   assert.ok(exportedPairs > 0, "export helper should preserve the completed rerere pair");
   assert.equal(existsSync(join(resolverPath, "resolutions", activeId)), false);
   assert.equal(existsSync(join(resolverPath, "resolutions", id, "thisimage")), false);
-  if (deletionRecord)
-    writeFileSync(join(resolverPath, "deletions.json"), JSON.stringify([deletionRecord]) + "\n");
+  if (deletionRecords.length > 0)
+    writeFileSync(join(resolverPath, "deletions.json"), JSON.stringify(deletionRecords) + "\n");
   commit(resolverPath, "seed completed rerere resolution");
   git(resolverPath, "remote", "add", "origin", remote);
   git(resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
@@ -334,8 +411,18 @@ async function makeFixture(
     );
     git(seed, "push", "origin", "HEAD:refs/heads/dev");
   }
+  const [deletionRecord] = deletionRecords;
   return { directory, remote, devSha, upstreamSha, resolverPath, recorder, id, deletionRecord };
 }
+
+test("replay refuses git older than 2.55", () => {
+  assert.doesNotThrow(() => assertGitVersion("git version 2.55.0\n"));
+  assert.doesNotThrow(() => assertGitVersion("git version 3.0.1"));
+  assert.throws(
+    () => assertGitVersion("git version 2.54.0 (Apple Git-157)"),
+    /cannot replay dev; use git 2\.55 or later/,
+  );
+});
 
 test("exact rename/delete resolutions replay and mismatched blobs fail closed", async () => {
   const fixture = await makeFixture("deletion", { deletion: true });
@@ -360,6 +447,16 @@ test("exact rename/delete resolutions replay and mismatched blobs fail closed", 
   assert.equal(existsSync(join(rejected, "renamed.patch")), true);
   assert.match(git(rejected, "ls-files", "-u"), /renamed.patch/);
   assert.equal(git(rejected, "ls-remote", "--refs", "origin"), beforeRefs);
+});
+
+test("a commit left empty by deletion records replays as an empty commit", async () => {
+  const fixture = await makeFixture("deletion-only", { deletion: true, deletionOnly: true });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const replayed = git(clone, "log", "--format=%H", "--grep=dev patch-only edit");
+  assert.match(replayed, /^[0-9a-f]{40}$/);
+  assert.equal(git(clone, "show", "--format=%an", "--name-only", replayed), "Patch Author");
 });
 
 test("deletion records reject unsafe paths, modes, duplicate keys and non-deletion stages", () => {
@@ -692,6 +789,66 @@ test("unknown conflict stops without publishing any refs", async () => {
   const diagnosticText = readFileSync(diagnostics, "utf8");
   assert.match(diagnosticText, /Starting refs:/);
   assert.match(diagnosticText, /diff --cc shared\.txt/);
+});
+
+test("clean merges drop like rebase and web-flow committers become the signing identity", async () => {
+  const fixture = await makeFixture("mixed-history", { mergeHistory: "clean" });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+
+  const replayed = `${fixture.upstreamSha}..HEAD~1`;
+  assert.equal(git(clone, "rev-list", "--merges", replayed), "");
+  assert.equal(git(clone, "show", "HEAD:side.txt"), "side");
+  const committers = git(clone, "log", "--format=%s|%cn <%ce> %cd", "--date=raw", replayed);
+  assert.deepEqual(
+    committers
+      .split("\n")
+      .filter((line) => !line.startsWith("dev "))
+      .sort(),
+    [
+      "side edit|Clement Liaw <cman101202@gmail.com> 1700000600 +0000",
+      `web merge|Clement Liaw <${devMetadata().GIT_COMMITTER_EMAIL}> 1700000700 +0000`,
+    ],
+  );
+});
+
+test("an upstream fixup applies exactly as one signed commit or stops the run", async () => {
+  const fixture = await makeFixture("fixup");
+  const fixupPath = join(fixture.resolverPath, "fixups", `${fixture.upstreamSha}.patch`);
+  mkdirSync(join(fixture.resolverPath, "fixups"));
+  const run = async (patch) => {
+    writeFileSync(fixupPath, patch);
+    commit(fixture.resolverPath, "fixup");
+    git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+    const clone = join(fixture.directory, `checkout-${patch.length}`);
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    return { clone, result: rebaseDev({ repositoryPath: clone, ...signingOptions }) };
+  };
+
+  const stale = await run("--- a/fixup.txt\n+++ b/fixup.txt\n@@ -1 +1 @@\n-stale\n+adapted\n");
+  await assert.rejects(stale.result, /does not apply/);
+
+  const { clone, result } = await run(
+    "diff --git a/fixup.txt b/fixup.txt\nnew file mode 100644\n--- /dev/null\n+++ b/fixup.txt\n@@ -0,0 +1 @@\n+adapted\n",
+  );
+  assert.equal((await result).fixupCommits, 1);
+  assert.equal(git(clone, "show", "HEAD:fixup.txt"), "adapted");
+  assert.match(git(clone, "log", "--format=%s"), /adapt incorporated upstream to the fork/);
+});
+
+test("a merge carrying hand edits stops before the replay", async () => {
+  const fixture = await makeFixture("hand-edited-merge", { mergeHistory: "hand-edited" });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
+
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
+    /is not Git's clean merge of its parents/,
+  );
+  assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
 });
 
 test("a newly empty replay stops with rebase state intact", async () => {
