@@ -1,5 +1,5 @@
 import type { BottomSheetHandleProps } from "@gorhom/bottom-sheet";
-import { useIsFocused } from "@react-navigation/native";
+import { useIsFocused } from "expo-router";
 import {
   type ComponentType,
   type FC,
