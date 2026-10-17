@@ -1980,6 +1980,8 @@ export const ko: TranslationResources = {
     archiveTooltip: "서브에이전트 보관",
     archiveFinishedAction: "완료된 하위 에이전트 보관",
     archiveFinishedRetry: "다시 시도 ({{failed}}/{{total}})",
+    showFinished: "완료된 {{count}}개 보기",
+    hideFinished: "완료된 항목 숨기기",
   },
   panels: {
     draft: {

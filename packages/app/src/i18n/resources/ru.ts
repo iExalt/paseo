@@ -2002,6 +2002,8 @@ export const ru: TranslationResources = {
     archiveTooltip: "Архивировать субагента",
     archiveFinishedAction: "Архивировать завершенные субагенты",
     archiveFinishedRetry: "Повторить ({{failed}}/{{total}})",
+    showFinished: "Показать завершенные ({{count}})",
+    hideFinished: "Скрыть завершенные",
   },
   panels: {
     draft: {

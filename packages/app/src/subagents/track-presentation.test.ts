@@ -5,6 +5,8 @@ import {
   buildSubagentPillPresentation,
   buildSubagentRowPresentationData,
   countFinishedSubagents,
+  doneSubagentIds,
+  foldSubagentRows,
   resolveRowLabel,
 } from "./track-presentation";
 
@@ -296,5 +298,36 @@ describe("provider-owned row subtitles", () => {
         providerRow({ description: null, subtitle: null, title: "general-purpose" }),
       ).subtitle,
     ).toBe("");
+  });
+});
+
+describe("foldSubagentRows", () => {
+  const ids = (rows: SubagentRow[]) => rows.map((r) => r.id);
+
+  it("folds the children that were done when the panel opened and keeps the rest in view", () => {
+    const rows = [
+      row({ id: "done" }),
+      row({ id: "working", status: "running" }),
+      row({ id: "failed", status: "error" }),
+    ];
+
+    const { live, done } = foldSubagentRows(rows, doneSubagentIds(rows));
+
+    expect(ids(live)).toEqual(["working", "failed"]);
+    expect(ids(done)).toEqual(["done"]);
+  });
+
+  it("keeps a child that finishes while the panel is open where it was", () => {
+    const opened = [row({ id: "reviewer", status: "running" })];
+    const now = [row({ id: "reviewer" })];
+
+    expect(ids(foldSubagentRows(now, doneSubagentIds(opened)).live)).toEqual(["reviewer"]);
+  });
+
+  it("brings a folded child back when it starts working again", () => {
+    const opened = [row({ id: "reviewer" })];
+    const now = [row({ id: "reviewer", status: "running" })];
+
+    expect(ids(foldSubagentRows(now, doneSubagentIds(opened)).live)).toEqual(["reviewer"]);
   });
 });

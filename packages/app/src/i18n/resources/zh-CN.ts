@@ -1948,6 +1948,8 @@ export const zhCN: TranslationResources = {
     archiveTooltip: "归档 subagent",
     archiveFinishedAction: "归档已完成的 subagent",
     archiveFinishedRetry: "重试 ({{failed}}/{{total}})",
+    showFinished: "显示 {{count}} 个已完成",
+    hideFinished: "隐藏已完成",
   },
   panels: {
     draft: {
