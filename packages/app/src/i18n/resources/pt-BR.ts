@@ -779,6 +779,7 @@ export const ptBR: TranslationResources = {
         importSession: "Importar sessão",
         copyPath: "Copiar caminho do workspace",
         copyBranchName: "Copiar nome da branch",
+        copyProviderSessionId: "Copiar ID da sessão",
         showSetup: "Mostrar configuração",
       },
       toasts: {
@@ -787,6 +788,7 @@ export const ptBR: TranslationResources = {
         terminalQueued: "Preparando workspace, abrindo terminal quando estiver pronto...",
         workspacePathCopiedLabel: "Caminho do workspace",
         branchNameCopiedLabel: "Nome da branch",
+        providerSessionIdCopiedLabel: "ID da sessão",
       },
     },
     scripts: {
