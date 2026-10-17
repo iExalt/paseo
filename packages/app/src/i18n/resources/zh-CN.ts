@@ -744,6 +744,7 @@ export const zhCN: TranslationResources = {
         importSession: "导入会话",
         copyPath: "复制 workspace 路径",
         copyBranchName: "复制分支名称",
+        copyProviderSessionId: "复制会话 ID",
         showSetup: "显示 setup",
       },
       toasts: {
@@ -752,6 +753,7 @@ export const zhCN: TranslationResources = {
         terminalQueued: "正在准备 workspace，Terminal 准备好后会打开...",
         workspacePathCopiedLabel: "Workspace 路径",
         branchNameCopiedLabel: "分支名称",
+        providerSessionIdCopiedLabel: "会话 ID",
       },
     },
     scripts: {

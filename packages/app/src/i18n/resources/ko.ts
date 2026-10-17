@@ -748,6 +748,7 @@ export const ko: TranslationResources = {
         importSession: "세션 가져오기",
         copyPath: "워크스페이스 경로 복사",
         copyBranchName: "브랜치 이름 복사",
+        copyProviderSessionId: "세션 ID 복사",
         showSetup: "설정 표시",
       },
       toasts: {
@@ -756,6 +757,7 @@ export const ko: TranslationResources = {
         terminalQueued: "워크스페이스 준비 중, 준비되면 터미널을 엽니다...",
         workspacePathCopiedLabel: "워크스페이스 경로",
         branchNameCopiedLabel: "브랜치 이름",
+        providerSessionIdCopiedLabel: "세션 ID",
       },
     },
     scripts: {

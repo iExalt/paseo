@@ -756,6 +756,7 @@ export const es: TranslationResources = {
         importSession: "Importar sesión",
         copyPath: "Copiar ruta del espacio de trabajo",
         copyBranchName: "Copiar nombre de sucursal",
+        copyProviderSessionId: "Copiar ID de sesión",
         showSetup: "Mostrar configuración",
       },
       toasts: {
@@ -765,6 +766,7 @@ export const es: TranslationResources = {
           "Preparando el espacio de trabajo, abriendo la terminal cuando esté listo...",
         workspacePathCopiedLabel: "RutaWorkspace",
         branchNameCopiedLabel: "Nombre de la sucursal",
+        providerSessionIdCopiedLabel: "ID de sesión",
       },
     },
     scripts: {

@@ -34,6 +34,7 @@ import { BackHandler, Text, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
 import { useIsFocused, useRouter, type Href } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { getProviderSessionId } from "@/workspace/copy-provider-session-id/resolve";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -242,6 +243,10 @@ interface WorkspaceFileLocationFields {
   path: string | null;
   lineStart?: number;
   lineEnd?: number;
+}
+
+function getTabAgentId(tab: WorkspaceTabDescriptor | null): string | null {
+  return tab?.target.kind === "agent" ? tab.target.agentId : null;
 }
 
 function getWorkspaceFileLocationFields(
@@ -467,6 +472,7 @@ interface WorkspaceHeaderTitleBarProps {
   subtitle: string;
   isSubtitleDistinct: boolean;
   currentBranchName: string | null;
+  activeAgentId: string | null;
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   showWorkspaceSetup: boolean;
@@ -484,6 +490,7 @@ function WorkspaceHeaderTitleBar({
   subtitle,
   isSubtitleDistinct,
   currentBranchName,
+  activeAgentId,
   normalizedServerId,
   normalizedWorkspaceId,
   showWorkspaceSetup,
@@ -515,6 +522,7 @@ function WorkspaceHeaderTitleBar({
           serverId={normalizedServerId}
           workspaceId={normalizedWorkspaceId}
           currentBranchName={currentBranchName}
+          activeAgentId={activeAgentId}
           showWorkspaceSetup={showWorkspaceSetup}
           importAgentDisabled={importAgentDisabled}
           copyPathDisabled={copyPathDisabled}
@@ -2138,8 +2146,7 @@ function WorkspaceScreenContent({
       if (!agentId) return;
       const agent =
         useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
-      const providerSessionId =
-        agent?.runtimeInfo?.sessionId ?? agent?.persistence?.sessionId ?? null;
+      const providerSessionId = agent ? getProviderSessionId(agent) : null;
       if (!agent || !providerSessionId) {
         toast.error(t("workspace.tabs.toasts.resumeIdUnavailable"));
         return;
@@ -2889,6 +2896,7 @@ function WorkspaceScreenContent({
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
+  const activeAgentId = getTabAgentId(activeTabDescriptor);
   const activeFileFields = getWorkspaceFileLocationFields(activeTabDescriptor);
   const activeFilePath = activeFileFields.path;
   const activeFileLineStart = activeFileFields.lineStart;
@@ -3295,6 +3303,7 @@ function WorkspaceScreenContent({
                 subtitle={workspaceHeaderSubtitle}
                 isSubtitleDistinct={isWorkspaceHeaderSubtitleDistinct}
                 currentBranchName={currentBranchName}
+                activeAgentId={activeAgentId}
                 normalizedServerId={normalizedServerId}
                 normalizedWorkspaceId={normalizedWorkspaceId}
                 showWorkspaceSetup={showWorkspaceSetup}
@@ -3311,6 +3320,7 @@ function WorkspaceScreenContent({
         />
       ) : null,
     [
+      activeAgentId,
       canOpenImportSheet,
       currentBranchName,
       handleCopyBranchName,
@@ -3389,6 +3399,7 @@ function WorkspaceScreenContent({
             normalizedWorkspaceId={normalizedWorkspaceId}
             scripts={compactHeaderScripts}
             currentBranchName={currentBranchName}
+            activeAgentId={activeAgentId}
             showWorkspaceSetup={showWorkspaceSetup}
             showCreateBrowserTab={showCreateBrowserTab}
             createTerminalDisabled={createTerminalDisabled}
@@ -3404,6 +3415,7 @@ function WorkspaceScreenContent({
         </CompactWorkspaceHeader>
       ) : null,
     [
+      activeAgentId,
       activeTabKey,
       canOpenImportSheet,
       compactHeaderScripts,
