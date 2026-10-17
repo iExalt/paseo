@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/iExalt/paseo/compare/paseo-v0.7.0...paseo-v0.8.0) (2026-10-17)
+
+
+### Features
+
+* keep, report and show agent session cost ([#184](https://github.com/iExalt/paseo/issues/184)) ([0c730a4](https://github.com/iExalt/paseo/commit/0c730a47fbcad16cdf7cdd7087c248b8816599da))
+
 ## [0.7.0](https://github.com/iExalt/paseo/compare/paseo-v0.6.0...paseo-v0.7.0) (2026-10-17)
 
 
