@@ -137,7 +137,11 @@
                 "type": "string"
               }
             },
-            "required": ["id", "name", "command"],
+            "required": [
+              "id",
+              "name",
+              "command"
+            ],
             "additionalProperties": {}
           }
         },
@@ -181,7 +185,11 @@
                 "type": "string"
               }
             },
-            "required": ["id", "name", "provider"],
+            "required": [
+              "id",
+              "name",
+              "provider"
+            ],
             "additionalProperties": {}
           }
         },
@@ -330,7 +338,9 @@
             "minLength": 1
           }
         },
-        "required": ["authorization"]
+        "required": [
+          "authorization"
+        ]
       }
     },
     "pluginsEnabled": {
@@ -359,10 +369,32 @@
                 "type": "boolean"
               }
             },
-            "required": ["source", "path"],
+            "required": [
+              "source",
+              "path"
+            ],
             "additionalProperties": false
           }
         ]
+      }
+    },
+    "replyRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "flags": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "source",
+          "flags"
+        ],
+        "additionalProperties": false
       }
     },
     "worktrees": {
@@ -477,11 +509,17 @@
                             "type": "boolean"
                           }
                         },
-                        "required": ["id", "label"]
+                        "required": [
+                          "id",
+                          "label"
+                        ]
                       }
                     }
                   },
-                  "required": ["id", "label"]
+                  "required": [
+                    "id",
+                    "label"
+                  ]
                 }
               },
               "additionalModels": {
@@ -521,11 +559,17 @@
                             "type": "boolean"
                           }
                         },
-                        "required": ["id", "label"]
+                        "required": [
+                          "id",
+                          "label"
+                        ]
                       }
                     }
                   },
-                  "required": ["id", "label"]
+                  "required": [
+                    "id",
+                    "label"
+                  ]
                 }
               },
               "disallowedTools": {
@@ -583,7 +627,9 @@
                     "minLength": 1
                   }
                 },
-                "required": ["provider"],
+                "required": [
+                  "provider"
+                ],
                 "additionalProperties": false
               }
             }
@@ -603,7 +649,9 @@
                       "const": "all"
                     }
                   },
-                  "required": ["mode"],
+                  "required": [
+                    "mode"
+                  ],
                   "additionalProperties": false
                 },
                 {
@@ -620,7 +668,10 @@
                       }
                     }
                   },
-                  "required": ["mode", "skills"],
+                  "required": [
+                    "mode",
+                    "skills"
+                  ],
                   "additionalProperties": false
                 }
               ]
@@ -757,22 +808,42 @@
       "properties": {
         "level": {
           "type": "string",
-          "enum": ["trace", "debug", "info", "warn", "error", "fatal"]
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warn",
+            "error",
+            "fatal"
+          ]
         },
         "format": {
           "type": "string",
-          "enum": ["pretty", "json"]
+          "enum": [
+            "pretty",
+            "json"
+          ]
         },
         "console": {
           "type": "object",
           "properties": {
             "level": {
               "type": "string",
-              "enum": ["trace", "debug", "info", "warn", "error", "fatal"]
+              "enum": [
+                "trace",
+                "debug",
+                "info",
+                "warn",
+                "error",
+                "fatal"
+              ]
             },
             "format": {
               "type": "string",
-              "enum": ["pretty", "json"]
+              "enum": [
+                "pretty",
+                "json"
+              ]
             }
           },
           "additionalProperties": false
@@ -782,7 +853,14 @@
           "properties": {
             "level": {
               "type": "string",
-              "enum": ["trace", "debug", "info", "warn", "error", "fatal"]
+              "enum": [
+                "trace",
+                "debug",
+                "info",
+                "warn",
+                "error",
+                "fatal"
+              ]
             },
             "path": {
               "type": "string",
