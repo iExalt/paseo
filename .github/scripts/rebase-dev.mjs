@@ -28,6 +28,7 @@ const CACHE_PREFIX = "resolutions/";
 const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
 const DELETIONS_PATH = "deletions.json";
+const FIXUPS_PREFIX = "fixups/";
 const RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json";
 const SIGNING_NAME = "Clement Liaw";
 const SIGNING_EMAIL = "clliaw@nvidia.com";
@@ -150,6 +151,14 @@ function parseTree(text) {
   return entries;
 }
 
+function assertFixupEntries(entries) {
+  for (const entry of entries.filter(({ path }) => path.startsWith(FIXUPS_PREFIX))) {
+    if (!/^fixups\/[0-9a-f]{40}\.patch$/.test(entry.path) || entry.mode !== "100644") {
+      throw new Error(`Unsupported path or file mode in resolution branch: ${entry.path}`);
+    }
+  }
+}
+
 export async function importResolutions(repositoryPath, resolutionSha) {
   if (!/^[0-9a-f]{40}$/.test(resolutionSha ?? "")) {
     throw new Error("A captured resolution-branch SHA is required");
@@ -176,8 +185,10 @@ export async function importResolutions(repositoryPath, resolutionSha) {
       throw new Error("Unsupported path or file mode: deletions.json");
     parseDeletionResolutions(await gitChecked(repositoryPath, ["cat-file", "blob", deletions.oid]));
   }
+  assertFixupEntries(entries);
   const cacheEntries = entries.filter(
-    (entry) => ![SCHEMA_PATH, DELETIONS_PATH].includes(entry.path),
+    (entry) =>
+      ![SCHEMA_PATH, DELETIONS_PATH].includes(entry.path) && !entry.path.startsWith(FIXUPS_PREFIX),
   );
   const pairs = new Map();
   for (const entry of cacheEntries) {
@@ -690,9 +701,40 @@ async function commitSignedFile(
   repositoryPath,
   { path, contents, message, signingKey, publicKey },
 ) {
-  const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
   await writeFile(join(repositoryPath, path), contents);
   await gitChecked(repositoryPath, ["add", "--", path]);
+  return commitSignedIndex(repositoryPath, { message, signingKey, publicKey });
+}
+
+// Upstream code can break the fork without any textual conflict, for example a new upstream
+// file written for an older toolchain than the fork pins. A reviewed patch keyed to the exact
+// captured upstream adapts it in one signed commit; a patch that does not apply stops the run.
+async function applyUpstreamFixup(
+  repositoryPath,
+  { resolutionSha, upstreamSha, signingKey, publicKey },
+) {
+  const path = `${FIXUPS_PREFIX}${upstreamSha}.patch`;
+  if (!(await gitChecked(repositoryPath, ["ls-tree", resolutionSha, "--", path]))) return 0;
+  const directory = await mkdtemp(join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-fixup-"));
+  try {
+    const patchPath = join(directory, "fixup.patch");
+    await writeFile(patchPath, await gitBlob(repositoryPath, `${resolutionSha}:${path}`));
+    const applied = await git(repositoryPath, ["apply", "--index", patchPath]);
+    if (applied.code !== 0) {
+      throw new Error(`Upstream fixup ${path} does not apply: ${applied.stderr.trim()}`);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  return commitSignedIndex(repositoryPath, {
+    message: "chore(rebase): adapt incorporated upstream to the fork",
+    signingKey,
+    publicKey,
+  });
+}
+
+async function commitSignedIndex(repositoryPath, { message, signingKey, publicKey }) {
+  const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
   const tree = (await gitChecked(repositoryPath, ["write-tree"])).trim();
   const unsigned = (
     await gitChecked(repositoryPath, ["commit-tree", tree, "-p", parent, "-m", message], {
@@ -908,6 +950,12 @@ export async function rebaseDev({
     const readRelease = () =>
       inspectForkRelease((file) => readFile(join(repositoryPath, file), "utf8"));
     assertForkReleasePreserved(before, await readRelease());
+    const fixupCommits = await applyUpstreamFixup(repositoryPath, {
+      resolutionSha: snapshots.resolutions,
+      upstreamSha: snapshots.upstream,
+      signingKey,
+      publicKey,
+    });
     let provenanceCommits = 0;
     if (before.config.upstreamBase !== snapshots.upstream) {
       // Keep replayed author/message metadata intact. Provenance is a separate,
@@ -953,7 +1001,7 @@ export async function rebaseDev({
       "Rebase completed; this snapshot will aid diagnosis if a later validation or publication step fails.",
       repositoryPath,
     );
-    return { ...snapshots, signedCommits, provenanceCommits, boundaryCommits };
+    return { ...snapshots, signedCommits, fixupCommits, provenanceCommits, boundaryCommits };
   } catch (error) {
     await writeDiagnostics(diagnosticsPath, snapshots, error.message, repositoryPath);
     throw error;

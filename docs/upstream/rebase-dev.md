@@ -10,7 +10,7 @@ GitHub marks a signed commit verified only when its committer email is a verifie
 
 Like `git rebase`, the replay drops merge commits and replays the rest in topological order. A merge is accepted only when its tree is exactly Git's automatic merge of its two parents, so dropping it loses nothing; a merge with conflict resolutions or other hand edits stops the run, and you must linearize that history by hand. Replays also fail closed if the commit mapping changes or metadata cannot be represented exactly.
 
-After the replay the run may add two signed commits of its own: `chore(rebase): capture incorporated upstream` records the new upstream base in `.github/fork-release.json`, and `chore(rebase): point release-please at the rebased release` records the rewritten release commit for release-please, as [Release boundary](../GITHUB_WORKFLOWS_STATUS.md#release-boundary) explains.
+After the replay the run may add up to three signed commits of its own: `chore(rebase): adapt incorporated upstream to the fork` applies a reviewed fixup patch (below), `chore(rebase): capture incorporated upstream` records the new upstream base in `.github/fork-release.json`, and `chore(rebase): point release-please at the rebased release` records the rewritten release commit for release-please, as [Release boundary](../GITHUB_WORKFLOWS_STATUS.md#release-boundary) explains.
 
 ## Resolution branch format
 
@@ -21,6 +21,8 @@ The `rebase-resolutions` branch may start with only `schema.json`; that is a val
 ```
 
 Completed Git `rerere` records live under `resolutions/<40-character-lowercase-hex-id>/`. Commit only regular files named `preimage` and `postimage`, plus complete matching numbered variants such as `preimage.1` and `postimage.1`. Do not commit `thisimage`, `preimage.N` without its matching `postimage.N`, symlinks, executable files, or other files. The importer validates Git tree modes, paths, schema, and pairs before copying blobs into the fresh checkout's `.git/rr-cache`; paths from the branch are never used directly as filesystem paths.
+
+Upstream code can break the fork with no textual conflict, for example a new upstream file written for an older toolchain than the fork pins. Fix those breaks in the optional regular file `fixups/<captured-upstream-sha>.patch`: a patch over the replayed tree that `git apply --index` must apply exactly. The run applies only the patch named for the captured upstream, after the replay and before validation; a patch that does not apply stops the run. Build it from the reproduction checkout below after the rebase finishes: make the fixes, check them with the routine checks, and save `git diff --no-ext-diff --binary HEAD`. A mirror sync to a newer upstream needs a new patch.
 
 Git `rerere` cannot record rename/delete or modify/delete resolutions. For a reviewed deletion, the optional regular file `deletions.json` holds an array of records with `upstream` (captured upstream SHA), `commit` (original `REBASE_HEAD` SHA), `path`, and `stages`. Capture `stages` from `git ls-files -u -- <path>` before resolving: each entry contains the exact `mode`, `oid`, and numeric `stage`. Only mode `100644`, stage 1, and exactly one of stages 2 or 3 are accepted. The sole supported action is deleting that path. Replay requires both captured commits and every index entry to match exactly; a changed conflict stops for manual review. These records are reviewed separately from the rerere exporter, which leaves existing deletion records intact.
 

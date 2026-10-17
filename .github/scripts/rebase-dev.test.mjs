@@ -747,6 +747,30 @@ test("clean merges drop like rebase and web-flow committers become the signing i
   );
 });
 
+test("an upstream fixup applies exactly as one signed commit or stops the run", async () => {
+  const fixture = await makeFixture("fixup");
+  const fixupPath = join(fixture.resolverPath, "fixups", `${fixture.upstreamSha}.patch`);
+  mkdirSync(join(fixture.resolverPath, "fixups"));
+  const run = async (patch) => {
+    writeFileSync(fixupPath, patch);
+    commit(fixture.resolverPath, "fixup");
+    git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+    const clone = join(fixture.directory, `checkout-${patch.length}`);
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    return { clone, result: rebaseDev({ repositoryPath: clone, ...signingOptions }) };
+  };
+
+  const stale = await run("--- a/fixup.txt\n+++ b/fixup.txt\n@@ -1 +1 @@\n-stale\n+adapted\n");
+  await assert.rejects(stale.result, /does not apply/);
+
+  const { clone, result } = await run(
+    "diff --git a/fixup.txt b/fixup.txt\nnew file mode 100644\n--- /dev/null\n+++ b/fixup.txt\n@@ -0,0 +1 @@\n+adapted\n",
+  );
+  assert.equal((await result).fixupCommits, 1);
+  assert.equal(git(clone, "show", "HEAD:fixup.txt"), "adapted");
+  assert.match(git(clone, "log", "--format=%s"), /adapt incorporated upstream to the fork/);
+});
+
 test("a merge carrying hand edits stops before the replay", async () => {
   const fixture = await makeFixture("hand-edited-merge", { mergeHistory: "hand-edited" });
   const clone = join(fixture.directory, "checkout");
