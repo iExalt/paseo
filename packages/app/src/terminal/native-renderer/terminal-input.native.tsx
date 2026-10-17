@@ -11,6 +11,7 @@ import {
   type EditingTextInputHandle,
 } from "@/components/ui/text-input";
 import { resolveNativeTerminalKey, type NativeTerminalKey } from "./terminal-key-events";
+import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
 
 export const TERMINAL_INPUT_CONTEXT_MENU_HIDDEN = true;
 export const TERMINAL_INPUT_HITBOX_SIZE = 1;
@@ -266,13 +267,20 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       [blurNativeInput, focusNativeInput, showNativeKeyboard],
     );
 
+    const releaseTypingScopeRef = useRef<(() => void) | null>(null);
+    useEffect(() => () => releaseTypingScopeRef.current?.(), []);
+
     const handleFocus = useCallback(() => {
       isFocusedRef.current = true;
+      releaseTypingScopeRef.current?.();
+      releaseTypingScopeRef.current = claimNativeTypingScope("terminal");
       onFocus?.();
     }, [onFocus]);
 
     const handleBlur = useCallback(() => {
       isFocusedRef.current = false;
+      releaseTypingScopeRef.current?.();
+      releaseTypingScopeRef.current = null;
       resetNativeInput();
     }, [resetNativeInput]);
 

@@ -58,6 +58,10 @@ export interface StreamViewportHandle {
   /** Stop following output so the rows on screen stay put while rows below them open or close. */
   holdReadingPosition: () => void;
   scrollToMessage?: (messageId: string, occurrence?: ScrollToMessageOccurrence) => void;
+  /** Native: put a row's start at the top at once, without animating. */
+  scrollToItem?: (itemId: string) => void;
+  /** Native: move content up by a window distance, negative for down, at once. */
+  scrollByWindowDelta?: (delta: number) => void;
 }
 
 export interface StreamSegmentRenderers {

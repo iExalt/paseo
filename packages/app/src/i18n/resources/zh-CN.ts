@@ -2,6 +2,10 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const zhCN: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeEditor: en.nativeEditor,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "无法搜索此聊天。请检查主机连接后重试。",
     historyChangedFailure: "搜索期间聊天已更改。请重新搜索。",
@@ -329,6 +333,8 @@ export const zhCN: TranslationResources = {
     actions: {
       copyCode: "复制代码",
       copyTurn: "复制回合",
+      selectText: "选择文本",
+      selectTextTruncated: "显示前 50,000 个字符。复制回合会复制全部内容。",
       copyMessage: "复制消息",
       forkMenu: "分叉消息",
       forkInNewTab: "分叉到新标签页",
@@ -2205,7 +2211,7 @@ export const zhCN: TranslationResources = {
     editor: {
       title: "编辑器",
       vimKeybindings: "Vim 键位",
-      vimHint: "适用于网页和桌面端的源文件。",
+      vimHint: "适用于编辑器中的源文件。",
     },
     files: {
       title: "文件",
@@ -2455,7 +2461,6 @@ export const zhCN: TranslationResources = {
     shortcuts: {
       dialogTitle: "快捷键",
       searchPlaceholder: "搜索快捷键",
-      unavailableOnMobile: "键盘快捷键仅在桌面端可用",
       capturePrompt: "按下快捷键...",
       captureIndexPrompt: "请以 1 到 9 的数字结尾。",
       unassigned: "未设置",

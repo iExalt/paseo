@@ -84,7 +84,7 @@ import { CommunityLinks } from "@/components/community-links";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DesktopPermissionsSection } from "@/desktop/components/desktop-permissions-section";
-import { DesktopNotificationsSection } from "@/desktop/components/desktop-notifications-section";
+import { NotificationsSection } from "@/screens/settings/notifications/notifications-section";
 import { BrowserDataSection } from "@/desktop/browser/settings/browser-data-section";
 import { IntegrationsSection } from "@/desktop/components/integrations-section";
 import { isElectronRuntime } from "@/desktop/host";
@@ -139,7 +139,9 @@ import {
 } from "@/utils/host-routes";
 import { selectSettingsHost, useSettingsHostSelection } from "@/navigation/settings-selection";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
-import { isWeb } from "@/constants/platform";
+import { isNative, isWeb } from "@/constants/platform";
+import { isSettingsSectionAvailable } from "@/screens/settings/section-availability";
+import { useKeyboardShortcutsAvailable } from "@/keyboard/availability";
 
 // ---------------------------------------------------------------------------
 // View model
@@ -149,8 +151,6 @@ interface SidebarSectionItem {
   id: SettingsSectionSlug;
   labelKey: string;
   icon: ComponentType<{ size: number; color: string; strokeWidth?: number }>;
-  desktopOnly?: boolean;
-  webOnly?: boolean;
   /** The page body, for pages that need nothing from the settings screen. */
   Content?: ComponentType;
 }
@@ -180,14 +180,12 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
     id: "browser",
     labelKey: "settings.sections.browser",
     icon: Globe,
-    desktopOnly: true,
     Content: BrowserDataSection,
   },
   {
     id: "editor",
     labelKey: "settings.sections.editor",
     icon: Code2,
-    webOnly: true,
     Content: EditorSection,
   },
   { id: "files", labelKey: "settings.sections.files", icon: Files, Content: FilesSection },
@@ -195,36 +193,36 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
     id: "shortcuts",
     labelKey: "settings.sections.shortcuts",
     icon: Keyboard,
-    desktopOnly: true,
     Content: KeyboardShortcutsSection,
   },
   {
     id: "integrations",
     labelKey: "settings.sections.integrations",
     icon: Puzzle,
-    desktopOnly: true,
     Content: IntegrationsSection,
   },
   {
     id: "notifications",
     labelKey: "settings.sections.notifications",
     icon: Bell,
-    desktopOnly: true,
-    Content: DesktopNotificationsSection,
+    Content: NotificationsSection,
   },
   {
     id: "permissions",
     labelKey: "settings.sections.permissions",
     icon: Shield,
-    desktopOnly: true,
     Content: DesktopPermissionsSection,
   },
   { id: "diagnostics", labelKey: "settings.sections.diagnostics", icon: Stethoscope },
   { id: "about", labelKey: "settings.sections.about", icon: Info },
 ];
 
-function isSectionAvailable(item: SidebarSectionItem, isDesktopApp: boolean): boolean {
-  return (!item.desktopOnly || isDesktopApp) && (!item.webOnly || isWeb);
+function isSectionAvailable(
+  item: SidebarSectionItem,
+  isDesktopApp: boolean,
+  keyboardShortcutsAvailable: boolean,
+): boolean {
+  return isSettingsSectionAvailable(item.id, { isDesktopApp, isWeb, keyboardShortcutsAvailable });
 }
 
 interface HostSectionItem {
@@ -970,7 +968,10 @@ function SettingsSidebar({
   const hasHosts = sortedHosts.length > 0;
   const enableBuiltInDaemonOption = useEnableBuiltInDaemonOption();
   const isDesktopApp = isElectronRuntime();
-  const items = SIDEBAR_SECTION_ITEMS.filter((item) => isSectionAvailable(item, isDesktopApp));
+  const shortcutsAvailable = useKeyboardShortcutsAvailable();
+  const items = SIDEBAR_SECTION_ITEMS.filter((item) =>
+    isSectionAvailable(item, isDesktopApp, shortcutsAvailable),
+  );
   const insets = useSafeAreaInsets();
   const isDesktop = layout === "desktop";
   const outerContainerStyle = useMemo(
@@ -1118,6 +1119,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   const [playbackTestResult, setPlaybackTestResult] = useState<string | null>(null);
   const lastOpenedAddHostIntentRef = useRef<string | null>(null);
   const isDesktopApp = isElectronRuntime();
+  const shortcutsAvailable = useKeyboardShortcutsAvailable();
   const isNixManagedApp = isNixManagedDesktopInstallation();
   const preferencesTransferMode = preferencesMigrationMode();
   const appVersion = resolveAppVersion();
@@ -1361,7 +1363,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     }
     if (view.kind === "section") {
       const item = SIDEBAR_SECTION_ITEMS.find((candidate) => candidate.id === view.section);
-      if (!item || !isSectionAvailable(item, isDesktopApp)) return null;
+      if (!item || !isSectionAvailable(item, isDesktopApp, shortcutsAvailable)) return null;
       switch (view.section) {
         case "general":
           return (

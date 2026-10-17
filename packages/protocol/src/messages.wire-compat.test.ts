@@ -5,6 +5,7 @@ import {
   AgentSnapshotPayloadSchema,
   AgentTimelineItemPayloadSchema,
   ServerInfoStatusPayloadSchema,
+  SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WSHelloMessageSchema,
   WorkspaceSetupSnapshotSchema,
@@ -524,4 +525,14 @@ test("released setup clients parse empty combined logs and retain command output
       error: null,
     }).detail.log,
   ).toBe("old daemon combined output");
+});
+
+test("test notification responses carry outcomes a newer daemon may add, and the request round-trips", () => {
+  const request = { type: "push.send_test.request", requestId: "push-test" };
+  expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  const response = {
+    type: "push.send_test.response",
+    payload: { requestId: "push-test", outcome: "some_future_outcome", error: "why" },
+  };
+  expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
 });
