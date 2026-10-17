@@ -88,6 +88,7 @@ import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { RenderProfile } from "@/utils/render-profiler";
 import { useComposerHeight } from "./height";
 import { ComposerInputPresentation } from "./presentation";
+import { ToolbarSpareWidthProvider, useToolbarSpareWidthMeasure } from "./toolbar-space";
 import { resolveComposerInputMode, type ComposerInputMode } from "@/composer/input-mode";
 import { pasteLinkedClipboardText } from "@/composer/pasted-text";
 import type { NativePastedFile } from "@/composer/native-pasted-image";
@@ -2207,6 +2208,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         focusInputKeys,
       ],
     );
+    const { spareWidth, onGroupLayout, onContentLayout } = useToolbarSpareWidthMeasure();
     const leadingEdge = resolveComposerLeadingEdge({
       showsAttach: mode.showAttachments,
       showsAgentControls: leftContent != null,
@@ -2225,9 +2227,11 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
     );
     const toolbar = useMemo(
       () => (
+        <ToolbarSpareWidthProvider value={spareWidth}>
         <View style={buttonRowStyle}>
           {/* Toolbar left: attachment button + agent controls */}
-          <View style={styles.leftButtonGroup}>
+          <View style={styles.leftButtonGroup} onLayout={onGroupLayout}>
+            <View style={styles.leftButtonContent} onLayout={onContentLayout}>
             <AttachmentDropdown
               visible={mode.showAttachments}
               isConnected={isConnected}
@@ -2238,6 +2242,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               addAttachmentLabel={t("composer.input.addAttachment")}
             />
             {leftContent}
+            </View>
           </View>
 
           {/* Right: dictation, then the trailing action (voice mode, send or stop) */}
@@ -2257,10 +2262,14 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
             />
             <View style={styles.trailingDisc}>{sendButton}</View>
           </View>
-        </View>
+          </View>
+        </ToolbarSpareWidthProvider>
       ),
       [
         buttonRowStyle,
+        spareWidth,
+        onGroupLayout,
+        onContentLayout,
         mode.showAttachments,
         isConnected,
         disabled,
@@ -2477,6 +2486,12 @@ const styles = StyleSheet.create((theme: Theme) => ({
     minWidth: 0,
     flexShrink: 1,
     flexGrow: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  leftButtonContent: {
+    minWidth: 0,
+    flexShrink: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: TOOLBAR_CONTROL_GAP,
