@@ -1,9 +1,15 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
+  ScrollView,
   View,
   Text,
+  type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   type StyleProp,
+  type TextLayoutEventData,
+  type TextLayoutLine,
   type TextStyle,
   type ViewStyle,
 } from "react-native";
@@ -17,8 +23,10 @@ import { useIsCompactFormFactor } from "@/constants/layout";
 import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { highlightToKeyedLines, type KeyedLine } from "@/utils/highlight-cache";
+import { codeBlockLanguageName } from "@/components/markdown/code-block-language";
 import { useChatFindAnchorText, type ChatFindAnchorTarget } from "@/agent-stream/chat-find/anchor";
-import { findMatchStyles } from "@/find-highlight/match-parts";
+import { findMatchStyles, matchPartsOffset } from "@/find-highlight/match-parts";
+import { findRevealDelta, monospaceRangeX } from "@/find-highlight/reveal";
 import { overlayMatchParts, type MatchPart } from "@/find-highlight/split";
 import {
   markdownCopyCodeBlockDataSet,
@@ -33,6 +41,11 @@ interface HighlightedCodeBlockProps {
   textStyle: TextStyle;
   /** Chat find's selected occurrence in this block, over the unstripped code. */
   findMatch?: CodeFindMatch | null;
+  /**
+   * Draws native Markdown's code block chrome (header, divider, insets) while find
+   * marks this block natively, so swapping it in for the native block keeps its height.
+   */
+  matchNativeBlock?: boolean;
 }
 
 export interface CodeFindMatch {
@@ -78,6 +91,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   inheritedStyles,
   textStyle,
   findMatch,
+  matchNativeBlock = false,
 }: HighlightedCodeBlockProps) {
   // Box styles (bg / padding / border / radius / margin) go on the wrapper View
   // so the absolute copy button positions relative to the visible code area,
@@ -98,6 +112,24 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   );
 
   const anchorText = useChatFindAnchorText(findMatch?.anchor ?? null);
+  const anchorTextLayout = findMatch?.anchor ? anchorText.onTextLayout : undefined;
+  // Native Markdown draws code blocks unwrapped in a pane that scrolls sideways. The
+  // find block does the same, so swapping it in does not change the block's height.
+  const frame = useMemo(
+    () =>
+      isNative && findMatch && matchNativeBlock
+        ? nativeBlockFrame(inheritedStyles, textStyle)
+        : null,
+    [findMatch, inheritedStyles, matchNativeBlock, textStyle],
+  );
+  const scroller = useFindCodeScroller(isNative ? findMatch : null, textStyle, frame);
+  const handleTextLayout = useCallback(
+    (event: NativeSyntheticEvent<TextLayoutEventData>) => {
+      anchorTextLayout?.(event);
+      scroller?.onTextLayout(event);
+    },
+    [anchorTextLayout, scroller],
+  );
   const isCompact = useIsCompactFormFactor();
   const [isHovered, setIsHovered] = useState(false);
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
@@ -108,25 +140,128 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
   // fence; pasting any of them into a terminal runs the last line.
   const getCode = useCallback(() => code.replace(TRAILING_CODE_LINE_BREAKS, ""), [code]);
 
+  const text = (
+    <Text
+      ref={findMatch?.anchor ? anchorText.textRef : undefined}
+      style={innerTextStyle}
+      dataSet={markdownCopyDataSet.code}
+      onTextLayout={anchorTextLayout || scroller ? handleTextLayout : undefined}
+    >
+      {renderCode(keyedLines, renderedCode, findMatch)}
+    </Text>
+  );
+
   return (
     <View
-      style={containerStyle}
+      style={scroller ? [containerStyle, scroller.containerStyle] : containerStyle}
       dataSet={copyDataSet}
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      <Text
-        ref={findMatch?.anchor ? anchorText.textRef : undefined}
-        style={innerTextStyle}
-        dataSet={markdownCopyDataSet.code}
-        onTextLayout={findMatch?.anchor ? anchorText.onTextLayout : undefined}
-      >
-        {renderCode(keyedLines, renderedCode, findMatch)}
-      </Text>
-      <CopyButton getCode={getCode} visible={controlsVisible} />
+      {frame ? <NativeBlockHeader frame={frame} language={language} getCode={getCode} /> : null}
+      {scroller ? (
+        <View>
+          <ScrollView
+            ref={scroller.scrollRef}
+            horizontal
+            showsHorizontalScrollIndicator
+            contentContainerStyle={scroller.contentStyle}
+            onLayout={scroller.onLayout}
+            onScroll={scroller.onScroll}
+            scrollEventThrottle={16}
+          >
+            {text}
+          </ScrollView>
+          {frame ? <View style={[frameStyles.divider, { top: frame.inset / 2 }]} /> : null}
+        </View>
+      ) : (
+        text
+      )}
+      {frame ? null : <CopyButton getCode={getCode} visible={controlsVisible} />}
     </View>
   );
 });
+
+// Keeps the selected occurrence this far from the pane's edges.
+const FIND_SCROLL_MARGIN = 24;
+
+/**
+ * Scrolls the find block's pane sideways to the selected occurrence. Its horizontal
+ * padding moves inside the pane, as in the native block, so code scrolls to the border.
+ */
+function useFindCodeScroller(
+  findMatch: CodeFindMatch | null | undefined,
+  textStyle: TextStyle,
+  frame: NativeBlockFrame | null,
+) {
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollX = useRef(0);
+  const [lines, setLines] = useState<readonly TextLayoutLine[]>([]);
+  const [paneWidth, setPaneWidth] = useState(0);
+  const enabled = !!findMatch;
+  const range = useMemo(() => {
+    if (!findMatch) return null;
+    const start = matchPartsOffset(findMatch.parts, findMatch.current);
+    let length = 0;
+    for (const part of findMatch.parts) {
+      if (part.match === findMatch.current) length += part.text.length;
+    }
+    return { start, end: start + length };
+  }, [findMatch]);
+  const padding = textStyle.paddingHorizontal ?? textStyle.padding;
+  let inset = typeof padding === "number" ? padding : 0;
+  if (frame) inset = frame.inset - frame.borderWidth;
+
+  useEffect(() => {
+    if (!range || paneWidth === 0) return;
+    const match = monospaceRangeX(lines, range.start, range.end);
+    if (!match) return;
+    const delta = findRevealDelta({
+      visibleTop: scrollX.current,
+      visibleBottom: scrollX.current + paneWidth,
+      matchTop: inset + match.x,
+      matchHeight: match.width,
+      margin: FIND_SCROLL_MARGIN,
+    });
+    if (delta === 0) return;
+    scrollRef.current?.scrollTo({ x: Math.max(0, scrollX.current + delta), animated: false });
+  }, [inset, lines, paneWidth, range]);
+
+  const onTextLayout = useCallback((event: NativeSyntheticEvent<TextLayoutEventData>) => {
+    setLines(event.nativeEvent.lines);
+  }, []);
+  const onLayout = useCallback((event: LayoutChangeEvent) => {
+    setPaneWidth(event.nativeEvent.layout.width);
+  }, []);
+  const onScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollX.current = event.nativeEvent.contentOffset.x;
+  }, []);
+  // The native pane spans the block's width and starts below the header; its text keeps
+  // the block's inset, less the bottom border the pane is clipped by.
+  const containerStyle = useMemo<ViewStyle>(
+    () => (frame ? { padding: 0 } : { paddingHorizontal: 0 }),
+    [frame],
+  );
+  const contentStyle = useMemo<ViewStyle>(
+    () =>
+      frame
+        ? {
+            paddingHorizontal: inset,
+            paddingTop: frame.inset,
+            paddingBottom: frame.inset - frame.borderWidth,
+          }
+        : { paddingHorizontal: inset },
+    [frame, inset],
+  );
+
+  return useMemo(
+    () =>
+      enabled
+        ? { scrollRef, onTextLayout, onLayout, onScroll, containerStyle, contentStyle }
+        : null,
+    [enabled, onTextLayout, onLayout, onScroll, containerStyle, contentStyle],
+  );
+}
 
 function renderCodeSegments(keyedLines: KeyedLine[]): React.ReactNode[] {
   const segments: React.ReactNode[] = [];
@@ -223,11 +358,18 @@ function splitFenceStyle(inheritedStyles: TextStyle, textStyle: TextStyle): Spli
 interface CopyButtonProps {
   getCode: () => string;
   visible: boolean;
+  iconSize?: number;
+  style?: StyleProp<ViewStyle>;
 }
 
 const COPIED_RESET_MS = 1500;
 
-const CopyButton = React.memo(function CopyButton({ getCode, visible }: CopyButtonProps) {
+const CopyButton = React.memo(function CopyButton({
+  getCode,
+  visible,
+  iconSize = 14,
+  style,
+}: CopyButtonProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -255,8 +397,8 @@ const CopyButton = React.memo(function CopyButton({ getCode, visible }: CopyButt
     ? copyButtonStyles.containerVisible
     : copyButtonStyles.containerHidden;
   const wrapperStyle = useMemo(
-    () => [copyButtonStyles.container, visibilityStyle],
-    [visibilityStyle],
+    () => [copyButtonStyles.container, visibilityStyle, style],
+    [style, visibilityStyle],
   );
 
   return (
@@ -274,9 +416,9 @@ const CopyButton = React.memo(function CopyButton({ getCode, visible }: CopyButt
           ? copyButtonStyles.iconHoveredColor.color
           : copyButtonStyles.iconColor.color;
         return copied ? (
-          <Check size={14} color={iconColor} />
+          <Check size={iconSize} color={iconColor} />
         ) : (
-          <Copy size={14} color={iconColor} />
+          <Copy size={iconSize} color={iconColor} />
         );
       }}
     </Pressable>
@@ -301,5 +443,92 @@ const copyButtonStyles = StyleSheet.create((theme) => ({
   },
   iconHoveredColor: {
     color: theme.colors.foreground,
+  },
+}));
+
+/**
+ * react-native-enriched-markdown's code block header metrics (CodeBlockContainerView.kt,
+ * ENRMCodeBlockContainerView.m). The header is the content inset plus one label line, with
+ * the label and copy button centred above a divider halfway into the code's top inset.
+ */
+interface NativeBlockFrame {
+  inset: number;
+  borderWidth: number;
+  labelFontSize: number;
+  iconSize: number;
+}
+
+const NATIVE_HEADER_LABEL_SCALE = 0.85;
+const NATIVE_HEADER_ICON_SCALE = 1.08;
+
+function nativeBlockFrame(inheritedStyles: TextStyle, textStyle: TextStyle): NativeBlockFrame {
+  const borderWidth = textStyle.borderWidth ?? 0;
+  const padding = typeof textStyle.padding === "number" ? textStyle.padding : 0;
+  const fontSize = inheritedStyles.fontSize ?? 14;
+  return {
+    inset: Math.ceil(padding + borderWidth),
+    borderWidth,
+    labelFontSize: fontSize * NATIVE_HEADER_LABEL_SCALE,
+    iconSize: Math.round(fontSize * NATIVE_HEADER_ICON_SCALE),
+  };
+}
+
+interface NativeBlockHeaderProps {
+  frame: NativeBlockFrame;
+  language: string | null | undefined;
+  getCode: () => string;
+}
+
+function NativeBlockHeader({ frame, language, getCode }: NativeBlockHeaderProps) {
+  const { inset, borderWidth } = frame;
+  // The border is drawn outside this view, so it comes off the top padding. A
+  // non-breaking space keeps the label's line height when there is no language.
+  const headerStyle = useMemo<ViewStyle>(
+    () => ({
+      paddingTop: inset * 0.75 - borderWidth,
+      paddingBottom: inset * 0.25,
+      paddingLeft: inset - borderWidth,
+      paddingRight: inset - borderWidth + frame.iconSize,
+    }),
+    [borderWidth, frame.iconSize, inset],
+  );
+  const labelStyle = useMemo(
+    () => [frameStyles.label, { fontSize: frame.labelFontSize }],
+    [frame.labelFontSize],
+  );
+  const buttonStyle = useMemo<ViewStyle>(
+    () => ({
+      top: inset / 2 - borderWidth,
+      bottom: 0,
+      right: inset - borderWidth,
+      padding: 0,
+      justifyContent: "center",
+    }),
+    [borderWidth, inset],
+  );
+  return (
+    <View style={headerStyle}>
+      <Text style={labelStyle} numberOfLines={1}>
+        {codeBlockLanguageName(language) || "\u00a0"}
+      </Text>
+      <CopyButton getCode={getCode} visible iconSize={frame.iconSize} style={buttonStyle} />
+    </View>
+  );
+}
+
+const frameStyles = StyleSheet.create((theme) => ({
+  label: {
+    color: theme.colors.foreground,
+    opacity: 0.6,
+    fontWeight: "500",
+    includeFontPadding: false,
+  },
+  divider: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: theme.colors.foreground,
+    opacity: 0.2,
   },
 }));
