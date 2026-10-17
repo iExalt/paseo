@@ -305,7 +305,7 @@ async function rebaseProgress(repositoryPath) {
   return `${head}:${current.code === 0 ? current.stdout.trim() : "none"}:${staged}:${unmerged}`;
 }
 
-function isReusableRerereStop(result, paths, indexPaths, deletions = 0) {
+function isReusableRerereStop(result, paths, resolved, deletions = 0) {
   const diagnostics = `${result.stdout}\n${result.stderr}`;
   const reusedRecords = diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? [];
   return (
@@ -314,7 +314,7 @@ function isReusableRerereStop(result, paths, indexPaths, deletions = 0) {
     /could not apply [0-9a-f]+/.test(diagnostics) &&
     (reusedRecords.length > 0 || deletions > 0) &&
     paths.length === 0 &&
-    indexPaths.length > 0
+    resolved
   );
 }
 
@@ -348,10 +348,28 @@ async function continueKnownResolutions(
         : 0;
     const conflicts = await unmergedPaths(repositoryPath);
     const staged = await stagedPaths(repositoryPath);
+    // A commit that only changed paths upstream deleted is empty once they are deleted.
+    // Keep it empty, with its own author and message, so the replay still maps 1:1.
+    const emptied = deletions > 0 && conflicts.length === 0 && staged.length === 0;
+    if (emptied) {
+      await gitChecked(repositoryPath, [
+        "-c",
+        "user.name=Rebase staging",
+        "-c",
+        "user.email=rebase-staging@users.noreply.github.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--allow-empty",
+        "--no-verify",
+        "-C",
+        "REBASE_HEAD",
+      ]);
+    }
     if (
       state.code !== 0 ||
       !directoryExists ||
-      !isReusableRerereStop(result, conflicts, staged, deletions)
+      !isReusableRerereStop(result, conflicts, staged.length > 0 || emptied, deletions)
     ) {
       throw new Error(
         `Rebase stopped without a safely reusable completed resolution:\n${result.stdout}\n${result.stderr}`,
@@ -879,6 +897,22 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
   return completed.length;
 }
 
+// Apple Git 2.54 fails partway through this replay: a pick that reuses a rerere
+// resolution cannot create MERGE_RR.lock. 2.55, which GitHub runners ship, replays it.
+const MIN_GIT_VERSION = [2, 55];
+
+export function assertGitVersion(versionText) {
+  const match = /^git version (\d+)\.(\d+)/.exec(versionText.trim());
+  if (!match) throw new Error(`Unrecognized git version: ${versionText.trim()}`);
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  const [minMajor, minMinor] = MIN_GIT_VERSION;
+  if (major < minMajor || (major === minMajor && minor < minMinor)) {
+    throw new Error(
+      `${versionText.trim()} cannot replay dev; use git ${minMajor}.${minMinor} or later`,
+    );
+  }
+}
+
 export async function rebaseDev({
   repositoryPath,
   remote = "origin",
@@ -891,6 +925,7 @@ export async function rebaseDev({
   try {
     if (signingKey && !signingKey.endsWith("\n")) signingKey += "\n";
     await validateSigningKey(signingKey, publicKey);
+    assertGitVersion(await gitChecked(repositoryPath, ["--version"]));
     const status = await gitChecked(repositoryPath, ["status", "--porcelain"]);
     if (status) throw new Error("Refusing to rebase a worktree with local changes");
     snapshots = await snapshotRefs(repositoryPath, remote);

@@ -20,6 +20,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
 import {
+  assertGitVersion,
   exportResolutions,
   importResolutions,
   parseDeletionResolutions,
@@ -154,6 +155,35 @@ function addMergeHistory(seed, mergeHistory) {
   gitWithEnv(seed, mergeMetadata, "commit", "-m", "merge side");
 }
 
+// A dev edit to a file upstream deleted, and nothing else.
+function commitPatchOnlyEdit(seed, enabled) {
+  if (!enabled) return;
+  writeFileSync(join(seed, "renamed.patch"), content({ target: "patch-only edit" }));
+  commit(
+    seed,
+    "dev patch-only edit",
+    devMetadata(
+      "Patch Author",
+      "patch@example.invalid",
+      "1700000350 +0000",
+      "Clement Liaw",
+      "1700000351 +0000",
+    ),
+  );
+}
+
+// The patch-only edit stops on its own modify/delete conflict, which leaves it empty.
+function resolvePatchOnlyEdit(recorder, enabled, recordDeletion) {
+  if (!enabled) return;
+  const stopped = spawnSync("git", ["-c", "core.editor=true", "rebase", "--continue"], {
+    cwd: recorder,
+    encoding: "utf8",
+  });
+  assert.notEqual(stopped.status, 0, "fixture must stop on the patch-only edit");
+  recordDeletion();
+  git(recorder, "commit", "--allow-empty", "-C", "REBASE_HEAD");
+}
+
 async function makeFixture(
   name,
   {
@@ -162,6 +192,7 @@ async function makeFixture(
     initiallyEmpty = false,
     newlyEmpty = false,
     deletion = false,
+    deletionOnly = false,
     mergeHistory,
   } = {},
 ) {
@@ -243,6 +274,7 @@ async function makeFixture(
       "1700000301 -0330",
     ),
   );
+  commitPatchOnlyEdit(seed, deletionOnly);
   if (unknown) {
     writeFileSync(join(seed, "shared.txt"), content({ target: "dev target", far: "dev far" }));
     commit(
@@ -297,20 +329,28 @@ async function makeFixture(
     },
   );
   assert.notEqual(initialRebase.status, 0, "fixture must record a real rebase conflict");
-  let deletionRecord;
-  if (deletion) {
+  const deletionRecords = [];
+  const recordDeletion = () => {
     const stages = git(recorder, "ls-files", "-u", "--", "renamed.patch")
       .split("\n")
       .map((line) => {
         const [mode, oid, stage] = line.split(/\s+/);
         return { mode, oid, stage: Number(stage) };
       });
-    deletionRecord = { upstream: upstreamSha, commit: devSha, path: "renamed.patch", stages };
+    const replayed = git(recorder, "rev-parse", "REBASE_HEAD");
+    deletionRecords.push({
+      upstream: upstreamSha,
+      commit: replayed,
+      path: "renamed.patch",
+      stages,
+    });
     git(recorder, "rm", "renamed.patch");
-  }
+  };
+  if (deletion) recordDeletion();
   const resolution = content({ target: "resolved target" });
   writeFileSync(join(recorder, "shared.txt"), resolution);
   git(recorder, "add", "shared.txt");
+  resolvePatchOnlyEdit(recorder, deletionOnly, recordDeletion);
   git(recorder, "-c", "core.editor=true", "rebase", "--continue");
 
   const cache = join(recorder, ".git", "rr-cache");
@@ -332,8 +372,8 @@ async function makeFixture(
   assert.ok(exportedPairs > 0, "export helper should preserve the completed rerere pair");
   assert.equal(existsSync(join(resolverPath, "resolutions", activeId)), false);
   assert.equal(existsSync(join(resolverPath, "resolutions", id, "thisimage")), false);
-  if (deletionRecord)
-    writeFileSync(join(resolverPath, "deletions.json"), JSON.stringify([deletionRecord]) + "\n");
+  if (deletionRecords.length > 0)
+    writeFileSync(join(resolverPath, "deletions.json"), JSON.stringify(deletionRecords) + "\n");
   commit(resolverPath, "seed completed rerere resolution");
   git(resolverPath, "remote", "add", "origin", remote);
   git(resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
@@ -364,8 +404,18 @@ async function makeFixture(
     );
     git(seed, "push", "origin", "HEAD:refs/heads/dev");
   }
+  const [deletionRecord] = deletionRecords;
   return { directory, remote, devSha, upstreamSha, resolverPath, recorder, id, deletionRecord };
 }
+
+test("replay refuses git older than 2.55", () => {
+  assert.doesNotThrow(() => assertGitVersion("git version 2.55.0\n"));
+  assert.doesNotThrow(() => assertGitVersion("git version 3.0.1"));
+  assert.throws(
+    () => assertGitVersion("git version 2.54.0 (Apple Git-157)"),
+    /cannot replay dev; use git 2\.55 or later/,
+  );
+});
 
 test("exact rename/delete resolutions replay and mismatched blobs fail closed", async () => {
   const fixture = await makeFixture("deletion", { deletion: true });
@@ -390,6 +440,16 @@ test("exact rename/delete resolutions replay and mismatched blobs fail closed", 
   assert.equal(existsSync(join(rejected, "renamed.patch")), true);
   assert.match(git(rejected, "ls-files", "-u"), /renamed.patch/);
   assert.equal(git(rejected, "ls-remote", "--refs", "origin"), beforeRefs);
+});
+
+test("a commit left empty by deletion records replays as an empty commit", async () => {
+  const fixture = await makeFixture("deletion-only", { deletion: true, deletionOnly: true });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const replayed = git(clone, "log", "--format=%H", "--grep=dev patch-only edit");
+  assert.match(replayed, /^[0-9a-f]{40}$/);
+  assert.equal(git(clone, "show", "--format=%an", "--name-only", replayed), "Patch Author");
 });
 
 test("deletion records reject unsafe paths, modes, duplicate keys and non-deletion stages", () => {
