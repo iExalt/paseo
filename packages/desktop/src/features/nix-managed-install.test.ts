@@ -54,6 +54,25 @@ describe("Nix-managed desktop marker", () => {
     ).toBe("nix-invalid");
   });
 
+  it("resolves the installed /Applications copy through the store output its marker names", () => {
+    const copied = Buffer.from(
+      JSON.stringify({ ...JSON.parse(marker.toString("utf8")), outputPath }),
+    );
+    const copyResources = "/Applications/Paseo.app/Contents/Resources";
+    const fileSystem = (storeMarker: Buffer) => ({
+      ...testFileSystem(copied, "/Applications/Paseo.app"),
+      readFileSync: (filePath: string) => (filePath.startsWith(outputPath) ? storeMarker : copied),
+      realpathSync: (filePath: string) =>
+        filePath === `${copyResources}/../../../..` ? "/" : filePath,
+    });
+    expect(resolveDesktopInstallation(copyResources, fileSystem(copied))).toMatchObject({
+      mode: "nix",
+      outputPath,
+      cliPath: `${outputPath}/bin/paseo-nix-update`,
+    });
+    expect(resolveDesktopInstallation(copyResources, fileSystem(marker)).mode).toBe("nix-invalid");
+  });
+
   it("keeps unmarked desktop installations on the existing Electron updater path", () => {
     expect(
       resolveDesktopInstallation(resourcesPath, {

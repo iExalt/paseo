@@ -3,12 +3,15 @@ import path from "node:path";
 
 export const NIX_MANAGED_MARKER_NAME = "paseo-nix-managed.json";
 export const INSTALLATION_MODE_ARGUMENT_PREFIX = "--paseo-installation-mode=";
+const STORE_OUTPUT = /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/;
 
 export interface NixManagedMarker {
   schemaVersion: 1;
   managedBy: "nix";
   packageVersion: string;
   buildVersion: string;
+  /** Store output that built this bundle; present in releases since installed copies. */
+  outputPath?: string;
 }
 
 export type DesktopInstallation =
@@ -37,7 +40,8 @@ function parseMarker(bytes: Buffer): NixManagedMarker {
     typeof (value as Record<string, unknown>).packageVersion !== "string" ||
     !(value as Record<string, unknown>).packageVersion ||
     typeof (value as Record<string, unknown>).buildVersion !== "string" ||
-    !(value as Record<string, unknown>).buildVersion
+    !(value as Record<string, unknown>).buildVersion ||
+    !["undefined", "string"].includes(typeof (value as Record<string, unknown>).outputPath)
   ) {
     throw new Error("Nix installation marker has an unsupported shape.");
   }
@@ -60,8 +64,26 @@ export function resolveDesktopInstallation(
   try {
     const marker = parseMarker(markerBytes);
     const realResourcesPath = fileSystem.realpathSync(resourcesPath);
-    const outputPath = fileSystem.realpathSync(path.resolve(realResourcesPath, "../../../.."));
-    if (!/^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(outputPath)) {
+    let outputPath = fileSystem.realpathSync(path.resolve(realResourcesPath, "../../../.."));
+    if (!STORE_OUTPUT.test(outputPath) && marker.outputPath) {
+      // The updater's /Applications/Paseo.app copy runs outside the store. Its
+      // sealed marker names the source output, which must still hold the same bytes.
+      outputPath = fileSystem.realpathSync(marker.outputPath);
+      const sourceMarker = fileSystem.readFileSync(
+        path.join(
+          outputPath,
+          "Applications",
+          "Paseo.app",
+          "Contents",
+          "Resources",
+          NIX_MANAGED_MARKER_NAME,
+        ),
+      );
+      if (!sourceMarker.equals(markerBytes)) {
+        throw new Error("The installed app differs from the Nix output it names.");
+      }
+    }
+    if (!STORE_OUTPUT.test(outputPath) || (marker.outputPath && marker.outputPath !== outputPath)) {
       throw new Error("Nix installation marker is outside a desktop store output.");
     }
     const cliPath = path.join(outputPath, "bin", "paseo-nix-update");
