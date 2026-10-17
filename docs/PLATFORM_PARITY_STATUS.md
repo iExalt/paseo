@@ -1,6 +1,6 @@
 # Desktop and mobile parity status
 
-Last updated: 2026-10-16
+Last updated: 2026-10-17
 
 ## Purpose
 
@@ -96,8 +96,8 @@ Evidence state: verified on the installed 0.6.0 app by the user, with waivers.
 
 ### C1: chat find on mobile
 
-Evidence state: verified on Paseo Debug before the renderer rebase; assistant
-marks need a new device check (below).
+Evidence state: verified on Paseo Debug, and re-checked for assistant marks
+after the rebase onto upstream's enriched-markdown renderer (below).
 
 - Find in the tab menu opens a full-width bar above the composer and the
   keyboard; Back closes it.
@@ -116,12 +116,16 @@ marks need a new device check (below).
 - Not seen on the device: a match deep in a code block taller than the
   screen. It moves to the chunk C end-to-end pass.
 - iOS is unverified.
-- Since the rebase onto upstream's enriched-markdown renderer, the evidence
-  above covers user messages and the find bar only; assistant marks and
-  scrolling are reimplemented and await a device check. Prose is drawn by the
-  library, which reports no lines, so reveal measures the occurrence's block
-  and estimates its line from where it starts in the block's source. Code
-  blocks still measure the line.
+- After the rebase onto upstream's enriched-markdown renderer (`dev` at
+  `fa16ee402`), Paseo Debug on the phone: the count, marks in a paragraph, a
+  code block and a match spanning text and inline code, Previous wrapping past
+  the first match, scrolling to each, and Close clearing marks and the frame
+  all pass. Prose is drawn by the library, which reports no lines, so reveal
+  measures the occurrence's block and estimates its line from where it starts
+  in the block's source; code blocks still measure the line.
+- Known shift: while find marks a code block, the block is drawn in JS and
+  wraps long lines that the native block scrolls sideways, so it grows taller
+  until the match moves on.
 
 ### C2: find in the file view on mobile
 
@@ -329,3 +333,6 @@ The pending cases below stay unverified.
 - 2026-10-17: merged as #161 and released in `paseo-v0.6.0`. The user ran
   B2's release gate on the installed app: Send test, foreground and background
   delivery, and tapping all pass; the other three checks are waived.
+- 2026-10-17: `dev` rebased onto upstream 88a7aec, which replaced the native
+  Markdown renderer. C1's assistant marks were ported and re-checked on Paseo
+  Debug.
