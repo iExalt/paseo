@@ -36,7 +36,6 @@ import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { getStreamItemMessageId } from "./presentation";
 import { scrollOffsetForDelta } from "@/find-highlight/reveal";
-import { messageStartIndex } from "./message-start-index";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
 import {
@@ -470,7 +469,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     listRef.current?.scrollToIndex({ index, viewPosition: 0, animated });
   });
   const scrollToMessage = useStableEvent((messageId: string) =>
-    jumpToRow(messageStartIndex(rows, messageId), true),
+    jumpToRow(
+      rows.findIndex((row) => getStreamItemMessageId(row) === messageId),
+      true,
+    ),
   );
   const scrollToItem = useStableEvent((itemId: string) =>
     jumpToRow(rows.findIndex((row) => row.id === itemId), false),

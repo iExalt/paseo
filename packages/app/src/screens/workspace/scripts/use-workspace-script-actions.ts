@@ -6,6 +6,7 @@ import type { WorkspaceDescriptor } from "@/stores/session-store";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useHostRuntimeSnapshot } from "@/runtime/host-runtime";
 import { useToast } from "@/contexts/toast-api-context";
+import { isNative } from "@/constants/platform";
 import {
   resolveWorkspaceScriptLink,
   type WorkspaceScriptLinkKind,
@@ -159,7 +160,11 @@ export function useWorkspaceScriptActions({
 
   const resolveLinks = useCallback(
     (script: WorkspaceScript): WorkspaceScriptLinks => {
-      const link = resolveWorkspaceScriptLink({ script, activeConnection });
+      const link = resolveWorkspaceScriptLink({
+        script,
+        activeConnection,
+        reachesHostLoopback: !isNative,
+      });
       const selected =
         link.targets.find((target) => target.kind === preferredRouteKind) ?? link.primary;
       return { selected, targets: link.targets };

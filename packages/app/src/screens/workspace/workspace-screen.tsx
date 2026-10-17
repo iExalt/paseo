@@ -3404,14 +3404,14 @@ function WorkspaceScreenContent({
       scripts: workspaceScripts,
       liveTerminalIds,
       onViewTerminal: handleViewScriptTerminal,
-      onOpenUrlInBrowserTab: handleOpenUrlInBrowserTab,
+      onOpenUrlInBrowserTab: openUrlInBrowserTab,
     }),
     [
       workspaceScripts,
       liveTerminalIds,
       scriptActions,
       handleViewScriptTerminal,
-      handleOpenUrlInBrowserTab,
+      openUrlInBrowserTab,
     ],
   );
   const renderWorkspaceTabSwitcher = useCallback(
