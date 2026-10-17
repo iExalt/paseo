@@ -7,9 +7,13 @@ export async function awaitAssistantMessage(page: Page, hasText?: string | RegEx
   await expect(target).toBeVisible({ timeout: 30_000 });
 }
 
-export async function awaitToolCall(page: Page, toolName: string | RegExp): Promise<void> {
+/**
+ * Summary is the default tool call display, so tool calls render inside a summary group
+ * ("Read 1 file and searched 1 time") instead of as individual badges.
+ */
+export async function awaitToolCallSummary(page: Page, summary: string | RegExp): Promise<void> {
   await expect(
-    page.getByTestId("tool-call-badge").filter({ hasText: toolName }).first(),
+    page.getByTestId("tool-call-group").filter({ hasText: summary }).first(),
   ).toBeVisible({ timeout: 30_000 });
 }
 
