@@ -9137,7 +9137,9 @@ export class Session {
           accepted: true,
           ...(deliveryStatus ? { deliveryStatus } : {}),
           error: null,
-          disposition,
+          // The wire enum has no "deferred"; an accepted send with no disposition is the honest
+          // answer for a steer that will start its own turn later.
+          disposition: disposition === "deferred" ? undefined : disposition,
         },
       });
     } catch (error) {
