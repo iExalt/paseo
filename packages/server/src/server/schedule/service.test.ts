@@ -722,7 +722,7 @@ describe("ScheduleService", () => {
     );
   });
 
-  test("delivers agent-target schedules through the steer-or-interrupt path", async () => {
+  test("delivers agent-target schedules through the steer path", async () => {
     const manager = new AgentManager({
       logger: createTestLogger(),
       clients: createTestAgentClients(),
@@ -731,7 +731,7 @@ describe("ScheduleService", () => {
     const agent = await manager.createAgent({ provider: "claude", cwd: tempDir }, undefined, {
       workspaceId: undefined,
     });
-    const steerOrReplace = vi.spyOn(manager, "steerOrReplaceActiveTurn");
+    const steer = vi.spyOn(manager, "steerOrDeferBehindActiveTurn");
     const service = createScheduleService({
       paseoHome: tempDir,
       logger: createTestLogger(),
@@ -748,8 +748,8 @@ describe("ScheduleService", () => {
 
     await service.runOnce(schedule.id);
 
-    expect(steerOrReplace).toHaveBeenCalledTimes(1);
-    expect(steerOrReplace.mock.calls[0]).toEqual([
+    expect(steer).toHaveBeenCalledTimes(1);
+    expect(steer.mock.calls[0]).toEqual([
       agent.id,
       expect.stringContaining(`Schedule fired (id=${schedule.id}, run=`),
       undefined,
