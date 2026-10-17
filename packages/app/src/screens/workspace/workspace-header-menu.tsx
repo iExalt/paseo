@@ -27,6 +27,7 @@ import {
 } from "@getpaseo/protocol/terminal-profiles";
 import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
 import { WorkspaceNotificationsMenuItem } from "@/workspace-notifications/menu-item";
+import { CopyProviderSessionIdMenuItem } from "@/workspace/copy-provider-session-id/menu-item";
 import type { Theme } from "@/styles/theme";
 import {
   useWorkspaceScriptsMenuPages,
@@ -79,6 +80,8 @@ export interface WorkspaceHeaderWorkspaceActions {
   serverId: string;
   workspaceId: string;
   currentBranchName: string | null;
+  /** The focused tab's agent, whose session "Copy session ID" prefers over the workspace's. */
+  activeAgentId: string | null;
   showWorkspaceSetup: boolean;
   importAgentDisabled: boolean;
   copyPathDisabled: boolean;
@@ -92,6 +95,7 @@ function WorkspaceHeaderWorkspaceActionItems({
   serverId,
   workspaceId,
   currentBranchName,
+  activeAgentId,
   showWorkspaceSetup,
   importAgentDisabled,
   copyPathDisabled,
@@ -125,6 +129,13 @@ function WorkspaceHeaderWorkspaceActionItems({
           {t("workspace.header.actions.copyBranchName")}
         </DropdownMenuItem>
       ) : null}
+      <CopyProviderSessionIdMenuItem
+        serverId={serverId}
+        workspaceId={workspaceId}
+        preferredAgentId={activeAgentId}
+        testID="workspace-header-copy-provider-session-id"
+        leading={MENU_COPY_ICON}
+      />
       <DropdownMenuItem
         testID="workspace-header-import-agent"
         leading={MENU_IMPORT_ICON}

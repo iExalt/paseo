@@ -782,6 +782,7 @@ export const en = {
         importSession: "Import session",
         copyPath: "Copy workspace path",
         copyBranchName: "Copy branch name",
+        copyProviderSessionId: "Copy session ID",
         showSetup: "Show setup",
       },
       toasts: {
@@ -790,6 +791,7 @@ export const en = {
         terminalQueued: "Preparing workspace, opening terminal when ready...",
         workspacePathCopiedLabel: "Workspace path",
         branchNameCopiedLabel: "Branch name",
+        providerSessionIdCopiedLabel: "Session ID",
       },
     },
     scripts: {
