@@ -1,0 +1,147 @@
+diff --git a/packages/app/src/agent-stream/stream-tick.bench.ts b/packages/app/src/agent-stream/stream-tick.bench.ts
+index dc1fecb88..6d4d86733 100644
+--- a/packages/app/src/agent-stream/stream-tick.bench.ts
++++ b/packages/app/src/agent-stream/stream-tick.bench.ts
+@@ -1,4 +1,4 @@
+-import { bench, describe } from "vitest";
++import { test } from "vitest";
+ import type { StreamItem, ToolCallItem } from "@/types/stream";
+ import {
+   prepareToolCallHistory,
+@@ -122,11 +122,13 @@ const defaultWindowStart = findMountedWindowStart({
+   minMountedCount: getMountedRecentStreamItems(),
+ });
+ 
+-describe(`${TICKS} streamed deltas over a ${TIMELINE_ITEMS}-item timeline`, () => {
+-  bench("default mounted window (recent items only)", () => {
+-    runTicks({ tail, historyStart: defaultWindowStart, heads });
+-  });
+-  bench("history fully revealed (scrolled to top)", () => {
+-    runTicks({ tail, historyStart: 0, heads });
+-  });
++test(`${TICKS} streamed deltas over a ${TIMELINE_ITEMS}-item timeline`, async ({ bench }) => {
++  await bench.compare(
++    bench("default mounted window (recent items only)", () => {
++      runTicks({ tail, historyStart: defaultWindowStart, heads });
++    }),
++    bench("history fully revealed (scrolled to top)", () => {
++      runTicks({ tail, historyStart: 0, heads });
++    }),
++  );
+ });
+diff --git a/packages/app/src/assistant-file-links/resolver.test.ts b/packages/app/src/assistant-file-links/resolver.test.ts
+index 384c3b685..6b21704a4 100644
+--- a/packages/app/src/assistant-file-links/resolver.test.ts
++++ b/packages/app/src/assistant-file-links/resolver.test.ts
+@@ -26,7 +26,7 @@ it("opens the existing non-ASCII file named by a rendered markdown link", async
+     const tokens = new MarkdownIt().parseInline("[报告](docs/reports/开户赠金.md)", {});
+     const href = tokens[0].children?.find((token) => token.type === "link_open")?.attrGet("href");
+     expect(href).toBe("docs/reports/%E5%BC%80%E6%88%B7%E8%B5%A0%E9%87%91.md");
+-    const resolution = classifyForResolution({ href: href! }, { workspaceRoot });
++    const resolution = classifyForResolution({ href: String(href) }, { workspaceRoot });
+     expect(resolution.kind).toBe("resolved");
+     if (resolution.kind !== "resolved" || resolution.value.kind !== "file") {
+       throw new Error("Expected a directly resolved file link");
+diff --git a/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx b/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx
+index d107547dc..3ec4d6393 100644
+--- a/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx
++++ b/packages/app/src/components/ui/isolated-bottom-sheet-modal/host-scope.tsx
+@@ -86,6 +86,6 @@ const styles = StyleSheet.create({
+     minHeight: 0,
+   },
+   host: {
+-    ...StyleSheet.absoluteFillObject,
++    ...StyleSheet.absoluteFill,
+   },
+ });
+diff --git a/packages/app/src/runtime/replica-cache/index.test.ts b/packages/app/src/runtime/replica-cache/index.test.ts
+index 71054feeb..29d95bac6 100644
+--- a/packages/app/src/runtime/replica-cache/index.test.ts
++++ b/packages/app/src/runtime/replica-cache/index.test.ts
+@@ -305,7 +305,7 @@ async function expectLegacyWorkspaceRefresh({
+   baseline,
+   reader,
+ }: Awaited<ReturnType<typeof cacheWithoutBackgroundVisibility>>): Promise<void> {
+-  const restored = await reader.readDirectory(SERVER_ID);
++  const restored = await readCachedDirectory(reader);
+   expect(restored.workspaces.size).toBe(0);
+   expect(restored.checkpoint).toEqual({
+     agents: baseline.checkpoint.agents,
+@@ -314,9 +314,7 @@ async function expectLegacyWorkspaceRefresh({
+   expect(restored.agents).toEqual(baseline.agents);
+   expect(restored.projects).toEqual(baseline.projects);
+   expect(await reader.readTimeline(SERVER_ID, "agent-1")).toEqual(timeline());
+-  expect((await createCache(storage).readDirectory(SERVER_ID)).checkpoint).toEqual(
+-    restored.checkpoint,
+-  );
++  expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(restored.checkpoint);
+ 
+   baseline.workspaces.set(
+     "workspace-1",
+@@ -324,7 +322,7 @@ async function expectLegacyWorkspaceRefresh({
+   );
+   reader.replaceDirectoryBaseline(SERVER_ID, baseline);
+   await reader.flush();
+-  const refreshed = await createCache(storage).readDirectory(SERVER_ID);
++  const refreshed = await readCachedDirectory(createCache(storage));
+   expect(refreshed.workspaces.get("workspace-1")?.background).toBe(true);
+   expect(refreshed.checkpoint).toEqual(baseline.checkpoint);
+ }
+@@ -344,9 +342,9 @@ describe("ReplicaCache", () => {
+       await writer.flush();
+ 
+       const reader = createCache(storage);
+-      expect(
+-        (await reader.readDirectory(SERVER_ID)).workspaces.get("workspace-1")?.background,
+-      ).toBe(background ?? false);
++      expect((await readCachedDirectory(reader)).workspaces.get("workspace-1")?.background).toBe(
++        background ?? false,
++      );
+       expect((await reader.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.background).toBe(
+         background ?? false,
+       );
+@@ -1235,7 +1233,8 @@ describe("ReplicaCache", () => {
+         const { cache, expectReads } = await streamingCache();
+ 
+         expect((await cache.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.name).toBe("main");
+-        expectReads(2, 1);
++        // The streamed rows are not the ones read, so their commits stay on the persist debounce.
++        expectReads(2);
+         await cache.flush();
+       });
+ 
+@@ -1260,7 +1259,7 @@ describe("ReplicaCache", () => {
+     replacement.agents.set("agent-2", agent("agent-2"));
+     cache.replaceDirectoryBaseline(SERVER_ID, replacement);
+ 
+-    const read = await cache.readDirectory(SERVER_ID);
++    const read = await readCachedDirectory(cache);
+ 
+     expect([...read.agents.keys()].sort()).toEqual(["agent-1", "agent-2"]);
+     expect(read.projects.size).toBe(0);
+diff --git a/packages/app/src/utils/assistant-markdown-image-source.test.ts b/packages/app/src/utils/assistant-markdown-image-source.test.ts
+index edc02a4eb..121299a7c 100644
+--- a/packages/app/src/utils/assistant-markdown-image-source.test.ts
++++ b/packages/app/src/utils/assistant-markdown-image-source.test.ts
+@@ -49,7 +49,7 @@ describe("local assistant Markdown images", () => {
+       .flatMap((token) => token.children ?? [])
+       .find((token) => token.type === "image");
+     expect(image).toBeDefined();
+-    const source = localFileSourceToPath(image!.attrGet("src")!, { decodeHref: true });
++    const source = localFileSourceToPath(String(image!.attrGet("src")), { decodeHref: true });
+     const target = resolveAssistantImageSource({ source, workspaceRoot });
+     expect(target?.kind).toBe("file_rpc");
+     if (target?.kind !== "file_rpc") throw new Error("Expected a local image read target");
+diff --git a/packages/server/src/utils/checkout-git.ts b/packages/server/src/utils/checkout-git.ts
+index ce0070290..b8d4e75f8 100644
+--- a/packages/server/src/utils/checkout-git.ts
++++ b/packages/server/src/utils/checkout-git.ts
+@@ -521,7 +521,7 @@ async function listCheckoutFileChanges(
+     { cwd, envOverlay: READ_ONLY_GIT_ENV },
+   );
+   const nameStatusFields = nameStatusOut.split("\0");
+-  for (let index = 0; index < nameStatusFields.length; ) {
++  for (let index = 0; index < nameStatusFields.length;) {
+     const rawStatus = nameStatusFields[index++];
+     if (!rawStatus) continue;
+ 
