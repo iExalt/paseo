@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findRevealDelta, lineAtOffset, scrollOffsetForDelta } from "./reveal";
+import { findRevealDelta, lineAtOffset, monospaceRangeX, scrollOffsetForDelta } from "./reveal";
 
 describe("lineAtOffset", () => {
   const lines = [
@@ -13,6 +13,24 @@ describe("lineAtOffset", () => {
     expect(lineAtOffset(lines, 11)).toEqual({ y: 20, height: 20 });
     expect(lineAtOffset(lines, 19)).toEqual({ y: 40, height: 20 });
     expect(lineAtOffset([], 3)).toBeNull();
+  });
+});
+
+describe("monospaceRangeX", () => {
+  const lines = [
+    { text: "ls\n", y: 0, height: 20, width: 16 },
+    { text: "git log --oneline\n", y: 20, height: 20, width: 136 },
+    { text: "", y: 40, height: 20, width: 0 },
+  ];
+
+  it("places a range by its column on its own line", () => {
+    expect(monospaceRangeX(lines, 7, 9)).toEqual({ x: 32, width: 16 });
+    expect(monospaceRangeX(lines, 0, 2)).toEqual({ x: 0, width: 16 });
+  });
+
+  it("needs a laid-out line with text to size a character", () => {
+    expect(monospaceRangeX([], 0, 1)).toBeNull();
+    expect(monospaceRangeX([lines[2]], 0, 1)).toBeNull();
   });
 });
 

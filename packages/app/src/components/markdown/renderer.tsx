@@ -100,7 +100,7 @@ function MarkdownFindParts({ find, ...props }: MarkdownRendererProps & { find: M
       {split.head ? <Part {...props} text={split.head} /> : null}
       <View ref={anchorRef} collapsable={false}>
         {split.code ? (
-          <FindCodeBlock {...split.code} anchor={find.anchor} />
+          <FindCodeBlock {...split.code} anchor={find.anchor} compact={props.compact} />
         ) : (
           <Part {...props} text={split.block} highlight />
         )}

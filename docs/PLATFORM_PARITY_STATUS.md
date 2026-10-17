@@ -123,9 +123,11 @@ after the rebase onto upstream's enriched-markdown renderer (below).
   all pass. Prose is drawn by the library, which reports no lines, so reveal
   measures the occurrence's block and estimates its line from where it starts
   in the block's source; code blocks still measure the line.
-- Known shift: while find marks a code block, the block is drawn in JS and
-  wraps long lines that the native block scrolls sideways, so it grows taller
-  until the match moves on.
+- While find marks a code block, the block is drawn in JS with the native
+  block's header, divider, insets and line height, in a pane that scrolls
+  sideways to the match. On the phone (#181) a match past the right edge
+  scrolled into view, and the content below the block moved 1 px against the
+  native block, where it had moved about 150 px.
 
 ### C2: find in the file view on mobile
 

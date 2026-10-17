@@ -6,27 +6,27 @@ import { matchPartsOffset } from "@/find-highlight/match-parts";
 import type { Theme } from "@/styles/theme";
 import { isWeb } from "@/constants/platform";
 import type { FindCode } from "./find-split";
+import { createCodeBlockStyle } from "./styles";
 
 const ThemedCodeBlock = withUnistyles(HighlightedCodeBlock);
 
-// Matches the native renderer's code block (markdown/styles.ts) so the block does not
-// shift while find marks it.
-const codeBlockStyle = (theme: Theme) => ({
-  inheritedStyles: {
-    color: theme.colors.foreground,
-    fontFamily:
-      theme.fontFamily.mono === "ui-monospace" && !isWeb ? undefined : theme.fontFamily.mono,
-    fontSize: theme.fontSize.code,
-  },
-  textStyle: {
-    backgroundColor: theme.colors.surface2,
-    borderColor: theme.colors.border,
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: theme.spacing[3],
-  },
-});
+// The native renderer's code block (markdown/styles.ts), so the block keeps its height
+// while find marks it.
+const codeBlockStyle = (theme: Theme, compact: boolean) => {
+  const { fontSize, lineHeight, color, ...box } = createCodeBlockStyle(theme, compact);
+  return {
+    inheritedStyles: {
+      color,
+      fontFamily:
+        theme.fontFamily.mono === "ui-monospace" && !isWeb ? undefined : theme.fontFamily.mono,
+      fontSize,
+      lineHeight,
+    },
+    textStyle: box,
+  };
+};
+const regularStyle = (theme: Theme) => codeBlockStyle(theme, false);
+const compactStyle = (theme: Theme) => codeBlockStyle(theme, true);
 
 /** A code block drawn in JS so it can mark the occurrence and measure its line. */
 export const FindCodeBlock = memo(function FindCodeBlock({
@@ -35,7 +35,8 @@ export const FindCodeBlock = memo(function FindCodeBlock({
   parts,
   current,
   anchor,
-}: FindCode & { anchor: ChatFindAnchorTarget }) {
+  compact = false,
+}: FindCode & { anchor: ChatFindAnchorTarget; compact?: boolean }) {
   const findMatch = useMemo(
     () => ({
       parts,
@@ -49,7 +50,8 @@ export const FindCodeBlock = memo(function FindCodeBlock({
       code={code}
       language={language}
       findMatch={findMatch}
-      uniProps={codeBlockStyle}
+      matchNativeBlock
+      uniProps={compact ? compactStyle : regularStyle}
     />
   );
 });
