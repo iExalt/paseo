@@ -98,6 +98,7 @@ class PaseoHardwareKeyboardModule : Module() {
         return consumedKeyCodes.remove(event.keyCode)
       }
       if (event.action != KeyEvent.ACTION_DOWN) return false
+      if (!isFromHardwareKeyboard(event)) return false
       val module = activeModule ?: return false
 
       val focus = activity.currentFocus
@@ -128,6 +129,18 @@ class PaseoHardwareKeyboardModule : Module() {
       if (!combo.consume) return false
       consumedKeyCodes.add(event.keyCode)
       return true
+    }
+
+    /**
+     * Soft keyboards deliver some keys as key events too: Gboard sends Enter in a multiline
+     * field as KEYCODE_ENTER rather than committing a newline. Those must reach the field
+     * untouched, or the on-screen Return key sends the message instead of breaking the line.
+     */
+    private fun isFromHardwareKeyboard(event: KeyEvent): Boolean {
+      if ((event.flags and KeyEvent.FLAG_SOFT_KEYBOARD) != 0) return false
+      if (event.deviceId == KeyCharacterMap.VIRTUAL_KEYBOARD) return false
+      val device = event.device ?: return false
+      return !device.isVirtual
     }
 
     /** Plain Enter in a focused text field submits the composer, unless an IME is composing. */

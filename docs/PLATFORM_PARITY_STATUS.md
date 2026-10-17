@@ -232,8 +232,9 @@ The pending cases below stay unverified.
   `MainActivity` plugin. JS publishes which combos fire while typing and
   which only outside a field, from web's focus-scope rules; the composer and
   both terminal renderers claim their scope. Native consumes a combo only
-  when that allows it, so text editing keeps its keys. Enter submits the
-  composer on Android as on iPad. Settings lists shortcuts on native
+  when that allows it, so text editing keeps its keys. A hardware
+  keyboard's Enter submits the composer on Android as on iPad; the soft
+  keyboard's Return still inserts a newline. Settings lists shortcuts on native
   read-only; rebinding stays a gap, deferred past this campaign, since
   capture reads DOM key events. Also deferred: shortcut badges while a
   modifier is held, and Electron's browser shortcuts (Mod+L focuses the
