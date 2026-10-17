@@ -2548,7 +2548,8 @@ export const en = {
           interrupt: "When the agent is running, Enter interrupts. Command/Ctrl+Enter queues.",
           steer:
             "When the agent is running, Enter steers the active turn. Command/Ctrl+Enter queues.",
-          queue: "When the agent is running, Enter queues. Command/Ctrl+Enter submits.",
+          queue:
+            "When the agent is running, Enter queues. Command/Ctrl+Enter steers the active turn.",
         },
         commandEnterDescriptions: {
           interrupt:

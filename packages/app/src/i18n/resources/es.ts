@@ -2432,7 +2432,7 @@ export const es: TranslationResources = {
           steer:
             "Cuando el agente se está ejecutando, Enter dirige el turno activo. Command/Ctrl+Enter pone en cola.",
           queue:
-            "Cuando el agente se está ejecutando, Enter pone en cola. Command/Ctrl+Enter envía.",
+            "Cuando el agente se está ejecutando, Enter pone en cola. Command/Ctrl+Enter dirige el turno activo.",
         },
         commandEnterDescriptions: {
           interrupt:

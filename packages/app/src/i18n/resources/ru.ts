@@ -2417,7 +2417,7 @@ export const ru: TranslationResources = {
           steer:
             "Когда агент работает, Enter дополняет текущий ответ новым указанием, а Command/Ctrl+Enter ставит сообщение в очередь.",
           queue:
-            "Когда агент работает, Enter ставит сообщение в очередь, а Command/Ctrl+Enter отправляет его.",
+            "Когда агент работает, Enter ставит сообщение в очередь, а Command/Ctrl+Enter дополняет текущий ответ новым указанием.",
         },
         commandEnterDescriptions: {
           interrupt:
