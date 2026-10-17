@@ -2614,8 +2614,9 @@ const styles = StyleSheet.create((theme: Theme) => ({
     alignItems: "center",
     gap: theme.spacing[1],
   },
+  // Grows to fit the session cost label beside the ring.
   contextWindowMeterSlot: {
-    width: 28,
+    minWidth: 28,
     height: 28,
     flexShrink: 0,
     alignItems: "center",

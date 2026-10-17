@@ -192,6 +192,14 @@ interface TimeoutOptions {
   onLateError?: (error: unknown) => void;
 }
 
+/** Mid-turn context readings carry no cost; keep the session's last known cost through them. */
+function withKnownCost(next: AgentUsage, previous: AgentUsage | undefined): AgentUsage {
+  const totalCostUsd = previous?.totalCostUsd;
+  return next.totalCostUsd === undefined && totalCostUsd !== undefined
+    ? { ...next, totalCostUsd }
+    : next;
+}
+
 function formatProviderList(providers: readonly string[]): string {
   return providers.length > 0 ? providers.join(", ") : "none";
 }
@@ -1522,6 +1530,9 @@ export class AgentManager {
       launchEnv,
       persistence: handle,
       restoring: true,
+      ...(record?.totalCostUsd !== undefined
+        ? { lastUsage: { totalCostUsd: record.totalCostUsd } }
+        : {}),
     });
   }
 
@@ -2162,7 +2173,8 @@ export class AgentManager {
         persistence: record.persistence ?? null,
         historyPrimed: true,
         lastUserMessageAt: record.lastUserMessageAt ? new Date(record.lastUserMessageAt) : null,
-        lastUsage: undefined,
+        lastUsage:
+          record.totalCostUsd !== undefined ? { totalCostUsd: record.totalCostUsd } : undefined,
         lastError: record.lastError ?? undefined,
         attention,
         internal: record.internal,
@@ -4713,7 +4725,7 @@ export class AgentManager {
         this.onStreamThreadStarted(agent);
         return undefined;
       case "usage_updated":
-        agent.lastUsage = event.usage;
+        agent.lastUsage = withKnownCost(event.usage, agent.lastUsage);
         this.emitState(agent);
         return undefined;
       case "mode_changed":
