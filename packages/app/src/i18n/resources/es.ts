@@ -2126,6 +2126,8 @@ export const es: TranslationResources = {
     archiveTooltip: "Subagente de archivo",
     archiveFinishedAction: "Archivar subagentes finalizados",
     archiveFinishedRetry: "Reintentar ({{failed}}/{{total}})",
+    showFinished: "Mostrar {{count}} finalizados",
+    hideFinished: "Ocultar finalizados",
   },
   panels: {
     draft: {

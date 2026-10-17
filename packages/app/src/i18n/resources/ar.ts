@@ -2076,6 +2076,8 @@ export const ar: TranslationResources = {
     archiveTooltip: "أرشفة الوكيل الفرعي",
     archiveFinishedAction: "أرشفة الوكلاء الفرعيين المكتملين",
     archiveFinishedRetry: "إعادة المحاولة ({{failed}}/{{total}})",
+    showFinished: "عرض المكتملين ({{count}})",
+    hideFinished: "إخفاء المكتملين",
   },
   panels: {
     draft: {
