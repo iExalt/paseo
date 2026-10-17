@@ -48,6 +48,7 @@ import { parsePartialJsonObject } from "./partial-json.js";
 import { withClaudeReplayHistory, type ClaudeReplayHistory } from "./transcript-history.js";
 import { ClaudeSidechainTracker } from "./sidechain-tracker.js";
 import { readClaudeSubagentHandback } from "./subagent-handback.js";
+import { dropRewoundBranches } from "./rewound-branches.js";
 import { ClaudeTaskState } from "./task-state.js";
 import {
   ClaudeTaskProtocolSource,
@@ -144,6 +145,24 @@ import { withTimeout } from "../../../../utils/promise-timeout.js";
 import { terminateWithTreeKill } from "../../../../utils/tree-kill.js";
 import { execCommand } from "../../../../utils/spawn.js";
 import { composeSystemPromptParts } from "../../system-prompt.js";
+
+/**
+ * Applies Claude's in-place rewinds to the parent transcript the replay indexes. Entries
+ * round-trip through JSON lines so one rewind reader serves both the file and the index.
+ */
+function dropRewoundEntries<T>(
+  entries: Iterable<T>,
+  options: Parameters<typeof dropRewoundBranches>[1],
+): Iterable<T> {
+  const list = [...entries];
+  const content = list.map((entry) => JSON.stringify(entry)).join("\n");
+  const kept = dropRewoundBranches(content, options);
+  if (kept === content) return list;
+  return kept
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as T);
+}
 
 const fsPromises = promises;
 const CLAUDE_SETTING_SOURCES: NonNullable<ClaudeOptions["settingSources"]> = [
@@ -3029,6 +3048,9 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   async revertConversation(input: { messageId: string }): Promise<void> {
+    if (await this.rewindConversationInPlace(input.messageId)) {
+      return;
+    }
     const target = this.resolveConversationRewindTarget(input.messageId);
     if (target.kind === "fresh-session") {
       this.startFreshConversationSession();
@@ -3222,6 +3244,87 @@ class ClaudeAgentSession implements AgentSession {
     return candidates;
   }
 
+  /**
+   * Rewinds the live session the way Esc Esc does in Claude Code: the CLI drops the target message
+   * and everything after it, in the same process and under the same session id. Background
+   * subagents and shells live in that process, so they keep running, and a stopped subagent stays
+   * resumable because its transcript stays under this session. Forking instead restarts Claude,
+   * which kills them, and moves the conversation to a session that cannot find their transcripts.
+   *
+   * `rewind_conversation` is a control request the CLI serves but the SDK does not type yet.
+   * Returns false when there is no session yet or the CLI refuses, so the caller can fork.
+   */
+  private async rewindConversationInPlace(messageId: string): Promise<boolean> {
+    const sessionId = this.claudeSessionId;
+    if (!sessionId) return false;
+    const targetMessageUuid = this.resolveClaudeMessageId(messageId);
+    let leafUuid: unknown;
+    try {
+      // Starts Claude on the same session when it is not running, rather than forking a new one.
+      const query = await this.ensureQuery();
+      const request = (
+        query as Query & {
+          request?: (request: Record<string, unknown>) => Promise<{ response?: unknown }>;
+        }
+      ).request;
+      if (typeof request !== "function") return false;
+      const result = await withTimeout(
+        request.call(query, {
+          subtype: "rewind_conversation",
+          target_message_uuid: targetMessageUuid,
+        }),
+        10_000,
+        "rewind_conversation timed out",
+      );
+      const response = toObjectRecord(result?.response);
+      if (response?.rewound !== true) {
+        this.logger.info(
+          { agentId: this.agentId, sessionId, targetMessageUuid, response },
+          "provider.claude.rewind.in_place_refused",
+        );
+        return false;
+      }
+      leafUuid = response.precedingAssistantUuid;
+    } catch (error) {
+      this.logger.info(
+        { err: error, agentId: this.agentId, sessionId, targetMessageUuid },
+        "provider.claude.rewind.in_place_unavailable",
+      );
+      return false;
+    }
+    this.reloadConversationHistory(sessionId, {
+      leafUuid: typeof leafUuid === "string" ? leafUuid : this.trackedRewindLeaf(messageId),
+    });
+    return true;
+  }
+
+  /** The kept turn's reply as Paseo tracked it, for a CLI that does not report the rewind's leaf. */
+  private trackedRewindLeaf(messageId: string): string | null {
+    try {
+      const target = this.resolveConversationRewindTarget(messageId);
+      return target.kind === "fresh-session" ? null : target.messageId;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Re-reads the session's transcript after the conversation behind it changed. `pendingRewind`
+   * is an in-place rewind whose marker Claude may not have written yet.
+   */
+  private reloadConversationHistory(
+    sessionId: string,
+    pendingRewind?: { leafUuid: string | null },
+  ): void {
+    this.persistedHistory = [];
+    this.persistedProviderSubagentEvents = [];
+    this.historyPending = false;
+    this.userMessageIds = [];
+    this.emittedUserMessageIds.clear();
+    this.rewindTurnAnchors.length = 0;
+    this.loadPersistedHistory(sessionId, pendingRewind);
+  }
+
   private rebindConversationSession(sessionId: string): void {
     const oldSessionId = this.claudeSessionId;
     this.claudeSessionId = sessionId;
@@ -3229,14 +3332,7 @@ class ClaudeAgentSession implements AgentSession {
     this.persistence = null;
     this.cachedRuntimeInfo = null;
     this.queryRestartNeeded = true;
-    this.persistedHistory = [];
-    this.persistedProviderSubagentEvents = [];
-    this.historyPending = false;
-    this.userMessageIds = [];
-    this.emittedUserMessageIds.clear();
-    this.rewindTurnAnchors.length = 0;
-    this.taskState.reset();
-    this.loadPersistedHistory(sessionId);
+    this.reloadConversationHistory(sessionId);
     if (oldSessionId && oldSessionId !== sessionId) {
       this.dispatchEvents([
         {
@@ -5251,7 +5347,10 @@ class ClaudeAgentSession implements AgentSession {
     }
   }
 
-  private loadPersistedHistory(sessionId: string): void {
+  private loadPersistedHistory(
+    sessionId: string,
+    pendingRewind?: { leafUuid: string | null },
+  ): void {
     let historyPath: string | null = null;
     try {
       this.taskState.reset();
@@ -5265,7 +5364,10 @@ class ClaudeAgentSession implements AgentSession {
       }
       withClaudeReplayHistory(historyPath, (history) => {
         const replay = this.ingestPersistedSidechains(history);
-        this.ingestPersistedHistory(history.parentEntries, replay);
+        this.ingestPersistedHistory(
+          dropRewoundEntries(history.parentEntries, { pendingRewind }),
+          replay,
+        );
       });
     } catch (error) {
       this.logger.warn(
