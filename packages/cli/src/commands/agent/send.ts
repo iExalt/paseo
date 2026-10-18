@@ -1,5 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { type Command, Option } from "commander";
-import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
+import {
+  DEFAULT_AGENT_SEND_BEHAVIOR,
+  type ActiveTurnBehavior,
+  type AgentSendBehavior,
+} from "@getpaseo/protocol/messages";
 import { collectMultiple } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
@@ -17,7 +22,7 @@ export interface AgentSendResult {
   agentId: string;
   status: "queued" | "sent" | "completed" | "timeout" | "permission" | "error";
   message: string;
-  disposition?: "out_of_band" | "steered" | "turn_started";
+  disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
 }
 
 /** Schema for agent send output */
@@ -37,6 +42,7 @@ export interface AgentSendOptions extends CommandOptions {
   prompt?: string;
   promptFile?: string;
   mode?: string;
+  ifRunning?: AgentSendBehavior;
   notifyOnFinish?: boolean;
 }
 
@@ -55,6 +61,14 @@ export function addSendOptions(cmd: Command): Command {
       ).choices(["interrupt", "steer"]),
     )
     .option("--mode <id>", "Set the provider mode before sending the message")
+    .addOption(
+      new Option(
+        "--if-running <behavior>",
+        "When the agent is mid-turn: steer adds the message to the turn, queue runs it once the agent is idle, interrupt cancels the turn",
+      )
+        .choices(["queue", "steer", "interrupt"])
+        .default(DEFAULT_AGENT_SEND_BEHAVIOR),
+    )
     .option("--notify-on-finish", "Notify the calling agent when this agent finishes")
     .option("--no-notify-on-finish", "Do not notify the calling agent when this agent finishes")
     .option("--no-wait", "Return immediately without waiting for completion");
@@ -207,11 +221,13 @@ export async function runSendCommand(
     const images =
       options.image && options.image.length > 0 ? await readImageFiles(options.image) : undefined;
 
-    // Send the message
+    // A fresh ID per invocation lets the wait follow this message if the daemon holds it.
+    const messageId = randomUUID();
     const dispatch = await client.sendAgentMessage(agentIdArg, promptInput, {
       images,
       sourceAgentId: callerAgentId,
-      activeTurnBehavior: options.behavior ?? (callerAgentId ? "steer" : "interrupt"),
+      messageId,
+      activeTurnBehavior: options.behavior ?? options.ifRunning ?? DEFAULT_AGENT_SEND_BEHAVIOR,
       sessionMode: options.mode,
       ...(options.notifyOnFinish !== undefined || callerAgentId
         ? { notifyOnFinish: options.notifyOnFinish ?? true }
@@ -237,7 +253,7 @@ export async function runSendCommand(
       };
     }
 
-    const state = await client.waitForFinish(agentIdArg, 600000); // 10 minute timeout
+    const state = await client.waitForFinish(agentIdArg, 600000, { messageId }); // 10 minute timeout
     await client.close();
 
     return {

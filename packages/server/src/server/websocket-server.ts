@@ -2033,6 +2033,8 @@ export class VoiceAssistantWebSocketServer {
         terminalInputAck: true,
         // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
         agentCancelOutcome: true,
+        // COMPAT(agentSendQueue): added in v0.9.1; remove gate after 2027-04-18.
+        agentSendQueue: true,
         // COMPAT(workspaceCallerContext): added in v0.11.2, remove gate after 2027-04-10.
         workspaceCallerContext: true,
         // COMPAT(rewind): added in v0.1.X, drop the gate when floor >= v0.1.X.
