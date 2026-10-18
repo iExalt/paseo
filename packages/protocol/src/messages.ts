@@ -3833,7 +3833,7 @@ export const ServerInfoStatusPayloadSchema = z
         terminalInputAck: z.boolean().optional(),
         // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
         agentCancelOutcome: z.boolean().optional(),
-        // COMPAT(agentSendQueue): added after v0.9.0; remove gate after 2027-10-18.
+        // COMPAT(agentSendQueue): added in v0.9.1; remove gate after 2027-04-18.
         agentSendQueue: z.boolean().optional(),
         // COMPAT(workspaceCallerContext): added in v0.11.2, remove gate after 2027-04-10.
         workspaceCallerContext: z.boolean().optional(),

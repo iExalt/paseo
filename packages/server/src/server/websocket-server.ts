@@ -1873,7 +1873,7 @@ export class VoiceAssistantWebSocketServer {
         terminalInputAck: true,
         // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
         agentCancelOutcome: true,
-        // COMPAT(agentSendQueue): added after v0.9.0; remove gate after 2027-10-18.
+        // COMPAT(agentSendQueue): added in v0.9.1; remove gate after 2027-04-18.
         agentSendQueue: true,
         // COMPAT(workspaceCallerContext): added in v0.11.2, remove gate after 2027-04-10.
         workspaceCallerContext: true,

@@ -1405,6 +1405,35 @@ test("a queued message survives Stop and runs once the agent is idle", async () 
   }
 });
 
+test.each([1, 2])(
+  "a steer sent %i microtasks after a held message is released still reaches the agent",
+  async (ticks) => {
+    const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
+    session.steerResult = "unavailable";
+    const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+    try {
+      session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-1" });
+      for (let tick = 0; tick < ticks; tick += 1) await Promise.resolve();
+      await expect(
+        startAgentRun(manager, agentId, "direct", logger, {
+          replaceRunning: true,
+          activeTurnBehavior: "steer",
+        }),
+      ).resolves.toEqual({ disposition: "deferred" });
+      await vi.waitFor(() => expect(session.startPrompts).toEqual(["initial", "replacement"]));
+      await manager.waitForAgentRunStart(agentId);
+      session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-2" });
+      await vi.waitFor(() =>
+        expect(session.startPrompts).toEqual(["initial", "replacement", "direct"]),
+      );
+      expect(session.interruptCount).toBe(0);
+    } finally {
+      await manager.closeAgent(agentId);
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  },
+);
+
 test("ambiguous steer failure leaves the active turn untouched", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = new Error("connection lost after delivery");

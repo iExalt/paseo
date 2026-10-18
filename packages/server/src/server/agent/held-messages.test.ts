@@ -11,10 +11,16 @@ import {
 const AGENT_ID = "held-agent";
 
 class FakeManager {
-  agent: { id: string; lifecycle: string; activeTurnId: string | null } | null = {
+  agent: {
+    id: string;
+    lifecycle: string;
+    activeTurnId: string | null;
+    pendingPermissions: Map<string, unknown>;
+  } | null = {
     id: AGENT_ID,
     lifecycle: "running",
     activeTurnId: "turn-1",
+    pendingPermissions: new Map(),
   };
   private subscriber: ((event: AgentManagerEvent) => void) | null = null;
 
@@ -34,7 +40,12 @@ class FakeManager {
   }
 
   endTurn(type: "turn_completed" | "turn_failed" | "turn_canceled", turnId = "turn-1"): void {
-    this.agent = { id: AGENT_ID, lifecycle: "idle", activeTurnId: null };
+    this.agent = {
+      id: AGENT_ID,
+      lifecycle: "idle",
+      activeTurnId: null,
+      pendingPermissions: this.agent?.pendingPermissions ?? new Map(),
+    };
     this.subscriber?.({
       type: "agent_stream",
       agentId: AGENT_ID,
@@ -43,12 +54,27 @@ class FakeManager {
   }
 
   startTurn(turnId: string): void {
-    this.agent = { id: AGENT_ID, lifecycle: "running", activeTurnId: turnId };
+    this.agent = {
+      id: AGENT_ID,
+      lifecycle: "running",
+      activeTurnId: turnId,
+      pendingPermissions: new Map(),
+    };
     this.emitState();
   }
 
   close(): void {
-    this.agent = { id: AGENT_ID, lifecycle: "closed", activeTurnId: null };
+    this.agent = {
+      id: AGENT_ID,
+      lifecycle: "closed",
+      activeTurnId: null,
+      pendingPermissions: new Map(),
+    };
+    this.emitState();
+  }
+
+  resolvePermissions(): void {
+    this.agent?.pendingPermissions.clear();
     this.emitState();
   }
 
@@ -192,6 +218,23 @@ test("a held message settles only after its dispatch registers a run", async () 
   registerRun();
   await expect(outcome).resolves.toBe("dispatched");
   expect(manager.agent?.activeTurnId).toBe("a-turn");
+});
+
+test("a queued message waits for a permission that outlived its turn", async () => {
+  const manager = new FakeManager();
+  const delivered: string[] = [];
+  manager.agent?.pendingPermissions.set("permission-1", {});
+  hold(manager, "queued", delivered, { kind: "queued" });
+
+  manager.endTurn("turn_completed");
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(delivered).toEqual([]);
+
+  manager.resolvePermissions();
+  await expect(waitForHeldMessage(manager.controller, AGENT_ID, "queued")).resolves.toBe(
+    "dispatched",
+  );
+  expect(delivered).toEqual(["queued"]);
 });
 
 test("a message the daemon is not holding has nothing to wait for", () => {

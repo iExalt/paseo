@@ -25,6 +25,7 @@ export type AgentRunController = Pick<
   | "steerOrDeferBehindActiveTurn"
   | "streamAgent"
   | "subscribe"
+  | "waitForAgentRunStart"
 > & {
   reloadAgentSession(agentId: string): Promise<unknown>;
 };
@@ -174,12 +175,16 @@ async function startAgentRunInner(
   );
 }
 
-/** A queued prompt waits while the agent has any turn or run, or other held prompts. */
+/**
+ * A queued prompt waits while the agent has any turn or run, an unanswered permission (which can
+ * outlive its turn), or other held prompts.
+ */
 function shouldQueue(agentManager: AgentRunController, agentId: string): boolean {
   const agent = agentManager.getAgent(agentId);
   return (
     agentManager.hasInFlightRun(agentId) ||
     Boolean(agent?.activeTurnId) ||
+    (agent?.pendingPermissions.size ?? 0) > 0 ||
     hasHeldMessages(agentManager, agentId)
   );
 }
@@ -228,6 +233,29 @@ async function dispatchHeldRun(
     : { kind: "settled" };
 }
 
+const ACTIVE_TURN_CHANGED = "Active turn changed before steering could be delivered";
+
+/**
+ * A run can be starting with no turn to steer into yet, for example a held message released as
+ * this steer arrived. Wait for that run once and steer into its turn instead of failing.
+ */
+async function steerAroundStartingRun(
+  agentManager: AgentRunController,
+  agentId: string,
+  prompt: AgentPromptInput,
+  options: StartAgentRunOptions | undefined,
+): Promise<SteerDispatch | null> {
+  try {
+    const steer = await steerActiveRun(agentManager, agentId, prompt, options);
+    if (steer?.kind !== "start" || !agentManager.hasInFlightRun(agentId)) return steer;
+  } catch (error) {
+    // The admission lost its turn before the provider took the steer, so nothing was delivered.
+    if (!(error instanceof Error) || error.message !== ACTIVE_TURN_CHANGED) throw error;
+  }
+  await agentManager.waitForAgentRunStart(agentId).catch(() => undefined);
+  return await steerActiveRun(agentManager, agentId, prompt, options);
+}
+
 /** Steers into or starts a turn; "busy" means a turn is running that will not take the steer. */
 async function dispatchRun(
   agentManager: AgentRunController,
@@ -237,20 +265,31 @@ async function dispatchRun(
   options?: StartAgentRunOptions,
 ): Promise<{ disposition: "steered" | "turn_started" } | { disposition: "busy"; turnId: string }> {
   const snapshot = agentManager.getAgent(agentId);
-  const steer = await steerActiveRun(agentManager, agentId, prompt, options);
-  if (steer?.kind === "steered") {
-    options?.onDispatch?.("steered");
-    return { disposition: "steered" };
+  let started: Awaited<ReturnType<typeof startOrReplaceRun>> | null = null;
+  for (let attempt = 0; !started; attempt += 1) {
+    const steer = await steerAroundStartingRun(agentManager, agentId, prompt, options);
+    if (steer?.kind === "steered") {
+      options?.onDispatch?.("steered");
+      return { disposition: "steered" };
+    }
+    if (steer?.kind === "defer") {
+      return { disposition: "busy", turnId: steer.turnId };
+    }
+    try {
+      started = await startOrReplaceRun(
+        agentManager,
+        agentId,
+        prompt,
+        steer ? { ...options, replaceRunning: false } : options,
+      );
+    } catch (error) {
+      // Another dispatch started a run after this steer found none; steer into that run instead.
+      const lostStartRace =
+        error instanceof Error && error.message.endsWith("already has an active run");
+      if (!steer || attempt > 0 || !lostStartRace) throw error;
+    }
   }
-  if (steer?.kind === "defer") {
-    return { disposition: "busy", turnId: steer.turnId };
-  }
-  const { iterator, replaced } = await startOrReplaceRun(
-    agentManager,
-    agentId,
-    prompt,
-    steer ? { ...options, replaceRunning: false } : options,
-  );
+  const { iterator, replaced } = started;
   logger.trace(
     {
       agentId,

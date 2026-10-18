@@ -113,6 +113,8 @@ class AgentHeldMessages {
       return;
     }
     if (head.kind === "deferred" && !head.turnEnded) return;
+    // A permission can outlive its turn; a queued message waits for it to be answered.
+    if (head.kind === "queued" && agent.pendingPermissions.size > 0) return;
     if (this.manager.hasInFlightRun(this.agentId) || agent.activeTurnId) {
       // A deferred steer whose turn ended tries the turn that followed it; a queued message waits
       // for idle. Neither dispatches while a run has started but has no turn to steer into yet.
