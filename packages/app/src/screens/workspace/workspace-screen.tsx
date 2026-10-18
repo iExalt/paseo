@@ -2340,11 +2340,15 @@ function WorkspaceScreenContent({
       }
       await handleBulkCloseTabs({
         tabsToClose: paneTabs.slice(0, index),
-        title: t("workspace.tabs.confirmations.closeTabsLeftTitle"),
+        title: t(
+          isMobile
+            ? "workspace.tabs.confirmations.closeTabsAboveTitle"
+            : "workspace.tabs.confirmations.closeTabsLeftTitle",
+        ),
         logLabel: "to the left",
       });
     },
-    [handleBulkCloseTabs, t],
+    [handleBulkCloseTabs, isMobile, t],
   );
 
   const handleCloseTabsToLeft = useCallback(
@@ -2362,11 +2366,15 @@ function WorkspaceScreenContent({
       }
       await handleBulkCloseTabs({
         tabsToClose: paneTabs.slice(index + 1),
-        title: t("workspace.tabs.confirmations.closeTabsRightTitle"),
+        title: t(
+          isMobile
+            ? "workspace.tabs.confirmations.closeTabsBelowTitle"
+            : "workspace.tabs.confirmations.closeTabsRightTitle",
+        ),
         logLabel: "to the right",
       });
     },
-    [handleBulkCloseTabs, t],
+    [handleBulkCloseTabs, isMobile, t],
   );
 
   const handleCloseTabsToRight = useCallback(

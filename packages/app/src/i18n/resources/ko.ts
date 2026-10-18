@@ -707,6 +707,8 @@ export const ko: TranslationResources = {
         failedToCloseAgent: "에이전트를 닫지 못했습니다",
       },
       confirmations: {
+        closeTabsAboveTitle: "위쪽 탭을 닫을까요?",
+        closeTabsBelowTitle: "아래쪽 탭을 닫을까요?",
         close: "닫기",
         cancel: "취소",
         archive: "보관",
