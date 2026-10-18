@@ -52,7 +52,17 @@ test("release keeps each secret in its job and publishes only release tags", () 
   assert.deepEqual(workflow.permissions, {});
   for (const [name, job] of Object.entries(workflow.jobs))
     assert.equal(job.permissions.contents, name === "publish" ? "write" : "read", name);
-  assert.deepEqual(workflow.on.push, { tags: ["paseo-v*"] });
+  // Dispatch only, so the caches it saves land on dev, where the next release
+  // can read them; a tag run's caches are invisible to every other tag.
+  assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
+  assert.match(workflow.jobs.resolve.if, /github\.ref == 'refs\/heads\/dev'/);
+  const releasePlease = load(
+    readFileSync(new URL(".github/workflows/release-please.yml", repoRoot), "utf8"),
+  );
+  assert.match(
+    releasePlease.jobs.dispatch.steps.at(-1).run,
+    /gh workflow run release\.yml .*--ref dev -f tag="\$TAG"/,
+  );
   // A dispatch without a tag uploads a draft under a paseo-dryrun- tag and never
   // reaches publication; a tag must name the version it points at.
   const publishing = workflow.jobs.publish.steps.filter((step) =>
@@ -436,19 +446,16 @@ if [ -f "$ACTIVE_SWAP_FILE" ]; then cat "$ACTIVE_SWAP_FILE"; fi
     assert.equal(existsSync(ownerDirectory), false);
     assert.equal(existsSync(swapFile), false);
 
-    // The release workflow runs from release-please's tag push, as its app.
+    // release-please.yml dispatches the release on dev as github-actions[bot].
     const cleanupAs = (environment) =>
       spawnSync("bash", [runnerSwapPath, "cleanup"], {
         encoding: "utf8",
-        env: { ...baseEnvironment, GITHUB_ACTOR: "paseo-release[bot]", ...environment },
+        env: { ...baseEnvironment, GITHUB_ACTOR: "github-actions[bot]", ...environment },
         timeout: 5000,
       }).status;
-    assert.equal(cleanupAs({ GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/tags/paseo-v0.6.0" }), 0);
-    assert.equal(cleanupAs({ GITHUB_EVENT_NAME: "push", GITHUB_REF: "refs/tags/v0.6.0" }), 1);
-    assert.equal(
-      cleanupAs({ GITHUB_EVENT_NAME: "pull_request", GITHUB_REF: "refs/tags/paseo-v0.6.0" }),
-      1,
-    );
+    assert.equal(cleanupAs({}), 0);
+    assert.equal(cleanupAs({ GITHUB_REF: "refs/tags/paseo-v0.6.0" }), 1);
+    assert.equal(cleanupAs({ GITHUB_ACTOR: "paseo-release[bot]" }), 1);
 
     writeFileSync(swapFile, "pre-existing runner file");
     const existingPath = spawnSync("bash", [runnerSwapPath, "enable"], {
