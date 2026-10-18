@@ -50,7 +50,7 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { ProvidersSection } from "@/screens/settings/providers-section";
-import { HostUsageSection } from "@/usage";
+import { HostSpendSection, HostUsageSection } from "@/usage";
 import { HostAppearanceSection } from "@/screens/settings/host-appearance-section";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { useSessionStore } from "@/stores/session-store";
@@ -354,6 +354,7 @@ export function HostUsagePage({ serverId }: { serverId: string }) {
   return (
     <View>
       <HostUsageSection serverId={serverId} />
+      <HostSpendSection serverId={serverId} />
     </View>
   );
 }
