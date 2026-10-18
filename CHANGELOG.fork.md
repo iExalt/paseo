@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.10.0](https://github.com/iExalt/paseo/compare/paseo-v0.9.0...paseo-v0.10.0) (2026-10-18)
+
+
+### Features
+
+* **cli:** choose queue, steer or interrupt for agent sends to a running agent ([#192](https://github.com/iExalt/paseo/issues/192)) ([5bd53f9](https://github.com/iExalt/paseo/commit/5bd53f93cf473b0d62699685325257cee2239527))
+* **codex:** include native subagent threads in chat cost ([#193](https://github.com/iExalt/paseo/issues/193)) ([3ad767d](https://github.com/iExalt/paseo/commit/3ad767d5554ba87648d27f208ceee0d75e12735f))
+* **skills:** add update-nix-paseo skill for staging and activating fork releases ([#191](https://github.com/iExalt/paseo/issues/191)) ([376b4d6](https://github.com/iExalt/paseo/commit/376b4d6403b7dd42bbb70d94da50edb7f226ab49))
+
+
+### Bug Fixes
+
+* **app:** match tab close confirmations to mobile layout ([#189](https://github.com/iExalt/paseo/issues/189)) ([36bb237](https://github.com/iExalt/paseo/commit/36bb237ae62b86295d3e907d54b561776e8f2bde))
+
 ## [0.9.0](https://github.com/iExalt/paseo/compare/paseo-v0.8.0...paseo-v0.9.0) (2026-10-18)
 
 
