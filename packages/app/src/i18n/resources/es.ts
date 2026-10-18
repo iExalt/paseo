@@ -716,6 +716,8 @@ export const es: TranslationResources = {
         failedToCloseAgent: "No se pudo cerrar el agente",
       },
       confirmations: {
+        closeTabsAboveTitle: "¿Cerrar pestañas de arriba?",
+        closeTabsBelowTitle: "¿Cerrar pestañas de abajo?",
         unsavedTitle: "Cambios sin guardar",
         unsavedMessage:
           "Esta pestaña tiene cambios sin guardar. Al cerrarla se descartará el borrador.",

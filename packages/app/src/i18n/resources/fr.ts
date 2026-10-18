@@ -715,6 +715,8 @@ export const fr: TranslationResources = {
         failedToCloseAgent: "Impossible de fermer l’agent",
       },
       confirmations: {
+        closeTabsAboveTitle: "Fermer les onglets au-dessus ?",
+        closeTabsBelowTitle: "Fermer les onglets en dessous ?",
         unsavedTitle: "Modifications non enregistrées",
         unsavedMessage:
           "Cet onglet contient des modifications non enregistrées. Le fermer supprimera le brouillon.",

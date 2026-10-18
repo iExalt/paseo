@@ -716,6 +716,8 @@ export const ja: TranslationResources = {
         failedToCloseAgent: "エージェントを閉じられませんでした",
       },
       confirmations: {
+        closeTabsAboveTitle: "上のタブを閉じますか？",
+        closeTabsBelowTitle: "下のタブを閉じますか？",
         unsavedTitle: "未保存の変更",
         unsavedMessage: "このタブには未保存の変更があります。閉じると下書きが破棄されます。",
         closeWithoutSaving: "保存せずに閉じる",

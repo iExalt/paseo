@@ -715,6 +715,8 @@ export const ru: TranslationResources = {
         failedToCloseAgent: "Не удалось закрыть агента",
       },
       confirmations: {
+        closeTabsAboveTitle: "Закрыть вкладки выше?",
+        closeTabsBelowTitle: "Закрыть вкладки ниже?",
         unsavedTitle: "Несохранённые изменения",
         unsavedMessage:
           "В этой вкладке есть несохранённые изменения. При закрытии черновик будет удалён.",

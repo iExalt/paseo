@@ -713,6 +713,8 @@ export const ptBR: TranslationResources = {
         failedToCloseAgent: "Falha ao fechar agente",
       },
       confirmations: {
+        closeTabsAboveTitle: "Fechar abas acima?",
+        closeTabsBelowTitle: "Fechar abas abaixo?",
         unsavedTitle: "Alterações não salvas",
         unsavedMessage: "Esta aba tem alterações não salvas. Fechá-la descartará o rascunho.",
         closeWithoutSaving: "Fechar sem salvar",
