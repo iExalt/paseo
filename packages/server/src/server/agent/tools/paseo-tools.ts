@@ -18,6 +18,9 @@ import type { AgentManager } from "../agent-manager.js";
 import {
   ActiveTurnBehaviorSchema,
   AgentProfileSchema,
+  AgentSendBehaviorSchema,
+  DEFAULT_AGENT_SEND_BEHAVIOR,
+  type AgentSendBehavior,
   ReplyRuleSchema,
   WorkspaceNotificationsSchema,
 } from "@getpaseo/protocol/messages";
@@ -1168,6 +1171,11 @@ function createToolCatalog(
     agentId: z.string(),
     prompt: z.string(),
     sessionMode: z.string().optional().describe("Optional mode to set before running the prompt."),
+    ifRunning: AgentSendBehaviorSchema.optional()
+      .default(DEFAULT_AGENT_SEND_BEHAVIOR)
+      .describe(
+        "What to do when the agent is mid-turn: steer adds the prompt to the running turn, queue runs it as a new turn once the agent is idle, interrupt cancels the turn and starts a new one.",
+      ),
   };
   const agentToAgentSendAgentPromptInputSchema = {
     ...commonSendAgentPromptInputSchema,
@@ -1985,7 +1993,9 @@ function createToolCatalog(
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
-        disposition: z.enum(["turn_started", "out_of_band", "steered"]).optional(),
+        disposition: z
+          .enum(["turn_started", "steered", "deferred", "queued", "out_of_band"])
+          .optional(),
         deliveryStatus: z.literal("queued").optional(),
         messageId: z.string().optional(),
         status: AgentStatusEnum,
@@ -1996,9 +2006,12 @@ function createToolCatalog(
       agentId,
       prompt,
       sessionMode,
+      ifRunning = DEFAULT_AGENT_SEND_BEHAVIOR,
       notifyOnFinish = Boolean(callerAgentId),
-      activeTurnBehavior = callerAgentId ? "steer" : "interrupt",
+      activeTurnBehavior: legacyActiveTurnBehavior,
     }) => {
+      // Upstream's activeTurnBehavior still wins when given; ifRunning adds queue and defaults to steer.
+      const activeTurnBehavior: AgentSendBehavior = legacyActiveTurnBehavior ?? ifRunning;
       if (callerAgentId && !agentManager.getAgent(agentId) && !(await agentStorage.get(agentId))) {
         throw new PaseoToolInputError(`Agent ${agentId} not found`);
       }
@@ -2040,6 +2053,7 @@ function createToolCatalog(
               },
               sessionMode,
               activeTurnBehavior,
+              clearPendingPermissions: true,
               onDispatch: confirmDispatch,
             });
           } catch (error) {
@@ -2072,6 +2086,7 @@ function createToolCatalog(
         source: callerAgentId ? { kind: "agent-message", agentId: callerAgentId } : undefined,
         sessionMode,
         activeTurnBehavior,
+        clearPendingPermissions: true,
         onDispatch: confirmDispatch,
         logger: childLogger,
       }).catch((error) => {

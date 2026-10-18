@@ -8543,6 +8543,24 @@ test.each([false, true])(
   },
 );
 
+test("queueing a message requires a host that queues, without sending anything", async () => {
+  const transport = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "queue-gate",
+    transportFactory: () => transport.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  transport.triggerOpen({ features: {} });
+  await connecting;
+  await expect(
+    client.sendAgentMessage("recipient", "later", { activeTurnBehavior: "queue" }),
+  ).rejects.toThrow("Update the Paseo host to queue messages");
+  expect(transport.sent).toHaveLength(0);
+});
+
 test("measures an outbound message in UTF-8 bytes against the daemon's message limit", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({
