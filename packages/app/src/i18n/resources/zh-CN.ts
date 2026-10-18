@@ -705,6 +705,8 @@ export const zhCN: TranslationResources = {
         failedToCloseAgent: "关闭 Agent 失败",
       },
       confirmations: {
+        closeTabsAboveTitle: "关闭上方标签？",
+        closeTabsBelowTitle: "关闭下方标签？",
         unsavedTitle: "未保存的更改",
         unsavedMessage: "此标签页有尚未保存的更改。关闭将丢弃草稿。",
         closeWithoutSaving: "不保存并关闭",
