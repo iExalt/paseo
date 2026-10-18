@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.0](https://github.com/iExalt/paseo/compare/paseo-v0.8.0...paseo-v0.9.0) (2026-10-18)
+
+
+### Features
+
+* show API spend by provider in Settings &gt; Usage ([#187](https://github.com/iExalt/paseo/issues/187)) ([983f3f5](https://github.com/iExalt/paseo/commit/983f3f5bac2cffc80ddc5837c601c7213fb4e456))
+
+
+### Bug Fixes
+
+* **ci:** run releases on dev so the next one reads their Android caches ([#186](https://github.com/iExalt/paseo/issues/186)) ([baa39ef](https://github.com/iExalt/paseo/commit/baa39efd14fc272423155d1b495751d76320df8f))
+
 ## [0.8.0](https://github.com/iExalt/paseo/compare/paseo-v0.7.0...paseo-v0.8.0) (2026-10-17)
 
 
