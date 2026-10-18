@@ -46,7 +46,8 @@
 > Activation keeps `/Applications/Paseo.app` a copy of the active release, so Dock pins and
 > notifications always open the current app; do not replace it with a link into the Nix
 > store. `rollback` returns to the previous release. An older checkout may not recognise
-> newer release manifests, so pull `dev` before `check`.
+> newer release manifests, so pull `dev` before `check`. Agents follow the
+> [`update-nix-paseo`](.agents/skills/update-nix-paseo/SKILL.md) skill.
 >
 > **Android:** install the `paseo-<version>-android-arm64.apk` attached to the release.
 
