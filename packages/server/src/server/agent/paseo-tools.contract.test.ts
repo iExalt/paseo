@@ -291,6 +291,7 @@ function buildAgentManagerSpies() {
     reloadStalePluginSession: async () => {},
     hasInFlightRun: vi.fn().mockReturnValue(false),
     steerOrReplaceActiveTurn: async () => ({ status: "inactive" as const }),
+    steerOrDeferBehindActiveTurn: vi.fn().mockResolvedValue({ status: "inactive" }),
     tryRunOutOfBand: vi.fn().mockReturnValue(false),
     subscribe: vi.fn().mockReturnValue(() => {}),
     streamAgent: vi.fn(() => (async function* noop() {})()),
@@ -4367,6 +4368,7 @@ describe("send_agent_prompt native tool", () => {
     }
     expect(parsed.data).toMatchObject({
       notifyOnFinish: true,
+      ifRunning: "steer",
     });
 
     const response = await tool.handler(parsed.data as Record<string, unknown>);
@@ -4377,6 +4379,7 @@ describe("send_agent_prompt native tool", () => {
       .get(server)!
       .waitForDispatch("child-agent", new AbortController().signal);
     expect(serverSubscriptionRecords.get(server)!.size).toBe(1);
+    expect(spies.agentManager.steerOrDeferBehindActiveTurn).toHaveBeenCalledTimes(1);
     expect(response.structuredContent.guidance).toContain("You will get notified");
   });
 
@@ -4603,12 +4606,17 @@ describe("send_agent_prompt native tool", () => {
         } else {
           childClient.sessions[0]!.rejectNextTurnStart(new Error("Requested turn could not start"));
           await expect(
-            invokeToolWithParsedInput(tool, { agentId: child.id, prompt: "Replacement task" }),
+            invokeToolWithParsedInput(tool, {
+              agentId: child.id,
+              prompt: "Replacement task",
+              ifRunning: "interrupt",
+            }),
           ).rejects.toThrow("Requested turn could not start");
           // A later real turn must not inherit a subscription from the rejected dispatch.
           await invokeToolWithParsedInput(tool, {
             agentId: child.id,
             prompt: "Recovery",
+            ifRunning: "interrupt",
             notifyOnFinish: false,
           });
           childClient.sessions[0]!.finishTurn("Recovered");
@@ -4714,6 +4722,7 @@ describe("send_agent_prompt native tool", () => {
       const sent = await invokeToolWithParsedInput(registeredTool(server, "send_agent_prompt"), {
         agentId: childId,
         prompt: "Stop and reply instead",
+        ifRunning: "interrupt",
       });
       expect(sent.structuredContent).toMatchObject({
         success: true,

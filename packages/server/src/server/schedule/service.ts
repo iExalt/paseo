@@ -234,6 +234,7 @@ type ScheduleAgentManager = Pick<
   | "steerOrDeferBehindActiveTurn"
   | "streamAgent"
   | "subscribe"
+  | "waitForAgentRunStart"
 > &
   Pick<
     AgentManager,
