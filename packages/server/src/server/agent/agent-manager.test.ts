@@ -21,6 +21,7 @@ import {
   type ManagedAgent,
 } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
+import { SpendLedger } from "./spend-ledger.js";
 import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { toAgentPayload } from "./agent-projections.js";
@@ -7066,9 +7067,12 @@ test("applies live autonomous events and preserves usage omitted from completion
   expect(lifecycleUpdates).toContain("idle");
 });
 
-test("keeps the session cost through cost-less usage readings and a resume", async () => {
+test("keeps the session cost through cost-less usage readings and a resume, and records it as spend", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-session-cost-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
+  // Started before the agent, as at daemon startup, so its spend is not carried in.
+  const spendLedger = new SpendLedger({ paseoHome: workdir, logger });
+  await spendLedger.initialize();
   let capturedSession: TestAgentSession | null = null;
   class CostClient extends TestAgentClient {
     override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
@@ -7079,6 +7083,7 @@ test("keeps the session cost through cost-less usage readings and a resume", asy
   const manager = new AgentManager({
     clients: { codex: new CostClient() },
     registry: storage,
+    spendLedger,
     logger,
     idFactory: () => "00000000-0000-4000-8000-000000000139",
   });
@@ -7106,6 +7111,9 @@ test("keeps the session cost through cost-less usage readings and a resume", asy
     await manager.closeAgent(snapshot.id);
     const record = await storage.get(snapshot.id);
     expect(record?.totalCostUsd).toBe(1.5);
+    expect((await manager.summarizeSpend()).providers).toMatchObject([
+      { provider: "codex", allTimeUsd: 1.5, carriedUsd: 0 },
+    ]);
 
     const resumed = await manager.resumeAgentFromPersistence(
       record!.persistence!,

@@ -20,4 +20,20 @@ export const usageCopy = {
   get clientUnavailable() {
     return i18n.t("providerUsage.clientUnavailable");
   },
+  hostUnavailable: (host: string) => i18n.t("providerUsage.hostUnavailable", { host }),
+  // API spend copy is English-only until it moves into the locale resources.
+  spend: "API spend",
+  spendInfo:
+    "What agents spent through this host, as each provider reports it. Plans billed by subscription may report a cost they don't charge.",
+  spendToday: "Today",
+  spendLast7Days: "7 days",
+  spendThisMonth: "This month",
+  spendAllTime: "All time",
+  spendEmpty: "No spend recorded yet",
+  spendLoading: "Loading spend...",
+  spendErrorTitle: "Unable to load spend",
+  spendUpgradeRequired: (host: string) => `Update ${host} to see API spend`,
+  spendTrackingSince: (date: string) => `Tracked since ${date}.`,
+  spendCarried: (amount: string) =>
+    `Includes ${amount} from sessions that started before tracking, counted on the day they first reported it.`,
 } as const;

@@ -110,6 +110,7 @@ import type {
   RefreshProvidersSnapshotResponseMessage,
   ProviderDiagnosticResponseMessage,
   ProfileListPayload,
+  UsageSpendSummaryPayload,
   PermissionListPayload,
   ProviderInspectPayload,
   ProviderInspectRequest,
@@ -1354,6 +1355,11 @@ interface PingProbe {
   // heartbeat sets this; a latency measurement never drives teardown, even when a
   // heartbeat tick shares (dedupes onto) an in-flight measurement ping.
   drivesLivenessFailure: boolean;
+}
+
+// COMPAT(usageSpendSummary): added in v0.9.0, remove gate after 2027-04-18.
+export function supportsSpendSummary(features: ServerInfoStatusPayload["features"]): boolean {
+  return features?.usageSpendSummary === true;
 }
 
 // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
@@ -5802,6 +5808,17 @@ export class DaemonClient {
         type: "get_daemon_config_request",
       },
       responseType: "get_daemon_config_response",
+    });
+  }
+
+  /** What agents spent through the host, by provider; `timeZone` decides where days start. */
+  async getSpendSummary(options?: {
+    timeZone?: string;
+    requestId?: string;
+  }): Promise<UsageSpendSummaryPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"usage.spend.summary.response">({
+      requestId: options?.requestId,
+      message: { type: "usage.spend.summary.request", timeZone: options?.timeZone },
     });
   }
 

@@ -22,6 +22,7 @@ import {
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
+import type { SpendSummary } from "@getpaseo/protocol/messages";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
@@ -62,6 +63,7 @@ import {
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
 import type { StoredAgentRecord, AgentStorage } from "./agent-storage.js";
+import type { SpendLedger } from "./spend-ledger.js";
 import type { AgentOwner } from "./agent-owner.js";
 import {
   InMemoryAgentTimelineStore,
@@ -344,6 +346,8 @@ export interface AgentManagerOptions {
   providerDefinitions?: ProviderEnabledMap;
   idFactory?: () => string;
   registry?: AgentStorage;
+  /** Records each cost increase with its date, for spend totals by provider. */
+  spendLedger?: SpendLedger;
   onAgentAttention?: AgentAttentionCallback;
   onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   timelineStore?: InMemoryAgentTimelineStore;
@@ -780,6 +784,7 @@ export class AgentManager {
   private readonly subscribers = new Set<SubscriptionRecord>();
   private readonly idFactory: () => string;
   private readonly registry?: AgentStorage;
+  private readonly spendLedger?: SpendLedger;
   private readonly durableTimelineStore?: AgentTimelineStore;
   private readonly previousStatuses = new Map<string, AgentLifecycleStatus>();
   private readonly backgroundTasks = new Set<Promise<void>>();
@@ -817,6 +822,7 @@ export class AgentManager {
     this.timelineStore = options.timelineStore ?? new InMemoryAgentTimelineStore();
     this.idFactory = options.idFactory ?? (() => randomUUID());
     this.registry = options?.registry;
+    this.spendLedger = options.spendLedger;
     this.paseoHome = options.paseoHome ? resolve(options.paseoHome) : undefined;
     this.paseoCliPath = resolvePaseoCliExecutablePath();
     this.durableTimelineStore = options?.durableTimelineStore;
@@ -1273,6 +1279,22 @@ export class AgentManager {
         );
       }
     }
+  }
+
+  /** Live cost readings only: replayed history repeats readings the ledger already has. */
+  private recordSpend(agent: ManagedAgent, usage: AgentUsage): void {
+    if (usage.totalCostUsd === undefined || !this.spendLedger) return;
+    void this.spendLedger.record({
+      agentId: agent.id,
+      provider: agent.provider,
+      createdAt: agent.createdAt,
+      totalUsd: usage.totalCostUsd,
+    });
+  }
+
+  /** What agents spent through this daemon, by provider, in the caller's time zone. */
+  async summarizeSpend(timeZone?: string): Promise<SpendSummary> {
+    return (await this.spendLedger?.summarize(timeZone)) ?? { trackingSince: null, providers: [] };
   }
 
   usageSession(id: string) {
@@ -4725,6 +4747,7 @@ export class AgentManager {
         this.onStreamThreadStarted(agent);
         return undefined;
       case "usage_updated":
+        if (!fromHistory) this.recordSpend(agent, event.usage);
         agent.lastUsage = withKnownCost(event.usage, agent.lastUsage);
         this.emitState(agent);
         return undefined;
@@ -4770,6 +4793,7 @@ export class AgentManager {
           isForegroundEvent,
           terminalDisposition,
           completionSubject,
+          fromHistory,
         });
         return undefined;
       case "turn_failed":
@@ -4871,9 +4895,17 @@ export class AgentManager {
     isForegroundEvent: boolean;
     terminalDisposition: ActiveTurnTerminalDisposition;
     completionSubject?: CompletionSubject;
+    fromHistory: boolean;
   }): void {
-    const { agent, event, eventTurnId, isForegroundEvent, terminalDisposition, completionSubject } =
-      params;
+    const {
+      agent,
+      event,
+      eventTurnId,
+      isForegroundEvent,
+      terminalDisposition,
+      completionSubject,
+      fromHistory,
+    } = params;
     this.logger.trace(
       {
         agentId: agent.id,
@@ -4887,6 +4919,7 @@ export class AgentManager {
     );
     if (terminalDisposition === "stale") return;
     if (event.usage) {
+      if (!fromHistory) this.recordSpend(agent, event.usage);
       agent.lastUsage = { ...agent.lastUsage, ...event.usage };
     }
     // If no usage on turn_completed, keep lastUsage as-is so context window
