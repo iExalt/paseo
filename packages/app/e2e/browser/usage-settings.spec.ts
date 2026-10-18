@@ -1,6 +1,8 @@
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { expect, test } from "../support/fixtures";
 import { gotoAppShell, openSettings } from "../support/helpers/app";
+import { qaScreenshot } from "../support/helpers/context-window";
+import { seedMockAgentWorkspace } from "../support/helpers/mock-agent";
 import { getServerId } from "../support/helpers/server-id";
 import { openSettingsHostSection } from "../support/helpers/settings";
 import {
@@ -152,5 +154,45 @@ test.describe("usage settings", () => {
       page.getByTestId("usage-card").getByText(/^Update (?!the host ).+ to see usage$/),
     ).toBeVisible({ timeout: 10_000 });
     expect(usage.listRequests()).toHaveLength(0);
+  });
+});
+
+test.describe("api spend", () => {
+  test("shows what agents spent by provider, as the daemon recorded it", async ({ page }) => {
+    test.setTimeout(180_000);
+    const serverId = getServerId();
+    const agent = await seedMockAgentWorkspace({
+      repoPrefix: "usage-spend-",
+      title: "Usage spend e2e",
+      initialPrompt: "emit 32000 byte file agent stream payload costing $1.25",
+    });
+    try {
+      // Other specs share the daemon and spend too, so read the total the section should show.
+      const allTimeUsd = async () =>
+        (await agent.client.getSpendSummary()).summary.providers.find(
+          (provider) => provider.provider === "mock",
+        )?.allTimeUsd ?? 0;
+      await expect.poll(allTimeUsd, { timeout: 30_000 }).toBeGreaterThanOrEqual(1.25);
+
+      await gotoAppShell(page);
+      await openSettings(page);
+      await openSettingsHostSection(page, serverId, "usage");
+      // A phone-width page shows whether the amounts fit side by side.
+      await page.setViewportSize({ width: 390, height: 844 });
+      const row = page.getByTestId("spend-card").getByTestId("spend-row-mock");
+      await expect(async () => {
+        const expected = new Intl.NumberFormat("en", { style: "currency", currency: "USD" }).format(
+          await allTimeUsd(),
+        );
+        await expect(row.getByLabel(`All time ${expected}`)).toBeVisible({ timeout: 1_000 });
+      }).toPass({ timeout: 20_000 });
+      await expect(row.getByText("Today", { exact: true })).toBeVisible();
+      await expect(row.getByText("This month", { exact: true })).toBeVisible();
+      await qaScreenshot(page, "usage-spend-compact");
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await qaScreenshot(page, "usage-spend-desktop");
+    } finally {
+      await agent.cleanup();
+    }
   });
 });
