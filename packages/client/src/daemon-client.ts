@@ -32,7 +32,7 @@ import {
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
-  type ActiveTurnBehavior,
+  type AgentSendBehavior,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
@@ -446,7 +446,7 @@ export interface SendMessageOptions {
   sourceAgentId?: string;
   messageId?: string;
   /** What happens when the agent is mid-turn. The daemon interrupts the turn when omitted. */
-  activeTurnBehavior?: ActiveTurnBehavior;
+  activeTurnBehavior?: AgentSendBehavior;
   sessionMode?: string;
   notifyOnFinish?: boolean;
   images?: Array<{ data: string; mimeType: string }>;
@@ -3725,7 +3725,7 @@ export class DaemonClient {
     agentId: string,
     text: string,
     options?: SendMessageOptions,
-  ): Promise<{ disposition?: "out_of_band" | "steered" | "turn_started" }> {
+  ): Promise<{ disposition?: "out_of_band" | "steered" | "turn_started" | "queued" }> {
     this.requireSendAgentMessageCapabilities(options);
     const requestId = this.createRequestId();
     const messageId = options?.messageId ?? crypto.randomUUID();
@@ -3767,6 +3767,15 @@ export class DaemonClient {
     }
     if (options?.sessionMode !== undefined || options?.notifyOnFinish !== undefined) {
       this.requireAgentOrchestrationParity();
+    }
+    if (
+      options?.activeTurnBehavior === "queue" &&
+      this.lastServerInfoMessage?.features?.agentSendQueue !== true
+    ) {
+      throw new DaemonConnectionError(
+        "Update the Paseo host to queue messages for a running agent.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
     }
   }
 
@@ -6246,7 +6255,11 @@ export class DaemonClient {
     });
   }
 
-  async waitForFinish(agentId: string, timeout = 60000): Promise<WaitForFinishResult> {
+  async waitForFinish(
+    agentId: string,
+    timeout = 60000,
+    options?: { messageId?: string },
+  ): Promise<WaitForFinishResult> {
     const requestId = this.createRequestId();
     const hasTimeout = Number.isFinite(timeout) && timeout > 0;
     const message = SessionInboundMessageSchema.parse({
@@ -6254,6 +6267,7 @@ export class DaemonClient {
       requestId,
       agentId,
       ...(hasTimeout ? { timeoutMs: timeout } : {}),
+      ...(options?.messageId ? { messageId: options.messageId } : {}),
     });
     const payload = await this.sendCorrelatedRequest({
       requestId,
