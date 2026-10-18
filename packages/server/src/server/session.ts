@@ -1104,6 +1104,7 @@ export class Session {
     this.usageSession = new UsageSession({
       emit: (msg) => this.emit(msg),
       runtime: pluginRuntime,
+      spend: agentManager,
       logger: this.sessionLogger,
     });
     this.agentConfigSession = new AgentConfigSession({
@@ -3688,6 +3689,8 @@ export class Session {
         return this.usageSession.handleLegacyList(msg);
       case "usage.list_reports.request":
         return this.usageSession.handleListReports(msg);
+      case "usage.spend.summary.request":
+        return this.usageSession.handleSpendSummary(msg);
       default:
         return undefined;
     }
