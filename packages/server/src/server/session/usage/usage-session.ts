@@ -1,6 +1,6 @@
 import type { ListUsageReportsOptions } from "../../plugins/usage-sources/index.js";
 import type pino from "pino";
-import type { ProviderUsage, UsageReportEntry } from "@getpaseo/protocol/messages";
+import type { ProviderUsage, SpendSummary, UsageReportEntry } from "@getpaseo/protocol/messages";
 import type { SessionInboundMessage, SessionOutboundMessage } from "../../messages.js";
 
 export interface UsageSessionOptions {
@@ -8,6 +8,9 @@ export interface UsageSessionOptions {
   runtime?: {
     listUsageReports(options: ListUsageReportsOptions): Promise<UsageReportEntry[]>;
     listLegacyUsage(): Promise<{ fetchedAt: string; providers: ProviderUsage[] }>;
+  };
+  spend?: {
+    summarizeSpend(timeZone?: string): Promise<SpendSummary>;
   };
   logger: pino.Logger;
 }
@@ -40,6 +43,31 @@ export class UsageSession {
         payload: {
           requestId: msg.requestId,
           error: error instanceof Error ? error.message : String(error),
+        },
+      });
+    }
+  }
+
+  async handleSpendSummary(
+    msg: Extract<SessionInboundMessage, { type: "usage.spend.summary.request" }>,
+  ): Promise<void> {
+    try {
+      if (!this.options.spend) throw new Error("Spend tracking is unavailable");
+      const summary = await this.options.spend.summarizeSpend(msg.timeZone);
+      this.options.emit({
+        type: "usage.spend.summary.response",
+        payload: { requestId: msg.requestId, summary },
+      });
+    } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      this.options.logger.error({ err }, "Failed to summarize spend");
+      this.options.emit({
+        type: "rpc_error",
+        payload: {
+          requestId: msg.requestId,
+          requestType: msg.type,
+          error: `Failed to summarize spend: ${err.message}`,
+          code: "usage_spend_summary_failed",
         },
       });
     }

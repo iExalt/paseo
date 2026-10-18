@@ -37,4 +37,18 @@ export const usageCopy = {
   displayRemaining: "Remaining",
   showInSidebar: "Summary in sidebar",
   showInSidebarHint: "Pinned windows show in the sidebar footer",
+  spend: "API spend",
+  spendInfo:
+    "What agents spent through this host, as each provider reports it. Plans billed by subscription may report a cost they don't charge.",
+  spendToday: "Today",
+  spendLast7Days: "7 days",
+  spendThisMonth: "This month",
+  spendAllTime: "All time",
+  spendEmpty: "No spend recorded yet",
+  spendLoading: "Loading spend...",
+  spendErrorTitle: "Unable to load spend",
+  spendUpgradeRequired: (host: string) => `Update ${host} to see API spend`,
+  spendTrackingSince: (date: string) => `Tracked since ${date}.`,
+  spendCarried: (amount: string) =>
+    `Includes ${amount} from sessions that started before tracking, counted on the day they first reported it.`,
 } as const;
