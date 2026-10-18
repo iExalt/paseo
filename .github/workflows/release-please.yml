@@ -2,10 +2,11 @@ name: Release Please
 
 # Keeps one release PR open that bumps the version and writes CHANGELOG.fork.md
 # from the Conventional Commits on dev. Merging it makes the paseo-v* tag and a
-# draft release with the changelog as its notes; the tag starts release.yml,
-# which builds, fills and publishes the draft. The release App's token is used,
-# not GITHUB_TOKEN: what GITHUB_TOKEN makes starts no workflows, so the release
-# PR would get no checks and the tag no release.
+# draft release with the changelog as its notes, and the dispatch job starts
+# release.yml on dev, which builds, fills and publishes the draft. The release
+# App's token is used for the PR, not GITHUB_TOKEN: what GITHUB_TOKEN pushes
+# starts no workflows, so the release PR would get no checks. A dispatch is the
+# exception, so GITHUB_TOKEN starts the release.
 on:
   push:
     branches: [dev]
@@ -24,6 +25,8 @@ jobs:
     timeout-minutes: 5
     outputs:
       pr: ${{ steps.release.outputs.pr }}
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: token
@@ -39,6 +42,22 @@ jobs:
         with:
           token: ${{ steps.token.outputs.token }}
           target-branch: dev
+
+  # On dev, not the tag, so the Android caches the release saves stay readable
+  # by the next one; see release.yml.
+  dispatch:
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Start the release on dev
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref dev -f tag="$TAG"
 
   # Every version bump changes package-lock.json, and with it the Nix dependency
   # hash. release-please rewrites its branch whenever it updates the PR, so this

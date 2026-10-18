@@ -3,20 +3,23 @@ name: Release
 # Builds the macOS Nix desktop closure and the Android fork APK at a paseo-v*
 # tag, smoke-tests both, signs what clients verify and publishes the GitHub
 # release the in-app updaters read. Merging the release PR makes the tag and a
-# draft release with the changelog (release-please.yml); this fills the draft
-# and publishes it as latest.
+# draft release with the changelog, then dispatches this on dev with the tag
+# (release-please.yml); this fills the draft and publishes it as latest.
+#
+# Runs only on dev, never on the tag: Actions caches are scoped to the ref that
+# saved them, and a run can read only its own ref's and dev's. Caches a tag run
+# saved would be invisible to the next release, so its Android build would
+# start cold.
 #
 # Dispatch with a tag to publish that tag again after a failed run; it must be
-# newer than the latest release. Dispatch on dev without a tag for a dry run: it
+# newer than the latest release. Dispatch without a tag for a dry run: it
 # uploads every asset to a draft tagged paseo-dryrun-<run_id> and never creates
 # a tag or marks a release latest. Delete the draft when done.
 on:
-  push:
-    tags: ["paseo-v*"]
   workflow_dispatch:
     inputs:
       tag:
-        description: Release tag to publish again, such as paseo-v0.6.0 (empty for a dry run)
+        description: Release tag to publish, such as paseo-v0.6.0 (empty for a dry run)
         type: string
         default: ""
 
@@ -29,11 +32,11 @@ concurrency:
 jobs:
   resolve:
     name: Resolve release identity
+    # github-actions[bot] is release-please.yml handing over a fresh tag.
     if: >-
-      github.repository == 'iExalt/paseo' &&
-      (github.event_name == 'push' ||
-       (github.actor == 'iExalt' && github.triggering_actor == 'iExalt' &&
-        (inputs.tag != '' || github.ref == 'refs/heads/dev')))
+      github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' &&
+      ((github.actor == 'iExalt' && github.triggering_actor == 'iExalt') ||
+       (github.actor == 'github-actions[bot]' && inputs.tag != ''))
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
@@ -58,7 +61,7 @@ jobs:
         id: identity
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || (github.event_name == 'push' && github.ref_name) || '' }}
+          TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
