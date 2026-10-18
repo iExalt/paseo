@@ -1,5 +1,6 @@
 import path from "node:path";
 import { readFileSync } from "node:fs";
+import type { UsageSpendSummaryPayload } from "@getpaseo/protocol/messages";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
 import { connectDaemonClient } from "./daemon-client-loader";
 import { withProjectOwnership } from "./project-ownership";
@@ -184,6 +185,7 @@ export interface SeedDaemonClient {
     handler: (event: { terminalId: string; type: string; data?: Uint8Array }) => void,
   ): () => void;
   killTerminal(terminalId: string): Promise<{ error: string | null }>;
+  getSpendSummary(options?: { timeZone?: string }): Promise<UsageSpendSummaryPayload>;
 }
 
 export async function connectSeedClient(options?: {

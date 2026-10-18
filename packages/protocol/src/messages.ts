@@ -1945,6 +1945,13 @@ export const UsageListReportsRequestMessageSchema = z.object({
   forceRefresh: z.boolean().optional(),
 });
 
+export const UsageSpendSummaryRequestMessageSchema = z.object({
+  type: z.literal("usage.spend.summary.request"),
+  requestId: z.string(),
+  /** IANA time zone that decides where "today" and "this month" start. Defaults to UTC. */
+  timeZone: z.string().optional(),
+});
+
 export const ResumeAgentRequestMessageSchema = z.object({
   type: z.literal("resume_agent_request"),
   handle: AgentPersistenceHandleSchema,
@@ -3484,6 +3491,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProviderDiagnosticRequestMessageSchema,
   ProviderUsageListRequestMessageSchema,
   UsageListReportsRequestMessageSchema,
+  UsageSpendSummaryRequestMessageSchema,
   ResumeAgentRequestMessageSchema,
   ImportAgentRequestMessageSchema,
   RefreshAgentRequestMessageSchema,
@@ -3795,6 +3803,8 @@ export const ServerInfoStatusPayloadSchema = z
         backgroundWorkspaces: z.boolean().optional(),
         providersSnapshot: z.boolean().optional(),
         usageSources: z.boolean().optional(),
+        // COMPAT(usageSpendSummary): added in v0.9.0, remove gate after 2027-04-18.
+        usageSpendSummary: z.boolean().optional(),
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
         providersSnapshotCwd: z.boolean().optional(),
         // COMPAT(directorySync): added in v0.3.x, remove gate after 2027-02-12.
@@ -6611,6 +6621,31 @@ export const UsageListReportsResponseMessageSchema = z.object({
   payload: z.object({ requestId: z.string(), error: z.string().nullable() }),
 });
 
+/** What agents spent through this daemon, by provider, as reported by each provider. */
+export const SpendSummarySchema = z.object({
+  /** When the daemon started recording spend. Null while it has no ledger. */
+  trackingSince: z.string().nullable(),
+  providers: z.array(
+    z.object({
+      provider: z.string(),
+      todayUsd: z.number(),
+      last7DaysUsd: z.number(),
+      thisMonthUsd: z.number(),
+      allTimeUsd: z.number(),
+      /** Part of `allTimeUsd` spent before tracking began, counted when first reported. */
+      carriedUsd: z.number(),
+    }),
+  ),
+});
+
+export const UsageSpendSummaryResponseMessageSchema = z.object({
+  type: z.literal("usage.spend.summary.response"),
+  payload: z.object({
+    requestId: z.string(),
+    summary: SpendSummarySchema,
+  }),
+});
+
 const AgentSlashCommandSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -7327,6 +7362,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProviderUsageListResponseMessageSchema,
   UsageListReportsUpdateMessageSchema,
   UsageListReportsResponseMessageSchema,
+  UsageSpendSummaryResponseMessageSchema,
   ListCommandsResponseSchema,
   ListTerminalsResponseSchema,
   TerminalsChangedSchema,
@@ -7514,6 +7550,10 @@ export type ProviderUsageTone = z.infer<typeof ProviderUsageToneSchema>;
 export type UsageProblem = z.infer<typeof UsageProblemSchema>;
 export type UsageReport = z.infer<typeof UsageReportSchema>;
 export type UsageReportEntry = z.infer<typeof UsageReportEntrySchema>;
+export type SpendSummary = z.infer<typeof SpendSummarySchema>;
+export type UsageSpendSummaryPayload = z.infer<
+  typeof UsageSpendSummaryResponseMessageSchema
+>["payload"];
 export type UsageListReportsResponseMessage = z.infer<typeof UsageListReportsResponseMessageSchema>;
 export type ProviderUsageStatus = z.infer<typeof ProviderUsageStatusSchema>;
 export type ProviderUsage = z.infer<typeof ProviderUsageSchema>;

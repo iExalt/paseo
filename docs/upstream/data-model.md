@@ -64,6 +64,8 @@ $PASEO_HOME/
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
+├── spend/
+│   └── ledger.jsonl                     # Dated agent spend, appended per cost increase
 ├── plugins/
 │   ├── sources.json                      # Managed kind and Git acquisition remote
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
@@ -561,6 +563,21 @@ These small files are not validated as full Zod schemas but are persisted under 
 | `paseo.pid`           | JSON `{ pid, startedAt, ... }`                                 | PID lock; prevents two daemons sharing one `$PASEO_HOME`.                         |
 | `local-credential`    | 32 random bytes encoded as base64url text                      | Rotated before each listen and deleted on shutdown; mode `0600`.                  |
 | `daemon.log`          | Pino log output                                                | Default location; path/rotation configurable via `log.file` in `config.json`.     |
+
+---
+
+## 8. Spend Ledger
+
+**Path:** `$PASEO_HOME/spend/ledger.jsonl`
+
+```jsonl
+{"startedAt":"2026-10-18T00:24:45.000Z"}
+{"at":"2026-10-18T00:30:37.683Z","provider":"claude","agentId":"5fa2…","usd":0.12,"totalUsd":0.84}
+```
+
+Backs Settings > Usage > API spend. Providers report only a session's lifetime cost, so the daemon appends one entry for each increase and keeps the reading in `totalUsd`. The next reading is measured from that, so a reading repeated after a restart adds nothing. A reading lower than `totalUsd` starts a new count. Replayed history never records spend. Totals are bucketed by day in the time zone the client sends.
+
+The first line records when tracking began. A new ledger seeds every stored agent's `totalCostUsd` as `carried` entries, and a session created before that time that first reports later is also `carried`: its earlier spend lands on the day it was recorded. Appends are not atomic, so the reader skips a line cut short by a crash and the next append starts on a fresh line.
 
 ---
 
