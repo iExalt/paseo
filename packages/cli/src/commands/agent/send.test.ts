@@ -48,6 +48,7 @@ describe("agent send --if-running", () => {
     expect(parseSend(["agent-1", "hello", "--if-running", "interrupt"]).ifRunning).toBe(
       "interrupt",
     );
+    expect(parseSend(["agent-1", "hello", "--if-running", "queue"]).ifRunning).toBe("queue");
     expect(() => parseSend(["agent-1", "hello", "--if-running", "later"])).toThrow();
   });
 

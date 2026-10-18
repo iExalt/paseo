@@ -64,6 +64,7 @@ import {
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent/agent-loading.js";
 import {
   setupFinishNotification,
+  dispositionAwaitsTurnStart,
   sendPromptToAgent,
   waitForAgentRunStartWithTimeout,
   unarchiveAgentState,
@@ -8976,8 +8977,7 @@ export class Session {
                 agentStorage: this.agentStorage,
                 childAgentId: agentId,
                 callerAgentId: msg.sourceAgentId,
-                waitForTurnStart:
-                  nextDisposition === "turn_started" || nextDisposition === "deferred",
+                waitForTurnStart: dispositionAwaitsTurnStart(nextDisposition),
                 logger: this.sessionLogger,
               });
             }

@@ -10,9 +10,9 @@ import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
-import { holdMessage, type HeldDispatchResult } from "./held-messages.js";
+import { hasHeldMessages, holdMessage, type HeldDispatchResult } from "./held-messages.js";
 import { getParentAgentIdFromLabels } from "@getpaseo/protocol/agent-labels";
-import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
+import type { AgentSendBehavior } from "@getpaseo/protocol/messages";
 
 export type AgentUnarchiveController = Pick<AgentManager, "notifyAgentState" | "unarchiveSnapshot">;
 
@@ -33,7 +33,7 @@ export interface StartAgentRunOptions {
   /** Called after selecting the run, before consuming its events. */
   onDispatch?: (disposition: PromptDispatchDisposition) => void;
   replaceRunning?: boolean;
-  activeTurnBehavior?: ActiveTurnBehavior;
+  activeTurnBehavior?: AgentSendBehavior;
   runOptions?: AgentRunOptions;
   /** Ask the provider to deny permissions blocking this steer. */
   clearPendingPermissions?: boolean;
@@ -41,9 +41,20 @@ export interface StartAgentRunOptions {
 
 /**
  * "deferred" is server-internal: the steer waits for the active turn to end and then starts its
- * own turn. Responses omit it, since the wire enum predates it.
+ * own turn. Responses omit it, since the wire enum predates it. "queued" waits for the agent to go
+ * idle; only queue requests produce it.
  */
-export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started" | "deferred";
+export type PromptDispatchDisposition =
+  | "out_of_band"
+  | "steered"
+  | "turn_started"
+  | "deferred"
+  | "queued";
+
+/** Whether the prompt runs in a turn that has not started yet, so a finish watch must wait for it. */
+export function dispositionAwaitsTurnStart(disposition: PromptDispatchDisposition): boolean {
+  return disposition === "turn_started" || disposition === "deferred" || disposition === "queued";
+}
 
 type SteerDispatch =
   | { kind: "steered" }
@@ -143,22 +154,61 @@ async function startAgentRunInner(
   logger: Logger,
   options?: StartAgentRunOptions,
 ): Promise<{ disposition: PromptDispatchDisposition }> {
-  const dispatch = await dispatchRun(agentManager, agentId, prompt, logger, options);
+  if (options?.activeTurnBehavior === "queue" && shouldQueue(agentManager, agentId)) {
+    return holdBehindActiveTurn(agentManager, agentId, prompt, logger, options, "queued");
+  }
+  const dispatch = await dispatchRun(agentManager, agentId, prompt, logger, {
+    ...options,
+    // An idle agent takes a queued prompt as its next turn.
+    ...(options?.activeTurnBehavior === "queue" ? { activeTurnBehavior: "steer" as const } : {}),
+  });
   if (dispatch.disposition !== "busy") return { disposition: dispatch.disposition };
-  const { onDispatch: _, ...redispatch } = options ?? {};
+  return holdBehindActiveTurn(
+    agentManager,
+    agentId,
+    prompt,
+    logger,
+    options ?? {},
+    "deferred",
+    dispatch.turnId,
+  );
+}
+
+/** A queued prompt waits while the agent has any turn or run, or other held prompts. */
+function shouldQueue(agentManager: AgentRunController, agentId: string): boolean {
+  const agent = agentManager.getAgent(agentId);
+  return (
+    agentManager.hasInFlightRun(agentId) ||
+    Boolean(agent?.activeTurnId) ||
+    hasHeldMessages(agentManager, agentId)
+  );
+}
+
+function holdBehindActiveTurn(
+  agentManager: AgentRunController,
+  agentId: string,
+  prompt: AgentPromptInput,
+  logger: Logger,
+  options: StartAgentRunOptions,
+  kind: "deferred" | "queued",
+  busyTurnId?: string,
+): { disposition: "deferred" | "queued" } {
+  const agent = agentManager.getAgent(agentId);
+  const turnId = busyTurnId ?? agent?.activeForegroundTurnId ?? agent?.activeTurnId ?? null;
+  const { onDispatch: _, ...redispatch } = options;
   holdMessage(
     agentManager,
     agentId,
     {
-      kind: "deferred",
-      turnId: dispatch.turnId,
-      messageId: options?.runOptions?.clientMessageId,
+      kind,
+      turnId,
+      messageId: options.runOptions?.clientMessageId,
       dispatch: () => dispatchHeldRun(agentManager, agentId, prompt, logger, redispatch),
     },
     logger,
   );
-  options?.onDispatch?.("deferred");
-  return { disposition: "deferred" };
+  options.onDispatch?.(kind);
+  return { disposition: kind };
 }
 
 /** Sends a held message again; the turn it starts reports itself through the stream. */
@@ -275,7 +325,7 @@ export interface SendPromptToAgentParams {
   prompt: AgentPromptInput;
   source?: AgentPromptSource;
   messageId?: string;
-  activeTurnBehavior?: ActiveTurnBehavior;
+  activeTurnBehavior?: AgentSendBehavior;
   runOptions?: AgentRunOptions;
   /** Optional mode to set on the agent before the run starts. */
   sessionMode?: string;

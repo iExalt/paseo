@@ -1343,6 +1343,68 @@ test("steers deferred behind the same turn each get their own turn, in order", a
   }
 });
 
+async function startRunningAgent(session: SteeringTestSession) {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-queue-"));
+  const client = new (class extends TestAgentClient {
+    override async createSession(): Promise<AgentSession> {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const run = manager.streamAgent(agent.id, "initial");
+  void (async () => {
+    for await (const _event of run) {
+    }
+  })();
+  await manager.waitForAgentRunStart(agent.id);
+  return { manager, agentId: agent.id, workdir };
+}
+
+test("queued messages wait for the turn instead of steering into it, then run in order", async () => {
+  const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
+  const { manager, agentId, workdir } = await startRunningAgent(session);
+  try {
+    for (const prompt of ["first", "second"]) {
+      await expect(
+        startAgentRun(manager, agentId, prompt, logger, {
+          replaceRunning: true,
+          activeTurnBehavior: "queue",
+        }),
+      ).resolves.toEqual({ disposition: "queued" });
+    }
+    expect(session.steerCount).toBe(0);
+
+    session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-1" });
+    await vi.waitFor(() => expect(session.startPrompts).toEqual(["initial", "first"]));
+    await manager.waitForAgentRunStart(agentId);
+    session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-2" });
+    await vi.waitFor(() => expect(session.startPrompts).toEqual(["initial", "first", "second"]));
+    expect(session.steerCount).toBe(0);
+    expect(session.interruptCount).toBe(0);
+  } finally {
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
+test("a queued message survives Stop and runs once the agent is idle", async () => {
+  const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
+  const { manager, agentId, workdir } = await startRunningAgent(session);
+  try {
+    await startAgentRun(manager, agentId, "after stop", logger, {
+      activeTurnBehavior: "queue",
+    });
+    await manager.cancelAgentRun(agentId);
+    await vi.waitFor(() => expect(session.startPrompts).toEqual(["initial", "after stop"]));
+  } finally {
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("ambiguous steer failure leaves the active turn untouched", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = new Error("connection lost after delivery");

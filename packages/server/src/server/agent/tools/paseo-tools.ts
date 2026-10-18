@@ -6,9 +6,9 @@ import type { Logger } from "pino";
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
 import {
-  ActiveTurnBehaviorSchema,
   AgentProfileSchema,
-  DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
+  AgentSendBehaviorSchema,
+  DEFAULT_AGENT_SEND_BEHAVIOR,
   ReplyRuleSchema,
   WorkspaceNotificationsSchema,
 } from "@getpaseo/protocol/messages";
@@ -61,6 +61,7 @@ import {
 import { listPendingAgentPermissions } from "../permission-list.js";
 import { getAgentActivity, getAgentStatus, queryAgentDirectory } from "../agent-query-service.js";
 import {
+  dispositionAwaitsTurnStart,
   type PromptDispatchDisposition,
   sendPromptToAgent,
   setupFinishNotification,
@@ -980,10 +981,10 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     agentId: z.string(),
     prompt: z.string(),
     sessionMode: z.string().optional().describe("Optional mode to set before running the prompt."),
-    ifRunning: ActiveTurnBehaviorSchema.optional()
-      .default(DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR)
+    ifRunning: AgentSendBehaviorSchema.optional()
+      .default(DEFAULT_AGENT_SEND_BEHAVIOR)
       .describe(
-        "What to do when the agent is mid-turn: steer adds the prompt to the running turn, interrupt cancels it and starts a new one.",
+        "What to do when the agent is mid-turn: steer adds the prompt to the running turn, queue runs it as a new turn once the agent is idle, interrupt cancels the turn and starts a new one.",
       ),
   };
   const agentToAgentSendAgentPromptInputSchema = {
@@ -1864,7 +1865,9 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
-        disposition: z.enum(["turn_started", "steered", "deferred", "out_of_band"]).optional(),
+        disposition: z
+          .enum(["turn_started", "steered", "deferred", "queued", "out_of_band"])
+          .optional(),
         status: AgentStatusEnum,
         guidance: z.string().optional(),
       },
@@ -1873,7 +1876,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       agentId,
       prompt,
       sessionMode,
-      ifRunning = DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
+      ifRunning = DEFAULT_AGENT_SEND_BEHAVIOR,
       notifyOnFinish = Boolean(callerAgentId),
     }) => {
       let stopNotification: (() => void) | undefined;
@@ -1886,7 +1889,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           agentStorage,
           childAgentId: agentId,
           callerAgentId,
-          waitForTurnStart: disposition === "turn_started" || disposition === "deferred",
+          waitForTurnStart: dispositionAwaitsTurnStart(disposition),
           logger: childLogger,
         });
       }

@@ -1149,8 +1149,14 @@ const ImageAttachmentSchema = z.object({
 
 export const ActiveTurnBehaviorSchema = z.enum(["interrupt", "steer"]);
 export type ActiveTurnBehavior = z.infer<typeof ActiveTurnBehaviorSchema>;
+/**
+ * What a send does when the agent is mid-turn. "queue" holds the message until the agent is idle;
+ * only daemons advertising agentSendQueue accept it.
+ */
+export const AgentSendBehaviorSchema = z.enum(["queue", "steer", "interrupt"]);
+export type AgentSendBehavior = z.infer<typeof AgentSendBehaviorSchema>;
 /** What agent sends do when the target is mid-turn unless the sender chooses. */
-export const DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR: ActiveTurnBehavior = "steer";
+export const DEFAULT_AGENT_SEND_BEHAVIOR: AgentSendBehavior = "steer";
 
 export const SendAgentMessageSchema = z.object({
   type: z.literal("send_agent_message"),
@@ -1317,7 +1323,7 @@ export const SendAgentMessageRequestSchema = z.object({
   /** Opaque sender identity for agent-originated prompts. */
   sourceAgentId: z.string().min(1).optional(),
   messageId: z.string().optional(), // Client-provided ID for deduplication
-  activeTurnBehavior: ActiveTurnBehaviorSchema.optional(),
+  activeTurnBehavior: AgentSendBehaviorSchema.optional(),
   // COMPAT(agentOrchestrationParity): only send when server_info advertises the feature.
   sessionMode: z.string().optional(),
   notifyOnFinish: z.boolean().optional(),
@@ -3827,6 +3833,8 @@ export const ServerInfoStatusPayloadSchema = z
         terminalInputAck: z.boolean().optional(),
         // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
         agentCancelOutcome: z.boolean().optional(),
+        // COMPAT(agentSendQueue): added after v0.9.0; remove gate after 2027-10-18.
+        agentSendQueue: z.boolean().optional(),
         // COMPAT(workspaceCallerContext): added in v0.11.2, remove gate after 2027-04-10.
         workspaceCallerContext: z.boolean().optional(),
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
@@ -5229,7 +5237,8 @@ export const SendAgentMessageResponseMessageSchema = z.object({
     agentId: z.string(),
     accepted: z.boolean(),
     error: z.string().nullable(),
-    disposition: z.enum(["out_of_band", "steered", "turn_started"]).optional(),
+    // Only queue requests get "queued", and only daemons advertising agentSendQueue accept them.
+    disposition: z.enum(["out_of_band", "steered", "turn_started", "queued"]).optional(),
   }),
 });
 

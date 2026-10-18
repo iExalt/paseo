@@ -1,9 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Option, type Command } from "commander";
-import {
-  DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
-  type ActiveTurnBehavior,
-} from "@getpaseo/protocol/messages";
+import { DEFAULT_AGENT_SEND_BEHAVIOR, type AgentSendBehavior } from "@getpaseo/protocol/messages";
 import { collectMultiple } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
@@ -21,7 +18,7 @@ export interface AgentSendResult {
   agentId: string;
   status: "sent" | "completed" | "timeout" | "permission" | "error";
   message: string;
-  disposition?: "out_of_band" | "steered" | "turn_started";
+  disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
 }
 
 /** Schema for agent send output */
@@ -40,7 +37,7 @@ export interface AgentSendOptions extends CommandOptions {
   prompt?: string;
   promptFile?: string;
   mode?: string;
-  ifRunning?: ActiveTurnBehavior;
+  ifRunning?: AgentSendBehavior;
   notifyOnFinish?: boolean;
 }
 
@@ -56,10 +53,10 @@ export function addSendOptions(cmd: Command): Command {
     .addOption(
       new Option(
         "--if-running <behavior>",
-        "When the agent is mid-turn: steer adds the message to the turn, interrupt cancels it",
+        "When the agent is mid-turn: steer adds the message to the turn, queue runs it once the agent is idle, interrupt cancels the turn",
       )
-        .choices(["steer", "interrupt"])
-        .default(DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR),
+        .choices(["queue", "steer", "interrupt"])
+        .default(DEFAULT_AGENT_SEND_BEHAVIOR),
     )
     .option("--notify-on-finish", "Notify the calling agent when this agent finishes")
     .option("--no-notify-on-finish", "Do not notify the calling agent when this agent finishes")
@@ -219,7 +216,7 @@ export async function runSendCommand(
       images,
       sourceAgentId: callerAgentId,
       messageId,
-      activeTurnBehavior: options.ifRunning ?? DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
+      activeTurnBehavior: options.ifRunning ?? DEFAULT_AGENT_SEND_BEHAVIOR,
       sessionMode: options.mode,
       ...(options.notifyOnFinish !== undefined || callerAgentId
         ? { notifyOnFinish: options.notifyOnFinish ?? true }
