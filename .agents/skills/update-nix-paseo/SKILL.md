@@ -65,11 +65,14 @@ die with its daemon partway through:
 pid=$(ps -axo pid=,args= | awk '$2 == "/Applications/Paseo.app/Contents/MacOS/Paseo" && NF == 2 { print $1 }') &&
 [ -n "$pid" ] &&
 /Applications/Paseo.app/Contents/Resources/bin/paseo daemon stop &&
-osascript -e 'quit app "Paseo"' &&
+kill -TERM "$pid" &&
 "$HOME/Library/Application Support/Paseo/nix-update/profile/bin/paseo-nix-update" install-app --after-exit "$pid"
 ```
 
-`pgrep` cannot see the app's main process, hence `ps`. This mirrors the in-app restart: stop the daemon, quit the app, then the active
+`pgrep` cannot see the app's main process, hence `ps`. The app quits cleanly on
+`SIGTERM`. Unlike `osascript`, this needs no Automation permission, which nobody
+can grant over SSH, so the command also works from a remote shell.
+This mirrors the in-app restart: stop the daemon, quit the app, then the active
 release's updater waits for the app to exit, replaces `/Applications/Paseo.app` and
 opens it. The new app starts a matching daemon. If Paseo is not running, the user only
 needs the last line without `--after-exit "$pid"`, then `open /Applications/Paseo.app`.
