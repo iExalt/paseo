@@ -1,4 +1,9 @@
-import { type Command } from "commander";
+import { randomUUID } from "node:crypto";
+import { Option, type Command } from "commander";
+import {
+  DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
+  type ActiveTurnBehavior,
+} from "@getpaseo/protocol/messages";
 import { collectMultiple } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
@@ -35,6 +40,7 @@ export interface AgentSendOptions extends CommandOptions {
   prompt?: string;
   promptFile?: string;
   mode?: string;
+  ifRunning?: ActiveTurnBehavior;
   notifyOnFinish?: boolean;
 }
 
@@ -47,6 +53,14 @@ export function addSendOptions(cmd: Command): Command {
     .option("--prompt-file <path>", "Read the message from a UTF-8 text file")
     .option("--image <path>", "Attach image(s) to the message", collectMultiple, [])
     .option("--mode <id>", "Set the provider mode before sending the message")
+    .addOption(
+      new Option(
+        "--if-running <behavior>",
+        "When the agent is mid-turn: steer adds the message to the turn, interrupt cancels it",
+      )
+        .choices(["steer", "interrupt"])
+        .default(DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR),
+    )
     .option("--notify-on-finish", "Notify the calling agent when this agent finishes")
     .option("--no-notify-on-finish", "Do not notify the calling agent when this agent finishes")
     .option("--no-wait", "Return immediately without waiting for completion");
@@ -199,10 +213,13 @@ export async function runSendCommand(
     const images =
       options.image && options.image.length > 0 ? await readImageFiles(options.image) : undefined;
 
-    // Send the message
+    // A fresh ID per invocation lets the wait follow this message if the daemon holds it.
+    const messageId = randomUUID();
     const dispatch = await client.sendAgentMessage(agentIdArg, promptInput, {
       images,
       sourceAgentId: callerAgentId,
+      messageId,
+      activeTurnBehavior: options.ifRunning ?? DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
       sessionMode: options.mode,
       ...(options.notifyOnFinish !== undefined || callerAgentId
         ? { notifyOnFinish: options.notifyOnFinish ?? true }
@@ -225,7 +242,7 @@ export async function runSendCommand(
       };
     }
 
-    const state = await client.waitForFinish(agentIdArg, 600000); // 10 minute timeout
+    const state = await client.waitForFinish(agentIdArg, 600000, { messageId }); // 10 minute timeout
     await client.close();
 
     return {

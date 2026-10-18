@@ -1320,6 +1320,29 @@ test("a provider without steering defers the message instead of interrupting", a
   }
 });
 
+test("steers deferred behind the same turn each get their own turn, in order", async () => {
+  const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
+  session.steerResult = "unavailable";
+  const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+  try {
+    await startAgentRun(manager, agentId, "second", logger, {
+      replaceRunning: true,
+      activeTurnBehavior: "steer",
+    });
+    session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-1" });
+    await vi.waitFor(() => expect(session.startPrompts).toEqual(["initial", "replacement"]));
+    await manager.waitForAgentRunStart(agentId);
+    session.pushEvent({ type: "turn_completed", provider: "codex", turnId: "active-turn-2" });
+    await vi.waitFor(() =>
+      expect(session.startPrompts).toEqual(["initial", "replacement", "second"]),
+    );
+    expect(session.interruptCount).toBe(0);
+  } finally {
+    await manager.closeAgent(agentId);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});
+
 test("ambiguous steer failure leaves the active turn untouched", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = new Error("connection lost after delivery");

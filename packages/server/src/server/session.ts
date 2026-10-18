@@ -69,6 +69,7 @@ import {
   unarchiveAgentState,
   type PromptDispatchDisposition,
 } from "./agent/agent-prompt.js";
+import { waitForHeldMessage } from "./agent/held-messages.js";
 import {
   resolveCreateAgentTitles,
   resolveFirstAgentPromptTitle,
@@ -3225,7 +3226,7 @@ export class Session {
       case "send_agent_message_request":
         return this.handleSendAgentMessageRequest(msg);
       case "wait_for_finish_request":
-        return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs);
+        return this.handleWaitForFinish(msg.agentId, msg.requestId, msg.timeoutMs, msg.messageId);
       case "create_agent_request":
         return this.handleCreateAgentRequest(msg);
       case "resume_agent_request":
@@ -9041,10 +9042,34 @@ export class Session {
     }
   }
 
+  /** Waits out a message the daemon is holding; true when it was discarded and reported. */
+  private async reportDiscardedHeldMessage(
+    agentId: string,
+    requestId: string,
+    messageId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    // A message the daemon is not holding has started, steered, or was lost with a restart.
+    const held = waitForHeldMessage(this.agentManager, agentId, messageId, signal);
+    if (!held || (await held) !== "discarded") return false;
+    this.emit({
+      type: "wait_for_finish_response",
+      payload: {
+        requestId,
+        status: "error",
+        final: await this.getAgentPayloadById(agentId),
+        error: "The message was discarded before it ran: its turn was stopped or the agent closed",
+        lastMessage: null,
+      },
+    });
+    return true;
+  }
+
   private async handleWaitForFinish(
     agentIdOrIdentifier: string,
     requestId: string,
     timeoutMs?: number,
+    messageId?: string,
   ): Promise<void> {
     const sourceSignal = this.delivery.requestSignal;
     sourceSignal.throwIfAborted();
@@ -9107,8 +9132,15 @@ export class Session {
       : null;
 
     try {
+      const signal = AbortSignal.any([abortController.signal, sourceSignal]);
+      if (
+        messageId &&
+        (await this.reportDiscardedHeldMessage(agentId, requestId, messageId, signal))
+      ) {
+        return;
+      }
       let result = await this.agentManager.waitForAgentEvent(agentId, {
-        signal: AbortSignal.any([abortController.signal, sourceSignal]),
+        signal,
         waitForActive: true,
       });
       let final = await this.getAgentPayloadById(agentId);

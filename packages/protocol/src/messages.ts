@@ -1149,6 +1149,8 @@ const ImageAttachmentSchema = z.object({
 
 export const ActiveTurnBehaviorSchema = z.enum(["interrupt", "steer"]);
 export type ActiveTurnBehavior = z.infer<typeof ActiveTurnBehaviorSchema>;
+/** What agent sends do when the target is mid-turn unless the sender chooses. */
+export const DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR: ActiveTurnBehavior = "steer";
 
 export const SendAgentMessageSchema = z.object({
   type: z.literal("send_agent_message"),
@@ -1329,6 +1331,8 @@ export const WaitForFinishRequestSchema = z.object({
   /** Accepts full ID, unique prefix, or exact full title (server resolves). */
   agentId: z.string(),
   timeoutMs: z.number().int().positive().optional(),
+  /** Wait for this sent message's turn when the daemon is holding it behind another turn. */
+  messageId: z.string().optional(),
 });
 
 export const DaemonGetStatusRequestSchema = z.object({

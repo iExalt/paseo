@@ -6,7 +6,9 @@ import type { Logger } from "pino";
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
 import {
+  ActiveTurnBehaviorSchema,
   AgentProfileSchema,
+  DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
   ReplyRuleSchema,
   WorkspaceNotificationsSchema,
 } from "@getpaseo/protocol/messages";
@@ -978,6 +980,11 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
     agentId: z.string(),
     prompt: z.string(),
     sessionMode: z.string().optional().describe("Optional mode to set before running the prompt."),
+    ifRunning: ActiveTurnBehaviorSchema.optional()
+      .default(DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR)
+      .describe(
+        "What to do when the agent is mid-turn: steer adds the prompt to the running turn, interrupt cancels it and starts a new one.",
+      ),
   };
   const agentToAgentSendAgentPromptInputSchema = {
     ...commonSendAgentPromptInputSchema,
@@ -1857,12 +1864,18 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
-        disposition: z.enum(["turn_started", "out_of_band"]).optional(),
+        disposition: z.enum(["turn_started", "steered", "deferred", "out_of_band"]).optional(),
         status: AgentStatusEnum,
         guidance: z.string().optional(),
       },
     },
-    async ({ agentId, prompt, sessionMode, notifyOnFinish = Boolean(callerAgentId) }) => {
+    async ({
+      agentId,
+      prompt,
+      sessionMode,
+      ifRunning = DEFAULT_AGENT_SEND_ACTIVE_TURN_BEHAVIOR,
+      notifyOnFinish = Boolean(callerAgentId),
+    }) => {
       let stopNotification: (() => void) | undefined;
       function armFinishNotification(disposition: PromptDispatchDisposition): void {
         if (!callerAgentId || !notifyOnFinish) {
@@ -1873,7 +1886,7 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
           agentStorage,
           childAgentId: agentId,
           callerAgentId,
-          waitForTurnStart: disposition === "turn_started",
+          waitForTurnStart: disposition === "turn_started" || disposition === "deferred",
           logger: childLogger,
         });
       }
@@ -1886,6 +1899,8 @@ export function createPaseoToolCatalog(options: PaseoToolHostDependencies): Pase
         prompt,
         source: callerAgentId ? { kind: "agent-message", agentId: callerAgentId } : undefined,
         sessionMode,
+        activeTurnBehavior: ifRunning,
+        clearPendingPermissions: true,
         onDispatch: armFinishNotification,
         logger: childLogger,
       }).catch((error) => {
