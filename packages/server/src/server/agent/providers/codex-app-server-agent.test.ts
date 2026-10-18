@@ -4824,14 +4824,24 @@ describe("Codex app-server provider", () => {
     });
   });
 
-  test("restores nested MultiAgentV2 ownership from persisted child threads", async () => {
+  test("restores nested MultiAgentV2 ownership and cost from persisted child threads", async () => {
     const session = createSession();
+    const usdMicros: Record<string, number> = {
+      "test-thread": 1_000,
+      "persisted-child": 2_000,
+      "persisted-grandchild": 3_000,
+    };
     session.client = {
       request: vi.fn(async (method: string, params: unknown) => {
+        const threadId = (params as { threadId?: string }).threadId;
+        if (method === "account/usage/read" && threadId) {
+          return {
+            threadUsage: { estimatedUsageUsdMicros: usdMicros[threadId], groups: [] },
+          };
+        }
         if (method !== "thread/read") {
           return {};
         }
-        const threadId = (params as { threadId?: string }).threadId;
         const itemsByThreadId = {
           "test-thread": [
             {
@@ -4885,6 +4895,18 @@ describe("Codex app-server provider", () => {
         parentSubagentId: "persisted-child",
       }),
     ]);
+
+    const costs: number[] = [];
+    session.subscribe((event) => {
+      if (event.type === "usage_updated" && event.usage.totalCostUsd !== undefined) {
+        costs.push(event.usage.totalCostUsd);
+      }
+    });
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "test-thread",
+      turn: { status: "completed", error: null },
+    });
+    await vi.waitFor(() => expect(costs).toEqual([0.006]));
   });
 
   test("coalesces persisted MultiAgentV2 activity for one child into one terminal card", async () => {
@@ -6401,6 +6423,66 @@ describe("Codex app-server provider", () => {
       usage: { contextWindowUsedTokens: 50000, totalCostUsd: 2.84575 },
     });
     expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  test("adds spawned subagent threads to the chat cost, including one finishing after the parent", async () => {
+    const session = createSession();
+    const usdMicros: Record<string, number> = { "test-thread": 1_602, "child-thread": 900 };
+    const request = vi.fn(async (method: string, params: unknown) => {
+      expect(method).toBe("account/usage/read");
+      const { threadId } = params as { threadId: string };
+      return {
+        threadUsage: {
+          threadId,
+          estimatedUsageUsdMicros: usdMicros[threadId] ?? 0,
+          groups: [{ totalTokens: 1 }],
+        },
+      };
+    });
+    session.client = { request };
+    const costs: number[] = [];
+    session.subscribe((event) => {
+      if (event.type === "usage_updated" && event.usage.totalCostUsd !== undefined) {
+        costs.push(event.usage.totalCostUsd);
+      }
+    });
+    const collabCall = (id: string, tool: string, receiverThreadIds: string[]) => ({
+      threadId: "test-thread",
+      item: {
+        type: "collabAgentToolCall",
+        id,
+        tool,
+        status: "completed",
+        prompt: "Count to 200.",
+        receiverThreadIds,
+        agentsStates: {},
+      },
+    });
+
+    asInternals(session).handleNotification(
+      "item/completed",
+      collabCall("spawn-1", "spawnAgent", ["child-thread"]),
+    );
+    // Waiting on a thread does not make it part of this chat.
+    asInternals(session).handleNotification(
+      "item/completed",
+      collabCall("wait-1", "wait", ["other-chat-thread"]),
+    );
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "test-thread",
+      turn: { status: "completed", error: null },
+    });
+    await vi.waitFor(() => expect(costs.at(-1)).toBeCloseTo(0.002502, 9));
+
+    usdMicros["child-thread"] = 1_760;
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "child-thread",
+      turn: { status: "completed" },
+    });
+    await vi.waitFor(() => expect(costs.at(-1)).toBeCloseTo(0.003362, 9));
+    expect(request).not.toHaveBeenCalledWith("account/usage/read", {
+      threadId: "other-chat-thread",
+    });
   });
 
   test("streams Codex assistant message deltas and does not replay completed text", () => {
