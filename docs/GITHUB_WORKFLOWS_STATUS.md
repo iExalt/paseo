@@ -13,14 +13,14 @@ in under five minutes.
 
 ## Workflows
 
-| Workflow             | Trigger                                           | What it does                                                                                                                    |
-| -------------------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`             | Every PR and `dev` push                           | Plans lanes from `.github/ci-paths.json`, runs `mise run ci:routine` per lane, then the `Routine CI required` gate              |
-| `ci-deep.yml`        | Release PRs (labeled/synchronize), owner dispatch | Browser, integration and Electron journeys at the exact release PR head                                                         |
-| `release-please.yml` | `dev` push                                        | Keeps the one release PR (`chore(dev): release X`) current and its Nix hash fresh; its merge tags `paseo-vX` with a draft       |
-| `release.yml`        | `paseo-v*` tag, owner dispatch                    | Builds, smoke-tests, signs and publishes the macOS closure and Android APK                                                      |
-| `rebase-dev.yml`     | Owner dispatch                                    | Rebases `dev` onto the `upstream/main` mirror, runs routine CI on the result, then pushes a backup and the new `dev` atomically |
-| `upstream-sync.yml`  | Daily 07:23 UTC, dispatch                         | Fast-forwards the `upstream/main` mirror branch                                                                                 |
+| Workflow             | Trigger                                           | What it does                                                                                                                                         |
+| -------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`             | Every PR and `dev` push                           | Plans lanes from `.github/ci-paths.json`, runs `mise run ci:routine` per lane, then the `Routine CI required` gate                                   |
+| `ci-deep.yml`        | Release PRs (labeled/synchronize), owner dispatch | Browser, integration and Electron journeys at the exact release PR head                                                                              |
+| `release-please.yml` | `dev` push                                        | Keeps the one release PR (`chore(dev): release X`) current and its Nix hash fresh; its merge tags `paseo-vX` with a draft and dispatches the release |
+| `release.yml`        | Dispatch on `dev` (release-please or owner)       | Builds, smoke-tests, signs and publishes the macOS closure and Android APK                                                                           |
+| `rebase-dev.yml`     | Owner dispatch                                    | Rebases `dev` onto the `upstream/main` mirror, runs routine CI on the result, then pushes a backup and the new `dev` atomically                      |
+| `upstream-sync.yml`  | Daily 07:23 UTC, dispatch                         | Fast-forwards the `upstream/main` mirror branch                                                                                                      |
 
 Routine CI details live in `.github/scripts/ci-routine.mjs`: lanes `quality`,
 `workspaces`, `app-1..2`, `server-1..3` and `integration`. App unit shards run
@@ -45,12 +45,13 @@ only restore it.
    `nix/npm-deps.hash`. release-please rewrites its branch whenever it updates
    the PR, and the job adds the commit back each time.
 3. Merge the release PR. On that push release-please tags `paseo-vX` at the
-   merge commit and opens a draft release with the changelog as its notes.
+   merge commit, opens a draft release with the changelog as its notes and
+   dispatches `release.yml` on `dev` with that tag.
    - A commit that adds nothing to the changelog (`test`, `ci`, `docs`) leaves
      the release PR untouched, so its checks still test the old `dev`. Closing
      and reopening it reuses the stale merge ref. Run
      `gh pr update-branch <N> --rebase` and wait for the new checks.
-4. The tag starts `release.yml`. It builds both artifacts, smoke-tests the
+4. `release.yml` builds both artifacts, smoke-tests the
    closure on a fresh macOS runner, signs the APK and the manifest, uploads
    everything to the draft, re-downloads and re-hashes each asset, then
    publishes the draft as latest.
@@ -72,7 +73,8 @@ tight.
 ## Recovery
 
 - **`release.yml` failed before publishing:** fix the cause on `dev` if it is
-  in the workflow, then dispatch `release.yml` with `tag` set to `paseo-vX`. It
+  in the workflow, then dispatch `release.yml` on `dev` with `tag` set to
+  `paseo-vX`. It
   builds the tag again, replaces the draft's assets and publishes. It refuses a
   tag that is not newer than the latest release.
 - **The tagged commit cannot ship** (the build itself is broken): land the fix
@@ -131,6 +133,10 @@ of the two it reaches first, so the value can stay after the next release.
   needs `contents: write`. Someone can create a pinned key first, but not with
   the pinned bytes, so a squatted, missing or corrupted entry builds that cache
   cold instead of failing.
+  - `release.yml` runs only on `dev`, never on the tag. A cache entry belongs
+    to the ref that saved it, and a run reads only its own ref's entries and
+    `dev`'s, so entries a `paseo-vX` tag run saved are invisible to the next
+    release. Releases 0.7.0 and 0.8.0 ran on their tags; 0.8.0 built cold.
   - `paseo-android-build-v2-<sha256>`: ccache plus the Gradle build cache,
     about 190 MB.
   - `paseo-gradle-deps-v2-<inputs>-<sha256>`: `~/.gradle/caches` and
