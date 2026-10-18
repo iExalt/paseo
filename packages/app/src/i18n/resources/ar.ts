@@ -700,6 +700,8 @@ export const ar: TranslationResources = {
         failedToCloseAgent: "فشل في إغلاق الوكيل",
       },
       confirmations: {
+        closeTabsAboveTitle: "هل تريد إغلاق علامات التبويب أعلاه؟",
+        closeTabsBelowTitle: "هل تريد إغلاق علامات التبويب أدناه؟",
         unsavedTitle: "تغييرات غير محفوظة",
         unsavedMessage:
           "تحتوي علامة التبويب هذه على تغييرات غير محفوظة. سيؤدي إغلاقها إلى تجاهل المسودة.",
