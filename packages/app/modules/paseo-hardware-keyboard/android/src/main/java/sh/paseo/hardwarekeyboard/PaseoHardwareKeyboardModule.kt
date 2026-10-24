@@ -11,6 +11,7 @@ import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.webkit.WebView
 import android.widget.TextView
+import com.facebook.react.R
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import org.json.JSONArray
@@ -19,6 +20,10 @@ import org.json.JSONObject
 private const val SHORTCUT_KEY_EVENT = "onShortcutKey"
 private const val SUBMIT_EVENT = "onHardwareKeyboardSubmit"
 private const val KEYBOARD_CHANGE_EVENT = "onHardwareKeyboardChange"
+private const val TERMINAL_KEY_EVENT = "onTerminalKey"
+
+/** nativeID of the native terminal's hidden input (TERMINAL_INPUT_NATIVE_ID in terminal-input.native.tsx). */
+private const val TERMINAL_INPUT_NATIVE_ID = "paseo-native-terminal-input"
 
 /**
  * Routes hardware keys that Paseo binds to JS. MainActivity calls [handleKeyEvent] from
@@ -44,7 +49,7 @@ class PaseoHardwareKeyboardModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("PaseoHardwareKeyboard")
 
-    Events(SHORTCUT_KEY_EVENT, SUBMIT_EVENT, KEYBOARD_CHANGE_EVENT)
+    Events(SHORTCUT_KEY_EVENT, SUBMIT_EVENT, KEYBOARD_CHANGE_EVENT, TERMINAL_KEY_EVENT)
 
     OnCreate {
       activeModule = this@PaseoHardwareKeyboardModule
@@ -112,9 +117,34 @@ class PaseoHardwareKeyboardModule : Module() {
 
       val code = DomKeys.code(event.keyCode) ?: return false
       val key = DomKeys.key(event)
-      val combo = policy.match(code, key, event, typing) ?: return false
+      val combo = policy.match(code, key, event, typing)
+      if (combo != null) {
+        module.sendEvent(
+          SHORTCUT_KEY_EVENT,
+          Bundle().apply {
+            putString("key", key)
+            putString("code", code)
+            putBoolean("altKey", event.isAltPressed)
+            putBoolean("ctrlKey", event.isCtrlPressed)
+            putBoolean("metaKey", event.isMetaPressed)
+            putBoolean("shiftKey", event.isShiftPressed)
+            putBoolean("repeat", event.repeatCount > 0)
+            putBoolean("typing", typing)
+          },
+        )
+        if (combo.consume) {
+          consumedKeyCodes.add(event.keyCode)
+          return true
+        }
+      }
+
+      val terminalInput = terminalInputFor(event, code, focus) ?: return false
+      consumedKeyCodes.add(event.keyCode)
+      // The input never sees this key, so drop the text typed before it: the terminal already
+      // has that text, and this key may have edited it there.
+      terminalInput.editableText?.let { if (it.isNotEmpty()) it.clear() }
       module.sendEvent(
-        SHORTCUT_KEY_EVENT,
+        TERMINAL_KEY_EVENT,
         Bundle().apply {
           putString("key", key)
           putString("code", code)
@@ -123,12 +153,29 @@ class PaseoHardwareKeyboardModule : Module() {
           putBoolean("metaKey", event.isMetaPressed)
           putBoolean("shiftKey", event.isShiftPressed)
           putBoolean("repeat", event.repeatCount > 0)
-          putBoolean("typing", typing)
         },
       )
-      if (!combo.consume) return false
-      consumedKeyCodes.add(event.keyCode)
       return true
+    }
+
+    /**
+     * The native terminal's hidden input when it has focus and [event] is a key it cannot type:
+     * a named key, a Ctrl chord other than Ctrl+V (paste), or an Alt chord that types no
+     * character (AltGr layouts keep theirs). Plain and Shift keys stay text.
+     */
+    private fun terminalInputFor(event: KeyEvent, code: String, focus: View?): TextView? {
+      if (focus !is TextView) return null
+      if (focus.getTag(R.id.view_tag_native_id) != TERMINAL_INPUT_NATIVE_ID) return null
+      val text = focus.editableText
+      if (text != null && BaseInputConnection.getComposingSpanStart(text) != -1) return null
+      val captured = when {
+        code != "Space" && DomKeys.isNamed(code) -> true
+        event.isCtrlPressed ->
+          code != "KeyV" || event.isAltPressed || event.isShiftPressed || event.isMetaPressed
+        event.isAltPressed -> !DomKeys.typesAltCharacter(event)
+        else -> false
+      }
+      return if (captured) focus else null
     }
 
     /**
@@ -293,6 +340,16 @@ internal object DomKeys {
   )
 
   fun code(keyCode: Int): String? = CODES[keyCode]
+
+  /** Whether [code] is a key that types no character, apart from Space. */
+  fun isNamed(code: String): Boolean = code in NAMED_KEYS
+
+  /** Whether Alt (AltGr, Option) makes this key type a character of its own. */
+  fun typesAltCharacter(event: KeyEvent): Boolean {
+    val textState = event.metaState and (KeyEvent.META_SHIFT_MASK or KeyEvent.META_CAPS_LOCK_ON)
+    val withAlt = event.getUnicodeChar(textState or (event.metaState and KeyEvent.META_ALT_MASK))
+    return withAlt != 0 && withAlt != event.getUnicodeChar(textState)
+  }
 
   /**
    * The character the key types with Shift and Caps Lock applied but not Ctrl, Alt or
