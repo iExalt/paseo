@@ -29,6 +29,7 @@ import {
   resolveVisibleFileSections,
 } from "./header-layout";
 import { hitTestDiffBodyPoint } from "./native-hit-testing";
+import { resolveReviewOverlayFrame } from "./review-overlay-geometry";
 import { retainDiffViewport } from "./viewport";
 import { HorizontalScroll } from "./horizontal-scroll.native";
 import {
@@ -515,7 +516,6 @@ function NativeReviewOverlays({
   const reviewActions = mode.reviewActions;
   return model.rows.flatMap((row) => {
     if (row.kind !== "line" || row.reviewHeight === 0) return [];
-    const columnWidth = model.viewportWidth / row.cells.length;
     return row.cells.flatMap((cell, index) => {
       if (!cell?.reviewTarget) return [];
       const comments = reviewActions.commentsByTarget.get(cell.reviewTarget.key) ?? [];
@@ -525,14 +525,19 @@ function NativeReviewOverlays({
         editor.target.side === cell.reviewTarget.side &&
         editor.target.lineNumber === cell.reviewTarget.lineNumber;
       if (comments.length === 0 && !hasEditor) return [];
+      const frame = resolveReviewOverlayFrame({
+        viewportWidth: model.viewportWidth,
+        columnCount: row.cells.length,
+        columnIndex: index,
+      });
       return [
         <View
           key={cell.reviewTarget.key}
           style={inlineUnistylesStyle<ViewStyle>({
             position: "absolute",
             top: row.top + row.height - row.reviewHeight,
-            left: index * columnWidth,
-            width: columnWidth,
+            left: frame.left,
+            width: frame.width,
             height: row.reviewHeight,
             zIndex: 6,
           })}
@@ -541,7 +546,7 @@ function NativeReviewOverlays({
             reviewTarget={cell.reviewTarget}
             reviewActions={reviewActions}
             height={row.reviewHeight}
-            viewportWidth={columnWidth}
+            viewportWidth={frame.width}
             pinToViewport={!model.wrapLines}
           />
         </View>,
