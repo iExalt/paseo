@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 // @ts-expect-error TS7016
 import ViewabilityHelper from "react-native-web/dist/vendor/react-native/ViewabilityHelper";
 import {
+  createNativeReadingAnchor,
   createReadingAnchor,
   getTopmostViewableRowId,
   READING_VIEWABILITY_CONFIG,
@@ -213,5 +214,52 @@ describe("reading viewability config", () => {
       isViewable: true,
     }));
     expect(getTopmostViewableRowId(rows, "newest")).toBe("row-2");
+  });
+});
+
+describe("native reading anchor", () => {
+  const rotate = { previousWidth: 1200, width: 800 };
+
+  it("restores the pre-reflow row once, ignoring reports from the drifting layout", () => {
+    const anchor = createNativeReadingAnchor();
+    anchor.noteViewable("prompt-12");
+    expect(anchor.beginViewportChange({ ...rotate, detached: true })).toBe(true);
+    anchor.noteViewable("prompt-61");
+    // A second size change before settling keeps the original reader.
+    expect(anchor.beginViewportChange({ previousWidth: 800, width: 820, detached: true })).toBe(
+      true,
+    );
+    expect(anchor.isRestorePending()).toBe(true);
+    expect(anchor.takeRestoreRowId()).toBe("prompt-12");
+    expect(anchor.takeRestoreRowId()).toBeNull();
+    expect(anchor.isRestorePending()).toBe(false);
+    // Reports after the restore track the reader again.
+    anchor.noteViewable("prompt-13");
+    anchor.beginViewportChange({ previousWidth: 800, width: 1200, detached: true });
+    expect(anchor.takeRestoreRowId()).toBe("prompt-13");
+  });
+
+  it("leaves sticky readers, first layout and unchanged widths to the list", () => {
+    const anchor = createNativeReadingAnchor();
+    anchor.noteViewable("prompt-12");
+    for (const change of [
+      { ...rotate, detached: false },
+      { previousWidth: 0, width: 800, detached: true },
+      { previousWidth: 1200, width: 1200.4, detached: true },
+    ]) {
+      expect(anchor.beginViewportChange(change)).toBe(false);
+    }
+    expect(anchor.takeRestoreRowId()).toBeNull();
+    expect(createNativeReadingAnchor().beginViewportChange({ ...rotate, detached: true })).toBe(
+      false,
+    );
+  });
+
+  it("drops the restore when the user takes over", () => {
+    const anchor = createNativeReadingAnchor();
+    anchor.noteViewable("prompt-12");
+    anchor.beginViewportChange({ ...rotate, detached: true });
+    anchor.cancel();
+    expect(anchor.takeRestoreRowId()).toBeNull();
   });
 });
