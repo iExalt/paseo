@@ -507,7 +507,7 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   assert.match(workflow.jobs.rebase.if, /github\.repository == 'iExalt\/paseo'/);
   assert.match(workflow.jobs.rebase.if, /github\.ref == 'refs\/heads\/dev'/);
   assert.match(workflow.jobs.rebase.if, /github\.actor == 'iExalt'/);
-  assert.deepEqual(workflow.jobs.rebase.permissions, { contents: "write" });
+  assert.deepEqual(workflow.jobs.rebase.permissions, { contents: "read" });
   const rebaseStep = workflow.jobs.rebase.steps.find((step) => step.id === "rebase");
   assert.equal(
     rebaseStep.env.PASEO_REBASE_SSH_SIGNING_KEY,
@@ -850,6 +850,38 @@ test("an upstream fixup applies exactly as one signed commit or stops the run", 
   assert.equal((await result).fixupCommits, 1);
   assert.equal(git(clone, "show", "HEAD:fixup.txt"), "adapted");
   assert.match(git(clone, "log", "--format=%s"), /adapt incorporated upstream to the fork/);
+});
+
+test("a workflow added upstream stops the run until a fixup deletes it", async () => {
+  const fixture = await makeFixture("inherited-workflow");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "upstream/main");
+  mkdirSync(join(seed, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(seed, ".github", "workflows", "upstream.yml"), "on: push\n");
+  commit(seed, "ci: add upstream workflow");
+  git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
+  const upstreamSha = git(seed, "rev-parse", "HEAD");
+  const rebase = (name) => {
+    const clone = join(fixture.directory, name);
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    return { clone, result: rebaseDev({ repositoryPath: clone, ...signingOptions }) };
+  };
+
+  await assert.rejects(
+    rebase("inherited").result,
+    /upstream workflows to dev: \.github\/workflows\/upstream\.yml/,
+  );
+
+  mkdirSync(join(fixture.resolverPath, "fixups"));
+  writeFileSync(
+    join(fixture.resolverPath, "fixups", `${upstreamSha}.patch`),
+    "diff --git a/.github/workflows/upstream.yml b/.github/workflows/upstream.yml\ndeleted file mode 100644\n--- a/.github/workflows/upstream.yml\n+++ /dev/null\n@@ -1 +0,0 @@\n-on: push\n",
+  );
+  commit(fixture.resolverPath, "fixup: drop upstream workflow");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+  const { clone, result } = rebase("dropped");
+  assert.equal((await result).fixupCommits, 1);
+  assert.equal(git(clone, "ls-tree", "--name-only", "HEAD", "--", ".github/workflows/"), "");
 });
 
 test("a merge carrying hand edits stops before the replay", async () => {
