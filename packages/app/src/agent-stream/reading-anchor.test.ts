@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 // RN's own helper is Flow source that vitest cannot parse. react-native-web vendors a plain
-// JS copy with the same threshold invariant and visibility rule.
+// JS copy with the same threshold invariant and visibility rule. It ships no types.
+// @ts-expect-error TS7016
 import ViewabilityHelper from "react-native-web/dist/vendor/react-native/ViewabilityHelper";
 import {
   createReadingAnchor,
@@ -188,7 +189,7 @@ describe("reading viewability config", () => {
   });
 
   it("feeds the topmost viewable row to the reading position", () => {
-    const rows = viewable(150, 500).map((index) => ({
+    const rows = viewable(150, 500).map((index: number) => ({
       id: `row-${index}`,
       index,
       isViewable: true,
