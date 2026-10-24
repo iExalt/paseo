@@ -59,7 +59,7 @@ describe("checkParity", () => {
   it("fails on stale entries and on gaps without a reason", () => {
     const manifest: ParityManifest = {
       splitModules: { gone: { kind: "equivalent" } },
-      settingsSections: { editor: { kind: "gap", chunk: "D1", reason: " " } },
+      settingsSections: { editor: { kind: "gap", chunk: "E1", reason: " " } },
       runtimeGates: { "gone.ts": { kind: "deliberate", reason: "Needs Electron" } },
     };
     expect(checkParity({ files: [], gatedSettingsSections: ["editor"] }, manifest)).toEqual([
