@@ -69,3 +69,41 @@ export function createReadingAnchor() {
     },
   };
 }
+
+// FlatList exposes no row geometry, so the native list holds the reader by row id. A width
+// change rewraps every row and Android's maintainVisibleContentPosition cannot hold an
+// inverted, virtualized list in place, so a detached reader would land elsewhere. Height
+// changes (keyboard, composer growth) do not rewrap rows and keep the native behavior.
+export function createNativeReadingAnchor() {
+  let readingRowId: string | null = null;
+  let frozenRowId: string | null = null;
+  return {
+    // Reports during a reflow come from the drifting layout, so the frozen row wins.
+    noteViewable(rowId: string | null) {
+      if (frozenRowId === null) readingRowId = rowId;
+    },
+    // Returns whether a restore is pending after this change.
+    beginViewportChange(change: {
+      previousWidth: number;
+      width: number;
+      detached: boolean;
+    }): boolean {
+      if (frozenRowId !== null) return true;
+      // Layout and scroll events can round widths differently; a reflow moves whole pixels.
+      const reflowed =
+        change.previousWidth > 0 && Math.abs(change.width - change.previousWidth) >= 1;
+      if (!change.detached || !reflowed || readingRowId === null) return false;
+      frozenRowId = readingRowId;
+      return true;
+    },
+    isRestorePending: () => frozenRowId !== null,
+    takeRestoreRowId(): string | null {
+      const rowId = frozenRowId;
+      frozenRowId = null;
+      return rowId;
+    },
+    cancel() {
+      frozenRowId = null;
+    },
+  };
+}
