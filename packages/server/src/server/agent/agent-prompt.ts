@@ -60,11 +60,6 @@ export type PromptDispatchDisposition =
   | "deferred"
   | "queued";
 
-/** Whether the prompt runs in a turn that has not started yet, so a finish watch must wait for it. */
-export function dispositionAwaitsTurnStart(disposition: PromptDispatchDisposition): boolean {
-  return disposition === "turn_started" || disposition === "deferred" || disposition === "queued";
-}
-
 type SteerDispatch =
   | { kind: "steered" }
   /** No turn to steer into, so start one. Background work alone is not a turn to interrupt. */

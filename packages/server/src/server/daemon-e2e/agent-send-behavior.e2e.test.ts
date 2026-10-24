@@ -79,7 +79,7 @@ test("a held send notifies its caller when its own turn finishes", async () => {
     const caller = await create("Caller");
     const agent = await create("Held send");
     await client.sendMessage(agent.id, "First task");
-    await client.sendAgentMessage(agent.id, "run sleep in the shell, then say 'state saved'", {
+    await client.sendAgentMessage(agent.id, "say 'state saved'", {
       sourceAgentId: caller.id,
       notifyOnFinish: true,
     });
