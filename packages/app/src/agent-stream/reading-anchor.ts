@@ -7,6 +7,32 @@ interface RowGeometry {
 // A row must clear the reading line before the next row takes ownership.
 const READING_POSITION_OFFSET_PX = 8;
 
+// FlatList reads this once at mount and throws unless exactly one threshold is set. A per-item
+// threshold of 0 counts any row with a visible pixel. The list viewport includes the padding
+// under the top overlay, so rows beneath it count as visible.
+export const READING_VIEWABILITY_CONFIG = Object.freeze({ itemVisiblePercentThreshold: 0 });
+
+interface ViewableRow {
+  id: string;
+  index: number | null;
+  isViewable: boolean;
+}
+
+// The native list is inverted, so its highest viewable index is the row at the top of the
+// viewport: the one being read. With none viewable, the reader is at the newest row, as on web.
+export function getTopmostViewableRowId(
+  rows: readonly ViewableRow[],
+  newestRowId: string | undefined,
+): string | null {
+  let top: ViewableRow | null = null;
+  for (const row of rows) {
+    if (row.isViewable && row.index !== null && (!top || row.index > (top.index ?? -1))) {
+      top = row;
+    }
+  }
+  return top?.id ?? newestRowId ?? null;
+}
+
 // Content coordinates survive user scrolling. Layout commits replace the geometry;
 // scroll events reuse it, without another DOM measurement pass.
 export function createReadingAnchor() {
