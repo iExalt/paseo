@@ -133,5 +133,309 @@
       { "mode": "100644", "oid": "1b9f8044ac9f2592080a0ff44fb4246d181896d9", "stage": 1 },
       { "mode": "100644", "oid": "9e898c4a11ddaa6eada543a9be89e25018098069", "stage": 3 }
     ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
+    "path": "packages/app/src/terminal/webview/terminal-emulator-webview-html.ts",
+    "stages": [
+      { "mode": "100644", "oid": "c7fc27652e3780708c18f3cbed134358b2f2a838", "stage": 1 },
+      { "mode": "100644", "oid": "0c988e769c653e18f3f543585f72747990cbe40a", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
+    "path": "patches/react-native-svg+15.15.3.patch",
+    "stages": [
+      { "mode": "100644", "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496", "stage": 1 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
+    "path": "patches/react-native-svg+15.15.4.patch",
+    "stages": [
+      { "mode": "100644", "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496", "stage": 2 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
+    "path": "patches/react-native-svg+15.15.5.patch",
+    "stages": [
+      { "mode": "100644", "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "f07c875e773d3ce9a6e70eabc649b2d65952b618",
+    "path": ".github/workflows/desktop-packages.yml",
+    "stages": [
+      { "mode": "100644", "oid": "c49504953d1a8a784e92bb0b6193ffa732a0656c", "stage": 1 },
+      { "mode": "100644", "oid": "9a56bf72456a9c48dae97c39ff5de4b8553fb83c", "stage": 2 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "ac65b375f879d86be918cfc994d866bab72c6271",
+    "path": ".github/ci-paths.yml",
+    "stages": [
+      { "mode": "100644", "oid": "c7a65e09d43880a288c89b5d26de76c9f1d2ecb6", "stage": 1 },
+      { "mode": "100644", "oid": "5f112685cb873a48b91e6faeac3d9284bdd716e9", "stage": 2 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "87e1a5176a65ed69c8af7882111b37de44c14fdc",
+    "path": "packages/server/src/server/agent/agent-mcp.e2e.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "2c6336eb1f9181a726e0780179fcf25384899df5", "stage": 1 },
+      { "mode": "100644", "oid": "9f7db3580f2761bcbafdaa8d0c8d2e39f612615a", "stage": 2 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "87e1a5176a65ed69c8af7882111b37de44c14fdc",
+    "path": "packages/server/src/server/agent/mcp-parity.e2e.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d", "stage": 1 },
+      { "mode": "100644", "oid": "b121244339ae0d059a0905b928c7894a3cd9ac38", "stage": 2 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/find-messages.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "466924f4cf462976f063b213616f58cc114cd40c", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/find-messages.ts",
+    "stages": [
+      { "mode": "100644", "oid": "285d6eef49868eb83f28d8336233b75c08d57446", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/find.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "9f01706174b4e3d6fa6fe18faf2a323b9be3df01", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/view-contract.ts",
+    "stages": [
+      { "mode": "100644", "oid": "5815725f76f65a162ed7ab10a42be46ba4677a8e", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/visual-theme.ts",
+    "stages": [
+      { "mode": "100644", "oid": "6ce865a9a9b901ac650abb18861491089fa35bf9", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/edit-batcher.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "e70bb56603fb8c38eb1006e99e36214434a48b31", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/edit-batcher.ts",
+    "stages": [
+      { "mode": "100644", "oid": "6ad59c241b7c0815cbd85bdc8babcb87cf714c95", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/entry.browser.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "0ffd6215e323b555de414b6307aaa89877f6e5ab", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/entry.ts",
+    "stages": [
+      { "mode": "100644", "oid": "4d801611c464ce5198996942ddbf651cbc8e7fe7", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/file-editor-webview-html.ts",
+    "stages": [
+      { "mode": "100644", "oid": "9d2a0a6a5b7dac9c3731e0a61dba654b312178b9", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/host-bridge.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "dd1fa7d5e51375d33582451cbfbf4637c14540e4", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/host-bridge.ts",
+    "stages": [
+      { "mode": "100644", "oid": "b30123249d06560a21c0e4a007b34af78981a379", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/protocol.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "f4ce98f87928f2672839657842572cb4abc6ed6b", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/protocol.ts",
+    "stages": [
+      { "mode": "100644", "oid": "e5c9a6aa27be579e6ff410882a6415720ccf023b", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/renderer-health.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "d8a14f48813f5d01a5ab151b149ee337d78489bf", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/editor/webview/renderer-health.ts",
+    "stages": [
+      { "mode": "100644", "oid": "2ea3be48d4ebf3ee945d8883463ab7d11f3171e5", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/find/index.native.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "3d6aa75b773663d7f58d30e66e47ff261ec3440d", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/find/line-matches.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "856b23a47b34d50cca83862fa1fd9ef973817597", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/find/line-matches.ts",
+    "stages": [
+      { "mode": "100644", "oid": "519aee77706b07b53269d00232fd44c5f2c0445d", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/readonly/line-layout.test.ts",
+    "stages": [
+      { "mode": "100644", "oid": "e06fb8cbf9db2c1ccfb77cfa12933e7d30791a47", "stage": 3 }
+    ]
+  },
+  {
+    "action": "keep",
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-panels/source/readonly/line-layout.ts",
+    "stages": [
+      { "mode": "100644", "oid": "82086007e265b3efcbd40d84b07b5a5f6abe0bfb", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/components/terminal-emulator-webview.native.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "dbaa0175d4a55936ad2196e763adf3a6aa275e10", "stage": 1 },
+      { "mode": "100644", "oid": "58fe18510f2646b20b05b8c75b3a13ce76daec1b", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/file-pane/source/view.native.tsx",
+    "stages": [
+      { "mode": "100644", "oid": "de7c5eeae1c188f7edcecd68a8c6d67256941f7d", "stage": 1 },
+      { "mode": "100644", "oid": "0dcdf320f8326e1ee9af87a8697bea29ceb7a5e4", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/terminal/webview/terminal-emulator-webview-entry.ts",
+    "stages": [
+      { "mode": "100644", "oid": "50f080b37cff6bd2aca10228485aafd79508c0c1", "stage": 1 },
+      { "mode": "100644", "oid": "c07861867b390a71d005671cf1d577e28ee9b457", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
+    "path": "packages/app/src/terminal/webview/terminal-emulator-webview-html.ts",
+    "stages": [
+      { "mode": "100644", "oid": "0c988e769c653e18f3f543585f72747990cbe40a", "stage": 1 },
+      { "mode": "100644", "oid": "2051a4529c6cd37e0ec1a7fe9940a023ebe6eef7", "stage": 3 }
+    ]
+  },
+  {
+    "upstream": "b8bb335c563279be45544b1b20a1fa5b3e56d422",
+    "commit": "0d2333cc9cf8987cef7eb913fe286a05a2ac7f28",
+    "path": "packages/app/src/terminal/webview/terminal-emulator-webview-html.ts",
+    "stages": [
+      { "mode": "100644", "oid": "2051a4529c6cd37e0ec1a7fe9940a023ebe6eef7", "stage": 1 },
+      { "mode": "100644", "oid": "479d2d3019a01c01d0badfb2d39aa10e58370402", "stage": 3 }
+    ]
   }
 ]
