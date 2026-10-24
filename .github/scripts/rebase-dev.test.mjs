@@ -193,6 +193,37 @@ function resolvePatchOnlyEdit(recorder, enabled, recordDeletion) {
   git(recorder, "commit", "--allow-empty", "-C", "REBASE_HEAD");
 }
 
+// Upstream and dev rename old.patch to different names, as when both bump a patched
+// dependency. `null` seeds the base copy.
+function renamePatch(seed, enabled, name) {
+  if (!enabled) return;
+  if (name === null) writeFileSync(join(seed, "old.patch"), content());
+  else git(seed, "mv", "old.patch", name);
+}
+
+// Each name of a rename/rename conflict sits at a single stage. Keep the fork's name.
+function resolveRenameRename(recorder, upstream, enabled) {
+  if (!enabled) return [];
+  const replayed = git(recorder, "rev-parse", "REBASE_HEAD");
+  const records = [
+    ["old.patch", "delete"],
+    ["upstream.patch", "delete"],
+    ["fork.patch", "keep"],
+  ].map(([path, action]) => {
+    const [mode, oid, stage] = git(recorder, "ls-files", "-u", "--", path).split(/\s+/);
+    return {
+      upstream,
+      commit: replayed,
+      path,
+      action,
+      stages: [{ mode, oid, stage: Number(stage) }],
+    };
+  });
+  git(recorder, "rm", "--", "old.patch", "upstream.patch");
+  git(recorder, "add", "--", "fork.patch");
+  return records;
+}
+
 async function makeFixture(
   name,
   {
@@ -202,6 +233,7 @@ async function makeFixture(
     newlyEmpty = false,
     deletion = false,
     deletionOnly = false,
+    renameRename,
     mergeHistory,
   } = {},
 ) {
@@ -219,6 +251,7 @@ async function makeFixture(
     JSON.stringify({ name: "fixture", version: "0.11.2", workspaces: [] }) + "\n",
   );
   if (deletion) writeFileSync(join(seed, "old.patch"), content());
+  renamePatch(seed, renameRename, null);
   commit(seed, "base");
   const baseSha = git(seed, "rev-parse", "HEAD");
   git(seed, "remote", "add", "origin", remote);
@@ -228,6 +261,7 @@ async function makeFixture(
   git(seed, "checkout", "-b", "upstream/main");
   writeFileSync(join(seed, "shared.txt"), content({ target: "upstream target" }));
   if (deletion) git(seed, "rm", "old.patch");
+  renamePatch(seed, renameRename, "upstream.patch");
   commit(seed, "upstream target edit");
   git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
   let upstreamSha = git(seed, "rev-parse", "HEAD");
@@ -272,6 +306,7 @@ async function makeFixture(
     git(seed, "mv", "old.patch", "renamed.patch");
     writeFileSync(join(seed, "renamed.patch"), content({ target: "updated patch" }));
   }
+  renamePatch(seed, renameRename, "fork.patch");
   // Like a GitHub squash merge, the message has no final newline, which a conflicted
   // pick adds back.
   git(seed, "add", "-A");
@@ -364,6 +399,7 @@ async function makeFixture(
     git(recorder, "rm", "renamed.patch");
   };
   if (deletion) recordDeletion();
+  deletionRecords.push(...resolveRenameRename(recorder, upstreamSha, renameRename));
   const resolution = content({ target: "resolved target" });
   writeFileSync(join(recorder, "shared.txt"), resolution);
   git(recorder, "add", "shared.txt");
@@ -422,7 +458,17 @@ async function makeFixture(
     git(seed, "push", "origin", "HEAD:refs/heads/dev");
   }
   const [deletionRecord] = deletionRecords;
-  return { directory, remote, devSha, upstreamSha, resolverPath, recorder, id, deletionRecord };
+  return {
+    directory,
+    remote,
+    devSha,
+    upstreamSha,
+    resolverPath,
+    recorder,
+    id,
+    deletionRecord,
+    deletionRecords,
+  };
 }
 
 test("replay refuses git older than 2.55", () => {
@@ -459,6 +505,27 @@ test("exact rename/delete resolutions replay and mismatched blobs fail closed", 
   assert.equal(git(rejected, "ls-remote", "--refs", "origin"), beforeRefs);
 });
 
+test("rename/rename records keep the fork's name and delete the others", async () => {
+  const fixture = await makeFixture("rename-rename", { renameRename: true });
+  assert.deepEqual(
+    fixture.deletionRecords.map(({ path, action, stages }) => [path, action, stages[0].stage]),
+    [
+      ["old.patch", "delete", 1],
+      ["upstream.patch", "delete", 2],
+      ["fork.patch", "keep", 3],
+    ],
+  );
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const patches = git(clone, "ls-tree", "--name-only", "HEAD")
+    .split("\n")
+    .filter((name) => name.endsWith(".patch"));
+  assert.deepEqual(patches, ["fork.patch"]);
+  assert.equal(git(clone, "show", "HEAD:fork.patch"), content().trimEnd());
+  assert.equal(git(clone, "status", "--porcelain"), "");
+});
+
 test("a commit left empty by deletion records replays as an empty commit", async () => {
   const fixture = await makeFixture("deletion-only", { deletion: true, deletionOnly: true });
   const clone = join(fixture.directory, "checkout");
@@ -492,6 +559,21 @@ test("deletion records reject unsafe paths, modes, duplicate keys and non-deleti
       () => parseDeletionResolutions(JSON.stringify([{ ...record, stages }])),
       /Invalid/,
     );
+  }
+  const [base, fork] = record.stages;
+  for (const accepted of [
+    { ...record, stages: [base] },
+    { ...record, stages: [fork] },
+    { ...record, action: "keep", stages: [fork] },
+  ]) {
+    assert.deepEqual(parseDeletionResolutions(JSON.stringify([accepted])), [accepted]);
+  }
+  for (const rejected of [
+    { ...record, action: "keep" },
+    { ...record, action: "keep", stages: [base] },
+    { ...record, action: "rename", stages: [fork] },
+  ]) {
+    assert.throws(() => parseDeletionResolutions(JSON.stringify([rejected])), /Invalid/);
   }
   assert.throws(() => parseDeletionResolutions(JSON.stringify([record, record])), /Duplicate/);
 });
