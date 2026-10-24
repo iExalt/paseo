@@ -4827,6 +4827,19 @@ index 5c5f05f13..a347ee742 100644
    },
    settingsSections: {
      browser: {
+diff --git a/packages/app/src/plugins/registry-requirements.test.ts b/packages/app/src/plugins/registry-requirements.test.ts
+index 2b2644b90..b705ebd0b 100644
+--- a/packages/app/src/plugins/registry-requirements.test.ts
++++ b/packages/app/src/plugins/registry-requirements.test.ts
+@@ -144,7 +144,7 @@ it("rejects the unreleased translation API on 0.12.0 before evaluating its impor
+   expect(starts()).toBe(0);
+   expect(result.getSnapshot()).toEqual([]);
+   expect(result.getEvaluationError("host", "translated")).toBe(
+-    'Plugin "translated" requires Paseo >=0.12.1. Your app is 0.12.0. Use a compatible plugin version or update the app.',
++    'Plugin "translated" requires Paseo >=0.12.1. Your app plugin API is 0.12.0. Use a compatible plugin version or update the app.',
+   );
+ });
+ 
 diff --git a/packages/app/src/runtime/replica-cache/index.test.ts b/packages/app/src/runtime/replica-cache/index.test.ts
 index 875980b93..2ea3e4f6a 100644
 --- a/packages/app/src/runtime/replica-cache/index.test.ts
