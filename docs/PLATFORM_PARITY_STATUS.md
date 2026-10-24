@@ -131,7 +131,9 @@ after the rebase onto upstream's enriched-markdown renderer (below).
 
 ### C2: find in the file view on mobile
 
-Evidence state: verified on Paseo Debug at the batch build, after two fixes.
+Evidence state: removed by the 2026-10-24 rebase (see Current boundary). The notes below describe the removed implementation; keep them for the port.
+
+Previously verified on Paseo Debug at the batch build, after two fixes.
 
 - Since D1, the read-only view shows files over the editor's 1 MiB limit and
   editable files until the editor is ready. The batch found its bar hidden
@@ -170,7 +172,9 @@ Evidence state: verified on Paseo Debug at the batch build.
 
 ### D1: file editing on mobile
 
-Evidence state: verified on Paseo Debug at the batch build, with the limits
+Evidence state: removed by the 2026-10-24 rebase (see Current boundary). The notes below describe the removed implementation; keep them for the port.
+
+Previously verified on Paseo Debug at the batch build, with the limits
 below.
 
 - Native runs the web CodeMirror editor in a WebView page built by
@@ -205,6 +209,9 @@ below.
   under the taller bar until the next step.
 
 ### E: tablets
+
+Pane splits on wide native layouts were removed by the 2026-10-24 rebase (see
+Current boundary); the rest of E stands.
 
 Evidence state: accepted on code review, unit tests and an Android release
 build. The user chose to skip the tablet checks: dev-station has no KVM, so an
@@ -310,9 +317,26 @@ The pending cases below stay unverified.
 
 ## Current boundary
 
-- All chunks are implemented. C2, C3, D1, F1 and F2 passed the phone batch
-  with the limits in their sections; F1 stays open for a service link. E is
-  accepted without device checks, by the user's choice.
+- C2, D1 and E's native pane splits are gone from `dev`. The 2026-10-24
+  rebase onto upstream b8bb335 took upstream's rebuild of the same areas over
+  #161, by the user's choice, and the fixup deleted the fork code that no
+  longer fit. Port each onto upstream's structure:
+  - D1: the WebView CodeMirror editor and bridge
+    (`file-panels/source/editor/webview/*`, `editor/find.tsx`,
+    `find-messages*`, `view-contract.ts`, `scripts/build-webview-html.mjs`,
+    `webview-source-hash.mjs`) onto `file-panels/source/editor/view.tsx`,
+    which shows "Source editing is available on web and desktop" on native.
+  - C2: native literal find and wrapped-row layout
+    (`file-panels/source/find/index.native.tsx`, `line-matches*`,
+    `readonly/line-layout*`) onto `readonly/view.native.tsx`.
+  - E pane splits: touch split, divider resize and pane focus onto
+    `workspace-tab-drag-context` and upstream's Explorer dock on every
+    non-compact layout (upstream #7424).
+  - The pre-rebase implementation is on `backup/rebase-dev/40088158235-1`,
+    under `packages/app/src/file-pane/`.
+- C3, F1 and F2 passed the phone batch with the limits in their sections; F1
+  stays open for a service link. The rest of E is accepted without device
+  checks, by the user's choice.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
 - Everything shipped in `paseo-v0.6.0`. B2 passed its release gate on the
@@ -339,3 +363,6 @@ The pending cases below stay unverified.
 - 2026-10-17: `dev` rebased onto upstream 88a7aec, which replaced the native
   Markdown renderer. C1's assistant marks were ported and re-checked on Paseo
   Debug.
+- 2026-10-24: `dev` rebased onto upstream b8bb335, which rebuilt file panes,
+  split drag-and-drop and the Explorer dock. C2, D1 and E's pane splits were
+  removed pending a port; C3 survived in the native grid renderer.
