@@ -32,6 +32,7 @@ export const usageCopy = {
   spendEmpty: "No spend recorded yet",
   spendLoading: "Loading spend...",
   spendErrorTitle: "Unable to load spend",
+  spendHostUnavailable: (host: string) => `Connect to ${host} to see API spend`,
   spendUpgradeRequired: (host: string) => `Update ${host} to see API spend`,
   spendTrackingSince: (date: string) => `Tracked since ${date}.`,
   spendCarried: (amount: string) =>

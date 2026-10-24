@@ -1,5 +1,7 @@
 import { supportsSpendSummary } from "@getpaseo/client/internal/daemon-client";
 import type { SpendSummary } from "@getpaseo/protocol/messages";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { useFetchQuery } from "@/data/query";
 import { getHostRuntimeStore, useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
@@ -22,7 +24,9 @@ export function resolveSpendView(input: {
   query: { data: SpendSummary | undefined; error: unknown };
 }): SpendView {
   const { hostLabel, isConnected, isSupported, query } = input;
-  if (!isConnected) return { kind: "unavailable", message: usageCopy.hostUnavailable(hostLabel) };
+  if (!isConnected) {
+    return { kind: "unavailable", message: usageCopy.spendHostUnavailable(hostLabel) };
+  }
   if (!isSupported)
     return { kind: "unavailable", message: usageCopy.spendUpgradeRequired(hostLabel) };
   if (query.data) return { kind: "ready", summary: query.data };
@@ -33,6 +37,11 @@ export function resolveSpendView(input: {
     };
   }
   return { kind: "loading" };
+}
+
+/** Every time zone's spend query for a host, so one refresh reaches whichever is shown. */
+function spendQueryKeyPrefix(serverId: string) {
+  return ["usage", serverId, "spend"] as const;
 }
 
 /** The device's IANA time zone, so "today" on the host means today where the user is. */
@@ -48,7 +57,7 @@ export function useHostSpend(serverId: string): SpendView {
   );
   const timeZone = deviceTimeZone();
   const query = useFetchQuery({
-    queryKey: ["usage", serverId, "spend", timeZone ?? "UTC"],
+    queryKey: [...spendQueryKeyPrefix(serverId), timeZone ?? "UTC"],
     queryFn: async () => {
       const client = getHostRuntimeStore().getClient(serverId);
       if (!client) throw new Error(usageCopy.clientUnavailable);
@@ -65,4 +74,12 @@ export function useHostSpend(serverId: string): SpendView {
     isSupported,
     query: { data: query.data, error: query.error },
   });
+}
+
+/** Refetches a host's spend now instead of when it next goes stale. */
+export function useRefreshHostSpend(serverId: string): () => void {
+  const queryClient = useQueryClient();
+  return useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: spendQueryKeyPrefix(serverId) });
+  }, [queryClient, serverId]);
 }
