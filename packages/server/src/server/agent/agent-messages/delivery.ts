@@ -1,4 +1,5 @@
 import type { PromptDispatchDisposition } from "../agent-prompt.js";
+import type { AgentSendBehavior } from "@getpaseo/protocol/messages";
 import { randomUUID } from "node:crypto";
 import type { AgentPromptInput, AgentPromptContentBlock } from "../agent-sdk-types.js";
 import { prepareAgentMessage, type AgentPromptSource } from "./envelope.js";
@@ -11,7 +12,7 @@ interface Message {
   sessionMode?: string;
   unarchive?: boolean;
   clearPendingPermissions?: boolean;
-  activeTurnBehavior?: "steer" | "interrupt";
+  activeTurnBehavior?: AgentSendBehavior;
   beforeDispatch?: () => void;
   onDispatch?: (disposition: PromptDispatchDisposition) => void;
 }
@@ -29,7 +30,7 @@ interface DispatchRequest {
   recipientId: string;
   messageIds: readonly string[];
   prompt: AgentPromptInput;
-  activeTurnBehavior: "steer" | "interrupt";
+  activeTurnBehavior: AgentSendBehavior;
   sessionMode?: string;
   clearPendingPermissions: boolean;
   unarchive: boolean;

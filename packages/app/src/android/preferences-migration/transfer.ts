@@ -227,7 +227,6 @@ function projectAppPreferences(rawApp: string | null, daemonIds: ReadonlySet<str
     sendBehavior: normalized.sendBehavior,
     serviceUrlBehavior: normalized.serviceUrlBehavior,
     terminalScrollbackLines: normalized.terminalScrollbackLines,
-    useLegacyTerminalRenderer: normalized.useLegacyTerminalRenderer,
     uiFontFamily: normalized.uiFontFamily,
     monoFontFamily: normalized.monoFontFamily,
     uiBaseFontSize: normalized.uiBaseFontSize,

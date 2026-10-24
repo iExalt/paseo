@@ -19,7 +19,7 @@
  *
  * A present but invalid `protected` field never falls back to legacy.
  *
- * See docs/relay-endpoint-security.md for the byte-level mapping.
+ * See docs/upstream/relay-endpoint-security.md for the byte-level mapping.
  */
 
 import {

@@ -33,7 +33,7 @@
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/react": "~19.2.0",
-    "expo-modules-core": "57.0.21",
+    "expo-modules-core": "57.0.24",
     "@typescript/native": "npm:typescript@^7.0.2",
     "expo-module-scripts": "^56.0.3",
     "react": "19.2.3",
