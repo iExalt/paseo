@@ -9,6 +9,7 @@ import {
   type LayoutChangeEvent,
   type ViewStyle,
 } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   createAnimatedComponent,
   useAnimatedReaction,
@@ -19,6 +20,7 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
+import { useStableEvent } from "@/hooks/use-stable-event";
 import { InlineReviewThread } from "@/review";
 import { useKeyboardShift } from "@/keyboard/shift";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
@@ -51,10 +53,23 @@ import {
   type NativeCanvasSlab,
 } from "./native-slabs";
 import {
+  nativeCaretViewportX,
+  nativeSelectionCarets,
   nativeSelectionRectsForSlab,
+  type NativeSelectionCaret,
   type NativeSelectionGeometry,
   type NativeSelectionRect,
 } from "./native-selection";
+import {
+  IDLE_SELECTION_GESTURE,
+  SELECTION_LONG_PRESS_MS,
+  isSelectionDragActive,
+  reduceSelectionGesture,
+  type SelectionGestureEffect,
+  type SelectionGestureEvent,
+  type SelectionGestureState,
+  type SelectionHandle,
+} from "./selection-gesture";
 import { useNativeDiffSelection } from "./use-native-diff-selection";
 import {
   createNativePaints,
@@ -74,6 +89,7 @@ import {
 import type {
   DiffDocumentModel,
   DiffFileSection,
+  DiffSelection,
   DiffSurfaceProps,
   DiffTypography,
   TextMeasurer,
@@ -84,6 +100,14 @@ const SYSTEM_MONO = "monospace";
 const CODE_LEFT_PADDING = 8;
 /** Matches the web surface's selection fill. */
 const SELECTION_OPACITY = 0.45;
+/** Minimum touch target for a selection handle. */
+const HANDLE_HIT_SIZE = 44;
+const HANDLE_KNOB_SIZE = 16;
+const HANDLE_STEM_WIDTH = 2;
+/** Moves a scrolled-out handle off screen so it can't be grabbed. */
+const HIDDEN_HANDLE_X = -10_000;
+
+type SelectionGestureDispatch = (event: SelectionGestureEvent) => SelectionGestureEffect;
 
 export function DiffSurface(props: DiffSurfaceProps) {
   const { t } = useTranslation();
@@ -176,6 +200,34 @@ export function DiffSurface(props: DiffSurfaceProps) {
     collapsedFilePaths: props.collapsedFilePaths,
     typography,
   });
+  const gestureStateRef = useRef<SelectionGestureState>(IDLE_SELECTION_GESTURE);
+  // Several gesture events can land before React re-renders with the new selection.
+  const latestSelectionRef = useRef<DiffSelection | null>(selection.selection);
+  useLayoutEffect(() => {
+    latestSelectionRef.current = selection.selection;
+  }, [selection.selection]);
+  // Scrolling stays off only while a long-press or handle drag moves the selection.
+  const [selectionDragActive, setSelectionDragActive] = useState(false);
+  const dispatchSelectionGesture = useStableEvent((event: SelectionGestureEvent) => {
+    const result = reduceSelectionGesture(
+      { model, horizontalOffsets: horizontalOffsets.value },
+      gestureStateRef.current,
+      latestSelectionRef.current,
+      event,
+    );
+    gestureStateRef.current = result.state;
+    if (result.selection !== latestSelectionRef.current) {
+      latestSelectionRef.current = result.selection;
+      selection.setSelection(result.selection);
+    }
+    setSelectionDragActive(isSelectionDragActive(result.state));
+    return result.effect;
+  });
+  // A drag never continues against rows that changed under it.
+  useEffect(() => {
+    gestureStateRef.current = IDLE_SELECTION_GESTURE;
+    setSelectionDragActive(false);
+  }, [props.files, props.displayPreferences.layout, props.collapsedFilePaths, typography]);
   const textLayoutStore = useMemo(
     () =>
       createNativeTextLayoutStore({
@@ -288,6 +340,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
         contentContainerStyle={contentStyle}
         onScroll={scrollHandler}
         scrollEventThrottle={16}
+        scrollEnabled={!selectionDragActive}
         showsVerticalScrollIndicator
         testID="git-diff-scroll"
       >
@@ -324,8 +377,17 @@ export function DiffSurface(props: DiffSurfaceProps) {
             model={model}
             mode={props.mode}
             horizontalOffsets={horizontalOffsets}
+            scrollEnabled={!selectionDragActive}
+            onSelectionGesture={dispatchSelectionGesture}
           />
         ))}
+        <NativeSelectionHandles
+          model={model}
+          selection={selection.selection}
+          horizontalOffsets={horizontalOffsets}
+          color={props.palette.selection}
+          onSelectionGesture={dispatchSelectionGesture}
+        />
         <NativeReviewOverlays model={model} mode={props.mode} />
         <Animated.View pointerEvents="none" style={keyboardSpacerStyle} />
       </AnimatedScrollView>
@@ -460,36 +522,43 @@ function NativeFileBody({
   model,
   mode,
   horizontalOffsets,
+  scrollEnabled,
+  onSelectionGesture,
 }: {
   file: DiffFileSection;
   model: DiffDocumentModel;
   mode: DiffSurfaceProps["mode"];
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
+  scrollEnabled: boolean;
+  onSelectionGesture: SelectionGestureDispatch;
 }) {
-  const touchRef = useRef<{ x: number; y: number; startedAt: number; moved: boolean } | null>(null);
   const reviewActions = mode.kind === "working" ? mode.reviewActions : undefined;
-  const touchStart = useCallback((event: GestureResponderEvent) => {
-    touchRef.current = {
-      x: event.nativeEvent.pageX,
-      y: event.nativeEvent.pageY,
-      startedAt: Date.now(),
-      moved: false,
-    };
-  }, []);
-  const touchMove = useCallback((event: GestureResponderEvent) => {
-    const touch = touchRef.current;
-    if (
-      touch &&
-      Math.hypot(event.nativeEvent.pageX - touch.x, event.nativeEvent.pageY - touch.y) > 10
-    ) {
-      touch.moved = true;
-    }
-  }, []);
+  const touchStart = useCallback(
+    (event: GestureResponderEvent) => {
+      onSelectionGesture({
+        type: "touch-start",
+        pageX: event.nativeEvent.pageX,
+        pageY: event.nativeEvent.pageY,
+        time: Date.now(),
+      });
+    },
+    [onSelectionGesture],
+  );
+  const touchMove = useCallback(
+    (event: GestureResponderEvent) => {
+      onSelectionGesture({
+        type: "touch-move",
+        pageX: event.nativeEvent.pageX,
+        pageY: event.nativeEvent.pageY,
+      });
+    },
+    [onSelectionGesture],
+  );
   const touchEnd = useCallback(
     (event: GestureResponderEvent) => {
-      const touch = touchRef.current;
-      touchRef.current = null;
-      if (!touch || touch.moved || Date.now() - touch.startedAt > 500 || !reviewActions) return;
+      // A quick tap dismisses a selection; without one it opens a review comment.
+      const effect = onSelectionGesture({ type: "touch-end", time: Date.now() });
+      if (effect !== "comment" || !reviewActions) return;
       const hit = hitTestDiffBodyPoint({
         model,
         file,
@@ -499,27 +568,187 @@ function NativeFileBody({
       });
       if (hit?.kind === "cell" && hit.target) reviewActions.onStartComment(hit.target);
     },
-    [file, horizontalOffsets, model, reviewActions],
+    [file, horizontalOffsets, model, onSelectionGesture, reviewActions],
+  );
+  const touchCancel = useCallback(
+    () => onSelectionGesture({ type: "touch-cancel" }),
+    [onSelectionGesture],
+  );
+  const longPressStart = useStableEvent((locationX: number, locationY: number) =>
+    onSelectionGesture({ type: "long-press", point: { file, locationX, locationY } }),
+  );
+  const longPressDrag = useStableEvent((locationX: number, locationY: number) =>
+    onSelectionGesture({ type: "drag", point: { file, locationX, locationY } }),
+  );
+  const longPressEnd = useStableEvent(() =>
+    onSelectionGesture({ type: "drag-end", source: "long-press" }),
+  );
+  // Fails if the finger moves before the hold completes, so scrolling and panel
+  // swipes win; once active it cancels them for the rest of the touch.
+  const longPress = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .activateAfterLongPress(SELECTION_LONG_PRESS_MS)
+        .onStart((event) => longPressStart(event.x, event.y))
+        .onUpdate((event) => longPressDrag(event.x, event.y))
+        .onFinalize(() => longPressEnd()),
+    [longPressDrag, longPressEnd, longPressStart],
   );
   return (
-    <View
-      testID={`diff-file-${file.fileIndex}-body`}
-      style={inlineUnistylesStyle<ViewStyle>({
-        position: "absolute",
-        top: file.bodyTop,
-        left: 0,
-        right: 0,
-        height: file.bodyHeight,
-        zIndex: 2,
-      })}
-      onTouchStart={touchStart}
-      onTouchMove={touchMove}
-      onTouchEnd={touchEnd}
-    >
-      {!file.isCollapsed && !model.wrapLines ? (
-        <HorizontalScroll file={file} offsets={horizontalOffsets} />
-      ) : null}
-    </View>
+    <GestureDetector gesture={longPress}>
+      <View
+        testID={`diff-file-${file.fileIndex}-body`}
+        style={inlineUnistylesStyle<ViewStyle>({
+          position: "absolute",
+          top: file.bodyTop,
+          left: 0,
+          right: 0,
+          height: file.bodyHeight,
+          zIndex: 2,
+        })}
+        onTouchStart={touchStart}
+        onTouchMove={touchMove}
+        onTouchEnd={touchEnd}
+        onTouchCancel={touchCancel}
+      >
+        {!file.isCollapsed && !model.wrapLines ? (
+          <HorizontalScroll file={file} offsets={horizontalOffsets} scrollEnabled={scrollEnabled} />
+        ) : null}
+      </View>
+    </GestureDetector>
+  );
+}
+
+function NativeSelectionHandles({
+  model,
+  selection,
+  horizontalOffsets,
+  color,
+  onSelectionGesture,
+}: {
+  model: DiffDocumentModel;
+  selection: DiffSelection | null;
+  horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
+  color: string;
+  onSelectionGesture: SelectionGestureDispatch;
+}) {
+  const carets = useMemo(() => nativeSelectionCarets(model, selection), [model, selection]);
+  if (!carets) return null;
+  return (
+    <>
+      <NativeSelectionHandle
+        handle="start"
+        caret={carets.start}
+        model={model}
+        horizontalOffsets={horizontalOffsets}
+        color={color}
+        onSelectionGesture={onSelectionGesture}
+      />
+      <NativeSelectionHandle
+        handle="end"
+        caret={carets.end}
+        model={model}
+        horizontalOffsets={horizontalOffsets}
+        color={color}
+        onSelectionGesture={onSelectionGesture}
+      />
+    </>
+  );
+}
+
+function NativeSelectionHandle({
+  handle,
+  caret,
+  model,
+  horizontalOffsets,
+  color,
+  onSelectionGesture,
+}: {
+  handle: SelectionHandle;
+  caret: NativeSelectionCaret;
+  model: DiffDocumentModel;
+  horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
+  color: string;
+  onSelectionGesture: SelectionGestureDispatch;
+}) {
+  // Where the drag started, in viewport x and document y at the caret's middle.
+  const originRef = useRef<{ fileIndex: number; x: number; y: number } | null>(null);
+  const begin = useStableEvent(() => {
+    originRef.current = {
+      fileIndex: caret.fileIndex,
+      x: nativeCaretViewportX(caret, horizontalOffsets.value),
+      y: caret.top + caret.height / 2,
+    };
+    onSelectionGesture({ type: "handle-start", handle });
+  });
+  const drag = useStableEvent((translationX: number, translationY: number) => {
+    const origin = originRef.current;
+    const file = origin ? model.files[origin.fileIndex] : undefined;
+    if (!origin || !file) return;
+    onSelectionGesture({
+      type: "drag",
+      point: {
+        file,
+        locationX: origin.x + translationX,
+        locationY: origin.y + translationY - file.bodyTop,
+      },
+    });
+  });
+  const end = useStableEvent(() => {
+    originRef.current = null;
+    onSelectionGesture({ type: "drag-end", source: "handle" });
+  });
+  const gesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .runOnJS(true)
+        .minDistance(0)
+        .onStart(() => begin())
+        .onUpdate((event) => drag(event.translationX, event.translationY))
+        .onFinalize(() => end()),
+    [begin, drag, end],
+  );
+  // Follows horizontal scroll on the UI thread; vertical scroll moves it with the content.
+  const positionStyle = useAnimatedStyle(() => {
+    const viewportX = nativeCaretViewportX(caret, horizontalOffsets.value);
+    const visible = viewportX >= caret.clipX && viewportX <= caret.clipX + caret.clipWidth;
+    return {
+      opacity: visible ? 1 : 0,
+      transform: [{ translateX: visible ? viewportX - HANDLE_HIT_SIZE / 2 : HIDDEN_HANDLE_X }],
+    };
+  }, [caret, horizontalOffsets]);
+  const frameStyle = useMemo<ViewStyle>(
+    () => ({
+      position: "absolute",
+      top: caret.top,
+      left: 0,
+      width: HANDLE_HIT_SIZE,
+      height: caret.height + HANDLE_HIT_SIZE,
+      zIndex: 4,
+    }),
+    [caret.height, caret.top],
+  );
+  const stemStyle = useMemo<ViewStyle>(
+    () => ({ height: caret.height, backgroundColor: color }),
+    [caret.height, color],
+  );
+  const knobStyle = useMemo<ViewStyle>(
+    () => ({ top: caret.height, backgroundColor: color }),
+    [caret.height, color],
+  );
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View
+        accessible={false}
+        importantForAccessibility="no-hide-descendants"
+        testID={`git-diff-selection-handle-${handle}`}
+        style={[frameStyle, positionStyle]}
+      >
+        <View pointerEvents="none" style={[styles.handleStem, stemStyle]} />
+        <View pointerEvents="none" style={[styles.handleKnob, knobStyle]} />
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
@@ -741,4 +970,17 @@ function NativeSlabCode({
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0, position: "relative", overflow: "hidden" },
   scroll: { backgroundColor: "transparent" },
+  handleStem: {
+    position: "absolute",
+    top: 0,
+    left: (HANDLE_HIT_SIZE - HANDLE_STEM_WIDTH) / 2,
+    width: HANDLE_STEM_WIDTH,
+  },
+  handleKnob: {
+    position: "absolute",
+    left: (HANDLE_HIT_SIZE - HANDLE_KNOB_SIZE) / 2,
+    width: HANDLE_KNOB_SIZE,
+    height: HANDLE_KNOB_SIZE,
+    borderRadius: HANDLE_KNOB_SIZE / 2,
+  },
 });

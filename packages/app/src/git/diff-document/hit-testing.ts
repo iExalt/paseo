@@ -163,7 +163,7 @@ export function selectAllSource(
   return first && last ? { anchor: first, focus: last } : null;
 }
 
-function comparePosition(left: DiffCharacterPosition, right: DiffCharacterPosition): number {
+export function comparePosition(left: DiffCharacterPosition, right: DiffCharacterPosition): number {
   return (
     left.rowIndex - right.rowIndex ||
     left.cellIndex - right.cellIndex ||
