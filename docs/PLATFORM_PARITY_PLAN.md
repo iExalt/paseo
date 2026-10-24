@@ -69,7 +69,7 @@ the token; that goes to the user.
 
 - [x] C1. Chat find on native: header-menu entry, host-backed search, scroll to
       the match and highlight it.
-- [x] C2. Find in the read-only file view.
+- [ ] C2. Find in the read-only file view. Removed by the 2026-10-24 rebase; see the status doc.
 - [x] C3. Terminal find in the native grid renderer, opened from the tab menu like chat and file find.
 
 Acceptance: model tests per surface; on Paseo Debug find steps through matches
@@ -81,8 +81,8 @@ screen, which no reachable chat had when C1 closed.
 
 ### D. File editing on mobile (P4)
 
-- [x] D1. CodeMirror hosted in a WebView, bridged to the shared
-      `FileEditorModel`; Editor settings shown on native.
+- [ ] D1. CodeMirror hosted in a WebView, bridged to the shared
+      `FileEditorModel`; Editor settings shown on native. Removed by the 2026-10-24 rebase; see the status doc.
 
 Acceptance: bridge tests; on Paseo Debug edit, save, conflict and rotation
 work with the soft keyboard.
