@@ -1,6 +1,6 @@
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
-import type { FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
+import { acceptOnDispatch, type FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
 import { AgentDirectory } from "./agent/directory.js";
 import { ConnectedHostSession } from "./connected-hosts/index.js";
 import type { ConnectedHosts } from "./connected-hosts/index.js";
@@ -9095,9 +9095,15 @@ export class Session {
               activeTurnBehavior: msg.activeTurnBehavior ?? "steer",
               sessionMode: msg.sessionMode,
               clearPendingPermissions: true,
-              onDispatch: (nextDisposition) => {
+              onDispatch: (nextDisposition, held) => {
                 disposition = nextDisposition;
-                notification?.accept();
+                if (!notification) return;
+                acceptOnDispatch(notification, held).catch((error) =>
+                  this.sessionLogger.error(
+                    { err: error, agentId },
+                    "Failed to settle finish subscription",
+                  ),
+                );
               },
             });
           } catch (error) {

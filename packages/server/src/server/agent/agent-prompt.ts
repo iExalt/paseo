@@ -6,7 +6,12 @@ import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
-import { hasHeldMessages, holdMessage, type HeldDispatchResult } from "./held-messages.js";
+import {
+  hasHeldMessages,
+  holdMessage,
+  type HeldDispatchResult,
+  type HeldMessageOutcome,
+} from "./held-messages.js";
 import type { AgentSendBehavior } from "@getpaseo/protocol/messages";
 
 export type AgentUnarchiveController = Pick<AgentManager, "notifyAgentState" | "unarchiveSnapshot">;
@@ -26,9 +31,17 @@ export type AgentRunController = Pick<
   reloadAgentSession(agentId: string): Promise<unknown>;
 };
 
+/**
+ * Called after selecting the run, before consuming its events. A held prompt also passes its
+ * outcome, which settles once the prompt is sent on or discarded.
+ */
+export type PromptDispatchListener = (
+  disposition: PromptDispatchDisposition,
+  held?: Promise<HeldMessageOutcome>,
+) => void;
+
 export interface StartAgentRunOptions {
-  /** Called after selecting the run, before consuming its events. */
-  onDispatch?: (disposition: PromptDispatchDisposition) => void;
+  onDispatch?: PromptDispatchListener;
   replaceRunning?: boolean;
   activeTurnBehavior?: AgentSendBehavior;
   runOptions?: AgentRunOptions;
@@ -47,11 +60,6 @@ export type PromptDispatchDisposition =
   | "turn_started"
   | "deferred"
   | "queued";
-
-/** Whether the prompt runs in a turn that has not started yet, so a finish watch must wait for it. */
-export function dispositionAwaitsTurnStart(disposition: PromptDispatchDisposition): boolean {
-  return disposition === "turn_started" || disposition === "deferred" || disposition === "queued";
-}
 
 type SteerDispatch =
   | { kind: "steered" }
@@ -198,7 +206,7 @@ function holdBehindActiveTurn(
   const agent = agentManager.getAgent(agentId);
   const turnId = busyTurnId ?? agent?.activeForegroundTurnId ?? agent?.activeTurnId ?? null;
   const { onDispatch: _, ...redispatch } = options;
-  holdMessage(
+  const held = holdMessage(
     agentManager,
     agentId,
     {
@@ -209,7 +217,7 @@ function holdBehindActiveTurn(
     },
     logger,
   );
-  options.onDispatch?.(kind);
+  options.onDispatch?.(kind, held);
   return { disposition: kind };
 }
 

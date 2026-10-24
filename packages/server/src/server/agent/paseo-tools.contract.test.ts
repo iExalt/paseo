@@ -12,7 +12,7 @@ import { type PromptDispatchDisposition } from "./agent-prompt.js";
 import { parseAgentMessage, parseAgentMessages } from "./agent-messages/index.js";
 import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { realpathSync } from "node:fs";
 import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
@@ -4535,6 +4535,91 @@ describe("send_agent_prompt native tool", () => {
       }
     },
   );
+
+  /**
+   * The child's provider cannot steer, so a follow-up sent during the first turn is held behind it.
+   * The caller asked for a notification on both sends.
+   */
+  async function sendHeldFollowUp(ifRunning: "steer" | "queue") {
+    const workdir = await mkdtemp(join(tmpdir(), "mcp-held-notification-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const parentClient = new HeldTurnAgentClient("claude", false);
+    const childClient = new HeldTurnAgentClient("codex", true);
+    const agentManager = new AgentManager({
+      clients: { claude: parentClient, codex: childClient },
+      registry: storage,
+      logger,
+    });
+    onTestFinished(() => removeAgentStateDir(agentManager, storage, workdir));
+    const parent = await agentManager.createAgent(
+      { provider: "claude", cwd: existingCwd },
+      undefined,
+      { workspaceId: "wks_parent" },
+    );
+    const child = await agentManager.createAgent(
+      { provider: "codex", cwd: existingCwd, title: "Held child" },
+      undefined,
+      { workspaceId: "wks_parent" },
+    );
+    const server = await createAgentToolCatalog({
+      agentManager,
+      agentStorage: storage,
+      callerAgentId: parent.id,
+      providerSnapshotManager: createOpenCodeManager().manager,
+      logger,
+    });
+    const tool = registeredTool(server, "send_agent_prompt");
+    const dispatched = () =>
+      serverDeliveries.get(server)!.waitForDispatch(child.id, new AbortController().signal);
+    await invokeToolWithParsedInput(tool, { agentId: child.id, prompt: "First task" });
+    await dispatched();
+    await vi.waitFor(() => expect(agentManager.getAgent(child.id)?.lifecycle).toBe("running"));
+    const response = await invokeToolWithParsedInput(tool, {
+      agentId: child.id,
+      prompt: "Follow-up",
+      ifRunning,
+    });
+    expect(response.structuredContent).toMatchObject({ success: true, deliveryStatus: "queued" });
+    await dispatched();
+    expect(childClient.sessions[0]!.prompts).toHaveLength(1);
+    return { child: childClient.sessions[0]!, notifications: parentClient.sessions[0]!.prompts };
+  }
+
+  async function settle(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  it.each(["steer", "queue"] as const)(
+    "notifies on the held follow-up's own turn, not the turn it waited behind (ifRunning: %s)",
+    async (ifRunning) => {
+      const { child, notifications } = await sendHeldFollowUp(ifRunning);
+      child.finishTurn("First task done");
+      await vi.waitFor(() => expect(child.prompts).toHaveLength(2));
+      await settle();
+      expect(notifications).toHaveLength(0);
+      child.finishTurn("Follow-up done");
+      await vi.waitFor(() => expect(notifications).toHaveLength(1));
+      await settle();
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]).toContain("Follow-up done");
+    },
+  );
+
+  it("reports the earlier turn once when a stop discards the held follow-up", async () => {
+    const { child, notifications } = await sendHeldFollowUp("steer");
+    await child.interrupt();
+    await vi.waitFor(() => expect(notifications).toHaveLength(1));
+    await settle();
+    expect(child.prompts).toHaveLength(1);
+    expect(notifications).toHaveLength(1);
+  });
+
+  it("reports a permission request while a follow-up is held", async () => {
+    const { child, notifications } = await sendHeldFollowUp("steer");
+    child.requestPermission("write-held");
+    await vi.waitFor(() => expect(notifications).toHaveLength(1));
+    expect(notifications[0]).toContain("needs permission");
+  });
 
   it.each(["out_of_band", "out_of_band_interrupt", "startup_failure"] as const)(
     "preserves %s dispatch notification semantics",
