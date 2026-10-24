@@ -1200,6 +1200,8 @@ test.each(["reject", "stall"] as const)(
         } as Query;
       },
     });
+    // The injected SDK never launches the real CLI, so do not require one on PATH.
+    vi.spyOn(claude, "isAvailable").mockResolvedValue(true);
     let armed = false;
     let peerRunning!: () => void;
     const peerReady = new Promise<void>((resolve) => {

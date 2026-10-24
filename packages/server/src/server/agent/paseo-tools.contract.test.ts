@@ -14,7 +14,7 @@ import { execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { realpathSync } from "node:fs";
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
 import { tmpdir } from "node:os";
 import { z } from "zod";
@@ -76,7 +76,6 @@ import { areEquivalentPaths } from "../../utils/path.js";
 import { createTerminalManager, type TerminalManager } from "../../terminal/terminal-manager.js";
 import { createWorkerTerminalManager } from "../../terminal/worker-terminal-manager.js";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
-import { PASEO_TOOL_NAMES } from "@getpaseo/protocol/paseo-tool-presentation/index";
 import { MutableDaemonConfigSchema, type AgentProfile } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../daemon-config-store.js";
 import type { BrowserToolsBroker, BrowserToolsExecuteInput } from "../browser-tools/broker.js";
@@ -188,7 +187,7 @@ function registeredTool(catalog: PaseoToolCatalog, name: string): RegisteredCata
     throw new Error(`Paseo tool has no callable handler: ${name}`);
   }
   const registered = { ...tool, handler };
-  const delivery = serverDeliveries.get(server);
+  const delivery = serverDeliveries.get(catalog);
   if (delivery) toolDeliveries.set(registered, delivery);
   return registered;
 }
@@ -4009,12 +4008,16 @@ describe("send_agent_prompt native tool", () => {
     { agentScoped: true, behavior: undefined, available: true, steered: true },
     { agentScoped: true, behavior: "interrupt", available: true, steered: false },
     { agentScoped: true, behavior: "steer", available: true, steered: true },
-    { agentScoped: false, behavior: undefined, available: true, steered: false },
+    // The fork steers by default for every caller (upstream interrupts top-level sends).
+    { agentScoped: false, behavior: undefined, available: true, steered: true },
     { agentScoped: false, behavior: "steer", available: true, steered: true },
-    { agentScoped: true, behavior: undefined, available: false, steered: false },
+    // The fork holds a steer the provider cannot take until the turn ends instead of interrupting.
+    { agentScoped: true, behavior: undefined, available: false, steered: false, deferred: true },
   ] as const)(
     "dispatches behavior $behavior for agent-scoped=$agentScoped, steering available=$available",
-    async ({ agentScoped, behavior, available, steered }) => {
+    async (row) => {
+      const { agentScoped, behavior, available, steered } = row;
+      const deferred = "deferred" in row && row.deferred;
       const workdir = await mkdtemp(join(tmpdir(), "mcp-send-behavior-"));
       const storage = new AgentStorage(join(workdir, "agents"), logger);
       const client = new HeldTurnAgentClient("codex", true, {
@@ -4058,9 +4061,9 @@ describe("send_agent_prompt native tool", () => {
             ? { deliveryStatus: "queued" }
             : { disposition: steered ? "steered" : "turn_started" }),
         });
-        expect(client.sessions[1]!.prompts).toHaveLength(steered ? 1 : 2);
+        expect(client.sessions[1]!.prompts).toHaveLength(steered || deferred ? 1 : 2);
         expect(client.sessions[1]!.steeredPrompts).toHaveLength(steered ? 1 : 0);
-        expect(manager.getAgent(child.id)!.activeTurnId === originalTurn).toBe(steered);
+        expect(manager.getAgent(child.id)!.activeTurnId === originalTurn).toBe(steered || deferred);
       } finally {
         await removeAgentStateDir(manager, storage, workdir);
       }
@@ -7267,11 +7270,13 @@ describe("local durable finish subscription MCP wiring", () => {
         subscriptions,
       );
       mcp = await directCatalogClient(server);
-      const result = await mcp.callTool({
-        name: "send_agent_prompt",
-        arguments: { agentId: child.id, prompt: "Must not dispatch" },
-      });
-      expect(result.isError).toBe(true);
+      // The direct catalog client rejects where an MCP client would return isError.
+      await expect(
+        mcp.callTool({
+          name: "send_agent_prompt",
+          arguments: { agentId: child.id, prompt: "Must not dispatch" },
+        }),
+      ).rejects.toThrow();
       expect(client.sessions[1]!.prompts).toEqual([]);
       expect(await subscriptions.list()).toEqual([]);
     } finally {

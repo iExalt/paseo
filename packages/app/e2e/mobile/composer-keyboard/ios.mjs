@@ -1,6 +1,6 @@
 // Composer autocomplete placement on iOS with the software keyboard: chat, workspace
 // draft tab, and New workspace. Run where agent-device reaches the simulator, with the
-// development app connected to the fixture host. See docs/mobile-testing.md.
+// development app connected to the fixture host. See docs/upstream/mobile-testing.md.
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

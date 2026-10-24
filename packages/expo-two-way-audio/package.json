@@ -35,7 +35,7 @@
     "@types/react": "~19.2.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "expo-module-scripts": "^56.0.3",
-    "expo-modules-core": "57.0.21",
+    "expo-modules-core": "57.0.24",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "react-native": "0.86.3",

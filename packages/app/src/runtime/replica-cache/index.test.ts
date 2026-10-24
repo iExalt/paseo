@@ -341,7 +341,7 @@ describe("ReplicaCache", () => {
     commitDirectory(writer, SERVER_ID, baseline);
     await writer.flush();
     const reader = createCache(storage);
-    expect((await reader.readDirectory(SERVER_ID)).workspaces.get(workspace.id)).toEqual(workspace);
+    expect((await readCachedDirectory(reader)).workspaces.get(workspace.id)).toEqual(workspace);
     expect((await reader.readWorkspace(SERVER_ID, workspace.id))?.workspace).toEqual(workspace);
   });
 
