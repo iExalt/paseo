@@ -58,7 +58,7 @@ import {
 import { resolveNativeTerminalMountAction } from "../terminal/native-renderer/terminal-mount-policy";
 import {
   forwardNativeTerminalKey,
-  type NativeTerminalKey,
+  type NativeTerminalKeyEvent,
 } from "../terminal/native-renderer/terminal-key-events";
 import {
   TerminalInput,
@@ -724,9 +724,9 @@ function NativeTerminalEmulator({
   );
 
   const handleNativeTerminalKey = useCallback(
-    (key: NativeTerminalKey) => {
+    (event: NativeTerminalKeyEvent) => {
       claimActiveTerminalSizeForAction("key");
-      forwardNativeTerminalKey({ key, onTerminalKey: callbacksRef.current.onTerminalKey });
+      forwardNativeTerminalKey({ event, onTerminalKey: callbacksRef.current.onTerminalKey });
     },
     [claimActiveTerminalSizeForAction],
   );
