@@ -89,7 +89,9 @@ export function createNativeReadingAnchor() {
       detached: boolean;
     }): boolean {
       if (frozenRowId !== null) return true;
-      const reflowed = change.previousWidth > 0 && change.width !== change.previousWidth;
+      // Layout and scroll events can round widths differently; a reflow moves whole pixels.
+      const reflowed =
+        change.previousWidth > 0 && Math.abs(change.width - change.previousWidth) >= 1;
       if (!change.detached || !reflowed || readingRowId === null) return false;
       frozenRowId = readingRowId;
       return true;

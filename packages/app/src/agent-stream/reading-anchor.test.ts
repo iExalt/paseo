@@ -221,13 +221,13 @@ describe("native reading anchor", () => {
     expect(anchor.takeRestoreRowId()).toBe("prompt-13");
   });
 
-  it("leaves sticky readers, first layout, height-only and unchanged sizes to the list", () => {
+  it("leaves sticky readers, first layout and unchanged widths to the list", () => {
     const anchor = createNativeReadingAnchor();
     anchor.noteViewable("prompt-12");
     for (const change of [
       { ...rotate, detached: false },
       { previousWidth: 0, width: 800, detached: true },
-      { previousWidth: 1200, width: 1200, detached: true },
+      { previousWidth: 1200, width: 1200.4, detached: true },
     ]) {
       expect(anchor.beginViewportChange(change)).toBe(false);
     }

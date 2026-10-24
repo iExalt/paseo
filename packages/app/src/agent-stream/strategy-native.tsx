@@ -524,6 +524,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     const previousOffsetY = scrollOffsetYRef.current;
     const previousViewportWidth = streamViewportMetricsRef.current.viewportWidth;
     if (
+      !isUserScrollActiveRef.current &&
       !readingAnchor.isRestorePending() &&
       beginReadingRestore(previousViewportWidth, Math.max(0, layoutMeasurement.width))
     ) {
