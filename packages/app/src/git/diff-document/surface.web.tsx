@@ -723,7 +723,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const writeSourceText = useCallback(
     (text: string) => {
       void copyToClipboard(text)
-        .then(() => toast.copied(t("common.states.copied")))
+        .then(() => toast.copied())
         .catch(() => toast.error(t("common.errors.unableToCopy")));
     },
     [t, toast],
