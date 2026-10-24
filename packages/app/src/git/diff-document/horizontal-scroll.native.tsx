@@ -16,9 +16,12 @@ const AnimatedHorizontalScrollView = createAnimatedComponent(ScrollView);
 export function HorizontalScroll({
   file,
   offsets,
+  scrollEnabled,
 }: {
   file: DiffFileSection;
   offsets: SharedValue<DiffHorizontalOffsets>;
+  /** Off while a selection drag owns the touch. */
+  scrollEnabled: boolean;
 }) {
   const scrollRef = useRef<ScrollViewType>(null);
   const closeGestureRef = useFileExplorerCloseGestureRef();
@@ -84,6 +87,7 @@ export function HorizontalScroll({
     <AnimatedHorizontalScrollView
       ref={scrollRef}
       horizontal
+      scrollEnabled={scrollEnabled}
       nestedScrollEnabled
       showsHorizontalScrollIndicator
       bounces={false}
