@@ -1,11 +1,12 @@
 import { View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { HostFilter } from "@/components/hosts/host-filter";
-import { useMemo, type ReactElement } from "react";
+import { useCallback, useMemo, type ReactElement } from "react";
 import { UsageRefreshButton } from "./refresh-button";
 import { UsageOptions } from "./options";
 import type { UsageHost } from "./model";
 import { useHostUsage } from "./queries";
+import { useRefreshHostSpend } from "./spend";
 import type { UsageView } from "./types";
 
 /** The hosts to choose between, and which one is shown. */
@@ -72,14 +73,20 @@ const styles = StyleSheet.create((theme) => ({
 
 /**
  * One host’s usage and title-row controls for the Usage modal.
- * Returns null when there is nothing to control, so headers leave no empty island.
+ * Returns null when there is nothing to control, so headers leave no empty island. The modal
+ * shows spend under plan usage, so its Refresh all refreshes both.
  */
 export function useHostUsageWithControls(hostSelection: UsageHostSelection): {
   view: UsageView;
   refresh: () => void;
   controls: ReactElement | null;
 } {
-  const { view, refresh } = useHostUsage(hostSelection.serverId);
+  const { view, refresh: refreshReports } = useHostUsage(hostSelection.serverId);
+  const refreshSpend = useRefreshHostSpend(hostSelection.serverId);
+  const refresh = useCallback(() => {
+    refreshReports();
+    refreshSpend();
+  }, [refreshReports, refreshSpend]);
   const hasControls = hasHostChoice(hostSelection) || view.kind !== "unavailable";
   const controls = useMemo(
     () =>

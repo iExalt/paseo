@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { Text, View, type StyleProp, type ViewStyle } from "react-native";
+import { Text, View } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import type { SpendSummary } from "@getpaseo/protocol/messages";
 import { Alert } from "@/components/ui/alert";
@@ -50,15 +50,7 @@ export function spendInfo(summary: SpendSummary | null, locale: string): string 
 }
 
 /** A host's API spend by provider, for its settings page and the Usage modal. */
-export function HostSpendSection({
-  serverId,
-  style,
-  flush,
-}: {
-  serverId: string;
-  style?: StyleProp<ViewStyle>;
-  flush?: boolean;
-}) {
+export function HostSpendSection({ serverId, flush }: { serverId: string; flush?: boolean }) {
   const { i18n } = useTranslation();
   const view = useHostSpend(serverId);
   const summary = view.kind === "ready" ? view.summary : null;
@@ -67,7 +59,6 @@ export function HostSpendSection({
       title={usageCopy.spend}
       info={spendInfo(summary, i18n.language)}
       testID="spend-card"
-      style={style}
       flush={flush}
     >
       <SpendBody serverId={serverId} view={view} locale={i18n.language} />

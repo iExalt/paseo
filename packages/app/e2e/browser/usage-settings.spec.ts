@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { expect, test } from "../support/fixtures";
 import { gotoAppShell, openSettings } from "../support/helpers/app";
@@ -174,6 +175,17 @@ test.describe("usage settings", () => {
   });
 });
 
+/** Counts the spend summaries the app asks the daemon for. */
+function countSpendRequests(page: Page): { readonly count: number } {
+  const counter = { count: 0 };
+  page.on("websocket", (socket) => {
+    socket.on("framesent", ({ payload }) => {
+      if (payload.toString().includes('"usage.spend.summary.request"')) counter.count += 1;
+    });
+  });
+  return counter;
+}
+
 test.describe("api spend", () => {
   test("shows what agents spent by provider, as the daemon recorded it", async ({ page }) => {
     test.setTimeout(180_000);
@@ -212,13 +224,19 @@ test.describe("api spend", () => {
       await page.setViewportSize({ width: 1440, height: 900 });
       await qaScreenshot(page, "usage-spend-desktop");
 
-      // The sidebar's Usage icon shows the same spend under the host's plan usage.
+      // The sidebar's Usage icon shows the same sections, and its Refresh all reaches spend too.
+      const spendRequests = countSpendRequests(page);
       await gotoAppShell(page);
       await openUsageFromIcon(page);
-      await expect(page.getByTestId("usage-modal-body").getByTestId("spend-row-mock")).toBeVisible({
-        timeout: 10_000,
-      });
+      const modal = page.getByTestId("usage-modal-body");
+      await expect(modal.getByText("Plan usage", { exact: true })).toBeVisible();
+      await expect(modal.getByTestId("spend-row-mock")).toBeVisible({ timeout: 10_000 });
+      const requestsBeforeRefresh = spendRequests.count;
+      await refreshAllUsage(page);
+      await expect.poll(() => spendRequests.count).toBeGreaterThan(requestsBeforeRefresh);
       await qaScreenshot(page, "usage-spend-modal");
+      await page.setViewportSize({ width: 390, height: 844 });
+      await qaScreenshot(page, "usage-spend-modal-compact");
     } finally {
       await agent.cleanup();
     }
