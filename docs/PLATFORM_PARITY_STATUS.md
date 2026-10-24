@@ -131,7 +131,7 @@ after the rebase onto upstream's enriched-markdown renderer (below).
 
 ### C2: find in the file view on mobile
 
-Evidence state: removed by the 2026-10-24 rebase (see Current boundary). The notes below describe the removed implementation; keep them for the port.
+Evidence state: dropped. The 2026-10-24 rebase removed it, and the fork follows upstream in keeping it web-only (see Current boundary). The notes below describe the removed implementation.
 
 Previously verified on Paseo Debug at the batch build, after two fixes.
 
@@ -172,7 +172,7 @@ Evidence state: verified on Paseo Debug at the batch build.
 
 ### D1: file editing on mobile
 
-Evidence state: removed by the 2026-10-24 rebase (see Current boundary). The notes below describe the removed implementation; keep them for the port.
+Evidence state: dropped. The 2026-10-24 rebase removed it, and the fork follows upstream in keeping it web-only (see Current boundary). The notes below describe the removed implementation.
 
 Previously verified on Paseo Debug at the batch build, with the limits
 below.
@@ -210,8 +210,8 @@ below.
 
 ### E: tablets
 
-Pane splits on wide native layouts were removed by the 2026-10-24 rebase (see
-Current boundary); the rest of E stands.
+Pane splits on wide native layouts (E2b) were removed by the 2026-10-24 rebase
+and dropped, following upstream (see Current boundary); the rest of E stands.
 
 Evidence state: accepted on code review, unit tests and an Android release
 build. The user chose to skip the tablet checks: dev-station has no KVM, so an
@@ -220,22 +220,13 @@ The pending cases below stay unverified.
 
 - Wide native means a window at least 576 dp wide: tablets and unfolded
   foldables. Android 16 ignores the portrait lock at 600 dp and wider, so
-  these layouts rotate; C2's and D1's rotation cases join the tablet batch.
+  these layouts rotate.
 - E2a: side-by-side diff was gated to web by two checks the manifest did not
   list (`panels/diff-panel.tsx`, `git/diff-pane.tsx`). Both now follow width
   only. Pending on the tablet: the layout toggle shows, split columns scroll
   and select.
-- E2b: wide native layouts split panes like web. Split right and Split down
-  come from the tab menu; the divider resizes by touch; touching a pane
-  focuses it. Drag-to-split and tab drag stay web-only by design: dnd-kit is
-  DOM-only, and touch drags compete with scrolling and swipe gestures. Every
-  visible pane now streams its agent, as on web. Pending on the tablet: split
-  right and down from the tab menu; resize by touch without fighting either
-  pane's scroll; close a split; the layout survives a restart and rotation;
-  no drag-to-split or tab drag; a tap on a button in an unfocused pane fires
-  once and focuses it; two agent panes stream while the other scrolls
-  (record frame stats as for C1); the explorer pane opens files beside it,
-  and a split-screen resize to compact and back keeps it reachable.
+- E2b: dropped. Wide native layouts show one pane, as upstream does, and
+  only the focused pane streams its agent.
 - E1: with a hardware keyboard on a wide native layout, the shortcut registry
   runs as on web. `paseo-hardware-keyboard` now covers Android through a
   `MainActivity` plugin. JS publishes which combos fire while typing and
@@ -317,10 +308,14 @@ The pending cases below stay unverified.
 
 ## Current boundary
 
-- C2, D1 and E's native pane splits are gone from `dev`. The 2026-10-24
-  rebase onto upstream b8bb335 took upstream's rebuild of the same areas over
-  #161, by the user's choice, and the fixup deleted the fork code that no
-  longer fit. Port each onto upstream's structure:
+- C2, D1 and E2b are dropped. The 2026-10-24 rebase onto upstream b8bb335
+  took upstream's rebuild of the same areas over #161, by the user's choice.
+  Upstream disables each on native on purpose: `file-panels/source/panel.tsx`
+  opens the editor only on web, `source/editor/view.tsx` shows "Source editing
+  is available on web and desktop", and `supportsDesktopPaneSplits()` in
+  `constants/layout.ts` returns `isWeb`. The user chose to follow upstream
+  rather than port them back, and the parity manifest lists them as
+  deliberate. If that changes, a port would move:
   - D1: the WebView CodeMirror editor and bridge
     (`file-panels/source/editor/webview/*`, `editor/find.tsx`,
     `find-messages*`, `view-contract.ts`, `scripts/build-webview-html.mjs`,
@@ -366,3 +361,5 @@ The pending cases below stay unverified.
 - 2026-10-24: `dev` rebased onto upstream b8bb335, which rebuilt file panes,
   split drag-and-drop and the Explorer dock. C2, D1 and E's pane splits were
   removed pending a port; C3 survived in the native grid renderer.
+- 2026-10-24: C2, D1 and E2b dropped by the user's choice, following
+  upstream, which keeps them web-only.

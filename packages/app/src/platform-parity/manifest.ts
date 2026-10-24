@@ -1,8 +1,10 @@
 import type { ParityManifest } from "./check";
 
 const equivalent = { kind: "equivalent" } as const;
+const FOLLOWS_UPSTREAM_WEB_ONLY =
+  "Upstream keeps this web-only; the fork follows it rather than porting its old native version (C2, D1, E2b)";
 const PANE_DRAG_WEB_ONLY =
-  "Drag-to-split and tab drag are web-only: touch drags compete with scrolling and swipe gestures; menu actions split panes instead";
+  "Pane splits are web-only, following upstream, so drag-to-split and tab drag are too";
 
 /**
  * How each platform difference in the app is classified. check.test.ts fails when a
@@ -96,18 +98,8 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Native shows documents in a WebView; Android's has no inline viewer for PDF and other documents",
     },
     "file-panels/html-preview": equivalent,
-    "file-panels/source/editor/view": {
-      kind: "gap",
-      chunk: "D1",
-      reason:
-        "The upstream file-panels rewrite replaced the WebView-hosted CodeMirror editor; native shows a read-only notice until D1 is ported onto file-panels",
-    },
-    "file-panels/source/readonly/view": {
-      kind: "gap",
-      chunk: "C2",
-      reason:
-        "Native draws read-only files as a virtualized Text list, but its line find did not survive the upstream file-panels rewrite",
-    },
+    "file-panels/source/editor/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
+    "file-panels/source/readonly/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "git/diff-document/horizontal-scroll": equivalent,
     "git/diff-document/paint": equivalent,
     "git/diff-document/surface": equivalent,
@@ -175,6 +167,8 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "deliberate",
       reason: "Window chrome, favicon status and the quitting overlay are desktop window concepts",
     },
+    "constants/layout.ts": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
+    "file-panels/source/panel.tsx": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "components/add-host-method-modal.tsx": {
       kind: "deliberate",
       reason: "Remote SSH onboarding needs a local SSH client",

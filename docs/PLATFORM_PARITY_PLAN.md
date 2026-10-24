@@ -19,6 +19,11 @@ Settings sections hidden in a plain web browser (not Electron) are out of scope.
 | Remote SSH host onboarding                                                  | Needs a local SSH client                              |
 | Open in editor or file manager, CLI install, open location, built-in daemon | Need the local filesystem or Electron                 |
 | Window chrome, favicon status, quitting overlay                             | Desktop window concepts                               |
+| Source editing, find in the read-only file view, pane splits                | Upstream keeps them web-only; the fork follows it     |
+
+The last row was C2, D1 and E2b, which the fork once shipped on native. The
+2026-10-24 rebase took upstream's rebuild of those areas, and the user chose to
+follow upstream instead of porting them back.
 
 ## Chunks
 
@@ -69,7 +74,8 @@ the token; that goes to the user.
 
 - [x] C1. Chat find on native: header-menu entry, host-backed search, scroll to
       the match and highlight it.
-- [ ] C2. Find in the read-only file view. Removed by the 2026-10-24 rebase; see the status doc.
+- C2. Find in the read-only file view. Dropped: upstream keeps it web-only
+  (see Deliberate differences).
 - [x] C3. Terminal find in the native grid renderer, opened from the tab menu like chat and file find.
 
 Acceptance: model tests per surface; on Paseo Debug find steps through matches
@@ -81,8 +87,9 @@ screen, which no reachable chat had when C1 closed.
 
 ### D. File editing on mobile (P4)
 
-- [ ] D1. CodeMirror hosted in a WebView, bridged to the shared
-      `FileEditorModel`; Editor settings shown on native. Removed by the 2026-10-24 rebase; see the status doc.
+- D1. CodeMirror hosted in a WebView, bridged to the shared
+  `FileEditorModel`; Editor settings shown on native. Dropped: upstream
+  keeps source editing web-only (see Deliberate differences).
 
 Acceptance: bridge tests; on Paseo Debug edit, save, conflict and rotation
 work with the soft keyboard.
@@ -93,7 +100,8 @@ work with the soft keyboard.
       deliver without a native module, and a touch drag stack for pane
       splits, since dnd-kit is DOM-only. E1–E3 follow the spike's findings.
 - [ ] E1. Keyboard shortcuts with a hardware keyboard on wide native layouts.
-- [ ] E2. Pane splits and side-by-side diff on wide native layouts.
+- [ ] E2. Side-by-side diff on wide native layouts. Pane splits were dropped:
+      upstream keeps them web-only (see Deliberate differences).
 - [ ] E3. Chat outline rail on wide native layouts.
 
 Acceptance: unit tests for the gating; an Android tablet emulator on
