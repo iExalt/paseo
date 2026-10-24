@@ -1,4 +1,4 @@
-import { Canvas, Group, Picture, type SkPicture } from "@shopify/react-native-skia";
+import { Canvas, Group, Picture, Rect, type SkPicture } from "@shopify/react-native-skia";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -51,6 +51,12 @@ import {
   type NativeCanvasSlab,
 } from "./native-slabs";
 import {
+  nativeSelectionRectsForSlab,
+  type NativeSelectionGeometry,
+  type NativeSelectionRect,
+} from "./native-selection";
+import { useNativeDiffSelection } from "./use-native-diff-selection";
+import {
   createNativePaints,
   recordNativeHeaderPicture,
   recordNativeSlabPictures,
@@ -76,6 +82,8 @@ import type {
 const AnimatedScrollView = createAnimatedComponent(ScrollView);
 const SYSTEM_MONO = "monospace";
 const CODE_LEFT_PADDING = 8;
+/** Matches the web surface's selection fill. */
+const SELECTION_OPACITY = 0.45;
 
 export function DiffSurface(props: DiffSurfaceProps) {
   const { t } = useTranslation();
@@ -161,6 +169,13 @@ export function DiffSurface(props: DiffSurfaceProps) {
     viewport.height,
   ]);
   const paints = useMemo(() => createNativePaints(props.palette), [props.palette]);
+  // Long-press, handles and the action bar drive selection through this controller.
+  const selection = useNativeDiffSelection(model, {
+    files: props.files,
+    layout: props.displayPreferences.layout,
+    collapsedFilePaths: props.collapsedFilePaths,
+    typography,
+  });
   const textLayoutStore = useMemo(
     () =>
       createNativeTextLayoutStore({
@@ -283,6 +298,8 @@ export function DiffSurface(props: DiffSurfaceProps) {
           textLayout={textLayout}
           paints={paints}
           horizontalOffsets={horizontalOffsets}
+          selectionGeometry={selection.geometry}
+          selectionColor={props.palette.selection}
         />
         {interactionFiles.map((file) => (
           <NativeCanvasFileHeader
@@ -323,6 +340,8 @@ function NativeCanvasSlabLayer({
   textLayout,
   paints,
   horizontalOffsets,
+  selectionGeometry,
+  selectionColor,
 }: {
   model: DiffDocumentModel;
   viewportHeight: number;
@@ -330,6 +349,8 @@ function NativeCanvasSlabLayer({
   textLayout: NativeTextLayout;
   paints: NativePaints;
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
+  selectionGeometry: NativeSelectionGeometry | null;
+  selectionColor: string;
 }) {
   const [windowTop, setWindowTop] = useState(0);
   const updateWindow = useCallback((nextTop: number) => {
@@ -361,6 +382,8 @@ function NativeCanvasSlabLayer({
       textLayout={textLayout}
       paints={paints}
       horizontalOffsets={horizontalOffsets}
+      selectionGeometry={selectionGeometry}
+      selectionColor={selectionColor}
     />
   ));
 }
@@ -556,12 +579,16 @@ function NativeCanvasSlabView({
   textLayout,
   paints,
   horizontalOffsets,
+  selectionGeometry,
+  selectionColor,
 }: {
   slab: NativeCanvasSlab;
   model: DiffDocumentModel;
   textLayout: NativeTextLayout;
   paints: NativePaints;
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
+  selectionGeometry: NativeSelectionGeometry | null;
+  selectionColor: string;
 }) {
   const file = model.files[slab.fileIndex];
   const pictures = useMemo(
@@ -576,6 +603,10 @@ function NativeCanvasSlabView({
         paints,
       }),
     [model, paints, slab.fileIndex, slab.height, slab.top, textLayout],
+  );
+  const selectionRects = useMemo(
+    () => nativeSelectionRectsForSlab(selectionGeometry, slab),
+    [selectionGeometry, slab],
   );
   const style = useMemo<ViewStyle>(
     () => ({
@@ -602,6 +633,8 @@ function NativeCanvasSlabView({
       </Canvas>
       <NativeSlabCode
         picture={pictures.content.unified}
+        selectionRects={selectionRects.unified}
+        selectionColor={selectionColor}
         path={slab.path}
         horizontalOffsets={horizontalOffsets}
         wrapLines={model.wrapLines}
@@ -613,6 +646,8 @@ function NativeCanvasSlabView({
         <>
           <NativeSlabCode
             picture={pictures.content.left}
+            selectionRects={selectionRects.left}
+            selectionColor={selectionColor}
             path={slab.path}
             horizontalOffsets={horizontalOffsets}
             wrapLines={model.wrapLines}
@@ -622,6 +657,8 @@ function NativeCanvasSlabView({
           />
           <NativeSlabCode
             picture={pictures.content.right}
+            selectionRects={selectionRects.right}
+            selectionColor={selectionColor}
             path={slab.path}
             horizontalOffsets={horizontalOffsets}
             wrapLines={model.wrapLines}
@@ -640,6 +677,8 @@ function NativeCanvasSlabView({
 
 function NativeSlabCode({
   picture,
+  selectionRects,
+  selectionColor,
   path,
   horizontalOffsets,
   wrapLines,
@@ -648,6 +687,8 @@ function NativeSlabCode({
   height,
 }: {
   picture: SkPicture;
+  selectionRects: readonly NativeSelectionRect[];
+  selectionColor: string;
   path: string;
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
   wrapLines: boolean;
@@ -676,6 +717,20 @@ function NativeSlabCode({
     <View pointerEvents="none" style={clipStyle}>
       <Canvas pointerEvents="none" style={StyleSheet.absoluteFill}>
         <Group transform={pictureTransform}>
+          {selectionRects.length > 0 ? (
+            <Group opacity={SELECTION_OPACITY}>
+              {selectionRects.map((rect) => (
+                <Rect
+                  key={`${rect.x}:${rect.y}`}
+                  x={rect.x}
+                  y={rect.y}
+                  width={rect.width}
+                  height={rect.height}
+                  color={selectionColor}
+                />
+              ))}
+            </Group>
+          ) : null}
           <Picture picture={picture} />
         </Group>
       </Canvas>

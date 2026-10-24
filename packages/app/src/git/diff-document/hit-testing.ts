@@ -236,6 +236,8 @@ export function selectionRectangles(input: {
         width: selected,
         height: input.model.lineHeight,
         fileIndex: row.fileIndex,
+        rowIndex: range.rowIndex,
+        cellIndex: range.cellIndex,
         clipX: range.cellIndex * columnWidth + file.gutterWidth + CODE_LEFT_PADDING,
         clipWidth: columnWidth - file.gutterWidth - CODE_LEFT_PADDING,
       });
@@ -244,12 +246,14 @@ export function selectionRectangles(input: {
   return rectangles;
 }
 
-interface SelectionRectangle {
+export interface SelectionRectangle {
   x: number;
   y: number;
   width: number;
   height: number;
   fileIndex: number;
+  rowIndex: number;
+  cellIndex: number;
   clipX: number;
   clipWidth: number;
 }
