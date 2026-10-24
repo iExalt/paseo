@@ -84,20 +84,31 @@ tight.
   public. Check on GitHub that `paseo-vX` points at the release commit and that
   the release is marked **Latest**; fix the flag by hand if not.
 - **Dry-run drafts** are never cleaned up automatically.
+- **`rebase-dev` stops on an upstream workflow:** the fork keeps only the
+  workflows on `dev`, so a workflow upstream adds stops the run. Delete it in
+  `fixups/<upstream sha>.patch` on `rebase-resolutions` and dispatch again.
 
 ## Secrets and variables
 
-| Name                                                              | Used by                                                   |
-| ----------------------------------------------------------------- | --------------------------------------------------------- |
-| `PASEO_NIX_RELEASE_SIGNING_KEY`                                   | `release.yml` `macos-build`: signs the closure            |
-| `PASEO_FORK_GOOGLE_SERVICES_JSON`                                 | `release.yml` `android-build`: Firebase config            |
-| `PASEO_FORK_SIGNING_KEY_PKCS8_PEM`, `PASEO_FORK_SIGNING_CERT_PEM` | `release.yml` `android-sign`: APK signer                  |
-| `PASEO_RELEASE_MANIFEST_PRIVATE_KEY`                              | `release.yml` `publish`: signs the manifest               |
-| `PASEO_RELEASE_APP_PRIVATE_KEY`, variable `_APP_CLIENT_ID`        | `release-please.yml`: mints the `paseo-release` App token |
-| `PASEO_REBASE_SSH_SIGNING_KEY`                                    | `rebase-dev.yml`: signs rebased commits                   |
+| Name                                                              | Used by                                                              |
+| ----------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `PASEO_NIX_RELEASE_SIGNING_KEY`                                   | `release.yml` `macos-build`: signs the closure                       |
+| `PASEO_FORK_GOOGLE_SERVICES_JSON`                                 | `release.yml` `android-build`: Firebase config                       |
+| `PASEO_FORK_SIGNING_KEY_PKCS8_PEM`, `PASEO_FORK_SIGNING_CERT_PEM` | `release.yml` `android-sign`: APK signer                             |
+| `PASEO_RELEASE_MANIFEST_PRIVATE_KEY`                              | `release.yml` `publish`: signs the manifest                          |
+| `PASEO_RELEASE_APP_PRIVATE_KEY`, variable `_APP_CLIENT_ID`        | `release-please.yml`: mints the `paseo-release` App token            |
+| `PASEO_REBASE_SSH_SIGNING_KEY`                                    | `rebase-dev.yml`: signs rebased commits                              |
+| `PASEO_SYNC_APP_PRIVATE_KEY`, variable `_APP_CLIENT_ID`           | `upstream-sync.yml`, `rebase-dev.yml`: `iexalt-paseo-sync` App token |
 
 Each secret is scoped to the one job that needs it (`scripts/ci-workflow.test.mjs`
 pins this for `release.yml`).
+
+The mirror and `dev` pushes use the `iexalt-paseo-sync` App because
+`GITHUB_TOKEN` cannot push commits that change workflow files, and upstream
+edits its workflows often. App pushes trigger workflows, so a rebased `dev`
+runs `ci.yml` and `release-please.yml`. The App key is SOPS-encrypted in
+`secrets/github-app/`; decrypt it with `--output-type binary` to rotate the
+secret.
 
 ## Release manifest
 

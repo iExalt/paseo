@@ -16,13 +16,21 @@ jobs:
     if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    permissions:
-      contents: write
+    permissions: {}
     steps:
+      # GITHUB_TOKEN cannot move a ref onto commits that change workflow files.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
+        with:
+          client-id: ${{ vars.PASEO_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PASEO_SYNC_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-workflows: write
       - name: Fast-forward upstream mirror
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ steps.token.outputs.token }}
           script: |
             try {
               const owner = 'iExalt';
