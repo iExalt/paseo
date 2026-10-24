@@ -324,14 +324,18 @@ async function rebaseProgress(repositoryPath) {
   return `${head}:${current.code === 0 ? current.stdout.trim() : "none"}:${staged}:${unmerged}`;
 }
 
+function reusedRerereRecords(result) {
+  const diagnostics = `${result.stdout}\n${result.stderr}`;
+  return (diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? []).length;
+}
+
 function isReusableRerereStop(result, paths, resolved, deletions = 0) {
   const diagnostics = `${result.stdout}\n${result.stderr}`;
-  const reusedRecords = diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? [];
   return (
     result.code !== 0 &&
     /CONFLICT \(/.test(diagnostics) &&
     /could not apply [0-9a-f]+/.test(diagnostics) &&
-    (reusedRecords.length > 0 || deletions > 0) &&
+    (reusedRerereRecords(result) > 0 || deletions > 0) &&
     paths.length === 0 &&
     resolved
   );
@@ -367,9 +371,11 @@ async function continueKnownResolutions(
         : 0;
     const conflicts = await unmergedPaths(repositoryPath);
     const staged = await stagedPaths(repositoryPath);
-    // A commit that only changed paths upstream deleted is empty once they are deleted.
-    // Keep it empty, with its own author and message, so the replay still maps 1:1.
-    const emptied = deletions > 0 && conflicts.length === 0 && staged.length === 0;
+    // A commit that only changed paths upstream deleted is empty once they are deleted, and
+    // a reviewed resolution can settle on upstream's side when upstream already made the
+    // change. Keep it empty, with its own author and message, so the replay still maps 1:1.
+    const resolvedByRecords = deletions > 0 || (conflictStop && reusedRerereRecords(result) > 0);
+    const emptied = resolvedByRecords && conflicts.length === 0 && staged.length === 0;
     if (emptied) {
       await gitChecked(repositoryPath, [
         "-c",

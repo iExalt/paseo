@@ -979,6 +979,42 @@ test("a merge carrying hand edits stops before the replay", async () => {
   assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
 });
 
+test("a pick a reused resolution settles on upstream's side replays as an empty commit", async () => {
+  const fixture = await makeFixture("resolved-empty");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "upstream/main");
+  writeFileSync(join(seed, "other.txt"), "upstream superset\n");
+  commit(seed, "upstream adds other");
+  git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
+  git(seed, "checkout", "dev");
+  writeFileSync(join(seed, "other.txt"), "fork subset\n");
+  commit(seed, "fork adds other", devMetadata());
+  git(seed, "push", "origin", "HEAD:refs/heads/dev");
+
+  // Record that the fork's pick resolves to upstream's file.
+  const { recorder } = fixture;
+  git(recorder, "fetch", "origin");
+  git(recorder, "checkout", "--detach", "origin/upstream/main");
+  assert.throws(() => git(recorder, "-c", "rerere.enabled=true", "cherry-pick", "origin/dev"));
+  writeFileSync(join(recorder, "other.txt"), "upstream superset\n");
+  git(recorder, "-c", "rerere.enabled=true", "rerere");
+  git(recorder, "cherry-pick", "--abort");
+  await exportResolutions({ repositoryPath: recorder, destinationPath: fixture.resolverPath });
+  commit(fixture.resolverPath, "record upstream-side resolution");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+
+  assert.equal(git(clone, "show", "HEAD:other.txt"), "upstream superset");
+  const upstream = git(clone, "rev-parse", "origin/upstream/main");
+  const replayed = git(clone, "log", "--format=%H %s", `${upstream}..HEAD`).split("\n");
+  const emptied = replayed.find((line) => line.endsWith(" fork adds other"));
+  assert.ok(emptied);
+  assert.equal(git(clone, "diff-tree", "--no-commit-id", "--name-only", emptied.split(" ")[0]), "");
+});
+
 test("a newly empty replay stops with rebase state intact", async () => {
   const fixture = await makeFixture("newly-empty", { newlyEmpty: true });
   const clone = join(fixture.directory, "checkout");
