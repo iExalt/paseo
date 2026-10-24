@@ -53,6 +53,7 @@ import { AppearanceSection } from "@/screens/settings/appearance/appearance-sect
 import { OpenLocationSection } from "@/screens/settings/open-location/open-location-section";
 import { TerminalSection } from "@/screens/settings/terminal/terminal-section";
 import { ChatSection } from "@/screens/settings/chat/chat-section";
+import { getSettingsSidebarInnerStyle } from "@/screens/settings/sidebar/inner-style";
 import { SidebarNavSection } from "@/screens/settings/sidebar/sidebar-nav-section";
 import { SendingSection } from "@/screens/settings/general/sending-section";
 import {
@@ -993,8 +994,8 @@ function SettingsSidebar({
     [isDesktop],
   );
   const innerContainerStyle = useMemo(
-    () => [{ flex: 1 }, isDesktop ? { paddingTop: insets.top } : null],
-    [insets.top, isDesktop],
+    () => getSettingsSidebarInnerStyle(isDesktop, insets),
+    [insets, isDesktop],
   );
   const selectedSectionId = view.kind === "section" ? view.section : null;
   let selectedHostSection: HostSectionSlug | null = null;
