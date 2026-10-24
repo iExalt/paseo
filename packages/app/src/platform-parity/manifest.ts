@@ -70,6 +70,7 @@ export const PARITY_MANIFEST: ParityManifest = {
     "components/ui/scroll-view": equivalent,
     "components/ui/text-input/text-input": equivalent,
     "components/zoomable-viewport/index": equivalent,
+    "components/workspace-tab-drag-scope": { kind: "deliberate", reason: PANE_DRAG_WEB_ONLY },
     "composer/dock/internal/fullscreen": {
       kind: "equivalent",
       note: "Native reserves the soft keyboard's space; web has none to reserve",
@@ -90,18 +91,22 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "equivalent",
       note: "Native clears the process-wide web view store through PaseoWebviewData",
     },
-    "file-pane/editor/view": {
+    "file-panels/document-frame/index": {
       kind: "equivalent",
-      note: "Native runs the web CodeMirror editor in a WebView page",
+      note: "Native shows documents in a WebView; Android's has no inline viewer for PDF and other documents",
     },
-    "file-pane/html-preview": equivalent,
-    "file-pane/find/index": {
-      kind: "equivalent",
-      note: "Web drives CodeMirror search; native scans lines and marks Text runs",
+    "file-panels/html-preview": equivalent,
+    "file-panels/source/editor/view": {
+      kind: "gap",
+      chunk: "D1",
+      reason:
+        "The upstream file-panels rewrite replaced the WebView-hosted CodeMirror editor; native shows a read-only notice until D1 is ported onto file-panels",
     },
-    "file-pane/source/view": {
-      kind: "equivalent",
-      note: "Native draws large read-only files as a virtualized Text list with its own find",
+    "file-panels/source/readonly/view": {
+      kind: "gap",
+      chunk: "C2",
+      reason:
+        "Native draws read-only files as a virtualized Text list, but its line find did not survive the upstream file-panels rewrite",
     },
     "git/diff-document/horizontal-scroll": equivalent,
     "git/diff-document/paint": equivalent,
@@ -116,6 +121,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "equivalent",
       note: "Web reads DOM key events; native gets hardware keys from the PaseoHardwareKeyboard module",
     },
+    "notification-open/source": {
+      kind: "equivalent",
+      note: "Each platform reports notification taps from its own source: expo-notifications, Electron, or the web click event",
+    },
     "panels/retained-chat-content": equivalent,
     "permissions/platform-permissions": equivalent,
     "plugins/react-native/clipboard": equivalent,
@@ -128,9 +137,17 @@ export const PARITY_MANIFEST: ParityManifest = {
     "runtime/replica-cache/row-store": equivalent,
     "runtime/replica-cache/row-store-factory": equivalent,
     "runtime/websocket-factory": equivalent,
+    "screens/workspace/explorer-sidebar/geometry": {
+      kind: "equivalent",
+      note: "Web resizes the explorer with pointer events; native with a pan gesture",
+    },
     "screens/settings/notifications/notifications-section": equivalent,
     "styles/install-web-scrollbar-styles": equivalent,
     "styles/unistyles-inline-style": equivalent,
+    "utils/decode-utf8": {
+      kind: "equivalent",
+      note: "Hermes has no native TextDecoder, so native decodes through string builtins",
+    },
   },
   settingsSections: {
     browser: {

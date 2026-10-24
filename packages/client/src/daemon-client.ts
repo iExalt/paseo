@@ -424,7 +424,7 @@ export interface PluginClientBundleStore {
   load(): Promise<PluginClientBundle[]>;
   replace(bundles: PluginClientBundle[]): Promise<void>;
 }
-/** Endpoint security negotiated on a relay connection. See docs/relay-endpoint-security.md. */
+/** Endpoint security negotiated on a relay connection. See docs/upstream/relay-endpoint-security.md. */
 export type RelaySecurityMode = "legacy" | "protected";
 
 export interface DaemonClientConfig {
@@ -479,7 +479,6 @@ export interface SendMessageOptions {
   messageId?: string;
   /** What happens when the agent is mid-turn. The daemon interrupts the turn when omitted. */
   activeTurnBehavior?: AgentSendBehavior;
-  sessionMode?: string;
   notifyOnFinish?: boolean;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
@@ -4137,7 +4136,7 @@ export class DaemonClient {
     options?: SendMessageOptions,
   ): Promise<{
     deliveryStatus?: "queued";
-    disposition?: "out_of_band" | "steered" | "turn_started";
+    disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
   }> {
     return this.sendAgentMessage(agentId, text, options);
   }

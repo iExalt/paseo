@@ -1,3 +1,4 @@
+import type { FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import {
   createAgentMessageDelivery,
@@ -183,6 +184,8 @@ interface WebSocketServerConfig {
   daemonStatusRpc?: boolean;
   relayConfig?: boolean;
   startPaused?: boolean;
+  /** Lets CLI sends and creates with notifyOnFinish register finish callbacks. */
+  finishSubscriptions?: () => FinishSubscriptions;
 }
 
 type WebSocketRuntimeMetrics = SessionRuntimeMetrics & CheckoutDiffMetrics;
@@ -565,6 +568,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly agentStorage: AgentStorage;
   private readonly messageReceipts: MessageReceipts;
   readonly agentMessages: AgentMessageDelivery;
+  private readonly finishSubscriptions: (() => FinishSubscriptions) | undefined;
   private readonly creationService: CreationService;
   private readonly projectRegistry: ProjectRegistry;
   private readonly workspaceRegistry: WorkspaceRegistry;
@@ -697,6 +701,7 @@ export class VoiceAssistantWebSocketServer {
     this.advertiseDaemonStatusRpc = wsConfig.daemonStatusRpc !== false;
     this.advertiseRelayConfig = wsConfig.relayConfig !== false;
     this.connectionLifecycle = wsConfig.startPaused === true ? "starting" : "accepting";
+    this.finishSubscriptions = wsConfig.finishSubscriptions;
     this.serverId = serverId;
     if (typeof daemonVersion !== "string" || daemonVersion.trim().length === 0) {
       throw new MissingDaemonVersionError();
@@ -1604,6 +1609,7 @@ export class VoiceAssistantWebSocketServer {
       agentStorage: this.agentStorage,
       messageReceipts: this.messageReceipts,
       agentMessages: this.agentMessages,
+      finishSubscriptions: this.finishSubscriptions,
       creationService: this.creationService,
       projectRegistry: this.projectRegistry,
       workspaceRegistry: this.workspaceRegistry,

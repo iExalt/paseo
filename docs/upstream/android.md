@@ -165,7 +165,6 @@ For a 64-bit ARM phone, select the `arm64-v8a` ABI:
 
 ```bash
 mise exec -- npm run build:app-deps
-mise exec -- npm --prefix packages/app run build:webviews
 cd packages/app
 mise exec -- env APP_VARIANT=development CI=1 npx expo prebuild --platform android --no-install
 cd android

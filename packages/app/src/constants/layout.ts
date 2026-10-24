@@ -1,4 +1,5 @@
 import { useUnistyles } from "react-native-unistyles";
+import { isWeb } from "@/constants/platform";
 
 export const FOOTER_HEIGHT = 75;
 
@@ -47,11 +48,9 @@ export function useIsCompactFormFactor(): boolean {
   return isCompactBreakpoint(rt.breakpoint);
 }
 
-/**
- * Whether the workspace shows split panes. Any platform splits once the window
- * leaves the compact breakpoint; touch layouts split from menus because
- * drag-to-split is web-only (see components/split-dnd).
- */
-export function paneSplitsAvailable(input: { isCompact: boolean }): boolean {
-  return !input.isCompact;
+// SplitContainer relies on dnd-kit and DOM-backed accessibility helpers.
+// Keep that capability distinct from desktop-width layout so touch tablets
+// can use the desktop shell without entering web-only code paths.
+export function supportsDesktopPaneSplits(): boolean {
+  return isWeb;
 }

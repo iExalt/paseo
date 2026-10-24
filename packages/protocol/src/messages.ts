@@ -1356,7 +1356,6 @@ export const SendAgentMessageRequestSchema = z.object({
   messageId: z.string().optional(), // Client-provided ID for deduplication
   activeTurnBehavior: AgentSendBehaviorSchema.optional(),
   // COMPAT(agentOrchestrationParity): only send when server_info advertises the feature.
-  sessionMode: z.string().optional(),
   notifyOnFinish: z.boolean().optional(),
   images: z.array(ImageAttachmentSchema).optional(),
   attachments: AgentAttachmentsSchema,

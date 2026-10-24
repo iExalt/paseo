@@ -99,6 +99,6 @@ frame size. Awaitable output completes when the physical send completes. An over
 closes without closing siblings or the saved link. Routed sessions release resources on disconnect;
 subscription demand is rebuilt by its owning client on reconnect.
 
-See the [SDK reference](../public-docs/sdk/reference.md#clienthosts),
-[CLI reference](../public-docs/cli.md#connected-hosts), and
-[plugin reference](../public-docs/plugins/reference.md#connected-hosts).
+See the [SDK reference](../../public-docs/sdk/reference.md#clienthosts),
+[CLI reference](../../public-docs/cli.md#connected-hosts), and
+[plugin reference](../../public-docs/plugins/reference.md#connected-hosts).

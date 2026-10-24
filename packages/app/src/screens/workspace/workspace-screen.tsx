@@ -3386,7 +3386,7 @@ function WorkspaceScreenContent({
       liveTerminalIds,
       onScriptTerminalStarted: handleScriptTerminalStarted,
       onViewTerminal: handleViewScriptTerminal,
-      onOpenUrlInBrowserTab: openUrlInBrowserTab,
+      onOpenUrlInBrowserTab: handleOpenUrlInBrowserTab,
     }),
     [
       normalizedServerId,
@@ -3395,7 +3395,7 @@ function WorkspaceScreenContent({
       liveTerminalIds,
       handleScriptTerminalStarted,
       handleViewScriptTerminal,
-      openUrlInBrowserTab,
+      handleOpenUrlInBrowserTab,
     ],
   );
   const compactWorkspaceHeader = useMemo(

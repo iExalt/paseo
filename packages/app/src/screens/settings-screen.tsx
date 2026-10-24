@@ -149,7 +149,7 @@ import {
   useSettingsSidebarScroll,
 } from "@/navigation/settings-presentation";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
-import { isNative, isWeb } from "@/constants/platform";
+import { isWeb } from "@/constants/platform";
 import { isSettingsSectionAvailable } from "@/screens/settings/section-availability";
 import { useKeyboardShortcutsAvailable } from "@/keyboard/availability";
 

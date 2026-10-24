@@ -1681,6 +1681,7 @@ export async function createPaseoDaemon(
                 daemonStatusRpc: dependencies.serverFeatureOverrides?.daemonStatusRpc,
                 relayConfig: dependencies.serverFeatureOverrides?.relayConfig,
                 startPaused: true,
+                finishSubscriptions: () => finishSubscriptions,
               },
               workspaceAutoName,
               workspaceRuntimeStore,

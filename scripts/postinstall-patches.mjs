@@ -70,10 +70,15 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@gorhom/bottom-sheet",
     patchPrefix: "@gorhom+bottom-sheet+",
   },
+  // npm nests or hoists this package depending on the rest of the tree; patch either.
   {
     nodeModulesPath: "packages/app/node_modules/react-native-svg",
     patchPrefix: "react-native-svg+",
     cwd: "packages/app",
+  },
+  {
+    nodeModulesPath: "node_modules/react-native-svg",
+    patchPrefix: "react-native-svg+",
   },
   {
     nodeModulesPath: "node_modules/react-native-reanimated",

@@ -25,7 +25,7 @@ import {
   X,
 } from "lucide-react-native";
 import { getIsElectron } from "@/constants/platform";
-import { paneSplitsAvailable, useIsCompactFormFactor } from "@/constants/layout";
+import { supportsDesktopPaneSplits, useIsCompactFormFactor } from "@/constants/layout";
 import { GIT_ACTION_ICONS } from "@/git/action-icons";
 import { useGitActionRunner, useGitActions } from "@/git/use-actions";
 import { useKeyboardShortcutOverrides } from "@/hooks/use-keyboard-shortcut-overrides";
@@ -283,7 +283,7 @@ export function useWorkspaceCommandCenterActions(): void {
         },
         shortcuts: resolveWorkspaceShortcuts(overrides),
         capabilities: {
-          canSplitPanes: paneSplitsAvailable({ isCompact }),
+          canSplitPanes: supportsDesktopPaneSplits() && !isCompact,
           canOpenBrowserTabs: getIsElectron(),
           isGit,
           canPin,
