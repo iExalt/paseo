@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { createReadingAnchor } from "./reading-anchor";
+// RN's own helper is Flow source that vitest cannot parse. react-native-web vendors a plain
+// JS copy with the same threshold invariant and visibility rule. It ships no types.
+// @ts-expect-error TS7016
+import ViewabilityHelper from "react-native-web/dist/vendor/react-native/ViewabilityHelper";
+import {
+  createReadingAnchor,
+  getTopmostViewableRowId,
+  READING_VIEWABILITY_CONFIG,
+} from "./reading-anchor";
 
 describe("reading anchor", () => {
   it("pins the folded turn host when a prepend replaces the row being read", () => {
@@ -136,5 +144,74 @@ describe("reading anchor", () => {
         rows.map((row) => ({ id: row.id, height: row.height, top: row.top + 2000 })),
       ),
     ).toBe(0);
+  });
+});
+
+describe("topmost viewable row", () => {
+  // The native list is inverted: index 0 is the newest row, so the highest index is the top.
+  it("reports the highest viewable index as the row being read", () => {
+    expect(
+      getTopmostViewableRowId(
+        [
+          { id: "newer", index: 1, isViewable: true },
+          { id: "older", index: 3, isViewable: true },
+          { id: "middle", index: 2, isViewable: true },
+        ],
+        "newest",
+      ),
+    ).toBe("older");
+  });
+
+  it("ignores rows that are not viewable or have no index", () => {
+    expect(
+      getTopmostViewableRowId(
+        [
+          { id: "gone", index: 9, isViewable: false },
+          { id: "header", index: null, isViewable: true },
+          { id: "reading", index: 2, isViewable: true },
+        ],
+        "newest",
+      ),
+    ).toBe("reading");
+  });
+
+  it("falls back to the newest row, or null, when nothing is viewable", () => {
+    expect(getTopmostViewableRowId([], "newest")).toBe("newest");
+    expect(getTopmostViewableRowId([], undefined)).toBeNull();
+  });
+});
+
+describe("reading viewability config", () => {
+  // The inverted list lays out index 0 at offset 0, the newest row at the bottom.
+  const lengths = [100, 300, 300, 300, 300];
+  const offsets = lengths.map((_, i) => lengths.slice(0, i).reduce((sum, n) => sum + n, 0));
+  const props = { data: lengths, getItemCount: () => lengths.length };
+  const getFrameMetrics = (index: number) => ({
+    offset: offsets[index]!,
+    length: lengths[index]!,
+  });
+  const viewable = (scrollOffset: number, viewportHeight: number) =>
+    new ViewabilityHelper(READING_VIEWABILITY_CONFIG).computeViewableItems(
+      props,
+      scrollOffset,
+      viewportHeight,
+      getFrameMetrics,
+    );
+
+  it("counts a partly visible row as viewable and excludes rows fully off screen", () => {
+    // Viewport 150..650: rows 0 (ends at 100) is off screen, row 1 spans 100..400,
+    // row 2 spans 400..700, row 3 starts at 700.
+    expect(viewable(150, 500)).toEqual([1, 2]);
+    // A one pixel sliver of row 3 at the top edge still counts.
+    expect(viewable(699, 500)).toEqual([2, 3, 4]);
+  });
+
+  it("feeds the topmost viewable row to the reading position", () => {
+    const rows = viewable(150, 500).map((index: number) => ({
+      id: `row-${index}`,
+      index,
+      isViewable: true,
+    }));
+    expect(getTopmostViewableRowId(rows, "newest")).toBe("row-2");
   });
 });
