@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.0](https://github.com/iExalt/paseo/compare/paseo-v0.10.0...paseo-v0.11.0) (2026-10-24)
+
+
+### Features
+
+* **app:** show API spend in the Usage modal ([#196](https://github.com/iExalt/paseo/issues/196)) ([353c0af](https://github.com/iExalt/paseo/commit/353c0afdbf2d604443b2185a9e494a4c888158c7))
+* **ci:** replay rename/rename and upstream-side resolutions in rebase-dev ([#199](https://github.com/iExalt/paseo/issues/199)) ([9ad1569](https://github.com/iExalt/paseo/commit/9ad1569ec3aa6dbac49543c7cece73c86749cd7b))
+
+
+### Bug Fixes
+
+* **app:** keep the settings sidebar above the bottom system inset ([#204](https://github.com/iExalt/paseo/issues/204)) ([96ccbd1](https://github.com/iExalt/paseo/commit/96ccbd19f2b56f6350e8bf36d58f9050a7ca00bb))
+* **app:** report reading position on native for the outline rail ([#203](https://github.com/iExalt/paseo/issues/203)) ([afe7be5](https://github.com/iExalt/paseo/commit/afe7be5572b5542c2b4cfc02e13309a504cd6e22))
+* **server:** notify on a held send's own turn, not the turn it waited behind ([#202](https://github.com/iExalt/paseo/issues/202)) ([273fea3](https://github.com/iExalt/paseo/commit/273fea304ce540e15603169be38bc018378fa02e))
+* **skills:** quit Paseo with SIGTERM in update-nix-paseo restart command ([#194](https://github.com/iExalt/paseo/issues/194)) ([77440ff](https://github.com/iExalt/paseo/commit/77440ffe7fb6aa34852cb985da8e1e9597807071))
+
 ## [0.10.0](https://github.com/iExalt/paseo/compare/paseo-v0.9.0...paseo-v0.10.0) (2026-10-18)
 
 
