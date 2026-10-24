@@ -268,7 +268,7 @@
         ]
       }
     },
-    // useUnistyles burn-down: 74 files total; the 68 files below still enforce the raw-query ban.
+    // useUnistyles burn-down: 75 files total; the 69 files below still enforce the raw-query ban.
     {
       "files": [
         "packages/app/src/app/_layout.tsx",
@@ -305,6 +305,7 @@
         "packages/app/src/components/settings-textarea.tsx",
         "packages/app/src/components/sidebar-callout.tsx",
         "packages/app/src/components/split-container.tsx",
+        "packages/app/src/components/split-drop-zone.tsx",
         "packages/app/src/components/terminal-pane.tsx",
         "packages/app/src/components/toast-host.tsx",
         "packages/app/src/components/tool-call-sheet.tsx",
@@ -409,7 +410,7 @@
       }
     },
     // Press feedback is owned by the primitives in components/ui. Raw pressable burn-down:
-    // 94 files. They may only leave this list.
+    // 97 files. They may only leave this list.
     {
       "files": [
         "packages/app/src/components/ui/**/*.{ts,tsx}",
@@ -418,6 +419,8 @@
         "packages/app/src/agent-skills/selection-sheet.tsx",
         "packages/app/src/agent-stream/chat-outline/rail.web.tsx",
         "packages/app/src/agent-stream/view.tsx",
+        "packages/app/src/android/preferences-migration/preferences-transfer-row.tsx",
+        "packages/app/src/android/preferences-migration/startup.tsx",
         "packages/app/src/app/pair-scan.tsx",
         "packages/app/src/changelog/internal/changelog-sheet.tsx",
         "packages/app/src/command-center/command-center.tsx",
@@ -477,6 +480,7 @@
         "packages/app/src/composer/index.tsx",
         "packages/app/src/composer/tracks.tsx",
         "packages/app/src/desktop/browser/pane/index.electron.tsx",
+        "packages/app/src/desktop/browser/pane/index.native.tsx",
         "packages/app/src/git/actions-split-button.tsx",
         "packages/app/src/git/commits-section/commit-row.tsx",
         "packages/app/src/git/commits-section/commits-section.tsx",

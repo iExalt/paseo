@@ -139,6 +139,7 @@ test("PR routing declares stable behavior ownership", () => {
     desktop: [
       "packages/desktop/**",
       "packages/app/src/desktop/**",
+      "packages/app/src/notification-open/source.electron.ts",
       "packages/server/src/server/browser-tools/**",
       "packages/app/e2e/support/**",
       "packages/app/*config.{cjs,js,ts}",
@@ -208,7 +209,12 @@ test("browser and desktop tests have exclusive, directory-owned suites", () => {
   assert.ok(desktopSpecs.length > 0);
   assert.ok(browserSpecs.every((path) => path.startsWith("packages/app/e2e/browser/")));
   assert.ok(desktopSpecs.every((path) => path.startsWith("packages/desktop/e2e/")));
-  assert.ok(electronModules.every((path) => path.startsWith("packages/app/src/desktop/")));
+  // Electron modules live under desktop/ unless the desktop filter names them one by one.
+  assert.ok(
+    electronModules.every(
+      (path) => path.startsWith("packages/app/src/desktop/") || filters.desktop.includes(path),
+    ),
+  );
 
   const desktopPackage = JSON.parse(readFileSync(desktopPackagePath, "utf8"));
   assert.match(desktopPackage.scripts.test, /--exclude ["']e2e\/\*\*["']/);
@@ -228,6 +234,7 @@ test("browser and desktop tests have exclusive, directory-owned suites", () => {
   assert.deepEqual(filters.desktop, [
     "packages/desktop/**",
     "packages/app/src/desktop/**",
+    "packages/app/src/notification-open/source.electron.ts",
     "packages/server/src/server/browser-tools/**",
     "packages/app/e2e/support/**",
     "packages/app/*config.{cjs,js,ts}",

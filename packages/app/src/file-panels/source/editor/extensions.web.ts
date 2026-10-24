@@ -15,6 +15,8 @@ import {
 import { createCodeMirrorHighlightStyle } from "@getpaseo/highlight";
 import type { EditorVisualTheme } from "./visual-theme";
 
+export type { EditorVisualTheme } from "./visual-theme";
+
 /**
  * `drawSelection: false` leaves the selection to the OS, so touch devices keep their
  * selection handles and copy/paste menu.

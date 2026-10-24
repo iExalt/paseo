@@ -15,7 +15,6 @@ const AppPreferencesSchema = z.strictObject({
   sendBehavior: z.enum(["interrupt", "steer", "queue"]),
   serviceUrlBehavior: z.enum(["ask", "in-app", "external"]),
   terminalScrollbackLines: z.number().int().min(0).max(1_000_000),
-  useLegacyTerminalRenderer: z.boolean(),
   uiFontFamily: z
     .string()
     .max(200)
