@@ -29,7 +29,9 @@ function ProviderGlyph({
 }
 
 const ThemedProviderGlyph = withUnistyles(ProviderGlyph);
-const mutedIconColor = (theme: Theme) => ({ color: theme.colors.foregroundMuted });
+const mutedIconColor = (theme: Theme) => ({
+  color: theme.colors.foregroundMuted,
+});
 
 /** The info tip: what the numbers are, since when, and how much predates tracking. */
 export function spendInfo(summary: SpendSummary | null, locale: string): string {
@@ -47,8 +49,8 @@ export function spendInfo(summary: SpendSummary | null, locale: string): string 
   return parts.join(" ");
 }
 
-/** A host's API spend by provider, for its settings page. */
-export function HostSpendSection({ serverId }: { serverId: string }) {
+/** A host's API spend by provider, for its settings page and the Usage modal. */
+export function HostSpendSection({ serverId, flush }: { serverId: string; flush?: boolean }) {
   const { i18n } = useTranslation();
   const view = useHostSpend(serverId);
   const summary = view.kind === "ready" ? view.summary : null;
@@ -57,6 +59,7 @@ export function HostSpendSection({ serverId }: { serverId: string }) {
       title={usageCopy.spend}
       info={spendInfo(summary, i18n.language)}
       testID="spend-card"
+      flush={flush}
     >
       <SpendBody serverId={serverId} view={view} locale={i18n.language} />
     </SettingsSection>
