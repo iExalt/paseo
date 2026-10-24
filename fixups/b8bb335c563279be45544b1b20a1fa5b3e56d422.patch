@@ -5193,6 +5193,19 @@ index 1f1211f4d..ace72ff4d 100644
        expect(client.sessions[1]!.prompts).toEqual([]);
        expect(await subscriptions.list()).toEqual([]);
      } finally {
+diff --git a/packages/server/src/server/bootstrap.smoke.test.ts b/packages/server/src/server/bootstrap.smoke.test.ts
+index 998997135..2e35c2952 100644
+--- a/packages/server/src/server/bootstrap.smoke.test.ts
++++ b/packages/server/src/server/bootstrap.smoke.test.ts
+@@ -1200,6 +1200,8 @@ test.each(["reject", "stall"] as const)(
+         } as Query;
+       },
+     });
++    // The injected SDK never launches the real CLI, so do not require one on PATH.
++    vi.spyOn(claude, "isAvailable").mockResolvedValue(true);
+     let armed = false;
+     let peerRunning!: () => void;
+     const peerReady = new Promise<void>((resolve) => {
 diff --git a/packages/server/src/server/bootstrap.ts b/packages/server/src/server/bootstrap.ts
 index a7e3a1e03..ff263db27 100644
 --- a/packages/server/src/server/bootstrap.ts
