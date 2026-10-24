@@ -20,8 +20,13 @@ import Animated, {
   type SharedValue,
 } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";
+import { useRetainedPanelActive } from "@/components/retained-panel";
+import { Button } from "@/components/ui/button";
+import { useToast } from "@/contexts/toast-context";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { InlineReviewThread } from "@/review";
+import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import { useKeyboardShift } from "@/keyboard/shift";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { DocumentFileHeader } from "./document-file-header";
@@ -70,6 +75,15 @@ import {
   type SelectionGestureState,
   type SelectionHandle,
 } from "./selection-gesture";
+import { placeSelectionActionBar } from "./selection-action-bar";
+import {
+  handleDragPointer,
+  longPressDragPointer,
+  nextSelectionAutoScrollTop,
+  selectionDragPoint,
+  selectionDragViewportY,
+  type SelectionDragPointer,
+} from "./selection-auto-scroll";
 import { useNativeDiffSelection } from "./use-native-diff-selection";
 import {
   createNativePaints,
@@ -108,6 +122,22 @@ const HANDLE_STEM_WIDTH = 2;
 const HIDDEN_HANDLE_X = -10_000;
 
 type SelectionGestureDispatch = (event: SelectionGestureEvent) => SelectionGestureEffect;
+type SelectionDragSource = "long-press" | "handle";
+type OutsideTouchEvent = Extract<SelectionGestureEvent, { type: `touch-${string}` }>;
+
+/**
+ * Tracks the finger of a running long-press or handle drag in viewport space,
+ * so edge auto-scroll can keep extending the selection while it stays still.
+ */
+interface SelectionDragControls {
+  beginLongPress: (fileIndex: number, bodyX: number, bodyY: number) => void;
+  beginHandle: (caret: NativeSelectionCaret) => void;
+  /** The finger's movement since the drag began, in layout pixels. */
+  move: (source: SelectionDragSource, deltaX: number, deltaY: number) => void;
+  end: (source: SelectionDragSource) => void;
+  /** Marks a touch that a file body or handle owns, so the surface doesn't treat it as outside. */
+  claimTouch: () => void;
+}
 
 export function DiffSurface(props: DiffSurfaceProps) {
   const { t } = useTranslation();
@@ -208,7 +238,10 @@ export function DiffSurface(props: DiffSurfaceProps) {
   }, [selection.selection]);
   // Scrolling stays off only while a long-press or handle drag moves the selection.
   const [selectionDragActive, setSelectionDragActive] = useState(false);
+  // Set by a body's touch start, which bubbles to the scroll view's handler right after.
+  const touchClaimedRef = useRef(false);
   const dispatchSelectionGesture = useStableEvent((event: SelectionGestureEvent) => {
+    if (event.type === "touch-start") touchClaimedRef.current = true;
     const result = reduceSelectionGesture(
       { model, horizontalOffsets: horizontalOffsets.value },
       gestureStateRef.current,
@@ -223,11 +256,129 @@ export function DiffSurface(props: DiffSurfaceProps) {
     setSelectionDragActive(isSelectionDragActive(result.state));
     return result.effect;
   });
+  const dragRef = useRef<{ source: SelectionDragSource; pointer: SelectionDragPointer } | null>(
+    null,
+  );
   // A drag never continues against rows that changed under it.
   useEffect(() => {
     gestureStateRef.current = IDLE_SELECTION_GESTURE;
+    dragRef.current = null;
     setSelectionDragActive(false);
   }, [props.files, props.displayPreferences.layout, props.collapsedFilePaths, typography]);
+  const dispatchSelectionDrag = useStableEvent((pointer: SelectionDragPointer) => {
+    const point = selectionDragPoint(model, pointer, scrollTop.value);
+    if (point) dispatchSelectionGesture({ type: "drag", point });
+  });
+  const beginLongPressDrag = useStableEvent((fileIndex: number, bodyX: number, bodyY: number) => {
+    const pointer = longPressDragPointer({
+      model,
+      fileIndex,
+      bodyX,
+      bodyY,
+      scrollTop: scrollTop.value,
+    });
+    dragRef.current = pointer ? { source: "long-press", pointer } : null;
+  });
+  const beginHandleDrag = useStableEvent((caret: NativeSelectionCaret) => {
+    const pointer = handleDragPointer({
+      fileIndex: caret.fileIndex,
+      caretViewportX: nativeCaretViewportX(caret, horizontalOffsets.value),
+      caretMiddleY: caret.top + caret.height / 2,
+      scrollTop: scrollTop.value,
+    });
+    dragRef.current = { source: "handle", pointer };
+  });
+  const moveSelectionDrag = useStableEvent(
+    (source: SelectionDragSource, deltaX: number, deltaY: number) => {
+      const drag = dragRef.current;
+      if (drag?.source !== source) return;
+      const pointer = { ...drag.pointer, deltaX, deltaY };
+      dragRef.current = { source, pointer };
+      dispatchSelectionDrag(pointer);
+    },
+  );
+  const endSelectionDrag = useStableEvent((source: SelectionDragSource) => {
+    if (dragRef.current?.source === source) dragRef.current = null;
+  });
+  const claimSelectionTouch = useStableEvent(() => {
+    touchClaimedRef.current = true;
+  });
+  const selectionDrag = useMemo<SelectionDragControls>(
+    () => ({
+      beginLongPress: beginLongPressDrag,
+      beginHandle: beginHandleDrag,
+      move: moveSelectionDrag,
+      end: endSelectionDrag,
+      claimTouch: claimSelectionTouch,
+    }),
+    [beginHandleDrag, beginLongPressDrag, claimSelectionTouch, endSelectionDrag, moveSelectionDrag],
+  );
+  const dismissSelection = useStableEvent(() => {
+    if (!latestSelectionRef.current) return;
+    latestSelectionRef.current = null;
+    selection.clearSelection();
+  });
+  // Taps outside the file bodies and handles (headers, review threads, empty space)
+  // run the same tap rules as a body but can only dismiss.
+  const outsideTouchRef = useRef<SelectionGestureState>(IDLE_SELECTION_GESTURE);
+  const trackOutsideTouch = useStableEvent((event: OutsideTouchEvent) => {
+    if (event.type === "touch-start") {
+      const claimed = touchClaimedRef.current;
+      touchClaimedRef.current = false;
+      if (claimed || isSelectionDragActive(gestureStateRef.current)) {
+        outsideTouchRef.current = IDLE_SELECTION_GESTURE;
+        return;
+      }
+    }
+    const result = reduceSelectionGesture(
+      { model, horizontalOffsets: horizontalOffsets.value },
+      outsideTouchRef.current,
+      latestSelectionRef.current,
+      event,
+    );
+    outsideTouchRef.current = result.state;
+    if (result.effect === "dismiss") dismissSelection();
+  });
+  const outsideTouchStart = useCallback(
+    (event: GestureResponderEvent) =>
+      trackOutsideTouch({
+        type: "touch-start",
+        pageX: event.nativeEvent.pageX,
+        pageY: event.nativeEvent.pageY,
+        time: Date.now(),
+      }),
+    [trackOutsideTouch],
+  );
+  const outsideTouchMove = useCallback(
+    (event: GestureResponderEvent) =>
+      trackOutsideTouch({
+        type: "touch-move",
+        pageX: event.nativeEvent.pageX,
+        pageY: event.nativeEvent.pageY,
+      }),
+    [trackOutsideTouch],
+  );
+  const outsideTouchEnd = useCallback(
+    () => trackOutsideTouch({ type: "touch-end", time: Date.now() }),
+    [trackOutsideTouch],
+  );
+  const outsideTouchCancel = useCallback(
+    () => trackOutsideTouch({ type: "touch-cancel" }),
+    [trackOutsideTouch],
+  );
+  // Android Back clears a selection before it leaves the pane; hidden panes leave Back alone.
+  const panelActive = useRetainedPanelActive();
+  useBackClosesFind(selection.selection !== null && panelActive, dismissSelection);
+  const selectAllText = useStableEvent(() => {
+    latestSelectionRef.current = selection.selectAll();
+  });
+  const toast = useToast();
+  // Like web's context menu Copy, the selection stays after copying.
+  const copySelection = useStableEvent(() => {
+    void copyToClipboard(selection.getSelectedText())
+      .then(() => toast.copied(t("common.states.copied")))
+      .catch(() => toast.error(t("common.errors.unableToCopy")));
+  });
   const textLayoutStore = useMemo(
     () =>
       createNativeTextLayoutStore({
@@ -332,6 +483,37 @@ export function DiffSurface(props: DiffSurfaceProps) {
     }),
     [contentInsetBottom, model.height, viewport.height],
   );
+  // While a drag runs, a finger near the top or bottom edge scrolls the list each
+  // frame and re-dispatches the drag at its unchanged viewport position, which is
+  // a new document point after the scroll. The selection reducer runs on the JS
+  // thread, so the tick does too. Programmatic scrolling ignores scrollEnabled.
+  const autoScrollFrame = useStableEvent((elapsedMs: number) => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const next = nextSelectionAutoScrollTop({
+      viewportY: selectionDragViewportY(drag.pointer),
+      viewportHeight: viewport.height,
+      scrollTop: scrollTop.value,
+      maxScrollTop: contentStyle.minHeight - viewport.height,
+      elapsedMs,
+    });
+    if (next === null) return;
+    scrollTop.value = next;
+    scrollRef.current?.scrollTo({ y: next, animated: false });
+    dispatchSelectionDrag(drag.pointer);
+  });
+  useEffect(() => {
+    if (!selectionDragActive) return undefined;
+    let frame = 0;
+    let previousTime: number | null = null;
+    const tick = (time: number) => {
+      if (previousTime !== null) autoScrollFrame(time - previousTime);
+      previousTime = time;
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [autoScrollFrame, selectionDragActive]);
   return (
     <View style={[styles.root, { backgroundColor: props.palette.surface }]} onLayout={layout}>
       <AnimatedScrollView
@@ -343,6 +525,10 @@ export function DiffSurface(props: DiffSurfaceProps) {
         scrollEnabled={!selectionDragActive}
         showsVerticalScrollIndicator
         testID="git-diff-scroll"
+        onTouchStart={outsideTouchStart}
+        onTouchMove={outsideTouchMove}
+        onTouchEnd={outsideTouchEnd}
+        onTouchCancel={outsideTouchCancel}
       >
         <NativeCanvasSlabLayer
           model={model}
@@ -379,6 +565,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
             horizontalOffsets={horizontalOffsets}
             scrollEnabled={!selectionDragActive}
             onSelectionGesture={dispatchSelectionGesture}
+            selectionDrag={selectionDrag}
           />
         ))}
         <NativeSelectionHandles
@@ -387,10 +574,23 @@ export function DiffSurface(props: DiffSurfaceProps) {
           horizontalOffsets={horizontalOffsets}
           color={props.palette.selection}
           onSelectionGesture={dispatchSelectionGesture}
+          selectionDrag={selectionDrag}
         />
         <NativeReviewOverlays model={model} mode={props.mode} />
         <Animated.View pointerEvents="none" style={keyboardSpacerStyle} />
       </AnimatedScrollView>
+      {selectionDragActive ? null : (
+        <NativeSelectionActionBar
+          model={model}
+          selection={selection.selection}
+          scrollTop={scrollTop}
+          horizontalOffsets={horizontalOffsets}
+          viewport={viewport}
+          palette={props.palette}
+          onCopy={copySelection}
+          onSelectAll={selectAllText}
+        />
+      )}
     </View>
   );
 }
@@ -524,6 +724,7 @@ function NativeFileBody({
   horizontalOffsets,
   scrollEnabled,
   onSelectionGesture,
+  selectionDrag,
 }: {
   file: DiffFileSection;
   model: DiffDocumentModel;
@@ -531,6 +732,7 @@ function NativeFileBody({
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
   scrollEnabled: boolean;
   onSelectionGesture: SelectionGestureDispatch;
+  selectionDrag: SelectionDragControls;
 }) {
   const reviewActions = mode.kind === "working" ? mode.reviewActions : undefined;
   const touchStart = useCallback(
@@ -574,15 +776,24 @@ function NativeFileBody({
     () => onSelectionGesture({ type: "touch-cancel" }),
     [onSelectionGesture],
   );
-  const longPressStart = useStableEvent((locationX: number, locationY: number) =>
-    onSelectionGesture({ type: "long-press", point: { file, locationX, locationY } }),
+  // The body's x/y move with the content, so drags track the absolute movement since
+  // the press instead; auto-scroll then adds the scroll offset to that viewport point.
+  const pressAbsoluteRef = useRef({ x: 0, y: 0 });
+  const longPressStart = useStableEvent(
+    (locationX: number, locationY: number, absoluteX: number, absoluteY: number) => {
+      pressAbsoluteRef.current = { x: absoluteX, y: absoluteY };
+      selectionDrag.beginLongPress(file.fileIndex, locationX, locationY);
+      onSelectionGesture({ type: "long-press", point: { file, locationX, locationY } });
+    },
   );
-  const longPressDrag = useStableEvent((locationX: number, locationY: number) =>
-    onSelectionGesture({ type: "drag", point: { file, locationX, locationY } }),
-  );
-  const longPressEnd = useStableEvent(() =>
-    onSelectionGesture({ type: "drag-end", source: "long-press" }),
-  );
+  const longPressDrag = useStableEvent((absoluteX: number, absoluteY: number) => {
+    const press = pressAbsoluteRef.current;
+    selectionDrag.move("long-press", absoluteX - press.x, absoluteY - press.y);
+  });
+  const longPressEnd = useStableEvent(() => {
+    selectionDrag.end("long-press");
+    onSelectionGesture({ type: "drag-end", source: "long-press" });
+  });
   // Fails if the finger moves before the hold completes, so scrolling and panel
   // swipes win; once active it cancels them for the rest of the touch.
   const longPress = useMemo(
@@ -590,8 +801,8 @@ function NativeFileBody({
       Gesture.Pan()
         .runOnJS(true)
         .activateAfterLongPress(SELECTION_LONG_PRESS_MS)
-        .onStart((event) => longPressStart(event.x, event.y))
-        .onUpdate((event) => longPressDrag(event.x, event.y))
+        .onStart((event) => longPressStart(event.x, event.y, event.absoluteX, event.absoluteY))
+        .onUpdate((event) => longPressDrag(event.absoluteX, event.absoluteY))
         .onFinalize(() => longPressEnd()),
     [longPressDrag, longPressEnd, longPressStart],
   );
@@ -626,12 +837,14 @@ function NativeSelectionHandles({
   horizontalOffsets,
   color,
   onSelectionGesture,
+  selectionDrag,
 }: {
   model: DiffDocumentModel;
   selection: DiffSelection | null;
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
   color: string;
   onSelectionGesture: SelectionGestureDispatch;
+  selectionDrag: SelectionDragControls;
 }) {
   const carets = useMemo(() => nativeSelectionCarets(model, selection), [model, selection]);
   if (!carets) return null;
@@ -640,18 +853,18 @@ function NativeSelectionHandles({
       <NativeSelectionHandle
         handle="start"
         caret={carets.start}
-        model={model}
         horizontalOffsets={horizontalOffsets}
         color={color}
         onSelectionGesture={onSelectionGesture}
+        selectionDrag={selectionDrag}
       />
       <NativeSelectionHandle
         handle="end"
         caret={carets.end}
-        model={model}
         horizontalOffsets={horizontalOffsets}
         color={color}
         onSelectionGesture={onSelectionGesture}
+        selectionDrag={selectionDrag}
       />
     </>
   );
@@ -660,43 +873,29 @@ function NativeSelectionHandles({
 function NativeSelectionHandle({
   handle,
   caret,
-  model,
   horizontalOffsets,
   color,
   onSelectionGesture,
+  selectionDrag,
 }: {
   handle: SelectionHandle;
   caret: NativeSelectionCaret;
-  model: DiffDocumentModel;
   horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
   color: string;
   onSelectionGesture: SelectionGestureDispatch;
+  selectionDrag: SelectionDragControls;
 }) {
-  // Where the drag started, in viewport x and document y at the caret's middle.
-  const originRef = useRef<{ fileIndex: number; x: number; y: number } | null>(null);
+  // The drag starts at the caret's middle; the surface adds the pan's translation
+  // and any auto-scroll since then.
   const begin = useStableEvent(() => {
-    originRef.current = {
-      fileIndex: caret.fileIndex,
-      x: nativeCaretViewportX(caret, horizontalOffsets.value),
-      y: caret.top + caret.height / 2,
-    };
+    selectionDrag.beginHandle(caret);
     onSelectionGesture({ type: "handle-start", handle });
   });
-  const drag = useStableEvent((translationX: number, translationY: number) => {
-    const origin = originRef.current;
-    const file = origin ? model.files[origin.fileIndex] : undefined;
-    if (!origin || !file) return;
-    onSelectionGesture({
-      type: "drag",
-      point: {
-        file,
-        locationX: origin.x + translationX,
-        locationY: origin.y + translationY - file.bodyTop,
-      },
-    });
-  });
+  const drag = useStableEvent((translationX: number, translationY: number) =>
+    selectionDrag.move("handle", translationX, translationY),
+  );
   const end = useStableEvent(() => {
-    originRef.current = null;
+    selectionDrag.end("handle");
     onSelectionGesture({ type: "drag-end", source: "handle" });
   });
   const gesture = useMemo(
@@ -744,11 +943,111 @@ function NativeSelectionHandle({
         importantForAccessibility="no-hide-descendants"
         testID={`git-diff-selection-handle-${handle}`}
         style={[frameStyle, positionStyle]}
+        onTouchStart={selectionDrag.claimTouch}
       >
         <View pointerEvents="none" style={[styles.handleStem, stemStyle]} />
         <View pointerEvents="none" style={[styles.handleKnob, knobStyle]} />
       </Animated.View>
     </GestureDetector>
+  );
+}
+
+function NativeSelectionActionBar({
+  model,
+  selection,
+  scrollTop,
+  horizontalOffsets,
+  viewport,
+  palette,
+  onCopy,
+  onSelectAll,
+}: {
+  model: DiffDocumentModel;
+  selection: DiffSelection | null;
+  scrollTop: SharedValue<number>;
+  horizontalOffsets: SharedValue<DiffHorizontalOffsets>;
+  viewport: { width: number; height: number };
+  palette: DiffSurfaceProps["palette"];
+  onCopy: () => void;
+  onSelectAll: () => void;
+}) {
+  const { t } = useTranslation();
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const carets = useMemo(() => nativeSelectionCarets(model, selection), [model, selection]);
+  const measure = useCallback((event: LayoutChangeEvent) => {
+    const { width, height } = event.nativeEvent.layout;
+    setSize((current) =>
+      current?.width === width && current.height === height ? current : { width, height },
+    );
+  }, []);
+  // Follows both scroll axes on the UI thread; hidden until measured or while out of view.
+  const positionStyle = useAnimatedStyle(() => {
+    const placement =
+      carets && size
+        ? placeSelectionActionBar({
+            start: {
+              x: nativeCaretViewportX(carets.start, horizontalOffsets.value),
+              top: carets.start.top,
+              bottom: carets.start.top + carets.start.height,
+            },
+            end: {
+              x: nativeCaretViewportX(carets.end, horizontalOffsets.value),
+              top: carets.end.top,
+              bottom: carets.end.top + carets.end.height,
+            },
+            endHandleHeight: HANDLE_KNOB_SIZE,
+            scrollTop: scrollTop.value,
+            viewportWidth: viewport.width,
+            viewportHeight: viewport.height,
+            barWidth: size.width,
+            barHeight: size.height,
+          })
+        : null;
+    if (!placement) {
+      return { opacity: 0, transform: [{ translateX: HIDDEN_HANDLE_X }, { translateY: 0 }] };
+    }
+    return {
+      opacity: 1,
+      transform: [{ translateX: placement.left }, { translateY: placement.top }],
+    };
+  }, [carets, horizontalOffsets, scrollTop, size, viewport.height, viewport.width]);
+  const barStyle = useMemo<ViewStyle>(
+    () => ({ backgroundColor: palette.headerSurface, borderColor: palette.border }),
+    [palette.border, palette.headerSurface],
+  );
+  const dividerStyle = useMemo<ViewStyle>(
+    () => ({ backgroundColor: palette.border }),
+    [palette.border],
+  );
+  if (!carets) return null;
+  const copyLabel = t("common.actions.copy");
+  const selectAllLabel = t("common.actions.selectAll");
+  return (
+    <Animated.View
+      testID="git-diff-selection-actions"
+      onLayout={measure}
+      style={[styles.actionBar, barStyle, positionStyle]}
+    >
+      <Button
+        variant="ghost"
+        size="sm"
+        accessibilityLabel={copyLabel}
+        testID="git-diff-selection-copy"
+        onPress={onCopy}
+      >
+        {copyLabel}
+      </Button>
+      <View style={[styles.actionDivider, dividerStyle]} />
+      <Button
+        variant="ghost"
+        size="sm"
+        accessibilityLabel={selectAllLabel}
+        testID="git-diff-selection-select-all"
+        onPress={onSelectAll}
+      >
+        {selectAllLabel}
+      </Button>
+    </Animated.View>
   );
 }
 
@@ -983,4 +1282,19 @@ const styles = StyleSheet.create({
     height: HANDLE_KNOB_SIZE,
     borderRadius: HANDLE_KNOB_SIZE / 2,
   },
+  actionBar: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 4,
+    gap: 4,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    overflow: "hidden",
+    zIndex: 10,
+    elevation: 6,
+  },
+  actionDivider: { width: StyleSheet.hairlineWidth, alignSelf: "stretch" },
 });
