@@ -1,3 +1,4 @@
+import type { Page } from "@playwright/test";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { expect, test } from "../support/fixtures";
 import { gotoAppShell, openSettings } from "../support/helpers/app";
@@ -10,6 +11,7 @@ import {
   type UsageReportsFixture,
 } from "../support/helpers/usage-reports";
 import {
+  openCompactSidebar,
   openUsageFromIcon,
   refreshAllUsage,
   showUsageAs,
@@ -30,7 +32,9 @@ function report(input: {
 }): UsageReportEntry {
   return {
     id: `${input.sourceId}:account`,
-    account: { label: input.sourceId === "alpha" ? "dev@example.com" : undefined },
+    account: {
+      label: input.sourceId === "alpha" ? "dev@example.com" : undefined,
+    },
     fetchedAt: "2026-01-01T00:00:00.000Z",
     sourceId: input.sourceId,
     sourceLabel: input.sourceLabel,
@@ -71,8 +75,19 @@ test.describe("usage settings", () => {
                 { id: "daily", label: "Daily", remainingPct: 30 },
               ],
               balances: [
-                { id: "credits", label: "Credits", remaining: 1234, unit: "credits" },
-                { id: "extra", label: "Extra usage", used: 5, limit: 20, unit: "usd" },
+                {
+                  id: "credits",
+                  label: "Credits",
+                  remaining: 1234,
+                  unit: "credits",
+                },
+                {
+                  id: "extra",
+                  label: "Extra usage",
+                  used: 5,
+                  limit: 20,
+                  unit: "usd",
+                },
               ],
               details: [{ id: "valid", label: "Valid until", value: "2026-12-31" }],
             },
@@ -92,7 +107,9 @@ test.describe("usage settings", () => {
     await usage.waitForListRequests(1);
 
     const card = page.getByTestId("usage-card");
-    await expect(card.getByText("Alpha plan", { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(card.getByText("Alpha plan", { exact: true })).toBeVisible({
+      timeout: 10_000,
+    });
     await expect(card.getByText("dev@example.com", { exact: true })).toBeVisible();
     await expect(card.getByText("Beta plan", { exact: true })).toBeVisible();
     await expect(card.getByText("70%")).toBeVisible();
@@ -143,7 +160,9 @@ test.describe("usage settings", () => {
   test("asks to update a host without usage support and never calls it", async ({ page }) => {
     test.setTimeout(120_000);
     const serverId = getServerId();
-    const usage = await installUsageReportsFixture(page, { usageSupported: false });
+    const usage = await installUsageReportsFixture(page, {
+      usageSupported: false,
+    });
 
     await gotoAppShell(page);
     await openSettings(page);
@@ -156,6 +175,17 @@ test.describe("usage settings", () => {
     expect(usage.listRequests()).toHaveLength(0);
   });
 });
+
+/** Counts the spend summaries the app asks the daemon for. */
+function countSpendRequests(page: Page): { readonly count: number } {
+  const counter = { count: 0 };
+  page.on("websocket", (socket) => {
+    socket.on("framesent", ({ payload }) => {
+      if (payload.toString().includes('"usage.spend.summary.request"')) counter.count += 1;
+    });
+  });
+  return counter;
+}
 
 test.describe("api spend", () => {
   test("shows what agents spent by provider, as the daemon recorded it", async ({ page }) => {
@@ -181,16 +211,38 @@ test.describe("api spend", () => {
       await page.setViewportSize({ width: 390, height: 844 });
       const row = page.getByTestId("spend-card").getByTestId("spend-row-mock");
       await expect(async () => {
-        const expected = new Intl.NumberFormat("en", { style: "currency", currency: "USD" }).format(
-          await allTimeUsd(),
-        );
-        await expect(row.getByLabel(`All time ${expected}`)).toBeVisible({ timeout: 1_000 });
+        const expected = new Intl.NumberFormat("en", {
+          style: "currency",
+          currency: "USD",
+        }).format(await allTimeUsd());
+        await expect(row.getByLabel(`All time ${expected}`)).toBeVisible({
+          timeout: 1_000,
+        });
       }).toPass({ timeout: 20_000 });
       await expect(row.getByText("Today", { exact: true })).toBeVisible();
       await expect(row.getByText("This month", { exact: true })).toBeVisible();
       await qaScreenshot(page, "usage-spend-compact");
       await page.setViewportSize({ width: 1440, height: 900 });
       await qaScreenshot(page, "usage-spend-desktop");
+
+      // The sidebar's Usage icon shows the same sections, and its Refresh all reaches spend too.
+      const spendRequests = countSpendRequests(page);
+      await gotoAppShell(page);
+      await openUsageFromIcon(page);
+      const modal = page.getByTestId("usage-modal-body");
+      await expect(modal.getByText("Plan usage", { exact: true })).toBeVisible();
+      await expect(modal.getByTestId("spend-row-mock")).toBeVisible({ timeout: 10_000 });
+      const requestsBeforeRefresh = spendRequests.count;
+      await refreshAllUsage(page);
+      await expect.poll(() => spendRequests.count).toBeGreaterThan(requestsBeforeRefresh);
+      await qaScreenshot(page, "usage-spend-modal");
+      // On a phone the same window is a bottom sheet behind the sidebar drawer.
+      await page.setViewportSize({ width: 390, height: 844 });
+      await gotoAppShell(page);
+      await openCompactSidebar(page);
+      await openUsageFromIcon(page);
+      await expect(modal.getByTestId("spend-row-mock")).toBeVisible({ timeout: 10_000 });
+      await qaScreenshot(page, "usage-spend-modal-compact");
     } finally {
       await agent.cleanup();
     }

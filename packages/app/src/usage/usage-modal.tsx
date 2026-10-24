@@ -2,12 +2,14 @@ import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 import { AdaptiveModalSheet } from "@/components/adaptive-modal-sheet";
+import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { builtinSidebarNavLabelKey } from "@/sidebar-nav/model";
 import { useHostUsageWithControls } from "./controls";
 import { usageCopy } from "./copy";
 import { useUsagePreferences } from "./display";
 import { useUsageHostSelection } from "./hosts";
 import type { UsageHost } from "./model";
+import { HostSpendSection } from "./spend-section";
 import { UsageBody, UsageMessage } from "./usage-section";
 
 interface UsageModalProps {
@@ -18,8 +20,8 @@ interface UsageModalProps {
 
 /**
  * Usage over the current screen: a dialog on wide layouts, a bottom sheet on compact ones. It
- * shows the usage host's reports with pins, and the host filter, Refresh all, and Settings in its
- * title row.
+ * shows the usage host's plan usage with pins, then its API spend, as Settings > Usage does, and
+ * the host filter, Refresh all, and Settings in its title row.
  */
 export function UsageModal(props: UsageModalProps) {
   const { serverId, connectedHosts, select } = useUsageHostSelection();
@@ -61,7 +63,10 @@ function HostUsageModal({
   return (
     <UsageModalFrame {...props} actions={controls}>
       <View testID={`usage-host-${serverId}`}>
-        <UsageBody serverId={serverId} view={view} display={display} onRefresh={refresh} />
+        <SettingsSection title={usageCopy.planUsage}>
+          <UsageBody serverId={serverId} view={view} display={display} onRefresh={refresh} />
+        </SettingsSection>
+        <HostSpendSection serverId={serverId} flush />
       </View>
     </UsageModalFrame>
   );
