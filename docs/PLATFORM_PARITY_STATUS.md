@@ -220,22 +220,13 @@ The pending cases below stay unverified.
 
 - Wide native means a window at least 576 dp wide: tablets and unfolded
   foldables. Android 16 ignores the portrait lock at 600 dp and wider, so
-  these layouts rotate; C2's and D1's rotation cases join the tablet batch.
+  these layouts rotate.
 - E2a: side-by-side diff was gated to web by two checks the manifest did not
   list (`panels/diff-panel.tsx`, `git/diff-pane.tsx`). Both now follow width
   only. Pending on the tablet: the layout toggle shows, split columns scroll
   and select.
-- E2b: wide native layouts split panes like web. Split right and Split down
-  come from the tab menu; the divider resizes by touch; touching a pane
-  focuses it. Drag-to-split and tab drag stay web-only by design: dnd-kit is
-  DOM-only, and touch drags compete with scrolling and swipe gestures. Every
-  visible pane now streams its agent, as on web. Pending on the tablet: split
-  right and down from the tab menu; resize by touch without fighting either
-  pane's scroll; close a split; the layout survives a restart and rotation;
-  no drag-to-split or tab drag; a tap on a button in an unfocused pane fires
-  once and focuses it; two agent panes stream while the other scrolls
-  (record frame stats as for C1); the explorer pane opens files beside it,
-  and a split-screen resize to compact and back keeps it reachable.
+- E2b: dropped. Wide native layouts show one pane, as upstream does, and
+  only the focused pane streams its agent.
 - E1: with a hardware keyboard on a wide native layout, the shortcut registry
   runs as on web. `paseo-hardware-keyboard` now covers Android through a
   `MainActivity` plugin. JS publishes which combos fire while typing and

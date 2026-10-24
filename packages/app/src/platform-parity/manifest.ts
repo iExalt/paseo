@@ -4,7 +4,7 @@ const equivalent = { kind: "equivalent" } as const;
 const FOLLOWS_UPSTREAM_WEB_ONLY =
   "Upstream keeps this web-only; the fork follows it rather than porting its old native version (C2, D1, E2b)";
 const PANE_DRAG_WEB_ONLY =
-  "Drag-to-split and tab drag are web-only: touch drags compete with scrolling and swipe gestures; menu actions split panes instead";
+  "Pane splits are web-only, following upstream, so drag-to-split and tab drag are too";
 
 /**
  * How each platform difference in the app is classified. check.test.ts fails when a
@@ -168,6 +168,7 @@ export const PARITY_MANIFEST: ParityManifest = {
       reason: "Window chrome, favicon status and the quitting overlay are desktop window concepts",
     },
     "constants/layout.ts": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
+    "file-panels/source/panel.tsx": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "components/add-host-method-modal.tsx": {
       kind: "deliberate",
       reason: "Remote SSH onboarding needs a local SSH client",
