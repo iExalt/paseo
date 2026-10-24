@@ -11,6 +11,7 @@ import {
   type UsageReportsFixture,
 } from "../support/helpers/usage-reports";
 import {
+  openCompactSidebar,
   openUsageFromIcon,
   refreshAllUsage,
   showUsageAs,
@@ -235,7 +236,12 @@ test.describe("api spend", () => {
       await refreshAllUsage(page);
       await expect.poll(() => spendRequests.count).toBeGreaterThan(requestsBeforeRefresh);
       await qaScreenshot(page, "usage-spend-modal");
+      // On a phone the same window is a bottom sheet behind the sidebar drawer.
       await page.setViewportSize({ width: 390, height: 844 });
+      await gotoAppShell(page);
+      await openCompactSidebar(page);
+      await openUsageFromIcon(page);
+      await expect(modal.getByTestId("spend-row-mock")).toBeVisible({ timeout: 10_000 });
       await qaScreenshot(page, "usage-spend-modal-compact");
     } finally {
       await agent.cleanup();
