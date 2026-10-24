@@ -7,6 +7,11 @@ interface RowGeometry {
 // A row must clear the reading line before the next row takes ownership.
 const READING_POSITION_OFFSET_PX = 8;
 
+// FlatList reads this once at mount and throws unless exactly one threshold is set. A per-item
+// threshold of 0 counts any row with a visible pixel. The list viewport includes the padding
+// under the top overlay, so rows beneath it count as visible.
+export const READING_VIEWABILITY_CONFIG = Object.freeze({ itemVisiblePercentThreshold: 0 });
+
 interface ViewableRow {
   id: string;
   index: number | null;

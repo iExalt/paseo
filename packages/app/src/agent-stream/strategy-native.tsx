@@ -24,7 +24,7 @@ import type { StreamItem } from "@/types/stream";
 import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useKeyboardStreamInset } from "@/keyboard/shift";
-import { getTopmostViewableRowId } from "./reading-anchor";
+import { getTopmostViewableRowId, READING_VIEWABILITY_CONFIG } from "./reading-anchor";
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
@@ -74,8 +74,6 @@ const historyStartSlotStyle: ViewStyle = {
 };
 const HISTORY_START_SETTLE_FRAMES = 2;
 const NATIVE_STREAM_WINDOW_SIZE = 10;
-// FlatList reads this once at mount, so it must stay a constant.
-const READING_VIEWABILITY_CONFIG = Object.freeze({ minimumViewTime: 0 });
 
 function keyExtractor(item: { id: string }): string {
   return item.id;
