@@ -527,7 +527,11 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   assert.ok(installIndex < validateIndex && validateIndex < publishIndex);
   assert.equal(steps[validateIndex].run, "node .github/scripts/rebase-dev.mjs validate");
   assert.equal(steps[publishIndex].env.TESTED_SHA, "${{ steps.validate.outputs.tested-sha }}");
-  assert.equal(steps[publishIndex].env.GH_TOKEN, "${{ github.token }}");
+  assert.equal(steps[publishIndex].env.GH_TOKEN, "${{ steps.token.outputs.token }}");
+  const tokenStep = steps[publishIndex - 1];
+  assert.equal(tokenStep.id, "token");
+  assert.match(tokenStep.uses, /^actions\/create-github-app-token@/);
+  assert.equal(tokenStep.with["permission-workflows"], "write");
   assert.equal(steps[0].with["persist-credentials"], false);
   assert.equal(workflow.jobs.rebase["runs-on"], "ubuntu-24.04");
   for (const [index, step] of steps.entries()) {
