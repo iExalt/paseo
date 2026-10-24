@@ -13,6 +13,7 @@ import {
   View,
   type LayoutChangeEvent,
   type ListRenderItemInfo,
+  type ViewToken,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewStyle,
@@ -23,6 +24,7 @@ import type { StreamItem } from "@/types/stream";
 import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useKeyboardStreamInset } from "@/keyboard/shift";
+import { getTopmostViewableRowId } from "./reading-anchor";
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
@@ -72,6 +74,8 @@ const historyStartSlotStyle: ViewStyle = {
 };
 const HISTORY_START_SETTLE_FRAMES = 2;
 const NATIVE_STREAM_WINDOW_SIZE = 10;
+// FlatList reads this once at mount, so it must stay a constant.
+const READING_VIEWABILITY_CONFIG = Object.freeze({ minimumViewTime: 0 });
 
 function keyExtractor(item: { id: string }): string {
   return item.id;
@@ -90,6 +94,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     routeBottomAnchorRequest,
     isAuthoritativeHistoryReady,
     onNearBottomChange,
+    onReadingPositionChange,
     onNearHistoryStart,
     isLoadingOlderHistory,
     hasOlderHistory,
@@ -618,6 +623,21 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     },
   );
 
+  const handleViewableItemsChanged = useStableEvent(
+    ({ viewableItems }: { viewableItems: ViewToken<StreamItem>[] }) => {
+      onReadingPositionChange?.(
+        getTopmostViewableRowId(
+          viewableItems.map((token) => ({
+            id: token.item.id,
+            index: token.index,
+            isViewable: token.isViewable,
+          })),
+          segments.liveHead.at(-1)?.id ?? historyRows[0]?.id,
+        ),
+      );
+    },
+  );
+
   const liveHeaderContent = useMemo(() => {
     // Stable render events read the latest expansion state; this revision makes
     // the memo invoke them again when that state changes.
@@ -687,6 +707,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       scrollEventThrottle={16}
       onContentSizeChange={handleContentSizeChange}
       onScrollToIndexFailed={handleScrollToIndexFailed}
+      onViewableItemsChanged={handleViewableItemsChanged}
+      viewabilityConfig={READING_VIEWABILITY_CONFIG}
       maintainVisibleContentPosition={maintainVisibleContentPosition}
       // Tall Markdown rows exhaust a shallow window during flings. Keep the initial
       // render small, then refill a deeper window in batches large enough to keep up.

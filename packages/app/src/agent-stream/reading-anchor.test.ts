@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createReadingAnchor } from "./reading-anchor";
+import { createReadingAnchor, getTopmostViewableRowId } from "./reading-anchor";
 
 describe("reading anchor", () => {
   const rows = [
@@ -118,5 +118,39 @@ describe("reading anchor", () => {
         rows.map((row) => ({ id: row.id, height: row.height, top: row.top + 2000 })),
       ),
     ).toBe(0);
+  });
+});
+
+describe("topmost viewable row", () => {
+  // The native list is inverted: index 0 is the newest row, so the highest index is the top.
+  it("reports the highest viewable index as the row being read", () => {
+    expect(
+      getTopmostViewableRowId(
+        [
+          { id: "newer", index: 1, isViewable: true },
+          { id: "older", index: 3, isViewable: true },
+          { id: "middle", index: 2, isViewable: true },
+        ],
+        "newest",
+      ),
+    ).toBe("older");
+  });
+
+  it("ignores rows that are not viewable or have no index", () => {
+    expect(
+      getTopmostViewableRowId(
+        [
+          { id: "gone", index: 9, isViewable: false },
+          { id: "header", index: null, isViewable: true },
+          { id: "reading", index: 2, isViewable: true },
+        ],
+        "newest",
+      ),
+    ).toBe("reading");
+  });
+
+  it("falls back to the newest row, or null, when nothing is viewable", () => {
+    expect(getTopmostViewableRowId([], "newest")).toBe("newest");
+    expect(getTopmostViewableRowId([], undefined)).toBeNull();
   });
 });

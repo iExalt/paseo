@@ -7,6 +7,27 @@ interface RowGeometry {
 // A row must clear the reading line before the next row takes ownership.
 const READING_POSITION_OFFSET_PX = 8;
 
+interface ViewableRow {
+  id: string;
+  index: number | null;
+  isViewable: boolean;
+}
+
+// The native list is inverted, so its highest viewable index is the row at the top of the
+// viewport: the one being read. With none viewable, the reader is at the newest row, as on web.
+export function getTopmostViewableRowId(
+  rows: readonly ViewableRow[],
+  newestRowId: string | undefined,
+): string | null {
+  let top: ViewableRow | null = null;
+  for (const row of rows) {
+    if (row.isViewable && row.index !== null && (!top || row.index > (top.index ?? -1))) {
+      top = row;
+    }
+  }
+  return top?.id ?? newestRowId ?? null;
+}
+
 // Content coordinates survive user scrolling. Layout commits replace the geometry;
 // scroll events reuse it, without another DOM measurement pass.
 export function createReadingAnchor() {
