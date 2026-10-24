@@ -6,7 +6,7 @@ import {
   TERMINAL_INPUT_CONTEXT_MENU_HIDDEN,
   TERMINAL_INPUT_HITBOX_SIZE,
 } from "./terminal-input.native";
-import { createNativeTerminalKeyEvent, resolveHardwareTerminalKey } from "./terminal-key-events";
+import { createNativeTerminalKeyEvent, resolveHardwareTerminalKey, forwardNativeTerminalKey, type NativeTerminalKeyEvent } from "./terminal-key-events";
 
 describe("native terminal typed input", () => {
   function inputData(change: { data: string; shouldClear: boolean }): string {
@@ -381,4 +381,28 @@ describe("native terminal typed input", () => {
       shouldClear: false,
     });
   });
+});
+
+describe("native terminal forwarding", () => {
+  it("forwards native arrow key events to the terminal key path", () => {
+    const events: NativeTerminalKeyEvent[] = [];
+
+    forwardNativeTerminalKey({
+      event: createNativeTerminalKeyEvent("ArrowUp"),
+      onTerminalKey: (event) => {
+        events.push(event);
+      },
+    });
+
+    expect(events).toEqual([
+      {
+        key: "ArrowUp",
+        ctrl: false,
+        shift: false,
+        alt: false,
+        meta: false,
+      },
+    ]);
+  });
+
 });

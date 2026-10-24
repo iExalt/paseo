@@ -51,7 +51,10 @@ import {
   TERMINAL_SELECTION_GRIP_SIZE,
 } from "../terminal/native-renderer/terminal-selection-controller";
 import { resolveNativeTerminalMountAction } from "../terminal/native-renderer/terminal-mount-policy";
-import { type NativeTerminalKeyEvent } from "../terminal/native-renderer/terminal-key-events";
+import {
+  forwardNativeTerminalKey,
+  type NativeTerminalKeyEvent,
+} from "../terminal/native-renderer/terminal-key-events";
 import {
   TerminalInput,
   type TerminalInputHandle,
@@ -608,7 +611,7 @@ function NativeTerminalEmulator({
   const handleNativeTerminalKey = useCallback(
     (event: NativeTerminalKeyEvent) => {
       claimActiveTerminalSizeForAction("key");
-      callbacksRef.current.onTerminalKey?.(event);
+      forwardNativeTerminalKey({ event, onTerminalKey: callbacksRef.current.onTerminalKey });
     },
     [claimActiveTerminalSizeForAction],
   );
