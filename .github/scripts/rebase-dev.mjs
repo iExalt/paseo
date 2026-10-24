@@ -233,9 +233,21 @@ export function parseDeletionResolutions(text) {
   if (!Array.isArray(records)) throw new Error("Deletion resolutions must be an array");
   const keys = new Set();
   for (const record of records) {
+    const action = record?.action ?? "delete";
+    const shape = record?.stages?.map?.((entry) => entry?.stage).join();
+    // A delete/modify conflict leaves stage 1 and one side. A rename/rename conflict leaves
+    // each name at a single stage: delete the base and the losing name, keep the winner.
+    const validShape =
+      action === "keep"
+        ? ["2", "3"].includes(shape)
+        : ["1,2", "1,3", "1", "2", "3"].includes(shape);
     if (
       !record ||
-      Object.keys(record).sort().join() !== "commit,path,stages,upstream" ||
+      !["commit,path,stages,upstream", "action,commit,path,stages,upstream"].includes(
+        Object.keys(record).sort().join(),
+      ) ||
+      !["delete", "keep"].includes(action) ||
+      !validShape ||
       !/^[0-9a-f]{40}$/.test(record.commit) ||
       !/^[0-9a-f]{40}$/.test(record.upstream) ||
       typeof record.path !== "string" ||
@@ -246,9 +258,6 @@ export function parseDeletionResolutions(text) {
             /^[A-Za-z0-9_@+.-]+$/.test(part) && ![".", "..", ".git"].includes(part.toLowerCase()),
         ) ||
       !Array.isArray(record.stages) ||
-      record.stages.length !== 2 ||
-      record.stages[0]?.stage !== 1 ||
-      ![2, 3].includes(record.stages[1]?.stage) ||
       record.stages.some(
         (entry) =>
           !entry ||
@@ -278,19 +287,23 @@ async function applyDeletionResolutions(repositoryPath, records, upstream) {
   const matching = records.filter(
     (record) => record.commit === commit && record.upstream === upstream,
   );
-  const pending = [];
   for (const record of matching) {
     const actual = await gitChecked(repositoryPath, ["ls-files", "-u", "-z", "--", record.path]);
     const expected = record.stages
       .map(({ mode, oid, stage }) => `${mode} ${oid} ${stage}\t${record.path}\0`)
       .join("");
     if (actual !== expected) throw new Error(`Deletion resolution index mismatch: ${record.path}`);
-    pending.push(record.path);
   }
-  for (const path of pending) {
-    await gitChecked(repositoryPath, ["rm", "--", path]);
+  for (const { action, path, stages } of matching) {
+    if (action === "keep") {
+      const [{ mode, oid }] = stages;
+      await gitChecked(repositoryPath, ["update-index", "--cacheinfo", `${mode},${oid},${path}`]);
+      await gitChecked(repositoryPath, ["checkout", "--", path]);
+    } else {
+      await gitChecked(repositoryPath, ["rm", "--", path]);
+    }
   }
-  return pending.length;
+  return matching.length;
 }
 
 async function unmergedPaths(repositoryPath) {
@@ -311,14 +324,18 @@ async function rebaseProgress(repositoryPath) {
   return `${head}:${current.code === 0 ? current.stdout.trim() : "none"}:${staged}:${unmerged}`;
 }
 
+function reusedRerereRecords(result) {
+  const diagnostics = `${result.stdout}\n${result.stderr}`;
+  return (diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? []).length;
+}
+
 function isReusableRerereStop(result, paths, resolved, deletions = 0) {
   const diagnostics = `${result.stdout}\n${result.stderr}`;
-  const reusedRecords = diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? [];
   return (
     result.code !== 0 &&
     /CONFLICT \(/.test(diagnostics) &&
     /could not apply [0-9a-f]+/.test(diagnostics) &&
-    (reusedRecords.length > 0 || deletions > 0) &&
+    (reusedRerereRecords(result) > 0 || deletions > 0) &&
     paths.length === 0 &&
     resolved
   );
@@ -354,9 +371,11 @@ async function continueKnownResolutions(
         : 0;
     const conflicts = await unmergedPaths(repositoryPath);
     const staged = await stagedPaths(repositoryPath);
-    // A commit that only changed paths upstream deleted is empty once they are deleted.
-    // Keep it empty, with its own author and message, so the replay still maps 1:1.
-    const emptied = deletions > 0 && conflicts.length === 0 && staged.length === 0;
+    // A commit that only changed paths upstream deleted is empty once they are deleted, and
+    // a reviewed resolution can settle on upstream's side when upstream already made the
+    // change. Keep it empty, with its own author and message, so the replay still maps 1:1.
+    const resolvedByRecords = deletions > 0 || (conflictStop && reusedRerereRecords(result) > 0);
+    const emptied = resolvedByRecords && conflicts.length === 0 && staged.length === 0;
     if (emptied) {
       await gitChecked(repositoryPath, [
         "-c",
