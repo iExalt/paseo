@@ -12,3 +12,7 @@ useDefaultAndroidSdkVersions()
 android {
   namespace "sh.paseo.hardwarekeyboard"
 }
+
+dependencies {
+  implementation "com.facebook.react:react-android"
+}

@@ -10,11 +10,27 @@ import {
   EditingTextInput as TextInput,
   type EditingTextInputHandle,
 } from "@/components/ui/text-input";
-import { resolveNativeTerminalKey, type NativeTerminalKey } from "./terminal-key-events";
+import {
+  createNativeTerminalKeyEvent,
+  resolveNativeTerminalKey,
+  type NativeTerminalKey,
+  type NativeTerminalKeyEvent,
+} from "./terminal-key-events";
+import { createHardwareTerminalKeyRouter } from "./hardware-terminal-keys";
 import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
+import { addNativeTerminalKeyListener } from "@/native/hardware-keyboard";
+import { useStableEvent } from "@/hooks/use-stable-event";
 
 export const TERMINAL_INPUT_CONTEXT_MENU_HIDDEN = true;
 export const TERMINAL_INPUT_HITBOX_SIZE = 1;
+// PaseoHardwareKeyboardModule.kt captures hardware terminal keys (Enter,
+// Backspace, arrows, Ctrl and Alt chords) only while the focused view carries
+// this nativeID. Keep the two in sync.
+export const TERMINAL_INPUT_NATIVE_ID = "paseo-native-terminal-input";
+
+const hardwareTerminalKeys = createHardwareTerminalKeyRouter({
+  addListener: addNativeTerminalKeyListener,
+});
 
 export interface TerminalTextInputChange {
   data: string;
@@ -40,7 +56,7 @@ interface TerminalInputProps {
   isKeyboardVisible: boolean;
   onFocus?: () => void;
   onInput?: (data: string) => void;
-  onTerminalKey?: (key: NativeTerminalKey) => void;
+  onTerminalKey?: (event: NativeTerminalKeyEvent) => void;
   style?: StyleProp<TextStyle>;
 }
 
@@ -268,19 +284,33 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     );
 
     const releaseTypingScopeRef = useRef<(() => void) | null>(null);
-    useEffect(() => () => releaseTypingScopeRef.current?.(), []);
+    const releaseHardwareKeysRef = useRef<(() => void) | null>(null);
+    const handleHardwareTerminalKey = useStableEvent((event: NativeTerminalKeyEvent) => {
+      onTerminalKey?.(event);
+    });
+    useEffect(
+      () => () => {
+        releaseTypingScopeRef.current?.();
+        releaseHardwareKeysRef.current?.();
+      },
+      [],
+    );
 
     const handleFocus = useCallback(() => {
       isFocusedRef.current = true;
       releaseTypingScopeRef.current?.();
       releaseTypingScopeRef.current = claimNativeTypingScope("terminal");
+      releaseHardwareKeysRef.current?.();
+      releaseHardwareKeysRef.current = hardwareTerminalKeys.claim(handleHardwareTerminalKey);
       onFocus?.();
-    }, [onFocus]);
+    }, [handleHardwareTerminalKey, onFocus]);
 
     const handleBlur = useCallback(() => {
       isFocusedRef.current = false;
       releaseTypingScopeRef.current?.();
       releaseTypingScopeRef.current = null;
+      releaseHardwareKeysRef.current?.();
+      releaseHardwareKeysRef.current = null;
       resetNativeInput();
     }, [resetNativeInput]);
 
@@ -301,7 +331,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
         const change = inputState.receiveKeyPress(event.nativeEvent.key);
         if (change.key) {
-          onTerminalKey?.(change.key);
+          onTerminalKey?.(createNativeTerminalKeyEvent(change.key));
         }
         if (change.data.length > 0) {
           onInput?.(change.data);
@@ -329,6 +359,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
         blurOnSubmit={false}
         importantForAutofill="no"
         multiline={true}
+        nativeID={TERMINAL_INPUT_NATIVE_ID}
         onChangeText={handleChangeText}
         onBlur={handleBlur}
         onFocus={handleFocus}

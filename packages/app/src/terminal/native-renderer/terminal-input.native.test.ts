@@ -6,7 +6,11 @@ import {
   TERMINAL_INPUT_CONTEXT_MENU_HIDDEN,
   TERMINAL_INPUT_HITBOX_SIZE,
 } from "./terminal-input.native";
-import { forwardNativeTerminalKey, type NativeTerminalKeyEvent } from "./terminal-key-events";
+import {
+  createNativeTerminalKeyEvent,
+  forwardNativeTerminalKey,
+  type NativeTerminalKeyEvent,
+} from "./terminal-key-events";
 
 describe("native terminal typed input", () => {
   function inputData(change: { data: string; shouldClear: boolean }): string {
@@ -153,7 +157,7 @@ describe("native terminal typed input", () => {
     const events: NativeTerminalKeyEvent[] = [];
 
     forwardNativeTerminalKey({
-      key: "ArrowUp",
+      event: createNativeTerminalKeyEvent("ArrowUp"),
       onTerminalKey: (event) => {
         events.push(event);
       },
