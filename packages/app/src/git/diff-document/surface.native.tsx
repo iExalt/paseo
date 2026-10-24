@@ -376,7 +376,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
   // Like web's context menu Copy, the selection stays after copying.
   const copySelection = useStableEvent(() => {
     void copyToClipboard(selection.getSelectedText())
-      .then(() => toast.copied(t("common.states.copied")))
+      .then(() => toast.copied())
       .catch(() => toast.error(t("common.errors.unableToCopy")));
   });
   const textLayoutStore = useMemo(

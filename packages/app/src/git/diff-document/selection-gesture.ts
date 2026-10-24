@@ -1,6 +1,10 @@
 import { comparePosition, orderedSelection, selectCellSource } from "./hit-testing";
 import type { DiffHorizontalOffsets } from "./horizontal-offsets";
-import { extendNativeSelection, nativeSelectionPositionAtBodyPoint } from "./native-selection";
+import {
+  extendNativeSelection,
+  nativeSelectionEdgePosition,
+  nativeSelectionPositionAtBodyPoint,
+} from "./native-selection";
 import type {
   DiffCharacterPosition,
   DiffDocumentModel,
@@ -171,8 +175,18 @@ function reduceDrag(
 ): SelectionGestureResult {
   const unchanged = { state, selection, effect: "none" } as const;
   if (state.kind !== "selecting" && state.kind !== "dragging-handle") return unchanged;
-  const focus = positionAt(context, point, state.lockCellIndex);
-  // A null focus (header, gap, missing cell on the locked side) holds the last one.
+  // Above or below a file's lines (its header, padding or border) the drag
+  // clamps to the nearest line edge, so an auto-scroll that stops at the top
+  // still reaches the first line. Other misses (a later hunk header, a missing
+  // cell on the locked side, a review gap) hold the last focus.
+  const focus =
+    positionAt(context, point, state.lockCellIndex) ??
+    nativeSelectionEdgePosition({
+      model: context.model,
+      file: point.file,
+      locationY: point.locationY,
+      lockCellIndex: state.lockCellIndex,
+    });
   if (!focus) return unchanged;
   let anchor = state.kind === "dragging-handle" ? state.anchor : null;
   if (state.kind === "selecting") {

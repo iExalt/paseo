@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { nativeSelectedText } from "./native-selection";
-import { build, lineRow, positionIn } from "./native-selection-fixture";
+import { build, diffFile, lineRow, positionIn } from "./native-selection-fixture";
 import {
   IDLE_SELECTION_GESTURE,
   isSelectionDragActive,
@@ -10,7 +10,8 @@ import {
   type SelectionGestureResult,
   type SelectionGestureState,
 } from "./selection-gesture";
-import type { DiffDocumentModel, DiffLineRow, DiffSelection } from "./types";
+import type { ParsedDiffFile } from "@getpaseo/protocol/messages";
+import type { DiffDocumentModel, DiffFileSection, DiffLineRow, DiffSelection } from "./types";
 
 describe("native diff selection gesture", () => {
   it("opens a comment on a quick tap without a selection", () => {
@@ -91,12 +92,11 @@ describe("native diff selection gesture", () => {
     });
   });
 
-  it("holds the last focus over headers, hunk headers and the other split side", () => {
-    const model = build({ layout: "split" });
-    const file = model.files[0]!;
+  it("holds the last focus over a later hunk header and the other split side", () => {
+    const model = build({ layout: "split", files: [twoHunkFile()] });
     const first = lineRow(model, (row) => row.cells[1]?.content === "new-one");
     const second = lineRow(model, (row) => row.cells[1]?.content === "new-two");
-    const hunkHeader = lineRow(model, (row) => row.cells[0]?.type === "header");
+    const hunkHeader = lineRow(model, (row) => row.cells[0]?.content === "@@ -9,1 +9,1 @@");
     const rightX = textX(model, 1) + 20;
     const pressed = run(model, null, [
       { type: "long-press", point: pointOn(model, first, rightX) },
@@ -108,12 +108,49 @@ describe("native diff selection gesture", () => {
     // Into the left column: clamped to the right side's first character.
     const crossed = step(model, dragged, { type: "drag", point: pointOn(model, second, 5) });
     expect(crossed.selection?.focus).toMatchObject({ cellIndex: 1, sourceOffset: 0 });
-    for (const point of [
-      pointOn(model, hunkHeader, rightX),
-      { file, locationX: rightX, locationY: -4 },
-      { file, locationX: rightX, locationY: model.height + 100 },
-    ]) {
-      expect(step(model, crossed, { type: "drag", point })).toEqual(crossed);
+    expect(
+      step(model, crossed, { type: "drag", point: pointOn(model, hunkHeader, rightX) }),
+    ).toEqual(crossed);
+  });
+
+  it("clamps a drag above or below a file's lines to its first or last line", () => {
+    for (const layout of ["unified", "split"] as const) {
+      const model = build({ layout, files: [diffFile("src/a.ts"), diffFile("src/b.ts")] });
+      const [fileA, fileB] = model.files as [DiffFileSection, DiffFileSection];
+      const cellIndex = layout === "split" ? 1 : 0;
+      const pressedRow = lineRow(
+        model,
+        (row) => row.fileIndex === 1 && row.cells[cellIndex]?.content === "new-two",
+      );
+      const pressed = run(model, null, [
+        { type: "long-press", point: pointOn(model, pressedRow, textX(model, cellIndex) + 10) },
+      ]);
+      const x = textX(model, cellIndex) + 10;
+      // Auto-scroll stopped at the top leaves the finger over the file header.
+      const header = step(model, pressed, {
+        type: "drag",
+        point: { file: fileB, locationX: x, locationY: -4 },
+      });
+      const fileBText =
+        layout === "split"
+          ? "new-one\nnew-two"
+          : "@@ -1,2 +1,2 @@\nold-one\nold-two\nnew-one\nnew-two";
+      expect(text(model, header.selection)).toBe(fileBText);
+      const aboveDocument = step(model, pressed, {
+        type: "drag",
+        point: { file: fileB, locationX: x, locationY: -fileB.bodyTop - 10 },
+      });
+      expect(text(model, aboveDocument.selection)).toBe(`${fileBText}\n${fileBText}`);
+      // Mirrored at the bottom: past the last line selects to its end.
+      const startRow = lineRow(
+        model,
+        (row) => row.fileIndex === 0 && Boolean(row.cells[cellIndex]),
+      );
+      const fromStart = run(model, null, [
+        { type: "long-press", point: pointOn(model, startRow, x) },
+        { type: "drag", point: { file: fileA, locationX: x, locationY: model.height + 100 } },
+      ]);
+      expect(text(model, fromStart.selection)).toBe(`${fileBText}\n${fileBText}`);
     }
   });
 
@@ -203,4 +240,27 @@ function pointOn(
 
 function text(model: DiffDocumentModel, selection: DiffSelection | null): string {
   return nativeSelectedText(model, selection);
+}
+
+function twoHunkFile(): ParsedDiffFile {
+  const file = diffFile("src/a.ts");
+  return {
+    ...file,
+    additions: 3,
+    deletions: 3,
+    hunks: [
+      ...file.hunks,
+      {
+        oldStart: 9,
+        oldCount: 1,
+        newStart: 9,
+        newCount: 1,
+        lines: [
+          { type: "header", content: "@@ -9,1 +9,1 @@" },
+          { type: "remove", content: "old-nine" },
+          { type: "add", content: "new-nine" },
+        ],
+      },
+    ],
+  };
 }

@@ -6,6 +6,7 @@ import type {
   DiffCharacterPosition,
   DiffDocumentModel,
   DiffFileSection,
+  DiffLineRow,
   DiffSelection,
   DiffSurfaceProps,
   DiffTypography,
@@ -110,6 +111,52 @@ export function nativeSelectionPositionAtBodyPoint(input: {
   if (hit?.kind !== "cell") return null;
   if (lock !== undefined && hit.position.cellIndex !== lock) return null;
   return hit.position;
+}
+
+/**
+ * The fallback focus for a drag point that hits no cell. Above a file's first
+ * line row on the locked side (its header, top padding, or above the document)
+ * it is the start of that line; below the file's last such row (its bottom
+ * border, or past the document) the end of that line. Anywhere else it is null,
+ * so gaps inside a file still hold the last focus.
+ */
+export function nativeSelectionEdgePosition(input: {
+  model: DiffDocumentModel;
+  file: DiffFileSection;
+  locationY: number;
+  lockCellIndex?: number;
+}): DiffCharacterPosition | null {
+  const { model } = input;
+  const documentY = input.file.bodyTop + input.locationY;
+  const targetFile = fileAtDocumentOffset(model.files, documentY) ?? model.files.at(-1);
+  if (!targetFile) return null;
+  const cellIndex = model.layout === "split" ? (input.lockCellIndex ?? 0) : 0;
+  let first: DiffLineRow | null = null;
+  let last: DiffLineRow | null = null;
+  for (let index = targetFile.rowStart; index < targetFile.rowEnd; index += 1) {
+    const row = model.rows[index];
+    if (row?.kind !== "line" || !row.cells[cellIndex]) continue;
+    first ??= row;
+    last = row;
+  }
+  if (first && documentY < first.top) return edgePosition(first, cellIndex, "start");
+  if (last && documentY >= last.top + last.height) return edgePosition(last, cellIndex, "end");
+  return null;
+}
+
+function edgePosition(
+  row: DiffLineRow,
+  cellIndex: number,
+  edge: "start" | "end",
+): DiffCharacterPosition {
+  const cell = row.cells[cellIndex]!;
+  return {
+    fileIndex: row.fileIndex,
+    rowIndex: row.index,
+    cellIndex,
+    side: cell.reviewTarget?.side ?? (cellIndex === 0 ? "old" : "new"),
+    sourceOffset: edge === "start" ? 0 : cell.content.length,
+  };
 }
 
 /** Moves the focus of a drag, keeping a split selection on the anchor's side. */
