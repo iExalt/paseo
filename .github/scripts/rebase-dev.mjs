@@ -29,6 +29,7 @@ const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
 const DELETIONS_PATH = "deletions.json";
 const FIXUPS_PREFIX = "fixups/";
+const WORKFLOWS_DIR = ".github/workflows/";
 const RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json";
 const SIGNING_NAME = "Clement Liaw";
 const SIGNING_EMAIL = "clliaw@nvidia.com";
@@ -740,6 +741,34 @@ async function commitSignedFile(
   return commitSignedIndex(repositoryPath, { message, signingKey, publicKey });
 }
 
+async function workflowPaths(repositoryPath, revision) {
+  const names = await gitChecked(repositoryPath, [
+    "ls-tree",
+    "-z",
+    "--name-only",
+    revision,
+    "--",
+    WORKFLOWS_DIR,
+  ]);
+  return new Set(names.split("\0").filter(Boolean));
+}
+
+// The fork keeps only the workflows it owns. Upstream edits to workflows dev deleted
+// surface as conflicts, but a workflow upstream adds would replay silently and start
+// running in the fork, so any workflow file captured dev lacks stops the run.
+async function assertNoInheritedWorkflows(repositoryPath, devSha) {
+  const owned = await workflowPaths(repositoryPath, devSha);
+  const inherited = [...(await workflowPaths(repositoryPath, "HEAD"))].filter(
+    (path) => !owned.has(path),
+  );
+  if (inherited.length > 0) {
+    throw new Error(
+      `Rebase would add upstream workflows to dev: ${inherited.join(", ")}. ` +
+        `Delete them in ${FIXUPS_PREFIX}<upstream sha>.patch on the resolution branch.`,
+    );
+  }
+}
+
 // Upstream code can break the fork without any textual conflict, for example a new upstream
 // file written for an older toolchain than the fork pins. A reviewed patch keyed to the exact
 // captured upstream adapts it in one signed commit; a patch that does not apply stops the run.
@@ -1009,6 +1038,7 @@ export async function rebaseDev({
       publicKey,
     });
     assertForkReleasePreserved(before, await readRelease());
+    await assertNoInheritedWorkflows(repositoryPath, snapshots.dev);
     let provenanceCommits = 0;
     if (before.config.upstreamBase !== snapshots.upstream) {
       // Keep replayed author/message metadata intact. Provenance is a separate,

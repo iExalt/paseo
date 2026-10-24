@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
-      contents: write
+      contents: read
     env:
       CI: "true"
       LEFTHOOK: "0"
@@ -52,6 +52,16 @@ jobs:
         id: validate
         run: node .github/scripts/rebase-dev.mjs validate
 
+      # GITHUB_TOKEN cannot push commits that change workflow files. Mint the
+      # one-hour App token only once validation has passed.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
+        with:
+          client-id: ${{ vars.PASEO_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PASEO_SYNC_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-workflows: write
       - name: Publish backup and rebased dev atomically
         run: |
           rebase_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
@@ -61,7 +71,7 @@ jobs:
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $rebase_auth" \
           node .github/scripts/rebase-dev.mjs publish
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           TESTED_SHA: ${{ steps.validate.outputs.tested-sha }}
           DEV_SHA: ${{ steps.rebase.outputs.dev-sha }}
           UPSTREAM_SHA: ${{ steps.rebase.outputs.upstream-sha }}
