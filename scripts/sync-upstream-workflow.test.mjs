@@ -8,7 +8,8 @@ const yaml = createRequire(import.meta.url)("js-yaml");
 const workflowPath = new URL("../.github/workflows/upstream-sync.yml", import.meta.url);
 const workflowText = await readFile(workflowPath, "utf8");
 const workflow = yaml.load(workflowText);
-const script = workflow.jobs.sync.steps[0].with.script;
+const [tokenStep, syncStep] = workflow.jobs.sync.steps;
+const script = syncStep.with.script;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 function makeGithub({ destinationSha, sourceSha, comparisonStatus, failures = {} }) {
@@ -53,10 +54,14 @@ test("workflow is scheduled at 07:23 UTC and guarded to the fork dev branch", ()
   assert.match(workflow.jobs.sync.if, /github\.repository == 'iExalt\/paseo'/);
   assert.match(workflow.jobs.sync.if, /github\.ref == 'refs\/heads\/dev'/);
   assert.deepEqual(workflow.permissions, {});
-  assert.deepEqual(workflow.jobs.sync.permissions, { contents: "write" });
+  assert.deepEqual(workflow.jobs.sync.permissions, {});
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.equal(workflow.jobs.sync["timeout-minutes"], 5);
-  assert.equal(workflow.jobs.sync.steps[0].with["github-token"], "${{ secrets.GITHUB_TOKEN }}");
+  // GITHUB_TOKEN cannot move the mirror onto upstream commits that change workflows.
+  assert.match(tokenStep.uses, /^actions\/create-github-app-token@[0-9a-f]{40}$/);
+  assert.equal(tokenStep.with["permission-contents"], "write");
+  assert.equal(tokenStep.with["permission-workflows"], "write");
+  assert.equal(syncStep.with["github-token"], "${{ steps.token.outputs.token }}");
   assert.equal(
     workflow.jobs.sync.steps.some((step) => step.uses?.startsWith("actions/checkout@")),
     false,
