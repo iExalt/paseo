@@ -31,6 +31,7 @@ import { useTranslation } from "react-i18next";
 import type { StreamItem } from "@/types/stream";
 import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { getTopmostViewableRowId, READING_VIEWABILITY_CONFIG } from "./reading-anchor";
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
@@ -152,6 +153,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     isInitialHistoryLoading,
     revealInitialHistory,
     onNearBottomChange,
+    onReadingPositionChange,
     onNearHistoryStart,
     isLoadingOlderHistory,
     hasOlderHistory,
@@ -747,6 +749,22 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     },
   );
 
+  const handleViewableItemsChanged = useStableEvent(
+    ({ viewableItems }: { viewableItems: { item: StreamItem; index: number | null; isViewable: boolean }[] }) => {
+      onReadingPositionChange?.(
+        getTopmostViewableRowId(
+          viewableItems.map((token) => ({
+            id: token.item.id,
+            // The shared helper orders an inverted list; negate indexes for forward rows.
+            index: token.index === null ? null : -token.index,
+            isViewable: token.isViewable,
+          })),
+          rows.at(-1)?.id,
+        ),
+      );
+    },
+  );
+
   const liveAuxiliaryContent = useMemo(() => {
     const liveAuxiliary = renderLiveAuxiliary();
     if (
@@ -805,6 +823,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         onMomentumScrollEnd={handleMomentumScrollEnd}
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
+        onViewableItemsChanged={handleViewableItemsChanged}
+        viewabilityConfig={READING_VIEWABILITY_CONFIG}
         onItemSizeChanged={handleItemSizeChanged}
         onReady={handleListPlaced}
         maintainVisibleContentPosition={maintainVisibleContentPosition}
