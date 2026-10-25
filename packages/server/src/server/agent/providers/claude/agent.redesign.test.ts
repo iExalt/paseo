@@ -2060,3 +2060,76 @@ test("does not use stream_event uuid as assistant message identity when message_
 
   await session.close();
 });
+
+test("per-block assistant snapshots do not re-emit streamed thinking or text blocks", async () => {
+  const sessionId = "redesign-multi-block-session";
+  function delta(index: number, content: Record<string, unknown>) {
+    return { type: "stream_event", event: { type: "content_block_delta", index, delta: content } };
+  }
+  // Claude Code sends one assistant snapshot per finished content block, all sharing the
+  // API message id, interleaved with the stream events for the whole message.
+  function snapshot(block: Record<string, unknown>) {
+    return {
+      type: "assistant",
+      message: { id: "message-1", role: "assistant", model: "opus", content: [block] },
+      parent_tool_use_id: null,
+      session_id: sessionId,
+    };
+  }
+  sdkQueryFactory.mockImplementation(({ prompt }: { prompt: AsyncIterable<unknown> }) => {
+    const readPromptUuid = createPromptUuidReader(prompt);
+    const frames: Array<() => Promise<Record<string, unknown>>> = [
+      async () => ({
+        type: "system",
+        subtype: "init",
+        session_id: sessionId,
+        permissionMode: "default",
+        model: "opus",
+      }),
+      async () => ({
+        type: "user",
+        message: { role: "user", content: "multi-block prompt" },
+        parent_tool_use_id: null,
+        uuid: (await readPromptUuid()) ?? "missing-prompt-uuid",
+        session_id: sessionId,
+      }),
+      async () => ({
+        type: "stream_event",
+        event: { type: "message_start", message: { id: "message-1", role: "assistant" } },
+      }),
+      async () => delta(0, { type: "thinking_delta", thinking: "First " }),
+      async () => delta(0, { type: "thinking_delta", thinking: "thought. " }),
+      async () => snapshot({ type: "thinking", thinking: "First thought. " }),
+      async () => delta(1, { type: "thinking_delta", thinking: "Second thought." }),
+      async () => snapshot({ type: "thinking", thinking: "Second thought." }),
+      async () => delta(2, { type: "text_delta", text: "Before. " }),
+      async () => snapshot({ type: "text", text: "Before. " }),
+      async () => delta(3, { type: "text_delta", text: "After" }),
+      // The snapshot carries text whose final delta never arrived; only that suffix is new.
+      async () => snapshot({ type: "text", text: "After." }),
+      async () => ({ type: "stream_event", event: { type: "message_stop" } }),
+      async () => ({ type: "result", subtype: "success", usage: buildUsage(), total_cost_usd: 0 }),
+    ];
+    return createBaseQueryMock(
+      vi.fn(async () => {
+        const frame = frames.shift();
+        return frame ? { done: false, value: await frame() } : { done: true, value: undefined };
+      }),
+    );
+  });
+
+  const session = await createSession();
+  const events = await collectUntilTerminal(streamSession(session, "multi-block prompt"));
+  function timelineText(type: "reasoning" | "assistant_message"): string {
+    return events
+      .flatMap((event) =>
+        event.type === "timeline" && event.item.type === type ? [event.item.text] : [],
+      )
+      .join("");
+  }
+
+  expect(timelineText("reasoning")).toBe("First thought. Second thought.");
+  expect(timelineText("assistant_message")).toBe("Before. After.");
+
+  await session.close();
+});
