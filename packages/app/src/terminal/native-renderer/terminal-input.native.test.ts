@@ -76,16 +76,6 @@ describe.each(["keyThenDiff", "diff"] as const)(
       expect(input.receiveTextChange(longText)).toEqual({ data: longText, shouldClear: false });
     });
 
-    it("translates software keyboard terminal control keys", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
-      expect(input.receiveKeyPress("Enter")).toEqual({ data: "\r", shouldClear: true });
-      expect(input.receiveKeyPress("Return")).toEqual({ data: "\r", shouldClear: true });
-      expect(input.receiveKeyPress("return")).toEqual({ data: "\r", shouldClear: true });
-      expect(input.receiveTextChange("hello\n")).toEqual({ data: "", shouldClear: true });
-    });
-
     it("accepts the same keyboard clipboard item after terminal focus synchronization", () => {
       const input = createTerminalTextInputState({ printableSource });
 
@@ -238,6 +228,16 @@ describe.each(["keyThenDiff", "diff"] as const)(
 );
 
 describe("native terminal typed input, key then diff (iOS)", () => {
+  it("translates software keyboard terminal control keys", () => {
+    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
+
+    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
+    expect(input.receiveKeyPress("Enter")).toEqual({ data: "\r", shouldClear: true });
+    expect(input.receiveKeyPress("Return")).toEqual({ data: "\r", shouldClear: true });
+    expect(input.receiveKeyPress("return")).toEqual({ data: "\r", shouldClear: true });
+    expect(input.receiveTextChange("hello\n")).toEqual({ data: "", shouldClear: true });
+  });
+
   it("dispatches printable keypresses when focused input does not report text changes", () => {
     const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
 
@@ -547,16 +547,15 @@ describe("native terminal typed input, diff (Android)", () => {
     it("sends Enter once when the clear lands, AOSP order", () => {
       const { input, play } = createDiffInput();
       play(["c", "ls"]);
-      expect(input.receiveTextChange("ls\n")).toEqual({ data: "", shouldClear: true });
-      expect(input.receiveKeyPress("Enter")).toEqual({ data: "\r", shouldClear: true });
-      expect(play(["reset"], ["c", "x"])).toBe("x");
+      expect(input.receiveTextChange("ls\n")).toEqual({ data: "\r", shouldClear: true });
+      expect(play(["reset"])).toBe("");
+      expect(input.receiveKeyPress("Enter")).toEqual({ data: "", shouldClear: false });
+      expect(play(["c", "x"])).toBe("x");
     });
 
     it("sends Enter once when the clear lands, Samsung order", () => {
       const { play } = createDiffInput();
-      expect(
-        play(["c", "ls"], ["k", "Enter"], ["reset"], ["c", "ls\n"], ["reset"], ["c", "x"]),
-      ).toBe("ls\rx");
+      expect(play(["c", "ls"], ["k", "Enter"], ["c", "ls\n"], ["reset"], ["c", "x"])).toBe("ls\rx");
     });
 
     it.each([
@@ -669,6 +668,56 @@ describe("native terminal typed input, diff (Android)", () => {
       expect(sent).toBe(line);
     });
 
+    it("keeps the stuck-clear marker across a hardware clear", () => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"], ["hook"]);
+      expect(play(["c", "ls\nx"])).toBe("x");
+    });
+
+    it("sends Enter from a newline change that has no Enter key", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "l"], ["c", "ls\n"])).toBe("ls\r");
+      expect(play(["reset"], ["c", "x"])).toBe("x");
+    });
+
+    it.each([
+      [
+        "key first",
+        [
+          ["k", "s\n"],
+          ["c", "ls\n"],
+        ] as InputEvent[],
+      ],
+      [
+        "change first",
+        [
+          ["c", "ls\n"],
+          ["k", "s\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends a letter and Enter committed together once: %s", (_order, events) => {
+      const { play } = createDiffInput();
+      expect(play(["c", "l"], ...events, ["reset"], ["c", "x"])).toBe("ls\rx");
+    });
+
+    it("sends one Enter when its key comes long after the newline change", () => {
+      const { play } = createDiffInput();
+      expect(
+        play(["c", "ls"], ["at", 0], ["c", "ls\n"], ["reset"], ["at", 500], ["k", "Enter"]),
+      ).toBe("ls\r");
+    });
+
+    it("sends an Enter key that has no newline change at the next event", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ls"], ["k", "Enter"])).toBe("ls");
+      expect(play(["c", "lsx"])).toBe("\rx");
+    });
+
+    it("sends a pending deletion before a newline change", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ab"], ["c", ""], ["c", "x\n"])).toBe("ab\x7f\x7fx\r");
+    });
+
     it("keeps the stuck-clear marker across a show-keyboard reset", () => {
       const { play } = createDiffInput();
       play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"], ["reset"]);
@@ -690,6 +739,79 @@ describe("native terminal typed input, diff (Android)", () => {
     it("resends stale text when a show-keyboard clear never lands (accepted cost)", () => {
       const { play } = createDiffInput();
       expect(play(["c", "abc"], ["reset"], ["c", "abcd"])).toBe("abcabcd");
+    });
+  });
+
+  describe("keys", () => {
+    it("translates software keyboard terminal control keys", () => {
+      const { input, play } = createDiffInput();
+      expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
+      expect(play(["k", "Enter"], ["c", "\n"])).toBe("\r");
+      expect(play(["k", "Return"], ["c", "\n"])).toBe("\r");
+      expect(input.receiveTextChange("hello\n")).toEqual({ data: "hello\r", shouldClear: true });
+    });
+
+    it.each([
+      [
+        "AOSP",
+        [
+          ["c", "\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        [
+          ["k", "Enter"],
+          ["c", "\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends Enter twice on an empty prompt: %s", (_order, enter) => {
+      const { play } = createDiffInput();
+      expect(play(...enter, ["reset"], ...enter, ["reset"])).toBe("\r\r");
+    });
+  });
+
+  describe("composition and Backspace", () => {
+    it("deletes once per held Backspace through a Hangul syllable, Samsung order", () => {
+      const { play } = createDiffInput();
+      play(["c", "한"]);
+      let sent = "";
+      for (const [at, text] of [
+        [0, "하"],
+        [50, "ㅎ"],
+        [100, ""],
+      ] as const) {
+        sent += play(["at", at], ["c", text], ["at", at + 1], ["k", "Backspace"]);
+      }
+      expect(sent).toBe("\x7f하\x7fㅎ\x7f");
+      expect(play(["at", 1000], ["k", "Backspace"])).toBe("\x7f");
+    });
+
+    it("pairs a Hangul rewrite with its Backspace key, AOSP order", () => {
+      const { play } = createDiffInput();
+      play(["c", "한"]);
+      expect(play(["k", "Backspace"], ["c", "하"])).toBe("\x7f하");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", "ㅎ"])).toBe("\x7fㅎ");
+    });
+
+    it("sends nothing extra for Korean jamo keys, Samsung order", () => {
+      const { play } = createDiffInput();
+      expect(
+        play(["c", "ㅎ"], ["k", "ㅎ"], ["c", "하"], ["k", "ㅏ"], ["c", "한"], ["k", "ㄴ"]),
+      ).toBe("ㅎ\x7f하\x7f한");
+    });
+
+    it("deletes once when a Backspace key comes long after the field empties", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ab"], ["at", 0], ["c", ""], ["at", 500], ["k", "Backspace"])).toBe(
+        "ab\x7f\x7f",
+      );
+    });
+
+    it("sends a deletion with no Backspace key at the next event", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "a"], ["c", ""], ["c", "b"])).toBe("a\x7fb");
     });
   });
 

@@ -65,7 +65,9 @@ export type TerminalInputResetReason = "enter" | "key-enter" | "show-keyboard" |
 // Module state, shared by every terminal: enough to tell whether the last
 // clear landed, which is all the trace needs.
 let lastChangeText = "";
-let pendingReset: { reason: TerminalInputResetReason; staleText: string } | null = null;
+// Resets with no change between them (such as blur, then blurred) share one
+// entry, so the next change is scored against the text before the first.
+let pendingReset: { reason: string; staleText: string } | null = null;
 
 export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, sent: string): void {
   if (!TERMINAL_TRACE_ENABLED) {
@@ -92,6 +94,13 @@ export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, se
 
 export function traceTerminalReset(reason: TerminalInputResetReason): void {
   if (!TERMINAL_TRACE_ENABLED) {
+    return;
+  }
+  if (pendingReset) {
+    pendingReset.reason += `+${reason}`;
+    writeTraceLine(
+      JSON.stringify({ t: nativeTerminalPerformanceNow(), reset: reason, merged: true }),
+    );
     return;
   }
   pendingReset = { reason, staleText: lastChangeText };

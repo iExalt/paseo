@@ -209,59 +209,60 @@ treats a key-first Enter's own newline change as part of that Enter.
 ### P1. One source of truth for typed text (agree the design first)
 
 - On Android, printable text comes only from the text diff, and printable
-  keypresses are ignored. Keypress is used for Enter, arrows and control keys.
-- The diff owns every deletion while the field has text. Three one-shot flags
-  pair a Backspace key with its diff, whichever arrives first:
+  keypresses are ignored. Keypress is used for Backspace, Enter, arrows and
+  control keys.
+- One pending slot, settled by the next event, pairs each key with its
+  change. Every event first settles what is pending.
   - A pure suffix deletion (the new text is a prefix of the old) sends one
-    `\x7f` per removed code point. If `keyAwaitingShrink` is set, clear it.
-    Otherwise set `shrinkAwaitingKey`.
-  - A change to empty text with `keyAwaitingShrink` set follows the suffix
-    rule. Without it, the change sends nothing and records
-    `emptiedAwaitingKey` = the number of removed code points.
-  - A Backspace key on a field with text sets `keyAwaitingShrink` and sends
-    nothing. On an empty field, it does one of three things. If
-    `emptiedAwaitingKey` is above 0, it sends that many `\x7f` (a composing
-    word or a batched select-all deleted at once). If `shrinkAwaitingKey` is
-    set, it clears it and sends nothing. Otherwise it sends one `\x7f`.
-  - Every hardware terminal key calls a hook such as
-    `inputState.noteHardwareClear()` before it is forwarded. The hook sets
-    `previousText` to empty and clears all three flags, but leaves
-    `replacementDesynced` alone. Android's hardware keyboard module
-    (`PaseoHardwareKeyboardModule.kt`, #206) clears the field after a key it
-    captures, and the terminal already has that text, so the clear must send
-    nothing in either event order.
-  - Any other key or change clears all three flags. Each flag also expires
-    about 100 ms after it is set. Both halves of a real pair come from one
-    native call or IME batch, so a stale flag, such as a Backspace that
-    deleted nothing, can't pair with a later hardware clear.
+    `\x7f` per removed code point. If a Backspace key is pending
+    (`keyAwaitingShrink`), they pair; otherwise the change leaves
+    `shrinkAwaitingKey` for its key. A non-append replacement (a Hangul
+    syllable losing a jamo) pairs the same way.
+  - A change to empty text with no key pending sends nothing and leaves
+    `emptied` with the removed count. A Backspace key next sends that many
+    `\x7f`, however late; any other event sends them first. This covers a
+    composing word or a batched select-all deleted at once.
+  - A Backspace key on a field with text leaves `keyAwaitingShrink` and sends
+    nothing; on an empty field it sends one `\x7f`.
+  - The Backspace pairs expire after 100 ms, so a Backspace that deleted
+    nothing can't pair with a later hardware clear. The clock is monotonic.
+  - Every hardware terminal key calls `inputState.noteHardwareClear()` before
+    it is forwarded. The hook sets `previousText` to empty and drops a pending
+    Backspace entry, but leaves `replacementDesynced` alone. Android's hardware
+    keyboard module (`PaseoHardwareKeyboardModule.kt`, #206) clears the field
+    after a key it captures, and the terminal already has that text, so the
+    clear must send nothing in either event order.
+- Enter comes from the text change. A change whose appended text is `X` plus
+  one trailing line break sends `X` and `\r`, then requests a clear. An Enter
+  key right after it is its echo and sends nothing. An Enter key first is
+  held, and the newline change after it sends the Enter; any other event
+  sends the held `\r` first. No timing is involved, so a JS stall between
+  the two can't double the Enter. React Native reports a commit of up to two
+  characters as the key, so a key ending in `\n` (`s\n`) is an Enter key, and
+  a longer commit has no key at all. A multi-line paste (text after the line
+  break) still sends nothing.
 - This is the candidate design. The case table under Acceptance is the
-  contract. If the P0 trace shows that the rule needs more timing heuristics
-  than the expiry, switch to the native `InputConnection` below instead of
-  adding them.
+  contract. If the device runs show that the rule needs more timing
+  heuristics than the Backspace expiry, switch to the native
+  `InputConnection` below instead of adding them.
 - A field can keep its text across Enter when the clear after Enter doesn't
-  land (P0a). A change whose appended text contains `\n` or `\r` sends
-  nothing; Enter comes from its key, and the multi-line paste guard stays.
-  Set `previousText` to the change's full text, newline included, then
-  record `pendingClearFrom = previousText` and set `previousText` to empty.
-  Only these clears record it, so the marker always contains `\n` or `\r`
-  and a single-line paste can never match it. A clear request whose text has no
-  newline, such as the Enter key's own clear or a later show-keyboard reset,
-  keeps an existing marker. On the next change, diff against
-  `pendingClearFrom` if the text starts with it (the clear didn't land), and
-  otherwise against `previousText`. Then forget `pendingClearFrom`.
-- A Backspace key on an empty field, followed within 20 ms by
-  a change that shrinks the stuck line (a proper prefix of the marker),
-  realigns silently, so the old line is not typed again. Without the key
-  first, such a change is the first letter of a new line that starts the
-  same way (`ls` twice) and is sent.
+  land (P0a). A newline change records `pendingClearFrom`, its full text, and
+  sets `previousText` to empty. The marker always contains a line break, so a
+  single-line paste can never match it, and other clear requests keep it. On
+  the next change, diff against the marker if the text extends it (the clear
+  didn't land), and otherwise against `previousText`. A change equal to the
+  marker is new text, because a field that kept the marker reports no
+  change. Then forget the marker.
+- A Backspace key on an empty field, followed within the pairing window by a
+  change equal to the marker minus its final line break, is a Backspace into
+  the stuck line. It realigns without typing the old line again; the key's
+  own `\x7f` reaches an empty prompt. Anything else, such as the first letter
+  of a new line that starts the same way (`ls` twice), is sent.
 - Known gap: with change-first Backspace (Samsung), a Backspace into a line
   whose clear never landed resends that line. Telling it apart from new
-  typing would mean holding the change until its key, the timing reconciler
-  this plan rejects; the native `InputConnection` fallback would close it.
-  No Samsung clear has failed in any run.
-- Known gap: an Enter that arrives only as text, with no Enter key, sends
-  nothing. A batch that drops the key or voice typing could do that; no
-  device run has shown it, and the code before P1 behaved the same.
+  typing would mean holding the change until its key; the native
+  `InputConnection` fallback would close it. No Samsung clear has failed in
+  any run.
 - Resets on focus, blur and show-keyboard record no marker (option A). P0b
   saw every one of them land on both keyboards. Marking them too (option B)
   would misread a second paste that extends the first, such as `git status`

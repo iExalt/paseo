@@ -39,6 +39,7 @@ describe("terminal input reset trace", () => {
     trace.traceTerminalReset("enter");
     trace.traceTerminalInput("change", "ls\nx", "x");
     trace.traceTerminalReset("key-enter");
+    trace.traceTerminalReset("show-keyboard");
     trace.traceTerminalInput("change", "y", "y");
     trace.traceTerminalInput("change", "yz", "z");
 
@@ -55,11 +56,12 @@ describe("terminal input reset trace", () => {
       { reset: "enter", fieldChars: 3 },
       { kind: "change", raw: "aa\na", sent: "a", afterReset: "enter", changeChars: 4, stale: true },
       { reset: "key-enter", fieldChars: 4 },
+      { reset: "show-keyboard", merged: true },
       {
         kind: "change",
         raw: "a",
         sent: "a",
-        afterReset: "key-enter",
+        afterReset: "key-enter+show-keyboard",
         changeChars: 1,
         stale: false,
       },

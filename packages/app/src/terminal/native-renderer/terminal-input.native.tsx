@@ -24,6 +24,7 @@ import {
   setNativeTerminalKeyCaptureActive,
 } from "@/native/hardware-keyboard";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { nativeTerminalPerformanceNow } from "./terminal-performance";
 import {
   traceTerminalInput,
   traceTerminalReset,
@@ -141,6 +142,10 @@ function resolveCompositionEdit(previousText: string, text: string): string {
   return `${"\x7f".repeat(removed.length)}${inserted}`;
 }
 
+function hasLineBreak(text: string): boolean {
+  return text.includes("\n") || text.includes("\r");
+}
+
 export function resolveTerminalInputFocusRequest(input: {
   isInputFocused: boolean;
   isKeyboardVisible: boolean;
@@ -155,7 +160,7 @@ export function createTerminalTextInputState(
   options: TerminalTextInputStateOptions = {},
 ): TerminalTextInputState {
   if (options.printableSource === "diff") {
-    return createDiffTerminalTextInputState(options.now ?? Date.now);
+    return createDiffTerminalTextInputState(options.now ?? nativeTerminalPerformanceNow);
   }
   return createKeyThenDiffTerminalTextInputState();
 }
@@ -208,7 +213,7 @@ function createKeyThenDiffTerminalTextInputState(): TerminalTextInputState {
         return { data: "", shouldClear: false };
       }
 
-      if (text.includes("\n") || text.includes("\r")) {
+      if (hasLineBreak(text)) {
         previousText = "";
         replacementDesynced = false;
         return { data: "", shouldClear: true };
@@ -244,13 +249,36 @@ function createKeyThenDiffTerminalTextInputState(): TerminalTextInputState {
 // Both halves of a Backspace (its key and its shrinking text change) come
 // from one native call or IME batch, so they land well inside this window.
 const BACKSPACE_PAIR_WINDOW_MS = 100;
-// A Backspace into a stuck line is followed by its change within about a
-// millisecond (AOSP keyboard, traced). Keep this window narrow so a fast
-// first letter of the next line is not mistaken for that change.
-const STUCK_LINE_BACKSPACE_WINDOW_MS = 20;
 
-function hasLineBreak(text: string): boolean {
-  return text.includes("\n") || text.includes("\r");
+/**
+ * What the diff policy is waiting for. Only one thing can be pending, because
+ * every event settles the previous one first (`takePending`).
+ *
+ * - `keyAwaitingShrink`, `shrinkAwaitingKey`: a Backspace key and its text
+ *   change, paired in either order within the window.
+ * - `keyOnMarker`: a Backspace key on an empty field while a stuck-clear
+ *   marker is set; the change that follows may be a Backspace into that line.
+ * - `emptied`: a change emptied the field. A Backspace key next sends the
+ *   deletion; anything else sends it first. The hardware-key hook drops it.
+ * - `newlineChange`: a change already sent Enter; an Enter key next is its
+ *   echo.
+ * - `enterKey`: an Enter key arrived first. A newline change next sends the
+ *   Enter; anything else sends it first.
+ */
+type PendingInput =
+  | { kind: "keyAwaitingShrink" | "shrinkAwaitingKey" | "keyOnMarker"; at: number }
+  | { kind: "emptied"; count: number }
+  | { kind: "newlineChange" | "enterKey" };
+
+function isEnterKey(key: string): boolean {
+  // RN reports a commit of up to two characters as the key, so `s\n` is a
+  // letter and Enter in one.
+  return (
+    key === "Enter" ||
+    key === "Return" ||
+    key === "return" ||
+    (key.length <= 2 && key.endsWith("\n"))
+  );
 }
 
 function createDiffTerminalTextInputState(now: () => number): TerminalTextInputState {
@@ -260,72 +288,145 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
   let replacementDesynced = false;
   // The field text when a clear was requested after a line break. If the
   // next change still starts with it, the clear never landed (seen with the
-  // AOSP keyboard), so diff against it instead. A paste has no line break,
-  // so it can never match.
+  // AOSP keyboard), so diff against it instead. A single-line paste has no
+  // line break, so it can never match.
   let pendingClearFrom: string | null = null;
-  // One-shot flags pairing a Backspace key with its text change, in either
-  // order. Each holds the time it was set.
-  let keyAwaitingShrink: number | null = null;
-  let shrinkAwaitingKey: number | null = null;
-  let emptiedAwaitingKey: { count: number; at: number } | null = null;
-  // A Backspace key on an empty field while a stuck-clear marker is set. Only
-  // then is a change that shrinks the marker a Backspace into the old line;
-  // without the key it is the first letter of a new line that starts the
-  // same way.
-  let backspaceOnMarkerAt: number | null = null;
+  let pending: PendingInput | null = null;
 
-  function isFresh(at: number | null, windowMs = BACKSPACE_PAIR_WINDOW_MS): at is number {
-    return at !== null && now() - at <= windowMs;
+  function isFresh(entry: PendingInput | null, kind: PendingInput["kind"]): boolean {
+    return (
+      entry !== null &&
+      entry.kind === kind &&
+      "at" in entry &&
+      now() - entry.at <= BACKSPACE_PAIR_WINDOW_MS
+    );
   }
 
-  function clearBackspaceFlags(): void {
-    keyAwaitingShrink = null;
-    shrinkAwaitingKey = null;
-    emptiedAwaitingKey = null;
-    backspaceOnMarkerAt = null;
+  /** Clears the pending slot, returning what an unpaired lazy entry still owes the terminal. */
+  function takePending(): { entry: PendingInput | null; owed: string } {
+    const entry = pending;
+    pending = null;
+    if (entry?.kind === "emptied") return { entry, owed: "\x7f".repeat(entry.count) };
+    if (entry?.kind === "enterKey") return { entry, owed: "\r" };
+    return { entry, owed: "" };
   }
 
-  function requestClear(text: string): TerminalTextInputChange {
+  function requestClear(text: string): void {
     if (hasLineBreak(text)) {
       pendingClearFrom = text;
     }
     previousText = "";
-    return { data: "", shouldClear: true };
   }
 
   function receiveBackspaceKey(): TerminalTextInputChange {
-    const pairedShrink = isFresh(shrinkAwaitingKey);
-    const emptied =
-      emptiedAwaitingKey && isFresh(emptiedAwaitingKey.at) ? emptiedAwaitingKey : null;
-    clearBackspaceFlags();
-    if (pairedShrink) {
-      return { data: "", shouldClear: false };
+    const entry = pending;
+    pending = null;
+    if (entry?.kind === "emptied") {
+      return { data: "\x7f".repeat(entry.count), shouldClear: false };
+    }
+    const owed = entry?.kind === "enterKey" ? "\r" : "";
+    if (isFresh(entry, "shrinkAwaitingKey")) {
+      return { data: owed, shouldClear: false };
     }
     if (previousText.length > 0) {
-      keyAwaitingShrink = now();
-      return { data: "", shouldClear: false };
+      pending = { kind: "keyAwaitingShrink", at: now() };
+      return { data: owed, shouldClear: false };
     }
     if (pendingClearFrom !== null) {
-      backspaceOnMarkerAt = now();
+      pending = { kind: "keyOnMarker", at: now() };
     }
-    return { data: "\x7f".repeat(emptied?.count ?? 1), shouldClear: false };
+    return { data: `${owed}\x7f`, shouldClear: false };
   }
 
-  function receiveShrink(text: string): TerminalTextInputChange {
+  // A Backspace key on an empty field, then the old line without its line
+  // break: a Backspace into a line whose clear never landed. This needs the
+  // key first (AOSP order); see the plan's known gap for the other.
+  function isBackspaceIntoStuckLine(
+    entry: PendingInput | null,
+    marker: string | null,
+    text: string,
+  ): boolean {
+    return (
+      marker !== null &&
+      isFresh(entry, "keyOnMarker") &&
+      /[\n\r]$/.test(marker) &&
+      text === marker.slice(0, -1)
+    );
+  }
+
+  function receiveAppend(
+    text: string,
+    appendedText: string,
+    entry: PendingInput | null,
+    owed: string,
+  ): TerminalTextInputChange {
+    const lineBreak = /\r\n|\n|\r/.exec(appendedText);
+    if (!lineBreak) {
+      previousText = text;
+      return { data: `${owed}${appendedText}`, shouldClear: false };
+    }
+    requestClear(text);
+    if (lineBreak.index + lineBreak[0].length < appendedText.length) {
+      // A multi-line paste is not run.
+      return { data: owed, shouldClear: true };
+    }
+    // Text then Enter. The change is the source of Enter; an Enter key that
+    // came first (`enterKey`, settled into `owed`) or follows is its echo.
+    const heldEnter = entry?.kind === "enterKey";
+    if (!heldEnter) {
+      pending = { kind: "newlineChange" };
+    }
+    const typed = appendedText.slice(0, lineBreak.index);
+    return { data: `${heldEnter ? "" : owed}${typed}\r`, shouldClear: true };
+  }
+
+  function receiveShrink(
+    text: string,
+    entry: PendingInput | null,
+    owed: string,
+  ): TerminalTextInputChange {
     const removed = Array.from(previousText).length - Array.from(text).length;
-    const pairedKey = isFresh(keyAwaitingShrink);
-    clearBackspaceFlags();
+    const pairedKey = isFresh(entry, "keyAwaitingShrink");
     previousText = text;
     if (text.length === 0 && !pairedKey) {
       // Either a Backspace whose key is still to come, or the hardware
-      // keyboard module clearing the field. Let the key decide.
-      emptiedAwaitingKey = { count: removed, at: now() };
-      return { data: "", shouldClear: false };
+      // keyboard module clearing the field. The next event decides.
+      pending = { kind: "emptied", count: removed };
+      return { data: owed, shouldClear: false };
     }
     if (!pairedKey) {
-      shrinkAwaitingKey = now();
+      pending = { kind: "shrinkAwaitingKey", at: now() };
     }
-    return { data: "\x7f".repeat(removed), shouldClear: false };
+    return { data: `${owed}${"\x7f".repeat(removed)}`, shouldClear: false };
+  }
+
+  // Autocorrect, a reopened word, or a CJK rewrite. When Backspace drives it
+  // (a Hangul syllable losing a jamo), pair it with the key like a shrink.
+  function receiveReplacement(
+    text: string,
+    entry: PendingInput | null,
+    owed: string,
+  ): TerminalTextInputChange {
+    if (!isFresh(entry, "keyAwaitingShrink")) {
+      pending = { kind: "shrinkAwaitingKey", at: now() };
+    }
+    let compositionEdit = "";
+    if (!replacementDesynced) {
+      compositionEdit = resolveCompositionEdit(previousText, text);
+    }
+    if (compositionEdit === "") {
+      replacementDesynced = true;
+    }
+    previousText = text;
+    return { data: `${owed}${compositionEdit}`, shouldClear: false };
+  }
+
+  function receiveEnterKey(): TerminalTextInputChange {
+    const { entry, owed } = takePending();
+    if (entry?.kind !== "newlineChange") {
+      pending = { kind: "enterKey" };
+    }
+    return { data: owed, shouldClear: false };
   }
 
   return {
@@ -333,73 +434,54 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
       if (key === "Backspace") {
         return receiveBackspaceKey();
       }
-      clearBackspaceFlags();
+      if (isEnterKey(key)) {
+        return receiveEnterKey();
+      }
+      const { owed } = takePending();
       const terminalKey = resolveNativeTerminalKey(key);
       if (terminalKey) {
-        return { data: "", key: terminalKey, shouldClear: false };
+        return { data: owed, key: terminalKey, shouldClear: false };
       }
-      if (key === "Enter" || key === "Return" || key === "return") {
-        return { ...requestClear(previousText), data: "\r" };
-      }
-      return { data: "", shouldClear: false };
+      return { data: owed, shouldClear: false };
     },
     receiveTextChange(text: string): TerminalTextInputChange {
-      if (
-        pendingClearFrom !== null &&
-        isFresh(backspaceOnMarkerAt, STUCK_LINE_BACKSPACE_WINDOW_MS) &&
-        text.length > 0 &&
-        text.length < pendingClearFrom.length &&
-        pendingClearFrom.startsWith(text)
-      ) {
-        // Backspace into a line whose clear never landed. The shell already
-        // ran that line, so realign silently. This needs the key first (AOSP
-        // order); see the plan's known gap for the change-first order.
-        pendingClearFrom = null;
-        clearBackspaceFlags();
-        previousText = text;
-        return { data: "", shouldClear: false };
-      }
-      const base =
-        pendingClearFrom !== null && text.startsWith(pendingClearFrom)
-          ? pendingClearFrom
-          : previousText;
+      const { entry, owed } = takePending();
+      const marker = pendingClearFrom;
       pendingClearFrom = null;
+      if (isBackspaceIntoStuckLine(entry, marker, text)) {
+        // The shell already ran that line, so realign without typing it again.
+        previousText = text;
+        return { data: owed, shouldClear: false };
+      }
+      // A change equal to the marker is new text: a field that kept the
+      // marker would not report a change at all.
+      const base =
+        marker !== null && text !== marker && text.startsWith(marker) ? marker : previousText;
       if (text === base) {
         previousText = text;
-        return { data: "", shouldClear: false };
+        return { data: owed, shouldClear: false };
       }
       if (text.startsWith(base)) {
-        clearBackspaceFlags();
-        const appendedText = text.slice(base.length);
-        if (hasLineBreak(appendedText)) {
-          // Enter comes from its key; a multi-line paste is not run.
-          return requestClear(text);
-        }
-        previousText = text;
-        return { data: appendedText, shouldClear: false };
+        return receiveAppend(text, text.slice(base.length), entry, owed);
       }
       if (base === previousText && previousText.startsWith(text)) {
-        return receiveShrink(text);
+        return receiveShrink(text, entry, owed);
       }
-      clearBackspaceFlags();
-      let compositionEdit = "";
-      if (!replacementDesynced) {
-        compositionEdit = resolveCompositionEdit(previousText, text);
-      }
-      if (compositionEdit === "") {
-        replacementDesynced = true;
-      }
-      previousText = text;
-      return { data: compositionEdit, shouldClear: false };
+      return receiveReplacement(text, entry, owed);
     },
     noteHardwareClear(): void {
       previousText = "";
-      clearBackspaceFlags();
+      if (pending?.kind !== "enterKey") {
+        pending = null;
+      }
     },
     reset(): void {
       previousText = "";
       replacementDesynced = false;
-      clearBackspaceFlags();
+      // An Enter in flight spans the clear it requested.
+      if (pending?.kind !== "newlineChange" && pending?.kind !== "enterKey") {
+        pending = null;
+      }
     },
   };
 }
