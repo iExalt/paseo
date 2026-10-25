@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Keyboard,
   type LayoutChangeEvent,
@@ -30,6 +38,7 @@ import {
   type NativeTerminalOutputDrain,
 } from "../terminal/native-renderer/headless-terminal-output-drain";
 import { traceTerminalLatency } from "../terminal/native-renderer/terminal-input-trace";
+import { probeTerminalSchedulerFloors } from "../terminal/native-renderer/terminal-latency-probe";
 import { TerminalGridView } from "../terminal/native-renderer/terminal-grid-view.native";
 import type { TerminalGridCellMetrics } from "../terminal/native-renderer/terminal-grid-metrics";
 import {
@@ -241,6 +250,12 @@ function NativeTerminalEmulator({
   const selectionRangeRef = useRef<TerminalSelectionRange | null>(null);
   const hasNotifiedSelectionRef = useRef(false);
   const terminalScreenRef = useRef<TerminalScreenState | null>(terminalScreen);
+  useLayoutEffect(() => {
+    traceTerminalLatency("commit", 0);
+  }, [terminalScreen]);
+  useEffect(() => {
+    probeTerminalSchedulerFloors();
+  }, []);
   const callbacksRef = useRef({
     onFocus,
     onInput,
@@ -382,6 +397,7 @@ function NativeTerminalEmulator({
       createNativeTerminalOutputDrain({
         write: async (chunk) => {
           await terminal.write(chunk);
+          traceTerminalLatency("written", chunk.length);
           writeRevisionRef.current += 1;
           emitInputModeChange();
         },
