@@ -20,7 +20,7 @@ import { createHardwareTerminalKeyRouter } from "./hardware-terminal-keys";
 import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
 import { addNativeTerminalKeyListener } from "@/native/hardware-keyboard";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { traceTerminalInput } from "./terminal-input-trace";
+import { redactTerminalTraceKey, traceTerminalInput } from "./terminal-input-trace";
 
 export const TERMINAL_INPUT_CONTEXT_MENU_HIDDEN = true;
 export const TERMINAL_INPUT_HITBOX_SIZE = 1;
@@ -289,7 +289,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const handleHardwareTerminalKey = useStableEvent((event: NativeTerminalKeyEvent) => {
       traceTerminalInput(
         "hwkey",
-        `${event.ctrl ? "C-" : ""}${event.alt ? "A-" : ""}${event.meta ? "M-" : ""}${event.key}`,
+        `${event.ctrl ? "C-" : ""}${event.alt ? "A-" : ""}${event.meta ? "M-" : ""}${redactTerminalTraceKey(event.key)}`,
         "",
       );
       onTerminalKey?.(event);
@@ -337,7 +337,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const handleKeyPress = useCallback(
       (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
         const change = inputState.receiveKeyPress(event.nativeEvent.key);
-        traceTerminalInput("key", event.nativeEvent.key, change.data);
+        traceTerminalInput("key", redactTerminalTraceKey(event.nativeEvent.key), change.data);
         if (change.key) {
           onTerminalKey?.(createNativeTerminalKeyEvent(change.key));
         }

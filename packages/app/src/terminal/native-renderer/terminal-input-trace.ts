@@ -33,6 +33,15 @@ export function redactTerminalTraceText(text: string): string {
   return result;
 }
 
+// React Native reports a commit of up to two characters as a key, so only
+// these names are logged as they are.
+const TERMINAL_KEY_NAME_PATTERN =
+  /^(Backspace|Enter|Tab|Escape|Delete|Home|End|PageUp|PageDown|Insert|Arrow(Up|Down|Left|Right)|F\d{1,2})$/;
+
+export function redactTerminalTraceKey(key: string): string {
+  return TERMINAL_KEY_NAME_PATTERN.test(key) ? key : traceText(key);
+}
+
 function traceText(text: string): string {
   return TRACE_FULL_TEXT ? text : redactTerminalTraceText(text);
 }
@@ -47,8 +56,7 @@ export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, se
     `[paseo-terminal-trace] ${JSON.stringify({
       t: nativeTerminalPerformanceNow(),
       kind,
-      // Named keys such as `Backspace` are kept; a typed character is not.
-      raw: kind === "change" || raw.length === 1 ? traceText(raw) : raw,
+      raw: kind === "change" ? traceText(raw) : raw,
       sent: traceText(sent),
     })}`,
   );
