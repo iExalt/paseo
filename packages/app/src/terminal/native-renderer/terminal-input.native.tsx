@@ -20,6 +20,7 @@ import {
   type NativeTerminalKey,
   type NativeTerminalKeyEvent,
 } from "./terminal-key-events";
+import { traceTerminalInput } from "./terminal-input-trace";
 
 export const TERMINAL_INPUT_CONTEXT_MENU_HIDDEN = true;
 export const TERMINAL_INPUT_HITBOX_SIZE = 1;
@@ -274,6 +275,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
         if (hasActiveOverlay()) return;
         const key = resolveHardwareTerminalKey(event);
         if (!key) return;
+        traceTerminalInput("hwkey", `${event.ctrlKey ? "C-" : ""}${event.altKey ? "A-" : ""}${event.metaKey ? "M-" : ""}${key}`, "");
         onTerminalKeyRef.current?.({
           key,
           ctrl: event.ctrlKey,
@@ -320,6 +322,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const handleChangeText = useCallback(
       (text: string) => {
         const change = inputState.receiveTextChange(text);
+        traceTerminalInput("change", text, change.data);
         if (change.data.length > 0) {
           onInput?.(change.data);
         }
@@ -333,6 +336,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const handleKeyPress = useCallback(
       (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
         const change = inputState.receiveKeyPress(event.nativeEvent.key);
+        traceTerminalInput("key", event.nativeEvent.key, change.data);
         if (change.key) {
           onTerminalKey?.(createNativeTerminalKeyEvent(change.key));
         }

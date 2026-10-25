@@ -117,6 +117,8 @@ The iOS simulator shares the Mac's loopback, so `localhost:<port>` reaches the h
 
 **Gotcha — `EXPO_PUBLIC_*` is inlined into the JS bundle at Metro bundle time, not read at runtime.** Set it in the same shell that starts Metro. If the app still connects to the old daemon, Metro served a cached bundle; re-bundle clean with `cd packages/app && EXPO_PUBLIC_LOCAL_DAEMON=… npx expo start -c` and reload the app.
 
+**Tracing native terminal input.** Bundle with `EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE=1` to log each native terminal key, text change, hardware key and echo-latency stage to logcat as `[paseo-terminal-trace]` JSON lines (`adb logcat -s ReactNativeJS`). Typed characters are logged as classes (`a`, `0`, `p`); `=full` logs the text itself, including passwords. For an APK with an embedded bundle, set it on the build command. See [MOBILE_TERMINAL_PLAN.md](../MOBILE_TERMINAL_PLAN.md).
+
 ### Desktop renderer profiling
 
 `npm run dev:desktop` starts Electron with Chromium remote debugging enabled so
