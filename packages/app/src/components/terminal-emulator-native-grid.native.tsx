@@ -38,7 +38,6 @@ import {
   type NativeTerminalOutputDrain,
 } from "../terminal/native-renderer/headless-terminal-output-drain";
 import { traceTerminalLatency } from "../terminal/native-renderer/terminal-input-trace";
-import { probeTerminalSchedulerFloors } from "../terminal/native-renderer/terminal-latency-probe";
 import { TerminalGridView } from "../terminal/native-renderer/terminal-grid-view.native";
 import type { TerminalGridCellMetrics } from "../terminal/native-renderer/terminal-grid-metrics";
 import {
@@ -253,9 +252,6 @@ function NativeTerminalEmulator({
   useLayoutEffect(() => {
     traceTerminalLatency("commit", 0);
   }, [terminalScreen]);
-  useEffect(() => {
-    probeTerminalSchedulerFloors();
-  }, []);
   const callbacksRef = useRef({
     onFocus,
     onInput,
