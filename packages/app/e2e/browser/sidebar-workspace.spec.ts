@@ -661,6 +661,13 @@ test.describe("Half-screen desktop layout", () => {
       await page.getByTestId("menu-button").first().click();
       await expect(page.getByTestId("sidebar-global-new-workspace")).toBeVisible();
       await expect(page.getByTestId("workspace-explorer-sidebar")).not.toBeVisible();
+
+      // The toggle-sidebar shortcut carries the same intent.
+      await explorerToggle.click();
+      await expect(page.getByTestId("sidebar-global-new-workspace")).not.toBeVisible();
+      await page.keyboard.press("ControlOrMeta+B");
+      await expect(page.getByTestId("sidebar-global-new-workspace")).toBeVisible();
+      await expect(page.getByTestId("workspace-explorer-sidebar")).not.toBeVisible();
     } finally {
       await workspace.cleanup();
     }

@@ -128,7 +128,6 @@ it("reserves room for Explorer and the workspace before showing app navigation",
 describe("menu press with Explorer open", () => {
   const base = {
     isCompactLayout: false,
-    sidebarOpen: false,
     explorerOpen: true,
     requestedSidebarWidth: 320,
     viewportWidth: 800,
@@ -136,12 +135,6 @@ describe("menu press with Explorer open", () => {
 
   it("shows the sidebar over Explorer when they cannot share the width", () => {
     expect(resolveMenuPressOutcome(base)).toBe("show-sidebar-over-explorer");
-  });
-
-  it("treats a sidebar hidden by Explorer as closed", () => {
-    expect(resolveMenuPressOutcome({ ...base, sidebarOpen: true })).toBe(
-      "show-sidebar-over-explorer",
-    );
   });
 
   it("toggles normally when both fit, Explorer is closed, or the layout is compact", () => {

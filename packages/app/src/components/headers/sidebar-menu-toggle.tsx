@@ -49,6 +49,46 @@ function MobileMenuIcon({ extraMuted }: { extraMuted: boolean }) {
   );
 }
 
+/**
+ * Shared by the menu button and the toggle-sidebar shortcut: the last press
+ * wins, so an open Explorer that leaves the sidebar no room yields to it.
+ */
+export function useSidebarMenuPress(isCompact: boolean): () => void {
+  const toggleAgentListForLayout = usePanelStore((state) => state.toggleAgentListForLayout);
+  const openAgentListForLayout = usePanelStore((state) => state.openAgentListForLayout);
+  const isWorkspaceRoute = parseHostWorkspaceRouteFromPathname(usePathname()) !== null;
+  const activeWorkspace = useActiveWorkspaceSelection();
+  const workspaceKey = activeWorkspace
+    ? `${activeWorkspace.serverId}:${activeWorkspace.workspaceId}`
+    : null;
+  const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const viewportWidth = windowWidth - insets.left - insets.right;
+
+  return useCallback(() => {
+    const explorerQuery = { isCompact: false, workspaceKey };
+    const outcome = resolveMenuPressOutcome({
+      isCompactLayout: isCompact,
+      explorerOpen: isWorkspaceRoute && isExplorerSidebarOpen(explorerQuery),
+      requestedSidebarWidth: usePanelStore.getState().sidebarWidth,
+      viewportWidth,
+    });
+    if (outcome === "show-sidebar-over-explorer") {
+      hideExplorerSidebar(explorerQuery);
+      openAgentListForLayout({ isCompact: false });
+      return;
+    }
+    toggleAgentListForLayout({ isCompact });
+  }, [
+    toggleAgentListForLayout,
+    openAgentListForLayout,
+    isCompact,
+    isWorkspaceRoute,
+    workspaceKey,
+    viewportWidth,
+  ]);
+}
+
 function SidebarMenuToggleButton({
   isMobile,
   extraMutedIdleIcon = false,
@@ -63,46 +103,12 @@ function SidebarMenuToggleButton({
 }) {
   const { t } = useTranslation();
   const isOpen = usePanelStore((state) => selectIsAgentListOpen(state, { isCompact: isMobile }));
-  const toggleAgentListForLayout = usePanelStore((state) => state.toggleAgentListForLayout);
   const toggleShortcutKeys = useMemo(
     () => (getShortcutOs() === "mac" ? ["mod", "B"] : ["mod", "."]),
     [],
   );
 
-  const openAgentListForLayout = usePanelStore((state) => state.openAgentListForLayout);
-  const isWorkspaceRoute = parseHostWorkspaceRouteFromPathname(usePathname()) !== null;
-  const activeWorkspace = useActiveWorkspaceSelection();
-  const workspaceKey = activeWorkspace
-    ? `${activeWorkspace.serverId}:${activeWorkspace.workspaceId}`
-    : null;
-  const { width: windowWidth } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
-  const viewportWidth = windowWidth - insets.left - insets.right;
-
-  const handlePress = useCallback(() => {
-    const explorerQuery = { isCompact: false, workspaceKey };
-    const outcome = resolveMenuPressOutcome({
-      isCompactLayout: isMobile,
-      sidebarOpen: isOpen,
-      explorerOpen: isWorkspaceRoute && isExplorerSidebarOpen(explorerQuery),
-      requestedSidebarWidth: usePanelStore.getState().sidebarWidth,
-      viewportWidth,
-    });
-    if (outcome === "show-sidebar-over-explorer") {
-      hideExplorerSidebar(explorerQuery);
-      openAgentListForLayout({ isCompact: false });
-      return;
-    }
-    toggleAgentListForLayout({ isCompact: isMobile });
-  }, [
-    toggleAgentListForLayout,
-    openAgentListForLayout,
-    isMobile,
-    isOpen,
-    isWorkspaceRoute,
-    workspaceKey,
-    viewportWidth,
-  ]);
+  const handlePress = useSidebarMenuPress(isMobile);
 
   const accessibilityState = useMemo(() => ({ expanded: isOpen }), [isOpen]);
 

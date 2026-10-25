@@ -92,11 +92,11 @@ export type MenuPressOutcome = "toggle-sidebar" | "show-sidebar-over-explorer";
  * The last press wins. When the menu would open the sidebar but an open
  * Explorer leaves the sidebar no room to share the width, the sidebar takes
  * over and Explorer closes. A sidebar that is flagged open yet hidden by
- * Explorer counts as closed, since the user cannot see it.
+ * Explorer counts as closed, since the user cannot see it, so the press
+ * ignores that flag.
  */
 export function resolveMenuPressOutcome(input: {
   isCompactLayout: boolean;
-  sidebarOpen: boolean;
   explorerOpen: boolean;
   requestedSidebarWidth: number;
   viewportWidth: number;
