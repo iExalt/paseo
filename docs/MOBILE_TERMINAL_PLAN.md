@@ -1,0 +1,267 @@
+# Mobile terminal plan
+
+On the user's Android phone with Gboard, Paseo's terminal often
+prints one key twice, and typing feels slow. This plan fixes input first and
+then removes latency where measurements show it, before the move to acyclic.
+
+## Known facts
+
+### The acyclic app spike (2026-10-17)
+
+The record is in the private acyclic planning repository. The spike was a web
+PWA, not Paseo's native app. It compared xterm.js 6 and ghostty-web on the same
+shell, with an optional local-echo overlay.
+
+- Both terminals were judged "glitchy and below usable" on the phone.
+  ghostty-web came out slightly ahead, and with xterm.js keys sometimes
+  registered more than once.
+- Plain words and spaces arrived correctly. The adb check found the
+  duplicates came from backspacing into a word already sent, then typing:
+  Gboard reopened that word in the terminal's hidden text field and the
+  page sent the edited word again. The
+  candidate fixes were to clear the field after each commit, turn off
+  suggestions, or add a line-edit box.
+- The phone never connected directly. Every session went through a Tailscale
+  DERP relay at 326 to 695 ms round trip, which dominated send-to-paint. The
+  2 to 10 s waits while a command ran were the shell not echoing, not the
+  transport.
+- Local echo made no noticeable difference with Gboard, because Gboard draws
+  the word being composed itself.
+
+### Paseo's Android terminal is a different stack
+
+Android does not run xterm.js. `terminal-emulator.native.tsx` mounts the
+native grid. It parses output with `@xterm/headless` in JS
+(`headless-terminal-output-drain.ts`) and renders React Native rows
+(`terminal-grid-view.native.tsx`). Input comes from a hidden 1×1 `TextInput`
+(`terminal-input.native.tsx`) that sends data from both `onKeyPress` and
+`onChangeText`. A `previousText` model is meant to remove the duplicates, but
+it assumes the key event arrives first.
+
+### Cause of the double keys (confirmed in source and a unit probe)
+
+React Native's Android keypress emulation
+(`ReactEditTextInputConnectionWrapper.kt`) delivers the text change _before_
+the key in two cases:
+
+- for `setComposingText`, in every case;
+- for `commitText`, inside an IME batch edit, because the key is held until
+  `endBatchEdit`.
+
+Fabric keeps the dispatch order (`EventQueue.cpp`). Backspace arrives key
+first through `deleteSurroundingText`, a `sendKeyEvent` DEL and
+`commitText("")`, but change first when `setComposingText` shrinks a word
+being composed. Inside a batch edit the wrapper keeps only the last key
+(`dispatchKeyEventOrEnqueue`), so keys can also be lost.
+
+When the change arrives first, the input state behaves like this, measured on
+the wire at `b0fc858a9`:
+
+| Events                                                | Sent                           |
+| ----------------------------------------------------- | ------------------------------ |
+| key then change, `l` `s` (today's tests)              | `ls`                           |
+| change then key, `l` `s` space `-`                    | `lls -`                        |
+| change then key, `l` `s`, then Backspace twice        | `lls`: both Backspaces dropped |
+| composed `git`, then `commitText("git ")` with no key | `ggit`: space dropped          |
+| one merged change `ab`, then keys `a` `b`             | `abab`                         |
+
+The first character is sent twice. That latches `replacementDesynced`, and
+from then on Backspace and change-only edits are dropped until Enter, a
+newline in the text, or a `reset()` on focus, blur or show-keyboard. A
+reopened word, as in the spike, also latches the desync rather than being
+resent: printable keys still flow but Backspace stops working.
+
+### Latency suspects (from source; not yet measured)
+
+The server pipeline, its invariants and the existing benchmarks are in
+[terminal-performance.md](upstream/terminal-performance.md). Those benchmarks
+cover the daemon and the browser, not the native grid or a phone network.
+
+| Stage                                                                                                                                                     | Where                                                                                   | Expectation                                            |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| Network path: direct, Tailscale direct, DERP, or Paseo's Cloudflare relay                                                                                 | `packages/relay`                                                                        | Likely dominant; the spike saw 326 to 695 ms over DERP |
+| Server output coalescing                                                                                                                                  | `terminal-output-coalescer.ts:19`, applied in the worker and per stream                 | At most about 10 ms; leave alone without data          |
+| Snapshot fallback on relay sockets: no buffered amount, so a full snapshot every 256 KB. Deliberate, so a slow relay client can't fall unboundedly behind | `terminal-session-controller.ts:962-978`, `terminal-restore.ts:10`                      | Heavy TUI output only, not echo                        |
+| E2EE in JS on Hermes (tweetnacl, noble chacha20poly1305)                                                                                                  | `relay/src/crypto.ts`, `relay/src/noise/cipher-state.ts`                                | Unknown; measure                                       |
+| Client parse, then rAF paint, then React reconcile                                                                                                        | `headless-terminal-output-drain.ts`, `terminal-emulator-native-grid.native.tsx:355-377` | One or two frames plus reconcile                       |
+| Input send                                                                                                                                                | `client/src/daemon-client.ts`                                                           | Not batched; negligible                                |
+
+## Increments
+
+Each increment is reviewed before the next one that depends on it. P1 and P2
+are independent once P0 lands.
+
+### P0. Instrument and reproduce on the phone
+
+- A dev-only input trace. For each event, log time, `key` or `change`, the
+  payload, `previousText`, the desync flag and the bytes sent. Also record
+  the IME and the input type with `adb shell dumpsys input_method`.
+- A latency trace keyed by a sequence id. Record the keystroke send, server
+  receive, PTY output emit, client frame receive, parse done and paint commit.
+  Compare client-side times only with client-side times, and server-side times
+  only with server-side times.
+- Record the connection path the phone actually uses. For Tailscale, check
+  `tailscale ping` and `tailscale status`; otherwise note the Paseo relay.
+
+Two devices share the work:
+
+- The virtual Android tablet (Cuttlefish in the k0s dev pod; see
+  `/home/dev/cuttlefish/HARNESS.md` there) runs the AOSP keyboard and a real
+  virtio hardware keyboard. Use it for the ordering bug under the AOSP
+  keyboard, hardware-key paths and every P1 check. Run
+  `settings put secure show_ime_with_hard_keyboard 1` in the guest so the
+  soft keyboard shows. It has no network, so its latency means nothing.
+- The user's phone is needed for Gboard's ordering and composition, for real
+  network latency and for the final sign-off.
+
+On either device, type by tapping the keyboard's keys with
+`adb shell input tap`, as the spike did.
+`adb shell input text` injects key events that bypass Gboard's
+`InputConnection`, which is the path with the bug. The existing agent-device
+scenario (`packages/app/e2e/mobile/agent-device/native-terminal-basic.android.ad`)
+probably types the same way, which would explain why it passes today;
+the P0 trace confirms it. Record the Gboard version.
+
+Acceptance:
+
+- The device script types `ls -la`, two Backspaces and Enter, then the
+  spike's case: `hello world`, Backspace into `world`, `ld`, Enter. It
+  compares each shell line, and it fails before P1 lands (base:
+  `origin/dev` at `c9820c294` or later). The trace shows
+  whether Gboard delivers change before key, and whether it wraps
+  Backspace in a batch edit.
+- If Gboard does not show change-first order, re-scope P1 before writing
+  any code.
+- A per-stage latency table, p50 and p90 over 30 or more echoed keystrokes,
+  on the phone's usual network with the path recorded.
+
+### P1. One source of truth for typed text (agree the design first)
+
+- On Android, printable text comes only from the text diff, and printable
+  keypresses are ignored. Keypress is used for Enter, arrows and control keys.
+- The diff owns every deletion while the field has text. Three one-shot flags
+  pair a Backspace key with its diff, whichever arrives first:
+  - A pure suffix deletion (the new text is a prefix of the old) sends one
+    `\x7f` per removed code point. If `keyAwaitingShrink` is set, clear it.
+    Otherwise set `shrinkAwaitingKey`.
+  - A change to empty text with `keyAwaitingShrink` set follows the suffix
+    rule. Without it, the change sends nothing and records
+    `emptiedAwaitingKey` = the number of removed code points.
+  - A Backspace key on a field with text sets `keyAwaitingShrink` and sends
+    nothing. On an empty field, it does one of three things. If
+    `emptiedAwaitingKey` is above 0, it sends that many `\x7f` (a composing
+    word or a batched select-all deleted at once). If `shrinkAwaitingKey` is
+    set, it clears it and sends nothing. Otherwise it sends one `\x7f`.
+  - Every hardware terminal key calls a hook such as
+    `inputState.noteHardwareClear()` before it is forwarded. The hook sets
+    `previousText` to empty and clears all three flags, but leaves
+    `replacementDesynced` alone. Android's hardware keyboard module
+    (`PaseoHardwareKeyboardModule.kt`, #206) clears the field after a key it
+    captures, and the terminal already has that text, so the clear must send
+    nothing in either event order.
+  - Any other key or change clears all three flags. Each flag also expires
+    about 100 ms after it is set. Both halves of a real pair come from one
+    native call or IME batch, so a stale flag, such as a Backspace that
+    deleted nothing, can't pair with a later hardware clear.
+- This is the candidate design. The case table under Acceptance is the
+  contract. If the P0 trace shows that the rule needs more timing heuristics
+  than the expiry, switch to the native `InputConnection` below instead of
+  adding them.
+- A non-append replacement that isn't CJK, such as autocorrect or a reopened
+  word, is still not sent. It no longer disables Backspace: only the CJK
+  rubout stays off until the next reset. A change to empty text does not
+  reset it.
+- Before changing anything, find which platform needs the keypress-only path
+  (the "does not report text changes" test, which came from `04fe30a3e`). If
+  it is only iOS or hardware keyboards, gate it by platform.
+- Don't build a pending-key reconciler in JS. A merged change event (`ab`
+  followed by the keys `a` and `b`) defeats it.
+- Clear the field after each commit only if the P0 trace shows it is needed.
+  The stale-suggestion test guards against clearing in the middle of a
+  composition.
+- Fallback if this approach fails on the device: a custom native
+  `InputConnection`, as Termux does. It sees every IME call directly, but
+  needs native code.
+
+Acceptance:
+
+- Each row of the unit tables asserts the bytes sent. It then asserts that a
+  following Backspace, given as the key and its shrinking text change, sends
+  one `\x7f`, or, if the field is empty, that the key alone sends one. The rows cover:
+  - key first and change first;
+  - a merged change;
+  - `commitText` with no key, where the space is kept;
+  - a composing shrink, change then key, which sends one `\x7f`;
+  - two `deleteSurroundingText` deletes, the second on an empty field (key,
+    change, key), which send two `\x7f`;
+  - a `sendKeyEvent` DEL on an empty field, which sends one `\x7f`;
+  - `commitText("")`, key then change, which sends one `\x7f`;
+  - an autocorrect replacement followed by Backspace;
+  - a composing shrink from `hel` to empty, change then key, which sends three
+    `\x7f`;
+  - a batched select-all, empty change then key, which sends N `\x7f`;
+  - a hardware clear, with the hook first and with the change first, which
+    sends nothing; a later soft Backspace sends one;
+  - a stale `keyAwaitingShrink` followed, after the expiry, by a hardware
+    clear, which sends nothing.
+- The unit tests inject a clock for the flag expiry instead of waiting.
+- Existing CJK composition tests and #206's hardware-key tests still pass.
+- The P0 device script, which failed on the same base, now passes.
+- On the virtual tablet, hardware Backspace and Enter still work after
+  typed text. Drive the virtio keyboard from the host side. `adb shell input
+  keyevent` uses the virtual keyboard device, which #206's capture rejects,
+  so that check would pass without testing anything. If the AOSP keyboard
+  composes with the hardware keyboard attached, add a hardware Backspace on
+  a one-character composing word.
+
+### P2. Remove measured latency
+
+The P0 numbers decide what to work on. The candidates set out in advance are:
+
+- Get a direct path. Prefer a direct Tailscale connection over DERP or the
+  Cloudflare relay, and show the connection path in the app so a relayed
+  session is visible.
+- Make the relay socket report its buffered amount, so that heavy output
+  streams instead of forcing a snapshot every 256 KB. Keep the bound on how
+  far a slow relay client can fall behind.
+- Cut crypto or parse cost, if the trace shows either is material.
+
+Acceptance:
+
+- The target stage's p50 and p90 over 30 or more keystrokes drop in a
+  before/after phone trace on the same recorded path.
+- `scripts/benchmark-terminal-latency.ts` shows no server regression.
+- If a direct path is reached, echo stays within two frames of its round
+  trip.
+- A relay change adds a session-controller unit test covering two cases. A
+  client reporting more than `MAX_CLIENT_BUFFERED_BYTES` still gets the
+  snapshot fallback. A draining client streams.
+
+### P3. Optional typing aids
+
+The spike found neither aid essential, so both are opt-in.
+
+- A line-edit box that sends whole lines. Gboard can then edit and autocorrect
+  freely, and nothing the shell already has is touched.
+- Local echo, using the spike's clean-room overlay design, for high-RTT
+  sessions and for shells that echo slowly while a command runs.
+- `keyboardType="visible-password"` as a setting. Termux uses it to stop
+  Gboard composing. It probably breaks CJK, glide and voice input; check
+  that on the phone before offering it, and don't make it the default.
+
+### P4. Regression coverage
+
+- Keep the P1 unit tables. They are the cheapest layer and cover every event
+  order.
+- Keep one adb Gboard typing check on the phone as the P1 acceptance gate. It
+  stays manual and is not in CI.
+- Do not add end-to-end latency tests to CI. Keep the P0 trace as a dev tool
+  instead.
+
+## Out of scope
+
+- Replacing the native grid with xterm.js or ghostty-web in a WebView. The
+  spike found no input advantage, since both had the same Gboard problem.
+  acyclic makes that choice for itself.
+- mosh-style UDP transport. It is GPL-3.0, needs a native UDP module in the
+  app and `mosh-server` on every host.
