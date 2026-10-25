@@ -513,6 +513,34 @@ export async function scrollTimelineToNewestLoadedEdge(page: Page): Promise<void
   });
 }
 
+/**
+ * Wheels toward newer content and returns the turn indexes in the order they first
+ * entered the viewport, stopping once `untilTurn` shows.
+ */
+export async function scrollNewerRecordingTurns(page: Page, untilTurn: number): Promise<number[]> {
+  const scroll = page.locator('[data-testid="agent-chat-scroll"]:visible').first();
+  await scroll.hover();
+  const seen: number[] = [];
+  for (let step = 0; step < 120 && !seen.includes(untilTurn); step += 1) {
+    const visible = await scroll.evaluate((element, prefix) => {
+      const viewport = element.getBoundingClientRect();
+      const turns: number[] = [];
+      for (const node of element.querySelectorAll("*")) {
+        const text = node.childElementCount === 0 ? node.textContent : null;
+        if (!text?.startsWith(prefix)) continue;
+        const rect = node.getBoundingClientRect();
+        if (rect.bottom <= viewport.top || rect.top >= viewport.bottom) continue;
+        turns.push(Number.parseInt(text.slice(prefix.length), 10));
+      }
+      return turns.sort((left, right) => left - right);
+    }, `${PROMPT_PREFIX}-`);
+    for (const turn of visible) if (!seen.includes(turn)) seen.push(turn);
+    await page.mouse.wheel(0, 300);
+    await waitForTimelineGeometryToSettle(page);
+  }
+  return seen;
+}
+
 export async function scrollTimelineUntilOlderHistoryIsReachable(
   page: Page,
   oldestPrompt: string,
