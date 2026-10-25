@@ -104,8 +104,9 @@ work with the soft keyboard.
       upstream keeps them web-only (see Deliberate differences).
 - [ ] E3. Chat outline rail on wide native layouts.
 
-Acceptance: unit tests for the gating; an Android tablet emulator on
-dev-station shows each feature.
+Acceptance: unit tests for the gating; a Cuttlefish Android 17 virtual tablet
+(arm64, 2560x1600 at 320 dpi, sw800dp) on a KVM-capable Linux arm64 host shows
+each feature.
 
 ### F. Browser tabs and copy (P6)
 
@@ -118,4 +119,4 @@ a workspace service URL and a reply copies as Markdown.
 ## Verification limits
 
 There is no iOS device or physical tablet. iOS rests on unit tests and review;
-tablets on an emulator.
+tablets are checked on a virtual Android device, not a physical one.
