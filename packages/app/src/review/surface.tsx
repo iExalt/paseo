@@ -37,6 +37,7 @@ import {
 } from "./store";
 import { buildReviewableDiffTargetKey, type ReviewableDiffTarget } from "@/utils/diff-layout";
 import {
+  INLINE_REVIEW_COMMENT_HEIGHT,
   INLINE_REVIEW_EDITOR_HEIGHT,
   INLINE_REVIEW_GAP,
   INLINE_REVIEW_VERTICAL_PADDING,
@@ -421,7 +422,16 @@ export function InlineReviewEditor({
   const handleBlur = useCallback(() => {
     setIsFocused(false);
   }, []);
-  const handleSave = useCallback(() => onSave(trimmedBody), [onSave, trimmedBody]);
+  // Blur before closing. Taps reach Cancel and Comment with the soft keyboard up, and unmounting
+  // a focused input hands focus, and the keyboard, to the next focusable view.
+  const handleCancel = useCallback(() => {
+    inputRef.current?.blur();
+    onCancel();
+  }, [onCancel]);
+  const handleSave = useCallback(() => {
+    inputRef.current?.blur();
+    onSave(trimmedBody);
+  }, [onSave, trimmedBody]);
 
   useEffect(() => {
     const element = getWebTextInputElement(inputRef.current);
@@ -433,7 +443,7 @@ export function InlineReviewEditor({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        onCancel();
+        handleCancel();
         return;
       }
 
@@ -455,7 +465,7 @@ export function InlineReviewEditor({
     return () => {
       element.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canSave, handleSave, onCancel]);
+  }, [canSave, handleCancel, handleSave]);
 
   const inputStyle = useMemo<StyleProp<TextStyle>>(
     () => [styles.editorInput, isFocused && styles.editorInputFocused],
@@ -482,7 +492,7 @@ export function InlineReviewEditor({
           accessibilityLabel={t("review.comment.cancelAccessibility")}
           testID={testID ? `${testID}-cancel` : undefined}
           hitSlop={SMALL_ACTION_HIT_SLOP}
-          onPress={onCancel}
+          onPress={handleCancel}
           variant="ghost"
           size="xs"
         >
@@ -558,6 +568,8 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
+    // Fill the slot the row geometry reserves; a one-line card is ~44dp and left a blank band.
+    minHeight: INLINE_REVIEW_COMMENT_HEIGHT,
   },
   commentBody: {
     flex: 1,
