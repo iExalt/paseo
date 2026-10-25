@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Keyboard,
   type LayoutChangeEvent,
@@ -241,6 +249,9 @@ function NativeTerminalEmulator({
   const selectionRangeRef = useRef<TerminalSelectionRange | null>(null);
   const hasNotifiedSelectionRef = useRef(false);
   const terminalScreenRef = useRef<TerminalScreenState | null>(terminalScreen);
+  useLayoutEffect(() => {
+    traceTerminalLatency("commit", 0);
+  }, [terminalScreen]);
   const callbacksRef = useRef({
     onFocus,
     onInput,
@@ -382,6 +393,7 @@ function NativeTerminalEmulator({
       createNativeTerminalOutputDrain({
         write: async (chunk) => {
           await terminal.write(chunk);
+          traceTerminalLatency("written", chunk.length);
           writeRevisionRef.current += 1;
           emitInputModeChange();
         },
@@ -407,6 +419,9 @@ function NativeTerminalEmulator({
         },
         scheduleFrame: requestAnimationFrame,
         cancelFrame: cancelAnimationFrame,
+        // A lone echo paints without waiting for a frame callback, which costs
+        // two or three frames on Android; bursts still paint once per frame.
+        idlePaintMs: 16,
       }),
     [commitTerminalScreen, emitInputModeChange, resolveTerminalScreen, syncSelectionWithTerminal],
   );
