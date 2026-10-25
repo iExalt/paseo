@@ -12,7 +12,8 @@ import { resolveMenuPressOutcome } from "@/components/desktop-sidebar-layout";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
 import { hideExplorerSidebar, isExplorerSidebarOpen } from "@/workspace-tabs/explorer-sidebar";
 import { parseHostWorkspaceRouteFromPathname } from "@/utils/host-routes";
-import { getShortcutOs } from "@/utils/shortcut-platform";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
+import type { ShortcutKey } from "@/utils/format-shortcut";
 import { useHasWindowChromeObstruction, useOwnsWindowChromeCorner } from "@/utils/desktop-window";
 import {
   extraMutedIconColorMapping,
@@ -28,6 +29,8 @@ interface SidebarMenuToggleProps {
   testID?: string;
   nativeID?: string;
 }
+
+const NO_SHORTCUT: ShortcutKey[] = [];
 
 const MOBILE_MENU_LINE_WIDTH = 16;
 const MOBILE_MENU_LINE_SHORT_WIDTH = 8;
@@ -103,10 +106,7 @@ function SidebarMenuToggleButton({
 }) {
   const { t } = useTranslation();
   const isOpen = usePanelStore((state) => selectIsAgentListOpen(state, { isCompact: isMobile }));
-  const toggleShortcutKeys = useMemo(
-    () => (getShortcutOs() === "mac" ? ["mod", "B"] : ["mod", "."]),
-    [],
-  );
+  const toggleShortcutChord = useShortcutKeys("toggle-left-sidebar");
 
   const handlePress = useSidebarMenuPress(isMobile);
 
@@ -116,7 +116,8 @@ function SidebarMenuToggleButton({
     <HeaderToggleButton
       onPress={handlePress}
       tooltipLabel={t("shell.menu.toggleSidebar")}
-      tooltipKeys={toggleShortcutKeys}
+      tooltipKeys={NO_SHORTCUT}
+      tooltipChord={toggleShortcutChord}
       tooltipSide={tooltipSide}
       testID={testID}
       nativeID={nativeID}
