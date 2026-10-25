@@ -249,7 +249,7 @@ treats a key-first Enter's own newline change as part of that Enter.
   keeps an existing marker. On the next change, diff against
   `pendingClearFrom` if the text starts with it (the clear didn't land), and
   otherwise against `previousText`. Then forget `pendingClearFrom`.
-- A Backspace key on an empty field, followed within the pairing window by
+- A Backspace key on an empty field, followed within 20 ms by
   a change that shrinks the stuck line (a proper prefix of the marker),
   realigns silently, so the old line is not typed again. Without the key
   first, such a change is the first letter of a new line that starts the

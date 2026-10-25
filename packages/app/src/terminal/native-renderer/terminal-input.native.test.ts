@@ -590,6 +590,27 @@ describe("native terminal typed input, diff (Android)", () => {
       expect(play(["at", 1000], ["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
     });
 
+    it.each([
+      [
+        "AOSP",
+        [
+          ["c", "ls\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        [
+          ["k", "Enter"],
+          ["c", "ls\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends a fast first letter after Backspace on an empty prompt: %s", (_order, enter) => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ...enter, ["reset"]);
+      expect(play(["at", 0], ["k", "Backspace"], ["at", 50], ["c", "l"], ["k", "l"])).toBe("\x7fl");
+    });
+
     it("resends the old line on Backspace after a stuck clear, Samsung order (known gap)", () => {
       // A change-first Backspace into a stuck line looks like typing a new line
       // that starts the same way; see the plan's known gaps.

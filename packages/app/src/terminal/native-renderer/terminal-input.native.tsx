@@ -244,6 +244,10 @@ function createKeyThenDiffTerminalTextInputState(): TerminalTextInputState {
 // Both halves of a Backspace (its key and its shrinking text change) come
 // from one native call or IME batch, so they land well inside this window.
 const BACKSPACE_PAIR_WINDOW_MS = 100;
+// A Backspace into a stuck line is followed by its change within about a
+// millisecond (AOSP keyboard, traced). Keep this window narrow so a fast
+// first letter of the next line is not mistaken for that change.
+const STUCK_LINE_BACKSPACE_WINDOW_MS = 20;
 
 function hasLineBreak(text: string): boolean {
   return text.includes("\n") || text.includes("\r");
@@ -270,8 +274,8 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
   // same way.
   let backspaceOnMarkerAt: number | null = null;
 
-  function isFresh(at: number | null): at is number {
-    return at !== null && now() - at <= BACKSPACE_PAIR_WINDOW_MS;
+  function isFresh(at: number | null, windowMs = BACKSPACE_PAIR_WINDOW_MS): at is number {
+    return at !== null && now() - at <= windowMs;
   }
 
   function clearBackspaceFlags(): void {
@@ -342,7 +346,7 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
     receiveTextChange(text: string): TerminalTextInputChange {
       if (
         pendingClearFrom !== null &&
-        isFresh(backspaceOnMarkerAt) &&
+        isFresh(backspaceOnMarkerAt, STUCK_LINE_BACKSPACE_WINDOW_MS) &&
         text.length > 0 &&
         text.length < pendingClearFrom.length &&
         pendingClearFrom.startsWith(text)
