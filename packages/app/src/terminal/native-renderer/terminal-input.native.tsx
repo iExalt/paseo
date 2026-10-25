@@ -270,6 +270,8 @@ type PendingInput =
   | { kind: "emptied"; count: number }
   | { kind: "newlineChange" | "enterKey" };
 
+const LINE_BREAK_AT_END = /(?:\r\n|\n|\r)$/;
+
 function isEnterKey(key: string): boolean {
   // RN reports a commit of up to two characters as the key, so `s\n` is a
   // letter and Enter in one.
@@ -325,7 +327,9 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
       return { data: "\x7f".repeat(entry.count), shouldClear: false };
     }
     const owed = entry?.kind === "enterKey" ? "\r" : "";
-    if (isFresh(entry, "shrinkAwaitingKey")) {
+    // The pending slot already guarantees this key is the next event after
+    // its change, so no time limit: a JS stall between them must not split them.
+    if (entry?.kind === "shrinkAwaitingKey") {
       return { data: owed, shouldClear: false };
     }
     if (previousText.length > 0) {
@@ -349,8 +353,8 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
     return (
       marker !== null &&
       isFresh(entry, "keyOnMarker") &&
-      /[\n\r]$/.test(marker) &&
-      text === marker.slice(0, -1)
+      LINE_BREAK_AT_END.test(marker) &&
+      text === marker.replace(LINE_BREAK_AT_END, "")
     );
   }
 
@@ -365,18 +369,27 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
       previousText = text;
       return { data: `${owed}${appendedText}`, shouldClear: false };
     }
-    requestClear(text);
     if (lineBreak.index + lineBreak[0].length < appendedText.length) {
       // A multi-line paste is not run.
+      requestClear(text);
       return { data: owed, shouldClear: true };
     }
-    // Text then Enter. The change is the source of Enter; an Enter key that
-    // came first (`enterKey`, settled into `owed`) or follows is its echo.
+    return sendEnterFromChange(text, entry, owed, appendedText.slice(0, lineBreak.index));
+  }
+
+  // Text then Enter. The change is the source of Enter; an Enter key that
+  // came first (`enterKey`, settled into `owed`) or follows is its echo.
+  function sendEnterFromChange(
+    text: string,
+    entry: PendingInput | null,
+    owed: string,
+    typed: string,
+  ): TerminalTextInputChange {
+    requestClear(text);
     const heldEnter = entry?.kind === "enterKey";
     if (!heldEnter) {
       pending = { kind: "newlineChange" };
     }
-    const typed = appendedText.slice(0, lineBreak.index);
     return { data: `${heldEnter ? "" : owed}${typed}\r`, shouldClear: true };
   }
 
@@ -407,18 +420,24 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
     entry: PendingInput | null,
     owed: string,
   ): TerminalTextInputChange {
-    if (!isFresh(entry, "keyAwaitingShrink")) {
+    // An autocorrect committed together with Enter: replace, then Enter.
+    const line = text.replace(LINE_BREAK_AT_END, "");
+    const withEnter = line !== text && !hasLineBreak(line);
+    if (!withEnter && !isFresh(entry, "keyAwaitingShrink")) {
       pending = { kind: "shrinkAwaitingKey", at: now() };
     }
     let compositionEdit = "";
     if (!replacementDesynced) {
-      compositionEdit = resolveCompositionEdit(previousText, text);
+      compositionEdit = resolveCompositionEdit(previousText, withEnter ? line : text);
     }
     if (compositionEdit === "") {
       replacementDesynced = true;
     }
     previousText = text;
-    return { data: `${owed}${compositionEdit}`, shouldClear: false };
+    if (!withEnter) {
+      return { data: `${owed}${compositionEdit}`, shouldClear: false };
+    }
+    return sendEnterFromChange(text, entry, owed, compositionEdit);
   }
 
   function receiveEnterKey(): TerminalTextInputChange {

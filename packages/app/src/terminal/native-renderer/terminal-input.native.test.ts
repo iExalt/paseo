@@ -505,11 +505,11 @@ describe("native terminal typed input, diff (Android)", () => {
       );
     });
 
-    it("does not pair a key with a shrink after the window expires", () => {
+    it("pairs a change-first Backspace with its key after a stall", () => {
       const { play } = createDiffInput();
       play(["c", "ab"]);
-      expect(play(["at", 0], ["c", "a"], ["at", 150], ["k", "Backspace"])).toBe("\x7f");
-      expect(play(["at", 160], ["c", ""])).toBe("\x7f");
+      expect(play(["at", 0], ["c", "a"], ["at", 500], ["k", "Backspace"])).toBe("\x7f");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", ""])).toBe("\x7f");
     });
   });
 
@@ -672,6 +672,34 @@ describe("native terminal typed input, diff (Android)", () => {
       const { play } = createDiffInput();
       play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"], ["hook"]);
       expect(play(["c", "ls\nx"])).toBe("x");
+    });
+
+    it.each([
+      [
+        "AOSP",
+        [
+          ["c", "the\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        [
+          ["k", "Enter"],
+          ["c", "the\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends Enter committed with an autocorrect at once: %s", (_order, enter) => {
+      const { play } = createDiffInput();
+      expect(play(["c", "teh"], ...enter)).toBe("teh\r");
+      expect(play(["reset"], ["c", "x"])).toBe("x");
+    });
+
+    it("realigns a Backspace into a stuck line that ended in CR LF", () => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\r\n"], ["k", "Enter"], ["reset"]);
+      expect(play(["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+      expect(play(["c", "lsx"])).toBe("x");
     });
 
     it("sends Enter from a newline change that has no Enter key", () => {
