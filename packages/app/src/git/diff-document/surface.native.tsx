@@ -160,21 +160,27 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const settledKeyboardShift = useSettledKeyboardShift();
   // Edge to edge the window height includes the keyboard area; RN's can be off on Android.
   const { height: windowHeight } = useKeyboardWindowDimensions();
+  // How much of the diff's bottom the keyboard and navigation bar cover. The content grows by
+  // it so the last lines, and an editor on them, can scroll clear.
+  const [hiddenBottom, setHiddenBottom] = useState(0);
   // Scroll a focused review editor, with its actions, into the part of this diff that the
   // keyboard and navigation bar leave visible.
   const revealFocusedEditor = useStableEvent(() => {
-    const editor = focusedEditorRef.current;
     const root = rootRef.current;
-    if (!editor || !root) return;
+    if (!root) return;
     root.measureInWindow((_rootX, rootTop, _rootWidth, rootHeight) => {
+      // The root can extend under the navigation bar, which the shift leaves out.
+      const keyboardTop = windowHeight - (settledKeyboardShift + bottomInset.value);
+      const visibleBottom = Math.min(rootTop + rootHeight, keyboardTop);
+      setHiddenBottom(Math.max(0, rootTop + rootHeight - visibleBottom));
+      const editor = focusedEditorRef.current;
+      if (!editor) return;
       editor.measureInWindow((_x, editorTop, _width, editorHeight) => {
-        // The root can extend under the navigation bar, which the shift leaves out.
-        const keyboardTop = windowHeight - (settledKeyboardShift + bottomInset.value);
         const nextScrollTop = resolveRevealScrollTop({
           elementTop: editorTop,
           elementBottom: editorTop + editorHeight,
           visibleTop: rootTop,
-          visibleBottom: Math.min(rootTop + rootHeight, keyboardTop),
+          visibleBottom,
           scrollTop: scrollTop.value,
         });
         if (nextScrollTop !== null)
@@ -182,9 +188,10 @@ export function DiffSurface(props: DiffSurfaceProps) {
       });
     });
   });
+  // Runs again once the content has grown by a new hidden strip.
   useEffect(() => {
     revealFocusedEditor();
-  }, [settledKeyboardShift, revealFocusedEditor]);
+  }, [settledKeyboardShift, hiddenBottom, viewport.height, revealFocusedEditor]);
   const revealHost = useMemo(
     () => ({
       focusEditor: (element: View) => {
@@ -524,12 +531,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const contentInsetBottom = props.contentInsetBottom ?? 0;
   const contentStyle = useMemo(
     () => ({
-      // The settled keyboard height lets the last lines scroll above the keyboard.
-      minHeight:
-        Math.max(model.height, viewport.height) + contentInsetBottom + settledKeyboardShift,
+      // Room to scroll the last lines above the keyboard and navigation bar.
+      minHeight: Math.max(model.height, viewport.height) + contentInsetBottom + hiddenBottom,
       backgroundColor: "transparent",
     }),
-    [contentInsetBottom, model.height, viewport.height, settledKeyboardShift],
+    [contentInsetBottom, model.height, viewport.height, hiddenBottom],
   );
   // While a drag runs, a finger near the top or bottom edge scrolls the list each
   // frame and re-dispatches the drag at its unchanged viewport position, which is
