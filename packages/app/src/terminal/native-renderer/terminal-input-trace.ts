@@ -39,7 +39,7 @@ const TERMINAL_KEY_NAME_PATTERN =
   /^(Backspace|Enter|Tab|Escape|Delete|Home|End|PageUp|PageDown|Insert|Arrow(Up|Down|Left|Right)|F\d{1,2})$/;
 
 // A chord such as `C-c` is kept: chords are commands, not typed text.
-const TERMINAL_CHORD_PATTERN = /^(?:[CAM]-)+./u;
+const TERMINAL_CHORD_PATTERN = /^(?:[CAM]-)+.$/u;
 
 export function redactTerminalTraceKey(key: string): string {
   if (TERMINAL_KEY_NAME_PATTERN.test(key) || TERMINAL_CHORD_PATTERN.test(key)) {

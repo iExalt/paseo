@@ -138,8 +138,9 @@ Acceptance:
 #### P0a result: virtual tablet, AOSP keyboard (2026-10-25, accepted)
 
 The trace (`EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE`, see
-[development.md](upstream/development.md)) ran on dev `c9820c294` or later
-plus the trace commits. The field's input type was `0x2a0001`: text,
+[development.md](upstream/development.md)) ran in an APK built from dev
+`7e2fee497` plus the trace at `002fab680` (sha256 `69d45330…`). Base failures
+were also reproduced on the tablet's untraced dev `9b38c3f65` APK. The field's input type was `0x2a0001`: text,
 multi-line and `NO_SUGGESTIONS`. Bytes were read back with a raw-mode byte
 logger, not a shell line.
 
@@ -151,7 +152,8 @@ logger, not a shell line.
   sent `hhello world`, no `\x7f`, then `lld`. Each time the model realigns,
   the next letter is sent twice.
 - Results vary between runs because the field clear after Enter
-  (`replaceText("")`) sometimes does not land. The field then keeps a leading
+  (`replaceText("")`) may not land; in one run it never landed for the rest
+  of the session. The field then keeps a leading
   `\n`, every later change takes the newline branch and is ignored, and only
   keys are sent. That accidental key-only mode typed the second line
   correctly. Why the clear fails is unknown; a stale native `eventCount` is
@@ -201,8 +203,10 @@ expiry, and real network latency.
 - A field can keep its text across Enter when the clear after Enter doesn't
   land (P0a). A change whose appended text contains `\n` or `\r` sends
   nothing; Enter comes from its key, and the multi-line paste guard stays.
-  Before requesting the clear, record `pendingClearFrom = previousText` and
-  set `previousText` to empty. On the next change, diff against
+  Set `previousText` to the change's full text, newline included, then
+  record `pendingClearFrom = previousText` and set `previousText` to empty.
+  Every clear request records it this way: Enter from the text, Enter as a
+  key, and the resets on focus, blur and show-keyboard. On the next change, diff against
   `pendingClearFrom` if the text starts with it (the clear didn't land), and
   otherwise against `previousText`. Then forget `pendingClearFrom`.
 - A non-append replacement that isn't CJK, such as autocorrect or a reopened
