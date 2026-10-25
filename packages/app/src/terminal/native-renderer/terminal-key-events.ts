@@ -37,7 +37,7 @@ export function createNativeTerminalKeyEvent(key: NativeTerminalKey): NativeTerm
 
 /**
  * Validates a hardware key the PaseoHardwareKeyboard module captured for the
- * focused native terminal (Android only). Keys the terminal cannot encode are
+ * focused native terminal (Android and iOS). Keys the terminal cannot encode are
  * dropped.
  */
 export function parseNativeTerminalKeyEvent(payload: unknown): NativeTerminalKeyEvent | null {
