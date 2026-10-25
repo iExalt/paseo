@@ -1209,13 +1209,56 @@ interface TimelineFragment {
   text: string;
 }
 
+// Claude Code streams deltas for a whole API message and also sends one assistant snapshot per
+// finished content block, all under the same message id. Text is tracked per content block so a
+// snapshot of a block that was already streamed is recognised instead of emitted again.
+interface TimelineTextBlocks {
+  blocks: string[];
+  streamIndex: number | null;
+  text: string;
+  emittedLength: number;
+}
+
 interface TimelineMessageState {
   id: string;
-  assistantText: string;
-  reasoningText: string;
-  emittedAssistantLength: number;
-  emittedReasoningLength: number;
+  assistant: TimelineTextBlocks;
+  reasoning: TimelineTextBlocks;
   stopped: boolean;
+}
+
+function createTimelineTextBlocks(): TimelineTextBlocks {
+  return { blocks: [], streamIndex: null, text: "", emittedLength: 0 };
+}
+
+function appendStreamedBlockText(
+  target: TimelineTextBlocks,
+  text: string,
+  streamIndex: number | null,
+): void {
+  const lastIndex = target.blocks.length - 1;
+  if (lastIndex < 0 || (streamIndex !== null && streamIndex !== target.streamIndex)) {
+    target.blocks.push(text);
+  } else {
+    target.blocks[lastIndex] += text;
+  }
+  target.streamIndex = streamIndex;
+  target.text += text;
+}
+
+function applySnapshotBlockText(target: TimelineTextBlocks, text: string): void {
+  if (target.blocks.includes(text)) {
+    return;
+  }
+  const lastIndex = target.blocks.length - 1;
+  const last = target.blocks[lastIndex];
+  if (last !== undefined && text.startsWith(last)) {
+    target.blocks[lastIndex] = text;
+    target.text += text.slice(last.length);
+    return;
+  }
+  target.blocks.push(text);
+  target.streamIndex = null;
+  target.text += text;
 }
 
 class TimelineAssembler {
@@ -1255,7 +1298,7 @@ class TimelineAssembler {
     }
     const state = this.ensureMessageState(messageId, runId);
     const fragments = this.extractFragments(message.message?.content);
-    return this.applyAbsoluteFragments(state, fragments);
+    return this.applySnapshotFragments(state, fragments);
   }
 
   private consumeStreamEvent(
@@ -1292,12 +1335,18 @@ class TimelineAssembler {
       return this.finalizeMessage(messageId, runId);
     }
 
+    const streamIndex = typeof event.index === "number" ? event.index : null;
     if (eventType === "content_block_start") {
-      return this.consumeDeltaContent(event.content_block, runId, streamEventMessageId);
+      return this.consumeDeltaContent(
+        event.content_block,
+        streamIndex,
+        runId,
+        streamEventMessageId,
+      );
     }
 
     if (eventType === "content_block_delta") {
-      return this.consumeDeltaContent(event.delta, runId, streamEventMessageId);
+      return this.consumeDeltaContent(event.delta, streamIndex, runId, streamEventMessageId);
     }
 
     return [];
@@ -1305,6 +1354,7 @@ class TimelineAssembler {
 
   private consumeDeltaContent(
     content: unknown,
+    streamIndex: number | null,
     runId: string | null,
     messageIdHint: string | null,
   ): AgentTimelineItem[] {
@@ -1321,47 +1371,18 @@ class TimelineAssembler {
       return [];
     }
     const state = this.ensureMessageState(messageId, runId);
-    return this.appendFragments(state, fragments);
-  }
-
-  private appendFragments(
-    state: TimelineMessageState,
-    fragments: TimelineFragment[],
-  ): AgentTimelineItem[] {
     for (const fragment of fragments) {
-      if (fragment.kind === "assistant") {
-        state.assistantText += fragment.text;
-      } else {
-        state.reasoningText += fragment.text;
-      }
+      appendStreamedBlockText(state[fragment.kind], fragment.text, streamIndex);
     }
     return this.emitNewContent(state);
   }
 
-  private applyAbsoluteFragments(
+  private applySnapshotFragments(
     state: TimelineMessageState,
     fragments: TimelineFragment[],
   ): AgentTimelineItem[] {
-    const assistantText = fragments
-      .filter((fragment) => fragment.kind === "assistant")
-      .map((fragment) => fragment.text)
-      .join("");
-    const reasoningText = fragments
-      .filter((fragment) => fragment.kind === "reasoning")
-      .map((fragment) => fragment.text)
-      .join("");
-
-    if (assistantText.length > 0) {
-      if (!assistantText.startsWith(state.assistantText)) {
-        state.emittedAssistantLength = 0;
-      }
-      state.assistantText = assistantText;
-    }
-    if (reasoningText.length > 0) {
-      if (!reasoningText.startsWith(state.reasoningText)) {
-        state.emittedReasoningLength = 0;
-      }
-      state.reasoningText = reasoningText;
+    for (const fragment of fragments) {
+      applySnapshotBlockText(state[fragment.kind], fragment.text);
     }
     return this.emitNewContent(state);
   }
@@ -1383,19 +1404,20 @@ class TimelineAssembler {
 
   private emitNewContent(state: TimelineMessageState): AgentTimelineItem[] {
     const items: AgentTimelineItem[] = [];
-    const nextAssistantText = state.assistantText.slice(state.emittedAssistantLength);
+    const { assistant, reasoning } = state;
+    const nextAssistantText = assistant.text.slice(assistant.emittedLength);
     if (
       nextAssistantText.length > 0 &&
       nextAssistantText !== INTERRUPT_TOOL_USE_PLACEHOLDER &&
       !isClaudeTranscriptNoiseText(nextAssistantText)
     ) {
-      state.emittedAssistantLength = state.assistantText.length;
+      assistant.emittedLength = assistant.text.length;
       items.push({ type: "assistant_message", text: nextAssistantText, messageId: state.id });
     }
 
-    const nextReasoningText = state.reasoningText.slice(state.emittedReasoningLength);
+    const nextReasoningText = reasoning.text.slice(reasoning.emittedLength);
     if (nextReasoningText.length > 0) {
-      state.emittedReasoningLength = state.reasoningText.length;
+      reasoning.emittedLength = reasoning.text.length;
       items.push({ type: "reasoning", text: nextReasoningText });
     }
     return items;
@@ -1412,10 +1434,8 @@ class TimelineAssembler {
     }
     const created: TimelineMessageState = {
       id: messageId,
-      assistantText: "",
-      reasoningText: "",
-      emittedAssistantLength: 0,
-      emittedReasoningLength: 0,
+      assistant: createTimelineTextBlocks(),
+      reasoning: createTimelineTextBlocks(),
       stopped: false,
     };
     this.messages.set(messageId, created);
