@@ -135,6 +135,39 @@ Acceptance:
 - A per-stage latency table, p50 and p90 over 30 or more echoed keystrokes,
   on the phone's usual network with the path recorded.
 
+#### P0a result: virtual tablet, AOSP keyboard (2026-10-25, accepted)
+
+The trace (`EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE`, see
+[development.md](upstream/development.md)) ran in an APK built from dev
+`7e2fee497` plus the trace at `002fab680` (sha256 `69d45330…`). Base failures
+were also reproduced on the tablet's untraced dev `9b38c3f65` APK. The field's input type was `0x2a0001`: text,
+multi-line and `NO_SUGGESTIONS`. Bytes were read back with a raw-mode byte
+logger, not a shell line.
+
+- Every letter arrives as a text change 16 to 21 ms before its key. Enter
+  arrives change first too. Backspace arrives key first, 0.5 ms before its
+  change. That doesn't show whether LatinIME batches Backspace, because
+  `deleteSurroundingText` sends its key at once either way.
+- Base fails both cases. Typing `hello world`, three Backspaces and `ld`
+  sent `hhello world`, no `\x7f`, then `lld`. Each time the model realigns,
+  the next letter is sent twice.
+- Results vary between runs because the field clear after Enter
+  (`replaceText("")`) may not land; in one run it never landed for the rest
+  of the session. The field then keeps a leading
+  `\n`, every later change takes the newline branch and is ignored, and only
+  keys are sent. That accidental key-only mode typed the second line
+  correctly. Why the clear fails is unknown; a stale native `eventCount` is
+  the first suspect.
+- Echo over `adb reverse` took 56 ms p50 and 66 ms p90 from send to paint,
+  over 21 keystrokes. Parsing one character took 10.6 ms at p50, which looks
+  like the headless `write` callback's scheduling rather than parse work.
+  Paint waits one frame (18 ms). The emulated CPU and the lack of a network
+  make these numbers unrepresentative of a phone.
+
+Still open for P0b on the phone: Gboard's order and composition, whether
+Gboard batches Backspace, Gboard's change-to-key gap compared with the 100 ms
+expiry, and real network latency.
+
 ### P1. One source of truth for typed text (agree the design first)
 
 - On Android, printable text comes only from the text diff, and printable
@@ -167,6 +200,15 @@ Acceptance:
   contract. If the P0 trace shows that the rule needs more timing heuristics
   than the expiry, switch to the native `InputConnection` below instead of
   adding them.
+- A field can keep its text across Enter when the clear after Enter doesn't
+  land (P0a). A change whose appended text contains `\n` or `\r` sends
+  nothing; Enter comes from its key, and the multi-line paste guard stays.
+  Set `previousText` to the change's full text, newline included, then
+  record `pendingClearFrom = previousText` and set `previousText` to empty.
+  Every clear request records it this way: Enter from the text, Enter as a
+  key, and the resets on focus, blur and show-keyboard. On the next change, diff against
+  `pendingClearFrom` if the text starts with it (the clear didn't land), and
+  otherwise against `previousText`. Then forget `pendingClearFrom`.
 - A non-append replacement that isn't CJK, such as autocorrect or a reopened
   word, is still not sent. It no longer disables Backspace: only the CJK
   rubout stays off until the next reset. A change to empty text does not
@@ -204,9 +246,13 @@ Acceptance:
     sends nothing; a later soft Backspace sends one;
   - a stale `keyAwaitingShrink` followed, after the expiry, by a hardware
     clear, which sends nothing.
+  - two lines where the clear after Enter lands, and two lines where it
+    doesn't (a stuck `\n` prefix): each letter is sent once and a following
+    Backspace sends one `\x7f`.
 - The unit tests inject a clock for the flag expiry instead of waiting.
 - Existing CJK composition tests and #206's hardware-key tests still pass.
-- The P0 device script, which failed on the same base, now passes.
+- The P0 device script, which failed on the same base, now passes,
+  including the second line after Enter.
 - On the virtual tablet, hardware Backspace and Enter still work after
   typed text. Drive the virtio keyboard from the host side. `adb shell input
   keyevent` uses the virtual keyboard device, which #206's capture rejects,
@@ -224,7 +270,9 @@ The P0 numbers decide what to work on. The candidates set out in advance are:
 - Make the relay socket report its buffered amount, so that heavy output
   streams instead of forcing a snapshot every 256 KB. Keep the bound on how
   far a slow relay client can fall behind.
-- Cut crypto or parse cost, if the trace shows either is material.
+- Cut crypto or parse cost, if the trace shows either is material. First
+  time `terminal.write` for one character in isolation, since P0a measured
+  10.6 ms from receive to parsed.
 
 Acceptance:
 
