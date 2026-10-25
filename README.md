@@ -233,7 +233,8 @@ npm run dev:app
 npm run dev:desktop
 npm run dev:website
 
-# build the server stack
+# build the server stack (run after pulling and before the first typecheck or
+# commit: other packages typecheck against the built server declarations)
 npm run build:server
 
 # repo-wide checks

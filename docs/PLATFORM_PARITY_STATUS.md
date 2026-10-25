@@ -269,9 +269,6 @@ host, with the limits below. iOS rests on code review and unit tests.
   the iPad terminal lacks Ctrl, arrow, Tab and Escape.
 - Wide layouts: the Settings sidebar clears the bottom system inset (#204,
   `96ccbd19f`).
-- Follow-up after the campaign: the compact explorer dock
-  (`NativeExplorerSidebarDock`) is now reachable only from a test override;
-  remove it.
 - E3: native gets a touch outline rail under the web rule: a wide layout and a
   chat panel at least 918 dp wide, so landscape tablets show it and portrait
   ones do not. A finger on the rail previews the prompt under it and lifting
