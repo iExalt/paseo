@@ -35,11 +35,12 @@ export function redactTerminalTraceText(text: string): string {
 
 // React Native reports a commit of up to two characters as a key, so only
 // these names are logged as they are.
-const TERMINAL_KEY_NAME_PATTERN =
-  /^(Backspace|Enter|Tab|Escape|Delete|Home|End|PageUp|PageDown|Insert|Arrow(Up|Down|Left|Right)|F\d{1,2})$/;
+const TERMINAL_KEY_NAMES =
+  "Backspace|Enter|Tab|Escape|Delete|Home|End|PageUp|PageDown|Insert|Arrow(?:Up|Down|Left|Right)|F\\d{1,2}";
+const TERMINAL_KEY_NAME_PATTERN = new RegExp(`^(?:${TERMINAL_KEY_NAMES})$`);
 
 // A chord such as `C-c` is kept: chords are commands, not typed text.
-const TERMINAL_CHORD_PATTERN = /^(?:[CAM]-)+.$/u;
+const TERMINAL_CHORD_PATTERN = new RegExp(`^(?:[CAM]-)+(?:.|${TERMINAL_KEY_NAMES})$`, "u");
 
 export function redactTerminalTraceKey(key: string): string {
   if (TERMINAL_KEY_NAME_PATTERN.test(key) || TERMINAL_CHORD_PATTERN.test(key)) {
