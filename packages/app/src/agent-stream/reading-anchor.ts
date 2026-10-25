@@ -122,6 +122,22 @@ export function createReadingAnchor() {
   };
 }
 
+// A row id can be reported before its timeline position resolves, so the tick dedupes on the
+// resolved position: the same row reported again with a new seq must still go through.
+export function createReadingSeqDedupe() {
+  let last: number | null | undefined;
+  return {
+    shouldForward(seq: number | null): boolean {
+      if (seq === last) return false;
+      last = seq;
+      return true;
+    },
+    reset() {
+      last = undefined;
+    },
+  };
+}
+
 export const MAX_SCROLL_TO_INDEX_RETRIES = 10;
 
 export function findRowIndex(rows: readonly { id: string }[], rowId: string | null): number | null {

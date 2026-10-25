@@ -7,6 +7,7 @@ import {
   createNativeReadingAnchor,
   createReadingAnchor,
   createNativeRowGeometry,
+  createReadingSeqDedupe,
   getReadingRowIdFromGeometry,
   getTopmostViewableRowId,
   MAX_SCROLL_TO_INDEX_RETRIES,
@@ -242,6 +243,31 @@ describe("native reading row from geometry", () => {
     expect(geometry.record("a", { y: 0, height: 12 })).toBe(true);
     geometry.forget("a");
     expect(geometry.get("a")).toBeUndefined();
+  });
+});
+
+describe("reading seq dedupe", () => {
+  const forwarded = (reports: { rowId: string; seq: number | null }[]) => {
+    const dedupe = createReadingSeqDedupe();
+    return reports.filter((report) => dedupe.shouldForward(report.seq)).map((r) => r.seq);
+  };
+
+  it("forwards a row again once its seq resolves, and skips true repeats", () => {
+    expect(
+      forwarded([
+        { rowId: "row", seq: null },
+        { rowId: "row", seq: null },
+        { rowId: "row", seq: 12 },
+        { rowId: "row", seq: 12 },
+      ]),
+    ).toEqual([null, 12]);
+  });
+
+  it("forwards the same seq again after a reset", () => {
+    const dedupe = createReadingSeqDedupe();
+    expect(dedupe.shouldForward(12)).toBe(true);
+    dedupe.reset();
+    expect(dedupe.shouldForward(12)).toBe(true);
   });
 });
 

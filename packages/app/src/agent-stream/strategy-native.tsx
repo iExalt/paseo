@@ -193,7 +193,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const [rowGeometry] = useState(createNativeRowGeometry);
   // The last viewable set FlatList reported; null until it reports one.
   const viewableRowsRef = useRef<ViewableRow[] | null>(null);
-  const lastReportedRowIdRef = useRef<string | null | undefined>(undefined);
 
   const historyItems = useMemo(() => {
     if (segments.historyVirtualized.length === 0) {
@@ -390,7 +389,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     };
     scrollOffsetYRef.current = 0;
     viewableRowsRef.current = null;
-    lastReportedRowIdRef.current = undefined;
     isUserScrollActiveRef.current = false;
     clearPendingUserScrollEnd();
     clearNativeViewportSettling();
@@ -588,7 +586,9 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   // The viewable set only changes when a row enters or leaves, but the reading row also
   // changes as the reading line crosses a row edge, or as a viewable row resizes.
-  const updateReadingRow = useStableEvent(() => {
+  // A resize arrives inside onLayout, possibly ahead of a rotation freeze and with the old
+  // offset, so it moves the tick without feeding the rotation restore's remembered row.
+  const updateReadingRow = useStableEvent((rememberRow: boolean) => {
     const viewableRows = viewableRowsRef.current;
     if (viewableRows === null) return;
     const rowId = getReadingRowIdFromGeometry({
@@ -598,14 +598,12 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       viewportHeight: streamViewportMetricsRef.current.viewportHeight,
       newestRowId: segments.liveHead.at(-1)?.id ?? historyRows[0]?.id,
     });
-    readingAnchor.noteViewable(rowId);
-    if (rowId === lastReportedRowIdRef.current) return;
-    lastReportedRowIdRef.current = rowId;
+    if (rememberRow) readingAnchor.noteViewable(rowId);
     onReadingPositionChange?.(rowId);
   });
 
   const handleRowResized = useStableEvent((rowId: string) => {
-    if (viewableRowsRef.current?.some((row) => row.id === rowId)) updateReadingRow();
+    if (viewableRowsRef.current?.some((row) => row.id === rowId)) updateReadingRow(false);
   });
   const rowGeometryContext = useMemo(
     () => ({ geometry: rowGeometry, onRowResized: handleRowResized }),
@@ -640,7 +638,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     onNearBottomChange(nearBottom);
 
     evaluateHistoryStart();
-    updateReadingRow();
+    updateReadingRow(true);
 
     if (
       !isUserScrollActiveRef.current &&
@@ -782,7 +780,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         index: token.index,
         isViewable: token.isViewable,
       }));
-      updateReadingRow();
+      updateReadingRow(true);
     },
   );
 
