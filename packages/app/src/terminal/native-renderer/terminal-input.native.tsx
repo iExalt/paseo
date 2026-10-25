@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef } from "react";
 import {
+  Platform,
   StyleSheet,
   type NativeSyntheticEvent,
   type StyleProp,
@@ -52,7 +53,27 @@ export interface TerminalTextInputChange {
 export interface TerminalTextInputState {
   receiveKeyPress: (key: string) => TerminalTextInputChange;
   receiveTextChange: (text: string) => TerminalTextInputChange;
+  /** A captured hardware key is about to clear the native field; that clear must send nothing. */
+  noteHardwareClear: () => void;
   reset: () => void;
+}
+
+/**
+ * Where printable text comes from.
+ *
+ * - `keyThenDiff` sends printable keypresses and the part of each text change
+ *   the key did not already cover. It assumes the key arrives first.
+ * - `diff` sends printable text only from the text change and ignores
+ *   printable keypresses. Android needs it: React Native's keypress emulation
+ *   delivers the text change before the key for composing text and batched
+ *   commits, so `keyThenDiff` sends the first character twice there.
+ */
+export type TerminalPrintableSource = "keyThenDiff" | "diff";
+
+export interface TerminalTextInputStateOptions {
+  printableSource?: TerminalPrintableSource;
+  /** Milliseconds; injected by tests to step past the Backspace pairing window. */
+  now?: () => number;
 }
 
 export type TerminalInputFocusRequest = "focus" | "refocus" | "none";
@@ -130,7 +151,16 @@ export function resolveTerminalInputFocusRequest(input: {
   return input.isKeyboardVisible ? "none" : "refocus";
 }
 
-export function createTerminalTextInputState(): TerminalTextInputState {
+export function createTerminalTextInputState(
+  options: TerminalTextInputStateOptions = {},
+): TerminalTextInputState {
+  if (options.printableSource === "diff") {
+    return createDiffTerminalTextInputState(options.now ?? Date.now);
+  }
+  return createKeyThenDiffTerminalTextInputState();
+}
+
+function createKeyThenDiffTerminalTextInputState(): TerminalTextInputState {
   let previousText = "";
   let submittedText: string | null = null;
   // A swallowed replacement leaves the terminal holding text the buffer no
@@ -203,9 +233,145 @@ export function createTerminalTextInputState(): TerminalTextInputState {
         shouldClear: false,
       };
     },
+    noteHardwareClear(): void {},
     reset(): void {
       previousText = "";
       replacementDesynced = false;
+    },
+  };
+}
+
+// Both halves of a Backspace (its key and its shrinking text change) come
+// from one native call or IME batch, so they land well inside this window.
+const BACKSPACE_PAIR_WINDOW_MS = 100;
+
+function hasLineBreak(text: string): boolean {
+  return text.includes("\n") || text.includes("\r");
+}
+
+function createDiffTerminalTextInputState(now: () => number): TerminalTextInputState {
+  let previousText = "";
+  // Same meaning as in keyThenDiff, but it only gates the CJK rubout here.
+  // Backspace keeps working after a swallowed replacement.
+  let replacementDesynced = false;
+  // The field text when a clear was requested after a line break. If the
+  // next change still starts with it, the clear never landed (seen with the
+  // AOSP keyboard), so diff against it instead. A paste has no line break,
+  // so it can never match.
+  let pendingClearFrom: string | null = null;
+  // One-shot flags pairing a Backspace key with its text change, in either
+  // order. Each holds the time it was set.
+  let keyAwaitingShrink: number | null = null;
+  let shrinkAwaitingKey: number | null = null;
+  let emptiedAwaitingKey: { count: number; at: number } | null = null;
+
+  function isFresh(at: number | null): at is number {
+    return at !== null && now() - at <= BACKSPACE_PAIR_WINDOW_MS;
+  }
+
+  function clearBackspaceFlags(): void {
+    keyAwaitingShrink = null;
+    shrinkAwaitingKey = null;
+    emptiedAwaitingKey = null;
+  }
+
+  function requestClear(text: string): TerminalTextInputChange {
+    if (hasLineBreak(text)) {
+      pendingClearFrom = text;
+    }
+    previousText = "";
+    return { data: "", shouldClear: true };
+  }
+
+  function receiveBackspaceKey(): TerminalTextInputChange {
+    const pairedShrink = isFresh(shrinkAwaitingKey);
+    const emptied =
+      emptiedAwaitingKey && isFresh(emptiedAwaitingKey.at) ? emptiedAwaitingKey : null;
+    clearBackspaceFlags();
+    if (pairedShrink) {
+      return { data: "", shouldClear: false };
+    }
+    if (previousText.length > 0) {
+      keyAwaitingShrink = now();
+      return { data: "", shouldClear: false };
+    }
+    return { data: "\x7f".repeat(emptied?.count ?? 1), shouldClear: false };
+  }
+
+  function receiveShrink(text: string): TerminalTextInputChange {
+    const removed = Array.from(previousText).length - Array.from(text).length;
+    const pairedKey = isFresh(keyAwaitingShrink);
+    clearBackspaceFlags();
+    previousText = text;
+    if (text.length === 0 && !pairedKey) {
+      // Either a Backspace whose key is still to come, or the hardware
+      // keyboard module clearing the field. Let the key decide.
+      emptiedAwaitingKey = { count: removed, at: now() };
+      return { data: "", shouldClear: false };
+    }
+    if (!pairedKey) {
+      shrinkAwaitingKey = now();
+    }
+    return { data: "\x7f".repeat(removed), shouldClear: false };
+  }
+
+  return {
+    receiveKeyPress(key: string): TerminalTextInputChange {
+      if (key === "Backspace") {
+        return receiveBackspaceKey();
+      }
+      clearBackspaceFlags();
+      const terminalKey = resolveNativeTerminalKey(key);
+      if (terminalKey) {
+        return { data: "", key: terminalKey, shouldClear: false };
+      }
+      if (key === "Enter" || key === "Return" || key === "return") {
+        return { ...requestClear(previousText), data: "\r" };
+      }
+      return { data: "", shouldClear: false };
+    },
+    receiveTextChange(text: string): TerminalTextInputChange {
+      const base =
+        pendingClearFrom !== null && text.startsWith(pendingClearFrom)
+          ? pendingClearFrom
+          : previousText;
+      pendingClearFrom = null;
+      if (text === base) {
+        previousText = text;
+        return { data: "", shouldClear: false };
+      }
+      if (text.startsWith(base)) {
+        clearBackspaceFlags();
+        const appendedText = text.slice(base.length);
+        if (hasLineBreak(appendedText)) {
+          // Enter comes from its key; a multi-line paste is not run.
+          return requestClear(text);
+        }
+        previousText = text;
+        return { data: appendedText, shouldClear: false };
+      }
+      if (base === previousText && previousText.startsWith(text)) {
+        return receiveShrink(text);
+      }
+      clearBackspaceFlags();
+      let compositionEdit = "";
+      if (!replacementDesynced) {
+        compositionEdit = resolveCompositionEdit(previousText, text);
+      }
+      if (compositionEdit === "") {
+        replacementDesynced = true;
+      }
+      previousText = text;
+      return { data: compositionEdit, shouldClear: false };
+    },
+    noteHardwareClear(): void {
+      previousText = "";
+      clearBackspaceFlags();
+    },
+    reset(): void {
+      previousText = "";
+      replacementDesynced = false;
+      clearBackspaceFlags();
     },
   };
 }
@@ -215,7 +381,13 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const inputRef = useRef<EditingTextInputHandle>(null);
     const isFocusedRef = useRef(false);
     const pendingFocusFrameRef = useRef<number | null>(null);
-    const inputState = useMemo(() => createTerminalTextInputState(), []);
+    const inputState = useMemo(
+      () =>
+        createTerminalTextInputState({
+          printableSource: Platform.OS === "android" ? "diff" : "keyThenDiff",
+        }),
+      [],
+    );
     const inputStyle = useMemo(() => [styles.input, style], [style]);
 
     const clearPendingFocus = useCallback(() => {
@@ -306,6 +478,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
         `${event.ctrl ? "C-" : ""}${event.alt ? "A-" : ""}${event.meta ? "M-" : ""}${event.key}`,
         "",
       );
+      inputState.noteHardwareClear();
       onTerminalKey?.(event);
     });
     useEffect(
