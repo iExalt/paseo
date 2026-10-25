@@ -163,17 +163,25 @@ index f1e3345..2549508 100644
  
      view.setOnLinkLongPressCallback { url ->
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
-index 72740e277..46ad50680 100644
+index 72740e277..3bdd7aafd 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
-@@ -57,6 +57,28 @@
+@@ -2,6 +2,7 @@
+ 
+ import android.content.Context
+ import android.graphics.Rect
++import android.os.Bundle
+ import android.util.AttributeSet
+ import android.view.KeyEvent
+ import android.view.MotionEvent
+@@ -57,6 +58,42 @@
  
      override fun dispatchKeyEvent(event: KeyEvent): Boolean = accessibilityHelper.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
  
 +    // setupAsMarkdownTextView's setTextIsSelectable(true) makes this view focusable in touch
 +    // mode, so when a focused TextInput is removed Android hands focus, and the still-shown
-+    // keyboard, to the first message. Take touch-mode focus only during our own touch, as
-+    // long-press selection and taps request it; keyboard navigation is unchanged.
++    // keyboard, to the first message. Take touch-mode focus only during our own touch or
++    // accessibility action, as selection requests it; keyboard navigation is unchanged.
 +    private var touchInProgress = false
 +
 +    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -184,6 +192,20 @@ index 72740e277..46ad50680 100644
 +        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
 +          touchInProgress = false
 +        }
++      }
++    }
++
++    // TalkBack keeps touch mode, and its text-selection action requests focus.
++    override fun performAccessibilityAction(
++      action: Int,
++      arguments: Bundle?,
++    ): Boolean {
++      val wasInProgress = touchInProgress
++      touchInProgress = true
++      try {
++        return super.performAccessibilityAction(action, arguments)
++      } finally {
++        touchInProgress = wasInProgress
 +      }
 +    }
 +

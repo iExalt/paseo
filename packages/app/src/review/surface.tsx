@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -415,6 +416,13 @@ export function InlineReviewEditor({
   const [isFocused, setIsFocused] = useState(false);
   const trimmedBody = body.trim();
   const canSave = trimmedBody.length > 0;
+
+  // Unmounting a focused input, as when its file collapses, hands focus and the soft keyboard to
+  // the next focusable view, so blur it on the way out. Blur is a no-op unless it has focus.
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    return () => input?.blur();
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
