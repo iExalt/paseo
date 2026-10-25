@@ -422,7 +422,16 @@ export function InlineReviewEditor({
   const handleBlur = useCallback(() => {
     setIsFocused(false);
   }, []);
-  const handleSave = useCallback(() => onSave(trimmedBody), [onSave, trimmedBody]);
+  // Blur before closing. Taps reach Cancel and Comment with the soft keyboard up, and unmounting
+  // a focused input hands focus, and the keyboard, to the next focusable view.
+  const handleCancel = useCallback(() => {
+    inputRef.current?.blur();
+    onCancel();
+  }, [onCancel]);
+  const handleSave = useCallback(() => {
+    inputRef.current?.blur();
+    onSave(trimmedBody);
+  }, [onSave, trimmedBody]);
 
   useEffect(() => {
     const element = getWebTextInputElement(inputRef.current);
@@ -434,7 +443,7 @@ export function InlineReviewEditor({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        onCancel();
+        handleCancel();
         return;
       }
 
@@ -456,7 +465,7 @@ export function InlineReviewEditor({
     return () => {
       element.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canSave, handleSave, onCancel]);
+  }, [canSave, handleCancel, handleSave]);
 
   const inputStyle = useMemo<StyleProp<TextStyle>>(
     () => [styles.editorInput, isFocused && styles.editorInputFocused],
@@ -483,7 +492,7 @@ export function InlineReviewEditor({
           accessibilityLabel={t("review.comment.cancelAccessibility")}
           testID={testID ? `${testID}-cancel` : undefined}
           hitSlop={SMALL_ACTION_HIT_SLOP}
-          onPress={onCancel}
+          onPress={handleCancel}
           variant="ghost"
           size="xs"
         >
