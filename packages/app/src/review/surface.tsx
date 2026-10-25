@@ -150,6 +150,7 @@ export function useInlineReviewController(input: {
       onCancelEditor: model.cancel,
       onSaveEditor: model.save,
       onDeleteComment: model.delete,
+      getEditor: model.getState,
     }),
     [commentsByTarget, editor, isCompact, model],
   );
@@ -285,6 +286,11 @@ export function InlineReviewThread({
   const editingCommentId = editor?.commentId ?? null;
   const editingExisting =
     editingCommentId !== null && comments.some((comment) => comment.id === editingCommentId);
+  const getEditor = reviewActions.getEditor;
+  const handsOffFocus = useCallback(() => {
+    const next = getEditor?.();
+    return Boolean(next && next.target.key !== reviewTarget.key);
+  }, [getEditor, reviewTarget.key]);
 
   const editorElement = editor ? (
     <InlineReviewEditor
@@ -293,6 +299,7 @@ export function InlineReviewThread({
       onChangeBody={reviewActions.onChangeEditorBody}
       onCancel={reviewActions.onCancelEditor}
       onSave={reviewActions.onSaveEditor}
+      handsOffFocus={handsOffFocus}
       testID="inline-review-editor"
     />
   ) : null;
@@ -401,12 +408,15 @@ export function InlineReviewEditor({
   onChangeBody,
   onCancel,
   onSave,
+  handsOffFocus,
   testID,
 }: {
   body: string;
   onChangeBody: (body: string) => void;
   onCancel: () => void;
   onSave: (body: string) => void;
+  /** True when the editor is moving to another line, whose input takes focus straight over. */
+  handsOffFocus?: () => boolean;
   testID?: string;
 }) {
   const { t } = useTranslation();
@@ -418,10 +428,18 @@ export function InlineReviewEditor({
   const canSave = trimmedBody.length > 0;
 
   // Unmounting a focused input, as when its file collapses, hands focus and the soft keyboard to
-  // the next focusable view, so blur it on the way out. Blur is a no-op unless it has focus.
+  // the next focusable view, so blur it on the way out. Blur is a no-op unless it has focus. When
+  // the editor moves to another line the new input takes focus itself; blurring first would drop
+  // and reopen the keyboard.
+  const handsOffFocusRef = useRef(handsOffFocus);
+  useLayoutEffect(() => {
+    handsOffFocusRef.current = handsOffFocus;
+  });
   useLayoutEffect(() => {
     const input = inputRef.current;
-    return () => input?.blur();
+    return () => {
+      if (!handsOffFocusRef.current?.()) input?.blur();
+    };
   }, []);
 
   useEffect(() => {
