@@ -653,6 +653,14 @@ test.describe("Half-screen desktop layout", () => {
       );
       await expect(explorerToggle).toHaveAccessibleName("Open Explorer sidebar");
       await expect(page.getByTestId("sidebar-global-new-workspace")).toBeVisible();
+
+      // Last press wins: the menu button takes the width back from Explorer.
+      await explorerToggle.click();
+      await expect(page.getByTestId("workspace-explorer-sidebar")).toBeVisible();
+      await expect(page.getByTestId("sidebar-global-new-workspace")).not.toBeVisible();
+      await page.getByTestId("menu-button").first().click();
+      await expect(page.getByTestId("sidebar-global-new-workspace")).toBeVisible();
+      await expect(page.getByTestId("workspace-explorer-sidebar")).not.toBeVisible();
     } finally {
       await workspace.cleanup();
     }

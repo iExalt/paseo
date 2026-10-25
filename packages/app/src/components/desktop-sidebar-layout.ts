@@ -85,3 +85,31 @@ export function canDesktopAppSidebarShare(input: {
     input.contentMinimumWidth
   );
 }
+
+export type MenuPressOutcome = "toggle-sidebar" | "show-sidebar-over-explorer";
+
+/**
+ * The last press wins. When the menu would open the sidebar but an open
+ * Explorer leaves the sidebar no room to share the width, the sidebar takes
+ * over and Explorer closes. A sidebar that is flagged open yet hidden by
+ * Explorer counts as closed, since the user cannot see it.
+ */
+export function resolveMenuPressOutcome(input: {
+  isCompactLayout: boolean;
+  sidebarOpen: boolean;
+  explorerOpen: boolean;
+  requestedSidebarWidth: number;
+  viewportWidth: number;
+}): MenuPressOutcome {
+  if (input.isCompactLayout || !input.explorerOpen) return "toggle-sidebar";
+  const sidebarFits = canDesktopAppSidebarShare({
+    contentMinimumWidth: resolveDesktopAppContentMinimum({
+      isSettingsRoute: false,
+      explorerVisible: true,
+    }),
+    requestedSidebarWidth: input.requestedSidebarWidth,
+    viewportWidth: input.viewportWidth,
+  });
+  if (sidebarFits) return "toggle-sidebar";
+  return "show-sidebar-over-explorer";
+}

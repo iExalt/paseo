@@ -1,11 +1,17 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { View, type StyleProp, type ViewStyle } from "react-native";
+import { useWindowDimensions, View, type StyleProp, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { PanelLeft } from "lucide-react-native";
+import { usePathname } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { HeaderToggleButton, headerIconSlotStyle } from "./header-toggle-button";
 import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { resolveMenuPressOutcome } from "@/components/desktop-sidebar-layout";
+import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
+import { hideExplorerSidebar, isExplorerSidebarOpen } from "@/workspace-tabs/explorer-sidebar";
+import { parseHostWorkspaceRouteFromPathname } from "@/utils/host-routes";
 import { getShortcutOs } from "@/utils/shortcut-platform";
 import { useHasWindowChromeObstruction, useOwnsWindowChromeCorner } from "@/utils/desktop-window";
 import {
@@ -63,9 +69,40 @@ function SidebarMenuToggleButton({
     [],
   );
 
+  const openAgentListForLayout = usePanelStore((state) => state.openAgentListForLayout);
+  const isWorkspaceRoute = parseHostWorkspaceRouteFromPathname(usePathname()) !== null;
+  const activeWorkspace = useActiveWorkspaceSelection();
+  const workspaceKey = activeWorkspace
+    ? `${activeWorkspace.serverId}:${activeWorkspace.workspaceId}`
+    : null;
+  const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const viewportWidth = windowWidth - insets.left - insets.right;
+
   const handlePress = useCallback(() => {
+    const explorerQuery = { isCompact: false, workspaceKey };
+    const outcome = resolveMenuPressOutcome({
+      isCompactLayout: isMobile,
+      sidebarOpen: isOpen,
+      explorerOpen: isWorkspaceRoute && isExplorerSidebarOpen(explorerQuery),
+      requestedSidebarWidth: usePanelStore.getState().sidebarWidth,
+      viewportWidth,
+    });
+    if (outcome === "show-sidebar-over-explorer") {
+      hideExplorerSidebar(explorerQuery);
+      openAgentListForLayout({ isCompact: false });
+      return;
+    }
     toggleAgentListForLayout({ isCompact: isMobile });
-  }, [toggleAgentListForLayout, isMobile]);
+  }, [
+    toggleAgentListForLayout,
+    openAgentListForLayout,
+    isMobile,
+    isOpen,
+    isWorkspaceRoute,
+    workspaceKey,
+    viewportWidth,
+  ]);
 
   const accessibilityState = useMemo(() => ({ expanded: isOpen }), [isOpen]);
 

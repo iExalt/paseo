@@ -4,6 +4,7 @@ import {
   resolveDesktopAppChromeLayout,
   resolveDesktopAppContentMinimum,
   resolveDesktopSidebarVisibility,
+  resolveMenuPressOutcome,
   resolveDesktopSidebarWidth,
 } from "@/components/desktop-sidebar-layout";
 
@@ -122,4 +123,30 @@ it("reserves room for Explorer and the workspace before showing app navigation",
       viewportWidth: 951,
     }),
   ).toBe(true);
+});
+
+describe("menu press with Explorer open", () => {
+  const base = {
+    isCompactLayout: false,
+    sidebarOpen: false,
+    explorerOpen: true,
+    requestedSidebarWidth: 320,
+    viewportWidth: 800,
+  };
+
+  it("shows the sidebar over Explorer when they cannot share the width", () => {
+    expect(resolveMenuPressOutcome(base)).toBe("show-sidebar-over-explorer");
+  });
+
+  it("treats a sidebar hidden by Explorer as closed", () => {
+    expect(resolveMenuPressOutcome({ ...base, sidebarOpen: true })).toBe(
+      "show-sidebar-over-explorer",
+    );
+  });
+
+  it("toggles normally when both fit, Explorer is closed, or the layout is compact", () => {
+    expect(resolveMenuPressOutcome({ ...base, viewportWidth: 1000 })).toBe("toggle-sidebar");
+    expect(resolveMenuPressOutcome({ ...base, explorerOpen: false })).toBe("toggle-sidebar");
+    expect(resolveMenuPressOutcome({ ...base, isCompactLayout: true })).toBe("toggle-sidebar");
+  });
 });
