@@ -7,6 +7,8 @@ import {
   createNativeReadingAnchor,
   createReadingAnchor,
   getTopmostViewableRowId,
+  MAX_SCROLL_TO_INDEX_RETRIES,
+  planScrollToIndexRetry,
   READING_VIEWABILITY_CONFIG,
 } from "./reading-anchor";
 
@@ -243,5 +245,27 @@ describe("native reading anchor", () => {
     anchor.beginViewportChange({ ...rotate, detached: true });
     anchor.cancel();
     expect(anchor.takeRestoreRowId()).toBeNull();
+  });
+});
+
+describe("scrollToIndex retry", () => {
+  // The inverted list puts the newest row at index 0.
+  const prompts = (from: number, to: number) =>
+    Array.from({ length: to - from + 1 }, (_, i) => ({ id: `prompt-${to - i}` }));
+  const retry = (rows: readonly { id: string }[], targetRowId: string | null, attempts = 0) =>
+    planScrollToIndexRetry({ rows, targetRowId, averageItemLength: 100, attempts });
+
+  it("aims at the target's index after newer rows land at lower indices", () => {
+    // Tail 51-70 and window 1-32: a jump to prompt 12 fails at index 40.
+    expect(retry([...prompts(51, 70), ...prompts(1, 32)], "prompt-12")?.index).toBe(40);
+    // Before the retry runs, 33-50 merge between them.
+    expect(retry(prompts(1, 70), "prompt-12")).toEqual({ index: 58, estimatedOffset: 5800 });
+  });
+
+  it("stops when the target is gone or the attempts run out", () => {
+    const rows = prompts(1, 70);
+    expect(retry(rows, "prompt-99")).toBeNull();
+    expect(retry(rows, null)).toBeNull();
+    expect(retry(rows, "prompt-12", MAX_SCROLL_TO_INDEX_RETRIES)).toBeNull();
   });
 });

@@ -26,7 +26,9 @@ import { useStableEvent } from "@/hooks/use-stable-event";
 import { useKeyboardStreamInset } from "@/keyboard/shift";
 import {
   createNativeReadingAnchor,
+  findRowIndex,
   getTopmostViewableRowId,
+  planScrollToIndexRetry,
   READING_VIEWABILITY_CONFIG,
 } from "./reading-anchor";
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
@@ -369,8 +371,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   // The list is inverted, so viewPosition 1 puts the message's start at the top.
   const scrollToIndexRetriesRef = useRef(0);
   const scrollToIndexAnimatedRef = useRef(true);
+  // Retries aim at this row, not at an index: rows merged meanwhile shift indices.
+  const scrollToIndexTargetRowIdRef = useRef<string | null>(null);
   const jumpToRow = useStableEvent((index: number, animated: boolean) => {
     scrollToIndexRetriesRef.current = 0;
+    scrollToIndexTargetRowIdRef.current = historyRows[index]?.id ?? null;
     scrollToIndexAnimatedRef.current = animated;
     bottomAnchorController.detachByUser();
     onNearBottomChange(false);
@@ -443,24 +448,29 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   });
   const handleScrollToIndexFailed = useStableEvent(
     (info: { index: number; averageItemLength: number }) => {
-      // Rows far from the window have no measured layout yet: jump near the estimate,
-      // let them render, then aim again. Bounded so an unreachable row cannot loop.
-      if (scrollToIndexRetriesRef.current >= 10) return;
+      const retry = planScrollToIndexRetry({
+        rows: historyRows,
+        targetRowId: scrollToIndexTargetRowIdRef.current,
+        averageItemLength: info.averageItemLength,
+        attempts: scrollToIndexRetriesRef.current,
+      });
+      if (!retry) return;
       scrollToIndexRetriesRef.current += 1;
       programmaticScrollEventBudgetRef.current = 3;
-      flatListRef.current?.scrollToOffset({
-        offset: info.averageItemLength * info.index,
-        animated: false,
-      });
-      requestAnimationFrame(() =>
-        flatListRef.current?.scrollToIndex({
-          index: info.index,
-          viewPosition: 1,
-          animated: scrollToIndexAnimatedRef.current,
-        }),
-      );
+      flatListRef.current?.scrollToOffset({ offset: retry.estimatedOffset, animated: false });
+      requestAnimationFrame(retryScrollToIndex);
     },
   );
+  // Resolve the target again when the retry runs: rows can merge in the frame between.
+  const retryScrollToIndex = useStableEvent(() => {
+    const index = findRowIndex(historyRows, scrollToIndexTargetRowIdRef.current);
+    if (index === null) return;
+    flatListRef.current?.scrollToIndex({
+      index,
+      viewPosition: 1,
+      animated: scrollToIndexAnimatedRef.current,
+    });
+  });
 
   useEffect(() => {
     const handle: StreamViewportHandle = {
