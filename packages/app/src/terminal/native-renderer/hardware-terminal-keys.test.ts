@@ -7,7 +7,10 @@ import { createTerminalKeyInput } from "@/terminal/runtime/terminal-key-dispatch
 import { createHardwareTerminalKeyRouter } from "./hardware-terminal-keys";
 import { parseNativeTerminalKeyEvent, type NativeTerminalKeyEvent } from "./terminal-key-events";
 
-/** A key as PaseoHardwareKeyboardModule.kt reports it in `onTerminalKey`. */
+/**
+ * A key as the PaseoHardwareKeyboard modules report it in `onTerminalKey`.
+ * Android (Kotlin) and iOS (Swift) emit this same payload with DOM key names.
+ */
 function nativeKey(
   key: string,
   modifiers: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean } = {},
@@ -54,6 +57,16 @@ describe("hardware terminal keys", () => {
       [nativeKey("[", { ctrl: true }), "\x1b"],
       [nativeKey(" ", { ctrl: true }), "\x00"],
       [nativeKey("b", { alt: true }), "\x1bb"],
+      [nativeKey("ArrowUp", { shift: true }), "\x1b[1;2A"],
+      [nativeKey("ArrowLeft", { alt: true }), "\x1b[1;3D"],
+      [nativeKey("ArrowRight", { ctrl: true, shift: true }), "\x1b[1;6C"],
+      [nativeKey("Home"), "\x1b[H"],
+      [nativeKey("End"), "\x1b[F"],
+      [nativeKey("PageUp"), "\x1b[5~"],
+      [nativeKey("PageDown"), "\x1b[6~"],
+      [nativeKey("v", { ctrl: true }), "\x16"],
+      [nativeKey("\\", { ctrl: true }), "\x1c"],
+      [nativeKey("]", { ctrl: true }), "\x1d"],
     ];
     for (const [payload, bytes] of cases) {
       expect({ payload, bytes: bytesFor(payload) }).toEqual({ payload, bytes });
@@ -70,7 +83,9 @@ describe("hardware terminal keys", () => {
   it("go only to the terminal input that most recently took focus", () => {
     let emit: (payload: unknown) => void = () => {};
     let subscriptions = 0;
+    const captureCalls: boolean[] = [];
     const router = createHardwareTerminalKeyRouter({
+      setCaptureActive: (active) => captureCalls.push(active),
       addListener: (handler) => {
         subscriptions += 1;
         emit = handler;
@@ -82,8 +97,10 @@ describe("hardware terminal keys", () => {
 
     const releaseFirst = router.claim((event) => first.push(event));
     emit(nativeKey("d", { ctrl: true }));
+    expect(captureCalls).toEqual([true]);
     const releaseSecond = router.claim((event) => second.push(event));
     releaseFirst();
+    expect(captureCalls).toEqual([true]);
     emit(nativeKey("Enter"));
     releaseSecond();
     emit(nativeKey("Escape"));
@@ -91,6 +108,7 @@ describe("hardware terminal keys", () => {
     expect(first).toEqual([{ key: "d", ctrl: true, shift: false, alt: false, meta: false }]);
     expect(second).toEqual([{ key: "Enter", ctrl: false, shift: false, alt: false, meta: false }]);
     expect(subscriptions).toBe(0);
+    expect(captureCalls).toEqual([true, false]);
   });
 
   // Native checks the shortcut policy before terminal capture. Web's rule
