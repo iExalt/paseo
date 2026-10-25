@@ -18,18 +18,24 @@ import {
 } from "./terminal-key-events";
 import { createHardwareTerminalKeyRouter } from "./hardware-terminal-keys";
 import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
-import { addNativeTerminalKeyListener } from "@/native/hardware-keyboard";
+import {
+  addNativeTerminalKeyListener,
+  setNativeTerminalKeyCaptureActive,
+} from "@/native/hardware-keyboard";
 import { useStableEvent } from "@/hooks/use-stable-event";
 
 export const TERMINAL_INPUT_CONTEXT_MENU_HIDDEN = true;
 export const TERMINAL_INPUT_HITBOX_SIZE = 1;
-// PaseoHardwareKeyboardModule.kt captures hardware terminal keys (Enter,
-// Backspace, arrows, Ctrl and Alt chords) only while the focused view carries
-// this nativeID. Keep the two in sync.
+// Android's PaseoHardwareKeyboardModule.kt captures hardware terminal keys
+// (Enter, Backspace, arrows, Ctrl and Alt chords) only while the focused view
+// carries this nativeID. Keep the two in sync. iOS has no such view match (the
+// first responder is an inner text view); it captures while the router has
+// switched capture on.
 export const TERMINAL_INPUT_NATIVE_ID = "paseo-native-terminal-input";
 
 const hardwareTerminalKeys = createHardwareTerminalKeyRouter({
   addListener: addNativeTerminalKeyListener,
+  setCaptureActive: setNativeTerminalKeyCaptureActive,
 });
 
 export interface TerminalTextInputChange {
