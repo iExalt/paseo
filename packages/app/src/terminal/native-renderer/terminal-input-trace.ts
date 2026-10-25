@@ -113,11 +113,22 @@ export function traceTerminalReset(reason: TerminalInputResetReason): void {
   );
 }
 
-export type TerminalLatencyStage = "send" | "recv" | "parsed" | "paint";
+// "written" is xterm's write callback, before the drain's own bookkeeping;
+// "paint" is the frame callback that sets React state; "commit" is the
+// layout effect after React commits that state.
+export type TerminalLatencyStage = "send" | "recv" | "written" | "parsed" | "paint" | "commit";
 
 export function traceTerminalLatency(stage: TerminalLatencyStage, chars: number): void {
   if (!TERMINAL_TRACE_ENABLED) {
     return;
   }
   writeTraceLine(JSON.stringify({ t: nativeTerminalPerformanceNow(), stage, chars }));
+}
+
+/** Logs a free-form trace line, such as the connection in use or a probe result. */
+export function traceTerminalEvent(fields: Record<string, unknown>): void {
+  if (!TERMINAL_TRACE_ENABLED) {
+    return;
+  }
+  writeTraceLine(JSON.stringify({ t: nativeTerminalPerformanceNow(), ...fields }));
 }
