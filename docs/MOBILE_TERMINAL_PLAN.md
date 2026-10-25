@@ -249,9 +249,16 @@ treats a key-first Enter's own newline change as part of that Enter.
   keeps an existing marker. On the next change, diff against
   `pendingClearFrom` if the text starts with it (the clear didn't land), and
   otherwise against `previousText`. Then forget `pendingClearFrom`.
-- A Backspace that shrinks a line whose clear never landed (the change is a
-  prefix of the marker) realigns silently, so the old line is not typed
-  again.
+- A Backspace key on an empty field, followed within the pairing window by
+  a change that shrinks the stuck line (a proper prefix of the marker),
+  realigns silently, so the old line is not typed again. Without the key
+  first, such a change is the first letter of a new line that starts the
+  same way (`ls` twice) and is sent.
+- Known gap: with change-first Backspace (Samsung), a Backspace into a line
+  whose clear never landed resends that line. Telling it apart from new
+  typing would mean holding the change until its key, the timing reconciler
+  this plan rejects; the native `InputConnection` fallback would close it.
+  No Samsung clear has failed in any run.
 - Known gap: an Enter that arrives only as text, with no Enter key, sends
   nothing. A batch that drops the key or voice typing could do that; no
   device run has shown it, and the code before P1 behaved the same.

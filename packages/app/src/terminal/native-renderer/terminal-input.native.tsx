@@ -264,6 +264,11 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
   let keyAwaitingShrink: number | null = null;
   let shrinkAwaitingKey: number | null = null;
   let emptiedAwaitingKey: { count: number; at: number } | null = null;
+  // A Backspace key on an empty field while a stuck-clear marker is set. Only
+  // then is a change that shrinks the marker a Backspace into the old line;
+  // without the key it is the first letter of a new line that starts the
+  // same way.
+  let backspaceOnMarkerAt: number | null = null;
 
   function isFresh(at: number | null): at is number {
     return at !== null && now() - at <= BACKSPACE_PAIR_WINDOW_MS;
@@ -273,6 +278,7 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
     keyAwaitingShrink = null;
     shrinkAwaitingKey = null;
     emptiedAwaitingKey = null;
+    backspaceOnMarkerAt = null;
   }
 
   function requestClear(text: string): TerminalTextInputChange {
@@ -294,6 +300,9 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
     if (previousText.length > 0) {
       keyAwaitingShrink = now();
       return { data: "", shouldClear: false };
+    }
+    if (pendingClearFrom !== null) {
+      backspaceOnMarkerAt = now();
     }
     return { data: "\x7f".repeat(emptied?.count ?? 1), shouldClear: false };
   }
@@ -333,16 +342,17 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
     receiveTextChange(text: string): TerminalTextInputChange {
       if (
         pendingClearFrom !== null &&
+        isFresh(backspaceOnMarkerAt) &&
         text.length > 0 &&
         text.length < pendingClearFrom.length &&
         pendingClearFrom.startsWith(text)
       ) {
         // Backspace into a line whose clear never landed. The shell already
-        // ran that line, so realign silently and let the key pair with this.
+        // ran that line, so realign silently. This needs the key first (AOSP
+        // order); see the plan's known gap for the change-first order.
         pendingClearFrom = null;
         clearBackspaceFlags();
         previousText = text;
-        shrinkAwaitingKey = now();
         return { data: "", shouldClear: false };
       }
       const base =

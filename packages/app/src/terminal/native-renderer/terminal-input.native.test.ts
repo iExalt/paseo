@@ -582,29 +582,70 @@ describe("native terminal typed input, diff (Android)", () => {
       expect(play(["k", "Backspace"], ["c", "ls\nx"])).toBe("\x7f");
     });
 
+    it("does not resend the old line on Backspace after a stuck clear, AOSP order", () => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"]);
+      expect(play(["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+      expect(play(["c", "lsx"])).toBe("x");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+    });
+
+    it("resends the old line on Backspace after a stuck clear, Samsung order (known gap)", () => {
+      // A change-first Backspace into a stuck line looks like typing a new line
+      // that starts the same way; see the plan's known gaps.
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"]);
+      expect(play(["c", "ls"], ["k", "Backspace"], ["c", "lsx"])).toBe("lsx");
+    });
+
     it.each([
       [
         "AOSP",
+        "ls",
         [
-          ["k", "Backspace"],
-          ["c", "ls"],
+          ["c", "ls\n"],
+          ["k", "Enter"],
         ] as InputEvent[],
-        "\x7f",
       ],
       [
         "Samsung",
+        "ls",
         [
-          ["c", "ls"],
-          ["k", "Backspace"],
+          ["k", "Enter"],
+          ["c", "ls\n"],
         ] as InputEvent[],
-        "",
       ],
-    ])("does not resend the old line on Backspace after a stuck clear: %s", (_order, bs, sent) => {
+      [
+        "AOSP",
+        "y",
+        [
+          ["c", "y\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        "y",
+        [
+          ["k", "Enter"],
+          ["c", "y\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends a repeated line in full after a clear lands: %s %s", (_order, line, enter) => {
       const { play } = createDiffInput();
-      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"]);
-      expect(play(...bs)).toBe(sent);
-      expect(play(["c", "lsx"])).toBe("x");
-      expect(play(["at", 1000], ["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+      let typed = "";
+      for (const letter of line) {
+        typed += letter;
+        play(["c", typed]);
+      }
+      play(...enter, ["reset"]);
+      typed = "";
+      let sent = "";
+      for (const letter of line) {
+        typed += letter;
+        sent += play(["c", typed], ["k", letter]);
+      }
+      expect(sent).toBe(line);
     });
 
     it("keeps the stuck-clear marker across a show-keyboard reset", () => {
