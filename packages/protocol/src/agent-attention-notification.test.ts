@@ -60,7 +60,7 @@ describe("buildAgentAttentionNotificationPayload", () => {
     });
 
     expect(payload).toEqual({
-      title: "Agent needs permission",
+      title: "❓️ Agent needs permission",
       body: "Approve command - Run git push",
       data: {
         serverId: "srv-2",
@@ -80,7 +80,7 @@ describe("buildAgentAttentionNotificationPayload", () => {
     });
 
     expect(payload).toEqual({
-      title: "Agent needs attention",
+      title: "❗️ Agent needs attention",
       body: "Encountered an error.",
       data: {
         serverId: "srv-3",
@@ -89,6 +89,34 @@ describe("buildAgentAttentionNotificationPayload", () => {
         reason: "error",
       },
     });
+  });
+
+  it.each([
+    ["finished", "Fix login redirect"],
+    ["permission", "❓️ Fix login redirect"],
+    ["error", "❗️ Fix login redirect"],
+  ] as const)("titles %s notifications with the thread title", (reason, title) => {
+    const payload = buildAgentAttentionNotificationPayload({
+      reason,
+      serverId: "srv-4",
+      workspaceId: "workspace-4",
+      agentId: "agent-4",
+      agentTitle: "  Fix login\nredirect ",
+    });
+
+    expect(payload.title).toBe(title);
+  });
+
+  it("ignores the placeholder thread title", () => {
+    const payload = buildAgentAttentionNotificationPayload({
+      reason: "finished",
+      serverId: "srv-5",
+      workspaceId: "workspace-5",
+      agentId: "agent-5",
+      agentTitle: "New agent",
+    });
+
+    expect(payload.title).toBe("Agent finished");
   });
 });
 
