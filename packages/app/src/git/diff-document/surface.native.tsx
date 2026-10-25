@@ -10,6 +10,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useWindowDimensions as useKeyboardWindowDimensions } from "react-native-keyboard-controller";
 import Animated, {
   createAnimatedComponent,
   useAnimatedReaction,
@@ -28,7 +29,8 @@ import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { getInlineReviewThreadState, InlineReviewThread } from "@/review";
 import { useBackCancelsReviewEditor } from "@/review/use-back-cancels-review-editor";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
-import { useKeyboardShift } from "@/keyboard/shift";
+import { useKeyboardShift, useSettledKeyboardShift } from "@/keyboard/shift";
+import { ReviewEditorRevealContext, resolveRevealScrollTop } from "@/review/reveal";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { DocumentFileHeader } from "./document-file-header";
 import {
@@ -152,10 +154,55 @@ export function DiffSurface(props: DiffSurfaceProps) {
   } | null>(null);
   const consumedFocusRef = useRef<string | null>(null);
   const scrollTop = useSharedValue(0);
-  const { shift: keyboardShift } = useKeyboardShift();
-  const keyboardSpacerStyle = useAnimatedStyle(
-    () => ({ height: keyboardShift.value }),
-    [keyboardShift],
+  const { bottomInset } = useKeyboardShift();
+  const rootRef = useRef<View>(null);
+  const focusedEditorRef = useRef<View | null>(null);
+  const settledKeyboardShift = useSettledKeyboardShift();
+  // Edge to edge the window height includes the keyboard area; RN's can be off on Android.
+  const { height: windowHeight } = useKeyboardWindowDimensions();
+  // How much of the diff's bottom the keyboard and navigation bar cover. The content grows by
+  // it so the last lines, and an editor on them, can scroll clear.
+  const [hiddenBottom, setHiddenBottom] = useState(0);
+  // Scroll a focused review editor, with its actions, into the part of this diff that the
+  // keyboard and navigation bar leave visible.
+  const revealFocusedEditor = useStableEvent(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    root.measureInWindow((_rootX, rootTop, _rootWidth, rootHeight) => {
+      // The root can extend under the navigation bar, which the shift leaves out.
+      const keyboardTop = windowHeight - (settledKeyboardShift + bottomInset.value);
+      const visibleBottom = Math.min(rootTop + rootHeight, keyboardTop);
+      setHiddenBottom(Math.max(0, rootTop + rootHeight - visibleBottom));
+      const editor = focusedEditorRef.current;
+      if (!editor) return;
+      editor.measureInWindow((_x, editorTop, _width, editorHeight) => {
+        const nextScrollTop = resolveRevealScrollTop({
+          elementTop: editorTop,
+          elementBottom: editorTop + editorHeight,
+          visibleTop: rootTop,
+          visibleBottom,
+          scrollTop: scrollTop.value,
+        });
+        if (nextScrollTop !== null)
+          scrollRef.current?.scrollTo({ y: nextScrollTop, animated: true });
+      });
+    });
+  });
+  // Runs again once the content has grown by a new hidden strip.
+  useEffect(() => {
+    revealFocusedEditor();
+  }, [settledKeyboardShift, hiddenBottom, viewport.height, revealFocusedEditor]);
+  const revealHost = useMemo(
+    () => ({
+      focusEditor: (element: View) => {
+        focusedEditorRef.current = element;
+        revealFocusedEditor();
+      },
+      releaseEditor: (element: View) => {
+        if (focusedEditorRef.current === element) focusedEditorRef.current = null;
+      },
+    }),
+    [revealFocusedEditor],
   );
   const horizontalOffsets = useSharedValue<DiffHorizontalOffsets>({});
   const family = props.displayPreferences.monoFontFamily.trim() || SYSTEM_MONO;
@@ -484,10 +531,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const contentInsetBottom = props.contentInsetBottom ?? 0;
   const contentStyle = useMemo(
     () => ({
-      minHeight: Math.max(model.height, viewport.height) + contentInsetBottom,
+      // Room to scroll the last lines above the keyboard and navigation bar.
+      minHeight: Math.max(model.height, viewport.height) + contentInsetBottom + hiddenBottom,
       backgroundColor: "transparent",
     }),
-    [contentInsetBottom, model.height, viewport.height],
+    [contentInsetBottom, model.height, viewport.height, hiddenBottom],
   );
   // While a drag runs, a finger near the top or bottom edge scrolls the list each
   // frame and re-dispatches the drag at its unchanged viewport position, which is
@@ -521,7 +569,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
     return () => cancelAnimationFrame(frame);
   }, [autoScrollFrame, selectionDragActive]);
   return (
-    <View style={[styles.root, { backgroundColor: props.palette.surface }]} onLayout={layout}>
+    <View
+      ref={rootRef}
+      style={[styles.root, { backgroundColor: props.palette.surface }]}
+      onLayout={layout}
+    >
       <AnimatedScrollView
         ref={scrollRef}
         style={[StyleSheet.absoluteFill, styles.scroll]}
@@ -585,8 +637,9 @@ export function DiffSurface(props: DiffSurfaceProps) {
           onSelectionGesture={dispatchSelectionGesture}
           selectionDrag={selectionDrag}
         />
-        <NativeReviewOverlays model={model} mode={props.mode} />
-        <Animated.View pointerEvents="none" style={keyboardSpacerStyle} />
+        <ReviewEditorRevealContext.Provider value={revealHost}>
+          <NativeReviewOverlays model={model} mode={props.mode} />
+        </ReviewEditorRevealContext.Provider>
       </AnimatedScrollView>
       {selectionDragActive ? null : (
         <NativeSelectionActionBar
