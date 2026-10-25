@@ -70,6 +70,30 @@ export function createReadingAnchor() {
   };
 }
 
+export const MAX_SCROLL_TO_INDEX_RETRIES = 10;
+
+export function findRowIndex(rows: readonly { id: string }[], rowId: string | null): number | null {
+  if (rowId === null) return null;
+  const index = rows.findIndex((row) => row.id === rowId);
+  return index >= 0 ? index : null;
+}
+
+// Rows far from the window have no measured layout yet: the list jumps near an estimate,
+// lets them render, then aims again. Bounded so an unreachable row cannot loop. Rows merged
+// while a retry waits shift indices (newer rows land at lower indices of the inverted list),
+// so the retry finds its target by id. A target that left the list ends the retries.
+export function planScrollToIndexRetry(input: {
+  rows: readonly { id: string }[];
+  targetRowId: string | null;
+  averageItemLength: number;
+  attempts: number;
+}): { index: number; estimatedOffset: number } | null {
+  if (input.attempts >= MAX_SCROLL_TO_INDEX_RETRIES) return null;
+  const index = findRowIndex(input.rows, input.targetRowId);
+  if (index === null) return null;
+  return { index, estimatedOffset: input.averageItemLength * index };
+}
+
 // FlatList exposes no row geometry, so the native list holds the reader by row id. A width
 // change rewraps every row and Android's maintainVisibleContentPosition cannot hold an
 // inverted, virtualized list in place, so a detached reader would land elsewhere. Height
