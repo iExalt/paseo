@@ -1330,6 +1330,39 @@ test("canvas diff copies only the selected split side", async ({ context, page }
   expect(after.code).not.toEqual(before.code);
 });
 
+test("canvas diff select all and header-crossing drags copy source without hunk headers", async ({
+  context,
+  page,
+}) => {
+  const lines = ["ALPHA", "BRAVO"];
+  const workspace = await createWorkspaceWithExactSelectionDiff(lines.join("\n"));
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await configureDiffPresentation(page, { layout: "unified", wrapLines: false });
+  await openSelectionWorkspaceChanges(page, workspace);
+  for (const layout of ["unified", "split"] as const) {
+    await setOpenChangesPresentation(page, { layout, wrapLines: false });
+    await rightClickFirstChangedLine(page);
+    await page.getByTestId("diff-source-select-all").click();
+    await copyFromChangedLineMenu(page, "Copy");
+    await expectClipboardText(page, lines.join("\n"));
+  }
+  await setOpenChangesPresentation(page, { layout: "unified", wrapLines: false });
+  const bodyBounds = await page.getByTestId("diff-file-0-body").boundingBox();
+  const fontSize = await page
+    .getByTestId("git-diff-canvas")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
+  if (!bodyBounds) throw new Error("Expanded diff body has no bounds");
+  const lineHeight = Math.round(fontSize * 1.5);
+  // Press on the hunk-header row (above the first changed line) and drag to the last line.
+  await page.mouse.move(bodyBounds.x + 200, bodyBounds.y + lineHeight * 0.5);
+  await page.mouse.down();
+  await page.mouse.move(bodyBounds.x + 400, bodyBounds.y + lineHeight * 2.5, { steps: 4 });
+  await page.mouse.up();
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  await page.keyboard.press("ControlOrMeta+C");
+  await expectClipboardText(page, lines.join("\n"));
+});
+
 test("canvas diff copies exact wrapped fragments", async ({ context, page }) => {
   const content = "abcdefghijklmnopqrstuvwxyz".repeat(8);
   const workspace = await createWorkspaceWithExactSelectionDiff(content);
