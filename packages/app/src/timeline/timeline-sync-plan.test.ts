@@ -3,6 +3,7 @@ import { TIMELINE_FETCH_PAGE_SIZE } from "@/timeline/timeline-fetch-policy";
 import {
   isTimelineCatchUpComplete,
   isTimelineResumeSnapshotAuthoritative,
+  planTimelineGapFetch,
   planTimelineOlderFetch,
   planTimelinePromptJump,
   planTimelineResumeFetch,
@@ -51,6 +52,39 @@ describe("timeline sync planning", () => {
       projection: "projected",
       mergeWindow: true,
     });
+  });
+
+  test("a reader in a jump window loads the hole after the window, and only there", () => {
+    const cursor = {
+      epoch: "epoch-1",
+      startSeq: 101,
+      endSeq: 140,
+      retainedRanges: [{ startSeq: 4, endSeq: 43 }],
+    };
+
+    expect(planTimelineGapFetch({ cursor, readingSeq: 24 })).toEqual({
+      direction: "after",
+      cursor: { epoch: "epoch-1", seq: 43 },
+      limit: TIMELINE_FETCH_PAGE_SIZE,
+      projection: "projected",
+      mergeWindow: true,
+    });
+    // The tail is the newest range: nothing follows it.
+    expect(planTimelineGapFetch({ cursor, readingSeq: 120 })).toBeNull();
+    // Adjacent ranges leave no hole.
+    expect(
+      planTimelineGapFetch({
+        cursor: { ...cursor, retainedRanges: [{ startSeq: 4, endSeq: 100 }] },
+        readingSeq: 24,
+      }),
+    ).toBeNull();
+    // A small hole is loaded without overlapping the tail.
+    expect(
+      planTimelineGapFetch({
+        cursor: { ...cursor, retainedRanges: [{ startSeq: 4, endSeq: 90 }] },
+        readingSeq: 24,
+      })?.limit,
+    ).toBe(10);
   });
 
   test("catch-up finishes when the daemon reports no newer rows", () => {

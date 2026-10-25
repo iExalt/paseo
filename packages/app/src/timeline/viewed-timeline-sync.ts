@@ -202,16 +202,20 @@ function commitProcessedTimeline(input: {
   const { serverId, payload, result, timeline, currentCursor, synchronized } = input;
   const agentId = payload.agentId;
   const store = useSessionStore.getState();
+  // Older pages and windows merged into the hole say nothing about the newest edge: a gap
+  // page has newer rows (the tail), which must not detach a timeline that holds the tail.
+  const keepsNewerEdge =
+    payload.direction === "before" ||
+    (payload.direction === "after" && payload.mergeWindow === true);
   if (result.commit !== "discard") {
     store.applyAgentTimelineResponseState(serverId, agentId, {
       items: result.tail,
       head: result.head,
       range: result.cursorChanged ? (result.cursor ?? null) : (currentCursor ?? null),
       older: result.older,
-      newer:
-        payload.direction === "before"
-          ? timeline.status === "synced" && timeline.newer === "available"
-          : payload.hasNewer,
+      newer: keepsNewerEdge
+        ? timeline.status === "synced" && timeline.newer === "available"
+        : payload.hasNewer,
       synchronized,
       acknowledgedClientMessageIds: result.acknowledgedClientMessageIds,
     });
