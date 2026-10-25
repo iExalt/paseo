@@ -464,11 +464,12 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     bottomAnchorController.detachByUser();
   });
   const jumpToRow = useStableEvent((index: number, animated: boolean) => {
-    if (index < 0) return;
+    const key = rows[index]?.id;
+    if (key === undefined) return;
     holdReadingPosition();
     onNearBottomChange(false);
     programmaticScrollEventBudgetRef.current = 3;
-    listRef.current?.scrollToIndex({ index, viewPosition: 0, animated });
+    listRef.current?.scrollToKey({ key, viewPosition: 0, animated });
   });
   const scrollToMessage = useStableEvent((messageId: string) =>
     jumpToRow(
