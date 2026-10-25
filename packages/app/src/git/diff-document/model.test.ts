@@ -10,6 +10,8 @@ import {
   resolveRelayoutScrollTop,
   shouldApplyRelayoutScroll,
 } from "./model";
+import type { ReviewDraftComment } from "@/review";
+import { REVIEW_OVERLAY_MIN_WIDTH } from "./review-overlay-geometry";
 import type { BuildDiffDocumentModelInput, TextMeasurer } from "./types";
 
 const measurer: TextMeasurer = { measure: (text) => Array.from(text).length * 10 };
@@ -404,6 +406,30 @@ describe("diff document model", () => {
       );
     });
     expect(reviewRow?.kind === "line" ? reviewRow.reviewHeight : 0).toBe(148);
+  });
+
+  it("stacks both split threads of a row when the columns are too narrow for the editor", () => {
+    const comment = { id: "c1", body: "note" } as ReviewDraftComment;
+    const heights = (viewportWidth: number) => {
+      const unified = buildDiffDocumentModel(input({ viewportWidth }));
+      const sides = unified.rows
+        .flatMap((row) => (row.kind === "line" ? row.cells : []))
+        .filter((cell) => cell?.reviewTarget);
+      const oldTarget = sides.find((cell) => cell?.reviewTarget?.side === "old")?.reviewTarget;
+      const newTarget = sides.find((cell) => cell?.reviewTarget?.side === "new")?.reviewTarget;
+      if (!oldTarget || !newTarget) throw new Error("Expected both review sides");
+      const reviewActions = {
+        ...reviewActionsWithEditor(newTarget),
+        commentsByTarget: new Map([[oldTarget.key, [comment]]]),
+      };
+      const split = buildDiffDocumentModel(
+        input({ layout: "split", viewportWidth, reviewActions }),
+      );
+      return rowForReviewTarget(split, newTarget.key).reviewHeight;
+    };
+    // Comment thread 72 + 16 padding, editor thread 132 + 16 padding.
+    expect(heights(2 * REVIEW_OVERLAY_MIN_WIDTH)).toBe(148);
+    expect(heights(2 * REVIEW_OVERLAY_MIN_WIDTH - 2)).toBe(88 + 148);
   });
 
   it("reflows review geometry without remeasuring unchanged text", () => {
