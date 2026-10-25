@@ -275,6 +275,11 @@ function NativeTerminalEmulator({
     ),
   );
   const terminalScreen = useSyncExternalStore(screenStore.subscribe, screenStore.get);
+  const renderedScreenRef = useRef<TerminalScreenState | null>(null);
+  if (renderedScreenRef.current !== terminalScreen) {
+    renderedScreenRef.current = terminalScreen;
+    traceTerminalLatency("render", 0);
+  }
   const [selectionRange, setSelectionRange] = useState<TerminalSelectionRange | null>(null);
   const selectionRangeRef = useRef<TerminalSelectionRange | null>(null);
   const hasNotifiedSelectionRef = useRef(false);
