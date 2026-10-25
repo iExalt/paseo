@@ -23,7 +23,11 @@ import {
   setNativeTerminalKeyCaptureActive,
 } from "@/native/hardware-keyboard";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { traceTerminalInput } from "./terminal-input-trace";
+import {
+  traceTerminalInput,
+  traceTerminalReset,
+  type TerminalInputResetReason,
+} from "./terminal-input-trace";
 
 export const TERMINAL_INPUT_CONTEXT_MENU_HIDDEN = true;
 export const TERMINAL_INPUT_HITBOX_SIZE = 1;
@@ -222,10 +226,14 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       pendingFocusFrameRef.current = null;
     }, []);
 
-    const resetNativeInput = useCallback(() => {
-      inputState.reset();
-      inputRef.current?.replaceText("");
-    }, [inputState]);
+    const resetNativeInput = useCallback(
+      (reason: TerminalInputResetReason) => {
+        traceTerminalReset(reason);
+        inputState.reset();
+        inputRef.current?.replaceText("");
+      },
+      [inputState],
+    );
 
     const showNativeKeyboard = useCallback(() => {
       clearPendingFocus();
@@ -237,7 +245,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       // Keep the native IME buffer aligned with the terminal. Some keyboards
       // do not emit a text change when a clipboard item replaces identical
       // stale input, so clear the buffer even when focus is already correct.
-      resetNativeInput();
+      resetNativeInput("show-keyboard");
 
       const focusRequest = resolveTerminalInputFocusRequest({
         isInputFocused: isFocusedRef.current || input.isFocused(),
@@ -265,7 +273,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       clearPendingFocus();
       inputRef.current?.blur();
       isFocusedRef.current = false;
-      resetNativeInput();
+      resetNativeInput("blur");
     }, [clearPendingFocus, resetNativeInput]);
 
     const focusNativeInput = useCallback(() => {
@@ -323,7 +331,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       releaseTypingScopeRef.current = null;
       releaseHardwareKeysRef.current?.();
       releaseHardwareKeysRef.current = null;
-      resetNativeInput();
+      resetNativeInput("blurred");
     }, [resetNativeInput]);
 
     const handleChangeText = useCallback(
@@ -334,7 +342,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
           onInput?.(change.data);
         }
         if (change.shouldClear) {
-          resetNativeInput();
+          resetNativeInput("enter");
         }
       },
       [inputState, onInput, resetNativeInput],
@@ -351,7 +359,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
           onInput?.(change.data);
         }
         if (change.shouldClear) {
-          resetNativeInput();
+          resetNativeInput("key-enter");
         }
       },
       [inputState, onInput, onTerminalKey, resetNativeInput],

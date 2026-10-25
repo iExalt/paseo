@@ -60,16 +60,46 @@ function writeTraceLine(json: string): void {
 
 export type TerminalInputTraceKind = "key" | "change" | "hwkey";
 
+export type TerminalInputResetReason = "enter" | "key-enter" | "show-keyboard" | "blur" | "blurred";
+
+// Module state, shared by every terminal: enough to tell whether the last
+// clear landed, which is all the trace needs.
+let lastChangeText = "";
+let pendingReset: { reason: TerminalInputResetReason; staleText: string } | null = null;
+
 export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, sent: string): void {
   if (!TERMINAL_TRACE_ENABLED) {
     return;
   }
+  const line: Record<string, unknown> = {
+    t: nativeTerminalPerformanceNow(),
+    kind,
+    raw: kind === "change" ? traceText(raw) : redactTerminalTraceKey(raw),
+    sent: traceText(sent),
+  };
+  if (kind === "change") {
+    if (pendingReset) {
+      // A change that still starts with the pre-clear text means the clear never landed.
+      line.afterReset = pendingReset.reason;
+      line.changeChars = raw.length;
+      line.stale = pendingReset.staleText === "" ? null : raw.startsWith(pendingReset.staleText);
+      pendingReset = null;
+    }
+    lastChangeText = raw;
+  }
+  writeTraceLine(JSON.stringify(line));
+}
+
+export function traceTerminalReset(reason: TerminalInputResetReason): void {
+  if (!TERMINAL_TRACE_ENABLED) {
+    return;
+  }
+  pendingReset = { reason, staleText: lastChangeText };
   writeTraceLine(
     JSON.stringify({
       t: nativeTerminalPerformanceNow(),
-      kind,
-      raw: kind === "change" ? traceText(raw) : redactTerminalTraceKey(raw),
-      sent: traceText(sent),
+      reset: reason,
+      fieldChars: lastChangeText.length,
     }),
   );
 }
