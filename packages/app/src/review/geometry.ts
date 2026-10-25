@@ -22,6 +22,8 @@ export interface InlineReviewActions {
   onChangeEditorBody: (body: string) => void;
   onSaveEditor: (body: string) => void;
   onDeleteComment: (id: string) => void;
+  /** The open editor right now, for an editor deciding what to do as it unmounts. */
+  getEditor?: () => InlineReviewEditorState | null;
 }
 
 export function isInlineReviewEditorForTarget(
