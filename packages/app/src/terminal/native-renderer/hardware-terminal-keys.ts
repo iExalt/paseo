@@ -2,6 +2,8 @@ import { parseNativeTerminalKeyEvent, type NativeTerminalKeyEvent } from "./term
 
 export interface HardwareTerminalKeySource {
   addListener(handler: (payload: unknown) => void): { remove: () => void };
+  /** Tells native whether to capture hardware terminal keys (iOS; Android detects the view itself). */
+  setCaptureActive(active: boolean): void;
 }
 
 export interface HardwareTerminalKeyRouter {
@@ -15,7 +17,8 @@ export interface HardwareTerminalKeyRouter {
 /**
  * Native captures a hardware terminal key only while a native terminal input
  * holds focus, so it reports keys without saying which terminal. The input
- * that most recently gained focus owns them.
+ * that most recently gained focus owns them. Capture is switched on with the
+ * first claim and off when the last owner releases.
  */
 export function createHardwareTerminalKeyRouter(
   source: HardwareTerminalKeySource,
@@ -27,6 +30,7 @@ export function createHardwareTerminalKeyRouter(
     claim(handler) {
       const token = {};
       owner = { handler, token };
+      if (!subscription) source.setCaptureActive(true);
       subscription ??= source.addListener((payload) => {
         const event = parseNativeTerminalKeyEvent(payload);
         if (event) owner?.handler(event);
@@ -36,6 +40,7 @@ export function createHardwareTerminalKeyRouter(
         owner = null;
         subscription?.remove();
         subscription = null;
+        source.setCaptureActive(false);
       };
     },
   };

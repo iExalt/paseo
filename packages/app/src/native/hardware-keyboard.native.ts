@@ -1,5 +1,4 @@
 import { useSyncExternalStore } from "react";
-import { Platform } from "react-native";
 import { requireOptionalNativeModule, type EventSubscription } from "expo-modules-core";
 import type { NativeShortcutPolicy } from "@/keyboard/native-shortcut-policy";
 
@@ -13,6 +12,9 @@ interface PaseoHardwareKeyboardModule {
   setHardwareKeyboardSubmitEnabled(enabled: boolean): void;
   setShortcutPolicy(policyJson: string): void;
   hasHardwareKeyboard(): boolean;
+  // Optional: Android detects the terminal view by nativeID, and older iOS
+  // dev clients predate the capture flag.
+  setTerminalKeyCaptureActive?(active: boolean): void;
   addListener(
     eventName: HardwareKeyboardEvent,
     handler: (payload: Record<string, unknown>) => void,
@@ -47,10 +49,12 @@ export function addNativeShortcutKeyListener(
 export function addNativeTerminalKeyListener(
   handler: (payload: unknown) => void,
 ): EventSubscription {
-  // Only the Android module captures terminal keys; the iPad terminal types
-  // through its text input.
-  if (Platform.OS !== "android") return noSubscription;
   return module?.addListener("onTerminalKey", handler) ?? noSubscription;
+}
+
+/** Switches iOS terminal key capture; Android ignores it and detects the view by nativeID. */
+export function setNativeTerminalKeyCaptureActive(active: boolean) {
+  module?.setTerminalKeyCaptureActive?.(active);
 }
 
 let hasHardwareKeyboard: boolean | null = null;

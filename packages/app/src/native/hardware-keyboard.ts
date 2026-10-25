@@ -24,6 +24,8 @@ export function addNativeTerminalKeyListener(_handler: (payload: unknown) => voi
   return noSubscription;
 }
 
+export function setNativeTerminalKeyCaptureActive(_active: boolean) {}
+
 export function useHasHardwareKeyboard(): boolean {
   return false;
 }
