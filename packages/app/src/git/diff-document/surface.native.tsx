@@ -154,28 +154,22 @@ export function DiffSurface(props: DiffSurfaceProps) {
   } | null>(null);
   const consumedFocusRef = useRef<string | null>(null);
   const scrollTop = useSharedValue(0);
-  const { shift: keyboardShift, bottomInset } = useKeyboardShift();
-  const keyboardSpacerStyle = useAnimatedStyle(
-    () => ({ height: keyboardShift.value }),
-    [keyboardShift],
-  );
+  const { bottomInset } = useKeyboardShift();
   const rootRef = useRef<View>(null);
   const focusedEditorRef = useRef<View | null>(null);
   const settledKeyboardShift = useSettledKeyboardShift();
   // Edge to edge the window height includes the keyboard area; RN's can be off on Android.
   const { height: windowHeight } = useKeyboardWindowDimensions();
-  // The spacer only lengthens the content, so scroll a focused review editor, with its
-  // actions, into the part of this diff that the keyboard leaves visible.
+  // Scroll a focused review editor, with its actions, into the part of this diff that the
+  // keyboard and navigation bar leave visible.
   const revealFocusedEditor = useStableEvent(() => {
     const editor = focusedEditorRef.current;
     const root = rootRef.current;
     if (!editor || !root) return;
     root.measureInWindow((_rootX, rootTop, _rootWidth, rootHeight) => {
       editor.measureInWindow((_x, editorTop, _width, editorHeight) => {
-        const keyboardTop =
-          settledKeyboardShift > 0
-            ? windowHeight - (settledKeyboardShift + bottomInset.value)
-            : Number.POSITIVE_INFINITY;
+        // The root can extend under the navigation bar, which the shift leaves out.
+        const keyboardTop = windowHeight - (settledKeyboardShift + bottomInset.value);
         const nextScrollTop = resolveRevealScrollTop({
           elementTop: editorTop,
           elementBottom: editorTop + editorHeight,
@@ -530,10 +524,12 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const contentInsetBottom = props.contentInsetBottom ?? 0;
   const contentStyle = useMemo(
     () => ({
-      minHeight: Math.max(model.height, viewport.height) + contentInsetBottom,
+      // The settled keyboard height lets the last lines scroll above the keyboard.
+      minHeight:
+        Math.max(model.height, viewport.height) + contentInsetBottom + settledKeyboardShift,
       backgroundColor: "transparent",
     }),
-    [contentInsetBottom, model.height, viewport.height],
+    [contentInsetBottom, model.height, viewport.height, settledKeyboardShift],
   );
   // While a drag runs, a finger near the top or bottom edge scrolls the list each
   // frame and re-dispatches the drag at its unchanged viewport position, which is
@@ -638,7 +634,6 @@ export function DiffSurface(props: DiffSurfaceProps) {
         <ReviewEditorRevealContext.Provider value={revealHost}>
           <NativeReviewOverlays model={model} mode={props.mode} />
         </ReviewEditorRevealContext.Provider>
-        <Animated.View pointerEvents="none" style={keyboardSpacerStyle} />
       </AnimatedScrollView>
       {selectionDragActive ? null : (
         <NativeSelectionActionBar
