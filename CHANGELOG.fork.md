@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.11.0](https://github.com/iExalt/paseo/compare/paseo-v0.10.0...paseo-v0.11.0) (2026-10-25)
+
+
+### Features
+
+* **app:** deliver hardware keyboard terminal keys on iPad ([#212](https://github.com/iExalt/paseo/issues/212)) ([67b70f9](https://github.com/iExalt/paseo/commit/67b70f9fda8d56906421369000701d9f5c2ce947))
+* **app:** select text in the native diff view ([#207](https://github.com/iExalt/paseo/issues/207)) ([fa29317](https://github.com/iExalt/paseo/commit/fa29317de0499ecf395165b0d1a955f46fe9b9b5))
+* **app:** show API spend in the Usage modal ([#196](https://github.com/iExalt/paseo/issues/196)) ([353c0af](https://github.com/iExalt/paseo/commit/353c0afdbf2d604443b2185a9e494a4c888158c7))
+* **app:** trace native terminal input order and echo latency ([#216](https://github.com/iExalt/paseo/issues/216)) ([960c7cc](https://github.com/iExalt/paseo/commit/960c7cc7298a7b194ab001f7b21d2bbcae3a85cc))
+* **ci:** replay rename/rename and upstream-side resolutions in rebase-dev ([#199](https://github.com/iExalt/paseo/issues/199)) ([9ad1569](https://github.com/iExalt/paseo/commit/9ad1569ec3aa6dbac49543c7cece73c86749cd7b))
+* title agent notifications with the thread title ([#218](https://github.com/iExalt/paseo/issues/218)) ([959507e](https://github.com/iExalt/paseo/commit/959507ef6a00e30b438eadeb7a48fbd12dc6b286))
+
+
+### Bug Fixes
+
+* **app:** deliver hardware keyboard terminal keys on Android ([#206](https://github.com/iExalt/paseo/issues/206)) ([c9820c2](https://github.com/iExalt/paseo/commit/c9820c2943558dca855abdd2ee34aa90df71f008))
+* **app:** keep reading position across rotation after outline jump ([#205](https://github.com/iExalt/paseo/issues/205)) ([9d065a8](https://github.com/iExalt/paseo/commit/9d065a8b2e40ba593cc31d67f25a1175ade95d41))
+* **app:** keep the native review editor usable in narrow split diffs ([#208](https://github.com/iExalt/paseo/issues/208)) ([fae6324](https://github.com/iExalt/paseo/commit/fae6324b10746353d0e090cbfa2027e8a17a8b20))
+* **app:** keep the settings sidebar above the bottom system inset ([#204](https://github.com/iExalt/paseo/issues/204)) ([96ccbd1](https://github.com/iExalt/paseo/commit/96ccbd19f2b56f6350e8bf36d58f9050a7ca00bb))
+* **app:** load the transcript hole after an outline jump on web ([#209](https://github.com/iExalt/paseo/issues/209)) ([9b38c3f](https://github.com/iExalt/paseo/commit/9b38c3f65395d7048a44c6f2c2f0eb4aed7c66ac))
+* **app:** menu button shows the sidebar over an Explorer it cannot share width with ([#217](https://github.com/iExalt/paseo/issues/217)) ([3ab97f9](https://github.com/iExalt/paseo/commit/3ab97f9ae3de37078c939f94e44e80f047c947a6))
+* **app:** omit hunk headers from diff select all and range copy ([#219](https://github.com/iExalt/paseo/issues/219)) ([86aeac0](https://github.com/iExalt/paseo/commit/86aeac0e8943e2556b38905efc9043cc5d30f137))
+* **app:** report reading position on native for the outline rail ([#203](https://github.com/iExalt/paseo/issues/203)) ([afe7be5](https://github.com/iExalt/paseo/commit/afe7be5572b5542c2b4cfc02e13309a504cd6e22))
+* **app:** send Android terminal keys exactly once ([#221](https://github.com/iExalt/paseo/issues/221)) ([c7b5cc5](https://github.com/iExalt/paseo/commit/c7b5cc53b71e02b6fec0702002b52aed0efd0460))
+* **app:** stack narrow split review threads and close the editor on Back ([#213](https://github.com/iExalt/paseo/issues/213)) ([ca3fb3f](https://github.com/iExalt/paseo/commit/ca3fb3fa508d9831724940031dd3af9e237020c6))
+* **app:** use web 8 px reading line for native outline tick ([#215](https://github.com/iExalt/paseo/issues/215)) ([1c6fc63](https://github.com/iExalt/paseo/commit/1c6fc63709a75a9e97cf4a96ce14cadd1754ff10))
+* **cli:** load node types in cli tsconfig ([#211](https://github.com/iExalt/paseo/issues/211)) ([7e2fee4](https://github.com/iExalt/paseo/commit/7e2fee4979642e0fd4e32d65774e6c4e03c1825d))
+* **server:** notify on a held send's own turn, not the turn it waited behind ([#202](https://github.com/iExalt/paseo/issues/202)) ([273fea3](https://github.com/iExalt/paseo/commit/273fea304ce540e15603169be38bc018378fa02e))
+* **server:** stop re-emitting streamed Claude blocks from per-block snapshots ([#220](https://github.com/iExalt/paseo/issues/220)) ([7af3c8f](https://github.com/iExalt/paseo/commit/7af3c8fe11b0ec8772d415962a999a0866300c9b))
+* **skills:** quit Paseo with SIGTERM in update-nix-paseo restart command ([#194](https://github.com/iExalt/paseo/issues/194)) ([77440ff](https://github.com/iExalt/paseo/commit/77440ffe7fb6aa34852cb985da8e1e9597807071))
+
 ## [0.10.0](https://github.com/iExalt/paseo/compare/paseo-v0.9.0...paseo-v0.10.0) (2026-10-18)
 
 
