@@ -1,5 +1,6 @@
 import React, {
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -26,6 +27,7 @@ import {
 } from "@/components/ui/text-input";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { createReviewEditorScope } from "./editor";
+import { ReviewEditorRevealContext } from "./reveal";
 import { isWeb } from "@/constants/platform";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import type { Theme } from "@/styles/theme";
@@ -408,6 +410,8 @@ export function InlineReviewEditor({
 }) {
   const { t } = useTranslation();
   const inputRef = useRef<EditingTextInputHandle | null>(null);
+  const editorBlockRef = useRef<View>(null);
+  const revealHost = useContext(ReviewEditorRevealContext);
   const [isFocused, setIsFocused] = useState(false);
   const trimmedBody = body.trim();
   const canSave = trimmedBody.length > 0;
@@ -418,10 +422,18 @@ export function InlineReviewEditor({
 
   const handleFocus = useCallback(() => {
     setIsFocused(true);
-  }, []);
+    if (editorBlockRef.current) revealHost?.focusEditor(editorBlockRef.current);
+  }, [revealHost]);
   const handleBlur = useCallback(() => {
     setIsFocused(false);
-  }, []);
+    if (editorBlockRef.current) revealHost?.releaseEditor(editorBlockRef.current);
+  }, [revealHost]);
+  useEffect(() => {
+    const element = editorBlockRef.current;
+    return () => {
+      if (element) revealHost?.releaseEditor(element);
+    };
+  }, [revealHost]);
   // Blur before closing. Taps reach Cancel and Comment with the soft keyboard up, and unmounting
   // a focused input hands focus, and the keyboard, to the next focusable view.
   const handleCancel = useCallback(() => {
@@ -473,7 +485,7 @@ export function InlineReviewEditor({
   );
 
   return (
-    <View style={styles.editorBlock} testID={testID}>
+    <View ref={editorBlockRef} style={styles.editorBlock} testID={testID}>
       <TextInput
         ref={inputRef}
         accessibilityLabel={t("review.comment.label")}
