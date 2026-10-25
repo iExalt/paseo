@@ -80,6 +80,7 @@ import { chatOutlineAvailable } from "@/agent-stream/chat-outline/model";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
+import { useTimelineGapFill } from "./use-timeline-gap-fill";
 import {
   CompletedTurnFooterRow,
   TurnFooter,
@@ -400,6 +401,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const isTimelineDetached = useSessionStore(
       (state) => state.sessions[resolvedServerId]?.agentTimelineHasNewer.get(agentId) === true,
     );
+    // Prompt jumps exist only where the daemon indexes prompts.
+    const timelineGapFill = useTimelineGapFill({
+      serverId: resolvedServerId,
+      agentId,
+      enabled: supportsChatOutline && streamRenderStrategy.shouldFillTimelineGaps(),
+    });
 
     const workspaceRoot = context.cwd?.trim() || "";
     const { revealDirectory } = useFileExplorerActions({
@@ -1109,7 +1116,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         rowId === null
           ? undefined
           : (layoutHistoryItemById.get(rowId) ?? layoutLiveHeadItemById.get(rowId));
-      chatOutline.reportReadingPosition(row?.item.timelineCursor?.seq ?? null);
+      const seq = row?.item.timelineCursor?.seq ?? null;
+      chatOutline.reportReadingPosition(seq);
+      timelineGapFill.reportReadingPosition(seq);
     });
 
     const renderHistoryRow = useCallback(

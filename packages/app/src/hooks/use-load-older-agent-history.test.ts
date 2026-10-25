@@ -160,6 +160,33 @@ describe("loadOlderAgentHistory", () => {
     expect(started).toBe(true);
   });
 
+  it("extends a jump window instead of pouring older rows into the hole above the tail", async () => {
+    const client = createClient();
+
+    await loadOlderAgentHistory(agentId, {
+      client,
+      cursor: {
+        epoch: "epoch-1",
+        startSeq: 101,
+        endSeq: 140,
+        retainedRanges: [{ startSeq: 44, endSeq: 83, hasOlder: true }],
+      },
+      hasOlder: true,
+      isLoadingOlder: false,
+      setInFlight: createInFlight().setInFlight,
+    });
+
+    expect(client.calls.map((call) => call.request)).toEqual([
+      {
+        direction: "before",
+        cursor: { epoch: "epoch-1", seq: 44 },
+        limit: TIMELINE_FETCH_PAGE_SIZE,
+        projection: "projected",
+        mergeWindow: true,
+      },
+    ]);
+  });
+
   it("shows a panel toast, warns, and clears in-flight on failure", async () => {
     const error = new Error("network");
     const client = createClient(async () => {
