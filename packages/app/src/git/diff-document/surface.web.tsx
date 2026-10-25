@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { resolveReviewOverlayFrame } from "./review-overlay-geometry";
 import { useTranslation } from "react-i18next";
 import type { ViewStyle } from "react-native";
 import { DomOverlayScrollbar } from "@/components/ui/overlay-scrollbar/dom-overlay-scrollbar";
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useToast } from "@/contexts/toast-context";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { InlineReviewAddButton, InlineReviewThread } from "@/review";
+import { getInlineReviewThreadState, InlineReviewAddButton, InlineReviewThread } from "@/review";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import type { ReviewableDiffTarget } from "@/utils/diff-layout";
 import { DocumentFileHeader } from "./document-file-header";
@@ -848,7 +849,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
           {props.mode.kind === "working" && reviewActions
             ? model.rows.map((row) => {
                 if (row.kind !== "line" || row.reviewHeight === 0) return null;
-                const columnWidth = model.viewportWidth / row.cells.length;
+                const leftHeight =
+                  getInlineReviewThreadState({
+                    reviewTarget: row.cells[0]?.reviewTarget,
+                    reviewActions,
+                  })?.height ?? 0;
                 return row.cells.map((cell, index) => {
                   if (!cell?.reviewTarget) return null;
                   const comments = reviewActions.commentsByTarget.get(cell.reviewTarget.key) ?? [];
@@ -857,15 +862,22 @@ export function DiffSurface(props: DiffSurfaceProps) {
                     reviewActions.editor.target.side === cell.reviewTarget.side &&
                     reviewActions.editor.target.lineNumber === cell.reviewTarget.lineNumber;
                   if (comments.length === 0 && !hasEditor) return null;
+                  const frame = resolveReviewOverlayFrame({
+                    viewportWidth: model.viewportWidth,
+                    columnCount: row.cells.length,
+                    columnIndex: index,
+                    rowHeight: row.reviewHeight,
+                    leftHeight,
+                  });
                   return (
                     <WebReviewThread
                       key={cell.reviewTarget.key}
                       target={cell.reviewTarget}
                       actions={reviewActions}
-                      top={row.top + row.height - row.reviewHeight}
-                      left={index * columnWidth}
-                      width={columnWidth}
-                      height={row.reviewHeight}
+                      top={row.top + row.height - row.reviewHeight + frame.top}
+                      left={frame.left}
+                      width={frame.width}
+                      height={frame.height}
                       pinToViewport={!model.wrapLines}
                     />
                   );

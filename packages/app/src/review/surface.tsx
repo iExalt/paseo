@@ -37,6 +37,7 @@ import {
 } from "./store";
 import { buildReviewableDiffTargetKey, type ReviewableDiffTarget } from "@/utils/diff-layout";
 import {
+  INLINE_REVIEW_COMMENT_HEIGHT,
   INLINE_REVIEW_EDITOR_HEIGHT,
   INLINE_REVIEW_GAP,
   INLINE_REVIEW_VERTICAL_PADDING,
@@ -558,6 +559,8 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
+    // Fill the slot the row geometry reserves; a one-line card is ~44dp and left a blank band.
+    minHeight: INLINE_REVIEW_COMMENT_HEIGHT,
   },
   commentBody: {
     flex: 1,
