@@ -132,9 +132,7 @@ describe("native diff selection gesture", () => {
         point: { file: fileB, locationX: x, locationY: -4 },
       });
       const fileBText =
-        layout === "split"
-          ? "new-one\nnew-two"
-          : "@@ -1,2 +1,2 @@\nold-one\nold-two\nnew-one\nnew-two";
+        layout === "split" ? "new-one\nnew-two" : "old-one\nold-two\nnew-one\nnew-two";
       expect(text(model, header.selection)).toBe(fileBText);
       const aboveDocument = step(model, pressed, {
         type: "drag",
