@@ -6,6 +6,9 @@ import ViewabilityHelper from "react-native-web/dist/vendor/react-native/Viewabi
 import {
   createNativeReadingAnchor,
   createReadingAnchor,
+  createNativeRowGeometry,
+  createReadingSeqDedupe,
+  getReadingRowIdFromGeometry,
   getTopmostViewableRowId,
   MAX_SCROLL_TO_INDEX_RETRIES,
   planScrollToIndexRetry,
@@ -181,6 +184,108 @@ describe("topmost viewable row", () => {
   it("falls back to the newest row, or null, when nothing is viewable", () => {
     expect(getTopmostViewableRowId([], "newest")).toBe("newest");
     expect(getTopmostViewableRowId([], undefined)).toBeNull();
+  });
+});
+
+describe("native reading row from geometry", () => {
+  // Inverted list: a row's visual bottom is its y, and the viewport top is offsetY + height.
+  const viewportTop = 1800;
+  const geometryWith = (sliver: number) => {
+    const geometry = createNativeRowGeometry();
+    geometry.record("prompt", { y: 1000, height: viewportTop - sliver - 1000 });
+    geometry.record("previous-turn", { y: viewportTop - sliver, height: 500 });
+    return geometry;
+  };
+  const rows = [
+    { id: "prompt", index: 2, isViewable: true },
+    { id: "previous-turn", index: 3, isViewable: true },
+  ];
+  const read = (sliver: number) =>
+    getReadingRowIdFromGeometry({
+      rows,
+      geometry: geometryWith(sliver),
+      offsetY: 1000,
+      viewportHeight: 800,
+      newestRowId: "newest",
+    });
+
+  it.each([1, 3, 5, 7, 8])("ignores a %i px sliver of the previous turn", (sliver) => {
+    expect(read(sliver)).toBe("prompt");
+  });
+
+  it("hands over once the previous turn clears the 8 px reading line", () => {
+    expect(read(9)).toBe("previous-turn");
+  });
+
+  it("falls back to the topmost viewable row without every viewable layout", () => {
+    const geometry = createNativeRowGeometry();
+    geometry.record("prompt", { y: 1000, height: 792 });
+    expect(
+      getReadingRowIdFromGeometry({
+        rows,
+        geometry,
+        offsetY: 1000,
+        viewportHeight: 800,
+        newestRowId: "newest",
+      }),
+    ).toBe("previous-turn");
+    expect(
+      getReadingRowIdFromGeometry({
+        rows,
+        geometry: geometryWith(3),
+        offsetY: 1000,
+        viewportHeight: 0,
+        newestRowId: "newest",
+      }),
+    ).toBe("previous-turn");
+  });
+
+  it("reports the newest row when no viewable row clears the line", () => {
+    const geometry = createNativeRowGeometry();
+    geometry.record("previous-turn", { y: 1795, height: 500 });
+    expect(
+      getReadingRowIdFromGeometry({
+        rows: [rows[1]],
+        geometry,
+        offsetY: 1000,
+        viewportHeight: 800,
+        newestRowId: "newest",
+      }),
+    ).toBe("newest");
+  });
+
+  it("reports a recorded frame change only when it moves", () => {
+    const geometry = createNativeRowGeometry();
+    expect(geometry.record("a", { y: 0, height: 10 })).toBe(true);
+    expect(geometry.record("a", { y: 0, height: 10 })).toBe(false);
+    expect(geometry.record("a", { y: 0, height: 12 })).toBe(true);
+    geometry.forget("a");
+    expect(geometry.get("a")).toBeUndefined();
+  });
+});
+
+describe("reading seq dedupe", () => {
+  const forwarded = (reports: { rowId: string; seq: number | null }[]) => {
+    const dedupe = createReadingSeqDedupe();
+    return reports.filter((report) => dedupe.shouldForward(report.seq)).map((r) => r.seq);
+  };
+
+  it("forwards a row again once its seq resolves, and skips true repeats", () => {
+    expect(
+      forwarded([
+        { rowId: "row", seq: null },
+        { rowId: "row", seq: null },
+        { rowId: "row", seq: 12 },
+        { rowId: "row", seq: 12 },
+      ]),
+    ).toEqual([null, 12]);
+  });
+
+  it("forwards the same seq again after a reset", () => {
+    const dedupe = createReadingSeqDedupe();
+    expect(dedupe.shouldForward(12)).toBe(true);
+    dedupe.reset();
+    expect(dedupe.shouldForward(12)).toBe(true);
   });
 });
 

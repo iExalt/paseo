@@ -16,7 +16,7 @@ const NO_REPLACEMENTS: ReadingRowReplacements = new Map();
 // under the top overlay, so rows beneath it count as visible.
 export const READING_VIEWABILITY_CONFIG = Object.freeze({ itemVisiblePercentThreshold: 0 });
 
-interface ViewableRow {
+export interface ViewableRow {
   id: string;
   index: number | null;
   isViewable: boolean;
@@ -35,6 +35,58 @@ export function getTopmostViewableRowId(
     }
   }
   return top?.id ?? newestRowId ?? null;
+}
+
+export interface NativeRowLayout {
+  y: number;
+  height: number;
+}
+
+// Content-coordinate frames of mounted native rows, by row id. FlatList exposes no geometry
+// of its own, so cells record theirs here as they lay out.
+export function createNativeRowGeometry() {
+  const layouts = new Map<string, NativeRowLayout>();
+  return {
+    get: (id: string) => layouts.get(id),
+    // Returns whether the frame changed, so a resize can re-evaluate the reading row.
+    record(id: string, layout: NativeRowLayout): boolean {
+      const previous = layouts.get(id);
+      if (previous && previous.y === layout.y && previous.height === layout.height) return false;
+      layouts.set(id, { y: layout.y, height: layout.height });
+      return true;
+    },
+    forget(id: string) {
+      layouts.delete(id);
+    },
+  };
+}
+
+// Native counterpart of createReadingAnchor().readingRow. The list is inverted, so content
+// y runs upward from the visual bottom: a row's visual bottom is its y, and the viewport top
+// is offsetY + viewportHeight. A row owns the reading position once its bottom clears the
+// reading line below that top, so a sliver of the previous turn does not take it. Without a
+// viewport height or the geometry of every viewable row, the topmost viewable row stands in.
+export function getReadingRowIdFromGeometry(input: {
+  rows: readonly ViewableRow[];
+  geometry: Pick<ReturnType<typeof createNativeRowGeometry>, "get">;
+  offsetY: number;
+  viewportHeight: number;
+  newestRowId: string | undefined;
+}): string | null {
+  const { rows, geometry, offsetY, viewportHeight, newestRowId } = input;
+  const fallback = () => getTopmostViewableRowId(rows, newestRowId);
+  if (viewportHeight <= 0) return fallback();
+  const readingLine = offsetY + viewportHeight - READING_POSITION_OFFSET_PX;
+  let reading: ViewableRow | null = null;
+  for (const row of rows) {
+    if (!row.isViewable || row.index === null) continue;
+    const layout = geometry.get(row.id);
+    if (!layout) return fallback();
+    if (layout.y < readingLine && (!reading || row.index > (reading.index ?? -1))) {
+      reading = row;
+    }
+  }
+  return reading?.id ?? newestRowId ?? null;
 }
 
 // Content coordinates survive user scrolling. Layout commits replace the geometry;
@@ -80,6 +132,22 @@ export function createReadingAnchor() {
       const next = previous && !userScrolled ? previous : readingRow(correctedTop);
       anchor = next ? { id: next.id, top: next.top } : null;
       return correctedTop;
+    },
+  };
+}
+
+// A row id can be reported before its timeline position resolves, so the tick dedupes on the
+// resolved position: the same row reported again with a new seq must still go through.
+export function createReadingSeqDedupe() {
+  let last: number | null | undefined;
+  return {
+    shouldForward(seq: number | null): boolean {
+      if (seq === last) return false;
+      last = seq;
+      return true;
+    },
+    reset() {
+      last = undefined;
     },
   };
 }

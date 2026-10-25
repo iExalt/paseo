@@ -74,6 +74,7 @@ import { IndentRail } from "@/components/indent-rail";
 import { TurnSummaryLine } from "./turn-collapse/summary-line";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
+import { createReadingSeqDedupe } from "./reading-anchor";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
 import { chatOutlineAvailable } from "@/agent-stream/chat-outline/model";
@@ -1111,12 +1112,17 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       return itemById;
     }, [streamLayout.liveHead]);
 
+    const [readingSeqDedupe] = useState(createReadingSeqDedupe);
+    // The outline and gap fill forget their position on these changes, so start over with them.
+    useEffect(() => readingSeqDedupe.reset(), [agentId, readingSeqDedupe, timelineEpoch]);
+
     const handleReadingPositionChange = useStableEvent((rowId: string | null) => {
       const row =
         rowId === null
           ? undefined
           : (layoutHistoryItemById.get(rowId) ?? layoutLiveHeadItemById.get(rowId));
       const seq = row?.item.timelineCursor?.seq ?? null;
+      if (!readingSeqDedupe.shouldForward(seq)) return;
       chatOutline.reportReadingPosition(seq);
       timelineGapFill.reportReadingPosition(seq);
     });
