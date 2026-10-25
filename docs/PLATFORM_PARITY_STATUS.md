@@ -232,14 +232,18 @@ host, with the limits below. iOS rests on code review and unit tests.
   - Text selection works on native (#207, `fa29317de`): a long-press selects
     within one side, handles extend, and Copy, Select all and edge
     auto-scroll work. Android verified, iOS unverified. Select all matches
-    web: it covers all files, and `@@` lines follow shared hit-testing
-    (unified includes them; split depends on the pressed side). Known limit:
+    web: it covers all files. Select all and range copy leave out `@@` hunk
+    headers in unified and split on both platforms (#219). Known limit:
     a long-press drag that auto-scrolls more than about 2 screens past the
     file where it began ends; dragging a handle can still extend the
     selection.
   - The split comment editor is full width when columns are narrower than
-    280 dp (#208, `fae6324b1`). Known limit: two threads on the same row in
-    narrow split overlap.
+    280 dp (#208, `fae6324b1`). Two threads on the same row then stack, on
+    native and web (#213).
+  - Review comments (#213): Back cancels an open comment editor instead of
+    leaving the app, and Cancel and Comment work on the first tap with the
+    soft keyboard up, then hide it. Known limit: an editor opened low in the
+    Explorer diff sits behind the soft keyboard until it closes.
 - E2b: dropped. Wide native layouts show one pane, as upstream does, and
   only the focused pane streams its agent.
 - E1: with a hardware keyboard on a wide native layout, the shortcut registry
@@ -268,7 +272,9 @@ host, with the limits below. iOS rests on code review and unit tests.
   keyboard is fixed at boot), IME composition, and the iPad case. Known gap:
   the iPad terminal lacks Ctrl, arrow, Tab and Escape.
 - Wide layouts: the Settings sidebar clears the bottom system inset (#204,
-  `96ccbd19f`).
+  `96ccbd19f`). When an open Explorer leaves the sidebar no room, as in
+  portrait at 800 dp, the menu button and Cmd/Ctrl+B show the sidebar over it
+  (#217).
 - E3: native gets a touch outline rail under the web rule: a wide layout and a
   chat panel at least 918 dp wide, so landscape tablets show it and portrait
   ones do not. A finger on the rail previews the prompt under it and lifting
@@ -281,7 +287,9 @@ host, with the limits below. iOS rests on code review and unit tests.
     scrub with gesture navigation does not trigger Back.
   - With the keyboard up, the first touch previews the right prompt. The rail
     is mostly clipped then: only about the last 11 prompts are reachable.
-  - The active tick follows scrolling on native (#203, `afe7be557`).
+  - The active tick follows scrolling on native (#203, `afe7be557`) and uses
+    web's reading line 8 dp below the top, so a sliver of the previous turn
+    no longer holds it (#215).
   - The reading position survives rotation after a rail jump (#205,
     `9d065a8b2`).
   - Not verified: TalkBack, which the image lacks.
@@ -403,3 +411,8 @@ host, with the limits below. iOS rests on code review and unit tests.
   across rotation (#205), terminal hardware keys (#206) and the Settings
   sidebar inset (#204). The transcript hole after an outline jump now fills
   on web (#209); on native it remains a known bug.
+- 2026-10-25: #213, #215, #217 and #219 checked together on the virtual
+  tablet, each against a `dev` build. With `show_ime_with_hard_keyboard` set
+  to 1 the AOSP keyboard renders and the two-tap Cancel reproduces, so no
+  phone was needed. The pass found that one-tap Cancel left the keyboard up;
+  #213 now blurs the input first.

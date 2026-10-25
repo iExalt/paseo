@@ -8,6 +8,7 @@ import {
 } from "@/utils/diff-layout";
 import { compactHighlightTokens } from "@/utils/diff-rendering";
 import { getInlineReviewThreadState, getSplitInlineReviewThreadState } from "@/review/geometry";
+import { isReviewOverlayStacked } from "./review-overlay-geometry";
 import { advancesFor, requiresShaping } from "./text-measurement";
 import type {
   BuildDiffDocumentModelInput,
@@ -801,6 +802,10 @@ function reviewHeightForCells(
         left: cells[0]?.reviewTarget,
         right: cells[1]?.reviewTarget,
         reviewActions: input.reviewActions,
+        stacked: isReviewOverlayStacked({
+          viewportWidth: input.viewportWidth,
+          columnCount: cells.length,
+        }),
       })?.height ?? 0
     );
   }

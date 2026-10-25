@@ -25,7 +25,8 @@ import { Button } from "@/components/ui/button";
 import { useToast } from "@/contexts/toast-context";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
-import { InlineReviewThread } from "@/review";
+import { getInlineReviewThreadState, InlineReviewThread } from "@/review";
+import { useBackCancelsReviewEditor } from "@/review/use-back-cancels-review-editor";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import { useKeyboardShift } from "@/keyboard/shift";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
@@ -374,6 +375,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
   // Android Back clears a selection before it leaves the pane; hidden panes leave Back alone.
   const panelActive = useRetainedPanelActive();
   useBackClosesFind(selection.selection !== null && panelActive, dismissSelection);
+  useBackCancelsReviewEditor(
+    Boolean(reviewActions?.editor),
+    panelActive,
+    reviewActions?.onCancelEditor ?? noop,
+  );
   const selectAllText = useStableEvent(() => {
     latestSelectionRef.current = selection.selectAll();
   });
@@ -528,6 +534,9 @@ export function DiffSurface(props: DiffSurfaceProps) {
         onScroll={scrollHandler}
         scrollEventThrottle={16}
         scrollEnabled={!selectionDragActive}
+        // With the editor's soft keyboard up, the first tap on Cancel must press it rather than
+        // only dismissing the keyboard.
+        keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator
         testID="git-diff-scroll"
         onTouchStart={outsideTouchStart}
@@ -1080,23 +1089,27 @@ function NativeReviewOverlays({
         viewportWidth: model.viewportWidth,
         columnCount: row.cells.length,
         columnIndex: index,
+        rowHeight: row.reviewHeight,
+        leftHeight:
+          getInlineReviewThreadState({ reviewTarget: row.cells[0]?.reviewTarget, reviewActions })
+            ?.height ?? 0,
       });
       return [
         <View
           key={cell.reviewTarget.key}
           style={inlineUnistylesStyle<ViewStyle>({
             position: "absolute",
-            top: row.top + row.height - row.reviewHeight,
+            top: row.top + row.height - row.reviewHeight + frame.top,
             left: frame.left,
             width: frame.width,
-            height: row.reviewHeight,
+            height: frame.height,
             zIndex: 6,
           })}
         >
           <InlineReviewThread
             reviewTarget={cell.reviewTarget}
             reviewActions={reviewActions}
-            height={row.reviewHeight}
+            height={frame.height}
             viewportWidth={frame.width}
             pinToViewport={!model.wrapLines}
           />
@@ -1303,3 +1316,5 @@ const styles = StyleSheet.create({
   },
   actionDivider: { width: StyleSheet.hairlineWidth, alignSelf: "stretch" },
 });
+
+function noop(): void {}
