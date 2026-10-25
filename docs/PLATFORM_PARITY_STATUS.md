@@ -1,6 +1,6 @@
 # Desktop and mobile parity status
 
-Last updated: 2026-10-17
+Last updated: 2026-10-25
 
 ## Purpose
 
@@ -14,7 +14,7 @@ checklist, to current evidence. It is not a second checklist.
 | Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                |
 | Branch                       | Merged to `dev` as `669d95cd2` (#161)                                    |
 | Current chunk                | F: browser tabs and copy                                                 |
-| Overall state                | C–F device-checked on the phone; E accepted on review only (user choice) |
+| Overall state                | C–F device-checked on the phone; E device-checked on a virtual tablet    |
 | Product or release readiness | Released in `paseo-v0.6.0`                                               |
 | Routine CI budget            | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
 
@@ -213,18 +213,33 @@ below.
 Pane splits on wide native layouts (E2b) were removed by the 2026-10-24 rebase
 and dropped, following upstream (see Current boundary); the rest of E stands.
 
-Evidence state: accepted on code review, unit tests and an Android release
-build. The user chose to skip the tablet checks: dev-station has no KVM, so an
-emulator there would be unusable, and running one on the Mac was declined.
-The pending cases below stay unverified.
+Evidence state: Android is device-verified on a Cuttlefish Android 17 virtual
+tablet (arm64, 2560x1600 at 320 dpi, sw800dp) on a KVM-capable Linux arm64
+host, with the limits below. iOS rests on code review and unit tests.
+
+- Device: `aosp_cf_arm64_only_phone` at tablet geometry, with a virtio
+  hardware keyboard. The image has no TalkBack or Gboard. The guest network is
+  off and the app reaches a daemon through `adb reverse`. Airplane mode avoids
+  a guest `system_server` crash loop.
 
 - Wide native means a window at least 576 dp wide: tablets and unfolded
   foldables. Android 16 ignores the portrait lock at 600 dp and wider, so
   these layouts rotate.
 - E2a: side-by-side diff was gated to web by two checks the manifest did not
   list (`panels/diff-panel.tsx`, `git/diff-pane.tsx`). Both now follow width
-  only. Pending on the tablet: the layout toggle shows, split columns scroll
-  and select.
+  only. Verified on the tablet: the layout toggle shows, two columns render,
+  and both scroll, horizontally together.
+  - Text selection works on native (#207, `fa29317de`): a long-press selects
+    within one side, handles extend, and Copy, Select all and edge
+    auto-scroll work. Android verified, iOS unverified. Select all matches
+    web: it covers all files, and `@@` lines follow shared hit-testing
+    (unified includes them; split depends on the pressed side). Known limit:
+    a long-press drag that auto-scrolls more than about 2 screens past the
+    file where it began ends; dragging a handle can still extend the
+    selection.
+  - The split comment editor is full width when columns are narrower than
+    280 dp (#208, `fae6324b1`). Known limit: two threads on the same row in
+    narrow split overlap.
 - E2b: dropped. Wide native layouts show one pane, as upstream does, and
   only the focused pane streams its agent.
 - E1: with a hardware keyboard on a wide native layout, the shortcut registry
@@ -241,26 +256,46 @@ The pending cases below stay unverified.
   address bar, Mod+R reloads); on native a focused browser tab counts as a
   text field, so Mod+L focuses the composer. Known limits: the second key of a two-key shortcut is
   also typed into a focused field; the system may take some combos first.
-  Pending on the tablet with a keyboard: Ctrl+K from the composer; Alt+arrow
-  and Ctrl+Backspace still edit in it; Ctrl+F in the file editor opens one
-  find; Enter submits and Shift+Enter adds a line, and neither submits
-  during composition or from the find bar; Ctrl+D reaches the shell in both
-  terminals; after the WebView terminal, Cmd+Shift+Left in the find bar
-  selects text (iPad); Escape and Back still work; a keyboard connected after launch
-  enables shortcuts and unplugging it hides the section.
+  Verified on the tablet with the virtual hardware keyboard: Ctrl+K opens
+  the palette; Alt+arrow and Ctrl+Backspace edit in the composer; Enter
+  submits and Shift+Enter adds a line; Escape and Back work. In the Android
+  native terminal, Ctrl+D exits `cat`, Ctrl+C interrupts `sleep` and Ctrl+U
+  clears the line. The native terminal now receives hardware Enter,
+  Backspace, Tab, Escape, arrows and Ctrl and Alt chords (#206, `c9820c294`),
+  and Escape goes to the shell when the terminal is focused. Ctrl+F in the file editor is scoped to web and
+  desktop, since native file editing stays web-only (2026-10-24 decision).
+  Not verified: a keyboard attached or detached after boot (the virtual
+  keyboard is fixed at boot), IME composition, and the iPad case. Known gap:
+  the iPad terminal lacks Ctrl, arrow, Tab and Escape.
+- Wide layouts: the Settings sidebar clears the bottom system inset (#204,
+  `96ccbd19f`).
 - Follow-up after the campaign: the compact explorer dock
   (`NativeExplorerSidebarDock`) is now reachable only from a test override;
   remove it.
 - E3: native gets a touch outline rail under the web rule: a wide layout and a
   chat panel at least 918 dp wide, so landscape tablets show it and portrait
   ones do not. A finger on the rail previews the prompt under it and lifting
-  jumps there; nothing magnifies, since touch has no hover. Pending on the
-  tablet: the rail shows in landscape only, scrubbing previews, lifting jumps
-  (also to a prompt outside the loaded window), the active tick follows
-  scrolling, and a vertical scrub does not scroll the transcript; with the
-  soft keyboard up the first touch previews the right prompt; with the
-  sidebar collapsed and gesture navigation on, a scrub does not trigger
-  Back; TalkBack steps through prompts.
+  jumps there; nothing magnifies, since touch has no hover. Verified on the
+  tablet:
+  - The rail shows only with a chat at least 918 dp wide: landscape with one
+    side panel collapsed, never portrait at 800 dp.
+  - Scrubbing previews and lifting jumps, including to a prompt outside the
+    loaded window. A vertical scrub does not scroll the transcript, and a
+    scrub with gesture navigation does not trigger Back.
+  - With the keyboard up, the first touch previews the right prompt. The rail
+    is mostly clipped then: only about the last 11 prompts are reachable.
+  - The active tick follows scrolling on native (#203, `afe7be557`).
+  - The reading position survives rotation after a rail jump (#205,
+    `9d065a8b2`).
+  - Not verified: TalkBack, which the image lacks.
+  - The transcript hole after an outline jump to older history fills on web
+    as the reader scrolls toward it (#209, `9b38c3f65`; e2e-covered).
+  - Known bug on native: scrolling newer from a jumped-to older prompt skips
+    the rows between the jump window and the loaded tail (e.g. 14 to 62 in a
+    70-prompt chat). Native gap filling was withdrawn because inserting those
+    rows into the inverted list pushed the jump target past the measured rows
+    and broke jump landing. Jumps themselves land correctly, and
+    scroll-to-index retries re-resolve the target by row id.
 
 ### F: browser tabs and copy
 
@@ -330,14 +365,15 @@ The pending cases below stay unverified.
   - The pre-rebase implementation is on `backup/rebase-dev/40088158235-1`,
     under `packages/app/src/file-pane/`.
 - C3, F1 and F2 passed the phone batch with the limits in their sections; F1
-  stays open for a service link. The rest of E is accepted without device
-  checks, by the user's choice.
+  stays open for a service link. E passed on the virtual tablet for Android
+  with the limits in its section. Not verified: iOS, the iPad, TalkBack,
+  IME composition, and keyboard attach and detach.
 - Device checks are batched: the user asked for one phone session per large
   chunk instead of a check per increment. Plan boxes stay open until then.
 - Everything shipped in `paseo-v0.6.0`. B2 passed its release gate on the
   installed app, with three checks waived by the user.
-- Native behaviour is checked on Paseo Debug on the user's Android phone. iOS
-  and physical tablets are not available.
+- Native behaviour is checked on Paseo Debug on the user's Android phone, and
+  E on a virtual Android tablet. iOS and physical tablets are not available.
 
 ## Progress log
 
@@ -363,3 +399,10 @@ The pending cases below stay unverified.
   removed pending a port; C3 survived in the native grid renderer.
 - 2026-10-24: C2, D1 and E2b dropped by the user's choice, following
   upstream, which keeps them web-only.
+- 2026-10-25: E checked on a Cuttlefish Android 17 virtual tablet (arm64,
+  2560x1600 at 320 dpi, sw800dp) on a KVM-capable Linux arm64 host. Fixes
+  from the pass: native diff text selection (#207), the narrow split comment
+  editor (#208), the outline rail's active tick (#203) and reading position
+  across rotation (#205), terminal hardware keys (#206) and the Settings
+  sidebar inset (#204). The transcript hole after an outline jump now fills
+  on web (#209); on native it remains a known bug.
