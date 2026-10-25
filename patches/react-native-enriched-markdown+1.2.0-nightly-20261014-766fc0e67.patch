@@ -174,6 +174,61 @@ index f1e3345..2549508 100644
      }
  
      view.setOnLinkLongPressCallback { url ->
+diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
+index 72740e277..3bdd7aafd 100644
+--- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
++++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/accessibility/AccessibleMarkdownTextView.kt
+@@ -2,6 +2,7 @@
+ 
+ import android.content.Context
+ import android.graphics.Rect
++import android.os.Bundle
+ import android.util.AttributeSet
+ import android.view.KeyEvent
+ import android.view.MotionEvent
+@@ -57,6 +58,42 @@
+ 
+     override fun dispatchKeyEvent(event: KeyEvent): Boolean = accessibilityHelper.dispatchKeyEvent(event) || super.dispatchKeyEvent(event)
+ 
++    // setupAsMarkdownTextView's setTextIsSelectable(true) makes this view focusable in touch
++    // mode, so when a focused TextInput is removed Android hands focus, and the still-shown
++    // keyboard, to the first message. Take touch-mode focus only during our own touch or
++    // accessibility action, as selection requests it; keyboard navigation is unchanged.
++    private var touchInProgress = false
++
++    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
++      if (event.actionMasked == MotionEvent.ACTION_DOWN) touchInProgress = true
++      try {
++        return super.dispatchTouchEvent(event)
++      } finally {
++        if (event.actionMasked == MotionEvent.ACTION_UP || event.actionMasked == MotionEvent.ACTION_CANCEL) {
++          touchInProgress = false
++        }
++      }
++    }
++
++    // TalkBack keeps touch mode, and its text-selection action requests focus.
++    override fun performAccessibilityAction(
++      action: Int,
++      arguments: Bundle?,
++    ): Boolean {
++      val wasInProgress = touchInProgress
++      touchInProgress = true
++      try {
++        return super.performAccessibilityAction(action, arguments)
++      } finally {
++        touchInProgress = wasInProgress
++      }
++    }
++
++    override fun requestFocus(
++      direction: Int,
++      previouslyFocusedRect: Rect?,
++    ): Boolean = if (isInTouchMode && !touchInProgress) false else super.requestFocus(direction, previouslyFocusedRect)
++
+     override fun onFocusChanged(
+       gainFocus: Boolean,
+       direction: Int,
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/events/LinkPressEvent.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/events/LinkPressEvent.kt
 index 93c763e..fbe1c68 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/events/LinkPressEvent.kt
