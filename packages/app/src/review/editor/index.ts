@@ -18,11 +18,19 @@ export function createReviewEditor(key: string, writer: ReviewCommentWriter) {
 
 function buildReviewEditor(key: string, writer: ReviewCommentWriter, onUnused: () => void) {
   let editor: InlineReviewEditorState | null = null;
+  // The body the open editor started from; text that differs is an unsaved draft.
+  let initialBody = "";
   const listeners = new Set<() => void>();
   function publish(next: InlineReviewEditorState | null) {
     editor = next;
     listeners.forEach((listener) => listener());
     if (!editor && listeners.size === 0) onUnused();
+  }
+  // Opening another editor would drop unsaved text, so it waits for Save or Cancel.
+  function open(next: InlineReviewEditorState) {
+    if (editor && editor.body.trim() !== initialBody.trim()) return;
+    initialBody = next.body;
+    publish(next);
   }
   return {
     getState: () => editor,
@@ -35,9 +43,9 @@ function buildReviewEditor(key: string, writer: ReviewCommentWriter, onUnused: (
         });
       };
     },
-    start: (target: ReviewableDiffTarget) => publish({ target, commentId: null, body: "" }),
+    start: (target: ReviewableDiffTarget) => open({ target, commentId: null, body: "" }),
     edit: (target: ReviewableDiffTarget, comment: ReviewDraftComment) =>
-      publish({ target, commentId: comment.id, body: comment.body }),
+      open({ target, commentId: comment.id, body: comment.body }),
     setBody: (body: string) => {
       if (editor) publish({ ...editor, body });
     },
