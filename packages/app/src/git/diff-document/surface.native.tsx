@@ -10,6 +10,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useWindowDimensions as useKeyboardWindowDimensions } from "react-native-keyboard-controller";
 import Animated, {
   createAnimatedComponent,
   useAnimatedReaction,
@@ -28,7 +29,8 @@ import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { getInlineReviewThreadState, InlineReviewThread } from "@/review";
 import { useBackCancelsReviewEditor } from "@/review/use-back-cancels-review-editor";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
-import { useKeyboardShift } from "@/keyboard/shift";
+import { useKeyboardShift, useSettledKeyboardShift } from "@/keyboard/shift";
+import { ReviewEditorRevealContext, resolveRevealScrollTop } from "@/review/reveal";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { DocumentFileHeader } from "./document-file-header";
 import {
@@ -152,10 +154,54 @@ export function DiffSurface(props: DiffSurfaceProps) {
   } | null>(null);
   const consumedFocusRef = useRef<string | null>(null);
   const scrollTop = useSharedValue(0);
-  const { shift: keyboardShift } = useKeyboardShift();
+  const { shift: keyboardShift, bottomInset } = useKeyboardShift();
   const keyboardSpacerStyle = useAnimatedStyle(
     () => ({ height: keyboardShift.value }),
     [keyboardShift],
+  );
+  const rootRef = useRef<View>(null);
+  const focusedEditorRef = useRef<View | null>(null);
+  const settledKeyboardShift = useSettledKeyboardShift();
+  // Edge to edge the window height includes the keyboard area; RN's can be off on Android.
+  const { height: windowHeight } = useKeyboardWindowDimensions();
+  // The spacer only lengthens the content, so scroll a focused review editor, with its
+  // actions, into the part of this diff that the keyboard leaves visible.
+  const revealFocusedEditor = useStableEvent(() => {
+    const editor = focusedEditorRef.current;
+    const root = rootRef.current;
+    if (!editor || !root) return;
+    root.measureInWindow((_rootX, rootTop, _rootWidth, rootHeight) => {
+      editor.measureInWindow((_x, editorTop, _width, editorHeight) => {
+        const keyboardTop =
+          settledKeyboardShift > 0
+            ? windowHeight - (settledKeyboardShift + bottomInset.value)
+            : Number.POSITIVE_INFINITY;
+        const nextScrollTop = resolveRevealScrollTop({
+          elementTop: editorTop,
+          elementBottom: editorTop + editorHeight,
+          visibleTop: rootTop,
+          visibleBottom: Math.min(rootTop + rootHeight, keyboardTop),
+          scrollTop: scrollTop.value,
+        });
+        if (nextScrollTop !== null)
+          scrollRef.current?.scrollTo({ y: nextScrollTop, animated: true });
+      });
+    });
+  });
+  useEffect(() => {
+    revealFocusedEditor();
+  }, [settledKeyboardShift, revealFocusedEditor]);
+  const revealHost = useMemo(
+    () => ({
+      focusEditor: (element: View) => {
+        focusedEditorRef.current = element;
+        revealFocusedEditor();
+      },
+      releaseEditor: (element: View) => {
+        if (focusedEditorRef.current === element) focusedEditorRef.current = null;
+      },
+    }),
+    [revealFocusedEditor],
   );
   const horizontalOffsets = useSharedValue<DiffHorizontalOffsets>({});
   const family = props.displayPreferences.monoFontFamily.trim() || SYSTEM_MONO;
@@ -521,7 +567,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
     return () => cancelAnimationFrame(frame);
   }, [autoScrollFrame, selectionDragActive]);
   return (
-    <View style={[styles.root, { backgroundColor: props.palette.surface }]} onLayout={layout}>
+    <View
+      ref={rootRef}
+      style={[styles.root, { backgroundColor: props.palette.surface }]}
+      onLayout={layout}
+    >
       <AnimatedScrollView
         ref={scrollRef}
         style={[StyleSheet.absoluteFill, styles.scroll]}
@@ -585,7 +635,9 @@ export function DiffSurface(props: DiffSurfaceProps) {
           onSelectionGesture={dispatchSelectionGesture}
           selectionDrag={selectionDrag}
         />
-        <NativeReviewOverlays model={model} mode={props.mode} />
+        <ReviewEditorRevealContext.Provider value={revealHost}>
+          <NativeReviewOverlays model={model} mode={props.mode} />
+        </ReviewEditorRevealContext.Provider>
         <Animated.View pointerEvents="none" style={keyboardSpacerStyle} />
       </AnimatedScrollView>
       {selectionDragActive ? null : (
