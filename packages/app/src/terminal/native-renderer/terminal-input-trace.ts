@@ -52,19 +52,24 @@ function traceText(text: string): string {
   return TRACE_FULL_TEXT ? text : redactTerminalTraceText(text);
 }
 
+// JSON leaves DEL unescaped, which hides a sent Backspace in a log viewer.
+function writeTraceLine(json: string): void {
+  console.log(`[paseo-terminal-trace] ${json.replaceAll("\x7f", "\\u007f")}`);
+}
+
 export type TerminalInputTraceKind = "key" | "change" | "hwkey";
 
 export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, sent: string): void {
   if (!TERMINAL_TRACE_ENABLED) {
     return;
   }
-  console.log(
-    `[paseo-terminal-trace] ${JSON.stringify({
+  writeTraceLine(
+    JSON.stringify({
       t: nativeTerminalPerformanceNow(),
       kind,
       raw: kind === "change" ? traceText(raw) : redactTerminalTraceKey(raw),
       sent: traceText(sent),
-    })}`,
+    }),
   );
 }
 
@@ -74,7 +79,5 @@ export function traceTerminalLatency(stage: TerminalLatencyStage, chars: number)
   if (!TERMINAL_TRACE_ENABLED) {
     return;
   }
-  console.log(
-    `[paseo-terminal-trace] ${JSON.stringify({ t: nativeTerminalPerformanceNow(), stage, chars })}`,
-  );
+  writeTraceLine(JSON.stringify({ t: nativeTerminalPerformanceNow(), stage, chars }));
 }
