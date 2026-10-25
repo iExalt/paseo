@@ -29,7 +29,7 @@ import {
   type TerminalGridCellMetrics,
 } from "./terminal-grid-metrics";
 import {
-  buildRows,
+  createTerminalRowBuilder,
   type TerminalCustomGlyphCell,
   type TerminalCustomGlyphRun,
   type TerminalRowModel,
@@ -326,8 +326,9 @@ export function TerminalGridView({
     () => state.grid.map((row) => row.slice(0, visibleCols)),
     [state.grid, visibleCols],
   );
+  const [buildRowModels] = useState(createTerminalRowBuilder);
   const rows = useMemo(() => {
-    const built = buildRows({
+    const built = buildRowModels({
       grid: projectedGrid,
       resolver,
       selection: selection
@@ -357,7 +358,7 @@ export function TerminalGridView({
     });
     traceTerminalLatency("rows", built.length);
     return built;
-  }, [find, projectedGrid, resolver, selection, state.firstRow, xtermTheme]);
+  }, [buildRowModels, find, projectedGrid, resolver, selection, state.firstRow, xtermTheme]);
 
   const containerStyle = useMemo<StyleProp<ViewStyle>>(
     () => [styles.root, { backgroundColor: resolver.backgroundColor }, style],

@@ -294,3 +294,61 @@ export function buildRows(input: {
     }),
   );
 }
+
+function cellEqual(a: TerminalRenderableCell, b: TerminalRenderableCell): boolean {
+  return (
+    a.char === b.char &&
+    a.fg === b.fg &&
+    a.bg === b.bg &&
+    a.fgMode === b.fgMode &&
+    a.bgMode === b.bgMode &&
+    a.bold === b.bold &&
+    a.italic === b.italic &&
+    a.underline === b.underline &&
+    a.dim === b.dim &&
+    a.inverse === b.inverse &&
+    a.strikethrough === b.strikethrough &&
+    a.width === b.width
+  );
+}
+
+function cellsEqual(left: TerminalRenderableCell[], right: TerminalRenderableCell[]): boolean {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+  for (let col = 0; col < left.length; col += 1) {
+    if (!cellEqual(left[col], right[col])) return false;
+  }
+  return true;
+}
+
+export type TerminalRowBuilder = typeof buildRows;
+
+/**
+ * Builds rows like `buildRows`, but reuses the previous model of a row whose
+ * cells are unchanged. A typed character changes one row, and resolving every
+ * cell's style for the rest cost several milliseconds per echo on Android.
+ * Rows painted with a selection or find matches are always rebuilt.
+ */
+export function createTerminalRowBuilder(): TerminalRowBuilder {
+  let previous: {
+    resolver: TerminalCellStyleResolver;
+    rows: Array<{ cells: TerminalRenderableCell[]; model: TerminalRowModel }>;
+  } | null = null;
+
+  return (input) => {
+    if (input.selection || input.find) {
+      previous = null;
+      return buildRows(input);
+    }
+    const reusable = previous?.resolver === input.resolver ? previous.rows : [];
+    const rows = input.grid.map((cells, index) => {
+      const entry = reusable[index];
+      if (entry && cellsEqual(entry.cells, cells)) {
+        return entry;
+      }
+      return { cells, model: buildRowModel({ cells, index, resolver: input.resolver }) };
+    });
+    previous = { resolver: input.resolver, rows };
+    return rows.map((row) => row.model);
+  };
+}
