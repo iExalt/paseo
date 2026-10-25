@@ -331,6 +331,20 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
       return { data: "", shouldClear: false };
     },
     receiveTextChange(text: string): TerminalTextInputChange {
+      if (
+        pendingClearFrom !== null &&
+        text.length > 0 &&
+        text.length < pendingClearFrom.length &&
+        pendingClearFrom.startsWith(text)
+      ) {
+        // Backspace into a line whose clear never landed. The shell already
+        // ran that line, so realign silently and let the key pair with this.
+        pendingClearFrom = null;
+        clearBackspaceFlags();
+        previousText = text;
+        shrinkAwaitingKey = now();
+        return { data: "", shouldClear: false };
+      }
       const base =
         pendingClearFrom !== null && text.startsWith(pendingClearFrom)
           ? pendingClearFrom

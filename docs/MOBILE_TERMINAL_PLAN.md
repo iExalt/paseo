@@ -249,6 +249,12 @@ treats a key-first Enter's own newline change as part of that Enter.
   keeps an existing marker. On the next change, diff against
   `pendingClearFrom` if the text starts with it (the clear didn't land), and
   otherwise against `previousText`. Then forget `pendingClearFrom`.
+- A Backspace that shrinks a line whose clear never landed (the change is a
+  prefix of the marker) realigns silently, so the old line is not typed
+  again.
+- Known gap: an Enter that arrives only as text, with no Enter key, sends
+  nothing. A batch that drops the key or voice typing could do that; no
+  device run has shown it, and the code before P1 behaved the same.
 - Resets on focus, blur and show-keyboard record no marker (option A). P0b
   saw every one of them land on both keyboards. Marking them too (option B)
   would misread a second paste that extends the first, such as `git status`

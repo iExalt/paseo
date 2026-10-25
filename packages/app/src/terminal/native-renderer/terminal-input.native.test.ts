@@ -582,6 +582,31 @@ describe("native terminal typed input, diff (Android)", () => {
       expect(play(["k", "Backspace"], ["c", "ls\nx"])).toBe("\x7f");
     });
 
+    it.each([
+      [
+        "AOSP",
+        [
+          ["k", "Backspace"],
+          ["c", "ls"],
+        ] as InputEvent[],
+        "\x7f",
+      ],
+      [
+        "Samsung",
+        [
+          ["c", "ls"],
+          ["k", "Backspace"],
+        ] as InputEvent[],
+        "",
+      ],
+    ])("does not resend the old line on Backspace after a stuck clear: %s", (_order, bs, sent) => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"]);
+      expect(play(...bs)).toBe(sent);
+      expect(play(["c", "lsx"])).toBe("x");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+    });
+
     it("keeps the stuck-clear marker across a show-keyboard reset", () => {
       const { play } = createDiffInput();
       play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"], ["reset"]);
