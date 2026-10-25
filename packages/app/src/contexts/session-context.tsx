@@ -140,6 +140,7 @@ interface AgentAttentionNotificationInput {
   serverId: string;
   workspaceId: string | undefined;
   agentId: string;
+  agentTitle: string | null;
   assistantMessage: string | null;
   permissionRequest: NotificationPermissionRequest | null;
 }
@@ -158,6 +159,7 @@ function resolveAgentAttentionNotification(
     serverId: input.serverId,
     workspaceId: input.workspaceId,
     agentId: input.agentId,
+    agentTitle: input.agentTitle,
     assistantMessage: input.reason === "finished" ? input.assistantMessage : null,
     permissionRequest: input.reason === "permission" ? input.permissionRequest : null,
   });
@@ -284,14 +286,15 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       const assistantMessage =
         findLatestAssistantMessageText(head) ?? findLatestAssistantMessageText(tail);
       const permissionRequest = getLatestPermissionRequest(session, params.agentId);
-      const workspaceId = session?.agents?.get(params.agentId)?.workspaceId;
+      const agent = session?.agents?.get(params.agentId);
 
       const notification = resolveAgentAttentionNotification({
         notification: params.notification,
         reason: params.reason,
         serverId,
-        workspaceId,
+        workspaceId: agent?.workspaceId,
         agentId: params.agentId,
+        agentTitle: agent?.title ?? null,
         assistantMessage,
         permissionRequest,
       });

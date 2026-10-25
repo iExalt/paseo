@@ -21,6 +21,7 @@ interface BuildAgentAttentionNotificationPayloadInput {
   serverId: string;
   workspaceId: string;
   agentId: string;
+  agentTitle?: string | null;
   assistantMessage?: string | null;
   permissionRequest?: NotificationPermissionRequest | null;
 }
@@ -169,10 +170,23 @@ export function findLatestPermissionRequest(
   return latest;
 }
 
-function resolveAgentAttentionTitle(reason: AgentAttentionReason): string {
-  if (reason === "permission") return "Agent needs permission";
-  if (reason === "error") return "Agent needs attention";
-  return "Agent finished";
+// Mirrors the app's resolveAgentLabel: placeholder titles don't identify a thread.
+const resolveAgentTitle = (title: string | null | undefined): string | null => {
+  const normalized = title ? normalizeNotificationText(title) : "";
+  if (!normalized || normalized.toLowerCase() === "new agent") {
+    return null;
+  }
+  return normalized;
+};
+
+function resolveAgentAttentionTitle(
+  reason: AgentAttentionReason,
+  agentTitle: string | null | undefined,
+): string {
+  const title = resolveAgentTitle(agentTitle);
+  if (reason === "permission") return `❓️ ${title ?? "Agent needs permission"}`;
+  if (reason === "error") return `❗️ ${title ?? "Agent needs attention"}`;
+  return title ?? "Agent finished";
 }
 
 function resolveAgentAttentionPreview(
@@ -196,7 +210,7 @@ function resolveAgentAttentionFallbackBody(reason: AgentAttentionReason): string
 export function buildAgentAttentionNotificationPayload(
   input: BuildAgentAttentionNotificationPayloadInput,
 ): AgentAttentionNotificationPayload {
-  const title = resolveAgentAttentionTitle(input.reason);
+  const title = resolveAgentAttentionTitle(input.reason, input.agentTitle);
   const preview = resolveAgentAttentionPreview(input);
   const body = preview ?? resolveAgentAttentionFallbackBody(input.reason);
 
