@@ -206,7 +206,7 @@ treats a key-first Enter's own newline change as part of that Enter.
 - Gboard is unverified. Its order is unknown, so P1's device gates are
   Samsung Keyboard on the phone and LatinIME on the tablet.
 
-### P1. One source of truth for typed text (agree the design first)
+### P1. One source of truth for typed text (merged in #221)
 
 - On Android, printable text comes only from the text diff, and printable
   keypresses are ignored. Keypress is used for Backspace, Enter, arrows and
@@ -370,6 +370,54 @@ Acceptance:
 - A relay change adds a session-controller unit test covering two cases. A
   client reporting more than `MAX_CLIENT_BUFFERED_BYTES` still gets the
   snapshot fallback. A draining client streams.
+
+#### P2 result: client wait removed; the network is the rest (2026-10-25)
+
+The trace gained `written` (after `terminal.write`) and `commit` (React's
+layout effect) stages, the active connection type, and an RPC ping every 2 s
+on that connection. Two client changes landed:
+
+- `terminal.write` started its first write after idle from xterm's
+  `setTimeout`. The write now calls xterm's `handleUserInput()` first, which
+  runs the write synchronously; recv → written fell from 15 ms to 0.3 ms.
+- The output drain paints output that ends a drain turn at once when nothing
+  was painted in the last 16 ms, instead of waiting for `requestAnimationFrame`,
+  which cost two frames on Android. Bursts still paint once per frame.
+
+Tablet (LatinIME, 47 keys per run, `adb reverse`), base trace against two
+runs of the fix, p50 in ms:
+
+| Stage          | before | after        |
+| -------------- | ------ | ------------ |
+| recv → written | 15.4   | 0.3          |
+| parsed → paint | 17.8   | 2.3 to 2.7   |
+| paint → commit | 10.2   | 17 to 21     |
+| send → commit  | 64.7   | 51.0 to 53.2 |
+
+send → commit p90 went from 77.7 to 69.0 and 60.1.
+
+Phone (Samsung Keyboard, 47 keys, fix at `f5de8fcba`). The app used the
+**relay**; its RPC ping was 383 ms p50 and `tailscale ping s24u` was 389 ms
+on a direct path:
+
+| Stage          | p50 ms | p90 ms |
+| -------------- | ------ | ------ |
+| send → recv    | 386    | 410    |
+| recv → written | 0.5    | 0.7    |
+| parsed → paint | 5.5    | 6.8    |
+| paint → commit | 21.6   | 26.6   |
+| send → commit  | 416    | 438    |
+
+- send → recv equals the round trip, so the daemon and the app add nothing
+  measurable before receipt. P0b's 90 ms gap compared a relayed round trip
+  with a direct `tailscale ping` on a faster day.
+- A direct path would save nothing on this day (389 against 383 ms). Showing
+  the path is already done by the host page's connection badge.
+- After receipt the phone spends about 28 ms, most of it React rendering the
+  new screen once the paint has been requested (paint → commit). The immediate
+  paint moved the frame wait into React's scheduler, which is the next lever.
+- The relay socket's buffered amount (above) only matters for heavy output
+  and is deferred.
 
 ### P3. Optional typing aids
 
