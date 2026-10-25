@@ -1,6 +1,6 @@
 # Mobile terminal plan
 
-On the user's Android phone with Gboard, Paseo's terminal often
+On the user's Android phone with Samsung Keyboard, Paseo's terminal often
 prints one key twice, and typing feels slow. This plan fixes input first and
 then removes latency where measurements show it, before the move to acyclic.
 
@@ -111,8 +111,8 @@ Two devices share the work:
   keyboard, hardware-key paths and every P1 check. Run
   `settings put secure show_ime_with_hard_keyboard 1` in the guest so the
   soft keyboard shows. It has no network, so its latency means nothing.
-- The user's phone is needed for Gboard's ordering and composition, for real
-  network latency and for the final sign-off.
+- The user's phone runs Samsung Keyboard, not Gboard. It is needed for that
+  keyboard's ordering, for real network latency and for the final sign-off.
 
 On either device, type by tapping the keyboard's keys with
 `adb shell input tap`, as the spike did.
@@ -120,7 +120,7 @@ On either device, type by tapping the keyboard's keys with
 `InputConnection`, which is the path with the bug. The existing agent-device
 scenario (`packages/app/e2e/mobile/agent-device/native-terminal-basic.android.ad`)
 probably types the same way, which would explain why it passes today;
-the P0 trace confirms it. Record the Gboard version.
+the P0 trace confirms it. Record the keyboard and its version.
 
 Acceptance:
 
@@ -128,10 +128,10 @@ Acceptance:
   spike's case: `hello world`, Backspace into `world`, `ld`, Enter. It
   compares each shell line, and it fails before P1 lands (base:
   `origin/dev` at `c9820c294` or later). The trace shows
-  whether Gboard delivers change before key, and whether it wraps
+  whether the keyboard delivers change before key, and whether it wraps
   Backspace in a batch edit.
-- If Gboard does not show change-first order, re-scope P1 before writing
-  any code.
+- If the phone's keyboard does not show change-first order, re-scope P1
+  before writing any code.
 - A per-stage latency table, p50 and p90 over 30 or more echoed keystrokes,
   on the phone's usual network with the path recorded.
 
@@ -164,58 +164,122 @@ logger, not a shell line.
   Paint waits one frame (18 ms). The emulated CPU and the lack of a network
   make these numbers unrepresentative of a phone.
 
-Still open for P0b on the phone: Gboard's order and composition, whether
-Gboard batches Backspace, Gboard's change-to-key gap compared with the 100 ms
-expiry, and real network latency.
+#### P0b result: the user's phone and the tablet (2026-10-25, accepted)
+
+The phone runs Samsung Keyboard 5.9.30.97; Gboard is not installed. The trace
+APK (Paseo Debug, `74351fa0c`, sha256 `9e7fb177…`) added each field clear's
+reason and whether the next change still held the cleared text. The analyzer
+treats a key-first Enter's own newline change as part of that Enter.
+
+| Wire order              | Samsung (phone)          | LatinIME (tablet)                     |
+| ----------------------- | ------------------------ | ------------------------------------- |
+| Printable               | change first, 0.5 ms p50 | change first, 18 ms                   |
+| Backspace               | change first, 0.5 ms     | key first, 0.2 ms                     |
+| Enter                   | key first, then `…\n`    | change first, key 0.3 to 4.6 ms later |
+| Clears after Enter      | 3 of 3 landed            | 2 of 2 (P0a: some failed)             |
+| Clears on show-keyboard | 10 of 10 landed          | 10 of 10 landed                       |
+
+- Base fails on Samsung as on the tablet. The first letter after every clear
+  is sent twice (`hhello`, `aabcd`, and the `d` typed after reopening the
+  keyboard). Backspace sends nothing, and the next letter then sends two stale
+  characters: `hello world`, three Backspaces and `ld` gave
+  `hhello worldolld`.
+- No clear other than after Enter failed on either keyboard. The app's
+  hide-keyboard button doesn't blur the input, so blur was always followed by
+  a show-keyboard clear before typing. P1 therefore keeps the stuck-clear
+  rule for Enter only (option A below).
+- Latency on the phone, 106 keystrokes over a direct Tailscale path with a
+  235 ms `tailscale ping`:
+
+  | Stage          | p50 ms | p90 ms |
+  | -------------- | ------ | ------ |
+  | send → recv    | 328    | 342    |
+  | recv → parsed  | 11     | 20     |
+  | parsed → paint | 23     | 34     |
+  | send → paint   | 367    | 385    |
+
+  The network dominates. About 90 ms of send → recv is not the round trip
+  and is unexplained; the app's endpoint (direct or relay) was not recorded.
+  `recv → parsed` is about 11 ms on both devices, which suggests a timer
+  floor rather than parse work. Paint takes about three 120 Hz frames.
+
+- Gboard is unverified. Its order is unknown, so P1's device gates are
+  Samsung Keyboard on the phone and LatinIME on the tablet.
 
 ### P1. One source of truth for typed text (agree the design first)
 
 - On Android, printable text comes only from the text diff, and printable
-  keypresses are ignored. Keypress is used for Enter, arrows and control keys.
-- The diff owns every deletion while the field has text. Three one-shot flags
-  pair a Backspace key with its diff, whichever arrives first:
+  keypresses are ignored. Keypress is used for Backspace, Enter, arrows and
+  control keys.
+- One pending slot, settled by the next event, pairs each key with its
+  change. Every event first settles what is pending.
   - A pure suffix deletion (the new text is a prefix of the old) sends one
-    `\x7f` per removed code point. If `keyAwaitingShrink` is set, clear it.
-    Otherwise set `shrinkAwaitingKey`.
-  - A change to empty text with `keyAwaitingShrink` set follows the suffix
-    rule. Without it, the change sends nothing and records
-    `emptiedAwaitingKey` = the number of removed code points.
-  - A Backspace key on a field with text sets `keyAwaitingShrink` and sends
-    nothing. On an empty field, it does one of three things. If
-    `emptiedAwaitingKey` is above 0, it sends that many `\x7f` (a composing
-    word or a batched select-all deleted at once). If `shrinkAwaitingKey` is
-    set, it clears it and sends nothing. Otherwise it sends one `\x7f`.
-  - Every hardware terminal key calls a hook such as
-    `inputState.noteHardwareClear()` before it is forwarded. The hook sets
-    `previousText` to empty and clears all three flags, but leaves
-    `replacementDesynced` alone. Android's hardware keyboard module
-    (`PaseoHardwareKeyboardModule.kt`, #206) clears the field after a key it
-    captures, and the terminal already has that text, so the clear must send
-    nothing in either event order.
-  - Any other key or change clears all three flags. Each flag also expires
-    about 100 ms after it is set. Both halves of a real pair come from one
-    native call or IME batch, so a stale flag, such as a Backspace that
-    deleted nothing, can't pair with a later hardware clear.
+    `\x7f` per removed code point. If a Backspace key is pending
+    (`keyAwaitingShrink`), they pair; otherwise the change leaves
+    `shrinkAwaitingKey` for its key. A non-append replacement (a Hangul
+    syllable losing a jamo) pairs the same way.
+  - A change to empty text with no key pending sends nothing and leaves
+    `emptied` with the removed count. A Backspace key next sends that many
+    `\x7f`, however late; any other event sends them first. This covers a
+    composing word or a batched select-all deleted at once.
+  - A Backspace key on a field with text leaves `keyAwaitingShrink` and sends
+    nothing; on an empty field it sends one `\x7f`.
+  - The Backspace pairs expire after 100 ms, so a Backspace that deleted
+    nothing can't pair with a later hardware clear. The clock is monotonic.
+  - Every hardware terminal key calls `inputState.noteHardwareClear()` before
+    it is forwarded. The hook sets `previousText` to empty and drops a pending
+    Backspace entry, but leaves `replacementDesynced` alone. Android's hardware
+    keyboard module (`PaseoHardwareKeyboardModule.kt`, #206) clears the field
+    after a key it captures, and the terminal already has that text, so the
+    clear must send nothing in either event order.
+- Enter comes from the text change. A change whose appended text is `X` plus
+  one trailing line break sends `X` and `\r`, then requests a clear. An Enter
+  key right after it is its echo and sends nothing. An Enter key first is
+  held, and the newline change after it sends the Enter; any other event
+  sends the held `\r` first. No timing is involved, so a JS stall between
+  the two can't double the Enter. React Native reports a commit of up to two
+  characters as the key, so a key ending in `\n` (`s\n`) is an Enter key, and
+  a longer commit has no key at all. A multi-line paste (text after the line
+  break) still sends nothing.
 - This is the candidate design. The case table under Acceptance is the
-  contract. If the P0 trace shows that the rule needs more timing heuristics
-  than the expiry, switch to the native `InputConnection` below instead of
-  adding them.
+  contract. If the device runs show that the rule needs more timing
+  heuristics than the Backspace expiry, switch to the native
+  `InputConnection` below instead of adding them.
 - A field can keep its text across Enter when the clear after Enter doesn't
-  land (P0a). A change whose appended text contains `\n` or `\r` sends
-  nothing; Enter comes from its key, and the multi-line paste guard stays.
-  Set `previousText` to the change's full text, newline included, then
-  record `pendingClearFrom = previousText` and set `previousText` to empty.
-  Every clear request records it this way: Enter from the text, Enter as a
-  key, and the resets on focus, blur and show-keyboard. On the next change, diff against
-  `pendingClearFrom` if the text starts with it (the clear didn't land), and
-  otherwise against `previousText`. Then forget `pendingClearFrom`.
+  land (P0a). A newline change records `pendingClearFrom`, its full text, and
+  sets `previousText` to empty. The marker always contains a line break, so a
+  single-line paste can never match it, and other clear requests keep it. On
+  the next change, diff against the marker if the text extends it (the clear
+  didn't land), and otherwise against `previousText`. A change equal to the
+  marker is new text, because a field that kept the marker reports no
+  change. Then forget the marker.
+- A Backspace key on an empty field, followed within the pairing window by a
+  change equal to the marker minus its final line break, is a Backspace into
+  the stuck line. It realigns without typing the old line again; the key's
+  own `\x7f` reaches an empty prompt. Anything else, such as the first letter
+  of a new line that starts the same way (`ls` twice), is sent.
+- Known gap: with change-first Backspace (Samsung), a Backspace into a line
+  whose clear never landed resends that line. Telling it apart from new
+  typing would mean holding the change until its key; the native
+  `InputConnection` fallback would close it. No Samsung clear has failed in
+  any run.
+- Resets on focus, blur and show-keyboard record no marker (option A). P0b
+  saw every one of them land on both keyboards. Marking them too (option B)
+  would misread a second paste that extends the first, such as `git status`
+  then `git status --short`, as a failed clear and drop its prefix.
 - A non-append replacement that isn't CJK, such as autocorrect or a reopened
   word, is still not sent. It no longer disables Backspace: only the CJK
   rubout stays off until the next reset. A change to empty text does not
   reset it.
-- Before changing anything, find which platform needs the keypress-only path
-  (the "does not report text changes" test, which came from `04fe30a3e`). If
-  it is only iOS or hardware keyboards, gate it by platform.
+- The rule is a policy of the input state,
+  `createTerminalTextInputState({ printableSource: "diff" | "keyThenDiff" })`.
+  The component picks `"diff"` on Android with `Platform.OS`; every other
+  platform keeps today's `"keyThenDiff"`, so iOS is untouched. Both policies
+  run in vitest.
+- The keypress-only test ("does not report text changes", from `04fe30a3e`)
+  stays in the `"keyThenDiff"` table until an iOS run shows whether iOS
+  needs it. Whether the Backspace decoupling below should also apply to iOS
+  is a follow-up, not part of P1.
 - Don't build a pending-key reconciler in JS. A merged change event (`ab`
   followed by the keys `a` and `b`) defeats it.
 - Clear the field after each commit only if the P0 trace shows it is needed.
@@ -227,6 +291,14 @@ expiry, and real network latency.
 
 Acceptance:
 
+- The existing `terminal-input.native.test.ts` becomes the `"keyThenDiff"`
+  table and keeps its assertions. A new `"diff"` table holds the
+  change-driven versions of the rows at L50, L61, L98, L112, L323 and L332
+  (L112 replaces `submittedText` with the marker), and the Backspace flips of
+  L355 and L364. The rows at L20, L32, L73, L82, L91, L136, L215, L236 to
+  L296, L298, L309, L316, L345 and L381 run in both tables.
+- The `"diff"` table covers both wire orders P0b recorded: Samsung's (all
+  change first, Enter key first) and LatinIME's (Backspace key first).
 - Each row of the unit tables asserts the bytes sent. It then asserts that a
   following Backspace, given as the key and its shrinking text change, sends
   one `\x7f`, or, if the field is empty, that the key alone sends one. The rows cover:
@@ -251,8 +323,18 @@ Acceptance:
     Backspace sends one `\x7f`.
 - The unit tests inject a clock for the flag expiry instead of waiting.
 - Existing CJK composition tests and #206's hardware-key tests still pass.
+- The reviewer's row list (groups A to F: printable text, Backspace,
+  replacements, Enter and clears, hardware clears, shared rows) is the
+  contract for the `"diff"` table. It includes option A's accepted cost: a
+  show-keyboard clear that fails resends the stale text.
+- On a device, type `ab`, press Home, return to the app and type `c`. Only
+  `c` is sent. This checks that a return without a show-keyboard reset still
+  clears through blur.
 - The P0 device script, which failed on the same base, now passes,
-  including the second line after Enter.
+  including the second line after Enter, on Samsung Keyboard (the user's
+  phone) and LatinIME (the tablet). Include a composing check on Samsung:
+  its 0.5 ms change-first gap may be `setComposingText` despite
+  `NO_SUGGESTIONS`.
 - On the virtual tablet, hardware Backspace and Enter still work after
   typed text. Drive the virtio keyboard from the host side. `adb shell input
   keyevent` uses the virtual keyboard device, which #206's capture rejects,
@@ -271,8 +353,12 @@ The P0 numbers decide what to work on. The candidates set out in advance are:
   streams instead of forcing a snapshot every 256 KB. Keep the bound on how
   far a slow relay client can fall behind.
 - Cut crypto or parse cost, if the trace shows either is material. First
-  time `terminal.write` for one character in isolation, since P0a measured
-  10.6 ms from receive to parsed.
+  time `terminal.write` for one character in isolation, since P0a and P0b
+  both measured about 11 ms from receive to parsed.
+- Find the roughly 90 ms of send → recv on the phone that is not the
+  Tailscale round trip. Record the app's endpoint first, then add the
+  deferred server-side stamps.
+- Find why paint takes about three frames after parsing on the phone.
 
 Acceptance:
 
@@ -301,8 +387,9 @@ The spike found neither aid essential, so both are opt-in.
 
 - Keep the P1 unit tables. They are the cheapest layer and cover every event
   order.
-- Keep one adb Gboard typing check on the phone as the P1 acceptance gate. It
-  stays manual and is not in CI.
+- Keep one adb typing check on the phone (Samsung Keyboard) and one on the
+  tablet (LatinIME) as the P1 acceptance gate. They stay manual and are not
+  in CI.
 - Do not add end-to-end latency tests to CI. Keep the P0 trace as a dev tool
   instead.
 
