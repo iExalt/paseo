@@ -12,5 +12,7 @@ describe("terminal input trace redaction", () => {
     expect(redactTerminalTraceKey("ArrowUp")).toBe("ArrowUp");
     expect(redactTerminalTraceKey("Hi")).toBe("aa");
     expect(redactTerminalTraceKey(". ")).toBe("p ");
+    expect(redactTerminalTraceKey("C-c")).toBe("C-c");
+    expect(redactTerminalTraceKey("C-")).toBe("ap");
   });
 });
