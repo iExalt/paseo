@@ -423,6 +423,9 @@ function NativeTerminalEmulator({
         },
         scheduleFrame: requestAnimationFrame,
         cancelFrame: cancelAnimationFrame,
+        // A lone echo paints without waiting for a frame callback, which costs
+        // two or three frames on Android; bursts still paint once per frame.
+        idlePaintMs: 16,
       }),
     [commitTerminalScreen, emitInputModeChange, resolveTerminalScreen, syncSelectionWithTerminal],
   );
