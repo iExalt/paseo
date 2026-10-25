@@ -242,8 +242,10 @@ host, with the limits below. iOS rests on code review and unit tests.
     native and web (#213).
   - Review comments (#213): Back cancels an open comment editor instead of
     leaving the app, and Cancel and Comment work on the first tap with the
-    soft keyboard up, then hide it. Known limit: an editor opened low in the
-    Explorer diff sits behind the soft keyboard until it closes.
+    soft keyboard up, then hide it. A focused editor scrolls clear of the
+    soft keyboard and navigation bar in the Explorer and in Diff tabs (#225),
+    and a tap on another line keeps unsaved text (#223). Known limit: moving
+    a clean editor to another line dips the soft keyboard for about 0.3 s.
 - E2b: dropped. Wide native layouts show one pane, as upstream does, and
   only the focused pane streams its agent.
 - E1: with a hardware keyboard on a wide native layout, the shortcut registry
@@ -416,3 +418,8 @@ host, with the limits below. iOS rests on code review and unit tests.
   to 1 the AOSP keyboard renders and the two-tap Cancel reproduces, so no
   phone was needed. The pass found that one-tap Cancel left the keyboard up;
   #213 now blurs the input first.
+- 2026-10-25: release follow-ups #222, #223, #225 and #226 checked on the
+  virtual tablet. The first #225 build failed: the diff's keyboard spacer
+  never lengthened the scroll range, because the other content is absolutely
+  positioned. Collapsing a file under a focused editor now hides the keyboard
+  instead of handing focus to message text or the composer (#226).
