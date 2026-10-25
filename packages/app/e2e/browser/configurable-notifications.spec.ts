@@ -540,7 +540,7 @@ test.describe("configurable notifications journey", () => {
       await turn(
         "Send a non-matching completion",
         "Unrelated answer",
-        [{ title: "Agent finished", body: "Unrelated answer" }],
+        [{ title: "Notification controls", body: "Unrelated answer" }],
         "Trial 1/4: notification expected — workspace on, no rule match, reply: Unrelated answer",
       );
 
@@ -553,7 +553,7 @@ test.describe("configurable notifications journey", () => {
       await turn(
         "Send a muted completion",
         "Muted completion",
-        [{ title: "Agent finished", body: "Unrelated answer" }],
+        [{ title: "Notification controls", body: "Unrelated answer" }],
         "Trial 2/4: suppressed — workspace off, reply: Muted completion",
       );
 
@@ -566,7 +566,7 @@ test.describe("configurable notifications journey", () => {
       await turn(
         "Send a matching completion",
         "No news.",
-        [{ title: "Agent finished", body: "Unrelated answer" }],
+        [{ title: "Notification controls", body: "Unrelated answer" }],
         "Trial 3/4: suppressed — matching reply rule, reply: No news.",
       );
       const clearForDelivery = runCliJson<{ replyRules: unknown[] }>(
@@ -578,8 +578,8 @@ test.describe("configurable notifications journey", () => {
         "Send the cleared-rule completion",
         "No news.",
         [
-          { title: "Agent finished", body: "Unrelated answer" },
-          { title: "Agent finished", body: "No news." },
+          { title: "Notification controls", body: "Unrelated answer" },
+          { title: "Notification controls", body: "No news." },
         ],
         "Trial 4/4: notification expected — rules cleared, reply: No news.",
       );

@@ -2911,6 +2911,7 @@ export class VoiceAssistantWebSocketServer {
     const allStates = notificationEntries.map((e) => e.state);
     const nowMs = Date.now();
     const assistantMessage = await this.agentManager.getLastAssistantMessage(params.agentId);
+    const storedAgent = await this.agentStorage.get(params.agentId);
     const workspace = await this.workspaceRegistry.get(workspaceId);
     const workspaceNotificationsEnabled = workspace?.notifications !== "off";
     const replyRuleMatched = this.shouldSuppressReplyRuleNotification({
@@ -2923,6 +2924,7 @@ export class VoiceAssistantWebSocketServer {
       serverId: this.serverId,
       workspaceId,
       agentId: params.agentId,
+      agentTitle: storedAgent?.title,
       assistantMessage,
       permissionRequest: findLatestPermissionRequest(agent.pendingPermissions),
     });
