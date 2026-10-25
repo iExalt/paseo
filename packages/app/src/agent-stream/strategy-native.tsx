@@ -1,7 +1,10 @@
 import {
   Fragment,
+  createContext,
   type ReactElement,
+  type ReactNode,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -12,6 +15,7 @@ import {
   Platform,
   View,
   type LayoutChangeEvent,
+  type StyleProp,
   type ListRenderItemInfo,
   type ViewToken,
   type NativeScrollEvent,
@@ -25,9 +29,11 @@ import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useKeyboardStreamInset } from "@/keyboard/shift";
 import {
+  type ViewableRow,
   createNativeReadingAnchor,
+  createNativeRowGeometry,
   findRowIndex,
-  getTopmostViewableRowId,
+  getReadingRowIdFromGeometry,
   planScrollToIndexRetry,
   READING_VIEWABILITY_CONFIG,
 } from "./reading-anchor";
@@ -86,6 +92,51 @@ const READING_RESTORE_STABLE_FRAMES = 3;
 const READING_RESTORE_MAX_FRAMES = 60;
 const NATIVE_STREAM_WINDOW_SIZE = 10;
 
+interface NativeRowGeometryContextValue {
+  geometry: ReturnType<typeof createNativeRowGeometry>;
+  onRowResized: (rowId: string) => void;
+}
+
+const NativeRowGeometryContext = createContext<NativeRowGeometryContextValue | null>(null);
+
+interface NativeStreamCellProps {
+  cellKey: string;
+  children: ReactNode;
+  onFocusCapture?: ((event: never) => void) | undefined;
+  onLayout?: ((event: LayoutChangeEvent) => void) | undefined;
+  style: StyleProp<ViewStyle> | undefined;
+}
+
+// FlatList exposes no row geometry, so each cell reports its own frame on layout. The cell
+// is a plain View with the props FlatList would give it. The component is module-level so
+// its identity is stable and cells never remount.
+function NativeStreamCell({
+  cellKey,
+  children,
+  onFocusCapture,
+  onLayout,
+  style,
+}: NativeStreamCellProps) {
+  const context = useContext(NativeRowGeometryContext);
+  useEffect(() => () => context?.geometry.forget(cellKey), [cellKey, context]);
+  // Record before FlatList's handler: its viewability pass runs inside it and reads the frame.
+  const handleLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { y, height } = event.nativeEvent.layout;
+      if (context?.geometry.record(cellKey, { y, height })) context.onRowResized(cellKey);
+      onLayout?.(event);
+    },
+    [cellKey, context, onLayout],
+  );
+  // RN's View typings omit the capture-phase focus prop FlatList's own cell sets.
+  const focusProps = { onFocusCapture };
+  return (
+    <View style={style} onLayout={handleLayout} {...focusProps}>
+      {children}
+    </View>
+  );
+}
+
 function keyExtractor(item: { id: string }): string {
   return item.id;
 }
@@ -139,6 +190,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const historyStartPaginationStateRef = useRef(historyStartPaginationState);
   const historyStartSettleSchedulerRef = useRef<HistoryStartSettleScheduler | null>(null);
   const [readingAnchor] = useState(createNativeReadingAnchor);
+  const [rowGeometry] = useState(createNativeRowGeometry);
+  // The last viewable set FlatList reported; null until it reports one.
+  const viewableRowsRef = useRef<ViewableRow[] | null>(null);
+  const lastReportedRowIdRef = useRef<string | null | undefined>(undefined);
 
   const historyItems = useMemo(() => {
     if (segments.historyVirtualized.length === 0) {
@@ -334,6 +389,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       contentMeasuredForKey: null,
     };
     scrollOffsetYRef.current = 0;
+    viewableRowsRef.current = null;
+    lastReportedRowIdRef.current = undefined;
     isUserScrollActiveRef.current = false;
     clearPendingUserScrollEnd();
     clearNativeViewportSettling();
@@ -529,6 +586,32 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     }),
   );
 
+  // The viewable set only changes when a row enters or leaves, but the reading row also
+  // changes as the reading line crosses a row edge, or as a viewable row resizes.
+  const updateReadingRow = useStableEvent(() => {
+    const viewableRows = viewableRowsRef.current;
+    if (viewableRows === null) return;
+    const rowId = getReadingRowIdFromGeometry({
+      rows: viewableRows,
+      geometry: rowGeometry,
+      offsetY: scrollOffsetYRef.current,
+      viewportHeight: streamViewportMetricsRef.current.viewportHeight,
+      newestRowId: segments.liveHead.at(-1)?.id ?? historyRows[0]?.id,
+    });
+    readingAnchor.noteViewable(rowId);
+    if (rowId === lastReportedRowIdRef.current) return;
+    lastReportedRowIdRef.current = rowId;
+    onReadingPositionChange?.(rowId);
+  });
+
+  const handleRowResized = useStableEvent((rowId: string) => {
+    if (viewableRowsRef.current?.some((row) => row.id === rowId)) updateReadingRow();
+  });
+  const rowGeometryContext = useMemo(
+    () => ({ geometry: rowGeometry, onRowResized: handleRowResized }),
+    [handleRowResized, rowGeometry],
+  );
+
   const handleScroll = useStableEvent((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const previousOffsetY = scrollOffsetYRef.current;
@@ -557,6 +640,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     onNearBottomChange(nearBottom);
 
     evaluateHistoryStart();
+    updateReadingRow();
 
     if (
       !isUserScrollActiveRef.current &&
@@ -693,16 +777,12 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   const handleViewableItemsChanged = useStableEvent(
     ({ viewableItems }: { viewableItems: ViewToken<StreamItem>[] }) => {
-      const rowId = getTopmostViewableRowId(
-        viewableItems.map((token) => ({
-          id: token.item.id,
-          index: token.index,
-          isViewable: token.isViewable,
-        })),
-        segments.liveHead.at(-1)?.id ?? historyRows[0]?.id,
-      );
-      readingAnchor.noteViewable(rowId);
-      onReadingPositionChange?.(rowId);
+      viewableRowsRef.current = viewableItems.map((token) => ({
+        id: token.item.id,
+        index: token.index,
+        isViewable: token.isViewable,
+      }));
+      updateReadingRow();
     },
   );
 
@@ -753,41 +833,44 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   // RN's FlatList strictMode keeps its internal renderItem wrapper stable when
   // data or the live header changes, preserving the row identities above.
   return (
-    <FlatList
-      {...listInsetProps}
-      ref={flatListRef}
-      data={historyRows}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
-      strictMode
-      testID="agent-chat-scroll"
-      nativeID="agent-chat-scroll-native-virtualized"
-      ListHeaderComponent={liveHeaderContent ?? undefined}
-      ListFooterComponent={historyFooterContent ?? undefined}
-      contentContainerStyle={listContentContainerStyle}
-      style={listStyle}
-      onLayout={handleListLayout}
-      onScroll={handleScroll}
-      onScrollBeginDrag={handleScrollBeginDrag}
-      onScrollEndDrag={handleScrollEndDrag}
-      onMomentumScrollBegin={handleMomentumScrollBegin}
-      onMomentumScrollEnd={handleMomentumScrollEnd}
-      scrollEventThrottle={16}
-      onContentSizeChange={handleContentSizeChange}
-      onScrollToIndexFailed={handleScrollToIndexFailed}
-      onViewableItemsChanged={handleViewableItemsChanged}
-      viewabilityConfig={READING_VIEWABILITY_CONFIG}
-      maintainVisibleContentPosition={maintainVisibleContentPosition}
-      // Tall Markdown rows exhaust a shallow window during flings. Keep the initial
-      // render small, then refill a deeper window in batches large enough to keep up.
-      initialNumToRender={2}
-      maxToRenderPerBatch={10}
-      windowSize={NATIVE_STREAM_WINDOW_SIZE}
-      removeClippedSubviews={false}
-      scrollEnabled={scrollEnabled}
-      showsVerticalScrollIndicator
-      inverted
-    />
+    <NativeRowGeometryContext.Provider value={rowGeometryContext}>
+      <FlatList
+        {...listInsetProps}
+        ref={flatListRef}
+        data={historyRows}
+        renderItem={renderItem}
+        CellRendererComponent={NativeStreamCell}
+        keyExtractor={keyExtractor}
+        strictMode
+        testID="agent-chat-scroll"
+        nativeID="agent-chat-scroll-native-virtualized"
+        ListHeaderComponent={liveHeaderContent ?? undefined}
+        ListFooterComponent={historyFooterContent ?? undefined}
+        contentContainerStyle={listContentContainerStyle}
+        style={listStyle}
+        onLayout={handleListLayout}
+        onScroll={handleScroll}
+        onScrollBeginDrag={handleScrollBeginDrag}
+        onScrollEndDrag={handleScrollEndDrag}
+        onMomentumScrollBegin={handleMomentumScrollBegin}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        scrollEventThrottle={16}
+        onContentSizeChange={handleContentSizeChange}
+        onScrollToIndexFailed={handleScrollToIndexFailed}
+        onViewableItemsChanged={handleViewableItemsChanged}
+        viewabilityConfig={READING_VIEWABILITY_CONFIG}
+        maintainVisibleContentPosition={maintainVisibleContentPosition}
+        // Tall Markdown rows exhaust a shallow window during flings. Keep the initial
+        // render small, then refill a deeper window in batches large enough to keep up.
+        initialNumToRender={2}
+        maxToRenderPerBatch={10}
+        windowSize={NATIVE_STREAM_WINDOW_SIZE}
+        removeClippedSubviews={false}
+        scrollEnabled={scrollEnabled}
+        showsVerticalScrollIndicator
+        inverted
+      />
+    </NativeRowGeometryContext.Provider>
   );
 }
 
