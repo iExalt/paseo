@@ -96,3 +96,75 @@ export function checkParity(tree: ParityTree, manifest: ParityManifest): string[
   }
   return problems;
 }
+
+export interface SourceModuleFacts {
+  /** Runtime (non-type) export names. */
+  exports: readonly string[];
+  /** Named runtime imports, keyed by the imported module's path under src without extension. */
+  imports: readonly { module: string; names: readonly string[] }[];
+}
+
+const PLATFORM_GROUPS = ["web", "native"] as const;
+
+type PlatformGroup = "web" | "native" | "base";
+
+/** Each module's files by platform group; `.web` wins over `.electron`, which only desktop loads. */
+function indexVariants(files: Iterable<string>): Map<string, Map<PlatformGroup, string>> {
+  const variants = new Map<string, Map<PlatformGroup, string>>();
+  for (const file of files) {
+    const match = IGNORED_FILE.test(file) ? null : SOURCE_FILE.exec(file);
+    if (!match) continue;
+    const [, base, platform] = match;
+    const entry = variants.get(base) ?? new Map<PlatformGroup, string>();
+    const group = platformGroup(platform);
+    if (group !== "web" || platform === "web" || !entry.has("web")) entry.set(group, file);
+    variants.set(base, entry);
+  }
+  return variants;
+}
+
+/** Platforms that load a file: its own group, or for a plain file each group its module lacks. */
+function loadingPlatforms(
+  file: string,
+  variants: Map<string, Map<PlatformGroup, string>>,
+): ("web" | "native")[] {
+  const match = SOURCE_FILE.exec(file);
+  if (!match || IGNORED_FILE.test(file)) return [];
+  const [, base, platform] = match;
+  const group = platformGroup(platform);
+  if (group !== "base") return [group];
+  const own = variants.get(base);
+  return PLATFORM_GROUPS.filter((candidate) => !own?.has(candidate));
+}
+
+/**
+ * Imports that resolve to a platform variant without the imported name. Metro and Vitest
+ * resolve a module's `.web`/`.native` file ahead of its plain file, so a name the variant
+ * lacks is `undefined` at runtime on that platform; TypeScript resolves the plain file and
+ * cannot see it. An importer is checked on the platforms that load it: a `.web` file on
+ * web, a plain file on each platform its own module has no variant for. Keys are POSIX
+ * paths relative to src.
+ */
+export function findMissingImports(facts: ReadonlyMap<string, SourceModuleFacts>): string[] {
+  const variants = indexVariants(facts.keys());
+  const problems = new Set<string>();
+  for (const [file, { imports }] of facts) {
+    const platforms = loadingPlatforms(file, variants);
+    for (const { module, names } of imports) {
+      const target = variants.get(module);
+      if (!target || target.size < 2) continue;
+      for (const candidate of platforms) {
+        const resolved = target.get(candidate) ?? target.get("base");
+        if (!resolved) continue;
+        const exported = new Set(facts.get(resolved)?.exports);
+        const missing = names.filter((name) => !exported.has(name));
+        if (missing.length > 0) {
+          problems.add(
+            `${file} imports ${missing.join(", ")} from ${resolved}, which does not export it`,
+          );
+        }
+      }
+    }
+  }
+  return [...problems].sort();
+}

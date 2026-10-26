@@ -1,9 +1,16 @@
-import { readdirSync } from "node:fs";
-import { sep } from "node:path";
+import { readdirSync, readFileSync } from "node:fs";
+import { dirname, join, normalize, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { SETTINGS_SECTION_GATES } from "@/screens/settings/section-availability";
-import { checkParity, findSplitModules, type ParityManifest } from "./check";
+import {
+  checkParity,
+  findMissingImports,
+  findSplitModules,
+  type ParityManifest,
+  type SourceModuleFacts,
+} from "./check";
 import { PARITY_MANIFEST } from "./manifest";
 
 const emptyManifest: ParityManifest = { splitModules: {}, settingsSections: {}, runtimeGates: {} };
@@ -81,8 +88,98 @@ describe("checkParity", () => {
   });
 });
 
+describe("findMissingImports", () => {
+  it("reports imports a platform variant cannot satisfy", () => {
+    const facts = new Map([
+      ["a.tsx", { exports: ["A", "resolve"], imports: [] }],
+      ["a.web.tsx", { exports: ["A"], imports: [] }],
+      ["shared.tsx", { exports: [], imports: [{ module: "a", names: ["A", "resolve"] }] }],
+      ["only-native.native.tsx", { exports: [], imports: [{ module: "a", names: ["resolve"] }] }],
+      ["view.tsx", { exports: [], imports: [{ module: "a", names: ["resolve"] }] }],
+      ["view.web.tsx", { exports: [], imports: [{ module: "a", names: ["A"] }] }],
+    ]);
+    expect(findMissingImports(facts)).toEqual([
+      "shared.tsx imports resolve from a.web.tsx, which does not export it",
+    ]);
+  });
+});
+
+const SRC_ROOT = fileURLToPath(new URL("..", import.meta.url));
+
+function hasModifier(node: ts.Node, kind: ts.SyntaxKind): boolean {
+  return (
+    ts.canHaveModifiers(node) && (ts.getModifiers(node)?.some((m) => m.kind === kind) ?? false)
+  );
+}
+
+/** Resolves an import specifier to a module path under src without extension, or null. */
+function resolveModule(importer: string, specifier: string): string | null {
+  let target: string;
+  if (specifier.startsWith("@/")) target = specifier.slice(2);
+  else if (specifier.startsWith(".")) target = normalize(join(dirname(importer), specifier));
+  else return null;
+  return target
+    .split(sep)
+    .join("/")
+    .replace(/\.tsx?$/, "");
+}
+
+function importedNames(clause: ts.ImportClause): string[] {
+  const names = clause.name ? ["default"] : [];
+  if (clause.namedBindings && ts.isNamedImports(clause.namedBindings)) {
+    for (const element of clause.namedBindings.elements) {
+      if (!element.isTypeOnly) names.push((element.propertyName ?? element.name).text);
+    }
+  }
+  return names;
+}
+
+function declaredExportNames(statement: ts.Statement): string[] {
+  if (ts.isExportDeclaration(statement)) {
+    const clause = statement.exportClause;
+    if (statement.isTypeOnly || !clause || !ts.isNamedExports(clause)) return [];
+    return clause.elements.filter((element) => !element.isTypeOnly).map((e) => e.name.text);
+  }
+  if (ts.isExportAssignment(statement)) return ["default"];
+  if (!hasModifier(statement, ts.SyntaxKind.ExportKeyword)) return [];
+  if (hasModifier(statement, ts.SyntaxKind.DefaultKeyword)) return ["default"];
+  if (ts.isVariableStatement(statement)) {
+    return statement.declarationList.declarations.flatMap((declaration) =>
+      ts.isIdentifier(declaration.name) ? [declaration.name.text] : [],
+    );
+  }
+  const named =
+    ts.isFunctionDeclaration(statement) ||
+    ts.isClassDeclaration(statement) ||
+    ts.isEnumDeclaration(statement);
+  return named && statement.name ? [statement.name.text] : [];
+}
+
+/** Runtime exports and named imports of a source file; `export *` is not followed. */
+function moduleFacts(file: string): SourceModuleFacts {
+  const source = ts.createSourceFile(
+    file,
+    readFileSync(join(SRC_ROOT, file), "utf8"),
+    ts.ScriptTarget.Latest,
+  );
+  const exports: string[] = [];
+  const imports: { module: string; names: string[] }[] = [];
+  for (const statement of source.statements) {
+    exports.push(...declaredExportNames(statement));
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      continue;
+    }
+    const clause = statement.importClause;
+    const module = resolveModule(file, statement.moduleSpecifier.text);
+    if (!clause || clause.isTypeOnly || !module) continue;
+    const names = importedNames(clause);
+    if (names.length > 0) imports.push({ module, names });
+  }
+  return { exports, imports };
+}
+
 function listSourceFiles(): string[] {
-  const root = fileURLToPath(new URL("..", import.meta.url));
+  const root = SRC_ROOT;
   return readdirSync(root, { recursive: true, encoding: "utf8" })
     .filter((file) => /\.tsx?$/.test(file))
     .map((file) => file.split(sep).join("/"));
@@ -96,5 +193,12 @@ describe("platform parity manifest", () => {
         PARITY_MANIFEST,
       ),
     ).toEqual([]);
+  });
+});
+
+describe("platform variants", () => {
+  it("export every name their importers use on each platform", () => {
+    const files = listSourceFiles();
+    expect(findMissingImports(new Map(files.map((file) => [file, moduleFacts(file)])))).toEqual([]);
   });
 });
