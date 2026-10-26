@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.11.1](https://github.com/iExalt/paseo/compare/paseo-v0.11.0...paseo-v0.11.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** keep a focused review editor above the keyboard ([#225](https://github.com/iExalt/paseo/issues/225)) ([54f6054](https://github.com/iExalt/paseo/commit/54f6054c19653bc58d0f4a7e728b06a6b19ea9f9))
+* **app:** keep an unsaved review comment when another line is tapped ([#223](https://github.com/iExalt/paseo/issues/223)) ([ff9bf10](https://github.com/iExalt/paseo/commit/ff9bf102183d1c84dbc6caf7b4422b04a769c0f0))
+* **app:** show the real sidebar shortcuts in toggle tooltips ([#222](https://github.com/iExalt/paseo/issues/222)) ([dcfa12c](https://github.com/iExalt/paseo/commit/dcfa12cb65af364d954817836b6be7cab5e0bb00))
+* **app:** stop message text taking focus from a removed input ([#226](https://github.com/iExalt/paseo/issues/226)) ([067e4c0](https://github.com/iExalt/paseo/commit/067e4c0e8e16cf0fb8834db4cac6c2ab0b41e91b))
+
+
+### Performance Improvements
+
+* **app:** paint native terminal echo without timer and frame waits ([#227](https://github.com/iExalt/paseo/issues/227)) ([01f0b4f](https://github.com/iExalt/paseo/commit/01f0b4fcc4239c1253757d8816d524d52a816cf6))
+* **app:** re-render only changed native terminal rows ([#228](https://github.com/iExalt/paseo/issues/228)) ([a31a581](https://github.com/iExalt/paseo/commit/a31a58171793b803d2470ecaaa48128ef0c63a6d))
+
 ## [0.11.0](https://github.com/iExalt/paseo/compare/paseo-v0.10.0...paseo-v0.11.0) (2026-10-25)
 
 
