@@ -25,5 +25,6 @@ because files in `public/` aren't content-hashed.
 uvx --from 'fonttools[woff]' fonttools ttLib.woff2 compress -o meslolgs-nf-regular.woff2 meslolgs_nf_regular.ttf
 ```
 
-Meslo is Apache-2.0 (`LICENSE.txt`). The icon glyphs keep the licenses of their
+Meslo is Apache-2.0 (`LICENSE.txt`). The web copies ship with `LICENSE.txt` and a
+`NOTICE.txt` covering the icon sets, so the web and desktop builds carry them. The icon glyphs keep the licenses of their
 icon sets, listed by [Nerd Fonts](https://github.com/ryanoasis/nerd-fonts/blob/v2.3.3/LICENSE).
