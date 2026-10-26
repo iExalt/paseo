@@ -4,6 +4,8 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
+const motion = vi.hoisted(() => ({ reduced: false }));
+
 // A minimal shared value: the clock only needs `value` and listeners. Worklets run inline.
 vi.mock("react-native-reanimated", async () => {
   const { useState } = await vi.importActual<typeof import("react")>("react");
@@ -24,12 +26,14 @@ vi.mock("react-native-reanimated", async () => {
   }
   return {
     makeMutable,
+    useReducedMotion: () => motion.reduced,
     useSharedValue: <T>(initial: T) => useState(() => makeMutable(initial))[0],
   };
 });
 vi.mock("react-native-worklets", () => ({
   scheduleOnUI: (worklet: (...args: unknown[]) => void, ...args: unknown[]) => worklet(...args),
 }));
+vi.mock("@/components/retained-panel", () => ({ useRetainedPanelActive: () => true }));
 
 // Vitest resolves "./clock" to clock.web.ts; load the native clock by its file name.
 const NATIVE_CLOCK = "./clock.ts";
@@ -40,42 +44,21 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  motion.reduced = false;
   vi.useRealTimers();
 });
 
-function advanceFrames(ms: number): void {
-  vi.advanceTimersByTime(ms);
-}
+it("keeps a ring still under reduced motion", () => {
+  const turning = renderHook(() => useStatusRingRotation());
+  motion.reduced = true;
+  const still = renderHook(() => useStatusRingRotation());
+  const turningAngle = turning.result.current.value;
+  const stillAngle = still.result.current.value;
 
-it("turns a ring only while its panel is active", () => {
-  const { result, rerender, unmount } = renderHook(({ active }) => useStatusRingRotation(active), {
-    initialProps: { active: false },
-  });
-  const hiddenAngle = result.current.value;
+  vi.advanceTimersByTime(100);
 
-  advanceFrames(100);
-  expect(result.current.value).toBe(hiddenAngle);
-
-  rerender({ active: true });
-  advanceFrames(100);
-  const turning = result.current.value;
-  expect(turning).not.toBe(hiddenAngle);
-
-  rerender({ active: false });
-  advanceFrames(100);
-  expect(result.current.value).toBe(turning);
-  unmount();
-});
-
-it("keeps a hidden ring still while a visible ring keeps the clock running", () => {
-  const visible = renderHook(() => useStatusRingRotation(true));
-  const hidden = renderHook(() => useStatusRingRotation(false));
-  const hiddenAngle = hidden.result.current.value;
-
-  advanceFrames(100);
-
-  expect(visible.result.current.value).not.toBe(hiddenAngle);
-  expect(hidden.result.current.value).toBe(hiddenAngle);
-  visible.unmount();
-  hidden.unmount();
+  expect(turning.result.current.value).not.toBe(turningAngle);
+  expect(still.result.current.value).toBe(stillAngle);
+  turning.unmount();
+  still.unmount();
 });
