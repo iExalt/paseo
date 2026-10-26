@@ -1,4 +1,4 @@
-import appPackage from "../../../package.json";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { pluginRegistry } from "../registry";
@@ -36,7 +36,13 @@ function install(locations: readonly ("workspace" | "explorer")[]) {
   })`;
   pluginRegistry.installCatalog(
     "host-1",
-    [{ id: "review", requirements: { paseo: `>=${appPackage.version}` }, clientBundle: bundle }],
+    [
+      {
+        id: "review",
+        requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
+        clientBundle: bundle,
+      },
+    ],
     {
       client: {} as DaemonClient,
       audio,

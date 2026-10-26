@@ -1,4 +1,4 @@
-import { resolveDaemonVersion } from "../daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -117,7 +117,7 @@ test("plugin handlers operate terminals through their host-owned Paseo API", asy
     path.join(pluginDirectory, "paseo-plugin.json"),
     JSON.stringify({
       id: "terminal-sdk",
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(
