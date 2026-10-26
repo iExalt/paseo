@@ -104,57 +104,68 @@ export interface SourceModuleFacts {
   imports: readonly { module: string; names: readonly string[] }[];
 }
 
-const PLATFORM_GROUPS = ["web", "native"] as const;
+type Runtime = "web" | "electron" | "native";
+type Variant = Runtime | "base";
 
-type PlatformGroup = "web" | "native" | "base";
+/** Files each runtime tries, most specific first; the plain file is the fallback for all. */
+const RESOLUTION: Record<Runtime, readonly Variant[]> = {
+  web: ["web", "base"],
+  electron: ["electron", "web", "base"],
+  native: ["native", "base"],
+};
+const RUNTIMES = Object.keys(RESOLUTION) as Runtime[];
 
-/** Each module's files by platform group; `.web` wins over `.electron`, which only desktop loads. */
-function indexVariants(files: Iterable<string>): Map<string, Map<PlatformGroup, string>> {
-  const variants = new Map<string, Map<PlatformGroup, string>>();
+function variantOf(platform: string | undefined): Variant {
+  if (platform === "web" || platform === "electron") return platform;
+  return platform ? "native" : "base";
+}
+
+/** Each module's files by variant, keyed by path under src without extension. */
+function indexVariants(files: Iterable<string>): Map<string, Map<Variant, string>> {
+  const variants = new Map<string, Map<Variant, string>>();
   for (const file of files) {
     const match = IGNORED_FILE.test(file) ? null : SOURCE_FILE.exec(file);
     if (!match) continue;
     const [, base, platform] = match;
-    const entry = variants.get(base) ?? new Map<PlatformGroup, string>();
-    const group = platformGroup(platform);
-    if (group !== "web" || platform === "web" || !entry.has("web")) entry.set(group, file);
+    const entry = variants.get(base) ?? new Map<Variant, string>();
+    entry.set(variantOf(platform), file);
     variants.set(base, entry);
   }
   return variants;
 }
 
-/** Platforms that load a file: its own group, or for a plain file each group its module lacks. */
-function loadingPlatforms(
-  file: string,
-  variants: Map<string, Map<PlatformGroup, string>>,
-): ("web" | "native")[] {
-  const match = SOURCE_FILE.exec(file);
-  if (!match || IGNORED_FILE.test(file)) return [];
-  const [, base, platform] = match;
-  const group = platformGroup(platform);
-  if (group !== "base") return [group];
-  const own = variants.get(base);
-  return PLATFORM_GROUPS.filter((candidate) => !own?.has(candidate));
+function resolveVariant(module: Map<Variant, string>, runtime: Runtime): Variant | undefined {
+  return RESOLUTION[runtime].find((variant) => module.has(variant));
+}
+
+/** Runtimes that load a file: those whose resolution of its own module picks it. */
+function loadingRuntimes(file: string, variants: Map<string, Map<Variant, string>>): Runtime[] {
+  const match = IGNORED_FILE.test(file) ? null : SOURCE_FILE.exec(file);
+  const own = match ? variants.get(match[1]) : undefined;
+  if (!match || !own) return [];
+  const variant = variantOf(match[2]);
+  return RUNTIMES.filter((runtime) => resolveVariant(own, runtime) === variant);
 }
 
 /**
  * Imports that resolve to a platform variant without the imported name. Metro and Vitest
- * resolve a module's `.web`/`.native` file ahead of its plain file, so a name the variant
- * lacks is `undefined` at runtime on that platform; TypeScript resolves the plain file and
- * cannot see it. An importer is checked on the platforms that load it: a `.web` file on
- * web, a plain file on each platform its own module has no variant for. Keys are POSIX
- * paths relative to src.
+ * resolve a module's `.electron`/`.web`/`.native` file ahead of its plain file, so a name
+ * the variant lacks is `undefined` at runtime there; TypeScript resolves the plain file and
+ * cannot see it. Each importer is checked on every runtime that loads it, re-exports
+ * included. Keys are POSIX paths relative to src.
  */
 export function findMissingImports(facts: ReadonlyMap<string, SourceModuleFacts>): string[] {
   const variants = indexVariants(facts.keys());
   const problems = new Set<string>();
   for (const [file, { imports }] of facts) {
-    const platforms = loadingPlatforms(file, variants);
+    const runtimes = loadingRuntimes(file, variants);
     for (const { module, names } of imports) {
-      const target = variants.get(module);
+      // `@/push-notifications` resolves to `push-notifications/index`.
+      const target = variants.get(module) ?? variants.get(`${module}/index`);
       if (!target || target.size < 2) continue;
-      for (const candidate of platforms) {
-        const resolved = target.get(candidate) ?? target.get("base");
+      for (const runtime of runtimes) {
+        const variant = resolveVariant(target, runtime);
+        const resolved = variant && target.get(variant);
         if (!resolved) continue;
         const exported = new Set(facts.get(resolved)?.exports);
         const missing = names.filter((name) => !exported.has(name));

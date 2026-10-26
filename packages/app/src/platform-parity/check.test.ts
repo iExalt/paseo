@@ -102,6 +102,22 @@ describe("findMissingImports", () => {
       "shared.tsx imports resolve from a.web.tsx, which does not export it",
     ]);
   });
+
+  it("resolves folder index modules and checks Electron variants", () => {
+    const facts = new Map([
+      ["push/index.ts", { exports: ["start"], imports: [] }],
+      ["push/index.native.ts", { exports: [], imports: [] }],
+      ["pane.tsx", { exports: ["Pane", "open"], imports: [] }],
+      ["pane.web.tsx", { exports: ["Pane", "open"], imports: [] }],
+      ["pane.electron.tsx", { exports: ["Pane"], imports: [] }],
+      ["host.tsx", { exports: [], imports: [{ module: "push", names: ["start"] }] }],
+      ["shell.web.tsx", { exports: [], imports: [{ module: "pane", names: ["open"] }] }],
+    ]);
+    expect(findMissingImports(facts)).toEqual([
+      "host.tsx imports start from push/index.native.ts, which does not export it",
+      "shell.web.tsx imports open from pane.electron.tsx, which does not export it",
+    ]);
+  });
 });
 
 const SRC_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -155,6 +171,24 @@ function declaredExportNames(statement: ts.Statement): string[] {
   return named && statement.name ? [statement.name.text] : [];
 }
 
+/** `export { a } from "./m"` reads `a` from `./m` like an import does. */
+function reexportFacts(
+  file: string,
+  statement: ts.Statement,
+): { module: string; names: string[] } | null {
+  if (!ts.isExportDeclaration(statement) || statement.isTypeOnly) return null;
+  const specifier = statement.moduleSpecifier;
+  const clause = statement.exportClause;
+  if (!specifier || !ts.isStringLiteral(specifier) || !clause || !ts.isNamedExports(clause)) {
+    return null;
+  }
+  const module = resolveModule(file, specifier.text);
+  const names = clause.elements
+    .filter((element) => !element.isTypeOnly)
+    .map((element) => (element.propertyName ?? element.name).text);
+  return module && names.length > 0 ? { module, names } : null;
+}
+
 /** Runtime exports and named imports of a source file; `export *` is not followed. */
 function moduleFacts(file: string): SourceModuleFacts {
   const source = ts.createSourceFile(
@@ -166,6 +200,8 @@ function moduleFacts(file: string): SourceModuleFacts {
   const imports: { module: string; names: string[] }[] = [];
   for (const statement of source.statements) {
     exports.push(...declaredExportNames(statement));
+    const reexport = reexportFacts(file, statement);
+    if (reexport) imports.push(reexport);
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       continue;
     }
