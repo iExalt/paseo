@@ -2,8 +2,8 @@ import { useEffect } from "react";
 
 /**
  * Opens a pane's find bar from outside the pane, such as a tab menu on touch devices
- * where there is no Cmd/Ctrl+F. Targets are `agent:<id>`, `file:<path>` or
- * `terminal:<id>`; the mounted pane for that target registers the handler.
+ * where there is no Cmd/Ctrl+F. Targets are `agent:<id>` or `terminal:<id>`; the
+ * mounted pane for that target registers the handler.
  */
 const handlers = new Map<string, () => void>();
 

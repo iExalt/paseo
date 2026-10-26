@@ -3,7 +3,6 @@ import { pluginSettings } from "./plugin-settings";
 
 export const ru: TranslationResources = {
   nativePermissions: en.nativePermissions,
-  nativeEditor: en.nativeEditor,
   nativeBrowser: en.nativeBrowser,
   nativeNotifications: en.nativeNotifications,
   paneFind: {

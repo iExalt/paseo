@@ -1,12 +1,18 @@
 import { useLayoutEffect, useState } from "react";
-import { makeMutable, type SharedValue, useSharedValue } from "react-native-reanimated";
+import {
+  makeMutable,
+  type SharedValue,
+  useReducedMotion,
+  useSharedValue,
+} from "react-native-reanimated";
 import { scheduleOnUI } from "react-native-worklets";
+import { useRetainedPanelActive } from "@/components/retained-panel";
 import { getStatusRingRotation } from "@/components/status-ring/geometry";
 
 const sharedRotation = makeMutable(getStatusRingRotation(Date.now()));
 const activeRingCount = makeMutable(0);
 const clockRunning = makeMutable(false);
-let nextRingListenerId = 1;
+let nextListenerId = 1;
 
 function advanceSharedRotation(): void {
   "worklet";
@@ -31,14 +37,14 @@ function registerStatusRing(
 
   registered.value = true;
   rotation.value = getStatusRingRotation(Date.now());
-  sharedRotation.addListener(listenerId, (nextRotation) => {
-    rotation.value = nextRotation;
+  sharedRotation.addListener(listenerId, (value) => {
+    rotation.value = value;
   });
   activeRingCount.value += 1;
 
   if (!clockRunning.value) {
     clockRunning.value = true;
-    sharedRotation.value = rotation.value;
+    sharedRotation.value = getStatusRingRotation(Date.now());
     requestAnimationFrame(advanceSharedRotation);
   }
 }
@@ -54,21 +60,18 @@ function unregisterStatusRing(registered: SharedValue<boolean>, listenerId: numb
   activeRingCount.value -= 1;
 }
 
-/**
- * The ring's rotation follows the shared clock only while `active`. A ring in a hidden retained
- * panel (the closed mobile sidebar stays mounted at opacity 0) detaches, so it neither keeps the
- * clock running nor re-runs its style worklet: each update is a Fabric commit on the UI thread.
- */
-export function useStatusRingRotation(active: boolean): SharedValue<number> {
+export function useStatusRingRotation(): SharedValue<number> {
+  // Hidden retained views must not subscribe their animated styles to the shared clock.
+  const panelActive = useRetainedPanelActive();
+  // Under reduced motion the ring stays a still arc, like SyncedLoader's dots.
+  const reduceMotion = useReducedMotion();
+  const active = panelActive && !reduceMotion;
   const rotation = useSharedValue(getStatusRingRotation(Date.now()));
   const registered = useSharedValue(false);
-  const [listenerId] = useState(() => nextRingListenerId++);
+  const [listenerId] = useState(() => nextListenerId++);
 
   useLayoutEffect(() => {
-    if (!active) {
-      return;
-    }
-
+    if (!active) return;
     scheduleOnUI(registerStatusRing, rotation, registered, listenerId);
     return () => {
       scheduleOnUI(unregisterStatusRing, registered, listenerId);
