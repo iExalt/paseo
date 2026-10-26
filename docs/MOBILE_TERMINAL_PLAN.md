@@ -417,7 +417,34 @@ on a direct path:
   new screen once the paint has been requested (paint → commit). The immediate
   paint moved the frame wait into React's scheduler, which is the next lever.
 - The relay socket's buffered amount (above) only matters for heavy output
-  and is deferred.
+  and is deferred to the wishlist.
+
+#### P2b result: render only the rows that changed (2026-10-25)
+
+`render` (the emulator renders a new screen) and `rows` (the grid has built
+its row models) stages split paint → commit on the tablet. Rebuilding every
+row's runs, styles and hash took 8.5 ms p50 of it, although an echo changes
+one row; paint → render, the wait for React, was 2.9 ms. Two changes:
+
+- The grid reuses the previous model of a row whose cells are unchanged.
+  Rows painted with a selection or find matches are always rebuilt.
+- The emulator reads the screen from an external store
+  (`useSyncExternalStore`), so React renders it at sync priority in a
+  microtask instead of through its scheduler. On its own it moved paint →
+  commit from 19.3 to 16.5 and 18.2 ms p50, within noise of the base.
+
+Tablet (LatinIME, 47 keys per run, same session and layout), base `f5de8fcba`
+against two runs of both changes, p50 in ms:
+
+| Stage          | before | after      |
+| -------------- | ------ | ---------- |
+| render → rows  | 8.5\*  | 0.7, 0.8   |
+| paint → commit | 19.3   | 11.7, 10.3 |
+| send → commit  | 50.7   | 40.9, 37.2 |
+
+\* From a run with the store change but without row reuse; the base has no
+`render` stage. send → commit p90 went from 69.9 to 52.5 and 52.9. The phone
+was not rerun.
 
 ### P3. Optional typing aids
 
