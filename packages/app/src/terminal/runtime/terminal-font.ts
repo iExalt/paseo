@@ -43,6 +43,11 @@ export function splitFontFamilyStack(fontFamily: string): string[] {
     .filter((family) => family.length > 0);
 }
 
+export function namesTerminalNerdFont(fontFamily: string): boolean {
+  const nerdFont = TERMINAL_NERD_FONT_FAMILY.toLowerCase();
+  return splitFontFamilyStack(fontFamily).some((family) => family.toLowerCase() === nerdFont);
+}
+
 function quoteFontFamily(family: string): string {
   return /\s/.test(family) ? `'${family}'` : family;
 }
@@ -55,11 +60,8 @@ export function resolveTerminalFontFamily(fontFamily: string | undefined): strin
   if (families.length === 0) {
     return DEFAULT_TERMINAL_FONT_FAMILY;
   }
-  const nerdFont = TERMINAL_NERD_FONT_FAMILY.toLowerCase();
-  if (!families.some((family) => family.toLowerCase() === nerdFont)) {
-    families.push(TERMINAL_NERD_FONT_FAMILY);
-  }
-  return families.map(quoteFontFamily).join(", ");
+  const stack = families.map(quoteFontFamily).join(", ");
+  return namesTerminalNerdFont(stack) ? stack : `${stack}, '${TERMINAL_NERD_FONT_FAMILY}'`;
 }
 
 export function resolveTerminalFontSize(fontSize: number | undefined): number {

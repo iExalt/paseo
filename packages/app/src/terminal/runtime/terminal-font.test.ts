@@ -5,6 +5,7 @@ import {
   resolveTerminalFontFamily,
   splitFontFamilyStack,
 } from "./terminal-font";
+import { withoutBundledTerminalFont } from "./terminal-bundled-font";
 
 describe("resolveTerminalFontFamily", () => {
   it("leads the default stack with the bundled Nerd Font", () => {
@@ -30,5 +31,14 @@ describe("resolveTerminalFontFamily", () => {
 
   it("still appends the bundled font after a differently named Meslo", () => {
     expect(resolveTerminalFontFamily("MesloLGM NF")).toBe("'MesloLGM NF', 'MesloLGS NF'");
+  });
+});
+
+describe("withoutBundledTerminalFont", () => {
+  it("drops the bundled font from a stack, whatever its quoting", () => {
+    expect(withoutBundledTerminalFont(DEFAULT_TERMINAL_FONT_FAMILY)).not.toMatch(/MesloLGS NF/);
+    expect(withoutBundledTerminalFont('Menlo, "mesloLGS NF"')).toBe("Menlo");
+    expect(withoutBundledTerminalFont("'MesloLGS NF'")).toBe("monospace");
+    expect(withoutBundledTerminalFont("'MesloLGM NF', 'MesloLGS NF'")).toBe("'MesloLGM NF'");
   });
 });

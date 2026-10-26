@@ -485,12 +485,18 @@ licenses are in
   per glyph; B settles which font a user override gets there.
 - Only the terminal default changes. Code blocks and diffs keep the app's mono
   stack.
+- Web and desktop fetch the woff2 from `public/fonts/` when a terminal first
+  mounts, not at startup. Until it loads, xterm gets the stack without Meslo;
+  then the font switches once. Meslo's cells are about 8% taller than the
+  fallbacks', so that first switch drops a row or two and resizes the PTY once.
+  Width can't tell Meslo from DejaVu Sans Mono or Menlo, which share its
+  advance, so tests check cell height and icon pixels instead.
 
-| Chunk | Outcome                                                                                                                                     | Status      |
-| ----- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
-| A1    | Vendored Regular and Bold with provenance; Meslo leads the terminal stack and is appended to a user font                                    | Implemented |
-| A2    | Web and desktop load the woff2 when a terminal mounts and measure after it loads; cold-cache headless proof, offline packaged desktop check | Not started |
-| B     | Android and iOS embed the TTFs with `expo-font`; Cuttlefish screenshot; iOS build-config check, live iOS deferred                           | Not started |
+| Chunk | Outcome                                                                                                           | Status                                                                                                                                                                                                                                                                                                                                        |
+| ----- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1    | Vendored Regular and Bold with provenance; Meslo leads the terminal stack and is appended to a user font          | Done                                                                                                                                                                                                                                                                                                                                          |
+| A2    | Web and desktop load the woff2 when a terminal mounts and switch to it once loaded                                | Done. A browser test checks the switch and Meslo's 17 px cells at 13 px; e2e with a slowed download sees three distinct icon cells, where a missing font draws identical boxes; a unit test covers a failed load. The Electron export carries `dist/fonts/`, but no packaged Electron run: the station's npm skips Electron's binary download |
+| B     | Android and iOS embed the TTFs with `expo-font`; Cuttlefish screenshot; iOS build-config check, live iOS deferred | Not started                                                                                                                                                                                                                                                                                                                                   |
 
 ## Out of scope
 

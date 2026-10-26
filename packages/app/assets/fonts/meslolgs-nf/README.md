@@ -16,7 +16,10 @@ Nerd Fonts v3 Material Design (`nf-md`, U+F0001+) and codicon ranges.
 
 Only Regular and Bold ship; the terminal synthesizes italics. Native apps embed
 the TTFs, which are named in lowercase with underscores because Android font
-resources must be. Web and desktop load the `.woff2` files, made with:
+resources must be. Web and desktop load the `.woff2` copies in
+`packages/app/public/fonts/meslolgs-nf/`, made with the command below. Bump the
+`?v=` query in `src/terminal/runtime/terminal-bundled-font.ts` when they change,
+because files in `public/` aren't content-hashed.
 
 ```bash
 uvx --from 'fonttools[woff]' fonttools ttLib.woff2 compress -o meslolgs-nf-regular.woff2 meslolgs_nf_regular.ttf
