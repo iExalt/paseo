@@ -2,6 +2,6 @@
   "schemaVersion": 1,
   "repository": "iExalt/paseo",
   "lineage": "iExalt/paseo:semver-v1",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "upstreamBase": "b8bb335c563279be45544b1b20a1fa5b3e56d422"
 }
