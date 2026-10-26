@@ -45,6 +45,8 @@ class MemoryStorage implements ReplicaRowStore {
   onRead: (() => void) | null = null;
   /** Throws once a read goes past this count, so a non-terminating read loop fails the test. */
   readLimit: number | null = null;
+  /** Answer from the rows held when the read started, like a store read already in flight. */
+  snapshotReads = false;
 
   private key(row: Pick<ReplicaRow, "serverId" | "kind" | "id">): string {
     return `${row.serverId}:${row.kind}:${row.id}`;
@@ -63,16 +65,19 @@ class MemoryStorage implements ReplicaRowStore {
         `replica cache read ${this.reads.length} passed the limit of ${this.readLimit}`,
       );
     }
-    this.onRead?.();
-    await this.readGate;
     const acceptedKinds = new Set(kinds);
     const acceptedIds = ids ? new Set(ids) : null;
-    return [...this.rows.values()].filter(
-      (row) =>
-        row.serverId === serverId &&
-        acceptedKinds.has(row.kind) &&
-        (!acceptedIds || acceptedIds.has(row.id)),
-    );
+    const select = () =>
+      [...this.rows.values()].filter(
+        (row) =>
+          row.serverId === serverId &&
+          acceptedKinds.has(row.kind) &&
+          (!acceptedIds || acceptedIds.has(row.id)),
+      );
+    const snapshot = this.snapshotReads ? select() : null;
+    this.onRead?.();
+    await this.readGate;
+    return snapshot ?? select();
   }
 
   async readIndex(): Promise<ReplicaHostIndex[]> {
@@ -1136,6 +1141,36 @@ describe("ReplicaCache", () => {
 
     expect(await cache.readDirectory(SERVER_ID)).toBeUndefined();
     expect(storage.reads.length).toBeLessThanOrEqual(maxReads);
+  });
+
+  it("rereads a timeline whose commit a persist landed during the read", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
+    await cache.flush();
+    storage.reads.length = 0;
+    storage.snapshotReads = true;
+    let releaseRead = () => {};
+    storage.readGate = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+    let landed: Promise<void> = Promise.resolve();
+    storage.onRead = () => {
+      storage.onRead = null;
+      // The commit is no longer pending once this persist lands, so only the read's own
+      // invalidation shows that the rows it is reading went stale.
+      cache.commitTimeline(SERVER_ID, "agent-1", timeline("Newer"));
+      landed = cache.flush();
+    };
+
+    const read = cache.readTimeline(SERVER_ID, "agent-1");
+    await expect.poll(() => storage.reads.length).toBe(1);
+    await landed;
+    storage.readGate = null;
+    releaseRead();
+
+    expect((await read)?.items).toEqual([timelineItem("Newer")]);
+    expect(storage.reads.length).toBe(2);
   });
 
   it("reports a miss when the requested timeline keeps changing during its read", async () => {
