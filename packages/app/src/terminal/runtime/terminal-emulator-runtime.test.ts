@@ -53,6 +53,24 @@ const terminalConstructorOptions = vi.hoisted(() => ({
   values: [] as unknown[],
 }));
 
+const bundledFont = vi.hoisted(() => {
+  const state = { loaded: false, resolve: (_loaded: boolean) => {} };
+  const load = () =>
+    new Promise<boolean>((resolve) => {
+      state.resolve = (loaded) => {
+        state.loaded = loaded;
+        resolve(loaded);
+      };
+    });
+  return { state, load };
+});
+
+vi.mock("./terminal-bundled-font", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./terminal-bundled-font")>()),
+  isBundledTerminalFontLoaded: () => bundledFont.state.loaded,
+  loadBundledTerminalFont: bundledFont.load,
+}));
+
 vi.mock("@xterm/xterm", () => ({
   Terminal: class Terminal {
     rows = 24;
@@ -633,7 +651,7 @@ describe("terminal-emulator-runtime", () => {
     expect(refresh).toHaveBeenCalledWith(0, 11);
   });
 
-  it("updates terminal font without remounting", () => {
+  it("updates terminal font without remounting", async () => {
     const runtime = new TerminalEmulatorRuntime();
     const refresh = vi.fn();
     const fitAndEmitResize = vi.fn();
@@ -651,6 +669,7 @@ describe("terminal-emulator-runtime", () => {
 
     runtime.setFont({ fontFamily: "  Menlo  ", fontSize: 18 });
 
+    // Cells are measured without the bundled font until it has loaded.
     expect(terminal.options?.fontFamily).toBe("Menlo");
     expect(terminal.options?.fontSize).toBe(18);
     expect(fitAndEmitResize).toHaveBeenCalledWith({
@@ -658,6 +677,41 @@ describe("terminal-emulator-runtime", () => {
       shouldClaim: false,
     });
     expect(refresh).toHaveBeenCalledWith(0, 11);
+
+    fitAndEmitResize.mockClear();
+    bundledFont.state.resolve(true);
+    await Promise.resolve();
+
+    expect(terminal.options?.fontFamily).toBe("Menlo, 'MesloLGS NF'");
+    expect(fitAndEmitResize).toHaveBeenCalledWith({ forceRefresh: true, shouldClaim: false });
+
+    runtime.setFont({ fontFamily: "Hack", fontSize: 18 });
+    expect(terminal.options?.fontFamily).toBe("Hack, 'MesloLGS NF'");
+    bundledFont.state.loaded = false;
+  });
+
+  it("keeps the fallback stack when the bundled font fails to load", async () => {
+    const runtime = new TerminalEmulatorRuntime();
+    const fitAndEmitResize = vi.fn();
+    const terminal: StubTerminal = {
+      write: () => {},
+      reset: () => {},
+      focus: () => {},
+      refresh: () => {},
+      options: { fontFamily: "before", fontSize: 13 },
+      rows: 12,
+      cols: 40,
+    };
+    (runtime as unknown as { terminal: StubTerminal }).terminal = terminal;
+    (runtime as unknown as RuntimeFitProbe).fitAndEmitResize = fitAndEmitResize;
+
+    runtime.setFont({ fontFamily: "Menlo", fontSize: 13 });
+    fitAndEmitResize.mockClear();
+    bundledFont.state.resolve(false);
+    await Promise.resolve();
+
+    expect(terminal.options?.fontFamily).toBe("Menlo");
+    expect(fitAndEmitResize).not.toHaveBeenCalled();
   });
 
   it("passively refits when the page becomes visible again", () => {

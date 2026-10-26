@@ -207,6 +207,30 @@ export default {
       ],
       ...buildProfile.notificationPlugins,
       "expo-audio",
+      // The terminal's bundled Nerd Font; see assets/fonts/meslolgs-nf/README.md.
+      // Android groups both weights under one family so fontWeight picks Bold.
+      [
+        "expo-font",
+        {
+          android: {
+            fonts: [
+              {
+                fontFamily: "MesloLGS NF",
+                fontDefinitions: [
+                  { path: "./assets/fonts/meslolgs-nf/meslolgs_nf_regular.ttf", weight: 400 },
+                  { path: "./assets/fonts/meslolgs-nf/meslolgs_nf_bold.ttf", weight: 700 },
+                ],
+              },
+            ],
+          },
+          ios: {
+            fonts: [
+              "./assets/fonts/meslolgs-nf/meslolgs_nf_regular.ttf",
+              "./assets/fonts/meslolgs-nf/meslolgs_nf_bold.ttf",
+            ],
+          },
+        },
+      ],
       [
         "expo-gradle-jvmargs",
         {
