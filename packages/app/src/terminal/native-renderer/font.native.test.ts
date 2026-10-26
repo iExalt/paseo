@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const platform = vi.hoisted(() => ({ OS: "android" }));
 
@@ -7,33 +7,32 @@ vi.mock("react-native", () => ({
     get OS() {
       return platform.OS;
     },
-    select: (options: Record<string, string>) => options[platform.OS] ?? options.default,
   },
 }));
 
-async function loadResolver(os: string) {
-  platform.OS = os;
-  vi.resetModules();
-  const { resolveNativeTerminalFontFamily } = await import("./font.native");
-  return resolveNativeTerminalFontFamily;
-}
+import { resolveNativeTerminalFontFamily } from "./font.native";
 
 describe("resolveNativeTerminalFontFamily", () => {
-  beforeEach(() => {
+  it("draws Android terminals with the bundled Nerd Font", () => {
     platform.OS = "android";
+    expect(resolveNativeTerminalFontFamily(undefined)).toBe("MesloLGS NF");
+    // Android has no named monospace family, and a generic one loses the icons.
+    expect(resolveNativeTerminalFontFamily("Foo, monospace")).toBe("MesloLGS NF");
+    expect(resolveNativeTerminalFontFamily("sans-serif-monospace")).toBe("MesloLGS NF");
   });
 
-  // Until the font is embedded in the native app, naming it must not reach Text,
-  // or Android would draw the terminal in its proportional default font.
-  it("skips the bundled Nerd Font on Android", async () => {
-    const resolve = await loadResolver("android");
-    expect(resolve(undefined)).toBe("monospace");
-    expect(resolve("Foo, MesloLGS NF")).toBe("monospace");
+  it("keeps a named iOS system font the user chose", () => {
+    platform.OS = "ios";
+    expect(resolveNativeTerminalFontFamily(undefined)).toBe("MesloLGS NF");
+    expect(resolveNativeTerminalFontFamily("'Courier New', monospace")).toBe("Courier New");
+    expect(resolveNativeTerminalFontFamily("Foo, menlo")).toBe("menlo");
   });
 
-  it("skips the bundled Nerd Font on iOS", async () => {
-    const resolve = await loadResolver("ios");
-    expect(resolve(undefined)).toBe("Menlo");
-    expect(resolve("Foo, 'MesloLGS NF'")).toBe("Menlo");
+  it("uses the bundled font for iOS generics and aliases", () => {
+    platform.OS = "ios";
+    expect(resolveNativeTerminalFontFamily("ui-monospace")).toBe("MesloLGS NF");
+    expect(resolveNativeTerminalFontFamily("SF Mono, Menlo")).toBe("Menlo");
+    expect(resolveNativeTerminalFontFamily("SF Mono")).toBe("MesloLGS NF");
+    expect(resolveNativeTerminalFontFamily("'MesloLGS NF', Menlo")).toBe("MesloLGS NF");
   });
 });

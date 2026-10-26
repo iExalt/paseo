@@ -481,8 +481,12 @@ licenses are in
   grid needs no wide-glyph handling. Icon ink overhangs a cell by about 7% on
   each side, as in other terminals.
 - A user mono font stays first. Web appends Meslo after it, and the browser
-  falls back per glyph for icons. Native cannot fall back to a bundled font
-  per glyph; B settles which font a user override gets there.
+  falls back per glyph for icons. Native text can't fall back per glyph to a
+  bundled font, so one family draws everything: Android always uses Meslo,
+  since it has no named monospace a user could pick and a generic one loses
+  the icons. iOS keeps Menlo or Courier only when the user names it before
+  Meslo. A user who typed `monospace` for diffs still gets Meslo in the
+  terminal.
 - Only the terminal default changes. Code blocks and diffs keep the app's mono
   stack.
 - Web and desktop fetch the woff2 from `public/fonts/` when a terminal first
@@ -492,11 +496,11 @@ licenses are in
   Width can't tell Meslo from DejaVu Sans Mono or Menlo, which share its
   advance, so tests check cell height and icon pixels instead.
 
-| Chunk | Outcome                                                                                                           | Status                                                                                                                                                                                                                                                                                                                                        |
-| ----- | ----------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A1    | Vendored Regular and Bold with provenance; Meslo leads the terminal stack and is appended to a user font          | Done                                                                                                                                                                                                                                                                                                                                          |
-| A2    | Web and desktop load the woff2 when a terminal mounts and switch to it once loaded                                | Done. A browser test checks the switch and Meslo's 17 px cells at 13 px; e2e with a slowed download sees three distinct icon cells, where a missing font draws identical boxes; a unit test covers a failed load. The Electron export carries `dist/fonts/`, but no packaged Electron run: the station's npm skips Electron's binary download |
-| B     | Android and iOS embed the TTFs with `expo-font`; Cuttlefish screenshot; iOS build-config check, live iOS deferred | Not started                                                                                                                                                                                                                                                                                                                                   |
+| Chunk | Outcome                                                                                                  | Status                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ----- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A1    | Vendored Regular and Bold with provenance; Meslo leads the terminal stack and is appended to a user font | Done                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| A2    | Web and desktop load the woff2 when a terminal mounts and switch to it once loaded                       | Done. A browser test checks the switch and Meslo's 17 px cells at 13 px; e2e with a slowed download sees three distinct icon cells, where a missing font draws identical boxes; a unit test covers a failed load. The Electron export carries `dist/fonts/`, but no packaged Electron run: the station's npm skips Electron's binary download                                                                                                            |
+| B     | Android and iOS embed the TTFs with `expo-font` and draw the terminal in them                            | Done on Android. On the Cuttlefish tablet, icons render in plain, bold, italic (synthesized slant) and bold-italic runs; bold ASCII keeps the cell width; rows grow from 28 to 30 px and descenders aren't clipped. The APK carries the two TTFs once under `res/` (2.95 MB compressed, 5.2 MB unpacked) and no woff2. iOS is checked only at build config (`UIAppFonts` lists both TTFs); its bold and italic matching is unverified until a device run |
 
 ## Out of scope
 
