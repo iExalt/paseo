@@ -828,20 +828,6 @@ function pendingRowKey(key: ReplicaRowKey): string {
   return `${key.serverId}\u0000${rowKey(key)}`;
 }
 
-function pendingKeyMatches(
-  pendingKey: string,
-  serverId: string,
-  kinds: readonly ReplicaRowKind[],
-  ids: readonly string[] | undefined,
-): boolean {
-  if (ids) {
-    return kinds.some((kind) =>
-      ids.some((id) => pendingKey === pendingRowKey({ serverId, kind, id })),
-    );
-  }
-  return kinds.some((kind) => pendingKey.startsWith(`${serverId}\u0000${kind}\u0000`));
-}
-
 // A streaming agent writes a new timeline row of up to 50 items, megabytes with tool output, on
 // every persist; its size is counted once per row object.
 const rowBytesCache = new WeakMap<ReplicaRow, number>();
@@ -929,15 +915,24 @@ function directoryEntityForRow(row: ReplicaRow): keyof DirectoryCheckpoint | und
   return undefined;
 }
 
+interface ReplicaRead {
+  serverId: string;
+  kinds: readonly ReplicaRowKind[];
+  ids?: readonly string[];
+  invalidated: boolean;
+}
+
+function matchesReplicaRead(read: ReplicaRead, row: ReplicaRowKey): boolean {
+  return (
+    read.serverId === row.serverId &&
+    read.kinds.includes(row.kind) &&
+    (!read.ids || read.ids.includes(row.id))
+  );
+}
+
 export class ReplicaCache {
   private readonly activeServerIds = new Set<string>();
-  // Reads validate against change sequences scoped to the rows they asked for. A host-wide
-  // revision made every streaming agent's per-frame timeline commit invalidate an unrelated read,
-  // so opening a chat while another agent streamed retried forever, forcing a persist each pass.
-  private changeSequence = 0;
-  private readonly hostChangeSequences = new Map<string, number>();
-  private readonly rowChangeSequences = new Map<string, number>();
-  private activeReads = 0;
+  private readonly activeReads = new Set<ReplicaRead>();
   // Identity and size of every stored row; payloads stay in the row store.
   private readonly storedRows = new Map<string, Map<string, ReplicaStoredRowIndex>>();
   private readonly hostBytes = new Map<string, number>();
@@ -1076,7 +1071,6 @@ export class ReplicaCache {
     ids?: readonly string[],
   ): Promise<ReplicaRow[] | null> {
     if (!this.activeServerIds.has(serverId)) return [];
-    this.activeReads += 1;
     try {
       await this.prepareStore();
       for (
@@ -1084,31 +1078,41 @@ export class ReplicaCache {
         attempt < MAX_READ_ATTEMPTS && this.activeServerIds.has(serverId);
         attempt += 1
       ) {
-        // Snapshot before draining: a matching change queued after this point, even one a
-        // concurrent persist is already writing, invalidates the rows read below.
-        const snapshot = this.changeSequence;
-        if (this.hasPendingRowChanges(serverId, kinds, ids)) {
-          // A read may only answer from rows the store already holds, so it waits for accepted
-          // commits of these rows to land. A store that rejects them will keep rejecting them:
-          // fail closed rather than re-attempt the write on every pass. A write rejected for
-          // other rows leaves these stored rows readable.
-          if (!(await this.syncPending()) && this.hasPendingRowChanges(serverId, kinds, ids)) {
-            return null;
-          }
-        } else {
-          // Other rows' pending commits stay on their debounce; only in-flight writes must land.
-          await this.writeQueue;
+        const read: ReplicaRead = { serverId, kinds, ids, invalidated: false };
+        this.activeReads.add(read);
+        try {
+          const rows = await this.attemptRead(read);
+          if (rows !== "retry") return rows;
+        } finally {
+          this.activeReads.delete(read);
         }
-        const rows = await this.rowStore.read(serverId, kinds, ids);
-        if (this.canReadRowsSince(serverId, kinds, ids, snapshot)) return rows;
       }
       return this.activeServerIds.has(serverId) ? null : [];
     } catch {
       return null;
-    } finally {
-      this.activeReads -= 1;
-      if (this.activeReads === 0) this.rowChangeSequences.clear();
     }
+  }
+
+  /** One read of the store, or "retry" when a commit to the requested rows raced it. */
+  private async attemptRead(read: ReplicaRead): Promise<ReplicaRow[] | null | "retry"> {
+    if (this.hasPendingReadChanges(read)) {
+      // A read may only answer from rows the store already holds, so it waits for accepted
+      // commits of these rows to land. A store that rejects them will keep rejecting them: fail
+      // closed rather than re-attempt the write on every pass. A write rejected for other rows
+      // leaves these stored rows readable.
+      if (!(await this.syncPending()) && this.hasPendingReadChanges(read)) return null;
+    } else {
+      // Other rows' pending commits stay on their debounce, so a streaming agent does not force
+      // a persist of its timeline per read; only in-flight writes must land.
+      await this.writeQueue;
+    }
+    if (read.invalidated || this.hasPendingReadChanges(read)) return "retry";
+    const rows = await this.rowStore.read(read.serverId, read.kinds, read.ids);
+    const current =
+      this.activeServerIds.has(read.serverId) &&
+      !read.invalidated &&
+      !this.hasPendingReadChanges(read);
+    return current ? rows : "retry";
   }
 
   private async deleteInvalidRow(row: ReplicaRow): Promise<void> {
@@ -1213,7 +1217,7 @@ export class ReplicaCache {
 
   replaceDirectoryBaseline(serverId: string, directory: CachedDirectory): void {
     if (!this.activeServerIds.has(serverId)) return;
-    this.invalidateHostReads(serverId);
+    this.invalidateHostReads(serverId, ["agent", "workspace", "project", "checkpoint"]);
     // Replacing the directory must not discard independently accepted timeline changes.
     for (const [key, row] of this.pendingUpserts) {
       if (row.serverId === serverId && row.kind !== "timeline") this.pendingUpserts.delete(key);
@@ -1344,29 +1348,17 @@ export class ReplicaCache {
   }
 
   private queueUpsert(row: StructuredReplicaUpsert): void {
+    this.invalidateRowReads(row);
     const key = pendingRowKey(row);
-    this.recordRowChange(key);
     this.pendingDeletes.delete(key);
     this.pendingUpserts.set(key, row);
   }
 
   private queueDelete(key: ReplicaRowKey): void {
+    this.invalidateRowReads(key);
     const pendingKey = pendingRowKey(key);
-    this.recordRowChange(pendingKey);
     this.pendingUpserts.delete(pendingKey);
     this.pendingDeletes.set(pendingKey, key);
-  }
-
-  private recordRowChange(pendingKey: string): void {
-    // Only an in-flight read compares against row changes; with none, there is nothing to record.
-    if (this.activeReads === 0) return;
-    this.changeSequence += 1;
-    this.rowChangeSequences.set(pendingKey, this.changeSequence);
-  }
-
-  private invalidateHostReads(serverId: string): void {
-    this.changeSequence += 1;
-    this.hostChangeSequences.set(serverId, this.changeSequence);
   }
 
   private hasPendingChanges(): boolean {
@@ -1375,37 +1367,35 @@ export class ReplicaCache {
     );
   }
 
-  private canReadRowsSince(
-    serverId: string,
-    kinds: readonly ReplicaRowKind[],
-    ids: readonly string[] | undefined,
-    snapshot: number,
-  ): boolean {
-    if (!this.activeServerIds.has(serverId)) return false;
-    if ((this.hostChangeSequences.get(serverId) ?? 0) > snapshot) return false;
-    if (this.hasPendingRowChanges(serverId, kinds, ids)) return false;
-    for (const [key, sequence] of this.rowChangeSequences) {
-      if (sequence > snapshot && pendingKeyMatches(key, serverId, kinds, ids)) return false;
-    }
-    return true;
-  }
-
-  private hasPendingRowChanges(
-    serverId: string,
-    kinds: readonly ReplicaRowKind[],
-    ids: readonly string[] | undefined,
-  ): boolean {
+  private hasPendingReadChanges(read: ReplicaRead): boolean {
     // A pending baseline replaces every directory row of the host.
-    if (this.pendingBaselines.has(serverId) && kinds.some((kind) => kind !== "timeline")) {
+    if (
+      this.pendingBaselines.has(read.serverId) &&
+      read.kinds.some((kind) => kind !== "timeline")
+    ) {
       return true;
     }
-    for (const key of this.pendingUpserts.keys()) {
-      if (pendingKeyMatches(key, serverId, kinds, ids)) return true;
+    return (
+      [...this.pendingUpserts.values()].some((row) => matchesReplicaRead(read, row)) ||
+      [...this.pendingDeletes.values()].some((row) => matchesReplicaRead(read, row))
+    );
+  }
+
+  private invalidateRowReads(row: ReplicaRowKey): void {
+    for (const read of this.activeReads) {
+      if (matchesReplicaRead(read, row)) read.invalidated = true;
     }
-    for (const key of this.pendingDeletes.keys()) {
-      if (pendingKeyMatches(key, serverId, kinds, ids)) return true;
+  }
+
+  private invalidateHostReads(serverId: string, kinds?: readonly ReplicaRowKind[]): void {
+    for (const read of this.activeReads) {
+      if (
+        read.serverId === serverId &&
+        (!kinds || kinds.some((kind) => read.kinds.includes(kind)))
+      ) {
+        read.invalidated = true;
+      }
     }
-    return false;
   }
 
   private drainPendingChanges(): PendingReplicaChanges {
