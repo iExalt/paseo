@@ -1,15 +1,17 @@
 package sh.paseo.forkupdates
 
+import android.app.DownloadManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import androidx.core.content.FileProvider
+import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
-import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -19,9 +21,18 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private const val MAX_APK_BYTES = 250L * 1024L * 1024L
 private const val MAX_REDIRECTS = 5
+private const val DOWNLOAD_POLL_MS = 500L
+private const val DOWNLOAD_DIRECTORY = "fork-updates"
+// Maps a staged APK file name to its system DownloadManager id, so a download that outlived
+// the app process is resumed rather than restarted.
+private const val DOWNLOAD_PREFERENCES = "sh.paseo.forkupdates.downloads"
 private val allowedHosts = setOf(
   "api.github.com",
   "github.com",
@@ -91,7 +102,7 @@ class PaseoForkUpdatesModule : Module() {
       }
     }
 
-    AsyncFunction("downloadAndVerifyApk") {
+    AsyncFunction("downloadAndVerifyApk") Coroutine {
         sourceUrl: String,
         fileName: String,
         expectedBytes: Long,
@@ -115,14 +126,16 @@ class PaseoForkUpdatesModule : Module() {
       val directory = File(requireNotNull(appContext.reactContext).filesDir, "fork-updates")
       require(directory.isDirectory || directory.mkdirs()) { "Could not prepare private update storage." }
       val destination = File(directory, fileName)
-      val stagedIsValid = destination.isFile && destination.length() == expectedBytes &&
-        runCatching {
-          require(hashFile(destination).equals(expectedSha256, ignoreCase = true)) {
-            "Staged APK hash does not match the signed release manifest."
+      val stagedIsValid = withContext(Dispatchers.IO) {
+        destination.isFile && destination.length() == expectedBytes &&
+          runCatching {
+            require(hashFile(destination).equals(expectedSha256, ignoreCase = true)) {
+              "Staged APK hash does not match the signed release manifest."
+            }
+            verifyApk(destination, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
           }
-          verifyApk(destination, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
-        }
-          .isSuccess
+            .isSuccess
+      }
       if (stagedIsValid) {
         destination.absolutePath
       } else {
@@ -205,7 +218,10 @@ class PaseoForkUpdatesModule : Module() {
     }
   }
 
-  private fun downloadApk(
+  // The system DownloadManager owns the transfer: it keeps going while Paseo is backgrounded
+  // or frozen, retries with byte ranges after network loss, and outlives the app process.
+  // Integrity does not depend on it; the result is hashed and its signer checked here.
+  private suspend fun downloadApk(
     sourceUrl: String,
     destination: File,
     part: File,
@@ -216,62 +232,121 @@ class PaseoForkUpdatesModule : Module() {
     expectedVersion: String,
     expectedCertificateSha256: String,
   ): String {
-    part.delete()
-    return try {
-      val connection = openAllowedConnection(sourceUrl)
-      try {
-        require(connection.responseCode == HttpURLConnection.HTTP_OK) {
-          "APK download returned HTTP ${connection.responseCode}."
-        }
-        val declaredLength = connection.contentLengthLong
-        require(declaredLength == -1L || declaredLength == expectedBytes) {
-          "APK download size does not match the signed release manifest."
-        }
-        val digest = MessageDigest.getInstance("SHA-256")
-        var total = 0L
-        var lastProgressAt = 0L
-        connection.inputStream.use { input ->
-          FileOutputStream(part).use { fileOutput ->
-            val output = fileOutput.buffered()
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-              val count = input.read(buffer)
-              if (count < 0) break
-              total += count
-              require(total <= expectedBytes && total <= MAX_APK_BYTES) {
-                "APK download exceeds the signed release size."
-              }
-              digest.update(buffer, 0, count)
-              output.write(buffer, 0, count)
-              if (total - lastProgressAt >= 512L * 1024L || total == expectedBytes) {
-                sendEvent(
-                  "onDownloadProgress",
-                  mapOf("downloadedBytes" to total, "totalBytes" to expectedBytes),
-                )
-                lastProgressAt = total
-              }
-            }
-            output.flush()
-            fileOutput.fd.sync()
+    val context = requireNotNull(appContext.reactContext)
+    val manager = requireNotNull(context.getSystemService(DownloadManager::class.java)) {
+      "Android download service is unavailable."
+    }
+    val preferences = context.getSharedPreferences(DOWNLOAD_PREFERENCES, Context.MODE_PRIVATE)
+    val downloadId = existingDownload(manager, preferences, destination.name)
+      ?: enqueueDownload(context, manager, preferences, sourceUrl, destination.name, expectedBytes, expectedVersion)
+    val path = try {
+      val downloaded = awaitDownload(context, manager, downloadId, expectedBytes)
+      withContext(Dispatchers.IO) {
+        try {
+          Files.copy(downloaded.toPath(), part.toPath(), REPLACE_EXISTING)
+          require(part.length() == expectedBytes) { "APK download is incomplete." }
+          require(hashFile(part).equals(expectedSha256, ignoreCase = true)) {
+            "APK hash does not match the signed release manifest."
           }
+          verifyApk(part, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
+          Files.move(part.toPath(), destination.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+        } catch (error: Throwable) {
+          part.delete()
+          throw error
         }
-        require(total == expectedBytes) { "APK download is incomplete." }
-        val actualHash = digest.digest().toHex()
-        require(actualHash.equals(expectedSha256, ignoreCase = true)) {
-          "APK hash does not match the signed release manifest."
-        }
-        verifyApk(part, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
-        Files.move(part.toPath(), destination.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
         destination.parentFile?.listFiles { file -> file.name.startsWith("fork-v") && file.name.endsWith(".apk") && file != destination }
           ?.forEach(File::delete)
         destination.absolutePath
-      } finally {
-        connection.disconnect()
       }
+    } catch (error: CancellationException) {
+      // The JS runtime went away; leave the transfer running for the next attempt to adopt.
+      throw error
     } catch (error: Throwable) {
-      part.delete()
+      forgetDownload(manager, preferences, destination.name)
       throw error
     }
+    forgetDownload(manager, preferences, destination.name)
+    return path
+  }
+
+  private fun existingDownload(
+    manager: DownloadManager,
+    preferences: android.content.SharedPreferences,
+    fileName: String,
+  ): Long? {
+    val id = preferences.getLong(fileName, -1L).takeIf { it >= 0 } ?: return null
+    val row = queryDownload(manager, id)
+    if (row == null || row.status == DownloadManager.STATUS_FAILED) {
+      forgetDownload(manager, preferences, fileName)
+      return null
+    }
+    return id
+  }
+
+  private suspend fun enqueueDownload(
+    context: Context,
+    manager: DownloadManager,
+    preferences: android.content.SharedPreferences,
+    sourceUrl: String,
+    fileName: String,
+    expectedBytes: Long,
+    expectedVersion: String,
+  ): Long {
+    // Only one update downloads at a time; drop transfers for superseded releases.
+    preferences.all.keys.forEach { forgetDownload(manager, preferences, it) }
+    val resolvedUrl = withContext(Dispatchers.IO) { resolveDownloadUrl(sourceUrl, expectedBytes) }
+    requireNotNull(context.getExternalFilesDir(DOWNLOAD_DIRECTORY)) {
+      "Shared update storage is unavailable."
+    }.listFiles()?.forEach(File::delete)
+    val request = DownloadManager.Request(Uri.parse(resolvedUrl))
+      .setTitle("Paseo $expectedVersion")
+      .setMimeType("application/octet-stream")
+      .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
+      .setDestinationInExternalFilesDir(context, DOWNLOAD_DIRECTORY, "$fileName.part")
+      .addRequestHeader("User-Agent", "Paseo-Android-Updater")
+      .addRequestHeader("Accept", "application/octet-stream")
+    val id = manager.enqueue(request)
+    preferences.edit().putLong(fileName, id).apply()
+    return id
+  }
+
+  private suspend fun awaitDownload(
+    context: Context,
+    manager: DownloadManager,
+    id: Long,
+    expectedBytes: Long,
+  ): File {
+    var lastReported = -1L
+    while (true) {
+      val row = queryDownload(manager, id) ?: throw IllegalArgumentException("APK download was canceled.")
+      require(row.totalBytes <= 0 || row.totalBytes == expectedBytes) {
+        "APK download size does not match the signed release manifest."
+      }
+      require(row.downloadedBytes <= expectedBytes) { "APK download exceeds the signed release size." }
+      if (row.downloadedBytes != lastReported) {
+        sendEvent(
+          "onDownloadProgress",
+          mapOf("downloadedBytes" to row.downloadedBytes.coerceAtLeast(0), "totalBytes" to expectedBytes),
+        )
+        lastReported = row.downloadedBytes
+      }
+      when (row.status) {
+        DownloadManager.STATUS_SUCCESSFUL -> {
+          val directory = requireNotNull(context.getExternalFilesDir(DOWNLOAD_DIRECTORY)).canonicalFile
+          val file = File(requireNotNull(row.localUri?.let { Uri.parse(it).path }) { "APK download has no file." }).canonicalFile
+          require(file.parentFile == directory && file.isFile) { "APK download landed outside update storage." }
+          return file
+        }
+        DownloadManager.STATUS_FAILED -> throw IllegalArgumentException("APK download failed (reason ${row.reason}).")
+      }
+      delay(DOWNLOAD_POLL_MS)
+    }
+  }
+
+  private fun forgetDownload(manager: DownloadManager, preferences: android.content.SharedPreferences, fileName: String) {
+    val id = preferences.getLong(fileName, -1L)
+    if (id >= 0) manager.remove(id)
+    preferences.edit().remove(fileName).apply()
   }
 
   private fun currentPackageInfo(): PackageInfo {
@@ -295,6 +370,46 @@ class PaseoForkUpdatesModule : Module() {
     require(signerHash.equals(certificateSha256, ignoreCase = true)) {
       "APK signer does not match the approved Paseo fork certificate."
     }
+  }
+}
+
+private class DownloadRow(
+  val status: Int,
+  val reason: Int,
+  val downloadedBytes: Long,
+  val totalBytes: Long,
+  val localUri: String?,
+)
+
+private fun queryDownload(manager: DownloadManager, id: Long): DownloadRow? =
+  manager.query(DownloadManager.Query().setFilterById(id))?.use { cursor ->
+    if (!cursor.moveToFirst()) {
+      null
+    } else {
+      DownloadRow(
+        status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)),
+        reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON)),
+        downloadedBytes = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)),
+        totalBytes = cursor.getLong(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)),
+        localUri = cursor.getString(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_LOCAL_URI)),
+      )
+    }
+  }
+
+// Walks the approved redirect chain here so DownloadManager starts at an approved host.
+private fun resolveDownloadUrl(sourceUrl: String, expectedBytes: Long): String {
+  val connection = openAllowedConnection(sourceUrl)
+  try {
+    require(connection.responseCode == HttpURLConnection.HTTP_OK) {
+      "APK download returned HTTP ${connection.responseCode}."
+    }
+    val declaredLength = connection.contentLengthLong
+    require(declaredLength == -1L || declaredLength == expectedBytes) {
+      "APK download size does not match the signed release manifest."
+    }
+    return connection.url.toString()
+  } finally {
+    connection.disconnect()
   }
 }
 
