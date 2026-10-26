@@ -55,14 +55,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     "components/markdown/fence/mermaid/host": equivalent,
     "components/project-icon-image": equivalent,
     "components/sortable-inline-list": equivalent,
-    "components/split-dnd": {
-      kind: "deliberate",
-      reason: PANE_DRAG_WEB_ONLY,
-    },
-    "components/split-drop-zone": {
-      kind: "deliberate",
-      reason: PANE_DRAG_WEB_ONLY,
-    },
     "components/terminal-emulator": equivalent,
     "components/status-ring/clock": equivalent,
     "components/status-ring/index": equivalent,
@@ -157,6 +149,7 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Hidden only in a plain browser; native has its own section",
     },
     permissions: { kind: "equivalent", note: "Hidden only in a plain browser" },
+    editor: { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
   },
   runtimeGates: {
     "android/fork-updates/store.ts": {
