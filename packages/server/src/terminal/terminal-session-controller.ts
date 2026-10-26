@@ -839,19 +839,21 @@ export class TerminalSessionController {
   private async handleTerminalKeysSendRequest(msg: TerminalKeysSendRequest): Promise<void> {
     let error: string | null = null;
     let written = 0;
-    const terminal = this.terminalManager?.getTerminal(msg.terminalId);
     if (!this.terminalManager) {
       error = "Terminal manager is not configured";
-    } else if (!terminal) {
-      error = `Terminal ${msg.terminalId} not found`;
     } else {
-      // Read the input mode at write time, so a mode the program just switched applies.
-      const preamble = terminal.getReplayPreamble();
-      const data = msg.keys
-        .map((key) => resolveTerminalKeyToken({ key, literal: msg.literal ?? false, preamble }))
-        .join("");
-      written = data.length;
-      terminal.send({ type: "input", data });
+      try {
+        // Read the input mode at write time, so a mode the program just switched applies.
+        const preamble =
+          this.terminalManager.getTerminal(msg.terminalId)?.getReplayPreamble() ?? "";
+        const data = msg.keys
+          .map((key) => resolveTerminalKeyToken({ key, literal: msg.literal ?? false, preamble }))
+          .join("");
+        sendTerminalInput(this.terminalManager, msg.terminalId, data);
+        written = data.length;
+      } catch (caught) {
+        error = caught instanceof Error ? caught.message : String(caught);
+      }
     }
 
     this.emit({
