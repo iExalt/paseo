@@ -1,5 +1,4 @@
 import type { Command } from "commander";
-import { serializeTerminalKeys } from "@getpaseo/client";
 import { renderError, toCommandError } from "../../output/render.js";
 import {
   connectTerminalClient,
@@ -50,12 +49,13 @@ async function executeSendKeysCommand(
       };
     }
 
-    const data = serializeTerminalKeys(keys, options.literal);
-    await daemonClient.sendTerminalInputAndWait(resolvedId, data);
+    const { written } = await daemonClient.sendTerminalKeysAndWait(resolvedId, keys, {
+      literal: options.literal,
+    });
 
     return {
       terminalId: resolvedId,
-      keysSent: data.length,
+      keysSent: written,
     };
   } catch (err) {
     throw toTerminalCommandError("TERMINAL_SEND_KEYS_FAILED", "send terminal keys", err);

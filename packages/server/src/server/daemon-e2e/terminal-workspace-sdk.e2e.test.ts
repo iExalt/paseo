@@ -93,6 +93,32 @@ test("SDK creates a command terminal and sends literal input and key tokens", as
   expect((await sdk.terminals.list({ workspaceId })).entries).toEqual([]);
 });
 
+test("key tokens sent for the CLI follow the terminal's current input mode", async () => {
+  const workspaceId = await createWorkspace("Keys");
+  const terminal = await sdk.terminals.create({
+    workspaceId,
+    command: process.execPath,
+    args: [
+      "-e",
+      "process.stdin.setRawMode(true); process.stdin.resume(); console.log('READY'); process.stdin.on('data', data => { if (data.toString() === 'app') { process.stdout.write('\\x1b[?1h'); console.log('APP'); return; } console.log('HEX:' + data.toString('hex')); });",
+    ],
+    size: { rows: 35, cols: 120 },
+  });
+  const screen = async () => (await terminal.capture({ stripAnsi: true })).lines.join("\n");
+  await expect.poll(screen).toContain("READY");
+
+  expect(await client.sendTerminalKeysAndWait(terminal.id, ["Down"])).toMatchObject({
+    success: true,
+    written: 3,
+  });
+  await expect.poll(screen).toContain("HEX:1b5b42");
+  await client.sendTerminalKeysAndWait(terminal.id, ["app"], { literal: true });
+  await expect.poll(screen).toContain("APP");
+  await client.sendTerminalKeysAndWait(terminal.id, ["Down"]);
+  await expect.poll(screen).toContain("HEX:1b4f42");
+  await terminal.kill();
+});
+
 test("terminal creation rejects unknown and archived owners, including explicit cwd overrides", async () => {
   const workspaceId = await createWorkspace("Archived");
   await sdk.workspaces.ref(workspaceId).archive();
