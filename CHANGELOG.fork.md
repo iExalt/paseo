@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.0](https://github.com/iExalt/paseo/compare/paseo-v0.11.1...paseo-v0.12.0) (2026-10-26)
+
+
+### Features
+
+* **app:** bundle MesloLGS NF so terminal icons render everywhere ([#229](https://github.com/iExalt/paseo/issues/229)) ([5faba85](https://github.com/iExalt/paseo/commit/5faba853f8c31bad743e2b92d0c11de5ef0009dc))
+
 ## [0.11.1](https://github.com/iExalt/paseo/compare/paseo-v0.11.0...paseo-v0.11.1) (2026-10-26)
 
 
