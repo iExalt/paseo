@@ -7,3 +7,4 @@
 - [ ] Support `$` to only bring up skills
 - [ ] Speed up dev rebase workflow, don't run checks in the workflow
 - [ ] Make sure both dev/upstream rebase workflows are safe (handle reruns, cancellation, parallelism 1, etc)
+- [ ] Make the relay socket report its buffered amount, so heavy terminal output streams instead of forcing a snapshot every 256 KB, while keeping the bound on how far a slow relay client can fall behind. Add a session-controller test: a client over `MAX_CLIENT_BUFFERED_BYTES` still gets the snapshot fallback, and a draining client streams. (P2 item deferred from `MOBILE_TERMINAL_PLAN.md`.)
