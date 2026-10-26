@@ -19,10 +19,7 @@ const MATCH_STATUS_LIMIT = 10_000;
 /** Which corner of the editor the floating Find widget occupies. */
 export type FindPlacement = "top" | "bottom";
 
-/**
- * CodeMirror owns query, matching, selection, replacement, and panel lifetime.
- * `fixedPlacement` pins the widget to one edge, as the native editor's bottom bar is.
- */
+/** CodeMirror owns query, matching, selection, replacement, and panel lifetime. */
 export class FileFindModel {
   private view: EditorView | null = null;
   private listeners = new Set<() => void>();
@@ -46,10 +43,6 @@ export class FileFindModel {
     };
   };
   readonly getSnapshot = () => this.snapshot;
-
-  constructor(private readonly fixedPlacement: FindPlacement | null = null) {
-    if (fixedPlacement) this.snapshot = { ...this.snapshot, placement: fixedPlacement };
-  }
 
   readonly extension: Extension = [
     // The widget floats over the editor as a sibling overlay, so this panel is an
@@ -78,11 +71,10 @@ export class FileFindModel {
   readonly open = (view = this.view) => {
     if (view) openSearchPanel(view);
   };
-  /** `focus: false` keeps a touch keyboard down after Find closes. */
-  readonly close = (options: { focus?: boolean } = {}) => {
+  readonly close = () => {
     if (this.view) {
       closeSearchPanel(this.view);
-      if (options.focus !== false) this.view.focus();
+      this.view.focus();
     }
   };
   readonly next = () => {
@@ -138,7 +130,7 @@ export class FileFindModel {
       dom,
       top: true,
       mount: () => {
-        this.snapshot = { ...this.snapshot, open: true, placement: this.fixedPlacement ?? "top" };
+        this.snapshot = { ...this.snapshot, open: true, placement: "top" };
         this.update(view, true);
       },
       update: (update: ViewUpdate) => {
@@ -153,7 +145,7 @@ export class FileFindModel {
           this.update(view, update.docChanged || queryChanged);
       },
       destroy: () => {
-        this.snapshot = { ...this.snapshot, open: false, placement: this.fixedPlacement ?? "top" };
+        this.snapshot = { ...this.snapshot, open: false, placement: "top" };
         this.publish();
       },
     };
@@ -181,7 +173,7 @@ export class FileFindModel {
    */
   private reposition() {
     const view = this.view;
-    if (!view || !this.widget || !this.snapshot.open || this.fixedPlacement) return;
+    if (!view || !this.widget || !this.snapshot.open) return;
     view.requestMeasure<FindPlacement>({
       key: this,
       read: () => this.measurePlacement(view),

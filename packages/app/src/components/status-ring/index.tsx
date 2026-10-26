@@ -1,6 +1,6 @@
 import { memo } from "react";
 import { View } from "react-native";
-import Animated, { useAnimatedStyle, useReducedMotion } from "react-native-reanimated";
+import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import {
   StatusRingFrame,
   type StatusRingProps,
@@ -8,7 +8,6 @@ import {
   styles,
 } from "@/components/status-ring/frame";
 import { useStatusRingRotation } from "@/components/status-ring/clock";
-import { useRetainedPanelActive } from "@/components/retained-panel";
 
 /**
  * Native running indicator. The rotation is published by one shared UI-thread clock rather than
@@ -18,10 +17,7 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
  * a Unistyles style on a Reanimated view crashes on theme change (docs/upstream/unistyles.md).
  */
 export const StatusRing = memo(function StatusRing({ backdrop }: StatusRingProps) {
-  // Under reduced motion the ring stays a still arc, like SyncedLoader's dots.
-  const active = useRetainedPanelActive();
-  const reduceMotion = useReducedMotion();
-  const rotation = useStatusRingRotation(active && !reduceMotion);
+  const rotation = useStatusRingRotation();
   const rotatorStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
   }));

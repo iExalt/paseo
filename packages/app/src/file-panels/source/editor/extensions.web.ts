@@ -12,23 +12,26 @@ import {
   keymap,
   lineNumbers,
 } from "@codemirror/view";
-import { createCodeMirrorHighlightStyle } from "@getpaseo/highlight";
-import type { EditorVisualTheme } from "./visual-theme";
+import { createCodeMirrorHighlightStyle, type HighlightStyle } from "@getpaseo/highlight";
 
-export type { EditorVisualTheme } from "./visual-theme";
+export interface EditorVisualTheme {
+  colorScheme: "light" | "dark";
+  background: string;
+  foreground: string;
+  cursor: string;
+  foregroundMuted: string;
+  border: string;
+  selection: string;
+  monoFont: string;
+  codeFontSize: number;
+  syntax: Record<HighlightStyle, string>;
+}
 
-/**
- * `drawSelection: false` leaves the selection to the OS, so touch devices keep their
- * selection handles and copy/paste menu.
- */
-export function editorBaseExtensions(
-  onSave: () => void,
-  options: { drawSelection?: boolean } = {},
-) {
+export function editorBaseExtensions(onSave: () => void) {
   return [
     lineNumbers(),
     history(),
-    options.drawSelection === false ? [] : drawSelection(),
+    drawSelection(),
     indentOnInput(),
     bracketMatching(),
     highlightActiveLine(),
