@@ -104,20 +104,20 @@ export interface SourceModuleFacts {
   imports: readonly { module: string; names: readonly string[] }[];
 }
 
-type Runtime = "web" | "electron" | "native";
-type Variant = Runtime | "base";
+type Runtime = "web" | "electron" | "ios" | "android";
+type Variant = Runtime | "native" | "base";
 
 /** Files each runtime tries, most specific first; the plain file is the fallback for all. */
 const RESOLUTION: Record<Runtime, readonly Variant[]> = {
   web: ["web", "base"],
   electron: ["electron", "web", "base"],
-  native: ["native", "base"],
+  ios: ["ios", "native", "base"],
+  android: ["android", "native", "base"],
 };
 const RUNTIMES = Object.keys(RESOLUTION) as Runtime[];
 
 function variantOf(platform: string | undefined): Variant {
-  if (platform === "web" || platform === "electron") return platform;
-  return platform ? "native" : "base";
+  return (platform as Variant | undefined) ?? "base";
 }
 
 /** Each module's files by variant, keyed by path under src without extension. */

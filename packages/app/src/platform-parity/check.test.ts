@@ -118,6 +118,18 @@ describe("findMissingImports", () => {
       "shell.web.tsx imports open from pane.electron.tsx, which does not export it",
     ]);
   });
+
+  it("checks iOS and Android variants separately", () => {
+    const facts = new Map([
+      ["keys.ios.ts", { exports: ["translate"], imports: [] }],
+      ["keys.android.ts", { exports: [], imports: [] }],
+      ["keys.web.ts", { exports: ["translate"], imports: [] }],
+      ["input.tsx", { exports: [], imports: [{ module: "keys", names: ["translate"] }] }],
+    ]);
+    expect(findMissingImports(facts)).toEqual([
+      "input.tsx imports translate from keys.android.ts, which does not export it",
+    ]);
+  });
 });
 
 const SRC_ROOT = fileURLToPath(new URL("..", import.meta.url));
