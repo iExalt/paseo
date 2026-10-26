@@ -117,7 +117,7 @@ export function createTerminalActions(
         return current;
       },
       write,
-      sendKeys: (keys) => write(serializeTerminalKeys(keys)),
+      sendKeys: (keys) => write(keys.map(resolveKeyToken).join("")),
       capture: (options = {}) => {
         const { requestId, ...captureOptions } = options;
         return client().captureTerminal(id, captureOptions, requestId);
@@ -147,10 +147,6 @@ export function createTerminalActions(
     list,
     ref,
   };
-}
-
-export function serializeTerminalKeys(keys: readonly string[], literal = false): string {
-  return literal ? keys.join("") : keys.map(resolveKeyToken).join("");
 }
 
 function resolveKeyToken(key: string): string {

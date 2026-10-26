@@ -3315,6 +3315,15 @@ export const TerminalInputRequestSchema = z.object({
   requestId: z.string(),
 });
 
+// Key tokens are encoded on the host, which knows the terminal's current input mode.
+export const TerminalKeysSendRequestSchema = z.object({
+  type: z.literal("terminal.keys.send.request"),
+  terminalId: z.string(),
+  keys: z.array(z.string()),
+  literal: z.boolean().optional(),
+  requestId: z.string(),
+});
+
 export const KillTerminalRequestSchema = z.object({
   type: z.literal("kill_terminal_request"),
   terminalId: z.string(),
@@ -3670,6 +3679,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   UnsubscribeTerminalRequestSchema,
   TerminalInputSchema,
   TerminalInputRequestSchema,
+  TerminalKeysSendRequestSchema,
   KillTerminalRequestSchema,
   CaptureTerminalRequestSchema,
   ChatCreateRequestSchema,
@@ -3904,6 +3914,8 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceTerminals: z.boolean().optional(),
         // COMPAT(terminalInputAck): added in v0.11.2, remove gate after 2027-10-10.
         terminalInputAck: z.boolean().optional(),
+        // COMPAT(terminalKeys): added in v0.12.1, remove gate after 2027-04-26.
+        terminalKeys: z.boolean().optional(),
         // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
         agentCancelOutcome: z.boolean().optional(),
         // COMPAT(agentSendQueue): added in v0.9.1; remove gate after 2027-04-18.
@@ -6933,6 +6945,18 @@ export const TerminalInputResponseSchema = z.object({
   }),
 });
 
+export const TerminalKeysSendResponseSchema = z.object({
+  type: z.literal("terminal.keys.send.response"),
+  payload: z.object({
+    terminalId: z.string(),
+    success: z.boolean(),
+    error: z.string().nullable(),
+    /** Length of the encoded input written to the terminal, in UTF-16 code units. */
+    written: z.number().int(),
+    requestId: z.string(),
+  }),
+});
+
 export const CaptureTerminalResponseSchema = z.object({
   type: z.literal("capture_terminal_response"),
   payload: z.object({
@@ -7526,6 +7550,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   SubscribeTerminalResponseSchema,
   KillTerminalResponseSchema,
   TerminalInputResponseSchema,
+  TerminalKeysSendResponseSchema,
   CaptureTerminalResponseSchema,
   TerminalStreamExitSchema,
   TerminalAttentionRequiredSchema,
@@ -8012,6 +8037,8 @@ export type UnsubscribeTerminalRequest = z.infer<typeof UnsubscribeTerminalReque
 export type TerminalInput = z.infer<typeof TerminalInputSchema>;
 export type TerminalInputRequest = z.infer<typeof TerminalInputRequestSchema>;
 export type TerminalInputResponse = z.infer<typeof TerminalInputResponseSchema>;
+export type TerminalKeysSendRequest = z.infer<typeof TerminalKeysSendRequestSchema>;
+export type TerminalKeysSendResponse = z.infer<typeof TerminalKeysSendResponseSchema>;
 export type TerminalCell = z.infer<typeof TerminalCellSchema>;
 export type TerminalCursorStyle = z.infer<typeof TerminalCursorStyleSchema>;
 export type TerminalCursor = z.infer<typeof TerminalCursorSchema>;

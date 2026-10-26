@@ -6853,7 +6853,7 @@ test("emits snapshot events for the subscribed terminal stream", async () => {
   expect(snapshots).toEqual([state]);
 });
 
-test("acknowledged terminal input is gated before dispatch to older hosts", async () => {
+test("acknowledged terminal input and key tokens are gated before dispatch to older hosts", async () => {
   const logger = createMockLogger();
   const mock = createMockTransport();
   const client = new DaemonClient({
@@ -6871,6 +6871,9 @@ test("acknowledged terminal input is gated before dispatch to older hosts", asyn
   const sentBefore = mock.sent.length;
 
   await expect(client.sendTerminalInputAndWait("term-1", "x")).rejects.toMatchObject({
+    code: "DAEMON_UPDATE_REQUIRED",
+  });
+  await expect(client.sendTerminalKeysAndWait("term-1", ["Down"])).rejects.toMatchObject({
     code: "DAEMON_UPDATE_REQUIRED",
   });
   expect(mock.sent).toHaveLength(sentBefore);

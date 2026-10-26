@@ -58,7 +58,10 @@ export function createTerminalCommand(): Command {
       .command("send-keys")
       .description("Send keys to a terminal")
       .argument("<terminal-id>", "Terminal ID, ID prefix, or name")
-      .argument("<keys...>", "Keys to send")
+      .argument(
+        "<keys...>",
+        "Text or key tokens: Enter, Tab, Escape, Space, BSpace, Up, Down, Left, Right, Home, End, Insert, Delete, PageUp, PageDown, F1-F12, with C- (Ctrl), M- (Alt) and S- (Shift) prefixes, e.g. C-r or C-M-Left",
+      )
       .option("-l, --literal", "Send raw keys without interpreting special tokens")
       .option("--json", "Output in JSON format"),
   ).action(withGlobalOptions(runSendKeysCommand));

@@ -40,7 +40,6 @@ import {
   type PaseoTerminalActions,
   type PaseoWorkspaceTerminalActions,
 } from "./terminals/index.js";
-export { serializeTerminalKeys } from "./terminals/index.js";
 export type {
   PaseoTerminal,
   PaseoTerminalActions,

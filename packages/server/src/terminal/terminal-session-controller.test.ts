@@ -1347,3 +1347,47 @@ test.each([false, true])(
     }
   },
 );
+
+describe("terminal-session-controller key tokens", () => {
+  test("answers a failed key send with an error instead of leaving the request open", async () => {
+    const outboundMessages: SessionOutboundMessage[] = [];
+    const terminal = {
+      getReplayPreamble: () => "",
+      send: vi.fn(() => {
+        throw new Error("terminal worker exited");
+      }),
+    } as unknown as TerminalSession;
+    const terminalManager = {
+      getTerminal: vi.fn(() => terminal),
+      subscribeTerminalsChanged: vi.fn(() => vi.fn()),
+    } as unknown as TerminalManager;
+    const controller = createController({
+      terminalManager,
+      emit: (message) => outboundMessages.push(message),
+      emitBinary: vi.fn(),
+      hasBinaryChannel: () => true,
+      isPathWithinRoot: isSameOrDescendantPath,
+      sessionLogger: createLogger(),
+    });
+
+    await controller.dispatch({
+      type: "terminal.keys.send.request",
+      terminalId: "term-1",
+      keys: ["Down"],
+      requestId: "keys-1",
+    });
+
+    expect(outboundMessages).toEqual([
+      {
+        type: "terminal.keys.send.response",
+        payload: {
+          terminalId: "term-1",
+          success: false,
+          error: "terminal worker exited",
+          written: 0,
+          requestId: "keys-1",
+        },
+      },
+    ]);
+  });
+});

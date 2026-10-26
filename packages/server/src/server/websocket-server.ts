@@ -2044,6 +2044,8 @@ export class VoiceAssistantWebSocketServer {
         workspaceTerminals: true,
         // COMPAT(terminalInputAck): added in v0.11.2, remove gate after 2027-10-10.
         terminalInputAck: true,
+        // COMPAT(terminalKeys): added in v0.12.1, remove gate after 2027-04-26.
+        terminalKeys: true,
         // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
         agentCancelOutcome: true,
         // COMPAT(agentSendQueue): added in v0.9.1; remove gate after 2027-04-18.

@@ -14,6 +14,7 @@ import type {
   SubscribeTerminalRequest,
   SubscribeTerminalsRequest,
   TerminalInputRequest,
+  TerminalKeysSendRequest,
   TerminalInput,
   UnsubscribeTerminalRequest,
   UnsubscribeTerminalsRequest,
@@ -39,6 +40,7 @@ import {
 import type { TerminalSession } from "./terminal.js";
 import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.js";
 import { sendTerminalInput } from "./terminal-input.js";
+import { resolveTerminalKeyToken } from "./terminal-key-tokens.js";
 import { applyTerminalSize } from "./terminal-size-ownership.js";
 import { TerminalWorkerIncompatibleError } from "./terminal-worker-pool.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
@@ -127,6 +129,7 @@ type TerminalDispatchableMessage =
   | UnsubscribeTerminalRequest
   | TerminalInput
   | TerminalInputRequest
+  | TerminalKeysSendRequest
   | KillTerminalRequest
   | CaptureTerminalRequest
   | RenameTerminalRequest;
@@ -140,6 +143,7 @@ const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> =
   "unsubscribe_terminal_request",
   "terminal_input",
   "terminal.input.request",
+  "terminal.keys.send.request",
   "kill_terminal_request",
   "capture_terminal_request",
   "terminal.rename.request",
@@ -238,6 +242,8 @@ export class TerminalSessionController {
         return undefined;
       case "terminal.input.request":
         return this.handleTerminalInputRequest(msg);
+      case "terminal.keys.send.request":
+        return this.handleTerminalKeysSendRequest(msg);
       case "kill_terminal_request":
         return this.handleKillTerminalRequest(msg);
       case "capture_terminal_request":
@@ -853,6 +859,38 @@ export class TerminalSessionController {
         terminalId: msg.terminalId,
         success: error === null,
         error,
+        requestId: msg.requestId,
+      },
+    });
+  }
+
+  private async handleTerminalKeysSendRequest(msg: TerminalKeysSendRequest): Promise<void> {
+    let error: string | null = null;
+    let written = 0;
+    if (!this.terminalManager) {
+      error = "Terminal manager is not configured";
+    } else {
+      try {
+        // Read the input mode at write time, so a mode the program just switched applies.
+        const preamble =
+          this.terminalManager.getTerminal(msg.terminalId)?.getReplayPreamble() ?? "";
+        const data = msg.keys
+          .map((key) => resolveTerminalKeyToken({ key, literal: msg.literal ?? false, preamble }))
+          .join("");
+        sendTerminalInput(this.terminalManager, msg.terminalId, data);
+        written = data.length;
+      } catch (caught) {
+        error = caught instanceof Error ? caught.message : String(caught);
+      }
+    }
+
+    this.emit({
+      type: "terminal.keys.send.response",
+      payload: {
+        terminalId: msg.terminalId,
+        success: error === null,
+        error,
+        written,
         requestId: msg.requestId,
       },
     });
