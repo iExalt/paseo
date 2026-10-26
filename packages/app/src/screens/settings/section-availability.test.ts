@@ -9,7 +9,7 @@ const nativeWithKeyboard = { ...native, keyboardShortcutsAvailable: true };
 describe("isSettingsSectionAvailable", () => {
   it("shows each gate only where it applies", () => {
     expect(
-      (["integrations", "browser", "notifications", "shortcuts", "general"] as const).map(
+      (["integrations", "browser", "notifications", "shortcuts", "editor", "general"] as const).map(
         (section) => [
           isSettingsSectionAvailable(section, desktop),
           isSettingsSectionAvailable(section, browser),
@@ -22,6 +22,7 @@ describe("isSettingsSectionAvailable", () => {
       [true, false, true, true],
       [true, false, true, true],
       [true, false, false, true],
+      [true, true, false, false],
       [true, true, true, true],
     ]);
   });
