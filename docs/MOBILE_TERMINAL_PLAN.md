@@ -468,6 +468,30 @@ The spike found neither aid essential, so both are opt-in.
 - Do not add end-to-end latency tests to CI. Keep the P0 trace as a dev tool
   instead.
 
+### P5. Bundled Nerd Font
+
+Prompt and TUI icons drew as tofu: no font shipped with the app, so web and
+desktop needed a locally installed Nerd Font, and the native grid only accepts
+system families. The target is a terminal that defaults to the bundled MesloLGS
+NF on every platform; the table tracks which platforms have it. Its source and
+licenses are in
+`packages/app/assets/fonts/meslolgs-nf/README.md`.
+
+- Every glyph advances one cell (1233/2048 em), icons included, so the native
+  grid needs no wide-glyph handling. Icon ink overhangs a cell by about 7% on
+  each side, as in other terminals.
+- A user mono font stays first. Web appends Meslo after it, and the browser
+  falls back per glyph for icons. Native cannot fall back to a bundled font
+  per glyph; B settles which font a user override gets there.
+- Only the terminal default changes. Code blocks and diffs keep the app's mono
+  stack.
+
+| Chunk | Outcome                                                                                                                                     | Status      |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------- | ----------- |
+| A1    | Vendored Regular and Bold with provenance; Meslo leads the terminal stack and is appended to a user font                                    | Implemented |
+| A2    | Web and desktop load the woff2 when a terminal mounts and measure after it loads; cold-cache headless proof, offline packaged desktop check | Not started |
+| B     | Android and iOS embed the TTFs with `expo-font`; Cuttlefish screenshot; iOS build-config check, live iOS deferred                           | Not started |
+
 ## Out of scope
 
 - Replacing the native grid with xterm.js or ghostty-web in a WebView. The

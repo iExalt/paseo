@@ -1,5 +1,5 @@
 import { Platform } from "react-native";
-import { resolveTerminalFontFamily } from "../runtime/terminal-font";
+import { resolveTerminalFontFamily, splitFontFamilyStack } from "../runtime/terminal-font";
 
 const IOS_LOADED_MONO_FAMILIES: ReadonlySet<string> = new Set(["courier", "courier new", "menlo"]);
 
@@ -17,24 +17,6 @@ const IOS_MONO_ALIASES = new Map<string, string>([
 const NATIVE_MONO_FALLBACK =
   Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) ?? "monospace";
 
-function stripFontQuotes(family: string): string {
-  const trimmed = family.trim();
-  if (
-    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-    (trimmed.startsWith('"') && trimmed.endsWith('"'))
-  ) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-}
-
-function splitFontStack(fontFamily: string): string[] {
-  return fontFamily
-    .split(",")
-    .map(stripFontQuotes)
-    .filter((family) => family.length > 0);
-}
-
 function loadedNativeFontFamily(family: string): string | null {
   const normalized = family.toLowerCase();
   if (Platform.OS === "ios") {
@@ -50,7 +32,7 @@ function loadedNativeFontFamily(family: string): string | null {
 
 export function resolveNativeTerminalFontFamily(fontFamily: string | undefined): string {
   const stack = resolveTerminalFontFamily(fontFamily);
-  const loadedFamily = splitFontStack(stack)
+  const loadedFamily = splitFontFamilyStack(stack)
     .map(loadedNativeFontFamily)
     .find((family): family is string => family !== null);
   return loadedFamily ?? NATIVE_MONO_FALLBACK;
