@@ -1,0 +1,135 @@
+diff --git a/packages/app/src/agent-stream/chat-find/message-matches.ts b/packages/app/src/agent-stream/chat-find/message-matches.ts
+index 3f422c1de..15cfafecc 100644
+--- a/packages/app/src/agent-stream/chat-find/message-matches.ts
++++ b/packages/app/src/agent-stream/chat-find/message-matches.ts
+@@ -1,7 +1,6 @@
+ import { countMatches, searchPattern } from "@getpaseo/protocol/chat-search-text";
+ import { capAssistantMessageForRender } from "@/components/assistant-message-render-limit";
+-import type { StreamItem } from "@/types/stream";
+-import { getStreamItemMessageId } from "../presentation";
++import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
+ import { findMarkdownMatches } from "./markdown-matches";
+ 
+ /** An occurrence of the query, as the stream item that draws it and its number there. */
+diff --git a/packages/app/src/agent-stream/strategy-native.tsx b/packages/app/src/agent-stream/strategy-native.tsx
+index 8c1f26fc1..1fd7893b0 100644
+--- a/packages/app/src/agent-stream/strategy-native.tsx
++++ b/packages/app/src/agent-stream/strategy-native.tsx
+@@ -24,7 +24,7 @@ import {
+ } from "react-native";
+ import { withUnistyles } from "react-native-unistyles";
+ import { LoadingSpinner } from "@/components/ui/loading-spinner";
+-import type { StreamItem } from "@/types/stream";
++import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
+ import type { Theme } from "@/styles/theme";
+ import { useStableEvent } from "@/hooks/use-stable-event";
+ import { useKeyboardStreamInset } from "@/keyboard/shift";
+@@ -40,7 +40,6 @@ import {
+ import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
+ import { useRevisedHistoryRows } from "./history-row-revision";
+ import { ChatFindRowFrame } from "./chat-find/row-frame";
+-import { getStreamItemMessageId } from "./presentation";
+ import { scrollOffsetForDelta } from "@/find-highlight/reveal";
+ import { useBottomAnchorController } from "./bottom-anchor-controller";
+ import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
+diff --git a/packages/app/src/android/preferences-migration/schema.ts b/packages/app/src/android/preferences-migration/schema.ts
+index 82c71837e..44757e509 100644
+--- a/packages/app/src/android/preferences-migration/schema.ts
++++ b/packages/app/src/android/preferences-migration/schema.ts
+@@ -52,7 +52,9 @@ const AppPreferencesSchema = z.strictObject({
+     serverId: safeIdentifier.nullable(),
+   }),
+   autoExpandReasoning: z.boolean(),
+-  toolCallDetailLevel: z.enum(["overview", "detailed"]),
++  chatDisplay: z.enum(["full", "collapseToolCalls", "collapseTurns"]).optional(),
++  // COMPAT(toolCallDetailLevel): bridge exports predate chatDisplay, remove after 2027-04-24.
++  toolCallDetailLevel: z.enum(["overview", "detailed"]).optional(),
+   chatOutlineEnabled: z.boolean(),
+   vimKeybindings: z.boolean(),
+   openInSidePane: z.strictObject({
+diff --git a/packages/app/src/android/preferences-migration/transfer.test.ts b/packages/app/src/android/preferences-migration/transfer.test.ts
+index 65d1b16cd..c00d0d62e 100644
+--- a/packages/app/src/android/preferences-migration/transfer.test.ts
++++ b/packages/app/src/android/preferences-migration/transfer.test.ts
+@@ -4,6 +4,7 @@ import { migrateSidebarViewState } from "@/stores/sidebar-view-store";
+ import { PersistedCollapsedProjectsSchema } from "@/stores/sidebar-collapsed-sections-store/state";
+ import { PanelPersistedStateSchema } from "@/stores/panel-store/state";
+ import { WorkspaceLayoutPersistedStateSchema } from "@/stores/workspace-layout-storage";
++import { APP_SETTINGS_KEY, normalizeAppSettings } from "@/hooks/use-settings/storage";
+ import {
+   buildSelectedPreferencesImport,
+   createPreferencesTransfer,
+@@ -294,4 +295,25 @@ describe("portable preferences projection", () => {
+     );
+     expect(writes.some(({ key }) => key.includes("daemon-registry"))).toBe(false);
+   });
++  it("imports a bridge export's tool call detail level as the chat display", async () => {
++    const storage = new MemoryStorage();
++    const exported = parseTransferForPreview(
++      await createPreferencesTransfer({ storage, configuredDaemonIds: [], sourceLabel: "Bridge" }),
++    );
++    const { chatDisplay: _chatDisplay, ...app } = exported.app;
++    const transfer = parseTransferForPreview(
++      JSON.stringify({ ...exported, app: { ...app, toolCallDetailLevel: "overview" } }),
++    );
++    storage.values.set(APP_SETTINGS_KEY, JSON.stringify({ chatDisplay: "collapseTurns" }));
++
++    const writes = await buildSelectedPreferencesImport({
++      storage,
++      transfer,
++      destinationDaemonIds: [],
++      selected: ["appearance"],
++    });
++
++    const written = writes.find(({ key }) => key === APP_SETTINGS_KEY)?.value ?? "{}";
++    expect(normalizeAppSettings(JSON.parse(written)).chatDisplay).toBe("collapseToolCalls");
++  });
+ });
+diff --git a/packages/app/src/android/preferences-migration/transfer.ts b/packages/app/src/android/preferences-migration/transfer.ts
+index ce90c5d29..bc594faf9 100644
+--- a/packages/app/src/android/preferences-migration/transfer.ts
++++ b/packages/app/src/android/preferences-migration/transfer.ts
+@@ -249,7 +249,7 @@ function projectAppPreferences(rawApp: string | null, daemonIds: ReadonlySet<str
+           : null,
+     },
+     autoExpandReasoning: normalized.autoExpandReasoning,
+-    toolCallDetailLevel: normalized.toolCallDetailLevel,
++    chatDisplay: normalized.chatDisplay,
+     chatOutlineEnabled: normalized.chatOutlineEnabled,
+     vimKeybindings: normalized.vimKeybindings,
+     openInSidePane: normalized.openInSidePane,
+@@ -598,11 +598,15 @@ interface PreferenceImportContext {
+ 
+ async function appendAppearanceImport(context: PreferenceImportContext): Promise<void> {
+   const current = parseObject(await context.storage.getItem(KEYS.app));
+-  const usageServerId = context.transfer.app.usage.serverId;
++  const { toolCallDetailLevel, ...transferred } = context.transfer.app;
++  const usageServerId = transferred.usage.serverId;
+   const app = {
+-    ...context.transfer.app,
++    ...transferred,
++    chatDisplay:
++      transferred.chatDisplay ??
++      (toolCallDetailLevel === "overview" ? "collapseToolCalls" : "full"),
+     usage: {
+-      ...context.transfer.app.usage,
++      ...transferred.usage,
+       serverId: usageServerId && context.matched.has(usageServerId) ? usageServerId : null,
+     },
+   };
+diff --git a/packages/app/src/platform-parity/manifest.ts b/packages/app/src/platform-parity/manifest.ts
+index 9630036bc..92cfd631f 100644
+--- a/packages/app/src/platform-parity/manifest.ts
++++ b/packages/app/src/platform-parity/manifest.ts
+@@ -48,6 +48,11 @@ export const PARITY_MANIFEST: ParityManifest = {
+         "Web caps very long replies to bound DOM size; native hands the whole reply to its parser, so it shows all of it",
+     },
+     "components/draggable-list": equivalent,
++    "components/import-session-list": {
++      kind: "deliberate",
++      reason:
++        "Upstream virtualizes long Import Session lists on web only; native keeps the sheet's ScrollView",
++    },
+     "components/markdown/renderers": {
+       kind: "equivalent",
+       note: "Web draws code blocks and link tooltips in JS; native draws code blocks in the library",
