@@ -48,6 +48,11 @@ export const PARITY_MANIFEST: ParityManifest = {
         "Web caps very long replies to bound DOM size; native hands the whole reply to its parser, so it shows all of it",
     },
     "components/draggable-list": equivalent,
+    "components/import-session-list": {
+      kind: "deliberate",
+      reason:
+        "Upstream virtualizes long Import Session lists on web only; native keeps the sheet's ScrollView",
+    },
     "components/markdown/renderers": {
       kind: "equivalent",
       note: "Web draws code blocks and link tooltips in JS; native draws code blocks in the library",

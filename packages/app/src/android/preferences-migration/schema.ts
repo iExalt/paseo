@@ -52,7 +52,9 @@ const AppPreferencesSchema = z.strictObject({
     serverId: safeIdentifier.nullable(),
   }),
   autoExpandReasoning: z.boolean(),
-  toolCallDetailLevel: z.enum(["overview", "detailed"]),
+  chatDisplay: z.enum(["full", "collapseToolCalls", "collapseTurns"]).optional(),
+  // COMPAT(toolCallDetailLevel): bridge exports predate chatDisplay, remove after 2027-04-24.
+  toolCallDetailLevel: z.enum(["overview", "detailed"]).optional(),
   chatOutlineEnabled: z.boolean(),
   vimKeybindings: z.boolean(),
   openInSidePane: z.strictObject({
