@@ -24,7 +24,7 @@ import {
 } from "react-native";
 import { withUnistyles } from "react-native-unistyles";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
-import type { StreamItem } from "@/types/stream";
+import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
 import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useKeyboardStreamInset } from "@/keyboard/shift";
@@ -40,7 +40,6 @@ import {
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
-import { getStreamItemMessageId } from "./presentation";
 import { scrollOffsetForDelta } from "@/find-highlight/reveal";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";

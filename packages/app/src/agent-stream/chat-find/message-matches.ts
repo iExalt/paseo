@@ -1,7 +1,6 @@
 import { countMatches, searchPattern } from "@getpaseo/protocol/chat-search-text";
 import { capAssistantMessageForRender } from "@/components/assistant-message-render-limit";
-import type { StreamItem } from "@/types/stream";
-import { getStreamItemMessageId } from "../presentation";
+import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
 import { findMarkdownMatches } from "./markdown-matches";
 
 /** An occurrence of the query, as the stream item that draws it and its number there. */
