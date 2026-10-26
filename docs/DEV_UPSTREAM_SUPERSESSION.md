@@ -1,7 +1,7 @@
 # Dev commits superseded by upstream
 
 An audit of every fork `dev` commit for work that upstream Paseo now provides,
-so `dev` can be simplified. It is read-only: nothing here has been applied yet.
+so `dev` can be simplified, and what was done about it.
 
 Snapshot: `origin/dev` 5faba853f, `upstream/main` d0fd2e532, merge-base
 b8bb335c5 (2026-10-25). Each rebase of `dev` changes commit IDs and may change
@@ -17,7 +17,18 @@ incorporated upstream to the fork` commits (1160b8b74, fab7425bd) removed about
 2,400 lines of 0dfb58612 (#161) while reconciling it with upstream. What is left is
 mostly small and listed below.
 
-The audit also found two live bugs on `dev`; fix those first.
+The audit also found two live bugs on `dev`.
+
+## Status
+
+| Items                                                           | State                                                                                                      |
+| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| S4, S6 bugs, plus a parity check for shadowed platform variants | Fixed in #235. `explorer-pane-placement.spec.ts` fails 3 of 4 on 33cd30b1e and passes 4 of 4 with the fix. |
+| S1, S3, S5, S7, `@expo/cli` patch name                          | Done in #233                                                                                               |
+| S2                                                              | Done in #234, with a new test for a commit that lands during a read                                        |
+| Both out-of-scope findings                                      | Fixed in #237                                                                                              |
+| History drops                                                   | Not done: they change no code. Do them at a manual rebase or leave them.                                   |
+| enriched-markdown patch conflict                                | Open until the next rebase onto upstream past 4845e1da5                                                    |
 
 ## Bugs found
 
@@ -29,8 +40,8 @@ The audit also found two live bugs on `dev`; fix those first.
 S4 is proven by source reading, a web-first esbuild bundle that fails with
 `No matching export … resolveSplitDropPosition`, and a vitest probe under web
 resolution where the import is `undefined`. Electron falls back to `.web.*`, so
-desktop is affected too. The drag failure itself has not been reproduced in a
-running app.
+desktop is affected too. The browser run in the Status table reproduced the
+drag failure, with Metro reporting the error at `workspace-tab-drag-scope.web.tsx:137`.
 
 ## Simplify
 
@@ -69,7 +80,7 @@ and 4ebf3e3d5 are intentional and stay.
 
 ## Patch upkeep
 
-Neither is a supersession.
+Neither is a supersession. The `@expo/cli` rename is done (#233).
 
 - `patches/react-native-enriched-markdown+…766fc0e67.patch`: upstream 4845e1da5
   (#7859, above the merge-base) rewrote the md4c autolink hunk that dev also
@@ -108,19 +119,20 @@ replaced them. They are squash candidates for history size only and do not bring
 - Agents on `dev` lost upstream #7343's input-mode-aware terminal keys: c29ae24b9
   moved agents from the MCP `send_terminal_keys` tool to `paseo terminal
   send-keys`, which uses the shared client's fixed key table
-  (`packages/client/src/terminals/index.ts:152-182`). Upstream's own CLI has the
-  same limit, so the fix belongs in the shared client.
+  (`packages/client/src/terminals/index.ts:152-182`) and never sees the
+  terminal's input mode. #237 adds a `terminal.keys.send` request that the host
+  encodes with upstream's resolver against the terminal's current mode.
 - `packages/server/src/server/agent/archive-discovery.e2e.test.ts:54` (upstream
-  #7532) connects to `/mcp/agents`, which `dev` no longer serves. Routine CI
-  does not run it; it would fail, since only upstream registers that route
-  (`bootstrap.ts:272`).
+  #7532) connected to `/mcp/agents`, which `dev` no longer serves. Since #237 it
+  uses the requests `paseo agent ls|status|archive` send and passes. Routine CI
+  still does not run it, as upstream's does not.
 
 ## Applying the results
 
 `rebase-dev.mjs` replays commits one-to-one and has no drop list, so the two
 routes differ in cost:
 
-- **Forward fixes (recommended for S1–S7):** ordinary conventional-commit PRs to
+- **Forward fixes (used for S1–S7):** ordinary conventional-commit PRs to
   `dev`. They shrink the tree's diff from upstream now, carry their own tests,
   and need no history rewrite.
 - **History drops:** only tidy history. Do them during a manual rebase, with the
@@ -138,7 +150,8 @@ routes differ in cost:
 - Six read-only auditors judged the 121 product commits, seven package-touching
   CI/docs commits, both adapt commits and the dependency patches against
   d0fd2e532 code and the 687 upstream commits since 2026-09-20. A peer reviewer
-  checked the non-keep verdicts against source, except S5 (partly checked) and
-  S7 (not checked).
-- No simplification was applied or tested as a rewrite; S2's acceptance test is
-  defined but not run. S4's runtime failure is derived, not observed.
+  checked the non-keep verdicts against source.
+- At publication S5 was only partly checked, S7 not checked, S2's acceptance
+  test not run and S4's runtime failure derived. The apply phase closed all
+  four: S5 and S7 in the #233 review, S2's gate in #234 (plus a race test that
+  fails without per-read invalidation), and S4 in the browser runs above.
