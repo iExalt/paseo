@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.12.1](https://github.com/iExalt/paseo/compare/paseo-v0.12.0...paseo-v0.12.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* **app:** keep Android fork update downloads running in the background ([#238](https://github.com/iExalt/paseo/issues/238)) ([fa40568](https://github.com/iExalt/paseo/commit/fa405683e7ad916cf015f698425597fc700eae62))
+* **app:** restore tab drag-to-split on web and hide editor settings on native ([#235](https://github.com/iExalt/paseo/issues/235)) ([182b5fa](https://github.com/iExalt/paseo/commit/182b5fa09f6ef96f814f9c447b036a3ba730efc9))
+* **cli:** encode terminal send-keys for the terminal's input mode ([#237](https://github.com/iExalt/paseo/issues/237)) ([7715914](https://github.com/iExalt/paseo/commit/771591434a81d06b8a696aad4dc5dcd3c2995ce7))
+
 ## [0.12.0](https://github.com/iExalt/paseo/compare/paseo-v0.11.1...paseo-v0.12.0) (2026-10-26)
 
 
