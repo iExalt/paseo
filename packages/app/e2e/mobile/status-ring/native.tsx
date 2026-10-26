@@ -21,7 +21,7 @@ function recordSample(name: string, value: { updates: number; rotation: number }
 }
 
 function Probe({ name }: { name: string }) {
-  const rotation = useStatusRingRotation(true);
+  const rotation = useStatusRingRotation();
   const updates = useSharedValue(0);
   useAnimatedReaction(
     () => rotation.value,

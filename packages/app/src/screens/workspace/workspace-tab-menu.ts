@@ -177,8 +177,6 @@ export function paneFindTarget(tab: WorkspaceTabDescriptor): string | null {
   switch (tab.target.kind) {
     case "agent":
       return `agent:${tab.target.agentId}`;
-    case "file":
-      return `file:${tab.target.path}`;
     case "terminal":
       return `terminal:${tab.target.terminalId}`;
     default:
