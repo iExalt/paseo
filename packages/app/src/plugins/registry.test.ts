@@ -1,4 +1,4 @@
-import appPackage from "../../package.json";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { pluginRegistry as registry } from "./registry";
@@ -31,7 +31,10 @@ const pluginRegistry = {
   ) {
     return registry.installCatalog(
       serverId,
-      catalog.map((entry) => ({ ...entry, requirements: { paseo: `>=${appPackage.version}` } })),
+      catalog.map((entry) => ({
+        ...entry,
+        requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
+      })),
       { ...options, client: daemonClient, audio },
     );
   },
