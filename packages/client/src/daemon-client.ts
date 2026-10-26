@@ -132,6 +132,7 @@ import type {
   CloseItemsResponse,
   KillTerminalResponse,
   TerminalInputResponse,
+  TerminalKeysSendResponse,
   CaptureTerminalResponse,
   TerminalInput,
   SessionInboundMessage,
@@ -685,6 +686,7 @@ type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
 type TerminalInputPayload = TerminalInputResponse["payload"];
+type TerminalKeysSendPayload = TerminalKeysSendResponse["payload"];
 type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
 type ScheduleCreatePayload = Extract<
   SessionOutboundMessage,
@@ -6801,6 +6803,39 @@ export class DaemonClient {
     });
     if (!payload.success) {
       throw new Error(payload.error ?? `Failed to send input to terminal ${terminalId}`);
+    }
+    return payload;
+  }
+
+  /** Sends key tokens that the host encodes for the terminal's current input mode. */
+  async sendTerminalKeysAndWait(
+    terminalId: string,
+    keys: readonly string[],
+    options: { literal?: boolean } = {},
+  ): Promise<TerminalKeysSendPayload> {
+    // COMPAT(terminalKeys): added in v0.12.1, remove gate after 2027-04-26.
+    if (this.lastServerInfoMessage?.features?.terminalKeys !== true) {
+      throw new DaemonConnectionError(
+        "Update the host to send terminal keys.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "terminal.keys.send.request",
+      terminalId,
+      keys: [...keys],
+      ...(options.literal ? { literal: true } : {}),
+      requestId,
+    });
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message,
+      responseType: "terminal.keys.send.response",
+      options: { skipQueue: true },
+    });
+    if (!payload.success) {
+      throw new Error(payload.error ?? `Failed to send keys to terminal ${terminalId}`);
     }
     return payload;
   }
