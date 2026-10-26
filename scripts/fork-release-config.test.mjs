@@ -20,7 +20,7 @@ test("authoritative fork metadata matches every workspace, internal dependency a
     "package-lock.json",
   ]) {
     const value = JSON.parse(await read(file));
-    value.version = "0.12.0";
+    value.version = `${before.config.version}-mismatch`;
     await assert.rejects(
       inspectForkRelease((name) => (name === file ? JSON.stringify(value) : read(name))),
     );
