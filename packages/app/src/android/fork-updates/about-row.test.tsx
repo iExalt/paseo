@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 import React from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const harness = vi.hoisted(() => ({
@@ -67,7 +67,10 @@ vi.mock("./client", () => ({
   ForkManualMigrationRequired: class extends Error {},
   forkUpdatesNative: {
     getInstalledVersion: () => harness.installedVersion,
-    addListener: (_name: string, listener: (event: { downloadedBytes: number }) => void) => {
+    addListener: (
+      _name: string,
+      listener: (event: { downloadedBytes: number; totalBytes: number }) => void,
+    ) => {
       harness.nativeListener.mockImplementation(listener);
       return { remove: () => harness.nativeListener.mockReset() };
     },
@@ -145,6 +148,17 @@ describe("fork Android update row", () => {
     harness.activeListener?.("active");
     await screen.findByText('settings.about.forkUpdates.installed {"version":"0.1.1"}');
     expect(harness.recordInstalledForkUpdate).toHaveBeenCalledWith("0.1.1");
+  });
+
+  it("reports progress against the transfer size, which the gzip sidecar shrinks", async () => {
+    harness.downloadForkUpdate.mockReturnValue(new Promise(() => undefined));
+    render(<ForkAndroidUpdateRow />);
+    fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.check" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "settings.about.forkUpdates.download" }),
+    );
+    act(() => harness.nativeListener({ downloadedBytes: 20, totalBytes: 40 }));
+    await screen.findByText('settings.about.forkUpdates.downloadingProgress {"percent":50}');
   });
 
   it("remembers a found update after the About screen closes", async () => {

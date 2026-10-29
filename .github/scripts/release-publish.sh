@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GitHub release steps for release.yml.
 #   draft:   find TAG's draft (release-please makes one) or create it, upload the
-#            six assets, re-download and re-hash them
+#            expected assets, re-download and re-hash them
 #   publish: publish the verified draft as latest; TAG must point at SOURCE_SHA
 # Reads GH_TOKEN, GITHUB_REPOSITORY, VERSION, SOURCE_SHA, TAG, ASSETS, PUBLISH, RELEASE_ID.
 set -euo pipefail
@@ -38,14 +38,28 @@ create() {
 }
 
 expected_assets() {
-  printf '%s\n' paseo-release-manifest.json paseo-release-manifest.sig \
-    "paseo-$VERSION-macos-arm64-nix-desktop.tar" "paseo-$VERSION-macos-arm64-nix-desktop.json" \
-    "paseo-$VERSION-android-arm64.apk" "paseo-$VERSION-android-cache-pin.json" | sort
+  {
+    printf '%s\n' paseo-release-manifest.json paseo-release-manifest.sig \
+      "paseo-$VERSION-macos-arm64-nix-desktop.tar" "paseo-$VERSION-macos-arm64-nix-desktop.json" \
+      "paseo-$VERSION-macos-arm64-nix-desktop.index.json" \
+      "paseo-$VERSION-android-arm64.apk" "paseo-$VERSION-android-arm64.apk.gz" \
+      "paseo-$VERSION-android-cache-pin.json"
+    # The desktop deltas the unsigned index lists: none up to DELTA_BASE_RELEASES
+    # (release-mac-index.mjs). A duplicate or unlisted delta fails the set check.
+    jq -r '.deltas[].asset' "$ASSETS/paseo-$VERSION-macos-arm64-nix-desktop.index.json"
+  } | sort
+}
+
+check_assets() {
+  local delta_name="^paseo-${VERSION//./\\.}-macos-arm64-nix-desktop\\.delta-from-[0-9]+\\.[0-9]+\\.[0-9]+\\.zst$"
+  jq -e --arg pattern "$delta_name" 'all(.deltas[].asset; test($pattern))' \
+    "$ASSETS/paseo-$VERSION-macos-arm64-nix-desktop.index.json" > /dev/null || fail "Unexpected delta asset name."
+  [[ "$(find "$ASSETS" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)" == "$(expected_assets)" ]] || fail "Unexpected release asset set."
 }
 
 draft() {
   local name id file asset_id
-  [[ "$(find "$ASSETS" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)" == "$(expected_assets)" ]] || fail "Unexpected release asset set."
+  check_assets
   if [[ "$PUBLISH" == true ]]; then
     [[ "$TAG" == "paseo-v$VERSION" ]] || fail "Publish tag must be paseo-v$VERSION."
     name="Paseo $VERSION"
@@ -103,7 +117,8 @@ publish() {
 }
 
 case "${1:-}" in
+  check-assets) check_assets ;;
   draft) draft ;;
   publish) publish ;;
-  *) fail "Usage: $0 {draft|publish}" ;;
+  *) fail "Usage: $0 {check-assets|draft|publish}" ;;
 esac

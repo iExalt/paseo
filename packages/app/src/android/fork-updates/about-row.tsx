@@ -20,6 +20,7 @@ function getStatusMessage(
   status: ForkUpdateStatus,
   update: VerifiedForkUpdate | null,
   downloadedBytes: number,
+  downloadTotalBytes: number,
 ): string {
   const version = update?.manifest.version;
   switch (status) {
@@ -32,7 +33,7 @@ function getStatusMessage(
     case "available":
       return t("settings.about.forkUpdates.available", { version });
     case "downloading": {
-      const totalBytes = update?.android.bytes ?? 0;
+      const totalBytes = downloadTotalBytes || (update?.android.bytes ?? 0);
       const percent =
         totalBytes > 0 ? Math.min(100, Math.floor((downloadedBytes / totalBytes) * 100)) : 0;
       return t("settings.about.forkUpdates.downloadingProgress", { percent });
@@ -85,6 +86,7 @@ export function ForkAndroidUpdateRow() {
   const update = useForkUpdateStore((state) => state.update);
   const apkPath = useForkUpdateStore((state) => state.apkPath);
   const downloadedBytes = useForkUpdateStore((state) => state.downloadedBytes);
+  const downloadTotalBytes = useForkUpdateStore((state) => state.downloadTotalBytes);
 
   useEffect(() => startForkUpdates(), []);
   const onPress = useCallback(() => {
@@ -96,7 +98,7 @@ export function ForkAndroidUpdateRow() {
   }
 
   const statusText = forkUpdatesNative
-    ? getStatusMessage(t, status, update, downloadedBytes)
+    ? getStatusMessage(t, status, update, downloadedBytes, downloadTotalBytes)
     : t("settings.about.forkUpdates.failed");
   const busy = status === "checking" || status === "downloading" || status === "installing";
   const buttonLabel = getActionLabel(t, status, Boolean(apkPath));

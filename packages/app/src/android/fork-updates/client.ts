@@ -10,6 +10,7 @@ import {
   RELEASE_MANIFEST_NAME,
   RELEASE_SIGNATURE_NAME,
   MAX_RELEASE_METADATA_BYTES,
+  GZIP_SUFFIX,
   approvedAndroidArtifact,
   findHighestVerifiedForkRelease,
   isNewerThanInstalled,
@@ -38,7 +39,8 @@ interface ForkUpdatesNativeModule {
   openUnknownSourcesSettings(): Promise<void>;
   fetchText(url: string, maxBytes: number): Promise<string>;
   downloadAndVerifyApk(
-    url: string,
+    // `bytes` and `compression` are set for the `.gz` sidecar; the APK is `url` minus `.gz`.
+    transfer: { url: string; bytes?: number; compression?: "gzip" },
     fileName: string,
     expectedBytes: number,
     expectedSha256: string,
@@ -215,8 +217,14 @@ export async function checkForForkUpdate(): Promise<{
 
 export async function downloadForkUpdate(update: VerifiedForkUpdate): Promise<string> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
+  // The receipt does not carry the release listing, so keep the sidecar size it found.
+  const { gzipApkBytes } = update;
   update = await requireNewerInstalledUpdate(update);
   const { android, apkUrl } = update;
+  const gzip =
+    gzipApkBytes !== undefined && gzipApkBytes > 0 && gzipApkBytes < android.bytes
+      ? gzipApkBytes
+      : null;
   const receipt = JSON.stringify({
     manifestText: update.manifestText,
     signatureText: update.signatureText,
@@ -225,7 +233,9 @@ export async function downloadForkUpdate(update: VerifiedForkUpdate): Promise<st
   let path: string;
   try {
     path = await forkUpdatesNative.downloadAndVerifyApk(
-      apkUrl,
+      gzip === null
+        ? { url: apkUrl }
+        : { url: `${apkUrl}${GZIP_SUFFIX}`, bytes: gzip, compression: "gzip" },
       stagedApkFileName(update),
       android.bytes,
       android.sha256,

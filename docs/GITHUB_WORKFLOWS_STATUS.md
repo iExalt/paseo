@@ -120,7 +120,20 @@ accept schema 2, the 14-cell manifest releases before 0.2.0 used. Clients
 older than 0.2.0 reject schema 3: install 0.2.0 by hand once (sideload the APK;
 run `scripts/paseo-nix-update.mjs` from a checkout on macOS). Until then an old
 Android client reports "No signed published Paseo fork release could be
-verified". `.github/fork-release.json` holds the version and upstream
+verified". The release also carries an unsigned
+`paseo-X-android-arm64.apk.gz`, about 40% of the APK's size. The Android
+updater downloads it when the listing offers it, checks the inflated bytes
+against the signed APK cell, and falls back to the APK on any failure. Keep it
+out of the manifest: changing the schema breaks installed clients.
+The macOS tar has unsigned sidecars too, written by
+`.github/scripts/release-mac-index.mjs`. `paseo-X-macos-arm64-nix-desktop.index.json`
+lists the tar's member ranges and narinfos. Up to four `.delta-from-Y.zst`
+files patch the desktop NAR from the last four stable releases. The macOS
+updater fetches only the store paths it lacks, by delta or by tar range. Nix
+still checks each path against the release key, and the updater checks the
+closure against the signed manifest. On any failure it downloads the full tar.
+A failure to build a delta is a warning, so the release still ships without it.
+`.github/fork-release.json` holds the version and upstream
 base that `release.yml` reads.
 
 ## Release boundary

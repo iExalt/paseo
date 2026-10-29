@@ -5,6 +5,7 @@
   nodejs_26,
   python3,
   makeWrapper,
+  zstd,
   autoPatchelfHook,
   copyDesktopItems,
   makeDesktopItem,
@@ -250,11 +251,14 @@ buildNpmPackage {
       mkdir -p "$updater_root/scripts" "$updater_root/packages/protocol/src"
       cp scripts/paseo-nix-update.mjs scripts/paseo-nix-update-legacy.mjs \
         scripts/paseo-nix-update-state.mjs scripts/paseo-nix-update-macos.mjs \
-        "$updater_root/scripts/"
+        scripts/paseo-nix-update-delta.mjs "$updater_root/scripts/"
       cp packages/protocol/src/release-manifest.ts packages/protocol/src/release-manifest-v2.ts \
         packages/protocol/src/fork-version.ts "$updater_root/packages/protocol/src/"
       printf '%s\n' '{ "type": "module" }' > "$updater_root/package.json"
+      # zstd applies the update deltas (scripts/paseo-nix-update-delta.mjs). Node's
+      # zlib zstd takes a dictionary only as an in-memory buffer, and the base is a 0.5 GB NAR.
       makeWrapper ${nodejs_26}/bin/node "$out/bin/paseo-nix-update" \
+        --prefix PATH : ${lib.makeBinPath [zstd]} \
         --add-flags "$updater_root/scripts/paseo-nix-update.mjs"
     ''}
 

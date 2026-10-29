@@ -2,6 +2,7 @@
 # Builds, signs and exports the macOS Nix desktop closure for release.yml.
 #   build:  build the desktop output (dependencies from cache.nixos.org), write the closure manifest
 #   export: sign the closure with the Nix release key and pack a zstd file:// binary cache as plain ustar
+#   (release-mac-index.mjs then writes the unsigned index and delta sidecars)
 # Inputs: VERSION, SOURCE_SHA, RUNNER_TEMP, GITHUB_OUTPUT;
 # NIX_RELEASE_SIGNING_KEY for export only.
 set -euo pipefail
@@ -78,7 +79,10 @@ export_closure() {
   nix store sign --key-file "$key_file" --recursive "$output_path"
   # zstd instead of the default xz: xz took most of the ~280 s export. The
   # installing host's nix decompresses; the client's extractor ignores the format.
-  nix copy --to "file://$cache_dir?secret-key=$key_file&compression=zstd" --option builders '' "$output_path"
+  # Level 9 over the default 3: the 0.12.1 desktop NAR shrank 11% (168.8 to
+  # 150.9 MB) for about 6 s more; level 15 saved 2% more for 50 s.
+  nix copy --to "file://$cache_dir?secret-key=$key_file&compression=zstd&compression-level=9" \
+    --option builders '' "$output_path"
   rm -f "$key_file"
   trap - EXIT
   # The client's extractor accepts plain ustar only: no AppleDouble members.

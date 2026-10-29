@@ -123,6 +123,25 @@ describe("fork release verification", () => {
     );
   });
 
+  it("offers the gzip sidecar only when exactly one plausibly sized copy exists", () => {
+    const manifest = manifestFor("0.1.2");
+    const apk = approvedAndroidArtifact(manifest);
+    const withSidecars = (...sizes: number[]) =>
+      verifyReleaseBinding(
+        releaseFor("0.1.2", {
+          assets: [
+            ...releaseFor("0.1.2").assets,
+            ...sizes.map((size) => ({ name: `${apk.name}.gz`, size })),
+          ],
+        }),
+        manifest,
+      ).gzipApkBytes;
+    expect(withSidecars(apk.bytes - 1)).toBe(apk.bytes - 1);
+    expect(withSidecars()).toBeUndefined();
+    expect(withSidecars(1, 1)).toBeUndefined();
+    for (const size of [0, apk.bytes, apk.bytes + 1]) expect(withSidecars(size)).toBeUndefined();
+  });
+
   it("rejects mismatched assets, package identity, and nonstable releases", () => {
     const manifest = manifestFor("0.1.2");
     expect(() => verifyReleaseBinding(releaseFor("0.1.2", { prerelease: true }), manifest)).toThrow(
