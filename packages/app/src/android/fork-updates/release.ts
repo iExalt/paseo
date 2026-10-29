@@ -17,6 +17,7 @@ export const RELEASE_MANIFEST_NAME = "paseo-release-manifest.json";
 export const RELEASE_SIGNATURE_NAME = "paseo-release-manifest.sig";
 export const MAX_RELEASE_METADATA_BYTES = 256 * 1024;
 export const MAX_APK_BYTES = 250 * 1024 * 1024;
+export const GZIP_SUFFIX = ".gz";
 
 export function isForkAndroidUpdaterEnabled(
   platform: string,
@@ -42,6 +43,8 @@ export interface VerifiedForkUpdate {
   manifest: ForkReleaseManifest;
   android: Extract<ForkReleaseArtifact, { kind: "apk" }>;
   apkUrl: string;
+  // Byte count of the unsigned `<apk>.gz` sidecar when the release has a usable one.
+  gzipApkBytes?: number;
   manifestText: string;
   signatureText: string;
 }
@@ -140,7 +143,28 @@ export function verifyReleaseBinding(
   const apkUrl = `https://github.com/${FORK_REPOSITORY}/releases/download/${encodeURIComponent(
     release.tag_name,
   )}/${encodeURIComponent(android.name)}`;
-  return { manifest, android, apkUrl, manifestText, signatureText };
+  const gzipApkBytes = gzipApkSidecarBytes(release.assets, android);
+  return {
+    manifest,
+    android,
+    apkUrl,
+    ...(gzipApkBytes === null ? {} : { gzipApkBytes }),
+    manifestText,
+    signatureText,
+  };
+}
+
+// The `.gz` sidecar is unsigned: the device gunzips it and checks the result against the
+// signed APK bytes, hash and signer, falling back to the APK. Its listed size only has to
+// be plausible, since a gzip that fails to shrink the APK is not worth downloading.
+export function gzipApkSidecarBytes(
+  assets: readonly GitHubReleaseAsset[],
+  android: Pick<ForkReleaseArtifact, "name" | "bytes">,
+): number | null {
+  const sidecars = assets.filter((asset) => asset.name === `${android.name}${GZIP_SUFFIX}`);
+  if (sidecars.length !== 1) return null;
+  const { size } = sidecars[0];
+  return Number.isSafeInteger(size) && size > 0 && size < android.bytes ? size : null;
 }
 
 export function approvedAndroidArtifact(

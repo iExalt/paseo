@@ -130,6 +130,19 @@ jobs:
       - name: Remove the Nix signing key file
         if: always()
         run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      # zstd comes from the pinned nixpkgs, the one the updater's wrapper ships.
+      - name: Write the update index and deltas from recent releases
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT_PATH: ${{ steps.build.outputs.output_path }}
+        run: |
+          zstd_bin="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#zstd.bin)/bin"
+          PATH="$zstd_bin:$PATH" node .github/scripts/release-mac-index.mjs "$RUNNER_TEMP/paseo-release-macos"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-macos
@@ -160,6 +173,8 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          # Fetching the pinned nixpkgs for zstd goes through the GitHub API.
+          github_access_token: ${{ github.token }}
           extra_nix_config: |
             experimental-features = nix-command flakes
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
@@ -168,14 +183,19 @@ jobs:
           path: ${{ runner.temp }}/paseo-release-macos
       - name: Install smoke harness dependencies
         run: node .github/scripts/release-mac-smoke-deps.mjs "$RUNNER_TEMP/paseo-smoke-deps"
+      # Installs the previous release, then stages this one from its delta.
       - name: Import with the release key alone, then check signature, CLI and launch
-        timeout-minutes: 10
+        timeout-minutes: 15
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
           SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
           OUTPUT_PATH: ${{ needs.macos-build.outputs.output_path }}
+          PUBLISH: ${{ needs.resolve.outputs.publish }}
+          GH_TOKEN: ${{ github.token }}
           PASEO_DESKTOP_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/paseo-desktop-smoke
-        run: node .github/scripts/release-mac-smoke.mjs "$RUNNER_TEMP/paseo-release-macos"
+        run: |
+          zstd_bin="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#zstd.bin)/bin"
+          PATH="$zstd_bin:$PATH" node .github/scripts/release-mac-smoke.mjs "$RUNNER_TEMP/paseo-release-macos"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: ${{ !cancelled() }}
         with:
@@ -368,8 +388,11 @@ jobs:
           grep -qF 'gradle-9.3.1-bin.zip' packages/app/android/gradle/wrapper/gradle-wrapper.properties
           cd packages/app/android
           started_at=$SECONDS
+          # The updater's gunzip test rides on this run: a separate Gradle run would pay
+          # configuration again, but here it adds only its own compile and three tests.
           bash "$GITHUB_WORKSPACE/scripts/gradle-resource-watch.sh" -- \
             env JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew :app:assembleRelease \
+            :paseo-fork-updates:testReleaseUnitTest \
             --no-daemon --max-workers=1 -Dorg.gradle.parallel=false \
             -Pkotlin.compiler.execution.strategy=in-process \
             -PreactNativeArchitectures=arm64-v8a \
@@ -508,6 +531,10 @@ jobs:
           actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           [[ "$actual" == "$expected" ]] || { echo "::error::Signed with $actual, expected $expected."; exit 1; }
           bash .github/scripts/release-apk-identity.sh "$apk"
+          # Unsigned download sidecar: the APK stores its dex, .so and JS uncompressed, so
+          # deflate cuts the transfer by about 60%. Clients check the gunzipped bytes against
+          # the signed manifest and fall back to the APK. -n keeps the output reproducible.
+          gzip -9 -n -c "$apk" > "$apk.gz"
           echo "cert_sha256=$actual" >> "$GITHUB_OUTPUT"
       - name: Remove signing material
         if: always()
