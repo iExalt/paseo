@@ -214,9 +214,10 @@ stays at `--max-workers=1`.
 Gradle's configuration cache would cut configuration from about 110 s to 10 s,
 but no release could reuse an entry: the React Native plugin reads
 `packages/app/package.json` while configuring, and every release commit bumps
-its version. It also reports 7 problems, all `node` path lookups run with
-`.execute()` in the generated `app/build.gradle`,
-`modules/paseo-diff-prototype` and `react-native-keyboard-controller`. Measured
+its version. It also reported 7 problems, all `node` path lookups run with
+`.execute()` in the generated `app/build.gradle` and
+`react-native-keyboard-controller`, plus one in the since-deleted diff
+prototype module. Measured
 in October 2026 (W9 experiments); revisit only if the RN plugin stops reading
 that file.
 

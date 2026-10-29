@@ -12,8 +12,8 @@ to current evidence. It is not a second checklist.
 | Field          | Status                                                                    |
 | -------------- | ------------------------------------------------------------------------- |
 | Baseline       | `de1cd5fef` (`chore(dev): release 0.13.1`)                                |
-| Branch         | `feat/android-apk-delta`                                                  |
-| Current phase  | Phase 1 code complete; G-live waits for two stable releases               |
+| Branch         | Phase 1 merged as `390a128bd` (#246); Phase 2 on `feat/android-size-cuts` |
+| Current phase  | Phase 2 (diff prototype, size report); G-live waits for two releases      |
 | Overall state  | Delta path implemented and verified off-device; not yet proven on a phone |
 | Release claims | No release ships deltas yet; no on-device delta install has happened      |
 
@@ -56,17 +56,30 @@ Evidence state: implemented; rehearsed against real releases.
 Four bases took 3:07 wall time at a 1.84 GB peak RSS. The `.gz` is
 57,110,026 B.
 
+- Release dry run 40966280437 at `390a128bd` ran the `android-delta` job in
+  CI (6 min 26 s) and uploaded deltas from 0.13.0, 0.12.1, 0.12.0 and 0.11.1
+  of 6.4, 10.0, 10.1 and 10.2 MB against a 57.4 MB `.gz`. They are larger than
+  the rehearsal's because that build adds this campaign's own native and Kotlin
+  code to 0.13.1. The draft was deleted.
+
 - The installed `base.apk` on the phone hashed identically to the 0.13.1
   release asset, so the installed APK is a valid base.
+
+### Smaller APK
+
+Evidence state: implemented; measured on a local dogfood build.
+
+- Deleting `paseo-diff-prototype` took native libraries from 74.5 to 69.8 MB
+  (net of zstd-jni's 0.63 MB); the arm64 dogfood APK built on dev-station at
+  `37a015749` is 165,324,625 B against 0.13.1's 170,062,966 B. The first CI
+  measurement is the size table of the next release or dry run.
 
 ## Current boundary
 
 - G-live has not run: the zstd-jni `.so` has not loaded on a device, and no
   phone has installed an update from a delta. The Cuttlefish tablet was
   unreachable (k0s API timeout) when the device probe was attempted.
-- The `android-delta` job has not run in CI; the first release after merge is
-  its first run.
-- Phases 2 and 3 have not started.
+- Phase 3 (R8) has not started. The unbundled barcode model was declined.
 
 ## Risks
 
@@ -81,4 +94,8 @@ Four bases took 3:07 wall time at a 1.84 GB peak RSS. The `.gz` is
 ## Progress log
 
 - 2026-10-29: Phase 1 chunks A–C implemented and reviewed; real-release
-  rehearsal produced a 1.96 MB delta from 0.13.0.
+  rehearsal produced a 1.96 MB delta from 0.13.0. Merged as #246; a release
+  dry run published deltas from CI.
+- 2026-10-29: Phase 2 deleted the diff prototype and added the release size
+  table; the barcode change was dropped to keep QR working without Play
+  Services.
