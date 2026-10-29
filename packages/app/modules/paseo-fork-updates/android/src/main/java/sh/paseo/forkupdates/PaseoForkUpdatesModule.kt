@@ -7,6 +7,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.FileProvider
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
@@ -33,9 +34,11 @@ private const val MAX_REDIRECTS = 5
 private const val DOWNLOAD_POLL_MS = 500L
 private const val DOWNLOAD_DIRECTORY = "fork-updates"
 private const val GZIP_SUFFIX = ".gz"
-// Maps a transfer file name (the staged APK name, plus `.gz` for the sidecar) to its system
-// DownloadManager id, so a download that outlived the app process is resumed rather than
-// restarted, and a raw transfer is never adopted as gzip or the reverse.
+private const val LOG_TAG = "PaseoForkUpdates"
+private val forkVersion = Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
+// Maps a transfer file name (the staged APK name, plus the sidecar suffix for a `.gz` or a
+// delta) to its system DownloadManager id, so a download that outlived the app process is
+// resumed rather than restarted, and one kind of transfer is never adopted as another.
 private const val DOWNLOAD_PREFERENCES = "sh.paseo.forkupdates.downloads"
 private val allowedHosts = setOf(
   "api.github.com",
@@ -107,7 +110,7 @@ class PaseoForkUpdatesModule : Module() {
     }
 
     AsyncFunction("downloadAndVerifyApk") Coroutine {
-        transfer: ApkTransfer,
+        transfers: List<ApkTransfer>,
         fileName: String,
         expectedBytes: Long,
         expectedSha256: String,
@@ -118,15 +121,11 @@ class PaseoForkUpdatesModule : Module() {
       ->
       require(fileName.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) { "APK filename is invalid." }
       require(expectedBytes in 1..MAX_APK_BYTES) { "APK size is outside the allowed range." }
-      // The gzip sidecar sits next to the APK, so the APK URL is the sidecar URL minus `.gz`.
-      val sourceUrl = transfer.url
-      val transferBytes = transfer.bytes
-      val gzip = transfer.compression == "gzip"
-      require(transfer.compression == null || gzip) { "APK compression is unsupported." }
-      require(
-        if (gzip) transferBytes != null && transferBytes in 1 until expectedBytes && sourceUrl.endsWith(GZIP_SUFFIX)
-        else transferBytes == null,
-      ) { "APK transfer size is invalid." }
+      require(transfers.isNotEmpty() && transfers.last().compression == null) {
+        "APK transfers must end with the signed APK."
+      }
+      require(transfers.map { it.compression }.toSet().size == transfers.size) { "APK transfers are duplicated." }
+      transfers.forEach { validateTransfer(it, expectedBytes) }
       require(expectedSha256.matches(Regex("[a-fA-F0-9]{64}"))) { "APK hash is invalid." }
       require(expectedCertificateSha256.matches(Regex("[a-fA-F0-9]{64}"))) {
         "APK certificate hash is invalid."
@@ -153,34 +152,30 @@ class PaseoForkUpdatesModule : Module() {
         destination.absolutePath
       } else {
         destination.delete()
-        suspend fun download(url: String, bytes: Long, compressed: Boolean) =
-          downloadApk(
-            url,
-            destination,
-            File(directory, "$fileName.part"),
-            bytes,
-            compressed,
-            expectedBytes,
-            expectedSha256,
-            expectedPackage,
-            expectedVersionCode,
-            expectedVersion,
-            expectedCertificateSha256,
-          )
-        // A raw fallback that outlived the process is adopted, so a bad sidecar is not
-        // fetched again and the APK transfer is not restarted on every launch.
-        val apkUrl = if (gzip) sourceUrl.removeSuffix(GZIP_SUFFIX) else sourceUrl
-        if (!gzip || hasLiveDownload(fileName)) {
-          download(apkUrl, expectedBytes, false)
-        } else {
-          try {
-            download(sourceUrl, requireNotNull(transferBytes), true)
-          } catch (error: Throwable) {
-            // The sidecar is unsigned, so any failure short of a cancel (missing asset, size
-            // mismatch, corrupt gzip, wrong bytes) falls back once to the signed APK.
-            if (error is CancellationException || error is DownloadCanceledException) throw error
-            download(apkUrl, expectedBytes, false)
+        // Sidecars are unsigned, so any failure short of a cancel (missing asset, size
+        // mismatch, wrong base, corrupt data, wrong bytes) moves on to the next transfer.
+        val names = transfers.map { "$fileName${transferSuffix(it)}" }
+        firstVerifiedTransfer(names, ::hasLiveDownload) { index ->
+          val transfer = transfers[index]
+          val mode = transfer.compression ?: "apk"
+          Log.i(LOG_TAG, "Fetching $expectedVersion as $mode (${transfer.bytes ?: expectedBytes} bytes)")
+          runCatching {
+            downloadApk(
+              transfer,
+              names[index],
+              destination,
+              File(directory, "$fileName.part"),
+              expectedBytes,
+              expectedSha256,
+              expectedPackage,
+              expectedVersionCode,
+              expectedVersion,
+              expectedCertificateSha256,
+            )
           }
+            .onSuccess { Log.i(LOG_TAG, "Verified $expectedVersion from $mode") }
+            .onFailure { Log.w(LOG_TAG, "Fetching $expectedVersion as $mode failed: $it") }
+            .getOrThrow()
         }
       }
     }
@@ -252,13 +247,13 @@ class PaseoForkUpdatesModule : Module() {
   // The system DownloadManager owns the transfer: it keeps going while Paseo is backgrounded
   // or frozen, retries with byte ranges after network loss, and outlives the app process.
   // Integrity does not depend on it; the result is hashed and its signer checked here.
-  // A gzip transfer is inflated into the private part file before those checks.
+  // A gzip transfer is inflated, and a delta applied to the installed APK, into the private
+  // part file before those checks.
   private suspend fun downloadApk(
-    sourceUrl: String,
+    transfer: ApkTransfer,
+    transferName: String,
     destination: File,
     part: File,
-    transferBytes: Long,
-    gzip: Boolean,
     expectedBytes: Long,
     expectedSha256: String,
     expectedPackage: String,
@@ -271,19 +266,22 @@ class PaseoForkUpdatesModule : Module() {
       "Android download service is unavailable."
     }
     val preferences = context.getSharedPreferences(DOWNLOAD_PREFERENCES, Context.MODE_PRIVATE)
-    val transferName = if (gzip) "${destination.name}$GZIP_SUFFIX" else destination.name
+    val transferBytes = transfer.bytes ?: expectedBytes
+    // Checked before anything downloads, and again in the chain's own order: the delta only
+    // rebuilds the release from the exact APK it was made against.
+    val base = if (transfer.compression == "zstd-patch") installedBase(requireNotNull(transfer.baseVersion)) else null
     val downloadId = existingDownload(manager, preferences, transferName)
-      ?: enqueueDownload(context, manager, preferences, sourceUrl, transferName, transferBytes, expectedVersion)
+      ?: enqueueDownload(context, manager, preferences, transfer.url, transferName, transferBytes, expectedVersion)
     val path = try {
       val downloaded = awaitDownload(context, manager, downloadId, transferBytes)
       withContext(Dispatchers.IO) {
         try {
-          if (gzip) {
-            downloaded.inputStream().use { input ->
+          when (transfer.compression) {
+            "gzip" -> downloaded.inputStream().use { input ->
               part.outputStream().use { output -> gunzipBounded(input, output, expectedBytes) }
             }
-          } else {
-            Files.copy(downloaded.toPath(), part.toPath(), REPLACE_EXISTING)
+            "zstd-patch" -> applyZstdPatch(requireNotNull(base), downloaded, part, expectedBytes)
+            else -> Files.copy(downloaded.toPath(), part.toPath(), REPLACE_EXISTING)
           }
           require(part.length() == expectedBytes) { "APK download is incomplete." }
           require(hashFile(part).equals(expectedSha256, ignoreCase = true)) {
@@ -308,6 +306,16 @@ class PaseoForkUpdatesModule : Module() {
     }
     forgetDownload(manager, preferences, transferName)
     return path
+  }
+
+  // The installed APK is the delta base only when it is the release the delta was made from.
+  // Sideloaded fork installs are a single APK, byte for byte the signed release asset.
+  private fun installedBase(baseVersion: String): File {
+    val context = requireNotNull(appContext.reactContext)
+    require(currentPackageInfo().versionName == baseVersion) { "Installed app is not the delta base release." }
+    val info = context.applicationInfo
+    require(info.splitSourceDirs.isNullOrEmpty()) { "Installed app is split, so it can't be a delta base." }
+    return File(info.sourceDir).also { require(it.canRead()) { "Installed APK is unreadable." } }
   }
 
   private fun hasLiveDownload(fileName: String): Boolean {
@@ -421,16 +429,36 @@ class PaseoForkUpdatesModule : Module() {
   }
 }
 
-// What to download: the APK itself, or its `.gz` sidecar with the sidecar's size. A record
-// because Expo coroutine functions take at most eight arguments.
+// One way to fetch the APK: the APK itself, its `.gz` sidecar, or a `zstd --patch-from` delta
+// against the installed `baseVersion`; sidecars carry their own size. A record because Expo
+// coroutine functions take at most eight arguments.
 class ApkTransfer : Record {
   @Field val url: String = ""
   @Field val bytes: Long? = null
   @Field val compression: String? = null
+  @Field val baseVersion: String? = null
 }
 
-// The user removed the transfer, so the APK fallback must not start another one.
-private class DownloadCanceledException : IllegalArgumentException("APK download was canceled.")
+private fun transferSuffix(transfer: ApkTransfer): String = when (transfer.compression) {
+  "gzip" -> GZIP_SUFFIX
+  "zstd-patch" -> ".delta-from-${transfer.baseVersion}.zst"
+  else -> ""
+}
+
+private fun validateTransfer(transfer: ApkTransfer, expectedBytes: Long) {
+  val bytes = transfer.bytes
+  when (transfer.compression) {
+    null -> require(bytes == null && transfer.baseVersion == null) { "APK transfer size is invalid." }
+    "gzip", "zstd-patch" -> require(bytes != null && bytes in 1 until expectedBytes) { "APK transfer size is invalid." }
+    else -> throw IllegalArgumentException("APK compression is unsupported.")
+  }
+  if (transfer.compression == "zstd-patch") {
+    require(transfer.baseVersion?.matches(forkVersion) == true) { "APK delta base version is invalid." }
+  } else {
+    require(transfer.baseVersion == null) { "APK transfer base version is invalid." }
+  }
+  require(transfer.url.endsWith(".apk${transferSuffix(transfer)}")) { "APK transfer URL is invalid." }
+}
 
 private class DownloadRow(
   val status: Int,

@@ -150,7 +150,7 @@ describe("fork Android update row", () => {
     expect(harness.recordInstalledForkUpdate).toHaveBeenCalledWith("0.1.1");
   });
 
-  it("reports progress against the transfer size, which the gzip sidecar shrinks", async () => {
+  it("reports progress against the current transfer's size, which sidecars shrink", async () => {
     harness.downloadForkUpdate.mockReturnValue(new Promise(() => undefined));
     render(<ForkAndroidUpdateRow />);
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.check" }));
@@ -159,6 +159,9 @@ describe("fork Android update row", () => {
     );
     act(() => harness.nativeListener({ downloadedBytes: 20, totalBytes: 40 }));
     await screen.findByText('settings.about.forkUpdates.downloadingProgress {"percent":50}');
+    // A failed delta falls back to a larger transfer, which restarts the count.
+    act(() => harness.nativeListener({ downloadedBytes: 10, totalBytes: 100 }));
+    await screen.findByText('settings.about.forkUpdates.downloadingProgress {"percent":10}');
   });
 
   it("remembers a found update after the About screen closes", async () => {

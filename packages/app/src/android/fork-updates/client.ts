@@ -39,8 +39,9 @@ interface ForkUpdatesNativeModule {
   openUnknownSourcesSettings(): Promise<void>;
   fetchText(url: string, maxBytes: number): Promise<string>;
   downloadAndVerifyApk(
-    // `bytes` and `compression` are set for the `.gz` sidecar; the APK is `url` minus `.gz`.
-    transfer: { url: string; bytes?: number; compression?: "gzip" },
+    // Tried in order until one verifies; sidecars set `bytes` and `compression`, and the
+    // signed APK comes last.
+    transfers: ApkTransfer[],
     fileName: string,
     expectedBytes: number,
     expectedSha256: string,
@@ -215,16 +216,52 @@ export async function checkForForkUpdate(): Promise<{
   };
 }
 
+type ApkTransfer =
+  | { url: string }
+  | { url: string; bytes: number; compression: "gzip" }
+  | { url: string; bytes: number; compression: "zstd-patch"; baseVersion: string };
+
+// Smallest first: the delta from the installed release, then the `.gz`, then the APK.
+function apkTransfers(
+  { android, apkUrl }: VerifiedForkUpdate,
+  installedVersion: string,
+  gzipApkBytes: number | undefined,
+  apkDeltaBytes: Record<string, number> | undefined,
+): ApkTransfer[] {
+  const plausible = (bytes: number | undefined): bytes is number =>
+    bytes !== undefined && bytes > 0 && bytes < android.bytes;
+  const transfers: ApkTransfer[] = [];
+  const deltaBytes =
+    apkDeltaBytes && Object.prototype.hasOwnProperty.call(apkDeltaBytes, installedVersion)
+      ? apkDeltaBytes[installedVersion]
+      : undefined;
+  if (plausible(deltaBytes)) {
+    transfers.push({
+      url: `${apkUrl}.delta-from-${installedVersion}.zst`,
+      bytes: deltaBytes,
+      compression: "zstd-patch",
+      baseVersion: installedVersion,
+    });
+  }
+  if (plausible(gzipApkBytes)) {
+    transfers.push({ url: `${apkUrl}${GZIP_SUFFIX}`, bytes: gzipApkBytes, compression: "gzip" });
+  }
+  transfers.push({ url: apkUrl });
+  return transfers;
+}
+
 export async function downloadForkUpdate(update: VerifiedForkUpdate): Promise<string> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
   // The receipt does not carry the release listing, so keep the sidecar size it found.
-  const { gzipApkBytes } = update;
+  const { gzipApkBytes, apkDeltaBytes } = update;
   update = await requireNewerInstalledUpdate(update);
-  const { android, apkUrl } = update;
-  const gzip =
-    gzipApkBytes !== undefined && gzipApkBytes > 0 && gzipApkBytes < android.bytes
-      ? gzipApkBytes
-      : null;
+  const transfers = apkTransfers(
+    update,
+    forkUpdatesNative.getInstalledVersion(),
+    gzipApkBytes,
+    apkDeltaBytes,
+  );
+  const { android } = update;
   const receipt = JSON.stringify({
     manifestText: update.manifestText,
     signatureText: update.signatureText,
@@ -233,9 +270,7 @@ export async function downloadForkUpdate(update: VerifiedForkUpdate): Promise<st
   let path: string;
   try {
     path = await forkUpdatesNative.downloadAndVerifyApk(
-      gzip === null
-        ? { url: apkUrl }
-        : { url: `${apkUrl}${GZIP_SUFFIX}`, bytes: gzip, compression: "gzip" },
+      transfers,
       stagedApkFileName(update),
       android.bytes,
       android.sha256,

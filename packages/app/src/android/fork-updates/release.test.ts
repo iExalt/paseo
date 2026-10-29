@@ -142,6 +142,29 @@ describe("fork release verification", () => {
     for (const size of [0, apk.bytes, apk.bytes + 1]) expect(withSidecars(size)).toBeUndefined();
   });
 
+  it("offers each plausibly sized delta sidecar by its base version", () => {
+    const manifest = manifestFor("0.1.2");
+    const apk = approvedAndroidArtifact(manifest);
+    const deltas = verifyReleaseBinding(
+      releaseFor("0.1.2", {
+        assets: [
+          ...releaseFor("0.1.2").assets,
+          { name: `${apk.name}.delta-from-0.1.1.zst`, size: 7 },
+          { name: `${apk.name}.delta-from-0.1.0.zst`, size: apk.bytes - 1 },
+          { name: `${apk.name}.delta-from-0.0.9.zst`, size: apk.bytes },
+          { name: `${apk.name}.delta-from-0.0.8.zst`, size: 0 },
+          { name: `${apk.name}.delta-from-01.0.0.zst`, size: 7 },
+          { name: `${apk.name}.delta-from-0.1.zst`, size: 7 },
+          { name: `${apk.name}.delta-from-0.1.0.zst.part`, size: 7 },
+          { name: `other-${apk.name}.delta-from-0.1.0.zst`, size: 7 },
+        ],
+      }),
+      manifest,
+    ).apkDeltaBytes;
+    expect(deltas).toEqual({ "0.1.1": 7, "0.1.0": apk.bytes - 1 });
+    expect(verifyReleaseBinding(releaseFor("0.1.2"), manifest).apkDeltaBytes).toBeUndefined();
+  });
+
   it("rejects mismatched assets, package identity, and nonstable releases", () => {
     const manifest = manifestFor("0.1.2");
     expect(() => verifyReleaseBinding(releaseFor("0.1.2", { prerelease: true }), manifest)).toThrow(
