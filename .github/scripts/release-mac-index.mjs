@@ -11,7 +11,10 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { compareForkVersions, forkVersionFromTag } from "../../packages/protocol/src/fork-version.ts";
+import {
+  compareForkVersions,
+  forkVersionFromTag,
+} from "../../packages/protocol/src/fork-version.ts";
 import {
   buildIndex,
   deltaAssetName,
@@ -100,7 +103,10 @@ async function previousNar(tag, work) {
   const { manifest } = await latestVerifiedRelease({ resolveTag: async () => tag });
   const artifact = macArtifact(manifest);
   const closure = validateNixClosureManifest(
-    await fetchMetadata(releaseDownloadUrl(tag, artifact.closureManifest.name), "a closure manifest"),
+    await fetchMetadata(
+      releaseDownloadUrl(tag, artifact.closureManifest.name),
+      "a closure manifest",
+    ),
     manifest,
   );
   const entry = closure.closure.find(({ path }) => path === artifact.outputPath);
@@ -124,7 +130,11 @@ async function previousNar(tag, work) {
     { ...located.member, total: artifact.bytes },
     compressed,
   );
-  assert.equal(sha256File(sha256), located.narinfo.fileHash, `${tag} NAR differs from its FileHash`);
+  assert.equal(
+    sha256File(sha256),
+    located.narinfo.fileHash,
+    `${tag} NAR differs from its FileHash`,
+  );
   assert.equal(located.narinfo.compression, "zstd", `${tag} NAR is not zstd`);
   const nar = await zstdDecompress(compressed, file, entry.narSize);
   await rm(compressed);
@@ -154,11 +164,17 @@ async function makeDelta({ base, next, archiveName, directory, work }) {
   const check = join(work, "check.nar");
   const rebuilt = await zstdDecompress(file, check, next.entry.narSize, { patchFrom: base.file });
   await rm(check);
-  assert.equal(sri(rebuilt.sha256), next.entry.narHash, `Delta from ${base.version} does not rebuild the NAR`);
+  assert.equal(
+    sri(rebuilt.sha256),
+    next.entry.narHash,
+    `Delta from ${base.version} does not rebuild the NAR`,
+  );
   const { size } = await stat(file);
   if (size >= next.fileSize) {
     await rm(file);
-    console.log(`Skipped the delta from ${base.version}: ${size} bytes is not below ${next.fileSize}`);
+    console.log(
+      `Skipped the delta from ${base.version}: ${size} bytes is not below ${next.fileSize}`,
+    );
     return null;
   }
   console.log(`Delta from ${base.version}: ${size} bytes`);
@@ -232,7 +248,11 @@ async function main() {
     };
     if (tags.length > 0) {
       await dumpPath(outputPath, next.file);
-      assert.equal(sri(await hashFile(next.file)), entry.narHash, "Dumped NAR differs from the closure");
+      assert.equal(
+        sri(await hashFile(next.file)),
+        entry.narHash,
+        "Dumped NAR differs from the closure",
+      );
     }
     for (const { tag } of tags) {
       try {

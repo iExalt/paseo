@@ -144,7 +144,11 @@ async function seedPreviousRelease(scratch, version) {
   const artifact = macArtifact(manifest);
   const file = join(scratch, artifact.name);
   await downloadAsset(
-    { name: artifact.name, url: releaseDownloadUrl(previous.tag, artifact.name), size: artifact.bytes },
+    {
+      name: artifact.name,
+      url: releaseDownloadUrl(previous.tag, artifact.name),
+      size: artifact.bytes,
+    },
     file,
     {
       expectedBytes: artifact.bytes,
@@ -164,7 +168,14 @@ async function seedPreviousRelease(scratch, version) {
 }
 
 /** Steps 1-3 of the header; leaves this release imported into the store. */
-export async function stageThroughIndex({ directory, scratch, version, outputPath, closure, publish }) {
+export async function stageThroughIndex({
+  directory,
+  scratch,
+  version,
+  outputPath,
+  closure,
+  publish,
+}) {
   const warn = (message) => console.log(`::warning::${message}`);
   let basePath = null;
   try {
@@ -177,7 +188,11 @@ export async function stageThroughIndex({ directory, scratch, version, outputPat
   const tar = join(directory, `${base}.tar`);
   const hash = createHash("sha256");
   await pipeline(createReadStream(tar), hash);
-  const artifact = { name: `${base}.tar`, bytes: (await stat(tar)).size, sha256: hash.digest("hex") };
+  const artifact = {
+    name: `${base}.tar`,
+    bytes: (await stat(tar)).size,
+    sha256: hash.digest("hex"),
+  };
   const local = localReleaseFetch(directory);
   const indexed = join(scratch, "indexed");
   await mkdir(indexed);

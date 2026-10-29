@@ -32,7 +32,11 @@ async function temporaryDirectory() {
 }
 
 afterEach(() =>
-  Promise.all(temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true, force: true }))),
+  Promise.all(
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
+  ),
 );
 
 function tarFile(name, contents, type = "0") {
@@ -65,8 +69,14 @@ function zstd(args) {
 // from base (the previous release's desktop path, installed locally).
 async function deltaRelease(directory) {
   const lines = (tag) =>
-    Buffer.from(Array.from({ length: 4000 }, (_, i) => `${i % 7 === 0 ? tag : "line"} ${i}\n`).join(""));
-  const nars = { dep: Buffer.from("dep nar\n".repeat(100)), desktop: lines("v3"), base: lines("v2") };
+    Buffer.from(
+      Array.from({ length: 4000 }, (_, i) => `${i % 7 === 0 ? tag : "line"} ${i}\n`).join(""),
+    );
+  const nars = {
+    dep: Buffer.from("dep nar\n".repeat(100)),
+    desktop: lines("v3"),
+    base: lines("v2"),
+  };
   const paths = {
     dep: `/nix/store/${"a".repeat(32)}-dep`,
     desktop: `/nix/store/${"b".repeat(32)}-paseo-desktop-1.2.3`,
@@ -154,7 +164,10 @@ async function serveRelease(files) {
 
 describe("Paseo Nix updater partial downloads", () => {
   it("rewrites a narinfo to an uncompressed NAR without changing what its Sig signs", () => {
-    assert.equal(nix32(sha256(Buffer.alloc(0))), "0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73");
+    assert.equal(
+      nix32(sha256(Buffer.alloc(0))),
+      "0mdqa9w1p6cmli6976v4wi0sw9r4p5prkj7lzfd1877wk11c9c73",
+    );
     const text = [
       `StorePath: /nix/store/${"b".repeat(32)}-x`,
       `URL: nar/${"1".repeat(52)}.nar.zst`,
@@ -184,7 +197,12 @@ describe("Paseo Nix updater partial downloads", () => {
   });
 
   it("walks ustar members with their data offsets and rejects a bad checksum", async () => {
-    const tar = Buffer.concat([tarFile("./nar/", "", "5"), tarFile("./a.narinfo", "x".repeat(600)), tarFile("./b", "y"), Buffer.alloc(1024)]);
+    const tar = Buffer.concat([
+      tarFile("./nar/", "", "5"),
+      tarFile("./a.narinfo", "x".repeat(600)),
+      tarFile("./b", "y"),
+      Buffer.alloc(1024),
+    ]);
     const readAt = async (offset, length) => tar.subarray(offset, offset + length);
     const members = [];
     for await (const member of walkTar(readAt, tar.length)) members.push(member);
@@ -218,7 +236,7 @@ describe("Paseo Nix updater partial downloads", () => {
     rejects((_, signed) => (signed.closure[0].narHash = sri(Buffer.from("x"))), /signed NarHash/);
     rejects((copy) => copy.narinfos.push(copy.narinfos[0]), /Duplicate index narinfo/);
     rejects((copy) => (copy.members.at(-1).offset = artifact.bytes), /outside the archive/);
-    rejects((copy) => copy.members.reverse(), /overlap or are out of order/);
+    rejects((copy) => (copy.members = copy.members.toReversed()), /overlap or are out of order/);
     rejects((copy) => (copy.members[0].name = "../nix-cache-info"), /member name/);
     rejects((copy) => (copy.deltas[0].asset = "other.zst"), /delta asset name/);
   });
@@ -227,8 +245,17 @@ describe("Paseo Nix updater partial downloads", () => {
     const entry = (path) => ({ path, narHash: sri(Buffer.from(path)), narSize: 1 });
     const closure = { closure: [entry("/nix/store/a"), entry("/nix/store/b")] };
     const narinfos = new Map([["/nix/store/b", { info: { url: "nar/b", fileSize: 100 } }]]);
-    const delta = (fromPath, bytes) => ({ fromPath, fromNarHash: "h", toPath: "/nix/store/b", bytes });
-    const deltas = [delta("/nix/store/old", 9), delta("/nix/store/older", 5), delta("/nix/store/gone", 1)];
+    const delta = (fromPath, bytes) => ({
+      fromPath,
+      fromNarHash: "h",
+      toPath: "/nix/store/b",
+      bytes,
+    });
+    const deltas = [
+      delta("/nix/store/old", 9),
+      delta("/nix/store/older", 5),
+      delta("/nix/store/gone", 1),
+    ];
     const local = new Map([
       ["/nix/store/old", { narHash: "h" }],
       ["/nix/store/older", { narHash: "h" }],
@@ -236,14 +263,20 @@ describe("Paseo Nix updater partial downloads", () => {
     ]);
     const invalid = new Set(["/nix/store/b"]);
     const [step, ...rest] = planFetch({ closure, narinfos, deltas, invalid, local });
-    assert.deepEqual([step.entry.path, step.delta.fromPath, rest.length], ["/nix/store/b", "/nix/store/older", 0]);
+    assert.deepEqual(
+      [step.entry.path, step.delta.fromPath, rest.length],
+      ["/nix/store/b", "/nix/store/older", 0],
+    );
     const [range] = planFetch({ closure, narinfos, deltas, invalid, local: new Map() });
     assert.equal(range.narinfo.url, "nar/b");
     // A delta no smaller than the compressed NAR is never worth it.
     narinfos.get("/nix/store/b").info.fileSize = 5;
     assert.equal(planFetch({ closure, narinfos, deltas, invalid, local })[0].narinfo.url, "nar/b");
     // Neither local query may reach a substituter.
-    assert.deepEqual(invalidPathsArgs(["/nix/store/a"]).slice(0, 2), ["--check-validity", "--print-invalid"]);
+    assert.deepEqual(invalidPathsArgs(["/nix/store/a"]).slice(0, 2), [
+      "--check-validity",
+      "--print-invalid",
+    ]);
     const infoArgs = pathInfoArgs(["/nix/store/a"]);
     assert.equal(infoArgs[infoArgs.indexOf("substituters") + 1], "");
   });
@@ -251,11 +284,16 @@ describe("Paseo Nix updater partial downloads", () => {
   it("accepts a range only as an exact 206 of the requested length", async () => {
     const directory = await temporaryDirectory();
     const fetchWith = (status, contentRange, body) => () =>
-      new Response(body, { status, headers: contentRange ? { "content-range": contentRange } : {} });
+      new Response(body, {
+        status,
+        headers: contentRange ? { "content-range": contentRange } : {},
+      });
     const member = { offset: 512, size: 4, total: 2048 };
     let file = 0;
     const attempt = (fetchImpl) =>
-      fetchRange("https://github.com/x", member, join(directory, String((file += 1))), { fetchImpl });
+      fetchRange("https://github.com/x", member, join(directory, String((file += 1))), {
+        fetchImpl,
+      });
     await attempt(fetchWith(206, "bytes 512-515/2048", "abcd"));
     await assert.rejects(attempt(fetchWith(200, null, "abcd")), /HTTP 200/);
     await assert.rejects(attempt(fetchWith(206, "bytes 512-515/4096", "abcd")), /HTTP 206/);
@@ -283,9 +321,14 @@ describe("Paseo Nix updater partial downloads", () => {
         freeSpace: async () => {},
         fetchImpl,
         store: {
-          invalidPaths: (paths) => new Set(paths.filter((path) => path !== release.paths.dep && path !== release.paths.base)),
+          invalidPaths: (paths) =>
+            new Set(
+              paths.filter((path) => path !== release.paths.dep && path !== release.paths.base),
+            ),
           pathInfo: (paths) =>
-            new Map(paths.map((path) => [path, { narHash: sri(baseNar), narSize: baseNar.length }])),
+            new Map(
+              paths.map((path) => [path, { narHash: sri(baseNar), narSize: baseNar.length }]),
+            ),
           dumpPath: (_path, file) => writeFile(file, baseNar, { flag: "wx" }),
         },
       });
@@ -293,7 +336,10 @@ describe("Paseo Nix updater partial downloads", () => {
       const viaDelta = await prepare("delta", release.nars.base);
       assert.deepEqual(requests.splice(0), [index, release.deltaName]);
       const hash = nix32(sha256(release.nars.desktop));
-      assert.deepEqual(await readFile(join(viaDelta.cache, "nar", `${hash}.nar`)), release.nars.desktop);
+      assert.deepEqual(
+        await readFile(join(viaDelta.cache, "nar", `${hash}.nar`)),
+        release.nars.desktop,
+      );
       const rewritten = await readFile(join(viaDelta.cache, `${"b".repeat(32)}.narinfo`), "utf8");
       assert.match(rewritten, /^Compression: none$/m);
       assert.equal(
@@ -326,11 +372,27 @@ describe("Paseo Nix updater partial downloads", () => {
       release.files[index] = Buffer.from(JSON.stringify(release.index));
       const warnings = [];
       const fallback = (fast) =>
-        importWithFallback({ fast, full: async () => "full", warn: (message) => warnings.push(message) });
-      assert.equal(await fallback(() => prepare("corrupt-delta", release.nars.base).then(() => "fast")), "full");
+        importWithFallback({
+          fast,
+          full: async () => "full",
+          warn: (message) => warnings.push(message),
+        });
+      assert.equal(
+        await fallback(async () => {
+          await prepare("corrupt-delta", release.nars.base);
+          return "fast";
+        }),
+        "full",
+      );
       assert.match(warnings[0], /zstd failed|signed NarHash/);
       release.files[index] = Buffer.from("{not json");
-      assert.equal(await fallback(() => prepare("corrupt-index", release.nars.base).then(() => "fast")), "full");
+      assert.equal(
+        await fallback(async () => {
+          await prepare("corrupt-index", release.nars.base);
+          return "fast";
+        }),
+        "full",
+      );
       assert.equal(warnings.length, 2);
       assert.match(warnings[1], /JSON/);
     } finally {

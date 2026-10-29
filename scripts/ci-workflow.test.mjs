@@ -102,14 +102,24 @@ test("release upload set is the fixed assets plus the deltas the index lists", (
       [fileURLToPath(new URL(".github/scripts/release-publish.sh", repoRoot)), "check-assets"],
       {
         encoding: "utf8",
-        env: { ...process.env, GH_TOKEN: "x", RUNNER_TEMP: directory, ASSETS: assets, VERSION: "1.2.3", GITHUB_REPOSITORY: "iExalt/paseo" },
+        env: {
+          ...process.env,
+          GH_TOKEN: "x",
+          RUNNER_TEMP: directory,
+          ASSETS: assets,
+          VERSION: "1.2.3",
+          GITHUB_REPOSITORY: "iExalt/paseo",
+        },
       },
     );
   };
   try {
     assert.equal(check([{ asset: delta }]).status, 0);
     assert.match(check([]).stderr, /Unexpected release asset set/, "an unlisted delta file");
-    assert.match(check([{ asset: delta }, { asset: delta }]).stderr, /Unexpected release asset set/);
+    assert.match(
+      check([{ asset: delta }, { asset: delta }]).stderr,
+      /Unexpected release asset set/,
+    );
     writeFileSync(join(assets, `${desktop}.delta-from-x.zst`), "");
     assert.match(
       check([{ asset: delta }, { asset: `${desktop}.delta-from-x.zst` }]).stderr,

@@ -184,7 +184,11 @@ export async function buildIndex(archivePath, archiveName) {
     return {
       schemaVersion: 1,
       kind: INDEX_KIND,
-      archive: { name: archiveName, bytes: size, sha256: (await hashFile(archivePath)).toString("hex") },
+      archive: {
+        name: archiveName,
+        bytes: size,
+        sha256: (await hashFile(archivePath)).toString("hex"),
+      },
       members,
       narinfos,
       deltas: [],
@@ -241,7 +245,11 @@ export function validateIndex(index, artifact, closure) {
     const entry = expected.get(info.storePath);
     assert.ok(entry, "Index narinfo names a path outside the signed closure");
     assert.ok(!narinfos.has(info.storePath), "Duplicate index narinfo");
-    assert.equal(info.narHash, sriToNix32(entry.narHash), "Index narinfo differs from signed NarHash");
+    assert.equal(
+      info.narHash,
+      sriToNix32(entry.narHash),
+      "Index narinfo differs from signed NarHash",
+    );
     assert.equal(info.narSize, entry.narSize, "Index narinfo differs from signed NarSize");
     assert.equal(members.get(info.url)?.size, info.fileSize, "Index narinfo has no matching NAR");
     assert.ok(!urls.has(info.url), "Index narinfos share a NAR");
@@ -258,7 +266,9 @@ export function validateIndex(index, artifact, closure) {
     assert.match(delta.fromNarHash, SRI_SHA256);
     assert.ok(expected.has(delta.toPath), "Delta targets a path outside the signed closure");
     assert.match(delta.asset, deltaName, "Unexpected delta asset name");
-    assert.ok(Number.isSafeInteger(delta.bytes) && delta.bytes > 0 && delta.bytes <= artifact.bytes);
+    assert.ok(
+      Number.isSafeInteger(delta.bytes) && delta.bytes > 0 && delta.bytes <= artifact.bytes,
+    );
     assert.match(delta.sha256, /^[0-9a-f]{64}$/);
   }
   return { members, narinfos, deltas: index.deltas };
@@ -304,9 +314,18 @@ async function writeStream(readable, file, maxBytes) {
 }
 
 /** Downloads bytes [offset, offset + size) of a release asset through fetchImpl. */
-export async function fetchRange(url, { offset, size, total }, file, { fetchImpl = fetchHttps, signal } = {}) {
+export async function fetchRange(
+  url,
+  { offset, size, total },
+  file,
+  { fetchImpl = fetchHttps, signal } = {},
+) {
   assert.ok(
-    Number.isSafeInteger(offset) && offset >= 0 && Number.isSafeInteger(size) && size > 0 && offset + size <= total,
+    Number.isSafeInteger(offset) &&
+      offset >= 0 &&
+      Number.isSafeInteger(size) &&
+      size > 0 &&
+      offset + size <= total,
     "Range lies outside the archive",
   );
   const end = offset + size - 1;
@@ -320,7 +339,9 @@ export async function fetchRange(url, { offset, size, total }, file, { fetchImpl
   const range = response.headers.get("content-range");
   if (response.status !== 206 || range !== `bytes ${offset}-${end}/${total}`) {
     await response.body?.cancel();
-    throw new Error(`Range request returned HTTP ${response.status} (${range ?? "no Content-Range"})`);
+    throw new Error(
+      `Range request returned HTTP ${response.status} (${range ?? "no Content-Range"})`,
+    );
   }
   const result = await writeStream(Readable.fromWeb(response.body), file, size);
   assert.equal(result.bytes, size, "Range response is truncated");
@@ -334,7 +355,10 @@ async function fetchAsset(url, file, { bytes, sha256 }, { fetchImpl = fetchHttps
     throw new Error(`Delta download returned HTTP ${response.status}`);
   }
   const result = await writeStream(Readable.fromWeb(response.body), file, bytes);
-  assert.ok(result.bytes === bytes && result.sha256.toString("hex") === sha256, "Delta differs from its index entry");
+  assert.ok(
+    result.bytes === bytes && result.sha256.toString("hex") === sha256,
+    "Delta differs from its index entry",
+  );
 }
 
 /** zstd -d, optionally against a --patch-from base, writing at most maxBytes. */
@@ -370,7 +394,10 @@ export async function dumpPath(path, file) {
       stdio: ["ignore", handle.fd, "pipe"],
       encoding: "utf8",
     });
-    assert.ok(!result.error && result.status === 0, `nix store dump-path failed: ${result.stderr ?? result.error}`);
+    assert.ok(
+      !result.error && result.status === 0,
+      `nix store dump-path failed: ${result.stderr ?? result.error}`,
+    );
   } finally {
     await handle.close();
   }
@@ -384,14 +411,15 @@ export const pathInfoArgs = (paths) => ["path-info", "--json", ...nixOptions(), 
 export const localStore = {
   invalidPaths(paths) {
     const result = spawnSync("nix-store", invalidPathsArgs(paths), { encoding: "utf8" });
-    assert.ok(!result.error && result.status === 0, `nix-store --check-validity failed: ${result.stderr}`);
+    assert.ok(
+      !result.error && result.status === 0,
+      `nix-store --check-validity failed: ${result.stderr}`,
+    );
     return new Set(result.stdout.split("\n").filter(Boolean));
   },
   pathInfo(paths) {
     if (paths.length === 0) return new Map();
-    const info = JSON.parse(
-      nix(pathInfoArgs(paths), { capture: true }).stdout,
-    );
+    const info = JSON.parse(nix(pathInfoArgs(paths), { capture: true }).stdout);
     return new Map(
       Object.entries(info)
         .filter(([, value]) => value)
@@ -418,7 +446,10 @@ export async function prepareIndexedCache({
   store = localStore,
   signal,
 }) {
-  const indexBytes = await fetchBytes(downloadUrl(tag, indexAssetName(artifact.name)), "the update index");
+  const indexBytes = await fetchBytes(
+    downloadUrl(tag, indexAssetName(artifact.name)),
+    "the update index",
+  );
   const index = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(indexBytes));
   const { members, narinfos, deltas } = validateIndex(index, artifact, closure);
   const bases = [...new Set(deltas.map((delta) => delta.fromPath))];
@@ -427,7 +458,9 @@ export async function prepareIndexedCache({
   const plan = planFetch({ closure, narinfos, deltas, invalid, local });
   const sum = (steps, size) => steps.reduce((total, step) => total + size(step), 0);
   const deltaSteps = plan.filter((step) => step.delta);
-  const transferBytes = sum(plan, (step) => (step.delta ? step.delta.bytes : step.narinfo.fileSize));
+  const transferBytes = sum(plan, (step) =>
+    step.delta ? step.delta.bytes : step.narinfo.fileSize,
+  );
   assert.ok(transferBytes <= artifact.bytes, "Index plan transfers more than the full archive");
   // Transfers, plus each delta's dumped base NAR and rebuilt NAR, plus the import.
   await freeSpace(
@@ -454,7 +487,11 @@ export async function prepareIndexedCache({
         { fetchImpl, signal },
       );
       // Early failure only; Nix enforces the signed NarHash on import.
-      assert.equal(sha256File(sha256), step.narinfo.fileHash, "Tar range differs from its FileHash");
+      assert.equal(
+        sha256File(sha256),
+        step.narinfo.fileHash,
+        "Tar range differs from its FileHash",
+      );
       transferred += member.size;
       continue;
     }

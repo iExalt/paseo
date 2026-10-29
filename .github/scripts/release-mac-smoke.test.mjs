@@ -55,7 +55,10 @@ test("smoke requires the desktop delta on a dry run, only warns on publish, and 
   const published = check({ index: { deltas: [] }, publish: true });
   assert.deepEqual([published.result, published.warnings.length], [false, 1]);
   assert.throws(() => check({ plan: [rangeStep(outputPath)] }), /previous release's delta/);
-  const otherDelta = { entry: { path: "/nix/store/dep" }, delta: { fromPath: "/nix/store/x", bytes: 1 } };
+  const otherDelta = {
+    entry: { path: "/nix/store/dep" },
+    delta: { fromPath: "/nix/store/x", bytes: 1 },
+  };
   assert.throws(() => check({ plan: [deltaStep, otherDelta] }), /tar range/);
   assert.throws(() => check({ desktopFileSize: 2_000_000 }), /desktop delta is/);
   assert.throws(() => check({ served: 230_000_000 }), /served/);
@@ -64,9 +67,9 @@ test("smoke requires the desktop delta on a dry run, only warns on publish, and 
 test("the updater wrapper's zstd directory is read from its PATH prefix", () => {
   const zstd = `/nix/store/${"z".repeat(32)}-zstd-1.5.7-bin/bin`;
   const wrapper = `#! /nix/store/${"b".repeat(32)}-bash/bin/bash -e
-PATH=\${PATH:+':'\$PATH':'}
+PATH=\${PATH:+':'$PATH':'}
 PATH=\${PATH/':''${zstd}'':'/':'}
-PATH='${zstd}'\$PATH
+PATH='${zstd}'$PATH
 exec "/nix/store/${"n".repeat(32)}-nodejs-26.11.1/bin/node" "$@"
 `;
   assert.equal(wrapperZstdDir(wrapper), zstd);
