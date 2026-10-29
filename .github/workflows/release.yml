@@ -546,9 +546,58 @@ jobs:
           if-no-files-found: error
           retention-days: 3
 
+  # Unsigned APK deltas from recent releases. They only save bandwidth, so this job never
+  # holds up the release: every failure is a warning, and publish runs without them.
+  android-delta:
+    name: Make APK deltas from recent releases
+    needs: [resolve, android-sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            scripts
+            packages/protocol/src
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: release-android
+          path: ${{ runner.temp }}/release-android
+      # About a minute and 1.5 GB per base at --ultra -22; the runner's zstd is enough to encode.
+      - name: Write deltas against the signed APKs of recent releases
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node .github/scripts/release-android-delta.mjs \
+            "$RUNNER_TEMP/release-android/paseo-$VERSION-android-arm64.apk" "$RUNNER_TEMP/release-android-delta"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-android-delta
+          path: ${{ runner.temp }}/release-android-delta/
+          if-no-files-found: ignore
+          retention-days: 3
+          compression-level: 0
+
   publish:
     name: ${{ needs.resolve.outputs.publish == 'true' && 'Publish release' || 'Upload dry-run draft' }}
-    needs: [resolve, macos-build, macos-smoke, android-build, android-sign]
+    needs: [resolve, macos-build, macos-smoke, android-build, android-sign, android-delta]
+    # Waits for android-delta but does not need it to succeed.
+    if: >-
+      !cancelled() && needs.resolve.result == 'success' && needs.macos-build.result == 'success' &&
+      needs.macos-smoke.result == 'success' && needs.android-build.result == 'success' &&
+      needs.android-sign.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -570,7 +619,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          pattern: release-{macos,android}
+          pattern: release-{macos,android,android-delta}
           path: ${{ runner.temp }}/release-assets
           merge-multiple: true
       - name: Pin the Android caches this run saved

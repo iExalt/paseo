@@ -47,8 +47,15 @@ test("release keeps each secret in its job and publishes only release tags", () 
     "macos-smoke": [],
     "android-build": ["PASEO_FORK_GOOGLE_SERVICES_JSON"],
     "android-sign": ["PASEO_FORK_SIGNING_CERT_PEM", "PASEO_FORK_SIGNING_KEY_PKCS8_PEM"],
+    "android-delta": [],
     publish: ["PASEO_RELEASE_MANIFEST_PRIVATE_KEY"],
   });
+  // Publish waits for the optional APK deltas but requires every other job to succeed.
+  const { needs, if: publishIf } = workflow.jobs.publish;
+  assert.ok(needs.includes("android-delta"));
+  for (const job of needs.filter((name) => name !== "android-delta"))
+    assert.match(publishIf, new RegExp(`needs\\.${job}\\.result == 'success'`), job);
+  assert.doesNotMatch(publishIf, /android-delta/);
   assert.deepEqual(workflow.permissions, {});
   for (const [name, job] of Object.entries(workflow.jobs))
     assert.equal(job.permissions.contents, name === "publish" ? "write" : "read", name);
@@ -78,7 +85,7 @@ test("release keeps each secret in its job and publishes only release tags", () 
   );
 });
 
-test("release upload set is the fixed assets plus the deltas the index lists", () => {
+test("release upload set is the fixed assets plus the listed and APK deltas", () => {
   const directory = mkdtempSync(join(tmpdir(), "paseo-release-assets-"));
   const assets = join(directory, "assets");
   mkdirSync(assets);
@@ -115,6 +122,18 @@ test("release upload set is the fixed assets plus the deltas the index lists", (
   };
   try {
     assert.equal(check([{ asset: delta }]).status, 0);
+    const apkDelta = join(assets, "paseo-1.2.3-android-arm64.apk.delta-from-1.2.2.zst");
+    writeFileSync(apkDelta, "");
+    assert.equal(check([{ asset: delta }]).status, 0, "an APK delta");
+    rmSync(apkDelta);
+    for (const name of [
+      "paseo-1.2.3-android-arm64.apk.delta-from-1.2.zst",
+      "paseo-1.2.3-android-arm64.apk.delta-from-1.2.2.zst.part",
+    ]) {
+      writeFileSync(join(assets, name), "");
+      assert.match(check([{ asset: delta }]).stderr, /Unexpected release asset set/, name);
+      rmSync(join(assets, name));
+    }
     assert.match(check([]).stderr, /Unexpected release asset set/, "an unlisted delta file");
     assert.match(
       check([{ asset: delta }, { asset: delta }]).stderr,
