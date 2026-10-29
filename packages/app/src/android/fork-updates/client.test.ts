@@ -82,7 +82,7 @@ describe("fork update staged receipt recovery", () => {
     expect(harness.storage.has("@getpaseo/fork-update/semver-v1/staged-pending")).toBe(true);
     expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledOnce();
     expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledWith(
-      "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk",
+      { url: "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk" },
       "fork-v0.1.1-paseo.apk",
       123,
       "a".repeat(64),
@@ -99,6 +99,20 @@ describe("fork update staged receipt recovery", () => {
     expect(harness.native.findVerifiedStagedApk).toHaveBeenCalledOnce();
     expect(harness.storage.has("@getpaseo/fork-update/semver-v1/staged")).toBe(true);
     expect(harness.storage.has("@getpaseo/fork-update/semver-v1/staged-pending")).toBe(false);
+  });
+
+  it("downloads the gzip sidecar the release listing offered", async () => {
+    await downloadForkUpdate({ ...(update as object), gzipApkBytes: 45 } as never);
+    expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledWith(
+      {
+        url: "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk.gz",
+        bytes: 45,
+        compression: "gzip",
+      },
+      "fork-v0.1.1-paseo.apk",
+      123,
+      ...Array(5).fill(expect.anything()),
+    );
   });
 
   it("records an exact installed candidate after process restart", async () => {

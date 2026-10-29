@@ -38,6 +38,9 @@ interface ForkUpdateState {
   apkPath: string | null;
   installedVersion: string | null;
   downloadedBytes: number;
+  // The transfer size the native download reports; the `.gz` sidecar is smaller than the
+  // APK. 0 until the first progress event.
+  downloadTotalBytes: number;
 }
 
 const INITIAL_STATE: ForkUpdateState = {
@@ -46,6 +49,7 @@ const INITIAL_STATE: ForkUpdateState = {
   apkPath: null,
   installedVersion: null,
   downloadedBytes: 0,
+  downloadTotalBytes: 0,
 };
 
 // Module state, not component state: the result of a check outlives the About screen and
@@ -141,7 +145,10 @@ export function startForkUpdates(): () => void {
       if (nextState === "active") handleAppActive();
     });
     const progress = native.addListener("onDownloadProgress", (event) => {
-      setState({ downloadedBytes: event.downloadedBytes });
+      setState({
+        downloadedBytes: event.downloadedBytes,
+        downloadTotalBytes: event.totalBytes,
+      });
     });
     stopListeners = () => {
       appState.remove();
@@ -223,7 +230,7 @@ export async function checkForForkUpdateNow({
 export async function downloadPendingForkUpdate(): Promise<void> {
   const { update } = getState();
   if (!update) return;
-  setState({ status: "downloading", downloadedBytes: 0 });
+  setState({ status: "downloading", downloadedBytes: 0, downloadTotalBytes: 0 });
   try {
     const path = await downloadForkUpdate(update);
     setState({ apkPath: path, status: "downloaded" });

@@ -508,6 +508,10 @@ jobs:
           actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           [[ "$actual" == "$expected" ]] || { echo "::error::Signed with $actual, expected $expected."; exit 1; }
           bash .github/scripts/release-apk-identity.sh "$apk"
+          # Unsigned download sidecar: the APK stores its dex, .so and JS uncompressed, so
+          # deflate cuts the transfer by about 60%. Clients check the gunzipped bytes against
+          # the signed manifest and fall back to the APK. -n keeps the output reproducible.
+          gzip -9 -n -c "$apk" > "$apk.gz"
           echo "cert_sha256=$actual" >> "$GITHUB_OUTPUT"
       - name: Remove signing material
         if: always()

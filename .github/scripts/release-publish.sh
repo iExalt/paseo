@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # GitHub release steps for release.yml.
 #   draft:   find TAG's draft (release-please makes one) or create it, upload the
-#            six assets, re-download and re-hash them
+#            expected assets, re-download and re-hash them
 #   publish: publish the verified draft as latest; TAG must point at SOURCE_SHA
 # Reads GH_TOKEN, GITHUB_REPOSITORY, VERSION, SOURCE_SHA, TAG, ASSETS, PUBLISH, RELEASE_ID.
 set -euo pipefail
@@ -40,7 +40,8 @@ create() {
 expected_assets() {
   printf '%s\n' paseo-release-manifest.json paseo-release-manifest.sig \
     "paseo-$VERSION-macos-arm64-nix-desktop.tar" "paseo-$VERSION-macos-arm64-nix-desktop.json" \
-    "paseo-$VERSION-android-arm64.apk" "paseo-$VERSION-android-cache-pin.json" | sort
+    "paseo-$VERSION-android-arm64.apk" "paseo-$VERSION-android-arm64.apk.gz" \
+    "paseo-$VERSION-android-cache-pin.json" | sort
 }
 
 draft() {

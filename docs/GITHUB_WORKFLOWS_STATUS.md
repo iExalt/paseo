@@ -120,7 +120,12 @@ accept schema 2, the 14-cell manifest releases before 0.2.0 used. Clients
 older than 0.2.0 reject schema 3: install 0.2.0 by hand once (sideload the APK;
 run `scripts/paseo-nix-update.mjs` from a checkout on macOS). Until then an old
 Android client reports "No signed published Paseo fork release could be
-verified". `.github/fork-release.json` holds the version and upstream
+verified". The release also carries an unsigned
+`paseo-X-android-arm64.apk.gz`, about 40% of the APK's size. The Android
+updater downloads it when the listing offers it, checks the inflated bytes
+against the signed APK cell, and falls back to the APK on any failure. Keep it
+out of the manifest: changing the schema breaks installed clients.
+`.github/fork-release.json` holds the version and upstream
 base that `release.yml` reads.
 
 ## Release boundary

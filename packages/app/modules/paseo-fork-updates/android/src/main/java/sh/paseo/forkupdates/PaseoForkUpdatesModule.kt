@@ -11,6 +11,8 @@ import androidx.core.content.FileProvider
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import expo.modules.kotlin.records.Field
+import expo.modules.kotlin.records.Record
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -30,8 +32,10 @@ private const val MAX_APK_BYTES = 250L * 1024L * 1024L
 private const val MAX_REDIRECTS = 5
 private const val DOWNLOAD_POLL_MS = 500L
 private const val DOWNLOAD_DIRECTORY = "fork-updates"
-// Maps a staged APK file name to its system DownloadManager id, so a download that outlived
-// the app process is resumed rather than restarted.
+private const val GZIP_SUFFIX = ".gz"
+// Maps a transfer file name (the staged APK name, plus `.gz` for the sidecar) to its system
+// DownloadManager id, so a download that outlived the app process is resumed rather than
+// restarted, and a raw transfer is never adopted as gzip or the reverse.
 private const val DOWNLOAD_PREFERENCES = "sh.paseo.forkupdates.downloads"
 private val allowedHosts = setOf(
   "api.github.com",
@@ -103,7 +107,7 @@ class PaseoForkUpdatesModule : Module() {
     }
 
     AsyncFunction("downloadAndVerifyApk") Coroutine {
-        sourceUrl: String,
+        transfer: ApkTransfer,
         fileName: String,
         expectedBytes: Long,
         expectedSha256: String,
@@ -114,6 +118,15 @@ class PaseoForkUpdatesModule : Module() {
       ->
       require(fileName.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) { "APK filename is invalid." }
       require(expectedBytes in 1..MAX_APK_BYTES) { "APK size is outside the allowed range." }
+      // The gzip sidecar sits next to the APK, so the APK URL is the sidecar URL minus `.gz`.
+      val sourceUrl = transfer.url
+      val transferBytes = transfer.bytes
+      val gzip = transfer.compression == "gzip"
+      require(transfer.compression == null || gzip) { "APK compression is unsupported." }
+      require(
+        if (gzip) transferBytes != null && transferBytes in 1 until expectedBytes && sourceUrl.endsWith(GZIP_SUFFIX)
+        else transferBytes == null,
+      ) { "APK transfer size is invalid." }
       require(expectedSha256.matches(Regex("[a-fA-F0-9]{64}"))) { "APK hash is invalid." }
       require(expectedCertificateSha256.matches(Regex("[a-fA-F0-9]{64}"))) {
         "APK certificate hash is invalid."
@@ -140,17 +153,32 @@ class PaseoForkUpdatesModule : Module() {
         destination.absolutePath
       } else {
         destination.delete()
-        downloadApk(
-          sourceUrl,
-          destination,
-          File(directory, "$fileName.part"),
-          expectedBytes,
-          expectedSha256,
-          expectedPackage,
-          expectedVersionCode,
-          expectedVersion,
-          expectedCertificateSha256,
-        )
+        suspend fun download(url: String, bytes: Long, compressed: Boolean) =
+          downloadApk(
+            url,
+            destination,
+            File(directory, "$fileName.part"),
+            bytes,
+            compressed,
+            expectedBytes,
+            expectedSha256,
+            expectedPackage,
+            expectedVersionCode,
+            expectedVersion,
+            expectedCertificateSha256,
+          )
+        if (!gzip) {
+          download(sourceUrl, expectedBytes, false)
+        } else {
+          try {
+            download(sourceUrl, requireNotNull(transferBytes), true)
+          } catch (error: Throwable) {
+            // The sidecar is unsigned, so any failure short of a cancel (missing asset, size
+            // mismatch, corrupt gzip, wrong bytes) falls back once to the signed APK.
+            if (error is CancellationException || error is DownloadCanceledException) throw error
+            download(sourceUrl.removeSuffix(GZIP_SUFFIX), expectedBytes, false)
+          }
+        }
       }
     }
 
@@ -221,10 +249,13 @@ class PaseoForkUpdatesModule : Module() {
   // The system DownloadManager owns the transfer: it keeps going while Paseo is backgrounded
   // or frozen, retries with byte ranges after network loss, and outlives the app process.
   // Integrity does not depend on it; the result is hashed and its signer checked here.
+  // A gzip transfer is inflated into the private part file before those checks.
   private suspend fun downloadApk(
     sourceUrl: String,
     destination: File,
     part: File,
+    transferBytes: Long,
+    gzip: Boolean,
     expectedBytes: Long,
     expectedSha256: String,
     expectedPackage: String,
@@ -237,13 +268,20 @@ class PaseoForkUpdatesModule : Module() {
       "Android download service is unavailable."
     }
     val preferences = context.getSharedPreferences(DOWNLOAD_PREFERENCES, Context.MODE_PRIVATE)
-    val downloadId = existingDownload(manager, preferences, destination.name)
-      ?: enqueueDownload(context, manager, preferences, sourceUrl, destination.name, expectedBytes, expectedVersion)
+    val transferName = if (gzip) "${destination.name}$GZIP_SUFFIX" else destination.name
+    val downloadId = existingDownload(manager, preferences, transferName)
+      ?: enqueueDownload(context, manager, preferences, sourceUrl, transferName, transferBytes, expectedVersion)
     val path = try {
-      val downloaded = awaitDownload(context, manager, downloadId, expectedBytes)
+      val downloaded = awaitDownload(context, manager, downloadId, transferBytes)
       withContext(Dispatchers.IO) {
         try {
-          Files.copy(downloaded.toPath(), part.toPath(), REPLACE_EXISTING)
+          if (gzip) {
+            downloaded.inputStream().use { input ->
+              part.outputStream().use { output -> gunzipBounded(input, output, expectedBytes) }
+            }
+          } else {
+            Files.copy(downloaded.toPath(), part.toPath(), REPLACE_EXISTING)
+          }
           require(part.length() == expectedBytes) { "APK download is incomplete." }
           require(hashFile(part).equals(expectedSha256, ignoreCase = true)) {
             "APK hash does not match the signed release manifest."
@@ -262,10 +300,10 @@ class PaseoForkUpdatesModule : Module() {
       // The JS runtime went away; leave the transfer running for the next attempt to adopt.
       throw error
     } catch (error: Throwable) {
-      forgetDownload(manager, preferences, destination.name)
+      forgetDownload(manager, preferences, transferName)
       throw error
     }
-    forgetDownload(manager, preferences, destination.name)
+    forgetDownload(manager, preferences, transferName)
     return path
   }
 
@@ -289,12 +327,12 @@ class PaseoForkUpdatesModule : Module() {
     preferences: android.content.SharedPreferences,
     sourceUrl: String,
     fileName: String,
-    expectedBytes: Long,
+    transferBytes: Long,
     expectedVersion: String,
   ): Long {
     // Only one update downloads at a time; drop transfers for superseded releases.
     preferences.all.keys.forEach { forgetDownload(manager, preferences, it) }
-    val resolvedUrl = withContext(Dispatchers.IO) { resolveDownloadUrl(sourceUrl, expectedBytes) }
+    val resolvedUrl = withContext(Dispatchers.IO) { resolveDownloadUrl(sourceUrl, transferBytes) }
     requireNotNull(context.getExternalFilesDir(DOWNLOAD_DIRECTORY)) {
       "Shared update storage is unavailable."
     }.listFiles()?.forEach(File::delete)
@@ -314,19 +352,19 @@ class PaseoForkUpdatesModule : Module() {
     context: Context,
     manager: DownloadManager,
     id: Long,
-    expectedBytes: Long,
+    transferBytes: Long,
   ): File {
     var lastReported = -1L
     while (true) {
-      val row = queryDownload(manager, id) ?: throw IllegalArgumentException("APK download was canceled.")
-      require(row.totalBytes <= 0 || row.totalBytes == expectedBytes) {
-        "APK download size does not match the signed release manifest."
+      val row = queryDownload(manager, id) ?: throw DownloadCanceledException()
+      require(row.totalBytes <= 0 || row.totalBytes == transferBytes) {
+        "APK download size does not match the release."
       }
-      require(row.downloadedBytes <= expectedBytes) { "APK download exceeds the signed release size." }
+      require(row.downloadedBytes <= transferBytes) { "APK download exceeds the release size." }
       if (row.downloadedBytes != lastReported) {
         sendEvent(
           "onDownloadProgress",
-          mapOf("downloadedBytes" to row.downloadedBytes.coerceAtLeast(0), "totalBytes" to expectedBytes),
+          mapOf("downloadedBytes" to row.downloadedBytes.coerceAtLeast(0), "totalBytes" to transferBytes),
         )
         lastReported = row.downloadedBytes
       }
@@ -373,6 +411,17 @@ class PaseoForkUpdatesModule : Module() {
   }
 }
 
+// What to download: the APK itself, or its `.gz` sidecar with the sidecar's size. A record
+// because Expo coroutine functions take at most eight arguments.
+class ApkTransfer : Record {
+  @Field val url: String = ""
+  @Field val bytes: Long? = null
+  @Field val compression: String? = null
+}
+
+// The user removed the transfer, so the APK fallback must not start another one.
+private class DownloadCanceledException : IllegalArgumentException("APK download was canceled.")
+
 private class DownloadRow(
   val status: Int,
   val reason: Int,
@@ -397,15 +446,15 @@ private fun queryDownload(manager: DownloadManager, id: Long): DownloadRow? =
   }
 
 // Walks the approved redirect chain here so DownloadManager starts at an approved host.
-private fun resolveDownloadUrl(sourceUrl: String, expectedBytes: Long): String {
+private fun resolveDownloadUrl(sourceUrl: String, transferBytes: Long): String {
   val connection = openAllowedConnection(sourceUrl)
   try {
     require(connection.responseCode == HttpURLConnection.HTTP_OK) {
       "APK download returned HTTP ${connection.responseCode}."
     }
     val declaredLength = connection.contentLengthLong
-    require(declaredLength == -1L || declaredLength == expectedBytes) {
-      "APK download size does not match the signed release manifest."
+    require(declaredLength == -1L || declaredLength == transferBytes) {
+      "APK download size does not match the release."
     }
     return connection.url.toString()
   } finally {
