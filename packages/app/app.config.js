@@ -215,7 +215,7 @@ export default {
           android: {
             fonts: [
               {
-                fontFamily: "MesloLGS NF",
+                fontFamily: "MesloLGS Nerd Font",
                 fontDefinitions: [
                   { path: "./assets/fonts/meslolgs-nf/meslolgs_nf_regular.ttf", weight: 400 },
                   { path: "./assets/fonts/meslolgs-nf/meslolgs_nf_bold.ttf", weight: 700 },

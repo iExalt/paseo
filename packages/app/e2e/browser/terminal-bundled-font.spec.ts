@@ -49,7 +49,7 @@ async function readIconCells(page: Page): Promise<{ fontFamily: string; cells: C
 async function waitForBundledFont(page: Page): Promise<void> {
   await expect
     .poll(async () => (await readIconCells(page)).fontFamily, { timeout: 15_000 })
-    .toContain("MesloLGS NF");
+    .toContain("MesloLGS Nerd Font");
 }
 
 async function printIconsAndCrop(page: Page, harness: TerminalE2EHarness): Promise<Buffer[]> {

@@ -3,8 +3,8 @@ import { namesTerminalNerdFont, TERMINAL_NERD_FONT_FAMILY } from "./terminal-fon
 // Served from packages/app/public, so web exports, the daemon web UI and the
 // desktop app:// handler all carry them, and native bundles never do.
 const BUNDLED_FONT_FACES = [
-  { url: "/fonts/meslolgs-nf/meslolgs-nf-regular.woff2?v=145eb9f", weight: "400" },
-  { url: "/fonts/meslolgs-nf/meslolgs-nf-bold.woff2?v=145eb9f", weight: "700" },
+  { url: "/fonts/meslolgs-nf/meslolgs-nf-regular.woff2?v=nf-3.5.1", weight: "400" },
+  { url: "/fonts/meslolgs-nf/meslolgs-nf-bold.woff2?v=nf-3.5.1", weight: "700" },
 ] as const;
 
 let bundledFontLoad: Promise<boolean> | null = null;
