@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.13.0](https://github.com/iExalt/paseo/compare/paseo-v0.12.1...paseo-v0.13.0) (2026-10-29)
+
+
+### Features
+
+* compress fork update downloads (Android .apk.gz, Nix desktop deltas) ([#241](https://github.com/iExalt/paseo/issues/241)) ([6184453](https://github.com/iExalt/paseo/commit/61844532ddbb89b4f935381c6e627353b2238ade))
+
+
+### Bug Fixes
+
+* **app:** bundle Nerd Fonts 3.5.1 Meslo so newer terminal icons render ([#239](https://github.com/iExalt/paseo/issues/239)) ([a3f1181](https://github.com/iExalt/paseo/commit/a3f11814539f29fc91545420021e9cf7473990e4))
+
 ## [0.12.1](https://github.com/iExalt/paseo/compare/paseo-v0.12.0...paseo-v0.12.1) (2026-10-26)
 
 
