@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.1](https://github.com/iExalt/paseo/compare/paseo-v0.13.0...paseo-v0.13.1) (2026-10-29)
+
+
+### Bug Fixes
+
+* **app:** remove worktree setup popup remnants ([#244](https://github.com/iExalt/paseo/issues/244)) ([77bdc5e](https://github.com/iExalt/paseo/commit/77bdc5e2d04eb615074abed695fb69cffbd38e70))
+
 ## [0.13.0](https://github.com/iExalt/paseo/compare/paseo-v0.12.1...paseo-v0.13.0) (2026-10-29)
 
 
