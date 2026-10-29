@@ -1,26 +1,41 @@
 // Fresh-runner smoke for the macOS release closure, run by release.yml before
-// publishing. It installs the exported cache the way the in-app updater
-// stages a release (client tar extractor, only the release key trusted,
-// substituters disabled), then checks the bundle signature, the bundled CLI and
-// updater, and launches the packaged app once. The launch's builtin-plugin check
+// publishing. It stages the release the way the in-app updater does, with only
+// the release key trusted and substituters disabled:
+//   1. installs the newest earlier release through the full-tar path
+//      (downloadAsset, client tar extractor);
+//   2. stages this release through the partial path (prepareIndexedCache over
+//      the local index, delta and tar), which must need only the desktop delta;
+//   3. checks the full tar still verifies for clients that never read the index;
+// then checks the bundle signature, the bundled CLI and updater, and launches
+// the packaged app once. The launch's builtin-plugin check
 // imports the client and server builds; they come from the closure's own app.asar,
 // so the job installs only release-mac-smoke-deps.mjs and builds nothing.
-// Usage: node release-mac-smoke.mjs <directory with tar and closure json>
+// Usage: node release-mac-smoke.mjs <directory with tar, closure json, index and deltas>
+// Env: VERSION, SOURCE_SHA, OUTPUT_PATH, PUBLISH, GITHUB_REPOSITORY, GH_TOKEN,
+// PASEO_DESKTOP_SMOKE_ARTIFACT_DIR, RUNNER_TEMP; zstd on PATH.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync } from "node:fs";
-import { appendFile, mkdir, mkdtemp, readFile, symlink } from "node:fs/promises";
+import { createReadStream, existsSync, lstatSync } from "node:fs";
+import { appendFile, mkdir, mkdtemp, readFile, rm, stat, symlink } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
+import { prepareIndexedCache } from "../../scripts/paseo-nix-update-delta.mjs";
+import { assertFreeSpace, downloadAsset } from "../../scripts/paseo-nix-update-legacy.mjs";
 import {
   extractNixCacheTar,
+  latestVerifiedRelease,
   localCacheCopyArgs,
   localCacheCopySignaturesArgs,
+  macArtifact,
   NIX_RELEASE_PUBLIC_KEY,
+  releaseDownloadUrl,
   validateNixArtifactClosure,
 } from "../../scripts/paseo-nix-update.mjs";
+import { deltaBaseTags, listReleases } from "./release-mac-index.mjs";
 
 const trustOnlyRelease = [
   "--option",
@@ -39,6 +54,144 @@ const trustOnlyRelease = [
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const run = (command, args) =>
   execFileSync(command, args, { encoding: "utf8", timeout: 600_000, maxBuffer: 64 * 1024 ** 2 });
+
+// The release is not on GitHub before publish, so the partial path reads the
+// local assets: a Range request gets an exact 206, anything else the whole file.
+export function localReleaseFetch(directory) {
+  let served = 0;
+  async function fetchImpl(name, headers = {}) {
+    assert.match(name, /^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Unexpected local asset name");
+    const file = join(directory, name);
+    const { size } = await stat(file);
+    const range = /^bytes=([0-9]+)-([0-9]+)$/.exec(headers.Range ?? "");
+    if (!range) {
+      served += size;
+      return new Response(Readable.toWeb(createReadStream(file)), { status: 200 });
+    }
+    const [start, end] = [Number(range[1]), Number(range[2])];
+    assert.ok(start <= end && end < size, `Unsatisfiable range ${headers.Range}`);
+    served += end - start + 1;
+    return new Response(Readable.toWeb(createReadStream(file, { start, end })), {
+      status: 206,
+      headers: { "content-range": `bytes ${start}-${end}/${size}` },
+    });
+  }
+  return { fetchImpl, served: () => served };
+}
+
+/**
+ * Checks that an install of the previous release stages this one from its
+ * delta alone. Without that delta a dry run fails; a publish warns and returns
+ * false, and the smoke still imports the partial-path cache.
+ */
+export function checkDeltaPlan({ index, plan, outputPath, basePath, served, tarBytes, publish, warn }) {
+  const listed = index.deltas.some(
+    (delta) => delta.fromPath === basePath && delta.toPath === outputPath,
+  );
+  if (!basePath || !listed) {
+    const message = `The update index has no delta from ${basePath ?? "an earlier release"}`;
+    if (!publish) throw new Error(message);
+    warn(message);
+    return false;
+  }
+  assert.deepEqual(
+    plan.map((step) => [step.entry.path, step.delta?.fromPath]),
+    [[outputPath, basePath]],
+    "The previous release should need only the desktop delta",
+  );
+  assert.ok(served < tarBytes * 0.02, `Partial staging served ${served} of ${tarBytes} bytes`);
+  return true;
+}
+
+// Installs the newest earlier stable release through the updater's full path.
+async function seedPreviousRelease(scratch, version) {
+  const [previous] = deltaBaseTags(
+    await listReleases(process.env.GITHUB_REPOSITORY, process.env.GH_TOKEN),
+    version,
+  );
+  assert.ok(previous, "There is no earlier stable release");
+  const { manifest } = await latestVerifiedRelease({ resolveTag: async () => previous.tag });
+  const artifact = macArtifact(manifest);
+  const file = join(scratch, artifact.name);
+  await downloadAsset(
+    { name: artifact.name, url: releaseDownloadUrl(previous.tag, artifact.name), size: artifact.bytes },
+    file,
+    {
+      expectedBytes: artifact.bytes,
+      expectedSha256: artifact.sha256,
+      maxBytes: artifact.bytes,
+      signal: AbortSignal.timeout(600_000),
+    },
+  );
+  const cache = join(scratch, "previous-cache");
+  await extractNixCacheTar(file, cache);
+  run("nix", localCacheCopyArgs(cache, artifact.outputPath));
+  run("nix", localCacheCopySignaturesArgs(cache, artifact.outputPath));
+  await rm(file);
+  await rm(cache, { recursive: true, force: true });
+  console.log(`Installed ${previous.tag} (${artifact.outputPath}) from its full tar`);
+  return artifact.outputPath;
+}
+
+/** Steps 1-3 of the header; leaves this release imported into the store. */
+export async function stageThroughIndex({ directory, scratch, version, outputPath, closure, publish }) {
+  const warn = (message) => console.log(`::warning::${message}`);
+  let basePath = null;
+  try {
+    basePath = await seedPreviousRelease(scratch, version);
+  } catch (error) {
+    if (!publish) throw error;
+    warn(`Could not install the previous release: ${error.message}`);
+  }
+  const base = `paseo-${version}-macos-arm64-nix-desktop`;
+  const tar = join(directory, `${base}.tar`);
+  const hash = createHash("sha256");
+  await pipeline(createReadStream(tar), hash);
+  const artifact = { name: `${base}.tar`, bytes: (await stat(tar)).size, sha256: hash.digest("hex") };
+  const local = localReleaseFetch(directory);
+  const indexed = join(scratch, "indexed");
+  await mkdir(indexed);
+  const { cache, plan, transferred } = await prepareIndexedCache({
+    tag: "unpublished",
+    artifact,
+    closure,
+    directory: indexed,
+    downloadUrl: (_tag, name) => name,
+    fetchBytes: (name) => readFile(join(directory, name)),
+    freeSpace: (transferBytes, importBytes) => assertFreeSpace(transferBytes, importBytes, scratch),
+    fetchImpl: local.fetchImpl,
+  });
+  // The updater reads the index through fetchBytes, outside the shim.
+  const indexBytes = await readFile(join(directory, `${base}.index.json`));
+  const index = JSON.parse(indexBytes.toString("utf8"));
+  const served = local.served() + indexBytes.length;
+  console.log(
+    `Partial staging: ${served} bytes served (${transferred} counted by the updater) of a ${artifact.bytes}-byte tar; plan ${plan
+      .map((step) => `${step.entry.path} via ${step.delta ? step.delta.asset : "tar range"}`)
+      .join(", ")}`,
+  );
+  checkDeltaPlan({ index, plan, outputPath, basePath, served, tarBytes: artifact.bytes, publish, warn });
+  run("nix", localCacheCopyArgs(cache, outputPath));
+  run("nix", localCacheCopySignaturesArgs(cache, outputPath));
+  await rm(indexed, { recursive: true, force: true });
+
+  // Clients that never read the index import the full tar: it must verify too.
+  const full = join(scratch, "full-cache");
+  await extractNixCacheTar(tar, full);
+  run("nix", [
+    "store",
+    "verify",
+    "--store",
+    `file://${full}`,
+    "--recursive",
+    "--sigs-needed",
+    "1",
+    ...trustOnlyRelease,
+    outputPath,
+  ]);
+  await rm(full, { recursive: true, force: true });
+  console.log("The full tar verifies with only the release key");
+}
 
 // The bundle must keep the signature the build applied through NAR packing and
 // substitution; macOS refuses notifications from a bundle signed as Electron.
@@ -122,10 +275,14 @@ async function main() {
   assert.ok(!existsSync(outputPath), "A fresh runner must not already hold the release output");
 
   const scratch = await mkdtemp(join(process.env.RUNNER_TEMP, "paseo-release-"));
-  const cache = join(scratch, "cache");
-  await extractNixCacheTar(join(directory, `${base}.tar`), cache);
-  run("nix", localCacheCopyArgs(cache, outputPath));
-  run("nix", localCacheCopySignaturesArgs(cache, outputPath));
+  await stageThroughIndex({
+    directory,
+    scratch,
+    version,
+    outputPath,
+    closure,
+    publish: process.env.PUBLISH === "true",
+  });
   // A daemon that ignores client trust options would fall back to its own keys,
   // so first prove the options bind: another key must not verify the closure.
   const verify = (trusted) =>

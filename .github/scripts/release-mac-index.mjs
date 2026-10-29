@@ -52,7 +52,7 @@ export function deltaBaseTags(releases, version, count = DELTA_BASE_RELEASES) {
     .slice(0, count);
 }
 
-async function listReleases(repository, token) {
+export async function listReleases(repository, token) {
   const response = await fetchHttps(
     `https://api.github.com/repos/${repository}/releases?per_page=100`,
     {
