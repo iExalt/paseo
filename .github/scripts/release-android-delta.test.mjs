@@ -40,6 +40,11 @@ test("APK deltas rebuild the signed APK and are kept only when they halve the .g
     assert.equal(await make({ next: { ...next, gzipBytes: size * 2 } }), null, "saves too little");
     assert.deepEqual(await readdir(directory), []);
     await assert.rejects(make({ next: { ...next, sha256: "0".repeat(64) } }), /does not rebuild/);
+    await assert.rejects(
+      make({ base: { ...base, file: join(work, "missing.apk") } }),
+      /zstd failed/,
+    );
+    assert.deepEqual(await readdir(directory), [], "a rejected delta is never published");
     let ran = false;
     const zstd = () => (ran = true);
     assert.equal(

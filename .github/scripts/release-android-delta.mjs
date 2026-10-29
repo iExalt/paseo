@@ -7,7 +7,7 @@
 // Env: VERSION, GITHUB_REPOSITORY, GH_TOKEN, RUNNER_TEMP; zstd on PATH.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchRange, hashFile, zstdDecompress } from "../../scripts/paseo-nix-update-delta.mjs";
@@ -52,27 +52,34 @@ async function previousApk(tag, work) {
  * would not save at least half of the .gz download.
  */
 export async function makeApkDelta({ base, next, directory, work, zstd = runZstd }) {
-  const file = join(directory, apkDeltaAssetName(basename(next.file), base.version));
+  const asset = apkDeltaAssetName(basename(next.file), base.version);
   if (Math.max(base.bytes, next.bytes) > 2 ** APK_WINDOW_LOG) {
     console.log(`Skipped the delta from ${base.version}: an APK exceeds the zstd window`);
     return null;
   }
-  zstd([...ZSTD_ARGS, `--patch-from=${base.file}`, next.file, "-o", file]);
+  // Built and checked in the work directory, and moved to the upload directory only once it
+  // passes: everything there is published.
+  const file = join(work, asset);
   const check = join(work, "check.apk");
-  const rebuilt = await zstdDecompress(file, check, next.bytes, { patchFrom: base.file });
-  await rm(check);
-  assert.ok(
-    rebuilt.bytes === next.bytes && rebuilt.sha256.toString("hex") === next.sha256,
-    `Delta from ${base.version} does not rebuild the APK`,
-  );
-  const { size } = await stat(file);
-  if (size * 2 >= next.gzipBytes) {
-    await rm(file);
-    console.log(`Skipped the delta from ${base.version}: ${size} bytes saves too little`);
-    return null;
+  try {
+    zstd([...ZSTD_ARGS, `--patch-from=${base.file}`, next.file, "-o", file]);
+    const rebuilt = await zstdDecompress(file, check, next.bytes, { patchFrom: base.file });
+    assert.ok(
+      rebuilt.bytes === next.bytes && rebuilt.sha256.toString("hex") === next.sha256,
+      `Delta from ${base.version} does not rebuild the APK`,
+    );
+    const { size } = await stat(file);
+    if (size * 2 >= next.gzipBytes) {
+      console.log(`Skipped the delta from ${base.version}: ${size} bytes saves too little`);
+      return null;
+    }
+    await rename(file, join(directory, asset));
+    console.log(`Delta from ${base.version}: ${size} bytes`);
+    return size;
+  } finally {
+    await rm(file, { force: true });
+    await rm(check, { force: true });
   }
-  console.log(`Delta from ${base.version}: ${size} bytes`);
-  return size;
 }
 
 function runZstd(args) {
