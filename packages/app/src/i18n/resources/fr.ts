@@ -1288,12 +1288,6 @@ export const fr: TranslationResources = {
       search: "Recherche",
       schedules: "Planifications",
     },
-    worktreeSetup: {
-      title: "Configurer les scripts de worktree",
-      description:
-        "Ajoutez des commandes de configuration pour que les nouveaux worktrees installent leurs dépendances et se préparent automatiquement.",
-      openProjectSettings: "Ouvrir les paramètres du projet",
-    },
     project: {
       actions: {
         menu: "Actions du projet",
