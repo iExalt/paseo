@@ -54,6 +54,7 @@ needs to be:
 ### Phase 3: R8
 
 - [ ] Enable minify and resource shrinking through `expo-build-properties`,
-      with `-dontobfuscate` and keep rules (`com.github.luben`, `modules/paseo-*`).
+      with `-dontobfuscate` and keep rules: `-keep class com.github.luben.zstd.** { *; }`
+      (the AAR ships none, and its JNI reads Java fields) and `modules/paseo-*`.
 - [ ] Device check of chat markdown, diff view, terminal, camera and the
       update flow; compare the next delta's size.

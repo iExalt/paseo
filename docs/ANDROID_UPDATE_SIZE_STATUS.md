@@ -42,7 +42,7 @@ Evidence:
 
 Evidence state: implemented; rehearsed against real releases.
 
-- `release-android-delta.mjs` run on dev-station for `VERSION=0.13.1` against
+- `release-android-delta.mjs` at `d07627215` run on dev-station for `VERSION=0.13.1` against
   the published releases (zstd 1.5.5, as on the CI runner), each delta
   re-applied to the signed sha:
 
@@ -74,6 +74,9 @@ Four bases took 3:07 wall time at a 1.84 GB peak RSS. The `.gz` is
   `PaseoForkUpdates` logcat lines prove the delta path at G-live.
 - R8 renaming would churn the dex between releases and inflate deltas; Phase 3
   keeps `-dontobfuscate`.
+- zstd-jni ships no consumer ProGuard rules and its JNI reads Java fields such
+  as `nativePtr`. Under R8 without `-keep class com.github.luben.zstd.** { *; }`
+  every update would fall back to the `.gz` without an error the user sees.
 
 ## Progress log
 
