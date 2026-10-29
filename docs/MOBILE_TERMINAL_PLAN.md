@@ -473,7 +473,7 @@ The spike found neither aid essential, so both are opt-in.
 Prompt and TUI icons drew as tofu: no font shipped with the app, so web and
 desktop needed a locally installed Nerd Font, and the native grid only accepts
 system families. The target is a terminal that defaults to the bundled MesloLGS
-NF on every platform; the table tracks which platforms have it. Its source and
+Nerd Font on every platform; the table tracks which platforms have it. Its source and
 licenses are in
 `packages/app/assets/fonts/meslolgs-nf/README.md`.
 

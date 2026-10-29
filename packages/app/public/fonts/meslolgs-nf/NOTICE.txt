@@ -1,16 +1,16 @@
-MesloLGS NF
+MesloLGS Nerd Font
 
-These fonts are MesloLGS NF Regular and Bold from
-https://github.com/romkatv/powerlevel10k-media (commit 145eb9f), converted to
-WOFF2 without other changes.
+These fonts are MesloLGSNerdFont-Regular and -Bold from the Nerd Fonts v3.5.1
+release (https://github.com/ryanoasis/nerd-fonts/releases/tag/v3.5.1),
+converted to WOFF2 without other changes.
 
 Meslo LG is Copyright 2009, 2010, 2013 André Berg, licensed under the Apache
 License, Version 2.0 (LICENSE.txt).
 
-The icon glyphs were added by Nerd Fonts 2.3.3
+The icon glyphs were added by Nerd Fonts 3.5.1
 (https://github.com/ryanoasis/nerd-fonts). Nerd Fonts patched fonts are
 licensed under the SIL Open Font License 1.1, and each icon set keeps its own
 license (among them Font Awesome, Material Design Icons, Octicons, Codicons,
 Devicons, Powerline Symbols, Seti-UI and Weather Icons). The Nerd Fonts license
 audit lists each set's license:
-https://github.com/ryanoasis/nerd-fonts/blob/v2.3.3/license-audit.md
+https://github.com/ryanoasis/nerd-fonts/blob/v3.5.1/license-audit.md
