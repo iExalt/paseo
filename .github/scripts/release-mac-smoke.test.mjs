@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkDeltaPlan, localReleaseFetch } from "./release-mac-smoke.mjs";
+import { checkDeltaPlan, localReleaseFetch, wrapperZstdDir } from "./release-mac-smoke.mjs";
 
 test("the local release shim answers a range with an exact 206 and counts served bytes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "paseo-smoke-shim-"));
@@ -24,11 +24,12 @@ test("the local release shim answers a range with an exact 206 and counts served
   }
 });
 
-test("smoke requires the previous release's delta on a dry run and only warns on publish", () => {
+test("smoke requires the desktop delta on a dry run, only warns on publish, and allows dependency ranges", () => {
   const outputPath = "/nix/store/new-paseo-desktop";
   const basePath = "/nix/store/old-paseo-desktop";
   const index = { deltas: [{ fromPath: basePath, toPath: outputPath }] };
-  const deltaStep = { entry: { path: outputPath }, delta: { fromPath: basePath } };
+  const deltaStep = { entry: { path: outputPath }, delta: { fromPath: basePath, bytes: 250_000 } };
+  const rangeStep = (path) => ({ entry: { path }, narinfo: { fileSize: 1_000_000 } });
   const check = (overrides) => {
     const warnings = [];
     const result = checkDeltaPlan({
@@ -36,21 +37,38 @@ test("smoke requires the previous release's delta on a dry run and only warns on
       plan: [deltaStep],
       outputPath,
       basePath,
+      desktopFileSize: 150_000_000,
       served: 300_000,
       tarBytes: 230_000_000,
       publish: false,
       warn: (message) => warnings.push(message),
+      log: () => {},
       ...overrides,
     });
     return { result, warnings };
   };
   assert.equal(check({}).result, true);
+  // A changed dependency arrives as a tar range alongside the desktop delta.
+  assert.equal(check({ plan: [deltaStep, rangeStep("/nix/store/dep")] }).result, true);
   assert.throws(() => check({ index: { deltas: [] } }), /no delta/);
   assert.throws(() => check({ basePath: null }), /no delta/);
   const published = check({ index: { deltas: [] }, publish: true });
   assert.deepEqual([published.result, published.warnings.length], [false, 1]);
-  // A changed dependency or a fallback to the tar range is not the delta-only path.
-  assert.throws(() => check({ plan: [deltaStep, { entry: { path: "/nix/store/dep" } }] }), /only the desktop delta/);
-  assert.throws(() => check({ plan: [{ entry: { path: outputPath } }] }), /only the desktop delta/);
-  assert.throws(() => check({ served: 5_000_000 }), /served/);
+  assert.throws(() => check({ plan: [rangeStep(outputPath)] }), /previous release's delta/);
+  const otherDelta = { entry: { path: "/nix/store/dep" }, delta: { fromPath: "/nix/store/x", bytes: 1 } };
+  assert.throws(() => check({ plan: [deltaStep, otherDelta] }), /tar range/);
+  assert.throws(() => check({ desktopFileSize: 2_000_000 }), /desktop delta is/);
+  assert.throws(() => check({ served: 230_000_000 }), /served/);
+});
+
+test("the updater wrapper's zstd directory is read from its PATH prefix", () => {
+  const zstd = `/nix/store/${"z".repeat(32)}-zstd-1.5.7-bin/bin`;
+  const wrapper = `#! /nix/store/${"b".repeat(32)}-bash/bin/bash -e
+PATH=\${PATH:+':'\$PATH':'}
+PATH=\${PATH/':''${zstd}'':'/':'}
+PATH='${zstd}'\$PATH
+exec "/nix/store/${"n".repeat(32)}-nodejs-26.11.1/bin/node" "$@"
+`;
+  assert.equal(wrapperZstdDir(wrapper), zstd);
+  assert.throws(() => wrapperZstdDir("exec node"), /no zstd/);
 });

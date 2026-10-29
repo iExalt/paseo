@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
-import { prepareIndexedCache } from "../../scripts/paseo-nix-update-delta.mjs";
+import { parseNarinfo, prepareIndexedCache } from "../../scripts/paseo-nix-update-delta.mjs";
 import { assertFreeSpace, downloadAsset } from "../../scripts/paseo-nix-update-legacy.mjs";
 import {
   extractNixCacheTar,
@@ -80,11 +80,24 @@ export function localReleaseFetch(directory) {
 }
 
 /**
- * Checks that an install of the previous release stages this one from its
- * delta alone. Without that delta a dry run fails; a publish warns and returns
- * false, and the smoke still imports the partial-path cache.
+ * Checks that an install of the previous release stages this one with the
+ * desktop path from its delta; any other missing path must come from a tar
+ * range, which exercises that path on real Nix too. Without the delta a dry
+ * run fails; a publish warns and returns false, and the smoke still imports
+ * the partial-path cache.
  */
-export function checkDeltaPlan({ index, plan, outputPath, basePath, served, tarBytes, publish, warn }) {
+export function checkDeltaPlan({
+  index,
+  plan,
+  outputPath,
+  basePath,
+  desktopFileSize,
+  served,
+  tarBytes,
+  publish,
+  warn,
+  log = console.log,
+}) {
   const listed = index.deltas.some(
     (delta) => delta.fromPath === basePath && delta.toPath === outputPath,
   );
@@ -94,13 +107,30 @@ export function checkDeltaPlan({ index, plan, outputPath, basePath, served, tarB
     warn(message);
     return false;
   }
-  assert.deepEqual(
-    plan.map((step) => [step.entry.path, step.delta?.fromPath]),
-    [[outputPath, basePath]],
-    "The previous release should need only the desktop delta",
+  const desktop = plan.filter((step) => step.entry.path === outputPath);
+  assert.ok(
+    desktop.length === 1 && desktop[0].delta?.fromPath === basePath,
+    "The desktop path should come from the previous release's delta",
   );
-  assert.ok(served < tarBytes * 0.02, `Partial staging served ${served} of ${tarBytes} bytes`);
+  const { bytes } = desktop[0].delta;
+  assert.ok(
+    bytes < desktopFileSize * 0.1,
+    `The desktop delta is ${bytes} bytes against a ${desktopFileSize}-byte compressed NAR`,
+  );
+  for (const step of plan) {
+    if (step === desktop[0]) continue;
+    assert.ok(step.narinfo && !step.delta, `${step.entry.path} should come from a tar range`);
+    log(`${step.entry.path}: tar range of ${step.narinfo.fileSize} bytes`);
+  }
+  assert.ok(served < tarBytes, `Partial staging served ${served} of ${tarBytes} bytes`);
   return true;
+}
+
+/** The zstd directory makeWrapper --prefix put on the updater's PATH. */
+export function wrapperZstdDir(wrapper) {
+  const match = /\/nix\/store\/[0-9a-z]{32}-zstd-[^/'":\s]+\/bin/.exec(wrapper);
+  assert.ok(match, "The updater wrapper puts no zstd on PATH");
+  return match[0];
 }
 
 // Installs the newest earlier stable release through the updater's full path.
@@ -170,7 +200,20 @@ export async function stageThroughIndex({ directory, scratch, version, outputPat
       .map((step) => `${step.entry.path} via ${step.delta ? step.delta.asset : "tar range"}`)
       .join(", ")}`,
   );
-  checkDeltaPlan({ index, plan, outputPath, basePath, served, tarBytes: artifact.bytes, publish, warn });
+  const desktopFileSize = index.narinfos
+    .map(parseNarinfo)
+    .find((info) => info.storePath === outputPath).fileSize;
+  checkDeltaPlan({
+    index,
+    plan,
+    outputPath,
+    basePath,
+    desktopFileSize,
+    served,
+    tarBytes: artifact.bytes,
+    publish,
+    warn,
+  });
   run("nix", localCacheCopyArgs(cache, outputPath));
   run("nix", localCacheCopySignaturesArgs(cache, outputPath));
   await rm(indexed, { recursive: true, force: true });
@@ -328,6 +371,9 @@ async function main() {
     run(join(outputPath, "bin/paseo-nix-update"), ["--help"]),
     /^Usage: paseo-nix-update/,
   );
+  // The updater applies deltas with the zstd its wrapper puts on PATH.
+  const zstdDir = wrapperZstdDir(await readFile(join(outputPath, "bin/paseo-nix-update"), "utf8"));
+  console.log(`Updater zstd: ${run(join(zstdDir, "zstd"), ["--version"]).trim()}`);
   console.log(`Bundle signed as sh.paseo.desktop; bundled CLI ${cliVersion}; updater runs`);
 
   const artifactDir = process.env.PASEO_DESKTOP_SMOKE_ARTIFACT_DIR;
