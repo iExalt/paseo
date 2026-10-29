@@ -33,9 +33,7 @@ private const val MAX_APK_BYTES = 250L * 1024L * 1024L
 private const val MAX_REDIRECTS = 5
 private const val DOWNLOAD_POLL_MS = 500L
 private const val DOWNLOAD_DIRECTORY = "fork-updates"
-private const val GZIP_SUFFIX = ".gz"
 private const val LOG_TAG = "PaseoForkUpdates"
-private val forkVersion = Regex("(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)")
 // Maps a transfer file name (the staged APK name, plus the sidecar suffix for a `.gz` or a
 // delta) to its system DownloadManager id, so a download that outlived the app process is
 // resumed rather than restarted, and one kind of transfer is never adopted as another.
@@ -121,11 +119,8 @@ class PaseoForkUpdatesModule : Module() {
       ->
       require(fileName.matches(Regex("[A-Za-z0-9._-]+\\.apk"))) { "APK filename is invalid." }
       require(expectedBytes in 1..MAX_APK_BYTES) { "APK size is outside the allowed range." }
-      require(transfers.isNotEmpty() && transfers.last().compression == null) {
-        "APK transfers must end with the signed APK."
-      }
-      require(transfers.map { it.compression }.toSet().size == transfers.size) { "APK transfers are duplicated." }
-      transfers.forEach { validateTransfer(it, expectedBytes) }
+      validateTransferModes(transfers.map { it.compression })
+      transfers.forEach { validateTransfer(it.compression, it.bytes, it.baseVersion, it.url, expectedBytes) }
       require(expectedSha256.matches(Regex("[a-fA-F0-9]{64}"))) { "APK hash is invalid." }
       require(expectedCertificateSha256.matches(Regex("[a-fA-F0-9]{64}"))) {
         "APK certificate hash is invalid."
@@ -154,7 +149,7 @@ class PaseoForkUpdatesModule : Module() {
         destination.delete()
         // Sidecars are unsigned, so any failure short of a cancel (missing asset, size
         // mismatch, wrong base, corrupt data, wrong bytes) moves on to the next transfer.
-        val names = transfers.map { "$fileName${transferSuffix(it)}" }
+        val names = transfers.map { "$fileName${transferSuffix(it.compression, it.baseVersion)}" }
         firstVerifiedTransfer(names, ::hasLiveDownload) { index ->
           val transfer = transfers[index]
           val mode = transfer.compression ?: "apk"
@@ -174,7 +169,15 @@ class PaseoForkUpdatesModule : Module() {
             )
           }
             .onSuccess { Log.i(LOG_TAG, "Verified $expectedVersion from $mode") }
-            .onFailure { Log.w(LOG_TAG, "Fetching $expectedVersion as $mode failed: $it") }
+            .onFailure {
+              // A teardown leaves the transfer running for the next attempt, and a cancel ends
+              // the chain; only other failures fall back.
+              if (it is CancellationException || it is DownloadCanceledException) {
+                Log.i(LOG_TAG, "Fetching $expectedVersion as $mode stopped: $it")
+              } else {
+                Log.w(LOG_TAG, "Fetching $expectedVersion as $mode failed: $it")
+              }
+            }
             .getOrThrow()
         }
       }
@@ -437,27 +440,6 @@ class ApkTransfer : Record {
   @Field val bytes: Long? = null
   @Field val compression: String? = null
   @Field val baseVersion: String? = null
-}
-
-private fun transferSuffix(transfer: ApkTransfer): String = when (transfer.compression) {
-  "gzip" -> GZIP_SUFFIX
-  "zstd-patch" -> ".delta-from-${transfer.baseVersion}.zst"
-  else -> ""
-}
-
-private fun validateTransfer(transfer: ApkTransfer, expectedBytes: Long) {
-  val bytes = transfer.bytes
-  when (transfer.compression) {
-    null -> require(bytes == null && transfer.baseVersion == null) { "APK transfer size is invalid." }
-    "gzip", "zstd-patch" -> require(bytes != null && bytes in 1 until expectedBytes) { "APK transfer size is invalid." }
-    else -> throw IllegalArgumentException("APK compression is unsupported.")
-  }
-  if (transfer.compression == "zstd-patch") {
-    require(transfer.baseVersion?.matches(forkVersion) == true) { "APK delta base version is invalid." }
-  } else {
-    require(transfer.baseVersion == null) { "APK transfer base version is invalid." }
-  }
-  require(transfer.url.endsWith(".apk${transferSuffix(transfer)}")) { "APK transfer URL is invalid." }
 }
 
 private class DownloadRow(

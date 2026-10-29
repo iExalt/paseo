@@ -58,4 +58,30 @@ class TransferChainTest {
     assertEquals("gz", result.getOrThrow())
     assertEquals(listOf("apk"), run(live = "apk", outcomes = mapOf("apk" to null)).first)
   }
+
+  @Test fun acceptsEachTransferMode() {
+    validateTransfer(null, null, null, "https://x/paseo.apk", 100)
+    validateTransfer("gzip", 40, null, "https://x/paseo.apk.gz", 100)
+    validateTransfer("zstd-patch", 4, "0.13.0", "https://x/paseo.apk.delta-from-0.13.0.zst", 100)
+    validateTransferModes(listOf("zstd-patch", "gzip", null))
+  }
+
+  @Test fun rejectsBadTransfers() {
+    fun rejects(compression: String?, bytes: Long?, baseVersion: String?, url: String) =
+      assertThrows(IllegalArgumentException::class.java) { validateTransfer(compression, bytes, baseVersion, url, 100) }
+    for (base in listOf("../0.1.0", "0.1.0/x", "0.1", "01.0.0", "0.1.0-beta")) {
+      rejects("zstd-patch", 4, base, "https://x/paseo.apk.delta-from-$base.zst")
+    }
+    rejects("gzip", 40, "0.1.0", "https://x/paseo.apk.gz")
+    rejects(null, null, "0.1.0", "https://x/paseo.apk")
+    rejects("zstd-patch", 4, "0.1.0", "https://x/paseo.apk.delta-from-0.0.9.zst")
+    rejects("zstd-patch", 100, "0.1.0", "https://x/paseo.apk.delta-from-0.1.0.zst")
+    rejects("gzip", 0, null, "https://x/paseo.apk.gz")
+    rejects(null, 50, null, "https://x/paseo.apk")
+    rejects("brotli", 4, null, "https://x/paseo.apk.br")
+    rejects("gzip", 40, null, "https://x/paseo.apk")
+    for (modes in listOf(emptyList(), listOf(null, "gzip"), listOf("gzip", "gzip", null), listOf(null, null))) {
+      assertThrows(IllegalArgumentException::class.java) { validateTransferModes(modes) }
+    }
+  }
 }
