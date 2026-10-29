@@ -47,6 +47,9 @@ expected_assets() {
     # The desktop deltas the unsigned index lists: none up to DELTA_BASE_RELEASES
     # (release-mac-index.mjs). A duplicate or unlisted delta fails the set check.
     jq -r '.deltas[].asset' "$ASSETS/paseo-$VERSION-macos-arm64-nix-desktop.index.json"
+    # The APK deltas release-android-delta.mjs made: any set of correctly named ones.
+    find "$ASSETS" -mindepth 1 -maxdepth 1 -name "paseo-$VERSION-android-arm64.apk.delta-from-*" -exec basename {} \; \
+      | grep -E "^paseo-${VERSION//./\\.}-android-arm64\\.apk\\.delta-from-[0-9]+\\.[0-9]+\\.[0-9]+\\.zst$" || true
   } | sort
 }
 

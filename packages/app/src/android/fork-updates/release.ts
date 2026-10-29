@@ -18,6 +18,7 @@ export const RELEASE_SIGNATURE_NAME = "paseo-release-manifest.sig";
 export const MAX_RELEASE_METADATA_BYTES = 256 * 1024;
 export const MAX_APK_BYTES = 250 * 1024 * 1024;
 export const GZIP_SUFFIX = ".gz";
+const DELTA_SIDECAR = /^\.delta-from-((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))\.zst$/;
 
 export function isForkAndroidUpdaterEnabled(
   platform: string,
@@ -45,6 +46,8 @@ export interface VerifiedForkUpdate {
   apkUrl: string;
   // Byte count of the unsigned `<apk>.gz` sidecar when the release has a usable one.
   gzipApkBytes?: number;
+  // Byte counts of the unsigned `<apk>.delta-from-<version>.zst` sidecars, by base version.
+  apkDeltaBytes?: Record<string, number>;
   manifestText: string;
   signatureText: string;
 }
@@ -144,11 +147,13 @@ export function verifyReleaseBinding(
     release.tag_name,
   )}/${encodeURIComponent(android.name)}`;
   const gzipApkBytes = gzipApkSidecarBytes(release.assets, android);
+  const apkDeltaBytes = apkDeltaSidecarBytes(release.assets, android);
   return {
     manifest,
     android,
     apkUrl,
     ...(gzipApkBytes === null ? {} : { gzipApkBytes }),
+    ...(Object.keys(apkDeltaBytes).length === 0 ? {} : { apkDeltaBytes }),
     manifestText,
     signatureText,
   };
@@ -165,6 +170,23 @@ export function gzipApkSidecarBytes(
   if (sidecars.length !== 1) return null;
   const { size } = sidecars[0];
   return Number.isSafeInteger(size) && size > 0 && size < android.bytes ? size : null;
+}
+
+// Delta sidecars are unsigned too: the device applies the one made from its installed
+// release to the installed APK and checks the result like the gzip one, falling back to it.
+export function apkDeltaSidecarBytes(
+  assets: readonly GitHubReleaseAsset[],
+  android: Pick<ForkReleaseArtifact, "name" | "bytes">,
+): Record<string, number> {
+  const deltas: Record<string, number> = {};
+  for (const { name, size } of assets) {
+    if (!name.startsWith(android.name)) continue;
+    const baseVersion = DELTA_SIDECAR.exec(name.slice(android.name.length))?.[1];
+    if (baseVersion && Number.isSafeInteger(size) && size > 0 && size < android.bytes) {
+      deltas[baseVersion] = size;
+    }
+  }
+  return deltas;
 }
 
 export function approvedAndroidArtifact(

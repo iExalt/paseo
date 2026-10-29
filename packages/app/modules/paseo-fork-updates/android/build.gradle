@@ -15,5 +15,10 @@ android {
 
 dependencies {
   implementation "com.facebook.react:react-android"
+  // Applies APK update deltas made with `zstd --patch-from`; 1.5.7-13 and later need
+  // compileSdk 37. The AAR carries only Android natives, so unit tests use the plain jar,
+  // which bundles the desktop ones.
+  implementation "com.github.luben:zstd-jni:1.5.7-12@aar"
+  testImplementation "com.github.luben:zstd-jni:1.5.7-12"
   testImplementation "junit:junit:4.13.2"
 }

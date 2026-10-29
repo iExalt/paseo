@@ -82,7 +82,7 @@ describe("fork update staged receipt recovery", () => {
     expect(harness.storage.has("@getpaseo/fork-update/semver-v1/staged-pending")).toBe(true);
     expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledOnce();
     expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledWith(
-      { url: "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk" },
+      [{ url: "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk" }],
       "fork-v0.1.1-paseo.apk",
       123,
       "a".repeat(64),
@@ -101,17 +101,34 @@ describe("fork update staged receipt recovery", () => {
     expect(harness.storage.has("@getpaseo/fork-update/semver-v1/staged-pending")).toBe(false);
   });
 
-  it("downloads the gzip sidecar the release listing offered", async () => {
-    await downloadForkUpdate({ ...(update as object), gzipApkBytes: 45 } as never);
+  it("offers the installed release's delta, then the gzip sidecar, then the APK", async () => {
+    const apkUrl = "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk";
+    harness.native.getInstalledVersion.mockReturnValue("0.1.0");
+    await downloadForkUpdate({
+      ...(update as object),
+      gzipApkBytes: 45,
+      apkDeltaBytes: { "0.0.9": 3, "0.1.0": 4 },
+    } as never);
     expect(harness.native.downloadAndVerifyApk).toHaveBeenCalledWith(
-      {
-        url: "https://github.com/iExalt/paseo/releases/download/paseo-v0.1.1/paseo.apk.gz",
-        bytes: 45,
-        compression: "gzip",
-      },
+      [
+        {
+          url: `${apkUrl}.delta-from-0.1.0.zst`,
+          bytes: 4,
+          compression: "zstd-patch",
+          baseVersion: "0.1.0",
+        },
+        { url: `${apkUrl}.gz`, bytes: 45, compression: "gzip" },
+        { url: apkUrl },
+      ],
       "fork-v0.1.1-paseo.apk",
       123,
       ...Array(5).fill(expect.anything()),
+    );
+
+    await downloadForkUpdate({ ...(update as object), apkDeltaBytes: { "0.0.9": 4 } } as never);
+    expect(harness.native.downloadAndVerifyApk).toHaveBeenLastCalledWith(
+      [{ url: apkUrl }],
+      ...Array(7).fill(expect.anything()),
     );
   });
 
