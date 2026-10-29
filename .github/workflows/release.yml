@@ -130,6 +130,19 @@ jobs:
       - name: Remove the Nix signing key file
         if: always()
         run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      # zstd comes from the pinned nixpkgs, the one the updater's wrapper ships.
+      - name: Write the update index and deltas from recent releases
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT_PATH: ${{ steps.build.outputs.output_path }}
+        run: |
+          zstd_bin="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#zstd.bin)/bin"
+          PATH="$zstd_bin:$PATH" node .github/scripts/release-mac-index.mjs "$RUNNER_TEMP/paseo-release-macos"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-macos

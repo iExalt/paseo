@@ -135,7 +135,7 @@ export async function resolveLatestTag(fetchOnce = fetch) {
   return tag;
 }
 
-async function fetchMetadata(url, what) {
+export async function fetchMetadata(url, what) {
   const response = await fetchHttps(
     url,
     { Accept: "application/octet-stream" },

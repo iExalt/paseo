@@ -78,6 +78,48 @@ test("release keeps each secret in its job and publishes only release tags", () 
   );
 });
 
+test("release upload set is the fixed assets plus the deltas the index lists", () => {
+  const directory = mkdtempSync(join(tmpdir(), "paseo-release-assets-"));
+  const assets = join(directory, "assets");
+  mkdirSync(assets);
+  const desktop = "paseo-1.2.3-macos-arm64-nix-desktop";
+  const delta = `${desktop}.delta-from-1.2.2.zst`;
+  for (const name of [
+    "paseo-release-manifest.json",
+    "paseo-release-manifest.sig",
+    `${desktop}.tar`,
+    `${desktop}.json`,
+    "paseo-1.2.3-android-arm64.apk",
+    "paseo-1.2.3-android-arm64.apk.gz",
+    "paseo-1.2.3-android-cache-pin.json",
+    delta,
+  ])
+    writeFileSync(join(assets, name), "");
+  const check = (deltas) => {
+    writeFileSync(join(assets, `${desktop}.index.json`), JSON.stringify({ deltas }));
+    return spawnSync(
+      "bash",
+      [fileURLToPath(new URL(".github/scripts/release-publish.sh", repoRoot)), "check-assets"],
+      {
+        encoding: "utf8",
+        env: { ...process.env, GH_TOKEN: "x", RUNNER_TEMP: directory, ASSETS: assets, VERSION: "1.2.3", GITHUB_REPOSITORY: "iExalt/paseo" },
+      },
+    );
+  };
+  try {
+    assert.equal(check([{ asset: delta }]).status, 0);
+    assert.match(check([]).stderr, /Unexpected release asset set/, "an unlisted delta file");
+    assert.match(check([{ asset: delta }, { asset: delta }]).stderr, /Unexpected release asset set/);
+    writeFileSync(join(assets, `${desktop}.delta-from-x.zst`), "");
+    assert.match(
+      check([{ asset: delta }, { asset: `${desktop}.delta-from-x.zst` }]).stderr,
+      /Unexpected delta asset name/,
+    );
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 const gradleResourceWatchPath = fileURLToPath(
   new URL("scripts/gradle-resource-watch.sh", repoRoot),
 );
