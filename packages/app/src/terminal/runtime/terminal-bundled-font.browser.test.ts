@@ -72,13 +72,13 @@ afterEach(() => {
 describe("bundled terminal font", () => {
   it("measures without the font while it loads, then switches and refits", async () => {
     const { terminal } = mountTerminal();
-    expect(terminal.options.fontFamily).not.toMatch(/MesloLGS NF/);
+    expect(terminal.options.fontFamily).not.toMatch(/MesloLGS Nerd Font/);
     await waitFor(() => cellHeight(terminal) > 0);
     const fallbackHeight = cellHeight(terminal);
     const fallbackRows = terminal.rows;
 
-    await waitFor(() => /MesloLGS NF/.test(terminal.options.fontFamily ?? ""));
-    expect(document.fonts.check('13px "MesloLGS NF"', "\u{f0001}")).toBe(true);
+    await waitFor(() => /MesloLGS Nerd Font/.test(terminal.options.fontFamily ?? ""));
+    expect(document.fonts.check('13px "MesloLGS Nerd Font"', "\u{f0001}")).toBe(true);
 
     // Meslo's line height is 1.262 em; the usual fallbacks share its advance
     // width but are shorter, so height is what tells the fonts apart.
@@ -93,7 +93,7 @@ describe("bundled terminal font", () => {
   it("uses the font from the start once it has loaded", async () => {
     await expect(loadBundledTerminalFont()).resolves.toBe(true);
     const { terminal } = mountTerminal();
-    expect(terminal.options.fontFamily).toMatch(/^'MesloLGS NF'/);
+    expect(terminal.options.fontFamily).toMatch(/^'MesloLGS Nerd Font'/);
   });
 
   it("ignores a load that finishes after the terminal unmounts", async () => {
@@ -101,6 +101,6 @@ describe("bundled terminal font", () => {
     entry.runtime.unmount();
     await expect(loadBundledTerminalFont()).resolves.toBe(true);
     const { terminal } = mountTerminal();
-    expect(terminal.options.fontFamily).toMatch(/^'MesloLGS NF'/);
+    expect(terminal.options.fontFamily).toMatch(/^'MesloLGS Nerd Font'/);
   });
 });

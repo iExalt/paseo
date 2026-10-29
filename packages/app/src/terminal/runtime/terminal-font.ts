@@ -2,7 +2,7 @@ const DEFAULT_TERMINAL_FONT_SIZE = 13;
 
 // Bundled with the app (assets/fonts/meslolgs-nf), so prompt and TUI icons render
 // without a locally installed Nerd Font.
-export const TERMINAL_NERD_FONT_FAMILY = "MesloLGS NF";
+export const TERMINAL_NERD_FONT_FAMILY = "MesloLGS Nerd Font";
 
 export const DEFAULT_TERMINAL_FONT_FAMILY = [
   `'${TERMINAL_NERD_FONT_FAMILY}'`,

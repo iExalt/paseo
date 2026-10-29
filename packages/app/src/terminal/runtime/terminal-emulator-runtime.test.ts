@@ -682,11 +682,11 @@ describe("terminal-emulator-runtime", () => {
     bundledFont.state.resolve(true);
     await Promise.resolve();
 
-    expect(terminal.options?.fontFamily).toBe("Menlo, 'MesloLGS NF'");
+    expect(terminal.options?.fontFamily).toBe("Menlo, 'MesloLGS Nerd Font'");
     expect(fitAndEmitResize).toHaveBeenCalledWith({ forceRefresh: true, shouldClaim: false });
 
     runtime.setFont({ fontFamily: "Hack", fontSize: 18 });
-    expect(terminal.options?.fontFamily).toBe("Hack, 'MesloLGS NF'");
+    expect(terminal.options?.fontFamily).toBe("Hack, 'MesloLGS Nerd Font'");
     bundledFont.state.loaded = false;
   });
 
