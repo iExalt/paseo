@@ -22,6 +22,7 @@ import {
   parseNarinfo,
   sha256File,
   validateIndex,
+  ZSTD_WINDOW_LOG,
   walkTar,
   zstdDecompress,
 } from "../../scripts/paseo-nix-update-delta.mjs";
@@ -143,9 +144,13 @@ function zstd(args) {
 async function makeDelta({ base, next, archiveName, directory, work }) {
   const asset = deltaAssetName(archiveName, base.version);
   const file = join(directory, asset);
+  if (Math.max(base.entry.narSize, next.entry.narSize) > 2 ** ZSTD_WINDOW_LOG) {
+    console.log(`Skipped the delta from ${base.version}: a NAR exceeds the zstd window`);
+    return null;
+  }
   // Default level 3: the 0.12.0 -> 0.12.1 spike gave 243 KB in 1.3 s; level 19
-  // gave 520 KB in 95 s. --long=30 lets matches reach the whole base NAR.
-  zstd(["-q", "--long=30", `--patch-from=${base.file}`, next.file, "-o", file]);
+  // gave 520 KB in 95 s.
+  zstd(["-q", `--long=${ZSTD_WINDOW_LOG}`, `--patch-from=${base.file}`, next.file, "-o", file]);
   const check = join(work, "check.nar");
   const rebuilt = await zstdDecompress(file, check, next.entry.narSize, { patchFrom: base.file });
   await rm(check);
@@ -207,10 +212,16 @@ async function main() {
   const checked = validateIndex(index, artifact, closure);
   await checkRanges(archivePath, checked);
 
-  const tags = deltaBaseTags(
-    await listReleases(process.env.GITHUB_REPOSITORY, process.env.GH_TOKEN),
-    version,
-  );
+  let tags = [];
+  try {
+    tags = deltaBaseTags(
+      await listReleases(process.env.GITHUB_REPOSITORY, process.env.GH_TOKEN),
+      version,
+    );
+  } catch (error) {
+    // Deltas only save bandwidth; publish the index without them.
+    console.log(`::warning::Could not list earlier releases for deltas: ${error.message}`);
+  }
   const work = await mkdtemp(join(process.env.RUNNER_TEMP, "paseo-release-delta-"));
   try {
     const entry = closure.closure.find(({ path }) => path === outputPath);

@@ -41,6 +41,7 @@ import {
   verifyLegacyImportedClosure,
   runLegacyRecovery,
 } from "./paseo-nix-update-legacy.mjs";
+import { prepareIndexedCache } from "./paseo-nix-update-delta.mjs";
 import {
   emptyState,
   validateState,
@@ -300,6 +301,16 @@ function targetFor(manifest) {
   };
 }
 
+/** Runs the fast path; on any failure, reports it and runs the full download. */
+export async function importWithFallback({ fast, full, warn }) {
+  try {
+    return await fast();
+  } catch (error) {
+    warn(error instanceof Error ? error.message : String(error));
+    return full();
+  }
+}
+
 async function stageRelease(verified) {
   const artifact = macArtifact(verified.manifest);
   const nixManifestBytes = await fetchMetadata(
@@ -307,27 +318,57 @@ async function stageRelease(verified) {
     "the Nix closure manifest",
   );
   const closure = validateNixClosureManifest(nixManifestBytes, verified.manifest);
-  await assertFreeSpace(
-    artifact.bytes,
-    closure.closure.reduce((sum, entry) => sum + entry.narSize, 0),
-    STATE_ROOT,
-  );
-  const directory = await mkdtemp(join(STATE_ROOT, "download-"));
-  try {
-    const file = join(directory, artifact.name);
-    const url = releaseDownloadUrl(verified.tag, artifact.name);
-    await downloadAsset({ name: artifact.name, url, size: artifact.bytes }, file, {
-      expectedBytes: artifact.bytes,
-      expectedSha256: artifact.sha256,
-      maxBytes: artifact.bytes,
-      signal: AbortSignal.timeout(ARCHIVE_TIMEOUT_MS),
-    });
-    const cache = join(directory, "cache");
-    await extractNixCacheTar(file, cache);
+  const receipt = { ...verified, nixManifestBytes };
+  const importCache = async (cache) => {
     nix(localCacheCopyArgs(cache, artifact.outputPath), { quiet: true });
     nix(localCacheCopySignaturesArgs(cache, artifact.outputPath), { quiet: true });
-    const receipt = { ...verified, nixManifestBytes };
     await verifyClosure(receipt);
+  };
+  const directory = await mkdtemp(join(STATE_ROOT, "download-"));
+  const indexed = join(directory, "indexed");
+  try {
+    await importWithFallback({
+      // Fetches only the paths this store lacks: a delta against an installed
+      // release, else that path's range of the tar (paseo-nix-update-delta.mjs).
+      async fast() {
+        await mkdir(indexed, { mode: 0o700 });
+        const { cache } = await prepareIndexedCache({
+          tag: verified.tag,
+          artifact,
+          closure,
+          directory: indexed,
+          downloadUrl: releaseDownloadUrl,
+          fetchBytes: fetchMetadata,
+          freeSpace: (transferBytes, importBytes) =>
+            assertFreeSpace(transferBytes, importBytes, STATE_ROOT),
+          signal: AbortSignal.timeout(ARCHIVE_TIMEOUT_MS),
+        });
+        await importCache(cache);
+      },
+      async full() {
+        await rm(indexed, { recursive: true, force: true });
+        await assertFreeSpace(
+          artifact.bytes,
+          closure.closure.reduce((sum, entry) => sum + entry.narSize, 0),
+          STATE_ROOT,
+        );
+        const file = join(directory, artifact.name);
+        const url = releaseDownloadUrl(verified.tag, artifact.name);
+        await downloadAsset({ name: artifact.name, url, size: artifact.bytes }, file, {
+          expectedBytes: artifact.bytes,
+          expectedSha256: artifact.sha256,
+          maxBytes: artifact.bytes,
+          signal: AbortSignal.timeout(ARCHIVE_TIMEOUT_MS),
+        });
+        const cache = join(directory, "cache");
+        await extractNixCacheTar(file, cache);
+        await importCache(cache);
+      },
+      warn: (message) =>
+        process.stderr.write(
+          `Partial update download failed (${message.slice(0, 2000)}); downloading the full archive.\n`,
+        ),
+    });
     await persistReceipt(receipt);
     setProfile(STAGING_PROFILE, artifact.outputPath, { quiet: true });
     const target = targetFor(verified.manifest);

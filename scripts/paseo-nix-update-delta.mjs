@@ -28,9 +28,11 @@ const NIX32_SHA256 = /^sha256:[0-9a-z]{52}$/;
 const MEMBER_NAME = /^(nix-cache-info|[0-9a-z]{32}\.narinfo|nar\/[0-9a-z]{52}\.nar(\.[a-z0-9]+)?)$/;
 const NAR_URL = /^nar\/[0-9a-z]{52}\.nar(\.[a-z0-9]+)?$/;
 const MAX_NARINFO_BYTES = 64 * 1024;
-// The decoder only allows windows up to this; --patch-from sizes the window to
-// the base NAR, so 31 (2 GiB) leaves room above today's 0.5 GB NAR.
-const ZSTD_DECODE_LONG = "--long=31";
+// Window log for --patch-from on both sides: the encoder needs it to reach back
+// into the base NAR, and the decoder refuses frames above 27 without it. CI
+// makes no delta when either NAR exceeds the window (release-mac-index.mjs).
+export const ZSTD_WINDOW_LOG = 30;
+const ZSTD_LONG = `--long=${ZSTD_WINDOW_LOG}`;
 
 /** Nix's base-32 encoding (least significant bits first), as used in narinfo hashes. */
 export function nix32(bytes) {
@@ -213,6 +215,7 @@ export function validateIndex(index, artifact, closure) {
   assert.ok(Array.isArray(index.members) && Array.isArray(index.narinfos));
   assert.ok(Array.isArray(index.deltas));
   const members = new Map();
+  let end = 512;
   for (const member of index.members) {
     exactKeys(member, ["name", "offset", "size"], "index member");
     assert.match(member.name, MEMBER_NAME, "Unexpected index member name");
@@ -226,10 +229,13 @@ export function validateIndex(index, artifact, closure) {
         member.offset + member.size <= artifact.bytes,
       "Index member lies outside the archive",
     );
+    assert.ok(member.offset >= end, "Index members overlap or are out of order");
+    end = member.offset + Math.ceil(member.size / 512) * 512 + 512;
     members.set(member.name, member);
   }
   const expected = new Map(closure.closure.map((entry) => [entry.path, entry]));
   const narinfos = new Map();
+  const urls = new Set();
   for (const text of index.narinfos) {
     const info = parseNarinfo(text);
     const entry = expected.get(info.storePath);
@@ -238,6 +244,8 @@ export function validateIndex(index, artifact, closure) {
     assert.equal(info.narHash, sriToNix32(entry.narHash), "Index narinfo differs from signed NarHash");
     assert.equal(info.narSize, entry.narSize, "Index narinfo differs from signed NarSize");
     assert.equal(members.get(info.url)?.size, info.fileSize, "Index narinfo has no matching NAR");
+    assert.ok(!urls.has(info.url), "Index narinfos share a NAR");
+    urls.add(info.url);
     narinfos.set(info.storePath, { text, info });
   }
   assert.equal(narinfos.size, expected.size, "Index lacks a narinfo for the signed closure");
@@ -265,10 +273,16 @@ export function planFetch({ closure, narinfos, deltas, invalid, local }) {
   return closure.closure
     .filter((entry) => invalid.has(entry.path))
     .map((entry) => {
+      const narinfo = narinfos.get(entry.path).info;
       const [delta] = deltas
-        .filter((d) => d.toPath === entry.path && local.get(d.fromPath)?.narHash === d.fromNarHash)
+        .filter(
+          (d) =>
+            d.toPath === entry.path &&
+            d.bytes < narinfo.fileSize &&
+            local.get(d.fromPath)?.narHash === d.fromNarHash,
+        )
         .sort((a, b) => a.bytes - b.bytes);
-      return delta ? { entry, delta } : { entry, narinfo: narinfos.get(entry.path).info };
+      return delta ? { entry, delta } : { entry, narinfo };
     });
 }
 
@@ -291,14 +305,23 @@ async function writeStream(readable, file, maxBytes) {
 
 /** Downloads bytes [offset, offset + size) of a release asset through fetchImpl. */
 export async function fetchRange(url, { offset, size, total }, file, { fetchImpl = fetchHttps, signal } = {}) {
+  assert.ok(
+    Number.isSafeInteger(offset) && offset >= 0 && Number.isSafeInteger(size) && size > 0 && offset + size <= total,
+    "Range lies outside the archive",
+  );
   const end = offset + size - 1;
+  // One range per request (GitHub answers multi-range requests with 501), each
+  // through the github.com URL: its signed redirect expires within the hour.
   const response = await fetchImpl(
     url,
     { Accept: "application/octet-stream", Range: `bytes=${offset}-${end}` },
     { signal },
   );
-  assert.equal(response.status, 206, `Range request returned HTTP ${response.status}`);
-  assert.equal(response.headers.get("content-range"), `bytes ${offset}-${end}/${total}`);
+  const range = response.headers.get("content-range");
+  if (response.status !== 206 || range !== `bytes ${offset}-${end}/${total}`) {
+    await response.body?.cancel();
+    throw new Error(`Range request returned HTTP ${response.status} (${range ?? "no Content-Range"})`);
+  }
   const result = await writeStream(Readable.fromWeb(response.body), file, size);
   assert.equal(result.bytes, size, "Range response is truncated");
   return result;
@@ -306,14 +329,17 @@ export async function fetchRange(url, { offset, size, total }, file, { fetchImpl
 
 async function fetchAsset(url, file, { bytes, sha256 }, { fetchImpl = fetchHttps, signal } = {}) {
   const response = await fetchImpl(url, { Accept: "application/octet-stream" }, { signal });
-  assert.equal(response.status, 200, `Delta download returned HTTP ${response.status}`);
+  if (response.status !== 200) {
+    await response.body?.cancel();
+    throw new Error(`Delta download returned HTTP ${response.status}`);
+  }
   const result = await writeStream(Readable.fromWeb(response.body), file, bytes);
   assert.ok(result.bytes === bytes && result.sha256.toString("hex") === sha256, "Delta differs from its index entry");
 }
 
 /** zstd -d, optionally against a --patch-from base, writing at most maxBytes. */
 export async function zstdDecompress(input, output, maxBytes, { patchFrom } = {}) {
-  const args = ["-d", "-q", "-c", ZSTD_DECODE_LONG];
+  const args = ["-d", "-q", "-c", ZSTD_LONG];
   if (patchFrom) args.push(`--patch-from=${patchFrom}`);
   const child = spawn("zstd", [...args, input], { stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
@@ -350,18 +376,21 @@ export async function dumpPath(path, file) {
   }
 }
 
+// Neither query may substitute: --check-validity reads only the local database,
+// and path-info runs with substituters disabled.
+export const invalidPathsArgs = (paths) => ["--check-validity", "--print-invalid", ...paths];
+export const pathInfoArgs = (paths) => ["path-info", "--json", ...nixOptions(), ...paths];
+
 export const localStore = {
   invalidPaths(paths) {
-    const result = spawnSync("nix-store", ["--check-validity", "--print-invalid", ...paths], {
-      encoding: "utf8",
-    });
+    const result = spawnSync("nix-store", invalidPathsArgs(paths), { encoding: "utf8" });
     assert.ok(!result.error && result.status === 0, `nix-store --check-validity failed: ${result.stderr}`);
     return new Set(result.stdout.split("\n").filter(Boolean));
   },
   pathInfo(paths) {
     if (paths.length === 0) return new Map();
     const info = JSON.parse(
-      nix(["path-info", "--json", ...nixOptions(), ...paths], { capture: true }).stdout,
+      nix(pathInfoArgs(paths), { capture: true }).stdout,
     );
     return new Map(
       Object.entries(info)
@@ -398,8 +427,11 @@ export async function prepareIndexedCache({
   const plan = planFetch({ closure, narinfos, deltas, invalid, local });
   const sum = (steps, size) => steps.reduce((total, step) => total + size(step), 0);
   const deltaSteps = plan.filter((step) => step.delta);
+  const transferBytes = sum(plan, (step) => (step.delta ? step.delta.bytes : step.narinfo.fileSize));
+  assert.ok(transferBytes <= artifact.bytes, "Index plan transfers more than the full archive");
+  // Transfers, plus each delta's dumped base NAR and rebuilt NAR, plus the import.
   await freeSpace(
-    sum(plan, (step) => (step.delta ? step.delta.bytes : step.narinfo.fileSize)) +
+    transferBytes +
       sum(deltaSteps, (step) => local.get(step.delta.fromPath).narSize + step.entry.narSize),
     sum(plan, (step) => step.entry.narSize),
   );
