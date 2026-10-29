@@ -63,8 +63,8 @@ only restore it.
      check uses the client and server builds packed in the closure's own
      `app.asar`, so the job builds nothing.
 
-**Dry run:** dispatch `release.yml` on `dev` with no tag. It uploads all six
-assets to a draft tagged `paseo-dryrun-<run_id>`, never tags and never marks
+**Dry run:** dispatch `release.yml` on `dev` with no tag. It uploads every
+expected asset to a draft tagged `paseo-dryrun-<run_id>`, never tags and never marks
 latest. Delete the draft when done. A dry run restores the latest release's
 pinned caches and saves its own entries, but its draft pin is never read, so
 those entries expire unused; delete them after a dry run if the cache budget is
@@ -80,6 +80,13 @@ tight.
 - **The tagged commit cannot ship** (the build itself is broken): land the fix
   on `dev` and let the next release PR carry it. Delete the stale draft and
   `paseo-vX` tag so they do not linger.
+- **GitHub refused the publish PATCH** (assets uploaded and verified, the
+  release still a draft): the log shows GitHub's response. A rerun of the failed
+  job uploads and verifies again, then sends the same PATCH, so it fails the same
+  way unless the response named a rate limit. Publish the draft with your own
+  token instead, with the same fields `publish()` in
+  `.github/scripts/release-publish.sh` sends, then run its tag and latest checks
+  by hand. 0.13.0 needed this: `GITHUB_TOKEN` got HTTP 403 twice.
 - **Publish step failed after the PATCH** (tag or latest check): the release is
   public. Check on GitHub that `paseo-vX` points at the release commit and that
   the release is marked **Latest**; fix the flag by hand if not.
