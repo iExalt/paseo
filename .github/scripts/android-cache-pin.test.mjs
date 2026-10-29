@@ -160,3 +160,39 @@ test("verify keeps a matching tar and deletes one restored with other content", 
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("plan reports expected input misses as notices and unusable pins as warnings", () => {
+  const dir = mkdtempSync(join(tmpdir(), "android-cache-plan-"));
+  try {
+    const script = fileURLToPath(new URL("./android-cache-pin.mjs", import.meta.url));
+    const preload = join(dir, "fetch.mjs");
+    const run = (value) => {
+      writeFileSync(
+        preload,
+        `const pin = ${JSON.stringify(value)};
+        globalThis.fetch = async (url) => ({
+          ok: true,
+          json: async () => ({ tag_name: "paseo-v0.2.2", assets: [{
+            name: "paseo-0.2.2-android-cache-pin.json", url: "https://example.test/pin"
+          }] }),
+          text: async () => JSON.stringify(pin),
+        });`,
+      );
+      return execFileSync(process.execPath, ["--import", preload, script, "plan"], {
+        encoding: "utf8",
+        env: { ...process.env, ImageOS: "ubuntu24", NPM_VERSION: "11.20.0", GITHUB_OUTPUT: "" },
+      });
+    };
+    const mismatch = run(pin());
+    assert.match(mismatch, /::notice::.*inputs differ \(lockfile, platform, or install files\)/);
+    assert.doesNotMatch(mismatch, /::warning::/);
+    assert.match(mismatch, /^modules_key=$/m);
+    const { modules: _modules, ...legacy } = pin();
+    const missing = run({ ...legacy, schemaVersion: 1 });
+    assert.match(missing, /::notice::.*no node_modules entry/);
+    assert.doesNotMatch(missing, /::warning::/);
+    assert.match(run({}), /::warning::No usable Android cache pin/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -151,7 +151,7 @@ of the two it reaches first, so the value can stay after the next release.
 
 - **Android caches are pinned by the release that wrote them.** Any job on
   `refs/heads/dev` can save cache entries, so a release build restores only the
-  two entries named in the latest published release's
+  three entries named in the latest published release's
   `paseo-X-android-cache-pin.json` asset, and only after each tar matches its
   pinned sha256 (`.github/scripts/android-cache-pin.mjs`). Writing that asset
   needs `contents: write`. Someone can create a pinned key first, but not with
@@ -174,7 +174,9 @@ of the two it reaches first, so the value can stay after the next release.
     replaces `npm ci`, so it is restored only when `<inputs>` match: routine
     CI's install inputs (lockfile, postinstall patches, runner image, arch,
     Node and npm). Never restore routine CI's `routine-modules-*` instead; any
-    dev push writes those.
+    dev push writes those. Expected input changes or older pins without a
+    node_modules entry emit a notice and run npm ci; fetch, parse and integrity
+    failures remain warnings.
   - `<inputs>` uses the lockfile without the root and workspace versions and
     the workspaces' specs for each other, so a release commit's version bump
     keeps both entries. A restored `node_modules/.package-lock.json` therefore
