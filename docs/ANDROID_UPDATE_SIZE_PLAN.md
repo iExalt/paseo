@@ -14,13 +14,16 @@ needs to be:
 | dex                    | 60 MB   | R8 off                                                             |
 | EnrichedMarkdown `.so` | 24.8 MB | tree-sitter grammars for 19 highlight languages (kept by decision) |
 | `paseo_diff_prototype` | 5.3 MB  | unused layout experiment that statically links a second Skia       |
-| `barhopper_v3`         | 4.9 MB  | expo-camera bundles the ML Kit barcode model for QR pairing        |
+| `barhopper_v3`         | 4.9 MB  | expo-camera bundles the ML Kit barcode model for QR pairing (kept) |
 
 ## Decisions
 
 - Keep all 19 highlight languages.
 - Delete `packages/app/modules/paseo-diff-prototype`.
-- QR scanning moves to the unbundled Play Services barcode model.
+- QR scanning keeps the bundled ML Kit model. The unbundled one would save
+  4.9 MB, but a sideloaded APK fetches its model on first use, and expo-camera
+  reports a missing model as no barcode: QR would stay dead offline or without
+  Play Services. Revisit after R8.
 - Deltas stay unsigned sidecars outside the manifest, like the `.gz`: the
   device checks the rebuilt APK against the signed cell.
 - The decoder is zstd-jni 1.5.7-12 (1.5.7-13 and later need compileSdk 37),
@@ -44,12 +47,9 @@ needs to be:
 
 ### Phase 2: cheap size cuts
 
-- [ ] Delete the diff prototype module.
-- [ ] Config plugin swapping `com.google.mlkit:barcode-scanning` for
-      `play-services-mlkit-barcode-scanning`, plus the model-download
-      manifest entry; F-Droid builds skip it.
-- [ ] Release job summary with per-group APK sizes and the delta size.
-- [ ] Device check: QR pairing still scans.
+- [x] Delete the diff prototype module.
+- [x] Release job summary with per-group APK sizes and the download sizes
+      (`android-size-report.mjs`).
 
 ### Phase 3: R8
 

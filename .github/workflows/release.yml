@@ -582,6 +582,13 @@ jobs:
         run: |
           node .github/scripts/release-android-delta.mjs \
             "$RUNNER_TEMP/release-android/paseo-$VERSION-android-arm64.apk" "$RUNNER_TEMP/release-android-delta"
+      - name: Summarize APK and download sizes
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: |
+          node .github/scripts/android-size-report.mjs \
+            "$RUNNER_TEMP/release-android/paseo-$VERSION-android-arm64.apk" "$RUNNER_TEMP/release-android-delta" \
+            >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-android-delta
