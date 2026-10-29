@@ -167,8 +167,11 @@ class PaseoForkUpdatesModule : Module() {
             expectedVersion,
             expectedCertificateSha256,
           )
-        if (!gzip) {
-          download(sourceUrl, expectedBytes, false)
+        // A raw fallback that outlived the process is adopted, so a bad sidecar is not
+        // fetched again and the APK transfer is not restarted on every launch.
+        val apkUrl = if (gzip) sourceUrl.removeSuffix(GZIP_SUFFIX) else sourceUrl
+        if (!gzip || hasLiveDownload(fileName)) {
+          download(apkUrl, expectedBytes, false)
         } else {
           try {
             download(sourceUrl, requireNotNull(transferBytes), true)
@@ -176,7 +179,7 @@ class PaseoForkUpdatesModule : Module() {
             // The sidecar is unsigned, so any failure short of a cancel (missing asset, size
             // mismatch, corrupt gzip, wrong bytes) falls back once to the signed APK.
             if (error is CancellationException || error is DownloadCanceledException) throw error
-            download(sourceUrl.removeSuffix(GZIP_SUFFIX), expectedBytes, false)
+            download(apkUrl, expectedBytes, false)
           }
         }
       }
@@ -305,6 +308,13 @@ class PaseoForkUpdatesModule : Module() {
     }
     forgetDownload(manager, preferences, transferName)
     return path
+  }
+
+  private fun hasLiveDownload(fileName: String): Boolean {
+    val context = requireNotNull(appContext.reactContext)
+    val manager = context.getSystemService(DownloadManager::class.java) ?: return false
+    val preferences = context.getSharedPreferences(DOWNLOAD_PREFERENCES, Context.MODE_PRIVATE)
+    return existingDownload(manager, preferences, fileName) != null
   }
 
   private fun existingDownload(
