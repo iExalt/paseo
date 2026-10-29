@@ -17,11 +17,11 @@ headers="$RUNNER_TEMP/github-api-headers"
 (umask 077 && printf 'Authorization: Bearer %s\nX-GitHub-Api-Version: 2022-11-28\n' "${GH_TOKEN:?}" > "$headers")
 trap 'rm -f "$headers"' EXIT
 request() { curl --fail-with-body --silent --show-error --retry 3 --header "@$headers" "$@"; }
-# Creating calls retry only a 403/429 rejection, which created nothing; a retried
-# 5xx that had succeeded would duplicate the release or asset. Failures print
-# GitHub's response, which names rate limits and permission errors.
-create() {
-  local body="$RUNNER_TEMP/github-create-body" response="$RUNNER_TEMP/github-create-headers"
+# Calls that change the release retry only a 403/429 rejection, which changed
+# nothing; a retried 5xx that had succeeded would duplicate the release or asset.
+# Failures print GitHub's response, which names rate limits and permission errors.
+mutate() {
+  local body="$RUNNER_TEMP/github-mutate-body" response="$RUNNER_TEMP/github-mutate-headers"
   local code attempt
   for attempt in 1 2; do
     code="$(curl --silent --show-error --header "@$headers" --dump-header "$response" \
@@ -76,19 +76,19 @@ draft() {
       request --request DELETE "$api/releases/assets/$asset_id" > /dev/null
     done
   else
-    # A file, not stdin, so create() can resend it on a retry.
+    # A file, not stdin, so mutate() can resend it on a retry.
     local payload="$RUNNER_TEMP/release-create.json"
     jq -n --arg tag "$TAG" --arg sha "$SOURCE_SHA" --arg name "$name" \
       --rawfile body "$RUNNER_TEMP/release-notes.md" \
       '{tag_name: $tag, target_commitish: $sha, name: $name, body: $body,
         draft: true, prerelease: false, make_latest: "false"}' > "$payload"
-    id="$(create --request POST --data-binary "@$payload" "$api/releases" | jq -er .id)"
+    id="$(mutate --request POST --data-binary "@$payload" "$api/releases" | jq -er .id)"
   fi
   echo "release_id=$id" >> "$GITHUB_OUTPUT"
   echo "Draft release $id ($TAG)"
 
   while IFS= read -r file; do
-    create --request POST --header "Content-Type: application/octet-stream" \
+    mutate --request POST --header "Content-Type: application/octet-stream" \
       --data-binary "@$ASSETS/$file" \
       "https://uploads.github.com/repos/$repo/releases/$id/assets?name=$file" > /dev/null
     echo "Uploaded $file"
@@ -108,9 +108,11 @@ draft() {
 
 publish() {
   [[ "$PUBLISH" == true && "$TAG" == "paseo-v$VERSION" ]] || fail "Refusing to publish $TAG."
+  local payload="$RUNNER_TEMP/release-publish.json"
   jq -n --arg tag "$TAG" --arg sha "$SOURCE_SHA" --arg name "Paseo $VERSION" \
-    '{tag_name: $tag, target_commitish: $sha, name: $name, draft: false, prerelease: false, make_latest: "true"}' \
-    | request --request PATCH --data-binary @- "$api/releases/${RELEASE_ID:?}" > /dev/null
+    '{tag_name: $tag, target_commitish: $sha, name: $name, draft: false, prerelease: false, make_latest: "true"}' > "$payload"
+  mutate --request PATCH --data-binary "@$payload" "$api/releases/${RELEASE_ID:?}" > /dev/null \
+    || fail "GitHub refused to publish $TAG; see the response above."
   [[ "$(request "$api/commits/$TAG" | jq -er .sha)" == "$SOURCE_SHA" ]] || fail "$TAG does not point at $SOURCE_SHA."
   [[ "$(request "$api/releases/latest" | jq -er .tag_name)" == "$TAG" ]] || fail "$TAG is not the latest release."
   echo "Published $TAG at $SOURCE_SHA as the latest release."
