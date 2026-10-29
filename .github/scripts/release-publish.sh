@@ -43,7 +43,10 @@ expected_assets() {
       "paseo-$VERSION-macos-arm64-nix-desktop.tar" "paseo-$VERSION-macos-arm64-nix-desktop.json" \
       "paseo-$VERSION-macos-arm64-nix-desktop.index.json" \
       "paseo-$VERSION-android-arm64.apk" "paseo-$VERSION-android-arm64.apk.gz" \
-      "paseo-$VERSION-android-cache-pin.json"
+      "paseo-$VERSION-android-cache-pin.json" \
+      "paseo-$VERSION-linux-x64-nix.tar" "paseo-$VERSION-linux-x64-nix.json" \
+      "paseo-$VERSION-linux-arm64-nix.tar" "paseo-$VERSION-linux-arm64-nix.json" \
+      "paseo-$VERSION-windows-x64.exe"
     # The desktop deltas the unsigned index lists: none up to DELTA_BASE_RELEASES
     # (release-mac-index.mjs). A duplicate or unlisted delta fails the set check.
     jq -r '.deltas[].asset' "$ASSETS/paseo-$VERSION-macos-arm64-nix-desktop.index.json"
