@@ -127,11 +127,17 @@ accept schema 2, the 14-cell manifest releases before 0.2.0 used. Clients
 older than 0.2.0 reject schema 3: install 0.2.0 by hand once (sideload the APK;
 run `scripts/paseo-nix-update.mjs` from a checkout on macOS). Until then an old
 Android client reports "No signed published Paseo fork release could be
-verified". The release also carries an unsigned
-`paseo-X-android-arm64.apk.gz`, about 40% of the APK's size. The Android
-updater downloads it when the listing offers it, checks the inflated bytes
-against the signed APK cell, and falls back to the APK on any failure. Keep it
-out of the manifest: changing the schema breaks installed clients.
+verified". The release also carries unsigned Android sidecars. Keep them out
+of the manifest: changing the schema breaks installed clients.
+`paseo-X-android-arm64.apk.gz` is about a third of the APK's size. The
+`android-delta` job writes up to four `.apk.delta-from-Y.zst` files with
+`.github/scripts/release-android-delta.mjs`: `zstd --patch-from` deltas against
+the signed APKs of the last four stable releases, a few MB each, kept only when
+they are under half the `.gz`. The job never blocks `publish`. The Android
+updater tries the delta from its installed version against the installed APK,
+then the `.gz`, then the APK, and checks each result against the signed APK
+cell. Logcat tag `PaseoForkUpdates` records which transfer verified; a delta
+that fails falls back without telling the user.
 The macOS tar has unsigned sidecars too, written by
 `.github/scripts/release-mac-index.mjs`. `paseo-X-macos-arm64-nix-desktop.index.json`
 lists the tar's member ranges and narinfos. Up to four `.delta-from-Y.zst`
