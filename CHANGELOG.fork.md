@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.15.0](https://github.com/iExalt/paseo/compare/paseo-v0.14.0...paseo-v0.15.0) (2026-10-30)
+
+
+### Features
+
+* **release:** publish Linux Nix closures and a Windows x64 installer ([#248](https://github.com/iExalt/paseo/issues/248)) ([f2103f3](https://github.com/iExalt/paseo/commit/f2103f321c53b35cd8b604e1a25f343fa287ccf0))
+
+
+### Performance Improvements
+
+* **nix:** keep the npm deps hash stable across version bumps ([#256](https://github.com/iExalt/paseo/issues/256)) ([25fb614](https://github.com/iExalt/paseo/commit/25fb614e438ab8f0926284467cc2fcbc25478cd6))
+
 ## [0.14.0](https://github.com/iExalt/paseo/compare/paseo-v0.13.1...paseo-v0.14.0) (2026-10-30)
 
 
