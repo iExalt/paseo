@@ -14,7 +14,7 @@ export interface KeepAwakeChild {
   readonly signalCode: NodeJS.Signals | null;
   kill(signal: NodeJS.Signals): boolean;
   once(event: "spawn", listener: () => void): unknown;
-  once(event: "error", listener: (error: Error) => void): unknown;
+  on(event: "error", listener: (error: Error) => void): unknown;
   once(
     event: "close",
     listener: (code: number | null, signal: NodeJS.Signals | null) => void,
@@ -60,6 +60,7 @@ export function createKeepAwakeController(
   const now = options.now ?? Date.now;
 
   let wanted = false;
+  let stopped = false;
   let child: KeepAwakeChild | null = null;
   let losses = 0;
   let respawnTimer: ReturnType<typeof setTimeout> | null = null;
@@ -80,8 +81,9 @@ export function createKeepAwakeController(
     current.once("spawn", () => {
       if (child === current) logger.info({ pid: current.pid }, "power_assertion_acquired");
     });
-    current.once("error", (error) => {
-      spawnError = error;
+    // `on`, not `once`: kill() can emit "error" later, and an unhandled one would crash the daemon.
+    current.on("error", (error) => {
+      spawnError ??= error;
     });
     current.once("close", (code, signal) => {
       // A child we released (or replaced) is no longer `child`; its exit is expected.
@@ -144,7 +146,7 @@ export function createKeepAwakeController(
 
   return {
     hold() {
-      if (!supported || wanted) return;
+      if (!supported || stopped || wanted) return;
       wanted = true;
       losses = 0;
       acquire();
@@ -154,6 +156,7 @@ export function createKeepAwakeController(
       release(reason);
     },
     async stop() {
+      stopped = true;
       if (supported) release("shutdown");
       await Promise.all(terminations);
     },

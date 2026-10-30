@@ -197,5 +197,9 @@ describe("keep-awake controller", () => {
     expect(children[0].signals).toEqual(["SIGTERM", "SIGKILL"]);
     expect(logEvents(logger)).not.toContain("warn:power_assertion_lost");
     expect(logger.messages.at(-1)?.args[0]).toEqual({ pid: children[0].pid, reason: "shutdown" });
+
+    // A late config change during shutdown must not re-acquire.
+    controller.hold();
+    expect(children).toHaveLength(1);
   });
 });
