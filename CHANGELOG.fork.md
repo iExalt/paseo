@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/iExalt/paseo/compare/paseo-v0.15.0...paseo-v0.16.0) (2026-10-30)
+
+
+### Features
+
+* **app:** add a keep-awake switch to the host pair device page ([#259](https://github.com/iExalt/paseo/issues/259)) ([25d718b](https://github.com/iExalt/paseo/commit/25d718bada039f3bbaef435489bb978385b04693))
+* **server:** keep the Mac awake while the relay is enabled ([#258](https://github.com/iExalt/paseo/issues/258)) ([e7e3813](https://github.com/iExalt/paseo/commit/e7e3813ee0701dfecd4ad6f6d44cd25ed9d15432))
+
+
+### Bug Fixes
+
+* **server:** give the first agent tab the generated workspace title ([#261](https://github.com/iExalt/paseo/issues/261)) ([41860b9](https://github.com/iExalt/paseo/commit/41860b9331a8cdd1af04247de680737846e9a724))
+
 ## [0.15.0](https://github.com/iExalt/paseo/compare/paseo-v0.14.0...paseo-v0.15.0) (2026-10-30)
 
 
