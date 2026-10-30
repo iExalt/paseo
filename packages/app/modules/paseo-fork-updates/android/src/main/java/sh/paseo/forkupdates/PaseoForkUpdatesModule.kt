@@ -8,7 +8,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.Settings
 import android.util.Log
-import androidx.core.content.FileProvider
 import expo.modules.kotlin.functions.Coroutine
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -33,7 +32,6 @@ private const val MAX_APK_BYTES = 250L * 1024L * 1024L
 private const val MAX_REDIRECTS = 5
 private const val DOWNLOAD_POLL_MS = 500L
 private const val DOWNLOAD_DIRECTORY = "fork-updates"
-private const val LOG_TAG = "PaseoForkUpdates"
 // Maps a transfer file name (the staged APK name, plus the sidecar suffix for a `.gz` or a
 // delta) to its system DownloadManager id, so a download that outlived the app process is
 // resumed rather than restarted, and one kind of transfer is never adopted as another.
@@ -214,7 +212,9 @@ class PaseoForkUpdatesModule : Module() {
       }
     }
 
-    AsyncFunction("openInstaller") {
+    // A successful update replaces this process, so this settles only when the user cancels
+    // Android's confirmation (resolving) or the install fails (rejecting).
+    AsyncFunction("installApk") Coroutine {
         absolutePath: String,
         expectedBytes: Long,
         expectedSha256: String,
@@ -230,20 +230,12 @@ class PaseoForkUpdatesModule : Module() {
       require(expectedVersionCode > currentPackageInfo().longVersionCode) {
         "APK version is not newer than the installed app."
       }
-      require(apk.length() == expectedBytes && hashFile(apk).equals(expectedSha256, ignoreCase = true)) {
-        "Staged APK no longer matches the signed release manifest."
+      require(apk.length() == expectedBytes) { "Staged APK no longer matches the signed release manifest." }
+      val outcome = withContext(Dispatchers.IO) {
+        verifyApk(apk, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
+        SessionInstall.install(context, apk, expectedSha256)
       }
-      verifyApk(apk, expectedPackage, expectedVersionCode, expectedVersion, expectedCertificateSha256)
-      val authority = "${context.packageName}.FileSystemFileProvider"
-      require(context.packageManager.resolveContentProvider(authority, 0) != null) {
-        "Expo FileSystem content provider is unavailable."
-      }
-      val contentUri = FileProvider.getUriForFile(context, authority, apk)
-      val intent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
-        setDataAndType(contentUri, "application/vnd.android.package-archive")
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
-      }
-      context.startActivity(intent)
+      check(outcome.canceled) { "Android rejected the update: ${outcome.message ?: "status ${outcome.status}"}" }
     }
   }
 
@@ -536,5 +528,3 @@ private fun hashFile(file: File): String {
   }
   return digest.digest().toHex()
 }
-
-private fun ByteArray.toHex(): String = joinToString("") { byte -> "%02x".format(byte) }
