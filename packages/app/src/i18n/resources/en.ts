@@ -2706,7 +2706,8 @@ export const en = {
         downloading: "Downloading and verifying APK…",
         downloadingProgress: "Downloading and verifying APK… {{percent}}%",
         downloaded: "Verified update {{version}} is ready to install.",
-        installer: "Android opened the system installer. Confirm there to update Paseo.",
+        installer:
+          "Installing the update. Paseo closes when it finishes; open it again to use the new version.",
         canceled: "The installer closed without updating Paseo. You can try again.",
         installed: "Paseo was updated to {{version}}.",
         permission: "Allow Paseo to install updates in Android settings, then return here.",

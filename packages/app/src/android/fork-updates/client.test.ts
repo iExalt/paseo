@@ -8,7 +8,7 @@ const harness = vi.hoisted(() => {
     native: {
       getInstalledVersionCode: vi.fn(() => 201000),
       getInstalledVersion: vi.fn(() => "0.1.0"),
-      openInstaller: vi.fn(async () => undefined),
+      installApk: vi.fn(async () => undefined),
       downloadAndVerifyApk: vi.fn(async () => "/private/fork-update.apk"),
       findVerifiedStagedApk: vi.fn(async () => "/private/fork-update.apk"),
     },
@@ -71,7 +71,7 @@ describe("fork update staged receipt recovery", () => {
     harness.failStagedWrite = false;
     harness.native.getInstalledVersionCode.mockReturnValue(201000);
     harness.native.getInstalledVersion.mockReturnValue("0.1.0");
-    harness.native.openInstaller.mockClear();
+    harness.native.installApk.mockClear();
     harness.native.downloadAndVerifyApk.mockClear();
     harness.native.findVerifiedStagedApk.mockClear();
   });
@@ -184,7 +184,7 @@ describe("fork update staged receipt recovery", () => {
     await expect(launchForkUpdateInstaller(update, "/private/fork-update.apk")).rejects.toThrow(
       "high-water",
     );
-    expect(harness.native.openInstaller).not.toHaveBeenCalled();
+    expect(harness.native.installApk).not.toHaveBeenCalled();
     expect(await restoreStagedForkUpdate()).toBeNull();
     expect(harness.storage.get("@getpaseo/fork-update/semver-v1/high-water")).toBe("0.1.2");
     await expect(recordInstalledForkUpdate("0.1.1")).rejects.toThrow("not installed");

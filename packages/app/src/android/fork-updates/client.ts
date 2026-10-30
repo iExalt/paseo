@@ -50,7 +50,10 @@ interface ForkUpdatesNativeModule {
     expectedVersion: string,
     expectedCertificateSha256: string,
   ): Promise<string>;
-  openInstaller(
+  // Installs through a PackageInstaller session. A successful update replaces the app
+  // process, so this resolves only when the user cancels Android's confirmation and rejects
+  // when the install fails.
+  installApk(
     path: string,
     expectedBytes: number,
     expectedSha256: string,
@@ -353,13 +356,14 @@ export async function openForkUpdateInstallSettings(): Promise<void> {
   await forkUpdatesNative.openUnknownSourcesSettings();
 }
 
+/** Resolves when the user cancels; a successful update replaces the app process. */
 export async function launchForkUpdateInstaller(
   update: VerifiedForkUpdate,
   path: string,
 ): Promise<void> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
   update = await requireNewerInstalledUpdate(update);
-  await forkUpdatesNative.openInstaller(
+  await forkUpdatesNative.installApk(
     path,
     update.android.bytes,
     update.android.sha256,

@@ -239,7 +239,7 @@ export async function downloadPendingForkUpdate(): Promise<void> {
   }
 }
 
-/** Opens Android's installer; Android asks the user to confirm, so Paseo does not. */
+/** Installs the update without a confirmation where Android allows it; Paseo never asks. */
 export async function installDownloadedForkUpdate(): Promise<void> {
   const { update, apkPath, installedVersion } = getState();
   if (!update || !apkPath) return;
@@ -254,6 +254,11 @@ export async function installDownloadedForkUpdate(): Promise<void> {
     installerPending = true;
     setState({ status: "installing" });
     await launchForkUpdateInstaller(update, apkPath);
+    // Reaching here means the user canceled Android's confirmation.
+    if (installerPending) {
+      installerPending = false;
+      setState({ status: "canceled" });
+    }
   } catch {
     installerPending = false;
     setState({ status: "error" });

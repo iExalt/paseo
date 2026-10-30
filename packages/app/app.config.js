@@ -172,7 +172,10 @@ export default {
       usesCleartextTraffic: true,
       permissions: [
         ...buildProfile.androidPermissions,
-        ...(appVariant === "fork" ? ["REQUEST_INSTALL_PACKAGES"] : []),
+        // The second lets the fork updater replace itself without Android's confirmation.
+        ...(appVariant === "fork"
+          ? ["REQUEST_INSTALL_PACKAGES", "UPDATE_PACKAGES_WITHOUT_USER_ACTION"]
+          : []),
       ],
       package: variantIdentity.androidPackage,
       versionCode: isPreferencesMigrationBridge ? 11001 : variantIdentity.androidVersionCode,
