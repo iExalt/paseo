@@ -96,7 +96,7 @@ State judged by `selected="true"` resource-ids in raw `uiautomator dump` output.
   `build:server`.
 - **Unpackaged desktop userData.** The `packages/desktop/src/main.ts` comment says the main
   checkout gets "default userData". Without `PASEO_ELECTRON_USER_DATA_DIR` that is Electron's
-  default path, which Electron derives before `app.setName("Paseo")` runs; whether it is the
+  default path, which Electron likely derives before `app.setName("Paseo")` runs; whether it is the
   installed app's `Paseo` directory is unverified. `npm run dev:desktop` always sets the variable.
 
 ## Progress log
