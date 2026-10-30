@@ -67,9 +67,15 @@ describe("fork update store", () => {
     await store.updateToPendingForkRelease();
     expect(store.useForkUpdateStore.getState().status).toBe("canceled");
 
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     harness.launchForkUpdateInstaller.mockRejectedValueOnce(new Error("INSTALL_FAILED"));
     await store.updateToPendingForkRelease();
     expect(store.useForkUpdateStore.getState().status).toBe("error");
+    expect(info).toHaveBeenCalledWith(
+      '[paseo-agent] update failed status=installing reason="Error: INSTALL_FAILED"',
+    );
+    expect(info).toHaveBeenCalledWith("[paseo-agent] update status status=error version=0.1.1");
+    info.mockRestore();
   });
 
   it("keeps a downloaded release but lets a newer one replace it", async () => {

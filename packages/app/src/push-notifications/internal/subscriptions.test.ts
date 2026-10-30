@@ -66,6 +66,31 @@ describe("push subscription registration status", () => {
     notifications.getExpoPushTokenAsync.mockResolvedValue({ data: "ExponentPushToken[a]" });
   });
 
+  it("reports a build without Firebase once per session instead of warning on every connect", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    notifications.getExpoPushTokenAsync.mockRejectedValue(
+      new Error(
+        "Unable to get Firebase Messaging instance. Did you configure `googleServicesFile`?",
+      ),
+    );
+
+    const stops = [
+      startSubscription({ client: fakeClient(true) as never, serverId: "a" }),
+      startSubscription({ client: fakeClient(true) as never, serverId: "b" }),
+    ];
+    await settle();
+
+    expect(usePushRegistrationStore.getState()).toMatchObject({ a: "failed", b: "failed" });
+    expect(info.mock.calls).toEqual([
+      ["[paseo-agent] push register status=unavailable reason=firebase-not-configured"],
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+    for (const stop of stops) stop();
+    info.mockRestore();
+    warn.mockRestore();
+  });
+
   it("follows the connection once the token resolves", async () => {
     const client = fakeClient(false);
     const stop = startSubscription({ client: client as never, serverId: "host" });
