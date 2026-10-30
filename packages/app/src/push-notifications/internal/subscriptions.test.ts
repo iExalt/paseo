@@ -87,6 +87,14 @@ describe("push subscription registration status", () => {
     ]);
     expect(warn).not.toHaveBeenCalled();
     for (const stop of stops) stop();
+
+    notifications.getExpoPushTokenAsync.mockRejectedValue(
+      new Error("Firebase Installations Service is unavailable"),
+    );
+    const stop = startSubscription({ client: fakeClient(true) as never, serverId: "c" });
+    await settle();
+    expect(warn).toHaveBeenCalledTimes(1);
+    stop();
     info.mockRestore();
     warn.mockRestore();
   });

@@ -51,12 +51,32 @@ from `dev` with the workspace-route hydration fix (upstream #7918, 2026-10-30); 
   `uiautomator dump`; summary helpers that print only id, text and description lose it.
 - Terminal rows are in the dump as `terminal-row-<n>` with their text. Diff code is drawn with
   Skia, so it is likely absent (unverified); take a screenshot.
-- App logs are on the `ReactNativeJS` logcat tag: `adb logcat -s ReactNativeJS`.
+- App logs are on the `ReactNativeJS` logcat tag: `adb logcat -s ReactNativeJS`. For state, read
+  the [agent log lines](#agent-log-lines) instead of screenshots.
 - `uiautomator dump` succeeded 15 of 15 times with the app idle on the tablet (chat, settings,
   sessions). Agents on the phone have hit `ERROR: could not get idle state` while lists load or
   an agent runs; wait and retry, or fall back to a screenshot.
 
 The shared Cuttlefish tablet's harness guide is `/home/dev/cuttlefish/HARNESS.md` in the dev pod.
+
+## Agent log lines
+
+The app logs state changes as one line each, on logcat's `ReactNativeJS` tag and in the web
+console: `[paseo-agent] <area> <event> key=value …`. Values with spaces are JSON-quoted.
+`adb logcat -s ReactNativeJS | grep '\[paseo-agent\]'` follows them.
+
+| Area and event               | Fields                                                                                     | When                                                           |
+| ---------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
+| `link import`                | `status` (`connected`, `cancelled`, `password_required`, `failed`), `serverId` or `reason` | A `#offer=`, `#connect=` or `relay://` link arrives            |
+| `connection status`          | `serverId`, `status`, `transport`, `error`                                                 | A host's connection status changes                             |
+| `connection bootstrap-probe` | `endpoint`, `status=failed`, `reason`                                                      | No daemon on this device's `localhost:6767`, as on every phone |
+| `push received`              | `id`, `test`, `shown`                                                                      | A notification arrives while the app is open                   |
+| `push register`              | `status=unavailable`, `reason=firebase-not-configured`                                     | Once per session in builds without Firebase                    |
+| `update status`              | `status`, `version`, `downloadedBytes`                                                     | The fork updater changes state                                 |
+| `update failed`              | `status` (the stage), `reason`                                                             | A check, download or install fails                             |
+
+Link bodies after `#`, `relay://` URIs and Expo push tokens are redacted. A `reason` can still
+quote a fragment of a malformed offer's decoded JSON (server ID and public key only).
 
 ## Desktop and web
 

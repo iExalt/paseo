@@ -36,11 +36,13 @@ async function ensurePushPermission(prompt: boolean): Promise<boolean> {
 }
 
 let loggedFirebaseMissing = false;
+// Messages from builds with no google-services file. Other Firebase errors are real failures.
+const FIREBASE_NOT_CONFIGURED = /googleServicesFile|Default FirebaseApp is not initialized/;
 
 // Builds without a google-services file (local APKs, the tablet harness) fail on every connect.
 // Say so once per session instead of a warning with a stack each time.
 function logRegistrationFailure(error: unknown): void {
-  if (/Firebase/i.test(describeError(error))) {
+  if (FIREBASE_NOT_CONFIGURED.test(describeError(error))) {
     if (loggedFirebaseMissing) return;
     loggedFirebaseMissing = true;
     agentLog("push", "register", { status: "unavailable", reason: "firebase-not-configured" });

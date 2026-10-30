@@ -1,6 +1,6 @@
 // One grep-able line per state change agents need to observe without screenshots:
 // `[paseo-agent] <area> <event> key=value ...` on logcat's ReactNativeJS tag and the web console.
-// docs/agent-testing.md lists the events. Values never carry link bodies or push tokens.
+// docs/agent-testing.md#agent-log-lines lists the events.
 
 export type AgentLogArea = "link" | "connection" | "push" | "update";
 export type AgentLogValue = string | number | boolean | null | undefined;
