@@ -18,7 +18,7 @@ type MutableDaemonConfigPatch = import("@getpaseo/protocol/messages").MutableDae
 type ProviderOverride = import("./agent/provider-launch-config.js").ProviderOverride;
 
 interface SupportedMutableConfigPatch {
-  relay?: { enabled?: boolean; requireProtectedSecurity?: boolean };
+  relay?: { enabled?: boolean; requireProtectedSecurity?: boolean; keepAwake?: boolean };
   agentTools?: { enabled?: boolean };
   browserTools?: { enabled?: boolean };
   providers?: MutableDaemonConfig["providers"];
@@ -173,6 +173,7 @@ function isEqualValue(a: unknown, b: unknown): boolean {
 const RELOADABLE_PATHS = [
   "daemon.relay.enabled",
   "daemon.relay.requireProtectedSecurity",
+  "daemon.relay.keepAwake",
   "daemon.agentTools.enabled",
   "daemon.browserTools.enabled",
   "daemon.hostnames",
@@ -197,6 +198,7 @@ const RELOADABLE_PATHS = [
 const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.relay.enabled", "relay.enabled"],
   ["daemon.relay.requireProtectedSecurity", "relay.requireProtectedSecurity"],
+  ["daemon.relay.keepAwake", "relay.keepAwake"],
   ["daemon.agentTools.enabled", "agentTools.enabled"],
   ["daemon.browserTools.enabled", "browserTools.enabled"],
   ["daemon.hostnames", "hostnames"],
@@ -261,6 +263,7 @@ function pickRelayPatch(
     ...(relay?.requireProtectedSecurity !== undefined
       ? { requireProtectedSecurity: relay.requireProtectedSecurity }
       : {}),
+    ...(relay?.keepAwake !== undefined ? { keepAwake: relay.keepAwake } : {}),
   };
   return Object.keys(picked).length > 0 ? { relay: picked } : {};
 }
@@ -705,6 +708,9 @@ function mergeMutableDaemonPatch(
   }
   if (patch.relay?.requireProtectedSecurity !== undefined) {
     next.relay = { ...next.relay, requireProtectedSecurity: patch.relay.requireProtectedSecurity };
+  }
+  if (patch.relay?.keepAwake !== undefined) {
+    next.relay = { ...next.relay, keepAwake: patch.relay.keepAwake };
   }
   if (patch.agentTools?.enabled !== undefined) {
     next.agentTools = { ...next.agentTools, enabled: patch.agentTools.enabled };

@@ -391,6 +391,7 @@ export interface PaseoDaemonConfig {
   relayEnabled?: boolean;
   relayEnabledMutable?: boolean;
   relayRequireProtectedSecurity?: boolean;
+  relayKeepAwake?: boolean;
   relayEndpoint?: string;
   relayPublicEndpoint?: string;
   relayUseTls?: boolean;
@@ -510,6 +511,7 @@ function createInitialRelayConfig(config: PaseoDaemonConfig): MutableDaemonConfi
   return {
     enabled: config.relayEnabled ?? true,
     requireProtectedSecurity: config.relayRequireProtectedSecurity ?? false,
+    keepAwake: config.relayKeepAwake ?? false,
   };
 }
 

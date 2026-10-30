@@ -47,6 +47,9 @@ const MutableRelayConfigSchema = z
     // COMPAT(relayProtectedSecurity): added in v0.13.0, keep optional while old daemons are supported.
     // When true the daemon admits only relay sessions that negotiated protected endpoint security.
     requireProtectedSecurity: z.boolean().optional(),
+    // COMPAT(relayKeepAwake): added in v0.16.0, keep optional while old daemons are supported.
+    // When true a macOS daemon holds a sleep assertion while the relay is enabled.
+    keepAwake: z.boolean().optional(),
   })
   .passthrough();
 
