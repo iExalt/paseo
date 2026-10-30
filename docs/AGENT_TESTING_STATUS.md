@@ -12,9 +12,9 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Field             | Status                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------- |
 | Baseline          | `8388477dd` (`feat(app): update the fork Android app without the system installer screens`) |
-| Current phase     | Phase I (plan Phase 0 and Phase 1): A merged, D in review                                   |
-| Overall state     | Docs and device facts merged (#264); CLI and build fixes implemented                        |
-| Immediate focus   | Chunk B: pair route, tagged logs, quieter logs, native `?open=`                             |
+| Current phase     | Phase I (plan Phase 0 and Phase 1): A and D merged, B in progress                           |
+| Overall state     | Docs, device facts, CLI and build fixes merged; native `?open=` fixed by upstream #7918     |
+| Immediate focus   | Chunk B: pair route and tagged logs; chunk C: forms and selectors                           |
 | Routine CI budget | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below                    |
 
 ### Routine CI baseline
@@ -39,26 +39,26 @@ Dev push run `41105948216` at `8388477dd`, hosted runners:
 | A. Docs and device facts | complete | Merged as `5f851ea50` (#264); tablet results below                                                 |
 | B. Reach and observe     | planned  | Device pass shared with C; tagged pairing failure line in 4 of 4 cold/warm runs of both link forms |
 | C. Forms and selectors   | planned  | Device pass shared with B                                                                          |
-| D. CLI and build         | active   | Scratch-home runs on dev-station, below                                                            |
+| D. CLI and build         | complete | Merged as `a29b61fa4` (#265); scratch-home runs below                                              |
 
 ### A: device facts
 
 Android 17 Cuttlefish tablet, `sh.paseo` 0.16.0 built at `8388477dd`, harness daemon 0.10.0.
 State judged by `selected="true"` resource-ids in raw `uiautomator dump` output.
 
-| Check                                     | Result                                                                                        |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `paseo://settings/about`, `/appearance`   | Correct page, cold and warm                                                                   |
-| `paseo://h/<srv>/agent/<id>`              | Agent tab selected, cold and warm                                                             |
-| `?open=terminal:` / `agent:`              | Selected when warm from a clean state; cold start keeps the previous tab (agent 0 of 2)       |
-| `?open=file:`                             | Tab created but never selected (0 of 4); the next warm `agent:` intent was then ignored twice |
-| `paseo://pair#offer=…`                    | "Unmatched Route", cold and warm                                                              |
-| `paseo:///#offer=…`                       | No route change                                                                               |
-| `[OfferLinkListener] Pairing link failed` | Logged in 2 of 4 runs with an invalid offer                                                   |
-| Idle `uiautomator dump`                   | 15 of 15 on chat, settings and sessions at default animator scale; scale-0 test not run       |
-| Terminal text in dumps                    | Present as `terminal-row-<n>` (plan item 16's terminal half is done)                          |
-| `pm grant sh.paseo …POST_NOTIFICATIONS`   | Granted                                                                                       |
-| `daemon status --json` (0.10.0 daemon)    | Includes `workerPid`                                                                          |
+| Check                                                              | Result                                                                                                                                                                       |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `paseo://settings/about`, `/appearance`                            | Correct page, cold and warm                                                                                                                                                  |
+| `paseo://h/<srv>/agent/<id>`                                       | Agent tab selected, cold and warm                                                                                                                                            |
+| `?open=` before the fix                                            | Cold start kept the previous tab (agent 0 of 2); `file:` tabs never selected (0 of 4). Probe: `hasHydratedWorkspaces` stayed false, so the pending intent was never consumed |
+| `?open=` after upstream #7918 (probe build at `5f851ea50` + #7918) | 8 of 8 selected: cold `agent:`, `terminal:`, `file:`; warm `agent:`, `file:` then `agent:`, `terminal:`                                                                      |
+| `paseo://pair#offer=…`                                             | "Unmatched Route", cold and warm                                                                                                                                             |
+| `paseo:///#offer=…`                                                | No route change                                                                                                                                                              |
+| `[OfferLinkListener] Pairing link failed`                          | Logged in 2 of 4 runs with an invalid offer                                                                                                                                  |
+| Idle `uiautomator dump`                                            | 15 of 15 on chat, settings and sessions at default animator scale; scale-0 test not run                                                                                      |
+| Terminal text in dumps                                             | Present as `terminal-row-<n>` (plan item 16's terminal half is done)                                                                                                         |
+| `pm grant sh.paseo …POST_NOTIFICATIONS`                            | Granted                                                                                                                                                                      |
+| `daemon status --json` (0.10.0 daemon)                             | Includes `workerPid`                                                                                                                                                         |
 
 ### D: CLI and build
 
@@ -74,9 +74,9 @@ Scratch homes on dev-station, port 7811, never the user's daemon.
 
 ## Current boundary
 
-- Native `?open=` does not reliably select its tab; cause not diagnosed. Code is upstream's
-  (`deferOpenTab`, `pendingOpenByWorkspace`, `usePendingWorkspaceOpen`); no upstream fix after the
-  2026-10-26 merge-base names it.
+- `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
+  the route wiring is covered only by the tablet pass, and upstream plans to remove `?open=` after
+  2027-01-22.
 - The idle-dump failure is not reproduced on the tablet. It was seen only on the phone in
   loading or running states (Phase 2 item 8).
 - A real pairing (valid offer, connected host) cannot run on the tablet: the guest has no
