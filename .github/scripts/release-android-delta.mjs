@@ -6,7 +6,7 @@
 // Usage: node release-android-delta.mjs <signed APK> <output dir>
 // Env: VERSION, GITHUB_REPOSITORY, GH_TOKEN, RUNNER_TEMP; zstd on PATH.
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -62,7 +62,7 @@ export async function makeApkDelta({ base, next, directory, work, zstd = runZstd
   const file = join(work, asset);
   const check = join(work, "check.apk");
   try {
-    zstd([...ZSTD_ARGS, `--patch-from=${base.file}`, next.file, "-o", file]);
+    await zstd([...ZSTD_ARGS, `--patch-from=${base.file}`, next.file, "-o", file]);
     const rebuilt = await zstdDecompress(file, check, next.bytes, { patchFrom: base.file });
     assert.ok(
       rebuilt.bytes === next.bytes && rebuilt.sha256.toString("hex") === next.sha256,
@@ -82,9 +82,15 @@ export async function makeApkDelta({ base, next, directory, work, zstd = runZstd
   }
 }
 
-function runZstd(args) {
-  const result = spawnSync("zstd", args, { encoding: "utf8" });
-  assert.ok(!result.error && result.status === 0, `zstd failed: ${result.stderr ?? result.error}`);
+async function runZstd(args) {
+  const child = spawn("zstd", args, { stdio: ["ignore", "ignore", "pipe"] });
+  let stderr = "";
+  child.stderr.on("data", (chunk) => (stderr += chunk));
+  const code = await new Promise((settle, reject) => {
+    child.on("error", reject);
+    child.on("close", settle);
+  });
+  assert.equal(code, 0, `zstd failed: ${stderr}`);
 }
 
 async function main() {
@@ -110,19 +116,24 @@ async function main() {
     gzipBytes: (await stat(`${apkPath}.gz`)).size,
   };
   const work = await mkdtemp(join(process.env.RUNNER_TEMP, "paseo-apk-delta-"));
+  // One base per core at once: each --ultra -22 run is single-threaded, takes about
+  // 90 s and peaks near 1.8 GB, so the four fit the runner's 4 cores and 16 GB.
   const made = [];
   try {
-    for (const { tag } of tags) {
-      try {
-        const base = await previousApk(tag, work);
-        if (await makeApkDelta({ base, next, directory, work })) made.push(base.version);
-      } catch (error) {
-        // Deltas only save bandwidth; a missing one must not block the release.
-        console.log(`::warning::No APK delta from ${tag}: ${error.message}`);
-      } finally {
-        await rm(join(work, "base.apk"), { force: true });
-      }
-    }
+    await Promise.all(
+      tags.map(async ({ tag }) => {
+        const own = await mkdtemp(join(work, "base-"));
+        try {
+          const base = await previousApk(tag, own);
+          if (await makeApkDelta({ base, next, directory, work: own })) made.push(base.version);
+        } catch (error) {
+          // Deltas only save bandwidth; a missing one must not block the release.
+          console.log(`::warning::No APK delta from ${tag}: ${error.message}`);
+        } finally {
+          await rm(own, { recursive: true, force: true });
+        }
+      }),
+    );
   } finally {
     await rm(work, { recursive: true, force: true });
   }
