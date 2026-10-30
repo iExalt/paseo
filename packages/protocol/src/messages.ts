@@ -3921,8 +3921,8 @@ export const ServerInfoStatusPayloadSchema = z
         daemonConfigReload: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         relayConfig: z.boolean().optional(),
-        // COMPAT(relayKeepAwake): added in v0.16.0, remove gate after 2027-04-30.
-        // Advertised only by macOS daemons, which can hold relay.keepAwake's sleep assertion.
+        // Platform capability, not a version gate: only macOS daemons that can hold
+        // relay.keepAwake's sleep assertion advertise it. Added in v0.16.0; keep it.
         relayKeepAwake: z.boolean().optional(),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: z.boolean().optional(),

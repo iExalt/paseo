@@ -2015,7 +2015,7 @@ export class VoiceAssistantWebSocketServer {
         daemonConfigReload: true,
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         ...(this.advertiseRelayConfig ? { relayConfig: true } : {}),
-        // COMPAT(relayKeepAwake): added in v0.16.0, remove gate after 2027-04-30.
+        // Platform capability (macOS keep-awake controller), not a version gate; keep it.
         ...(this.advertiseRelayKeepAwake ? { relayKeepAwake: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: true,
