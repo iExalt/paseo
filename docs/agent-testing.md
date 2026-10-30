@@ -52,6 +52,17 @@ from `dev` with the workspace-route hydration fix (upstream #7918, 2026-10-30); 
   Skia, so it is likely absent (unverified); take a screenshot.
 - App logs are on the `ReactNativeJS` logcat tag: `adb logcat -s ReactNativeJS`. For state, read
   the [agent log lines](#agent-log-lines) instead of screenshots.
+- Find on a phone-width layout: `workspace-tab-switcher-trigger`, then
+  `workspace-tab-menu-<tabId>-trigger`, then `workspace-tab-menu-<tabId>-find`. The bar is
+  `pane-find-input`, `pane-find-status` (`1 of 2`), `pane-find-next`, `pane-find-previous` and
+  `pane-find-close`. Wide layouts have no native Find entry point.
+- Settings rows are `settings-section-<section>` and `settings-host-section-<section>`. The
+  direct connection form is `direct-host-input`, `direct-port-input` and
+  `direct-password-input`; Enter in the host field moves to the port, and both select their text
+  on focus. Open it with `paseo://settings/general?addHost=1`, then tap `add-host-method-direct`.
+- To check a phone-width layout on the tablet, run `adb shell wm size 1080x2400` and
+  `adb shell wm density 420`; undo with `wm size reset` and `wm density reset` before releasing the
+  device.
 - `uiautomator dump` succeeded 15 of 15 times with the app idle on the tablet (chat, settings,
   sessions). Agents on the phone have hit `ERROR: could not get idle state` while lists load or
   an agent runs; wait and retry, or fall back to a screenshot.
