@@ -62,7 +62,7 @@ The shared Cuttlefish tablet's harness guide is `/home/dev/cuttlefish/HARNESS.md
 ## Agent log lines
 
 The app logs state changes as one line each, on logcat's `ReactNativeJS` tag and in the web
-console: `[paseo-agent] <area> <event> key=value …`. Values with spaces are JSON-quoted.
+console: `[paseo-agent] <area> <event> key=value …`. Values with spaces, `=` or quotes are JSON-quoted.
 `adb logcat -s ReactNativeJS | grep '\[paseo-agent\]'` follows them.
 
 | Area and event               | Fields                                                                                     | When                                                           |
