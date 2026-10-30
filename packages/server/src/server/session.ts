@@ -3356,8 +3356,7 @@ export class Session {
       msg.type === "daemon.notifications.rules.get.request" ||
       msg.type === "daemon.notifications.rules.set.request"
     ) {
-      this.dispatchDaemonNotificationRulesMessage(msg);
-      return undefined;
+      return this.dispatchDaemonNotificationRulesMessage(msg);
     }
 
     switch (msg.type) {
@@ -3425,16 +3424,16 @@ export class Session {
     }
   }
 
-  private dispatchDaemonNotificationRulesMessage(
+  private async dispatchDaemonNotificationRulesMessage(
     msg: Extract<
       SessionInboundMessage,
       {
         type: "daemon.notifications.rules.get.request" | "daemon.notifications.rules.set.request";
       }
     >,
-  ): void {
+  ): Promise<void> {
     if (msg.type === "daemon.notifications.rules.set.request") {
-      this.daemonConfigStore.patch({ replyRules: msg.replyRules });
+      await this.daemonConfigStore.patch({ replyRules: msg.replyRules });
       this.emit({
         type: "daemon.notifications.rules.set.response",
         payload: {

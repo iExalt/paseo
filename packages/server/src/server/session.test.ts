@@ -2292,6 +2292,64 @@ describe("daemon status + pairing RPC", () => {
     ]);
   });
 
+  test("daemon notification rule RPCs await persistence and report asynchronous failures", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    let currentRules: Array<{ source: string; flags: string }> = [];
+    let finishWrite!: () => void;
+    const write = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+    const patch = vi.fn(async ({ replyRules }: { replyRules: typeof currentRules }) => {
+      await write;
+      currentRules = replyRules;
+    });
+    const session = createSessionForTest({
+      messages,
+      daemonConfigStore: asDaemonConfigStore({
+        get: () => ({ providers: {} }),
+        getReplyRules: () => currentRules,
+        patch,
+      }),
+    });
+    const rules = [{ source: "hello", flags: "i" }];
+    const request = session.handleMessage({
+      type: "daemon.notifications.rules.set.request",
+      requestId: "rules-pending",
+      replyRules: rules,
+    });
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledOnce());
+    expect(messages).toEqual([]);
+    finishWrite();
+    await request;
+    expect(messages).toEqual([
+      {
+        type: "daemon.notifications.rules.set.response",
+        payload: { requestId: "rules-pending", replyRules: rules },
+      },
+    ]);
+
+    messages.length = 0;
+    patch.mockRejectedValueOnce(new Error("config write failed"));
+    await session.handleMessage({
+      type: "daemon.notifications.rules.set.request",
+      requestId: "rules-failed",
+      replyRules: [],
+    });
+    expect(messages).toContainEqual({
+      type: "rpc_error",
+      payload: {
+        requestId: "rules-failed",
+        requestType: "daemon.notifications.rules.set.request",
+        error: "Request failed: config write failed",
+        code: "handler_error",
+      },
+    });
+    expect(
+      messages.some((message) => message.type === "daemon.notifications.rules.set.response"),
+    ).toBe(false);
+    expect(currentRules).toEqual(rules);
+  });
+
   test("daemon.get_status.request reports identity, runtime config, and mapped providers", async () => {
     const messages: unknown[] = [];
     const session = createSessionForTest({
