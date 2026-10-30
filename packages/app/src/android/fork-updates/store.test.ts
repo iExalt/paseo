@@ -43,7 +43,8 @@ describe("fork update store", () => {
     harness.checkForForkUpdate.mockResolvedValue({ update, installedVersion: "0.1.0" });
     harness.downloadForkUpdate.mockResolvedValue("/files/update.apk");
     harness.canInstallForkUpdate.mockResolvedValue(true);
-    harness.launchForkUpdateInstaller.mockResolvedValue(undefined);
+    // A successful update replaces the app process, so the install never settles.
+    harness.launchForkUpdateInstaller.mockReturnValue(new Promise(() => undefined));
     harness.restoreStagedForkUpdate.mockResolvedValue(null);
   });
 
@@ -51,11 +52,24 @@ describe("fork update store", () => {
     await store.checkForForkUpdateNow({ userInitiated: false });
     expect(store.hasPendingForkUpdate(store.useForkUpdateStore.getState())).toBe(true);
 
-    await store.updateToPendingForkRelease();
+    void store.updateToPendingForkRelease();
 
+    await vi.waitFor(() =>
+      expect(harness.launchForkUpdateInstaller).toHaveBeenCalledWith(update, "/files/update.apk"),
+    );
     expect(harness.downloadForkUpdate).toHaveBeenCalledWith(update);
-    expect(harness.launchForkUpdateInstaller).toHaveBeenCalledWith(update, "/files/update.apk");
     expect(store.useForkUpdateStore.getState().status).toBe("installing");
+  });
+
+  it("reports a canceled confirmation and a rejected install", async () => {
+    await store.checkForForkUpdateNow({ userInitiated: false });
+    harness.launchForkUpdateInstaller.mockResolvedValueOnce(undefined);
+    await store.updateToPendingForkRelease();
+    expect(store.useForkUpdateStore.getState().status).toBe("canceled");
+
+    harness.launchForkUpdateInstaller.mockRejectedValueOnce(new Error("INSTALL_FAILED"));
+    await store.updateToPendingForkRelease();
+    expect(store.useForkUpdateStore.getState().status).toBe("error");
   });
 
   it("keeps a downloaded release but lets a newer one replace it", async () => {

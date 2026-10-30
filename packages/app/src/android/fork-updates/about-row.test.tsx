@@ -108,7 +108,8 @@ describe("fork Android update row", () => {
     harness.downloadForkUpdate.mockResolvedValue("/private/files/fork-updates/update.apk");
     harness.canInstallForkUpdate.mockImplementation(async () => harness.allowInstall);
     harness.openForkUpdateInstallSettings.mockResolvedValue(undefined);
-    harness.launchForkUpdateInstaller.mockResolvedValue(undefined);
+    // A successful update replaces the app process, so the install never settles.
+    harness.launchForkUpdateInstaller.mockReturnValue(new Promise(() => undefined));
     harness.recordInstalledForkUpdate.mockResolvedValue(undefined);
     harness.restoreStagedForkUpdate.mockResolvedValue(null);
   });
