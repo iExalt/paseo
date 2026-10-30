@@ -24,6 +24,8 @@ export interface KeepAwakeChild {
 export type SpawnKeepAwakeAssertion = () => KeepAwakeChild;
 
 export interface KeepAwakeController {
+  // False off macOS or without a spawner; the controller then ignores hold().
+  readonly supported: boolean;
   hold(): void;
   release(reason: KeepAwakeReleaseReason): void;
   stop(): Promise<void>;
@@ -145,6 +147,7 @@ export function createKeepAwakeController(
   }
 
   return {
+    supported,
     hold() {
       if (!supported || stopped || wanted) return;
       wanted = true;

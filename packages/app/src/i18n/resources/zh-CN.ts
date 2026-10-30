@@ -2701,6 +2701,13 @@ export const zhCN: TranslationResources = {
         title: "配对设备",
         rowTitle: "配对设备",
         rowHint: "扫描二维码或复制链接，将手机连接到这个 Host",
+        keepAwake: {
+          title: "为中继保持此 Mac 唤醒",
+          hint: "中继开启时，在接通电源的情况下阻止睡眠，让远程设备可以访问此 Mac。接通电源时会消耗更多电量并更易发热。",
+          activeHint: "中继开启时，接通电源会保持此 Mac 唤醒",
+          waitingHint: "中继开启后生效",
+          updateFailed: "无法更新保持唤醒设置",
+        },
       },
       skills: {
         ...en.settings.host.skills,

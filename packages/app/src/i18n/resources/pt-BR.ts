@@ -2768,6 +2768,13 @@ export const ptBR: TranslationResources = {
         title: "Parear dispositivos",
         rowTitle: "Parear um dispositivo",
         rowHint: "Escaneie um QR code ou copie um link para conectar seu celular a este host",
+        keepAwake: {
+          title: "Manter este Mac acordado para o relay",
+          hint: "Impede a suspensão na tomada enquanto o relay está ativado, para que dispositivos remotos alcancem este Mac. Consome mais energia e esquenta mais enquanto está na tomada.",
+          activeHint: "Mantém este Mac acordado na tomada enquanto o relay está ativado",
+          waitingHint: "Entra em vigor quando o relay está ativado",
+          updateFailed: "Não foi possível atualizar a opção de manter acordado",
+        },
       },
       skills: {
         ...en.settings.host.skills,

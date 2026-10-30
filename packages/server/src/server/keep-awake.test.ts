@@ -111,6 +111,7 @@ describe("keep-awake controller", () => {
     controller.hold();
     await controller.stop();
 
+    expect(controller.supported).toBe(false);
     expect(children).toHaveLength(0);
     expect(logger.messages).toHaveLength(0);
   });

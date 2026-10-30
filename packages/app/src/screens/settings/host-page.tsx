@@ -70,6 +70,7 @@ import { IdleRuntimeCleanupCard } from "./idle-runtime-cleanup-card";
 import { AgentToolsCard } from "./agent-tools-card";
 import { ReplyRulesSection } from "./reply-rules-section";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
+import { RelayKeepAwakeCard } from "./relay-keep-awake-card";
 
 const ThemedRestart = withUnistyles(RotateCw);
 const ThemedUpdate = withUnistyles(ArrowUpToLine);
@@ -275,6 +276,7 @@ export function HostPairDevicePage({ serverId }: { serverId: string }) {
   return (
     <SettingsSection title={t("settings.host.pairDevices.title")}>
       <PairDeviceRow serverId={serverId} />
+      <RelayKeepAwakeCard serverId={serverId} />
     </SettingsSection>
   );
 }

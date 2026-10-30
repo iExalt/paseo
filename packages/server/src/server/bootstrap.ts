@@ -1700,6 +1700,7 @@ export async function createPaseoDaemon(
                 getHostnames: () => configuredHostnames,
                 daemonStatusRpc: dependencies.serverFeatureOverrides?.daemonStatusRpc,
                 relayConfig: dependencies.serverFeatureOverrides?.relayConfig,
+                relayKeepAwake: keepAwake.supported,
                 startPaused: true,
                 finishSubscriptions: () => finishSubscriptions,
               },

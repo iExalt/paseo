@@ -2754,6 +2754,13 @@ export const ja: TranslationResources = {
         title: "デバイスをペアリング",
         rowTitle: "デバイスをペアリング",
         rowHint: "QRコードをスキャンするかリンクをコピーしてスマートフォンをこのホストに接続",
+        keepAwake: {
+          title: "リレーのためにこの Mac をスリープさせない",
+          hint: "リレーが有効な間、電源接続中のスリープを防ぎ、リモートデバイスからこの Mac に接続できるようにします。電源接続中は消費電力と発熱が増えます。",
+          activeHint: "リレーが有効な間、電源接続中はこの Mac をスリープさせません",
+          waitingHint: "リレーが有効なときに適用されます",
+          updateFailed: "スリープ防止の設定を更新できません",
+        },
       },
       skills: {
         ...en.settings.host.skills,
