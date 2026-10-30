@@ -40,7 +40,7 @@ needs to be:
       the installed version; each attempt is logged under `PaseoForkUpdates`.
 - [x] C. `android-delta` release job writes deltas from the last four releases;
       the publish asset check accepts them.
-- [ ] G-live. Release N ships the delta client; release N+1 updates the phone
+- [x] G-live. Release N ships the delta client; release N+1 updates the phone
       with logcat showing `Verified <N+1> from zstd-patch` and no `.gz`
       transfer. This also proves the zstd-jni `.so` loads in a release build
       and that the installed APK can be mapped.
@@ -61,6 +61,6 @@ needs to be:
       terminal, camera, restart. The guest has no network, so the update check
       could not reach GitHub.
 - [x] Release dry run with R8: CI build time and memory, the fork APK size.
-- [ ] After the first R8 release: the phone's update check and a push
+- [x] After the first R8 release: the phone's update check and a push
       notification work before anything else ships. If the updater broke,
       sideload the fixed APK; the signer is unchanged.
