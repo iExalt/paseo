@@ -786,7 +786,10 @@ function serializeTimeline(timeline: CommittedTimeline): StoredTimeline | null {
     for (let index = segment.length - 1; index >= 0; index -= 1) {
       const item = segment[index]!;
       if (item.kind === "user_message" && isUnreconciledLocalUserMessage(item)) continue;
-      if (items.length >= MAX_TIMELINE_ITEMS && !continuesTurn(item, visited[visited.length - 1]!)) {
+      if (
+        items.length >= MAX_TIMELINE_ITEMS &&
+        !continuesTurn(item, visited[visited.length - 1]!)
+      ) {
         visitedAll = false;
         break visit;
       }

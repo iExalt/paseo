@@ -51,6 +51,7 @@ describe("native Paseo tool catalog", () => {
     });
     const catalog = createPaseoToolCatalog({
       agentManager: asAgentManager({
+        getPluginTools: () => [],
         getAgent: () => ({
           id: "agent-1",
           cwd: "/workspace/project",

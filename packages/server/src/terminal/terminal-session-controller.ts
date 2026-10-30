@@ -434,6 +434,11 @@ export class TerminalSessionController {
     return refresh;
   }
 
+  private assertTerminalManagerAvailable(): void {
+    const unavailable = this.terminalManager?.getUnavailableError?.();
+    if (unavailable) throw unavailable;
+  }
+
   private async handleListTerminalsRequest(msg: ListTerminalsRequest): Promise<void> {
     if (!this.terminalManager) {
       this.emit({
@@ -449,8 +454,7 @@ export class TerminalSessionController {
     }
 
     try {
-      const unavailable = this.terminalManager.getUnavailableError?.();
-      if (unavailable) throw unavailable;
+      this.assertTerminalManagerAvailable();
       const callerScope = msg.callerContext
         ? await this.resolveCallerContext?.({
             callerContext: msg.callerContext,

@@ -126,7 +126,9 @@
   },
   "devDependencies": {
     "@types/ws": "^8.18.2",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "@vercel/nft": "^1.11.0",
+    "@vitest/browser-playwright": "5.0.3",
     "concurrently": "^10.0.5",
     "cross-env": "^10.1.0",
     "electron": "44.6.0",
@@ -142,10 +144,8 @@
     "playwright": "^1.63.0",
     "react-dom": "19.2.3",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "ws": "^8.22.0",
-    "@typescript/native": "npm:typescript@^7.0.2",
-    "@vitest/browser-playwright": "5.0.3",
-    "vitest": "5.0.3"
+    "vitest": "5.0.3",
+    "ws": "^8.22.0"
   },
   "overrides": {
     "@codemirror/language": "6.13.1",

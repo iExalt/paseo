@@ -749,6 +749,7 @@ describe("ReplicaCache", () => {
     const items: StreamItem[] = Array.from({ length: 120 }, (_, index) => ({
       ...timelineItem(`Message ${index}`),
       id: `message-${index}`,
+      turnId: `turn-${index}`,
     }));
     // Orchestrator tool calls are not stored, so the stored tail reaches past them.
     items.splice(110, 0, {
@@ -785,6 +786,7 @@ describe("ReplicaCache", () => {
     const item = (seq: number): StreamItem => ({
       ...timelineItem(`Message ${seq}`),
       id: `message-${seq}`,
+      turnId: `turn-${seq}`,
       timelineCursor: { epoch: "epoch-1", seq },
     });
     const tail = Array.from({ length: tailLength }, (_, index) => item(index + 1));

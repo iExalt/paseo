@@ -1,3 +1,4 @@
+import assert from "node:assert/strict";
 import nacl from "tweetnacl";
 import { describe, expect, it } from "vitest";
 import { openAfterInSlices, type SliceScheduler } from "./sliced-open.js";
@@ -29,8 +30,8 @@ describe("openAfterInSlices", () => {
 
       const opened = await openAfterInSlices(box, nonce, sharedKey, scheduler);
 
-      expect(opened).toEqual(nacl.box.open.after(box, nonce, sharedKey));
-      expect(opened).toEqual(plaintext);
+      assert.deepEqual(opened, nacl.box.open.after(box, nonce, sharedKey));
+      assert.deepEqual(opened, plaintext);
       // Blocks 16, 32, ... are each preceded by a check; block 0 also covers the first 32 bytes.
       expect(scheduler.yields).toBe(Math.floor(Math.ceil(Math.max(0, length - 32) / 64) / 16));
     },

@@ -3284,12 +3284,22 @@ test.each([
       });
       expect(client.lastLaunchContext).toEqual({
         agentId: agent.id,
-        env: { ...expectedEnv, PASEO_AGENT_ID: agent.id, PASEO_AGENT_CWD: workdir },
+        env: {
+          ...expectedEnv,
+          PASEO_AGENT_ID: agent.id,
+          PASEO_AGENT_CWD: workdir,
+          PASEO_CLI: resolvePaseoCliExecutablePath(),
+        },
       });
       await manager.reloadAgentSession(agent.id);
       expect(client.lastLaunchContext).toEqual({
         agentId: agent.id,
-        env: { ...expectedEnv, PASEO_AGENT_ID: agent.id, PASEO_AGENT_CWD: workdir },
+        env: {
+          ...expectedEnv,
+          PASEO_AGENT_ID: agent.id,
+          PASEO_AGENT_CWD: workdir,
+          PASEO_CLI: resolvePaseoCliExecutablePath(),
+        },
       });
       expect(toAgentPayload(resumed)).not.toHaveProperty("launchEnv");
       expect(toAgentPayload(resumed).persistence?.metadata).not.toHaveProperty("launchEnv");

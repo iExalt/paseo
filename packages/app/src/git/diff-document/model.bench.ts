@@ -1,5 +1,5 @@
 import type { ParsedDiffFile } from "@getpaseo/protocol/messages";
-import { bench, describe } from "vitest";
+import { test, describe } from "vitest";
 import {
   changelogCorpusFile,
   generatedCodeCorpusFile,
@@ -303,14 +303,16 @@ for (const scenario of SCENARIOS) {
   describe(scenario.name, () => {
     for (const variant of VARIANTS) {
       if (variant.backend === nativeBackend) continue;
-      bench(variant.name, () => {
-        buildDiffDocumentModel(
-          input(scenario, {
-            wrapLines: variant.wrapLines,
-            viewport: variant.viewport,
-            measureText: variant.backend().measurer,
-          }),
-        );
+      test(variant.name, async ({ bench }) => {
+        await bench(variant.name, () => {
+          buildDiffDocumentModel(
+            input(scenario, {
+              wrapLines: variant.wrapLines,
+              viewport: variant.viewport,
+              measureText: variant.backend().measurer,
+            }),
+          );
+        });
       });
     }
   });

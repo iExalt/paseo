@@ -51,7 +51,7 @@ test("silent workers stay alive and receive the full shutdown grace period", asy
 
     controller.requestShutdown("test_complete");
     expect(child.send).toHaveBeenLastCalledWith(
-      { type: "paseo:graceful-shutdown", reason: "test_complete" },
+      { type: "paseo:graceful-shutdown", reason: "test_complete", keepTerminals: false },
       expect.any(Function),
     );
     await vi.advanceTimersByTimeAsync(9_999);

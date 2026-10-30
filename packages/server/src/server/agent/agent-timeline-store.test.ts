@@ -7,6 +7,83 @@ import type { AgentTimelineItem } from "./agent-sdk-types.js";
 import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 
 describe("InMemoryAgentTimelineStore", () => {
+  it("paginates oversized turns in both directions without dropping rows", () => {
+    const store = new InMemoryAgentTimelineStore();
+    store.initialize("agent", { epoch: "current" });
+    // JSON escaping makes these individually valid tool results exceed the
+    // expansion byte budget well before the row budget is exhausted.
+    for (let index = 0; index < 80; index++) {
+      store.append(
+        "agent",
+        {
+          type: "tool_call",
+          callId: `call-${index}`,
+          name: "shell",
+          status: "completed",
+          error: null,
+          detail: { type: "unknown", input: null, output: "\u0000".repeat(60 * 1024) },
+        },
+        { turnId: "run" },
+      );
+    }
+    const tail = store.fetch("agent", { direction: "tail", limit: 10, wholeTurns: true });
+    expect(tail.rows).toHaveLength(10);
+    expect(tail).toMatchObject({ startSeq: 71, endSeq: 80, hasOlder: true, hasNewer: false });
+    const seen = tail.rows.map((row) => row.seq);
+    let page = tail;
+    while (page.hasOlder) {
+      page = store.fetch("agent", {
+        direction: "before",
+        cursor: { epoch: "current", seq: page.startSeq! },
+        limit: 10,
+        wholeTurns: true,
+      });
+      expect(page.rows).toHaveLength(10);
+      expect(Buffer.byteLength(JSON.stringify(page.rows))).toBeLessThan(8 * 1024 * 1024);
+      seen.unshift(...page.rows.map((row) => row.seq));
+    }
+    expect(seen).toEqual(Array.from({ length: 80 }, (_, index) => index + 1));
+    // A jump into the beginning of a large turn must not expand its right edge
+    // or claim that the unseen end of that turn has already been fetched.
+    expect(page).toMatchObject({ startSeq: 1, endSeq: 10, hasOlder: false, hasNewer: true });
+    const after = store.fetch("agent", {
+      direction: "after",
+      cursor: { epoch: "current", seq: page.endSeq! },
+      limit: 10,
+      wholeTurns: true,
+    });
+    expect(after).toMatchObject({ startSeq: 11, endSeq: 20, hasNewer: true });
+    const reset = store.fetch("agent", {
+      direction: "after",
+      cursor: { epoch: "stale", seq: 1 },
+      limit: 10,
+      wholeTurns: true,
+    });
+    expect(reset).toMatchObject({ reset: true, startSeq: 71, endSeq: 80, hasOlder: true });
+  });
+
+  it("bounds whole-turn expansion work for turns containing many tiny rows", () => {
+    const store = new InMemoryAgentTimelineStore();
+    store.initialize("agent", { epoch: "current" });
+    for (let index = 0; index < 3000; index++) {
+      store.append(
+        "agent",
+        {
+          type: "tool_call",
+          callId: `call-${index}`,
+          name: "shell",
+          status: "completed",
+          error: null,
+          detail: { type: "unknown", input: null, output: null },
+        },
+        { turnId: "run" },
+      );
+    }
+    const page = store.fetch("agent", { direction: "tail", limit: 200, wholeTurns: true });
+    expect(page.rows).toHaveLength(200);
+    expect(page).toMatchObject({ startSeq: 2801, endSeq: 3000, hasOlder: true });
+  });
+
   it("resets stale forward cursors to complete available turns", () => {
     const store = new InMemoryAgentTimelineStore();
     store.initialize("agent", { epoch: "current" });

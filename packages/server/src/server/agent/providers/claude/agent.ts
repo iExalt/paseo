@@ -53,7 +53,6 @@ import { parsePartialJsonObject } from "./partial-json.js";
 import { withClaudeReplayHistory, type ClaudeReplayHistory } from "./transcript-history.js";
 import { ClaudeSidechainTracker } from "./sidechain-tracker.js";
 import { readClaudeSubagentHandback } from "./subagent-handback.js";
-import { dropRewoundBranches } from "./rewound-branches.js";
 import { ClaudeTaskState } from "./task-state.js";
 import {
   ClaudeTaskProtocolSource,
@@ -152,25 +151,6 @@ import { withTimeout } from "../../../../utils/promise-timeout.js";
 import { terminateWithTreeKill } from "../../../../utils/tree-kill.js";
 import { execCommand } from "../../../../utils/spawn.js";
 import { composeSystemPromptParts } from "../../system-prompt.js";
-
-/**
- * Applies Claude's in-place rewinds to the parent transcript the replay indexes. Entries
- * round-trip through JSON lines so one rewind reader serves both the file and the index.
- */
-async function dropRewoundEntries<T>(
-  entries: AsyncIterable<T>,
-  options: Parameters<typeof dropRewoundBranches>[1],
-): Promise<T[]> {
-  const list: T[] = [];
-  for await (const entry of entries) list.push(entry);
-  const content = list.map((entry) => JSON.stringify(entry)).join("\n");
-  const kept = dropRewoundBranches(content, options);
-  if (kept === content) return list;
-  return kept
-    .split("\n")
-    .filter((line) => line.length > 0)
-    .map((line) => JSON.parse(line) as T);
-}
 
 const fsPromises = promises;
 const CLAUDE_SETTING_SOURCES: NonNullable<ClaudeOptions["settingSources"]> = [
@@ -5498,7 +5478,10 @@ class ClaudeAgentSession implements AgentSession {
     return this.historyReady;
   }
 
-  private async loadPersistedHistory(sessionId: string, pendingRewind?: { leafUuid: string | null }): Promise<void> {
+  private async loadPersistedHistory(
+    sessionId: string,
+    pendingRewind?: { leafUuid: string | null },
+  ): Promise<void> {
     let historyPath: string | null = null;
     this.replayingHistory = true;
     try {
@@ -5511,13 +5494,14 @@ class ClaudeAgentSession implements AgentSession {
         );
         return;
       }
-      await withClaudeReplayHistory(historyPath, async (history) => {
-        const replay = await this.ingestPersistedSidechains(history);
-        await this.ingestPersistedHistory(
-          await dropRewoundEntries(history.parentEntries, { pendingRewind }),
-          replay,
-        );
-      });
+      await withClaudeReplayHistory(
+        historyPath,
+        async (history) => {
+          const replay = await this.ingestPersistedSidechains(history);
+          await this.ingestPersistedHistory(history.parentEntries, replay);
+        },
+        { pendingRewind },
+      );
     } catch (error) {
       this.logger.warn(
         { err: error, sessionId, historyPath },

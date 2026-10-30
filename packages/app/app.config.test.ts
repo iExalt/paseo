@@ -69,11 +69,12 @@ it("follows system rotation on Android", async () => {
 }, 30_000);
 
 it("allows all orientations on iPhone and iPad", async () => {
-  const { mkdtemp, rm } = await import("node:fs/promises");
+  const { mkdtemp, rm, symlink } = await import("node:fs/promises");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const root = await mkdtemp(join(tmpdir(), "paseo-ios-config-"));
   try {
+    await symlink(join(__dirname, "assets"), join(root, "assets"), "dir");
     const { exp } = await getPrebuildConfigAsync(__dirname, { platforms: ["ios"] });
     await compileModsAsync(exp, {
       projectRoot: root,

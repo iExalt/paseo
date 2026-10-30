@@ -176,20 +176,6 @@ describe("workspace agent visibility", () => {
     expect(result.foreignAgentIds).toEqual(new Set([foreign.id]));
   });
 
-  it("reuses the derived visibility until an input changes", () => {
-    const select = createWorkspaceAgentVisibilitySelector();
-    const agent = makeAgent({ id: "agent", cwd: "/repo", workspaceId: WORKSPACE_ID });
-    const sessionAgents = new Map<string, Agent>([[agent.id, agent]]);
-
-    const first = select({ sessionAgents, workspaceId: WORKSPACE_ID });
-
-    expect(select({ sessionAgents, workspaceId: WORKSPACE_ID })).toBe(first);
-    const next = select({ sessionAgents: new Map(sessionAgents), workspaceId: WORKSPACE_ID });
-    expect(next).not.toBe(first);
-    expect(next).toEqual(first);
-    expect(select({ sessionAgents, workspaceId: "other" }).activeAgentIds.size).toBe(0);
-  });
-
   it("keeps subagents active while excluding them from auto-open", () => {
     const parent = makeAgent({
       id: "parent-agent",

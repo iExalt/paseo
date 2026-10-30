@@ -116,6 +116,10 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
     "panels/retained-chat-content": equivalent,
     "permissions/platform-permissions": equivalent,
+    "plugins/client-bundles/index": {
+      kind: "equivalent",
+      note: "Verified plugin bundles use IndexedDB on web and the file cache on native",
+    },
     "plugins/react-native/clipboard": equivalent,
     "projects/icon-cache-storage": equivalent,
     "push-notifications/index": {

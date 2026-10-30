@@ -554,7 +554,11 @@ test("local STT language survives wire reads and patches", () => {
 });
 
 test("speech config reads remain compatible with clients before features and future providers", () => {
-  const oldSchema = MutableDaemonConfigSchema.omit({ features: true, envOverrides: true });
+  const oldSchema = MutableDaemonConfigSchema.in.omit({
+    features: true,
+    envOverrides: true,
+    agentTools: true,
+  });
   const oldRead = oldSchema.parse({
     providers: {},
     relay: { enabled: false },
@@ -573,7 +577,10 @@ test("speech config reads remain compatible with clients before features and fut
     envOverrides: { "features.voiceMode.stt.provider": "PASEO_VOICE_STT_PROVIDER" },
   };
   expect(oldSchema.parse(read)).toEqual(read);
-  expect(MutableDaemonConfigSchema.parse(oldRead)).toEqual(oldRead);
+  expect(MutableDaemonConfigSchema.parse(oldRead)).toEqual({
+    ...oldRead,
+    agentTools: { enabled: true },
+  });
   expect(MutableDaemonConfigSchema.parse(read).features?.dictation.stt).toEqual(
     read.features.dictation.stt,
   );

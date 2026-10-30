@@ -205,9 +205,9 @@ describe("DaemonConfigStore", () => {
     vi.spyOn(privateFiles, "writePrivateFileAtomic").mockImplementationOnce(async () => {
       throw new Error("injected I/O failure");
     });
-    await expect(store.patch({ replyRules: [{ source: "^save-failure$", flags: "" }] })).rejects.toThrow(
-      /\[Config\] Failed to write .*injected I\/O failure/,
-    );
+    await expect(
+      store.patch({ replyRules: [{ source: "^save-failure$", flags: "" }] }),
+    ).rejects.toThrow(/\[Config\] Failed to write .*injected I\/O failure/);
     expect(readFileSync(configPath, "utf8")).toBe(persistedBytes);
     expect(store.getReplyRules()).toEqual(originalRules);
     expect(
@@ -228,9 +228,9 @@ describe("DaemonConfigStore", () => {
         expect(previous).toBeDefined();
       };
     });
-    await expect(store.patch({ replyRules: [{ source: "^replacement$", flags: "" }] })).rejects.toThrow(
-      "live rule owner failed",
-    );
+    await expect(
+      store.patch({ replyRules: [{ source: "^replacement$", flags: "" }] }),
+    ).rejects.toThrow("live rule owner failed");
     unsubscribeFailure();
 
     expect(store.getReplyRules()).toEqual(originalRules);
