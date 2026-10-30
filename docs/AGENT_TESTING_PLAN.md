@@ -38,7 +38,7 @@ It draws on 21 past agent sessions, read through the transcripts:
 Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
 - [x] On the Cuttlefish tablet, check the deep links from cold and warm start. Settings and agent routes work; `?open=` works only warm and never selects `file:` tabs; `paseo://pair#` shows "Unmatched Route".
-- [ ] Make `?open=` select its tab on native from cold start and for `file:`, with a fork-owned test at the store layer (intent to selected tab). Moved to chunk B. The `COMPAT(workspace-open-url)` marker is upstream's (#7612): leave it, and check upstream for a later fix first.
+- [x] Make `?open=` select its tab on native from cold start and for `file:`. Cause: the workspace route never demanded the host directory, so workspaces never hydrated and the pending intent waited forever. Fixed by cherry-picking upstream #7918; the `COMPAT(workspace-open-url)` marker stays.
 - [x] Write `docs/agent-testing.md`: packages and launch components, package-qualified `am start`, `pm grant … POST_NOTIFICATIONS`, the deep-link table, reading state from dumps, isolation variables, `daemon start` versus `daemon run`.
 - [x] Animator test: not run. Idle dumps succeeded 15 of 15 on the tablet at the default scale, so there was no failure to compare against. The failures were on the phone while lists loaded or an agent ran; item 8 owns them.
 - [x] Update the `phone-debug` skill (in the home-manager config repo): a pointer to `docs/agent-testing.md`, the idle-dump failure and its fallback, and that `input tap` has no hold. The Find tap path is left out until Find has a URL or testID (item 5).
