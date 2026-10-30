@@ -2,6 +2,9 @@
   lib,
   stdenv,
   buildNpmPackage,
+  fetchNpmDeps,
+  runCommand,
+  writeTextDir,
   nodejs_26,
   python3,
   makeWrapper,
@@ -14,14 +17,35 @@
   # `overrideAttrs` gymnastics — `npmDepsHash` is destructured from
   # `buildNpmPackage`'s args, so `overrideAttrs` cannot reach it.
   #
-  # Refresh this sidecar with scripts/update-nix.sh whenever package-lock.json
-  # changes, including version-only release updates.
+  # Refresh this sidecar with scripts/update-nix.sh whenever a dependency
+  # changes. A version-only release update leaves it as it is.
   npmDepsHash ? lib.fileContents ./npm-deps.hash,
 }:
 
+let
+  version = (builtins.fromJSON (builtins.readFile ../package.json)).version;
+  lockfile = builtins.fromJSON (builtins.readFile ../package-lock.json);
+  # The registry tarballs are all the npm cache holds. The root and workspace
+  # entries carry the release version, so fetching from them made every
+  # release a new hash and a full refetch. This lockfile keeps only the
+  # tarball entries, and the fetch has no version in its name, so a release
+  # that changes no dependency reuses the same store path.
+  registryLockfile = writeTextDir "package-lock.json" (builtins.toJSON {
+    inherit (lockfile) lockfileVersion;
+    requires = true;
+    packages = lib.filterAttrs (
+      key: entry: lib.hasInfix "node_modules/" key && !(entry.link or false)
+    ) lockfile.packages;
+  });
+  registryDeps = fetchNpmDeps {
+    name = "paseo-npm-deps";
+    src = registryLockfile;
+    hash = npmDepsHash;
+  };
+in
 buildNpmPackage rec {
   pname = "paseo";
-  version = (builtins.fromJSON (builtins.readFile ../package.json)).version;
+  inherit version;
 
   src = lib.cleanSourceWith {
     src = ./..;
@@ -62,9 +86,20 @@ buildNpmPackage rec {
 
   nodejs = nodejs_26;
 
-  # Default hash lives in nix/npm-deps.hash (see arg default above).
-  # CI auto-updates that file when package-lock.json changes (see .github/workflows/).
-  inherit npmDepsHash;
+  # npmConfigHook requires the cache's lockfile to equal the source's, so
+  # this puts the full lockfile next to the shared registry cache.
+  npmDeps = runCommand "paseo-${version}-npm-deps" { } ''
+    mkdir $out
+    for entry in ${registryDeps}/* ${registryDeps}/.[!.]*; do
+      [ -e "$entry" ] && ln -s "$entry" $out/
+    done
+    rm $out/package-lock.json
+    cp ${../package-lock.json} $out/package-lock.json
+  '';
+
+  passthru = {
+    inherit registryDeps registryLockfile;
+  };
 
   # Prevent onnxruntime-node's install script from running during automatic
   # npm rebuild (it tries to download from api.nuget.org, which fails in the sandbox).

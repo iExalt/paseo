@@ -41,10 +41,12 @@ only restore it.
    checks. Deep CI runs on it. The version follows the commits: a `feat` bumps
    the minor. A `Release-As: X.Y.Z` footer in a conventional commit on `dev`
    sets the version of the next release.
-2. The `nix-hash` job adds `chore(nix): refresh the npm dependency hash` to the
-   release PR, because every version bump changes `package-lock.json` and so
-   `nix/npm-deps.hash`. release-please rewrites its branch whenever it updates
-   the PR, and the job adds the commit back each time.
+2. The `nix-hash` job checks `nix/npm-deps.hash` on the release PR. The Nix
+   npm fetch reads only the lockfile's registry entries, so a version bump
+   leaves the hash alone and the job pushes nothing. It pushes
+   `chore(nix): refresh the npm dependency hash` only when a dependency change
+   landed without running `scripts/update-nix.sh`, and that push restarts the
+   PR's checks.
 3. Merge the release PR. On that push release-please tags `paseo-vX` at the
    merge commit, opens a draft release with the changelog as its notes and
    dispatches `release.yml` on `dev` with that tag.
