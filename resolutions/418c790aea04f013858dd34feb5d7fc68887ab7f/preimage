@@ -1,0 +1,853 @@
+name: Release
+
+# Builds the macOS Nix desktop closure and the Android fork APK at a paseo-v*
+# tag, plus the Linux x64/arm64 Nix closures and the Windows x64 installer;
+# smoke-tests each, signs what clients verify and publishes the GitHub release
+# the in-app updaters read. Merging the release PR makes the tag and a
+# draft release with the changelog, then dispatches this on dev with the tag
+# (release-please.yml); this fills the draft and publishes it as latest.
+#
+# Runs only on dev, never on the tag: Actions caches are scoped to the ref that
+# saved them, and a run can read only its own ref's and dev's. Caches a tag run
+# saved would be invisible to the next release, so its Android build would
+# start cold.
+#
+# Dispatch with a tag to publish that tag again after a failed run; it must be
+# newer than the latest release. Dispatch without a tag for a dry run: it
+# uploads every asset to a draft tagged paseo-dryrun-<run_id> and never creates
+# a tag or marks a release latest. Delete the draft when done.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish, such as paseo-v0.6.0 (empty for a dry run)
+        type: string
+        default: ""
+
+permissions: {}
+
+concurrency:
+  group: paseo-release
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve release identity
+    # github-actions[bot] is release-please.yml handing over a fresh tag.
+    if: >-
+      github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' &&
+      ((github.actor == 'iExalt' && github.triggering_actor == 'iExalt') ||
+       (github.actor == 'github-actions[bot]' && inputs.tag != ''))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.identity.outputs.sha }}
+      version: ${{ steps.identity.outputs.version }}
+      version_code: ${{ steps.identity.outputs.version_code }}
+      upstream_base: ${{ steps.identity.outputs.upstream_base }}
+      tag: ${{ steps.identity.outputs.tag }}
+      publish: ${{ steps.identity.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - name: Resolve version, Android version code and release tag
+        id: identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          version="$(jq -er .version package.json)"
+          [[ "$(jq -er .version .github/fork-release.json)" == "$version" ]]
+          upstream_base="$(jq -er .upstreamBase .github/fork-release.json)"
+          [[ "$upstream_base" =~ ^[0-9a-f]{40}$ ]]
+          version_code="$(node --input-type=module -e 'import { forkAndroidVersionCode } from "./scripts/fork-version.mjs"; console.log(forkAndroidVersionCode(process.argv[1]))' "$version")"
+          node .github/scripts/release-manifest.mjs notes "$version" > /dev/null
+          if [[ -n "$TAG" ]]; then
+            publish=true
+            if [[ "$TAG" != "paseo-v$version" ]]; then
+              echo "::error::Tag $TAG does not name the version $version it points at."
+              exit 1
+            fi
+            latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
+            # shellcheck disable=SC2016 # JavaScript template literal
+            node --input-type=module -e 'import { compareForkVersions, forkVersionFromTag } from "./scripts/fork-version.mjs"; if (compareForkVersions(process.argv[1], forkVersionFromTag(process.argv[2])) <= 0) throw new Error(`${process.argv[1]} does not exceed latest ${process.argv[2]}`)' "$version" "$latest"
+            tag="$TAG"
+          else
+            publish=false
+            tag="paseo-dryrun-$GITHUB_RUN_ID"
+          fi
+          {
+            echo "sha=$sha"
+            echo "version=$version"
+            echo "version_code=$version_code"
+            echo "upstream_base=$upstream_base"
+            echo "tag=$tag"
+            echo "publish=$publish"
+          } >> "$GITHUB_OUTPUT"
+          echo "Release $version ($tag) from $sha; Android versionCode $version_code."
+
+  macos-build:
+    name: Build and sign macOS Nix closure
+    needs: [resolve]
+    runs-on: macos-14
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    outputs:
+      output_path: ${{ steps.build.outputs.output_path }}
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Build the desktop closure
+        id: build
+        timeout-minutes: 60
+        run: bash .github/scripts/release-nix.sh build
+      - name: Sign and export the binary cache
+        timeout-minutes: 15
+        env:
+          NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
+        run: bash .github/scripts/release-nix.sh export
+      - name: Remove the Nix signing key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      # zstd comes from the pinned nixpkgs, the one the updater's wrapper ships.
+      - name: Write the update index and deltas from recent releases
+        timeout-minutes: 15
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OUTPUT_PATH: ${{ steps.build.outputs.output_path }}
+        run: |
+          zstd_bin="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#zstd.bin)/bin"
+          PATH="$zstd_bin:$PATH" node .github/scripts/release-mac-index.mjs "$RUNNER_TEMP/paseo-release-macos"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-macos
+          path: ${{ runner.temp }}/paseo-release-macos/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  macos-smoke:
+    name: Install and launch macOS closure on a fresh runner
+    needs: [resolve, macos-build]
+    runs-on: macos-14
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          # Fetching the pinned nixpkgs for zstd goes through the GitHub API.
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: release-macos
+          path: ${{ runner.temp }}/paseo-release-macos
+      - name: Install smoke harness dependencies
+        run: node .github/scripts/release-mac-smoke-deps.mjs "$RUNNER_TEMP/paseo-smoke-deps"
+      # Installs the previous release, then stages this one from its delta.
+      - name: Import with the release key alone, then check signature, CLI and launch
+        timeout-minutes: 15
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+          OUTPUT_PATH: ${{ needs.macos-build.outputs.output_path }}
+          PUBLISH: ${{ needs.resolve.outputs.publish }}
+          GH_TOKEN: ${{ github.token }}
+          PASEO_DESKTOP_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/paseo-desktop-smoke
+        run: |
+          zstd_bin="$(nix build --no-link --print-out-paths --inputs-from . nixpkgs#zstd.bin)/bin"
+          PATH="$zstd_bin:$PATH" node .github/scripts/release-mac-smoke.mjs "$RUNNER_TEMP/paseo-release-macos"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: release-macos-smoke
+          path: ${{ runner.temp }}/paseo-desktop-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Linux and Windows assets sit beside the signed manifest, which carries only
+  # the macOS and Android cells: installed clients reject any other cell set.
+  # Users install and upgrade them by hand.
+  linux-build:
+    name: Build and sign Linux Nix closure (${{ matrix.arch }})
+    needs: [resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Build the CLI and desktop closure
+        timeout-minutes: 60
+        run: bash .github/scripts/release-nix.sh build
+      - name: Sign and export the binary cache
+        timeout-minutes: 15
+        env:
+          NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
+        run: bash .github/scripts/release-nix.sh export
+      - name: Remove the Nix signing key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/paseo-release-linux/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  linux-smoke:
+    name: Install and launch Linux closure on a fresh runner (${{ matrix.arch }})
+    needs: [resolve, linux-build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/paseo-release-linux
+      - name: Install smoke harness dependencies and Xvfb
+        timeout-minutes: 5
+        run: |
+          node .github/scripts/release-mac-smoke-deps.mjs "$RUNNER_TEMP/paseo-smoke-deps"
+          command -v xvfb-run > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth; }
+      - name: Import with the release key alone, then check the CLI and launch
+        timeout-minutes: 10
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+          PLATFORM: linux-${{ matrix.arch }}
+          PASEO_DESKTOP_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/paseo-desktop-smoke
+        run: node .github/scripts/release-linux-smoke.mjs "$RUNNER_TEMP/paseo-release-linux"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: release-linux-${{ matrix.arch }}-smoke
+          path: ${{ runner.temp }}/paseo-desktop-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The NSIS installer is unsigned: there is no Windows publisher certificate.
+  windows-build:
+    name: Build and smoke-test Windows x64 installer
+    needs: [resolve]
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      CI: "true"
+      LEFTHOOK: "0"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+          registry-url: https://npm.pkg.github.com
+          scope: "@boudra"
+      - name: Install JavaScript dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: node scripts/npm-retry.mjs ci
+      # afterPack smoke-tests the unpacked app (packages/desktop/scripts/after-pack.js).
+      - name: Build the installer and smoke-test the unpacked app
+        timeout-minutes: 30
+        env:
+          PASEO_DESKTOP_SMOKE: "1"
+          PASEO_DESKTOP_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/paseo-desktop-smoke
+        run: npm run build:desktop -- --publish never --win nsis --x64
+      - name: Install silently and check the installed CLI
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = "packages/desktop/release/Paseo-Setup-$env:VERSION-x64.exe"
+          $dir = Join-Path $env:RUNNER_TEMP "paseo-install"
+          # NSIS takes /D last and unquoted.
+          $process = Start-Process -FilePath $installer -ArgumentList "/S", "/D=$dir" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "The installer exited with $($process.ExitCode)." }
+          if (-not (Test-Path (Join-Path $dir "Paseo.exe"))) { throw "The installer left no Paseo.exe in $dir." }
+          $cliVersion = & cmd.exe /d /c "`"$dir\resources\bin\paseo.cmd`" --version"
+          if ($LASTEXITCODE -ne 0 -or -not ($cliVersion -contains $env:VERSION)) { throw "The installed CLI reports $cliVersion." }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/release-windows" | Out-Null
+          Copy-Item $installer "$env:RUNNER_TEMP/release-windows/paseo-$env:VERSION-windows-x64.exe"
+          Write-Output "Installed to $dir; CLI $cliVersion"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-windows-x64
+          path: ${{ runner.temp }}/release-windows/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: release-windows-x64-smoke
+          path: ${{ runner.temp }}/paseo-desktop-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  android-build:
+    name: Build unsigned Android APK
+    needs: [resolve]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    outputs:
+      build_sha256: ${{ steps.pack.outputs.build_sha256 }}
+      deps_inputs: ${{ steps.pin.outputs.deps_inputs }}
+      deps_sha256: ${{ steps.pack.outputs.deps_sha256 }}
+      modules_inputs: ${{ steps.pin.outputs.modules_inputs }}
+      modules_sha256: ${{ steps.modules.outputs.modules_sha256 }}
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      PASEO_ANDROID_VERSION_CODE: ${{ needs.resolve.outputs.version_code }}
+      LEFTHOOK: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+          registry-url: https://npm.pkg.github.com
+          scope: "@boudra"
+      # Restore only the cache entries the latest published release pinned, each
+      # checked against its pinned sha256; anything else builds that cache cold.
+      # Never fall back to routine CI's node_modules: any dev push writes those.
+      # See android-cache-pin.mjs. Save and restore use the same tar paths.
+      - name: Read the Android cache pin
+        id: pin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: NPM_VERSION="$(npm --version)" node .github/scripts/android-cache-pin.mjs plan
+      - name: Restore the pinned node_modules
+        if: steps.pin.outputs.modules_key != ''
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 3
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/modules.tar.zst
+          key: ${{ steps.pin.outputs.modules_key }}
+      # A restored tree keeps node_modules/.package-lock.json from the release
+      # that saved it; nothing reads it, and workspaces resolve through symlinks.
+      - name: Install JavaScript dependencies
+        id: modules
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          INPUTS: ${{ steps.pin.outputs.modules_inputs }}
+          PINNED_SHA256: ${{ steps.pin.outputs.modules_sha256 }}
+          npm_config_fetch_timeout: "30000"
+          npm_config_fetch_retries: "2"
+          npm_config_fetch_retry_mintimeout: "1000"
+          npm_config_fetch_retry_maxtimeout: "5000"
+        run: |
+          set -euo pipefail
+          tar_file="$RUNNER_TEMP/android-cache/modules.tar.zst"
+          mkdir -p "$RUNNER_TEMP/android-cache"
+          if [[ -n "$PINNED_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$tar_file" "$PINNED_SHA256" | grep -qx ok=true; then
+            zstd -dcq "$tar_file" | tar -xf -
+            rm -f "$tar_file"
+            echo "restored pinned node_modules, sha256 verified"
+            sha256="$PINNED_SHA256" save=false
+          else
+            node scripts/npm-retry.mjs ci
+            # Pack before anything builds into node_modules (Gradle writes android/build there).
+            tar -cf - node_modules packages/*/node_modules | zstd -T0 -3 -q -o "$tar_file"
+            sha256="$(sha256sum "$tar_file" | cut -d' ' -f1)" save=true
+            ls -l "$tar_file"
+          fi
+          {
+            echo "modules_sha256=$sha256"
+            echo "modules_key=paseo-node-modules-v1-$INPUTS-$sha256"
+            echo "save_modules=$save"
+          } | tee -a "$GITHUB_OUTPUT"
+      - name: Save the node_modules cache
+        if: steps.modules.outputs.save_modules == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/modules.tar.zst
+          key: ${{ steps.modules.outputs.modules_key }}
+      - name: Build app dependencies
+        run: |
+          rm -f "$RUNNER_TEMP/android-cache/modules.tar.zst"
+          npm run build:app-deps
+      - name: Prepare Firebase client config
+        env:
+          PASEO_FORK_GOOGLE_SERVICES_JSON: ${{ secrets.PASEO_FORK_GOOGLE_SERVICES_JSON }}
+          FIREBASE_PROJECT_ID_FORK: paseo-18157
+        run: |
+          set -euo pipefail
+          umask 077
+          firebase_file="$RUNNER_TEMP/paseo-fork-google-services.json"
+          printf '%s' "$PASEO_FORK_GOOGLE_SERVICES_JSON" > "$firebase_file"
+          node - "$firebase_file" "$FIREBASE_PROJECT_ID_FORK" <<'NODE'
+          const fs = require("node:fs");
+          const { validateForkGoogleServicesConfig } = require("./packages/app/app-variant");
+          try {
+            validateForkGoogleServicesConfig(JSON.parse(fs.readFileSync(process.argv[2], "utf8")), process.argv[3]);
+          } catch {
+            console.error("Firebase client config failed validation.");
+            process.exitCode = 1;
+          }
+          NODE
+          {
+            echo "APP_VARIANT=fork"
+            echo "GOOGLE_SERVICES_FILE_FORK=$firebase_file"
+            echo "FIREBASE_PROJECT_ID_FORK=$FIREBASE_PROJECT_ID_FORK"
+          } >> "$GITHUB_ENV"
+      - name: Generate fork Android project
+        working-directory: packages/app
+        run: npx expo prebuild --platform android --no-install --non-interactive
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25.0.4"
+      - name: Restore the pinned Android build cache
+        if: steps.pin.outputs.build_key != ''
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 3
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/build.tar
+          key: ${{ steps.pin.outputs.build_key }}
+      - name: Restore the pinned Gradle dependency cache
+        if: steps.pin.outputs.deps_key != ''
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/deps.tar
+          key: ${{ steps.pin.outputs.deps_key }}
+      - name: Verify and unpack the pinned caches
+        id: unpack
+        env:
+          BUILD_SHA256: ${{ steps.pin.outputs.build_sha256 }}
+          DEPS_SHA256: ${{ steps.pin.outputs.deps_sha256 }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/android-cache"
+          mkdir -p "$dir" "$RUNNER_TEMP/android-build-cache" "$HOME/.gradle"
+          if [[ -n "$BUILD_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$dir/build.tar" "$BUILD_SHA256" | grep -qx ok=true; then
+            tar -xf "$dir/build.tar" -C "$RUNNER_TEMP/android-build-cache"
+            echo "restored pinned build cache, sha256 verified"
+          fi
+          deps=false
+          if [[ -n "$DEPS_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$dir/deps.tar" "$DEPS_SHA256" | grep -qx ok=true; then
+            tar -xf "$dir/deps.tar" -C "$HOME/.gradle"
+            deps=true
+            echo "restored pinned Gradle dependency cache, sha256 verified"
+          fi
+          rm -f "$dir/build.tar" "$dir/deps.tar"
+          echo "deps_restored=$deps" >> "$GITHUB_OUTPUT"
+      - name: Install Android SDK packages and runner swap
+        run: |
+          set -euo pipefail
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          set +o pipefail
+          yes | "$sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$sdkmanager" --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+          bash scripts/runner-swap.sh enable
+      - name: Install ccache
+        timeout-minutes: 3
+        run: command -v ccache > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq ccache; }
+      - name: Assemble arm64 release APK
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/android-build-cache"
+          export CCACHE_DIR="$cache/ccache" PASEO_GRADLE_BUILD_CACHE="$cache/gradle"
+          export CCACHE_COMPILERCHECK=content CCACHE_MAXSIZE=3G
+          export CMAKE_C_COMPILER_LAUNCHER=ccache CMAKE_CXX_COMPILER_LAUNCHER=ccache
+          mkdir -p "$CCACHE_DIR" "$PASEO_GRADLE_BUILD_CACHE"
+          # The restored cache carries earlier runs' counters; report this build's alone.
+          ccache --zero-stats > /dev/null
+          grep -qF 'gradle-9.3.1-bin.zip' packages/app/android/gradle/wrapper/gradle-wrapper.properties
+          cd packages/app/android
+          started_at=$SECONDS
+          # The updater's gunzip test rides on this run: a separate Gradle run would pay
+          # configuration again, but here it adds only its own compile and three tests.
+          bash "$GITHUB_WORKSPACE/scripts/gradle-resource-watch.sh" -- \
+            env JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED ./gradlew :app:assembleRelease \
+            :paseo-fork-updates:testReleaseUnitTest \
+            --no-daemon --max-workers=1 -Dorg.gradle.parallel=false \
+            -Pkotlin.compiler.execution.strategy=in-process \
+            -PreactNativeArchitectures=arm64-v8a \
+            -PreactNativeDevServerIp=localhost \
+            --build-cache --init-script "$GITHUB_WORKSPACE/.github/scripts/android-build-cache.init.gradle"
+          echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
+          ccache --show-stats
+      # Each save is keyed by its tar's sha256 so the publish job can pin it. The
+      # dependency cache is re-pinned instead of saved when the pinned entry was
+      # restored and its inputs are unchanged.
+      - name: Pack the Android caches
+        id: pack
+        env:
+          INPUTS: ${{ steps.pin.outputs.deps_inputs }}
+          DEPS_RESTORED: ${{ steps.unpack.outputs.deps_restored }}
+          DEPS_INPUTS_MATCH: ${{ steps.pin.outputs.deps_inputs_match }}
+          PINNED_DEPS_SHA256: ${{ steps.pin.outputs.deps_sha256 }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/android-cache"
+          mkdir -p "$dir"
+          tar -cf "$dir/build.tar" -C "$RUNNER_TEMP/android-build-cache" .
+          build_sha256="$(sha256sum "$dir/build.tar" | cut -d' ' -f1)"
+          if [[ "$DEPS_RESTORED" == true && "$DEPS_INPUTS_MATCH" == true ]]; then
+            deps_sha256="$PINNED_DEPS_SHA256" save_deps=false
+          else
+            # Gradle rewrites its lock and GC files on every start; --no-daemon leaves none held.
+            tar -cf "$dir/deps.tar" -C "$HOME/.gradle" --exclude='*.lock' --exclude=gc.properties caches wrapper
+            deps_sha256="$(sha256sum "$dir/deps.tar" | cut -d' ' -f1)" save_deps=true
+          fi
+          {
+            echo "build_sha256=$build_sha256"
+            echo "build_key=paseo-android-build-v2-$build_sha256"
+            echo "deps_sha256=$deps_sha256"
+            echo "deps_key=paseo-gradle-deps-v2-$INPUTS-$deps_sha256"
+            echo "save_deps=$save_deps"
+          } | tee -a "$GITHUB_OUTPUT"
+          ls -l "$dir"
+      # An existing key (a rerun, or one squatted first) fails the save; the pin
+      # still names it and the next restore's digest check falls back to cold.
+      - name: Save the Android build cache
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/build.tar
+          key: ${{ steps.pack.outputs.build_key }}
+      - name: Save the Gradle dependency cache
+        if: steps.pack.outputs.save_deps == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 10
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/deps.tar
+          key: ${{ steps.pack.outputs.deps_key }}
+      - name: Disable runner swap and remove Firebase config
+        if: always()
+        run: |
+          bash scripts/runner-swap.sh cleanup
+          rm -f "$RUNNER_TEMP/paseo-fork-google-services.json" packages/app/android/app/google-services.json
+      - name: Check unsigned APK identity
+        run: |
+          set -euo pipefail
+          apk=packages/app/android/app/build/outputs/apk/release/app-release.apk
+          bash .github/scripts/release-apk-identity.sh "$apk"
+          mkdir -p "$RUNNER_TEMP/release-android-unsigned"
+          cp "$apk" "$RUNNER_TEMP/release-android-unsigned/unsigned.apk"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-android-unsigned
+          path: ${{ runner.temp }}/release-android-unsigned/
+          if-no-files-found: error
+          retention-days: 3
+
+  android-sign:
+    name: Sign Android APK
+    needs: [resolve, android-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      cert_sha256: ${{ steps.sign.outputs.cert_sha256 }}
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      PASEO_ANDROID_VERSION_CODE: ${{ needs.resolve.outputs.version_code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            packages/protocol/src
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: release-android-unsigned
+          path: ${{ runner.temp }}/release-android-unsigned
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "25.0.4"
+      - name: Install Android build tools
+        run: |
+          set +o pipefail
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null
+          set -o pipefail
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "build-tools;36.0.0"
+      - name: Sign with the fork certificate and verify the signer
+        id: sign
+        env:
+          SIGNING_KEY_PEM: ${{ secrets.PASEO_FORK_SIGNING_KEY_PKCS8_PEM }}
+          SIGNING_CERT_PEM: ${{ secrets.PASEO_FORK_SIGNING_CERT_PEM }}
+        run: |
+          set -euo pipefail
+          # FORK_ANDROID_CERTIFICATE_SHA256, the signer clients pin.
+          expected="$(grep -A1 '^export const FORK_ANDROID_CERTIFICATE_SHA256 =$' packages/protocol/src/release-manifest-v2.ts \
+            | sed -n 's/^ *"\([a-f0-9]\{64\}\)";$/\1/p')"
+          [[ "$expected" =~ ^[a-f0-9]{64}$ ]]
+          umask 077
+          key_pem="$RUNNER_TEMP/fork-signing-key.pk8.pem"
+          key_der="$RUNNER_TEMP/fork-signing-key.pk8.der"
+          cert="$RUNNER_TEMP/fork-signing-cert.pem"
+          printf '%s' "$SIGNING_KEY_PEM" > "$key_pem"
+          printf '%s' "$SIGNING_CERT_PEM" > "$cert"
+          openssl pkcs8 -topk8 -nocrypt -in "$key_pem" -outform DER -out "$key_der"
+          apksigner="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          mkdir -p "$RUNNER_TEMP/release-android"
+          apk="$RUNNER_TEMP/release-android/paseo-$VERSION-android-arm64.apk"
+          "$apksigner" sign --key "$key_der" --cert "$cert" --out "$apk" "$RUNNER_TEMP/release-android-unsigned/unsigned.apk"
+          # The v4 .idsig sidecar only serves incremental adb installs; clients get the APK alone.
+          rm -f "$key_pem" "$key_der" "$cert" "$apk.idsig"
+          "$apksigner" verify --verbose "$apk"
+          report="$("$apksigner" verify --print-certs "$apk")"
+          [[ "$(grep -c '^Signer #[0-9]* certificate SHA-256 digest: ' <<< "$report")" == 1 ]]
+          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          [[ "$actual" == "$expected" ]] || { echo "::error::Signed with $actual, expected $expected."; exit 1; }
+          bash .github/scripts/release-apk-identity.sh "$apk"
+          # Unsigned download sidecar: the APK stores its dex, .so and JS uncompressed, so
+          # deflate cuts the transfer by about 60%. Clients check the gunzipped bytes against
+          # the signed manifest and fall back to the APK. -n keeps the output reproducible.
+          gzip -9 -n -c "$apk" > "$apk.gz"
+          echo "cert_sha256=$actual" >> "$GITHUB_OUTPUT"
+      - name: Remove signing material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/fork-signing-key.pk8.pem" "$RUNNER_TEMP/fork-signing-key.pk8.der" "$RUNNER_TEMP/fork-signing-cert.pem"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-android
+          path: ${{ runner.temp }}/release-android/
+          if-no-files-found: error
+          retention-days: 3
+
+  # Unsigned APK deltas from recent releases. They only save bandwidth, so this job never
+  # holds up the release: every failure is a warning, and publish runs without them.
+  android-delta:
+    name: Make APK deltas from recent releases
+    needs: [resolve, android-sign]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/scripts
+            scripts
+            packages/protocol/src
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: release-android
+          path: ${{ runner.temp }}/release-android
+      # About a minute and 1.5 GB per base at --ultra -22; the runner's zstd is enough to encode.
+      - name: Write deltas against the signed APKs of recent releases
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node .github/scripts/release-android-delta.mjs \
+            "$RUNNER_TEMP/release-android/paseo-$VERSION-android-arm64.apk" "$RUNNER_TEMP/release-android-delta"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-android-delta
+          path: ${{ runner.temp }}/release-android-delta/
+          if-no-files-found: ignore
+          retention-days: 3
+          compression-level: 0
+
+  publish:
+    name: ${{ needs.resolve.outputs.publish == 'true' && 'Publish release' || 'Upload dry-run draft' }}
+<<<<<<<
+    needs:
+      [
+        resolve,
+        macos-build,
+        macos-smoke,
+        linux-build,
+        linux-smoke,
+        windows-build,
+        android-build,
+        android-sign,
+      ]
+=======
+    needs: [resolve, macos-build, macos-smoke, android-build, android-sign, android-delta]
+    # Waits for android-delta but does not need it to succeed.
+    if: >-
+      !cancelled() && needs.resolve.result == 'success' && needs.macos-build.result == 'success' &&
+      needs.macos-smoke.result == 'success' && needs.android-build.result == 'success' &&
+      needs.android-sign.result == 'success'
+>>>>>>>
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PUBLISH: ${{ needs.resolve.outputs.publish }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+<<<<<<<
+          pattern: release-{macos,android,android-delta}
+=======
+          pattern: release-{macos,android,linux-x64,linux-arm64,windows-x64}
+>>>>>>>
+          path: ${{ runner.temp }}/release-assets
+          merge-multiple: true
+      - name: Pin the Android caches this run saved
+        env:
+          BUILD_SHA256: ${{ needs.android-build.outputs.build_sha256 }}
+          DEPS_INPUTS: ${{ needs.android-build.outputs.deps_inputs }}
+          DEPS_SHA256: ${{ needs.android-build.outputs.deps_sha256 }}
+          MODULES_INPUTS: ${{ needs.android-build.outputs.modules_inputs }}
+          MODULES_SHA256: ${{ needs.android-build.outputs.modules_sha256 }}
+        run: |
+          node .github/scripts/android-cache-pin.mjs pin \
+            "$RUNNER_TEMP/release-assets/paseo-$VERSION-android-cache-pin.json" "$VERSION"
+      - name: Build, sign and verify the release manifest
+        env:
+          UPSTREAM_BASE: ${{ needs.resolve.outputs.upstream_base }}
+          MAC_OUTPUT_PATH: ${{ needs.macos-build.outputs.output_path }}
+          APK_VERSION_CODE: ${{ needs.resolve.outputs.version_code }}
+          APK_CERT_SHA256: ${{ needs.android-sign.outputs.cert_sha256 }}
+          PASEO_RELEASE_MANIFEST_PRIVATE_KEY: ${{ secrets.PASEO_RELEASE_MANIFEST_PRIVATE_KEY }}
+          ASSETS: ${{ runner.temp }}/release-assets
+        run: |
+          node .github/scripts/release-manifest.mjs build "$ASSETS"
+          node .github/scripts/release-manifest.mjs notes "$VERSION" > "$RUNNER_TEMP/release-notes.md"
+          ls -l "$ASSETS"
+      - name: Fill the release draft, or create one, and upload the assets
+        id: draft
+        env:
+          ASSETS: ${{ runner.temp }}/release-assets
+        run: bash .github/scripts/release-publish.sh draft
+      - name: Publish as the latest release
+        if: needs.resolve.outputs.publish == 'true'
+        env:
+          RELEASE_ID: ${{ steps.draft.outputs.release_id }}
+        run: bash .github/scripts/release-publish.sh publish
