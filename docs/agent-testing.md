@@ -79,11 +79,13 @@ For a browser-only check, serve the web UI from an isolated daemon:
 
 ## Isolated daemons
 
-- `paseo daemon start` (managed) drops `PASEO_*` setting overrides such as `PASEO_LISTEN` and
-  `PASEO_CORS_ORIGINS` (`DAEMON_SETTING_ENV_KEYS` in
-  `packages/server/src/server/config-environment.ts`). Put settings in `<home>/config.json`, or use
-  `paseo daemon run` in the foreground, which keeps them.
+- `paseo daemon start` (managed) ignores setting overrides such as `PASEO_LISTEN`, `PORT` and
+  `PASEO_CORS_ORIGINS`, and names the ones it ignores on stderr. Put settings in
+  `<home>/config.json`, or use `paseo daemon run` in the foreground, which keeps them.
 - `PASEO_NODE_ENV=development` enables development-only providers such as the mock provider.
 - `paseo daemon status --json --home <home>` reports `workerPid` when the daemon is reachable.
   Stop a test daemon with `paseo daemon stop --home <home>`, never by process name: the
   user's daemon has the same name.
+- `paseo daemon pair --home <home> --app-url paseo:// --json` prints a pairing link and QR that
+  open the app directly (`paseo:///#offer=…`). With no daemon running, it builds the offer from
+  `<home>/config.json` without contacting the relay; `daemon.relay.enabled` must be true there.
