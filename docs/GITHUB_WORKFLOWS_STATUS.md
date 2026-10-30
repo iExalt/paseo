@@ -1,9 +1,10 @@
 # GitHub workflows
 
 How the fork's CI and releases work today and what to do when they fail. The
-fork has one user, so releases are "builds plus smoke": macOS Nix closure and
-Android APK, smoke-tested, signed and published. There is no attestation,
-candidate authority, Windows/Linux packaging or upgrade testing. The retired
+fork has one user, so releases are "builds plus smoke": macOS Nix closure,
+Android APK, Linux x64/arm64 Nix closures and a Windows x64 installer,
+smoke-tested, signed and published. There is no attestation, candidate
+authority, Windows arm64 build or Windows/Linux upgrade testing. The retired
 candidate pipeline and the campaign that built it live in git history (before
 `ci: delete the retired release candidate pipeline`) and in
 [complete-campaigns](complete-campaigns/GITHUB_WORKFLOWS_PLAN.md).
@@ -18,7 +19,7 @@ in under five minutes.
 | `ci.yml`             | Every PR and `dev` push                           | Plans lanes from `.github/ci-paths.json`, runs `mise run ci:routine` per lane, then the `Routine CI required` gate                                   |
 | `ci-deep.yml`        | Release PRs (labeled/synchronize), owner dispatch | Browser, integration and Electron journeys at the exact release PR head                                                                              |
 | `release-please.yml` | `dev` push                                        | Keeps the one release PR (`chore(dev): release X`) current and its Nix hash fresh; its merge tags `paseo-vX` with a draft and dispatches the release |
-| `release.yml`        | Dispatch on `dev` (release-please or owner)       | Builds, smoke-tests, signs and publishes the macOS closure and Android APK                                                                           |
+| `release.yml`        | Dispatch on `dev` (release-please or owner)       | Builds, smoke-tests, signs and publishes the macOS closure, Android APK, Linux Nix closures and Windows installer                                    |
 | `rebase-dev.yml`     | Owner dispatch                                    | Rebases `dev` onto the `upstream/main` mirror, runs routine CI on the result, then pushes a backup and the new `dev` atomically                      |
 | `upstream-sync.yml`  | Daily 07:23 UTC, dispatch                         | Fast-forwards the `upstream/main` mirror branch                                                                                                      |
 
@@ -51,10 +52,11 @@ only restore it.
      the release PR untouched, so its checks still test the old `dev`. Closing
      and reopening it reuses the stale merge ref. Run
      `gh pr update-branch <N> --rebase` and wait for the new checks.
-4. `release.yml` builds both artifacts, smoke-tests the
-   closure on a fresh macOS runner, signs the APK and the manifest, uploads
-   everything to the draft, re-downloads and re-hashes each asset, then
-   publishes the draft as latest.
+4. `release.yml` builds every artifact, smoke-tests the
+   macOS and Linux closures on fresh runners and the Windows app in its build
+   job, signs the APK and the manifest, uploads everything to the draft,
+   re-downloads and re-hashes each asset, then publishes the draft as latest.
+   Any failed platform blocks the release.
    - The closure tar is a zstd-compressed `file://` binary cache. The
      installing host's own `nix` decompresses it, so the device's Nix must
      read `.nar.zst`; the client's tar extractor ignores the format.
@@ -99,7 +101,7 @@ tight.
 
 | Name                                                              | Used by                                                              |
 | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
-| `PASEO_NIX_RELEASE_SIGNING_KEY`                                   | `release.yml` `macos-build`: signs the closure                       |
+| `PASEO_NIX_RELEASE_SIGNING_KEY`                                   | `release.yml` `macos-build`, `linux-build`: signs the closures       |
 | `PASEO_FORK_GOOGLE_SERVICES_JSON`                                 | `release.yml` `android-build`: Firebase config                       |
 | `PASEO_FORK_SIGNING_KEY_PKCS8_PEM`, `PASEO_FORK_SIGNING_CERT_PEM` | `release.yml` `android-sign`: APK signer                             |
 | `PASEO_RELEASE_MANIFEST_PRIVATE_KEY`                              | `release.yml` `publish`: signs the manifest                          |
@@ -148,6 +150,27 @@ closure against the signed manifest. On any failure it downloads the full tar.
 A failure to build a delta is a warning, so the release still ships without it.
 `.github/fork-release.json` holds the version and upstream
 base that `release.yml` reads.
+
+### Linux and Windows assets
+
+These sit beside the manifest, unsigned by it, and have no in-app updater; you
+install and upgrade them by hand. Adding their cells would need a new manifest
+schema, which every installed client rejects.
+
+- `paseo-X-linux-{x64,arm64}-nix.tar` is a `file://` binary cache holding the
+  CLI/daemon (`.#paseo`) and the desktop (`.#desktop`), signed with the Nix
+  release key like the macOS tar. Its `.json` lists both store paths in
+  `outputPaths` and the closure. To install, add the release key
+  (`release_public_key` in `.github/scripts/release-nix.sh`) to
+  `trusted-public-keys` in `nix.conf`, extract the tar, then run
+  `nix copy --from file://<dir> <paths>` and `nix profile install <paths>`.
+  The smoke test imports both with only the release key trusted, runs the
+  CLI, and launches the desktop under xvfb.
+- `paseo-X-windows-x64.exe` is the unsigned NSIS installer; there is no
+  publisher certificate, so SmartScreen warns. The build smoke-tests the
+  unpacked app (`PASEO_DESKTOP_SMOKE`), then installs silently and runs the
+  installed CLI. There is no arm64 build: `npm ci` alone took 22 minutes on
+  `windows-11-arm`.
 
 ## Release boundary
 
@@ -224,5 +247,5 @@ before acting on it. Revisit only if the RN plugin stops reading that file.
 
 Node is 26.11.1 and npm 11.20.0 everywhere: workflows, `.tool-versions` and
 the Nix packages. Nix takes `nodejs_26` from the pinned nixpkgs, which cache.nixos.org
-serves, so there is no seed release; `release-mac.sh` fails if the build would
+serves, so there is no seed release; `release-nix.sh` fails if the build would
 compile Node from source. When nixpkgs moves Node, bump every pin together.
