@@ -15,6 +15,7 @@ import {
   restoreStagedForkUpdate,
 } from "./client";
 import { isForkAndroidUpdaterEnabled, type VerifiedForkUpdate } from "./release";
+import { agentLog, describeError } from "@/utils/agent-log";
 
 export const FORK_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -56,6 +57,15 @@ const INITIAL_STATE: ForkUpdateState = {
 // feeds the sidebar update icon.
 export const useForkUpdateStore = create<ForkUpdateState>(() => INITIAL_STATE);
 
+useForkUpdateStore.subscribe((state, previous) => {
+  if (state.status === previous.status) return;
+  agentLog("update", "status", {
+    status: state.status,
+    version: state.update?.manifest.version ?? null,
+    downloadedBytes: state.status === "downloaded" ? state.downloadedBytes : undefined,
+  });
+});
+
 const setState = useForkUpdateStore.setState;
 const getState = useForkUpdateStore.getState;
 
@@ -94,6 +104,7 @@ let installerPending = false;
 let permissionSettingsPending = false;
 
 function fail(error: unknown): void {
+  agentLog("update", "failed", { status: getState().status, reason: describeError(error) });
   setState({
     status: error instanceof ForkManualMigrationRequired ? "migration-required" : "error",
   });
@@ -224,6 +235,7 @@ export async function checkForForkUpdateNow({
   } catch (error) {
     // A failed background check keeps the last good result.
     if (userInitiated) fail(error);
+    else agentLog("update", "failed", { status: "checking", reason: describeError(error) });
   }
 }
 
@@ -259,8 +271,9 @@ export async function installDownloadedForkUpdate(): Promise<void> {
       installerPending = false;
       setState({ status: "canceled" });
     }
-  } catch {
+  } catch (error) {
     installerPending = false;
+    agentLog("update", "failed", { status: "installing", reason: describeError(error) });
     setState({ status: "error" });
   }
 }

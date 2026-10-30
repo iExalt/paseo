@@ -92,6 +92,7 @@ import { projectIconCache } from "@/projects/icon-cache";
 import { createPerformanceTrace } from "@/performance/native-trace";
 import { revokePushNotifications } from "@/push-notifications";
 import { createAppWebSocketFactory } from "./websocket-factory";
+import { agentLog, describeError } from "@/utils/agent-log";
 
 export type HostRuntimeConnectionStatus = "idle" | "connecting" | "online" | "offline" | "error";
 export type PairingNavigationTarget = "openProject" | "hostRoot" | "hostSettings";
@@ -1806,9 +1807,11 @@ export class HostRuntimeStore {
         timeoutMs: DEFAULT_LOCALHOST_BOOTSTRAP_TIMEOUT_MS,
       });
     } catch (error) {
-      console.warn("[HostRuntime] bootstrap probe failed", {
+      // Expected whenever no daemon listens on this device's localhost, as on every phone.
+      agentLog("connection", "bootstrap-probe", {
         endpoint: LOCALHOST_FALLBACK_ENDPOINT,
-        error,
+        status: "failed",
+        reason: describeError(error),
       });
     }
   }
@@ -2545,6 +2548,14 @@ export class HostRuntimeStore {
       previousStatus !== undefined && previousStatus !== "online" && previousStatus !== "idle";
     if (statusChanged && (!wasUnavailable || !isUnavailable)) {
       this.connectionStatusStartedAtByServer.set(serverId, Date.now());
+    }
+    if (statusChanged) {
+      agentLog("connection", "status", {
+        serverId,
+        status: snapshot.connectionStatus,
+        transport: snapshot.activeConnection?.type ?? null,
+        error: snapshot.lastError,
+      });
     }
     this.lastConnectionStatusByServer.set(serverId, snapshot.connectionStatus);
     const didTransitionOnline =
