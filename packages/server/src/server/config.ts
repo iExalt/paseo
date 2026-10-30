@@ -275,6 +275,7 @@ interface ResolvedRelay {
   enabled: boolean;
   enabledMutable: boolean;
   requireProtectedSecurity: boolean;
+  keepAwake: boolean;
   endpoint: string;
   publicEndpoint: string;
   useTls: boolean;
@@ -338,6 +339,7 @@ function resolveRelayConfig(input: ResolveRelayInput): ResolvedRelay {
     enabled,
     enabledMutable: input.cliRelayEnabled === undefined && environmentEnabled === undefined,
     requireProtectedSecurity: input.persisted.daemon?.relay?.requireProtectedSecurity ?? false,
+    keepAwake: input.persisted.daemon?.relay?.keepAwake ?? false,
     endpoint,
     publicEndpoint,
     useTls,
@@ -649,6 +651,7 @@ export function resolveConfigFromPersisted(
     relayEnabled: relay.enabled,
     relayEnabledMutable: relay.enabledMutable,
     relayRequireProtectedSecurity: relay.requireProtectedSecurity,
+    relayKeepAwake: relay.keepAwake,
     relayEndpoint: relay.endpoint,
     relayPublicEndpoint: relay.publicEndpoint,
     relayUseTls: relay.useTls,

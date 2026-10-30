@@ -20,6 +20,7 @@ function reloadableConfig(
   return {
     relay: {
       enabled: relay.enabled ?? options.relayEnabledFallback ?? true,
+      keepAwake: relay.keepAwake,
     },
     agentTools: { enabled: false },
     browserTools: { enabled: daemon.browserTools?.enabled ?? false },
@@ -257,7 +258,7 @@ describe("DaemonConfigStore", () => {
     expect(loadPersistedConfig(paseoHome).daemon?.relay?.enabled).toBe(true);
   });
 
-  test("patch persists the relay protected security requirement independently of relay enablement", () => {
+  test("patch persists relay security and keep-awake settings independently of relay enablement", () => {
     const paseoHome = mkdtempSync(path.join(tmpdir(), "paseo-daemon-config-store-"));
     tempDirs.push(paseoHome);
     const store = new DaemonConfigStore(
@@ -273,17 +274,26 @@ describe("DaemonConfigStore", () => {
         appendSystemPrompt: "",
       },
       undefined,
-      // A launch override owns relay.enabled; the security requirement is still editable.
+      // A launch override owns relay.enabled; the other relay settings are still editable.
       { relayEnabledMutable: false },
     );
     const changes: unknown[] = [];
     store.onFieldChange("relay.requireProtectedSecurity", (value) => changes.push(value));
+    store.onFieldChange("relay.keepAwake", (value) => changes.push(value));
 
-    store.patch({ relay: { requireProtectedSecurity: true } });
+    store.patch({ relay: { requireProtectedSecurity: true, keepAwake: true } });
 
-    expect(changes).toEqual([true]);
-    expect(store.get().relay).toEqual({ enabled: true, requireProtectedSecurity: true });
-    expect(loadPersistedConfig(paseoHome).daemon?.relay?.requireProtectedSecurity).toBe(true);
+    expect(changes).toEqual([true, true]);
+    expect(store.get().relay).toEqual({
+      enabled: true,
+      requireProtectedSecurity: true,
+      keepAwake: true,
+    });
+    const persistedRelay = loadPersistedConfig(paseoHome).daemon?.relay;
+    expect(persistedRelay?.requireProtectedSecurity).toBe(true);
+    expect(persistedRelay?.keepAwake).toBe(true);
+    // The launch override's relay.enabled=true stays out of config.json.
+    expect(persistedRelay?.enabled).toBe(false);
   });
 
   test("patch round-trips agent profiles through the strictly-parsed persisted config", () => {
@@ -1182,6 +1192,26 @@ describe("DaemonConfigStore reload", () => {
     });
     expect(store.get().pluginsEnabled).toBe(false);
     expect(changes).toEqual([true, false]);
+  });
+
+  test("applies a hand-edited relay keep-awake setting", () => {
+    const { paseoHome, store, persisted } = createReloadableStore({
+      initialPersisted: { version: 1, daemon: { relay: { enabled: true } } },
+    });
+    const changes: unknown[] = [];
+    store.onFieldChange("relay.keepAwake", (value) => changes.push(value));
+
+    writeConfig(paseoHome, {
+      ...persisted,
+      daemon: { relay: { enabled: true, keepAwake: true } },
+    });
+
+    expect(store.reload()).toEqual({
+      appliedPaths: ["daemon.relay.keepAwake"],
+      restartRequiredPaths: [],
+      overrideControlledPaths: [],
+    });
+    expect(changes).toEqual([true]);
   });
 
   test("classifies every leaf when a parent subtree is added", () => {

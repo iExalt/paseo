@@ -287,6 +287,12 @@ export const PersistedConfigSchema = z
               .describe(
                 "Admit only relay clients that negotiate protected endpoint security (replay protection). Defaults to false; older clients still connect while it is off.",
               ),
+            keepAwake: z
+              .boolean()
+              .optional()
+              .describe(
+                "On macOS, keep the Mac awake on AC power while the relay is enabled, so remote clients can reach it with the lid closed. Defaults to false.",
+              ),
             endpoint: z.string().optional(),
             publicEndpoint: z.string().optional(),
             useTls: z.boolean().optional(),
