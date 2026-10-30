@@ -1,0 +1,108 @@
+# Agent testing status
+
+Last updated: 2026-10-30
+
+## Purpose
+
+This links the [agent testing plan](AGENT_TESTING_PLAN.md), which holds the phase checklist,
+to current evidence. The agent-facing result is [agent-testing.md](agent-testing.md).
+
+## Current snapshot
+
+| Field             | Status                                                                                      |
+| ----------------- | ------------------------------------------------------------------------------------------- |
+| Baseline          | `8388477dd` (`feat(app): update the fork Android app without the system installer screens`) |
+| Current phase     | Phase I (plan Phase 0 and Phase 1), chunk A                                                 |
+| Overall state     | Device facts and docs written; no app or CLI change yet                                     |
+| Immediate focus   | Chunk B: pair route, tagged logs, quieter logs, native `?open=`                             |
+| Routine CI budget | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below                    |
+
+### Routine CI baseline
+
+Dev push run `41105948216` at `8388477dd`, hosted runners:
+
+| Lane        | Wall time |
+| ----------- | --------- |
+| app-1       | 136 s     |
+| app-2       | 115 s     |
+| quality     | 123 s     |
+| workspaces  | 175 s     |
+| server-1    | 181 s     |
+| server-2    | 171 s     |
+| server-3    | 167 s     |
+| integration | 171 s     |
+
+## Chunks
+
+| Chunk                    | Status  | Evidence                                                                                           |
+| ------------------------ | ------- | -------------------------------------------------------------------------------------------------- |
+| A. Docs and device facts | active  | Tablet results below                                                                               |
+| B. Reach and observe     | planned | Device pass shared with C; tagged pairing failure line in 4 of 4 cold/warm runs of both link forms |
+| C. Forms and selectors   | planned | Device pass shared with B                                                                          |
+| D. CLI and build         | planned | Scratch-home daemon run on dev-station                                                             |
+
+### A: device facts
+
+Android 17 Cuttlefish tablet, `sh.paseo` 0.16.0 built at `8388477dd`, harness daemon 0.10.0.
+State judged by `selected="true"` resource-ids in raw `uiautomator dump` output.
+
+| Check                                     | Result                                                                                        |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `paseo://settings/about`, `/appearance`   | Correct page, cold and warm                                                                   |
+| `paseo://h/<srv>/agent/<id>`              | Agent tab selected, cold and warm                                                             |
+| `?open=terminal:` / `agent:`              | Selected when warm from a clean state; cold start keeps the previous tab (agent 0 of 2)       |
+| `?open=file:`                             | Tab created but never selected (0 of 4); the next warm `agent:` intent was then ignored twice |
+| `paseo://pair#offer=…`                    | "Unmatched Route", cold and warm                                                              |
+| `paseo:///#offer=…`                       | No route change                                                                               |
+| `[OfferLinkListener] Pairing link failed` | Logged in 2 of 4 runs with an invalid offer                                                   |
+| Idle `uiautomator dump`                   | 15 of 15 on chat, settings and sessions at default animator scale; scale-0 test not run       |
+| Terminal text in dumps                    | Present as `terminal-row-<n>` (plan item 16's terminal half is done)                          |
+| `pm grant sh.paseo …POST_NOTIFICATIONS`   | Granted                                                                                       |
+| `daemon status --json` (0.10.0 daemon)    | Includes `workerPid`                                                                          |
+
+## Current boundary
+
+- Native `?open=` does not reliably select its tab; cause not diagnosed. Code is upstream's
+  (`deferOpenTab`, `pendingOpenByWorkspace`, `usePendingWorkspaceOpen`); no upstream fix after the
+  2026-10-26 merge-base names it.
+- The idle-dump failure is not reproduced on the tablet. It was seen only on the phone in
+  loading or running states (Phase 2 item 8).
+- A real pairing (valid offer, connected host) cannot run on the tablet: the guest has no
+  network and the harness daemon has no relay. B's pair-route device check covers routing and
+  the failure path; the connected redirect is unit-tested.
+- The update row and update stages only run in `fork` builds, so their testIDs and logs get
+  unit tests only until Phase 2 item 9.
+
+## Active risks and decisions
+
+| Risk or decision  | Evidence or uncertainty                                                      | Mitigation                                                                                  |
+| ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Shared tablet     | Other sessions drive the same guest and harness APK                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated |
+| `?open=` fix size | Undiagnosed upstream code that upstream plans to delete after 2027-01-22     | Time-boxed diagnosis in B; a large fix returns to the user                                  |
+| Upstream drift    | 121 upstream commits past the merge-base, some in workspace tab code (#8093) | Check upstream before each app fix                                                          |
+
+## Open questions
+
+- **Linux `sharp` binaries:** whether the lockfile lacks them is inferred from an error message.
+- **Theme loss after SIGTERM:** unflushed storage is unproven; the retry passed.
+- **Git requirement for the desktop dev runner:** appears fixed; `git branch --show-current` no
+  longer appears in `packages/desktop/scripts`.
+
+## Where docs and code disagree
+
+- **Typecheck in fresh worktrees.** `CLAUDE.md` says to run typecheck after every change, but a
+  fresh worktree fails typecheck until `npm run build:server` has run. Observed in a past
+  session, not reproduced here.
+- **Main checkout userData.** The `packages/desktop/src/main.ts` comment says the main checkout
+  gets the default userData. That applies only when Electron starts without
+  `PASEO_ELECTRON_USER_DATA_DIR`; `npm run dev:desktop` always sets it to `<dev root>/.dev/user-data`,
+  as `docs/upstream/development.md` says.
+
+## Progress log
+
+### 2026-10-30
+
+- Plan approved for Phase I. Review moved the `?open=` guard into a fix, narrowed item 6 and
+  item 7, and dropped "stop kills workers" for lack of evidence.
+- Chunk A: harness APK replaced with a `8388477dd` build; deep links, pairing links and idle
+  dumps checked on the tablet; `docs/agent-testing.md` written.
