@@ -205,6 +205,7 @@ async function prepareTestDaemonConfig(
     relayUseTls: options.relayUseTls,
     relayPublicUseTls: options.relayPublicUseTls,
     relayRequireProtectedSecurity: options.relayRequireProtectedSecurity,
+    keepAwakeSpawn: null,
     appBaseUrl: "https://app.paseo.sh",
     auth: options.auth,
     pushNotificationSender: options.pushNotificationSender,

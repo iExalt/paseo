@@ -243,6 +243,23 @@ URI 中的 `password=` 总是优先于环境变量，因此你可以全局设置
 
 `PASEO_RELAY_ENABLED=true|false` 会为前台部署覆盖文件中的值。托管的 `start` 使用文件中的值。在通过应用或 `paseo daemon pair --relay` 修改中继之前，请结束并重新启动部署以移除它的覆盖项。
 
+### 为中继保持 Mac 唤醒 {#keep-a-mac-awake-for-the-relay}
+
+Mac 睡眠时 daemon 会暂停，中继客户端无法连接到它。即使合盖并接通电源，macOS 也会反复短暂唤醒后再次小睡。将 `daemon.relay.keepAwake` 设为 `true`，daemon 会在中继启用期间持有一个防睡眠断言（`caffeinate -s`）：
+
+```json
+{
+  "daemon": {
+    "relay": {
+      "enabled": true,
+      "keepAwake": true
+    }
+  }
+}
+```
+
+默认值为 `false`。开启后，合盖并接通电源的 Mac 会停留在暗唤醒（dark wake）状态而不再小睡，中继保持连接。该断言只在接通电源时生效，并在 daemon 退出、关闭中继或关闭该设置时结束。`daemon.log` 会记录 `power_assertion_acquired` 和 `power_assertion_released`。其他平台会忽略该设置。
+
 ## 常用环境变量 {#common-env-vars}
 
 - `PASEO_HOME`，设置 Paseo 主目录

@@ -189,6 +189,7 @@ import { startWorkerTerminalManager } from "../terminal/worker-terminal-manager.
 import { applyTerminalAgentHookSetting } from "../terminal/agent-hooks/terminal-agent-hook-setting.js";
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { createRelayRuntime, type RelayRuntime } from "./relay-runtime.js";
+import { createKeepAwakeController, type SpawnKeepAwakeAssertion } from "./keep-awake.js";
 import { admitSecuredRelaySocket } from "./websocket/secure-relay-ingress.js";
 import type { PushNotificationSender } from "./push/index.js";
 import { getOrCreateServerId } from "./server-id.js";
@@ -404,6 +405,9 @@ export interface PaseoDaemonConfig {
   relayEnabled?: boolean;
   relayEnabledMutable?: boolean;
   relayRequireProtectedSecurity?: boolean;
+  relayKeepAwake?: boolean;
+  // Replaces the caffeinate spawner; null disables keep-awake (tests).
+  keepAwakeSpawn?: SpawnKeepAwakeAssertion | null;
   relayEndpoint?: string;
   relayPublicEndpoint?: string;
   relayUseTls?: boolean;
@@ -527,6 +531,7 @@ function createInitialRelayConfig(config: ResolvedDaemonSettings): MutableDaemon
   return {
     enabled: config.relayEnabled ?? true,
     requireProtectedSecurity: config.relayRequireProtectedSecurity ?? false,
+    keepAwake: config.relayKeepAwake ?? false,
   };
 }
 
@@ -652,6 +657,21 @@ export async function createPaseoDaemon(
     logger.warn({ err: error }, "Failed to reconcile managed helper process ledger");
   });
   let relayRuntime: RelayRuntime | null = null;
+  const keepAwake = createKeepAwakeController({
+    logger,
+    spawnAssertion: config.keepAwakeSpawn,
+  });
+  // Hold while the relay is effectively enabled, including when a launch override
+  // owns relay.enabled, and keep holding while it reconnects.
+  function syncKeepAwake(): void {
+    const relayEnabled = relayRuntime?.getConfig().enabled === true;
+    const settingEnabled = daemonConfigStore.get().relay?.keepAwake === true;
+    if (relayEnabled && settingEnabled) {
+      keepAwake.hold();
+      return;
+    }
+    keepAwake.release(relayEnabled ? "setting_disabled" : "relay_disabled");
+  }
 
   const staticDir = config.staticDir;
   const downloadTokenTtlMs = config.downloadTokenTtlMs ?? 60000;
@@ -1776,8 +1796,13 @@ export async function createPaseoDaemon(
                 ),
               serverId,
             });
+            syncKeepAwake();
             daemonConfigStore.onFieldChange("relay.enabled", (value) => {
               relayRuntime?.setEnabled(value === true);
+              syncKeepAwake();
+            });
+            daemonConfigStore.onFieldChange("relay.keepAwake", () => {
+              syncKeepAwake();
             });
             await hubRelationships.start();
           };
@@ -1809,6 +1834,7 @@ export async function createPaseoDaemon(
       await pluginRuntime.stopAllPlugins().catch(() => undefined);
       await serviceProxy.stopStandalone().catch(() => undefined);
       await agentProviderRuntime.shutdown().catch(() => undefined);
+      await keepAwake.stop();
       if (mainStarted) {
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));
@@ -1865,6 +1891,7 @@ export async function createPaseoDaemon(
     }
     await speechService.stop();
     await scheduleService.stop().catch(() => undefined);
+    await keepAwake.stop();
     await relayRuntime?.stop().catch(() => undefined);
     if (wsServer) {
       await wsServer.close();
