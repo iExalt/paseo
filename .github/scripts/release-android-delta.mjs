@@ -85,7 +85,9 @@ export async function makeApkDelta({ base, next, directory, work, zstd = runZstd
 async function runZstd(args) {
   const child = spawn("zstd", args, { stdio: ["ignore", "ignore", "pipe"] });
   let stderr = "";
-  child.stderr.on("data", (chunk) => (stderr += chunk));
+  child.stderr.on("data", (chunk) => {
+    if (stderr.length < 4096) stderr += chunk;
+  });
   const code = await new Promise((settle, reject) => {
     child.on("error", reject);
     child.on("close", settle);
