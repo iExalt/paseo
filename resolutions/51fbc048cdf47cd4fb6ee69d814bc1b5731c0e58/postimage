@@ -1,0 +1,55 @@
+{
+  "name": "@getpaseo/expo-two-way-audio",
+  "version": "0.14.0",
+  "description": "Native module for two way audio streaming",
+  "keywords": [
+    "ExpoTwoWayAudio",
+    "expo",
+    "expo-two-way-audio",
+    "react-native"
+  ],
+  "homepage": "https://github.com/boudra/expo-two-way-audio",
+  "bugs": {
+    "url": "https://github.com/speechmatics/expo-two-way-audio/issues"
+  },
+  "license": "MIT",
+  "author": "Speechmatics <devrel@speechmatics.com> (https://github.com/speechmatics)",
+  "repository": "https://github.com/boudra/expo-two-way-audio",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "expo-module clean",
+    "dev": "expo-module build",
+    "lint": "expo-module lint",
+    "test": "expo-module test",
+    "format": "oxfmt --check .",
+    "format:fix": "oxfmt .",
+    "typecheck": "tsc --noEmit",
+    "expo-module": "expo-module",
+    "open:ios": "xed examples/basic-usage/ios",
+    "open:android": "open -a \"Android Studio\" examples/basic-usage/android"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/react": "~19.2.0",
+    "expo-modules-core": "57.0.21",
+    "@typescript/native": "npm:typescript@^7.0.2",
+    "expo-module-scripts": "^56.0.3",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "react-native": "0.86.3",
+    "react-native-worklets": "0.10.1",
+    "typescript": "npm:@typescript/typescript6@^6.0.2"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "peerDependenciesMeta": {
+    "expo": {
+      "optional": true
+    }
+  }
+}

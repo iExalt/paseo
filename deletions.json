@@ -4,8 +4,16 @@
     "commit": "4ea125b833181ac0882e344571b0bdbfe8556b42",
     "path": "patches/react-native-uitextview+2.7.1.patch",
     "stages": [
-      { "mode": "100644", "oid": "f64f09ebc741be449c3d154b202d3ce3686fb1ed", "stage": 1 },
-      { "mode": "100644", "oid": "43ca6100860aee0c0b73d101de0f0577f5c27396", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "f64f09ebc741be449c3d154b202d3ce3686fb1ed",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "43ca6100860aee0c0b73d101de0f0577f5c27396",
+        "stage": 3
+      }
     ]
   },
   {
@@ -13,8 +21,16 @@
     "commit": "0c49e5149cdb375de0ab626f00e2ee21f0051fc7",
     "path": "packages/server/src/server/agent/mcp-parity.e2e.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "3ae70680b688de7f6e67a13d43a5d900b956b88c", "stage": 1 },
-      { "mode": "100644", "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d", "stage": 2 }
+      {
+        "mode": "100644",
+        "oid": "3ae70680b688de7f6e67a13d43a5d900b956b88c",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d",
+        "stage": 2
+      }
     ]
   },
   {
@@ -22,8 +38,16 @@
     "commit": "490cb81af7d69b38005fcbf2b72df80aae806a32",
     "path": "packages/app/src/utils/split-markdown-blocks.ts",
     "stages": [
-      { "mode": "100644", "oid": "8282fc3ca936c19c33544099058d80e729abeb4d", "stage": 1 },
-      { "mode": "100644", "oid": "f5bafd878e78df2ac8c36fdfb8bc4a78399c3d1a", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "8282fc3ca936c19c33544099058d80e729abeb4d",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "f5bafd878e78df2ac8c36fdfb8bc4a78399c3d1a",
+        "stage": 3
+      }
     ]
   },
   {
@@ -31,8 +55,16 @@
     "commit": "490cb81af7d69b38005fcbf2b72df80aae806a32",
     "path": "packages/app/src/utils/streaming-markdown/index.ts",
     "stages": [
-      { "mode": "100644", "oid": "b70b464d76c27e3ff766914ae58d7d414a97904e", "stage": 1 },
-      { "mode": "100644", "oid": "60c52af5506bc9190d1160b6102d24aef08dda46", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "b70b464d76c27e3ff766914ae58d7d414a97904e",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "60c52af5506bc9190d1160b6102d24aef08dda46",
+        "stage": 3
+      }
     ]
   },
   {
@@ -40,8 +72,16 @@
     "commit": "0740677709440a5e309f439f398005f76b064cfb",
     "path": "packages/app/src/utils/__tests__/split-markdown-blocks.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "22eddf8152e9fab4a0d34e04937571b60a0230bc", "stage": 1 },
-      { "mode": "100644", "oid": "0fe7f210260cdcee8e8568ff029a03fc0f6a9ecf", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "22eddf8152e9fab4a0d34e04937571b60a0230bc",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "0fe7f210260cdcee8e8568ff029a03fc0f6a9ecf",
+        "stage": 3
+      }
     ]
   },
   {
@@ -49,8 +89,16 @@
     "commit": "0c49e5149cdb375de0ab626f00e2ee21f0051fc7",
     "path": "packages/server/src/server/agent/mcp-parity.e2e.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "3ae70680b688de7f6e67a13d43a5d900b956b88c", "stage": 1 },
-      { "mode": "100644", "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d", "stage": 2 }
+      {
+        "mode": "100644",
+        "oid": "3ae70680b688de7f6e67a13d43a5d900b956b88c",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d",
+        "stage": 2
+      }
     ]
   },
   {
@@ -58,8 +106,16 @@
     "commit": "09da314cbca3e74451a91ddd1e7929dc928939b4",
     "path": "patches/react-native-markdown-display+7.0.2.patch",
     "stages": [
-      { "mode": "100644", "oid": "ad8ac0bf66e1aaa284aac4e76755a0bef97345ca", "stage": 1 },
-      { "mode": "100644", "oid": "0a14b508fe4901afdad2c65b334661a1cfd8d761", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "ad8ac0bf66e1aaa284aac4e76755a0bef97345ca",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "0a14b508fe4901afdad2c65b334661a1cfd8d761",
+        "stage": 3
+      }
     ]
   },
   {
@@ -67,8 +123,16 @@
     "commit": "4e7fa8112c192c3e90705e5c6e9a0eba94c63758",
     "path": "packages/app/src/utils/__tests__/split-markdown-blocks.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "0fe7f210260cdcee8e8568ff029a03fc0f6a9ecf", "stage": 1 },
-      { "mode": "100644", "oid": "9012d0d531f21f79ef894143289354a6fcbd33e9", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "0fe7f210260cdcee8e8568ff029a03fc0f6a9ecf",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "9012d0d531f21f79ef894143289354a6fcbd33e9",
+        "stage": 3
+      }
     ]
   },
   {
@@ -76,8 +140,16 @@
     "commit": "4e7fa8112c192c3e90705e5c6e9a0eba94c63758",
     "path": "packages/app/src/utils/split-markdown-blocks.ts",
     "stages": [
-      { "mode": "100644", "oid": "f5bafd878e78df2ac8c36fdfb8bc4a78399c3d1a", "stage": 1 },
-      { "mode": "100644", "oid": "772121ddc76670dd9fc9001fbccc3133dfc0df7b", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "f5bafd878e78df2ac8c36fdfb8bc4a78399c3d1a",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "772121ddc76670dd9fc9001fbccc3133dfc0df7b",
+        "stage": 3
+      }
     ]
   },
   {
@@ -85,8 +157,16 @@
     "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
     "path": "packages/app/src/assistant-file-links/link.tsx",
     "stages": [
-      { "mode": "100644", "oid": "4b8e944ee34bb72a8d5d2e39e81b29f9e97a4830", "stage": 1 },
-      { "mode": "100644", "oid": "c675b16e33d431ccbe546719b5d595f7bff39780", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "4b8e944ee34bb72a8d5d2e39e81b29f9e97a4830",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "c675b16e33d431ccbe546719b5d595f7bff39780",
+        "stage": 3
+      }
     ]
   },
   {
@@ -94,8 +174,16 @@
     "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
     "path": "packages/app/src/components/markdown-text.android.tsx",
     "stages": [
-      { "mode": "100644", "oid": "f444d916bd95a0a060638ad5f0e3675d86a9aa76", "stage": 1 },
-      { "mode": "100644", "oid": "edcfe04a51367f708a9f237624ec20bc7f08f44b", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "f444d916bd95a0a060638ad5f0e3675d86a9aa76",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "edcfe04a51367f708a9f237624ec20bc7f08f44b",
+        "stage": 3
+      }
     ]
   },
   {
@@ -103,8 +191,16 @@
     "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
     "path": "packages/app/src/components/markdown-text.ios.tsx",
     "stages": [
-      { "mode": "100644", "oid": "1b2eb405c4bcd9d2a90e589b785ae93b545bc9b3", "stage": 1 },
-      { "mode": "100644", "oid": "6afdcad47aa1077b980d17b0ef8fc932acb1ca65", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "1b2eb405c4bcd9d2a90e589b785ae93b545bc9b3",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "6afdcad47aa1077b980d17b0ef8fc932acb1ca65",
+        "stage": 3
+      }
     ]
   },
   {
@@ -112,8 +208,16 @@
     "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
     "path": "packages/app/src/components/markdown-text.web.tsx",
     "stages": [
-      { "mode": "100644", "oid": "0cb89f0cfff9dc6e35e4003194b25ebeff26c1c6", "stage": 1 },
-      { "mode": "100644", "oid": "29d1f0a87b88c69458f3cc4be3147c8df1945594", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "0cb89f0cfff9dc6e35e4003194b25ebeff26c1c6",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "29d1f0a87b88c69458f3cc4be3147c8df1945594",
+        "stage": 3
+      }
     ]
   },
   {
@@ -121,8 +225,16 @@
     "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
     "path": "packages/app/src/components/markdown/fence/index.tsx",
     "stages": [
-      { "mode": "100644", "oid": "846aa91355a38e4698accc27b12fb255189e9d33", "stage": 1 },
-      { "mode": "100644", "oid": "a4480a1f1deb7ce775b3f34947776f147c4d024e", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "846aa91355a38e4698accc27b12fb255189e9d33",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "a4480a1f1deb7ce775b3f34947776f147c4d024e",
+        "stage": 3
+      }
     ]
   },
   {
@@ -130,8 +242,16 @@
     "commit": "669d95cd2b4cce80655d79555258b31955add7fa",
     "path": "packages/app/src/types/react-native-markdown-display.d.ts",
     "stages": [
-      { "mode": "100644", "oid": "1b9f8044ac9f2592080a0ff44fb4246d181896d9", "stage": 1 },
-      { "mode": "100644", "oid": "9e898c4a11ddaa6eada543a9be89e25018098069", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "1b9f8044ac9f2592080a0ff44fb4246d181896d9",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "9e898c4a11ddaa6eada543a9be89e25018098069",
+        "stage": 3
+      }
     ]
   },
   {
@@ -139,8 +259,16 @@
     "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
     "path": "packages/app/src/terminal/webview/terminal-emulator-webview-html.ts",
     "stages": [
-      { "mode": "100644", "oid": "c7fc27652e3780708c18f3cbed134358b2f2a838", "stage": 1 },
-      { "mode": "100644", "oid": "0c988e769c653e18f3f543585f72747990cbe40a", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "c7fc27652e3780708c18f3cbed134358b2f2a838",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "0c988e769c653e18f3f543585f72747990cbe40a",
+        "stage": 3
+      }
     ]
   },
   {
@@ -148,7 +276,11 @@
     "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
     "path": "patches/react-native-svg+15.15.3.patch",
     "stages": [
-      { "mode": "100644", "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496", "stage": 1 }
+      {
+        "mode": "100644",
+        "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496",
+        "stage": 1
+      }
     ]
   },
   {
@@ -156,7 +288,11 @@
     "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
     "path": "patches/react-native-svg+15.15.4.patch",
     "stages": [
-      { "mode": "100644", "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496", "stage": 2 }
+      {
+        "mode": "100644",
+        "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496",
+        "stage": 2
+      }
     ]
   },
   {
@@ -165,7 +301,11 @@
     "commit": "e4312173e562d6b4c2485274d80335deb8bb4333",
     "path": "patches/react-native-svg+15.15.5.patch",
     "stages": [
-      { "mode": "100644", "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "b6b4a85a90fddefc8bb45f64b22497a041f42496",
+        "stage": 3
+      }
     ]
   },
   {
@@ -173,8 +313,16 @@
     "commit": "f07c875e773d3ce9a6e70eabc649b2d65952b618",
     "path": ".github/workflows/desktop-packages.yml",
     "stages": [
-      { "mode": "100644", "oid": "c49504953d1a8a784e92bb0b6193ffa732a0656c", "stage": 1 },
-      { "mode": "100644", "oid": "9a56bf72456a9c48dae97c39ff5de4b8553fb83c", "stage": 2 }
+      {
+        "mode": "100644",
+        "oid": "c49504953d1a8a784e92bb0b6193ffa732a0656c",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "9a56bf72456a9c48dae97c39ff5de4b8553fb83c",
+        "stage": 2
+      }
     ]
   },
   {
@@ -182,8 +330,16 @@
     "commit": "ac65b375f879d86be918cfc994d866bab72c6271",
     "path": ".github/ci-paths.yml",
     "stages": [
-      { "mode": "100644", "oid": "c7a65e09d43880a288c89b5d26de76c9f1d2ecb6", "stage": 1 },
-      { "mode": "100644", "oid": "5f112685cb873a48b91e6faeac3d9284bdd716e9", "stage": 2 }
+      {
+        "mode": "100644",
+        "oid": "c7a65e09d43880a288c89b5d26de76c9f1d2ecb6",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "5f112685cb873a48b91e6faeac3d9284bdd716e9",
+        "stage": 2
+      }
     ]
   },
   {
@@ -191,8 +347,16 @@
     "commit": "87e1a5176a65ed69c8af7882111b37de44c14fdc",
     "path": "packages/server/src/server/agent/agent-mcp.e2e.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "2c6336eb1f9181a726e0780179fcf25384899df5", "stage": 1 },
-      { "mode": "100644", "oid": "9f7db3580f2761bcbafdaa8d0c8d2e39f612615a", "stage": 2 }
+      {
+        "mode": "100644",
+        "oid": "2c6336eb1f9181a726e0780179fcf25384899df5",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "9f7db3580f2761bcbafdaa8d0c8d2e39f612615a",
+        "stage": 2
+      }
     ]
   },
   {
@@ -200,8 +364,16 @@
     "commit": "87e1a5176a65ed69c8af7882111b37de44c14fdc",
     "path": "packages/server/src/server/agent/mcp-parity.e2e.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d", "stage": 1 },
-      { "mode": "100644", "oid": "b121244339ae0d059a0905b928c7894a3cd9ac38", "stage": 2 }
+      {
+        "mode": "100644",
+        "oid": "4d7af142377ed41c0750ce431bd25036ac13ed7d",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "b121244339ae0d059a0905b928c7894a3cd9ac38",
+        "stage": 2
+      }
     ]
   },
   {
@@ -210,7 +382,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/find-messages.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "466924f4cf462976f063b213616f58cc114cd40c", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "466924f4cf462976f063b213616f58cc114cd40c",
+        "stage": 3
+      }
     ]
   },
   {
@@ -219,7 +395,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/find-messages.ts",
     "stages": [
-      { "mode": "100644", "oid": "285d6eef49868eb83f28d8336233b75c08d57446", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "285d6eef49868eb83f28d8336233b75c08d57446",
+        "stage": 3
+      }
     ]
   },
   {
@@ -228,7 +408,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/find.tsx",
     "stages": [
-      { "mode": "100644", "oid": "9f01706174b4e3d6fa6fe18faf2a323b9be3df01", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "9f01706174b4e3d6fa6fe18faf2a323b9be3df01",
+        "stage": 3
+      }
     ]
   },
   {
@@ -237,7 +421,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/view-contract.ts",
     "stages": [
-      { "mode": "100644", "oid": "5815725f76f65a162ed7ab10a42be46ba4677a8e", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "5815725f76f65a162ed7ab10a42be46ba4677a8e",
+        "stage": 3
+      }
     ]
   },
   {
@@ -246,7 +434,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/visual-theme.ts",
     "stages": [
-      { "mode": "100644", "oid": "6ce865a9a9b901ac650abb18861491089fa35bf9", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "6ce865a9a9b901ac650abb18861491089fa35bf9",
+        "stage": 3
+      }
     ]
   },
   {
@@ -255,7 +447,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/edit-batcher.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "e70bb56603fb8c38eb1006e99e36214434a48b31", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "e70bb56603fb8c38eb1006e99e36214434a48b31",
+        "stage": 3
+      }
     ]
   },
   {
@@ -264,7 +460,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/edit-batcher.ts",
     "stages": [
-      { "mode": "100644", "oid": "6ad59c241b7c0815cbd85bdc8babcb87cf714c95", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "6ad59c241b7c0815cbd85bdc8babcb87cf714c95",
+        "stage": 3
+      }
     ]
   },
   {
@@ -273,7 +473,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/entry.browser.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "0ffd6215e323b555de414b6307aaa89877f6e5ab", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "0ffd6215e323b555de414b6307aaa89877f6e5ab",
+        "stage": 3
+      }
     ]
   },
   {
@@ -282,7 +486,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/entry.ts",
     "stages": [
-      { "mode": "100644", "oid": "4d801611c464ce5198996942ddbf651cbc8e7fe7", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "4d801611c464ce5198996942ddbf651cbc8e7fe7",
+        "stage": 3
+      }
     ]
   },
   {
@@ -291,7 +499,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/file-editor-webview-html.ts",
     "stages": [
-      { "mode": "100644", "oid": "9d2a0a6a5b7dac9c3731e0a61dba654b312178b9", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "9d2a0a6a5b7dac9c3731e0a61dba654b312178b9",
+        "stage": 3
+      }
     ]
   },
   {
@@ -300,7 +512,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/host-bridge.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "dd1fa7d5e51375d33582451cbfbf4637c14540e4", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "dd1fa7d5e51375d33582451cbfbf4637c14540e4",
+        "stage": 3
+      }
     ]
   },
   {
@@ -309,7 +525,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/host-bridge.ts",
     "stages": [
-      { "mode": "100644", "oid": "b30123249d06560a21c0e4a007b34af78981a379", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "b30123249d06560a21c0e4a007b34af78981a379",
+        "stage": 3
+      }
     ]
   },
   {
@@ -318,7 +538,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/protocol.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "f4ce98f87928f2672839657842572cb4abc6ed6b", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "f4ce98f87928f2672839657842572cb4abc6ed6b",
+        "stage": 3
+      }
     ]
   },
   {
@@ -327,7 +551,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/protocol.ts",
     "stages": [
-      { "mode": "100644", "oid": "e5c9a6aa27be579e6ff410882a6415720ccf023b", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "e5c9a6aa27be579e6ff410882a6415720ccf023b",
+        "stage": 3
+      }
     ]
   },
   {
@@ -336,7 +564,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/renderer-health.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "d8a14f48813f5d01a5ab151b149ee337d78489bf", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "d8a14f48813f5d01a5ab151b149ee337d78489bf",
+        "stage": 3
+      }
     ]
   },
   {
@@ -345,7 +577,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/editor/webview/renderer-health.ts",
     "stages": [
-      { "mode": "100644", "oid": "2ea3be48d4ebf3ee945d8883463ab7d11f3171e5", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "2ea3be48d4ebf3ee945d8883463ab7d11f3171e5",
+        "stage": 3
+      }
     ]
   },
   {
@@ -354,7 +590,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/find/index.native.tsx",
     "stages": [
-      { "mode": "100644", "oid": "3d6aa75b773663d7f58d30e66e47ff261ec3440d", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "3d6aa75b773663d7f58d30e66e47ff261ec3440d",
+        "stage": 3
+      }
     ]
   },
   {
@@ -363,7 +603,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/find/line-matches.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "856b23a47b34d50cca83862fa1fd9ef973817597", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "856b23a47b34d50cca83862fa1fd9ef973817597",
+        "stage": 3
+      }
     ]
   },
   {
@@ -372,7 +616,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/find/line-matches.ts",
     "stages": [
-      { "mode": "100644", "oid": "519aee77706b07b53269d00232fd44c5f2c0445d", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "519aee77706b07b53269d00232fd44c5f2c0445d",
+        "stage": 3
+      }
     ]
   },
   {
@@ -381,7 +629,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/readonly/line-layout.test.ts",
     "stages": [
-      { "mode": "100644", "oid": "e06fb8cbf9db2c1ccfb77cfa12933e7d30791a47", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "e06fb8cbf9db2c1ccfb77cfa12933e7d30791a47",
+        "stage": 3
+      }
     ]
   },
   {
@@ -390,7 +642,11 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-panels/source/readonly/line-layout.ts",
     "stages": [
-      { "mode": "100644", "oid": "82086007e265b3efcbd40d84b07b5a5f6abe0bfb", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "82086007e265b3efcbd40d84b07b5a5f6abe0bfb",
+        "stage": 3
+      }
     ]
   },
   {
@@ -398,8 +654,16 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/components/terminal-emulator-webview.native.tsx",
     "stages": [
-      { "mode": "100644", "oid": "dbaa0175d4a55936ad2196e763adf3a6aa275e10", "stage": 1 },
-      { "mode": "100644", "oid": "58fe18510f2646b20b05b8c75b3a13ce76daec1b", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "dbaa0175d4a55936ad2196e763adf3a6aa275e10",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "58fe18510f2646b20b05b8c75b3a13ce76daec1b",
+        "stage": 3
+      }
     ]
   },
   {
@@ -407,8 +671,16 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/file-pane/source/view.native.tsx",
     "stages": [
-      { "mode": "100644", "oid": "de7c5eeae1c188f7edcecd68a8c6d67256941f7d", "stage": 1 },
-      { "mode": "100644", "oid": "0dcdf320f8326e1ee9af87a8697bea29ceb7a5e4", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "de7c5eeae1c188f7edcecd68a8c6d67256941f7d",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "0dcdf320f8326e1ee9af87a8697bea29ceb7a5e4",
+        "stage": 3
+      }
     ]
   },
   {
@@ -416,8 +688,16 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/terminal/webview/terminal-emulator-webview-entry.ts",
     "stages": [
-      { "mode": "100644", "oid": "50f080b37cff6bd2aca10228485aafd79508c0c1", "stage": 1 },
-      { "mode": "100644", "oid": "c07861867b390a71d005671cf1d577e28ee9b457", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "50f080b37cff6bd2aca10228485aafd79508c0c1",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "c07861867b390a71d005671cf1d577e28ee9b457",
+        "stage": 3
+      }
     ]
   },
   {
@@ -425,8 +705,16 @@
     "commit": "6c93019a2f7c10b0aad2d5df0bc0b64259424663",
     "path": "packages/app/src/terminal/webview/terminal-emulator-webview-html.ts",
     "stages": [
-      { "mode": "100644", "oid": "0c988e769c653e18f3f543585f72747990cbe40a", "stage": 1 },
-      { "mode": "100644", "oid": "2051a4529c6cd37e0ec1a7fe9940a023ebe6eef7", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "0c988e769c653e18f3f543585f72747990cbe40a",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "2051a4529c6cd37e0ec1a7fe9940a023ebe6eef7",
+        "stage": 3
+      }
     ]
   },
   {
@@ -434,8 +722,33 @@
     "commit": "0d2333cc9cf8987cef7eb913fe286a05a2ac7f28",
     "path": "packages/app/src/terminal/webview/terminal-emulator-webview-html.ts",
     "stages": [
-      { "mode": "100644", "oid": "2051a4529c6cd37e0ec1a7fe9940a023ebe6eef7", "stage": 1 },
-      { "mode": "100644", "oid": "479d2d3019a01c01d0badfb2d39aa10e58370402", "stage": 3 }
+      {
+        "mode": "100644",
+        "oid": "2051a4529c6cd37e0ec1a7fe9940a023ebe6eef7",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "479d2d3019a01c01d0badfb2d39aa10e58370402",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "a4f696620b5d248598a882b1a78d82ec5038c74b",
+    "commit": "bbea2ded54e742ae97bdf19504c2e4c687858946",
+    "path": ".github/workflows/desktop-release.yml",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "e29c09e5c8a942bbc4195534121c4cfedae7efaa",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "7725a230656b3884ec9d3066c3ff4da512ac35a7",
+        "stage": 2
+      }
     ]
   }
 ]
