@@ -53,8 +53,14 @@ needs to be:
 
 ### Phase 3: R8
 
-- [ ] Enable minify and resource shrinking through `expo-build-properties`,
-      with `-dontobfuscate` and keep rules: `-keep class com.github.luben.zstd.** { *; }`
-      (the AAR ships none, and its JNI reads Java fields) and `modules/paseo-*`.
-- [ ] Device check of chat markdown, diff view, terminal, camera and the
-      update flow; compare the next delta's size.
+- [x] Enable minify and resource shrinking through `expo-build-properties`,
+      with `-dontobfuscate` and `-keep class com.github.luben.zstd.** { *; }`
+      (the AAR ships no rules, and its JNI reads Java fields). No `modules/paseo-*`
+      rule was needed.
+- [x] Device check on the Cuttlefish tablet: chat markdown, diff view,
+      terminal, camera, restart. The guest has no network, so the update check
+      could not reach GitHub.
+- [ ] Release dry run with R8: CI build time and memory, the fork APK size.
+- [ ] After the first R8 release: the phone's update check and a push
+      notification work before anything else ships. If the updater broke,
+      sideload the fixed APK; the signer is unchanged.

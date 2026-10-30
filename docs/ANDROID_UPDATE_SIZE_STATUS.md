@@ -74,12 +74,41 @@ Evidence state: implemented; measured on a local dogfood build.
   `37a015749` is 165,324,625 B against 0.13.1's 170,062,966 B. The first CI
   measurement is the size table of the next release or dry run.
 
+### R8
+
+Evidence state: implemented; device-checked on the tablet without network.
+
+Local arm64 builds on dev-station (dogfood variant, unsigned, same machine):
+
+| Build                    | Dex     | APK           | `.gz -9`     | Delta 0.13.0 → 0.13.1 |
+| ------------------------ | ------- | ------------- | ------------ | --------------------- |
+| 0.13.0/0.13.1 without R8 | 59.7 MB | 169,959,832 B | 57,004,799 B | 2,101,619 B           |
+| 0.13.0/0.13.1 with R8    | 27.9 MB | 137,813,721 B | 46,467,049 B | 2,093,422 B           |
+
+- R8 left the dex unchanged between the two releases (4 dex files, none
+  changed), so `-dontobfuscate` with optimization on does not inflate deltas.
+  Without R8, `classes6.dex` changed.
+- Resource shrinking removed 21 library drawables and raw keep files; all 7
+  drawables bundled from JS assets survived.
+- The R8 build keeps all 39 `com.github.luben.zstd` classes, their native
+  methods and `nativePtr` (dexdump).
+- Build time and peak memory matched the builds without R8 (8–16 min, about
+  1.2 GB, with other builds running).
+- Cuttlefish tablet, `sh.paseo.debug` release build with R8 at `b2db9a9cd`:
+  launch, connect, chat markdown with highlighted code, sending a message,
+  terminal, Skia diff view, the QR camera, and a cold restart all worked, with
+  no `ClassNotFound`, `NoSuchMethod`, `NoSuchField` or JNI errors in logcat.
+  The update check could not reach GitHub (no network in the guest), so the
+  updater under R8 is first exercised after release.
+
 ## Current boundary
 
 - G-live has not run: the zstd-jni `.so` has not loaded on a device, and no
   phone has installed an update from a delta. The Cuttlefish tablet was
   unreachable (k0s API timeout) when the device probe was attempted.
-- Phase 3 (R8) has not started. The unbundled barcode model was declined.
+- R8 has not run in a CI release build; a dry run follows the merge. The
+  updater and push notifications under R8 are unproven until the first R8
+  release is checked on the phone. The unbundled barcode model was declined.
 
 ## Risks
 

@@ -250,6 +250,14 @@ export default {
             kotlinVersion: "2.1.20",
             // Allow HTTP connections for local network hosts in release builds
             usesCleartextTraffic: true,
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            // R8 keeps names so each release changes few dex bytes and APK deltas stay
+            // small. zstd-jni ships no consumer rules and its JNI reads Java fields.
+            extraProguardRules: [
+              "-dontobfuscate",
+              "-keep class com.github.luben.zstd.** { *; }",
+            ].join("\n"),
           },
         },
       ],
