@@ -91,12 +91,13 @@ State judged by `selected="true"` resource-ids in raw `uiautomator dump` output.
 ## Where docs and code disagree
 
 - **Typecheck in fresh worktrees.** `CLAUDE.md` says to run typecheck after every change, but a
-  fresh worktree fails typecheck until `npm run build:server` has run. Observed in a past
-  session, not reproduced here.
-- **Main checkout userData.** The `packages/desktop/src/main.ts` comment says the main checkout
-  gets the default userData. That applies only when Electron starts without
-  `PASEO_ELECTRON_USER_DATA_DIR`; `npm run dev:desktop` always sets it to `<dev root>/.dev/user-data`,
-  as `docs/upstream/development.md` says.
+  fresh worktree fails typecheck until `npm run build:server` has run. Reproduced on 2026-10-30:
+  the chunk A pre-commit typecheck failed in a new dev-station worktree and passed after
+  `build:server`.
+- **Unpackaged desktop userData.** The `packages/desktop/src/main.ts` comment says the main
+  checkout gets "default userData". Without `PASEO_ELECTRON_USER_DATA_DIR` that is Electron's
+  default path, which Electron derives before `app.setName("Paseo")` runs; whether it is the
+  installed app's `Paseo` directory is unverified. `npm run dev:desktop` always sets the variable.
 
 ## Progress log
 

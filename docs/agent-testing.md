@@ -31,15 +31,15 @@ Grant notifications before the first launch, or the permission prompt takes focu
 Checked on the Android 17 tablet with `sh.paseo` 0.16.0 on 2026-10-30. Cold means
 `am force-stop` first; warm means the app is already open.
 
-| Link                                                                              | Cold | Warm | Notes                                                                                     |
-| --------------------------------------------------------------------------------- | ---- | ---- | ----------------------------------------------------------------------------------------- |
-| `paseo://settings/<section>` (`about`, `appearance`, …)                           | yes  | yes  |                                                                                           |
-| `paseo://h/<serverId>/agent/<agentId>`                                            | yes  | yes  | Opens the agent's workspace with the agent tab selected                                   |
-| `paseo://h/<serverId>/workspace/<workspaceId>`                                    |      | yes  |                                                                                           |
-| `paseo://h/<serverId>/workspace/<workspaceId>?open=terminal:<id>` or `agent:<id>` | no   | yes  | Cold start ignores `?open=`. A `file:` intent breaks later warm intents on that workspace |
-| `…?open=file:<base64url path>`                                                    | no   | no   | Creates the file tab but does not select it                                               |
-| `paseo:///#offer=…`                                                               | yes  | yes  | Use this form. Stays on the current screen; pairing through it worked on the phone        |
-| `paseo://pair#offer=…`                                                            | no   | no   | Imports the offer, then shows "Unmatched Route"                                           |
+| Link                                                                              | Cold           | Warm           | Notes                                                                                                             |
+| --------------------------------------------------------------------------------- | -------------- | -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `paseo://settings/<section>` (`about`, `appearance`, …)                           | yes            | yes            |                                                                                                                   |
+| `paseo://h/<serverId>/agent/<agentId>`                                            | yes            | yes            | Opens the agent's workspace with the agent tab selected                                                           |
+| `paseo://h/<serverId>/workspace/<workspaceId>`                                    | not checked    | yes            |                                                                                                                   |
+| `paseo://h/<serverId>/workspace/<workspaceId>?open=terminal:<id>` or `agent:<id>` | no             | yes            | Cold start ignores `?open=`. After a `file:` intent, a warm `agent:` intent was ignored (2 of 2)                  |
+| `…?open=file:<base64url path>`                                                    | no             | no             | Creates the file tab but does not select it                                                                       |
+| `paseo:///#offer=…`                                                               | no route error | no route error | Use this form. Checked with an invalid offer only; earlier phone sessions paired through it after tapping Connect |
+| `paseo://pair#offer=…`                                                            | no             | no             | "Unmatched Route" (invalid offer); earlier phone sessions report the pairing still happened                       |
 
 To reach a terminal, open the agent route to land in the workspace, then send the warm
 `?open=terminal:` link. `?open=` is upstream compatibility code marked
@@ -50,7 +50,7 @@ To reach a terminal, open the agent route to land in the workspace, then send th
 - `testID` surfaces as `resource-id`. The selected tab carries `selected="true"` in a raw
   `uiautomator dump`; summary helpers that print only id, text and description lose it.
 - Terminal rows are in the dump as `terminal-row-<n>` with their text. Diff code is drawn with
-  Skia and is not; take a screenshot.
+  Skia, so it is likely absent (unverified); take a screenshot.
 - App logs are on the `ReactNativeJS` logcat tag: `adb logcat -s ReactNativeJS`.
 - `uiautomator dump` succeeded 15 of 15 times with the app idle on the tablet (chat, settings,
   sessions). Agents on the phone have hit `ERROR: could not get idle state` while lists load or
@@ -69,11 +69,12 @@ The shared Cuttlefish tablet's harness guide is `/home/dev/cuttlefish/HARNESS.md
 | `EXPO_DEV_URL`                         | Metro URL Electron loads; defaults to `http://localhost:8081`                            |
 
 Launching Electron directly (Playwright `_electron.launch`) skips `dev.sh`. Without
-`PASEO_ELECTRON_USER_DATA_DIR`, a worktree gets `Paseo-<worktree>` userData, but the main checkout
-gets the default `Paseo` userData, which the installed app also uses. Always set it.
+`PASEO_ELECTRON_USER_DATA_DIR`, an unpackaged launch uses `Paseo-<worktree>` userData when its cwd
+is a linked git worktree, and Electron's default userData otherwise. Whether that default collides
+with the installed app is unverified, so always set the variable.
 
 For a browser-only check, serve the web UI from an isolated daemon:
-[daemon-served web UI](upstream/development.md#daemon-served-web-ui) and
+[daemon-served web UI](upstream/development.md#bundled-daemon-web-ui) and
 `PASEO_CORS_ORIGINS` for a separate origin.
 
 ## Isolated daemons
