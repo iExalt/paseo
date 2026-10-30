@@ -185,8 +185,9 @@ jobs:
       - name: Install smoke harness dependencies
         run: node .github/scripts/release-mac-smoke-deps.mjs "$RUNNER_TEMP/paseo-smoke-deps"
       # Installs the previous release, then stages this one from its delta.
+      # Takes about 2 min; a hang fails here instead of at the job limit.
       - name: Import with the release key alone, then check signature, CLI and launch
-        timeout-minutes: 15
+        timeout-minutes: 5
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
           SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
@@ -298,8 +299,9 @@ jobs:
         run: |
           node .github/scripts/release-mac-smoke-deps.mjs "$RUNNER_TEMP/paseo-smoke-deps"
           command -v xvfb-run > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth; }
+      # Takes under a minute; a hang fails here instead of at the job limit.
       - name: Import with the release key alone, then check the CLI and launch
-        timeout-minutes: 10
+        timeout-minutes: 4
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
           SOURCE_SHA: ${{ needs.resolve.outputs.sha }}

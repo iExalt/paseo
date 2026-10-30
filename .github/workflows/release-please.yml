@@ -59,9 +59,9 @@ jobs:
           TAG: ${{ needs.release-please.outputs.tag }}
         run: gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref dev -f tag="$TAG"
 
-  # Every version bump changes package-lock.json, and with it the Nix dependency
-  # hash. release-please rewrites its branch whenever it updates the PR, so this
-  # adds the hash back each time.
+  # A version bump no longer changes the Nix dependency hash, so this pushes
+  # nothing unless a dependency change landed without its hash. It stays as
+  # that safety net, so a stale hash fails here instead of in the release.
   nix-hash:
     needs: release-please
     if: needs.release-please.outputs.pr != ''
