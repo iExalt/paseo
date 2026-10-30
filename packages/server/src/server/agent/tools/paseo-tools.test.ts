@@ -136,7 +136,8 @@ describe("native Paseo tool catalog", () => {
   it("allows authorized host reads and mutations of daemon-wide notification rules", async () => {
     let currentRules: Array<{ source: string; flags: string }> = [];
     const getReplyRules = vi.fn(() => currentRules);
-    const patch = vi.fn((input: { replyRules: Array<{ source: string; flags: string }> }) => {
+    const patch = vi.fn(async (input: { replyRules: Array<{ source: string; flags: string }> }) => {
+      await Promise.resolve();
       currentRules = input.replyRules;
     });
     const catalog = createPaseoToolCatalog({
@@ -164,5 +165,20 @@ describe("native Paseo tool catalog", () => {
       structuredContent: { replyRules: [{ source: "hello", flags: "i" }] },
     });
     expect(patch).toHaveBeenCalledWith({ replyRules: [{ source: "hello", flags: "i" }] });
+    await expect(catalog.executeTool("clear_daemon_notification_rules", {})).resolves.toMatchObject(
+      {
+        structuredContent: { replyRules: [] },
+      },
+    );
+    expect(currentRules).toEqual([]);
+
+    patch.mockRejectedValueOnce(new Error("config write failed"));
+    await expect(
+      catalog.executeTool("set_daemon_notification_rules", { replyRules: [] }),
+    ).rejects.toThrow("config write failed");
+    patch.mockRejectedValueOnce(new Error("config write failed"));
+    await expect(catalog.executeTool("clear_daemon_notification_rules", {})).rejects.toThrow(
+      "config write failed",
+    );
   });
 });

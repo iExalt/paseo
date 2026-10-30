@@ -1483,7 +1483,7 @@ function createToolCatalog(
     async ({ replyRules }) => {
       requireHostPermission("daemon.manage");
       const store = requireReplyRuleFilteringSupport();
-      store.patch({ replyRules });
+      await store.patch({ replyRules });
       return {
         content: [],
         structuredContent: ensureValidJson({ replyRules: [...store.getReplyRules()] }),
@@ -1502,7 +1502,7 @@ function createToolCatalog(
     async () => {
       requireHostPermission("daemon.manage");
       const store = requireReplyRuleFilteringSupport();
-      store.patch({ replyRules: [] });
+      await store.patch({ replyRules: [] });
       return {
         content: [],
         structuredContent: ensureValidJson({ replyRules: [...store.getReplyRules()] }),
