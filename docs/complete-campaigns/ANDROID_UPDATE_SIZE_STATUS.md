@@ -1,6 +1,6 @@
 # Smaller Android updates status
 
-Last updated: 2026-10-29
+Last updated: 2026-10-30
 
 ## Purpose
 
@@ -9,13 +9,13 @@ to current evidence. It is not a second checklist.
 
 ## Current snapshot
 
-| Field          | Status                                                                    |
-| -------------- | ------------------------------------------------------------------------- |
-| Baseline       | `de1cd5fef` (`chore(dev): release 0.13.1`)                                |
-| Branch         | Merged: `390a128bd` (#246), `b2db9a9cd` (#249), `b267f1890` (#250)        |
-| Current phase  | Phases 1–3 merged; G-live and the post-release R8 check wait for releases |
-| Overall state  | Delta path implemented and verified off-device; not yet proven on a phone |
-| Release claims | No release ships deltas yet; no on-device delta install has happened      |
+| Field          | Status                                                                   |
+| -------------- | ------------------------------------------------------------------------ |
+| Baseline       | `de1cd5fef` (`chore(dev): release 0.13.1`)                               |
+| Branch         | Merged: `390a128bd` (#246), `b2db9a9cd` (#249), `b267f1890` (#250)       |
+| Current phase  | Complete: every phase merged and both live checks passed                 |
+| Overall state  | The phone updated 0.14.0 → 0.15.0 from a 1.0 MB delta                    |
+| Release claims | 0.14.0 is the first R8 release with the delta client; 0.15.0 used deltas |
 
 ## Accomplishments with evidence
 
@@ -112,13 +112,39 @@ Local arm64 builds on dev-station (dogfood variant, unsigned, same machine):
   large; the local pair above shows R8 releases after it stay small. The draft
   was deleted.
 
-## Current boundary
+### Live releases
 
-- G-live has not run: the zstd-jni `.so` has not loaded on a device, and no
-  phone has installed an update from a delta. The Cuttlefish tablet was
-  unreachable (k0s API timeout) when the device probe was attempted.
-- The updater and push notifications under R8 are unproven until the first
-  R8 release is checked on the phone. G-live should use two R8 releases. The unbundled barcode model was declined.
+Evidence state: verified on the phone (Android 16, prod `sh.paseo.iexalt`).
+
+| Release | Fork APK      | `.gz`        | Delta from the previous release |
+| ------- | ------------- | ------------ | ------------------------------- |
+| 0.14.0  | 133,269,220 B | 44,580,986 B | 9,730,764 B (from 0.13.1)       |
+| 0.15.0  | 133,269,220 B | 44,580,558 B | 1,016,071 B (from 0.14.0)       |
+
+- 0.14.0 (run 40983963926): the phone updated from 0.13.1 by the `.gz`, since
+  0.13.1 predates the delta client. Under R8 the update check reported "up to
+  date", FCM delivered a push to the open app, and a push sent with Paseo in
+  the background was posted.
+- 0.15.0 (run 41054837850): one DownloadManager transfer, no `.gz`:
+
+  ```
+  08:46:08.844 I/PaseoForkUpdates: Fetching 0.15.0 as zstd-patch (1016071 bytes)
+  08:46:10.447 I/PaseoForkUpdates: Verified 0.15.0 from zstd-patch
+  ```
+
+  This also proves the zstd-jni `.so` loads in a release build and that the
+  installed APK maps as the base. The install prompt and relaunch worked.
+
+- Building the four deltas in parallel (#252) cut the `android-delta` job from
+  7:07 (dry run 40979129503) to 3:27 (0.14.0) and 2:43 (0.15.0).
+
+## Remaining limits
+
+- Only the order of the fallback after a rejected delta is tested
+  (`TransferChainTest`); no device has fallen back to the `.gz`.
+- Deltas from releases before 0.14.0 stay 9.7–13.4 MB, because R8 rewrote
+  every dex file in 0.14.0.
+- The unbundled barcode model was declined.
 
 ## Risks
 
@@ -138,3 +164,7 @@ Local arm64 builds on dev-station (dogfood variant, unsigned, same machine):
 - 2026-10-29: Phase 2 deleted the diff prototype and added the release size
   table; the barcode change was dropped to keep QR working without Play
   Services.
+- 2026-10-29: Phase 3 turned on R8 (#250); the delta job builds its bases in
+  parallel (#252).
+- 2026-10-30: 0.14.0 passed the R8 phone check; 0.15.0 updated the phone from
+  a 1.0 MB delta, closing G-live. The campaign is complete.
