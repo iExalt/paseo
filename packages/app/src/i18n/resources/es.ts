@@ -2697,6 +2697,13 @@ export const es: TranslationResources = {
         title: "Emparejar dispositivos",
         rowTitle: "Emparejar un dispositivo",
         rowHint: "Escanee un códigoQRo copie un enlace para conectar su teléfono a este host",
+        keepAwake: {
+          title: "Mantener este Mac activo para el relay",
+          hint: "Evita la suspensión con corriente mientras el relay está activado, para que los dispositivos remotos puedan llegar a este Mac. Consume más energía y se calienta más mientras está enchufado.",
+          activeHint: "Mantiene este Mac activo con corriente mientras el relay está activado",
+          waitingHint: "Se aplica cuando el relay está activado",
+          updateFailed: "No se pudo actualizar la opción de mantener activo",
+        },
       },
       skills: {
         ...en.settings.host.skills,

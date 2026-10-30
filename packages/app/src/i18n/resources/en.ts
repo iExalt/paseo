@@ -2860,6 +2860,13 @@ export const en = {
         title: "Pair devices",
         rowTitle: "Pair a device",
         rowHint: "Scan a QR code or copy a link to connect your phone to this host",
+        keepAwake: {
+          title: "Keep this Mac awake for the relay",
+          hint: "Prevents sleep on AC power while the relay is on, so remote devices can reach this Mac. Uses more power and runs warmer while plugged in.",
+          activeHint: "Keeps this Mac awake on AC power while the relay is on",
+          waitingHint: "Takes effect when relay is on",
+          updateFailed: "Unable to update keep awake",
+        },
       },
       skills: {
         sectionTitle: "Orchestration skills",
