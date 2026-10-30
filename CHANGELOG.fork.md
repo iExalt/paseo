@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.14.0](https://github.com/iExalt/paseo/compare/paseo-v0.13.1...paseo-v0.14.0) (2026-10-30)
+
+
+### Features
+
+* **app:** drop the unused diff prototype and report APK sizes per release ([#249](https://github.com/iExalt/paseo/issues/249)) ([b2db9a9](https://github.com/iExalt/paseo/commit/b2db9a9cd62a33862b1915890a68ef2caf3d8d28))
+* **app:** shrink the Android release with R8, keeping names ([#250](https://github.com/iExalt/paseo/issues/250)) ([b267f18](https://github.com/iExalt/paseo/commit/b267f1890c9f9aa8289dc632c5f37725ed351414))
+* update Android by zstd APK delta before the gzip sidecar ([#246](https://github.com/iExalt/paseo/issues/246)) ([390a128](https://github.com/iExalt/paseo/commit/390a128bdba8c8f6b1d91c5cffa32d479c5f67b4))
+
 ## [0.13.1](https://github.com/iExalt/paseo/compare/paseo-v0.13.0...paseo-v0.13.1) (2026-10-29)
 
 
