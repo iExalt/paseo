@@ -1525,6 +1525,35 @@ index 7f23f630c..8809a81e1 100644
      "react": "19.2.3",
      "react-dom": "19.2.3",
      "react-native": "0.86.3",
+diff --git a/packages/protocol/src/messages.wire-compat.test.ts b/packages/protocol/src/messages.wire-compat.test.ts
+index b1db469ee..b0512daba 100644
+--- a/packages/protocol/src/messages.wire-compat.test.ts
++++ b/packages/protocol/src/messages.wire-compat.test.ts
+@@ -554,7 +554,11 @@ test("local STT language survives wire reads and patches", () => {
+ });
+ 
+ test("speech config reads remain compatible with clients before features and future providers", () => {
+-  const oldSchema = MutableDaemonConfigSchema.omit({ features: true, envOverrides: true });
++  const oldSchema = MutableDaemonConfigSchema.in.omit({
++    features: true,
++    envOverrides: true,
++    agentTools: true,
++  });
+   const oldRead = oldSchema.parse({
+     providers: {},
+     relay: { enabled: false },
+@@ -573,7 +577,10 @@ test("speech config reads remain compatible with clients before features and fut
+     envOverrides: { "features.voiceMode.stt.provider": "PASEO_VOICE_STT_PROVIDER" },
+   };
+   expect(oldSchema.parse(read)).toEqual(read);
+-  expect(MutableDaemonConfigSchema.parse(oldRead)).toEqual(oldRead);
++  expect(MutableDaemonConfigSchema.parse(oldRead)).toEqual({
++    ...oldRead,
++    agentTools: { enabled: true },
++  });
+   expect(MutableDaemonConfigSchema.parse(read).features?.dictation.stt).toEqual(
+     read.features.dictation.stt,
+   );
 diff --git a/packages/protocol/src/mutable-daemon-config.ts b/packages/protocol/src/mutable-daemon-config.ts
 index c01fa434d..29c3d5580 100644
 --- a/packages/protocol/src/mutable-daemon-config.ts
