@@ -4,6 +4,7 @@ import {
   foregroundNotificationBehavior,
   isPushTestNotification,
 } from "@/push-notifications/test-push";
+import { agentLog } from "@/utils/agent-log";
 
 function toTap(response: Notifications.NotificationResponse): NotificationTap {
   return {
@@ -21,10 +22,16 @@ function isTestPush(response: Notifications.NotificationResponse): boolean {
 export function createNotificationOpenSource(): NotificationOpenSource {
   Notifications.setNotificationHandler({
     // Foreground notifications stay silent except a test notification, which must show.
-    handleNotification: async (notification) =>
-      foregroundNotificationBehavior(
-        notification.request.content.data as Record<string, unknown> | undefined,
-      ),
+    handleNotification: async (notification) => {
+      const data = notification.request.content.data as Record<string, unknown> | undefined;
+      const behavior = foregroundNotificationBehavior(data);
+      agentLog("push", "received", {
+        id: notification.request.identifier,
+        test: isPushTestNotification(data),
+        shown: behavior.shouldShowBanner,
+      });
+      return behavior;
+    },
   });
   return {
     subscribe(onTap) {

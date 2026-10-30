@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
+import { agentLog, describeError } from "@/utils/agent-log";
 import {
   PUSH_CHANNEL_ID,
   provideReregister,
@@ -32,6 +33,22 @@ async function ensurePushPermission(prompt: boolean): Promise<boolean> {
   if (!prompt || !existing.canAskAgain) return false;
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status === Notifications.PermissionStatus.GRANTED;
+}
+
+let loggedFirebaseMissing = false;
+// Messages from builds with no google-services file. Other Firebase errors are real failures.
+const FIREBASE_NOT_CONFIGURED = /googleServicesFile|Default FirebaseApp is not initialized/;
+
+// Builds without a google-services file (local APKs, the tablet harness) fail on every connect.
+// Say so once per session instead of a warning with a stack each time.
+function logRegistrationFailure(error: unknown): void {
+  if (FIREBASE_NOT_CONFIGURED.test(describeError(error))) {
+    if (loggedFirebaseMissing) return;
+    loggedFirebaseMissing = true;
+    agentLog("push", "register", { status: "unavailable", reason: "firebase-not-configured" });
+    return;
+  }
+  console.warn("[PushNotifications] Failed to register push token", error);
 }
 
 type ResolvedToken = { token: string } | { token: null; reason: "no-permission" | "no-token" };
@@ -93,7 +110,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
       })
       .catch((error) => {
         if (!stopped) setPushRegistrationStatus(serverId, "failed");
-        console.warn("[PushNotifications] Failed to register push token", error);
+        logRegistrationFailure(error);
       });
   };
 
