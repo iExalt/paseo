@@ -43,6 +43,7 @@ test("--app-url points the link and QR at the app without changing the offer", a
     );
     expect(rebased).toEqual(direct);
     expect(rebased.qr).not.toEqual(original.qr);
+    await expect(withAppUrl(original, "paseo")).rejects.toMatchObject({ code: "INVALID_OPTIONS" });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

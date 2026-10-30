@@ -146,7 +146,13 @@ export async function withAppUrl(
   pairing: PairingOffer,
   appUrl: string | undefined,
 ): Promise<PairingOffer> {
-  if (!appUrl || !pairing.url) return pairing;
+  if (!appUrl) return pairing;
+  if (!URL.canParse(appUrl))
+    throw {
+      code: "INVALID_OPTIONS",
+      message: `--app-url must be a URL such as paseo://: ${appUrl}`,
+    };
+  if (!pairing.url) return pairing;
   return { ...pairing, ...(await rebasePairingUrl({ url: pairing.url, appBaseUrl: appUrl })) };
 }
 
