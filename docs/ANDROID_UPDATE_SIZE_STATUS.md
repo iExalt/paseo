@@ -12,8 +12,8 @@ to current evidence. It is not a second checklist.
 | Field          | Status                                                                    |
 | -------------- | ------------------------------------------------------------------------- |
 | Baseline       | `de1cd5fef` (`chore(dev): release 0.13.1`)                                |
-| Branch         | Phase 1 merged as `390a128bd` (#246); Phase 2 on `feat/android-size-cuts` |
-| Current phase  | Phase 2 (diff prototype, size report); G-live waits for two releases      |
+| Branch         | Merged: `390a128bd` (#246), `b2db9a9cd` (#249), `b267f1890` (#250)        |
+| Current phase  | Phases 1–3 merged; G-live and the post-release R8 check wait for releases |
 | Overall state  | Delta path implemented and verified off-device; not yet proven on a phone |
 | Release claims | No release ships deltas yet; no on-device delta install has happened      |
 
@@ -101,14 +101,24 @@ Local arm64 builds on dev-station (dogfood variant, unsigned, same machine):
   The update check could not reach GitHub (no network in the guest), so the
   updater under R8 is first exercised after release.
 
+- Release dry run 40979129503 at `b267f1890` (fork variant, CI): the Android
+  build passed in 12 min 54 s with R8 (`BUILD SUCCESSFUL in 9m 57s`, no
+  out-of-memory), against 10 min 33 s for the dry run at `390a128bd`. The
+  signed fork APK is 133,269,220 B with 4 dex files (28.0 MB) and a
+  44,579,802 B `.gz`, against 170,767,561 B and 57,403,319 B before R8. Its dex
+  still holds the 39 zstd-jni classes and the 51 `sh.paseo.forkupdates`
+  classes. Its deltas are 9.8 MB from 0.13.0 and 13.3–13.4 MB from older
+  releases: every dex file is new in the first R8 release, so its deltas are
+  large; the local pair above shows R8 releases after it stay small. The draft
+  was deleted.
+
 ## Current boundary
 
 - G-live has not run: the zstd-jni `.so` has not loaded on a device, and no
   phone has installed an update from a delta. The Cuttlefish tablet was
   unreachable (k0s API timeout) when the device probe was attempted.
-- R8 has not run in a CI release build; a dry run follows the merge. The
-  updater and push notifications under R8 are unproven until the first R8
-  release is checked on the phone. The unbundled barcode model was declined.
+- The updater and push notifications under R8 are unproven until the first
+  R8 release is checked on the phone. G-live should use two R8 releases. The unbundled barcode model was declined.
 
 ## Risks
 

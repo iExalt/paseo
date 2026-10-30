@@ -60,7 +60,7 @@ needs to be:
 - [x] Device check on the Cuttlefish tablet: chat markdown, diff view,
       terminal, camera, restart. The guest has no network, so the update check
       could not reach GitHub.
-- [ ] Release dry run with R8: CI build time and memory, the fork APK size.
+- [x] Release dry run with R8: CI build time and memory, the fork APK size.
 - [ ] After the first R8 release: the phone's update check and a push
       notification work before anything else ships. If the updater broke,
       sideload the fixed APK; the signer is unchanged.
