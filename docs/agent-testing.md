@@ -28,22 +28,22 @@ Grant notifications before the first launch, or the permission prompt takes focu
 
 ### Deep links
 
-Checked on the Android 17 tablet with `sh.paseo` 0.16.0 on 2026-10-30. Cold means
+Checked on the Android 17 tablet with `sh.paseo` 0.16.0 on 2026-10-30; `?open=` rows on builds
+from `dev` with the workspace-route hydration fix (upstream #7918, 2026-10-30); older builds ignore
+`?open=` on cold start. Cold means
 `am force-stop` first; warm means the app is already open.
 
-| Link                                                                              | Cold           | Warm           | Notes                                                                                                             |
-| --------------------------------------------------------------------------------- | -------------- | -------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `paseo://settings/<section>` (`about`, `appearance`, …)                           | yes            | yes            |                                                                                                                   |
-| `paseo://h/<serverId>/agent/<agentId>`                                            | yes            | yes            | Opens the agent's workspace with the agent tab selected                                                           |
-| `paseo://h/<serverId>/workspace/<workspaceId>`                                    | not checked    | yes            |                                                                                                                   |
-| `paseo://h/<serverId>/workspace/<workspaceId>?open=terminal:<id>` or `agent:<id>` | no             | yes            | Cold start ignores `?open=`. After a `file:` intent, a warm `agent:` intent was ignored (2 of 2)                  |
-| `…?open=file:<base64url path>`                                                    | no             | no             | Creates the file tab but does not select it                                                                       |
-| `paseo:///#offer=…`                                                               | no route error | no route error | Use this form. Checked with an invalid offer only; earlier phone sessions paired through it after tapping Connect |
-| `paseo://pair#offer=…`                                                            | no             | no             | "Unmatched Route" (invalid offer); earlier phone sessions report the pairing still happened                       |
+| Link                                                                                                       | Cold           | Warm           | Notes                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------- | -------------- | -------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `paseo://settings/<section>` (`about`, `appearance`, …)                                                    | yes            | yes            |                                                                                                                   |
+| `paseo://h/<serverId>/agent/<agentId>`                                                                     | yes            | yes            | Opens the agent's workspace with the agent tab selected                                                           |
+| `paseo://h/<serverId>/workspace/<workspaceId>`                                                             | not checked    | yes            |                                                                                                                   |
+| `paseo://h/<serverId>/workspace/<workspaceId>?open=terminal:<id>`, `agent:<id>` or `file:<base64url path>` | yes            | yes            | Selects the tab, also after another intent on the same workspace                                                  |
+| `paseo:///#offer=…`                                                                                        | no route error | no route error | Use this form. Checked with an invalid offer only; earlier phone sessions paired through it after tapping Connect |
+| `paseo://pair#offer=…`                                                                                     | no             | no             | "Unmatched Route" (invalid offer); earlier phone sessions report the pairing still happened                       |
 
-To reach a terminal, open the agent route to land in the workspace, then send the warm
-`?open=terminal:` link. `?open=` is upstream compatibility code marked
-`COMPAT(workspace-open-url)` for removal after 2027-01-22.
+`?open=` is upstream compatibility code marked `COMPAT(workspace-open-url)` for removal after
+2027-01-22; no fork test guards it.
 
 ### Reading state
 
