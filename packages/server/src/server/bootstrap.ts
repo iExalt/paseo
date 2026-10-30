@@ -1177,6 +1177,7 @@ export async function createPaseoDaemon(
   };
   const workspaceAutoName = new WorkspaceAutoName({
     agentManager,
+    agentStorage,
     workspaceRegistry,
     workspaceGitService,
     providerSnapshotManager,
