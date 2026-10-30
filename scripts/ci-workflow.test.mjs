@@ -45,6 +45,9 @@ test("release keeps each secret in its job and publishes only release tags", () 
     resolve: [],
     "macos-build": ["PASEO_NIX_RELEASE_SIGNING_KEY"],
     "macos-smoke": [],
+    "linux-build": ["PASEO_NIX_RELEASE_SIGNING_KEY"],
+    "linux-smoke": [],
+    "windows-build": [],
     "android-build": ["PASEO_FORK_GOOGLE_SERVICES_JSON"],
     "android-sign": ["PASEO_FORK_SIGNING_CERT_PEM", "PASEO_FORK_SIGNING_KEY_PKCS8_PEM"],
     "android-delta": [],
@@ -99,6 +102,11 @@ test("release upload set is the fixed assets plus the listed and APK deltas", ()
     "paseo-1.2.3-android-arm64.apk",
     "paseo-1.2.3-android-arm64.apk.gz",
     "paseo-1.2.3-android-cache-pin.json",
+    "paseo-1.2.3-linux-x64-nix.tar",
+    "paseo-1.2.3-linux-x64-nix.json",
+    "paseo-1.2.3-linux-arm64-nix.tar",
+    "paseo-1.2.3-linux-arm64-nix.json",
+    "paseo-1.2.3-windows-x64.exe",
     delta,
   ])
     writeFileSync(join(assets, name), "");

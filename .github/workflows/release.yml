@@ -1,8 +1,9 @@
 name: Release
 
 # Builds the macOS Nix desktop closure and the Android fork APK at a paseo-v*
-# tag, smoke-tests both, signs what clients verify and publishes the GitHub
-# release the in-app updaters read. Merging the release PR makes the tag and a
+# tag, plus the Linux x64/arm64 Nix closures and the Windows x64 installer;
+# smoke-tests each, signs what clients verify and publishes the GitHub release
+# the in-app updaters read. Merging the release PR makes the tag and a
 # draft release with the changelog, then dispatches this on dev with the tag
 # (release-please.yml); this fills the draft and publishes it as latest.
 #
@@ -121,12 +122,12 @@ jobs:
       - name: Build the desktop closure
         id: build
         timeout-minutes: 60
-        run: bash .github/scripts/release-mac.sh build
+        run: bash .github/scripts/release-nix.sh build
       - name: Sign and export the binary cache
         timeout-minutes: 15
         env:
           NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
-        run: bash .github/scripts/release-mac.sh export
+        run: bash .github/scripts/release-nix.sh export
       - name: Remove the Nix signing key file
         if: always()
         run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
@@ -200,6 +201,184 @@ jobs:
         if: ${{ !cancelled() }}
         with:
           name: release-macos-smoke
+          path: ${{ runner.temp }}/paseo-desktop-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Linux and Windows assets sit beside the signed manifest, which carries only
+  # the macOS and Android cells: installed clients reject any other cell set.
+  # Users install and upgrade them by hand.
+  linux-build:
+    name: Build and sign Linux Nix closure (${{ matrix.arch }})
+    needs: [resolve]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: Build the CLI and desktop closure
+        timeout-minutes: 60
+        run: bash .github/scripts/release-nix.sh build
+      - name: Sign and export the binary cache
+        timeout-minutes: 15
+        env:
+          NIX_RELEASE_SIGNING_KEY: ${{ secrets.PASEO_NIX_RELEASE_SIGNING_KEY }}
+        run: bash .github/scripts/release-nix.sh export
+      - name: Remove the Nix signing key file
+        if: always()
+        run: rm -f "$RUNNER_TEMP/paseo-nix-release-secret-key"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/paseo-release-linux/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+
+  linux-smoke:
+    name: Install and launch Linux closure on a fresh runner (${{ matrix.arch }})
+    needs: [resolve, linux-build]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          name: release-linux-${{ matrix.arch }}
+          path: ${{ runner.temp }}/paseo-release-linux
+      - name: Install smoke harness dependencies and Xvfb
+        timeout-minutes: 5
+        run: |
+          node .github/scripts/release-mac-smoke-deps.mjs "$RUNNER_TEMP/paseo-smoke-deps"
+          command -v xvfb-run > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xauth; }
+      - name: Import with the release key alone, then check the CLI and launch
+        timeout-minutes: 10
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
+          PLATFORM: linux-${{ matrix.arch }}
+          PASEO_DESKTOP_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/paseo-desktop-smoke
+        run: node .github/scripts/release-linux-smoke.mjs "$RUNNER_TEMP/paseo-release-linux"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: release-linux-${{ matrix.arch }}-smoke
+          path: ${{ runner.temp }}/paseo-desktop-smoke/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The NSIS installer is unsigned: there is no Windows publisher certificate.
+  windows-build:
+    name: Build and smoke-test Windows x64 installer
+    needs: [resolve]
+    runs-on: windows-2025
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.version }}
+      CI: "true"
+      LEFTHOOK: "0"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+          registry-url: https://npm.pkg.github.com
+          scope: "@boudra"
+      - name: Install JavaScript dependencies
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        run: node scripts/npm-retry.mjs ci
+      # afterPack smoke-tests the unpacked app (packages/desktop/scripts/after-pack.js).
+      - name: Build the installer and smoke-test the unpacked app
+        timeout-minutes: 30
+        env:
+          PASEO_DESKTOP_SMOKE: "1"
+          PASEO_DESKTOP_SMOKE_ARTIFACT_DIR: ${{ runner.temp }}/paseo-desktop-smoke
+        run: npm run build:desktop -- --publish never --win nsis --x64
+      - name: Install silently and check the installed CLI
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installer = "packages/desktop/release/Paseo-Setup-$env:VERSION-x64.exe"
+          $dir = Join-Path $env:RUNNER_TEMP "paseo-install"
+          # NSIS takes /D last and unquoted.
+          $process = Start-Process -FilePath $installer -ArgumentList "/S", "/D=$dir" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "The installer exited with $($process.ExitCode)." }
+          if (-not (Test-Path (Join-Path $dir "Paseo.exe"))) { throw "The installer left no Paseo.exe in $dir." }
+          $cliVersion = & cmd.exe /d /c "`"$dir\resources\bin\paseo.cmd`" --version"
+          if ($LASTEXITCODE -ne 0 -or -not ($cliVersion -contains $env:VERSION)) { throw "The installed CLI reports $cliVersion." }
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP/release-windows" | Out-Null
+          Copy-Item $installer "$env:RUNNER_TEMP/release-windows/paseo-$env:VERSION-windows-x64.exe"
+          Write-Output "Installed to $dir; CLI $cliVersion"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-windows-x64
+          path: ${{ runner.temp }}/release-windows/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() }}
+        with:
+          name: release-windows-x64-smoke
           path: ${{ runner.temp }}/paseo-desktop-smoke/
           if-no-files-found: ignore
           retention-days: 7
@@ -599,12 +778,24 @@ jobs:
 
   publish:
     name: ${{ needs.resolve.outputs.publish == 'true' && 'Publish release' || 'Upload dry-run draft' }}
-    needs: [resolve, macos-build, macos-smoke, android-build, android-sign, android-delta]
+    needs:
+      [
+        resolve,
+        macos-build,
+        macos-smoke,
+        linux-build,
+        linux-smoke,
+        windows-build,
+        android-build,
+        android-sign,
+        android-delta,
+      ]
     # Waits for android-delta but does not need it to succeed.
     if: >-
       !cancelled() && needs.resolve.result == 'success' && needs.macos-build.result == 'success' &&
-      needs.macos-smoke.result == 'success' && needs.android-build.result == 'success' &&
-      needs.android-sign.result == 'success'
+      needs.macos-smoke.result == 'success' && needs.linux-build.result == 'success' &&
+      needs.linux-smoke.result == 'success' && needs.windows-build.result == 'success' &&
+      needs.android-build.result == 'success' && needs.android-sign.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -626,7 +817,7 @@ jobs:
           package-manager-cache: false
       - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
         with:
-          pattern: release-{macos,android,android-delta}
+          pattern: release-{macos,android,android-delta,linux-x64,linux-arm64,windows-x64}
           path: ${{ runner.temp }}/release-assets
           merge-multiple: true
       - name: Pin the Android caches this run saved
