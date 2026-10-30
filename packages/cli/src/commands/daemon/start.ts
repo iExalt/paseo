@@ -1,6 +1,6 @@
 import { addLocalDaemonOptions } from "../../utils/command-options.js";
 import { Command } from "commander";
-import { daemonLogPath } from "@getpaseo/server/daemon-control";
+import { daemonLogPath, droppedManagedEnvOverrides } from "@getpaseo/server/daemon-control";
 import { launchLocalDaemon, parseTimeoutMs, rejectRemovedLaunchFlags } from "./local-daemon.js";
 import { withOutput, type CommandOptions } from "../../output/index.js";
 
@@ -14,6 +14,12 @@ export function startCommand(): Command {
 export async function runStart(options: CommandOptions, _command: Command) {
   if (options.daemonTarget.kind !== "instance") throw new Error("Start requires a local home");
   const home = options.daemonTarget.home;
+  const dropped = droppedManagedEnvOverrides(process.env);
+  if (dropped.length > 0) {
+    process.stderr.write(
+      `Ignoring ${dropped.join(", ")}: daemon start reads ${home}/config.json. Use paseo daemon run to apply environment overrides.\n`,
+    );
+  }
   const result = await launchLocalDaemon({ home, timeoutMs: parseTimeoutMs(options.timeout) });
   const data = {
     action: result.spawned ? "started" : "already_running",

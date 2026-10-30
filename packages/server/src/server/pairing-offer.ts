@@ -1,6 +1,10 @@
 import type { Logger } from "pino";
 
-import { createConnectionOfferV2, encodeOfferToFragmentUrl } from "./connection-offer.js";
+import {
+  createConnectionOfferV2,
+  encodeOfferToFragmentUrl,
+  joinAppBaseUrl,
+} from "./connection-offer.js";
 import { loadOrCreateDaemonKeyPair } from "./daemon-keypair.js";
 import { renderPairingQr } from "./pairing-qr.js";
 import { getOrCreateServerId } from "./server-id.js";
@@ -70,4 +74,15 @@ export async function generateLocalPairingOffer(args: {
     url,
     qr,
   };
+}
+
+/** Point an existing pairing link at another app base URL, keeping its `#offer=` fragment. */
+export async function rebasePairingUrl(args: {
+  url: string;
+  appBaseUrl: string;
+}): Promise<{ url: string; qr: string | null }> {
+  const fragmentStart = args.url.indexOf("#");
+  if (fragmentStart < 0) throw new Error("Pairing link has no #offer= fragment");
+  const url = joinAppBaseUrl(args.appBaseUrl, args.url.slice(fragmentStart));
+  return { url, qr: await renderPairingQr(url).catch(() => null) };
 }

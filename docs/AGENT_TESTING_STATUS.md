@@ -12,8 +12,8 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Field             | Status                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------- |
 | Baseline          | `8388477dd` (`feat(app): update the fork Android app without the system installer screens`) |
-| Current phase     | Phase I (plan Phase 0 and Phase 1), chunk A                                                 |
-| Overall state     | Device facts and docs written; no app or CLI change yet                                     |
+| Current phase     | Phase I (plan Phase 0 and Phase 1): A merged, D in review                                   |
+| Overall state     | Docs and device facts merged (#264); CLI and build fixes implemented                        |
 | Immediate focus   | Chunk B: pair route, tagged logs, quieter logs, native `?open=`                             |
 | Routine CI budget | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below                    |
 
@@ -34,12 +34,12 @@ Dev push run `41105948216` at `8388477dd`, hosted runners:
 
 ## Chunks
 
-| Chunk                    | Status  | Evidence                                                                                           |
-| ------------------------ | ------- | -------------------------------------------------------------------------------------------------- |
-| A. Docs and device facts | active  | Tablet results below                                                                               |
-| B. Reach and observe     | planned | Device pass shared with C; tagged pairing failure line in 4 of 4 cold/warm runs of both link forms |
-| C. Forms and selectors   | planned | Device pass shared with B                                                                          |
-| D. CLI and build         | planned | Scratch-home daemon run on dev-station                                                             |
+| Chunk                    | Status   | Evidence                                                                                           |
+| ------------------------ | -------- | -------------------------------------------------------------------------------------------------- |
+| A. Docs and device facts | complete | Merged as `5f851ea50` (#264); tablet results below                                                 |
+| B. Reach and observe     | planned  | Device pass shared with C; tagged pairing failure line in 4 of 4 cold/warm runs of both link forms |
+| C. Forms and selectors   | planned  | Device pass shared with B                                                                          |
+| D. CLI and build         | active   | Scratch-home runs on dev-station, below                                                            |
 
 ### A: device facts
 
@@ -59,6 +59,18 @@ State judged by `selected="true"` resource-ids in raw `uiautomator dump` output.
 | Terminal text in dumps                    | Present as `terminal-row-<n>` (plan item 16's terminal half is done)                          |
 | `pm grant sh.paseo …POST_NOTIFICATIONS`   | Granted                                                                                       |
 | `daemon status --json` (0.10.0 daemon)    | Includes `workerPid`                                                                          |
+
+### D: CLI and build
+
+Scratch homes on dev-station, port 7811, never the user's daemon.
+
+| Check                                                         | Result                                                                                             |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `daemon start` with `PASEO_LISTEN=…7899 PORT=9999`            | Listened on the config's 7811 at base with no message; now prints `Ignoring PASEO_LISTEN, PORT: …` |
+| `daemon status --json`                                        | `workerPid` present at base                                                                        |
+| `daemon stop --home`                                          | Supervisor and worker pids both gone 3 s later, at base                                            |
+| `daemon pair --home <offline home> --app-url paseo:// --json` | `paseo:///#offer=…` with a QR; without the flag, `https://app.paseo.sh/#offer=…`                   |
+| `build:main`, `rm -rf dist`, `build:main`                     | Base: second build emits nothing (331 ms). Fixed: `dist/main.js` emitted, also after `typecheck`   |
 
 ## Current boundary
 
@@ -107,3 +119,7 @@ State judged by `selected="true"` resource-ids in raw `uiautomator dump` output.
   item 7, and dropped "stop kills workers" for lack of evidence.
 - Chunk A: harness APK replaced with a `8388477dd` build; deep links, pairing links and idle
   dumps checked on the tablet; `docs/agent-testing.md` written.
+- Chunk A merged as `5f851ea50` (#264); the phone-debug skill points at `docs/agent-testing.md`
+  (home-manager config `05ee966`, active after the next switch).
+- Chunk D: `daemon start` names ignored overrides, `daemon pair --app-url`, desktop `build:main`
+  no longer skips its emit. "Stop kills workers" and the `workerPid` sub-item needed no change.
