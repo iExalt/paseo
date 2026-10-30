@@ -248,7 +248,7 @@ Mac 睡眠时 daemon 会暂停，中继客户端无法连接到它。即使合�
 }
 ```
 
-默认值为 `false`。该断言只在接通电源时生效，并在 daemon 退出、关闭中继或关闭该设置时结束。`daemon.log` 会记录 `power_assertion_acquired` 和 `power_assertion_released`。其他平台会忽略该设置。
+默认值为 `false`。开启后，合盖并接通电源的 Mac 会停留在暗唤醒（dark wake）状态而不再小睡，中继保持连接。该断言只在接通电源时生效，并在 daemon 退出、关闭中继或关闭该设置时结束。`daemon.log` 会记录 `power_assertion_acquired` 和 `power_assertion_released`。其他平台会忽略该设置。
 
 ## 常用环境变量 {#common-env-vars}
 

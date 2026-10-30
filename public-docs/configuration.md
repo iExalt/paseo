@@ -252,7 +252,7 @@ A sleeping Mac pauses the daemon, so relay clients can't reach it. Even with the
 }
 ```
 
-It defaults to `false`. The assertion only applies on AC power and ends when the daemon exits or you turn off the relay or the setting. `daemon.log` records `power_assertion_acquired` and `power_assertion_released`. Other platforms ignore the setting.
+It defaults to `false`. With it on, a lid-closed Mac on AC stays in dark wake instead of napping, so the relay stays connected. The assertion only applies on AC power and ends when the daemon exits or you turn off the relay or the setting. `daemon.log` records `power_assertion_acquired` and `power_assertion_released`. Other platforms ignore the setting.
 
 ## Common env vars
 
