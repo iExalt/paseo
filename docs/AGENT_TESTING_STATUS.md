@@ -12,9 +12,9 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Field             | Status                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------- |
 | Baseline          | `8388477dd` (`feat(app): update the fork Android app without the system installer screens`) |
-| Current phase     | Phase I (plan Phase 0 and Phase 1): A and D merged, B in progress                           |
-| Overall state     | Docs, device facts, CLI and build fixes merged; native `?open=` fixed by upstream #7918     |
-| Immediate focus   | Chunk B: pair route and tagged logs; chunk C: forms and selectors                           |
+| Current phase     | Phase I (plan Phase 0 and Phase 1): A, D and the `?open=` fix merged; B and C in review     |
+| Overall state     | Every Phase I item implemented; B and C passed the combined tablet pass                     |
+| Immediate focus   | Publish B and C, then propose Phase II                                                      |
 | Routine CI budget | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below                    |
 
 ### Routine CI baseline
@@ -34,12 +34,12 @@ Dev push run `41105948216` at `8388477dd`, hosted runners:
 
 ## Chunks
 
-| Chunk                    | Status   | Evidence                                                                                           |
-| ------------------------ | -------- | -------------------------------------------------------------------------------------------------- |
-| A. Docs and device facts | complete | Merged as `5f851ea50` (#264); tablet results below                                                 |
-| B. Reach and observe     | planned  | Device pass shared with C; tagged pairing failure line in 4 of 4 cold/warm runs of both link forms |
-| C. Forms and selectors   | planned  | Device pass shared with B                                                                          |
-| D. CLI and build         | complete | Merged as `a29b61fa4` (#265); scratch-home runs below                                              |
+| Chunk                    | Status   | Evidence                                                                                       |
+| ------------------------ | -------- | ---------------------------------------------------------------------------------------------- |
+| A. Docs and device facts | complete | Merged as `5f851ea50` (#264); tablet results below                                             |
+| B. Reach and observe     | active   | `?open=` fix merged as `ef86116fc` (#266); pair route and log lines passed the B/C tablet pass |
+| C. Forms and selectors   | active   | Passed the B/C tablet pass                                                                     |
+| D. CLI and build         | complete | Merged as `a29b61fa4` (#265); scratch-home runs below                                          |
 
 ### A: device facts
 
@@ -72,6 +72,24 @@ Scratch homes on dev-station, port 7811, never the user's daemon.
 | `daemon pair --home <offline home> --app-url paseo:// --json` | `paseo:///#offer=…` with a QR; without the flag, `https://app.paseo.sh/#offer=…`                   |
 | `build:main`, `rm -rf dist`, `build:main`                     | Base: second build emits nothing (331 ms). Fixed: `dist/main.js` emitted, also after `typecheck`   |
 
+### B and C: combined tablet pass
+
+Build `ca053ac5e` (dev `ef86116fc` plus both branches), installed as the harness APK on
+2026-10-30. Raw dumps and logcat excerpts: `/tmp/t3/at/pass-2026-10-30/` in the dev pod (emptyDir;
+lost on a pod restart).
+
+| Check                                                       | Result                                                                                                                                                                                                       |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `pair#offer=invalid` and `///#offer=invalid`, cold and warm | 4 of 4 logged `link import status=failed reason="TypeError: Decoder error"`; no Unmatched Route; each landed on the open workspace                                                                           |
+| Cold launch                                                 | One `connection bootstrap-probe … status=failed` line, one `push register status=unavailable reason=firebase-not-configured`, `connection status … status=online transport=directTcp`; no old-style warnings |
+| Cold `?open=agent:` and `file:` from a terminal tab         | Agent and README tabs selected                                                                                                                                                                               |
+| Direct form                                                 | Enter in host focused the port (`focused="true"`); typing 6790 over 6767 gave 6790 after both the Enter focus and a tap; Enter in the port connected to the 0.10.0 harness daemon and closed the modal       |
+| Keyboard after Enter in host                                | `mInputShown=false` with `show_ime_with_hard_keyboard=1`; the tablet's virtio keyboard decides this, so a phone check is still open                                                                          |
+| Find, phone-width (`wm size 1080x2400`, density 420)        | Tab switcher → tab menu → Find; `pane-find-input`, `-status` (`1 of 2`), `-next`, `-previous`, `-close` present                                                                                              |
+| Compact sidebar                                             | Closed: 0 `sidebar*` nodes; open: 25 (20 clickable); closed again: 0                                                                                                                                         |
+| `settings-section-*`                                        | Present in phone-width and wide layouts                                                                                                                                                                      |
+| Display restored                                            | `wm size reset`, `wm density reset`: 2560x1600 at 320; navigation mode 0                                                                                                                                     |
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -80,18 +98,18 @@ Scratch homes on dev-station, port 7811, never the user's daemon.
 - The idle-dump failure is not reproduced on the tablet. It was seen only on the phone in
   loading or running states (Phase 2 item 8).
 - A real pairing (valid offer, connected host) cannot run on the tablet: the guest has no
-  network and the harness daemon has no relay. B's pair-route device check covers routing and
-  the failure path; the connected redirect is unit-tested.
+  network and the harness daemon has no relay. The pass covers routing and the failure path; the
+  redirect after a connected import is unchanged listener code and untested.
+- Whether the soft keyboard stays up after Enter moves focus to the port is unchecked on a phone.
 - The update row and update stages only run in `fork` builds, so their testIDs and logs get
   unit tests only until Phase 2 item 9.
 
 ## Active risks and decisions
 
-| Risk or decision  | Evidence or uncertainty                                                      | Mitigation                                                                                  |
-| ----------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Shared tablet     | Other sessions drive the same guest and harness APK                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated |
-| `?open=` fix size | Undiagnosed upstream code that upstream plans to delete after 2027-01-22     | Time-boxed diagnosis in B; a large fix returns to the user                                  |
-| Upstream drift    | 121 upstream commits past the merge-base, some in workspace tab code (#8093) | Check upstream before each app fix                                                          |
+| Risk or decision | Evidence or uncertainty                                                      | Mitigation                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Shared tablet    | Other sessions drive the same guest and harness APK                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated |
+| Upstream drift   | 121 upstream commits past the merge-base, some in workspace tab code (#8093) | Check upstream before each app fix                                                          |
 
 ## Open questions
 
@@ -123,3 +141,6 @@ Scratch homes on dev-station, port 7811, never the user's daemon.
   (home-manager config `05ee966`, active after the next switch).
 - Chunk D: `daemon start` names ignored overrides, `daemon pair --app-url`, desktop `build:main`
   no longer skips its emit. "Stop kills workers" and the `workerPid` sub-item needed no change.
+- `?open=` fixed by cherry-picking upstream #7918 (#266): the workspace route never demanded the
+  host directory, so workspaces never hydrated and pending intents waited forever.
+- B and C passed one combined tablet pass on build `ca053ac5e`; the harness APK is now that build.
