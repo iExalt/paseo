@@ -48,7 +48,13 @@ export function encodeOfferToFragmentUrl(args: {
 }): string {
   const json = JSON.stringify(args.offer);
   const encoded = Buffer.from(json, "utf8").toString("base64url");
-  return `${args.appBaseUrl.replace(/\/$/, "")}/#offer=${encoded}`;
+  return joinAppBaseUrl(args.appBaseUrl, `#offer=${encoded}`);
+}
+
+// A scheme-only base such as `paseo://` keeps its empty authority, giving `paseo:///#offer=…`.
+export function joinAppBaseUrl(appBaseUrl: string, fragment: string): string {
+  const base = appBaseUrl.endsWith("://") ? appBaseUrl : appBaseUrl.replace(/\/$/, "");
+  return `${base}/${fragment}`;
 }
 
 function getPrimaryLanIp(): string | null {

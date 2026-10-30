@@ -1,7 +1,7 @@
 import { confirm, isCancel, log } from "@clack/prompts";
 import { Command } from "commander";
 import chalk from "chalk";
-import { generateLocalPairingOffer } from "@getpaseo/server/pairing";
+import { generateLocalPairingOffer, rebasePairingUrl } from "@getpaseo/server/pairing";
 import { readDaemonInstance } from "@getpaseo/server/daemon-control";
 import {
   readPersistedConfig,
@@ -20,6 +20,7 @@ interface PairOptions {
   home?: string;
   json?: boolean;
   relay?: boolean;
+  appUrl?: string;
 }
 
 export interface PairCommandOutput {
@@ -62,6 +63,7 @@ export function pairCommand(): Command {
     new Command("pair").description("Print the daemon pairing QR code and link"),
   )
     .option("--relay", "Enable relay without prompting")
+    .option("--app-url <url>", "Base URL for the pairing link, such as paseo:// to open the app")
     .action(
       withGlobalOptions((options: PairOptions, _command: Command) => runPairCommand(options)),
     );
@@ -140,6 +142,14 @@ async function resolveDaemonPairingOffer(
   }
 }
 
+export async function withAppUrl(
+  pairing: PairingOffer,
+  appUrl: string | undefined,
+): Promise<PairingOffer> {
+  if (!appUrl || !pairing.url) return pairing;
+  return { ...pairing, ...(await rebasePairingUrl({ url: pairing.url, appBaseUrl: appUrl })) };
+}
+
 export async function confirmRelayPairing(): Promise<boolean> {
   log.message("Your connection is end-to-end encrypted. Paseo cannot read your code or messages.");
   log.message(`Learn how it works: ${RELAY_DOCS_URL}`);
@@ -166,7 +176,7 @@ export async function runPairCommand(options: PairOptions): Promise<void> {
       ? resolveLocalPairingOffer({ paseoHome: target.home, enableRelay })
       : resolveDaemonPairingOffer(target, enableRelay);
   const offline = target.kind === "instance" && !(await readDaemonInstance(target.home));
-  const pairing = await resolveOffer(options.relay === true);
+  const pairing = await withAppUrl(await resolveOffer(options.relay === true), options.appUrl);
 
   if (offline)
     output.writeStderr(
