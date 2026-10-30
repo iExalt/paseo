@@ -116,7 +116,7 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
 I'd do 1, 3, 8, 11 and 13 first. They address the friction that showed up in the most sessions.
 
-### Phase I chunks (approved 2026-10-30)
+### Phase I chunks (approved and complete 2026-10-30)
 
 Phase I covers Phase 0 and Phase 1. Phases 2–4 need their own approval.
 

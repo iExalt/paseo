@@ -12,9 +12,9 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Field             | Status                                                                                      |
 | ----------------- | ------------------------------------------------------------------------------------------- |
 | Baseline          | `8388477dd` (`feat(app): update the fork Android app without the system installer screens`) |
-| Current phase     | Phase I (plan Phase 0 and Phase 1): A, D and the `?open=` fix merged; B and C in review     |
-| Overall state     | Every Phase I item implemented; B and C passed the combined tablet pass                     |
-| Immediate focus   | Publish B and C, then propose Phase II                                                      |
+| Current phase     | Phase I (plan Phase 0 and Phase 1) complete; Phase II (plan Phase 2) awaiting approval      |
+| Overall state     | Every Phase I chunk merged; open limits under Current boundary                              |
+| Immediate focus   | Phase II: measure idle motion before fixing it; decide the debug-surface gate               |
 | Routine CI budget | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below                    |
 
 ### Routine CI baseline
@@ -34,12 +34,12 @@ Dev push run `41105948216` at `8388477dd`, hosted runners:
 
 ## Chunks
 
-| Chunk                    | Status   | Evidence                                                                                       |
-| ------------------------ | -------- | ---------------------------------------------------------------------------------------------- |
-| A. Docs and device facts | complete | Merged as `5f851ea50` (#264); tablet results below                                             |
-| B. Reach and observe     | active   | `?open=` fix merged as `ef86116fc` (#266); pair route and log lines passed the B/C tablet pass |
-| C. Forms and selectors   | active   | Passed the B/C tablet pass                                                                     |
-| D. CLI and build         | complete | Merged as `a29b61fa4` (#265); scratch-home runs below                                          |
+| Chunk                    | Status   | Evidence                                                                                  |
+| ------------------------ | -------- | ----------------------------------------------------------------------------------------- |
+| A. Docs and device facts | complete | Merged as `5f851ea50` (#264); tablet results below                                        |
+| B. Reach and observe     | complete | `?open=` fix merged as `ef86116fc` (#266); pair route and log lines as `d2cc31dc7` (#267) |
+| C. Forms and selectors   | complete | Merged as `316706e7c` (#268)                                                              |
+| D. CLI and build         | complete | Merged as `a29b61fa4` (#265); scratch-home runs below                                     |
 
 ### A: device facts
 
@@ -144,3 +144,4 @@ lost on a pod restart).
 - `?open=` fixed by cherry-picking upstream #7918 (#266): the workspace route never demanded the
   host directory, so workspaces never hydrated and pending intents waited forever.
 - B and C passed one combined tablet pass on build `ca053ac5e`; the harness APK is now that build.
+- B and C merged as `d2cc31dc7` (#267) and `316706e7c` (#268); Phase I complete.
