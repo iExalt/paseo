@@ -790,6 +790,7 @@ function SidebarSectionButton({
       accessibilityState={accessibilityState}
       onPress={handlePress}
       style={isSelected ? selectedSidebarItemStyle : sidebarItemStyle}
+      testID={`settings-section-${itemId}`}
     >
       <IconComponent
         size={densityIconSize(rt, "md")}

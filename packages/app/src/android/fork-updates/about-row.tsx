@@ -107,9 +107,17 @@ export function ForkAndroidUpdateRow() {
     <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="fork-android-update-row">
       <View style={settingsStyles.rowContent}>
         <Text style={settingsStyles.rowTitle}>{t("settings.about.forkUpdates.label")}</Text>
-        <Text style={settingsStyles.rowHint}>{statusText}</Text>
+        <Text style={settingsStyles.rowHint} testID="fork-android-update-status">
+          {statusText}
+        </Text>
       </View>
-      <Button variant="outline" size="sm" onPress={onPress} disabled={!enabled || busy}>
+      <Button
+        variant="outline"
+        size="sm"
+        onPress={onPress}
+        disabled={!enabled || busy}
+        testID="fork-android-update-action"
+      >
         {buttonLabel}
       </Button>
     </View>

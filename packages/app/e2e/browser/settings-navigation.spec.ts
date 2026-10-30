@@ -174,7 +174,7 @@ test.describe("Settings sidebar navigation", () => {
     await verifyLegacyHostSettingsRedirect(page);
   });
 
-  test("direct connection advanced URI round-trips SSL and password into the form", async ({
+  test("direct connection advanced URI round-trips into the form, and Enter moves host to port", async ({
     page,
   }) => {
     await gotoAppShell(page);
@@ -202,6 +202,12 @@ test.describe("Settings sidebar navigation", () => {
     );
     await toggleHostAdvanced(page);
     await expectDirectHostUriHidden(page);
+
+    // Enter moves from host to port, and focus selects the old value so typing replaces it.
+    await page.getByTestId("direct-host-input").press("Enter");
+    await expect(page.getByTestId("direct-port-input")).toBeFocused();
+    await page.keyboard.type("6790");
+    await expect(page.getByTestId("direct-port-input")).toHaveValue("6790");
   });
 
   test("Escape lets settings dropdowns and modals close before leaving settings", async ({

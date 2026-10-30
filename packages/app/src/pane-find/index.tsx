@@ -91,9 +91,20 @@ const FindField = forwardRef<
     onKeyPress(event: NativeSyntheticEvent<TextInputKeyPressEventData>): void;
     autoFocus?: boolean;
     returnKeyType?: TextInputProps["returnKeyType"];
+    testID?: string;
   }
 >(function FindField(
-  { label, initialValue, height, trailing, onChangeText, onKeyPress, autoFocus, returnKeyType },
+  {
+    label,
+    initialValue,
+    height,
+    trailing,
+    onChangeText,
+    onKeyPress,
+    autoFocus,
+    returnKeyType,
+    testID,
+  },
   ref,
 ) {
   const [focused, setFocused] = useState(false);
@@ -118,6 +129,7 @@ const FindField = forwardRef<
     <View style={fieldStyle}>
       <TextInput
         ref={ref}
+        testID={testID}
         autoFocus={autoFocus}
         selectTextOnFocus
         initialValue={initialValue}
@@ -209,6 +221,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
   const matchCount = useMemo(
     () => (
       <Text
+        testID="pane-find-status"
         style={styles.status}
         role="status"
         accessibilityLabel={t("paneFind.matches")}
@@ -222,6 +235,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
 
   return (
     <View
+      testID="pane-find"
       style={widgetStyle}
       accessibilityLabel={t("paneFind.title")}
       {...(isWeb
@@ -256,6 +270,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
         <View style={styles.row}>
           <FindField
             ref={input}
+            testID="pane-find-input"
             autoFocus
             label={t("paneFind.placeholder")}
             initialValue={query}
@@ -266,6 +281,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
             onKeyPress={onKeyPress}
           />
           <ToolbarButton
+            testID="pane-find-previous"
             label={t("paneFind.previous")}
             compact={isCompact}
             disabled={!canNavigate}
@@ -274,6 +290,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
             <ArrowUpIcon size={glyphSize} />
           </ToolbarButton>
           <ToolbarButton
+            testID="pane-find-next"
             label={t("paneFind.next")}
             compact={isCompact}
             disabled={!canNavigate}
@@ -281,7 +298,12 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
           >
             <ArrowDownIcon size={glyphSize} />
           </ToolbarButton>
-          <ToolbarButton label={t("paneFind.close")} compact={isCompact} onPress={onClose}>
+          <ToolbarButton
+            testID="pane-find-close"
+            label={t("paneFind.close")}
+            compact={isCompact}
+            onPress={onClose}
+          >
             <CloseIcon size={glyphSize} />
           </ToolbarButton>
         </View>

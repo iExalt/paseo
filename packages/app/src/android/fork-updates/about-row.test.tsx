@@ -51,12 +51,18 @@ vi.mock("@/components/ui/button", async () => {
       children,
       onPress,
       disabled,
+      testID,
     }: {
       children: React.ReactNode;
       onPress(): void;
       disabled?: boolean;
+      testID?: string;
     }) =>
-      ReactModule.createElement("button", { type: "button", onClick: onPress, disabled }, children),
+      ReactModule.createElement(
+        "button",
+        { type: "button", onClick: onPress, disabled, "data-testid": testID },
+        children,
+      ),
   };
 });
 
@@ -121,8 +127,11 @@ describe("fork Android update row", () => {
 
   it("checks manually, downloads, asks Android for permission, and distinguishes cancel from install", async () => {
     render(<ForkAndroidUpdateRow />);
-    expect(screen.getByText("settings.about.forkUpdates.idle")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.check" }));
+    // Agents drive the row by these IDs; the button's label changes with every state.
+    expect(screen.getByTestId("fork-android-update-status").textContent).toBe(
+      "settings.about.forkUpdates.idle",
+    );
+    fireEvent.click(screen.getByTestId("fork-android-update-action"));
     await screen.findByText('settings.about.forkUpdates.available {"version":"0.1.1"}');
 
     fireEvent.click(screen.getByRole("button", { name: "settings.about.forkUpdates.download" }));
