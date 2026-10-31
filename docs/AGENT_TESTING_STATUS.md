@@ -13,8 +13,8 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | ----------------- | ----------------------------------------------------------------------------------------- |
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
 | Current phase     | Phase II (plan Phase 2), approved 2026-10-31                                              |
-| Overall state     | Phase I complete and re-checked on the rebased build; E measured and needs docs only      |
-| Immediate focus   | Publish E; shape F (ready markers)                                                        |
+| Overall state     | Phase I complete and re-checked on the rebased build; E merged; F implemented             |
+| Immediate focus   | Publish F; shape G (debug switches)                                                       |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
@@ -41,15 +41,15 @@ budget at about 340 s with every lane green.
 ones; SHAs in the 2026-10-30 log entries are superseded. The `?open=` fix (#266, a cherry-pick of
 upstream #7918) is now upstream's own commit `9abc4f41f`.
 
-| Chunk                    | Status   | Evidence                                                                                       |
-| ------------------------ | -------- | ---------------------------------------------------------------------------------------------- |
-| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                                        |
-| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`                       |
-| C. Forms and selectors   | complete | #268, `058c9ce85`                                                                              |
-| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                                     |
-| E. Motion                | active   | Measured on the tablet and the web; no app change needed; [results below](#e-motion-and-dumps) |
-| F. Ready markers         | planned  |                                                                                                |
-| G. Debug switches        | planned  | Build-flag gate (decided 2026-10-31); adds the frozen elapsed clock from E                     |
+| Chunk                    | Status   | Evidence                                                                      |
+| ------------------------ | -------- | ----------------------------------------------------------------------------- |
+| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                       |
+| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`      |
+| C. Forms and selectors   | complete | #268, `058c9ce85`                                                             |
+| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                    |
+| E. Motion                | complete | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps) |
+| F. Ready markers         | active   | Web probe and tablet pass; [results below](#f-ready-markers)                  |
+| G. Debug switches        | planned  | Build-flag gate (decided 2026-10-31); adds the frozen elapsed clock from E    |
 
 ### A: device facts
 
@@ -138,6 +138,31 @@ Web, headless Chromium at 1280×800 against a daemon-served web UI, 3 s window a
 | Chat, agent running        | Two infinite animations (status indicator, agent tab); 61 frame callbacks/s; loader attribute changes; elapsed text once a second | Elapsed text once a second only |
 | Switch thumb after a click | Slides over about 60–120 ms                                                                                                       | In place on the first frame     |
 
+### F: ready markers
+
+Web: the daemon-served UI built from the F branch, headless Chromium, prompts sent with
+`paseo send` from outside the app. Each wait read `data-turns`, sent, then waited for
+`agent-timeline-settled` with a larger `data-turns` (`waitForFunction`, no fixed sleeps).
+
+| Turn                                | Runs | Result                                                  |
+| ----------------------------------- | ---- | ------------------------------------------------------- |
+| 0 ms (the agent ends at once)       | 4    | 4 of 4 detected as `turns` n+1, 0.8–1.3 s after sending |
+| 200 ms                              | 4    | 4 of 4, 0.8–1.5 s                                       |
+| 10 min, cancelled with `paseo stop` | 4    | 4 of 4, 1.4–2.5 s                                       |
+
+A 0 ms turn still logs `running`, then `settled` about 120 ms later: the turn's open and close
+reach the app as separate store updates. The count comes from a store subscription, so it would
+also survive both landing in one update (`timeline-readiness-marker.test.tsx`).
+
+Tablet, wide layout, a build of the F branch from before the turn counter's reference count
+(JavaScript only, covered by that test): the logcat wait for `state=settled turns=1` returned
+562 ms after a 0 ms prompt; a 10 min turn logged `running`, and cancelling it logged `settled
+turns=2`. The dump after `settled` succeeded and did not contain the marker: the 1×1 node is not in
+the accessibility tree, so Android waits use the log line.
+
+In a fresh browser profile, opening `/h/<serverId>/agent/<agentId>` on the daemon-served web UI
+first lands on `/open-project`; the same URL works once the host is saved.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -159,6 +184,7 @@ Web, headless Chromium at 1280×800 against a daemon-served web UI, 3 s window a
 | ---------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Shared tablet    | Other sessions drive the same guest and harness APK                                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated |
 | Upstream drift   | `dev` is rebased onto upstream periodically (645 commits on 2026-10-30), which rewrites SHAs | Cite PR numbers with SHAs; check upstream before each app fix                               |
+| Turn batching    | The turn counter relies on seeing the turn open in some store update                         | A unit test closes a turn inside one `act()`; upstream batching changes would show there    |
 | CI headroom      | After the rebase, server-2 and server-3 take 219 s and 222 s against the 300 s critical path | Watch each chunk's run; app tests from F and G land in app lanes                            |
 
 ## Open questions
@@ -209,3 +235,5 @@ Web, headless Chromium at 1280×800 against a daemon-served web UI, 3 s window a
 - E measured: animation scales at 0 plus a relaunch stop the ring and loader; the 1 Hz elapsed
   time still blocks dumps in a running chat; the web app already honours reduced motion. E ships
   as documentation, and the frozen clock moves to G.
+- E merged as #272. F's readiness marker and `timeline state` log line pass the web probe with
+  CLI-sent 0 ms, 200 ms and cancelled turns, and the tablet logcat wait; the marker is web-only.
