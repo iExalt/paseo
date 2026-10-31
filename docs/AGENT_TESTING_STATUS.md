@@ -325,13 +325,14 @@ those upstream files are next touched.
   fresh worktree fails typecheck until `npm run build:server` has run. Reproduced on 2026-10-30:
   the chunk A pre-commit typecheck failed in a new dev-station worktree and passed after
   `build:server`.
-- **Unpackaged desktop userData.** The `packages/desktop/src/main.ts` comment says the main
-  checkout gets "default userData". That holds only for direct launches without
-  `PASEO_ELECTRON_USER_DATA_DIR`, since `npm run dev:desktop` always sets it to `.dev/user-data`.
-  Measured on 2026-10-31 with Electron's own resolution (an app named `@getpaseo/desktop`, outside
-  a worktree): reading the path before `setName("Paseo")` gives `<appData>/@getpaseo/desktop`, but
-  main.ts calls `setName` first, so the default is `<appData>/Paseo`, the installed app's
-  directory.
+- **Unpackaged desktop userData.** Resolved on 2026-10-31. The `main.ts` comment said the main
+  checkout gets "default userData"; because `app.setName("Paseo")` runs before anything reads the
+  path, that default was `<appData>/Paseo`, the installed app's directory. At the user's choice,
+  direct unpackaged launches outside a worktree now use `<appData>/Paseo-dev` (a fork change, to
+  offer upstream). electron-log still writes `<appData>/Paseo/logs/main.log` on Linux whatever the
+  userData; not changed. Because the single-instance lock lives in userData, a direct launch also
+  no longer signals the user's running app as a second instance. Two main checkouts on one
+  machine now share `Paseo-dev`.
 
 ## Progress log
 
@@ -385,3 +386,6 @@ those upstream files are next touched.
 - J merged as #283. K: `desktop:sandbox` runs the desktop app headless on the station against a
   qa:web daemon and refuses to report ready unless the app adopted that daemon. A direct
   unpackaged launch outside a worktree shares the installed app's userData (measured).
+- K merged as #284. The user chose to isolate direct unpackaged launches: outside a worktree they
+  now use `<appData>/Paseo-dev`, checked on the station from a plain git checkout, from outside git
+  and from a linked worktree (unchanged `Paseo-<worktree>`).
