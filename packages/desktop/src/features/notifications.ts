@@ -7,13 +7,84 @@ interface NotificationInput {
   title?: unknown;
   body?: unknown;
   data?: unknown;
+  /** Thread key: a newer notification with the same id replaces the older one. */
+  id?: unknown;
+  /** Thread key plus reason, so a restarted app can tell what a delivered notification was. */
+  groupId?: unknown;
+}
+
+export interface DeliveredNotification {
+  id: string;
+  groupId: string;
 }
 
 interface NotificationClickPayload {
   data?: Record<string, unknown>;
 }
 
+// Notifications are held until closed so their click handlers survive. A replaced macOS
+// notification stays held for the session: macOS reports no event when it is replaced.
 const activeNotifications = new Set<Notification>();
+const notificationsById = new Map<string, Notification>();
+/** The renderer's group id per thread, which carries the reason even where the OS drops it. */
+const rendererGroupIds = new Map<string, string>();
+
+function forgetNotification(notification: Notification, id: string | null): void {
+  activeNotifications.delete(notification);
+  if (id && notificationsById.get(id) === notification) {
+    notificationsById.delete(id);
+    rendererGroupIds.delete(id);
+  }
+}
+
+/**
+ * macOS keeps the renderer's group id, which carries the reason for the startup sweep.
+ * Windows replaces a toast only when tag and group both match, so the group is the id.
+ */
+function resolveGroupId(id: string | null, groupId: string | null): string | null {
+  if (!id) return null;
+  if (process.platform === "darwin") return groupId;
+  if (process.platform === "win32") return id;
+  return null;
+}
+
+/** Removes delivered notifications by thread key. Unknown ids are ignored. */
+export function dismissNotifications(ids: readonly string[]): void {
+  const earlierLaunch: string[] = [];
+  for (const id of ids) {
+    const notification = notificationsById.get(id);
+    notificationsById.delete(id);
+    rendererGroupIds.delete(id);
+    if (!notification) {
+      earlierLaunch.push(id);
+      continue;
+    }
+    activeNotifications.delete(notification);
+    // close() also frees the native notification. Notification.remove() would leave it
+    // registered under the id, where it can capture clicks meant for the thread's next one.
+    notification.close();
+  }
+  // Only macOS can reach notifications delivered before this launch.
+  if (process.platform === "darwin" && earlierLaunch.length > 0) {
+    Notification.remove(earlierLaunch);
+  }
+}
+
+/**
+ * Notifications a fresh renderer should track: the ones this process still holds (after a
+ * window reload), and on macOS those still in Notification Center from earlier launches.
+ */
+export async function listDeliveredNotifications(): Promise<DeliveredNotification[]> {
+  const delivered = new Map<string, string>(rendererGroupIds);
+  if (process.platform === "darwin") {
+    for (const notification of await Notification.getHistory()) {
+      if (notification.id && notification.groupId && !delivered.has(notification.id)) {
+        delivered.set(notification.id, notification.groupId);
+      }
+    }
+  }
+  return [...delivered].map(([id, groupId]) => ({ id, groupId }));
+}
 
 function toTrimmedString(value: unknown): string | null {
   if (typeof value !== "string") {
@@ -83,6 +154,18 @@ export function registerNotificationHandlers(): void {
     return Notification.isSupported();
   });
 
+  ipcMain.handle("paseo:notification:dismiss", (_event, rawIds?: unknown) => {
+    const ids = Array.isArray(rawIds)
+      ? rawIds.flatMap((value) => {
+          const id = toTrimmedString(value);
+          return id ? [id] : [];
+        })
+      : [];
+    dismissNotifications(ids);
+  });
+
+  ipcMain.handle("paseo:notification:delivered", () => listDeliveredNotifications());
+
   ipcMain.handle("paseo:notification:send", async (event, rawInput?: NotificationInput) => {
     if (!Notification.isSupported()) {
       return false;
@@ -95,16 +178,33 @@ export function registerNotificationHandlers(): void {
 
     const body = toTrimmedString(rawInput?.body) ?? undefined;
     const data = toRecord(rawInput?.data);
+    const id = toTrimmedString(rawInput?.id);
+    const rendererGroupId = toTrimmedString(rawInput?.groupId);
+    const groupId = resolveGroupId(id, rendererGroupId);
     const icon = getNotificationIcon();
     const settings = await getDesktopSettingsStore().get();
     const notification = new Notification({
       title,
       ...(body ? { body } : {}),
       ...(icon ? { icon } : {}),
+      ...(id ? { id } : {}),
+      ...(groupId ? { groupId } : {}),
       silent: !settings.notifications.playSound,
     });
 
     activeNotifications.add(notification);
+    if (id) {
+      const previous = notificationsById.get(id);
+      notificationsById.set(id, notification);
+      if (rendererGroupId) rendererGroupIds.set(id, rendererGroupId);
+      else rendererGroupIds.delete(id);
+      // macOS replaces a delivered notification with the same id, and closing the old object
+      // would remove the new one by identifier. Linux ignores ids, so close the old one first.
+      if (previous && process.platform !== "darwin") {
+        activeNotifications.delete(previous);
+        previous.close();
+      }
+    }
 
     notification.on("click", () => {
       const win = focusSenderWindow(event.sender);
@@ -112,11 +212,11 @@ export function registerNotificationHandlers(): void {
         const payload: NotificationClickPayload = { data };
         win.webContents.send("paseo:event:notification-click", payload);
       }
-      activeNotifications.delete(notification);
+      forgetNotification(notification, id);
     });
 
     notification.on("close", () => {
-      activeNotifications.delete(notification);
+      forgetNotification(notification, id);
     });
 
     // macOS refuses a request (unsigned bundle, notifications turned off) only
@@ -130,7 +230,7 @@ export function registerNotificationHandlers(): void {
       notification.once("failed", (_failure, error) => {
         clearTimeout(fallback);
         console.warn(`[notifications] Delivery failed: ${error}`);
-        activeNotifications.delete(notification);
+        forgetNotification(notification, id);
         resolve(false);
       });
     });

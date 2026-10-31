@@ -10,6 +10,12 @@ import { isWeb } from "@/constants/platform";
 
 type AttentionReason = "finished" | "error" | "permission" | null | undefined;
 
+/**
+ * After a thread is opened, how long its state may keep arriving (host connecting, directory
+ * hydrating) and still count as seen on entry rather than as a new turn ending while watched.
+ */
+const ENTRY_SETTLE_MS = 5_000;
+
 interface UseAgentAttentionClearParams {
   agentId: string | null | undefined;
   client: DaemonClient | null;
@@ -39,6 +45,10 @@ export function useAgentAttentionClear({
   const prevActivelyViewedRef = useRef(isScreenFocused && getIsAppActivelyVisible());
   const prevScreenFocusedRef = useRef(false);
   const prevAppVisibleRef = useRef(getIsAppActivelyVisible());
+  // Set on entering the thread until a clear is sent or the entry settles. A cold start
+  // focuses the thread before the host connects and before its attention state arrives.
+  const entryClearPendingRef = useRef(false);
+  const [entrySettleKey, setEntrySettleKey] = useState(0);
 
   const clearAttention = useCallback(
     (trigger: AgentAttentionClearTrigger) => {
@@ -59,6 +69,7 @@ export function useAgentAttentionClear({
         return;
       }
       deferredFocusEntryClearRef.current = false;
+      entryClearPendingRef.current = false;
       client.clearAgentAttention(resolvedAgentId).catch(() => {});
     },
     [agentId, attentionReason, client, isConnected, requiresAttention],
@@ -98,6 +109,7 @@ export function useAgentAttentionClear({
   useEffect(() => {
     const isActivelyViewed = isScreenFocused && isAppVisible;
     if (
+      !entryClearPendingRef.current &&
       !prevRequiresAttentionRef.current &&
       Boolean(requiresAttention) &&
       prevActivelyViewedRef.current &&
@@ -114,12 +126,30 @@ export function useAgentAttentionClear({
     const resumedIntoFocusedAgent = !prevAppVisibleRef.current && isAppVisible && isScreenFocused;
 
     if (enteredScreenFocus || resumedIntoFocusedAgent) {
+      entryClearPendingRef.current = true;
+      setEntrySettleKey((key) => key + 1);
       clearAttention("focus-entry");
     }
+    if (!isScreenFocused || !isAppVisible) entryClearPendingRef.current = false;
 
     prevScreenFocusedRef.current = isScreenFocused;
     prevAppVisibleRef.current = isAppVisible;
   }, [clearAttention, isAppVisible, isScreenFocused]);
+
+  // The entry clear above was refused while disconnected or before attention arrived.
+  useEffect(() => {
+    if (entryClearPendingRef.current && isScreenFocused && isAppVisible) {
+      clearAttention("focus-entry");
+    }
+  }, [clearAttention, isAppVisible, isScreenFocused]);
+
+  useEffect(() => {
+    if (!isConnected || entrySettleKey === 0) return;
+    const timer = setTimeout(() => {
+      entryClearPendingRef.current = false;
+    }, ENTRY_SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [entrySettleKey, isConnected]);
 
   return {
     clearOnInputFocus: useCallback(() => {
