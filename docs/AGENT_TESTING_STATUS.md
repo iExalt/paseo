@@ -330,7 +330,9 @@ those upstream files are next touched.
   path, that default was `<appData>/Paseo`, the installed app's directory. At the user's choice,
   direct unpackaged launches outside a worktree now use `<appData>/Paseo-dev` (a fork change, to
   offer upstream). electron-log still writes `<appData>/Paseo/logs/main.log` on Linux whatever the
-  userData; not changed.
+  userData; not changed. Because the single-instance lock lives in userData, a direct launch also
+  no longer signals the user's running app as a second instance. Two main checkouts on one
+  machine now share `Paseo-dev`.
 
 ## Progress log
 
