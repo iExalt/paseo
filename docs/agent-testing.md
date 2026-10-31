@@ -22,8 +22,8 @@ isolated daemon and app instance.
 `npm run build:apk:arm64` builds `production`. `npm run build:apk:arm64 -- --fork` builds `fork`,
 the only variant with the fork updater, into `artifacts/paseo-fork-arm64.apk`; pass
 `GOOGLE_SERVICES_FILE_FORK` (an absolute path to a Firebase JSON for `sh.paseo.iexalt`; a
-placeholder is fine without push) and `FIREBASE_PROJECT_ID_FORK=paseo-18157`. All three register `paseo://`, so always name the
-package: `adb shell am start -a android.intent.action.VIEW -d '<url>' <package>`. Without it,
+placeholder is fine without push) and `FIREBASE_PROJECT_ID_FORK=paseo-18157`. All three register
+`paseo://`, so always name the package: `adb shell am start -a android.intent.action.VIEW -d '<url>' <package>`. Without it,
 a device with two variants shows a chooser.
 
 Grant notifications before the first launch, or the permission prompt takes focus:
@@ -70,8 +70,8 @@ $A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
   launcher, Settings or a permission dialog.
 - `tap`, `type`, `key`, `open` and `switch` refuse the user's own app, `sh.paseo.iexalt`, unless
   `--allow-user-app` is passed with the user's go-ahead, or `AGENT_ADB_ALLOW_PACKAGES` names it
-  (comma-separated). Set the variable only on a device where the fork is a test install; `tap` checks focus again just before it
-  taps. Reading commands (`dump`, `focus`, `wait`, `turns`) work on any package.
+  (comma-separated); set the variable only on a device where the fork is a test install. `tap`
+  checks focus again just before it taps. Reading commands (`dump`, `focus`, `wait`, `turns`) work on any package.
 - `type` sends ASCII only: `input text` drops other characters on most Android builds.
 - `turns` prints `unknown` (exit 3) when the agent has no line left in the log buffer, rather
   than 0. `wait-turn` follows the agent's latest line, as described in
@@ -99,6 +99,9 @@ $A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
   direct connection form is `direct-host-input`, `direct-port-input` and
   `direct-password-input`; Enter in the host field moves to the port, and both select their text
   on focus. Open it with `paseo://settings/general?addHost=1`, then tap `add-host-method-direct`.
+- The fork updater's row in About is `fork-android-update-row`, with `fork-android-update-status`
+  and `fork-android-update-action`, in fork builds only. On the tablet, which has no network, a
+  check ends in the error state; a failed background check leaves the row idle.
 - To check a phone-width layout on the tablet, run `adb shell wm size 1080x2400` and
   `adb shell wm density 420`; undo with `wm size reset` and `wm density reset` before releasing the
   device.

@@ -77,21 +77,21 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
 ## Phase 3: one-command entry points for agents (each M; depends on 3, 8)
 
-**Approved 2026-10-31** as chunks T (retire the `transfer` switch, since the transfer flow is being retired), H (item 11), I (item 13), J (item 14), K (item 12) and L (a fork-variant harness build, so the updater switch from item 9 can come back). Making dev Electron isolate userData by default stays out of K and returns as its own decision with K's evidence. L was narrowed on 2026-10-31: the native updater fetches only https from GitHub and the tablet guest has no network, so L runs the fork build offline and brings back no switch; giving the guest network for a full update run is its approved follow-up.
+**Approved 2026-10-31** as chunks T (retire the `transfer` switch, since the transfer flow is being retired), H (item 11), I (item 13), J (item 14), K (item 12) and L (a fork-variant harness build, so the updater switch from item 9 can come back). Making dev Electron isolate userData by default stays out of K and returns as its own decision with K's evidence. L was narrowed on 2026-10-31: the native updater fetches only https from GitHub and the tablet guest has no network, so L runs the fork build offline and brings back no switch; giving the guest network for a full update run is its approved follow-up. **Complete 2026-10-31** (#278–#286). The follow-up stopped short: a proxy cannot reach the app while the guest has no network interface, and adding one needs `NET_ADMIN` in the pod spec.
 
-- [ ] **11. `qa:web`.**
+- [x] **11. `qa:web`.**
   - **What it runs:** an isolated, minimal daemon serving the web UI on a free port, printing `{url, serverId}`.
   - **What it turns off and on:** relay, plugins and speech off; mock provider on.
   - **Seed data:** an optional synthetic "heavy chat" seed with tool calls, diffs and icons.
   - **Replaces:** hand-written `config.json`, an 11 min fight with plugins and speech downloads, an isolated home that registered with the real relay, and a profiling run blocked by having no fixtures.
   - **Outcome (2026-10-31):** `npm run qa:web [--seed heavy]` and `--stop`. The relay registration came from a config that omitted `daemon.relay.enabled` (`COMPAT(relayOptInDefault)`); qa:web sets it, turns off usage sources and every provider but `mock`, and is ready in about 4 s on the station.
-- [ ] **12. `desktop:sandbox`.**
+- [x] **12. `desktop:sandbox`.**
   - **What it is:** the existing `createIsolatedDesktopEnv`, `reserveDesktopDebugPort` and temporary-userData code from the release smoke scripts, promoted to a script.
   - **What it does:** keeps paths short (avoiding `Socket path too long`), prints the CDP URL, and defaults to dev-station under Xvfb, so no window opens on the Mac.
   - **Shared helper:** `connectToPaseoRenderer()`, which every `packages/desktop/e2e/*.mjs` should use (fixes empty `pages` from `connectOverCDP`).
   - **Isolation by default:** make dev Electron isolate userData by default, including the main checkout.
-  - **Outcome (2026-10-31):** `npm run desktop:sandbox` runs the unpackaged app under Xvfb against a `qa:web` daemon, with the CDP URL in its JSON and `connectToPaseoRenderer()` in `packages/desktop/e2e/support/`. The existing e2e scripts keep their own connect code for now. Isolation by default waits for the user's decision; a direct launch outside a worktree uses `<appData>/Paseo`, the installed app's directory.
-- [ ] **13. Android agent helper (`scripts/android/agent-adb.sh` or similar):**
+  - **Outcome (2026-10-31):** `npm run desktop:sandbox` runs the unpackaged app under Xvfb against a `qa:web` daemon, with the CDP URL in its JSON and `connectToPaseoRenderer()` in `packages/desktop/e2e/support/`. The existing e2e scripts keep their own connect code for now. Isolation by default: a direct unpackaged launch outside a worktree now uses `<appData>/Paseo-dev` instead of the installed app's `<appData>/Paseo` (#285).
+- [x] **13. Android agent helper (`scripts/android/agent-adb.sh` or similar):**
   - print a dump as `id | text | desc | centre`;
   - tap by `id`, guarded on the app having focus;
   - wait for an `id`;
@@ -101,7 +101,7 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
   **Outcome (2026-10-31):** `scripts/android/agent-adb.py`, in Python because the tablet's pod has no Node. Besides the four commands it types and sends keys under the same focus guard, sets switches, waits on turn counts, holds lock files, and refuses to restart the user's own app.
 
-- [ ] **14. `e2e/probe/` project (gitignored).**
+- [x] **14. `e2e/probe/` project (gitignored).**
   - runs throwaway scripts with the repo's Playwright, so agents stop copying files into `packages/app/scripts/.x-tmp.mjs`;
   - console capture with formatted arguments, so React warnings stop arriving as `%s`;
   - screenshot and console tail always saved on failure;

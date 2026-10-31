@@ -9,13 +9,13 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 
 ## Current snapshot
 
-| Field             | Status                                                                                    |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
-| Current phase     | Phase III (plan Phase 3) approved 2026-10-31: T, H, I, J, K, L                            |
-| Overall state     | Phase II merged; T retires the `transfer` switch; open limits under Current boundary      |
-| Immediate focus   | L (fork-variant harness build) in review; then guest network for a full update run        |
-| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
+| Field             | Status                                                                                        |
+| ----------------- | --------------------------------------------------------------------------------------------- |
+| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream; Phase III ends at `bb6460ca5`   |
+| Current phase     | Phase III (plan Phase 3) complete 2026-10-31: T, H, I, J, K, K2, L                            |
+| Overall state     | Phases I–III merged; Phase 4 waits for its areas to be touched; limits under Current boundary |
+| Immediate focus   | None approved; a full update run needs a guest network interface (user decision)              |
+| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`)     |
 
 ### Routine CI baseline
 
@@ -41,21 +41,21 @@ budget at about 340 s with every lane green.
 ones; SHAs in the 2026-10-30 log entries are superseded. The `?open=` fix (#266, a cherry-pick of
 upstream #7918) is now upstream's own commit `9abc4f41f`.
 
-| Chunk                    | Status      | Evidence                                                                      |
-| ------------------------ | ----------- | ----------------------------------------------------------------------------- |
-| A. Docs and device facts | complete    | #264, `416ab4e8c`; tablet results below                                       |
-| B. Reach and observe     | complete    | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`      |
-| C. Forms and selectors   | complete    | #268, `058c9ce85`                                                             |
-| D. CLI and build         | complete    | #265, `7d58cefc8`; scratch-home runs below                                    |
-| E. Motion                | complete    | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps) |
-| F. Ready markers         | complete    | #274, `ab8dafbe5`; [results below](#f-ready-markers)                          |
-| G. Debug switches        | complete    | #275, `489adafe4`; #276, `3b41fbffb`; [results below](#g-debug-switches)      |
-| T. Retire `transfer`     | complete    | #278, `e3ad6f5f7`                                                             |
-| H. `qa:web`              | complete    | #280, `333551771`; [results below](#h-qaweb)                                  |
-| I. Android helper        | complete    | #282, `ddf9a2af5`; [results below](#i-android-helper)                         |
-| J. Browser probes        | complete    | #283, `ba090cd40`; [results below](#j-browser-probes)                         |
-| K. Desktop sandbox       | complete    | #284, `23675058b`; userData #285, `75d66c608`; [results](#k-desktop-sandbox)  |
-| L. Fork-variant build    | implemented | [results below](#l-fork-variant-build)                                        |
+| Chunk                    | Status   | Evidence                                                                      |
+| ------------------------ | -------- | ----------------------------------------------------------------------------- |
+| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                       |
+| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`      |
+| C. Forms and selectors   | complete | #268, `058c9ce85`                                                             |
+| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                    |
+| E. Motion                | complete | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps) |
+| F. Ready markers         | complete | #274, `ab8dafbe5`; [results below](#f-ready-markers)                          |
+| G. Debug switches        | complete | #275, `489adafe4`; #276, `3b41fbffb`; [results below](#g-debug-switches)      |
+| T. Retire `transfer`     | complete | #278, `e3ad6f5f7`                                                             |
+| H. `qa:web`              | complete | #280, `333551771`; [results below](#h-qaweb)                                  |
+| I. Android helper        | complete | #282, `ddf9a2af5`; [results below](#i-android-helper)                         |
+| J. Browser probes        | complete | #283, `ba090cd40`; [results below](#j-browser-probes)                         |
+| K. Desktop sandbox       | complete | #284, `23675058b`; userData #285, `75d66c608`; [results](#k-desktop-sandbox)  |
+| L. Fork-variant build    | complete | #286, `bb6460ca5`; [results below](#l-fork-variant-build)                     |
 
 ### A: device facts
 
@@ -303,6 +303,14 @@ no network. The helper's `open` named the activity `sh.paseo.MainActivity`, whic
 package does not have; it is now package-relative. The error row blames verification for what
 is a DNS failure; not changed here.
 
+Follow-up, same day: a GitHub-only CONNECT proxy in the pod (port 443 to the native allowlist's
+hosts, behind `adb reverse`) set as the guest's `global_http_proxy_*` did not help. The check
+failed with the same `UnknownHostException` and the proxy logged no connection: with no network
+interface (`cf-tablet` launches with `--enable_tap_devices=false`), the app resolves the host
+itself. The settings, the reverse and the install were removed afterwards. Downloads go through
+the system DownloadManager, which waits for a system network, so a proxy could not have carried
+them either. A full update run needs tap devices, which need `NET_ADMIN` in the pod spec.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -316,9 +324,10 @@ is a DNS failure; not changed here.
   redirect after a connected import is unchanged listener code and untested.
 - Whether the soft keyboard stays up after Enter moves focus to the port is unchecked on a phone.
 - A fork build's update check, its row and its offline failure ran on the tablet (L), but no
-  download or install did: the guest has no network, and the native updater accepts only GitHub
-  over https. A full run against a real fork release, which the signer check should reject, needs
-  network in the guest; the user approved that as L's follow-up on 2026-10-31.
+  release fetch, download or install did: the guest has no network interface, a proxy does not
+  reach the app without one, and the native updater accepts only GitHub over https. A full run
+  against a real fork release, which the signer check should reject, needs tap devices in the
+  guest (`NET_ADMIN` in the pod spec).
 - The readiness marker is web-only; Android waits use the `timeline state` log line.
 
 ## Active risks and decisions
@@ -418,3 +427,5 @@ is a DNS failure; not changed here.
   network, so the planned loopback mirror was dropped. The user chose an offline run now and
   guest network as a follow-up. The fork build's update row and its offline failure ran on the
   tablet; the build was then uninstalled.
+- L merged as #286. A GitHub-only proxy did not give the guest's updater network, so a full
+  update run needs tap devices in the pod. Phase III complete.
