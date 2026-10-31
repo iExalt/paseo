@@ -22,8 +22,8 @@ interface NotificationClickPayload {
   data?: Record<string, unknown>;
 }
 
-// Notifications are held until closed: Electron removes one from the notification
-// center when its object is garbage collected.
+// Notifications are held until closed so their click handlers survive. A replaced macOS
+// notification stays held for the session: macOS reports no event when it is replaced.
 const activeNotifications = new Set<Notification>();
 const notificationsById = new Map<string, Notification>();
 
@@ -45,18 +45,23 @@ function resolveGroupId(id: string | null, groupId: string | null): string | nul
 
 /** Removes delivered notifications by thread key. Unknown ids are ignored. */
 export function dismissNotifications(ids: readonly string[]): void {
-  const live = ids.flatMap((id) => {
+  const earlierLaunch: string[] = [];
+  for (const id of ids) {
     const notification = notificationsById.get(id);
     notificationsById.delete(id);
-    if (notification) activeNotifications.delete(notification);
-    return notification ? [notification] : [];
-  });
-  if (process.platform === "darwin") {
-    // Also reaches notifications delivered before this launch.
-    if (ids.length > 0) Notification.remove([...ids]);
-    return;
+    if (!notification) {
+      earlierLaunch.push(id);
+      continue;
+    }
+    activeNotifications.delete(notification);
+    // close() also frees the native notification. Notification.remove() would leave it
+    // registered under the id, where it can capture clicks meant for the thread's next one.
+    notification.close();
   }
-  for (const notification of live) notification.close();
+  // Only macOS can reach notifications delivered before this launch.
+  if (process.platform === "darwin" && earlierLaunch.length > 0) {
+    Notification.remove(earlierLaunch);
+  }
 }
 
 /** Notifications still in Notification Center from earlier launches. macOS only. */

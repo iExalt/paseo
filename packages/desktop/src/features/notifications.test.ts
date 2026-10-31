@@ -96,11 +96,10 @@ describe("desktop notification handlers", () => {
     // The replaced object's late close event must not untrack the new notification.
     first?.emit("close");
     await invoke("paseo:notification:dismiss", ["paseo-agent:host:agent", "unknown"]);
-    expect(electron.FakeNotification.remove).toHaveBeenCalledWith([
-      "paseo-agent:host:agent",
-      "unknown",
-    ]);
-    expect(second?.close).not.toHaveBeenCalled();
+    // The live one is closed, freeing its native object; only the leftover goes by id.
+    expect(second?.close).toHaveBeenCalledTimes(1);
+    expect(first?.close).not.toHaveBeenCalled();
+    expect(electron.FakeNotification.remove).toHaveBeenCalledWith(["unknown"]);
   });
 
   it.each(["linux", "win32"] as const)(
