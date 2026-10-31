@@ -41,9 +41,11 @@ export function retainTurnCounter(key: string, start: () => () => void): () => v
   const counter = counters.get(key);
   if (counter) counter.refs += 1;
   else counters.set(key, { refs: 1, stop: start() });
+  let released = false;
   return () => {
     const current = counters.get(key);
-    if (!current) return;
+    if (released || !current) return;
+    released = true;
     current.refs -= 1;
     if (current.refs > 0) return;
     current.stop();

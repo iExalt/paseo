@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { StyleSheet, View } from "react-native";
+import { isWeb } from "@/constants/platform";
 import type { AgentScreenReadySyncState } from "@/hooks/use-agent-screen-state-machine";
 import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { agentLog } from "@/utils/agent-log";
@@ -27,8 +28,8 @@ export function useCountClosedTurns(serverId: string, agentId: string): void {
 }
 
 /**
- * An invisible node naming the open chat's readiness: `agent-timeline-<state>` as a testID, with
- * `data-agent-id` and `data-turns` on web. Render it only for the visible chat.
+ * Logs the open chat's readiness and, on web, renders an invisible `agent-timeline-<state>` node
+ * with `data-agent-id` and `data-turns`. Render it only for the visible chat.
  */
 export function TimelineReadinessMarker({
   serverId,
@@ -52,6 +53,8 @@ export function TimelineReadinessMarker({
     agentLog("timeline", "state", { agentId, state: readiness, turns });
   }, [agentId, readiness, turns]);
 
+  // Native leaves a contentless node out of the accessibility tree, so dumps never show it.
+  if (!isWeb) return null;
   return (
     <View
       testID={`agent-timeline-${readiness}`}
