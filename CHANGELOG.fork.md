@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.2](https://github.com/iExalt/paseo/compare/paseo-v0.17.1...paseo-v0.17.2) (2026-10-31)
+
+
+### Bug Fixes
+
+* **app:** skip attachment garbage collection when IndexedDB is missing ([#304](https://github.com/iExalt/paseo/issues/304)) ([3f4dfa0](https://github.com/iExalt/paseo/commit/3f4dfa0b6997e8fc40d9fe9074d88cac15f76b5f))
+
+
+### Performance Improvements
+
+* **ci:** shorten the server unit lanes ([#305](https://github.com/iExalt/paseo/issues/305)) ([211ff68](https://github.com/iExalt/paseo/commit/211ff6892d3bda58cfffe37f90ca9a41f7540abe))
+* **server:** stop server tests waiting out production timeouts ([#306](https://github.com/iExalt/paseo/issues/306)) ([923ea18](https://github.com/iExalt/paseo/commit/923ea18bc9213d56598a26ef744ba9eed7db40d7))
+
 ## [0.17.1](https://github.com/iExalt/paseo/compare/paseo-v0.17.0...paseo-v0.17.1) (2026-10-31)
 
 
