@@ -28,10 +28,10 @@ Grant notifications before the first launch, or the permission prompt takes focu
 
 ### Deep links
 
-Checked on the Android 17 tablet with `sh.paseo` 0.16.0 on 2026-10-30; `?open=` rows on builds
-from `dev` with the workspace-route hydration fix (upstream #7918, 2026-10-30); older builds ignore
-`?open=` on cold start. Cold means
-`am force-stop` first; warm means the app is already open.
+Checked on the Android 17 tablet with `sh.paseo` 0.16.0 on 2026-10-30, and again on a build of
+`dev` at `89889fa6d` on 2026-10-31. Builds without upstream #7918 (the workspace-route hydration
+fix, on `dev` since 2026-10-30) ignore `?open=` on cold start. Cold means `am force-stop` first;
+warm means the app is already open.
 
 | Link                                                                                                       | Cold        | Warm | Notes                                                                                                                                                                                                                                                                                                            |
 | ---------------------------------------------------------------------------------------------------------- | ----------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,9 +63,25 @@ from `dev` with the workspace-route hydration fix (upstream #7918, 2026-10-30); 
 - To check a phone-width layout on the tablet, run `adb shell wm size 1080x2400` and
   `adb shell wm density 420`; undo with `wm size reset` and `wm density reset` before releasing the
   device.
-- `uiautomator dump` succeeded 15 of 15 times with the app idle on the tablet (chat, settings,
-  sessions). Agents on the phone have hit `ERROR: could not get idle state` while lists load or
-  an agent runs; wait and retry, or fall back to a screenshot.
+
+### Motion and screen dumps
+
+`uiautomator dump` fails with `ERROR: could not get idle state` while the screen keeps changing.
+It waits for about a second without accessibility events, so a running agent blocks it:
+
+- The status ring and the turn loader animate. Set `transition_animation_scale`,
+  `window_animation_scale` and `animator_duration_scale` to 0 with `adb shell settings put global
+  <name> 0`, then `am force-stop` and relaunch. Reanimated's reduce motion reads only
+  `transition_animation_scale`, and only at startup, so without the relaunch nothing changes.
+  Read the three values with `settings get global <name>` first and put them back afterwards;
+  `settings delete global <name>` restores one that was `null`.
+- The open chat of a running agent still fails at scale 0. Its turn footer's elapsed time
+  (`turn-working-elapsed`) changes every second. Dump from another screen, wait for the turn to
+  end (`paseo wait`), or take a screenshot.
+
+With the app idle, or an agent running on another screen, dumps succeed at default scales,
+including during a cold start. The tablet results are in
+[AGENT_TESTING_STATUS.md](AGENT_TESTING_STATUS.md#e-motion-and-dumps).
 
 The shared Cuttlefish tablet's harness guide is `/home/dev/cuttlefish/HARNESS.md` in the dev pod.
 
@@ -102,6 +118,10 @@ Launching Electron directly (Playwright `_electron.launch`) skips `dev.sh`. With
 `PASEO_ELECTRON_USER_DATA_DIR`, an unpackaged launch uses `Paseo-<worktree>` userData when its cwd
 is a linked git worktree, and Electron's default userData otherwise. Whether that default collides
 with the installed app is unverified, so always set the variable.
+
+Playwright's `reducedMotion: 'reduce'` context option stops the web app's animations: the status
+ring, the turn loader and switch thumbs. Only the running turn's elapsed time keeps changing, once
+a second.
 
 For a browser-only check, serve the web UI from an isolated daemon:
 [daemon-served web UI](upstream/development.md#bundled-daemon-web-ui) and

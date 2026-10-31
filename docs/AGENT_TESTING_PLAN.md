@@ -38,7 +38,7 @@ It draws on 21 past agent sessions, read through the transcripts:
 Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
 - [x] On the Cuttlefish tablet, check the deep links from cold and warm start. Settings and agent routes work; `?open=` works only warm and never selects `file:` tabs; `paseo://pair#` shows "Unmatched Route".
-- [x] Make `?open=` select its tab on native from cold start and for `file:`. Cause: the workspace route never demanded the host directory, so workspaces never hydrated and the pending intent waited forever. Fixed by cherry-picking upstream #7918; the `COMPAT(workspace-open-url)` marker stays.
+- [x] Make `?open=` select its tab on native from cold start and for `file:`. Cause: the workspace route never demanded the host directory, so workspaces never hydrated and the pending intent waited forever. Fixed by cherry-picking upstream #7918, which is upstream's own commit on `dev` since the 2026-10-30 rebase; the `COMPAT(workspace-open-url)` marker stays.
 - [x] Write `docs/agent-testing.md`: packages and launch components, package-qualified `am start`, `pm grant … POST_NOTIFICATIONS`, the deep-link table, reading state from dumps, isolation variables, `daemon start` versus `daemon run`.
 - [x] Animator test: not run. Idle dumps succeeded 15 of 15 on the tablet at the default scale, so there was no failure to compare against. The failures were on the phone while lists loaded or an agent ran; item 8 owns them.
 - [x] Update the `phone-debug` skill (in the home-manager config repo): a pointer to `docs/agent-testing.md`, the idle-dump failure and its fallback, and that `input tap` has no hold. The Find tap path is left out until Find has a URL or testID (item 5).
@@ -62,6 +62,7 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
   - **Honour `prefers-reduced-motion` on web,** so Playwright's `reducedMotion: 'reduce'` snaps the switch thumb and similar animations.
   - **Ready markers.** Add stable markers for "app ready and connected" (a testID or accessibility node carrying the connection status) and for "timeline settled" (`data-` attributes).
   - **Proof:** dumps succeed on the tablet with the app idle; a web probe asserts readiness without `waitForTimeout`.
+  - **Measured (chunk E, 2026-10-31):** nothing animates at idle on the tablet. While an agent runs, the status ring and turn loader block dumps until the animation scales are 0 and the app is relaunched; the turn's elapsed time, which changes every second, still blocks dumps of the open chat. The web app already honours `prefers-reduced-motion`, switch thumbs included. So the first two bullets need documentation only, and the elapsed clock gets a debug switch in item 9.
 - [ ] **9. A debug control surface, in debug builds only.** Use `paseo://debug?…` or intent extras for:
   - turning on traces at run time (replacing compile-time `EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE` and similar);
   - a platform or variant override for gated UI (replacing temporary source edits such as `// PROBE-ONLY`);
@@ -69,7 +70,10 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
   Proof: change a trace on the tablet without reinstalling.
 
+  **Shape (approved 2026-10-31):** the switches exist only in builds made with an explicit build flag, which the harness recipe sets; releases stay unchanged. Agents set them with `adb shell am start` intent extras, not a `paseo://` link, so other apps cannot flip them. Each switch logs a `[paseo-agent]` line and none changes user data. In order of risk: trace toggles; a frozen elapsed clock (only the one-second tick stops) and the notification-prompt skip from item 10; a platform override that resets on cold start; and the fork updater with a custom base URL, only if the updater exists in non-fork builds and still checks the APK's signing key whatever the URL.
+
 - [ ] **10. No surprise prompts in debug and test runs.** Defer the notification-permission request until after the first connection. In test mode, skip it. The prompt stole focus after every fresh install (phone, tablet, Android CI about 5 times).
+  - **Decided 2026-10-31:** no deferral. The prompt already waits for a host, so deferring it moves it by about a second and changes upstream behaviour for every user. The test-mode skip ships as one of item 9's switches.
 
 ## Phase 3: one-command entry points for agents (each M; depends on 3, 8)
 
@@ -126,5 +130,15 @@ Phase I covers Phase 0 and Phase 1. Phases 2–4 need their own approval.
 | B. Reach and observe     | 1, 3, 4, native `?open=` | Unit tests; tablet pass on a build combining B and C before either merges                                       |
 | C. Forms and selectors   | 2, 5                     | Same combined tablet pass: Enter chaining with the keyboard up, sidebar nodes absent when closed                |
 | D. CLI and build         | 6, 7                     | Scratch-home daemon run on dev-station; `build:main` emits after deleting `dist`; no tsbuildinfo in the package |
+
+### Phase II chunks (approved 2026-10-31)
+
+Phase II covers Phase 2. Phases 3 and 4 need their own approval.
+
+| Chunk             | Covers      | Gate                                                                                                                     |
+| ----------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------ |
+| E. Motion         | 8 (motion)  | Frames, accessibility events and dumps measured per state on the tablet; web animations listed with and without `reduce` |
+| F. Ready markers  | 8 (markers) | A web probe waits on the markers with no `waitForTimeout`; one native wait on the same marker                            |
+| G. Debug switches | 9, 10       | A trace turned on without reinstalling; with the frozen clock and scales at 0, a running chat dumps 3 of 3               |
 
 Open questions and doc/code disagreements are tracked in [AGENT_TESTING_STATUS.md](AGENT_TESTING_STATUS.md).
