@@ -1,7 +1,9 @@
 // Release-pinned Android caches for release.yml. Any job on dev can save cache
 // entries, so a release build restores only the exact keys the latest
 // published release pinned, and only after the tar matches the pinned sha256.
-// Every problem means a cold build, never a failure.
+// Every problem means a cold build, never a failure. Routine CI keys its
+// installed-dependency cache on the same modules inputs.
+//   inputs                        write modules_inputs (needs ImageOS and NPM_VERSION)
 //   plan                          hash this checkout's cache inputs and read the latest release's
 //                                 pin; write both to GITHUB_OUTPUT (needs ImageOS and NPM_VERSION)
 //   verify <tar> <sha256>         write ok=true|false; delete a tar that does not match
@@ -220,11 +222,15 @@ async function fetchLatestPin() {
   return parsePin(await download.text());
 }
 
-async function planCommand() {
+async function requireInputs(command) {
   if (!process.env.ImageOS || !process.env.NPM_VERSION) {
-    throw new Error("plan needs ImageOS and NPM_VERSION");
+    throw new Error(`${command} needs ImageOS and NPM_VERSION`);
   }
-  const { deps, modules } = await cacheInputs();
+  return cacheInputs();
+}
+
+async function planCommand() {
+  const { deps, modules } = await requireInputs("plan");
   let pin = null;
   try {
     pin = await fetchLatestPin();
@@ -256,7 +262,9 @@ async function planCommand() {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
-  if (command === "plan") {
+  if (command === "inputs") {
+    await output({ modules_inputs: (await requireInputs("inputs")).modules });
+  } else if (command === "plan") {
     await planCommand();
   } else if (command === "verify") {
     const [file, sha256] = args;
