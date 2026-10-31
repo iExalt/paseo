@@ -14,7 +14,7 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
 | Current phase     | Phase III (plan Phase 3) approved 2026-10-31: T, H, I, J, K, L                            |
 | Overall state     | Phase II merged; T retires the `transfer` switch; open limits under Current boundary      |
-| Immediate focus   | K (`desktop:sandbox`) in review; the userData default decision; then L                    |
+| Immediate focus   | L (fork-variant harness build) in review; then guest network for a full update run        |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
@@ -54,7 +54,8 @@ upstream #7918) is now upstream's own commit `9abc4f41f`.
 | H. `qa:web`              | complete    | #280, `333551771`; [results below](#h-qaweb)                                  |
 | I. Android helper        | complete    | #282, `ddf9a2af5`; [results below](#i-android-helper)                         |
 | J. Browser probes        | complete    | #283, `ba090cd40`; [results below](#j-browser-probes)                         |
-| K. Desktop sandbox       | implemented | [results below](#k-desktop-sandbox)                                           |
+| K. Desktop sandbox       | complete    | #284, `23675058b`; userData #285, `75d66c608`; [results](#k-desktop-sandbox)  |
+| L. Fork-variant build    | implemented | [results below](#l-fork-variant-build)                                        |
 
 ### A: device facts
 
@@ -278,6 +279,30 @@ Electron leaves the daemon to `--stop`. No existing desktop e2e changed: they ru
 `browser-tabs.e2e.mjs`, `packaged-app-smoke.js` and `verify-electron-cdp.mjs` is left for when
 those upstream files are next touched.
 
+### L: fork-variant build
+
+Tablet, `npm run build:apk:arm64 -- --fork` from `75d66c608` plus L, with
+`EXPO_PUBLIC_PASEO_AGENT_SWITCHES=1` and a placeholder Firebase file at
+`~/.config/paseo-agent-testing/google-services-placeholder.json` on the station (sha256
+`399576e2…`):
+
+| Check                                     | Result                                                                                                                                    |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| APK identity                              | `sh.paseo.iexalt`, versionName 0.16.0, versionCode 216000, equal to `forkAndroidVersionCode("0.16.0")`; no Firebase copy left in the tree |
+| Helper without `AGENT_ADB_ALLOW_PACKAGES` | `open` refused, exit 2                                                                                                                    |
+| Launch, background check                  | `update failed status=checking reason="… UnknownHostException: Unable to resolve host \"api.github.com\" …"`; the row stays idle          |
+| `fork-android-update-row` after launch    | Status "Check for a signed stable fork update.", action "Check"                                                                           |
+| Tap Check                                 | `update status status=checking`, the same `update failed` line, then `update status status=error`                                         |
+| Row after the check                       | "Could not verify the published fork update. Check your connection and retry.", action "Check"                                            |
+| Afterwards                                | `sh.paseo.iexalt` uninstalled with its data; `sh.paseo` untouched; HARNESS.md notes it                                                    |
+
+No updater switch came back. A fork build runs the updater by itself, and `updaterBase`, the one
+switch that would add something, cannot work: the native module fetches only https from GitHub
+hosts on port 443, redirects included (`PaseoForkUpdatesModule.kt:39-44`), and the guest has
+no network. The helper's `open` named the activity `sh.paseo.MainActivity`, which the fork
+package does not have; it is now package-relative. The error row blames verification for what
+is a DNS failure; not changed here.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -290,10 +315,10 @@ those upstream files are next touched.
   network and the harness daemon has no relay. The pass covers routing and the failure path; the
   redirect after a connected import is unchanged listener code and untested.
 - Whether the soft keyboard stays up after Enter moves focus to the port is unchecked on a phone.
-- The update row and update stages only run in `fork` builds, so their testIDs and logs get
-  unit tests only. A run-time updater switch cannot help: a non-fork build fails the updater's
-  installed-version check before it fetches anything. A fork-variant harness build is a Phase 3
-  candidate.
+- A fork build's update check, its row and its offline failure ran on the tablet (L), but no
+  download or install did: the guest has no network, and the native updater accepts only GitHub
+  over https. A full run against a real fork release, which the signer check should reject, needs
+  network in the guest; the user approved that as L's follow-up on 2026-10-31.
 - The readiness marker is web-only; Android waits use the `timeline state` log line.
 
 ## Active risks and decisions
@@ -389,3 +414,7 @@ those upstream files are next touched.
 - K merged as #284. The user chose to isolate direct unpackaged launches: outside a worktree they
   now use `<appData>/Paseo-dev`, checked on the station from a plain git checkout, from outside git
   and from a linked worktree (unchanged `Paseo-<worktree>`).
+- K2 merged as #285. L: the native updater fetches only https from GitHub and the guest has no
+  network, so the planned loopback mirror was dropped. The user chose an offline run now and
+  guest network as a follow-up. The fork build's update row and its offline failure ran on the
+  tablet; the build was then uninstalled.

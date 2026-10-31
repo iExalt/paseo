@@ -10,8 +10,13 @@ const helper = path.join(androidDir, "agent-adb.py");
 const fixture = (name) => readFileSync(path.join(androidDir, "fixtures", name), "utf8");
 
 // Runs only the helper's parsing and guards; none of these commands call adb.
-function agentAdb(args, input = "") {
-  const result = spawnSync("python3", [helper, ...args], { input, encoding: "utf8" });
+function agentAdb(args, input = "", env = {}) {
+  const { AGENT_ADB_ALLOW_PACKAGES: _inherited, ...base } = process.env;
+  const result = spawnSync("python3", [helper, ...args], {
+    input,
+    encoding: "utf8",
+    env: { ...base, ...env },
+  });
   return { code: result.status, out: result.stdout.trimEnd(), err: result.stderr.trim() };
 }
 
@@ -78,6 +83,13 @@ test("driving the user's own app is refused unless explicitly allowed", () => {
     0,
   );
   assert.equal(agentAdb(["--package", "sh.paseo", "check-package"]).code, 0);
+  // A device where the fork is a test install opts in through the environment instead.
+  const optIn = (packages) =>
+    agentAdb(["--package", "sh.paseo.iexalt", "check-package"], "", {
+      AGENT_ADB_ALLOW_PACKAGES: packages,
+    }).code;
+  assert.equal(optIn("sh.paseo.debug, sh.paseo.iexalt"), 0);
+  assert.equal(optIn("sh.paseo.iexalt.other"), 2);
   // Driving commands check the package before touching adb, so no device is needed here.
   const tap = agentAdb(["--package", "sh.paseo.iexalt", "tap", "menu-button"]);
   assert.equal(tap.code, 2);

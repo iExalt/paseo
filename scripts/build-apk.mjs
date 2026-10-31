@@ -3,7 +3,8 @@ import { copyFileSync, mkdirSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const target = process.argv[2] ?? "universal";
+const fork = process.argv.includes("--fork");
+const target = process.argv.slice(2).find((arg) => arg !== "--fork") ?? "universal";
 const architectures = {
   universal: "armeabi-v7a,arm64-v8a,x86,x86_64",
   arm64: "arm64-v8a",
@@ -16,7 +17,9 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const app = path.join(root, "packages/app");
 const env = {
   ...process.env,
-  APP_VARIANT: "production",
+  // --fork builds sh.paseo.iexalt with the fork updater; app.config.js then requires
+  // GOOGLE_SERVICES_FILE_FORK and FIREBASE_PROJECT_ID_FORK.
+  APP_VARIANT: fork ? "fork" : "production",
   PASEO_WATCHDOG_BUILD: "1",
   PASEO_DIAGNOSTIC_BUILD_TIME: new Date().toISOString(),
   PASEO_DIAGNOSTIC_REVISION:
@@ -30,6 +33,14 @@ function run(command, args, cwd) {
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
+// Prebuild copies the Firebase file into the generated project; remove it whatever happens.
+const firebaseCopy = path.join(app, "android/app/google-services.json");
+process.on("exit", () => {
+  if (fork) rmSync(firebaseCopy, { force: true });
+});
+// Without listeners, an interrupt or a timeout's SIGTERM would end the script before "exit".
+process.on("SIGINT", () => process.exit(130));
+process.on("SIGTERM", () => process.exit(143));
 run("npm", ["run", "build:app-deps"], root);
 run("npx", ["expo", "prebuild", "--platform", "android", "--no-install"], app);
 // Gradle does not track Metro's environment flags. Always regenerate the JS artifact
@@ -46,7 +57,7 @@ run(
   ],
   path.join(app, "android"),
 );
-const destination = path.join(root, `artifacts/paseo-dogfood-${target}.apk`);
+const destination = path.join(root, `artifacts/paseo-${fork ? "fork" : "dogfood"}-${target}.apk`);
 mkdirSync(path.dirname(destination), { recursive: true });
 copyFileSync(path.join(app, "android/app/build/outputs/apk/release/app-release.apk"), destination);
 console.log(`\nDiagnostic release APK: ${destination}\nLogs: Downloads/Paseo diagnostics\n`);
