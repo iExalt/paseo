@@ -76,6 +76,17 @@ tracker holds directory demand for every host it has notifications for.
 | Electron, Win/Linux | Sent this launch                                   | Notifications from an earlier launch can't be reached.                                                                                       |
 | iOS, Android        | Whatever is in the notification shade              | Synced on start, on foreground and when a push arrives. Pushes resolved while the app was closed go on the next open. Android stacks pushes. |
 
+Android posts pushes that arrive while Paseo is killed or in the background itself, through the
+Firebase SDK, with only a title and body: no data says which thread they belong to. Those go
+only once every host is caught up (`notification-dismissal/caught-up.ts`). A `❓️` question goes
+when no thread on any host has a pending question; any other push goes when every thread on
+every host is read. Archived agents and subagents don't count: subagents never push. A thread
+that needed attention without pushing, from a workspace with notifications off or a reply rule,
+still holds them. Every saved host must be online with a fresh directory, so one offline host
+keeps them all, and only pushes delivered before every host's latest refresh are considered.
+While such pushes wait, the app holds every host's directory and refreshes them all on
+foreground. The push test notification is never dismissed.
+
 On every Electron platform, a notification the user clears stays tracked until its thread
 resolves: main does not forward the close to the renderer.
 
