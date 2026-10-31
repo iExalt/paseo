@@ -10,9 +10,8 @@ Progress and evidence: [Question images status](QUESTION_IMAGES_STATUS.md).
 
 ## Known facts
 
-Two of these turned out wrong; see the corrections under [Spike findings](QUESTION_IMAGES_STATUS.md#spike-findings-step-0).
-
-Read from code at `73ac3f53e`; nothing below has been rendered yet.
+Read from code at `73ac3f53e`, before anything was rendered. Two facts were corrected after the
+spike and are marked **Corrected**; the evidence is in the [status](QUESTION_IMAGES_STATUS.md#spike-findings-step-0).
 
 - The question text, option labels and option descriptions go through the
   shared Markdown renderer (`packages/app/src/components/question-form-card.tsx:153,160,591`),
@@ -22,7 +21,11 @@ Read from code at `73ac3f53e`; nothing below has been rendered yet.
   file-link context. The workspace screen supplies it around everything it
   draws, question cards included
   (`packages/app/src/screens/workspace/workspace-screen.tsx:3821`), so images
-  in question text and descriptions may already work.
+  in question text and descriptions may already work. **Corrected:** that
+  resolves against the workspace root, while replies resolve against the
+  agent's cwd. The two differ only for an agent created with `runtimeCwd`,
+  because the daemon ignores a create request's `cwd` when it names a
+  workspace. Question cards now use the agent-cwd resolver.
 - `preview` is a plain string drawn in `ScrollableCodeSurface`: monospace,
   wrapped, 240 px tall at most on web and uncapped on native
   (`question-form-card.tsx:42-44,163-175`).
@@ -32,8 +35,11 @@ Read from code at `73ac3f53e`; nothing below has been rendered yet.
 - Notification text strips Markdown and turns an image into its alt text, so
   an image without alt text vanishes
   (`packages/protocol/src/agent-attention-notification.ts:62`). For Claude
-  questions the notification shows the first question as the title and the
-  option labels as the body (`packages/server/src/server/agent/providers/claude/agent.ts:1186`).
+  questions the permission request carries the first question as its title and
+  the option labels as its description
+  (`packages/server/src/server/agent/providers/claude/agent.ts:1186`).
+  **Corrected:** the notification title is the agent's title (`❓️ <agent>`);
+  the request's question and option labels go in the body.
   Descriptions and previews never reach a notification.
 - The daemon appends Paseo instructions to every agent's system prompt in
   `applyDaemonAppendSystemPrompt` (`packages/server/src/server/agent/agent-manager.ts:5660`).
