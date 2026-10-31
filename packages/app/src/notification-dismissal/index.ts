@@ -1,7 +1,12 @@
 import { createAppNotificationDismissalEnvironment } from "./environment";
 import { createNotificationDismissalTracker, type NotificationDismissalTracker } from "./tracker";
 
-export { readAgentNotificationData, agentNotificationKey } from "./key";
+export {
+  agentNotificationGroupId,
+  agentNotificationKey,
+  parseDeliveredAgentNotification,
+  readAgentNotificationData,
+} from "./key";
 export type { NotificationDismissalTracker } from "./tracker";
 
 /** A tracker bound to the app's host runtime and session store. */

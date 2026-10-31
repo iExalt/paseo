@@ -55,9 +55,20 @@ export interface DesktopDialogBridge {
 
 export interface DesktopNotificationBridge {
   isSupported?: () => Promise<boolean>;
-  sendNotification?: (
-    payload: string | { title: string; body?: string; data?: Record<string, unknown> },
-  ) => Promise<boolean>;
+  sendNotification?: (payload: DesktopNotificationPayload) => Promise<boolean>;
+  dismissNotifications?: (ids: string[]) => Promise<void>;
+  /** Notifications delivered before this launch; empty outside macOS. */
+  getDeliveredNotifications?: () => Promise<Array<{ id: string; groupId: string }>>;
+}
+
+export interface DesktopNotificationPayload {
+  title: string;
+  body?: string;
+  data?: Record<string, unknown>;
+  /** Thread key; a newer notification with the same id replaces the older one. */
+  id?: string;
+  /** Thread key plus reason; the main process decides per platform whether to use it. */
+  groupId?: string;
 }
 
 export interface DesktopOpenerBridge {

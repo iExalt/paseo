@@ -133,7 +133,10 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
-import { ensureOsNotificationPermission } from "@/utils/os-notifications";
+import {
+  adoptDeliveredOsNotifications,
+  ensureOsNotificationPermission,
+} from "@/utils/os-notifications";
 import { agentLog, describeError } from "@/utils/agent-log";
 
 polyfillCrypto();
@@ -860,7 +863,9 @@ function WorkspaceRouteNavigationBridge() {
 
 function AppShell() {
   useEffect(() => {
-    if (getDesktopHost()) void ensureOsNotificationPermission();
+    if (!getDesktopHost()) return;
+    void ensureOsNotificationPermission();
+    void adoptDeliveredOsNotifications();
   }, []);
   return (
     <MobilePanelsProvider>

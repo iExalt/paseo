@@ -28,7 +28,16 @@ export interface NotificationDismissalTracker {
    * state changes during the await are seen. A newer notification for the same thread
    * replaces the older entry and its arming state.
    */
-  track(identity: AgentNotificationIdentity, reason: TrackedNotificationReason): string;
+  track(
+    identity: AgentNotificationIdentity,
+    reason: TrackedNotificationReason,
+    options?: {
+      /** Defaults to now. Zero for leftovers from an earlier launch: any fresh state is newer. */
+      createdAt?: number;
+      /** Keep an existing entry for the thread; a notification from this launch is newer. */
+      ifAbsent?: boolean;
+    },
+  ): string;
   /** Stops tracking without dismissing, for a notification that was never shown. */
   forget(key: string): void;
   /** Re-evaluates now, for state the environment cannot observe (app foreground). */
@@ -109,14 +118,15 @@ export function createNotificationDismissalTracker(input: {
   }
 
   return {
-    track(identity, reason) {
+    track(identity, reason, options) {
       const key = agentNotificationKey(identity);
+      if (options?.ifAbsent && entries.has(key)) return key;
       entries.set(key, {
         key,
         serverId: identity.serverId,
         agentId: identity.agentId,
         reason,
-        createdAt: environment.now(),
+        createdAt: options?.createdAt ?? environment.now(),
         armed: false,
         resolvedSince: null,
         absenceRefreshRequested: false,

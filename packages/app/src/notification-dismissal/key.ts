@@ -26,6 +26,30 @@ export function parseAgentNotificationKey(key: string): AgentNotificationIdentit
   }
 }
 
+const REASONS: readonly TrackedNotificationReason[] = ["finished", "error", "permission"];
+
+/**
+ * Group id for desktop notifications: the key plus the reason. macOS history returns only
+ * ids and group ids, so a restarted app reads the reason back from here.
+ */
+export function agentNotificationGroupId(key: string, reason: TrackedNotificationReason): string {
+  return `${key}:${reason}`;
+}
+
+/** Reads a delivered desktop notification back: the thread from its id, the reason from its group. */
+export function parseDeliveredAgentNotification(delivered: {
+  id: string;
+  groupId: string;
+}): (AgentNotificationIdentity & { reason: TrackedNotificationReason }) | null {
+  const identity = parseAgentNotificationKey(delivered.id);
+  if (!identity) return null;
+  const prefix = `${delivered.id}:`;
+  const reason = delivered.groupId.startsWith(prefix)
+    ? delivered.groupId.slice(prefix.length)
+    : null;
+  return { ...identity, reason: REASONS.find((known) => known === reason) ?? "unknown" };
+}
+
 /**
  * Reads the agent-attention fields of a notification payload. Terminal, host and test
  * notifications carry no agent reason and are never tracked.

@@ -130,6 +130,22 @@ describe("notification dismissal tracker", () => {
     expect(environment.refreshed).toEqual(["host"]);
   });
 
+  it("keeps a fresh entry when a leftover from an earlier launch names the same thread", async () => {
+    const { environment, dismissed, tracker } = setup();
+    // Stale store state: the leftover sweep must not re-arm this launch's notification.
+    environment.refreshRequestedAt = 500;
+    tracker.track(AGENT, "finished");
+    tracker.track(AGENT, "unknown", { createdAt: 0, ifAbsent: true });
+    environment.advanceTo(environment.clock + 5_000);
+    expect(dismissed).toEqual([]);
+
+    const leftover = setup();
+    leftover.environment.refreshRequestedAt = 500;
+    leftover.tracker.track(AGENT, "unknown", { createdAt: 0, ifAbsent: true });
+    leftover.environment.advanceTo(leftover.environment.clock + 1_500);
+    expect(leftover.dismissed).toEqual([KEY]);
+  });
+
   it("forgets a notification that was never shown without dismissing it", () => {
     const { environment, dismissed, tracker } = setup();
     const key = tracker.track(AGENT, "finished");

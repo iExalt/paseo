@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { agentNotificationKey, parseAgentNotificationKey, readAgentNotificationData } from "./key";
+import {
+  agentNotificationGroupId,
+  agentNotificationKey,
+  parseAgentNotificationKey,
+  parseDeliveredAgentNotification,
+  readAgentNotificationData,
+} from "./key";
 import {
   planNotificationDismissals,
   type AgentDismissalView,
@@ -175,6 +181,19 @@ describe("agent notification keys", () => {
     expect(parseAgentNotificationKey("paseo-terminal:x:y")).toBeNull();
     expect(parseAgentNotificationKey("paseo-agent:x")).toBeNull();
     expect(parseAgentNotificationKey("paseo-agent:%E0%A4%A:y")).toBeNull();
+  });
+
+  it("reads a delivered desktop notification's thread from its id and reason from its group", () => {
+    const id = agentNotificationKey({ serverId: "s:1", agentId: "a" });
+    expect(
+      parseDeliveredAgentNotification({ id, groupId: agentNotificationGroupId(id, "permission") }),
+    ).toEqual({ serverId: "s:1", agentId: "a", reason: "permission" });
+    // Windows and Linux posts carry no reason; neither does a foreign group.
+    expect(parseDeliveredAgentNotification({ id, groupId: id })?.reason).toBe("unknown");
+    expect(parseDeliveredAgentNotification({ id, groupId: "other:finished" })?.reason).toBe(
+      "unknown",
+    );
+    expect(parseDeliveredAgentNotification({ id: "3f1c-uuid", groupId: "" })).toBeNull();
   });
 
   it("reads only agent-attention payloads", () => {

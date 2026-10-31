@@ -10,7 +10,7 @@ interface MockNotificationOptions {
 }
 
 interface FakeDismissal {
-  tracked: Array<{ serverId: string; agentId: string; reason: string }>;
+  tracked: Array<{ serverId: string; agentId: string; reason: string; options?: unknown }>;
   forgotten: string[];
   dismiss: (keys: string[]) => void;
 }
@@ -48,7 +48,11 @@ async function loadModuleForPlatform(
           title: string;
           body?: string;
           data?: Record<string, unknown>;
+          id?: string;
+          groupId?: string;
         }) => Promise<boolean>;
+        dismissNotifications?: (ids: string[]) => Promise<void>;
+        getDeliveredNotifications?: () => Promise<Array<{ id: string; groupId: string }>>;
       };
     } | null;
   },
@@ -61,11 +65,21 @@ async function loadModuleForPlatform(
     return {
       readAgentNotificationData: key.readAgentNotificationData,
       agentNotificationKey: key.agentNotificationKey,
+      agentNotificationGroupId: key.agentNotificationGroupId,
+      parseDeliveredAgentNotification: key.parseDeliveredAgentNotification,
       createAppNotificationDismissalTracker: (dismiss: (keys: string[]) => void) => {
         dismissal.dismiss = dismiss;
         return {
-          track: (identity: { serverId: string; agentId: string }, reason: string) => {
-            dismissal.tracked.push({ ...identity, reason });
+          track: (
+            identity: { serverId: string; agentId: string },
+            reason: string,
+            trackOptions?: unknown,
+          ) => {
+            dismissal.tracked.push({
+              ...identity,
+              reason,
+              ...(trackOptions ? { options: trackOptions } : {}),
+            });
             return key.agentNotificationKey(identity);
           },
           forget: (trackedKey: string) => dismissal.forgotten.push(trackedKey),
@@ -408,5 +422,63 @@ describe("sendOsNotification", () => {
       body: "If you can see this, desktop notifications work.",
       data: { serverId: "srv-1" },
     });
+  });
+
+  it("sends desktop notifications keyed by thread and removes them when dismissed", async () => {
+    const shows: Array<(shown: boolean) => void> = [];
+    const sendNotification = vi.fn(() => new Promise<boolean>((resolve) => shows.push(resolve)));
+    const dismissNotifications = vi.fn(async () => undefined);
+    const { sendOsNotification, dismissal } = await loadModuleForPlatform("web", {
+      desktopHost: { notification: { sendNotification, dismissNotifications } },
+    });
+    const data = { serverId: "srv-1", workspaceId: "w", agentId: "agent-1", reason: "permission" };
+    const key = "paseo-agent:srv-1:agent-1";
+
+    // Resolved while the main process is still showing it: removed once it is up.
+    const pending = sendOsNotification({ title: "Question", data });
+    expect(sendNotification).toHaveBeenCalledWith({
+      title: "Question",
+      data,
+      id: key,
+      groupId: `${key}:permission`,
+    });
+    dismissal.dismiss([key]);
+    expect(dismissNotifications).toHaveBeenLastCalledWith([key]);
+    dismissNotifications.mockClear();
+    shows[0]?.(true);
+    await pending;
+    expect(dismissNotifications).toHaveBeenCalledWith([key]);
+
+    // Not shown: stop tracking it.
+    const refused = sendOsNotification({ title: "Question", data });
+    shows[1]?.(false);
+    await refused;
+    expect(dismissal.forgotten).toEqual([key]);
+  });
+
+  it("adopts this thread's leftovers from an earlier launch without replacing fresh entries", async () => {
+    const key = "paseo-agent:srv-1:agent-1";
+    const { adoptDeliveredOsNotifications, dismissal } = await loadModuleForPlatform("web", {
+      desktopHost: {
+        notification: {
+          sendNotification: async () => true,
+          getDeliveredNotifications: async () => [
+            { id: key, groupId: `${key}:finished` },
+            { id: "unrelated-uuid", groupId: "" },
+          ],
+        },
+      },
+    });
+
+    await adoptDeliveredOsNotifications();
+
+    expect(dismissal.tracked).toEqual([
+      {
+        serverId: "srv-1",
+        agentId: "agent-1",
+        reason: "finished",
+        options: { createdAt: 0, ifAbsent: true },
+      },
+    ]);
   });
 });
