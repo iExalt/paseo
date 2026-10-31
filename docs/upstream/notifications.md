@@ -50,8 +50,36 @@ read by Expo arrives under `userInfo.body`; simulator payloads must match:
 An Android FCM launch intent needs `google.message_id` and a JSON `body` extra.
 An arbitrary Activity launch with data extras does not exercise Expo's FCM path.
 
-Foreground pushes remain in Notification Center without a banner or sound.
-This preserves notifications sent with stale presence information.
+While the app is open, pushes other than the test push are not presented at all
+(`foregroundNotificationBehavior` in `push-notifications/test-push.ts`): the app already shows
+what they report.
+
+## Dismissal
+
+Each client removes its own notifications once their thread no longer needs the user
+(`notification-dismissal/`). A turn-finished notification goes when the thread's attention
+clears. A question stays until no permission request is pending, even after the thread is read.
+Any notification goes when its agent is archived or deleted or its host is removed. Archive
+dismisses as soon as the app archives optimistically, so an archive that then fails has
+already removed the notification.
+
+The daemon sends `agent_attention_required` before the agent update that explains it. A
+notification therefore arms only once this client has seen its condition active, or after an
+agent-directory refresh requested after it arrived, and a resolved condition must hold for
+1.5 s before the notification goes. Cached or offline state never dismisses anything; the
+tracker holds directory demand for every host it has notifications for.
+
+| Platform            | Tracked notifications                              | Limit                                                                                                                                        |
+| ------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser             | Sent by this page; `tag` = thread key              | A reload loses them; they stay until the user clears them.                                                                                   |
+| Electron, macOS     | Sent this launch, plus `Notification.getHistory()` | Needs a signed build. The reason rides in `groupId`. Replaced notifications stay held for the session, since macOS reports no event.         |
+| Electron, Win/Linux | Sent this launch                                   | Notifications from an earlier launch can't be reached. A notification the user clears stays tracked until its thread resolves.               |
+| iOS, Android        | Whatever is in the notification shade              | Synced on start, on foreground and when a push arrives. Pushes resolved while the app was closed go on the next open. Android stacks pushes. |
+
+Never call `close()` on a replaced Electron notification on macOS: macOS removes by identifier, so
+it removes the newer notification. On macOS dismiss a live notification with `close()`, not
+`Notification.remove()`, which leaves the native object registered under the id, where it can take
+clicks meant for the thread's next notification.
 
 ## Startup and verification
 
