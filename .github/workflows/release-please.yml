@@ -98,7 +98,7 @@ jobs:
           APP_SLUG: ${{ steps.token.outputs.app-slug }}
         run: |
           git diff --quiet package-lock.json nix/npm-deps.hash && exit 0
-          bot="$APP_SLUG[bot]"
+          bot="${APP_SLUG}[bot]"
           git config user.name "$bot"
           git config user.email "$(gh api "/users/$bot" --jq .id)+$bot@users.noreply.github.com"
           git commit -m "chore(nix): refresh the npm dependency hash" -- package-lock.json nix/npm-deps.hash
