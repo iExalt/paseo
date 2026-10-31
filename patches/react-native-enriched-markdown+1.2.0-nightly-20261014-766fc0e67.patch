@@ -3978,10 +3978,22 @@ diff --git a/node_modules/react-native-enriched-markdown/android/generated/jni/r
    auto tmp_color = map.find("color");
    if (tmp_color != map.end()) {
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt
-index 56951af..a757cd6 100644
+index 56951af..e04228b 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt
-@@ -85,7 +85,9 @@ class ImageSpan(
+@@ -72,7 +72,10 @@ class ImageSpan(
+   private fun intrinsicImageSize(): Pair<Int, Int> {
+     sourceDrawable?.let { return it.intrinsicWidth to it.intrinsicHeight }
+     val cached = ImageCache.getOriginal(imageUrl) ?: return 0 to 0
+-    return cached.width to cached.height
++    // Match sourceDrawable, whose intrinsic size is density-scaled; 'center' compares widths, so a
++    // raw-pixel fallback here would measure a different box than the one drawn.
++    val metrics = context.resources.displayMetrics
++    return cached.getScaledWidth(metrics) to cached.getScaledHeight(metrics)
+   }
+ 
+   // Sizing precedence: aspectRatio > maxHeight > height. Returns the legacy fixed
+@@ -85,7 +88,9 @@ class ImageSpan(
      if (maxHeightPx > 0) {
        val (intrinsicWidth, intrinsicHeight) = intrinsicImageSize()
        if (targetWidth > 0 && intrinsicWidth > 0 && intrinsicHeight > 0) {
