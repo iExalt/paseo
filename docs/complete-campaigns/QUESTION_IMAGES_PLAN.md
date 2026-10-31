@@ -10,12 +10,14 @@ Progress and evidence: [Question images status](QUESTION_IMAGES_STATUS.md).
 
 ## Known facts
 
+Two of these turned out wrong; see the corrections under [Spike findings](QUESTION_IMAGES_STATUS.md#spike-findings-step-0).
+
 Read from code at `73ac3f53e`; nothing below has been rendered yet.
 
 - The question text, option labels and option descriptions go through the
   shared Markdown renderer (`packages/app/src/components/question-form-card.tsx:153,160,591`),
   which draws HTTP(S) images and workspace images read over the session RPC
-  ([Markdown renderer](markdown-renderer.md#links-and-images)).
+  ([Markdown renderer](../markdown-renderer.md#links-and-images)).
 - Workspace images need the daemon client and workspace root from the
   file-link context. The workspace screen supplies it around everything it
   draws, question cards included
@@ -77,14 +79,14 @@ Read from code at `73ac3f53e`; nothing below has been rendered yet.
       `agent-attention-notification.test.ts` for an image with and without alt
       text. Check that the later link and autolink rules leave the placeholder
       alone.
-- [ ] **4. Tell agents.** Add one sentence beside the Paseo CLI instructions,
+- [x] **4. Tell agents.** Add one sentence beside the Paseo CLI instructions,
       only when Paseo agent tools are enabled: question dialogs show Markdown
       images from the workspace in question text, option descriptions and
       image-only previews, so save mockups as PNGs inside the workspace. Update
       the test that pins those instructions, if one exists.
-- [ ] **5. Docs.** Move the durable rules (where question images draw, the
+- [x] **5. Docs.** Move the durable rules (where question images draw, the
       image-only preview rule, the notification placeholder) into
-      [Markdown renderer](markdown-renderer.md#links-and-images), then move this
+      [Markdown renderer](../markdown-renderer.md#links-and-images), then move this
       plan to `complete-campaigns/`.
 
 ## Acceptance
@@ -96,6 +98,16 @@ Read from code at `73ac3f53e`; nothing below has been rendered yet.
   Background the app with `am kill`, not force-stop, or FCM drops the push.
 - Typecheck, lint and format pass; only the changed test files run locally.
 - Captures are kept as receipts under `docs/qa-evidence/`.
+
+As run, three checks differ from the criteria above. They are reported to the user for acceptance
+rather than claimed as met; evidence is in the [status](QUESTION_IMAGES_STATUS.md):
+
+- The push check ran on the user's phone with a debug build, not the tablet: the Cuttlefish build
+  has no Firebase, so it cannot receive pushes. The user chose "Phone at end of B".
+- The live Claude check ran on web only, against a branch daemon on the Mac, which the tablet's
+  pod cannot reach. Android rendering of the same Markdown is captured with the mock agent.
+- The live agent used image-only previews, not images in question text or descriptions. Those two
+  are proven with the mock agent on web and Android.
 
 ## Risks
 
