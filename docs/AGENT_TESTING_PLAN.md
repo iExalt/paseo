@@ -98,6 +98,8 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
   Use it on both the phone and Cuttlefish. It replaces six one-off variants (`ui.sh`, `ph.sh`, `p.sh`, `ph.zsh`, `tab.sh`, the tablet `ui.sh`), one of which threw away `resource-id`.
 
+  **Outcome (2026-10-31):** `scripts/android/agent-adb.py`, in Python because the tablet's pod has no Node. Besides the four commands it types and sends keys under the same focus guard, sets switches, waits on turn counts, holds lock files, and refuses to restart the user's own app.
+
 - [ ] **14. `e2e/probe/` project (gitignored).**
   - runs throwaway scripts with the repo's Playwright, so agents stop copying files into `packages/app/scripts/.x-tmp.mjs`;
   - console capture with formatted arguments, so React warnings stop arriving as `%s`;

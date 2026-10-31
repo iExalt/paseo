@@ -22,6 +22,7 @@ export const coreTests = [
 ];
 export const helperTests = [
   "packages/desktop/scripts/after-pack.test.mjs",
+  "scripts/agent-adb.test.mjs",
   "scripts/daemon-launch-contract.test.mjs",
   "scripts/is-main-module.test.mjs",
   "scripts/paseo-nix-update.test.mjs",
