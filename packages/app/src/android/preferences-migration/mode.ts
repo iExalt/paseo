@@ -1,6 +1,5 @@
 import Constants from "expo-constants";
 import { Platform } from "react-native";
-import { readAgentSwitch } from "@/diagnostics/agent-switches";
 
 export const PREFERENCES_MIGRATION_BRIDGE_VERSION_CODE = 11001;
 
@@ -28,14 +27,7 @@ export function resolvePreferencesMigrationMode(input: {
   return null;
 }
 
-// Repeated here, not imported, so bundles without the flag still fold it away.
-const SWITCHES_ENABLED = process.env.EXPO_PUBLIC_PASEO_AGENT_SWITCHES === "1";
-
 export function preferencesMigrationMode(): PreferencesMigrationMode | null {
-  // The `transfer` agent switch shows the row on any platform for UI checks; the transfer itself
-  // still needs the real packages.
-  const forced = SWITCHES_ENABLED ? readAgentSwitch("transfer") : undefined;
-  if (forced) return forced;
   const config = Constants.expoConfig;
   return resolvePreferencesMigrationMode({
     platform: Platform.OS,
