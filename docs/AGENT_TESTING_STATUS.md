@@ -12,9 +12,9 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Field             | Status                                                                                    |
 | ----------------- | ----------------------------------------------------------------------------------------- |
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
-| Current phase     | Phase II (plan Phase 2) complete; Phase III not yet proposed                              |
-| Overall state     | E, F and G merged; the updater switch deferred; open limits under Current boundary        |
-| Immediate focus   | Report Phase II; decide the transfer path, the fork-variant harness build and Phase III   |
+| Current phase     | Phase III (plan Phase 3) approved 2026-10-31: T, H, I, J, K, L                            |
+| Overall state     | Phase II merged; T retires the `transfer` switch; open limits under Current boundary      |
+| Immediate focus   | T, then H (`qa:web`) with I (Android helper) alongside                                    |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
@@ -178,9 +178,10 @@ harness terminal fixture, text typed with `adb shell input text`:
 | Running chat, phone width, scales at 0            | 5 frames / 12 events / 0 of 3 dumps; with `clock=frozen`, 0 / 2 / 3 of 3                             |
 | Cleared app, add the harness host                 | Permission dialog takes focus; with `notifications=skip`, no dialog and `push prompt status=skipped` |
 
-Web, daemon-served UI built with the flag: `/settings/about` shows no Transfer row without
+Web, daemon-served UI built with the flag: `/settings/about` showed no Transfer row without
 switches, `preferences-import` with `{"transfer":"receiver"}` in `sessionStorage`, and
-`preferences-export` with `bridge`.
+`preferences-export` with `bridge`. The `transfer` switch was removed in Phase III because the
+transfer flow is being retired.
 
 The planned `updater=on` and `updaterBase` switches were dropped. Every updater call first checks
 that the installed version code follows the fork's encoding and stops with "migration required"
@@ -216,6 +217,7 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
 | ---------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Shared tablet    | Other sessions drive the same guest and harness APK                                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated                                                                    |
 | Upstream drift   | `dev` is rebased onto upstream periodically (645 commits on 2026-10-30), which rewrites SHAs | Cite PR numbers with SHAs; check upstream before each app fix                                                                                                  |
+| Transfer switch  | The preferences transfer flow is being retired (user decision, 2026-10-31)                   | T removes the `transfer` switch; builds that still get it log `debug rejected key=transfer reason=unknown-key`                                                 |
 | Turn batching    | The turn counter relies on the turn's open and close reaching the store as separate updates  | Only the station probe (a 0 ms CLI-sent turn) detects a change; the unit test calls `setState` by hand and cannot. No automated guard                          |
 | CI headroom      | After the rebase, server-2 and server-3 take 219 s and 222 s against the 300 s critical path | Watch each chunk's run; app tests from F and G land in app lanes                                                                                               |
 | App lane noise   | Dev pushes with no app change ran app-2 in 115–204 s (`cdb9e43e5`, `5563b2dc8`, `efb823a20`) | Compare app-1 plus app-2 across several runs before calling a regression; G's two runs (151 s, 156 s) sit inside that range and its new tests take under 0.2 s |
@@ -227,8 +229,6 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
   2026-10-31, one valid try did not submit even after a second tap and one submitted on the first
   (a third try did not open the form). Unexplained; check the modal's tap handling before
   deciding scope.
-- **Transfer path:** the preferences bridge is pinned to version code 11001 and no doc describes
-  it. If the transfer path is going away, the `transfer` switch goes with it.
 - **Linux `sharp` binaries:** whether the lockfile lacks them is inferred from an error message.
 - **Theme loss after SIGTERM:** unflushed storage is unproven; the retry passed.
 - **Git requirement for the desktop dev runner:** appears fixed; `git branch --show-current` no
@@ -280,3 +280,7 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
   deferred to a fork-variant harness build (Phase 3 candidate).
 - G merged as #275 and #276. Phase II complete; the guide now points running-chat dumps at the
   frozen clock and warns that `pm clear` wipes the shared harness.
+- Phase III approved: T (retire the `transfer` switch), H `qa:web`, I Android helper, J
+  `e2e/probe/`, K `desktop:sandbox` (the userData default flip comes back as its own decision),
+  and L, a fork-variant harness build that brings back the updater switch. The phone-debug skill
+  update after I includes a home-manager switch.

@@ -160,12 +160,11 @@ start keeps the permission prompt away. Once the app has asked for the permissio
 shows the prompt again after `adb shell pm clear <package>`. That wipes the app's hosts and
 settings: on the shared tablet, hold the lock, re-add `127.0.0.1:6790` and note it in HARNESS.md.
 
-| Key             | Values                                  | Effect                                                                                                                                                                                                                                                     |
-| --------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trace`         | `terminal-input`, `terminal-input:full` | Native terminal input trace as `[paseo-terminal-trace]` lines; `:full` logs typed text, passwords included, so don't use it on the shared tablet                                                                                                           |
-| `clock`         | `frozen`                                | The running turn's elapsed time stops ticking, so a running chat can be dumped (with the scale recipe)                                                                                                                                                     |
-| `notifications` | `skip`                                  | The notification permission prompt is never shown; logs `push prompt status=skipped`                                                                                                                                                                       |
-| `transfer`      | `bridge`, `receiver`                    | Shows the preferences Transfer row in About on any platform, for UI checks. Its button exports (`bridge`) or opens a file picker before a confirmed import (`receiver`); the transfer itself needs the real packages, so don't run it on the shared tablet |
+| Key             | Values                                  | Effect                                                                                                                                           |
+| --------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `trace`         | `terminal-input`, `terminal-input:full` | Native terminal input trace as `[paseo-terminal-trace]` lines; `:full` logs typed text, passwords included, so don't use it on the shared tablet |
+| `clock`         | `frozen`                                | The running turn's elapsed time stops ticking, so a running chat can be dumped (with the scale recipe)                                           |
+| `notifications` | `skip`                                  | The notification permission prompt is never shown; logs `push prompt status=skipped`                                                             |
 
 ## Desktop and web
 

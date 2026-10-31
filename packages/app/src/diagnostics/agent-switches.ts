@@ -12,8 +12,6 @@ const ALLOWED_VALUES = {
   clock: ["frozen"],
   // Skips the notification permission prompt, which takes focus on a fresh install.
   notifications: ["skip"],
-  // Shows the preferences Transfer row outside the packages that own it.
-  transfer: ["bridge", "receiver"],
 } as const;
 
 export type AgentSwitchKey = keyof typeof ALLOWED_VALUES;
