@@ -25,7 +25,10 @@ under five minutes; this latency budget is advisory and does not block merges.
 
 Routine CI details live in `.github/scripts/ci-routine.mjs`: lanes `quality`,
 `workspaces`, `app-1..2`, `server-1..3` and `integration`. App unit shards run
-three Vitest workers, the other units four. The `required` job requires planner
+three Vitest workers, the other units four. Server shards balance by
+`packages/server/test-durations.json`; when one server lane runs well ahead of
+the others, regenerate it from a dev push with
+`npx tsx scripts/refresh-test-durations.ts` in `packages/server`. The `required` job requires planner
 and routine lane success, then reports the five-minute latency budget from the
 `plan` job's start. Latency overruns and reporting errors do not fail the job.
 Partial reruns retain the old `plan` start time, so their latency can include
