@@ -3978,21 +3978,19 @@ diff --git a/node_modules/react-native-enriched-markdown/android/generated/jni/r
    auto tmp_color = map.find("color");
    if (tmp_color != map.end()) {
 diff --git a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt
-index 56951af..e04228b 100644
+index 56951af..457e5ae 100644
 --- a/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt
 +++ b/node_modules/react-native-enriched-markdown/android/src/main/java/com/swmansion/enriched/markdown/spans/ImageSpan.kt
-@@ -72,7 +72,10 @@ class ImageSpan(
+@@ -69,6 +69,9 @@ class ImageSpan(
+   private var sourceDrawable: Drawable? = null
+   private var onBoxHeightChanged: (() -> Unit)? = null
+ 
++  // The box height this span's line was last laid out with (set in chooseHeight).
++  private var laidOutBoxHeight: Int = -1
++
    private fun intrinsicImageSize(): Pair<Int, Int> {
      sourceDrawable?.let { return it.intrinsicWidth to it.intrinsicHeight }
      val cached = ImageCache.getOriginal(imageUrl) ?: return 0 to 0
--    return cached.width to cached.height
-+    // Match sourceDrawable, whose intrinsic size is density-scaled; 'center' compares widths, so a
-+    // raw-pixel fallback here would measure a different box than the one drawn.
-+    val metrics = context.resources.displayMetrics
-+    return cached.getScaledWidth(metrics) to cached.getScaledHeight(metrics)
-   }
- 
-   // Sizing precedence: aspectRatio > maxHeight > height. Returns the legacy fixed
 @@ -85,7 +88,9 @@ class ImageSpan(
      if (maxHeightPx > 0) {
        val (intrinsicWidth, intrinsicHeight) = intrinsicImageSize()
@@ -4004,6 +4002,27 @@ index 56951af..e04228b 100644
          return minOf(maxHeightPx.toFloat(), fitted).toInt().coerceAtLeast(1)
        }
        return maxHeightPx
+@@ -174,6 +179,12 @@ class ImageSpan(
+       view.invalidate()
+       view.requestLayout()
+     }
++    // A TextView keeps its line metrics until its text is set again, so a block box that changed
++    // after the first layout (sized once the view's width is known) would leave a stale line height
++    // and a measured container that disagrees with it. Re-set the text only in that case.
++    if (!isInline && view.layout != null && laidOutBoxHeight != -1 && laidOutBoxHeight != boxHeight) {
++      view.text = view.text
++    }
+     notifyBoxHeightMayHaveChanged(view)
+   }
+ 
+@@ -279,6 +290,7 @@ class ImageSpan(
+     fm: Paint.FontMetricsInt?,
+   ) {
+     if (fm == null || isInline) return
++    laidOutBoxHeight = boxHeight
+     val currentLineHeight = fm.descent - fm.ascent
+     if (boxHeight > currentLineHeight) {
+       val extraHeight = boxHeight - currentLineHeight
 diff --git a/node_modules/react-native-enriched-markdown/ios/attachments/ENRMImageAttachment.m b/node_modules/react-native-enriched-markdown/ios/attachments/ENRMImageAttachment.m
 index bf2ae56..ed2481b 100644
 --- a/node_modules/react-native-enriched-markdown/ios/attachments/ENRMImageAttachment.m
