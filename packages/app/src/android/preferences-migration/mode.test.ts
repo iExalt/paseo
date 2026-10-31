@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { resolvePreferencesMigrationMode } from "./mode";
 
 const { resolvePreferencesMigrationBridge } = require("../../../app-variant");
@@ -55,5 +55,31 @@ describe("preference migration startup mode", () => {
     expect(resolvePreferencesMigrationBridge("development", false)).toBe(false);
     expect(() => resolvePreferencesMigrationBridge("fork", true)).toThrow();
     expect(() => resolvePreferencesMigrationBridge("production", true)).toThrow();
+  });
+});
+
+describe("the transfer agent switch", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.doUnmock("@/diagnostics/agent-switches-source");
+  });
+
+  async function modeWith(flag: string) {
+    vi.resetModules();
+    vi.stubEnv("EXPO_PUBLIC_PASEO_AGENT_SWITCHES", flag);
+    vi.doMock("@/diagnostics/agent-switches-source", () => ({
+      takeLaunchSwitches: () => ({ transfer: "receiver" }),
+      addSwitchesListener: () => {},
+    }));
+    vi.spyOn(console, "info").mockImplementation(() => {});
+    return (await import("./mode")).preferencesMigrationMode();
+  }
+
+  it("shows the row in a build with agent switches, whatever the package", async () => {
+    expect(await modeWith("1")).toBe("receiver");
+  });
+
+  it("is ignored in other builds", async () => {
+    expect(await modeWith("")).toBeNull();
   });
 });
