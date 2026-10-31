@@ -78,6 +78,7 @@ export class OmpHarness {
       usagePollScheduler?: OmpUsagePollScheduler;
       providerIdleDeadlineMs?: number;
       runtimeEnv?: Record<string, string>;
+      mcpServerTimeoutMs?: number;
     } = {},
   ) {
     this.client = new OmpAgentClient({
@@ -88,6 +89,7 @@ export class OmpHarness {
       noTurnScheduler: options.noTurnScheduler,
       usagePollScheduler: options.usagePollScheduler,
       providerIdleDeadlineMs: options.providerIdleDeadlineMs,
+      mcpServerTimeoutMs: options.mcpServerTimeoutMs,
     });
   }
 
