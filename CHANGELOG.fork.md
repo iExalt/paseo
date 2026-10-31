@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.17.1](https://github.com/iExalt/paseo/compare/paseo-v0.17.0...paseo-v0.17.1) (2026-10-31)
+
+
+### Bug Fixes
+
+* **release:** load upstream 0.14 built-ins and leave the macos-14 brownout ([#296](https://github.com/iExalt/paseo/issues/296)) ([b8e6dac](https://github.com/iExalt/paseo/commit/b8e6dacea1079ad20205a24b8e48b568093f2182))
+* **scripts:** build workspace declarations before a fresh typecheck ([#297](https://github.com/iExalt/paseo/issues/297)) ([6fc0049](https://github.com/iExalt/paseo/commit/6fc00492cfc5769456eca6cbc69b5bab25b29bfa))
+
+
+### Performance Improvements
+
+* **ci:** cut the critical server-unit lane ([#301](https://github.com/iExalt/paseo/issues/301)) ([af16400](https://github.com/iExalt/paseo/commit/af164008178465d345069b7c8c04d05ad4cd403b))
+
 ## [0.17.0](https://github.com/iExalt/paseo/compare/paseo-v0.16.0...paseo-v0.17.0) (2026-10-31)
 
 
