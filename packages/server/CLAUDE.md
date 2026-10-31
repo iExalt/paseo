@@ -86,7 +86,7 @@ oxfmt formats the repo with the root `.oxfmtrc.json`; oxlint lints it with `.oxl
 
 ### Error Handling
 
-- **Fail explicitly** — throw instead of silently returning defaults
+- **Fail explicitly** — throw instead of silently returning defaults. Exception: provider image output. Materializing an image falls back to the provider's copy, or to an "omitted" note, so one unreadable image never fails the whole tool result or history replay (`provider-image-output.ts`)
 - **Typed domain errors** — extend `Error` with structured metadata
 
 ```typescript
