@@ -16,6 +16,7 @@ import {
   parseToolArgs,
   parseToolResult,
   splitPiToolResultImages,
+  withPiReadImageOriginal,
   type PiToolResult,
   type PiTrackedToolCall,
 } from "./tool-call-mapper.js";
@@ -222,7 +223,16 @@ export class PiHistoryMapper {
     // Pull image blocks out of the result so base64 never reaches the tool output, then render
     // each one as an assistant_message markdown image after the tool_call (mirroring the live
     // path and the Claude provider, upstream #1717).
-    const { images, result: splitResult } = splitPiToolResultImages(result);
+    const { images: splitImages, result: splitResult } = splitPiToolResultImages(result);
+    // A saved result's own timestamp guards against a file overwritten after the read; without
+    // one the file cannot be trusted, so keep Pi's copy.
+    const images =
+      typeof message.timestamp === "number"
+        ? withPiReadImageOriginal(splitImages, {
+            toolCall: tracked,
+            observedAt: new Date(message.timestamp),
+          })
+        : splitImages;
     const mapping = this.extensionHost.mapToolCall({
       callId: message.toolCallId,
       toolName: tracked.toolName,
