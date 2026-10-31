@@ -5,6 +5,7 @@ import {
   type BottomAnchorMode,
 } from "./bottom-anchor-controller";
 import type { BottomAnchorTransportBehavior } from "./strategy";
+import { planNativeScrollToBottom } from "./native-scroll-animation";
 
 type MeasurementState = ReturnType<typeof createMeasurementState>;
 
@@ -814,6 +815,65 @@ describe("bottom anchor controller driver", () => {
     });
 
     expect(harness.driver.getSnapshot().mode).toBe("sticky-bottom");
+  });
+  it("stays sticky through an animated jump whose scroll events reach JS late", () => {
+    const harness = createDriverHarness({
+      transportBehavior: { verificationDelayFrames: 2, verificationRetryMode: "recheck" },
+      measurementState: createMeasurementState({
+        containerKey: "native-virtualized",
+        viewportWidth: 1600,
+        viewportHeight: 900,
+        contentHeight: 8000,
+        offsetY: 1300,
+        viewportMeasuredForKey: "native-virtualized",
+        contentMeasuredForKey: "native-virtualized",
+      }),
+    });
+    const metrics = harness.context.measurementState;
+    // Mirrors the native list: it records the offset its scrollToBottom plan reports, and
+    // scroll deltas are measured from the last recorded offset.
+    let recordedOffsetY = metrics.offsetY;
+    harness.setScrollToBottomBehavior(() => {
+      const plan = planNativeScrollToBottom({
+        animated: harness.scrollAttempts.at(-1) ?? false,
+        offsetY: recordedOffsetY,
+        viewportHeight: metrics.viewportHeight,
+        windowSize: 10,
+      });
+      recordedOffsetY = plan.recordedOffsetY;
+      metrics.offsetY = plan.recordedOffsetY;
+      harness.context.nearBottom = plan.recordedOffsetY <= 32;
+    });
+    const reportScroll = (offsetY: number) => {
+      const scrollDelta = offsetY - recordedOffsetY;
+      recordedOffsetY = offsetY;
+      metrics.offsetY = offsetY;
+      harness.context.nearBottom = offsetY <= 32;
+      harness.driver.handleScrollNearBottomChange({
+        nextIsNearBottom: offsetY <= 32,
+        scrollDelta,
+      });
+    };
+
+    harness.driver.detachByUser();
+    harness.driver.requestLocalAnchor({ agentId: "agent-1", reason: "jump-to-bottom" });
+    // The verification frames pass before the animation's first scroll event reaches JS.
+    for (let frame = 0; frame < 5; frame += 1) harness.scheduler.flushFrame();
+    expect(harness.scrollAttempts).toEqual([true]);
+    for (const offsetY of [1200, 700, 200]) reportScroll(offsetY);
+    expect(harness.driver.getSnapshot().mode).toBe("sticky-bottom");
+
+    reportScroll(0);
+    harness.scheduler.flushAll();
+    expect(harness.driver.getSnapshot()).toMatchObject({
+      mode: "sticky-bottom",
+      pendingRequest: null,
+    });
+
+    // A turn sent from another client grows the live head without a local request.
+    const attemptsBeforeTurn = harness.scrollAttempts.length;
+    harness.driver.prepareForStickyContentChange();
+    expect(harness.scrollAttempts.length).toBe(attemptsBeforeTurn + 1);
   });
 });
 

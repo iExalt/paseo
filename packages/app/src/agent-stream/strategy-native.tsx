@@ -37,7 +37,7 @@ import {
   planScrollToIndexRetry,
   READING_VIEWABILITY_CONFIG,
 } from "./reading-anchor";
-import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
+import { planNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { scrollOffsetForDelta } from "@/find-highlight/reveal";
@@ -301,21 +301,18 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   const scrollToBottom = useCallback(
     (animated: boolean) => {
-      programmaticScrollEventBudgetRef.current = 3;
-      flatListRef.current?.scrollToOffset({
-        offset: 0,
-        animated:
-          animated &&
-          shouldAnimateNativeScrollToBottom({
-            offsetY: scrollOffsetYRef.current,
-            viewportHeight: streamViewportMetricsRef.current.viewportHeight,
-            windowSize: NATIVE_STREAM_WINDOW_SIZE,
-          }),
+      const plan = planNativeScrollToBottom({
+        animated,
+        offsetY: scrollOffsetYRef.current,
+        viewportHeight: streamViewportMetricsRef.current.viewportHeight,
+        windowSize: NATIVE_STREAM_WINDOW_SIZE,
       });
-      scrollOffsetYRef.current = 0;
+      programmaticScrollEventBudgetRef.current = 3;
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: plan.animated });
+      scrollOffsetYRef.current = plan.recordedOffsetY;
       streamViewportMetricsRef.current = {
         ...streamViewportMetricsRef.current,
-        offsetY: 0,
+        offsetY: plan.recordedOffsetY,
       };
       onNearBottomChange(true);
     },
