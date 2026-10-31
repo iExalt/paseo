@@ -254,7 +254,7 @@ REACT_NATIVE_PACKAGER_HOSTNAME=localhost \
 
 This is the Android counterpart of the iOS local-simulator flow in [development.md](development.md): on iOS the simulator shares the Mac's loopback so `localhost:<port>` works directly; on Android you need `10.0.2.2` or `adb reverse`.
 
-## Inverted timeline selection
+## Inverted timelines
 
 Android focus and selection visibility requests must not reposition inverted timelines. The
 `modules/paseo-scroll` package keeps React Native's scroll manager interface and returns zero for
@@ -262,6 +262,16 @@ child-reveal scroll calculations when the view's transform matrix inverts the ve
 Native's Android list uses `scale: -1`, which decomposes into a 180-degree rotation with positive
 `scaleY`; checking the scale property alone misses it. Dragging and explicit scroll
 commands still work; non-inverted scroll views keep Android's default behavior.
+
+Android applies mouse-wheel and rotary scrolls in content coordinates, so in an inverted list
+they run backwards on screen. The same package negates the vertical scroll axes of those events
+when the matrix inverts the vertical axis. Touch drags need no change: their coordinates already
+pass through the transform.
+
+The package's `android/src/androidTest` suite covers both behaviors. Run it with Gradle's
+`connectedDebugAndroidTest` task for `:paseo-scroll`, or install its test APK
+(`:paseo-scroll:assembleDebugAndroidTest`) and run `am instrument -w
+sh.paseo.scroll.test/androidx.test.runner.AndroidJUnitRunner`. No CI lane runs it.
 
 Register this package before React Native's core package through its Expo config plugin. Normal
 Android builds use the prebuilt `react-android` library, so patching Java under `node_modules` does
