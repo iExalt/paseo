@@ -70,7 +70,10 @@ describe("fork update store", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     harness.launchForkUpdateInstaller.mockRejectedValueOnce(new Error("INSTALL_FAILED"));
     await store.updateToPendingForkRelease();
-    expect(store.useForkUpdateStore.getState().status).toBe("error");
+    expect(store.useForkUpdateStore.getState()).toMatchObject({
+      status: "error",
+      failure: "install",
+    });
     expect(info).toHaveBeenCalledWith(
       '[paseo-agent] update failed status=installing reason="Error: INSTALL_FAILED"',
     );
@@ -108,13 +111,19 @@ describe("fork update store", () => {
       ),
     );
     await store.checkForForkUpdateNow({ userInitiated: true });
-    expect(store.useForkUpdateStore.getState()).toMatchObject({ status: "error", offline: true });
+    expect(store.useForkUpdateStore.getState()).toMatchObject({
+      status: "error",
+      failure: "offline",
+    });
 
     harness.checkForForkUpdate.mockRejectedValue(
       new Error("Release manifest signature is invalid."),
     );
     await store.checkForForkUpdateNow({ userInitiated: true });
-    expect(store.useForkUpdateStore.getState()).toMatchObject({ status: "error", offline: false });
+    expect(store.useForkUpdateStore.getState()).toMatchObject({
+      status: "error",
+      failure: "release",
+    });
   });
 
   it("keeps the last result when a background check fails", async () => {
