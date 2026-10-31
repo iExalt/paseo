@@ -199,7 +199,7 @@ The app runs on iOS, Android, web (browser), and web (Electron desktop). Code is
 | Use a native-only API (Haptics, push tokens, camera)           | `if (isNative)`                                                           |
 | Use an Electron bridge (file dialog, titlebar, updates)        | `if (getIsElectron())`                                                    |
 | Switch layout between phone and tablet/desktop                 | `useIsCompactFormFactor()`                                                |
-| Show something on hover, always-visible on native              | `isHovered \                                                              | \   | isNative \ | \   | isCompact` (hover only works on web) |
+| Show something on hover, always-visible on native              | `isHovered \|\| isNative \|\| isCompact` (hover only works on web)        |
 | Gate to iOS or Android specifically                            | `Platform.OS === "ios"` / `Platform.OS === "android"` (rare, keep inline) |
 
 ### Rules
