@@ -301,7 +301,7 @@ switch that would add something, cannot work: the native module fetches only htt
 hosts on port 443, redirects included (`PaseoForkUpdatesModule.kt:39-44`), and the guest has
 no network. The helper's `open` named the activity `sh.paseo.MainActivity`, which the fork
 package does not have; it is now package-relative. The error row blames verification for what
-is a DNS failure; not changed here.
+was a DNS failure; it now reads "Could not reach GitHub" for network errors (follow-up PR).
 
 Follow-up, same day: a GitHub-only CONNECT proxy in the pod (port 443 to the native allowlist's
 hosts, behind `adb reverse`) set as the guest's `global_http_proxy_*` did not help. The check
@@ -349,10 +349,6 @@ them either. A full update run needs tap devices, which need `NET_ADMIN` in the 
 
 ## Open questions
 
-- **Updater error copy:** the fork updater shows "Could not verify the published fork update" for
-  a DNS failure (L). The copy is fork code (`packages/app/src/android/fork-updates`, #262);
-  telling network errors (unknown host, connect, timeout) apart from verification failures would
-  fix it.
 - **Connect with the keyboard up:** at phone width, tapping Connect while the host field has the
   keyboard up sometimes does not submit the direct form. Seen once in E; in the retry on
   2026-10-31, one valid try did not submit even after a second tap and one submitted on the first
@@ -439,3 +435,5 @@ them either. A full update run needs tap devices, which need `NET_ADMIN` in the 
   tablet; the build was then uninstalled.
 - L merged as #286. A GitHub-only proxy did not give the guest's updater network, so a full
   update run needs tap devices in the pod. Phase III complete.
+- Follow-ups approved: the updater error copy, the CLAUDE.md platform-gating row, the
+  unpackaged Electron log path, and network for the tablet.

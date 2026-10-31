@@ -21,6 +21,7 @@ function getStatusMessage(
   update: VerifiedForkUpdate | null,
   downloadedBytes: number,
   downloadTotalBytes: number,
+  offline: boolean,
 ): string {
   const version = update?.manifest.version;
   switch (status) {
@@ -53,7 +54,9 @@ function getStatusMessage(
         defaultValue: "Install the fork 0.1.0 or newer manually before using fork updates.",
       });
     case "error":
-      return t("settings.about.forkUpdates.failed");
+      return t(
+        offline ? "settings.about.forkUpdates.offline" : "settings.about.forkUpdates.failed",
+      );
   }
 }
 
@@ -87,6 +90,7 @@ export function ForkAndroidUpdateRow() {
   const apkPath = useForkUpdateStore((state) => state.apkPath);
   const downloadedBytes = useForkUpdateStore((state) => state.downloadedBytes);
   const downloadTotalBytes = useForkUpdateStore((state) => state.downloadTotalBytes);
+  const offline = useForkUpdateStore((state) => state.offline);
 
   useEffect(() => startForkUpdates(), []);
   const onPress = useCallback(() => {
@@ -98,7 +102,7 @@ export function ForkAndroidUpdateRow() {
   }
 
   const statusText = forkUpdatesNative
-    ? getStatusMessage(t, status, update, downloadedBytes, downloadTotalBytes)
+    ? getStatusMessage(t, status, update, downloadedBytes, downloadTotalBytes, offline)
     : t("settings.about.forkUpdates.failed");
   const busy = status === "checking" || status === "downloading" || status === "installing";
   const buttonLabel = getActionLabel(t, status, Boolean(apkPath));
