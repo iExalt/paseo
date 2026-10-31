@@ -101,6 +101,22 @@ describe("fork update store", () => {
     });
   });
 
+  it("tells an unreachable GitHub apart from a release that fails its checks", async () => {
+    harness.checkForForkUpdate.mockRejectedValue(
+      new Error(
+        "Call to function 'PaseoForkUpdates.fetchText' has been rejected.\n→ Caused by: java.net.UnknownHostException: Unable to resolve host \"api.github.com\"",
+      ),
+    );
+    await store.checkForForkUpdateNow({ userInitiated: true });
+    expect(store.useForkUpdateStore.getState()).toMatchObject({ status: "error", offline: true });
+
+    harness.checkForForkUpdate.mockRejectedValue(
+      new Error("Release manifest signature is invalid."),
+    );
+    await store.checkForForkUpdateNow({ userInitiated: true });
+    expect(store.useForkUpdateStore.getState()).toMatchObject({ status: "error", offline: false });
+  });
+
   it("keeps the last result when a background check fails", async () => {
     await store.checkForForkUpdateNow({ userInitiated: false });
     harness.checkForForkUpdate.mockRejectedValue(new Error("offline"));

@@ -42,6 +42,8 @@ interface ForkUpdateState {
   // The transfer size the native download reports; the `.gz` sidecar is smaller than the
   // APK. 0 until the first progress event.
   downloadTotalBytes: number;
+  // Whether the last failure was GitHub being unreachable rather than a release failing checks.
+  offline: boolean;
 }
 
 const INITIAL_STATE: ForkUpdateState = {
@@ -51,6 +53,7 @@ const INITIAL_STATE: ForkUpdateState = {
   installedVersion: null,
   downloadedBytes: 0,
   downloadTotalBytes: 0,
+  offline: false,
 };
 
 // Module state, not component state: the result of a check outlives the About screen and
@@ -103,10 +106,16 @@ let beforeInstallerVersion: string | null = null;
 let installerPending = false;
 let permissionSettingsPending = false;
 
+// Native fetches reject with the Java exception's name in the message; a JS fetch with this one.
+const NETWORK_ERROR =
+  /\b(?:UnknownHostException|ConnectException|NoRouteToHostException|SocketTimeoutException)\b|Network request failed/;
+
 function fail(error: unknown): void {
-  agentLog("update", "failed", { status: getState().status, reason: describeError(error) });
+  const reason = describeError(error);
+  agentLog("update", "failed", { status: getState().status, reason });
   setState({
     status: error instanceof ForkManualMigrationRequired ? "migration-required" : "error",
+    offline: NETWORK_ERROR.test(reason),
   });
 }
 
@@ -274,7 +283,7 @@ export async function installDownloadedForkUpdate(): Promise<void> {
   } catch (error) {
     installerPending = false;
     agentLog("update", "failed", { status: "installing", reason: describeError(error) });
-    setState({ status: "error" });
+    setState({ status: "error", offline: false });
   }
 }
 
