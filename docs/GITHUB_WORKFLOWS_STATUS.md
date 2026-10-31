@@ -9,8 +9,8 @@ candidate pipeline and the campaign that built it live in git history (before
 `ci: delete the retired release candidate pipeline`) and in
 [complete-campaigns](complete-campaigns/GITHUB_WORKFLOWS_PLAN.md).
 
-CI stays free: hosted runners only, no paid services. Blocking PR CI must finish
-in under five minutes.
+CI stays free: hosted runners only, no paid services. Routine PR CI targets
+under five minutes; this latency budget is advisory and does not block merges.
 
 ## Workflows
 
@@ -25,11 +25,12 @@ in under five minutes.
 
 Routine CI details live in `.github/scripts/ci-routine.mjs`: lanes `quality`,
 `workspaces`, `app-1..2`, `server-1..3` and `integration`. App unit shards run
-three Vitest workers, the other units four. The `required` job also enforces
-the five-minute latency budget from the `plan` job's start. Because that budget
-covers the whole attempt, use **Re-run all jobs**, not "Re-run failed jobs",
-when a lane flakes: a partial rerun keeps the old `plan` start time and fails
-the latency gate.
+three Vitest workers, the other units four. The `required` job requires planner
+and routine lane success, then reports the five-minute latency budget from the
+`plan` job's start. Latency overruns and reporting errors do not fail the job.
+Partial reruns retain the old `plan` start time, so their latency can include
+time between attempts. Use **Re-run all jobs** for a fresh latency measurement;
+**Re-run failed jobs** remains sufficient to retry failed checks.
 
 Dev pushes refresh the installed dependency cache (`install-cache`); PR lanes
 only restore it.
