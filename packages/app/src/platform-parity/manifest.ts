@@ -110,6 +110,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "equivalent",
       note: "Web reads DOM key events; native gets hardware keys from the PaseoHardwareKeyboard module",
     },
+    "notification-dismissal/start-presented": {
+      kind: "equivalent",
+      note: "Native mirrors pushes in the notification shade; web and desktop track notifications as they send them",
+    },
     "notification-open/source": {
       kind: "equivalent",
       note: "Each platform reports notification taps from its own source: expo-notifications, Electron, or the web click event",
