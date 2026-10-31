@@ -33,14 +33,14 @@ function run(command, args, cwd) {
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
-// Prebuild copies the Firebase file into the generated project; remove it whatever happens.
+// Prebuild copies the Firebase file into the generated project; remove it on the way out.
 const firebaseCopy = path.join(app, "android/app/google-services.json");
 process.on("exit", () => {
   if (fork) rmSync(firebaseCopy, { force: true });
 });
-// Without listeners, an interrupt or a timeout's SIGTERM would end the script before "exit".
-process.on("SIGINT", () => process.exit(130));
-process.on("SIGTERM", () => process.exit(143));
+// Ctrl-C reaches the running step too, so run() exits and this handler still runs. A signal sent
+// to this process alone ends it at once and skips the cleanup; listeners would only delay that
+// until the step returns, because spawnSync blocks them.
 run("npm", ["run", "build:app-deps"], root);
 run("npx", ["expo", "prebuild", "--platform", "android", "--no-install"], app);
 // Gradle does not track Metro's environment flags. Always regenerate the JS artifact
