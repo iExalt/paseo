@@ -186,7 +186,11 @@ export async function sendOsNotification(payload: OsNotificationPayload): Promis
     getDismissalTracker().track(agent, agent.reason);
   }
   const granted = await ensureNotificationPermission();
-  if (key && pendingWebNotifications.get(key) === pending) pendingWebNotifications.delete(key);
+  if (key) {
+    // A newer notification for the thread, sent during the wait, owns the slot and its entry.
+    if (pendingWebNotifications.get(key) !== pending) return false;
+    pendingWebNotifications.delete(key);
+  }
   if (!granted) {
     if (key) getDismissalTracker().forget(key);
     return false;

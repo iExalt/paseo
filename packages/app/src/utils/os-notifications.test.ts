@@ -368,6 +368,17 @@ describe("sendOsNotification", () => {
     await first;
     expect(created).toHaveLength(0);
 
+    // Two sends for the thread wait on the same prompt; a dismissal resolves both.
+    MockNotification.permission = "default";
+    const older = sendOsNotification({ title: "Older", data });
+    const newer = sendOsNotification({ title: "Newer", data });
+    await Promise.resolve();
+    dismissal.dismiss([key]);
+    grant("granted");
+    MockNotification.permission = "granted";
+    await Promise.all([older, newer]);
+    expect(created).toHaveLength(0);
+
     await sendOsNotification({ title: "Unread", data });
     expect(created).toHaveLength(1);
     created[0]?.closeListeners.forEach((listener) => listener());
