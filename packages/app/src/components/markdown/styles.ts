@@ -36,7 +36,8 @@ export function createMarkdownStyles(
     compact = false,
     muted = false,
     blockGap,
-  }: { compact?: boolean; muted?: boolean; blockGap: number },
+    imageMaxHeight = 560,
+  }: { compact?: boolean; muted?: boolean; blockGap: number; imageMaxHeight?: number },
 ): { markdownStyle: MarkdownStyle; selectionColor: string; containerStyle?: typeof WEB_CONTAINER } {
   const fontSize = compact ? theme.fontSize.base : theme.fontSize.content;
   // Every block is followed by the same gap; the library drops it after the last block.
@@ -124,7 +125,7 @@ export function createMarkdownStyles(
       // Fit the column width and cap the height; a fixed height shrank wide screenshots to a
       // third of the column on tablets. A constant cap keeps window resizes from restyling messages.
       // "center" never scales up; the local library patch shrinks its box to a small image.
-      image: { ...block, maxHeight: 560, resizeMode: "center", borderRadius: 8 },
+      image: { ...block, maxHeight: imageMaxHeight, resizeMode: "center", borderRadius: 8 },
       thematicBreak: { ...block, color: theme.colors.border, height: 1 },
     },
   };

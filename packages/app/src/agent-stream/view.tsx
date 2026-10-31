@@ -147,16 +147,34 @@ function BottomOverlayInset({ height }: { height: number }) {
 function renderPendingPermissionsNode(input: {
   pendingPermissions: PendingPermission[];
   client: DaemonClient | null;
+  serverId: string;
+  workspaceRoot: string;
+  onOpenWorkspaceFile: (target: InlinePathTarget, disposition: OpenFileDisposition) => void;
+  toast?: ToastApi | null;
 }): ReactNode {
   if (input.pendingPermissions.length === 0) {
     return null;
   }
+  // Question Markdown resolves relative image and file paths against the agent's cwd, as its
+  // replies do; the workspace screen's own resolver uses the workspace directory instead.
   return (
-    <View style={stylesheet.permissionsContainer}>
-      {input.pendingPermissions.map((permission) => (
-        <PermissionRequestCard key={permission.key} permission={permission} client={input.client} />
-      ))}
-    </View>
+    <AssistantFileLinkResolverProvider
+      client={input.client}
+      serverId={input.serverId}
+      workspaceRoot={input.workspaceRoot}
+      onOpenWorkspaceFile={input.onOpenWorkspaceFile}
+      toast={input.toast}
+    >
+      <View style={stylesheet.permissionsContainer}>
+        {input.pendingPermissions.map((permission) => (
+          <PermissionRequestCard
+            key={permission.key}
+            permission={permission}
+            client={input.client}
+          />
+        ))}
+      </View>
+    </AssistantFileLinkResolverProvider>
   );
 }
 
@@ -1038,8 +1056,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         renderPendingPermissionsNode({
           pendingPermissions: pendingPermissionItems,
           client,
+          serverId: resolvedServerId,
+          workspaceRoot,
+          onOpenWorkspaceFile: handleInlinePathPress,
+          toast,
         }),
-      [client, pendingPermissionItems],
+      [
+        client,
+        handleInlinePathPress,
+        pendingPermissionItems,
+        resolvedServerId,
+        toast,
+        workspaceRoot,
+      ],
     );
     const turnFooterNode = useMemo(
       () =>
