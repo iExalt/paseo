@@ -102,8 +102,9 @@ $A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
   `direct-password-input`; Enter in the host field moves to the port, and both select their text
   on focus. Open it with `paseo://settings/general?addHost=1`, then tap `add-host-method-direct`.
 - The fork updater's row in About is `fork-android-update-row`, with `fork-android-update-status`
-  and `fork-android-update-action`, in fork builds only. On the tablet, which has no network, a
-  check ends in the error state; a failed background check leaves the row idle.
+  and `fork-android-update-action`, in fork builds only. The tablet guest has network, so a fork
+  build there checks and downloads real releases; boot it with `CF_NET=0` for the offline error
+  state. A failed background check leaves the row idle.
 - To check a phone-width layout on the tablet, run `adb shell wm size 1080x2400` and
   `adb shell wm density 420`; undo with `wm size reset` and `wm density reset` before releasing the
   device.

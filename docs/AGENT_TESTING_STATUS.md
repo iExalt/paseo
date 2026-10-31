@@ -14,7 +14,7 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream; Phase III ends at `bb6460ca5`   |
 | Current phase     | Phase III (plan Phase 3) complete 2026-10-31: T, H, I, J, K, K2, L                            |
 | Overall state     | Phases I–III merged; Phase 4 waits for its areas to be touched; limits under Current boundary |
-| Immediate focus   | None approved; a full update run needs a guest network interface (user decision)              |
+| Immediate focus   | None approved; the approved follow-ups and the tablet network are done                        |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`)     |
 
 ### Routine CI baseline
@@ -311,6 +311,29 @@ itself. The settings, the reverse and the install were removed afterwards. Downl
 the system DownloadManager, which waits for a system network, so a proxy could not have carried
 them either. A full update run needs tap devices, which need `NET_ADMIN` in the pod spec.
 
+### Tablet network (N), 2026-10-31
+
+At the user's choice, the dev pod's container gained `NET_ADMIN`, `NET_RAW` and `/dev/net/tun`
+(infra repo, flux-apps `a92221e`, bumped in `ddfacf9`). The guest now reaches the internet over
+Wi-Fi: Cuttlefish's OpenWRT VM serves VirtWifi, bridged on `cvd-wbr` and masqueraded out of the
+pod, with guest DNS sent to the cluster resolver. `cf-tablet start` builds the taps and NAT and
+connects Wi-Fi by default (`CF_NET=0` restores the offline guest with airplane mode). Cellular
+stays connecting and Ethernet gets no DHCP; neither is needed. Over 22 minutes with network,
+system_server did not restart, so the airplane-mode workaround is now only for `CF_NET=0`.
+
+The restart wiped the pod's `/tmp/t3`. It came back from a 16 GB archive on the CephFS home
+volume, which from this station flushes and reads at about 3 MB/s (a Tailscale relay to the
+storage hosts). Splitting it into three zstd archives (5.1 GB) from a pod on a storage host cut
+the restore to 31 minutes. HARNESS.md records the restore and the rule to sync before a restart.
+
+| Run                                  | Result                                                                                                    |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| Locally signed 0.15.0 fork build     | Found 0.16.0. The 2 MB zstd delta failed its checksum (different base APK); the 44.6 MB gzip verified     |
+| Its Install                          | Android rejected the session: `INSTALL_FAILED_UPDATE_INCOMPATIBLE` (signers differ), as expected          |
+| Row after the rejection              | "Could not verify the published fork update.", although verification passed; fixed in #292                |
+| Published 0.15.0 release from GitHub | Verified 0.16.0 from the 2 MB delta and opened Android's installer (`INSTALL_PACKAGE` intent, not tapped) |
+| Afterwards                           | `sh.paseo.iexalt` uninstalled; the installer and Settings force-stopped; `sh.paseo` untouched             |
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -319,15 +342,15 @@ them either. A full update run needs tap devices, which need `NET_ADMIN` in the 
 - A running agent's open chat cannot be dumped on installed builds, whatever the animation
   scales: its elapsed time changes every second. G's frozen clock covers flag-gated builds only.
 - Dump failures during loading were not reproduced on the tablet, and the phone was not measured.
-- A real pairing (valid offer, connected host) cannot run on the tablet: the guest has no
-  network and the harness daemon has no relay. The pass covers routing and the failure path; the
+- A real pairing (valid offer, connected host) has not run on the tablet: the harness daemon
+  has no relay, though the guest now has network. The pass covers routing and the failure path; the
   redirect after a connected import is unchanged listener code and untested.
 - Whether the soft keyboard stays up after Enter moves focus to the port is unchecked on a phone.
-- A fork build's update check, its row and its offline failure ran on the tablet (L), but no
-  release fetch, download or install did: the guest has no network interface, a proxy does not
-  reach the app without one, and the native updater accepts only GitHub over https. A full run
-  against a real fork release, which the signer check should reject, needs tap devices in the
-  guest (`NET_ADMIN` in the pod spec).
+- The fork updater's check, delta and full downloads, verification and Android's signer
+  rejection ran live on the tablet (N). A completed install did not: the release's installer
+  dialog was not tapped, and the shell cannot make the app its own installer
+  (`cmd package set-installer` throws `SecurityException`), so a prompt-free self-update needs a
+  device where a release installed itself. The session-install success path is untested.
 - `agent-adb.py` ran only on the tablet; it is unchecked on a phone (next phone session).
 - `connectToPaseoRenderer` is not used by the existing desktop e2e scripts
   (`browser-tabs.e2e.mjs`, `packaged-app-smoke.js`, `verify-electron-cdp.mjs`); adopt it when they
@@ -438,3 +461,9 @@ them either. A full update run needs tap devices, which need `NET_ADMIN` in the 
   update run needs tap devices in the pod. Phase III complete.
 - Follow-ups approved: the updater error copy, the CLAUDE.md platform-gating row, the
   unpackaged Electron log path, and network for the tablet.
+- Follow-ups merged: #288 (network errors read "Could not reach GitHub"), #289 (CLAUDE.md row),
+  #290 (unpackaged Electron log path), #291 (`qa:web` checks node-pty's native build). The user
+  approved changing the shared dev pod; the tablet guest now has network (N above). The live
+  update run found install rejections blamed on verification: #292. In the infra repo,
+  `mise run check` failed only at check-inventory (ansible-core under Python 3.15 on the Mac,
+  unrelated); check-flux, lint-markdown and check-submodules passed.
