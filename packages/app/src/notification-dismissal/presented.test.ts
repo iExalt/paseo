@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { agentNotificationKey } from "./key";
 import {
   createPresentedNotificationSync,
@@ -74,6 +74,43 @@ describe("presented notification sync", () => {
     shade.length = 0;
     await sync.sync();
     expect(forgotten).toEqual([KEY]);
+  });
+
+  it("runs one sync at a time, so a late older listing cannot forget a newer push", async () => {
+    const tracked: string[] = [];
+    const forgotten: string[] = [];
+    const listings: Array<(shade: PresentedNotification[]) => void> = [];
+    const sync = createPresentedNotificationSync({
+      api: {
+        list: () => new Promise((resolve) => listings.push(resolve)),
+        dismiss: async () => undefined,
+      },
+      tracker: () => ({
+        track: (identity) => {
+          tracked.push(identity.agentId);
+          return agentNotificationKey(identity);
+        },
+        forget: (key) => forgotten.push(key),
+        reconcile: () => undefined,
+        dispose: () => undefined,
+      }),
+    });
+    const first = sync.sync();
+    const second = sync.sync();
+    expect(listings).toHaveLength(1);
+    listings[0]?.([]);
+    await vi.waitFor(() => expect(listings).toHaveLength(2));
+    // The queued pass lists again and sees the push that arrived meanwhile.
+    listings[1]?.([push("x", 500)]);
+    await Promise.all([first, second]);
+    expect(tracked).toEqual(["agent"]);
+    expect(forgotten).toEqual([]);
+  });
+
+  it("waits for both conditions when a question and a turn end arrive in the same millisecond", async () => {
+    const { sync, tracked } = setup([push("a", 100, "finished"), push("b", 100, "permission")]);
+    await sync.sync();
+    expect(tracked).toEqual([{ reason: "unknown", createdAt: 100 }]);
   });
 
   it("converts iOS delivery seconds to milliseconds", () => {

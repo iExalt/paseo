@@ -1,4 +1,8 @@
-import { agentNotificationKey, readAgentNotificationData } from "./key";
+import {
+  agentNotificationKey,
+  readAgentNotificationData,
+  type TrackedNotificationReason,
+} from "./key";
 import type { NotificationDismissalTracker } from "./tracker";
 
 export interface PresentedNotification {
@@ -38,7 +42,7 @@ export function createPresentedNotificationSync(input: {
       string,
       {
         identity: { serverId: string; agentId: string };
-        reason: "finished" | "error" | "permission";
+        reason: TrackedNotificationReason;
         deliveredAt: number;
       }
     >();
@@ -56,31 +60,60 @@ export function createPresentedNotificationSync(input: {
         });
         continue;
       }
-      // The newest notification decides what the thread is waiting on.
+      // The newest notification decides what the thread is waiting on. A tie can't tell a
+      // question from a turn end, so it waits for both to clear.
       if (notification.deliveredAt > thread.deliveredAt) {
         thread.deliveredAt = notification.deliveredAt;
         thread.reason = agent.reason;
+      } else if (
+        notification.deliveredAt === thread.deliveredAt &&
+        thread.reason !== agent.reason
+      ) {
+        thread.reason = "unknown";
       }
     }
     return threads;
   }
 
+  async function syncOnce(): Promise<void> {
+    const threads = await readThreads();
+    const tracker = input.tracker();
+    for (const [key, thread] of threads) {
+      if ((trackedAt.get(key) ?? -1) >= thread.deliveredAt) continue;
+      tracker.track(thread.identity, thread.reason, { createdAt: thread.deliveredAt });
+      trackedAt.set(key, thread.deliveredAt);
+    }
+    // Cleared by the user: nothing left to dismiss for the thread.
+    for (const key of trackedAt.keys()) {
+      if (threads.has(key)) continue;
+      trackedAt.delete(key);
+      tracker.forget(key);
+    }
+  }
+
+  // One sync at a time: an older listing finishing late would forget a push a newer one tracked.
+  let running: Promise<void> | null = null;
+  let rerun = false;
+  function sync(): Promise<void> {
+    if (running) {
+      rerun = true;
+      return running;
+    }
+    running = (async () => {
+      try {
+        do {
+          rerun = false;
+          await syncOnce();
+        } while (rerun);
+      } finally {
+        running = null;
+      }
+    })();
+    return running;
+  }
+
   return {
-    async sync() {
-      const threads = await readThreads();
-      const tracker = input.tracker();
-      for (const [key, thread] of threads) {
-        if ((trackedAt.get(key) ?? -1) >= thread.deliveredAt) continue;
-        tracker.track(thread.identity, thread.reason, { createdAt: thread.deliveredAt });
-        trackedAt.set(key, thread.deliveredAt);
-      }
-      // Cleared by the user: nothing left to dismiss for the thread.
-      for (const key of trackedAt.keys()) {
-        if (threads.has(key)) continue;
-        trackedAt.delete(key);
-        tracker.forget(key);
-      }
-    },
+    sync,
     async dismiss(keys) {
       const cutoffs = new Map(keys.map((key) => [key, trackedAt.get(key) ?? -1]));
       for (const key of keys) trackedAt.delete(key);
