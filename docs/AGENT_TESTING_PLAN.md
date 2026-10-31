@@ -77,7 +77,7 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
 ## Phase 3: one-command entry points for agents (each M; depends on 3, 8)
 
-**Approved 2026-10-31** as chunks T (retire the `transfer` switch, since the transfer flow is being retired), H (item 11), I (item 13), J (item 14), K (item 12) and L (a fork-variant harness build, so the updater switch from item 9 can come back). Making dev Electron isolate userData by default stays out of K and returns as its own decision with K's evidence.
+**Approved 2026-10-31** as chunks T (retire the `transfer` switch, since the transfer flow is being retired), H (item 11), I (item 13), J (item 14), K (item 12) and L (a fork-variant harness build, so the updater switch from item 9 can come back). Making dev Electron isolate userData by default stays out of K and returns as its own decision with K's evidence. L was narrowed on 2026-10-31: the native updater fetches only https from GitHub and the tablet guest has no network, so L runs the fork build offline and brings back no switch; giving the guest network for a full update run is its approved follow-up.
 
 - [ ] **11. `qa:web`.**
   - **What it runs:** an isolated, minimal daemon serving the web UI on a free port, printing `{url, serverId}`.

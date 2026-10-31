@@ -19,9 +19,11 @@ import time
 import xml.etree.ElementTree as ElementTree
 
 # The fork package is the user's own app on their phone. Commands that drive, restart or
-# reconfigure the app refuse it unless --allow-user-app is passed; reading it is fine.
+# reconfigure the app refuse it unless --allow-user-app is passed or AGENT_ADB_ALLOW_PACKAGES
+# names it; reading it is fine.
 USER_APP_PACKAGES = {"sh.paseo.iexalt"}
-MAIN_ACTIVITY = "sh.paseo.MainActivity"
+# Relative to the package: sh.paseo.MainActivity, sh.paseo.iexalt.MainActivity, ...
+MAIN_ACTIVITY = ".MainActivity"
 DUMP_PATH = "/sdcard/agent-adb.xml"
 FLAGS = ("selected", "focused", "checked")
 FOCUS_RE = re.compile(r"mCurrentFocus=(?:Window\{\S+ \S+ ([^}\s]+)\}|(null))")
@@ -94,8 +96,13 @@ def parse_turns(logcat_text, agent_id):
     return last
 
 
+def allowed_packages():
+    """Packages named in AGENT_ADB_ALLOW_PACKAGES, for a device where they are test installs."""
+    return {name.strip() for name in os.environ.get("AGENT_ADB_ALLOW_PACKAGES", "").split(",") if name.strip()}
+
+
 def check_package(package, allow_user_app):
-    if package in USER_APP_PACKAGES and not allow_user_app:
+    if package in USER_APP_PACKAGES and not allow_user_app and package not in allowed_packages():
         raise Failure(
             f"Refusing to drive {package}: it is the user's own app. "
             "Pass --allow-user-app only with the user's go-ahead.",

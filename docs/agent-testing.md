@@ -19,7 +19,10 @@ isolated daemon and app instance.
 | `development` | `sh.paseo.debug`  | `sh.paseo.debug/.MainActivity`  |
 | `fork`        | `sh.paseo.iexalt` | `sh.paseo.iexalt/.MainActivity` |
 
-`npm run build:apk:arm64` builds `production`. All three register `paseo://`, so always name the
+`npm run build:apk:arm64` builds `production`. `npm run build:apk:arm64 -- --fork` builds `fork`,
+the only variant with the fork updater, into `artifacts/paseo-fork-arm64.apk`; pass
+`GOOGLE_SERVICES_FILE_FORK` (an absolute path to a Firebase JSON for `sh.paseo.iexalt`; a
+placeholder is fine without push) and `FIREBASE_PROJECT_ID_FORK=paseo-18157`. All three register `paseo://`, so always name the
 package: `adb shell am start -a android.intent.action.VIEW -d '<url>' <package>`. Without it,
 a device with two variants shows a chooser.
 
@@ -66,7 +69,8 @@ $A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
 - `tap`, `type` and `key` send input only while the package has focus, so they never reach the
   launcher, Settings or a permission dialog.
 - `tap`, `type`, `key`, `open` and `switch` refuse the user's own app, `sh.paseo.iexalt`, unless
-  `--allow-user-app` is passed with the user's go-ahead; `tap` checks focus again just before it
+  `--allow-user-app` is passed with the user's go-ahead, or `AGENT_ADB_ALLOW_PACKAGES` names it
+  (comma-separated). Set the variable only on a device where the fork is a test install; `tap` checks focus again just before it
   taps. Reading commands (`dump`, `focus`, `wait`, `turns`) work on any package.
 - `type` sends ASCII only: `input text` drops other characters on most Android builds.
 - `turns` prints `unknown` (exit 3) when the agent has no line left in the log buffer, rather
