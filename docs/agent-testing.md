@@ -79,8 +79,9 @@ It waits for about a second without accessibility events, so a running agent blo
   (`turn-working-elapsed`) changes every second. Dump from another screen, wait for the turn to
   end (`paseo wait`), or take a screenshot.
 
-With the app idle, or an agent running on another screen, dumps succeed at default scales,
-including during a cold start. The tablet results are in
+On the phone-width tablet, dumps succeed at default scales with the app idle, during a cold start,
+and with an agent running while no status ring is on screen. A visible running ring (sidebar open,
+or any wide layout) needs the scale recipe above. The phone was not measured; results are in
 [AGENT_TESTING_STATUS.md](AGENT_TESTING_STATUS.md#e-motion-and-dumps).
 
 The shared Cuttlefish tablet's harness guide is `/home/dev/cuttlefish/HARNESS.md` in the dev pod.

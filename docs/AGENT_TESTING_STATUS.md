@@ -151,7 +151,7 @@ Web, headless Chromium at 1280×800 against a daemon-served web UI, 3 s window a
   redirect after a connected import is unchanged listener code and untested.
 - Whether the soft keyboard stays up after Enter moves focus to the port is unchecked on a phone.
 - The update row and update stages only run in `fork` builds, so their testIDs and logs get
-  unit tests only until Phase 2 item 9.
+  unit tests only until G's updater switch.
 
 ## Active risks and decisions
 
