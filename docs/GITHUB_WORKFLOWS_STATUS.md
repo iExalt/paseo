@@ -33,7 +33,9 @@ time between attempts. Use **Re-run all jobs** for a fresh latency measurement;
 **Re-run failed jobs** remains sufficient to retry failed checks.
 
 Dev pushes refresh the installed dependency cache (`install-cache`); PR lanes
-only restore it.
+only restore it. Its key uses the Android node_modules `<inputs>` below, so the
+release PR's version bump restores dev's entry instead of running `npm ci` in
+every lane, which pushes the critical path about 50 s over budget.
 
 ## Release procedure
 
@@ -223,7 +225,7 @@ of the two it reaches first, so the value can stay after the next release.
   - GitHub evicts entries unused for seven days. A release that follows a week
     with no release or dry run restoring the pinned entries builds cold, about
     10 minutes slower (accepted).
-- **Routine dependency cache:** `routine-modules-v1-*`, one rolling entry
+- **Routine dependency cache:** `routine-modules-v2-*`, one rolling entry
   written by `dev` pushes.
 
 ## Android build time

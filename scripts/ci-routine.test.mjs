@@ -424,7 +424,9 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
     assert.notEqual(workflow.jobs[job].permissions?.actions, "write");
   const keyStep = (job) => job.steps.find((step) => step.id === "modules").run;
   assert.equal(keyStep(refresh), keyStep(workflow.jobs.routine));
-  assert.match(keyStep(refresh), /package-lock\.json.*patches\/\*\.patch/);
+  // Release PRs only bump workspace versions; they must reuse dev's tree.
+  assert.match(keyStep(refresh), /android-cache-pin\.mjs inputs/);
+  assert.match(keyStep(refresh), /test -n "\$inputs"/);
   assert.match(keyStep(refresh), /\$ImageOS-.*uname -m.*node --version.*npm --version/);
   assert.doesNotMatch(keyStep(refresh), /ImageVersion/);
   // The cached tree must be the one a lane's own install would produce.
