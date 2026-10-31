@@ -262,7 +262,7 @@ describe("PluginRuntime", () => {
     const directory = await createPlugin("fork-api", "export default function() {}");
     await writeFile(
       path.join(directory, "paseo-plugin.json"),
-      JSON.stringify({ id: "fork-api", requirements: { paseo: ">=0.11.0 <0.12.0" } }),
+      JSON.stringify({ id: "fork-api", requirements: { paseo: `^${PASEO_PLUGIN_API_VERSION}` } }),
     );
     const child = createReloadChild("fork-api", []);
     const send = vi.spyOn(child, "send");
