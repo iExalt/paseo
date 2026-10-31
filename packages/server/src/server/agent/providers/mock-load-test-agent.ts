@@ -298,6 +298,37 @@ function parseMockQuestionPrompt(prompt: AgentPromptInput): MockQuestionPromptRe
     return null;
   }
 
+  if (/with\s+images/i.test(text)) {
+    // Relative paths resolve against the agent cwd; the spec writes the files.
+    const outsidePath = /outside image:\s*(\S+)/i.exec(text)?.[1] ?? "/nonexistent.png";
+    return {
+      questions: [
+        {
+          question:
+            "Which hero image should the landing page use?\n\n![Hero banner](question-images/hero.png)",
+          header: "hero",
+          options: [
+            {
+              label: "Blue",
+              description: "Blue theme ![Blue swatch](question-images/blue.png)",
+            },
+            {
+              label: "Green",
+              description: "Green theme\n\n![Green swatch](question-images/green.png)",
+            },
+            {
+              label: "Remote",
+              description: "![Remote swatch](https://example.com/remote.png)",
+            },
+            { label: "No alt", description: "![](question-images/no-alt.png)" },
+            { label: "Outside", description: `![Outside swatch](${outsidePath})` },
+          ],
+          multiSelect: false,
+        },
+      ],
+    };
+  }
+
   if (/with\s+links/i.test(text)) {
     return {
       questions: [

@@ -1,3 +1,5 @@
+import { mkdir } from "node:fs/promises";
+import path from "node:path";
 import type { Page } from "@playwright/test";
 import { seedWorkspace, type SeedDaemonClient } from "./seed-client";
 import { getServerId } from "./server-id";
@@ -21,6 +23,8 @@ export interface MockAgentOptions {
   thinkingOptionId?: string;
   modeId?: string;
   featureValues?: Record<string, unknown>;
+  /** Runs the agent in this subdirectory of the repo instead of the repo root. */
+  cwdSubdir?: string;
 }
 
 /**
@@ -37,9 +41,13 @@ export async function seedMockAgentWorkspace(
     port: options.port,
   });
   try {
+    const cwd = options.cwdSubdir
+      ? path.join(workspace.repoPath, options.cwdSubdir)
+      : workspace.repoPath;
+    await mkdir(cwd, { recursive: true });
     const agent = await workspace.client.createAgent({
       provider: "mock",
-      cwd: workspace.repoPath,
+      cwd,
       workspaceId: workspace.workspaceId,
       title: options.title,
       modeId: options.modeId ?? "load-test",
@@ -51,7 +59,7 @@ export async function seedMockAgentWorkspace(
     return {
       agentId: agent.id,
       workspaceId: workspace.workspaceId,
-      cwd: workspace.repoPath,
+      cwd,
       client: workspace.client,
       cleanup: workspace.cleanup,
     };
