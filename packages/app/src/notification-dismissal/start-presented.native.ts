@@ -1,6 +1,8 @@
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import { isPushTestNotification } from "@/push-notifications/test-push";
+import { createCaughtUpTracker } from "./caught-up-tracker";
+import { createAppCaughtUpEnvironment } from "./environment";
 import { createAppNotificationDismissalTracker } from "./index";
 import {
   createPresentedNotificationSync,
@@ -19,27 +21,47 @@ export function startPresentedNotificationDismissal(): () => void {
     // Pushes that arrived after the dismissed ones stay; the follow-up sync tracks them.
     void presented?.dismiss(keys).then(sync, sync);
   });
+  const caughtUp = createCaughtUpTracker({
+    environment: createAppCaughtUpEnvironment(),
+    dismiss: (identifiers) => {
+      void Promise.all(
+        identifiers.map((identifier) =>
+          Notifications.dismissNotificationAsync(identifier).catch(() => undefined),
+        ),
+      ).then(sync);
+    },
+  });
   presented = createPresentedNotificationSync({
     api: {
       list: async () =>
         (await Notifications.getPresentedNotificationsAsync()).map((notification) => ({
           identifier: notification.request.identifier,
           data: notification.request.content.data,
+          title: notification.request.content.title,
+          body: notification.request.content.body,
           deliveredAt: presentedAtMs(Platform.OS, notification.date),
         })),
       dismiss: (identifier) => Notifications.dismissNotificationAsync(identifier),
     },
     tracker: () => tracker,
     isTrackable: (data) => !isPushTestNotification(data as Record<string, unknown> | undefined),
+    onUntracked: (pushes) => caughtUp.setPushes(pushes),
   });
-  sync();
+  // Pushes Android posted while Paseo was closed predate the refresh this starts.
+  const syncAndRefresh = () =>
+    void presented?.sync().then(
+      () => caughtUp.refreshAll(),
+      () => undefined,
+    );
+  syncAndRefresh();
   const appState = AppState.addEventListener("change", (state) => {
-    if (state === "active") sync();
+    if (state === "active") syncAndRefresh();
   });
   const received = Notifications.addNotificationReceivedListener(sync);
   return () => {
     appState.remove();
     received.remove();
     tracker.dispose();
+    caughtUp.dispose();
   };
 }

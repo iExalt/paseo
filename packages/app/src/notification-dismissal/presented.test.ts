@@ -107,6 +107,34 @@ describe("presented notification sync", () => {
     expect(forgotten).toEqual([]);
   });
 
+  it("hands pushes without thread data to the caught-up tracker, classified by title", async () => {
+    const untracked: unknown[] = [];
+    const sync = createPresentedNotificationSync({
+      api: {
+        list: async () => [
+          push("a", 100),
+          { identifier: "q", deliveredAt: 200, data: {}, title: "❓️ Plan", body: "Approve?" },
+          { identifier: "f", deliveredAt: 300, data: {}, title: "Plan", body: "Done" },
+        ],
+        dismiss: async () => undefined,
+      },
+      tracker: () => ({
+        track: (identity) => agentNotificationKey(identity),
+        forget: () => undefined,
+        reconcile: () => undefined,
+        dispose: () => undefined,
+      }),
+      onUntracked: (pushes) => untracked.push(pushes),
+    });
+    await sync.sync();
+    expect(untracked).toEqual([
+      [
+        { identifier: "q", kind: "question", deliveredAt: 200 },
+        { identifier: "f", kind: "finished", deliveredAt: 300 },
+      ],
+    ]);
+  });
+
   it("waits for both conditions when a question and a turn end arrive in the same millisecond", async () => {
     const { sync, tracked } = setup([push("a", 100, "finished"), push("b", 100, "permission")]);
     await sync.sync();

@@ -1,22 +1,30 @@
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
+import type { HostCatchUpSummary } from "./caught-up";
+import type { CaughtUpEnvironment } from "./caught-up-tracker";
 import type { HostDismissalView } from "./plan";
 import type { NotificationDismissalEnvironment } from "./tracker";
 
-function readHostView(serverId: string): HostDismissalView | null {
-  const runtime = getHostRuntimeStore();
-  if (!runtime.getHosts().some((host) => host.serverId === serverId)) return null;
-  const snapshot = runtime.getSnapshot(serverId);
+/** The latest whole-directory refresh, if it belongs to the host's live connection. */
+function readCurrentRefresh(serverId: string): { requestedAt: number } | null {
+  const snapshot = getHostRuntimeStore().getSnapshot(serverId);
   const refresh = snapshot?.agentDirectoryRefresh ?? null;
   const current =
     snapshot?.connectionStatus === "online" &&
     refresh !== null &&
     refresh.clientGeneration === snapshot.clientGeneration &&
     refresh.connectionEpoch === snapshot.connectionEpoch;
+  return current ? refresh : null;
+}
+
+function readHostView(serverId: string): HostDismissalView | null {
+  const runtime = getHostRuntimeStore();
+  if (!runtime.getHosts().some((host) => host.serverId === serverId)) return null;
+  const refresh = readCurrentRefresh(serverId);
   const session = useSessionStore.getState().sessions[serverId];
   return {
-    current,
-    refreshRequestedAt: current ? refresh.requestedAt : null,
+    current: refresh !== null,
+    refreshRequestedAt: refresh?.requestedAt ?? null,
     agent(agentId) {
       const agent = session?.agents.get(agentId);
       if (!agent) return null;
@@ -33,13 +41,26 @@ function readHostView(serverId: string): HostDismissalView | null {
   };
 }
 
-export function createAppNotificationDismissalEnvironment(): NotificationDismissalEnvironment {
+function readHostCatchUp(serverId: string): HostCatchUpSummary {
+  const refresh = readCurrentRefresh(serverId);
+  const session = useSessionStore.getState().sessions[serverId];
+  let anyRequiresAttention = false;
+  for (const agent of session?.agents.values() ?? []) {
+    if (agent.requiresAttention === true && !agent.archivedAt) anyRequiresAttention = true;
+  }
+  return {
+    current: refresh !== null,
+    refreshRequestedAt: refresh?.requestedAt ?? null,
+    anyRequiresAttention,
+    anyPendingPermission: (session?.pendingPermissions.size ?? 0) > 0,
+  };
+}
+
+function createSharedEnvironment() {
   const runtime = getHostRuntimeStore();
   return {
     now: () => Date.now(),
-    hostsLoaded: () => runtime.isHostRegistryLoaded(),
-    host: readHostView,
-    subscribe(onChange) {
+    subscribe(onChange: () => void) {
       const unsubscribers = [
         useSessionStore.subscribe(onChange),
         runtime.subscribeAll(onChange),
@@ -49,15 +70,34 @@ export function createAppNotificationDismissalEnvironment(): NotificationDismiss
         for (const unsubscribe of unsubscribers) unsubscribe();
       };
     },
-    acquireDirectory(serverId) {
+    acquireDirectory(serverId: string) {
       // The directory exists once the runtime has a controller for the host.
       if (!runtime.getSnapshot(serverId)) return null;
       return runtime.acquireDirectoryDemand(serverId);
     },
-    refreshDirectory(serverId) {
+    refreshDirectory(serverId: string) {
       void runtime.refreshDirectories(serverId).catch(() => undefined);
     },
-    setTimer: (callback, delayMs) => setTimeout(callback, delayMs),
-    clearTimer: (timer) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+    setTimer: (callback: () => void, delayMs: number): unknown => setTimeout(callback, delayMs),
+    clearTimer: (timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>),
+  };
+}
+
+export function createAppNotificationDismissalEnvironment(): NotificationDismissalEnvironment {
+  const runtime = getHostRuntimeStore();
+  return {
+    ...createSharedEnvironment(),
+    hostsLoaded: () => runtime.isHostRegistryLoaded(),
+    host: readHostView,
+  };
+}
+
+export function createAppCaughtUpEnvironment(): CaughtUpEnvironment {
+  const runtime = getHostRuntimeStore();
+  return {
+    ...createSharedEnvironment(),
+    serverIds: () =>
+      runtime.isHostRegistryLoaded() ? runtime.getHosts().map((host) => host.serverId) : null,
+    host: readHostCatchUp,
   };
 }

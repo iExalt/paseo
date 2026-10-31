@@ -3,11 +3,14 @@ import {
   readAgentNotificationData,
   type TrackedNotificationReason,
 } from "./key";
+import { classifyUntrackedPush, type UntrackedPush } from "./caught-up";
 import type { NotificationDismissalTracker } from "./tracker";
 
 export interface PresentedNotification {
   identifier: string;
   data: unknown;
+  title?: string | null;
+  body?: string | null;
   /** Device clock delivery time, in milliseconds. */
   deliveredAt: number;
 }
@@ -33,6 +36,8 @@ export function createPresentedNotificationSync(input: {
   api: PresentedNotificationsApi;
   tracker: () => NotificationDismissalTracker;
   isTrackable?: (data: unknown) => boolean;
+  /** Pushes with no thread data: Android posts those itself while the app isn't running. */
+  onUntracked?: (pushes: UntrackedPush[]) => void;
 }): PresentedNotificationSync {
   /** Newest delivery tracked per thread; a dismissal covers nothing delivered after it. */
   const trackedAt = new Map<string, number>();
@@ -46,10 +51,18 @@ export function createPresentedNotificationSync(input: {
         deliveredAt: number;
       }
     >();
+    const untracked: UntrackedPush[] = [];
     for (const notification of await input.api.list()) {
       if (input.isTrackable && !input.isTrackable(notification.data)) continue;
       const agent = readAgentNotificationData(notification.data);
-      if (!agent) continue;
+      if (!agent) {
+        untracked.push({
+          identifier: notification.identifier,
+          kind: classifyUntrackedPush(notification.title ?? "", notification.body ?? ""),
+          deliveredAt: notification.deliveredAt,
+        });
+        continue;
+      }
       const key = agentNotificationKey(agent);
       const thread = threads.get(key);
       if (!thread) {
@@ -72,11 +85,12 @@ export function createPresentedNotificationSync(input: {
         thread.reason = "unknown";
       }
     }
-    return threads;
+    return { threads, untracked };
   }
 
   async function syncOnce(): Promise<void> {
-    const threads = await readThreads();
+    const { threads, untracked } = await readThreads();
+    input.onUntracked?.(untracked);
     const tracker = input.tracker();
     for (const [key, thread] of threads) {
       if ((trackedAt.get(key) ?? -1) >= thread.deliveredAt) continue;
