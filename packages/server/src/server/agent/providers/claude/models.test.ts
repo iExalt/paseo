@@ -987,15 +987,18 @@ describe("Claude model discovery process", () => {
   it("times out and closes an unresponsive discovery process", async () => {
     let closed = false;
     await expect(
-      discoverClaudeModels({ resolveBinary: async () => "/claude", env: {} }, () => ({
-        supportedModels: () => new Promise(() => {}),
-        close: () => {
-          closed = true;
-        },
-      })),
+      discoverClaudeModels(
+        { resolveBinary: async () => "/claude", env: {}, timeoutMs: 50 },
+        () => ({
+          supportedModels: () => new Promise(() => {}),
+          close: () => {
+            closed = true;
+          },
+        }),
+      ),
     ).rejects.toThrow("Claude model discovery timed out");
     expect(closed).toBe(true);
-  }, 10_000);
+  });
 
   it("closes a stalled probe when its refresh is canceled", async () => {
     const controller = new AbortController();

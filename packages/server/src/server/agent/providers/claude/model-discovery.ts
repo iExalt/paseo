@@ -11,12 +11,15 @@ interface ClaudeModelDiscoveryOptions {
   runtimeSettings?: ProviderRuntimeSettings;
   env: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 type OpenDiscoveryQuery = (
   input: ClaudeQueryInput,
   context: ClaudeQueryContext,
 ) => Pick<Query, "supportedModels" | "close">;
+
+const DISCOVERY_TIMEOUT_MS = 5_000;
 
 // The curated catalog survives a failed or slow probe. This process never receives
 // a prompt and must not persist a session or launch user MCP servers/hooks.
@@ -30,7 +33,7 @@ export async function discoverClaudeModels(
     : controller.signal;
   const timer = setTimeout(
     () => controller.abort(new Error("Claude model discovery timed out")),
-    5_000,
+    options.timeoutMs ?? DISCOVERY_TIMEOUT_MS,
   );
   let endInput!: () => void;
   const ended = new Promise<void>((resolve) => {
