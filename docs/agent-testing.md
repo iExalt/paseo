@@ -220,7 +220,30 @@ Playwright's `reducedMotion: 'reduce'` context option stops the web app's animat
 ring, the turn loader and switch thumbs. Only the running turn's elapsed time keeps changing, once
 a second.
 
-For a browser-only check, start one with `npm run qa:web` (below).
+For a browser-only check, write a [browser probe](#browser-probes), or start a daemon with
+`npm run qa:web` (below).
+
+## Browser probes
+
+Throwaway Playwright checks go in `.dev/probes/<name>.probe.ts` (gitignored) and run with
+`npm run probe -- <name>`. Copy `packages/app/e2e/probe/examples/example.probe.ts` and import
+from `../../packages/app/e2e/probe/fixtures`, which gives:
+
+- `qa`: a `qa:web --seed heavy` daemon for the worker, also the `baseURL`, stopped afterwards even
+  when a probe fails. `probe.use({ qaSeed: false })` skips the seed; `PROBE_URL` (and
+  `PROBE_SERVER_ID`) use a server you run instead, which the fixture never stops. A failure
+  restarts the worker, so the next probe starts a fresh daemon.
+- `desktop`: `probe.use({ desktop: "local-daemon" })` installs a fake `window.paseoDesktop` that
+  presents `qa` as the desktop app's own daemon, so desktop-only UI renders in Chromium;
+  `"daemon-starting"` keeps the desktop daemon starting. The fake is typed against
+  `DesktopHostBridge`, so the app typecheck catches drift. The desktop app's startup redirect wins
+  over a typed `/settings` URL; navigate from `/` instead.
+- `consoleLines`: every console message with its arguments substituted (`%s`, `%d`, `%o`).
+  When a probe fails, the last 200 lines are written to `console-tail.txt` beside Playwright's
+  screenshot and trace in `.dev/probes/artifacts/<test>/`.
+
+Probes run against the daemon-served production web UI, so React's development warnings don't
+appear; use Metro (`PROBE_URL=http://localhost:8081`) when you need them.
 
 ## Isolated daemons
 
