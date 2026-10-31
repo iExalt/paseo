@@ -143,9 +143,11 @@ See [docs/upstream/development.md](docs/upstream/development.md) for full setup,
 
 ## Release branches
 
-Merge normal PRs into `main`, including while a beta soaks or a release is being finalized. Each
-release builds in a short-lived release workspace from `origin/main` or a release tag; see
-[release base and source](docs/upstream/release.md#release-base-and-source).
+Open PRs against `dev` and merge them there; it is the fork's default branch. Never target
+`upstream/main`: it mirrors upstream, and `rebase-dev` rebases `dev` onto it. Releases cut from `dev` through release-please;
+see the [fork release procedure](docs/GITHUB_WORKFLOWS_STATUS.md#release-procedure).
+[Release base and source](docs/upstream/release.md#release-base-and-source) describes upstream's
+process, not the fork's.
 
 ## Critical rules
 
