@@ -9,13 +9,13 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 
 ## Current snapshot
 
-| Field             | Status                                                                                                 |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                                           |
-| Current phase     | Phase II (plan Phase 2), approved 2026-10-31                                                           |
-| Overall state     | E and F merged; G's trace, clock, notification and transfer switches done; the updater switch deferred |
-| Immediate focus   | Publish the transfer switch; Phase II boundary review                                                  |
-| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`)              |
+| Field             | Status                                                                                    |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
+| Current phase     | Phase II (plan Phase 2) complete; Phase III not yet proposed                              |
+| Overall state     | E, F and G merged; the updater switch deferred; open limits under Current boundary        |
+| Immediate focus   | Report Phase II; decide the transfer path, the fork-variant harness build and Phase III   |
+| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
 
@@ -41,15 +41,15 @@ budget at about 340 s with every lane green.
 ones; SHAs in the 2026-10-30 log entries are superseded. The `?open=` fix (#266, a cherry-pick of
 upstream #7918) is now upstream's own commit `9abc4f41f`.
 
-| Chunk                    | Status   | Evidence                                                                                      |
-| ------------------------ | -------- | --------------------------------------------------------------------------------------------- |
-| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                                       |
-| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`                      |
-| C. Forms and selectors   | complete | #268, `058c9ce85`                                                                             |
-| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                                    |
-| E. Motion                | complete | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps)                 |
-| F. Ready markers         | complete | #274, `ab8dafbe5`; [results below](#f-ready-markers)                                          |
-| G. Debug switches        | active   | Trace, clock and notification switches pass on the tablet; [results below](#g-debug-switches) |
+| Chunk                    | Status   | Evidence                                                                      |
+| ------------------------ | -------- | ----------------------------------------------------------------------------- |
+| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                       |
+| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`      |
+| C. Forms and selectors   | complete | #268, `058c9ce85`                                                             |
+| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                    |
+| E. Motion                | complete | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps) |
+| F. Ready markers         | complete | #274, `ab8dafbe5`; [results below](#f-ready-markers)                          |
+| G. Debug switches        | complete | #275, `489adafe4`; #276, `3b41fbffb`; [results below](#g-debug-switches)      |
 
 ### A: device facts
 
@@ -208,6 +208,7 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
   unit tests only. A run-time updater switch cannot help: a non-fork build fails the updater's
   installed-version check before it fetches anything. A fork-variant harness build is a Phase 3
   candidate.
+- The readiness marker is web-only; Android waits use the `timeline state` log line.
 
 ## Active risks and decisions
 
@@ -215,15 +216,19 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
 | ---------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Shared tablet    | Other sessions drive the same guest and harness APK                                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated                                                                    |
 | Upstream drift   | `dev` is rebased onto upstream periodically (645 commits on 2026-10-30), which rewrites SHAs | Cite PR numbers with SHAs; check upstream before each app fix                                                                                                  |
-| Turn batching    | The turn counter relies on seeing the turn open in some store update                         | A unit test closes a turn inside one `act()`; upstream batching changes would show there                                                                       |
+| Turn batching    | The turn counter relies on the turn's open and close reaching the store as separate updates  | Only the station probe (a 0 ms CLI-sent turn) detects a change; the unit test calls `setState` by hand and cannot. No automated guard                          |
 | CI headroom      | After the rebase, server-2 and server-3 take 219 s and 222 s against the 300 s critical path | Watch each chunk's run; app tests from F and G land in app lanes                                                                                               |
 | App lane noise   | Dev pushes with no app change ran app-2 in 115–204 s (`cdb9e43e5`, `5563b2dc8`, `efb823a20`) | Compare app-1 plus app-2 across several runs before calling a regression; G's two runs (151 s, 156 s) sit inside that range and its new tests take under 0.2 s |
 
 ## Open questions
 
-- **Connect with the keyboard up:** at phone width, one tap on Connect while the host field had the
-  keyboard up did not submit the direct form (seen once). Retry three times on the next tablet
-  session before deciding whether it is in scope.
+- **Connect with the keyboard up:** at phone width, tapping Connect while the host field has the
+  keyboard up sometimes does not submit the direct form. Seen once in E; in the retry on
+  2026-10-31, one valid try did not submit even after a second tap and one submitted on the first
+  (a third try did not open the form). Unexplained; check the modal's tap handling before
+  deciding scope.
+- **Transfer path:** the preferences bridge is pinned to version code 11001 and no doc describes
+  it. If the transfer path is going away, the `transfer` switch goes with it.
 - **Linux `sharp` binaries:** whether the lockfile lacks them is inferred from an error message.
 - **Theme loss after SIGTERM:** unflushed storage is unproven; the retry passed.
 - **Git requirement for the desktop dev runner:** appears fixed; `git branch --show-current` no
@@ -273,3 +278,5 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
   harness APK is now the flagged G build.
 - G: the transfer switch shows the Transfer row on web with no source edit; the updater switch is
   deferred to a fork-variant harness build (Phase 3 candidate).
+- G merged as #275 and #276. Phase II complete; the guide now points running-chat dumps at the
+  frozen clock and warns that `pm clear` wipes the shared harness.
