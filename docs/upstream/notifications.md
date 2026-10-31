@@ -76,8 +76,8 @@ tracker holds directory demand for every host it has notifications for.
 | Electron, Win/Linux | Sent this launch                                   | Notifications from an earlier launch can't be reached.                                                                                       |
 | iOS, Android        | Whatever is in the notification shade              | Synced on start, on foreground and when a push arrives. Pushes resolved while the app was closed go on the next open. Android stacks pushes. |
 
-Android posts pushes that arrive while Paseo is killed or in the background itself, through the
-Firebase SDK, with only a title and body: no data says which thread they belong to. Those go
+When Paseo is killed or in the background on Android, the Firebase SDK posts pushes itself, with
+only a title and body: no data says which thread they belong to. Those go
 only once every host is caught up (`notification-dismissal/caught-up.ts`). A `❓️` question goes
 when no thread on any host has a pending question; any other push goes when every thread on
 every host is read. Archived agents and subagents don't count: subagents never push. A thread
