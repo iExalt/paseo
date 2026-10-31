@@ -14,7 +14,7 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
 | Current phase     | Phase III (plan Phase 3) approved 2026-10-31: T, H, I, J, K, L                            |
 | Overall state     | Phase II merged; T retires the `transfer` switch; open limits under Current boundary      |
-| Immediate focus   | T, then H (`qa:web`) with I (Android helper) alongside                                    |
+| Immediate focus   | H (`qa:web`) in review, then I (Android helper)                                           |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
@@ -41,15 +41,17 @@ budget at about 340 s with every lane green.
 ones; SHAs in the 2026-10-30 log entries are superseded. The `?open=` fix (#266, a cherry-pick of
 upstream #7918) is now upstream's own commit `9abc4f41f`.
 
-| Chunk                    | Status   | Evidence                                                                      |
-| ------------------------ | -------- | ----------------------------------------------------------------------------- |
-| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                       |
-| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`      |
-| C. Forms and selectors   | complete | #268, `058c9ce85`                                                             |
-| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                    |
-| E. Motion                | complete | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps) |
-| F. Ready markers         | complete | #274, `ab8dafbe5`; [results below](#f-ready-markers)                          |
-| G. Debug switches        | complete | #275, `489adafe4`; #276, `3b41fbffb`; [results below](#g-debug-switches)      |
+| Chunk                    | Status      | Evidence                                                                      |
+| ------------------------ | ----------- | ----------------------------------------------------------------------------- |
+| A. Docs and device facts | complete    | #264, `416ab4e8c`; tablet results below                                       |
+| B. Reach and observe     | complete    | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`      |
+| C. Forms and selectors   | complete    | #268, `058c9ce85`                                                             |
+| D. CLI and build         | complete    | #265, `7d58cefc8`; scratch-home runs below                                    |
+| E. Motion                | complete    | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps) |
+| F. Ready markers         | complete    | #274, `ab8dafbe5`; [results below](#f-ready-markers)                          |
+| G. Debug switches        | complete    | #275, `489adafe4`; #276, `3b41fbffb`; [results below](#g-debug-switches)      |
+| T. Retire `transfer`     | complete    | #278, `e3ad6f5f7`                                                             |
+| H. `qa:web`              | implemented | [results below](#h-qaweb)                                                     |
 
 ### A: device facts
 
@@ -193,6 +195,27 @@ JavaScript subscribes, so the native module now holds switches until JavaScript 
 it asked), so the prompt check used `pm clear`; the harness app was set up again with host
 127.0.0.1:6790 and lost its other settings on 2026-10-31.
 
+### H: `qa:web`
+
+Station, `e3ad6f5f7` plus the H change, server built, web UI from the Phase II flagged build:
+
+| Check                                                                                        | Result                                                                                                                      |
+| -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `--home` equal to an inherited `PASEO_HOME`                                                  | Refused, exit 1                                                                                                             |
+| Fake `HOME` with a sentinel in `.paseo/config.json`, `PASEO_HOME` and `PASEO_HOST` inherited | Default home used; sentinel absent from it; fake home unchanged (paths and mtimes); nothing on 6767; no sockets in the home |
+| Providers in `daemon status`                                                                 | `mock` available; built-in plugin providers `antigravity` and `muse` registered, unavailable                                |
+| `daemon.log` (110 lines, `listening` and web UI lines present)                               | No relay, download or plugin install lines                                                                                  |
+| Seeded agents in Chromium                                                                    | All three reach `agent-timeline-settled`; the realistic turn shows an edit and shell commands, the image agent a data image |
+| CLI-sent `agent send` on a seeded agent                                                      | `turns` 0 → 1, settled after 10.6 s (`ten-second-stream`)                                                                   |
+| `--stop`                                                                                     | Supervisor, worker and port gone                                                                                            |
+| Ready time                                                                                   | 3.4–4.3 s from launch to a reachable daemon; seeding adds 11–12 s                                                           |
+
+`pluginsEnabled: false` only blocks configured plugins; built-in plugins always load. qa:web also
+turns off usage sources, which read the user's provider accounts, and reports the built-in
+plugins' providers as `otherProviders`, since their IDs are only known once the daemon runs.
+`mock-slow` is a catalog-timeout fixture, not a slow turn; the mock provider's long models
+replace Phase II's slow ACP agent.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -284,3 +307,5 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
   `e2e/probe/`, K `desktop:sandbox` (the userData default flip comes back as its own decision),
   and L, a fork-variant harness build that brings back the updater switch. The phone-debug skill
   update after I includes a home-manager switch.
+- T merged as #278. H: `qa:web` starts a scratch daemon in 3.4–4.3 s on the station with only the
+  mock provider on; the isolation, readiness and stop checks pass.
