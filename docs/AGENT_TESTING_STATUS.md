@@ -14,7 +14,7 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
 | Current phase     | Phase III (plan Phase 3) approved 2026-10-31: T, H, I, J, K, L                            |
 | Overall state     | Phase II merged; T retires the `transfer` switch; open limits under Current boundary      |
-| Immediate focus   | J (browser probes) in review, then K (`desktop:sandbox`)                                  |
+| Immediate focus   | K (`desktop:sandbox`) in review; the userData default decision; then L                    |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
@@ -53,7 +53,8 @@ upstream #7918) is now upstream's own commit `9abc4f41f`.
 | T. Retire `transfer`     | complete    | #278, `e3ad6f5f7`                                                             |
 | H. `qa:web`              | complete    | #280, `333551771`; [results below](#h-qaweb)                                  |
 | I. Android helper        | complete    | #282, `ddf9a2af5`; [results below](#i-android-helper)                         |
-| J. Browser probes        | implemented | [results below](#j-browser-probes)                                            |
+| J. Browser probes        | complete    | #283, `ba090cd40`; [results below](#j-browser-probes)                         |
+| K. Desktop sandbox       | implemented | [results below](#k-desktop-sandbox)                                           |
 
 ### A: device facts
 
@@ -258,6 +259,25 @@ The first fake returned `null` for `start_desktop_daemon`, and the app showed "T
 failed to start". The desktop app parses a daemon status from start and restart as well as from
 `desktop_daemon_status`, and connects over TCP when the status has `listen`.
 
+### K: desktop sandbox
+
+Station, desktop main built from `ba090cd40` plus K, renderer from the daemon-served web UI:
+
+| Check                                                   | Result                                                                                                      |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `desktop:sandbox --seed heavy`                          | Ready in 19.1 s, 11.7 s of it seeding; one JSON line                                                        |
+| First start                                             | Electron aborted: `chrome-sandbox` is not setuid root on the station; `--no-sandbox` is now added only then |
+| `desktop_daemon_status` through the real preload bridge | The sandbox home and server, `running`, `desktopManaged: false`; supervisor pid unchanged                   |
+| `connectToPaseoRenderer` from a second process          | The app's page in 65 ms                                                                                     |
+| Settings from the sidebar                               | `settings-section-permissions` visible, with the real bridge's 16 members                                   |
+| `--stop`                                                | Electron and Xvfb process group gone, daemon stopped (`daemonWasRunning: true`), CDP port closed            |
+
+The desktop app adopts a running daemon in its `PASEO_HOME` without managing it, so quitting
+Electron leaves the daemon to `--stop`. No existing desktop e2e changed: they run in deep CI
+(`daemon-lifecycle.e2e.mjs`) or by hand, and adopting `connectToPaseoRenderer` in
+`browser-tabs.e2e.mjs`, `packaged-app-smoke.js` and `verify-electron-cdp.mjs` is left for when
+those upstream files are next touched.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -306,9 +326,12 @@ failed to start". The desktop app parses a daemon status from start and restart 
   the chunk A pre-commit typecheck failed in a new dev-station worktree and passed after
   `build:server`.
 - **Unpackaged desktop userData.** The `packages/desktop/src/main.ts` comment says the main
-  checkout gets "default userData". Without `PASEO_ELECTRON_USER_DATA_DIR` that is Electron's
-  default path, which Electron likely derives before `app.setName("Paseo")` runs; whether it is the
-  installed app's `Paseo` directory is unverified. `npm run dev:desktop` always sets the variable.
+  checkout gets "default userData". That holds only for direct launches without
+  `PASEO_ELECTRON_USER_DATA_DIR`, since `npm run dev:desktop` always sets it to `.dev/user-data`.
+  Measured on 2026-10-31 with Electron's own resolution (an app named `@getpaseo/desktop`, outside
+  a worktree): reading the path before `setName("Paseo")` gives `<appData>/@getpaseo/desktop`, but
+  main.ts calls `setName` first, so the default is `<appData>/Paseo`, the installed app's
+  directory.
 
 ## Progress log
 
@@ -359,3 +382,6 @@ failed to start". The desktop app parses a daemon status from start and restart 
   generation built from the pushed commit matched the active one file for file.
 - J: probes in `.dev/probes` run with `npm run probe` against a `qa:web` daemon, with a typed fake
   desktop bridge and console tails on failure.
+- J merged as #283. K: `desktop:sandbox` runs the desktop app headless on the station against a
+  qa:web daemon and refuses to report ready unless the app adopted that daemon. A direct
+  unpackaged launch outside a worktree shares the installed app's userData (measured).
