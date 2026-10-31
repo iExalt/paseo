@@ -101,6 +101,8 @@ Evidence:
   the workspace root (`session.ts` `resolveSessionCreateAgentIntent`). An agent's cwd differs from
   its workspace only through `runtimeCwd`, as agent-launched agents get. The seed helper's
   `cwdSubdir` uses it.
+- A question notification's title is the agent's title, not the first question; the question
+  goes in the body (B's push: title `❓️ Push question`, text `Which hero? [image: Hero banner]`).
 - Inline images (`Blue theme ![Blue](blue.png)`) draw at line height. Agents are told to put
   images on their own line (step 4) rather than changing renderer sizing.
 - The tablet's older APK (`ab8dafbe5`) scaled small images up to the column width; `efb823a20`
