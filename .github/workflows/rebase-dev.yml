@@ -12,7 +12,7 @@ concurrency:
 jobs:
   rebase:
     if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 45
     permissions:
       contents: read

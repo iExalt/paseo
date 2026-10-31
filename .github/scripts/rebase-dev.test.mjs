@@ -615,7 +615,7 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   assert.match(tokenStep.uses, /^actions\/create-github-app-token@/);
   assert.equal(tokenStep.with["permission-workflows"], "write");
   assert.equal(steps[0].with["persist-credentials"], false);
-  assert.equal(workflow.jobs.rebase["runs-on"], "ubuntu-24.04");
+  assert.equal(workflow.jobs.rebase["runs-on"], "ubuntu-26.04");
   for (const [index, step] of steps.entries()) {
     if (index !== rebaseIndex) assert.equal(step.env?.PASEO_REBASE_SSH_SIGNING_KEY, undefined);
     if (index !== publishIndex) assert.equal(step.env?.GH_TOKEN, undefined);
