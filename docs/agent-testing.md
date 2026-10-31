@@ -23,8 +23,9 @@ isolated daemon and app instance.
 the only variant with the fork updater, into `artifacts/paseo-fork-arm64.apk`; pass
 `GOOGLE_SERVICES_FILE_FORK` (an absolute path to a Firebase JSON for `sh.paseo.iexalt`; a
 placeholder is fine without push) and `FIREBASE_PROJECT_ID_FORK=paseo-18157`. All three register
-`paseo://`, so always name the package: `adb shell am start -a android.intent.action.VIEW -d '<url>' <package>`. Without it,
-a device with two variants shows a chooser.
+`paseo://`, so always name the package:
+`adb shell am start -a android.intent.action.VIEW -d '<url>' <package>`. Without it, a device with
+two variants shows a chooser.
 
 Grant notifications before the first launch, or the permission prompt takes focus:
 `adb shell pm grant <package> android.permission.POST_NOTIFICATIONS`. In a build with
@@ -62,7 +63,8 @@ $A type 127.0.0.1; $A key ENTER
 $A wait add-host-modal --gone  # or wait for an id to appear; exit 5 on timeout
 $A open --cold 'paseo://settings/general?addHost=1'
 $A switch clock=frozen notifications=skip
-n=$($A turns <agentId>); paseo agent send <agentId> "…"; $A wait-turn <agentId> --after "$n"
+n=$($A turns <agentId>) || n=0   # unknown (exit 3): no line yet; 0 only if the chat was open since launch
+paseo agent send --no-wait <agentId> "…"; $A wait-turn <agentId> --after "$n"
 $A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
 ```
 
@@ -225,6 +227,13 @@ still goes to the app's default log directory (`<appData>/Paseo/logs` on Linux),
 installed app's. Set the variable anyway when you need a clean profile, or use the
 [desktop sandbox](#desktop-sandbox).
 
+Playwright's `reducedMotion: 'reduce'` context option stops the web app's animations: the status
+ring, the turn loader and switch thumbs. Only the running turn's elapsed time keeps changing, once
+a second.
+
+For a browser-only check, write a [browser probe](#browser-probes), or start a daemon with
+[`npm run qa:web`](#isolated-daemons).
+
 ## Desktop sandbox
 
 `npm run desktop:sandbox` runs the unpackaged desktop app against a fresh
@@ -252,13 +261,6 @@ npm run desktop:sandbox -- --stop <home>
   from that origin has drawn the app, instead of returning DevTools or blank pages.
 - `--stop` only stops a home the sandbox started (`.desktop-sandbox`), ends Electron and Xvfb by
   their recorded process group, then stops the daemon.
-
-Playwright's `reducedMotion: 'reduce'` context option stops the web app's animations: the status
-ring, the turn loader and switch thumbs. Only the running turn's elapsed time keeps changing, once
-a second.
-
-For a browser-only check, write a [browser probe](#browser-probes), or start a daemon with
-`npm run qa:web` (below).
 
 ## Browser probes
 

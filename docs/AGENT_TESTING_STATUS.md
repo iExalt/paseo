@@ -328,21 +328,31 @@ them either. A full update run needs tap devices, which need `NET_ADMIN` in the 
   reach the app without one, and the native updater accepts only GitHub over https. A full run
   against a real fork release, which the signer check should reject, needs tap devices in the
   guest (`NET_ADMIN` in the pod spec).
+- `agent-adb.py` ran only on the tablet; it is unchecked on a phone (next phone session).
+- `connectToPaseoRenderer` is not used by the existing desktop e2e scripts
+  (`browser-tabs.e2e.mjs`, `packaged-app-smoke.js`, `verify-electron-cdp.mjs`); adopt it when they
+  are next touched, or offer it upstream with #285.
+- `desktop:sandbox --metro` was not tried.
 - The readiness marker is web-only; Android waits use the `timeline state` log line.
 
 ## Active risks and decisions
 
-| Risk or decision | Evidence or uncertainty                                                                      | Mitigation                                                                                                                                                     |
-| ---------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shared tablet    | Other sessions drive the same guest and harness APK                                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated                                                                    |
-| Upstream drift   | `dev` is rebased onto upstream periodically (645 commits on 2026-10-30), which rewrites SHAs | Cite PR numbers with SHAs; check upstream before each app fix                                                                                                  |
-| Transfer switch  | The preferences transfer flow is being retired (user decision, 2026-10-31)                   | T removes the `transfer` switch; builds that still get it log `debug rejected key=transfer reason=unknown-key`                                                 |
-| Turn batching    | The turn counter relies on the turn's open and close reaching the store as separate updates  | Only the station probe (a 0 ms CLI-sent turn) detects a change; the unit test calls `setState` by hand and cannot. No automated guard                          |
-| CI headroom      | After the rebase, server-2 and server-3 take 219 s and 222 s against the 300 s critical path | Watch each chunk's run; app tests from F and G land in app lanes                                                                                               |
-| App lane noise   | Dev pushes with no app change ran app-2 in 115–204 s (`cdb9e43e5`, `5563b2dc8`, `efb823a20`) | Compare app-1 plus app-2 across several runs before calling a regression; G's two runs (151 s, 156 s) sit inside that range and its new tests take under 0.2 s |
+| Risk or decision | Evidence or uncertainty                                                                                  | Mitigation                                                                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared tablet    | Other sessions drive the same guest and harness APK                                                      | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated                                                                    |
+| Upstream drift   | `dev` is rebased onto upstream periodically (645 commits on 2026-10-30), which rewrites SHAs             | Cite PR numbers with SHAs; check upstream before each app fix                                                                                                  |
+| Dev userData     | Direct unpackaged launches outside a worktree use `<appData>/Paseo-dev` (#285, user decision 2026-10-31) | Every main checkout on a machine shares `Paseo-dev`; offer #285 upstream                                                                                       |
+| Transfer switch  | The preferences transfer flow is being retired (user decision, 2026-10-31)                               | T removes the `transfer` switch; builds that still get it log `debug rejected key=transfer reason=unknown-key`                                                 |
+| Turn batching    | The turn counter relies on the turn's open and close reaching the store as separate updates              | Only the station probe (a 0 ms CLI-sent turn) detects a change; the unit test calls `setState` by hand and cannot. No automated guard                          |
+| CI headroom      | After the rebase, server-2 and server-3 take 219 s and 222 s against the 300 s critical path             | Watch each chunk's run; app tests from F and G land in app lanes                                                                                               |
+| App lane noise   | Dev pushes with no app change ran app-2 in 115–204 s (`cdb9e43e5`, `5563b2dc8`, `efb823a20`)             | Compare app-1 plus app-2 across several runs before calling a regression; G's two runs (151 s, 156 s) sit inside that range and its new tests take under 0.2 s |
 
 ## Open questions
 
+- **Updater error copy:** the fork updater shows "Could not verify the published fork update" for
+  a DNS failure (L). The copy is fork code (`packages/app/src/android/fork-updates`, #262);
+  telling network errors (unknown host, connect, timeout) apart from verification failures would
+  fix it.
 - **Connect with the keyboard up:** at phone width, tapping Connect while the host field has the
   keyboard up sometimes does not submit the direct form. Seen once in E; in the retry on
   2026-10-31, one valid try did not submit even after a second tap and one submitted on the first
