@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.17.0](https://github.com/iExalt/paseo/compare/paseo-v0.16.0...paseo-v0.17.0) (2026-10-31)
+
+
+### Features
+
+* **android:** build the fork variant for agent testing ([#286](https://github.com/iExalt/paseo/issues/286)) ([bb6460c](https://github.com/iExalt/paseo/commit/bb6460ca5b4a891c8a8504a9ae67846c7fef3a1b))
+* **app:** add a transfer agent switch that shows the preferences Transfer row ([#276](https://github.com/iExalt/paseo/issues/276)) ([3b41fbf](https://github.com/iExalt/paseo/commit/3b41fbffb8480db06fcee89d05594640dc7245e3))
+* **app:** add agent debug switches for terminal trace, frozen clock and the notification prompt ([#275](https://github.com/iExalt/paseo/issues/275)) ([489adaf](https://github.com/iExalt/paseo/commit/489adafe43df7caff05dc80788453b130ed621de))
+* **app:** add browser probes with qa:web, console and fake desktop fixtures ([#283](https://github.com/iExalt/paseo/issues/283)) ([ba090cd](https://github.com/iExalt/paseo/commit/ba090cd4029d3d7f7b5ab3322db86b0ad96980c6))
+* **app:** chain the direct connection fields and add agent testIDs to Find, settings and the update row ([#268](https://github.com/iExalt/paseo/issues/268)) ([058c9ce](https://github.com/iExalt/paseo/commit/058c9ce85b099d6eecc269fb4703415ed9419778))
+* **app:** log agent-observable state as [paseo-agent] lines and route paseo://pair links ([#267](https://github.com/iExalt/paseo/issues/267)) ([cab4305](https://github.com/iExalt/paseo/commit/cab4305dbfdc64ec0fd9921a7972a1ede2634117))
+* **app:** mark the open chat's readiness for agents waiting on a turn ([#274](https://github.com/iExalt/paseo/issues/274)) ([ab8dafb](https://github.com/iExalt/paseo/commit/ab8dafbe566592de9132b014cf5ab2f2627eca00))
+* **app:** update the fork Android app without the system installer screens ([#262](https://github.com/iExalt/paseo/issues/262)) ([1c0e486](https://github.com/iExalt/paseo/commit/1c0e48647693609daaf70d7f6e43bd6d2326bc6f))
+* **cli:** name ignored daemon start overrides and add daemon pair --app-url ([#265](https://github.com/iExalt/paseo/issues/265)) ([7d58cef](https://github.com/iExalt/paseo/commit/7d58cefc8f51b42d013449129e4c3756b13afc93))
+* **desktop:** add desktop:sandbox, a headless desktop app for agents ([#284](https://github.com/iExalt/paseo/issues/284)) ([2367505](https://github.com/iExalt/paseo/commit/23675058baceabb26131797b15ca4696fd4811dd))
+* dismiss notifications once their thread is resolved ([#273](https://github.com/iExalt/paseo/issues/273)) ([1d5bf5f](https://github.com/iExalt/paseo/commit/1d5bf5f9ac7c8e9eda652d8b361978c459380a58))
+* **scripts:** add agent-adb.py, an Android helper for agents ([#282](https://github.com/iExalt/paseo/issues/282)) ([ddf9a2a](https://github.com/iExalt/paseo/commit/ddf9a2af544cf1ed020710b686d73c9577a809ef))
+* **scripts:** add qa:web, a one-command scratch daemon for browser checks ([#280](https://github.com/iExalt/paseo/issues/280)) ([3335517](https://github.com/iExalt/paseo/commit/33355177197f97775c201229d2224c0cecd6376a))
+
+
+### Bug Fixes
+
+* **app:** demand the host directory from the workspace route ([#7918](https://github.com/iExalt/paseo/issues/7918)) ([9abc4f4](https://github.com/iExalt/paseo/commit/9abc4f41f60b5748de414b80c79bd1845cdd05df))
+* **app:** say when Android refuses a verified fork update ([#292](https://github.com/iExalt/paseo/issues/292)) ([33d0f89](https://github.com/iExalt/paseo/commit/33d0f89506c807161767d98b846cb89222f94bba))
+* **app:** say when the fork updater cannot reach GitHub ([#288](https://github.com/iExalt/paseo/issues/288)) ([0f93bde](https://github.com/iExalt/paseo/commit/0f93bde20e8b4b85911a7049e570e07cd14f2660))
+* **app:** scroll the inverted Android chat the right way with a mouse wheel ([#281](https://github.com/iExalt/paseo/issues/281)) ([c5839fd](https://github.com/iExalt/paseo/commit/c5839fdf40c0b7aa40a50d807f7e1645dae69b9f))
+* **ci:** keep the routine dependency cache across release version bumps ([#295](https://github.com/iExalt/paseo/issues/295)) ([fb1a0b8](https://github.com/iExalt/paseo/commit/fb1a0b80f0ebd1dc343ae4517debe4988f61754f))
+* **ci:** make latency advisory and log its measurement ([#294](https://github.com/iExalt/paseo/issues/294)) ([79064f9](https://github.com/iExalt/paseo/commit/79064f912fa8293eb7b0973351a8d6814df8c380))
+* **desktop:** keep dev and test logs with their userData ([#290](https://github.com/iExalt/paseo/issues/290)) ([3edb11e](https://github.com/iExalt/paseo/commit/3edb11e10eff00063b618faa45c70bc6f494da58))
+* **desktop:** keep direct unpackaged launches out of the installed app's userData ([#285](https://github.com/iExalt/paseo/issues/285)) ([75d66c6](https://github.com/iExalt/paseo/commit/75d66c608fa4a3fcecbc5d442959cb50cc15d40e))
+* **scripts:** check node-pty's native build before qa:web starts a daemon ([#291](https://github.com/iExalt/paseo/issues/291)) ([e696b5b](https://github.com/iExalt/paseo/commit/e696b5b89ae56a9850373234cee49447b5ad5175))
+* **server:** await notification rule persistence ([a4f1dfa](https://github.com/iExalt/paseo/commit/a4f1dfac73c6804163e8e95def47c36b24ee4e00))
+* show full-resolution images in chat threads ([#270](https://github.com/iExalt/paseo/issues/270)) ([efb823a](https://github.com/iExalt/paseo/commit/efb823a200e5ecbdd9869df620c9795bf23bb831))
+
 ## [0.16.0](https://github.com/iExalt/paseo/compare/paseo-v0.15.0...paseo-v0.16.0) (2026-10-30)
 
 
