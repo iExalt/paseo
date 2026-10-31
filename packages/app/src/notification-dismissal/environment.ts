@@ -1,6 +1,6 @@
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
-import type { HostCatchUpSummary } from "./caught-up";
+import { summarizeHostCatchUp, type HostCatchUpSummary } from "./caught-up";
 import type { CaughtUpEnvironment } from "./caught-up-tracker";
 import type { HostDismissalView } from "./plan";
 import type { NotificationDismissalEnvironment } from "./tracker";
@@ -42,18 +42,14 @@ function readHostView(serverId: string): HostDismissalView | null {
 }
 
 function readHostCatchUp(serverId: string): HostCatchUpSummary {
-  const refresh = readCurrentRefresh(serverId);
   const session = useSessionStore.getState().sessions[serverId];
-  let anyRequiresAttention = false;
-  for (const agent of session?.agents.values() ?? []) {
-    if (agent.requiresAttention === true && !agent.archivedAt) anyRequiresAttention = true;
-  }
-  return {
-    current: refresh !== null,
-    refreshRequestedAt: refresh?.requestedAt ?? null,
-    anyRequiresAttention,
-    anyPendingPermission: (session?.pendingPermissions.size ?? 0) > 0,
-  };
+  return summarizeHostCatchUp({
+    refreshRequestedAt: readCurrentRefresh(serverId)?.requestedAt ?? null,
+    agents: session?.agents ?? new Map(),
+    pendingPermissionAgentIds: [...(session?.pendingPermissions.values() ?? [])].map(
+      (pending) => pending.agentId,
+    ),
+  });
 }
 
 function createSharedEnvironment() {

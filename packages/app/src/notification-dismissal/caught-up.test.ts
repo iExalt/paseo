@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyUntrackedPush,
   planCaughtUpDismissals,
+  summarizeHostCatchUp,
   type CaughtUpSince,
   type HostCatchUpSummary,
   type UntrackedPush,
@@ -83,5 +84,25 @@ describe("caught-up dismissal of untracked pushes", () => {
     ];
     const hosts = [host({ refreshRequestedAt: 800 }), host({ refreshRequestedAt: 3000 })];
     expect(plan(hosts, 9000, { question: 0, finished: 0 }, pushes).dismiss).toEqual(["old"]);
+  });
+
+  it("ignores archived agents and subagents, which never get a push of their own", () => {
+    const agents = new Map([
+      ["archived", { requiresAttention: true, archivedAt: "2026-10-31", parentAgentId: null }],
+      ["child", { requiresAttention: true, parentAgentId: "parent" }],
+      ["parent", { requiresAttention: false, parentAgentId: null }],
+    ]);
+    expect(
+      summarizeHostCatchUp({
+        refreshRequestedAt: 1000,
+        agents,
+        pendingPermissionAgentIds: ["child"],
+      }),
+    ).toEqual(host());
+    // A request from an agent not in the directory yet holds questions.
+    expect(
+      summarizeHostCatchUp({ refreshRequestedAt: 1000, agents, pendingPermissionAgentIds: ["new"] })
+        .anyPendingPermission,
+    ).toBe(true);
   });
 });

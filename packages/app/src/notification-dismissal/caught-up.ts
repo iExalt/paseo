@@ -33,6 +33,40 @@ export interface HostCatchUpSummary {
   anyPendingPermission: boolean;
 }
 
+export interface CatchUpAgent {
+  requiresAttention?: boolean | null;
+  archivedAt?: unknown;
+  parentAgentId?: string | null;
+}
+
+/**
+ * Subagents get attention and permission requests but never a push, and no UI asks the user
+ * to clear them, so they can't be what a push is about and must not hold it.
+ */
+export function summarizeHostCatchUp(input: {
+  refreshRequestedAt: number | null;
+  agents: ReadonlyMap<string, CatchUpAgent>;
+  pendingPermissionAgentIds: Iterable<string>;
+}): HostCatchUpSummary {
+  const isSubagent = (agent: CatchUpAgent | undefined) => !!agent?.parentAgentId;
+  let anyRequiresAttention = false;
+  for (const agent of input.agents.values()) {
+    if (agent.requiresAttention === true && !agent.archivedAt && !isSubagent(agent)) {
+      anyRequiresAttention = true;
+    }
+  }
+  let anyPendingPermission = false;
+  for (const agentId of input.pendingPermissionAgentIds) {
+    if (!isSubagent(input.agents.get(agentId))) anyPendingPermission = true;
+  }
+  return {
+    current: input.refreshRequestedAt !== null,
+    refreshRequestedAt: input.refreshRequestedAt,
+    anyRequiresAttention,
+    anyPendingPermission,
+  };
+}
+
 /** When each kind was first seen caught up; reset when it stops being. */
 export interface CaughtUpSince {
   question: number | null;
