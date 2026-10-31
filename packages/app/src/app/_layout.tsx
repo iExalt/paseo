@@ -133,6 +133,7 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
+import { startPresentedNotificationDismissal } from "@/notification-dismissal/start-presented";
 import {
   adoptDeliveredOsNotifications,
   ensureOsNotificationPermission,
@@ -862,6 +863,7 @@ function WorkspaceRouteNavigationBridge() {
 }
 
 function AppShell() {
+  useEffect(() => startPresentedNotificationDismissal(), []);
   useEffect(() => {
     if (!getDesktopHost()) return;
     void ensureOsNotificationPermission();
