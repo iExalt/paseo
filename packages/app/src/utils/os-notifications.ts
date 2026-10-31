@@ -2,6 +2,11 @@ import { Asset } from "expo-asset";
 import { getDesktopHost } from "@/desktop/host";
 import { parseNotificationOpenTarget, WEB_NOTIFICATION_CLICK_EVENT } from "@/notification-open";
 import { isNative } from "@/constants/platform";
+import {
+  createAppNotificationDismissalTracker,
+  readAgentNotificationData,
+  type NotificationDismissalTracker,
+} from "@/notification-dismissal";
 
 interface OsNotificationPayload {
   title: string;
@@ -15,10 +20,33 @@ export interface WebNotificationClickDetail {
 
 interface WebNotificationInstance {
   addEventListener: (type: "click", listener: (event: Event) => void) => void;
+  close: () => void;
+}
+
+interface WebNotificationOptions {
+  body?: string;
+  data?: Record<string, unknown>;
+  icon?: string;
+  tag?: string;
+  /** Alert again when replacing a same-tag notification; Chrome replaces silently otherwise. */
+  renotify?: boolean;
 }
 
 let permissionRequest: Promise<boolean> | null = null;
 let notificationIconUrl: string | null | undefined;
+let dismissalTracker: NotificationDismissalTracker | null = null;
+/** Live browser notifications by thread key. Lost on reload; those stay until the user clears them. */
+const liveWebNotifications = new Map<string, WebNotificationInstance>();
+
+function getDismissalTracker(): NotificationDismissalTracker {
+  dismissalTracker ??= createAppNotificationDismissalTracker((keys) => {
+    for (const key of keys) {
+      liveWebNotifications.get(key)?.close();
+      liveWebNotifications.delete(key);
+    }
+  });
+  return dismissalTracker;
+}
 
 function getDesktopNotificationSender():
   | ((payload: {
@@ -40,24 +68,14 @@ function getDesktopNotificationSender():
 function getWebNotificationConstructor(): {
   permission: string;
   requestPermission?: () => Promise<string>;
-  new (
-    title: string,
-    options?: {
-      body?: string;
-      data?: Record<string, unknown>;
-      icon?: string;
-    },
-  ): unknown;
+  new (title: string, options?: WebNotificationOptions): unknown;
 } | null {
   const NotificationConstructor = (
     globalThis as {
       Notification?: {
         permission: string;
         requestPermission?: () => Promise<string>;
-        new (
-          title: string,
-          options?: { body?: string; data?: Record<string, unknown>; icon?: string },
-        ): unknown;
+        new (title: string, options?: WebNotificationOptions): unknown;
       };
     }
   ).Notification;
@@ -153,20 +171,25 @@ export async function sendOsNotification(payload: OsNotificationPayload): Promis
   }
 
   const NotificationConstructor = getWebNotificationConstructor();
-  if (NotificationConstructor) {
-    const granted = await ensureNotificationPermission();
-    if (granted) {
-      const notification = new NotificationConstructor(payload.title, {
-        body: payload.body,
-        data: payload.data,
-        icon: getWebNotificationIconUrl(),
-      }) as WebNotificationInstance;
-      if (hasNotificationClickTarget(payload.data)) {
-        attachWebClickHandler(notification, payload.data);
-      }
-      return true;
-    }
+  if (!NotificationConstructor) return false;
+  const agent = readAgentNotificationData(payload.data);
+  // Track before awaiting permission so state that changes meanwhile is still observed.
+  const key = agent ? getDismissalTracker().track(agent, agent.reason) : null;
+  const granted = await ensureNotificationPermission();
+  if (!granted) {
+    if (key) getDismissalTracker().forget(key);
+    return false;
   }
-
-  return false;
+  const notification = new NotificationConstructor(payload.title, {
+    body: payload.body,
+    data: payload.data,
+    icon: getWebNotificationIconUrl(),
+    ...(key ? { tag: key, renotify: true } : {}),
+  }) as WebNotificationInstance;
+  // A same-tag notification replaced the previous one; closing the old instance is not needed.
+  if (key) liveWebNotifications.set(key, notification);
+  if (hasNotificationClickTarget(payload.data)) {
+    attachWebClickHandler(notification, payload.data);
+  }
+  return true;
 }

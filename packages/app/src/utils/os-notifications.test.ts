@@ -5,6 +5,14 @@ interface MockNotificationOptions {
   body?: string;
   data?: Record<string, unknown>;
   icon?: string;
+  tag?: string;
+  renotify?: boolean;
+}
+
+interface FakeDismissal {
+  tracked: Array<{ serverId: string; agentId: string; reason: string }>;
+  forgotten: string[];
+  dismiss: (keys: string[]) => void;
 }
 
 interface MockNotificationInstance {
@@ -46,7 +54,26 @@ async function loadModuleForPlatform(
   },
 ) {
   vi.resetModules();
+  const dismissal: FakeDismissal = { tracked: [], forgotten: [], dismiss: () => undefined };
   vi.doMock("react-native", () => ({ Platform: { OS: platform } }));
+  vi.doMock("@/notification-dismissal", async () => {
+    const key = await import("@/notification-dismissal/key");
+    return {
+      readAgentNotificationData: key.readAgentNotificationData,
+      createAppNotificationDismissalTracker: (dismiss: (keys: string[]) => void) => {
+        dismissal.dismiss = dismiss;
+        return {
+          track: (identity: { serverId: string; agentId: string }, reason: string) => {
+            dismissal.tracked.push({ ...identity, reason });
+            return key.agentNotificationKey(identity);
+          },
+          forget: (trackedKey: string) => dismissal.forgotten.push(trackedKey),
+          reconcile: () => undefined,
+          dispose: () => undefined,
+        };
+      },
+    };
+  });
   vi.doMock("@/desktop/host", () => ({
     getDesktopHost: () => options?.desktopHost ?? null,
   }));
@@ -57,7 +84,7 @@ async function loadModuleForPlatform(
       })),
     },
   }));
-  return import("./os-notifications");
+  return { ...(await import("./os-notifications")), dismissal };
 }
 
 function restoreGlobals(): void {
@@ -95,6 +122,7 @@ describe("sendOsNotification", () => {
 
   afterEach(() => {
     vi.doUnmock("react-native");
+    vi.doUnmock("@/notification-dismissal");
     vi.restoreAllMocks();
     vi.resetModules();
     restoreGlobals();
@@ -260,6 +288,48 @@ describe("sendOsNotification", () => {
     expect(sent).toBe(true);
     expect(created).toHaveLength(1);
     expect(created[0]?.clickListeners).toHaveLength(0);
+  });
+
+  it("gives each thread one tagged notification and closes it when dismissed", async () => {
+    const created: MockNotificationInstance[] = [];
+
+    class MockNotification implements MockNotificationInstance {
+      static permission = "granted";
+      static requestPermission = vi.fn(async () => "granted");
+      clickListeners: Array<(event: Event) => void> = [];
+      close = vi.fn();
+
+      constructor(
+        public title: string,
+        public options?: MockNotificationOptions,
+      ) {
+        created.push(this);
+      }
+
+      addEventListener(): void {}
+    }
+
+    (globalThis as { Notification?: unknown }).Notification = MockNotification;
+    const { sendOsNotification, dismissal } = await loadModuleForPlatform("web");
+    const data = { serverId: "srv-1", workspaceId: "w", agentId: "agent-1", reason: "finished" };
+
+    await sendOsNotification({ title: "First", data });
+    await sendOsNotification({ title: "Second", data });
+    await sendOsNotification({ title: "Test", body: "No agent" });
+
+    const key = "paseo-agent:srv-1:agent-1";
+    expect(created.map((notification) => notification.options?.tag)).toEqual([key, key, undefined]);
+    expect(created[1]?.options?.renotify).toBe(true);
+    expect(created[2]?.options).not.toHaveProperty("renotify");
+    expect(dismissal.tracked).toEqual([
+      { serverId: "srv-1", agentId: "agent-1", reason: "finished" },
+      { serverId: "srv-1", agentId: "agent-1", reason: "finished" },
+    ]);
+
+    dismissal.dismiss([key]);
+    // The browser already replaced the first notification; only the live one is closed.
+    expect(created[0]?.close).not.toHaveBeenCalled();
+    expect(created[1]?.close).toHaveBeenCalledTimes(1);
   });
 
   it("uses the desktop notification bridge when available", async () => {
