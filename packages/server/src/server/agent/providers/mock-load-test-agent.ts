@@ -257,6 +257,8 @@ interface MockQuestionPromptQuestion {
 }
 
 interface MockQuestionPromptRequest {
+  /** The permission title, which notifications show; defaults to "Questions". */
+  title?: string;
   questions: MockQuestionPromptQuestion[];
 }
 
@@ -302,6 +304,7 @@ function parseMockQuestionPrompt(prompt: AgentPromptInput): MockQuestionPromptRe
     // Relative paths resolve against the agent cwd; the spec writes the files.
     const outsidePath = /outside image:\s*(\S+)/i.exec(text)?.[1] ?? "/nonexistent.png";
     return {
+      title: "Which hero? ![Hero banner](question-images/hero.png)",
       questions: [
         {
           question:
@@ -319,6 +322,11 @@ function parseMockQuestionPrompt(prompt: AgentPromptInput): MockQuestionPromptRe
             {
               label: "Remote",
               description: "![Remote swatch](https://example.com/remote.png)",
+              preview: "+--------+\n| remote |\n+--------+",
+            },
+            {
+              label: "Preview",
+              preview: "![Blue preview](question-images/blue.png)",
             },
             { label: "No alt", description: "![](question-images/no-alt.png)" },
             { label: "Outside", description: `![Outside swatch](${outsidePath})` },
@@ -1463,7 +1471,7 @@ export class MockLoadTestAgentSession implements AgentSession {
       provider: this.provider,
       name: "MockQuestions",
       kind: "question",
-      title: "Questions",
+      title: questionPrompt.title ?? "Questions",
       input: {
         questions: questionPrompt.questions,
       },

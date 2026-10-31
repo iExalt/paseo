@@ -43,6 +43,28 @@ describe("buildAgentAttentionNotificationPayload", () => {
     });
   });
 
+  it("shows images as placeholders in notification text", () => {
+    const body = (assistantMessage: string) =>
+      buildAgentAttentionNotificationPayload({
+        reason: "finished",
+        serverId: "srv-1",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        assistantMessage,
+      }).body;
+
+    expect(body("Pick one:\n\n![Blue theme](mockups/blue.png)\n\n![](mockups/green.png)")).toBe(
+      "Pick one: [image: Blue theme] [image]",
+    );
+    expect(body("[![CI](https://x/badge.svg)](https://x/actions) is green")).toBe(
+      "[image: CI] is green",
+    );
+    expect(body("![chart](c.png)(see note)")).toBe("[image: chart](see note)");
+    expect(body("![a b](<my img.png>) and ![snake_case](s.png)")).toBe(
+      "[image: a b] and [image: snake_case]",
+    );
+  });
+
   it("builds permission notifications from request details", () => {
     const payload = buildAgentAttentionNotificationPayload({
       reason: "permission",

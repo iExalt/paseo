@@ -51,6 +51,15 @@ const truncateNotificationText = (text: string, limit: number): string => {
   return trimmed.length > 0 ? `${trimmed}...` : text.slice(0, limit);
 };
 
+const MARKDOWN_DESTINATION = String.raw`\((?:[^()\\]|\\.)*\)`;
+const LINKED_IMAGE = new RegExp(
+  String.raw`\[!\[([^\]]*)\]${MARKDOWN_DESTINATION}\]${MARKDOWN_DESTINATION}`,
+  "g",
+);
+const IMAGE = new RegExp(String.raw`!\[([^\]]*)\]${MARKDOWN_DESTINATION}`, "g");
+// Private-use delimiters keep image placeholders away from the link and emphasis rules below.
+const PLACEHOLDER_TOKEN = /\uE000(\d+)\uE001/g;
+
 const stripMarkdownToText = (markdown: string): string => {
   let text = markdown.replace(/\r\n/g, "\n");
 
@@ -58,8 +67,15 @@ const stripMarkdownToText = (markdown: string): string => {
   text = text.replace(/^\s*```[^\n]*$/gm, "");
   text = text.replace(/^\s*~~~[^\n]*$/gm, "");
 
-  // Markdown links/images.
-  text = text.replace(/!\[([^\]]*)\]\((?:[^()\\]|\\.)*\)/g, "$1");
+  // Images, linked or not, become "[image: alt]" or "[image]"; links become their text.
+  const placeholders: string[] = [];
+  const toPlaceholder = (_match: string, alt: string) => {
+    const label = alt.trim();
+    placeholders.push(label ? `[image: ${label}]` : "[image]");
+    return `\uE000${placeholders.length - 1}\uE001`;
+  };
+  text = text.replace(LINKED_IMAGE, toPlaceholder);
+  text = text.replace(IMAGE, toPlaceholder);
   text = text.replace(/\[([^\]]+)\]\((?:[^()\\]|\\.)*\)/g, "$1");
 
   // Structural prefixes.
@@ -79,7 +95,7 @@ const stripMarkdownToText = (markdown: string): string => {
   // Angle-bracketed URL autolinks.
   text = text.replace(/<([^>\n]+)>/g, "$1");
 
-  return text;
+  return text.replace(PLACEHOLDER_TOKEN, (_match, index: string) => placeholders[Number(index)]);
 };
 
 const buildNotificationPreview = (text: string | null | undefined): string | null => {

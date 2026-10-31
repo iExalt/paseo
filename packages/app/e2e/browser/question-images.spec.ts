@@ -100,6 +100,31 @@ test.describe("Question images", () => {
     }
   });
 
+  test("an image preview opens the image; a text preview still answers", async ({ page }) => {
+    test.setTimeout(180_000);
+    const { card, cleanup } = await openImageQuestion(page, {});
+    try {
+      const preview = await expectImageLoaded(card, "Blue preview");
+      expect((await preview.boundingBox())?.height).toBeLessThanOrEqual(QUESTION_IMAGE_MAX_HEIGHT);
+      await preview.click();
+      await expect(page.getByTestId("attachment-lightbox")).toBeVisible();
+      await expect(card.getByRole("radio", { name: /Preview/ })).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("attachment-lightbox")).toHaveCount(0);
+
+      await card.getByTestId("question-form-option-preview").getByText("| remote |").click();
+      await expect(card.getByRole("radio", { name: /Remote/ })).toHaveAttribute(
+        "aria-checked",
+        "true",
+      );
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("relative images resolve against the agent cwd, not the workspace root", async ({
     page,
   }) => {

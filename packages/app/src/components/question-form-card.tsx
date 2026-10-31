@@ -23,6 +23,7 @@ import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
   isQuestionAnswered,
+  parseImageOnlyPreview,
   parseQuestionFormQuestions,
   questionShowsTextInput,
   resolveDismissLabel,
@@ -43,18 +44,23 @@ const IS_WEB = isWeb;
 // drag to the preview's nested scroll, so lines past a cap would be unreachable.
 const OPTION_PREVIEW_MAX_HEIGHT = IS_WEB ? 240 : undefined;
 
-// Web clicks that must not answer: a link in the label, anything in the description, and the
-// second click of a double-click, which would otherwise land on the next question's options.
-function isNonAnsweringClick(event: GestureResponderEvent, description: View | null): boolean {
+// Web clicks that must not answer: a link in the label, anything in the description or an image
+// preview, and the second click of a double-click, which would otherwise land on the next
+// question's options.
+function isNonAnsweringClick(
+  event: GestureResponderEvent,
+  ownedRegions: readonly (View | null)[],
+): boolean {
   if (!IS_WEB) return false;
   const click = event.nativeEvent as unknown as MouseEvent;
   if (click.detail > 1) return true;
   const target = click.target as Element | null;
-  const descriptionElement = description as unknown as Element | null;
-  return Boolean(target?.closest("a") || descriptionElement?.contains(target));
+  if (target?.closest("a")) return true;
+  return ownedRegions.some((region) => (region as unknown as Element | null)?.contains(target));
 }
 
-// The description is selectable text, so a touch on it belongs to the text, not the option.
+// The description is selectable text and an image preview opens the image, so a touch on either
+// belongs to it, not the option.
 const claimResponder = () => true;
 
 function getQuestionInputPlaceholder({
@@ -93,9 +99,14 @@ function QuestionOptionRow({
   const { theme } = useUnistyles();
 
   const descriptionRef = useRef<View>(null);
+  const imagePreviewRef = useRef<View>(null);
+  const imagePreview = useMemo(
+    () => (option.preview ? parseImageOnlyPreview(option.preview) : null),
+    [option.preview],
+  );
   const handlePress = useCallback(
     (event: GestureResponderEvent) => {
-      if (isNonAnsweringClick(event, descriptionRef.current)) return;
+      if (isNonAnsweringClick(event, [descriptionRef.current, imagePreviewRef.current])) return;
       onToggle(qIndex, optIndex, multiSelect);
     },
     [onToggle, qIndex, optIndex, multiSelect],
@@ -160,7 +171,16 @@ function QuestionOptionRow({
               <MarkdownRenderer text={option.description} dialog muted />
             </View>
           ) : null}
-          {option.preview ? (
+          {imagePreview ? (
+            <View
+              ref={imagePreviewRef}
+              testID="question-form-option-preview-image"
+              onStartShouldSetResponder={claimResponder}
+            >
+              <MarkdownRenderer text={imagePreview} dialog selectable={false} />
+            </View>
+          ) : null}
+          {option.preview && !imagePreview ? (
             // Shown for every option at once so they can be compared before picking.
             // Long lines wrap, as in Claude Code, since most previews are prose.
             <ScrollableCodeSurface
