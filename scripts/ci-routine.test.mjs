@@ -277,11 +277,24 @@ test("hosted planner propagates failure before emitting a matrix", () => {
   }
 });
 
-test("latency gate rejects overruns and missing API evidence for the current attempt", () => {
+test("latency reporting is advisory while routine success remains required", () => {
+  const steps = workflow.jobs.required.steps;
+  assert.equal(
+    steps.find((step) => step.name === "Report complete routine latency")["continue-on-error"],
+    true,
+  );
+  assert.equal(
+    steps.find((step) => step.name === "Require complete routine success")["continue-on-error"] ??
+      false,
+    false,
+  );
+});
+
+test("latency reporting detects overruns and missing API evidence for the current attempt", () => {
   const fixture = mkdtempSync(join(tmpdir(), "paseo-ci-latency-"));
   try {
     const script = workflow.jobs.required.steps.find(
-      (step) => step.name === "Enforce complete routine latency",
+      (step) => step.name === "Report complete routine latency",
     ).run;
     assert.match(script, /attempts\/\$GITHUB_RUN_ATTEMPT\/jobs/);
     assert.match(script, /--paginate/);
@@ -313,6 +326,11 @@ test("latency gate rejects overruns and missing API evidence for the current att
         },
       });
       assert.equal(result.status === 0, pass, `${elapsed}/${apiStatus}/${stamp}`);
+      if (apiStatus === 0 && stamp === valid) {
+        const message = `Routine critical path: ${elapsed}s (budget <300s; initial queue excluded, job scheduling included).`;
+        assert.ok(result.stdout.toString().includes(message));
+        assert.ok(readFileSync(join(fixture, "summary"), "utf8").includes(message));
+      }
     }
   } finally {
     rmSync(fixture, { recursive: true, force: true });

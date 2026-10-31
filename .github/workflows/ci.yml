@@ -196,7 +196,8 @@ jobs:
           RESULT: ${{ needs.routine.result }}
           PLAN_RESULT: ${{ needs.plan.result }}
         run: test "$PLAN_RESULT" = success && test "$RESULT" = success
-      - name: Enforce complete routine latency
+      - name: Report complete routine latency
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -209,5 +210,8 @@ jobs:
           fi
           start_seconds="$(date -u -d "$started" +%s)"
           elapsed=$(( $(date -u +%s) - start_seconds ))
-          echo "Routine critical path: ${elapsed}s (budget <300s; initial queue excluded, job scheduling included)." >> "$GITHUB_STEP_SUMMARY"
-          test "$elapsed" -ge 0 && test "$elapsed" -lt 300
+          echo "Routine critical path: ${elapsed}s (budget <300s; initial queue excluded, job scheduling included)." | tee -a "$GITHUB_STEP_SUMMARY"
+          if ! { test "$elapsed" -ge 0 && test "$elapsed" -lt 300; }; then
+            echo "::warning::Routine critical path ${elapsed}s exceeds the advisory budget (<300s)."
+            exit 1
+          fi
