@@ -37,7 +37,7 @@ import {
   planScrollToIndexRetry,
   READING_VIEWABILITY_CONFIG,
 } from "./reading-anchor";
-import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
+import { planNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { scrollOffsetForDelta } from "@/find-highlight/reveal";
@@ -90,6 +90,8 @@ const NATIVE_VIEWPORT_SETTLE_FRAMES = 4;
 const READING_RESTORE_STABLE_FRAMES = 3;
 const READING_RESTORE_MAX_FRAMES = 60;
 const NATIVE_STREAM_WINDOW_SIZE = 10;
+// A programmatic scroll owns the viewport until its scroll events stop for this long.
+const PROGRAMMATIC_SCROLL_QUIET_MS = 200;
 
 interface NativeRowGeometryContextValue {
   geometry: ReturnType<typeof createNativeRowGeometry>;
@@ -180,6 +182,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const streamKeyboardInset = useKeyboardStreamInset();
   const userScrollEndFrameIdRef = useRef<number | null>(null);
   const programmaticScrollEventBudgetRef = useRef(0);
+  const programmaticScrollQuietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isNativeViewportSettlingRef = useRef(false);
   const nativeViewportSettlingFrameIdRef = useRef<number | null>(null);
   const historyStartReadyRef = useRef(false);
@@ -283,6 +286,25 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     }
   }, []);
 
+  // Jumps, find and held reading positions can land near the bottom. Until their scroll
+  // events go quiet, a move toward the bottom is theirs, not the reader returning to it.
+  const holdProgrammaticScroll = useCallback(() => {
+    if (programmaticScrollQuietTimerRef.current !== null) {
+      clearTimeout(programmaticScrollQuietTimerRef.current);
+    }
+    programmaticScrollQuietTimerRef.current = setTimeout(() => {
+      programmaticScrollQuietTimerRef.current = null;
+    }, PROGRAMMATIC_SCROLL_QUIET_MS);
+  }, []);
+  useEffect(
+    () => () => {
+      if (programmaticScrollQuietTimerRef.current !== null) {
+        clearTimeout(programmaticScrollQuietTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const clearPendingUserScrollEnd = useCallback(() => {
     if (userScrollEndFrameIdRef.current !== null) {
       cancelAnimationFrame(userScrollEndFrameIdRef.current);
@@ -301,21 +323,18 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   const scrollToBottom = useCallback(
     (animated: boolean) => {
-      programmaticScrollEventBudgetRef.current = 3;
-      flatListRef.current?.scrollToOffset({
-        offset: 0,
-        animated:
-          animated &&
-          shouldAnimateNativeScrollToBottom({
-            offsetY: scrollOffsetYRef.current,
-            viewportHeight: streamViewportMetricsRef.current.viewportHeight,
-            windowSize: NATIVE_STREAM_WINDOW_SIZE,
-          }),
+      const plan = planNativeScrollToBottom({
+        animated,
+        offsetY: scrollOffsetYRef.current,
+        viewportHeight: streamViewportMetricsRef.current.viewportHeight,
+        windowSize: NATIVE_STREAM_WINDOW_SIZE,
       });
-      scrollOffsetYRef.current = 0;
+      programmaticScrollEventBudgetRef.current = 3;
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: plan.animated });
+      scrollOffsetYRef.current = plan.recordedOffsetY;
       streamViewportMetricsRef.current = {
         ...streamViewportMetricsRef.current,
-        offsetY: 0,
+        offsetY: plan.recordedOffsetY,
       };
       onNearBottomChange(true);
     },
@@ -432,6 +451,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     scrollToIndexTargetRowIdRef.current = historyRows[index]?.id ?? null;
     scrollToIndexAnimatedRef.current = animated;
     bottomAnchorController.detachByUser();
+    holdProgrammaticScroll();
     onNearBottomChange(false);
     // Live rows live in the list header, at offset zero of the inverted list.
     if (index < 0) {
@@ -493,6 +513,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const scrollByWindowDelta = useStableEvent((delta: number) => {
     readingAnchor.cancel();
     bottomAnchorController.detachByUser();
+    holdProgrammaticScroll();
     onNearBottomChange(false);
     programmaticScrollEventBudgetRef.current = 3;
     flatListRef.current?.scrollToOffset({
@@ -510,6 +531,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       });
       if (!retry) return;
       scrollToIndexRetriesRef.current += 1;
+      holdProgrammaticScroll();
       programmaticScrollEventBudgetRef.current = 3;
       flatListRef.current?.scrollToOffset({ offset: retry.estimatedOffset, animated: false });
       requestAnimationFrame(retryScrollToIndex);
@@ -539,7 +561,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
         markNativeViewportSettling();
       },
-      holdReadingPosition: () => bottomAnchorController.detachByUser(),
+      holdReadingPosition: () => {
+        bottomAnchorController.detachByUser();
+        holdProgrammaticScroll();
+      },
       scrollToMessage: (messageId) => scrollToMessage(messageId),
       scrollToItem: (itemId) => scrollToItem(itemId),
       scrollByWindowDelta: (delta) => scrollByWindowDelta(delta),
@@ -553,6 +578,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   }, [
     agentId,
     bottomAnchorController,
+    holdProgrammaticScroll,
     markNativeViewportSettling,
     readingAnchor,
     scrollByWindowDelta,
@@ -613,6 +639,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const handleScroll = useStableEvent((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const previousOffsetY = scrollOffsetYRef.current;
+    const isProgrammaticScroll = programmaticScrollQuietTimerRef.current !== null;
+    if (isProgrammaticScroll) holdProgrammaticScroll();
     const previousViewportWidth = streamViewportMetricsRef.current.viewportWidth;
     if (
       !isUserScrollActiveRef.current &&
@@ -651,6 +679,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       bottomAnchorController.handleScrollNearBottomChange({
         nextIsNearBottom: nearBottom,
         scrollDelta: contentOffset.y - previousOffsetY,
+        // The list is inverted: offset zero is the bottom.
+        scrolledTowardBottomByUser: !isProgrammaticScroll && contentOffset.y < previousOffsetY,
       });
     }
   });
