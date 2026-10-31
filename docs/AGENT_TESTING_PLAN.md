@@ -84,6 +84,7 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
   - **What it turns off and on:** relay, plugins and speech off; mock provider on.
   - **Seed data:** an optional synthetic "heavy chat" seed with tool calls, diffs and icons.
   - **Replaces:** hand-written `config.json`, an 11 min fight with plugins and speech downloads, an isolated home that registered with the real relay, and a profiling run blocked by having no fixtures.
+  - **Outcome (2026-10-31):** `npm run qa:web [--seed heavy]` and `--stop`. The relay registration came from a config that omitted `daemon.relay.enabled` (`COMPAT(relayOptInDefault)`); qa:web sets it, turns off usage sources and every provider but `mock`, and is ready in about 4 s on the station.
 - [ ] **12. `desktop:sandbox`.**
   - **What it is:** the existing `createIsolatedDesktopEnv`, `reserveDesktopDebugPort` and temporary-userData code from the release smoke scripts, promoted to a script.
   - **What it does:** keeps paths short (avoiding `Socket path too long`), prints the CDP URL, and defaults to dev-station under Xvfb, so no window opens on the Mac.

@@ -185,12 +185,50 @@ Playwright's `reducedMotion: 'reduce'` context option stops the web app's animat
 ring, the turn loader and switch thumbs. Only the running turn's elapsed time keeps changing, once
 a second.
 
-For a browser-only check, serve the web UI from an isolated daemon:
-[daemon-served web UI](upstream/development.md#bundled-daemon-web-ui) and
-`PASEO_CORS_ORIGINS` for a separate origin.
+For a browser-only check, start one with `npm run qa:web` (below).
 
 ## Isolated daemons
 
+`npm run qa:web` starts a scratch daemon that serves the web UI and prints one JSON line:
+
+```sh
+npm run -s qa:web -- --seed heavy
+# {"url":"http://127.0.0.1:36505/","serverId":"srv_…","home":"<repo>/.dev/qa-web/36505",
+#  "pid":…,"workerPid":…,"readyMs":3534,"providers":["mock"],
+#  "seed":{"agents":[{"title":"Realistic turn","id":"…"},…],"missing":[],"ms":11652},
+#  "stop":"npm run qa:web -- --stop <home>"}
+npm run qa:web -- --stop <home>
+```
+
+- It needs `npm run build:server` and `npm run build:daemon-web-ui` first, and names whichever is
+  missing. Build the web UI with `EXPO_PUBLIC_PASEO_AGENT_SWITCHES=1` for
+  [debug switches](#debug-switches); that changes the web UI every daemon in the worktree serves.
+- The home defaults to `<repo>/.dev/qa-web/<port>`. It refuses `~/.paseo`, an inherited
+  `PASEO_HOME` and a home that already has a config (unless `--reuse`), and never copies from
+  `~/.paseo`.
+- The relay, usage sources, plugins and speech are off. Only the mock provider is on: every other
+  provider, including those that built-in plugins register, is disabled in config before the
+  daemon starts, so it never probes their CLIs or accounts. Built-in plugins still load;
+  `pluginsEnabled` only covers configured plugins.
+- Every child process gets the scratch home and `PASEO_NODE_ENV=development`, and no inherited
+  `PASEO_*` variable, so it is safe to run from inside a Paseo agent.
+- `--seed heavy` creates a git workspace and three finished mock agents through the CLI: a
+  realistic turn (reads, searches, an edit with a diff, shell commands), 60 tool calls, and an
+  image. A browser that has loaded `/` once can open `<url>h/<serverId>/agent/<id>`.
+- Drive it with the built CLI and `--home`: `node packages/cli/bin/paseo agent send <id> "…" --home
+  <home>`. Mock models run for a fixed time; `ten-second-stream` is the seed's. Don't use
+  `npm run cli` here: it runs through `scripts/dev-home.sh`, which points at the worktree's own
+  `.dev/paseo-home` when `PASEO_HOME` is unset.
+- `--stop` only stops a home that qa:web started (it writes `.qa-web` there), and exits non-zero
+  if the supervisor, the worker or the port is still alive afterwards.
+
+For a daemon set up by hand:
+
+- Set `daemon.relay.enabled: false` explicitly. A config that omits it keeps the old relay-on
+  default until 2027-01-31 (`COMPAT(relayOptInDefault)`), so the scratch home registers with the
+  real relay.
+- To serve the web UI, see [daemon-served web UI](upstream/development.md#bundled-daemon-web-ui);
+  `PASEO_CORS_ORIGINS` allows a separate origin.
 - `paseo daemon start` (managed) ignores setting overrides such as `PASEO_LISTEN`, `PORT` and
   `PASEO_CORS_ORIGINS`, and names the ones it ignores on stderr. Put settings in
   `<home>/config.json`, or use `paseo daemon run` in the foreground, which keeps them.
