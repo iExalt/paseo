@@ -73,8 +73,11 @@ tracker holds directory demand for every host it has notifications for.
 | ------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | Browser             | Sent by this page; `tag` = thread key              | A reload loses them; they stay until the user clears them.                                                                                   |
 | Electron, macOS     | Sent this launch, plus `Notification.getHistory()` | Needs a signed build. The reason rides in `groupId`. Replaced notifications stay held for the session, since macOS reports no event.         |
-| Electron, Win/Linux | Sent this launch                                   | Notifications from an earlier launch can't be reached. A notification the user clears stays tracked until its thread resolves.               |
+| Electron, Win/Linux | Sent this launch                                   | Notifications from an earlier launch can't be reached.                                                                                       |
 | iOS, Android        | Whatever is in the notification shade              | Synced on start, on foreground and when a push arrives. Pushes resolved while the app was closed go on the next open. Android stacks pushes. |
+
+On every Electron platform, a notification the user clears stays tracked until its thread
+resolves: main does not forward the close to the renderer.
 
 Never call `close()` on a replaced Electron notification on macOS: macOS removes by identifier, so
 it removes the newer notification. On macOS dismiss a live notification with `close()`, not
