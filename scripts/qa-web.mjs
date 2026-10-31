@@ -3,6 +3,7 @@
 // checking the app in a browser. Prints one JSON line on stdout; progress goes to stderr.
 // See docs/agent-testing.md#isolated-daemons.
 import { execFile } from "node:child_process";
+import { createRequire } from "node:module";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
@@ -57,6 +58,19 @@ function preflight() {
     const commands = [...new Set(missing.map(([, command]) => command))];
     throw new Error(
       `Missing build output:\n${missing.map(([file]) => `  ${path.relative(repoRoot, file)}`).join("\n")}\nRun: ${commands.join(" && ")}`,
+    );
+  }
+  // An install with --ignore-scripts leaves node-pty unbuilt, and the daemon then exits at start
+  // (packages/server/src/terminal/terminal-worker-runtime.ts looks in the same two places).
+  const nodePty = path.dirname(
+    createRequire(path.join(repoRoot, "packages/server/package.json")).resolve(
+      "node-pty/package.json",
+    ),
+  );
+  const native = ["build/Release", `prebuilds/${process.platform}-${process.arch}`];
+  if (!native.some((relative) => existsSync(path.join(nodePty, relative)))) {
+    throw new Error(
+      `node-pty has no native build for ${process.platform}-${process.arch}.\nRun: npm rebuild node-pty`,
     );
   }
 }

@@ -297,7 +297,8 @@ npm run qa:web -- --stop <home>
 ```
 
 - It needs `npm run build:server` and `npm run build:daemon-web-ui` first, and names whichever is
-  missing. Build the web UI with `EXPO_PUBLIC_PASEO_AGENT_SWITCHES=1` for
+  missing. After `npm ci --ignore-scripts` it also asks for `npm rebuild node-pty`, without which
+  the daemon exits at start. Build the web UI with `EXPO_PUBLIC_PASEO_AGENT_SWITCHES=1` for
   [debug switches](#debug-switches); that changes the web UI every daemon in the worktree serves.
 - The home defaults to `<repo>/.dev/qa-web/<port>`. It refuses `~/.paseo`, an inherited
   `PASEO_HOME` and a home that already has a config (unless `--reuse`), and never copies from
