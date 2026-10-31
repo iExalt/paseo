@@ -4,6 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, expect, test } from "vitest";
+import {
+  assertPluginCompatibility,
+  PASEO_PLUGIN_API_VERSION,
+} from "@getpaseo/protocol/plugin-requirements";
 import { compilePlugin } from "../compiler.js";
 import { readPluginManifest } from "../manifest.js";
 import { DaemonClient } from "../../test-utils/daemon-client.js";
@@ -35,11 +39,18 @@ async function fixture(root: string, id: string, client = false): Promise<string
   return directory;
 }
 
-test("listed built-ins resolve to matching manifests and compile", async () => {
+test("listed built-ins resolve to matching manifests, fit the plugin API, and compile", async () => {
   const root = resolveBuiltinPluginsRoot();
   for (const id of builtinPlugins) {
     const directory = path.join(root, id);
-    expect((await readPluginManifest(directory)).id).toBe(id);
+    const manifest = await readPluginManifest(directory);
+    expect(manifest.id).toBe(id);
+    // Bootstrap checks against the plugin API version, so an upstream built-in can outrun it.
+    assertPluginCompatibility({
+      ...manifest,
+      version: PASEO_PLUGIN_API_VERSION,
+      runtime: "daemon",
+    });
     const findEntry = async (names: string[]) => {
       for (const name of names) {
         const entry = path.join(directory, name);

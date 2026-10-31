@@ -1,6 +1,7 @@
 import { createPluginHosts } from "./hosts";
 import { afterEach, expect, it } from "vitest";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { PluginRegistry } from "./registry";
 
 const audio = { play: async () => 0 };
@@ -60,17 +61,19 @@ it("production fork registry retains upstream plugin API requirements", () => {
       [
         {
           id: "supported",
-          requirements: { paseo: ">=0.11.0 <0.12.0" },
+          requirements: { paseo: `^${PASEO_PLUGIN_API_VERSION}` },
           clientBundle,
         },
-        { id: "future", requirements: { paseo: ">=0.12.0" }, clientBundle },
+        { id: "future", requirements: { paseo: `>${PASEO_PLUGIN_API_VERSION}` }, clientBundle },
         { id: "legacy", clientBundle },
       ],
       { client, audio },
     );
     expect(pluginRegistry.getEvaluationError(host, "supported")).toBeUndefined();
     expect(pluginRegistry.getSnapshot().map(({ id }) => id)).toEqual(["supported"]);
-    expect(pluginRegistry.getEvaluationError(host, "future")).toContain("requires Paseo >=0.12.0");
+    expect(pluginRegistry.getEvaluationError(host, "future")).toContain(
+      `requires Paseo >${PASEO_PLUGIN_API_VERSION}`,
+    );
     expect(pluginRegistry.getEvaluationError(host, "legacy")).toContain("targets Paseo before 0.8");
   } finally {
     pluginRegistry.removeHost(host);

@@ -99,7 +99,7 @@ jobs:
   macos-build:
     name: Build and sign macOS Nix closure
     needs: [resolve]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 90
     permissions:
       contents: read
@@ -155,7 +155,7 @@ jobs:
   macos-smoke:
     name: Install and launch macOS closure on a fresh runner
     needs: [resolve, macos-build]
-    runs-on: macos-14
+    runs-on: macos-15
     timeout-minutes: 30
     permissions:
       contents: read
