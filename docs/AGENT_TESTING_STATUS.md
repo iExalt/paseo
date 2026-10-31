@@ -203,16 +203,20 @@ Station, `e3ad6f5f7` plus the H change, server built, web UI from the Phase II f
 | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `--home` equal to an inherited `PASEO_HOME`                                                  | Refused, exit 1                                                                                                             |
 | Fake `HOME` with a sentinel in `.paseo/config.json`, `PASEO_HOME` and `PASEO_HOST` inherited | Default home used; sentinel absent from it; fake home unchanged (paths and mtimes); nothing on 6767; no sockets in the home |
-| Providers in `daemon status`                                                                 | `mock` available; built-in plugin providers `antigravity` and `muse` registered, unavailable                                |
+| Providers in `daemon status`                                                                 | Only `mock`; before the built-in plugins' providers were disabled, `antigravity` and `muse` registered too                  |
 | `daemon.log` (110 lines, `listening` and web UI lines present)                               | No relay, download or plugin install lines                                                                                  |
 | Seeded agents in Chromium                                                                    | All three reach `agent-timeline-settled`; the realistic turn shows an edit and shell commands, the image agent a data image |
 | CLI-sent `agent send` on a seeded agent                                                      | `turns` 0 → 1, settled after 10.6 s (`ten-second-stream`)                                                                   |
-| `--stop`                                                                                     | Supervisor, worker and port gone                                                                                            |
+| `--stop`                                                                                     | Supervisor, worker and port gone; refuses a home without `.qa-web`; a stopped daemon reports `wasRunning:false`             |
 | Ready time                                                                                   | 3.4–4.3 s from launch to a reachable daemon; seeding adds 11–12 s                                                           |
 
-`pluginsEnabled: false` only blocks configured plugins; built-in plugins always load. qa:web also
-turns off usage sources, which read the user's provider accounts, and reports the built-in
-plugins' providers as `otherProviders`, since their IDs are only known once the daemon runs.
+`pluginsEnabled: false` only blocks configured plugins; built-in plugins always load. Their
+providers are probed like any other: `muse` runs `muse --version` and then reads the account, and
+`antigravity` runs `agy --version` and loads its catalog. qa:web therefore disables them in config
+too, deriving their IDs from the built-in plugin list (a plugin named `<id>-provider` registers
+`<id>`, which a test checks against the plugin sources); disabled providers are never probed.
+Usage reads only happen when a client asks, and `UsageSession` refuses them when
+`daemon.usage.enabled` is false.
 `mock-slow` is a catalog-timeout fixture, not a slow turn; the mock provider's long models
 replace Phase II's slow ACP agent.
 

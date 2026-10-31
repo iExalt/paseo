@@ -1,9 +1,13 @@
+import { realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 // The only provider a qa:web daemon runs. Real providers stay off so a scratch daemon never
 // probes the user's own CLIs or accounts.
 export const QA_WEB_PROVIDER = "mock";
+
+// Written by start; --stop refuses a home without it, so it never stops a daemon it didn't start.
+export const QA_WEB_MARKER = ".qa-web";
 
 // Long homes risk Unix socket paths over the platform limit (104 bytes on macOS).
 const LONG_HOME_CHARS = 90;
@@ -84,12 +88,21 @@ export function qaWebEnv(env, home) {
   return { ...clean, PASEO_HOME: home, PASEO_NODE_ENV: "development" };
 }
 
+// Symlinks resolve for paths that exist, so a link to ~/.paseo is still recognised.
+function realPath(p) {
+  try {
+    return realpathSync(p);
+  } catch {
+    return path.resolve(p);
+  }
+}
+
 /** Returns warnings; throws when the home could be someone's real daemon home. */
 export function checkQaWebHome({ home, env, homeDir = os.homedir(), hasConfig, reuse }) {
-  const resolved = path.resolve(home);
+  const resolved = realPath(home);
   const protectedHomes = [path.join(homeDir, ".paseo"), env.PASEO_HOME]
     .filter(Boolean)
-    .map((p) => path.resolve(p));
+    .map(realPath);
   if (protectedHomes.includes(resolved)) {
     throw new Error(`Refusing to use ${resolved}: it is a real daemon home`);
   }
@@ -99,4 +112,20 @@ export function checkQaWebHome({ home, env, homeDir = os.homedir(), hasConfig, r
   return resolved.length > LONG_HOME_CHARS
     ? [`${resolved} is ${resolved.length} characters; a Unix socket under it may exceed the limit`]
     : [];
+}
+
+export function checkQaWebStopHome({ home, hasMarker }) {
+  if (!hasMarker) {
+    throw new Error(`Refusing to stop ${home}: qa:web did not start it (no ${QA_WEB_MARKER})`);
+  }
+}
+
+/**
+ * Provider IDs registered by built-in plugins. A plugin named `<id>-provider` registers the
+ * provider `<id>`; qa-web.test.mjs checks that convention against the plugin sources.
+ */
+export function builtinPluginProviderIds(builtinPlugins) {
+  return builtinPlugins
+    .filter((id) => id.endsWith("-provider"))
+    .map((id) => id.slice(0, -"-provider".length));
 }

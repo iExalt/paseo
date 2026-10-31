@@ -1,6 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildQaWebConfig, checkQaWebHome, parseQaWebArgs, qaWebEnv } from "./qa-web-config.mjs";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+import {
+  buildQaWebConfig,
+  builtinPluginProviderIds,
+  checkQaWebHome,
+  checkQaWebStopHome,
+  parseQaWebArgs,
+  qaWebEnv,
+} from "./qa-web-config.mjs";
+
+const repoRoot = path.resolve(import.meta.dirname, "..");
 
 test("the scratch config turns off the relay, usage, plugins, speech and every provider but mock", () => {
   const providerIds = ["claude", "codex", "future-provider", "mock", "mock-slow"];
@@ -63,4 +74,28 @@ test("arguments parse into start and stop modes and reject the unknown", () => {
   assert.throws(() => parseQaWebArgs(["--port", "0"]), /Invalid --port/);
   assert.throws(() => parseQaWebArgs(["--home"]), /needs a value/);
   assert.throws(() => parseQaWebArgs(["--bogus"]), /Unknown option/);
+});
+
+test("--stop only stops homes qa:web started", () => {
+  assert.throws(() => checkQaWebStopHome({ home: "/h", hasMarker: false }), /did not start it/);
+  checkQaWebStopHome({ home: "/h", hasMarker: true });
+});
+
+test("each built-in provider plugin registers the provider its name implies", () => {
+  const source = readFileSync(
+    path.join(repoRoot, "packages/server/src/server/plugins/builtin/index.ts"),
+    "utf8",
+  );
+  const builtinPlugins = [...source.matchAll(/^\s+"([a-z0-9-]+)",$/gm)].map((match) => match[1]);
+  assert.ok(builtinPlugins.length > 0);
+  const providerIds = builtinPluginProviderIds(builtinPlugins);
+  assert.ok(providerIds.length > 0);
+  for (const id of providerIds) {
+    const serverDir = path.join(repoRoot, "plugins", `${id}-provider`, "server");
+    const sources = readdirSync(serverDir)
+      .filter((file) => file.endsWith(".ts") && !file.endsWith(".test.ts"))
+      .map((file) => readFileSync(path.join(serverDir, file), "utf8"))
+      .join("\n");
+    assert.match(sources, new RegExp(`\\bid: "${id}"`), `${id}-provider registers "${id}"`);
+  }
 });

@@ -194,7 +194,7 @@ For a browser-only check, start one with `npm run qa:web` (below).
 ```sh
 npm run -s qa:web -- --seed heavy
 # {"url":"http://127.0.0.1:36505/","serverId":"srv_…","home":"<repo>/.dev/qa-web/36505",
-#  "pid":…,"workerPid":…,"readyMs":3534,"otherProviders":["antigravity","muse"],
+#  "pid":…,"workerPid":…,"readyMs":3534,"providers":["mock"],
 #  "seed":{"agents":[{"title":"Realistic turn","id":"…"},…],"missing":[],"ms":11652},
 #  "stop":"npm run qa:web -- --stop <home>"}
 npm run qa:web -- --stop <home>
@@ -207,8 +207,9 @@ npm run qa:web -- --stop <home>
   `PASEO_HOME` and a home that already has a config (unless `--reuse`), and never copies from
   `~/.paseo`.
 - The relay, usage sources, plugins and speech are off. Only the mock provider is on: every other
-  registered provider is disabled in config. Built-in plugins still load and register their own
-  providers, listed in `otherProviders`.
+  provider, including those that built-in plugins register, is disabled in config before the
+  daemon starts, so it never probes their CLIs or accounts. Built-in plugins still load;
+  `pluginsEnabled` only covers configured plugins.
 - Every child process gets the scratch home and `PASEO_NODE_ENV=development`, and no inherited
   `PASEO_*` variable, so it is safe to run from inside a Paseo agent.
 - `--seed heavy` creates a git workspace and three finished mock agents through the CLI: a
@@ -218,7 +219,8 @@ npm run qa:web -- --stop <home>
   <home>`. Mock models run for a fixed time; `ten-second-stream` is the seed's. Don't use
   `npm run cli` here: it runs through `scripts/dev-home.sh`, which points at the worktree's own
   `.dev/paseo-home` when `PASEO_HOME` is unset.
-- `--stop` exits non-zero if the supervisor, the worker or the port is still alive afterwards.
+- `--stop` only stops a home that qa:web started (it writes `.qa-web` there), and exits non-zero
+  if the supervisor, the worker or the port is still alive afterwards.
 
 For a daemon set up by hand:
 

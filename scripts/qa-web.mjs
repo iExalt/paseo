@@ -11,15 +11,23 @@ import { promisify } from "node:util";
 import { isMainModule } from "./is-main-module.mjs";
 import {
   buildQaWebConfig,
+  builtinPluginProviderIds,
   checkQaWebHome,
+  checkQaWebStopHome,
   parseQaWebArgs,
   qaWebEnv,
+  QA_WEB_MARKER,
   QA_WEB_PROVIDER,
 } from "./qa-web-config.mjs";
 
 const run = promisify(execFile);
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const cliBin = path.join(repoRoot, "packages/cli/bin/paseo");
+const protocolManifest = path.join(repoRoot, "packages/protocol/dist/provider-manifest.js");
+const builtinPluginList = path.join(
+  repoRoot,
+  "packages/server/dist/server/server/plugins/builtin/index.js",
+);
 const SEED_MODEL = "ten-second-stream";
 // A 1×1 PNG, so the seeded image renders without a network fetch.
 const SEED_IMAGE =
@@ -37,7 +45,8 @@ function log(message) {
 function preflight() {
   const required = [
     [cliBin.replace(/bin\/paseo$/, "dist/index.js"), "npm run build:server"],
-    [path.join(repoRoot, "packages/protocol/dist/provider-manifest.js"), "npm run build:server"],
+    [protocolManifest, "npm run build:server"],
+    [builtinPluginList, "npm run build:server"],
     [
       path.join(repoRoot, "packages/server/dist/server/web-ui/index.html"),
       "npm run build:daemon-web-ui",
@@ -52,13 +61,17 @@ function preflight() {
   }
 }
 
+// Every provider the daemon can register, including built-in plugins' providers, so they are
+// disabled before the daemon would probe their CLIs and accounts.
 async function registeredProviderIds() {
-  const manifest = await import(
-    pathToFileURL(path.join(repoRoot, "packages/protocol/dist/provider-manifest.js")).href
-  );
-  return [...manifest.AGENT_PROVIDER_DEFINITIONS, ...manifest.DEV_AGENT_PROVIDER_DEFINITIONS].map(
-    (definition) => definition.id,
-  );
+  const manifest = await import(pathToFileURL(protocolManifest).href);
+  const { builtinPlugins } = await import(pathToFileURL(builtinPluginList).href);
+  return [
+    ...[...manifest.AGENT_PROVIDER_DEFINITIONS, ...manifest.DEV_AGENT_PROVIDER_DEFINITIONS].map(
+      (definition) => definition.id,
+    ),
+    ...builtinPluginProviderIds(builtinPlugins),
+  ];
 }
 
 function freePort() {
@@ -165,6 +178,7 @@ async function start(args) {
     log(warning);
   }
   mkdirSync(home, { recursive: true });
+  writeFileSync(path.join(home, QA_WEB_MARKER), "");
 
   log(`starting a daemon in ${home}`);
   let launch;
@@ -194,10 +208,7 @@ async function start(args) {
     pid: launch.pid,
     workerPid: status.workerPid,
     readyMs,
-    // Built-in plugins register these; their IDs are only known once the daemon runs.
-    otherProviders: (status.providers ?? [])
-      .map((provider) => provider.provider)
-      .filter((id) => id !== QA_WEB_PROVIDER),
+    providers: (status.providers ?? []).map((provider) => provider.provider),
     ...(seed ? { seed } : {}),
     stop: `npm run qa:web -- --stop ${home}`,
   };
@@ -207,7 +218,12 @@ async function start(args) {
 async function stop(args) {
   const home = path.resolve(args.home);
   checkQaWebHome({ home, env: process.env, hasConfig: false, reuse: true });
+  checkQaWebStopHome({ home, hasMarker: existsSync(path.join(home, QA_WEB_MARKER)) });
   const status = await paseo(home, ["daemon", "status"]);
+  if (!status.pid) {
+    process.stdout.write(`${JSON.stringify({ stopped: home, wasRunning: false })}\n`);
+    return;
+  }
   const port =
     Number(
       String(status.listen ?? "")
@@ -227,7 +243,7 @@ async function stop(args) {
     leftovers = await findLeftovers();
   }
   if (leftovers.length > 0) throw new Error(`Still running after stop: ${leftovers.join(", ")}`);
-  process.stdout.write(`${JSON.stringify({ stopped: home })}\n`);
+  process.stdout.write(`${JSON.stringify({ stopped: home, wasRunning: true })}\n`);
 }
 
 if (isMainModule(import.meta.url)) {
