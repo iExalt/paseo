@@ -1,14 +1,32 @@
+import { readAgentSwitch, subscribeAgentSwitches } from "@/diagnostics/agent-switches";
 import { nativeTerminalPerformanceNow } from "./terminal-performance";
 
 // Dev-only trace of native terminal input order and echo latency, written to
 // logcat (ReactNativeJS) as one `[paseo-terminal-trace]` JSON line per event.
 // EXPO_PUBLIC_* is inlined at bundle time, so a normal build carries only the
 // disabled branch. "1" logs character classes; "full" logs the typed text,
-// including anything typed at a password prompt.
+// including anything typed at a password prompt. A build with agent switches
+// also turns it on at run time: `trace=terminal-input` or `terminal-input:full`.
 const TRACE_MODE = process.env.EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE;
+const ENV_TRACE_ENABLED = TRACE_MODE === "1" || TRACE_MODE === "full";
+const ENV_TRACE_FULL_TEXT = TRACE_MODE === "full";
+// Repeated here, not imported, so bundles without the flag still fold it away.
+const SWITCHES_ENABLED = process.env.EXPO_PUBLIC_PASEO_AGENT_SWITCHES === "1";
 
-export const TERMINAL_TRACE_ENABLED = TRACE_MODE === "1" || TRACE_MODE === "full";
-const TRACE_FULL_TEXT = TRACE_MODE === "full";
+let switchTrace = SWITCHES_ENABLED ? readAgentSwitch("trace") : undefined;
+if (SWITCHES_ENABLED) {
+  subscribeAgentSwitches(() => {
+    switchTrace = readAgentSwitch("trace");
+  });
+}
+
+export function isTerminalTraceEnabled(): boolean {
+  return ENV_TRACE_ENABLED || (SWITCHES_ENABLED && switchTrace !== undefined);
+}
+
+function isTraceFullText(): boolean {
+  return ENV_TRACE_FULL_TEXT || (SWITCHES_ENABLED && switchTrace === "terminal-input:full");
+}
 
 /**
  * Letters become `a`, digits `0`, other printable ASCII `p`, other non-ASCII
@@ -50,7 +68,7 @@ export function redactTerminalTraceKey(key: string): string {
 }
 
 function traceText(text: string): string {
-  return TRACE_FULL_TEXT ? text : redactTerminalTraceText(text);
+  return isTraceFullText() ? text : redactTerminalTraceText(text);
 }
 
 // JSON leaves DEL unescaped, which hides a sent Backspace in a log viewer.
@@ -70,7 +88,7 @@ let lastChangeText = "";
 let pendingReset: { reason: string; staleText: string } | null = null;
 
 export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, sent: string): void {
-  if (!TERMINAL_TRACE_ENABLED) {
+  if (!isTerminalTraceEnabled()) {
     return;
   }
   const line: Record<string, unknown> = {
@@ -93,7 +111,7 @@ export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, se
 }
 
 export function traceTerminalReset(reason: TerminalInputResetReason): void {
-  if (!TERMINAL_TRACE_ENABLED) {
+  if (!isTerminalTraceEnabled()) {
     return;
   }
   if (pendingReset) {
@@ -127,7 +145,7 @@ export type TerminalLatencyStage =
   | "commit";
 
 export function traceTerminalLatency(stage: TerminalLatencyStage, chars: number): void {
-  if (!TERMINAL_TRACE_ENABLED) {
+  if (!isTerminalTraceEnabled()) {
     return;
   }
   writeTraceLine(JSON.stringify({ t: nativeTerminalPerformanceNow(), stage, chars }));
@@ -135,7 +153,7 @@ export function traceTerminalLatency(stage: TerminalLatencyStage, chars: number)
 
 /** Logs a free-form trace line, such as the connection in use or a probe result. */
 export function traceTerminalEvent(fields: Record<string, unknown>): void {
-  if (!TERMINAL_TRACE_ENABLED) {
+  if (!isTerminalTraceEnabled()) {
     return;
   }
   writeTraceLine(JSON.stringify({ t: nativeTerminalPerformanceNow(), ...fields }));

@@ -9,13 +9,13 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 
 ## Current snapshot
 
-| Field             | Status                                                                                    |
-| ----------------- | ----------------------------------------------------------------------------------------- |
-| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
-| Current phase     | Phase II (plan Phase 2), approved 2026-10-31                                              |
-| Overall state     | Phase I complete and re-checked on the rebased build; E merged; F implemented             |
-| Immediate focus   | Publish F; shape G (debug switches)                                                       |
-| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
+| Field             | Status                                                                                           |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                                     |
+| Current phase     | Phase II (plan Phase 2), approved 2026-10-31                                                     |
+| Overall state     | Phase I complete and re-checked on the rebased build; E and F merged; G switches 1–2 implemented |
+| Immediate focus   | Publish the trace, clock and notification switches; then Transfer and updater (G3)               |
+| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`)        |
 
 ### Routine CI baseline
 
@@ -41,15 +41,15 @@ budget at about 340 s with every lane green.
 ones; SHAs in the 2026-10-30 log entries are superseded. The `?open=` fix (#266, a cherry-pick of
 upstream #7918) is now upstream's own commit `9abc4f41f`.
 
-| Chunk                    | Status   | Evidence                                                                      |
-| ------------------------ | -------- | ----------------------------------------------------------------------------- |
-| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                       |
-| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`      |
-| C. Forms and selectors   | complete | #268, `058c9ce85`                                                             |
-| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                    |
-| E. Motion                | complete | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps) |
-| F. Ready markers         | active   | Web probe and tablet pass; [results below](#f-ready-markers)                  |
-| G. Debug switches        | planned  | Build-flag gate (decided 2026-10-31); adds the frozen elapsed clock from E    |
+| Chunk                    | Status   | Evidence                                                                                      |
+| ------------------------ | -------- | --------------------------------------------------------------------------------------------- |
+| A. Docs and device facts | complete | #264, `416ab4e8c`; tablet results below                                                       |
+| B. Reach and observe     | complete | Upstream #7918 (`9abc4f41f`); pair route and log lines #267, `cab4305db`                      |
+| C. Forms and selectors   | complete | #268, `058c9ce85`                                                                             |
+| D. CLI and build         | complete | #265, `7d58cefc8`; scratch-home runs below                                                    |
+| E. Motion                | complete | #272, `5563b2dc8`; no app change needed; [results below](#e-motion-and-dumps)                 |
+| F. Ready markers         | complete | #274, `ab8dafbe5`; [results below](#f-ready-markers)                                          |
+| G. Debug switches        | active   | Trace, clock and notification switches pass on the tablet; [results below](#g-debug-switches) |
 
 ### A: device facts
 
@@ -163,6 +163,27 @@ the accessibility tree, so Android waits use the log line.
 In a fresh browser profile, opening `/h/<serverId>/agent/<agentId>` on the daemon-served web UI
 first lands on `/open-project`; the same URL works once the host is saved.
 
+### G: debug switches
+
+Tablet, build of the G branch with `EXPO_PUBLIC_PASEO_AGENT_SWITCHES=1` (sha256 `674882c1…`),
+harness terminal fixture, text typed with `adb shell input text`:
+
+| Check                                             | Result                                                                                               |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Cold start, no extras                             | No `debug` lines, no trace                                                                           |
+| Warm `--es paseo.trace terminal-input`            | `debug set key=trace value=terminal-input`; typing `ab3` traced as `aa0` (classes only)              |
+| Home, then `am start` with no extras              | No second `debug set`                                                                                |
+| Warm `paseo.trace off` and an unknown key         | `debug set key=trace value=off`, `debug rejected key=colour reason=unknown-key`                      |
+| Cold start with `--es paseo.trace terminal-input` | `debug set` at launch; typing `Pw9x` traced as classes (`a`, `aa`, `aa0`, …)                         |
+| Running chat, phone width, scales at 0            | 5 frames / 12 events / 0 of 3 dumps; with `clock=frozen`, 0 / 2 / 3 of 3                             |
+| Cleared app, add the harness host                 | Permission dialog takes focus; with `notifications=skip`, no dialog and `push prompt status=skipped` |
+
+The first flagged build lost cold-start switches: the activity reaches the foreground before the
+JavaScript subscribes, so the native module now holds switches until JavaScript takes them.
+`pm revoke` plus clearing the permission flags did not bring the prompt back (Expo remembers that
+it asked), so the prompt check used `pm clear`; the harness app was set up again with host
+127.0.0.1:6790 and lost its other settings on 2026-10-31.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -237,3 +258,5 @@ first lands on `/open-project`; the same URL works once the host is saved.
   as documentation, and the frozen clock moves to G.
 - E merged as #272. F's readiness marker and `timeline state` log line pass the web probe with
   CLI-sent 0 ms, 200 ms and cancelled turns, and the tablet logcat wait; the marker is web-only.
+- F merged as #274. G: trace, frozen clock and notification switches pass on the tablet; the
+  harness APK is now the flagged G build.

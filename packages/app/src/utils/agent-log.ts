@@ -2,7 +2,7 @@
 // `[paseo-agent] <area> <event> key=value ...` on logcat's ReactNativeJS tag and the web console.
 // docs/agent-testing.md#agent-log-lines lists the events.
 
-export type AgentLogArea = "link" | "connection" | "push" | "update" | "timeline";
+export type AgentLogArea = "link" | "connection" | "push" | "update" | "timeline" | "debug";
 export type AgentLogValue = string | number | boolean | null | undefined;
 
 const MAX_VALUE_LENGTH = 160;

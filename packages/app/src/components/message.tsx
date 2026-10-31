@@ -1,4 +1,5 @@
 import { MessagePreview, MessageSender } from "@/components/user-message";
+import { useLiveElapsedMs } from "@/components/live-elapsed";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
@@ -742,20 +743,7 @@ export const LiveElapsed = memo(function LiveElapsed({
   style,
   testID,
 }: LiveElapsedProps) {
-  const startedAtMs = startedAt.getTime();
-  const [elapsedMs, setElapsedMs] = useState(() => Math.max(0, Date.now() - startedAtMs));
-  const visibleElapsedMs = active ? Math.max(0, Date.now() - startedAtMs) : elapsedMs;
-
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    setElapsedMs(Math.max(0, Date.now() - startedAtMs));
-    const handle = setInterval(() => {
-      setElapsedMs(Math.max(0, Date.now() - startedAtMs));
-    }, 1000);
-    return () => clearInterval(handle);
-  }, [active, startedAtMs]);
+  const visibleElapsedMs = useLiveElapsedMs(startedAt.getTime(), active);
 
   return (
     <Text style={style} testID={testID}>

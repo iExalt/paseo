@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useHostRuntimeSnapshot } from "@/runtime/host-runtime";
 import {
-  TERMINAL_TRACE_ENABLED,
+  isTerminalTraceEnabled,
   traceTerminalEvent,
 } from "@/terminal/native-renderer/terminal-input-trace";
 
@@ -20,18 +20,19 @@ export function useTerminalConnectionTrace(input: {
 }): void {
   const { serverId, client, active } = input;
   const activeConnection = useHostRuntimeSnapshot(serverId)?.activeConnection ?? null;
-  const connectionType = TERMINAL_TRACE_ENABLED ? (activeConnection?.type ?? null) : null;
-  const connectionDisplay = TERMINAL_TRACE_ENABLED ? (activeConnection?.display ?? null) : null;
+  const traceEnabled = isTerminalTraceEnabled();
+  const connectionType = traceEnabled ? (activeConnection?.type ?? null) : null;
+  const connectionDisplay = traceEnabled ? (activeConnection?.display ?? null) : null;
 
   useEffect(() => {
-    if (!TERMINAL_TRACE_ENABLED) {
+    if (!traceEnabled) {
       return;
     }
     traceTerminalEvent({ connection: connectionType, display: connectionDisplay });
-  }, [connectionType, connectionDisplay]);
+  }, [traceEnabled, connectionType, connectionDisplay]);
 
   useEffect(() => {
-    if (!TERMINAL_TRACE_ENABLED || !client || !active) {
+    if (!traceEnabled || !client || !active) {
       return;
     }
     let cancelled = false;
@@ -50,5 +51,5 @@ export function useTerminalConnectionTrace(input: {
       cancelled = true;
       clearInterval(handle);
     };
-  }, [client, active]);
+  }, [traceEnabled, client, active]);
 }

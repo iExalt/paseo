@@ -4,6 +4,7 @@ import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
+import { readAgentSwitch } from "@/diagnostics/agent-switches";
 import { agentLog, describeError } from "@/utils/agent-log";
 import {
   PUSH_CHANNEL_ID,
@@ -27,10 +28,17 @@ function getExpoProjectId(): string | null {
   return fromExtra.success ? fromExtra.data : null;
 }
 
+// Repeated here, not imported, so bundles without the flag still fold it away.
+const SWITCHES_ENABLED = process.env.EXPO_PUBLIC_PASEO_AGENT_SWITCHES === "1";
+
 async function ensurePushPermission(prompt: boolean): Promise<boolean> {
   const existing = await Notifications.getPermissionsAsync();
   if (existing.status === Notifications.PermissionStatus.GRANTED) return true;
   if (!prompt || !existing.canAskAgain) return false;
+  if (SWITCHES_ENABLED && readAgentSwitch("notifications") === "skip") {
+    agentLog("push", "prompt", { status: "skipped", reason: "debug-switch" });
+    return false;
+  }
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status === Notifications.PermissionStatus.GRANTED;
 }
