@@ -121,7 +121,7 @@ describe("desktop notification handlers", () => {
     },
   );
 
-  it("lists delivered agent notifications on macOS only", async () => {
+  it("lists macOS history from earlier launches", async () => {
     electron.FakeNotification.getHistory.mockResolvedValueOnce([
       { id: "paseo-agent:host:agent", groupId: "paseo-agent:host:agent:permission" },
       { id: "", groupId: "" },
@@ -130,7 +130,15 @@ describe("desktop notification handlers", () => {
     expect(await invoke("paseo:notification:delivered")).toEqual([
       { id: "paseo-agent:host:agent", groupId: "paseo-agent:host:agent:permission" },
     ]);
+  });
+
+  it("lists this process's live notifications with their reason for a reloaded window", async () => {
     setPlatform("linux");
+    await send("Live");
+    expect(await invoke("paseo:notification:delivered")).toEqual([
+      { id: "paseo-agent:host:agent", groupId: "paseo-agent:host:agent:finished" },
+    ]);
+    await invoke("paseo:notification:dismiss", ["paseo-agent:host:agent"]);
     expect(await invoke("paseo:notification:delivered")).toEqual([]);
   });
 });

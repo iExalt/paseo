@@ -154,6 +154,14 @@ describe("notification dismissal tracker", () => {
     expect(environment.demanded.size).toBe(0);
   });
 
+  it("stays inert after dispose, even for a sync that was already in flight", () => {
+    const { environment, tracker } = setup();
+    tracker.dispose();
+    tracker.track(AGENT, "finished");
+    expect(environment.listener).toBeNull();
+    expect(environment.demanded.size).toBe(0);
+  });
+
   it("dismisses at once when the host is removed", async () => {
     const { environment, dismissed, tracker } = setup();
     tracker.track(AGENT, "permission");

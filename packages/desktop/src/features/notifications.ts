@@ -26,10 +26,15 @@ interface NotificationClickPayload {
 // notification stays held for the session: macOS reports no event when it is replaced.
 const activeNotifications = new Set<Notification>();
 const notificationsById = new Map<string, Notification>();
+/** The renderer's group id per thread, which carries the reason even where the OS drops it. */
+const rendererGroupIds = new Map<string, string>();
 
 function forgetNotification(notification: Notification, id: string | null): void {
   activeNotifications.delete(notification);
-  if (id && notificationsById.get(id) === notification) notificationsById.delete(id);
+  if (id && notificationsById.get(id) === notification) {
+    notificationsById.delete(id);
+    rendererGroupIds.delete(id);
+  }
 }
 
 /**
@@ -49,6 +54,7 @@ export function dismissNotifications(ids: readonly string[]): void {
   for (const id of ids) {
     const notification = notificationsById.get(id);
     notificationsById.delete(id);
+    rendererGroupIds.delete(id);
     if (!notification) {
       earlierLaunch.push(id);
       continue;
@@ -64,15 +70,20 @@ export function dismissNotifications(ids: readonly string[]): void {
   }
 }
 
-/** Notifications still in Notification Center from earlier launches. macOS only. */
+/**
+ * Notifications a fresh renderer should track: the ones this process still holds (after a
+ * window reload), and on macOS those still in Notification Center from earlier launches.
+ */
 export async function listDeliveredNotifications(): Promise<DeliveredNotification[]> {
-  if (process.platform !== "darwin") return [];
-  const delivered = await Notification.getHistory();
-  return delivered.flatMap((notification) =>
-    notification.id && notification.groupId
-      ? [{ id: notification.id, groupId: notification.groupId }]
-      : [],
-  );
+  const delivered = new Map<string, string>(rendererGroupIds);
+  if (process.platform === "darwin") {
+    for (const notification of await Notification.getHistory()) {
+      if (notification.id && notification.groupId && !delivered.has(notification.id)) {
+        delivered.set(notification.id, notification.groupId);
+      }
+    }
+  }
+  return [...delivered].map(([id, groupId]) => ({ id, groupId }));
 }
 
 function toTrimmedString(value: unknown): string | null {
@@ -168,7 +179,8 @@ export function registerNotificationHandlers(): void {
     const body = toTrimmedString(rawInput?.body) ?? undefined;
     const data = toRecord(rawInput?.data);
     const id = toTrimmedString(rawInput?.id);
-    const groupId = resolveGroupId(id, toTrimmedString(rawInput?.groupId));
+    const rendererGroupId = toTrimmedString(rawInput?.groupId);
+    const groupId = resolveGroupId(id, rendererGroupId);
     const icon = getNotificationIcon();
     const settings = await getDesktopSettingsStore().get();
     const notification = new Notification({
@@ -184,6 +196,8 @@ export function registerNotificationHandlers(): void {
     if (id) {
       const previous = notificationsById.get(id);
       notificationsById.set(id, notification);
+      if (rendererGroupId) rendererGroupIds.set(id, rendererGroupId);
+      else rendererGroupIds.delete(id);
       // macOS replaces a delivered notification with the same id, and closing the old object
       // would remove the new one by identifier. Linux ignores ids, so close the old one first.
       if (previous && process.platform !== "darwin") {

@@ -57,7 +57,7 @@ export interface DesktopNotificationBridge {
   isSupported?: () => Promise<boolean>;
   sendNotification?: (payload: DesktopNotificationPayload) => Promise<boolean>;
   dismissNotifications?: (ids: string[]) => Promise<void>;
-  /** Notifications delivered before this launch; empty outside macOS. */
+  /** Notifications a fresh renderer should track: still held by main, or (macOS) from earlier launches. */
   getDeliveredNotifications?: () => Promise<Array<{ id: string; groupId: string }>>;
 }
 

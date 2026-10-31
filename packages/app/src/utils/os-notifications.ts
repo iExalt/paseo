@@ -72,8 +72,8 @@ function getDismissalTracker(): NotificationDismissalTracker {
 }
 
 /**
- * Tracks notifications still in the desktop notification center from an earlier launch, so
- * the ones whose threads were resolved meanwhile go away. Call once at startup.
+ * Tracks desktop notifications this renderer did not send: ones from before a window reload,
+ * and on macOS ones from an earlier launch. Those resolved meanwhile go away. Call at startup.
  */
 export async function adoptDeliveredOsNotifications(): Promise<void> {
   const getDelivered = getDesktopNotificationBridge()?.getDeliveredNotifications;

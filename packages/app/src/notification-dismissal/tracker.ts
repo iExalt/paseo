@@ -55,6 +55,8 @@ export function createNotificationDismissalTracker(input: {
   let unsubscribe: (() => void) | null = null;
   let timer: unknown = null;
   let scheduled = false;
+  // An async caller can still reach a disposed tracker; it must not resubscribe or demand.
+  let disposed = false;
 
   function syncDirectoryDemand(): void {
     const servers = new Set([...entries.values()].map((entry) => entry.serverId));
@@ -94,6 +96,7 @@ export function createNotificationDismissalTracker(input: {
 
   function reconcile(): void {
     scheduled = false;
+    if (disposed) return;
     const plan = planNotificationDismissals({
       entries: [...entries.values()],
       hostsLoaded: environment.hostsLoaded(),
@@ -120,6 +123,7 @@ export function createNotificationDismissalTracker(input: {
   return {
     track(identity, reason, options) {
       const key = agentNotificationKey(identity);
+      if (disposed) return key;
       if (options?.ifAbsent && entries.has(key)) return key;
       entries.set(key, {
         key,
@@ -140,6 +144,7 @@ export function createNotificationDismissalTracker(input: {
     },
     reconcile,
     dispose() {
+      disposed = true;
       setRecheck(null);
       unsubscribe?.();
       unsubscribe = null;
