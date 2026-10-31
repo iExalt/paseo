@@ -60,6 +60,7 @@ async function loadModuleForPlatform(
     const key = await import("@/notification-dismissal/key");
     return {
       readAgentNotificationData: key.readAgentNotificationData,
+      agentNotificationKey: key.agentNotificationKey,
       createAppNotificationDismissalTracker: (dismiss: (keys: string[]) => void) => {
         dismissal.dismiss = dismiss;
         return {
@@ -330,6 +331,47 @@ describe("sendOsNotification", () => {
     // The browser already replaced the first notification; only the live one is closed.
     expect(created[0]?.close).not.toHaveBeenCalled();
     expect(created[1]?.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a notification resolved while permission was pending, and forgets one the user closes", async () => {
+    const created: Array<{ title: string; closeListeners: Array<() => void> }> = [];
+    let grant!: (permission: string) => void;
+
+    class MockNotification {
+      static permission = "default";
+      static requestPermission = vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            grant = resolve;
+          }),
+      );
+      closeListeners: Array<() => void> = [];
+      close = vi.fn();
+      constructor(public title: string) {
+        created.push(this);
+      }
+      addEventListener(event: string, listener: () => void): void {
+        if (event === "close") this.closeListeners.push(listener);
+      }
+    }
+
+    (globalThis as { Notification?: unknown }).Notification = MockNotification;
+    const { sendOsNotification, dismissal } = await loadModuleForPlatform("web");
+    const data = { serverId: "srv-1", workspaceId: "w", agentId: "agent-1", reason: "finished" };
+    const key = "paseo-agent:srv-1:agent-1";
+
+    const first = sendOsNotification({ title: "Read elsewhere", data });
+    await Promise.resolve();
+    dismissal.dismiss([key]);
+    grant("granted");
+    MockNotification.permission = "granted";
+    await first;
+    expect(created).toHaveLength(0);
+
+    await sendOsNotification({ title: "Unread", data });
+    expect(created).toHaveLength(1);
+    created[0]?.closeListeners.forEach((listener) => listener());
+    expect(dismissal.forgotten).toEqual([key]);
   });
 
   it("uses the desktop notification bridge when available", async () => {

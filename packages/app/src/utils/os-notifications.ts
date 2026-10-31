@@ -3,6 +3,7 @@ import { getDesktopHost } from "@/desktop/host";
 import { parseNotificationOpenTarget, WEB_NOTIFICATION_CLICK_EVENT } from "@/notification-open";
 import { isNative } from "@/constants/platform";
 import {
+  agentNotificationKey,
   createAppNotificationDismissalTracker,
   readAgentNotificationData,
   type NotificationDismissalTracker,
@@ -19,7 +20,7 @@ export interface WebNotificationClickDetail {
 }
 
 interface WebNotificationInstance {
-  addEventListener: (type: "click", listener: (event: Event) => void) => void;
+  addEventListener: (type: "click" | "close", listener: (event: Event) => void) => void;
   close: () => void;
 }
 
@@ -37,10 +38,14 @@ let notificationIconUrl: string | null | undefined;
 let dismissalTracker: NotificationDismissalTracker | null = null;
 /** Live browser notifications by thread key. Lost on reload; those stay until the user clears them. */
 const liveWebNotifications = new Map<string, WebNotificationInstance>();
+/** Keys tracked while their notification awaits permission, and whether dismissal came first. */
+const pendingWebNotifications = new Map<string, { dismissed: boolean }>();
 
 function getDismissalTracker(): NotificationDismissalTracker {
   dismissalTracker ??= createAppNotificationDismissalTracker((keys) => {
     for (const key of keys) {
+      const pending = pendingWebNotifications.get(key);
+      if (pending) pending.dismissed = true;
       liveWebNotifications.get(key)?.close();
       liveWebNotifications.delete(key);
     }
@@ -173,21 +178,40 @@ export async function sendOsNotification(payload: OsNotificationPayload): Promis
   const NotificationConstructor = getWebNotificationConstructor();
   if (!NotificationConstructor) return false;
   const agent = readAgentNotificationData(payload.data);
-  // Track before awaiting permission so state that changes meanwhile is still observed.
-  const key = agent ? getDismissalTracker().track(agent, agent.reason) : null;
+  const key = agent ? agentNotificationKey(agent) : null;
+  const pending = { dismissed: false };
+  if (agent && key) {
+    pendingWebNotifications.set(key, pending);
+    // Track before awaiting permission so state that changes meanwhile is still observed.
+    getDismissalTracker().track(agent, agent.reason);
+  }
   const granted = await ensureNotificationPermission();
+  if (key && pendingWebNotifications.get(key) === pending) pendingWebNotifications.delete(key);
   if (!granted) {
     if (key) getDismissalTracker().forget(key);
     return false;
   }
+  // Resolved while permission was pending: the notification is already out of date.
+  if (pending.dismissed) return true;
   const notification = new NotificationConstructor(payload.title, {
     body: payload.body,
     data: payload.data,
     icon: getWebNotificationIconUrl(),
     ...(key ? { tag: key, renotify: true } : {}),
   }) as WebNotificationInstance;
-  // A same-tag notification replaced the previous one; closing the old instance is not needed.
-  if (key) liveWebNotifications.set(key, notification);
+  if (key) {
+    // A same-tag notification replaced the previous one; closing the old instance is not needed.
+    liveWebNotifications.set(key, notification);
+    notification.addEventListener("close", () => {
+      // The user cleared it; stop holding the host's directory for it. A newer notification
+      // for the thread, live or still pending, keeps the entry.
+      if (liveWebNotifications.get(key) !== notification || pendingWebNotifications.has(key)) {
+        return;
+      }
+      liveWebNotifications.delete(key);
+      getDismissalTracker().forget(key);
+    });
+  }
   if (hasNotificationClickTarget(payload.data)) {
     attachWebClickHandler(notification, payload.data);
   }
