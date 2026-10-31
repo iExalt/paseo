@@ -156,11 +156,12 @@ Switches set at launch apply before the app connects, so `--es paseo.notificatio
 start keeps the permission prompt away. Once the app has asked for the permission, Android only
 shows the prompt again after `adb shell pm clear <package>`.
 
-| Key             | Values                                  | Effect                                                                                                     |
-| --------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `trace`         | `terminal-input`, `terminal-input:full` | Native terminal input trace as `[paseo-terminal-trace]` lines; `:full` logs typed text, passwords included |
-| `clock`         | `frozen`                                | The running turn's elapsed time stops ticking, so a running chat can be dumped (with the scale recipe)     |
-| `notifications` | `skip`                                  | The notification permission prompt is never shown; logs `push prompt status=skipped`                       |
+| Key             | Values                                  | Effect                                                                                                                                                                                                                                                     |
+| --------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `trace`         | `terminal-input`, `terminal-input:full` | Native terminal input trace as `[paseo-terminal-trace]` lines; `:full` logs typed text, passwords included                                                                                                                                                 |
+| `clock`         | `frozen`                                | The running turn's elapsed time stops ticking, so a running chat can be dumped (with the scale recipe)                                                                                                                                                     |
+| `notifications` | `skip`                                  | The notification permission prompt is never shown; logs `push prompt status=skipped`                                                                                                                                                                       |
+| `transfer`      | `bridge`, `receiver`                    | Shows the preferences Transfer row in About on any platform, for UI checks. Its button exports (`bridge`) or opens a file picker before a confirmed import (`receiver`); the transfer itself needs the real packages, so don't run it on the shared tablet |
 
 ## Desktop and web
 

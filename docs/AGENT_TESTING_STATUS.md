@@ -9,13 +9,13 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 
 ## Current snapshot
 
-| Field             | Status                                                                                           |
-| ----------------- | ------------------------------------------------------------------------------------------------ |
-| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                                     |
-| Current phase     | Phase II (plan Phase 2), approved 2026-10-31                                                     |
-| Overall state     | Phase I complete and re-checked on the rebased build; E and F merged; G switches 1–2 implemented |
-| Immediate focus   | Publish the trace, clock and notification switches; then Transfer and updater (G3)               |
-| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`)        |
+| Field             | Status                                                                                                 |
+| ----------------- | ------------------------------------------------------------------------------------------------------ |
+| Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                                           |
+| Current phase     | Phase II (plan Phase 2), approved 2026-10-31                                                           |
+| Overall state     | E and F merged; G's trace, clock, notification and transfer switches done; the updater switch deferred |
+| Immediate focus   | Publish the transfer switch; Phase II boundary review                                                  |
+| Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`)              |
 
 ### Routine CI baseline
 
@@ -178,6 +178,14 @@ harness terminal fixture, text typed with `adb shell input text`:
 | Running chat, phone width, scales at 0            | 5 frames / 12 events / 0 of 3 dumps; with `clock=frozen`, 0 / 2 / 3 of 3                             |
 | Cleared app, add the harness host                 | Permission dialog takes focus; with `notifications=skip`, no dialog and `push prompt status=skipped` |
 
+Web, daemon-served UI built with the flag: `/settings/about` shows no Transfer row without
+switches, `preferences-import` with `{"transfer":"receiver"}` in `sessionStorage`, and
+`preferences-export` with `bridge`.
+
+The planned `updater=on` and `updaterBase` switches were dropped. Every updater call first checks
+that the installed version code follows the fork's encoding and stops with "migration required"
+otherwise, so a non-fork build would only ever show that state.
+
 The first flagged build lost cold-start switches: the activity reaches the foreground before the
 JavaScript subscribes, so the native module now holds switches until JavaScript takes them.
 `pm revoke` plus clearing the permission flags did not bring the prompt back (Expo remembers that
@@ -197,16 +205,19 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
   redirect after a connected import is unchanged listener code and untested.
 - Whether the soft keyboard stays up after Enter moves focus to the port is unchecked on a phone.
 - The update row and update stages only run in `fork` builds, so their testIDs and logs get
-  unit tests only until G's updater switch.
+  unit tests only. A run-time updater switch cannot help: a non-fork build fails the updater's
+  installed-version check before it fetches anything. A fork-variant harness build is a Phase 3
+  candidate.
 
 ## Active risks and decisions
 
-| Risk or decision | Evidence or uncertainty                                                                      | Mitigation                                                                                  |
-| ---------------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Shared tablet    | Other sessions drive the same guest and harness APK                                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated |
-| Upstream drift   | `dev` is rebased onto upstream periodically (645 commits on 2026-10-30), which rewrites SHAs | Cite PR numbers with SHAs; check upstream before each app fix                               |
-| Turn batching    | The turn counter relies on seeing the turn open in some store update                         | A unit test closes a turn inside one `act()`; upstream batching changes would show there    |
-| CI headroom      | After the rebase, server-2 and server-3 take 219 s and 222 s against the 300 s critical path | Watch each chunk's run; app tests from F and G land in app lanes                            |
+| Risk or decision | Evidence or uncertainty                                                                      | Mitigation                                                                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shared tablet    | Other sessions drive the same guest and harness APK                                          | `/tmp/t3/LOCK-agent-testing` while driving; focus guard on every action; HARNESS.md updated                                                                    |
+| Upstream drift   | `dev` is rebased onto upstream periodically (645 commits on 2026-10-30), which rewrites SHAs | Cite PR numbers with SHAs; check upstream before each app fix                                                                                                  |
+| Turn batching    | The turn counter relies on seeing the turn open in some store update                         | A unit test closes a turn inside one `act()`; upstream batching changes would show there                                                                       |
+| CI headroom      | After the rebase, server-2 and server-3 take 219 s and 222 s against the 300 s critical path | Watch each chunk's run; app tests from F and G land in app lanes                                                                                               |
+| App lane noise   | Dev pushes with no app change ran app-2 in 115–204 s (`cdb9e43e5`, `5563b2dc8`, `efb823a20`) | Compare app-1 plus app-2 across several runs before calling a regression; G's two runs (151 s, 156 s) sit inside that range and its new tests take under 0.2 s |
 
 ## Open questions
 
@@ -260,3 +271,5 @@ it asked), so the prompt check used `pm clear`; the harness app was set up again
   CLI-sent 0 ms, 200 ms and cancelled turns, and the tablet logcat wait; the marker is web-only.
 - F merged as #274. G: trace, frozen clock and notification switches pass on the tablet; the
   harness APK is now the flagged G build.
+- G: the transfer switch shows the Transfer row on web with no source edit; the updater switch is
+  deferred to a fork-variant harness build (Phase 3 candidate).
