@@ -14,7 +14,7 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
 | Current phase     | Phase III (plan Phase 3) approved 2026-10-31: T, H, I, J, K, L                            |
 | Overall state     | Phase II merged; T retires the `transfer` switch; open limits under Current boundary      |
-| Immediate focus   | I (Android helper) in review, then J (`e2e/probe/`)                                       |
+| Immediate focus   | J (browser probes) in review, then K (`desktop:sandbox`)                                  |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
@@ -52,7 +52,8 @@ upstream #7918) is now upstream's own commit `9abc4f41f`.
 | G. Debug switches        | complete    | #275, `489adafe4`; #276, `3b41fbffb`; [results below](#g-debug-switches)      |
 | T. Retire `transfer`     | complete    | #278, `e3ad6f5f7`                                                             |
 | H. `qa:web`              | complete    | #280, `333551771`; [results below](#h-qaweb)                                  |
-| I. Android helper        | implemented | [results below](#i-android-helper)                                            |
+| I. Android helper        | complete    | #282, `ddf9a2af5`; [results below](#i-android-helper)                         |
+| J. Browser probes        | implemented | [results below](#j-browser-probes)                                            |
 
 ### A: device facts
 
@@ -240,6 +241,23 @@ The scratch daemon's host was removed again through the helper (`host-page-remov
 `remove-host-confirm`), leaving the harness app with 127.0.0.1:6790 only. The phone was not
 used; its check waits for the next phone session.
 
+### J: browser probes
+
+Station, `npm run probe -- .dev/probes/` with the committed example and two check probes:
+
+| Check                                                                                       | Result                                                                                                    |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Example: a seeded agent's chat settles                                                      | Passes in 3.4 s after a 15–20 s `qa:web --seed heavy` boot                                                |
+| `desktop: "local-daemon"`, then settings from the sidebar                                   | `settings-section-permissions` visible; without `desktop`, absent while `settings-section-general` shows  |
+| A probe that fails on purpose after `console.error("Warning: %s received %d props: %o", …)` | `test-failed-1.png`, a trace and `console-tail.txt` with `Warning: ProbeCheck received 2 props: { a: 1 }` |
+| Real app console                                                                            | React Native Web's `Animated: useNativeDriver is not supported…` warning arrives as text                  |
+| Daemons after runs with failures                                                            | Every `.dev/qa-web` home stopped; a failure restarts the worker, which boots its own daemon               |
+| App typecheck, oxlint, knip                                                                 | Clean for `packages/app/e2e/probe`; knip reports nothing new                                              |
+
+The first fake returned `null` for `start_desktop_daemon`, and the app showed "The local server
+failed to start". The desktop app parses a daemon status from start and restart as well as from
+`desktop_daemon_status`, and connects over TCP when the status has `listen`.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -336,3 +354,8 @@ used; its check waits for the next phone session.
 - H merged as #280. I: `agent-adb.py` repeats the Phase I link and form checks and F's turn wait
   on the tablet with no other adb commands, and refuses input outside the app and restarts of the
   user's own app.
+- I merged as #282; the phone-debug skill points at the helper (nix-home-manager-config
+  `07a39af`). No home-manager switch was needed: skills are linked out of the store, and a
+  generation built from the pushed commit matched the active one file for file.
+- J: probes in `.dev/probes` run with `npm run probe` against a `qa:web` daemon, with a typed fake
+  desktop bridge and console tails on failure.

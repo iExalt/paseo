@@ -107,6 +107,8 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
   - quieter Metro logs;
   - a committed fake `window.paseoDesktop` bridge with scenarios, used with the item 9 override.
 
+  **Outcome (2026-10-31):** probes are Playwright tests in the gitignored `.dev/probes`, run with `npm run probe`. Fixtures in `packages/app/e2e/probe/` boot `qa:web`, format console arguments and keep a console tail beside the failure screenshot, and install a fake desktop bridge typed against `DesktopHostBridge`. Quieter Metro logs were dropped: probes use the daemon-served web UI.
+
 ## Phase 4: larger seams (each L; do when the area is next touched)
 
 - [ ] **15. Electron test seams:**
