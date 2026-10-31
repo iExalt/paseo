@@ -994,7 +994,8 @@ describe("OMP agent client and session", () => {
   test.each(["result after ack", "result before ack"] as const)(
     "fails a prompt OMP rejects before its agent runs (%s)",
     async (order) => {
-      const omp = new OmpHarness();
+      const scheduler = new ManualNoTurnScheduler();
+      const omp = new OmpHarness({ noTurnScheduler: scheduler });
       await omp.start();
 
       await expect(
@@ -1002,6 +1003,7 @@ describe("OMP agent client and session", () => {
           "Reply with ok.",
           "No API key found for anthropic.",
           order,
+          () => scheduler.settle(),
         ),
       ).rejects.toThrow("No API key found for anthropic.");
       expect(omp.turnFailures()).toEqual(["No API key found for anthropic."]);

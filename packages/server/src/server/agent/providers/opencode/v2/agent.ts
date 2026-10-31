@@ -48,6 +48,7 @@ interface V2AgentOptions {
   managedProcesses?: ManagedProcessRegistry;
   bridge?: OpenCodeBridge;
   runtime?: Pick<V2Runtime, "acquire" | "shutdown">;
+  turnRecoveryIntervalMs?: number;
 }
 
 export class OpenCodeV2AgentClient implements AgentClient {
@@ -202,6 +203,7 @@ export class OpenCodeV2AgentClient implements AgentClient {
       bindChild,
       acquire,
       moved,
+      this.options.turnRecoveryIntervalMs,
     );
     try {
       if (this.options.bridge) {
