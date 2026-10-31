@@ -360,6 +360,7 @@ export class OmpHarness {
     input: string,
     error: string,
     order: "result after ack" | "result before ack",
+    settleNoTurnWindow?: () => void,
   ): Promise<unknown> {
     const session = this.requireSession();
     const runtime = this.omp.latestSession();
@@ -377,7 +378,11 @@ export class OmpHarness {
     if (order === "result before ack") runtime.emit(rejection);
     await promptStarted;
     await waitForImmediate();
-    if (order === "result after ack") runtime.emit(rejection);
+    if (order === "result after ack") {
+      runtime.emit(rejection);
+      await waitForImmediate();
+    }
+    settleNoTurnWindow?.();
     return await run;
   }
 
