@@ -14,7 +14,7 @@ to current evidence. The agent-facing result is [agent-testing.md](agent-testing
 | Baseline          | `89889fa6d`, `dev` after the 2026-10-30 rebase onto upstream                              |
 | Current phase     | Phase III (plan Phase 3) approved 2026-10-31: T, H, I, J, K, L                            |
 | Overall state     | Phase II merged; T retires the `transfer` switch; open limits under Current boundary      |
-| Immediate focus   | H (`qa:web`) in review, then I (Android helper)                                           |
+| Immediate focus   | I (Android helper) in review, then J (`e2e/probe/`)                                       |
 | Routine CI budget | Critical path under 300 s from the `plan` job's start (`docs/GITHUB_WORKFLOWS_STATUS.md`) |
 
 ### Routine CI baseline
@@ -51,7 +51,8 @@ upstream #7918) is now upstream's own commit `9abc4f41f`.
 | F. Ready markers         | complete    | #274, `ab8dafbe5`; [results below](#f-ready-markers)                          |
 | G. Debug switches        | complete    | #275, `489adafe4`; #276, `3b41fbffb`; [results below](#g-debug-switches)      |
 | T. Retire `transfer`     | complete    | #278, `e3ad6f5f7`                                                             |
-| H. `qa:web`              | implemented | [results below](#h-qaweb)                                                     |
+| H. `qa:web`              | complete    | #280, `333551771`; [results below](#h-qaweb)                                  |
+| I. Android helper        | implemented | [results below](#i-android-helper)                                            |
 
 ### A: device facts
 
@@ -220,6 +221,25 @@ Usage reads only happen when a client asks, and `UsageSession` refuses them when
 `mock-slow` is a catalog-timeout fixture, not a slow turn; the mock provider's long models
 replace Phase II's slow ACP agent.
 
+### I: Android helper
+
+Tablet, flagged harness APK, `scripts/android/agent-adb.py` run inside the pod with
+`AGENT_ADB="$C adb"` and no other adb commands except `input` checks and log reads with `-T`:
+
+| Check                                                            | Result                                                                                                                   |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `focus` with Paseo, the launcher and Settings in front           | Exit 0 for Paseo; `tap` refused with exit 2 for the launcher and Settings                                                |
+| `--package sh.paseo.iexalt switch` and `open --cold`             | Refused, exit 2                                                                                                          |
+| Phase I links, cold and warm (`pair#` and `///#` invalid offers) | Workspace deck reached, `link import status=failed`, no Unmatched Route; matches Phase I                                 |
+| Cold `?open=terminal`, `agent`, `file`                           | The matching workspace tab is `selected`; matches Phase I                                                                |
+| Direct form through `tap`, `type`, `key ENTER`                   | Host focused, Enter moves focus to the port, the port's text is replaced, the modal closes and the new host comes online |
+| `turns`, a CLI-sent 0 ms turn, `wait-turn --after`               | 0 → 1 after 800 ms; a long turn cancelled → 2                                                                            |
+| `turns` for an agent with no line                                | `unknown`, exit 3                                                                                                        |
+
+The scratch daemon's host was removed again through the helper (`host-page-remove-host-button`,
+`remove-host-confirm`), leaving the harness app with 127.0.0.1:6790 only. The phone was not
+used; its check waits for the next phone session.
+
 ## Current boundary
 
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
@@ -313,3 +333,6 @@ replace Phase II's slow ACP agent.
   update after I includes a home-manager switch.
 - T merged as #278. H: `qa:web` starts a scratch daemon in 3.4–4.3 s on the station with only the
   mock provider on; the isolation, readiness and stop checks pass.
+- H merged as #280. I: `agent-adb.py` repeats the Phase I link and form checks and F's turn wait
+  on the tablet with no other adb commands, and refuses input outside the app and restarts of the
+  user's own app.

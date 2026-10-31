@@ -45,10 +45,44 @@ warm means the app is already open.
 `?open=` is upstream compatibility code marked `COMPAT(workspace-open-url)` for removal after
 2027-01-22; no fork test guards it.
 
+### Android helper
+
+`scripts/android/agent-adb.py` (Python 3, standard library only) wraps the steps below, on a phone
+or on the tablet. It reads the adb command from `AGENT_ADB`, default `adb`; on the tablet run it
+inside the pod with `AGENT_ADB="/home/dev/cuttlefish/cf-tablet adb"`.
+
+```sh
+A="python3 scripts/android/agent-adb.py"   # --package <package> for another variant
+$A dump                        # id | text | desc | x,y | flags (selected, focused, checked, disabled)
+$A tap direct-host-input       # refuses (exit 2) unless the package has focus
+$A type 127.0.0.1; $A key ENTER
+$A wait add-host-modal --gone  # or wait for an id to appear; exit 5 on timeout
+$A open --cold 'paseo://settings/general?addHost=1'
+$A switch clock=frozen notifications=skip
+n=$($A turns <agentId>); paseo agent send <agentId> "…"; $A wait-turn <agentId> --after "$n"
+$A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
+```
+
+- `tap`, `type` and `key` send input only while the package has focus, so they never reach the
+  launcher, Settings or a permission dialog.
+- `tap`, `type`, `key`, `open` and `switch` refuse the user's own app, `sh.paseo.iexalt`, unless
+  `--allow-user-app` is passed with the user's go-ahead; `tap` checks focus again just before it
+  taps. Reading commands (`dump`, `focus`, `wait`, `turns`) work on any package.
+- `type` sends ASCII only: `input text` drops other characters on most Android builds.
+- `turns` prints `unknown` (exit 3) when the agent has no line left in the log buffer, rather
+  than 0. `wait-turn` follows the agent's latest line, as described in
+  [Waiting for the app](#waiting-for-the-app). The helper never clears logcat; on the shared
+  tablet that would erase other sessions' evidence. Read your own window with
+  `adb logcat -d -T '<MM-DD hh:mm:ss.000>'` instead.
+- A dump that fails with "could not get idle state" exits 4 with the
+  [motion recipe](#motion-and-screen-dumps).
+- Lock files live on the machine running the helper: run it inside the pod for the tablet's
+  locks.
+
 ### Reading state
 
 - `testID` surfaces as `resource-id`. The selected tab carries `selected="true"` in a raw
-  `uiautomator dump`; summary helpers that print only id, text and description lose it.
+  `uiautomator dump`, and in the helper's flags column; other summaries lose it.
 - Terminal rows are in the dump as `terminal-row-<n>` with their text. Diff code is drawn with
   Skia, so it is likely absent (unverified); take a screenshot.
 - App logs are on the `ReactNativeJS` logcat tag: `adb logcat -s ReactNativeJS`. For state, read
@@ -130,7 +164,8 @@ agent are not counted.
   `data-turns` is larger, or wait for the console line below. Always include `data-agent-id`: with
   two chats open, a bare `getByTestId('agent-timeline-settled')` matches both and fails Playwright's
   strict mode.
-- **Android:** follow `adb logcat -s ReactNativeJS` for
+- **Android:** `agent-adb.py turns` and `wait-turn` (above) do this. By hand, follow
+  `adb logcat -s ReactNativeJS` for
   `[paseo-agent] timeline state agentId=<id> state=settled turns=<n+1>`, where `n` is the last
   `turns` logged for that agent. Once it appears, the chat's elapsed clock has stopped and
   `uiautomator dump` works again, unless another running agent's status ring is on screen.
