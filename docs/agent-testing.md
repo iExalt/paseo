@@ -232,7 +232,7 @@ npm run desktop:sandbox -- --stop <home>
 - It runs on Linux under `xvfb-run`, so no window opens; run it on dev-station. On macOS it
   refuses unless `--allow-window`. Without a setuid-root `chrome-sandbox` it adds `--no-sandbox`.
 - The renderer is the daemon-served web UI (`EXPO_DEV_URL=<url>`); `--metro <url>` uses a Metro
-  server instead, for development builds and React warnings.
+  server instead, for development builds and React warnings (not yet tried).
 - Electron gets the scratch home, `userData` under it, no inherited `PASEO_*` variable, and remote
   debugging on 127.0.0.1 only. Start fails unless the app's `desktop_daemon_status` reports the
   sandbox's own home and server and the daemon was adopted, not replaced.

@@ -1,6 +1,9 @@
 import path from "node:path";
 
-/** Whether Electron's chrome-sandbox helper next to `electronPath` is setuid root. */
+/**
+ * Whether Electron's chrome-sandbox helper next to `electronPath` is setuid root. Only Linux has
+ * the helper, and only the Linux launch reads this, so macOS keeps its sandbox.
+ */
 export function hasSetuidSandbox(stat) {
   return stat !== null && stat.uid === 0 && (stat.mode & 0o4000) !== 0;
 }
