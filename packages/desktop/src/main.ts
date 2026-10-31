@@ -316,7 +316,6 @@ if (forcedUserDataDir) {
       windowsHide: true,
     }).trim();
     devWorktreeName = path.basename(topLevel);
-    // Main checkout (e.g. "paseo") gets default userData — only worktrees diverge.
     const commonDir = path.resolve(
       topLevel,
       execFileSync("git", ["rev-parse", "--git-common-dir"], {
@@ -335,6 +334,12 @@ if (forcedUserDataDir) {
     }
   } catch {
     devWorktreeName = null;
+  }
+  // app.setName("Paseo") above makes the default userData the installed app's directory,
+  // so the main checkout and launches outside git get their own instead of sharing it.
+  if (devWorktreeName === null) {
+    app.setPath("userData", path.join(app.getPath("appData"), "Paseo-dev"));
+    log.info("[dev-user-data] unpackaged userData outside a worktree: Paseo-dev");
   }
 }
 

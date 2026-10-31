@@ -213,9 +213,10 @@ settings: on the shared tablet, hold the lock, re-add `127.0.0.1:6790` and note 
 
 Launching Electron directly (Playwright `_electron.launch`) skips `dev.sh`. Without
 `PASEO_ELECTRON_USER_DATA_DIR`, an unpackaged launch uses `Paseo-<worktree>` userData when its cwd
-is a linked git worktree, and `<appData>/Paseo` otherwise: `app.setName("Paseo")` runs before
-anything reads the path, so a direct launch outside a worktree shares the installed app's userData.
-Always set the variable, or use the [desktop sandbox](#desktop-sandbox).
+is a linked git worktree, and `Paseo-dev` otherwise, never the installed app's `Paseo`. Its log
+still goes to the app's default log directory (`<appData>/Paseo/logs` on Linux), beside the
+installed app's. Set the variable anyway when you need a clean profile, or use the
+[desktop sandbox](#desktop-sandbox).
 
 ## Desktop sandbox
 
