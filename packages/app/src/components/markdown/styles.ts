@@ -121,7 +121,9 @@ export function createMarkdownStyles(
         borderColor: theme.colors.foregroundMuted,
       },
       inlineImage: { size: paragraph.lineHeight },
-      image: { ...block, height: 320, resizeMode: "contain", borderRadius: 8 },
+      // Fit the column width and cap the height; a fixed height shrank wide screenshots to a
+      // third of the column on tablets. A constant cap keeps window resizes from restyling messages.
+      image: { ...block, maxHeight: 560, resizeMode: "contain", borderRadius: 8 },
       thematicBreak: { ...block, color: theme.colors.border, height: 1 },
     },
   };
