@@ -24,6 +24,9 @@ const patchedPackages = [
     patchPrefix: "@expo+cli+",
   },
   // npm nests or hoists this package depending on the rest of the tree; patch either.
+  // Local, not upstream: with maxHeight, resizeMode "center" sizes the block image box from an
+  // image narrower than the line, so chat images never scale up (ImageSpan.kt,
+  // ENRMImageAttachment.m, web styles). Keep these hunks across upgrades.
   {
     nodeModulesPath: "packages/app/node_modules/react-native-enriched-markdown",
     patchPrefix: "react-native-enriched-markdown+",
