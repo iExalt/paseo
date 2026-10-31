@@ -24,7 +24,8 @@ package: `adb shell am start -a android.intent.action.VIEW -d '<url>' <package>`
 a device with two variants shows a chooser.
 
 Grant notifications before the first launch, or the permission prompt takes focus:
-`adb shell pm grant <package> android.permission.POST_NOTIFICATIONS`.
+`adb shell pm grant <package> android.permission.POST_NOTIFICATIONS`. In a build with
+[debug switches](#debug-switches), `--es paseo.notifications skip` also keeps it away.
 
 ### Deep links
 
@@ -76,8 +77,10 @@ It waits for about a second without accessibility events, so a running agent blo
   Read the three values with `settings get global <name>` first and put them back afterwards;
   `settings delete global <name>` restores one that was `null`.
 - The open chat of a running agent still fails at scale 0. Its turn footer's elapsed time
-  (`turn-working-elapsed`) changes every second. Dump from another screen, wait for the turn to
-  end (`paseo wait`), or take a screenshot.
+  (`turn-working-elapsed`) changes every second. In a build with
+  [debug switches](#debug-switches), such as the tablet harness, launch with
+  `--es paseo.clock frozen` as well as the scale recipe. Otherwise dump from another screen, wait
+  for the turn to end (`paseo wait`), or take a screenshot.
 
 On the phone-width tablet, dumps succeed at default scales with the app idle, during a cold start,
 and with an agent running while no status ring is on screen. A visible running ring (sidebar open,
@@ -130,7 +133,7 @@ agent are not counted.
 - **Android:** follow `adb logcat -s ReactNativeJS` for
   `[paseo-agent] timeline state agentId=<id> state=settled turns=<n+1>`, where `n` is the last
   `turns` logged for that agent. Once it appears, the chat's elapsed clock has stopped and
-  `uiautomator dump` works again.
+  `uiautomator dump` works again, unless another running agent's status ring is on screen.
 
 Host readiness is the `connection status … status=online` line.
 
@@ -154,11 +157,12 @@ second, and clearing `clock` at the label's next render, such as a new turn or a
 
 Switches set at launch apply before the app connects, so `--es paseo.notifications skip` on a cold
 start keeps the permission prompt away. Once the app has asked for the permission, Android only
-shows the prompt again after `adb shell pm clear <package>`.
+shows the prompt again after `adb shell pm clear <package>`. That wipes the app's hosts and
+settings: on the shared tablet, hold the lock, re-add `127.0.0.1:6790` and note it in HARNESS.md.
 
 | Key             | Values                                  | Effect                                                                                                                                                                                                                                                     |
 | --------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `trace`         | `terminal-input`, `terminal-input:full` | Native terminal input trace as `[paseo-terminal-trace]` lines; `:full` logs typed text, passwords included                                                                                                                                                 |
+| `trace`         | `terminal-input`, `terminal-input:full` | Native terminal input trace as `[paseo-terminal-trace]` lines; `:full` logs typed text, passwords included, so don't use it on the shared tablet                                                                                                           |
 | `clock`         | `frozen`                                | The running turn's elapsed time stops ticking, so a running chat can be dumped (with the scale recipe)                                                                                                                                                     |
 | `notifications` | `skip`                                  | The notification permission prompt is never shown; logs `push prompt status=skipped`                                                                                                                                                                       |
 | `transfer`      | `bridge`, `receiver`                    | Shows the preferences Transfer row in About on any platform, for UI checks. Its button exports (`bridge`) or opens a file picker before a confirmed import (`receiver`); the transfer itself needs the real packages, so don't run it on the shared tablet |
