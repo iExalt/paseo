@@ -2713,6 +2713,8 @@ export const en = {
         permission: "Allow Paseo to install updates in Android settings, then return here.",
         failed: "Could not verify the published fork update.",
         offline: "Could not reach GitHub. Check your connection and retry.",
+        installFailed:
+          "Android did not install the update. Retry, or install it from the GitHub release.",
         check: "Check",
         checkingAction: "Checking…",
         download: "Download",

@@ -33,6 +33,8 @@ export type ForkUpdateStatus =
   | "error"
   | "migration-required";
 
+export type ForkUpdateFailure = "offline" | "release" | "install";
+
 interface ForkUpdateState {
   status: ForkUpdateStatus;
   update: VerifiedForkUpdate | null;
@@ -42,8 +44,9 @@ interface ForkUpdateState {
   // The transfer size the native download reports; the `.gz` sidecar is smaller than the
   // APK. 0 until the first progress event.
   downloadTotalBytes: number;
-  // Whether the last failure was GitHub being unreachable rather than a release failing checks.
-  offline: boolean;
+  // What the last error was: GitHub unreachable, a release failing its checks, or Android
+  // refusing the verified APK.
+  failure: ForkUpdateFailure | null;
 }
 
 const INITIAL_STATE: ForkUpdateState = {
@@ -53,7 +56,7 @@ const INITIAL_STATE: ForkUpdateState = {
   installedVersion: null,
   downloadedBytes: 0,
   downloadTotalBytes: 0,
-  offline: false,
+  failure: null,
 };
 
 // Module state, not component state: the result of a check outlives the About screen and
@@ -115,7 +118,7 @@ function fail(error: unknown): void {
   agentLog("update", "failed", { status: getState().status, reason });
   setState({
     status: error instanceof ForkManualMigrationRequired ? "migration-required" : "error",
-    offline: NETWORK_ERROR.test(reason),
+    failure: NETWORK_ERROR.test(reason) ? "offline" : "release",
   });
 }
 
@@ -283,7 +286,7 @@ export async function installDownloadedForkUpdate(): Promise<void> {
   } catch (error) {
     installerPending = false;
     agentLog("update", "failed", { status: "installing", reason: describeError(error) });
-    setState({ status: "error", offline: false });
+    setState({ status: "error", failure: "install" });
   }
 }
 
