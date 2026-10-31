@@ -1,4 +1,6 @@
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, test } from "vitest";
@@ -243,6 +245,76 @@ describe("Claude tool_result image rendering", () => {
       for (const source of sources) {
         rmSync(source, { force: true });
       }
+    }
+  });
+});
+
+describe("Claude Read image originals", () => {
+  const original = "full resolution original";
+
+  function readToolUse(filePath: string) {
+    return {
+      type: "assistant",
+      uuid: "assistant-read",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "tool_use", id: "toolu_read_png", name: "Read", input: { file_path: filePath } },
+        ],
+      },
+    };
+  }
+
+  function writeOriginal(): string {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "paseo-claude-read-"));
+    const filePath = path.join(dir, "shot.png");
+    writeFileSync(filePath, original);
+    return filePath;
+  }
+
+  test("a live Read shows the file it read instead of Claude Code's downscaled copy", async () => {
+    const filePath = writeOriginal();
+    const session = await createSession();
+    await session.translateMessageToEvents({
+      ...readToolUse(filePath),
+      parent_tool_use_id: null,
+      session_id: "session-1",
+    } as unknown as SDKMessage);
+
+    const events = await session.translateMessageToEvents(imageToolResultUserMessage());
+    const items = events
+      .filter((event) => event.type === "timeline")
+      .map((event) => (event as { item: AgentTimelineItem }).item);
+    const [source] = imageMessages(items).map(markdownImageSource);
+
+    try {
+      expect(readFileSync(source).toString()).toBe(original);
+    } finally {
+      rmSync(path.dirname(filePath), { recursive: true, force: true });
+    }
+  });
+
+  test.each([
+    ["the original", "2999-01-01T00:00:00.000Z", original],
+    ["Claude Code's copy once the original changed after", "2000-01-01T00:00:00.000Z", null],
+  ])("a replayed Read shows %s the entry", async (_label, timestamp, expected) => {
+    const filePath = writeOriginal();
+    const session = await createSession();
+    await session.convertHistoryEntry(readToolUse(filePath));
+
+    const items = await session.convertHistoryEntry({
+      ...(imageToolResultHistoryEntry() as object),
+      timestamp,
+    });
+    const [source] = imageMessages(items).map(markdownImageSource);
+
+    try {
+      const bytes = readFileSync(source);
+      expect(bytes.toString("base64") === ONE_BY_ONE_PNG_BASE64 ? null : bytes.toString()).toBe(
+        expected,
+      );
+    } finally {
+      rmSync(path.dirname(filePath), { recursive: true, force: true });
     }
   });
 });
