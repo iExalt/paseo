@@ -424,6 +424,27 @@ describe("bottom anchor controller driver", () => {
     expect(harness.scrollAttempts).toHaveLength(1);
   });
 
+  it.each([
+    { scrolledTowardBottomByUser: true, mode: "sticky-bottom", scrollAttempts: 1 },
+    { scrolledTowardBottomByUser: false, mode: "detached", scrollAttempts: 0 },
+  ])(
+    "re-attaches at the bottom without a drag only when the reader scrolled there: $scrolledTowardBottomByUser",
+    ({ scrolledTowardBottomByUser, mode, scrollAttempts }) => {
+      const harness = createDriverHarness();
+
+      harness.driver.detachByUser();
+      harness.driver.handleScrollNearBottomChange({
+        nextIsNearBottom: true,
+        scrollDelta: -48,
+        scrolledTowardBottomByUser,
+      });
+      harness.scheduler.flushAll();
+
+      expect(harness.driver.getSnapshot().mode).toBe(mode);
+      expect(harness.scrollAttempts).toHaveLength(scrollAttempts);
+    },
+  );
+
   it("switches back to sticky-bottom for explicit jump-to-bottom", () => {
     const harness = createDriverHarness({
       isNearBottom: false,
