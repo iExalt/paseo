@@ -92,16 +92,18 @@ The app logs state changes as one line each, on logcat's `ReactNativeJS` tag and
 console: `[paseo-agent] <area> <event> key=value …`. Values with spaces, `=` or quotes are JSON-quoted.
 `adb logcat -s ReactNativeJS | grep '\[paseo-agent\]'` follows them.
 
-| Area and event               | Fields                                                                                     | When                                                           |
-| ---------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------- |
-| `link import`                | `status` (`connected`, `cancelled`, `password_required`, `failed`), `serverId` or `reason` | A `#offer=`, `#connect=` or `relay://` link arrives            |
-| `connection status`          | `serverId`, `status`, `transport`, `error`                                                 | A host's connection status changes                             |
-| `connection bootstrap-probe` | `endpoint`, `status=failed`, `reason`                                                      | No daemon on this device's `localhost:6767`, as on every phone |
-| `push received`              | `id`, `test`, `shown`                                                                      | A notification arrives while the app is open                   |
-| `push register`              | `status=unavailable`, `reason=firebase-not-configured`                                     | Once per session in builds without Firebase                    |
-| `update status`              | `status`, `version`, `downloadedBytes`                                                     | The fork updater changes state                                 |
-| `update failed`              | `status` (the stage), `reason`                                                             | A check, download or install fails                             |
-| `timeline state`             | `agentId`, `state` (`loading`, `running`, `settled`, `error`), `turns`                     | The open chat's readiness or closed-turn count changes         |
+| Area and event                | Fields                                                                                     | When                                                             |
+| ----------------------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `link import`                 | `status` (`connected`, `cancelled`, `password_required`, `failed`), `serverId` or `reason` | A `#offer=`, `#connect=` or `relay://` link arrives              |
+| `connection status`           | `serverId`, `status`, `transport`, `error`                                                 | A host's connection status changes                               |
+| `connection bootstrap-probe`  | `endpoint`, `status=failed`, `reason`                                                      | No daemon on this device's `localhost:6767`, as on every phone   |
+| `push received`               | `id`, `test`, `shown`                                                                      | A notification arrives while the app is open                     |
+| `push register`               | `status=unavailable`, `reason=firebase-not-configured`                                     | Once per session in builds without Firebase                      |
+| `push prompt`                 | `status=skipped`, `reason=debug-switch`                                                    | The `notifications=skip` switch held back the permission prompt  |
+| `update status`               | `status`, `version`, `downloadedBytes`                                                     | The fork updater changes state                                   |
+| `update failed`               | `status` (the stage), `reason`                                                             | A check, download or install fails                               |
+| `timeline state`              | `agentId`, `state` (`loading`, `running`, `settled`, `error`), `turns`                     | The open chat's readiness or closed-turn count changes           |
+| `debug set`, `debug rejected` | `key`, `value` or `reason`                                                                 | A [debug switch](#debug-switches) is applied, cleared or refused |
 
 Link bodies after `#`, `relay://` URIs and Expo push tokens are redacted. A `reason` can still
 quote a fragment of a malformed offer's decoded JSON (server ID and public key only).
@@ -131,6 +133,34 @@ agent are not counted.
   `uiautomator dump` works again.
 
 Host readiness is the `connection status … status=online` line.
+
+## Debug switches
+
+Builds made with `EXPO_PUBLIC_PASEO_AGENT_SWITCHES=1 npm run build:apk:arm64` read switches at run
+time; the tablet harness APK is one. Other builds carry the code but never read a switch, and the
+native module that hands them over ships inert in every Android build.
+
+- **Android:** `adb shell am start -n <package>/.MainActivity --es paseo.<key> <value>`, at launch
+  or while the app runs (the activity is `singleTask`, so a running app receives them). `off`
+  clears a key. Switches last until the process ends, but a relaunch from recents after the
+  process died replays the extras it was started with.
+- **Web:** set `sessionStorage["paseo.agentSwitches"]` to a JSON object of keys and values before
+  the page loads, for example with Playwright's `addInitScript`. It lasts for the tab.
+
+Each applied switch logs `[paseo-agent] debug set key=<key> value=<value>`; an unknown key or value
+logs `debug rejected` and changes nothing. Code reads a switch when it next runs, so a change sent
+to a running app applies at the next use: the trace at the next keystroke, a frozen clock within a
+second, and clearing `clock` at the label's next render, such as a new turn or a tab switch.
+
+Switches set at launch apply before the app connects, so `--es paseo.notifications skip` on a cold
+start keeps the permission prompt away. Once the app has asked for the permission, Android only
+shows the prompt again after `adb shell pm clear <package>`.
+
+| Key             | Values                                  | Effect                                                                                                     |
+| --------------- | --------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `trace`         | `terminal-input`, `terminal-input:full` | Native terminal input trace as `[paseo-terminal-trace]` lines; `:full` logs typed text, passwords included |
+| `clock`         | `frozen`                                | The running turn's elapsed time stops ticking, so a running chat can be dumped (with the scale recipe)     |
+| `notifications` | `skip`                                  | The notification permission prompt is never shown; logs `push prompt status=skipped`                       |
 
 ## Desktop and web
 

@@ -135,8 +135,11 @@ import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
 import { ensureOsNotificationPermission } from "@/utils/os-notifications";
 import { agentLog, describeError } from "@/utils/agent-log";
+import { loadAgentSwitches } from "@/diagnostics/agent-switches";
 
 polyfillCrypto();
+// Before anything reads a switch, and so the log shows them at every launch.
+loadAgentSwitches();
 
 export interface HostRuntimeBootstrapState {
   splashError: string | null;

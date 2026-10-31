@@ -90,6 +90,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "equivalent",
       note: "Native clears the process-wide web view store through PaseoWebviewData",
     },
+    "diagnostics/agent-switches-source": {
+      kind: "equivalent",
+      note: "Agent debug switches come from sessionStorage on web and adb intent extras through PaseoAgentSwitches on Android",
+    },
     "file-panels/document-frame/index": {
       kind: "equivalent",
       note: "Native shows documents in a WebView; Android's has no inline viewer for PDF and other documents",

@@ -155,3 +155,28 @@ describe("push subscription registration status", () => {
     expect(usePushRegistrationStore.getState().host).toBe("sent");
   });
 });
+
+describe("the notifications=skip agent switch", () => {
+  it("leaves the permission unasked in a build with agent switches", async () => {
+    vi.resetModules();
+    vi.stubEnv("EXPO_PUBLIC_PASEO_AGENT_SWITCHES", "1");
+    vi.doMock("@/diagnostics/agent-switches-source", () => ({
+      takeLaunchSwitches: () => ({ notifications: "skip" }),
+      addSwitchesListener: () => {},
+    }));
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    notifications.getPermissionsAsync.mockResolvedValue({ status: "denied", canAskAgain: true });
+    const fresh = await import("./subscriptions");
+
+    fresh.startSubscription({ client: fakeClient(true) as never, serverId: "host" });
+    await settle();
+
+    expect(notifications.requestPermissionsAsync).not.toHaveBeenCalled();
+    expect(info.mock.calls.map(([line]) => line)).toContain(
+      "[paseo-agent] push prompt status=skipped reason=debug-switch",
+    );
+    vi.unstubAllEnvs();
+    vi.doUnmock("@/diagnostics/agent-switches-source");
+    info.mockRestore();
+  });
+});
