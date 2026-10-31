@@ -384,10 +384,13 @@ the restore to 31 minutes. HARNESS.md records the restore and the rule to sync b
 
 ## Where docs and code disagree
 
-- **Typecheck in fresh worktrees.** `CLAUDE.md` says to run typecheck after every change, but a
-  fresh worktree fails typecheck until `npm run build:server` has run. Reproduced on 2026-10-30:
-  the chunk A pre-commit typecheck failed in a new dev-station worktree and passed after
-  `build:server`.
+- **Typecheck in fresh worktrees.** Resolved on 2026-10-31. `CLAUDE.md` says to run typecheck
+  after every change, but a fresh worktree has no workspace `dist` declarations: root typecheck
+  failed with 2,344 errors in 8 workspaces. Worse, that run cached its errors in the CLI's
+  incremental `tsconfig.tsbuildinfo`, so typecheck still failed after `npm run build:server`
+  until the cache was deleted. Root `typecheck` and `typecheck:server` now run `build:server`
+  first when a package it builds has no `dist` (41 s cold, then 23 s; the check adds about 60 ms).
+  A worktree whose cache was already poisoned needs its `packages/*/tsconfig.tsbuildinfo` deleted.
 - **Unpackaged desktop userData.** Resolved on 2026-10-31. The `main.ts` comment said the main
   checkout gets "default userData"; because `app.setName("Paseo")` runs before anything reads the
   path, that default was `<appData>/Paseo`, the installed app's directory. At the user's choice,

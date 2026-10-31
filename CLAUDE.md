@@ -130,7 +130,7 @@ npm run dev:app                      # Start Expo against the dev daemon
 npm run dev:desktop                  # Start Electron desktop dev
 npm run cli -- ls -a -g              # List all agents
 npm run cli -- daemon status         # Check daemon status
-npm run typecheck                    # Always run after changes
+npm run typecheck                    # Always run after changes; runs build:server first in a fresh checkout
 npm run lint                         # Always run after changes
 npm run format                       # Auto-format with oxfmt
 npm run format:check                 # Check formatting without writing
@@ -164,7 +164,7 @@ process, not the fork's.
   - For full suite verification, push to CI and check GitHub Actions instead.
 - Add tests to existing suites and reuse their npm scripts and CI jobs instead of creating feature-specific ones.
 - **Always run typecheck and lint after every change.**
-- **Build workspace packages before diagnosing cross-package type errors.** This repo consumes generated declarations across workspaces. If typecheck fails in a package that depends on another workspace, rebuild the owning stack first so `dist` declarations are current:
+- **Build workspace packages before diagnosing cross-package type errors.** This repo consumes generated declarations across workspaces. If typecheck fails in a package that depends on another workspace, rebuild the owning stack first so `dist` declarations are current. Root `npm run typecheck` runs `build:server` by itself only when a package that `build:server` builds has no `dist` at all, as in a fresh checkout:
   - `npm run build:client` — rebuild protocol and client declarations.
   - `npm run build:server` — rebuild highlight, relay, protocol, client, server, and CLI when server/CLI types may be stale.
   - Do not patch inferred callback parameters or add local duplicate types just to silence stale declaration errors.

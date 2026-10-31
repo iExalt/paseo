@@ -57,13 +57,13 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
 ## Phase 2: shared foundations (each M)
 
-- [ ] **8. Motion and readiness, on both platforms.**
+- [x] **8. Motion and readiness, on both platforms.**
   - **Find the idle animation.** Find what still animates at idle on native (`dumpsys gfxinfo` with the app idle) and gate it behind reduce-motion. `could not get idle state` hit 4 sessions after the running-ring fix in `7cac0db95`.
   - **Honour `prefers-reduced-motion` on web,** so Playwright's `reducedMotion: 'reduce'` snaps the switch thumb and similar animations.
   - **Ready markers.** Add stable markers for "app ready and connected" (a testID or accessibility node carrying the connection status) and for "timeline settled" (`data-` attributes).
   - **Proof:** dumps succeed on the tablet with the app idle; a web probe asserts readiness without `waitForTimeout`.
   - **Measured (chunk E, 2026-10-31):** nothing animates at idle on the tablet. While an agent runs, the status ring and turn loader block dumps until the animation scales are 0 and the app is relaunched; the turn's elapsed time, which changes every second, still blocks dumps of the open chat. The web app already honours `prefers-reduced-motion`, switch thumbs included. So the first two bullets need documentation only, and the elapsed clock gets a debug switch in item 9.
-- [ ] **9. A debug control surface, in debug builds only.** Use `paseo://debug?…` or intent extras for:
+- [x] **9. A debug control surface, in debug builds only.** Use `paseo://debug?…` or intent extras for:
   - turning on traces at run time (replacing compile-time `EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE` and similar);
   - a platform or variant override for gated UI (replacing temporary source edits such as `// PROBE-ONLY`);
   - turning on the fork updater with a configurable release base URL (replacing the `sed` patch of `app-variant.js` plus a 14 min rebuild).
@@ -72,12 +72,12 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
 
   **Shape (approved 2026-10-31):** the switches exist only in builds made with an explicit build flag, which the harness recipe sets; releases stay unchanged. Agents set them with `adb shell am start` intent extras, not a `paseo://` link, so other apps cannot flip them. Each switch logs a `[paseo-agent]` line and none changes user data. In order of risk: trace toggles; a frozen elapsed clock (only the one-second tick stops) and the notification-prompt skip from item 10; a platform override that resets on cold start; and the fork updater with a custom base URL, only if the updater exists in non-fork builds and still checks the APK's signing key whatever the URL. **Outcome (2026-10-31):** trace, frozen clock, notification skip and a narrow `transfer` override (the cited `// PROBE-ONLY` edit) shipped; the updater switch was dropped because a non-fork build fails the updater's installed-version check before fetching, so a fork-variant harness build moves to Phase 3.
 
-- [ ] **10. No surprise prompts in debug and test runs.** Defer the notification-permission request until after the first connection. In test mode, skip it. The prompt stole focus after every fresh install (phone, tablet, Android CI about 5 times).
+- [x] **10. No surprise prompts in debug and test runs.** Defer the notification-permission request until after the first connection. In test mode, skip it. The prompt stole focus after every fresh install (phone, tablet, Android CI about 5 times).
   - **Decided 2026-10-31:** no deferral. The prompt already waits for a host, so deferring it moves it by about a second and changes upstream behaviour for every user. The test-mode skip ships as one of item 9's switches.
 
 ## Phase 3: one-command entry points for agents (each M; depends on 3, 8)
 
-**Approved 2026-10-31** as chunks T (retire the `transfer` switch, since the transfer flow is being retired), H (item 11), I (item 13), J (item 14), K (item 12) and L (a fork-variant harness build, so the updater switch from item 9 can come back). Making dev Electron isolate userData by default stays out of K and returns as its own decision with K's evidence. L was narrowed on 2026-10-31: the native updater fetches only https from GitHub and the tablet guest has no network, so L runs the fork build offline and brings back no switch; giving the guest network for a full update run is its approved follow-up. **Complete 2026-10-31** (#278–#286). The follow-up stopped short: a proxy cannot reach the app while the guest has no network interface, and adding one needs `NET_ADMIN` in the pod spec.
+**Approved 2026-10-31** as chunks T (retire the `transfer` switch, since the transfer flow is being retired), H (item 11), I (item 13), J (item 14), K (item 12) and L (a fork-variant harness build, so the updater switch from item 9 can come back). Making dev Electron isolate userData by default stays out of K and returns as its own decision with K's evidence. L was narrowed on 2026-10-31: the native updater fetches only https from GitHub and the tablet guest has no network, so L runs the fork build offline and brings back no switch; giving the guest network for a full update run is its approved follow-up. **Complete 2026-10-31** (#278–#286). The follow-up first stopped short, because a proxy cannot reach the app while the guest has no network interface. It finished later on 2026-10-31: the pod gained `NET_ADMIN`, `NET_RAW` and `/dev/net/tun`, the guest reaches the internet over Wi-Fi, and the live updater run is under [Tablet network](AGENT_TESTING_STATUS.md#tablet-network-n-2026-10-31) in the status document.
 
 - [x] **11. `qa:web`.**
   - **What it runs:** an isolated, minimal daemon serving the web UI on a free port, printing `{url, serverId}`.
