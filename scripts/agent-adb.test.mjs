@@ -69,7 +69,7 @@ test("turns come from the agent's last timeline line, and unknown when it is gon
   assert.equal(agentAdb(["parse-turns", "c3"], log).out, "unknown");
 });
 
-test("the user's own app is refused unless explicitly allowed", () => {
+test("driving the user's own app is refused unless explicitly allowed", () => {
   const refused = agentAdb(["--package", "sh.paseo.iexalt", "check-package"]);
   assert.equal(refused.code, 2);
   assert.match(refused.err, /user's own app/);
@@ -78,6 +78,10 @@ test("the user's own app is refused unless explicitly allowed", () => {
     0,
   );
   assert.equal(agentAdb(["--package", "sh.paseo", "check-package"]).code, 0);
+  // Driving commands check the package before touching adb, so no device is needed here.
+  const tap = agentAdb(["--package", "sh.paseo.iexalt", "tap", "menu-button"]);
+  assert.equal(tap.code, 2);
+  assert.match(tap.err, /user's own app/);
 });
 
 test("a lock is exclusive and only its owner can release it", () => {

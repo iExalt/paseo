@@ -65,8 +65,10 @@ $A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
 
 - `tap`, `type` and `key` send input only while the package has focus, so they never reach the
   launcher, Settings or a permission dialog.
-- `open --cold` and `switch` restart the app. Both refuse the user's own app, `sh.paseo.iexalt`,
-  unless `--allow-user-app` is passed with the user's go-ahead.
+- `tap`, `type`, `key`, `open` and `switch` refuse the user's own app, `sh.paseo.iexalt`, unless
+  `--allow-user-app` is passed with the user's go-ahead; `tap` checks focus again just before it
+  taps. Reading commands (`dump`, `focus`, `wait`, `turns`) work on any package.
+- `type` sends ASCII only: `input text` drops other characters on most Android builds.
 - `turns` prints `unknown` (exit 3) when the agent has no line left in the log buffer, rather
   than 0. `wait-turn` follows the agent's latest line, as described in
   [Waiting for the app](#waiting-for-the-app). The helper never clears logcat; on the shared

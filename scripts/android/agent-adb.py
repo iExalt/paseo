@@ -18,8 +18,8 @@ import sys
 import time
 import xml.etree.ElementTree as ElementTree
 
-# The fork package is the user's own app on their phone. Commands that restart or reconfigure
-# the app refuse it unless --allow-user-app is passed.
+# The fork package is the user's own app on their phone. Commands that drive, restart or
+# reconfigure the app refuse it unless --allow-user-app is passed; reading it is fine.
 USER_APP_PACKAGES = {"sh.paseo.iexalt"}
 MAIN_ACTIVITY = "sh.paseo.MainActivity"
 DUMP_PATH = "/sdcard/agent-adb.xml"
@@ -97,7 +97,7 @@ def parse_turns(logcat_text, agent_id):
 def check_package(package, allow_user_app):
     if package in USER_APP_PACKAGES and not allow_user_app:
         raise Failure(
-            f"Refusing to restart or reconfigure {package}: it is the user's own app. "
+            f"Refusing to drive {package}: it is the user's own app. "
             "Pass --allow-user-app only with the user's go-ahead.",
             2,
         )
@@ -172,21 +172,26 @@ def cmd_focus(args):
 
 
 def cmd_tap(args):
+    check_package(args.package, args.allow_user_app)
     require_focus(args.package)
     row = find_node(dump_screen(), args.id, args.nth)
     if not row or not row[3]:
         raise Failure(f"Not found: {args.id}", 3)
+    # The dump takes a second or more; a dialog that appeared meanwhile would take the tap.
+    require_focus(args.package)
     shell(f"input tap {row[3][0]} {row[3][1]}")
     print(f"tapped {args.id} at {row[3][0]},{row[3][1]}")
 
 
 def cmd_type(args):
+    check_package(args.package, args.allow_user_app)
     require_focus(args.package)
     # `input text` takes %s for spaces and needs shell quoting for the rest.
     shell(f"input text {shlex.quote(args.text.replace(' ', '%s'))}")
 
 
 def cmd_key(args):
+    check_package(args.package, args.allow_user_app)
     require_focus(args.package)
     shell(f"input keyevent {shlex.quote(args.key)}")
 
@@ -204,8 +209,8 @@ def cmd_wait(args):
 
 
 def cmd_open(args):
+    check_package(args.package, args.allow_user_app)
     if args.cold:
-        check_package(args.package, args.allow_user_app)
         shell(f"am force-stop {args.package}")
     out = shell(
         f"am start -W -a android.intent.action.VIEW -d {shlex.quote(args.url)} {args.package}"
@@ -290,7 +295,7 @@ def cmd_check_package(args):
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--package", default="sh.paseo", help="app package (default sh.paseo)")
-    parser.add_argument("--allow-user-app", action="store_true", help="allow restarting the user's own app")
+    parser.add_argument("--allow-user-app", action="store_true", help="allow driving the user's own app")
     commands = parser.add_subparsers(dest="command", required=True)
 
     def add(name, handler, help_text):
@@ -303,7 +308,7 @@ def build_parser():
     tap = add("tap", cmd_tap, "tap a resource ID, only while the package has focus")
     tap.add_argument("id")
     tap.add_argument("--nth", type=int, default=0)
-    add("type", cmd_type, "type text, only while the package has focus").add_argument("text")
+    add("type", cmd_type, "type ASCII text (input text drops the rest), only while the package has focus").add_argument("text")
     add("key", cmd_key, "send a key event (ENTER, 66, ...), only while the package has focus").add_argument("key")
     wait = add("wait", cmd_wait, "wait for a resource ID to appear, or with --gone to go")
     wait.add_argument("id")
