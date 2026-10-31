@@ -21,6 +21,7 @@ import type {
   SessionOutboundMessage,
 } from "../../messages.js";
 import { createPaseoDaemon, type PaseoDaemon, type PaseoDaemonConfig } from "../../bootstrap.js";
+import { BuiltinPluginLoader } from "../../plugins/builtin/index.js";
 import type { WebSocketLike } from "../../websocket-server.js";
 import type {
   AgentClient,
@@ -1422,7 +1423,9 @@ export class HubRelationshipHarness {
         done();
       },
     });
+    // Built-in plugins add about 800 ms to every start, and Hub tests never use them.
     this.daemon = await createPaseoDaemon(this.config, pino({ level: "trace" }, destination), {
+      builtinPlugins: new BuiltinPluginLoader(undefined, []),
       hubRelationshipRemote: this.remote,
       hubRelationshipClock: this.clock,
       hubRelationshipRetryPolicy: this.clock,
