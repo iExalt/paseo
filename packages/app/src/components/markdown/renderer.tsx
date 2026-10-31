@@ -30,18 +30,24 @@ const FIND_MD4C_FLAGS = { ...MD4C_FLAGS, highlight: true };
 
 // Reading the breakpoint here makes Unistyles restyle the text when the layout crosses it.
 const markdownStyle =
-  (compact: boolean, muted = false) =>
+  (compact: boolean, muted = false, imageMaxHeight?: number) =>
   (theme: Theme, rt: { breakpoint?: string }) =>
     createMarkdownStyles(theme, {
       compact,
       muted,
       blockGap: resolveDensity(rt, density.blockGap),
+      imageMaxHeight,
     });
+// A dialog shows several images at once, so each stays well under the chat's cap.
+const DIALOG_IMAGE_MAX_HEIGHT = 240;
 const regularStyle = markdownStyle(false);
 const compactStyle = markdownStyle(true);
 const compactMutedStyle = markdownStyle(true, true);
+const dialogStyle = markdownStyle(true, false, DIALOG_IMAGE_MAX_HEIGHT);
+const dialogMutedStyle = markdownStyle(true, true, DIALOG_IMAGE_MAX_HEIGHT);
 
-function pickMarkdownStyle(compact: boolean, muted: boolean) {
+function pickMarkdownStyle(compact: boolean, muted: boolean, dialog: boolean) {
+  if (dialog) return muted ? dialogMutedStyle : dialogStyle;
   if (!compact) return regularStyle;
   return muted ? compactMutedStyle : compactStyle;
 }
@@ -51,6 +57,8 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
   compact?: boolean;
   /** Muted text colour. Compact surfaces only. */
   muted?: boolean;
+  /** Compact text with images capped for a dialog; implies compact. */
+  dialog?: boolean;
   selectable?: boolean;
   streaming?: boolean;
   onLinkPress?: (url: string) => unknown;
@@ -105,6 +113,7 @@ const MarkdownPart = memo(function MarkdownPart({
   highlight = false,
   compact = false,
   muted = false,
+  dialog = false,
   selectable = true,
   streaming = false,
   onLinkPress,
@@ -149,7 +158,7 @@ const MarkdownPart = memo(function MarkdownPart({
             <ThemedMarkdown
               key={`${segment.kind}:${segment.id}`}
               markdown={segment.source}
-              uniProps={pickMarkdownStyle(compact, muted)}
+              uniProps={pickMarkdownStyle(compact, muted, dialog)}
               flavor="github"
               selectable={selectable}
               md4cFlags={highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS}

@@ -6,6 +6,8 @@ wants to show a visual draws an ASCII mockup in the monospace `preview` box,
 because nothing tells it Paseo can draw images there. Notifications for such
 questions read cleanly on every platform.
 
+Progress and evidence: [Question images status](QUESTION_IMAGES_STATUS.md).
+
 ## Known facts
 
 Read from code at `73ac3f53e`; nothing below has been rendered yet.
@@ -52,7 +54,7 @@ Read from code at `73ac3f53e`; nothing below has been rendered yet.
 
 ## Increments
 
-- [ ] **0. Spike.** Ask one test question with a workspace PNG in the question
+- [x] **0. Spike.** Ask one test question with a workspace PNG in the question
       text, in a description and as an image-only preview, plus one HTTP(S)
       image. Capture it on web, Electron and the Cuttlefish tablet. Record:
   - whether text and description images load already;
@@ -60,7 +62,7 @@ Read from code at `73ac3f53e`; nothing below has been rendered yet.
   - whether tapping an image in a description opens the lightbox or selects
     the option, on web and Android;
   - what an image outside the workspace (`/tmp/x.png`) shows.
-- [ ] **1. Text and description images.** Fix only what the spike finds.
+- [x] **1. Text and description images.** Fix only what the spike finds.
       Likely fixes: cap image height in the compact card, and keep an image tap
       from also selecting the option. Descriptions already claim their own
       touches on native (`question-form-card.tsx:57`); the web click filter at

@@ -157,7 +157,7 @@ function QuestionOptionRow({
               testID="question-form-option-description"
               onStartShouldSetResponder={claimResponder}
             >
-              <MarkdownRenderer text={option.description} compact muted />
+              <MarkdownRenderer text={option.description} dialog muted />
             </View>
           ) : null}
           {option.preview ? (
@@ -588,7 +588,7 @@ export function QuestionFormCard({
       />
       <View style={styles.questionHeader}>
         <View testID="question-form-current-question" style={styles.questionText}>
-          <MarkdownRenderer text={questions[resolvedActiveQuestionIndex].question} compact />
+          <MarkdownRenderer text={questions[resolvedActiveQuestionIndex].question} dialog />
         </View>
       </View>
 
