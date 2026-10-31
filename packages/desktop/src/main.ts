@@ -139,12 +139,6 @@ const bootstrapComplete = new Promise<void>((resolve) => {
 let bootstrapIsComplete = false;
 
 app.setName(APP_NAME);
-log.info("[desktop] app startup", {
-  version: app.getVersion(),
-  platform: process.platform,
-  arch: process.arch,
-  isPackaged: app.isPackaged,
-});
 
 interface AttachedBrowserInput {
   browserId: string;
@@ -305,6 +299,13 @@ function installBrowserWindowOpenHandler(input: {
 // Electron windows can run side-by-side (separate userData = separate lock).
 let devWorktreeName: string | null = null;
 const forcedUserDataDir = process.env.PASEO_ELECTRON_USER_DATA_DIR?.trim();
+// electron-log picks its directory from the app name, so an overridden userData would still log
+// into the installed app's log directory. Keep the log with the profile; nothing is logged before
+// this block sets userData, so the first line already lands there.
+if (forcedUserDataDir || !app.isPackaged) {
+  log.transports.file.resolvePathFn = (variables) =>
+    path.join(app.getPath("userData"), "logs", variables.fileName ?? "main.log");
+}
 if (forcedUserDataDir) {
   app.setPath("userData", forcedUserDataDir);
   log.info("[dev-user-data] forced userData dir:", forcedUserDataDir);
@@ -342,6 +343,12 @@ if (forcedUserDataDir) {
     log.info("[dev-user-data] unpackaged userData outside a worktree: Paseo-dev");
   }
 }
+log.info("[desktop] app startup", {
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  isPackaged: app.isPackaged,
+});
 
 // Allow users to pass Chromium flags via PASEO_ELECTRON_FLAGS for debugging
 // rendering issues (e.g. "--disable-gpu --ozone-platform=x11").
