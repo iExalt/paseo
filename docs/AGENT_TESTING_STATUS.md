@@ -373,8 +373,9 @@ them either. A full update run needs tap devices, which need `NET_ADMIN` in the 
   checkout gets "default userData"; because `app.setName("Paseo")` runs before anything reads the
   path, that default was `<appData>/Paseo`, the installed app's directory. At the user's choice,
   direct unpackaged launches outside a worktree now use `<appData>/Paseo-dev` (a fork change, to
-  offer upstream). electron-log still writes `<appData>/Paseo/logs/main.log` on Linux whatever the
-  userData; not changed. Because the single-instance lock lives in userData, a direct launch also
+  offer upstream). electron-log wrote `<appData>/Paseo/logs/main.log` on Linux whatever the
+  userData; unpackaged launches and launches with `PASEO_ELECTRON_USER_DATA_DIR` now log to
+  `<userData>/logs/main.log` (checked with `desktop:sandbox`: the installed app's log did not grow). Because the single-instance lock lives in userData, a direct launch also
   no longer signals the user's running app as a second instance. Two main checkouts on one
   machine now share `Paseo-dev`.
 
