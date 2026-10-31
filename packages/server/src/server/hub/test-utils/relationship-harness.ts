@@ -1423,9 +1423,11 @@ export class HubRelationshipHarness {
         done();
       },
     });
-    // Built-in plugins add about 800 ms to every start, and Hub tests never use them.
+    // Built-in plugins (about 800 ms) and an eager terminal worker (about 500 ms) slow every
+    // start; Hub tests use neither, and a terminal request still launches the worker.
     this.daemon = await createPaseoDaemon(this.config, pino({ level: "trace" }, destination), {
       builtinPlugins: new BuiltinPluginLoader(undefined, []),
+      deferTerminalWorkerLaunch: true,
       hubRelationshipRemote: this.remote,
       hubRelationshipClock: this.clock,
       hubRelationshipRetryPolicy: this.clock,
