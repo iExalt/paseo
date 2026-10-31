@@ -257,9 +257,17 @@ export function planLane(selection, lane, cwd = root) {
       : step,
   );
   // Each hosted job is a fresh checkout; generated workspace declarations are
-  // prerequisites, not artifacts trusted from a different job or commit.
+  // prerequisites, not artifacts trusted from a different job or commit. Unit shards
+  // build only the packages they import from dist: server units run the server and
+  // its terminal worker from source, so they skip the server and CLI builds (13 s).
   if (group === "app")
     commands.unshift({ name: "app dependencies", command: "npm", args: ["run", "build:app-deps"] });
+  else if (group === "server")
+    commands.unshift({
+      name: "server dependencies",
+      command: "npm",
+      args: ["run", "build:server-deps"],
+    });
   else if (lane !== "quality")
     commands.unshift(complete.find((step) => step.name === "workspace declarations"));
   return commands;

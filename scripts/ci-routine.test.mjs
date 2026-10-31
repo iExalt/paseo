@@ -215,6 +215,11 @@ test("parallel lanes partition every selected check, with only declared prerequi
           assert.deepEqual(step.args, ["run", "build:app-deps"]);
           continue;
         }
+        if (step.name === "server dependencies") {
+          assert.match(lane, /^server-\d$/);
+          assert.deepEqual(step.args, ["run", "build:server-deps"]);
+          continue;
+        }
         if (step.name === "workspace declarations" && lane !== "quality") continue;
         const sharded = { "server units": "server", "app units": "app" }[step.name];
         if (sharded) {
