@@ -38,7 +38,7 @@ jobs:
       github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' &&
       ((github.actor == 'iExalt' && github.triggering_actor == 'iExalt') ||
        (github.actor == 'github-actions[bot]' && inputs.tag != ''))
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -99,7 +99,7 @@ jobs:
   macos-build:
     name: Build and sign macOS Nix closure
     needs: [resolve]
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 90
     permissions:
       contents: read
@@ -155,7 +155,7 @@ jobs:
   macos-smoke:
     name: Install and launch macOS closure on a fresh runner
     needs: [resolve, macos-build]
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 30
     permissions:
       contents: read
@@ -217,9 +217,9 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -265,9 +265,9 @@ jobs:
       matrix:
         include:
           - arch: x64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: arm64
-            runner: ubuntu-24.04-arm
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -388,7 +388,7 @@ jobs:
   android-build:
     name: Build unsigned Android APK
     needs: [resolve]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: read
@@ -651,7 +651,7 @@ jobs:
   android-sign:
     name: Sign Android APK
     needs: [resolve, android-build]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -732,7 +732,7 @@ jobs:
   android-delta:
     name: Make APK deltas from recent releases
     needs: [resolve, android-sign]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     permissions:
       contents: read
@@ -798,7 +798,7 @@ jobs:
       needs.macos-smoke.result == 'success' && needs.linux-build.result == 'success' &&
       needs.linux-smoke.result == 'success' && needs.windows-build.result == 'success' &&
       needs.android-build.result == 'success' && needs.android-sign.result == 'success'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: write

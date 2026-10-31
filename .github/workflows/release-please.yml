@@ -21,7 +21,7 @@ concurrency:
 jobs:
   release-please:
     if: github.repository == 'iExalt/paseo'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     outputs:
       pr: ${{ steps.release.outputs.pr }}
@@ -48,7 +48,7 @@ jobs:
   dispatch:
     needs: release-please
     if: needs.release-please.outputs.release_created == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       actions: write
@@ -65,7 +65,7 @@ jobs:
   nix-hash:
     needs: release-please
     if: needs.release-please.outputs.pr != ''
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     env:
       BRANCH: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}

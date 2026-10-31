@@ -16,7 +16,7 @@ concurrency:
 jobs:
   plan:
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
@@ -43,7 +43,7 @@ jobs:
     name: routine (${{ matrix.lane }})
     needs: plan
     if: github.repository == 'iExalt/paseo' && !github.event.repository.private
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 7
     strategy:
       fail-fast: false
@@ -116,7 +116,7 @@ jobs:
     if: >-
       github.repository == 'iExalt/paseo' && !github.event.repository.private &&
       github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 7
     permissions:
       contents: read
@@ -191,7 +191,7 @@ jobs:
       contents: read
     if: always()
     needs: [plan, routine]
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - name: Require complete routine success
