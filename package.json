@@ -100,6 +100,7 @@
     "cli": "./scripts/dev-home.sh npx tsx packages/cli/src/index.js",
     "qa:web": "node scripts/qa-web.mjs",
     "probe": "playwright test -c packages/app/e2e/probe/playwright.probe.config.ts",
+    "desktop:sandbox": "node packages/desktop/scripts/desktop-sandbox.mjs",
     "version": "npm run version:sync-internal && npm run fdroid:changelogs && npm run release:prepare && git add -A",
     "version:sync-internal": "node scripts/sync-workspace-versions.mjs",
     "release:prepare": "npm install --workspaces --include-workspace-root",

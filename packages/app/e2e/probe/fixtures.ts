@@ -73,6 +73,7 @@ export const probe = base.extend<ProbeTestFixtures, ProbeWorkerFixtures>({
   desktop: [undefined, { option: true }],
   page: async ({ page, desktop, qa }, provide) => {
     if (desktop) {
+      if (!qa.serverId) throw new Error("desktop scenarios need PROBE_SERVER_ID with PROBE_URL");
       await page.addInitScript(installFakeDesktopBridge, fakeDesktopScenario(desktop, qa));
     }
     await provide(page);

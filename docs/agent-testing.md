@@ -213,8 +213,34 @@ settings: on the shared tablet, hold the lock, re-add `127.0.0.1:6790` and note 
 
 Launching Electron directly (Playwright `_electron.launch`) skips `dev.sh`. Without
 `PASEO_ELECTRON_USER_DATA_DIR`, an unpackaged launch uses `Paseo-<worktree>` userData when its cwd
-is a linked git worktree, and Electron's default userData otherwise. Whether that default collides
-with the installed app is unverified, so always set the variable.
+is a linked git worktree, and `<appData>/Paseo` otherwise: `app.setName("Paseo")` runs before
+anything reads the path, so a direct launch outside a worktree shares the installed app's userData.
+Always set the variable, or use the [desktop sandbox](#desktop-sandbox).
+
+## Desktop sandbox
+
+`npm run desktop:sandbox` runs the unpackaged desktop app against a fresh
+[`qa:web`](#isolated-daemons) daemon and prints one JSON line with `cdpUrl`, `url`, `serverId`,
+`home`, `electronPid` and the `stop` command:
+
+```sh
+npm run build:main --workspace=@getpaseo/desktop   # once, and after desktop main changes
+npm run -s desktop:sandbox -- --seed heavy
+npm run desktop:sandbox -- --stop <home>
+```
+
+- It runs on Linux under `xvfb-run`, so no window opens; run it on dev-station. On macOS it
+  refuses unless `--allow-window`. Without a setuid-root `chrome-sandbox` it adds `--no-sandbox`.
+- The renderer is the daemon-served web UI (`EXPO_DEV_URL=<url>`); `--metro <url>` uses a Metro
+  server instead, for development builds and React warnings (not yet tried).
+- Electron gets the scratch home, `userData` under it, no inherited `PASEO_*` variable, and remote
+  debugging on 127.0.0.1 only. Start fails unless the app's `desktop_daemon_status` reports the
+  sandbox's own home and server and the daemon was adopted, not replaced.
+- Attach with `connectToPaseoRenderer(cdpUrl, { origin })` from
+  `packages/desktop/e2e/support/connect-renderer.mjs`. It retries `connectOverCDP` until a page
+  from that origin has drawn the app, instead of returning DevTools or blank pages.
+- `--stop` only stops a home the sandbox started (`.desktop-sandbox`), ends Electron and Xvfb by
+  their recorded process group, then stops the daemon.
 
 Playwright's `reducedMotion: 'reduce'` context option stops the web app's animations: the status
 ring, the turn loader and switch thumbs. Only the running turn's elapsed time keeps changing, once
