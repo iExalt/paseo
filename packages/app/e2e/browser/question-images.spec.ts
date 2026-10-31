@@ -69,7 +69,7 @@ async function openImageQuestion(page: Page, input: { cwdSubdir?: string }) {
 }
 
 test.describe("Question images", () => {
-  test("question text and descriptions show workspace, absolute and remote images", async ({
+  test("question text, descriptions and previews show images that never answer", async ({
     page,
   }) => {
     test.setTimeout(180_000);
@@ -94,6 +94,25 @@ test.describe("Question images", () => {
       await expect(card.getByRole("radio", { name: /Green/ })).toHaveAttribute(
         "aria-checked",
         "false",
+      );
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("attachment-lightbox")).toHaveCount(0);
+
+      // An image-only preview opens the image too; a text preview still answers.
+      const preview = await expectImageLoaded(card, "Blue preview");
+      expect((await preview.boundingBox())?.height).toBeLessThanOrEqual(QUESTION_IMAGE_MAX_HEIGHT);
+      await preview.click();
+      await expect(page.getByTestId("attachment-lightbox")).toBeVisible();
+      await expect(card.getByRole("radio", { name: /Preview/ })).toHaveAttribute(
+        "aria-checked",
+        "false",
+      );
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("attachment-lightbox")).toHaveCount(0);
+      await card.getByTestId("question-form-option-preview").getByText("| remote |").click();
+      await expect(card.getByRole("radio", { name: /Remote/ })).toHaveAttribute(
+        "aria-checked",
+        "true",
       );
     } finally {
       await cleanup();

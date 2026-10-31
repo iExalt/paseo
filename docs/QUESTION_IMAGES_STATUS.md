@@ -13,8 +13,8 @@ current evidence.
 | --------------- | ------------------------------------------------------------------------------------------ |
 | Baseline        | `dev` at `923ea18bc`                                                                       |
 | Current phase   | One phase, three chunks: A (steps 0–1), B (steps 2–3), C (steps 4–6); approved by the user |
-| Overall state   | Chunk A verified on web and Android; B and C not merged                                    |
-| Immediate focus | Chunk B: image-only previews and notification placeholders, then the phone push check      |
+| Overall state   | Chunks A and B verified on web and Android, B's push on a phone; C not merged              |
+| Immediate focus | Chunk C: agent instruction, docs, live Claude check                                        |
 
 ## Accomplishments with evidence
 
@@ -42,6 +42,34 @@ Evidence:
   its alt text; tapping a description image opens the lightbox and leaves the option unchecked.
   Capture: [android-hero-cap.png](qa-evidence/question-images/android-hero-cap.png).
 
+### B — Image-only previews and notification placeholders
+
+Evidence state: verified.
+
+- An option preview that is exactly one Markdown image draws as that image under the dialog cap.
+  Any other preview, ASCII mockups included, stays monospace text.
+- Tapping an image preview opens the image without answering; a text preview still answers.
+- Notification text shows images as `[image: alt]` or `[image]`. Linked images (badges) give
+  `[image: alt]`, and `![chart](c.png)(note)` keeps its parenthesis.
+
+Evidence:
+
+- Commits: `5c8abbad6` feat: draw image-only option previews and show images as notification
+  placeholders; `d7df190cc` folds the preview checks into the root-cwd spec journey.
+- Unit: `agent-attention-notification.test.ts` 11 passed; `question-form-card-core.test.ts` 8
+  passed.
+- Web: `question-images.spec.ts` 2 passed (56.1 s, with an APK build running alongside). With
+  the web click filter limited to descriptions, the preview test fails (the option answers).
+- Android (Cuttlefish, APK at `fc15fe046`): a preview image tap opens the lightbox and leaves the
+  option unchecked; a text preview tap checks its option. Capture:
+  [android-previews.png](qa-evidence/question-images/android-previews.png).
+- Push (the user's S24U, Paseo Debug built at `d7df190cc` with the debug Firebase config, branch
+  daemon on dev-station over the relay, app backgrounded with `am kill` and quiet for over
+  180 s), read from `dumpsys notification`: a finished reply `![](x.png)` showed `[image]`; a
+  question titled `Which hero? ![Hero banner](…)` showed `Which hero? [image: Hero banner]`.
+  An agent that had already finished a turn while the phone was active sent no second finished
+  push; a fresh agent did.
+
 ### Spike findings (step 0)
 
 - Everything in question text and descriptions already loaded when the agent ran at the
@@ -57,8 +85,6 @@ Evidence:
 
 ## Current boundary
 
-- Chunk B (image-only previews, notification placeholders) is code-reviewed but not merged; the
-  phone push check is pending.
 - Chunk C (agent instruction, docs, live Claude check) has not started.
 - iOS and Electron are not captured. Electron uses the web renderer.
 

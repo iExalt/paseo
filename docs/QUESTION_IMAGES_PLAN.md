@@ -67,12 +67,12 @@ Read from code at `73ac3f53e`; nothing below has been rendered yet.
       from also selecting the option. Descriptions already claim their own
       touches on native (`question-form-card.tsx:57`); the web click filter at
       `question-form-card.tsx:50-54` may need to include images.
-- [ ] **2. Image-only previews.** Add a pure `parseImageOnlyPreview(preview)`
+- [x] **2. Image-only previews.** Add a pure `parseImageOnlyPreview(preview)`
       to `question-form-card-core.ts` with unit cases for a lone image,
       surrounding whitespace, text plus an image, two images and ASCII art.
       Draw a match through the Markdown image path inside the existing preview
       height cap; everything else stays in `ScrollableCodeSurface`.
-- [ ] **3. Notification placeholder.** Replace the image rule in
+- [x] **3. Notification placeholder.** Replace the image rule in
       `stripMarkdownToText` and add a case to
       `agent-attention-notification.test.ts` for an image with and without alt
       text. Check that the later link and autolink rules leave the placeholder
