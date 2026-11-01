@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.18.0](https://github.com/iExalt/paseo/compare/paseo-v0.17.1...paseo-v0.18.0) (2026-11-01)
+
+
+### Features
+
+* **app:** show question images against the agent cwd, capped for dialogs ([#308](https://github.com/iExalt/paseo/issues/308)) ([4741d67](https://github.com/iExalt/paseo/commit/4741d673e4e54c2ac9b892036dd0088570cfa2ed))
+* draw image-only option previews and show images as notification placeholders ([#309](https://github.com/iExalt/paseo/issues/309)) ([937f868](https://github.com/iExalt/paseo/commit/937f8684c1649b322ad751ceb0fe4e4a6847a3bc))
+* **server:** tell agents question dialogs show images ([#310](https://github.com/iExalt/paseo/issues/310)) ([864bc4a](https://github.com/iExalt/paseo/commit/864bc4ad622ced754d5006a9d2b54c9d481c0f28))
+
+
+### Bug Fixes
+
+* **app:** skip attachment garbage collection when IndexedDB is missing ([#304](https://github.com/iExalt/paseo/issues/304)) ([3f4dfa0](https://github.com/iExalt/paseo/commit/3f4dfa0b6997e8fc40d9fe9074d88cac15f76b5f))
+
+
+### Performance Improvements
+
+* **ci:** shorten the server unit lanes ([#305](https://github.com/iExalt/paseo/issues/305)) ([211ff68](https://github.com/iExalt/paseo/commit/211ff6892d3bda58cfffe37f90ca9a41f7540abe))
+* **server:** stop server tests waiting out production timeouts ([#306](https://github.com/iExalt/paseo/issues/306)) ([923ea18](https://github.com/iExalt/paseo/commit/923ea18bc9213d56598a26ef744ba9eed7db40d7))
+
 ## [0.17.1](https://github.com/iExalt/paseo/compare/paseo-v0.17.0...paseo-v0.17.1) (2026-10-31)
 
 
