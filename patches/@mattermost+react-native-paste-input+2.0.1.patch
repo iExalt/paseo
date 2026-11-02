@@ -58,10 +58,10 @@ index 9e60bd9..35c89ef 100644
 +  private fun getUriInClipboard() : Uri? = mEditText.clipboardFileUri()
  }
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-index 1794b53..3b0fd95 100644
+index 1794b53..6f27aa2 100644
 --- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
 +++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-@@ -1,6 +1,10 @@
+@@ -1,9 +1,15 @@
  package com.mattermost.pasteinputtext
  
  import android.annotation.SuppressLint
@@ -71,8 +71,13 @@ index 1794b53..3b0fd95 100644
 +import android.util.Log
  import android.os.Build
  import android.view.inputmethod.EditorInfo
++import android.view.KeyEvent
  import android.view.inputmethod.InputConnection
-@@ -33,8 +37,35 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
++import android.view.inputmethod.InputConnectionWrapper
+ import androidx.core.view.inputmethod.EditorInfoCompat
+ import androidx.core.view.inputmethod.InputConnectionCompat
+ import com.facebook.react.uimanager.ThemedReactContext
+@@ -33,10 +39,39 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
      return mOnPasteListener
    }
  
@@ -104,13 +109,18 @@ index 1794b53..3b0fd95 100644
 +    }
 +    return super.onTextContextMenuItem(id)
 +  }
-+
+ 
+-    EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
 +  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
 +    val ic = super.onCreateInputConnection(outAttrs) ?: return null
++
++    // List image types explicitly before the wildcard: some keyboards match
++    // their content against these entries literally and skip "*/*".
++    EditorInfoCompat.setContentMimeTypes(outAttrs, CONTENT_MIME_TYPES)
  
-     EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
- 
-@@ -48,6 +79,7 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+     val callback = InputConnectionCompat.OnCommitContentListener { inputContentInfo, flags, _ ->
+       val lacksPermission = (flags and InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION) != 0
+@@ -48,6 +83,7 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
          }
        }
  
@@ -118,16 +128,47 @@ index 1794b53..3b0fd95 100644
        if (!mDisabledCopyPaste) {
          getOnPasteListener().onPaste(inputContentInfo.contentUri, mPasteEventDispatcher)
        }
-@@ -55,6 +87,10 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+@@ -55,6 +91,41 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
        true
      }
  
 -    return InputConnectionCompat.createWrapper(ic!!, outAttrs, callback)
-+    return InputConnectionCompat.createWrapper(ic, outAttrs, callback)
++    return PasteLoggingInputConnection(InputConnectionCompat.createWrapper(ic, outAttrs, callback))
++  }
++
++  // Logs the keyboard calls that can carry a paste, so a keyboard whose paste
++  // never reaches onPaste shows which route it took. Typed text is not logged.
++  private class PasteLoggingInputConnection(target: InputConnection) : InputConnectionWrapper(target, false) {
++    override fun performContextMenuAction(id: Int): Boolean {
++      Log.i(TAG, "keyboard performContextMenuAction $id")
++      return super.performContextMenuAction(id)
++    }
++
++    override fun performPrivateCommand(action: String?, data: android.os.Bundle?): Boolean {
++      Log.i(TAG, "keyboard performPrivateCommand $action")
++      return super.performPrivateCommand(action, data)
++    }
++
++    override fun sendKeyEvent(event: KeyEvent): Boolean {
++      if (event.isCtrlPressed && event.action == KeyEvent.ACTION_DOWN) {
++        Log.i(TAG, "keyboard ctrl key ${event.keyCode}")
++      }
++      return super.sendKeyEvent(event)
++    }
++
++    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
++      if (text != null && (text.startsWith("content://") || text.startsWith("file://"))) {
++        Log.i(TAG, "keyboard commitText of a URI")
++      }
++      return super.commitText(text, newCursorPosition)
++    }
 +  }
 +
 +  companion object {
 +    private const val TAG = "PasteInput"
++    private val CONTENT_MIME_TYPES = arrayOf(
++      "image/*", "image/png", "image/jpeg", "image/gif", "image/webp", "*/*",
++    )
    }
  }
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt

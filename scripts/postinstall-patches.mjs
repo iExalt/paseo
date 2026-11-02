@@ -95,8 +95,9 @@ const patchedPackages = [
   // Android image paste, local and not upstream as of 2.0.1: take the MIME type from the content
   // provider when the URI name has no usable extension (keyboard commits), and send URI-only
   // image clips to onPaste from every paste route: the long-press menu, Ctrl+V and keyboard
-  // performContextMenuAction(paste). Logs each route under the PasteInput tag. Keep these hunks
-  // across upgrades.
+  // performContextMenuAction(paste). Lists image MIME types before "*/*" for keyboards that match
+  // them literally, and logs each route and keyboard paste call under the PasteInput tag. Keep
+  // these hunks across upgrades.
   {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
