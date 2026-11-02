@@ -27,18 +27,79 @@ index 73466dd..8440ac9 100644
    }
  
    auto textSize = textLayoutManager_
+diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
+index 9e60bd9..1594fbd 100644
+--- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
++++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
+@@ -61,12 +61,11 @@ class PasteInputActionCallback(editText: PasteInputEditText, disabled: Boolean,
+     val clipboardManager = mEditText.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+     val clipData = clipboardManager.primaryClip ?: return null
+     val item = clipData.getItemAt(0) ?: return null
+-    val chars = item.text ?: return null
+-
+-    val text = chars.toString()
+-    return if (text.isNotEmpty()) {
+-      null
+-    } else item.uri
+-
++    if (!item.text.isNullOrEmpty()) return null
++    // Copied images (Chrome, Photos, screenshots) are URI-only clips with no text.
++    // Leave text-typed URIs to the stock paste, which coerces them to text.
++    val uri = item.uri ?: return null
++    val type = mEditText.context.contentResolver.getType(uri) ?: return null
++    return if (type.startsWith("text/")) null else uri
+   }
+ }
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-index 9e429b8..1d10014 100644
+index 1794b53..eca5e57 100644
 --- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
 +++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-@@ -36,2 +36,2 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+@@ -33,8 +33,8 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+     return mOnPasteListener
+   }
+ 
 -  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
 -    val ic = super.onCreateInputConnection(outAttrs)
 +  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
 +    val ic = super.onCreateInputConnection(outAttrs) ?: return null
-@@ -58 +58 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+ 
+     EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
+ 
+@@ -55,6 +55,6 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+       true
+     }
+ 
 -    return InputConnectionCompat.createWrapper(ic!!, outAttrs, callback)
 +    return InputConnectionCompat.createWrapper(ic, outAttrs, callback)
+   }
+ }
+diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
+index 9afe1f0..08bf518 100644
+--- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
++++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
+@@ -19,7 +19,7 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
+ 
+   override fun onPaste(itemUri: Uri, eventDispatcher: EventDispatcher?) {
+     val reactContext = mEditText.context as ReactContext
+-    reactContext.contentResolver.getType(itemUri) ?: return
++    val providerMimeType = reactContext.contentResolver.getType(itemUri) ?: return
+ 
+     var uriString: String = itemUri.toString()
+     val mimeType: String
+@@ -52,8 +52,11 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
+       uriString = RealPathUtil.getRealPathFromURI(reactContext, itemUri) ?: return
+     }
+ 
+-    val extension: String = MimeTypeMap.getFileExtensionFromUrl(uriString) ?: return
+-    mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: return
++    // Keyboards such as Gboard commit URIs whose name has no extension, and
++    // getFileExtensionFromUrl returns "" for names with spaces. Fall back to the
++    // provider's MIME type instead of dropping the paste.
++    val extension: String = MimeTypeMap.getFileExtensionFromUrl(uriString) ?: ""
++    mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: providerMimeType
+     val fileName: String = URLUtil.guessFileName(uriString, null, mimeType)
+ 
+     try {
 diff --git a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
 index 51b9dfa..501badf 100644
 --- a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
