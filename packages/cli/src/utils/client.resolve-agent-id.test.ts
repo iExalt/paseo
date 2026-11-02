@@ -18,6 +18,28 @@ describe("resolveAgentId", () => {
     expect(resolveAgentId(query, agents)).toBe(expected);
   });
 
+  test("rejects an ID prefix several agents share instead of picking one", () => {
+    const shared = [
+      { id: "abc1234-first", title: "First" },
+      { id: "abc1234-second", title: null },
+    ];
+    expect(() => resolveAgentId("abc1234", shared)).toThrow(
+      expect.objectContaining({
+        code: "AMBIGUOUS_AGENT_ID",
+        message:
+          'Agent ID prefix "abc1234" matches 2 agents. Use a longer prefix or the full agent ID:\n  abc1234-first  First\n  abc1234-second',
+      }),
+    );
+  });
+
+  test("a unique title still settles a prefix several agents share", () => {
+    const shared = [
+      { id: "review-1", title: "Other" },
+      { id: "review-2", title: "Review" },
+    ];
+    expect(resolveAgentId("review", shared)).toBe("review-2");
+  });
+
   describe("provider session IDs", () => {
     const withSessions = [
       ...agents,
