@@ -92,6 +92,9 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/react-native-webview",
     patchPrefix: "react-native-webview+",
   },
+  // Android image paste, local and not upstream as of 2.0.1: take the MIME type from the content
+  // provider when the URI name has no usable extension (keyboard commits), and send URI-only
+  // image clips from the long-press Paste to onPaste. Keep these hunks across upgrades.
   {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
