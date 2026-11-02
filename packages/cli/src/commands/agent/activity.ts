@@ -7,6 +7,7 @@ import type {
   SingleResult,
 } from "../../output/index.js";
 import { connectToDaemon } from "../../utils/client.js";
+import { resolveExactAgentTarget } from "../../utils/agent-target.js";
 
 export const agentActivitySchema: OutputSchema<AgentActivityResult> = {
   idField: "agentId",
@@ -38,7 +39,7 @@ function parseLimit(value: string | undefined): number | undefined {
 export function addAgentActivityOptions(command: Command): Command {
   return command
     .description("Show an agent's recent conversation and activity summary")
-    .argument("<agent-id>", "Exact agent ID")
+    .argument("<agent-id>", "Exact agent ID or full session ID")
     .option(
       "--limit <number>",
       "Limit curated activity entries; zero or a negative value includes all",
@@ -62,7 +63,7 @@ export async function runAgentActivityCommand(
       } satisfies CommandError;
     }
     const result = await client.getAgentActivity({
-      agentId,
+      agentId: await resolveExactAgentTarget(client, agentId),
       ...(limit !== undefined ? { limit } : {}),
     });
     return { type: "single", data: result, schema: agentActivitySchema };

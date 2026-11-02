@@ -7,7 +7,7 @@ import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../
 export function addInspectOptions(cmd: Command): Command {
   return cmd
     .description("Show detailed information about an agent")
-    .argument("<id>", "Agent ID (or prefix)");
+    .argument("<id>", "Agent ID, prefix, or full session ID");
 }
 
 /** Agent inspect data for display (matches CLI spec format) */

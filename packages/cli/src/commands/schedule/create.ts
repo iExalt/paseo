@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import type { SingleResult } from "../../output/index.js";
+import { resolveExactAgentTarget } from "../../utils/agent-target.js";
 import { scheduleSchema } from "./schema.js";
 import {
   connectScheduleClient,
@@ -57,6 +58,13 @@ export async function runCreateCommand(
       expiresIn: options.expiresIn,
       runNow,
     });
+    // Store the Paseo ID, never a provider session ID, so the schedule survives a session rotation.
+    if (input.target.type === "agent") {
+      input.target = {
+        ...input.target,
+        agentId: await resolveExactAgentTarget(client, input.target.agentId),
+      };
+    }
     const payload = await client.scheduleCreate({
       ...input,
       ...(options.replace ? { replaceExisting: true } : {}),

@@ -8,6 +8,7 @@ import type { CommandError, CommandOptions, ListResult, OutputSchema } from "../
 import { connectToDaemon } from "../../utils/client.js";
 import { collectMultiple } from "../../utils/command-options.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
+import { resolveExactAgentTarget } from "../../utils/agent-target.js";
 
 export const agentQuerySchema: OutputSchema<AgentListItemPayload> = {
   idField: "id",
@@ -72,7 +73,10 @@ function parseStatuses(
 export function addAgentQueryOptions(command: Command): Command {
   return command
     .description("Find agents by scope, age, status, and visibility")
-    .option("--caller-agent <id>", "Use an agent caller directory as the default scope")
+    .option(
+      "--caller-agent <id>",
+      "Use an agent caller directory as the default scope (exact ID or full session ID)",
+    )
     .option("--cwd <path>", "Restrict results to this directory and its descendants")
     .option("--include-archived", "Include archived agents")
     .option("--include-background", "Include background workspace agents")
@@ -118,7 +122,9 @@ export async function runAgentQueryCommand(
         details: "Update the daemon before querying agents.",
       } satisfies CommandError;
     }
-    const callerAgentId = requestedCallerId || (await resolveCallerAgentId(client));
+    const callerAgentId = requestedCallerId
+      ? await resolveExactAgentTarget(client, requestedCallerId)
+      : await resolveCallerAgentId(client);
     const agents = await client.queryAgentDirectory({
       ...(options.includeBackground ? { includeBackground: true } : {}),
       ...(options.includeArchived ? { includeArchived: true } : {}),

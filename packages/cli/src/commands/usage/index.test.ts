@@ -1,3 +1,4 @@
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { describe, expect, it } from "vitest";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { render } from "../../output/index.js";
@@ -116,6 +117,10 @@ function host(entries = reports, supported = true) {
             : entries;
           return { requestId: "request", reports: selected };
         },
+        fetchAgent: (async ({ agentId }: { agentId: string }) =>
+          agentId === "thread-123"
+            ? { agent: { id: "agent-123", runtimeInfo: { sessionId: "thread-123" } } }
+            : null) as unknown as DaemonClient["fetchAgent"],
         close: async () => {
           closed++;
         },
@@ -217,6 +222,12 @@ it("passes agent account selection and refresh without converting it to token co
     daemon.connect,
   );
   expect(daemon.queries).toEqual([{ agentId: "agent-123", forceRefresh: true }]);
+});
+
+it("selects the agent's account by its full session ID", async () => {
+  const daemon = host();
+  await runUsageCommand({ ...options, agent: "thread-123" }, { kind: "list" }, daemon.connect);
+  expect(daemon.queries).toEqual([{ agentId: "agent-123", forceRefresh: undefined }]);
 });
 
 it("returns an empty array in JSON and explains empty discovery in human output", async () => {

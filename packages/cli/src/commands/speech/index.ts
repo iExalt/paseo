@@ -10,6 +10,7 @@ import { withOutput } from "../../output/index.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
+import { resolveExactAgentTarget } from "../../utils/agent-target.js";
 
 interface SpeechSpeakResult {
   ok: true;
@@ -27,7 +28,10 @@ export function createSpeechCommand(): Command {
       .command("speak")
       .description("Speak text through the daemon-managed voice session")
       .argument("<text>", "Text to speak (1–4000 characters)")
-      .option("--agent <id>", "Agent whose active voice session should speak"),
+      .option(
+        "--agent <id>",
+        "Agent (exact ID or full session ID) whose active voice session should speak",
+      ),
   ).action(withOutput(runSpeechSpeakCommand));
   return speech;
 }
@@ -70,7 +74,9 @@ export async function runSpeechSpeakCommand(
         details: "Update the daemon before using `paseo speech speak`.",
       } satisfies CommandError;
     }
-    const callerAgentId = requestedAgentId || (await resolveCallerAgentId(client));
+    const callerAgentId = requestedAgentId
+      ? await resolveExactAgentTarget(client, requestedAgentId)
+      : await resolveCallerAgentId(client);
     await client.speakText(
       {
         text: normalizedText,

@@ -42,6 +42,7 @@ describe("registered browser CLI commands", () => {
         },
       }).payload,
     );
+    vi.spyOn(client, "fetchAgent").mockResolvedValue(null);
     vi.spyOn(client, "close").mockResolvedValue();
     vi.mocked(connectToDaemon).mockResolvedValueOnce(client);
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);

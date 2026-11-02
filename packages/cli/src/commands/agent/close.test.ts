@@ -13,7 +13,11 @@ const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
 
 vi.mock("../../utils/client.js", () => ({ connectToDaemon: vi.fn() }));
 
-function historyPage(agentIds: string[], nextCursor: string | null = null) {
+function historyPage(
+  agentIds: string[],
+  nextCursor: string | null = null,
+  sessionIds: Record<string, string> = {},
+) {
   return FetchAgentHistoryResponseMessageSchema.parse({
     type: "fetch_agent_history_response",
     payload: {
@@ -39,7 +43,7 @@ function historyPage(agentIds: string[], nextCursor: string | null = null) {
           currentModeId: null,
           availableModes: [],
           pendingPermissions: [],
-          persistence: null,
+          persistence: sessionIds[id] ? { provider: "codex", sessionId: sessionIds[id] } : null,
           title: id,
           labels: {},
         }),
@@ -124,6 +128,32 @@ describe("runCloseCommand", () => {
     ).rejects.toMatchObject({
       code: "AMBIGUOUS_AGENT_ID",
       details: "Matches: agent-10, agent-11",
+    });
+    expect(client.closeAgent).not.toHaveBeenCalled();
+  });
+
+  it("closes the agent whose full provider session ID matches", async () => {
+    const client = createClient(
+      [historyPage(["agent-1", "agent-2"], null, { "agent-2": "thread-abc" })],
+      true,
+    );
+
+    await runCloseCommand("thread-abc", { daemonTarget }, new Command("close"));
+
+    expect(client.closeAgent).toHaveBeenCalledWith("agent-2");
+  });
+
+  it("rejects a provider session ID two agents hold, listing both", async () => {
+    const client = createClient(
+      [historyPage(["agent-1", "agent-2"], null, { "agent-1": "thread-x", "agent-2": "thread-x" })],
+      true,
+    );
+
+    await expect(
+      runCloseCommand("thread-x", { daemonTarget }, new Command("close")),
+    ).rejects.toMatchObject({
+      code: "AMBIGUOUS_AGENT_ID",
+      message: expect.stringMatching(/agent-1 {2}agent-1\n {2}agent-2 {2}agent-2$/),
     });
     expect(client.closeAgent).not.toHaveBeenCalled();
   });

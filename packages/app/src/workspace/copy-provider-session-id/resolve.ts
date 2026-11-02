@@ -1,3 +1,4 @@
+import { getProviderSessionId } from "@getpaseo/protocol/agent-provider-session-id";
 import type { Agent } from "@/stores/session-store";
 import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
 
@@ -6,12 +7,8 @@ type SessionAgent = Pick<
   "id" | "workspaceId" | "archivedAt" | "parentAgentId" | "lastActivityAt" | "persistence"
 > & { runtimeInfo?: Pick<NonNullable<Agent["runtimeInfo"]>, "sessionId"> };
 
-/** The provider's own ID for the conversation: Claude's session ID, Codex's thread ID, and so on. */
-export function getProviderSessionId(
-  agent: Pick<SessionAgent, "persistence" | "runtimeInfo">,
-): string | null {
-  return agent.runtimeInfo?.sessionId ?? agent.persistence?.sessionId ?? null;
-}
+// The CLI and daemon resolve this same ID back to the agent, so copy and resolution share one rule.
+export { getProviderSessionId };
 
 /**
  * Picks the provider session a workspace-level "copy session ID" action should copy.

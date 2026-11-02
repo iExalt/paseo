@@ -13,6 +13,12 @@ import {
   parseConnectionUri,
 } from "@getpaseo/protocol/daemon-endpoints";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import {
+  findAgentsByProviderSessionId,
+  formatAmbiguousProviderSessionIdError,
+  type ProviderSessionIdSource,
+} from "@getpaseo/protocol/agent-provider-session-id";
+import type { CommandError } from "../output/index.js";
 import { getOrCreateCliClientId } from "./client-id.js";
 import { resolveCliVersion } from "../version.js";
 
@@ -231,15 +237,17 @@ export async function tryConnectToDaemon(options: ConnectOptions): Promise<Daemo
 }
 
 /** Minimal agent type for ID resolution */
-interface AgentLike {
+interface AgentLike extends ProviderSessionIdSource {
   id: string;
   title?: string | null;
 }
 
 /**
  * Resolve an agent ID from a partial ID or name.
- * Supports:
+ * Supports, in order:
  * - Full ID match
+ * - Full provider session ID match (the ID the app's "Copy session ID" copies); throws
+ *   AMBIGUOUS_AGENT_ID when several agents hold it
  * - Prefix match (first N characters)
  * - Title/name match (case-insensitive)
  *
@@ -256,6 +264,18 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
   const exactMatch = agents.find((a) => a.id === idOrName);
   if (exactMatch) {
     return exactMatch.id;
+  }
+
+  const sessionId = idOrName.trim();
+  const sessionMatches = findAgentsByProviderSessionId(agents, sessionId);
+  if (sessionMatches.length === 1 && sessionMatches[0]) {
+    return sessionMatches[0].id;
+  }
+  if (sessionMatches.length > 1) {
+    throw {
+      code: "AMBIGUOUS_AGENT_ID",
+      message: formatAmbiguousProviderSessionIdError(sessionId, sessionMatches),
+    } satisfies CommandError;
   }
 
   // Try ID prefix match

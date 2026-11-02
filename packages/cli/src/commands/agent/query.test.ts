@@ -48,6 +48,7 @@ describe("agent query command gates", () => {
       }),
     );
     const query = vi.spyOn(client, "queryAgentDirectory").mockResolvedValue([]);
+    vi.spyOn(client, "fetchAgent").mockResolvedValue(null);
     vi.spyOn(client, "close").mockResolvedValue();
     vi.mocked(connectToDaemon).mockResolvedValue(client);
 

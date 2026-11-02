@@ -30,6 +30,7 @@ describe("registered speech CLI command", () => {
       requestId: "speech-request",
       ok: true,
     });
+    vi.spyOn(client, "fetchAgent").mockResolvedValue(null);
     vi.spyOn(client, "close").mockResolvedValue();
     vi.mocked(connectToDaemon).mockResolvedValueOnce(client);
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);

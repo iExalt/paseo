@@ -7992,7 +7992,7 @@ test("agent orchestration options are rejected before sending to an older host",
   expect(transport.sent).toHaveLength(0);
 });
 
-test("send agent message forwards mode and notification and returns dispatch disposition", async () => {
+test("send agent message forwards mode and notification and returns the resolved agent and disposition", async () => {
   const transport = createMockTransport();
   const client = new DaemonClient({
     url: "ws://test",
@@ -8005,7 +8005,7 @@ test("send agent message forwards mode and notification and returns dispatch dis
   transport.triggerOpen({ features: { agentOrchestrationParity: true } });
   await connected;
 
-  const sent = client.sendAgentMessage("agent-1", "continue", {
+  const sent = client.sendAgentMessage("thread-abc", "continue", {
     sessionMode: "plan",
     notifyOnFinish: false,
   });
@@ -8023,7 +8023,8 @@ test("send agent message forwards mode and notification and returns dispatch dis
       },
     }),
   );
-  await expect(sent).resolves.toEqual({ disposition: "out_of_band" });
+  // The daemon reports the Paseo ID it resolved the session ID to.
+  await expect(sent).resolves.toEqual({ agentId: "agent-1", disposition: "out_of_band" });
 });
 
 test("creation lifecycle acknowledgement reaches the observer before the final response", async () => {

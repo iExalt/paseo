@@ -4065,6 +4065,8 @@ export class DaemonClient {
     text: string,
     options: SendMessageOptions = {},
   ): Promise<{
+    /** The Paseo ID the daemon resolved `agentId` to, which may have been a prefix or session ID. */
+    agentId: string;
     deliveryStatus?: "queued";
     disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
   }> {
@@ -4100,6 +4102,7 @@ export class DaemonClient {
       throw new Error(payload.error ?? "sendAgentMessage rejected");
     }
     return {
+      agentId: payload.agentId,
       ...(payload.deliveryStatus ? { deliveryStatus: payload.deliveryStatus } : {}),
       ...(payload.disposition ? { disposition: payload.disposition } : {}),
     };
