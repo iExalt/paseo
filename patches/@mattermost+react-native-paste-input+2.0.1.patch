@@ -28,13 +28,25 @@ index 73466dd..8440ac9 100644
  
    auto textSize = textLayoutManager_
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
-index 9e60bd9..1594fbd 100644
+index 9e60bd9..35c89ef 100644
 --- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
 +++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
-@@ -61,12 +61,11 @@ class PasteInputActionCallback(editText: PasteInputEditText, disabled: Boolean,
-     val clipboardManager = mEditText.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-     val clipData = clipboardManager.primaryClip ?: return null
-     val item = clipData.getItemAt(0) ?: return null
+@@ -1,7 +1,5 @@
+ package com.mattermost.pasteinputtext
+ 
+-import android.content.ClipboardManager
+-import android.content.Context
+ import android.net.Uri
+ import android.view.ActionMode
+ import android.view.Menu
+@@ -57,16 +55,5 @@ class PasteInputActionCallback(editText: PasteInputEditText, disabled: Boolean,
+     }
+   }
+ 
+-  private fun getUriInClipboard() : Uri? {
+-    val clipboardManager = mEditText.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+-    val clipData = clipboardManager.primaryClip ?: return null
+-    val item = clipData.getItemAt(0) ?: return null
 -    val chars = item.text ?: return null
 -
 -    val text = chars.toString()
@@ -42,51 +54,98 @@ index 9e60bd9..1594fbd 100644
 -      null
 -    } else item.uri
 -
-+    if (!item.text.isNullOrEmpty()) return null
-+    // Copied images (Chrome, Photos, screenshots) are URI-only clips with no text.
-+    // Leave text-typed URIs to the stock paste, which coerces them to text.
-+    val uri = item.uri ?: return null
-+    val type = mEditText.context.contentResolver.getType(uri) ?: return null
-+    return if (type.startsWith("text/")) null else uri
-   }
+-  }
++  private fun getUriInClipboard() : Uri? = mEditText.clipboardFileUri()
  }
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-index 1794b53..eca5e57 100644
+index 1794b53..3b0fd95 100644
 --- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
 +++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
-@@ -33,8 +33,8 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+@@ -1,6 +1,10 @@
+ package com.mattermost.pasteinputtext
+ 
+ import android.annotation.SuppressLint
++import android.content.ClipboardManager
++import android.content.Context
++import android.net.Uri
++import android.util.Log
+ import android.os.Build
+ import android.view.inputmethod.EditorInfo
+ import android.view.inputmethod.InputConnection
+@@ -33,8 +37,35 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
      return mOnPasteListener
    }
  
 -  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
 -    val ic = super.onCreateInputConnection(outAttrs)
++  // A file on the clipboard, such as a copied image: a URI-only clip whose
++  // provider type is not text. Text clips and text-typed URIs return null so
++  // the stock paste handles them.
++  fun clipboardFileUri(): Uri? {
++    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
++    val item = clipboardManager.primaryClip?.getItemAt(0) ?: return null
++    if (!item.text.isNullOrEmpty()) return null
++    val uri = item.uri ?: return null
++    val type = context.contentResolver.getType(uri) ?: return null
++    return if (type.startsWith("text/")) null else uri
++  }
++
++  // Ctrl+V and keyboards that paste with performContextMenuAction(paste) come
++  // here without going through the action mode menu.
++  override fun onTextContextMenuItem(id: Int): Boolean {
++    if (id == android.R.id.paste && !mDisabledCopyPaste) {
++      val uri = clipboardFileUri()
++      if (uri != null) {
++        Log.i(TAG, "paste command with clipboard file $uri")
++        val dispatcher = if (::mPasteEventDispatcher.isInitialized) mPasteEventDispatcher else null
++        getOnPasteListener().onPaste(uri, dispatcher)
++        return true
++      }
++    }
++    return super.onTextContextMenuItem(id)
++  }
++
 +  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
 +    val ic = super.onCreateInputConnection(outAttrs) ?: return null
  
      EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
  
-@@ -55,6 +55,6 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+@@ -48,6 +79,7 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+         }
+       }
+ 
++      Log.i(TAG, "keyboard commitContent ${inputContentInfo.contentUri} ${inputContentInfo.description}")
+       if (!mDisabledCopyPaste) {
+         getOnPasteListener().onPaste(inputContentInfo.contentUri, mPasteEventDispatcher)
+       }
+@@ -55,6 +87,10 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
        true
      }
  
 -    return InputConnectionCompat.createWrapper(ic!!, outAttrs, callback)
 +    return InputConnectionCompat.createWrapper(ic, outAttrs, callback)
++  }
++
++  companion object {
++    private const val TAG = "PasteInput"
    }
  }
 diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
-index 9afe1f0..08bf518 100644
+index 9afe1f0..73dd18e 100644
 --- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
 +++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
-@@ -19,7 +19,7 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
+@@ -19,7 +19,9 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
  
    override fun onPaste(itemUri: Uri, eventDispatcher: EventDispatcher?) {
      val reactContext = mEditText.context as ReactContext
 -    reactContext.contentResolver.getType(itemUri) ?: return
-+    val providerMimeType = reactContext.contentResolver.getType(itemUri) ?: return
++    val providerMimeType = reactContext.contentResolver.getType(itemUri)
++    android.util.Log.i("PasteInput", "onPaste $itemUri type=$providerMimeType")
++    providerMimeType ?: return
  
      var uriString: String = itemUri.toString()
      val mimeType: String
-@@ -52,8 +52,11 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
+@@ -52,8 +54,11 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
        uriString = RealPathUtil.getRealPathFromURI(reactContext, itemUri) ?: return
      }
  
