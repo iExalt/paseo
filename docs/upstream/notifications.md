@@ -82,10 +82,10 @@ could have raised them still waits (`notification-dismissal/caught-up.ts`). A `â
 held by a pending question whose thread title matches the push, or whose agent isn't in the
 directory yet. Any other push is held by an unread thread whose title matches, or that became
 unread no more than 10 minutes before the push arrived, in case it was renamed since. An
-unread thread that is days old with another title no longer keeps every push. Archived agents and subagents don't count:
-subagents never push. Every saved host must be online with a fresh directory, so one offline
-host keeps them all, and only pushes delivered before every host's latest refresh are
-considered. Two threads with the same title hold each other's pushes.
+unread thread that is days old with another title no longer keeps every push. Archived agents
+and subagents don't count: subagents never push. Every saved host must be online with a fresh
+directory, so one offline host keeps them all, and only pushes delivered before every host's
+latest refresh are considered. Two threads with the same title hold each other's pushes.
 While such pushes wait, the app holds every host's directory and refreshes them all on
 foreground. The push test notification is never dismissed.
 

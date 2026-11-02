@@ -110,8 +110,8 @@ export const PUSH_ATTRIBUTION_WINDOW_MS = 10 * 60_000;
 
 /**
  * Whether a waiting thread could be what a push is about: the push carries its title, its
- * agent isn't in the directory yet, or it started waiting around or after the push. Without this, any old unread thread would
- * keep every push in the shade forever.
+ * agent isn't in the directory yet, or it started waiting around or after the push. Without
+ * this, any old unread thread would keep every push in the shade forever.
  */
 export function blockerHoldsPush(blocker: CatchUpBlocker, push: UntrackedPush): boolean {
   if (blocker.pushTitle === null || blocker.pushTitle === push.title) return true;
