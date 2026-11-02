@@ -286,7 +286,7 @@ paseo attach abc123   # Attach to agent (Ctrl+C to detach)
 
 Agent ID 可以缩写，只要 `abc` 没有歧义就可以使用。
 
-凡是命令接受 Agent 的地方，也可以传入该 Agent 的完整会话 ID，即应用中 **Copy session ID** 复制的 Claude Code 会话 ID、Codex 线程 ID 或其他提供方 ID。完全匹配的 Agent ID 优先于会话 ID。会话 ID 必须完整，不会按前缀匹配。如果多个 Agent 持有同一个会话 ID（例如导入之后），命令会失败并列出它们的 Agent ID 供你选择。未知的会话 ID 不会导入或恢复会话；需要时请使用 `paseo import`。较旧的 daemon 可能无法为 `send`、`wait` 等由 daemon 解析的命令识别会话 ID。
+凡是命令接受 Agent 的地方，也可以传入该 Agent 的完整会话 ID，即应用中 **Copy session ID** 复制的 Claude Code 会话 ID、Codex 线程 ID 或其他提供方 ID。完全匹配的 Agent ID 优先于会话 ID。会话 ID 必须完整，不会按前缀匹配。如果多个 Agent 持有同一个会话 ID，命令会失败并列出它们的 Agent ID 供你选择。未知的会话 ID 不会导入或恢复会话；需要时请使用 `paseo import`。较旧的 daemon 可能无法为 `send`、`wait` 等由 daemon 解析的命令识别会话 ID。
 
 ## 发送消息 {#sending-messages}
 

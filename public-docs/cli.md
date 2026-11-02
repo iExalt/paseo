@@ -329,7 +329,7 @@ paseo attach abc123   # Attach to agent (Ctrl+C to detach)
 
 Agent IDs can be shortened, `abc` works if it's unambiguous.
 
-Anywhere a command takes an agent, you can also pass the agent's full session ID: the Claude Code session ID, Codex thread ID, or other provider ID that **Copy session ID** copies in the app. An exact agent ID wins over a session ID. Session IDs must be complete; they are never matched by prefix. When more than one agent holds the same session ID, for example after an import, the command fails and lists their agent IDs so you can pick one. An unknown session ID never imports or resumes a session; use `paseo import` for that. Older daemons may not resolve session IDs for `send`, `wait`, and other commands the daemon resolves.
+Anywhere a command takes an agent, you can also pass the agent's full session ID: the Claude Code session ID, Codex thread ID, or other provider ID that **Copy session ID** copies in the app. An exact agent ID wins over a session ID. Session IDs must be complete; they are never matched by prefix. When more than one agent holds the same session ID, the command fails and lists their agent IDs so you can pick one. An unknown session ID never imports or resumes a session; use `paseo import` for that. Older daemons may not resolve session IDs for `send`, `wait`, and other commands the daemon resolves.
 
 ## Sending messages
 
