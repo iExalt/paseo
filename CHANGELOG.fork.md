@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.18.0](https://github.com/iExalt/paseo/compare/paseo-v0.17.1...paseo-v0.18.0) (2026-11-02)
+
+
+### Features
+
+* **app:** show question images against the agent cwd, capped for dialogs ([#308](https://github.com/iExalt/paseo/issues/308)) ([4741d67](https://github.com/iExalt/paseo/commit/4741d673e4e54c2ac9b892036dd0088570cfa2ed))
+* draw image-only option previews and show images as notification placeholders ([#309](https://github.com/iExalt/paseo/issues/309)) ([937f868](https://github.com/iExalt/paseo/commit/937f8684c1649b322ad751ceb0fe4e4a6847a3bc))
+* **server:** tell agents question dialogs show images ([#310](https://github.com/iExalt/paseo/issues/310)) ([864bc4a](https://github.com/iExalt/paseo/commit/864bc4ad622ced754d5006a9d2b54c9d481c0f28))
+
+
+### Bug Fixes
+
+* **app:** let an Android push go once its own thread is read ([#315](https://github.com/iExalt/paseo/issues/315)) ([09c0f16](https://github.com/iExalt/paseo/commit/09c0f1622feee8b41f4b7eb16a7de42c1f033ba1))
+* **app:** list image MIME types for Android keyboards that skip */* ([#314](https://github.com/iExalt/paseo/issues/314)) ([0d7d94e](https://github.com/iExalt/paseo/commit/0d7d94ec0eaed44029f3cbfa9f38b063d1dfbc7d))
+* **app:** paste copied images on Android with Ctrl+V and keyboard paste ([#313](https://github.com/iExalt/paseo/issues/313)) ([f85f323](https://github.com/iExalt/paseo/commit/f85f3231dbcb7c7bb72cae688cf8eaf69cbfaf14))
+* **app:** paste images on Android from keyboards and the long-press menu ([#312](https://github.com/iExalt/paseo/issues/312)) ([1aedc1a](https://github.com/iExalt/paseo/commit/1aedc1ac32d020f54ee1fd71a5e2a5929c470838))
+* **app:** skip attachment garbage collection when IndexedDB is missing ([#304](https://github.com/iExalt/paseo/issues/304)) ([3f4dfa0](https://github.com/iExalt/paseo/commit/3f4dfa0b6997e8fc40d9fe9074d88cac15f76b5f))
+* **relay:** run the relay e2e against the local worker ([#316](https://github.com/iExalt/paseo/issues/316)) ([f7d0538](https://github.com/iExalt/paseo/commit/f7d0538e0193cc7818a9b2982298503e8b2525ee))
+
+
+### Performance Improvements
+
+* **ci:** shorten the server unit lanes ([#305](https://github.com/iExalt/paseo/issues/305)) ([211ff68](https://github.com/iExalt/paseo/commit/211ff6892d3bda58cfffe37f90ca9a41f7540abe))
+* **server:** stop server tests waiting out production timeouts ([#306](https://github.com/iExalt/paseo/issues/306)) ([923ea18](https://github.com/iExalt/paseo/commit/923ea18bc9213d56598a26ef744ba9eed7db40d7))
+
 ## [0.17.1](https://github.com/iExalt/paseo/compare/paseo-v0.17.0...paseo-v0.17.1) (2026-10-31)
 
 
