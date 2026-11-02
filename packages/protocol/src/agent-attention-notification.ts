@@ -195,7 +195,7 @@ const resolveAgentTitle = (title: string | null | undefined): string | null => {
   return normalized;
 };
 
-function resolveAgentAttentionTitle(
+export function resolveAgentAttentionTitle(
   reason: AgentAttentionReason,
   agentTitle: string | null | undefined,
 ): string {

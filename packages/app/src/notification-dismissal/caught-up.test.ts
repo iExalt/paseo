@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  PUSH_ATTRIBUTION_WINDOW_MS,
   classifyUntrackedPush,
   planCaughtUpDismissals,
   summarizeHostCatchUp,
@@ -14,22 +15,26 @@ function host(overrides: Partial<HostCatchUpSummary> = {}): HostCatchUpSummary {
   return {
     current: true,
     refreshRequestedAt: 1000,
-    anyRequiresAttention: false,
-    anyPendingPermission: false,
+    finished: [],
+    question: [],
     ...overrides,
   };
 }
 
 const PUSHES: UntrackedPush[] = [
-  { identifier: "finished", kind: "finished", deliveredAt: 500 },
-  { identifier: "question", kind: "question", deliveredAt: 500 },
-  { identifier: "test", kind: "test", deliveredAt: 500 },
+  { identifier: "finished", kind: "finished", title: "Fix the build", deliveredAt: 500 },
+  { identifier: "question", kind: "question", title: "❓️ Fix the build", deliveredAt: 500 },
+  { identifier: "test", kind: "test", title: "Paseo", deliveredAt: 500 },
 ];
+const SETTLED: CaughtUpSince = new Map([
+  ["finished", 0],
+  ["question", 0],
+]);
 
 function plan(
   hosts: HostCatchUpSummary[] | null,
   now: number,
-  caughtUpSince: CaughtUpSince = { question: null, finished: null },
+  caughtUpSince: CaughtUpSince = new Map(),
   pushes: UntrackedPush[] = PUSHES,
 ) {
   return planCaughtUpDismissals({ pushes, hosts, caughtUpSince, now, graceMs: GRACE });
@@ -51,39 +56,58 @@ describe("caught-up dismissal of untracked pushes", () => {
     expect(later.dismiss).toEqual(["finished", "question"]);
   });
 
-  it("keeps a question while any host has a pending permission, even with nothing unread", () => {
-    const hosts = [host(), host({ anyPendingPermission: true })];
-    const settled = plan(hosts, 2000, { question: 0, finished: 0 });
-    expect(settled.dismiss).toEqual(["finished"]);
-    expect(settled.caughtUpSince.question).toBeNull();
+  it("keeps a question while its thread or an agent not yet in the directory waits", () => {
+    for (const pushTitle of ["❓️ Fix the build", null]) {
+      const hosts = [host(), host({ question: [{ pushTitle, raisedAt: null }] })];
+      const settled = plan(hosts, 2000, SETTLED);
+      expect(settled.dismiss).toEqual(["finished"]);
+      expect(settled.caughtUpSince.has("question")).toBe(false);
+    }
   });
 
-  it("keeps turn ends while any thread on any host is unread", () => {
-    const settled = plan([host({ anyRequiresAttention: true })], 2000, {
-      question: 0,
-      finished: 0,
-    });
-    expect(settled.dismiss).toEqual(["question"]);
+  it("dismisses an answered question while another thread's question waits", () => {
+    const hosts = [host({ question: [{ pushTitle: "❓️ Other thread", raisedAt: null }] })];
+    expect(plan(hosts, 2000, SETTLED).dismiss).toEqual(["finished", "question"]);
+  });
+
+  it("keeps a turn end while its thread is unread, however long ago that thread finished", () => {
+    const hosts = [host({ finished: [{ pushTitle: "Fix the build", raisedAt: -1e9 }] })];
+    expect(plan(hosts, 2000, SETTLED).dismiss).toEqual(["question"]);
+  });
+
+  it("keeps a turn end while a renamed thread that finished around it is unread", () => {
+    const raisedAt = 500 - PUSH_ATTRIBUTION_WINDOW_MS;
+    const hosts = [host({ finished: [{ pushTitle: "Renamed", raisedAt }] })];
+    expect(plan(hosts, 2000, SETTLED).dismiss).toEqual(["question"]);
+  });
+
+  it("dismisses a read turn end while older unread threads sit elsewhere", () => {
+    const raisedAt = 499 - PUSH_ATTRIBUTION_WINDOW_MS;
+    const hosts = [
+      host({ finished: [{ pushTitle: "Audit shard 1", raisedAt }] }),
+      host({ finished: [{ pushTitle: "Audit shard 2", raisedAt: null }] }),
+    ];
+    expect(plan(hosts, 2000, SETTLED).dismiss).toEqual(["finished", "question"]);
   });
 
   it("holds everything while a host is offline, unrefreshed or the host list is loading", () => {
     for (const hosts of [[host(), host({ current: false })], [], null]) {
-      const settled = plan(hosts, 9000, { question: 0, finished: 0 });
-      expect(settled).toEqual({
-        dismiss: [],
-        caughtUpSince: { question: null, finished: null },
-        recheckAt: null,
-      });
+      const settled = plan(hosts, 9000, SETTLED);
+      expect(settled).toEqual({ dismiss: [], caughtUpSince: new Map(), recheckAt: null });
     }
   });
 
   it("keeps a push delivered after the oldest host refresh started", () => {
     const pushes: UntrackedPush[] = [
-      { identifier: "old", kind: "finished", deliveredAt: 500 },
-      { identifier: "new", kind: "finished", deliveredAt: 800 },
+      { identifier: "old", kind: "finished", title: "Old", deliveredAt: 500 },
+      { identifier: "new", kind: "finished", title: "New", deliveredAt: 800 },
     ];
     const hosts = [host({ refreshRequestedAt: 800 }), host({ refreshRequestedAt: 3000 })];
-    expect(plan(hosts, 9000, { question: 0, finished: 0 }, pushes).dismiss).toEqual(["old"]);
+    const since = new Map([
+      ["old", 0],
+      ["new", 0],
+    ]);
+    expect(plan(hosts, 9000, since, pushes).dismiss).toEqual(["old"]);
   });
 
   it("ignores archived agents and subagents, which never get a push of their own", () => {
@@ -91,6 +115,16 @@ describe("caught-up dismissal of untracked pushes", () => {
       ["archived", { requiresAttention: true, archivedAt: "2026-10-31", parentAgentId: null }],
       ["child", { requiresAttention: true, parentAgentId: "parent" }],
       ["parent", { requiresAttention: false, parentAgentId: null }],
+      [
+        "errored",
+        {
+          title: "Fix the build",
+          requiresAttention: true,
+          attentionReason: "error" as const,
+          attentionTimestamp: new Date(42),
+          parentAgentId: null,
+        },
+      ],
     ]);
     expect(
       summarizeHostCatchUp({
@@ -98,11 +132,17 @@ describe("caught-up dismissal of untracked pushes", () => {
         agents,
         pendingPermissionAgentIds: ["child"],
       }),
-    ).toEqual(host());
-    // A request from an agent not in the directory yet holds questions.
+    ).toEqual(host({ finished: [{ pushTitle: "❗️ Fix the build", raisedAt: 42 }] }));
+    // The daemon's push titles; a request from an agent not in the directory yet is unknown.
     expect(
-      summarizeHostCatchUp({ refreshRequestedAt: 1000, agents, pendingPermissionAgentIds: ["new"] })
-        .anyPendingPermission,
-    ).toBe(true);
+      summarizeHostCatchUp({
+        refreshRequestedAt: 1000,
+        agents,
+        pendingPermissionAgentIds: ["errored", "new"],
+      }).question,
+    ).toEqual([
+      { pushTitle: "❓️ Fix the build", raisedAt: null },
+      { pushTitle: null, raisedAt: null },
+    ]);
   });
 });

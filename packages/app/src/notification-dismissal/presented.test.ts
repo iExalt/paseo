@@ -129,8 +129,8 @@ describe("presented notification sync", () => {
     await sync.sync();
     expect(untracked).toEqual([
       [
-        { identifier: "q", kind: "question", deliveredAt: 200 },
-        { identifier: "f", kind: "finished", deliveredAt: 300 },
+        { identifier: "q", kind: "question", title: "❓️ Plan", deliveredAt: 200 },
+        { identifier: "f", kind: "finished", title: "Plan", deliveredAt: 300 },
       ],
     ]);
   });

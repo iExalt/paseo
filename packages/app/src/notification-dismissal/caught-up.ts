@@ -1,9 +1,15 @@
+import {
+  resolveAgentAttentionTitle,
+  type AgentAttentionReason,
+} from "@getpaseo/protocol/agent-attention-notification";
 import { DISMISS_GRACE_MS } from "./plan";
 
 /**
  * Android pushes delivered while the app isn't running are posted by the Firebase SDK, with
  * only their title and text: nothing says which thread they belong to. They can only go
- * once every host is caught up, judged per kind from the title.
+ * once every host is caught up on whatever could have raised them: a waiting thread holds a
+ * push of its kind only if the push has its title or its attention is recent (see
+ * blockerHoldsPush).
  */
 export type UntrackedPushKind = "question" | "finished" | "test";
 
@@ -21,20 +27,39 @@ export function classifyUntrackedPush(title: string, body: string): UntrackedPus
 export interface UntrackedPush {
   identifier: string;
   kind: UntrackedPushKind;
+  /** The notification's title, as the daemon wrote it. */
+  title: string;
   /** Device clock delivery time, in milliseconds. */
   deliveredAt: number;
+}
+
+/**
+ * A thread still waiting on the user: a top-level agent with unread attention (finished) or
+ * a pending permission (question).
+ */
+export interface CatchUpBlocker {
+  /** The push title the daemon would give it; null when its agent isn't in the directory. */
+  pushTitle: string | null;
+  /**
+   * When it started waiting, on the daemon's clock; null when unknown, which leaves the title
+   * alone to decide. Questions have none: a permission request sets no attention timestamp.
+   */
+  raisedAt: number | null;
 }
 
 export interface HostCatchUpSummary {
   /** Online, with a whole-directory refresh on the current connection. */
   current: boolean;
   refreshRequestedAt: number | null;
-  anyRequiresAttention: boolean;
-  anyPendingPermission: boolean;
+  finished: CatchUpBlocker[];
+  question: CatchUpBlocker[];
 }
 
 export interface CatchUpAgent {
+  title?: string | null;
   requiresAttention?: boolean | null;
+  attentionReason?: AgentAttentionReason | null;
+  attentionTimestamp?: Date | null;
   archivedAt?: unknown;
   parentAgentId?: string | null;
 }
@@ -49,29 +74,54 @@ export function summarizeHostCatchUp(input: {
   pendingPermissionAgentIds: Iterable<string>;
 }): HostCatchUpSummary {
   const isSubagent = (agent: CatchUpAgent | undefined) => !!agent?.parentAgentId;
-  let anyRequiresAttention = false;
+  const finished: CatchUpBlocker[] = [];
   for (const agent of input.agents.values()) {
     if (agent.requiresAttention === true && !agent.archivedAt && !isSubagent(agent)) {
-      anyRequiresAttention = true;
+      const reason = agent.attentionReason === "error" ? "error" : "finished";
+      finished.push({
+        pushTitle: resolveAgentAttentionTitle(reason, agent.title),
+        raisedAt: agent.attentionTimestamp?.getTime() ?? null,
+      });
     }
   }
-  let anyPendingPermission = false;
-  for (const agentId of input.pendingPermissionAgentIds) {
-    if (!isSubagent(input.agents.get(agentId))) anyPendingPermission = true;
+  const question: CatchUpBlocker[] = [];
+  for (const agentId of new Set(input.pendingPermissionAgentIds)) {
+    const agent = input.agents.get(agentId);
+    if (isSubagent(agent)) continue;
+    question.push({
+      pushTitle: agent ? resolveAgentAttentionTitle("permission", agent.title) : null,
+      raisedAt: null,
+    });
   }
   return {
     current: input.refreshRequestedAt !== null,
     refreshRequestedAt: input.refreshRequestedAt,
-    anyRequiresAttention,
-    anyPendingPermission,
+    finished,
+    question,
   };
 }
 
-/** When each kind was first seen caught up; reset when it stops being. */
-export interface CaughtUpSince {
-  question: number | null;
-  finished: number | null;
+/**
+ * How long before a push arrived a waiting thread's attention may have been raised and still
+ * be what the push is about, when the titles differ (the thread was renamed after the push).
+ * It also covers clock skew and delivery delay between the daemon and the phone.
+ */
+export const PUSH_ATTRIBUTION_WINDOW_MS = 10 * 60_000;
+
+/**
+ * Whether a waiting thread could be what a push is about: the push carries its title, its
+ * agent isn't in the directory yet, or it started waiting around or after the push. Without this, any old unread thread would
+ * keep every push in the shade forever.
+ */
+export function blockerHoldsPush(blocker: CatchUpBlocker, push: UntrackedPush): boolean {
+  if (blocker.pushTitle === null || blocker.pushTitle === push.title) return true;
+  return (
+    blocker.raisedAt !== null && blocker.raisedAt >= push.deliveredAt - PUSH_ATTRIBUTION_WINDOW_MS
+  );
 }
+
+/** When each push was first seen with nothing holding it, by identifier. */
+export type CaughtUpSince = ReadonlyMap<string, number>;
 
 export interface CaughtUpPlan {
   dismiss: string[];
@@ -79,7 +129,7 @@ export interface CaughtUpPlan {
   recheckAt: number | null;
 }
 
-const NOT_CAUGHT_UP: CaughtUpSince = { question: null, finished: null };
+const NOT_CAUGHT_UP: CaughtUpSince = new Map();
 
 export function planCaughtUpDismissals(input: {
   pushes: readonly UntrackedPush[];
@@ -97,20 +147,18 @@ export function planCaughtUpDismissals(input: {
   }
   // Pushes carry no host, so only ones every host's latest refresh postdates are settled.
   const cutoff = Math.min(...hosts.map((host) => host.refreshRequestedAt ?? -Infinity));
-  const caughtUpSince: CaughtUpSince = {
-    question: hosts.some((host) => host.anyPendingPermission)
-      ? null
-      : (input.caughtUpSince.question ?? input.now),
-    finished: hosts.some((host) => host.anyRequiresAttention)
-      ? null
-      : (input.caughtUpSince.finished ?? input.now),
-  };
+  const caughtUpSince = new Map<string, number>();
   const dismiss: string[] = [];
   let recheckAt: number | null = null;
   for (const push of input.pushes) {
-    if (push.kind === "test" || push.deliveredAt >= cutoff) continue;
-    const since = caughtUpSince[push.kind];
-    if (since === null) continue;
+    const kind = push.kind;
+    if (kind === "test" || push.deliveredAt >= cutoff) continue;
+    const held = hosts.some((host) =>
+      host[kind].some((blocker) => blockerHoldsPush(blocker, push)),
+    );
+    if (held) continue;
+    const since = input.caughtUpSince.get(push.identifier) ?? input.now;
+    caughtUpSince.set(push.identifier, since);
     if (input.now >= since + graceMs) {
       dismiss.push(push.identifier);
     } else {

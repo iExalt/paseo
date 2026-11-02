@@ -35,7 +35,7 @@ export function createCaughtUpTracker(input: {
 }): CaughtUpTracker {
   const { environment } = input;
   let pushes: UntrackedPush[] = [];
-  let caughtUpSince: CaughtUpSince = { question: null, finished: null };
+  let caughtUpSince: CaughtUpSince = new Map();
   const directoryReleases = new Map<string, () => void>();
   let unsubscribe: (() => void) | null = null;
   let timer: unknown = null;
@@ -77,7 +77,7 @@ export function createCaughtUpTracker(input: {
       unsubscribe?.();
       unsubscribe = null;
       // Unobserved from here on, so a later push must see the state stay caught up anew.
-      caughtUpSince = { question: null, finished: null };
+      caughtUpSince = new Map();
     }
     syncDirectoryDemand();
     if (pushes.length === 0) {
