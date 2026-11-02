@@ -77,13 +77,15 @@ tracker holds directory demand for every host it has notifications for.
 | iOS, Android        | Whatever is in the notification shade              | Synced on start, on foreground and when a push arrives. Pushes resolved while the app was closed go on the next open. Android stacks pushes. |
 
 When Paseo is killed or in the background on Android, the Firebase SDK posts pushes itself, with
-only a title and body: no data says which thread they belong to. Those go
-only once every host is caught up (`notification-dismissal/caught-up.ts`). A `❓️` question goes
-when no thread on any host has a pending question; any other push goes when every thread on
-every host is read. Archived agents and subagents don't count: subagents never push. A thread
-that needed attention without pushing, from a workspace with notifications off or a reply rule,
-still holds them. Every saved host must be online with a fresh directory, so one offline host
-keeps them all, and only pushes delivered before every host's latest refresh are considered.
+only a title and body: no data says which thread they belong to. Those go once nothing that
+could have raised them still waits (`notification-dismissal/caught-up.ts`). A `❓️` question is
+held by a pending question whose thread title matches the push, or whose agent isn't in the
+directory yet. Any other push is held by an unread thread whose title matches, or that became
+unread no more than 10 minutes before the push arrived, in case it was renamed since. An
+unread thread that is days old with another title no longer keeps every push. Archived agents
+and subagents don't count: subagents never push. Every saved host must be online with a fresh
+directory, so one offline host keeps them all, and only pushes delivered before every host's
+latest refresh are considered. Two threads with the same title hold each other's pushes.
 While such pushes wait, the app holds every host's directory and refreshes them all on
 foreground. The push test notification is never dismissed.
 

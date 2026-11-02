@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { HostCatchUpSummary, UntrackedPush } from "./caught-up";
 import { createCaughtUpTracker, type CaughtUpEnvironment } from "./caught-up-tracker";
 
-const PUSH: UntrackedPush = { identifier: "push", kind: "finished", deliveredAt: 500 };
+const PUSH: UntrackedPush = {
+  identifier: "push",
+  kind: "finished",
+  title: "Fix the build",
+  deliveredAt: 500,
+};
+const UNREAD = [{ pushTitle: "Fix the build", raisedAt: 400 }];
 
 function setup() {
   const hosts = new Map<string, HostCatchUpSummary>([
@@ -11,8 +17,8 @@ function setup() {
       {
         current: true,
         refreshRequestedAt: 1000,
-        anyRequiresAttention: true,
-        anyPendingPermission: false,
+        finished: UNREAD,
+        question: [],
       },
     ],
     [
@@ -20,8 +26,8 @@ function setup() {
       {
         current: true,
         refreshRequestedAt: 1000,
-        anyRequiresAttention: false,
-        anyPendingPermission: false,
+        finished: [],
+        question: [],
       },
     ],
   ]);
@@ -73,7 +79,7 @@ describe("caught-up tracker", () => {
     expect([...demand]).toEqual(["a", "b"]);
     expect(refreshed).toEqual(["a", "b"]);
 
-    await update("a", { anyRequiresAttention: false });
+    await update("a", { finished: [] });
     vi.advanceTimersByTime(1499);
     expect(dismissed).toEqual([]);
     vi.advanceTimersByTime(1);
@@ -87,7 +93,7 @@ describe("caught-up tracker", () => {
   it("restarts the grace when a read state is seen again after the shade emptied", async () => {
     vi.useFakeTimers({ now: 2000 });
     const { tracker, dismissed, update } = setup();
-    await update("a", { anyRequiresAttention: false });
+    await update("a", { finished: [] });
     tracker.setPushes([PUSH]);
     tracker.setPushes([]);
     vi.advanceTimersByTime(5000);

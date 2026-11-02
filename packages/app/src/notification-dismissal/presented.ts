@@ -59,6 +59,7 @@ export function createPresentedNotificationSync(input: {
         untracked.push({
           identifier: notification.identifier,
           kind: classifyUntrackedPush(notification.title ?? "", notification.body ?? ""),
+          title: notification.title ?? "",
           deliveredAt: notification.deliveredAt,
         });
         continue;
