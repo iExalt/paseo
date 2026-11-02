@@ -296,10 +296,17 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
     return partialTitleMatches[0].id;
   }
 
-  // If we have multiple prefix matches and no unique title match, return first prefix match
-  const firstPrefixMatch = prefixMatches[0];
-  if (firstPrefixMatch) {
-    return firstPrefixMatch.id;
+  // Several agents share the prefix and no title settles it: make the caller choose.
+  if (prefixMatches.length > 1) {
+    throw {
+      code: "AMBIGUOUS_AGENT_ID",
+      message: [
+        `Agent ID prefix "${idOrName}" matches ${prefixMatches.length} agents. Use a longer prefix or the full agent ID:`,
+        ...prefixMatches.map((agent) =>
+          agent.title ? `  ${agent.id}  ${agent.title}` : `  ${agent.id}`,
+        ),
+      ].join("\n"),
+    } satisfies CommandError;
   }
 
   return null;
