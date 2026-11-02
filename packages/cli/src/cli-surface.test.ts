@@ -129,7 +129,9 @@ describe("canonical CLI surface", () => {
     expect(run?.helpInformation()).toContain("--feature <id=value>");
     expect(run?.helpInformation()).toContain("comma-separated");
     expect(agentRun?.helpInformation()).toContain("--feature <id=value>");
-    expect(agentClose?.helpInformation()).toContain("Agent ID or unambiguous ID prefix");
+    expect(agentClose?.helpInformation()).toContain(
+      "Agent ID, unambiguous ID prefix, or full session ID",
+    );
     expect(agentClose?.helpInformation()).toContain("preserving its history");
     expect(update?.helpInformation()).toContain("--mode <id>");
     expect(update?.helpInformation()).toContain("--model <id>");

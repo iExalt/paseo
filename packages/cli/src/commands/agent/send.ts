@@ -49,7 +49,7 @@ export interface AgentSendOptions extends CommandOptions {
 export function addSendOptions(cmd: Command): Command {
   return cmd
     .description("Send a message/task to an existing agent")
-    .argument("<id>", "Agent ID (or prefix)")
+    .argument("<id>", "Agent ID, prefix, or full session ID")
     .argument("[prompt]", "The message to send")
     .option("--prompt <text>", "Provide the message inline as a flag")
     .option("--prompt-file <path>", "Read the message from a UTF-8 text file")
@@ -234,6 +234,9 @@ export async function runSendCommand(
         : {}),
     });
 
+    // Wait on and report the Paseo ID the daemon resolved, not the prefix or session ID typed.
+    const agentId = dispatch.agentId;
+
     // If --no-wait, return immediately
     if (options.wait === false) {
       await client.close();
@@ -241,24 +244,24 @@ export async function runSendCommand(
       return {
         type: "single",
         data: {
-          agentId: agentIdArg,
+          ...dispatch,
+          agentId,
           status: dispatch.deliveryStatus ?? "sent",
           message:
             dispatch.deliveryStatus === "queued"
               ? "Message queued for delivery after two quiet seconds"
               : "Message sent, not waiting for completion",
-          ...dispatch,
         },
         schema: agentSendSchema,
       };
     }
 
-    const state = await client.waitForFinish(agentIdArg, 600000, { messageId }); // 10 minute timeout
+    const state = await client.waitForFinish(agentId, 600000, { messageId }); // 10 minute timeout
     await client.close();
 
     return {
       type: "single",
-      data: { ...buildSendResult(agentIdArg, state), ...dispatch },
+      data: { ...dispatch, ...buildSendResult(agentId, state) },
       schema: agentSendSchema,
     };
   } catch (err) {

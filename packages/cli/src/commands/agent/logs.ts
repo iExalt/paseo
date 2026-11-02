@@ -13,7 +13,7 @@ import { curateAgentActivity } from "@getpaseo/server/agent-activity";
 export function addLogsOptions(cmd: Command): Command {
   return cmd
     .description("View agent activity/timeline")
-    .argument("<id>", "Agent ID (or prefix)")
+    .argument("<id>", "Agent ID, prefix, or full session ID")
     .option("-f, --follow", "Follow log output (streaming)")
     .option("--tail <n>", "Show last n entries")
     .option("--filter <type>", "Filter by event type (tools, text, errors, permissions)")

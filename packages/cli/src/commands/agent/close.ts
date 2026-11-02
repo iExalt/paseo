@@ -1,4 +1,9 @@
 import type { Command } from "commander";
+import {
+  findAgentsByProviderSessionId,
+  formatAmbiguousProviderSessionIdError,
+  type ProviderSessionIdCandidate,
+} from "@getpaseo/protocol/agent-provider-session-id";
 import { connectToDaemon } from "../../utils/client.js";
 import type {
   CommandError,
@@ -23,7 +28,7 @@ const closeSchema: OutputSchema<AgentCloseResult> = {
 export function addCloseOptions(cmd: Command): Command {
   return cmd
     .description("Close an agent session while preserving its history")
-    .argument("<id>", "Agent ID or unambiguous ID prefix");
+    .argument("<id>", "Agent ID, unambiguous ID prefix, or full session ID");
 }
 
 export async function runCloseCommand(
@@ -52,17 +57,17 @@ export async function runCloseCommand(
       } satisfies CommandError;
     }
 
-    const agentIds: string[] = [];
+    const agents: ProviderSessionIdCandidate[] = [];
     let cursor: string | undefined;
     do {
       const payload = await client.fetchAgentHistory({
         page: { limit: 200, ...(cursor ? { cursor } : {}) },
       });
-      agentIds.push(...payload.entries.map((entry) => entry.agent.id));
+      agents.push(...payload.entries.map((entry) => entry.agent));
       cursor = payload.pageInfo.nextCursor ?? undefined;
     } while (cursor);
 
-    const agentId = resolveCloseAgentId(idQuery, agentIds);
+    const agentId = resolveCloseAgentId(idQuery, agents);
     await client.closeAgent(agentId);
 
     return {
@@ -75,9 +80,19 @@ export async function runCloseCommand(
   }
 }
 
-function resolveCloseAgentId(idArg: string, agentIds: string[]): string {
+function resolveCloseAgentId(idArg: string, agents: ProviderSessionIdCandidate[]): string {
+  const agentIds = agents.map((agent) => agent.id);
   const exactMatch = agentIds.find((agentId) => agentId === idArg);
   if (exactMatch) return exactMatch;
+
+  const sessionMatches = findAgentsByProviderSessionId(agents, idArg);
+  if (sessionMatches.length === 1 && sessionMatches[0]) return sessionMatches[0].id;
+  if (sessionMatches.length > 1) {
+    throw {
+      code: "AMBIGUOUS_AGENT_ID",
+      message: formatAmbiguousProviderSessionIdError(idArg, sessionMatches),
+    } satisfies CommandError;
+  }
 
   const prefixMatches = [
     ...new Set(agentIds.filter((agentId) => agentId.toLowerCase().startsWith(idArg.toLowerCase()))),

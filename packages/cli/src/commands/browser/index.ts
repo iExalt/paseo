@@ -11,6 +11,7 @@ import { normalizeBrowserHttpUrlInput } from "@getpaseo/protocol/browser-automat
 import { addJsonAndDaemonHostOptions, collectMultiple } from "../../utils/command-options.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { connectToDaemon } from "../../utils/client.js";
+import { resolveExactAgentTarget } from "../../utils/agent-target.js";
 import {
   withOutput,
   type CommandError,
@@ -150,7 +151,10 @@ function addBrowserAction(
   let command = browser.command(name).description(description);
   for (const argument of args) command = command.argument(argument.name, argument.description);
   command
-    .option("--agent <id>", "Agent whose runtime directory scopes tab creation and listing")
+    .option(
+      "--agent <id>",
+      "Agent (exact ID or full session ID) whose runtime directory scopes tab creation and listing",
+    )
     .option("--workspace <id>", "Workspace that scopes tab creation and listing");
   addJsonAndDaemonHostOptions(command);
   command.action(withOutput(createBrowserAction(operation)));
@@ -194,7 +198,10 @@ function createBrowserAction(
           details: "Update the daemon before using browser commands.",
         } satisfies CommandError;
       }
-      const agentId = requestedAgentId?.trim() || (await resolveCallerAgentId(client));
+      const explicitAgentId = requestedAgentId?.trim();
+      const agentId = explicitAgentId
+        ? await resolveExactAgentTarget(client, explicitAgentId)
+        : await resolveCallerAgentId(client);
       const response = await client.executeBrowserCommand(
         {
           command: parsedCommand,

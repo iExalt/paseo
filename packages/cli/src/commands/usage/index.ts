@@ -2,6 +2,7 @@ import { Command } from "commander";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { connectToDaemon, type ConnectOptions } from "../../utils/client.js";
+import { resolveExactAgentTarget } from "../../utils/agent-target.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { withOutput, type CommandOptions, type CommandResult } from "../../output/index.js";
 import { usageSchema } from "./presentation.js";
@@ -15,6 +16,7 @@ type UsageSelection = { kind: "list" } | { kind: "inspect"; id: string };
 interface UsageClient {
   getLastServerInfoMessage(): { features?: { usageSources?: boolean } } | null;
   listUsageReports: DaemonClient["listUsageReports"];
+  fetchAgent: DaemonClient["fetchAgent"];
   close: DaemonClient["close"];
 }
 type ConnectUsage = (options: ConnectOptions) => Promise<UsageClient>;
@@ -39,7 +41,10 @@ export async function runUsageCommand(
     }
     if (selection.kind === "list") {
       const { reports } = await client.listUsageReports({
-        agentId: options.agent,
+        agentId:
+          options.agent === undefined
+            ? undefined
+            : await resolveExactAgentTarget(client, options.agent),
         forceRefresh: options.refresh,
       });
       return { type: "list", data: reports, schema: usageSchema };
@@ -67,7 +72,7 @@ function addListOptions(command: Command): Command {
   return addJsonAndDaemonHostOptions(command)
     .option(
       "--agent <id>",
-      "Show account quota associated with this agent (not agent token consumption)",
+      "Show account quota associated with this agent, by exact ID or full session ID (not agent token consumption)",
     )
     .option("--refresh", "Refresh usage instead of using the host cache");
 }

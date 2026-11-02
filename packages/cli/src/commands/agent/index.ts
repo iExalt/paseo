@@ -94,7 +94,7 @@ export function createAgentCommand(): Command {
     agent
       .command("mode")
       .description("Change an agent's operational mode")
-      .argument("<id>", "Agent ID (or prefix)")
+      .argument("<id>", "Agent ID, prefix, or full session ID")
       .argument("[mode]", "Mode to set (required unless --list)")
       .option("--list", "List available modes for this agent"),
   ).action(withOutput(runModeCommand));
@@ -111,14 +111,14 @@ export function createAgentCommand(): Command {
     agent
       .command("detach")
       .description("Make a subagent independent without stopping or moving it")
-      .argument("<id>", "Agent ID, prefix, or name"),
+      .argument("<id>", "Agent ID, full session ID, prefix, or name"),
   ).action(withOutput(runDetachCommand));
 
   addJsonAndDaemonHostOptions(
     agent
       .command("update")
       .description("Update an agent's settings or metadata")
-      .argument("<id>", "Agent ID (or prefix)")
+      .argument("<id>", "Agent ID, prefix, or full session ID")
       .option("--name <name>", "Update the agent's display name")
       .option("--mode <id>", "Update the agent's provider mode ID")
       .option("--model <id>", "Update the agent's model ID")

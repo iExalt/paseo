@@ -40,7 +40,7 @@ paseo usage inspect <report-id> --refresh
 
 Copy the full report ID from the list into `inspect` to see reset times, balances and units, plan details, supplied forecasts, and login failures with recovery instructions. Report IDs require exact matches.
 
-`--agent` selects the account quota associated with an agent. It does not measure that agent's token consumption or cost. Use the full agent ID, and do not combine `--agent` with `inspect`.
+`--agent` selects the account quota associated with an agent. It does not measure that agent's token consumption or cost. Use the full agent ID or the agent's full session ID, and do not combine `--agent` with `inspect`.
 
 Queries use the host's five-minute cache when available. Add `--refresh` to bypass it. Use `--host` or `--home` to [select a daemon](#select-one-daemon). Hosts without usage-source support return an update message.
 
@@ -328,6 +328,8 @@ paseo attach abc123   # Attach to agent (Ctrl+C to detach)
 ```
 
 Agent IDs can be shortened, `abc` works if it's unambiguous.
+
+Anywhere a command takes an agent, you can also pass the agent's full session ID: the Claude Code session ID, Codex thread ID, or other provider ID that **Copy session ID** copies in the app. An exact agent ID wins over a session ID. Session IDs must be complete; they are never matched by prefix. When more than one agent holds the same session ID, for example after an import, the command fails and lists their agent IDs so you can pick one. An unknown session ID never imports or resumes a session; use `paseo import` for that. Older daemons may not resolve session IDs for `send`, `wait`, and other commands the daemon resolves.
 
 ## Sending messages
 

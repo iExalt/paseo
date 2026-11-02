@@ -16,7 +16,7 @@ export function createPermitCommand(): Command {
     permit
       .command("allow")
       .description("Allow a permission request")
-      .argument("<agent>", "Agent ID (or prefix)")
+      .argument("<agent>", "Agent ID, prefix, or full session ID")
       .argument("[req_id]", "Permission request ID (optional if --all)")
       .option("--all", "Allow all pending permissions for this agent")
       .option("--input <json>", "Modified input parameters (JSON)")
@@ -31,7 +31,7 @@ export function createPermitCommand(): Command {
     permit
       .command("deny")
       .description("Deny a permission request")
-      .argument("<agent>", "Agent ID (or prefix)")
+      .argument("<agent>", "Agent ID, prefix, or full session ID")
       .argument("[req_id]", "Permission request ID (optional if --all)")
       .option("--all", "Deny all pending permissions for this agent")
       .option("--message <msg>", "Denial reason message")

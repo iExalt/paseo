@@ -38,7 +38,7 @@ paseo usage inspect <report-id> --refresh
 
 把列表中的完整报告 ID 复制到 `inspect` 中，可以查看重置时间、余额和单位、套餐详情、提供的预测，以及附带恢复说明的登录失败信息。报告 ID 需要完全匹配。
 
-`--agent` 选择与某个 Agent 关联的账号配额。它不会统计该 Agent 的 token 消耗或费用。请使用完整的 Agent ID，并且不要把 `--agent` 与 `inspect` 一起使用。
+`--agent` 选择与某个 Agent 关联的账号配额。它不会统计该 Agent 的 token 消耗或费用。请使用完整的 Agent ID 或该 Agent 的完整会话 ID，并且不要把 `--agent` 与 `inspect` 一起使用。
 
 查询会在可用时使用主机的五分钟缓存。添加 `--refresh` 可以绕过缓存。使用 `--host` 或 `--home` [选择一个 daemon](#select-one-daemon)。不支持用量来源的主机会返回一条更新提示。
 
@@ -285,6 +285,8 @@ paseo attach abc123   # Attach to agent (Ctrl+C to detach)
 ```
 
 Agent ID 可以缩写，只要 `abc` 没有歧义就可以使用。
+
+凡是命令接受 Agent 的地方，也可以传入该 Agent 的完整会话 ID，即应用中 **Copy session ID** 复制的 Claude Code 会话 ID、Codex 线程 ID 或其他提供方 ID。完全匹配的 Agent ID 优先于会话 ID。会话 ID 必须完整，不会按前缀匹配。如果多个 Agent 持有同一个会话 ID（例如导入之后），命令会失败并列出它们的 Agent ID 供你选择。未知的会话 ID 不会导入或恢复会话；需要时请使用 `paseo import`。较旧的 daemon 可能无法为 `send`、`wait` 等由 daemon 解析的命令识别会话 ID。
 
 ## 发送消息 {#sending-messages}
 

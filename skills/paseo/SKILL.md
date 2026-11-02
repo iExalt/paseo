@@ -47,6 +47,8 @@ paseo agent close <id>
 
 Agent-scoped creation defaults to a subagent in your workspace. `--workspace <id>` changes placement, preserving parentage. Use `--relationship detached` only when independent work is intended. `--no-wait` changes waiting only. Create/send notify a resolved caller on finish, error, or permission by default; `--no-notify-on-finish` opts out. Human shells have no parent callback. With notifications enabled, continue independent work instead of repeatedly polling. Otherwise use `wait`, `agent status`, or `agent activity`.
 
+Any agent `<id>` also accepts the agent's full provider session ID (Claude session ID, Codex thread ID), which is what the user gets from **Copy session ID**. An exact agent ID wins, session IDs never match by prefix, and an ID several agents share fails with their agent IDs listed.
+
 `stop` cancels the current run. `agent close` closes the runtime while preserving history. `archive` removes the agent from active use and needs `--force` if it is running. `delete` hard-deletes history. Never substitute delete for close. Runtime and metadata updates apply sequentially; failures can leave earlier changes applied. Inspect state before retrying. `send --mode <id>` changes mode before dispatch.
 
 ## Projects and workspaces

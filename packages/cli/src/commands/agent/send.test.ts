@@ -9,13 +9,15 @@ const daemonTarget = { kind: "endpoint" as const, host: "daemon.test:12345" };
 vi.mock("../../utils/client.js", () => ({ connectToDaemon: vi.fn() }));
 vi.mock("../../utils/caller-agent.js", () => ({ resolveCallerAgentId: vi.fn(async () => null) }));
 
-function createClient() {
+function createClient(resolvedAgentId = "agent-1") {
   const client = new DaemonClient({
     url: "ws://daemon.test",
     clientId: "cli-send-test",
     reconnect: { enabled: false },
   });
-  const sendAgentMessage = vi.spyOn(client, "sendAgentMessage").mockResolvedValue({});
+  const sendAgentMessage = vi
+    .spyOn(client, "sendAgentMessage")
+    .mockResolvedValue({ agentId: resolvedAgentId });
   const waitForFinish = vi.spyOn(client, "waitForFinish").mockResolvedValue({
     status: "idle",
     final: null,
@@ -60,5 +62,24 @@ describe("agent send --if-running", () => {
     const sent = sendAgentMessage.mock.calls[0]![2]!;
     expect(sent).toMatchObject({ activeTurnBehavior: "steer", messageId: expect.any(String) });
     expect(waitForFinish).toHaveBeenCalledWith("agent-1", 600000, { messageId: sent.messageId });
+  });
+
+  it("waits on and reports the Paseo ID the daemon resolved a session ID to", async () => {
+    const { sendAgentMessage, waitForFinish } = createClient("agent-1");
+
+    const waited = await runSendCommand("thread-abc", "hello", { daemonTarget }, new Command());
+    const queued = createClient("agent-1");
+    const noWait = await runSendCommand(
+      "thread-abc",
+      "hello",
+      { daemonTarget, wait: false },
+      new Command(),
+    );
+
+    expect(sendAgentMessage.mock.calls[0]![0]).toBe("thread-abc");
+    expect(waitForFinish.mock.calls[0]![0]).toBe("agent-1");
+    expect(waited.data.agentId).toBe("agent-1");
+    expect(queued.waitForFinish).not.toHaveBeenCalled();
+    expect(noWait.data.agentId).toBe("agent-1");
   });
 });

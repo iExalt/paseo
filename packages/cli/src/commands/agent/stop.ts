@@ -32,7 +32,7 @@ export const stopSchema: OutputSchema<StopResult> = {
 export function addStopOptions(cmd: Command): Command {
   return cmd
     .description("Interrupt an agent if it is running (no-op for idle agents)")
-    .argument("[id]", "Agent ID (or prefix) - optional if --all or --cwd specified")
+    .argument("[id]", "Agent ID, prefix, or full session ID - optional if --all or --cwd specified")
     .option("--all", "Stop all agents")
     .option("--cwd <path>", "Stop all agents in directory");
 }
