@@ -154,6 +154,10 @@ import {
   type AgentSessionConfig,
 } from "./agent/agent-sdk-types.js";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
+import {
+  resolveAgentIdentifierFrom,
+  type AgentIdentifierResolution,
+} from "./agent/resolve-agent-identifier.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import {
   ImportSessionsRequestError,
@@ -6030,66 +6034,13 @@ export class Session {
     return this.agentDirectory.list(filter);
   }
 
-  private async resolveAgentIdentifier(
-    identifier: string,
-  ): Promise<{ ok: true; agentId: string } | { ok: false; notFound: boolean; error: string }> {
-    const trimmed = identifier.trim();
-    if (!trimmed) {
-      return { ok: false, notFound: false, error: "Agent identifier cannot be empty" };
-    }
-
-    // An internal agent, live or recently archived, is addressable by its exact
-    // id and nothing else: the caller that created it holds the id, and no
-    // listing ever includes it.
-    if (this.agentManager.getAgent(trimmed) || this.agentManager.getRetiredInternalAgent(trimmed)) {
-      return { ok: true, agentId: trimmed };
-    }
-
-    const stored = await this.agentStorage.list();
-    const storedRecords = stored.filter((record) => !record.internal);
-    const knownIds = new Set<string>();
-    for (const record of storedRecords) {
-      knownIds.add(record.id);
-    }
-    for (const agent of this.agentManager.listAgents()) {
-      knownIds.add(agent.id);
-    }
-
-    if (knownIds.has(trimmed)) {
-      return { ok: true, agentId: trimmed };
-    }
-
-    const prefixMatches = Array.from(knownIds).filter((id) => id.startsWith(trimmed));
-    if (prefixMatches.length === 1) {
-      return { ok: true, agentId: prefixMatches[0] };
-    }
-    if (prefixMatches.length > 1) {
-      return {
-        ok: false,
-        notFound: false,
-        error: `Agent identifier "${trimmed}" is ambiguous (${prefixMatches
-          .slice(0, 5)
-          .map((id) => id.slice(0, 8))
-          .join(", ")}${prefixMatches.length > 5 ? ", …" : ""})`,
-      };
-    }
-
-    const titleMatches = storedRecords.filter((record) => record.title === trimmed);
-    if (titleMatches.length === 1) {
-      return { ok: true, agentId: titleMatches[0].id };
-    }
-    if (titleMatches.length > 1) {
-      return {
-        ok: false,
-        notFound: false,
-        error: `Agent title "${trimmed}" is ambiguous (${titleMatches
-          .slice(0, 5)
-          .map((r) => r.id.slice(0, 8))
-          .join(", ")}${titleMatches.length > 5 ? ", …" : ""})`,
-      };
-    }
-
-    return { ok: false, notFound: true, error: `Agent not found: ${trimmed}` };
+  private async resolveAgentIdentifier(identifier: string): Promise<AgentIdentifierResolution> {
+    return resolveAgentIdentifierFrom(identifier, {
+      live: this.agentManager.listAgents({ includeInternal: true }),
+      stored: await this.agentStorage.list(),
+      isRetiredInternalAgent: (agentId) =>
+        Boolean(this.agentManager.getRetiredInternalAgent(agentId)),
+    });
   }
 
   /**
