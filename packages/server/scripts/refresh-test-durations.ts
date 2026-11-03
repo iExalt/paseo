@@ -12,7 +12,8 @@ import { fileURLToPath } from "node:url";
 const RECORDED_SECONDS = 2;
 // Routine CI runs only on the fork; gh's default repository may be upstream.
 const REPOSITORY = "iExalt/paseo";
-const LANES = ["routine (server-1)", "routine (server-2)", "routine (server-3)"];
+// The routine planner owns lane names and the matrix job name format.
+const ROUTINE_PLANNER = new URL("../../../.github/scripts/ci-routine.mjs", import.meta.url).href;
 
 interface WorkflowJob {
   id: number;
@@ -41,7 +42,13 @@ export function renderDurations(seconds: Map<string, number>): string {
   return `${JSON.stringify(Object.fromEntries(recorded), null, 2)}\n`;
 }
 
-function main(runId?: string): void {
+async function main(runId?: string): Promise<void> {
+  const planner: { lanes: string[]; routineJobName: (lane: string) => string } = await import(
+    ROUTINE_PLANNER
+  );
+  const serverJobs = planner.lanes
+    .filter((lane) => lane.startsWith("server-"))
+    .map(planner.routineJobName);
   const run =
     runId ??
     gh([
@@ -60,7 +67,7 @@ function main(runId?: string): void {
     gh(["api", `repos/${REPOSITORY}/actions/runs/${run}/jobs?per_page=100`, "--jq=.jobs"]),
   );
   const seconds = new Map<string, number>();
-  for (const lane of LANES) {
+  for (const lane of serverJobs) {
     const job = jobs.find((item) => item.name === lane);
     if (job?.conclusion !== "success") throw new Error(`Run ${run} has no successful ${lane}`);
     const log = gh([
@@ -77,5 +84,5 @@ function main(runId?: string): void {
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  main(process.argv[2]);
+  await main(process.argv[2]);
 }
