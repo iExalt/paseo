@@ -14,6 +14,7 @@ import {
   existsSync,
   mkdtempSync,
   mkdirSync,
+  readFileSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -1288,5 +1289,41 @@ describe.skipIf(isPlatform("win32"))("terminal POSIX-only", () => {
       // Should not throw
       session.send({ type: "input", data: "echo test\r" });
     });
+  });
+});
+
+describe.skipIf(isPlatform("win32"))("terminal kill", () => {
+  it("kills a background job that ignores SIGHUP after the grace period", async () => {
+    const dir = realpathSync.native(mkdtempSync(join(tmpdir(), "terminal-kill-tree-")));
+    temporaryDirs.push(dir);
+    const pidFile = join(dir, "job.pid");
+    const session = await createTerminal({
+      workspaceId: "ws-test",
+      cwd: dir,
+      command: "/bin/sh",
+      // Not exec'd: the job is a child of the shell, so killing the shell alone reparents it.
+      args: ["-c", `trap '' HUP; sleep 1000 & echo $! > ${pidFile}; wait`],
+    });
+    sessions.push(session);
+    const deadline = Date.now() + 5000;
+    while (!existsSync(pidFile) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    const jobPid = Number(readFileSync(pidFile, "utf8").trim());
+    expect(jobPid).toBeGreaterThan(0);
+
+    await session.killAndWait({ gracefulTimeoutMs: 200, forceTimeoutMs: 200 });
+
+    const goneBy = Date.now() + 1000;
+    let alive = true;
+    while (alive && Date.now() < goneBy) {
+      try {
+        process.kill(jobPid, 0);
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      } catch {
+        alive = false;
+      }
+    }
+    expect(alive).toBe(false);
   });
 });
