@@ -25,6 +25,7 @@ import {
 } from "@agentclientprotocol/sdk";
 
 import {
+  appendACPStderrTail,
   ACPAgentClient,
   ACPAgentSession,
   type SpawnedACPProcess,
@@ -66,6 +67,18 @@ import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { buildStringCommandShellInvocation } from "../../../utils/string-command-shell.js";
 import { asInternals } from "../../test-utils/class-mocks.js";
 import * as spawnUtils from "../../../utils/spawn.js";
+
+describe("appendACPStderrTail", () => {
+  test("keeps only the newest 8 KiB of a chatty agent's stderr", () => {
+    const chunks: string[] = [];
+    for (let i = 0; i < 100; i += 1)
+      appendACPStderrTail(chunks, `${String(i).padStart(3, "0")}`.repeat(100));
+
+    const kept = chunks.join("");
+    expect(kept).toHaveLength(8192);
+    expect(kept.endsWith("099099")).toBe(true);
+  });
+});
 
 describe("buildACPClientCapabilities", () => {
   test("enables terminal execution on the host while keeping filesystem operations with the agent by default", () => {
