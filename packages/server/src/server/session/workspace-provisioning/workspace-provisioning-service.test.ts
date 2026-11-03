@@ -18,6 +18,7 @@ import {
   type WorkspaceRegistry,
 } from "../../workspace-registry.js";
 import { checkoutLiteFromGitSnapshot } from "../../workspace-registry-model.js";
+import { withWorktreePathLock } from "../../../utils/worktree-path-lock.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../../worktree-session.js";
 import {
   createWorkspaceProvisioningService,
@@ -582,6 +583,31 @@ test("createWorkspaceForDirectory always mints a fresh workspace even when one a
   expect(first.notifications).toBe("off");
   expect(second.notifications).toBe("on");
   expect(await workspaceRegistry.list()).toHaveLength(2);
+});
+
+test("createWorkspaceForDirectory waits for an archive's delete and refuses the removed directory", async () => {
+  const repo = path.join(tmpDir, "repo");
+  mkdirSync(repo, { recursive: true });
+  gitRoots.add(repo);
+
+  let releaseArchive!: () => void;
+  const archiveHeld = new Promise<void>((resolve) => {
+    releaseArchive = resolve;
+  });
+  const archive = withWorktreePathLock(repo, async () => {
+    await archiveHeld;
+    rmSync(repo, { recursive: true, force: true });
+  });
+  const created = provisioning.createWorkspaceForDirectory(repo);
+  const outcome = created.then(
+    () => "created",
+    (error: Error) => error.message,
+  );
+
+  releaseArchive();
+  await archive;
+  expect(await outcome).toBe(`Workspace directory was removed: ${repo}`);
+  expect(await workspaceRegistry.list()).toEqual([]);
 });
 
 test("directory creation persists the live branch and a trimmed title", async () => {
