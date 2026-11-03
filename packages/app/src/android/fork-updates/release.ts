@@ -210,3 +210,9 @@ export function isNewerThanInstalled(
     compareForkVersions(update.manifest.version, highWaterVersion) > 0
   );
 }
+
+export class ForkManualMigrationRequired extends Error {
+  constructor() {
+    super("Install the fork 0.1.0 or newer manually before using fork updates.");
+  }
+}
