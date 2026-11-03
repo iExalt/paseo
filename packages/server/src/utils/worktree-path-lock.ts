@@ -7,6 +7,7 @@ import { resolve, sep } from "node:path";
 // created on a subdirectory waits for the archive of its worktree.
 
 const held = new Map<string, Promise<void>>();
+const waiting = new Map<string, number>();
 
 function overlaps(a: string, b: string): boolean {
   return a === b || a.startsWith(b + sep) || b.startsWith(a + sep);
@@ -18,7 +19,14 @@ export async function withWorktreePathLock<T>(path: string, work: () => Promise<
   for (;;) {
     const blockers = [...held].filter(([heldPath]) => overlaps(heldPath, key));
     if (blockers.length === 0) break;
-    await Promise.all(blockers.map(([, done]) => done));
+    waiting.set(key, (waiting.get(key) ?? 0) + 1);
+    try {
+      await Promise.all(blockers.map(([, done]) => done));
+    } finally {
+      const count = (waiting.get(key) ?? 1) - 1;
+      if (count === 0) waiting.delete(key);
+      else waiting.set(key, count);
+    }
   }
   let release!: () => void;
   held.set(
@@ -33,4 +41,9 @@ export async function withWorktreePathLock<T>(path: string, work: () => Promise<
     held.delete(key);
     release();
   }
+}
+
+/** How many callers are blocked waiting to lock exactly this path. */
+export async function countWorktreePathLockWaiters(path: string): Promise<number> {
+  return waiting.get(await realpath(path).catch(() => resolve(path))) ?? 0;
 }

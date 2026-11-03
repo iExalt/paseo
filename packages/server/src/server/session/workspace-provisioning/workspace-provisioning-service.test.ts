@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
 
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { getCheckoutStatus } from "../../../utils/checkout-git.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
@@ -18,7 +18,10 @@ import {
   type WorkspaceRegistry,
 } from "../../workspace-registry.js";
 import { checkoutLiteFromGitSnapshot } from "../../workspace-registry-model.js";
-import { withWorktreePathLock } from "../../../utils/worktree-path-lock.js";
+import {
+  countWorktreePathLockWaiters,
+  withWorktreePathLock,
+} from "../../../utils/worktree-path-lock.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../../worktree-session.js";
 import {
   createWorkspaceProvisioningService,
@@ -610,6 +613,8 @@ test("createWorkspaceForDirectory waits for an archive's delete and refuses the 
     (error: Error) => error.message,
   );
 
+  // Release only once the create has sampled the directory and is queued behind the archive.
+  await vi.waitFor(async () => expect(await countWorktreePathLockWaiters(repo)).toBe(1));
   releaseArchive();
   await archive;
   expect(await outcome).toBe(`Workspace directory was removed: ${repo}`);
