@@ -1,4 +1,4 @@
-import { realpathSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -128,4 +128,17 @@ export function builtinPluginProviderIds(builtinPlugins) {
   return builtinPlugins
     .filter((id) => id.endsWith("-provider"))
     .map((id) => id.slice(0, -"-provider".length));
+}
+
+// patch-package's @gorhom/bottom-sheet patch (scripts/postinstall-patches.mjs) adds this export;
+// the app's SheetHostScope imports it. An install with --ignore-scripts skips the patch, and the
+// served UI then crashes on load with React error #130 (undefined component).
+const BOTTOM_SHEET_PATCH_MARKER = "BottomSheetModalInternalProvider";
+
+// Returns an error message when the bottom-sheet entry file lacks the patch, otherwise null.
+export function checkBottomSheetPatch(entryFile) {
+  if (existsSync(entryFile) && readFileSync(entryFile, "utf8").includes(BOTTOM_SHEET_PATCH_MARKER)) {
+    return null;
+  }
+  return `@gorhom/bottom-sheet is unpatched (no ${BOTTOM_SHEET_PATCH_MARKER} in ${entryFile}); the web UI would crash on load.\nRun: node scripts/postinstall-patches.mjs`;
 }
