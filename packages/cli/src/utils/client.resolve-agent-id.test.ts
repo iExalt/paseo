@@ -32,6 +32,17 @@ describe("resolveAgentId", () => {
     );
   });
 
+  test("a title substring does not settle a prefix several agents share", () => {
+    const shared = [
+      { id: "abc1234-first", title: "First" },
+      { id: "abc1234-second", title: null },
+      { id: "zzz9999-third", title: "Fix abc1234 crash" },
+    ];
+    expect(() => resolveAgentId("abc1234", shared)).toThrow(
+      expect.objectContaining({ code: "AMBIGUOUS_AGENT_ID" }),
+    );
+  });
+
   test("a unique title still settles a prefix several agents share", () => {
     const shared = [
       { id: "review-1", title: "Other" },

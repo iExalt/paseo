@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import type { AgentPendingPermissionPayload } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
+import { shortPermissionId } from "./allow.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 
 /** Permission list item for display */
@@ -17,7 +18,7 @@ export const permitLsSchema: OutputSchema<PermissionListItem> = {
   idField: "id",
   columns: [
     { header: "AGENT", field: "agentShortId", width: 12 },
-    { header: "REQ_ID", field: (item) => item.id.slice(0, 8), width: 12 },
+    { header: "REQ_ID", field: (item) => shortPermissionId(item.id), width: 12 },
     { header: "TOOL", field: "name", width: 20 },
     { header: "DESCRIPTION", field: "description", width: 50 },
   ],

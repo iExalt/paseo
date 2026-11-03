@@ -87,7 +87,6 @@ export function createDenyCommand(connect: PermitClientConnector = connectToDaem
         pendingPermissions,
         requestId: reqId,
         all: options.all,
-        requireUnambiguousPrefix: hasSingleRequestFields,
       });
 
       // Deny permissions
