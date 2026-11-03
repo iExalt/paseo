@@ -57,3 +57,11 @@ check does next. It runs over a port to the native updater
 (`packages/app/src/android/fork-updates/controller.ts`); `updater.ts` wires the
 app's single instance.
 _Avoid_: update store, updater state
+
+**Reading position**:
+The row a native reader is on, and keeping them on it: jumps aimed by row id
+with retries, the reading row frozen across a width change and restored once
+the rows stop rewrapping, and the window in which the list's own scrolls count
+as programmatic (`packages/app/src/agent-stream/native-reading-position.ts`).
+It works beside upstream's bottom anchor, reading its mode and detaching it.
+_Avoid_: reading anchor (the pure web and native helpers it builds on), scroll restore

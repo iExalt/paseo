@@ -1,10 +1,7 @@
 import {
   Fragment,
-  createContext,
   type ReactElement,
-  type ReactNode,
   useCallback,
-  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -15,9 +12,7 @@ import {
   Platform,
   View,
   type LayoutChangeEvent,
-  type StyleProp,
   type ListRenderItemInfo,
-  type ViewToken,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
   type ViewStyle,
@@ -28,19 +23,12 @@ import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
 import type { Theme } from "@/styles/theme";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useKeyboardStreamInset } from "@/keyboard/shift";
-import {
-  type ViewableRow,
-  createNativeReadingAnchor,
-  createNativeRowGeometry,
-  findRowIndex,
-  getReadingRowIdFromGeometry,
-  planScrollToIndexRetry,
-  READING_VIEWABILITY_CONFIG,
-} from "./reading-anchor";
+import { READING_VIEWABILITY_CONFIG } from "./reading-anchor";
+import { useNativeReadingPosition } from "./use-native-reading-position";
+import { NativeRowGeometryContext, NativeStreamCell } from "./native-stream-cell";
 import { planNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
-import { scrollOffsetForDelta } from "@/find-highlight/reveal";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -84,60 +72,7 @@ const historyStartSlotStyle: ViewStyle = {
   flexShrink: 0,
 };
 const HISTORY_START_SETTLE_FRAMES = 2;
-const NATIVE_VIEWPORT_SETTLE_FRAMES = 4;
-// Rows rewrap over several frames after a width change. Restore the reader once the content
-// height holds still, or after about a second if it never does.
-const READING_RESTORE_STABLE_FRAMES = 3;
-const READING_RESTORE_MAX_FRAMES = 60;
 const NATIVE_STREAM_WINDOW_SIZE = 10;
-// A programmatic scroll owns the viewport until its scroll events stop for this long.
-const PROGRAMMATIC_SCROLL_QUIET_MS = 200;
-
-interface NativeRowGeometryContextValue {
-  geometry: ReturnType<typeof createNativeRowGeometry>;
-  onRowResized: (rowId: string) => void;
-}
-
-const NativeRowGeometryContext = createContext<NativeRowGeometryContextValue | null>(null);
-
-interface NativeStreamCellProps {
-  cellKey: string;
-  children: ReactNode;
-  onFocusCapture?: ((event: never) => void) | undefined;
-  onLayout?: ((event: LayoutChangeEvent) => void) | undefined;
-  style: StyleProp<ViewStyle> | undefined;
-}
-
-// FlatList exposes no row geometry, so each cell reports its own frame on layout. The cell
-// is a plain View with the props FlatList would give it. The component is module-level so
-// its identity is stable and cells never remount.
-function NativeStreamCell({
-  cellKey,
-  children,
-  onFocusCapture,
-  onLayout,
-  style,
-}: NativeStreamCellProps) {
-  const context = useContext(NativeRowGeometryContext);
-  useEffect(() => () => context?.geometry.forget(cellKey), [cellKey, context]);
-  // Record before FlatList's handler: its viewability pass runs inside it and reads the frame.
-  const handleLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const { y, height } = event.nativeEvent.layout;
-      if (context?.geometry.record(cellKey, { y, height })) context.onRowResized(cellKey);
-      onLayout?.(event);
-    },
-    [cellKey, context, onLayout],
-  );
-  // RN's View typings omit the capture-phase focus prop FlatList's own cell sets.
-  const focusProps = { onFocusCapture };
-  return (
-    <View style={style} onLayout={handleLayout} {...focusProps}>
-      {children}
-    </View>
-  );
-}
-
 function keyExtractor(item: { id: string }): string {
   return item.id;
 }
@@ -182,7 +117,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const streamKeyboardInset = useKeyboardStreamInset();
   const userScrollEndFrameIdRef = useRef<number | null>(null);
   const programmaticScrollEventBudgetRef = useRef(0);
-  const programmaticScrollQuietTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isNativeViewportSettlingRef = useRef(false);
   const nativeViewportSettlingFrameIdRef = useRef<number | null>(null);
   const historyStartReadyRef = useRef(false);
@@ -191,10 +125,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   );
   const historyStartPaginationStateRef = useRef(historyStartPaginationState);
   const historyStartSettleSchedulerRef = useRef<HistoryStartSettleScheduler | null>(null);
-  const [readingAnchor] = useState(createNativeReadingAnchor);
-  const [rowGeometry] = useState(createNativeRowGeometry);
-  // The last viewable set FlatList reported; null until it reports one.
-  const viewableRowsRef = useRef<ViewableRow[] | null>(null);
 
   const historyItems = useMemo(() => {
     if (segments.historyVirtualized.length === 0) {
@@ -286,31 +216,44 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     }
   }, []);
 
-  // Jumps, find and held reading positions can land near the bottom. Until their scroll
-  // events go quiet, a move toward the bottom is theirs, not the reader returning to it.
-  const holdProgrammaticScroll = useCallback(() => {
-    if (programmaticScrollQuietTimerRef.current !== null) {
-      clearTimeout(programmaticScrollQuietTimerRef.current);
-    }
-    programmaticScrollQuietTimerRef.current = setTimeout(() => {
-      programmaticScrollQuietTimerRef.current = null;
-    }, PROGRAMMATIC_SCROLL_QUIET_MS);
-  }, []);
-  useEffect(
-    () => () => {
-      if (programmaticScrollQuietTimerRef.current !== null) {
-        clearTimeout(programmaticScrollQuietTimerRef.current);
-      }
-    },
-    [],
-  );
-
   const clearPendingUserScrollEnd = useCallback(() => {
     if (userScrollEndFrameIdRef.current !== null) {
       cancelAnimationFrame(userScrollEndFrameIdRef.current);
       userScrollEndFrameIdRef.current = null;
     }
   }, []);
+
+  const readingPosition = useNativeReadingPosition({
+    flatListRef,
+    scrollOffsetYRef,
+    metricsRef: streamViewportMetricsRef,
+    scrollBudgetRef: programmaticScrollEventBudgetRef,
+    historyRows,
+    newestRowId: segments.liveHead.at(-1)?.id ?? historyRows[0]?.id,
+    getBottomAnchor: () => bottomAnchorController,
+    onReadingPositionChange,
+    onNearBottomChange,
+  });
+
+  const markNativeViewportSettling = useCallback(() => {
+    clearNativeViewportSettling();
+    isNativeViewportSettlingRef.current = true;
+    readingPosition.settleStart();
+    let remainingFrames = 4;
+    const tick = () => {
+      // A pending reading restore keeps the settle running until the rows stop rewrapping.
+      const awaitsReadingRestore = readingPosition.settleFrame();
+      if (remainingFrames <= 0 && !awaitsReadingRestore) {
+        nativeViewportSettlingFrameIdRef.current = null;
+        isNativeViewportSettlingRef.current = false;
+        readingPosition.settled();
+        return;
+      }
+      remainingFrames -= 1;
+      nativeViewportSettlingFrameIdRef.current = requestAnimationFrame(tick);
+    };
+    nativeViewportSettlingFrameIdRef.current = requestAnimationFrame(tick);
+  }, [clearNativeViewportSettling, readingPosition]);
 
   const getBottomAnchorTransportBehavior = useCallback(
     () =>
@@ -406,12 +349,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       contentMeasuredForKey: null,
     };
     scrollOffsetYRef.current = 0;
-    viewableRowsRef.current = null;
     isUserScrollActiveRef.current = false;
     clearPendingUserScrollEnd();
     clearNativeViewportSettling();
     isNativeViewportSettlingRef.current = false;
-    readingAnchor.cancel();
+    readingPosition.reset();
     historyStartReadyRef.current = false;
     const initialHistoryStartState = createHistoryStartPaginationState();
     historyStartPaginationStateRef.current = initialHistoryStartState;
@@ -431,7 +373,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     clearNativeViewportSettling,
     clearPendingUserScrollEnd,
     evaluateHistoryStart,
-    readingAnchor,
+    readingPosition,
   ]);
 
   useEffect(() => () => clearNativeViewportSettling(), [clearNativeViewportSettling]);
@@ -440,118 +382,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     bottomAnchorController.prepareForStickyContentChange();
   }, [bottomAnchorController, historyRows, segments.liveHead]);
 
-  // A jump detaches from the bottom so streaming output does not pull the reader back.
-  // The list is inverted, so viewPosition 1 puts the message's start at the top.
-  const scrollToIndexRetriesRef = useRef(0);
-  const scrollToIndexAnimatedRef = useRef(true);
-  // Retries aim at this row, not at an index: rows merged meanwhile shift indices.
-  const scrollToIndexTargetRowIdRef = useRef<string | null>(null);
-  const jumpToRow = useStableEvent((index: number, animated: boolean) => {
-    scrollToIndexRetriesRef.current = 0;
-    scrollToIndexTargetRowIdRef.current = historyRows[index]?.id ?? null;
-    scrollToIndexAnimatedRef.current = animated;
-    bottomAnchorController.detachByUser();
-    holdProgrammaticScroll();
-    onNearBottomChange(false);
-    // Live rows live in the list header, at offset zero of the inverted list.
-    if (index < 0) {
-      flatListRef.current?.scrollToOffset({ offset: 0, animated });
-      return;
-    }
-    programmaticScrollEventBudgetRef.current = 3;
-    flatListRef.current?.scrollToIndex({ index, viewPosition: 1, animated });
-  });
-  // The restore reuses the jump path: its retries, and the programmatic-scroll budget that
-  // keeps the correction from counting as a user scroll.
-  const restoreReadingRow = useStableEvent(() => {
-    const rowId = readingAnchor.takeRestoreRowId();
-    if (rowId === null || bottomAnchorController.mode !== "detached") return;
-    const index = historyRows.findIndex((row) => row.id === rowId);
-    if (index >= 0) jumpToRow(index, false);
-  });
-  const markNativeViewportSettling = useCallback(() => {
-    clearNativeViewportSettling();
-    isNativeViewportSettlingRef.current = true;
-    let frames = 0;
-    let stableFrames = 0;
-    let contentHeight = streamViewportMetricsRef.current.contentHeight;
-    const tick = () => {
-      frames += 1;
-      const nextContentHeight = streamViewportMetricsRef.current.contentHeight;
-      stableFrames = nextContentHeight === contentHeight ? stableFrames + 1 : 0;
-      contentHeight = nextContentHeight;
-      const awaitsStableContent =
-        readingAnchor.isRestorePending() &&
-        stableFrames < READING_RESTORE_STABLE_FRAMES &&
-        frames < READING_RESTORE_MAX_FRAMES;
-      if (frames <= NATIVE_VIEWPORT_SETTLE_FRAMES || awaitsStableContent) {
-        nativeViewportSettlingFrameIdRef.current = requestAnimationFrame(tick);
-        return;
-      }
-      nativeViewportSettlingFrameIdRef.current = null;
-      isNativeViewportSettlingRef.current = false;
-      restoreReadingRow();
-    };
-    nativeViewportSettlingFrameIdRef.current = requestAnimationFrame(tick);
-  }, [clearNativeViewportSettling, readingAnchor, restoreReadingRow]);
-
-  const scrollToMessage = useStableEvent((messageId: string) => {
-    readingAnchor.cancel();
-    jumpToRow(
-      historyRows.findIndex((row) => getStreamItemMessageId(row) === messageId),
-      true,
-    );
-  });
-  // Find measures right after it jumps, so its jumps land at once instead of animating.
-  const scrollToItem = useStableEvent((itemId: string) => {
-    readingAnchor.cancel();
-    jumpToRow(
-      historyRows.findIndex((row) => row.id === itemId),
-      false,
-    );
-  });
-  const scrollByWindowDelta = useStableEvent((delta: number) => {
-    readingAnchor.cancel();
-    bottomAnchorController.detachByUser();
-    holdProgrammaticScroll();
-    onNearBottomChange(false);
-    programmaticScrollEventBudgetRef.current = 3;
-    flatListRef.current?.scrollToOffset({
-      offset: scrollOffsetForDelta(scrollOffsetYRef.current, delta, true),
-      animated: false,
-    });
-  });
-  const handleScrollToIndexFailed = useStableEvent(
-    (info: { index: number; averageItemLength: number }) => {
-      const retry = planScrollToIndexRetry({
-        rows: historyRows,
-        targetRowId: scrollToIndexTargetRowIdRef.current,
-        averageItemLength: info.averageItemLength,
-        attempts: scrollToIndexRetriesRef.current,
-      });
-      if (!retry) return;
-      scrollToIndexRetriesRef.current += 1;
-      holdProgrammaticScroll();
-      programmaticScrollEventBudgetRef.current = 3;
-      flatListRef.current?.scrollToOffset({ offset: retry.estimatedOffset, animated: false });
-      requestAnimationFrame(retryScrollToIndex);
-    },
-  );
-  // Resolve the target again when the retry runs: rows can merge in the frame between.
-  const retryScrollToIndex = useStableEvent(() => {
-    const index = findRowIndex(historyRows, scrollToIndexTargetRowIdRef.current);
-    if (index === null) return;
-    flatListRef.current?.scrollToIndex({
-      index,
-      viewPosition: 1,
-      animated: scrollToIndexAnimatedRef.current,
-    });
-  });
-
   useEffect(() => {
     const handle: StreamViewportHandle = {
       scrollToBottom: (reason = "jump-to-bottom") => {
-        readingAnchor.cancel();
+        readingPosition.cancel();
         bottomAnchorController.requestLocalAnchor({
           agentId,
           reason,
@@ -561,13 +395,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
         markNativeViewportSettling();
       },
-      holdReadingPosition: () => {
-        bottomAnchorController.detachByUser();
-        holdProgrammaticScroll();
-      },
-      scrollToMessage: (messageId) => scrollToMessage(messageId),
-      scrollToItem: (itemId) => scrollToItem(itemId),
-      scrollByWindowDelta: (delta) => scrollByWindowDelta(delta),
+      holdReadingPosition: () => readingPosition.hold(),
+      scrollToMessage: (messageId) => readingPosition.jumpToMessage(messageId),
+      scrollToItem: (itemId) => readingPosition.jumpToItem(itemId),
+      scrollByWindowDelta: (delta) => readingPosition.scrollByWindowDelta(delta),
     };
     viewportRef.current = handle;
     return () => {
@@ -575,17 +406,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [
-    agentId,
-    bottomAnchorController,
-    holdProgrammaticScroll,
-    markNativeViewportSettling,
-    readingAnchor,
-    scrollByWindowDelta,
-    scrollToItem,
-    scrollToMessage,
-    viewportRef,
-  ]);
+  }, [agentId, bottomAnchorController, markNativeViewportSettling, readingPosition, viewportRef]);
 
   const isScrollEventNearBottom = useStableEvent(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -600,55 +421,15 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     },
   );
 
-  // Freeze the reader before FlatList reports rows from the rewrapped layout. Android can
-  // report the resize in a scroll event before onLayout; both run ahead of viewability.
-  const beginReadingRestore = useStableEvent((previousWidth: number, width: number) =>
-    readingAnchor.beginViewportChange({
-      previousWidth,
-      width,
-      detached: bottomAnchorController.mode === "detached",
-    }),
-  );
-
-  // The viewable set only changes when a row enters or leaves, but the reading row also
-  // changes as the reading line crosses a row edge, or as a viewable row resizes.
-  // A resize arrives inside onLayout, possibly ahead of a rotation freeze and with the old
-  // offset, so it moves the tick without feeding the rotation restore's remembered row.
-  const updateReadingRow = useStableEvent((rememberRow: boolean) => {
-    const viewableRows = viewableRowsRef.current;
-    if (viewableRows === null) return;
-    const rowId = getReadingRowIdFromGeometry({
-      rows: viewableRows,
-      geometry: rowGeometry,
-      offsetY: scrollOffsetYRef.current,
-      viewportHeight: streamViewportMetricsRef.current.viewportHeight,
-      newestRowId: segments.liveHead.at(-1)?.id ?? historyRows[0]?.id,
-    });
-    if (rememberRow) readingAnchor.noteViewable(rowId);
-    onReadingPositionChange?.(rowId);
-  });
-
-  const handleRowResized = useStableEvent((rowId: string) => {
-    if (viewableRowsRef.current?.some((row) => row.id === rowId)) updateReadingRow(false);
-  });
-  const rowGeometryContext = useMemo(
-    () => ({ geometry: rowGeometry, onRowResized: handleRowResized }),
-    [handleRowResized, rowGeometry],
-  );
-
   const handleScroll = useStableEvent((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const previousOffsetY = scrollOffsetYRef.current;
-    const isProgrammaticScroll = programmaticScrollQuietTimerRef.current !== null;
-    if (isProgrammaticScroll) holdProgrammaticScroll();
-    const previousViewportWidth = streamViewportMetricsRef.current.viewportWidth;
-    if (
-      !isUserScrollActiveRef.current &&
-      !readingAnchor.isRestorePending() &&
-      beginReadingRestore(previousViewportWidth, Math.max(0, layoutMeasurement.width))
-    ) {
-      markNativeViewportSettling();
-    }
+    const reading = readingPosition.scrollStart({
+      previousWidth: streamViewportMetricsRef.current.viewportWidth,
+      width: Math.max(0, layoutMeasurement.width),
+      userScrollActive: isUserScrollActiveRef.current,
+    });
+    if (reading.startSettle) markNativeViewportSettling();
     scrollOffsetYRef.current = contentOffset.y;
     scrollKeyboardDismiss.onScroll(event);
 
@@ -666,7 +447,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     onNearBottomChange(nearBottom);
 
     evaluateHistoryStart();
-    updateReadingRow(true);
+    readingPosition.scrollEnd();
 
     if (
       !isUserScrollActiveRef.current &&
@@ -680,7 +461,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         nextIsNearBottom: nearBottom,
         scrollDelta: contentOffset.y - previousOffsetY,
         // The list is inverted: offset zero is the bottom.
-        scrolledTowardBottomByUser: !isProgrammaticScroll && contentOffset.y < previousOffsetY,
+        scrolledTowardBottomByUser: !reading.programmatic && contentOffset.y < previousOffsetY,
       });
     }
   });
@@ -688,7 +469,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const handleScrollBeginDrag = useStableEvent((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     clearPendingUserScrollEnd();
     isUserScrollActiveRef.current = true;
-    readingAnchor.cancel();
+    readingPosition.beginDrag();
     scrollKeyboardDismiss.onScrollBeginDrag(event);
     bottomAnchorController.beginUserScroll();
     const rearmed = rearmHistoryStartPagination(historyStartPaginationStateRef.current);
@@ -747,7 +528,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       viewportMeasuredForKey: "native-virtualized",
     };
     if (viewportChanged) {
-      beginReadingRestore(previousViewportWidth, viewportWidth);
+      readingPosition.viewportChanged(previousViewportWidth, viewportWidth);
       markNativeViewportSettling();
     }
     bottomAnchorController.handleViewportMetricsChange({
@@ -803,17 +584,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     },
   );
 
-  const handleViewableItemsChanged = useStableEvent(
-    ({ viewableItems }: { viewableItems: ViewToken<StreamItem>[] }) => {
-      viewableRowsRef.current = viewableItems.map((token) => ({
-        id: token.item.id,
-        index: token.index,
-        isViewable: token.isViewable,
-      }));
-      updateReadingRow(true);
-    },
-  );
-
   const liveHeaderContent = useMemo(() => {
     // Stable render events read the latest expansion state; this revision makes
     // the memo invoke them again when that state changes.
@@ -860,44 +630,47 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   // RN's FlatList strictMode keeps its internal renderItem wrapper stable when
   // data or the live header changes, preserving the row identities above.
+  const list = (
+    <FlatList
+      {...listInsetProps}
+      ref={flatListRef}
+      data={historyRows}
+      renderItem={renderItem}
+      CellRendererComponent={NativeStreamCell}
+      keyExtractor={keyExtractor}
+      strictMode
+      testID="agent-chat-scroll"
+      nativeID="agent-chat-scroll-native-virtualized"
+      ListHeaderComponent={liveHeaderContent ?? undefined}
+      ListFooterComponent={historyFooterContent ?? undefined}
+      contentContainerStyle={listContentContainerStyle}
+      style={listStyle}
+      onLayout={handleListLayout}
+      onScroll={handleScroll}
+      onScrollBeginDrag={handleScrollBeginDrag}
+      onScrollEndDrag={handleScrollEndDrag}
+      onMomentumScrollBegin={handleMomentumScrollBegin}
+      onMomentumScrollEnd={handleMomentumScrollEnd}
+      scrollEventThrottle={16}
+      onContentSizeChange={handleContentSizeChange}
+      onScrollToIndexFailed={readingPosition.scrollToIndexFailed}
+      onViewableItemsChanged={readingPosition.viewableItemsChanged}
+      viewabilityConfig={READING_VIEWABILITY_CONFIG}
+      maintainVisibleContentPosition={maintainVisibleContentPosition}
+      // Tall Markdown rows exhaust a shallow window during flings. Keep the initial
+      // render small, then refill a deeper window in batches large enough to keep up.
+      initialNumToRender={2}
+      maxToRenderPerBatch={10}
+      windowSize={NATIVE_STREAM_WINDOW_SIZE}
+      removeClippedSubviews={false}
+      scrollEnabled={scrollEnabled}
+      showsVerticalScrollIndicator
+      inverted
+    />
+  );
   return (
-    <NativeRowGeometryContext.Provider value={rowGeometryContext}>
-      <FlatList
-        {...listInsetProps}
-        ref={flatListRef}
-        data={historyRows}
-        renderItem={renderItem}
-        CellRendererComponent={NativeStreamCell}
-        keyExtractor={keyExtractor}
-        strictMode
-        testID="agent-chat-scroll"
-        nativeID="agent-chat-scroll-native-virtualized"
-        ListHeaderComponent={liveHeaderContent ?? undefined}
-        ListFooterComponent={historyFooterContent ?? undefined}
-        contentContainerStyle={listContentContainerStyle}
-        style={listStyle}
-        onLayout={handleListLayout}
-        onScroll={handleScroll}
-        onScrollBeginDrag={handleScrollBeginDrag}
-        onScrollEndDrag={handleScrollEndDrag}
-        onMomentumScrollBegin={handleMomentumScrollBegin}
-        onMomentumScrollEnd={handleMomentumScrollEnd}
-        scrollEventThrottle={16}
-        onContentSizeChange={handleContentSizeChange}
-        onScrollToIndexFailed={handleScrollToIndexFailed}
-        onViewableItemsChanged={handleViewableItemsChanged}
-        viewabilityConfig={READING_VIEWABILITY_CONFIG}
-        maintainVisibleContentPosition={maintainVisibleContentPosition}
-        // Tall Markdown rows exhaust a shallow window during flings. Keep the initial
-        // render small, then refill a deeper window in batches large enough to keep up.
-        initialNumToRender={2}
-        maxToRenderPerBatch={10}
-        windowSize={NATIVE_STREAM_WINDOW_SIZE}
-        removeClippedSubviews={false}
-        scrollEnabled={scrollEnabled}
-        showsVerticalScrollIndicator
-        inverted
-      />
+    <NativeRowGeometryContext.Provider value={readingPosition}>
+      {list}
     </NativeRowGeometryContext.Provider>
   );
 }
