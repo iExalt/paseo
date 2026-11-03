@@ -197,6 +197,8 @@ export interface DispatchComposerAgentMessageInput {
   submission: MessageSubmissionWriter;
   activeTurnBehavior?: ActiveTurnBehavior;
   activeTurnId?: string;
+  /** Reuse an ID across retries so the daemon delivers the message once; new by default. */
+  clientMessageId?: string;
 }
 
 export async function dispatchComposerAgentMessage(
@@ -205,7 +207,7 @@ export async function dispatchComposerAgentMessage(
   const wirePayload = splitComposerAttachmentsForSubmit(input.attachments, {
     format: input.attachmentSubmitFormat,
   });
-  const clientMessageId = generateMessageId();
+  const clientMessageId = input.clientMessageId ?? generateMessageId();
   const userMessage = createUserMessage({
     clientMessageId,
     text: input.text,
@@ -216,7 +218,14 @@ export async function dispatchComposerAgentMessage(
       ? { turnId: input.activeTurnId }
       : {}),
   });
-  input.submission.begin(input.agentId, userMessage);
+  try {
+    input.submission.begin(input.agentId, userMessage);
+  } catch (error) {
+    // A retry whose earlier attempt the daemon already echoed back is in the timeline under
+    // this ID: it was delivered, so sending again would duplicate it.
+    if (input.clientMessageId) return;
+    throw error;
+  }
   try {
     const imagesData = await input.encodeImages(wirePayload.images);
     await input.client.sendAgentMessage(input.agentId, input.text, {
@@ -299,6 +308,7 @@ export interface SendQueuedComposerMessageNowInput {
     text: string;
     attachments: ComposerAttachment[];
     activeTurnBehavior: "steer";
+    clientMessageId: string;
   }) => Promise<void>;
   failedToSendMessage?: string;
 }
@@ -312,6 +322,11 @@ export type SendQueuedComposerMessageNowResult =
  * Sends a queued message without waiting for the turn to end. It always steers, whatever the
  * default send setting: a queued message only asked to go sooner, never to stop the agent.
  */
+const UNRETRYABLE_SEND_ERRORS = new Set([
+  "agent_request_outcome_unknown",
+  "agent_request_key_conflict",
+]);
+
 export async function sendQueuedComposerMessageNow(
   input: SendQueuedComposerMessageNowInput,
 ): Promise<SendQueuedComposerMessageNowResult> {
@@ -330,10 +345,16 @@ export async function sendQueuedComposerMessageNow(
       text: item.text,
       attachments: item.attachments,
       activeTurnBehavior: "steer",
+      // The queue item's ID is the message ID, so a retry after a lost reply is delivered once.
+      clientMessageId: item.id,
     });
     return { status: "submitted" };
   } catch (error) {
+    // The daemon already holds a receipt for this ID that a retry can never settle. Re-queuing
+    // would put the item back at the head and block every later queued message.
+    const settledByDaemon = error instanceof Error && UNRETRYABLE_SEND_ERRORS.has(error.message);
     input.queue.write((prev) => {
+      if (settledByDaemon) return prev;
       const next = new Map(prev);
       next.set(input.agentId, [item, ...(prev.get(input.agentId) ?? [])]);
       return next;
