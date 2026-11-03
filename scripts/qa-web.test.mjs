@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   buildQaWebConfig,
   builtinPluginProviderIds,
+  checkBottomSheetPatch,
   checkQaWebHome,
   checkQaWebStopHome,
   parseQaWebArgs,
@@ -97,5 +100,22 @@ test("each built-in provider plugin registers the provider its name implies", ()
       .map((file) => readFileSync(path.join(serverDir, file), "utf8"))
       .join("\n");
     assert.match(sources, new RegExp(`\\bid: "${id}"`), `${id}-provider registers "${id}"`);
+  }
+});
+
+test("the bottom-sheet check fails on an unpatched entry file and passes on a patched one", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "qa-web-bottom-sheet-"));
+  try {
+    const entry = path.join(dir, "index.js");
+    writeFileSync(entry, "export { default } from './bottomSheet';\n");
+    assert.match(
+      checkBottomSheetPatch(entry),
+      /unpatched[\s\S]*Run: node scripts\/postinstall-patches\.mjs$/,
+    );
+    assert.match(checkBottomSheetPatch(path.join(dir, "missing.js")), /unpatched/);
+    writeFileSync(entry, "export { BottomSheetModalInternalProvider } from './x';\n");
+    assert.equal(checkBottomSheetPatch(entry), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });

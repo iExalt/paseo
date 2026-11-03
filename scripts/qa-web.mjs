@@ -13,6 +13,7 @@ import { isMainModule } from "./is-main-module.mjs";
 import {
   buildQaWebConfig,
   builtinPluginProviderIds,
+  checkBottomSheetPatch,
   checkQaWebHome,
   checkQaWebStopHome,
   parseQaWebArgs,
@@ -72,6 +73,17 @@ function preflight() {
     throw new Error(
       `node-pty has no native build for ${process.platform}-${process.arch}.\nRun: npm rebuild node-pty`,
     );
+  }
+  // The same install skips scripts/postinstall-patches.mjs, and the web UI needs the bottom-sheet
+  // patch (the web bundle resolves lib/module).
+  const bottomSheet = path.dirname(
+    createRequire(path.join(repoRoot, "packages/app/package.json")).resolve(
+      "@gorhom/bottom-sheet/package.json",
+    ),
+  );
+  const unpatched = checkBottomSheetPatch(path.join(bottomSheet, "lib/module/index.js"));
+  if (unpatched) {
+    throw new Error(unpatched);
   }
 }
 
