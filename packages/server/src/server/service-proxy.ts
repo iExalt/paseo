@@ -352,6 +352,10 @@ function proxyHttpRequest({
       res.end("502 Bad Gateway");
     }
   });
+  // A client that leaves mid-response (an SSE page reload) must not strand the upstream socket.
+  res.on("close", () => {
+    if (!res.writableFinished) proxyReq.destroy();
+  });
   req.pipe(proxyReq, { end: true });
 }
 
