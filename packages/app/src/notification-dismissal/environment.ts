@@ -1,9 +1,8 @@
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import { summarizeHostCatchUp, type HostCatchUpSummary } from "./caught-up";
-import type { CaughtUpEnvironment } from "./caught-up-tracker";
+import type { NotificationDismissalEnvironment } from "./dismissal";
 import type { HostDismissalView } from "./plan";
-import type { NotificationDismissalEnvironment } from "./tracker";
 
 /** The latest whole-directory refresh, if it belongs to the host's live connection. */
 function readCurrentRefresh(serverId: string): { requestedAt: number } | null {
@@ -52,10 +51,14 @@ function readHostCatchUp(serverId: string): HostCatchUpSummary {
   });
 }
 
-function createSharedEnvironment() {
+export function createAppNotificationDismissalEnvironment(): NotificationDismissalEnvironment {
   const runtime = getHostRuntimeStore();
   return {
     now: () => Date.now(),
+    serverIds: () =>
+      runtime.isHostRegistryLoaded() ? runtime.getHosts().map((host) => host.serverId) : null,
+    host: readHostView,
+    catchUp: readHostCatchUp,
     subscribe(onChange: () => void) {
       const unsubscribers = [
         useSessionStore.subscribe(onChange),
@@ -76,24 +79,5 @@ function createSharedEnvironment() {
     },
     setTimer: (callback: () => void, delayMs: number): unknown => setTimeout(callback, delayMs),
     clearTimer: (timer: unknown) => clearTimeout(timer as ReturnType<typeof setTimeout>),
-  };
-}
-
-export function createAppNotificationDismissalEnvironment(): NotificationDismissalEnvironment {
-  const runtime = getHostRuntimeStore();
-  return {
-    ...createSharedEnvironment(),
-    hostsLoaded: () => runtime.isHostRegistryLoaded(),
-    host: readHostView,
-  };
-}
-
-export function createAppCaughtUpEnvironment(): CaughtUpEnvironment {
-  const runtime = getHostRuntimeStore();
-  return {
-    ...createSharedEnvironment(),
-    serverIds: () =>
-      runtime.isHostRegistryLoaded() ? runtime.getHosts().map((host) => host.serverId) : null,
-    host: readHostCatchUp,
   };
 }

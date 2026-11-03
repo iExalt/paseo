@@ -4,7 +4,7 @@ import {
   type TrackedNotificationReason,
 } from "./key";
 import { classifyUntrackedPush, type UntrackedPush } from "./caught-up";
-import type { NotificationDismissalTracker } from "./tracker";
+import type { NotificationDismissal } from "./dismissal";
 
 export interface PresentedNotification {
   identifier: string;
@@ -34,7 +34,7 @@ export interface PresentedNotificationSync {
  */
 export function createPresentedNotificationSync(input: {
   api: PresentedNotificationsApi;
-  tracker: () => NotificationDismissalTracker;
+  tracker: () => Pick<NotificationDismissal, "track" | "forget">;
   isTrackable?: (data: unknown) => boolean;
   /** Pushes with no thread data: Android posts those itself while the app isn't running. */
   onUntracked?: (pushes: UntrackedPush[]) => void;
