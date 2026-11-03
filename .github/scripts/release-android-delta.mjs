@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { fetchRange, hashFile, zstdDecompress } from "../../scripts/paseo-nix-update-delta.mjs";
 import { latestVerifiedRelease, releaseDownloadUrl } from "../../scripts/paseo-nix-update.mjs";
 import { DELTA_BASE_RELEASES, deltaBaseTags, listReleases } from "./release-mac-index.mjs";
+import { apkDeltaAssetName, releaseAssets } from "./release-assets.mjs";
 
 // The phone decodes in one pass into the mapped output, which needs no window limit, but
 // the encoder can only reach back this far into the base: 256 MiB covers MAX_APK_BYTES.
@@ -20,12 +21,6 @@ export const APK_WINDOW_LOG = 28;
 // --ultra -22 gave 1.9 MB in 58 s for 0.13.0 -> 0.13.1, against 3.9 MB in 16 s at -19.
 // --check: the phone detects a wrong base by the frame checksum.
 const ZSTD_ARGS = ["-q", "--check", "--ultra", "-22", `--long=${APK_WINDOW_LOG}`];
-
-export function apkDeltaAssetName(apkName, fromVersion) {
-  assert.match(apkName, /^paseo-[0-9]+\.[0-9]+\.[0-9]+-android-arm64\.apk$/);
-  assert.match(fromVersion, /^[0-9]+\.[0-9]+\.[0-9]+$/);
-  return `${apkName}.delta-from-${fromVersion}.zst`;
-}
 
 function signedApk(manifest) {
   const apk = manifest.artifacts.find((artifact) => artifact.kind === "apk");
@@ -52,7 +47,7 @@ async function previousApk(tag, work) {
  * would not save at least half of the .gz download.
  */
 export async function makeApkDelta({ base, next, directory, work, zstd = runZstd }) {
-  const asset = apkDeltaAssetName(basename(next.file), base.version);
+  const asset = apkDeltaAssetName(next.version, base.version);
   if (Math.max(base.bytes, next.bytes) > 2 ** APK_WINDOW_LOG) {
     console.log(`Skipped the delta from ${base.version}: an APK exceeds the zstd window`);
     return null;
@@ -98,7 +93,7 @@ async function runZstd(args) {
 async function main() {
   const [apkPath, directory] = process.argv.slice(2);
   const { VERSION: version } = process.env;
-  assert.equal(basename(apkPath), `paseo-${version}-android-arm64.apk`);
+  assert.equal(basename(apkPath), releaseAssets(version).apk);
   await mkdir(directory, { recursive: true });
   let tags = [];
   try {
@@ -112,6 +107,7 @@ async function main() {
     console.log(`::warning::Could not list earlier releases for APK deltas: ${error.message}`);
   }
   const next = {
+    version,
     file: apkPath,
     bytes: (await stat(apkPath)).size,
     sha256: (await hashFile(apkPath)).toString("hex"),

@@ -38,6 +38,7 @@ import {
   validateNixArtifactClosure,
   validateNixClosureManifest,
 } from "../../scripts/paseo-nix-update.mjs";
+import { releaseAssets } from "./release-assets.mjs";
 
 // Installs this many releases behind can update by delta. Each costs CI about
 // 15 s (range fetch of the old NAR, then a 1-2 s delta) and a few MB of assets.
@@ -207,10 +208,9 @@ async function checkRanges(archivePath, checked) {
 async function main() {
   const [directory] = process.argv.slice(2);
   const { VERSION: version, SOURCE_SHA: sourceSha, OUTPUT_PATH: outputPath } = process.env;
-  const base = `paseo-${version}-macos-arm64-nix-desktop`;
-  const archiveName = `${base}.tar`;
+  const { macArchive: archiveName, macClosure } = releaseAssets(version);
   const archivePath = join(directory, archiveName);
-  const closureBytes = await readFile(join(directory, `${base}.json`));
+  const closureBytes = await readFile(join(directory, macClosure));
   const closure = validateNixArtifactClosure(
     closureBytes,
     {

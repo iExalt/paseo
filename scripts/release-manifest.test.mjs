@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import test from "node:test";
+import { releaseAssets } from "../.github/scripts/release-assets.mjs";
 import {
-  assetNames,
   changelogSection,
   describeAsset,
   releaseManifestBytes,
@@ -12,7 +12,7 @@ import { FORK_ANDROID_CERTIFICATE_SHA256 } from "../packages/protocol/src/releas
 import { verifyReleaseManifestBytes } from "./paseo-nix-update.mjs";
 
 const version = "0.2.0";
-const names = assetNames(version);
+const names = releaseAssets(version);
 const release = (overrides = {}) => ({
   version,
   sourceSha: "a".repeat(40),

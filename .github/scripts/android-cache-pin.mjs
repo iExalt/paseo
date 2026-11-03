@@ -14,6 +14,7 @@ import { appendFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dependencyFingerprint } from "./dependency-fingerprint.mjs";
+import { releaseAssets } from "./release-assets.mjs";
 
 const HEX = /^[0-9a-f]{64}$/;
 const BUILD_KEY = /^paseo-android-build-v2-([0-9a-f]{64})$/;
@@ -21,7 +22,6 @@ const DEPS_KEY = /^paseo-gradle-deps-v2-([0-9a-f]{64})-([0-9a-f]{64})$/;
 const MODULES_KEY = /^paseo-node-modules-v1-([0-9a-f]{64})-([0-9a-f]{64})$/;
 const RELEASE_TAG = /^paseo-v(\d+\.\d+\.\d+)$/;
 
-export const pinAssetName = (version) => `paseo-${version}-android-cache-pin.json`;
 export const buildKey = (sha256) => `paseo-android-build-v2-${sha256}`;
 export const depsKey = (inputs, sha256) => `paseo-gradle-deps-v2-${inputs}-${sha256}`;
 export const modulesKey = (inputs, sha256) => `paseo-node-modules-v1-${inputs}-${sha256}`;
@@ -100,8 +100,10 @@ export function choosePinAsset(release) {
   const pinAssets = (release.assets ?? []).filter((asset) =>
     asset.name.endsWith("-android-cache-pin.json"),
   );
-  if (pinAssets.length !== 1 || pinAssets[0].name !== pinAssetName(version)) {
-    throw new Error(`Expected exactly ${pinAssetName(version)} on ${release.tag_name}`);
+  if (pinAssets.length !== 1 || pinAssets[0].name !== releaseAssets(version).androidCachePin) {
+    throw new Error(
+      `Expected exactly ${releaseAssets(version).androidCachePin} on ${release.tag_name}`,
+    );
   }
   return { version, asset: pinAssets[0] };
 }
