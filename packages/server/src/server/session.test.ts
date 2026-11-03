@@ -423,6 +423,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     getSnapshot: vi.fn(),
     suggestBranchesForCwd: vi.fn(),
     listStashes: vi.fn(),
+    invalidateStashes: vi.fn(),
 
     validateBranchRef: vi.fn(),
     hasLocalBranch: vi.fn(),

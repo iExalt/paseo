@@ -683,6 +683,7 @@ export class CheckoutSession {
         cwd,
         timeout: 120_000,
       });
+      this.workspaceGitService.invalidateStashes();
       await this.gitMutation.notifyGitMutation(cwd, "stash-push");
       this.scheduleDiffRefresh(cwd);
       this.host.emit({
@@ -718,6 +719,7 @@ export class CheckoutSession {
         cwd,
         timeout: 120_000,
       });
+      this.workspaceGitService.invalidateStashes();
       await this.gitMutation.notifyGitMutation(cwd, "stash-pop");
       this.scheduleDiffRefresh(cwd);
       this.host.emit({
@@ -725,6 +727,8 @@ export class CheckoutSession {
         payload: { cwd, success: true, error: null, requestId },
       });
     } catch (error) {
+      // A refused pop means the client's list is stale; let its refresh read the stack again.
+      this.workspaceGitService.invalidateStashes();
       this.host.emit({
         type: "stash_pop_response",
         payload: { cwd, success: false, error: toCheckoutError(error), requestId },

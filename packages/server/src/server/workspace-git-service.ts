@@ -237,6 +237,7 @@ export interface WorkspaceGitService {
     options?: WorkspaceGitReadOptions,
   ): Promise<WorkspaceGitWorktreeInfo[]>;
   invalidateWorktrees(): void;
+  invalidateStashes(): void;
   getProjectSlug(cwd: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveRepoRoot(cwd: string, options?: WorkspaceGitReadOptions): Promise<string>;
   resolveDefaultBranch(cwdOrRepoRoot: string, options?: WorkspaceGitReadOptions): Promise<string>;
@@ -934,6 +935,12 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     return snapshot.git.isPaseoOwnedWorktree
       ? (snapshot.git.mainRepoRoot ?? snapshot.git.repoRoot ?? resolve(cwd))
       : (snapshot.git.repoRoot ?? resolve(cwd));
+  }
+
+  invalidateStashes(): void {
+    this.assertNotDisposed();
+    // Every worktree of a repository shares one stash stack, so drop every cached list.
+    this.stashListCache.clear();
   }
 
   invalidateWorktrees(): void {
