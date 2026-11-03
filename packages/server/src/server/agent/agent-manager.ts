@@ -794,6 +794,9 @@ export class AgentManager {
   private readonly runtimeCleanupIdentities = new WeakMap<AgentSession, object>();
   private readonly collectingRuntimes = new Set<string>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
+  // Agents an archive is stopping: a send that arrives meanwhile fails instead of starting a
+  // turn the archive then kills.
+  private readonly archivingAgentIds = new Set<string>();
   private readonly agentStreamCoalescer: AgentStreamCoalescer;
   private sessionOpenGeneration = 0;
   private readonly sessionOpenGenerations = new Map<string, number>();
@@ -2409,6 +2412,16 @@ export class AgentManager {
     this.emitState(agent);
   }
 
+  /** Rejects new turns for `agentId` until `work` settles. */
+  async whileArchiving<T>(agentId: string, work: () => Promise<T>): Promise<T> {
+    this.archivingAgentIds.add(agentId);
+    try {
+      return await work();
+    } finally {
+      this.archivingAgentIds.delete(agentId);
+    }
+  }
+
   async clearAgentAttention(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
     if (agent.attention.requiresAttention) {
@@ -2807,6 +2820,9 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
   ): AsyncGenerator<AgentStreamEvent> {
+    if (this.archivingAgentIds.has(agentId)) {
+      throw new Error(`Agent ${agentId} is being archived`);
+    }
     if (this.collectingRuntimes.has(agentId) || (!this.agents.has(agentId) && this.registry))
       return this.streamAfterRuntimeCollection(agentId, prompt, options);
     const existingAgent = this.requireSessionAgent(agentId);
@@ -2944,6 +2960,7 @@ export class AgentManager {
     agent: ActiveManagedAgent,
     turnId?: string,
     completionSubject?: CompletionSubject,
+    options?: { turnCanceled?: boolean },
   ): void {
     const mutableAgent = agent;
     if (turnId) {
@@ -2987,7 +3004,7 @@ export class AgentManager {
     );
     if (!shouldHoldBusyForReplacement) {
       this.touchUpdatedAt(mutableAgent);
-      this.emitState(mutableAgent, { completionSubject });
+      this.emitState(mutableAgent, { completionSubject, turnCanceled: options?.turnCanceled });
     }
   }
 
@@ -3445,7 +3462,7 @@ export class AgentManager {
       if (!agent.pendingReplacement) {
         agent.lifecycle = "idle";
         this.touchUpdatedAt(agent);
-        this.emitState(agent);
+        this.emitState(agent, { turnCanceled: true });
       }
     } else if (settlement === "timed_out" && run.kind === "autonomous") {
       this.logger.warn(
@@ -4647,7 +4664,9 @@ export class AgentManager {
       if (isTurnTerminalEvent(event)) {
         this.runs.settleTerminalRun(agent.id, eventTurnId);
         if (isForegroundEvent) {
-          this.finalizeForegroundTurn(agent, eventTurnId, completionSubject);
+          this.finalizeForegroundTurn(agent, eventTurnId, completionSubject, {
+            turnCanceled: event.type === "turn_canceled",
+          });
         }
       }
 
@@ -5286,10 +5305,16 @@ export class AgentManager {
 
   private emitState(
     agent: ManagedAgent,
-    options?: { persist?: boolean; completionSubject?: CompletionSubject },
+    options?: {
+      persist?: boolean;
+      completionSubject?: CompletionSubject;
+      turnCanceled?: boolean;
+    },
   ): void {
     // Keep attention as an edge-triggered unread signal, not a level signal.
-    this.checkAndSetAttention(agent, options?.completionSubject);
+    this.checkAndSetAttention(agent, options?.completionSubject, {
+      turnCanceled: options?.turnCanceled,
+    });
     if (options?.persist !== false) {
       this.enqueueBackgroundPersist(agent);
     }
@@ -5322,7 +5347,11 @@ export class AgentManager {
     }
   }
 
-  private checkAndSetAttention(agent: ManagedAgent, completionSubject?: CompletionSubject): void {
+  private checkAndSetAttention(
+    agent: ManagedAgent,
+    completionSubject?: CompletionSubject,
+    options?: { turnCanceled?: boolean },
+  ): void {
     const previousStatus = this.previousStatuses.get(agent.id);
     const currentStatus = agent.lifecycle;
 
@@ -5334,19 +5363,20 @@ export class AgentManager {
       return;
     }
 
-    // Skip if already requires attention
-    if (agent.attention.requiresAttention) {
-      return;
-    }
+    // An unread attention keeps clients current with the newest finish or error, but only an
+    // error pushes again: a second "finished" before anyone looks would repeat the same news.
+    const alreadyUnread = agent.attention.requiresAttention;
 
-    // Check if agent transitioned from running to idle (finished)
-    if (previousStatus === "running" && currentStatus === "idle") {
+    // A turn the user stopped (stop, archive, close) didn't finish on its own.
+    if (previousStatus === "running" && currentStatus === "idle" && !options?.turnCanceled) {
       agent.attention = {
         requiresAttention: true,
         attentionReason: "finished",
         attentionTimestamp: new Date(),
       };
-      this.broadcastAgentAttention(agent, "finished", completionSubject);
+      if (!alreadyUnread) {
+        this.broadcastAgentAttention(agent, "finished", completionSubject);
+      }
       return;
     }
 
