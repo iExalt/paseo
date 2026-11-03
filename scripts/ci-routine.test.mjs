@@ -14,8 +14,8 @@ import {
   planCommands,
   planLane,
   planMatrix,
+  laneGroups,
   lanes,
-  shards,
   root,
   selectChecks,
   vitestHelpers,
@@ -121,10 +121,6 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   const cli = commands.find((step) => step.name === "cli units");
   assert.ok(cli.args.includes("**/*.e2e.test.ts"));
   const desktop = commands.find((step) => step.name === "desktop units");
-  // Electron must be fetched in the lane that runs the desktop units, before them.
-  const workspaces = planLane(selectChecks(null, filters), "workspaces").map((step) => step.name);
-  const electron = workspaces.indexOf("desktop Electron binary");
-  assert.ok(electron >= 0 && electron < workspaces.indexOf("desktop units"));
   assert.ok(desktop.args.includes("scripts/after-pack.test.mjs"));
   assert.ok(desktop.args.includes("e2e/**"));
   assert.ok(desktop.args.includes("vitest"));
@@ -191,7 +187,7 @@ test("new Node test files require an explicit routine or package classification"
   }
 });
 
-test("parallel lanes partition every selected check, with only declared prerequisites duplicated", () => {
+test("parallel lanes partition every selected check behind one declared prerequisite", () => {
   for (const files of [
     null,
     [],
@@ -205,46 +201,34 @@ test("parallel lanes partition every selected check, with only declared prerequi
     const matrix = planMatrix(selection);
     assert.equal(new Set(matrix.lane).size, matrix.lane.length);
     assert.ok(matrix.lane.includes("quality"));
+    for (const step of complete) assert.ok(Object.hasOwn(laneGroups, step.lane), step.name);
     const seen = [];
     for (const lane of lanes) {
+      const group = lane.replace(/-\d+$/, "");
+      const { shards, prerequisite } = laneGroups[group];
       const commands = planLane(selection, lane);
       assert.equal(matrix.lane.includes(lane), commands.length > 0);
-      for (const step of commands) {
-        if (step.name === "app dependencies") {
-          assert.match(lane, /^app-\d$/);
-          assert.deepEqual(step.args, ["run", "build:app-deps"]);
-          continue;
-        }
-        if (step.name === "server dependencies") {
-          assert.match(lane, /^server-\d$/);
-          assert.deepEqual(step.args, ["run", "build:server-deps"]);
-          continue;
-        }
-        if (step.name === "workspace declarations" && lane !== "quality") continue;
-        const sharded = { "server units": "server", "app units": "app" }[step.name];
-        if (sharded) {
-          assert.equal(step.args.at(-1), `--shard=${lane.at(-1)}/${shards[sharded]}`);
-          assert.deepEqual(
-            step.args.slice(0, -1),
-            complete.find((item) => item.name === step.name).args,
-          );
-        } else
-          assert.deepEqual(
-            step,
-            complete.find((item) => item.name === step.name),
-          );
-        if (!sharded || lane.endsWith("-1")) seen.push(step.name);
+      if (!commands.length) continue;
+      const checks = prerequisite ? commands.slice(1) : commands;
+      if (prerequisite) assert.deepEqual(commands[0], { ...prerequisite, lane: group });
+      for (const step of checks) {
+        const planned = complete.find((item) => item.name === step.name);
+        assert.equal(step.lane, group);
+        assert.deepEqual(
+          step,
+          shards
+            ? { ...planned, args: [...planned.args, `--shard=${lane.at(-1)}/${shards}`] }
+            : planned,
+        );
+        if (!shards || lane.endsWith("-1")) seen.push(step.name);
       }
     }
     assert.deepEqual(seen.sort(), complete.map((step) => step.name).sort());
-    for (const [group, count] of Object.entries(shards))
-      assert.deepEqual(
-        matrix.lane.filter((lane) => lane.startsWith(`${group}-`)),
-        selection.domains.includes(group)
-          ? Array.from({ length: count }, (_, index) => `${group}-${index + 1}`)
-          : [],
-      );
   }
+  // 4837e25c6: Electron must be fetched in the lane that runs the desktop units, before them.
+  const workspaces = planLane(selectChecks(null, filters), "workspaces").map((step) => step.name);
+  const electron = workspaces.indexOf("desktop Electron binary");
+  assert.ok(electron >= 0 && electron < workspaces.indexOf("desktop units"));
   assert.throws(() => planLane(selectChecks(null, filters), "unknown"));
 });
 

@@ -102,15 +102,18 @@ export function selectChecks(files, filters) {
 
 export function planCommands(selection, cwd = root) {
   const commands = [];
-  const add = (name, command, args) => commands.push({ name, command, args });
-  const npm = (name, script, args = []) => add(name, "npm", ["run", script, ...args]);
-  const unit = (workspace, script = "test", args = [], workers = 4) =>
-    npm(`${workspace} units`, script, [
-      `--workspace=@getpaseo/${workspace}`,
-      "--",
-      ...args,
-      `--maxWorkers=${workers}`,
-    ]);
+  // Every step names its lane group here, so renaming a step cannot reroute it.
+  const add = (name, command, args, lane = "quality") =>
+    commands.push({ name, command, args, lane });
+  const npm = (name, script, args = [], lane = "quality") =>
+    add(name, "npm", ["run", script, ...args], lane);
+  const unit = (workspace, script = "test", args = [], workers = 4, lane = "workspaces") =>
+    npm(
+      `${workspace} units`,
+      script,
+      [`--workspace=@getpaseo/${workspace}`, "--", ...args, `--maxWorkers=${workers}`],
+      lane,
+    );
   if (selection.files === null) npm("format", "format:check");
   else {
     const files = selection.files.filter(
@@ -145,53 +148,63 @@ export function planCommands(selection, cwd = root) {
     ...vitestHelpers,
   ]);
   npm("lint", "lint");
-  npm("workspace declarations", "build:server");
+  commands.push({ ...workspaceDeclarations, lane: "quality" });
   npm("types", "typecheck");
   if (selection.domains.includes("sdk"))
     for (const name of ["protocol", "client", "plugin", "highlight"]) unit(name);
   if (selection.domains.includes("relay")) unit("relay");
   if (selection.domains.includes("server")) {
     unit("builtin-plugins");
-    unit("server", "test:unit");
+    unit("server", "test:unit", [], 4, "server");
   }
   if (selection.domains.includes("cli"))
     unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
   // Four app workers starved live tests' 10 s hooks on 4-vCPU runners; three is the agreed response; watch for recurrence.
-  if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"], 3);
+  if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"], 3, "app");
   if (selection.domains.includes("desktop")) {
     // Install scripts are skipped, so fetch Electron once before parallel workers
     // would each try to extract it on first import.
-    add("desktop Electron binary", "npm", [
-      "exec",
-      "--workspace=@getpaseo/desktop",
-      "--",
-      "install-electron",
-    ]);
-    add("desktop units", "npm", [
-      "exec",
-      "--workspace=@getpaseo/desktop",
-      "--",
-      "vitest",
-      "run",
-      "--exclude",
-      "e2e/**",
-      "--exclude",
-      "scripts/after-pack.test.mjs",
-      "--maxWorkers=4",
-    ]);
-  }
-  if (selection.domains.includes("server")) {
-    const integration = (name, files, args = []) =>
-      add(name, "npm", [
+    add(
+      "desktop Electron binary",
+      "npm",
+      ["exec", "--workspace=@getpaseo/desktop", "--", "install-electron"],
+      "workspaces",
+    );
+    add(
+      "desktop units",
+      "npm",
+      [
         "exec",
-        "--workspace=@getpaseo/server",
+        "--workspace=@getpaseo/desktop",
         "--",
         "vitest",
         "run",
-        "--maxWorkers=1",
-        ...files,
-        ...args,
-      ]);
+        "--exclude",
+        "e2e/**",
+        "--exclude",
+        "scripts/after-pack.test.mjs",
+        "--maxWorkers=4",
+      ],
+      "workspaces",
+    );
+  }
+  if (selection.domains.includes("server")) {
+    const integration = (name, files, args = []) =>
+      add(
+        name,
+        "npm",
+        [
+          "exec",
+          "--workspace=@getpaseo/server",
+          "--",
+          "vitest",
+          "run",
+          "--maxWorkers=1",
+          ...files,
+          ...args,
+        ],
+        "integration",
+      );
     integration(
       "focused server integration",
       [
@@ -218,58 +231,56 @@ export function planCommands(selection, cwd = root) {
   return commands;
 }
 
+// Each lane group runs its steps after one prerequisite. Every hosted job is a
+// fresh checkout, so generated workspace declarations are prerequisites, not
+// artifacts trusted from another job or commit. Unit shards build only the
+// packages they import from dist: server units run the server and its terminal
+// worker from source, so they skip the server and CLI builds (13 s).
 // Hosted runners have 4 vCPUs; measured on them, 4 workers cut app units from
 // 139 s to 95 s; three runs per shard kept every lane's tests under 90 s.
-export const shards = { app: 2, server: 3 };
-export const lanes = [
-  "quality",
-  "workspaces",
-  ...Object.entries(shards).flatMap(([group, count]) =>
-    Array.from({ length: count }, (_, index) => `${group}-${index + 1}`),
-  ),
-  "integration",
-];
-
-function commandLane(step) {
-  if (step.name === "server units") return "server";
-  if (step.name === "app units") return "app";
-  if (step.name.endsWith(" units") || step.name === "desktop Electron binary") return "workspaces";
-  if (
-    ["focused server integration", "worktree autoarchive", "versioned OpenCode runtime"].includes(
-      step.name,
-    )
-  )
-    return "integration";
-  return "quality";
-}
+const workspaceDeclarations = {
+  name: "workspace declarations",
+  command: "npm",
+  args: ["run", "build:server"],
+};
+export const laneGroups = {
+  quality: {},
+  workspaces: { prerequisite: workspaceDeclarations },
+  app: {
+    shards: 2,
+    prerequisite: { name: "app dependencies", command: "npm", args: ["run", "build:app-deps"] },
+  },
+  server: {
+    shards: 3,
+    prerequisite: {
+      name: "server dependencies",
+      command: "npm",
+      args: ["run", "build:server-deps"],
+    },
+  },
+  integration: { prerequisite: workspaceDeclarations },
+};
+export const lanes = Object.entries(laneGroups).flatMap(([group, { shards }]) =>
+  shards ? Array.from({ length: shards }, (_, index) => `${group}-${index + 1}`) : [group],
+);
+/** The ci.yml matrix job name for a lane; refresh-test-durations reads logs by it. */
+export const routineJobName = (lane) => `routine (${lane})`;
 
 export function planLane(selection, lane, cwd = root) {
   assert.ok(lanes.includes(lane), `Unknown routine lane: ${lane}`);
   const group = lane.replace(/-\d+$/, "");
+  const { shards, prerequisite } = laneGroups[group];
   const complete = planCommands(selection, cwd);
-  const selected = complete.filter((step) => commandLane(step) === group);
+  const selected = complete.filter((step) => step.lane === group);
   if (!selected.length) return [];
-  const commands = selected.map((step) =>
-    group in shards
-      ? Object.assign({}, step, {
-          args: [...step.args, `--shard=${lane.slice(group.length + 1)}/${shards[group]}`],
-        })
-      : step,
-  );
-  // Each hosted job is a fresh checkout; generated workspace declarations are
-  // prerequisites, not artifacts trusted from a different job or commit. Unit shards
-  // build only the packages they import from dist: server units run the server and
-  // its terminal worker from source, so they skip the server and CLI builds (13 s).
-  if (group === "app")
-    commands.unshift({ name: "app dependencies", command: "npm", args: ["run", "build:app-deps"] });
-  else if (group === "server")
-    commands.unshift({
-      name: "server dependencies",
-      command: "npm",
-      args: ["run", "build:server-deps"],
-    });
-  else if (lane !== "quality")
-    commands.unshift(complete.find((step) => step.name === "workspace declarations"));
+  const commands = shards
+    ? selected.map((step) =>
+        Object.assign({}, step, {
+          args: [...step.args, `--shard=${lane.slice(group.length + 1)}/${shards}`],
+        }),
+      )
+    : selected;
+  if (prerequisite) commands.unshift({ ...prerequisite, lane: group });
   return commands;
 }
 
