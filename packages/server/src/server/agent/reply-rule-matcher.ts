@@ -32,15 +32,24 @@ export class ReplyRuleMatcher {
   }
 
   matches(subject: CompletionSubject | undefined): boolean {
-    if (
-      !subject ||
-      subject.completeness !== "complete" ||
-      subject.text.length > COMPLETION_SUBJECT_MAX_LENGTH
-    ) {
-      return false;
-    }
+    if (!subject || classifyReplySubject(subject)) return false;
     return this.patterns.some((pattern) => pattern.test(subject.text));
   }
+}
+
+export type ReplySubjectFailOpenReason =
+  | "missing_subject"
+  | "incomplete_subject"
+  | "oversize_subject";
+
+/** Why a completion subject cannot be judged by reply rules, or null when it can. */
+export function classifyReplySubject(
+  subject: CompletionSubject | undefined,
+): ReplySubjectFailOpenReason | null {
+  if (!subject) return "missing_subject";
+  if (subject.completeness !== "complete") return "incomplete_subject";
+  if (subject.text.length > COMPLETION_SUBJECT_MAX_LENGTH) return "oversize_subject";
+  return null;
 }
 
 function normalizeFlags(flags: string): string {

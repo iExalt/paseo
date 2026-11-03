@@ -16,6 +16,7 @@ import {
 import { stat } from "node:fs/promises";
 import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
+import { readReplyRules, writeReplyRules } from "../../notification-policy.js";
 import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
@@ -1464,10 +1465,9 @@ function createToolCatalog(
     async () => {
       requireHostPermission("daemon.read");
       const store = requireReplyRuleFilteringSupport();
-      const replyRules = store.getReplyRules();
       return {
         content: [],
-        structuredContent: ensureValidJson({ replyRules: [...replyRules] }),
+        structuredContent: ensureValidJson({ replyRules: readReplyRules(store) }),
       };
     },
   );
@@ -1483,10 +1483,11 @@ function createToolCatalog(
     async ({ replyRules }) => {
       requireHostPermission("daemon.manage");
       const store = requireReplyRuleFilteringSupport();
-      await store.patch({ replyRules });
       return {
         content: [],
-        structuredContent: ensureValidJson({ replyRules: [...store.getReplyRules()] }),
+        structuredContent: ensureValidJson({
+          replyRules: await writeReplyRules(store, replyRules),
+        }),
       };
     },
   );
@@ -1502,10 +1503,9 @@ function createToolCatalog(
     async () => {
       requireHostPermission("daemon.manage");
       const store = requireReplyRuleFilteringSupport();
-      await store.patch({ replyRules: [] });
       return {
         content: [],
-        structuredContent: ensureValidJson({ replyRules: [...store.getReplyRules()] }),
+        structuredContent: ensureValidJson({ replyRules: await writeReplyRules(store, []) }),
       };
     },
   );

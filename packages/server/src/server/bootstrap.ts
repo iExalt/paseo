@@ -20,9 +20,9 @@ import type { Logger } from "pino";
 import { z } from "zod";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
 import {
-  updateWorkspaceNotifications,
+  setWorkspaceNotifications,
   WORKSPACE_NOTIFICATIONS_ENABLED,
-} from "./workspace-notifications.js";
+} from "./notification-policy.js";
 
 export type ListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -1534,8 +1534,7 @@ export async function createPaseoDaemon(
     providerSnapshotManager,
     daemonConfigStore,
     ...(hostAuthorization ? { hostAuthorization } : {}),
-    replyRuleFilteringEnabled:
-      hostAuthorization !== undefined && typeof daemonConfigStore.getReplyRules === "function",
+    replyRuleFilteringEnabled: hostAuthorization !== undefined,
     github,
     workspaceGitService,
     findWorkspaceIdForCwd: findWorkspaceIdForCwdExternal,
@@ -1544,7 +1543,7 @@ export async function createPaseoDaemon(
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
     updateWorkspaceNotifications: async (workspaceId, notifications) => {
-      const workspace = await updateWorkspaceNotifications(
+      const workspace = await setWorkspaceNotifications(
         workspaceRegistry,
         workspaceId,
         notifications,
