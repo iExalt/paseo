@@ -16,21 +16,21 @@ module, interface, depth, seam, adapter, leverage, locality.
 | Field          | Status                                                                                  |
 | -------------- | --------------------------------------------------------------------------------------- |
 | Baseline       | `dev` at `374eac209`                                                                    |
-| Current item   | 4, Routine lane                                                                         |
+| Current item   | 5, Dependency fingerprint                                                               |
 | Required CI    | dev push run 41531769754: plan start to required 3m44s; slowest lane `workspaces` 3m10s |
 | Release impact | None; no item publishes a release                                                       |
 
 ## Items
 
-| #   | Module                  | State   | PR  | Notes                                                                                                                                       |
-| --- | ----------------------- | ------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| 4   | Routine lane            | active  |     | Steps declare their lane; one lane table owns shards and prerequisites                                                                      |
-| 5   | Dependency fingerprint  | planned |     | Rescoped (owner, 2026-11-03): one key CLI for both `ci.yml` jobs; Nix filter and release-please untouched; no Nix test                      |
-| 6   | Release asset catalog   | planned |     | Grows `release-manifest.mjs` `assetNames`; desktop delta naming stays in shipped `paseo-nix-update-delta.mjs`; one release dry run approved |
-| 3   | Fork updater controller | planned |     |                                                                                                                                             |
-| 2   | Notification policy     | planned |     | Push-title parsing moves to protocol here                                                                                                   |
-| 1   | Notification dismissal  | planned |     | Android push proof needs the phone                                                                                                          |
-| 7   | Reading position        | planned |     | Interaction with upstream `bottomAnchorController` written down before building                                                             |
+| #   | Module                  | State   | PR                                               | Notes                                                                                                                                       |
+| --- | ----------------------- | ------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 4   | Routine lane            | merged  | [#320](https://github.com/iExalt/paseo/pull/320) | Steps declare their lane; one lane table owns shards and prerequisites                                                                      |
+| 5   | Dependency fingerprint  | active  |                                                  | Rescoped (owner chose "Shrink it", 2026-11-03): one key CLI for both `ci.yml` jobs; Nix filter and release-please untouched; no Nix test    |
+| 6   | Release asset catalog   | planned |                                                  | Grows `release-manifest.mjs` `assetNames`; desktop delta naming stays in shipped `paseo-nix-update-delta.mjs`; one release dry run approved |
+| 3   | Fork updater controller | planned |                                                  |                                                                                                                                             |
+| 2   | Notification policy     | planned |                                                  | Push-title parsing moves to protocol here                                                                                                   |
+| 1   | Notification dismissal  | planned |                                                  | Android push proof needs the phone                                                                                                          |
+| 7   | Reading position        | planned |                                                  | Interaction with upstream `bottomAnchorController` written down before building                                                             |
 
 ## Review corrections to the cards
 

@@ -17,6 +17,7 @@ export const coreTests = [
   ".github/scripts/release-mac-smoke-deps.test.mjs",
   ".github/scripts/release-mac-smoke.test.mjs",
   ".github/scripts/android-cache-pin.test.mjs",
+  ".github/scripts/dependency-fingerprint.test.mjs",
   ".github/scripts/release-android-delta.test.mjs",
   ".github/scripts/android-size-report.test.mjs",
 ];

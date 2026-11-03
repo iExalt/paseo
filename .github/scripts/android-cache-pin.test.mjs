@@ -6,13 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import {
-  buildPin,
-  choosePinAsset,
-  normalizedLock,
-  parsePin,
-  planRestore,
-} from "./android-cache-pin.mjs";
+import { buildPin, choosePinAsset, parsePin, planRestore } from "./android-cache-pin.mjs";
 
 const a = "a".repeat(64);
 const b = "b".repeat(64);
@@ -89,46 +83,6 @@ test("Gradle caches restore regardless of inputs; node_modules only for identica
   assert.equal(changed.deps.key, `paseo-gradle-deps-v2-${b}-${c}`);
   assert.equal(changed.depsInputsMatch, false);
   assert.equal(changed.modules, null);
-});
-
-test("a release's own version bump leaves the normalized lockfile unchanged", () => {
-  const lock = (version, change = () => {}) => {
-    const value = {
-      name: "paseo",
-      version,
-      lockfileVersion: 3,
-      packages: {
-        "": { name: "paseo", version, workspaces: ["packages/client"] },
-        "packages/client": {
-          name: "@getpaseo/client",
-          version,
-          dependencies: { "@getpaseo/protocol": version, ws: "^8.0.0" },
-        },
-        "packages/protocol": { name: "@getpaseo/protocol", version },
-        "node_modules/@getpaseo/client": { resolved: "packages/client", link: true },
-        "node_modules/@getpaseo/protocol": { resolved: "packages/protocol", link: true },
-        "node_modules/ws": { version: "8.18.0", integrity: "sha512-x" },
-      },
-    };
-    change(value);
-    return normalizedLock(value);
-  };
-  assert.equal(lock("0.2.1"), lock("0.2.2"));
-  for (const [label, change] of [
-    ["registry version", (value) => (value.packages["node_modules/ws"].version = "8.18.1")],
-    ["integrity", (value) => (value.packages["node_modules/ws"].integrity = "sha512-y")],
-    ["external spec", (value) => (value.packages["packages/client"].dependencies.ws = "^9.0.0")],
-    [
-      "new workspace link",
-      (value) =>
-        (value.packages["node_modules/@getpaseo/relay"] = {
-          resolved: "packages/relay",
-          link: true,
-        }),
-    ],
-  ]) {
-    assert.notEqual(lock("0.2.1", change), lock("0.2.1"), label);
-  }
 });
 
 test("verify keeps a matching tar and deletes one restored with other content", () => {

@@ -414,10 +414,8 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   const keyStep = (job) => job.steps.find((step) => step.id === "modules").run;
   assert.equal(keyStep(refresh), keyStep(workflow.jobs.routine));
   // Release PRs only bump workspace versions; they must reuse dev's tree.
-  assert.match(keyStep(refresh), /android-cache-pin\.mjs inputs/);
-  assert.match(keyStep(refresh), /test -n "\$inputs"/);
-  assert.match(keyStep(refresh), /\$ImageOS-.*uname -m.*node --version.*npm --version/);
-  assert.doesNotMatch(keyStep(refresh), /ImageVersion/);
+  // A standalone assignment fails the step under bash -e; `echo "key=$(…)"` would not.
+  assert.match(keyStep(refresh), /^\s*key="\$\(.*dependency-fingerprint\.mjs routine-key\)"$/m);
   // The cached tree must be the one a lane's own install would produce.
   const install = (job) =>
     job.steps.find((step) => step.name?.startsWith("Install locked dependencies"));

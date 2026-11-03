@@ -1,9 +1,8 @@
 // Release-pinned Android caches for release.yml. Any job on dev can save cache
 // entries, so a release build restores only the exact keys the latest
 // published release pinned, and only after the tar matches the pinned sha256.
-// Every problem means a cold build, never a failure. Routine CI keys its
-// installed-dependency cache on the same modules inputs.
-//   inputs                        write modules_inputs (needs ImageOS and NPM_VERSION)
+// Every problem means a cold build, never a failure. Inputs are the
+// dependency fingerprint (dependency-fingerprint.mjs).
 //   plan                          hash this checkout's cache inputs and read the latest release's
 //                                 pin; write both to GITHUB_OUTPUT (needs ImageOS and NPM_VERSION)
 //   verify <tar> <sha256>         write ok=true|false; delete a tar that does not match
@@ -11,9 +10,10 @@
 //                                 MODULES_INPUTS and MODULES_SHA256
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { appendFile, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { appendFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { dependencyFingerprint } from "./dependency-fingerprint.mjs";
 
 const HEX = /^[0-9a-f]{64}$/;
 const BUILD_KEY = /^paseo-android-build-v2-([0-9a-f]{64})$/;
@@ -93,38 +93,6 @@ export function parsePin(text) {
   return pin;
 }
 
-// The lockfile without the release's own version: each release commit bumps
-// the root and workspace versions and the workspaces' specs for each other,
-// none of which changes an installed file outside the workspace symlinks.
-export function normalizedLock(lock) {
-  const workspaces = Object.entries(lock.packages ?? {}).filter(
-    ([path]) => !path.split("/").includes("node_modules"),
-  );
-  const names = new Set(
-    Object.entries(lock.packages ?? {})
-      .filter(([, entry]) => entry.link)
-      .map(([path]) => path.slice(path.lastIndexOf("node_modules/") + "node_modules/".length)),
-  );
-  const packages = { ...lock.packages };
-  for (const [path, entry] of workspaces) {
-    const { version: _version, ...rest } = entry;
-    for (const field of [
-      "dependencies",
-      "devDependencies",
-      "optionalDependencies",
-      "peerDependencies",
-    ]) {
-      if (!rest[field]) continue;
-      rest[field] = Object.fromEntries(
-        Object.entries(rest[field]).map(([name, spec]) => [name, names.has(name) ? "*" : spec]),
-      );
-    }
-    packages[path] = rest;
-  }
-  const { version: _version, ...rest } = lock;
-  return JSON.stringify({ ...rest, packages });
-}
-
 // Picks the one pin asset a published release carries for its own version.
 export function choosePinAsset(release) {
   const version = RELEASE_TAG.exec(release?.tag_name ?? "")?.[1];
@@ -151,32 +119,6 @@ export function planRestore(pin, { deps, modules }) {
     modules:
       pin.modules?.inputs === modules ? { key: pin.modules.key, sha256: pin.modules.sha256 } : null,
   };
-}
-
-const digest = (...parts) => {
-  const hash = createHash("sha256");
-  for (const part of parts) hash.update(`${part.length}:`).update(part);
-  return hash.digest("hex");
-};
-
-// deps: the Gradle wrapper and every Gradle plugin and library come from
-// node_modules, so the lockfile decides them. modules: also what changes the
-// installed tree without changing the lock, and the ABI native addons build for.
-export async function cacheInputs(root = ".", env = process.env) {
-  const lock = normalizedLock(JSON.parse(await readFile(`${root}/package-lock.json`, "utf8")));
-  const patches = (await readdir(`${root}/patches`).catch(() => []))
-    .filter((name) => name.endsWith(".patch"))
-    .sort();
-  const installFiles = [
-    "scripts/postinstall-patches.mjs",
-    "scripts/postinstall-patches-target.mjs",
-    ...patches.map((name) => `patches/${name}`),
-  ];
-  const installed = await Promise.all(
-    installFiles.map(async (file) => `${file}\n${await readFile(`${root}/${file}`, "utf8")}`),
-  );
-  const platform = [env.ImageOS, process.arch, process.version, env.NPM_VERSION].join(" ");
-  return { deps: digest(lock), modules: digest(lock, platform, ...installed) };
 }
 
 export async function sha256File(file) {
@@ -222,15 +164,8 @@ async function fetchLatestPin() {
   return parsePin(await download.text());
 }
 
-async function requireInputs(command) {
-  if (!process.env.ImageOS || !process.env.NPM_VERSION) {
-    throw new Error(`${command} needs ImageOS and NPM_VERSION`);
-  }
-  return cacheInputs();
-}
-
 async function planCommand() {
-  const { deps, modules } = await requireInputs("plan");
+  const { deps, modules } = await dependencyFingerprint();
   let pin = null;
   try {
     pin = await fetchLatestPin();
@@ -262,9 +197,7 @@ async function planCommand() {
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
-  if (command === "inputs") {
-    await output({ modules_inputs: (await requireInputs("inputs")).modules });
-  } else if (command === "plan") {
+  if (command === "plan") {
     await planCommand();
   } else if (command === "verify") {
     const [file, sha256] = args;
@@ -284,7 +217,7 @@ async function main() {
     await writeFile(out, `${JSON.stringify(pin, null, 2)}\n`);
     console.log(`Pinned ${pin.build.key}, ${pin.deps.key} and ${pin.modules.key}`);
   } else {
-    throw new Error("Usage: android-cache-pin.mjs inputs|plan|verify|pin ...");
+    throw new Error("Usage: android-cache-pin.mjs plan|verify|pin ...");
   }
 }
 
