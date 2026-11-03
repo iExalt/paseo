@@ -22,15 +22,7 @@ import {
   validateNixArtifactClosure,
   verifyReleaseManifestBytes,
 } from "../../scripts/paseo-nix-update.mjs";
-
-export const MANIFEST_ASSET = "paseo-release-manifest.json";
-export const SIGNATURE_ASSET = "paseo-release-manifest.sig";
-
-export const assetNames = (version) => ({
-  macArchive: `paseo-${version}-macos-arm64-nix-desktop.tar`,
-  macClosure: `paseo-${version}-macos-arm64-nix-desktop.json`,
-  apk: `paseo-${version}-android-arm64.apk`,
-});
+import { MANIFEST_ASSET, releaseAssets, SIGNATURE_ASSET } from "./release-assets.mjs";
 
 export function describeAsset(name, bytes) {
   return { name, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -109,7 +101,7 @@ export function changelogSection(changelog, version) {
 
 function build(directory, env) {
   const version = env.VERSION;
-  const names = assetNames(version);
+  const names = releaseAssets(version);
   const read = (name) => readFileSync(join(directory, name));
   const closureBytes = read(names.macClosure);
   const mac = {

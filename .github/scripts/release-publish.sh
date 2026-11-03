@@ -37,30 +37,11 @@ mutate() {
   done
 }
 
-expected_assets() {
-  {
-    printf '%s\n' paseo-release-manifest.json paseo-release-manifest.sig \
-      "paseo-$VERSION-macos-arm64-nix-desktop.tar" "paseo-$VERSION-macos-arm64-nix-desktop.json" \
-      "paseo-$VERSION-macos-arm64-nix-desktop.index.json" \
-      "paseo-$VERSION-android-arm64.apk" "paseo-$VERSION-android-arm64.apk.gz" \
-      "paseo-$VERSION-android-cache-pin.json" \
-      "paseo-$VERSION-linux-x64-nix.tar" "paseo-$VERSION-linux-x64-nix.json" \
-      "paseo-$VERSION-linux-arm64-nix.tar" "paseo-$VERSION-linux-arm64-nix.json" \
-      "paseo-$VERSION-windows-x64.exe"
-    # The desktop deltas the unsigned index lists: none up to DELTA_BASE_RELEASES
-    # (release-mac-index.mjs). A duplicate or unlisted delta fails the set check.
-    jq -r '.deltas[].asset' "$ASSETS/paseo-$VERSION-macos-arm64-nix-desktop.index.json"
-    # The APK deltas release-android-delta.mjs made: any set of correctly named ones.
-    find "$ASSETS" -mindepth 1 -maxdepth 1 -name "paseo-$VERSION-android-arm64.apk.delta-from-*" -exec basename {} \; \
-      | grep -E "^paseo-${VERSION//./\\.}-android-arm64\\.apk\\.delta-from-[0-9]+\\.[0-9]+\\.[0-9]+\\.zst$" || true
-  } | sort
-}
+# release-assets.mjs owns the asset names and makes every set comparison.
+assets_cli() { VERSION="$VERSION" node "$(dirname "$0")/release-assets.mjs" "$@"; }
 
 check_assets() {
-  local delta_name="^paseo-${VERSION//./\\.}-macos-arm64-nix-desktop\\.delta-from-[0-9]+\\.[0-9]+\\.[0-9]+\\.zst$"
-  jq -e --arg pattern "$delta_name" 'all(.deltas[].asset; test($pattern))' \
-    "$ASSETS/paseo-$VERSION-macos-arm64-nix-desktop.index.json" > /dev/null || fail "Unexpected delta asset name."
-  [[ "$(find "$ASSETS" -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)" == "$(expected_assets)" ]] || fail "Unexpected release asset set."
+  assets_cli check "$ASSETS" > /dev/null || exit 1
 }
 
 draft() {
@@ -98,18 +79,18 @@ draft() {
       --data-binary "@$ASSETS/$file" \
       "https://uploads.github.com/repos/$repo/releases/$id/assets?name=$file" > /dev/null
     echo "Uploaded $file"
-  done < <(expected_assets)
+  done < <(assets_cli check "$ASSETS")
 
   # Re-download every asset from the release and compare it with the signed bytes.
   local listing="$RUNNER_TEMP/release-assets.json"
   request "$api/releases/$id/assets?per_page=100" > "$listing"
-  [[ "$(jq -r '.[].name' "$listing" | sort)" == "$(expected_assets)" ]] || fail "Release assets differ from the upload set."
+  assets_cli check-listing "$listing" "$ASSETS" || exit 1
   while IFS= read -r file; do
     asset_id="$(jq -er --arg name "$file" '.[] | select(.name == $name and .state == "uploaded") | .id' "$listing")"
     [[ "$(request --location --header "Accept: application/octet-stream" "$api/releases/assets/$asset_id" | shasum -a 256 | cut -d' ' -f1)" \
       == "$(shasum -a 256 "$ASSETS/$file" | cut -d' ' -f1)" ]] || fail "Downloaded $file differs from the signed bytes."
     echo "Verified $file"
-  done < <(expected_assets)
+  done < <(assets_cli check "$ASSETS")
 }
 
 publish() {

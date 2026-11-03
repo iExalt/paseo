@@ -77,6 +77,11 @@ every lane, which pushes the critical path about 50 s over budget.
      check uses the client and server builds packed in the closure's own
      `app.asar`, so the job builds nothing.
 
+A release's asset names and its exact upload set come from one catalog,
+`.github/scripts/release-assets.mjs`. Naming and checking a new asset kind is
+one edit there; release.yml still spells its build paths. The publish job's checks fail on any file the catalog does not name. Desktop delta
+names stay with the shipped updater (`scripts/paseo-nix-update-delta.mjs`).
+
 **Dry run:** dispatch `release.yml` on `dev` with no tag. It uploads every
 expected asset to a draft tagged `paseo-dryrun-<run_id>`, never tags and never marks
 latest. Delete the draft when done. A dry run restores the latest release's

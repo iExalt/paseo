@@ -36,6 +36,7 @@ import {
   validateNixArtifactClosure,
 } from "../../scripts/paseo-nix-update.mjs";
 import { deltaBaseTags, listReleases } from "./release-mac-index.mjs";
+import { releaseAssets } from "./release-assets.mjs";
 
 const trustOnlyRelease = [
   "--option",
@@ -184,12 +185,12 @@ export async function stageThroughIndex({
     if (!publish) throw error;
     warn(`Could not install the previous release: ${error.message}`);
   }
-  const base = `paseo-${version}-macos-arm64-nix-desktop`;
-  const tar = join(directory, `${base}.tar`);
+  const names = releaseAssets(version);
+  const tar = join(directory, names.macArchive);
   const hash = createHash("sha256");
   await pipeline(createReadStream(tar), hash);
   const artifact = {
-    name: `${base}.tar`,
+    name: names.macArchive,
     bytes: (await stat(tar)).size,
     sha256: hash.digest("hex"),
   };
@@ -207,7 +208,7 @@ export async function stageThroughIndex({
     fetchImpl: local.fetchImpl,
   });
   // The updater reads the index through fetchBytes, outside the shim.
-  const indexBytes = await readFile(join(directory, `${base}.index.json`));
+  const indexBytes = await readFile(join(directory, names.macIndex));
   const index = JSON.parse(indexBytes.toString("utf8"));
   const served = local.served() + indexBytes.length;
   console.log(
@@ -361,8 +362,7 @@ async function main() {
   const [directory] = process.argv.slice(2);
   const { VERSION: version, SOURCE_SHA: sourceSha, OUTPUT_PATH: outputPath } = process.env;
   assert.equal(process.platform, "darwin");
-  const base = `paseo-${version}-macos-arm64-nix-desktop`;
-  const closureBytes = await readFile(join(directory, `${base}.json`));
+  const closureBytes = await readFile(join(directory, releaseAssets(version).macClosure));
   const closure = validateNixArtifactClosure(
     closureBytes,
     {
