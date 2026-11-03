@@ -116,6 +116,10 @@ describe("fork updater controller", () => {
 
     fake.foreground();
     await vi.waitFor(() => expect(message()).toBe("settings.about.forkUpdates.permission"));
+    // One return from settings is handled once.
+    const checks = fake.canInstall.mock.calls.length;
+    fake.foreground();
+    expect(fake.canInstall).toHaveBeenCalledTimes(checks);
     fake.allowInstall = true;
     await row();
     expect(label()).toBe("install");
@@ -127,13 +131,20 @@ describe("fork updater controller", () => {
     await vi.waitFor(() => expect(message()).toBe("settings.about.forkUpdates.canceled"));
     expect(label()).toBe("install");
 
-    void row();
+    // The installer's own promise can settle after the foreground return has
+    // reconciled; the reconcile wins.
+    let settleInstaller = () => {};
+    fake.install.mockReturnValueOnce(new Promise<void>((resolve) => (settleInstaller = resolve)));
+    const pressed = row();
     await vi.waitFor(() => expect(fake.install).toHaveBeenCalledTimes(2));
     fake.installed = "0.1.1";
     fake.foreground();
     await vi.waitFor(() =>
       expect(message()).toBe('settings.about.forkUpdates.installed {"version":"0.1.1"}'),
     );
+    settleInstaller();
+    await pressed;
+    expect(message()).toBe('settings.about.forkUpdates.installed {"version":"0.1.1"}');
     expect(fake.recordInstalled).toHaveBeenCalledWith("0.1.1");
     expect(view().icon).toBeNull();
   });
@@ -199,8 +210,15 @@ describe("fork updater controller", () => {
     expect(label()).toBe("check");
 
     fake.check.mockRejectedValue(new Error("Release manifest signature is invalid."));
+    logs.length = 0;
     await row();
     expect(message()).toBe("settings.about.forkUpdates.failed");
+    // The failure is logged with the state it happened in, before the new status.
+    expect(logs).toEqual([
+      "[paseo-agent] update status status=checking version=null",
+      '[paseo-agent] update failed status=checking reason="Error: Release manifest signature is invalid."',
+      "[paseo-agent] update status status=error version=null",
+    ]);
   });
 
   it("keeps the last result when a background check fails", async () => {
