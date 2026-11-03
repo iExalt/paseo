@@ -16,7 +16,7 @@ module, interface, depth, seam, adapter, leverage, locality.
 | Field          | Status                                                                                  |
 | -------------- | --------------------------------------------------------------------------------------- |
 | Baseline       | `dev` at `374eac209`                                                                    |
-| Current item   | 7, Reading position                                                                     |
+| Current item   | None; all seven items merged                                                            |
 | Required CI    | dev push run 41531769754: plan start to required 3m44s; slowest lane `workspaces` 3m10s |
 | Release impact | None; no item publishes a release                                                       |
 
@@ -84,3 +84,32 @@ Where the host calls the module (`scrollStart` before it records the offset,
 `scrollEnd` before the bottom anchor, the settle calls inside upstream's
 settle) can't be pinned by the module's tests. It rests on review and the
 Cuttlefish run. The PR's base is `dev` at `50c61e532`.
+
+### Cuttlefish run, 2026-11-03
+
+Builds: item 7 at `bf87f5cd3` and a baseline at its base `50c61e532`, both
+`sh.paseo.debug`, on a fake-agent chat with 62 prompts. The agent-stream
+directory is unchanged between that base and the rebased PR.
+
+- A rail jump to prompt 3 kept prompt 3 at the top and tick 3 through a
+  rotation to portrait and back. Two more streamed turns did not pull it to
+  the bottom.
+- Scroll to bottom tapped 0.3 to 0.7 s after a rotation ended at the bottom and
+  stayed there. The run cannot show the restore was still pending at the tap;
+  the cancel itself rests on the module's unit pin.
+- A drag 0.6 or 0.9 s after rotating to portrait beat the restore on both
+  builds (prompt 24 at y 700 to 716 instead of the restored 22). A drag at
+  0.3 s landed before the re-layout, and both builds restored. These rows come
+  from the second item 7 trial set; the first set ran with the sidebar open and
+  the stale width below, and was discarded.
+- Find (compact layout) stepped matches 1 to 5 and back with the list
+  following.
+
+Seen on both builds, so not from this change:
+
+- After that drag, prompt 24's reply is followed on screen by prompt 53, with
+  25 to 52 missing (`base-0.6-portrait.png`, `i7b-0.6-portrait.png`). A
+  user-visible row-sequence bug candidate in the inverted list.
+- After some portrait-to-landscape rotations the app keeps the portrait width
+  until the next rotation: stuck 5 of 7 times on item 7 and 1 of 4 on the
+  baseline (Fisher p about 0.24). It sits in the app root, not the stream.
