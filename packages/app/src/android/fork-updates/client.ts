@@ -16,6 +16,7 @@ import {
   isNewerThanInstalled,
   verifyReleaseBinding,
   verifySignedManifest,
+  ForkManualMigrationRequired,
   type GitHubRelease,
   type VerifiedForkUpdate,
 } from "./release";
@@ -77,6 +78,8 @@ interface ForkUpdatesNativeModule {
   ): { remove(): void };
 }
 
+export { ForkManualMigrationRequired };
+
 export const forkUpdatesNative =
   requireOptionalNativeModule<ForkUpdatesNativeModule>("PaseoForkUpdates");
 
@@ -102,12 +105,6 @@ async function readStableReleases(): Promise<GitHubRelease[]> {
 
 function releaseAssetUrl(tag: string, name: string): string {
   return `https://github.com/${FORK_REPOSITORY}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(name)}`;
-}
-
-export class ForkManualMigrationRequired extends Error {
-  constructor() {
-    super("Install the fork 0.1.0 or newer manually before using fork updates.");
-  }
 }
 
 let installedStateQueue: Promise<unknown> = Promise.resolve();

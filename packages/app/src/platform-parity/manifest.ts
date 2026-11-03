@@ -169,7 +169,7 @@ export const PARITY_MANIFEST: ParityManifest = {
     editor: { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
   },
   runtimeGates: {
-    "android/fork-updates/store.ts": {
+    "android/fork-updates/updater.ts": {
       kind: "deliberate",
       reason: "iOS updates come from the App Store and TestFlight",
     },
