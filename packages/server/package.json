@@ -130,7 +130,6 @@
     "node-pty": "1.1.0",
     "openai": "^7.30.0",
     "p-limit": "^7.3.3",
-    "p-memoize": "^8.0.0",
     "p-throttle": "^8.1.1",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
@@ -146,11 +145,9 @@
     "uuid": "^14.0.2",
     "which": "^7.0.0",
     "ws": "^8.22.0",
-    "yaml": "2.9.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@ai-sdk/mcp": "2.0.69",
     "@playwright/test": "^1.63.0",
     "@types/express": "^5.0.6",
     "@types/markdown-it": "^14.2.0",

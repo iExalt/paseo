@@ -27,11 +27,12 @@
       "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,mts,mjs,cjs,js}"]
     },
     "packages/app": {
+      "expo": false,
       "entry": [
         "index.ts",
         "app.config.js",
         "babel.config.js",
-        "app/**/*.{ts,tsx}",
+        "src/app/**/*.{ts,tsx}",
         "src/**/*.test.{ts,tsx}",
         "src/**/*.e2e.{ts,tsx}",
         "src/**/*.native.{ts,tsx}",
