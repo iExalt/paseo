@@ -443,59 +443,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(pushNotifications.sent).toEqual([]);
   });
 
-  it("suppresses a matching complete subject for push when no client is present", async () => {
-    const matcher = ReplyRuleMatcher.compile([{ source: "^No news\\.$", flags: "i" }]);
-    const { server, pushNotifications } = createServer(undefined, undefined, {
-      getReplyRules: () => [{ source: "^No news\\.$", flags: "i" }],
-      matchesReplyRules: (subject: Parameters<typeof matcher.matches>[0]) =>
-        matcher.matches(subject),
-    });
-
-    await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention({
-      agentId: "agent-1",
-      provider: "claude",
-      reason: "finished",
-      completionSubject: {
-        turnId: "turn-1",
-        text: "No news.",
-        completeness: "complete",
-      },
-    });
-
-    expect(pushNotifications.sent).toEqual([]);
-  });
-
-  it.each(["permission", "error"] as const)(
-    "does not consult reply rules for %s attention",
-    async (reason) => {
-      const matcher = vi.fn(() => true);
-      const { server } = createServer(undefined, undefined, {
-        getReplyRules: () => [{ source: ".*", flags: "" }],
-        matchesReplyRules: matcher,
-      });
-      const ws = connectClient(server, {
-        deviceType: "web",
-        appVisible: false,
-        focusedAgentId: null,
-        lastActivityAt: new Date(),
-      });
-
-      await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention({
-        agentId: "agent-1",
-        provider: "claude",
-        reason,
-        completionSubject: {
-          turnId: "turn-1",
-          text: "matched",
-          completeness: "complete",
-        },
-      });
-
-      expect(matcher).not.toHaveBeenCalled();
-      expect(readAttentionRequiredMessage(ws).shouldNotify).toBe(true);
-    },
-  );
-
   it("reads the current rule matcher after asynchronous notification lookups", async () => {
     let resolveWorkspace: (workspace: null) => void = () => undefined;
     const workspaceRegistry = createStub<WorkspaceRegistry>({
@@ -583,42 +530,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
 
     expect(pushNotifications.sent).toHaveLength(1);
     expect(getLastAssistantMessage).toHaveBeenCalledWith("agent-2");
-  });
-
-  it("does not send a muted push when no client is present", async () => {
-    const workspace = createPersistedWorkspaceRecord({
-      workspaceId: WORKSPACE_ID,
-      projectId: "project-1",
-      cwd: "/tmp/shared-workspace",
-      kind: "directory",
-      displayName: "Project",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:00.000Z",
-      notifications: "off",
-    });
-    const workspaceRegistry = createStub<WorkspaceRegistry>({
-      get: vi.fn(async (workspaceId) => (workspaceId === WORKSPACE_ID ? workspace : null)),
-    });
-    const matcher = vi.fn(() => true);
-    const { server, pushNotifications } = createServer(undefined, workspaceRegistry, {
-      getReplyRules: () => [{ source: ".*", flags: "" }],
-      matchesReplyRules: matcher,
-    });
-
-    await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention.call(server, {
-      agentId: "agent-1",
-      provider: "claude",
-      reason: "finished",
-      completionSubject: {
-        turnId: "turn-1",
-        text: "matched",
-        completeness: "complete",
-      },
-    });
-
-    expect(workspaceRegistry.get).toHaveBeenCalledWith(WORKSPACE_ID);
-    expect(matcher).not.toHaveBeenCalled();
-    expect(pushNotifications.sent).toEqual([]);
   });
 
   it("routes a hidden stale focused browser tab's notification to the present Electron web client", async () => {

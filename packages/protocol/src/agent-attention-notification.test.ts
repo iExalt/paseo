@@ -3,6 +3,8 @@ import {
   buildAgentAttentionNotificationPayload,
   findLatestAssistantMessageFromTimeline,
   findLatestPermissionRequest,
+  parseAgentAttentionTitle,
+  resolveAgentAttentionTitle,
 } from "./agent-attention-notification.js";
 
 describe("buildAgentAttentionNotificationPayload", () => {
@@ -165,5 +167,26 @@ describe("findLatestPermissionRequest", () => {
     ]);
 
     expect(findLatestPermissionRequest(pending)?.id).toBe("second");
+  });
+});
+
+describe("agent attention titles", () => {
+  it("writes each reason's title byte for byte and reads the reason back", () => {
+    const cases = (["finished", "error", "permission"] as const).flatMap((reason) => [
+      { reason, agentTitle: null },
+      { reason, agentTitle: "Fix the build" },
+    ]);
+    const titles = cases.map(({ reason, agentTitle }) => {
+      const title = resolveAgentAttentionTitle(reason, agentTitle);
+      return { reason, title, parsed: parseAgentAttentionTitle(title) };
+    });
+    expect(titles).toEqual([
+      { reason: "finished", title: "Agent finished", parsed: "finished" },
+      { reason: "finished", title: "Fix the build", parsed: "finished" },
+      { reason: "error", title: "\u2757\ufe0f Agent needs attention", parsed: "error" },
+      { reason: "error", title: "\u2757\ufe0f Fix the build", parsed: "error" },
+      { reason: "permission", title: "\u2753\ufe0f Agent needs permission", parsed: "permission" },
+      { reason: "permission", title: "\u2753\ufe0f Fix the build", parsed: "permission" },
+    ]);
   });
 });

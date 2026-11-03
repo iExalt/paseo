@@ -1,4 +1,5 @@
 import {
+  parseAgentAttentionTitle,
   resolveAgentAttentionTitle,
   type AgentAttentionReason,
 } from "@getpaseo/protocol/agent-attention-notification";
@@ -13,15 +14,13 @@ import { DISMISS_GRACE_MS } from "./plan";
  */
 export type UntrackedPushKind = "question" | "finished" | "test";
 
-// The daemon's titles: resolveAgentAttentionTitle in @getpaseo/protocol, and the push test
-// in the server's session.ts.
-const QUESTION_TITLE_PREFIX = "❓️ ";
+// The daemon's push test, in the server's session.ts.
 const TEST_PUSH_TITLE = "Paseo";
 const TEST_PUSH_BODY = "Test notification from this host";
 
 export function classifyUntrackedPush(title: string, body: string): UntrackedPushKind {
   if (title === TEST_PUSH_TITLE && body === TEST_PUSH_BODY) return "test";
-  return title.startsWith(QUESTION_TITLE_PREFIX) ? "question" : "finished";
+  return parseAgentAttentionTitle(title) === "permission" ? "question" : "finished";
 }
 
 export interface UntrackedPush {

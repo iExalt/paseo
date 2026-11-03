@@ -51,7 +51,7 @@ import {
   type ProjectRegistry,
   type WorkspaceRegistry,
 } from "../workspace-registry.js";
-import { updateWorkspaceNotifications } from "../workspace-notifications.js";
+import { setWorkspaceNotifications } from "../notification-policy.js";
 import type {
   CreateScheduleInput,
   StoredSchedule,
@@ -2949,7 +2949,7 @@ describe("create_agent native tool", () => {
         upsert: async () => undefined,
       },
       updateWorkspaceNotifications: async (workspaceId, notifications) => {
-        const updated = await updateWorkspaceNotifications(
+        const updated = await setWorkspaceNotifications(
           {
             update: async (id, updater) => {
               if (id !== current.workspaceId || id !== workspaceId) return null;

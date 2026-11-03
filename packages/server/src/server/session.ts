@@ -283,7 +283,12 @@ import {
 import { archiveByScope, type ActiveWorkspaceRef } from "./workspace-archive-service.js";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { SessionAuthorization, type DaemonPermission } from "./authorization/index.js";
-import { updateWorkspaceNotifications } from "./workspace-notifications.js";
+import {
+  daemonConfigForClient,
+  readReplyRules,
+  setWorkspaceNotifications,
+  writeReplyRules,
+} from "./notification-policy.js";
 
 function resolveWorkspaceSetupRuntime(
   runtime: WorkspaceSetupRuntime | undefined,
@@ -2381,9 +2386,7 @@ export class Session {
   private getDaemonConfigForCurrentClient(
     config: MutableDaemonConfig = this.daemonConfigStore.get(),
   ): MutableDaemonConfig {
-    if (this.supports(CLIENT_CAPS.replyRuleNotifications)) return config;
-    const { replyRules: _replyRules, ...legacyConfig } = config;
-    return legacyConfig as MutableDaemonConfig;
+    return daemonConfigForClient(config, this.supports(CLIENT_CAPS.replyRuleNotifications));
   }
 
   public allowsInbound(message: SessionInboundMessage): boolean {
@@ -3486,23 +3489,17 @@ export class Session {
     >,
   ): Promise<void> {
     if (msg.type === "daemon.notifications.rules.set.request") {
-      await this.daemonConfigStore.patch({ replyRules: msg.replyRules });
+      const replyRules = await writeReplyRules(this.daemonConfigStore, msg.replyRules);
       this.emit({
         type: "daemon.notifications.rules.set.response",
-        payload: {
-          requestId: msg.requestId,
-          replyRules: [...this.daemonConfigStore.getReplyRules()],
-        },
+        payload: { requestId: msg.requestId, replyRules },
       });
       return;
     }
 
     this.emit({
       type: "daemon.notifications.rules.get.response",
-      payload: {
-        requestId: msg.requestId,
-        replyRules: [...this.daemonConfigStore.getReplyRules()],
-      },
+      payload: { requestId: msg.requestId, replyRules: readReplyRules(this.daemonConfigStore) },
     });
   }
 
@@ -4601,11 +4598,7 @@ export class Session {
 
     let updated: PersistedWorkspaceRecord | null;
     try {
-      updated = await updateWorkspaceNotifications(
-        this.workspaceRegistry,
-        workspaceId,
-        notifications,
-      );
+      updated = await setWorkspaceNotifications(this.workspaceRegistry, workspaceId, notifications);
     } catch (error) {
       this.sessionLogger.error(
         { err: error, workspaceId, requestId },

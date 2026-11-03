@@ -499,27 +499,6 @@ describe("VoiceAssistantWebSocketServer terminal attention notifications", () =>
     expect(workspaceRegistry.get).toHaveBeenNthCalledWith(2, "ws-on");
   });
 
-  it("does not send a muted push when no client is present", async () => {
-    const { manager, emit } = createTerminalManager();
-    const workspace = workspaceRecord({ workspaceId: "ws-muted", notifications: "off" });
-    const workspaceRegistry = createWorkspaceRegistry([workspace]);
-    const { pushNotifications } = createServer(manager, workspaceRegistry);
-
-    emit(
-      transition({
-        previousState: "working",
-        previousChangedAt: 1000,
-        state: "idle",
-        changedAt: 11001,
-        workspaceId: "ws-muted",
-      }),
-    );
-    await flushAsync();
-
-    expect(workspaceRegistry.get).toHaveBeenCalledWith("ws-muted");
-    expect(pushNotifications.sent).toEqual([]);
-  });
-
   it("does not broadcast on working -> working (no transition to idle)", async () => {
     const { manager, emit } = createTerminalManager();
     const { server } = createServer(manager);

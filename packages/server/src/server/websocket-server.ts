@@ -23,10 +23,7 @@ import { getHostName } from "./host-name.js";
 import { randomUUID } from "node:crypto";
 import { monitorEventLoopDelay } from "node:perf_hooks";
 import type { AgentManager, AgentMetricsSnapshot, ManagedAgent } from "./agent/agent-manager.js";
-import {
-  COMPLETION_SUBJECT_MAX_LENGTH,
-  type CompletionSubject,
-} from "./agent/completion-subject-collector.js";
+import type { CompletionSubject } from "./agent/completion-subject-collector.js";
 import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { TerminalManager } from "../terminal/terminal-manager.js";
@@ -86,18 +83,19 @@ import type { ServiceProxySubsystem } from "./service-proxy.js";
 import type { WorkspaceScriptRuntimeStore } from "./workspace-script-runtime-store.js";
 import type { SpeechReadinessSnapshot, SpeechService } from "./speech/speech-runtime.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "./voice-types.js";
-import {
-  computeNotificationPlan,
-  isPushEligibleAttentionReason,
-  type ClientPresenceState,
-} from "./agent-attention-policy.js";
+import type { ClientPresenceState } from "./agent-attention-policy.js";
 import {
   buildAgentAttentionNotificationPayload,
   findLatestPermissionRequest,
 } from "@getpaseo/protocol/agent-attention-notification";
 import { createGitHubService } from "../services/github-service.js";
 import type { ForgeService } from "../services/forge-service.js";
-import { WORKSPACE_NOTIFICATIONS_ENABLED } from "./workspace-notifications.js";
+import {
+  WORKSPACE_NOTIFICATIONS_ENABLED,
+  daemonConfigForClient,
+  decideNotificationDelivery,
+  type NotificationPolicySources,
+} from "./notification-policy.js";
 import {
   extractHttpBearerToken,
   extractWsBearerProtocol,
@@ -2189,9 +2187,7 @@ export class VoiceAssistantWebSocketServer {
     config: MutableDaemonConfig,
     includeReplyRules: boolean,
   ): SessionOutboundMessage {
-    const visibleConfig = includeReplyRules
-      ? config
-      : (({ replyRules: _replyRules, ...legacyConfig }) => legacyConfig)(config);
+    const visibleConfig = daemonConfigForClient(config, includeReplyRules);
     return {
       type: "status",
       payload: {
@@ -2857,39 +2853,12 @@ export class VoiceAssistantWebSocketServer {
     };
   }
 
-  private shouldSuppressReplyRuleNotification(params: {
-    reason: "finished" | "error" | "permission";
-    workspaceNotificationsEnabled: boolean;
-    completionSubject?: CompletionSubject;
-  }): boolean {
-    if (!params.workspaceNotificationsEnabled || params.reason !== "finished") return false;
-    const replyRules = this.daemonConfigStore.getReplyRules();
-    if (replyRules.length === 0) return false;
-
-    const subject = params.completionSubject;
-    let failOpenReason: string | undefined;
-    if (!subject) {
-      failOpenReason = "missing_subject";
-    } else if (subject.completeness !== "complete") {
-      failOpenReason = "incomplete_subject";
-    } else if (subject.text.length > COMPLETION_SUBJECT_MAX_LENGTH) {
-      failOpenReason = "oversize_subject";
-    }
-
-    if (failOpenReason) {
-      this.logger.info(
-        {
-          event: "reply_rule_match_fail_open",
-          reason: failOpenReason,
-          ruleCount: replyRules.length,
-          ...(subject ? { subjectLength: subject.text.length } : {}),
-        },
-        "Reply-rule evaluation failed open",
-      );
-      return false;
-    }
-
-    return this.daemonConfigStore.matchesReplyRules(subject);
+  private notificationPolicySources(): NotificationPolicySources {
+    return {
+      daemonConfig: this.daemonConfigStore,
+      workspaces: this.workspaceRegistry,
+      logger: this.logger,
+    };
   }
 
   private async collectAgentAttentionClients(
@@ -2926,17 +2895,9 @@ export class VoiceAssistantWebSocketServer {
     const notificationEntries = clientEntries.filter(({ ws }) =>
       this.sessions.get(ws)?.session.wantsSourceNotification(ws, "agent_attention_required"),
     );
-    const allStates = notificationEntries.map((e) => e.state);
     const nowMs = Date.now();
     const assistantMessage = await this.agentManager.getLastAssistantMessage(params.agentId);
     const storedAgent = await this.agentStorage.get(params.agentId);
-    const workspace = await this.workspaceRegistry.get(workspaceId);
-    const workspaceNotificationsEnabled = workspace?.notifications !== "off";
-    const replyRuleMatched = this.shouldSuppressReplyRuleNotification({
-      reason: params.reason,
-      workspaceNotificationsEnabled,
-      completionSubject: params.completionSubject,
-    });
     const notification = buildAgentAttentionNotificationPayload({
       reason: params.reason,
       serverId: this.serverId,
@@ -2947,25 +2908,26 @@ export class VoiceAssistantWebSocketServer {
       permissionRequest: findLatestPermissionRequest(agent.pendingPermissions),
     });
 
-    const plan = computeNotificationPlan({
-      allStates,
-      focusTarget: { kind: "agent", id: params.agentId },
-      pushEligible: isPushEligibleAttentionReason(params.reason),
+    const delivery = await decideNotificationDelivery(this.notificationPolicySources(), {
+      target: {
+        kind: "agent",
+        agentId: params.agentId,
+        reason: params.reason,
+        completionSubject: params.completionSubject,
+      },
+      workspaceId,
+      recipients: notificationEntries.map(({ ws, state }) => ({ recipient: ws, state })),
       nowMs,
     });
 
-    if (workspaceNotificationsEnabled && !replyRuleMatched && plan.shouldPush) {
+    if (delivery.push) {
       void this.pushNotificationSender.send(notification).catch((err) => {
         this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
       });
     }
 
     for (const { ws } of clientEntries) {
-      const shouldNotify =
-        workspaceNotificationsEnabled &&
-        !replyRuleMatched &&
-        plan.inAppRecipientIndex !== null &&
-        notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
+      const shouldNotify = delivery.inAppRecipient === ws;
       const timestamp = new Date().toISOString();
       const connection = this.sessions.get(ws);
       const attentionPayload = {
@@ -3041,22 +3003,18 @@ export class VoiceAssistantWebSocketServer {
     const notificationEntries = clientEntries.filter(({ ws }) =>
       this.sessions.get(ws)?.session.wantsSourceNotification(ws, "terminal_attention_required"),
     );
-    const allStates = notificationEntries.map((e) => e.state);
     const nowMs = Date.now();
-    const workspace = workspaceId ? await this.workspaceRegistry.get(workspaceId) : null;
-    const workspaceNotificationsEnabled = workspace?.notifications !== "off";
-
-    const plan = computeNotificationPlan({
-      allStates,
-      focusTarget: { kind: "terminal", id: params.terminalId },
-      pushEligible: true,
+    const delivery = await decideNotificationDelivery(this.notificationPolicySources(), {
+      target: { kind: "terminal", terminalId: params.terminalId },
+      workspaceId,
+      recipients: notificationEntries.map(({ ws, state }) => ({ recipient: ws, state })),
       nowMs,
     });
 
     const title = terminalAttentionTitle(params.reason);
     const body = params.terminalName;
 
-    if (workspaceNotificationsEnabled && plan.shouldPush) {
+    if (delivery.push) {
       void this.pushNotificationSender
         .send({
           title,
@@ -3077,10 +3035,7 @@ export class VoiceAssistantWebSocketServer {
     }
 
     for (const { ws } of clientEntries) {
-      const shouldNotify =
-        workspaceNotificationsEnabled &&
-        plan.inAppRecipientIndex !== null &&
-        notificationEntries[plan.inAppRecipientIndex]?.ws === ws;
+      const shouldNotify = delivery.inAppRecipient === ws;
       const message = wrapSessionMessage({
         type: "terminal_attention_required",
         payload: {
