@@ -13,3 +13,11 @@ One parallel job of fork Routine CI (`quality`, `workspaces`, `app-1..2`,
 it is created; the group's shard count and single prerequisite live in one
 table, `laneGroups` in `.github/scripts/ci-routine.mjs`.
 _Avoid_: shard (one numbered member of a sharded lane group), job
+
+**Dependency fingerprint**:
+The digests of what decides an installed dependency tree: the lockfile without
+the release's own version bump, plus, for installed modules, the install
+patches and the runner ABI. Routine CI's dependency cache key and the release's
+Android cache pin both use it (`.github/scripts/dependency-fingerprint.mjs`).
+Nix filters the lockfile separately for its own fetch.
+_Avoid_: cache inputs, lock hash

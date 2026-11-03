@@ -39,8 +39,9 @@ time between attempts. Use **Re-run all jobs** for a fresh latency measurement;
 **Re-run failed jobs** remains sufficient to retry failed checks.
 
 Dev pushes refresh the installed dependency cache (`install-cache`); PR lanes
-only restore it. Its key uses the Android node_modules `<inputs>` below, so the
-release PR's version bump restores dev's entry instead of running `npm ci` in
+only restore it. `.github/scripts/dependency-fingerprint.mjs routine-key`
+prints its key from the same dependency fingerprint as the Android
+`<inputs>` below, so the release PR's version bump restores dev's entry instead of running `npm ci` in
 every lane, which pushes the critical path about 50 s over budget.
 
 ## Release procedure
@@ -224,7 +225,8 @@ of the two it reaches first, so the value can stay after the next release.
     dev push writes those. Expected input changes or older pins without a
     node_modules entry emit a notice and run npm ci; fetch, parse and integrity
     failures remain warnings.
-  - `<inputs>` uses the lockfile without the root and workspace versions and
+  - `<inputs>` is the dependency fingerprint
+    (`.github/scripts/dependency-fingerprint.mjs`): the lockfile without the root and workspace versions and
     the workspaces' specs for each other, so a release commit's version bump
     keeps both entries. A restored `node_modules/.package-lock.json` therefore
     names the older workspace versions; nothing reads it.
