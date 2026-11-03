@@ -3,10 +3,10 @@ import type { SingleResult } from "../../output/index.js";
 import type { OutputSchema } from "../../output/index.js";
 import {
   connectScheduleClient,
-  requireNewAgentSchedule,
   toScheduleCommandError,
   type ScheduleCommandOptions,
 } from "./shared.js";
+import type { ScheduleDaemonClient } from "./types.js";
 
 interface ScheduleDeleteRow {
   id: string;
@@ -28,11 +28,7 @@ export async function runDeleteCommand(
 ): Promise<SingleResult<ScheduleDeleteRow>> {
   const { client } = await connectScheduleClient(options.daemonTarget);
   try {
-    await requireNewAgentSchedule(client, id);
-    const payload = await client.scheduleDelete({ id });
-    if (payload.error) {
-      throw new Error(payload.error);
-    }
+    const payload = await deleteNewAgentSchedule(client, id);
     return {
       type: "single",
       data: {
@@ -46,4 +42,20 @@ export async function runDeleteCommand(
   } finally {
     await client.close().catch(() => {});
   }
+}
+
+/**
+ * Deletes a new-agent schedule. A schedule the daemon can't read (a corrupt file) can still be
+ * deleted: the daemon's delete never parses it, and an unknown ID still fails there.
+ */
+export async function deleteNewAgentSchedule(client: ScheduleDaemonClient, id: string) {
+  const inspected = await client.scheduleInspect({ id });
+  if (!inspected.error && inspected.schedule?.target.type !== "new-agent") {
+    throw new Error(`Schedule not found: ${id}`);
+  }
+  const payload = await client.scheduleDelete({ id });
+  if (payload.error) {
+    throw new Error(payload.error);
+  }
+  return payload;
 }

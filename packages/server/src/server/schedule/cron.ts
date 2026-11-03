@@ -9,6 +9,8 @@ interface CronDateParts {
   dayOfWeek: number;
 }
 
+const CRON_SEARCH_YEARS = 8;
+
 function startOfNextMinute(date: Date): Date {
   return new Date(
     Date.UTC(
@@ -94,23 +96,27 @@ export function computeNextRunAt(cadence: ScheduleCadence, after: Date): Date {
 
   const cron = parseCronExpression(cadence.expression);
   const readDateParts = createCronDatePartsReader(cadence.timezone);
-  const limit = 366 * 24 * 60;
+  // Bounded by time, not iterations: Feb 29 can be 8 years away (2096 to 2104).
+  const searchEnd = after.getTime() + CRON_SEARCH_YEARS * 366 * 24 * 60 * 60_000;
   let cursor = startOfNextMinute(after);
 
-  for (let index = 0; index < limit; index += 1) {
+  while (cursor.getTime() <= searchEnd) {
     const { minute, hour, dayOfMonth, month, dayOfWeek } = readDateParts(cursor);
+    const dayMatches = cron.dayOfMonth.matches(dayOfMonth) && cron.dayOfWeek.matches(dayOfWeek);
 
-    if (
-      cron.minute.matches(minute) &&
-      cron.hour.matches(hour) &&
-      cron.dayOfMonth.matches(dayOfMonth) &&
-      cron.month.matches(month) &&
-      cron.dayOfWeek.matches(dayOfWeek)
-    ) {
+    let skipMinutes = 1;
+    if (!cron.month.matches(month) || !dayMatches) {
+      // Toward the next local midnight, stopping 3 hours short so a DST shift during the jump
+      // can't carry it past midnight; the rest goes an hour at a time.
+      const minutesToMidnight = 24 * 60 - (hour * 60 + minute);
+      skipMinutes = minutesToMidnight > 180 ? minutesToMidnight - 180 : 60 - minute;
+    } else if (!cron.hour.matches(hour)) {
+      skipMinutes = 60 - minute;
+    } else if (cron.minute.matches(minute)) {
       return cursor;
     }
 
-    cursor = new Date(cursor.getTime() + 60_000);
+    cursor = new Date(cursor.getTime() + skipMinutes * 60_000);
   }
 
   throw new Error(`Unable to compute next run time for cron expression: ${cadence.expression}`);
