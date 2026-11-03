@@ -991,12 +991,16 @@ export async function isPaseoOwnedWorktreeCwd(
   const relativePath = await getOwnershipRelativePath(worktreesBaseRoot, resolvedCwd);
 
   // Ownership is defined by the path living under <worktrees-root>/<hash>/<slug>[/...].
-  // The <hash>/<slug> prefix is Paseo-private — nothing else writes there — so the
-  // path shape alone is sufficient proof of ownership, even when git has already
-  // forgotten about the worktree.
+  // Under the default root the <hash>/<slug> prefix is Paseo-private — nothing else writes
+  // there — so the path shape alone is sufficient proof of ownership, even when git has
+  // already forgotten about the worktree. A custom `worktrees.root` can be a directory the
+  // user also fills by hand, so there the <hash> must also be this repository's.
   if (relativePath !== null) {
     const parts = relativePath.split(sep).filter((part) => part.length > 0);
-    if (parts.length >= 2) {
+    const hashMatchesRepo =
+      !options?.worktreesRoot ||
+      (repoRoot !== undefined && parts[0] === deriveShortAlphanumericHash(repoRoot));
+    if (parts.length >= 2 && hashMatchesRepo) {
       const worktreesRoot = join(worktreesBaseRoot, parts[0]);
       return {
         allowed: true,

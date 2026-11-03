@@ -8,6 +8,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ForgeService } from "../services/forge-service.js";
 import { createRealpathAwarePathMatcher } from "../utils/path.js";
 import { getPaseoWorktreeMetadataPath } from "../utils/worktree-metadata.js";
+import { withWorktreePathLock } from "../utils/worktree-path-lock.js";
 import { archiveCommand } from "./worktree/commands.js";
 import { createWorktree, listPaseoWorktrees, type WorktreeConfig } from "../utils/worktree.js";
 import type { ManagedAgent } from "./agent/agent-manager.js";
@@ -268,6 +269,35 @@ describe("archiveByScope", () => {
       removedDirectory: true,
     });
     expect(existsSync(worktree.worktreePath)).toBe(false);
+  });
+
+  test("holds the worktree path lock from the last-reference check through the delete", async () => {
+    const { tempDir, repoDir } = createGitRepo();
+    const paseoHome = path.join(tempDir, ".paseo");
+    const worktree = await createPaseoOwnedWorktree(repoDir, paseoHome, "locked-delete");
+    const workspaceId = "ws-locked-delete";
+    const deps = createArchiveDeps({
+      paseoHome,
+      activeWorkspaces: [{ workspaceId, cwd: worktree.worktreePath, kind: "worktree" }],
+    });
+    // A workspace create probing the directory during each lookup; the last lookup is the
+    // last-reference check, so a create racing it must wait and then see the delete.
+    const probes: Array<Promise<boolean>> = [];
+    const listActiveWorkspaces = deps.listActiveWorkspaces;
+    deps.listActiveWorkspaces = async () => {
+      probes.push(
+        withWorktreePathLock(worktree.worktreePath, async () => existsSync(worktree.worktreePath)),
+      );
+      return listActiveWorkspaces();
+    };
+
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId },
+      requestId: "req-locked-delete",
+    });
+
+    expect(result.removedDirectory).toBe(true);
+    expect(await probes.at(-1)).toBe(false);
   });
 
   test("workspace scope archives the record but leaves a plugin-placed directory whose marker is gone", async () => {
