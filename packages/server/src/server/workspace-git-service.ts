@@ -302,6 +302,7 @@ export interface WorkspaceGitStashListOptions {
 
 export interface WorkspaceGitStashEntry {
   index: number;
+  hash: string;
   message: string;
   branch: string | null;
   isPaseo: boolean;
@@ -897,10 +898,13 @@ export class WorkspaceGitServiceImpl implements WorkspaceGitService {
     const paseoOnly = options?.paseoOnly !== false;
     const key = JSON.stringify(["stashes", normalizedCwd, paseoOnly]);
     return this.readAuxiliaryCache(this.stashListCache, key, readOptions, async () => {
-      const { stdout } = await this.deps.runGitCommand(["stash", "list", "--format=%gd%x00%s"], {
-        cwd: normalizedCwd,
-        envOverlay: READ_ONLY_GIT_ENV,
-      });
+      const { stdout } = await this.deps.runGitCommand(
+        ["stash", "list", "--format=%gd%x00%H%x00%s"],
+        {
+          cwd: normalizedCwd,
+          envOverlay: READ_ONLY_GIT_ENV,
+        },
+      );
       return parseWorkspaceGitStashList(stdout, { paseoOnly });
     });
   }
@@ -3872,7 +3876,12 @@ function parseWorkspaceGitStashList(
     }
 
     const refPart = line.slice(0, sepIdx);
-    const subject = line.slice(sepIdx + 1);
+    const hashEnd = line.indexOf("\0", sepIdx + 1);
+    if (hashEnd < 0) {
+      continue;
+    }
+    const hash = line.slice(sepIdx + 1, hashEnd);
+    const subject = line.slice(hashEnd + 1);
     const indexMatch = refPart.match(/\{(\d+)\}/);
     if (!indexMatch) {
       continue;
@@ -3888,7 +3897,7 @@ function parseWorkspaceGitStashList(
       continue;
     }
 
-    entries.push({ index, message: subject, branch, isPaseo });
+    entries.push({ index, hash, message: subject, branch, isPaseo });
   }
 
   return entries;
