@@ -19,6 +19,7 @@ import { createUserMessage, generateMessageId, type UserMessageItem } from "@/ty
 import type { MessageSubmissionRejectionOutcome } from "@/composer/submission/model";
 import type { PickedImageAttachmentInput } from "@/hooks/image-attachment-picker";
 import { i18n } from "@/i18n/i18next";
+import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
 
 export interface QueuedComposerMessage {
   id: string;
@@ -353,10 +354,14 @@ export async function sendQueuedComposerMessageNow(
     // The daemon already holds a receipt for this ID that a retry can never settle. Re-queuing
     // would put the item back at the head and block every later queued message.
     const settledByDaemon = error instanceof Error && UNRETRYABLE_SEND_ERRORS.has(error.message);
+    // Only a lost connection leaves the outcome unknown, so only then does the retry reuse the ID.
+    // Any other failed send leaves a pending receipt that would refuse the same ID forever.
+    const requeued =
+      error instanceof DaemonConnectionError ? item : { ...item, id: generateMessageId() };
     input.queue.write((prev) => {
       if (settledByDaemon) return prev;
       const next = new Map(prev);
-      next.set(input.agentId, [item, ...(prev.get(input.agentId) ?? [])]);
+      next.set(input.agentId, [requeued, ...(prev.get(input.agentId) ?? [])]);
       return next;
     });
     return {
