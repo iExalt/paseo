@@ -49,3 +49,11 @@ thread, every host is caught up. One driver runs both plans against the app's
 stores (`packages/app/src/notification-dismissal/dismissal.ts`); the native
 shade, desktop bridge and browser notifications are its callers.
 _Avoid_: notification clearing, auto-dismiss
+
+**Fork updater controller**:
+The one state machine behind the fork Android updater: what the About row
+says and offers, whether the sidebar icon shows, and what a press or the hourly
+check does next. It runs over a port to the native updater
+(`packages/app/src/android/fork-updates/controller.ts`); `updater.ts` wires the
+app's single instance.
+_Avoid_: update store, updater state

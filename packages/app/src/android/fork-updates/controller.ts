@@ -111,6 +111,11 @@ const NETWORK_ERROR =
 
 // Three different questions, kept apart on purpose: the permission screen holds off a
 // background check and keeps the icon, but its row button stays pressable.
+/** A failed step that left a verified download behind offers to install it again. */
+function canRetryStagedInstall({ status, apkPath }: State): boolean {
+  return status === "error" && apkPath !== null;
+}
+
 /** States the sidebar icon offers to continue from. */
 function isPending(state: State): boolean {
   switch (state.status) {
@@ -122,7 +127,7 @@ function isPending(state: State): boolean {
     case "canceled":
       return true;
     case "error":
-      return state.apkPath !== null;
+      return canRetryStagedInstall(state);
     default:
       return false;
   }
@@ -184,8 +189,8 @@ function messageOf(state: State): ForkUpdateText {
   }
 }
 
-function rowLabelKeyOf({ status, apkPath }: State): string {
-  switch (status) {
+function rowLabelKeyOf(state: State): string {
+  switch (state.status) {
     case "checking":
       return `${KEY}.checkingAction`;
     case "downloading":
@@ -196,7 +201,7 @@ function rowLabelKeyOf({ status, apkPath }: State): string {
     case "canceled":
       return `${KEY}.install`;
     case "error":
-      return apkPath !== null ? `${KEY}.install` : `${KEY}.check`;
+      return canRetryStagedInstall(state) ? `${KEY}.install` : `${KEY}.check`;
     case "permission":
       return `${KEY}.continue`;
     default:
@@ -377,14 +382,10 @@ export function createForkUpdateController(
 
   /** The About row's button: the next step for the current state. */
   async function pressRow(native: ForkUpdatePort): Promise<void> {
-    const { status, apkPath } = state;
+    const { status } = state;
     if (status === "available") {
       await download(native);
-    } else if (
-      status === "downloaded" ||
-      status === "canceled" ||
-      (status === "error" && apkPath !== null)
-    ) {
+    } else if (status === "downloaded" || status === "canceled" || canRetryStagedInstall(state)) {
       await install(native);
     } else if (status === "permission") {
       await continueAfterPermission(native);
