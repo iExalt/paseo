@@ -1,5 +1,34 @@
 # Changelog
 
+## [0.19.0](https://github.com/iExalt/paseo/compare/paseo-v0.18.0...paseo-v0.19.0) (2026-11-03)
+
+
+### Features
+
+* accept full session IDs as CLI agent targets ([#317](https://github.com/iExalt/paseo/issues/317)) ([076d89e](https://github.com/iExalt/paseo/commit/076d89ee2ff1f0c7eb2ff83dd634e0b14621dcd1))
+
+
+### Bug Fixes
+
+* **android:** enable Java native access in build-apk.mjs ([#338](https://github.com/iExalt/paseo/issues/338)) ([da696d7](https://github.com/iExalt/paseo/commit/da696d76ce94a5673a665da9824fb9f36c704af4))
+* **android:** refuse a delta update when the disk is too full ([#344](https://github.com/iExalt/paseo/issues/344)) ([1eb7a27](https://github.com/iExalt/paseo/commit/1eb7a27db49252f2de3ce77b3bd8bd0456efa81e))
+* **app:** deliver a queued prompt once when its reply is lost ([#331](https://github.com/iExalt/paseo/issues/331)) ([50c61e5](https://github.com/iExalt/paseo/commit/50c61e532a2bcbe6b576ce9fa22a404a041fa6c9))
+* **app:** give a queued prompt a new ID after a definite send failure ([#335](https://github.com/iExalt/paseo/issues/335)) ([971017e](https://github.com/iExalt/paseo/commit/971017e482cee7f6b9f91a4cf9ad5df3b90047f3))
+* **app:** keep queued prompts across reloads and cap image previews ([#342](https://github.com/iExalt/paseo/issues/342)) ([af49094](https://github.com/iExalt/paseo/commit/af49094196de83293a5a9b8019c261514394f29e))
+* **cli:** refuse ambiguous permission, worktree and agent targets ([#326](https://github.com/iExalt/paseo/issues/326)) ([438be22](https://github.com/iExalt/paseo/commit/438be22bd5bcf10c79e58c8bd222fcbffc06e934))
+* **cli:** reject ambiguous agent ID prefixes instead of picking the first ([#319](https://github.com/iExalt/paseo/issues/319)) ([374eac2](https://github.com/iExalt/paseo/commit/374eac20968d453967edf289664d29531847e769))
+* **plugins:** reap esbuild on idle, scaffold the plugin API range, clear stale staging ([#340](https://github.com/iExalt/paseo/issues/340)) ([7693af0](https://github.com/iExalt/paseo/commit/7693af0a50712f2bd7b269065cc79f95c5c4372a))
+* **server:** keep a merge in progress when Pull fails, and clean up squash conflicts ([#329](https://github.com/iExalt/paseo/issues/329)) ([3ea3200](https://github.com/iExalt/paseo/commit/3ea3200e5e4b328b8c0f5469902e4addebe8d6b0))
+* **server:** keep agent attention right across unread, stop and archive ([#334](https://github.com/iExalt/paseo/issues/334)) ([dde9e45](https://github.com/iExalt/paseo/commit/dde9e457fd20f9b854550b99bd9b0b12e3cdfe74))
+* **server:** keep only an 8 KiB stderr tail for ACP agents ([#339](https://github.com/iExalt/paseo/issues/339)) ([75bf1cd](https://github.com/iExalt/paseo/commit/75bf1cd6f7e4e0355568f898bfeb1c5f9ea95814))
+* **server:** keep schedules running past a cron with no next run, and cap run history ([#332](https://github.com/iExalt/paseo/issues/332)) ([96e7f7a](https://github.com/iExalt/paseo/commit/96e7f7aa3edc72ffc8a80746fffad495dd5f65c8))
+* **server:** kill a closed terminal's whole process tree ([#330](https://github.com/iExalt/paseo/issues/330)) ([08cb69b](https://github.com/iExalt/paseo/commit/08cb69b07e19f305a3d956bf6e38cda9303578bd))
+* **server:** make archive deletion safe for custom roots and concurrent creates ([#336](https://github.com/iExalt/paseo/issues/336)) ([079aca8](https://github.com/iExalt/paseo/commit/079aca89a4192a726fe085ab73e2e1090991162d))
+* **server:** refuse a stash pop when the index names another stash ([#341](https://github.com/iExalt/paseo/issues/341)) ([f4d19ce](https://github.com/iExalt/paseo/commit/f4d19ce9c4cde680a51118cb955d8597adc90450))
+* **server:** stop leaking proxy sockets, FIFO opens and old uploads ([#337](https://github.com/iExalt/paseo/issues/337)) ([9fb3bfb](https://github.com/iExalt/paseo/commit/9fb3bfb1ed2a3cd4e56bcca8cca9a27feabc28a7))
+* **server:** stop load errors from wiping the registry or daemon identity ([#328](https://github.com/iExalt/paseo/issues/328)) ([37b3d40](https://github.com/iExalt/paseo/commit/37b3d402a125413163791df2bd7eeadfbe1def76))
+* **server:** tighten daemon WebSocket admission and password checks ([#327](https://github.com/iExalt/paseo/issues/327)) ([8198c29](https://github.com/iExalt/paseo/commit/8198c29ce08c7a81697cc83ed642341468bc5564))
+
 ## [0.18.0](https://github.com/iExalt/paseo/compare/paseo-v0.17.1...paseo-v0.18.0) (2026-11-02)
 
 
