@@ -603,6 +603,7 @@ function createSessionForWorkspaceTests(
     archiveSnapshot: async () => ({}),
     unarchiveSnapshot: async () => true,
     clearAgentAttention: async () => {},
+    whileArchiving: <T>(_agentId: string, work: () => Promise<T>) => work(),
     markAgentUnread: async () => {},
     notifyAgentState: () => {},
     ...options.agentManager,
@@ -1617,6 +1618,7 @@ test("archive emits an authoritative agent_update upsert for subscribed clients"
           return archivedRecord;
         },
         clearAgentAttention: async () => {},
+        whileArchiving: <T>(_agentId: string, work: () => Promise<T>) => work(),
         notifyAgentState: () => {},
       }),
       agentStorage: asAgentStorage({
@@ -2093,6 +2095,7 @@ test("close_items_request archives agents and kills terminals in one batch", asy
         cancelAgentRun,
         archiveAgent: async () => ({ archivedAt }),
         clearAgentAttention: async () => {},
+        whileArchiving: <T>(_agentId: string, work: () => Promise<T>) => work(),
         notifyAgentState: () => {},
       }),
       agentStorage: asAgentStorage({
@@ -2279,6 +2282,7 @@ test("close_items_request archives stored agents that are not currently loaded",
           return storedRecord;
         },
         clearAgentAttention: async () => {},
+        whileArchiving: <T>(_agentId: string, work: () => Promise<T>) => work(),
         notifyAgentState: () => {},
       }),
       agentStorage: asAgentStorage({
@@ -2431,6 +2435,7 @@ test("close_items_request continues after an archive failure", async () => {
           return { archivedAt };
         },
         clearAgentAttention: async () => {},
+        whileArchiving: <T>(_agentId: string, work: () => Promise<T>) => work(),
         notifyAgentState: () => {},
       }),
       agentStorage: asAgentStorage({
