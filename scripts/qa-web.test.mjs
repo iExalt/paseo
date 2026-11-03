@@ -108,7 +108,10 @@ test("the bottom-sheet check fails on an unpatched entry file and passes on a pa
   try {
     const entry = path.join(dir, "index.js");
     writeFileSync(entry, "export { default } from './bottomSheet';\n");
-    assert.match(checkBottomSheetPatch(entry), /unpatched[\s\S]*Run: node scripts\/postinstall-patches\.mjs$/);
+    assert.match(
+      checkBottomSheetPatch(entry),
+      /unpatched[\s\S]*Run: node scripts\/postinstall-patches\.mjs$/,
+    );
     assert.match(checkBottomSheetPatch(path.join(dir, "missing.js")), /unpatched/);
     writeFileSync(entry, "export { BottomSheetModalInternalProvider } from './x';\n");
     assert.equal(checkBottomSheetPatch(entry), null);

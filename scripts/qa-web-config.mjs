@@ -137,7 +137,10 @@ const BOTTOM_SHEET_PATCH_MARKER = "BottomSheetModalInternalProvider";
 
 // Returns an error message when the bottom-sheet entry file lacks the patch, otherwise null.
 export function checkBottomSheetPatch(entryFile) {
-  if (existsSync(entryFile) && readFileSync(entryFile, "utf8").includes(BOTTOM_SHEET_PATCH_MARKER)) {
+  if (
+    existsSync(entryFile) &&
+    readFileSync(entryFile, "utf8").includes(BOTTOM_SHEET_PATCH_MARKER)
+  ) {
     return null;
   }
   return `@gorhom/bottom-sheet is unpatched (no ${BOTTOM_SHEET_PATCH_MARKER} in ${entryFile}); the web UI would crash on load.\nRun: node scripts/postinstall-patches.mjs`;
