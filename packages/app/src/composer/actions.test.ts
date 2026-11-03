@@ -464,6 +464,28 @@ describe("dispatchComposerAgentMessage", () => {
     expect(legacy.tail.get("legacy")?.[0]?.turnId).toBeUndefined();
   });
 
+  it("does not resend a retried message the timeline already shows", async () => {
+    const client = createFakeSendClient();
+    const stream = createFakeStream();
+    const send = () =>
+      dispatchComposerAgentMessage({
+        client,
+        agentId: "agent",
+        text: "queued",
+        attachments: [],
+        encodeImages: async () => [],
+        submission: stream,
+        activeTurnBehavior: "steer",
+        clientMessageId: "msg-queued",
+      });
+
+    await send();
+    await send();
+
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0]?.options.messageId).toBe("msg-queued");
+  });
+
   it("removes the submitted prompt when the host rejects it", async () => {
     const rejection = new Error("Host rejected prompt");
     const client = createFakeSendClient({ rejection });
@@ -824,7 +846,13 @@ describe("sendQueuedComposerMessageNow", () => {
     expect(result).toEqual({ status: "submitted" });
     expect(queue.state.get("agent")).toEqual([]);
     expect(submitted).toEqual([
-      { text: "send me", attachments: [review], activeTurnBehavior: "steer" },
+      // The queue item's ID is the message ID, so a retry after a lost reply is delivered once.
+      {
+        text: "send me",
+        attachments: [review],
+        activeTurnBehavior: "steer",
+        clientMessageId: "msg-1",
+      },
     ]);
   });
 
@@ -851,6 +879,30 @@ describe("sendQueuedComposerMessageNow", () => {
     expect(result).toEqual({ status: "failed", errorMessage: "network down" });
     const state = queue.state.get("agent");
     expect(state?.map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
+  });
+
+  it("drops a queued entry the daemon has a receipt for, so it can't block the queue", async () => {
+    const queue = createFakeQueue(
+      new Map([
+        [
+          "agent",
+          [
+            { id: "msg-1", text: "first", attachments: [] },
+            { id: "msg-2", text: "second", attachments: [] },
+          ],
+        ],
+      ]),
+    );
+    const result = await sendQueuedComposerMessageNow({
+      agentId: "agent",
+      messageId: "msg-1",
+      queue,
+      submitMessage: async () => {
+        throw new Error("agent_request_outcome_unknown");
+      },
+    });
+    expect(result).toEqual({ status: "failed", errorMessage: "agent_request_outcome_unknown" });
+    expect(queue.state.get("agent")?.map((m) => m.id)).toEqual(["msg-2"]);
   });
 });
 
