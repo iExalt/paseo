@@ -1845,7 +1845,6 @@ export const useSessionStore = create<SessionStore>()(
           if (session.queuedMessages === nextValue) {
             return prev;
           }
-          useQueuedMessageSnapshot.getState().save(serverId, nextValue);
           return {
             ...prev,
             sessions: {
@@ -1854,6 +1853,8 @@ export const useSessionStore = create<SessionStore>()(
             },
           };
         });
+        const queues = get().sessions[serverId]?.queuedMessages;
+        if (queues) useQueuedMessageSnapshot.getState().save(serverId, queues);
       },
 
       // Hydration

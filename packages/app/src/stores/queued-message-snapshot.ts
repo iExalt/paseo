@@ -32,6 +32,14 @@ const PersistedQueuedMessagesSchema = z.object({
   byServer: z.record(z.string(), z.record(z.string(), z.array(QueuedMessageSchema))),
 });
 
+let readFailed = false;
+const readFailureWaiters = new Set<() => void>();
+function markSnapshotReadFailed(): void {
+  readFailed = true;
+  for (const release of readFailureWaiters) release();
+  readFailureWaiters.clear();
+}
+
 interface QueuedMessageSnapshotState {
   byServer: QueuesByServer;
   save: (serverId: string, queues: ReadonlyMap<string, QueuedMessage[]>) => void;
@@ -54,6 +62,11 @@ export const useQueuedMessageSnapshot = create<QueuedMessageSnapshotState>()(
       name: "paseo-queued-messages",
       storage: createValidatedPersistStorage(AsyncStorage, PersistedQueuedMessagesSchema),
       partialize: ({ byServer }) => ({ byServer }),
+      // A failed storage read never finishes hydration; release attachment GC anyway, since
+      // nothing was restored for it to protect.
+      onRehydrateStorage: () => (_state, error) => {
+        if (error) markSnapshotReadFailed();
+      },
     },
   ),
 );
@@ -64,12 +77,15 @@ export function readQueuedMessageSnapshot(serverId: string): Map<string, QueuedM
 
 /** Resolves once the snapshot has loaded, so attachment GC never runs without its images. */
 export function whenQueuedMessageSnapshotLoaded(): Promise<void> {
-  if (useQueuedMessageSnapshot.persist.hasHydrated()) return Promise.resolve();
+  if (readFailed || useQueuedMessageSnapshot.persist.hasHydrated()) return Promise.resolve();
   return new Promise((resolve) => {
-    const unsubscribe = useQueuedMessageSnapshot.persist.onFinishHydration(() => {
+    const release = () => {
       unsubscribe();
+      readFailureWaiters.delete(release);
       resolve();
-    });
+    };
+    const unsubscribe = useQueuedMessageSnapshot.persist.onFinishHydration(release);
+    readFailureWaiters.add(release);
   });
 }
 
