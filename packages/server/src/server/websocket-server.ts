@@ -97,6 +97,7 @@ import {
   type NotificationPolicySources,
 } from "./notification-policy.js";
 import {
+  DaemonPasswordCheckBusyError,
   extractHttpBearerToken,
   extractWsBearerProtocol,
   extractWsBearerToken,
@@ -515,6 +516,8 @@ const WS_CLOSE_HELLO_TIMEOUT = 4001;
 const WS_CLOSE_INVALID_HELLO = 4002;
 const WS_CLOSE_INCOMPATIBLE_PROTOCOL = 4003;
 const WS_CLOSE_SERVER_SHUTDOWN = 1001;
+const WS_CLOSE_TRY_AGAIN_LATER = 1013;
+const TRY_AGAIN_LATER_REASON = "Try again later";
 const WS_PROTOCOL_VERSION = 1;
 const WS_RUNTIME_METRICS_FLUSH_MS = 30_000;
 const OWNER_SESSION_ADMISSION: SessionAdmission = {
@@ -992,7 +995,14 @@ export class VoiceAssistantWebSocketServer {
       const hasHeaderCredential = token !== null;
       if (password && hasHeaderCredential) {
         const requestMetadata = extractSocketRequestMetadata(request);
-        const isAuthorized = await isBearerTokenValidAsync({ password, token });
+        let isAuthorized: boolean;
+        try {
+          isAuthorized = await isBearerTokenValidAsync({ password, token });
+        } catch (error) {
+          if (!(error instanceof DaemonPasswordCheckBusyError)) throw error;
+          ws.close(WS_CLOSE_TRY_AGAIN_LATER, TRY_AGAIN_LATER_REASON);
+          return;
+        }
         if (!isAuthorized) {
           const reason = "Incorrect password";
           this.logger.warn(
@@ -1838,6 +1848,14 @@ export class VoiceAssistantWebSocketServer {
       pending.admission = resolved.admission;
       return true;
     } catch (error) {
+      if (error instanceof DaemonPasswordCheckBusyError) {
+        // Not an auth failure: a rejected hello would make clients stop and ask for a password.
+        if (this.pendingConnections.get(ws) === pending) {
+          this.clearPendingConnection(ws);
+          ws.close(WS_CLOSE_TRY_AGAIN_LATER, TRY_AGAIN_LATER_REASON);
+        }
+        return false;
+      }
       pending.connectionLogger.error({ err: error }, "Failed to resolve hello credential");
       if (this.pendingConnections.get(ws) === pending) {
         this.clearPendingConnection(ws);
@@ -3208,7 +3226,8 @@ function defaultPortForOriginProtocol(protocol: string): string | null {
 
 function isLoopbackAlias(hostname: string): boolean {
   const normalized = stripIpv6Brackets(hostname).toLowerCase();
-  if (normalized === "localhost" || normalized.endsWith(".localhost")) {
+  // Not `*.localhost`: service proxy pages live there and must not reach the daemon socket.
+  if (normalized === "localhost") {
     return true;
   }
   if (normalized === "::1" || normalized === "0:0:0:0:0:0:0:1") {
