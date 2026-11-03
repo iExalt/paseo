@@ -96,7 +96,10 @@ class PluginCompiler {
     this.worker = null;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
-    this.stopping = mode === "terminate" ? worker.terminate() : shutDownWorker(worker);
+    // A graceful stop runs in the background: the next request gets a fresh isolate while the old
+    // one stops its own esbuild, so it never waits out the shutdown grace.
+    if (mode === "terminate") this.stopping = worker.terminate();
+    else void shutDownWorker(worker);
   }
 
   private async request<T extends CompilerTask>(
