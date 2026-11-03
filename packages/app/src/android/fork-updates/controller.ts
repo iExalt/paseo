@@ -109,13 +109,13 @@ const INITIAL_STATE: State = {
 const NETWORK_ERROR =
   /\b(?:UnknownHostException|ConnectException|NoRouteToHostException|SocketTimeoutException)\b|Network request failed/;
 
-// Three different questions, kept apart on purpose: the permission screen holds off a
-// background check and keeps the icon, but its row button stays pressable.
 /** A failed step that left a verified download behind offers to install it again. */
 function canRetryStagedInstall({ status, apkPath }: State): boolean {
   return status === "error" && apkPath !== null;
 }
 
+// Three different questions, kept apart on purpose: the permission screen holds off a
+// background check and keeps the icon, but its row button stays pressable.
 /** States the sidebar icon offers to continue from. */
 function isPending(state: State): boolean {
   switch (state.status) {

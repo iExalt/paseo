@@ -16,7 +16,7 @@ module, interface, depth, seam, adapter, leverage, locality.
 | Field          | Status                                                                                  |
 | -------------- | --------------------------------------------------------------------------------------- |
 | Baseline       | `dev` at `374eac209`                                                                    |
-| Current item   | 3, Fork updater controller                                                              |
+| Current item   | 7, Reading position                                                                     |
 | Required CI    | dev push run 41531769754: plan start to required 3m44s; slowest lane `workspaces` 3m10s |
 | Release impact | None; no item publishes a release                                                       |
 
