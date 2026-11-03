@@ -40,6 +40,15 @@ class ZstdPatchTest {
     assertThrows(ZstdException::class.java) { patch(baseBytes = otherBase) }
   }
 
+  @Test fun refusesBeforeMappingWhenTheDiskIsTooFull() {
+    val output = File(work, "out")
+    val error = assertThrows(IllegalArgumentException::class.java) {
+      applyZstdPatch(file("base", base), file("delta", fixture), output, target.size.toLong(), availableBytes = target.size.toLong())
+    }
+    assertTrue(error.message!!.contains("free space"))
+    assertFalse(output.exists())
+  }
+
   @Test fun rejectsATruncatedDelta() {
     assertThrows(ZstdException::class.java) { patch(delta = fixture.copyOf(fixture.size - 8)) }
   }
