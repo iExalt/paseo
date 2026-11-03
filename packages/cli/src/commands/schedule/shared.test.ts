@@ -2,6 +2,8 @@ import { describe, expect, test } from "vitest";
 
 import { selectDaemonTarget } from "../../utils/daemon-target.js";
 
+import { deleteNewAgentSchedule } from "./delete.js";
+import type { ScheduleDaemonClient } from "./types.js";
 import {
   compileEveryPresetToCron,
   parseScheduleCreateInput,
@@ -437,5 +439,22 @@ describe("compileEveryPresetToCron", () => {
 
   test.each(["15minutes", "junk15m", "1h-nope"])("rejects malformed preset %s", (value) => {
     expect(() => compileEveryPresetToCron(value)).toThrow("Invalid duration format");
+  });
+});
+
+describe("deleteNewAgentSchedule", () => {
+  test("deletes a schedule whose file the daemon can't parse", async () => {
+    const deleted: string[] = [];
+    const client = {
+      scheduleInspect: async () => ({ schedule: null, error: "Unexpected token } in JSON" }),
+      scheduleDelete: async ({ id }: { id: string }) => {
+        deleted.push(id);
+        return { scheduleId: id, error: null };
+      },
+    } as unknown as ScheduleDaemonClient;
+
+    await deleteNewAgentSchedule(client, "corrupt-1");
+
+    expect(deleted).toEqual(["corrupt-1"]);
   });
 });

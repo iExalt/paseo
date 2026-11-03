@@ -52,16 +52,45 @@ export class ScheduleStateConflictError extends Error {
   }
 }
 
+/** The next run after `after`, or null when the cadence has none in the search window. */
+function tryComputeNextRunAt(cadence: StoredSchedule["cadence"], after: Date): Date | null {
+  try {
+    return computeNextRunAt(cadence, after);
+  } catch {
+    return null;
+  }
+}
+
 function advanceNextRunAtPast(
   cadence: StoredSchedule["cadence"],
-  nextRunAt: Date,
+  nextRunAt: Date | null,
   now: Date,
-): Date {
+): Date | null {
   let next = nextRunAt;
-  while (next.getTime() <= now.getTime()) {
-    next = computeNextRunAt(cadence, next);
+  while (next && next.getTime() <= now.getTime()) {
+    next = tryComputeNextRunAt(cadence, next);
   }
   return next;
+}
+
+const MAX_RETAINED_RUNS = 100;
+
+/**
+ * Appends a run, keeping at most 100 for a schedule with no run limit. A run limit already bounds
+ * the list, and completion counts it, so those keep every run. A running entry is never dropped.
+ */
+export function appendScheduleRun(schedule: StoredSchedule, run: ScheduleRun): ScheduleRun[] {
+  const runs = [...schedule.runs, run];
+  if (schedule.maxRuns !== null) return runs;
+  let excess = runs.length - MAX_RETAINED_RUNS;
+  if (excess <= 0) return runs;
+  return runs.filter((entry) => {
+    if (excess > 0 && entry.status !== "running") {
+      excess -= 1;
+      return false;
+    }
+    return true;
+  });
 }
 
 function trimOptionalName(value: string | null | undefined): string | null {
@@ -572,22 +601,36 @@ export class ScheduleService {
   async tick(): Promise<void> {
     const now = this.now();
     const schedules = await this.store.list();
+    // One failing schedule must not stop the ones after it; the tick still reports the failure.
+    let firstError: unknown = null;
     for (const schedule of schedules) {
-      if (schedule.status !== "active" || !schedule.nextRunAt) {
-        continue;
+      try {
+        await this.tickSchedule(schedule, now);
+      } catch (error) {
+        this.logger.error({ err: error, scheduleId: schedule.id }, "Failed to tick schedule");
+        firstError ??= error;
       }
-      if (this.runningScheduleIds.has(schedule.id)) {
-        continue;
-      }
-      if (shouldCompleteSchedule(schedule, now)) {
-        await this.completeScheduleIfDue(schedule.id, now);
-        continue;
-      }
-      if (new Date(schedule.nextRunAt).getTime() > now.getTime()) {
-        continue;
-      }
-      await this.runSchedule(schedule, now);
     }
+    if (firstError !== null) {
+      throw firstError;
+    }
+  }
+
+  private async tickSchedule(schedule: StoredSchedule, now: Date): Promise<void> {
+    if (schedule.status !== "active" || !schedule.nextRunAt) {
+      return;
+    }
+    if (this.runningScheduleIds.has(schedule.id)) {
+      return;
+    }
+    if (shouldCompleteSchedule(schedule, now)) {
+      await this.completeScheduleIfDue(schedule.id, now);
+      return;
+    }
+    if (new Date(schedule.nextRunAt).getTime() > now.getTime()) {
+      return;
+    }
+    await this.runSchedule(schedule, now);
   }
 
   private async completeScheduleIfDue(scheduleId: string, now: Date): Promise<void> {
@@ -658,11 +701,14 @@ export class ScheduleService {
         updated.nextRunAt &&
         new Date(updated.nextRunAt).getTime() <= now.getTime()
       ) {
-        let nextRunAt = computeNextRunAt(updated.cadence, new Date(updated.nextRunAt));
-        while (nextRunAt.getTime() <= now.getTime()) {
-          nextRunAt = computeNextRunAt(updated.cadence, nextRunAt);
-        }
-        updated = { ...updated, nextRunAt: nextRunAt.toISOString() };
+        const nextRunAt = advanceNextRunAtPast(
+          updated.cadence,
+          tryComputeNextRunAt(updated.cadence, new Date(updated.nextRunAt)),
+          now,
+        );
+        updated = nextRunAt
+          ? { ...updated, nextRunAt: nextRunAt.toISOString() }
+          : completeSchedule(updated, now);
         dirty = true;
       }
 
@@ -792,13 +838,14 @@ export class ScheduleService {
       const scheduledFor = schedule.nextRunAt;
       const isFinalRun =
         schedule.maxRuns !== null && countCompletedRuns(schedule) + 1 >= schedule.maxRuns;
+      // No successor (a cron with no run in the search window) makes this the final run.
       const nextRunAt = isFinalRun
         ? null
-        : advanceNextRunAtPast(
+        : (advanceNextRunAtPast(
             schedule.cadence,
-            computeNextRunAt(schedule.cadence, new Date(scheduledFor)),
+            tryComputeNextRunAt(schedule.cadence, new Date(scheduledFor)),
             now,
-          ).toISOString();
+          )?.toISOString() ?? null);
 
       // Claim the due slot and advance its cursor in the same serialized update.
       // A tick can hold a stale list while another tick finishes this schedule.
@@ -817,7 +864,7 @@ export class ScheduleService {
         ...schedule,
         nextRunAt,
         updatedAt: now.toISOString(),
-        runs: [...schedule.runs, runningRun],
+        runs: appendScheduleRun(schedule, runningRun),
       };
       claimed = { schedule: updated, runId };
       return updated;
@@ -833,7 +880,7 @@ export class ScheduleService {
     const updated = await this.store.update(scheduleId, (schedule) => ({
       ...schedule,
       updatedAt: runningRun.startedAt,
-      runs: [...schedule.runs, runningRun],
+      runs: appendScheduleRun(schedule, runningRun),
     }));
     return requireSchedule(updated, scheduleId);
   }
@@ -891,12 +938,12 @@ export class ScheduleService {
         const finishedRun = completedRuns.find((run) => run.id === params.runId)!;
         const nextRunAt = updated.nextRunAt
           ? new Date(updated.nextRunAt)
-          : computeNextRunAt(updated.cadence, new Date(finishedRun.scheduledFor));
+          : tryComputeNextRunAt(updated.cadence, new Date(finishedRun.scheduledFor));
         // Move an overdue cursor past a long run without advancing a future one twice.
-        updated = {
-          ...updated,
-          nextRunAt: advanceNextRunAtPast(updated.cadence, nextRunAt, now).toISOString(),
-        };
+        const advanced = advanceNextRunAtPast(updated.cadence, nextRunAt, now);
+        updated = advanced
+          ? { ...updated, nextRunAt: advanced.toISOString() }
+          : completeSchedule(updated, now);
       }
 
       return updated;
