@@ -1,6 +1,14 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 
 import { beforeEach, afterEach, describe, expect, test } from "vitest";
 
@@ -119,6 +127,37 @@ describe("workspace registries", () => {
     await reloaded.initialize();
     expect(await reloaded.get("workspace-a")).toMatchObject({ notifications: "off" });
     expect(await reloaded.get("workspace-b")).toMatchObject({ notifications: "on" });
+  });
+
+  test("quarantines an unreadable registry instead of overwriting it with one record", async () => {
+    const filePath = path.join(tmpDir, "projects", "corrupt-workspaces.json");
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFileSync(filePath, '[{"workspaceId":"workspace-a"');
+
+    const registry = new FileBackedWorkspaceRegistry(filePath, logger);
+    await registry.initialize();
+    await registry.upsert(
+      createPersistedWorkspaceRecord({
+        workspaceId: "workspace-new",
+        projectId: "project-one",
+        cwd: "/tmp/new",
+        kind: "directory",
+        displayName: "new",
+        createdAt: "2026-03-01T00:00:00.000Z",
+        updatedAt: "2026-03-01T00:00:00.000Z",
+      }),
+    );
+
+    const quarantined = readdirSync(path.dirname(filePath)).filter((name) =>
+      name.startsWith("corrupt-workspaces.json.invalid-"),
+    );
+    expect(quarantined).toHaveLength(1);
+    expect(readFileSync(path.join(path.dirname(filePath), quarantined[0]!), "utf8")).toBe(
+      '[{"workspaceId":"workspace-a"',
+    );
+    const reloaded = new FileBackedWorkspaceRegistry(filePath, logger);
+    await reloaded.initialize();
+    expect(await reloaded.get("workspace-new")).toMatchObject({ cwd: "/tmp/new" });
   });
 
   test("keeps the prior notification policy when the durable write fails", async () => {
