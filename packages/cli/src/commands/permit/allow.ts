@@ -20,7 +20,7 @@ export interface PermissionResponseItem {
 export const permitResponseSchema: OutputSchema<PermissionResponseItem> = {
   idField: "requestId",
   columns: [
-    { header: "REQUEST ID", field: (item) => item.requestId.slice(0, 8), width: 12 },
+    { header: "REQUEST ID", field: (item) => shortPermissionId(item.requestId), width: 12 },
     { header: "AGENT", field: "agentShortId", width: 10 },
     { header: "TOOL", field: "name", width: 20 },
     {
@@ -54,23 +54,33 @@ export function toPermissionResponseItem(
 interface ResolvePermissionRequestParams {
   pendingPermissions: readonly AgentPermissionRequest[];
   requestId: string;
-  requireUnambiguousPrefix?: boolean;
 }
 
+const PERMISSION_ID_PREFIX = "permission-";
+
+/** The short request ID `permit ls` shows: providers prefix every ID with `permission-`. */
+export function shortPermissionId(id: string): string {
+  return (id.startsWith(PERMISSION_ID_PREFIX) ? id.slice(PERMISSION_ID_PREFIX.length) : id).slice(
+    0,
+    8,
+  );
+}
+
+/** Exact ID first, then a unique prefix of the full ID or of the ID without `permission-`. */
 export function resolvePermissionRequest({
   pendingPermissions,
   requestId,
-  requireUnambiguousPrefix = false,
 }: ResolvePermissionRequestParams): AgentPermissionRequest {
-  if (requireUnambiguousPrefix) {
-    const exactMatch = pendingPermissions.find((permission) => permission.id === requestId);
-    if (exactMatch) return exactMatch;
-  }
+  const exactMatch = pendingPermissions.find((permission) => permission.id === requestId);
+  if (exactMatch) return exactMatch;
 
-  const prefixMatches = pendingPermissions.filter((permission) =>
-    permission.id.startsWith(requestId),
+  const prefixMatches = pendingPermissions.filter(
+    (permission) =>
+      permission.id.startsWith(requestId) ||
+      (permission.id.startsWith(PERMISSION_ID_PREFIX) &&
+        permission.id.slice(PERMISSION_ID_PREFIX.length).startsWith(requestId)),
   );
-  if (requireUnambiguousPrefix && prefixMatches.length > 1) {
+  if (prefixMatches.length > 1) {
     throw {
       code: "AMBIGUOUS_PERMISSION_ID",
       message: `Permission request ID prefix is ambiguous: ${requestId}`,
@@ -84,7 +94,7 @@ export function resolvePermissionRequest({
   throw {
     code: "PERMISSION_NOT_FOUND",
     message: `Permission request not found: ${requestId}`,
-    details: `Available requests: ${pendingPermissions.map((request) => request.id.slice(0, 8)).join(", ")}`,
+    details: `Available requests: ${pendingPermissions.map((request) => shortPermissionId(request.id)).join(", ")}`,
   } satisfies CommandError;
 }
 
@@ -97,10 +107,9 @@ export function selectPermissionRequests({
   pendingPermissions,
   requestId,
   all,
-  requireUnambiguousPrefix,
 }: SelectPermissionRequestsParams): AgentPermissionRequest[] {
   if (!requestId || all) return [...pendingPermissions];
-  return [resolvePermissionRequest({ pendingPermissions, requestId, requireUnambiguousPrefix })];
+  return [resolvePermissionRequest({ pendingPermissions, requestId })];
 }
 
 export type PermitAllowResult = ListResult<PermissionResponseItem>;
@@ -116,7 +125,7 @@ export interface PermitAllowOptions extends CommandOptions {
 function createAllowResponse(
   reqId: string | undefined,
   options: PermitAllowOptions,
-): { response: AgentPermissionResponse; hasSingleRequestFields: boolean } {
+): { response: AgentPermissionResponse } {
   const hasSingleRequestFields =
     options.selectedActionId !== undefined || options.updatedPermissions !== undefined;
   if (hasSingleRequestFields && (!reqId || options.all)) {
@@ -161,7 +170,7 @@ function createAllowResponse(
     ...(updatedPermissions !== undefined ? { updatedPermissions } : {}),
   });
 
-  return { response, hasSingleRequestFields };
+  return { response };
 }
 
 export interface PermitClient {
@@ -187,7 +196,7 @@ export function createAllowCommand(connect: PermitClientConnector = connectToDae
     options: PermitAllowOptions,
     _command: Command,
   ): Promise<PermitAllowResult> {
-    const { response, hasSingleRequestFields } = createAllowResponse(reqId, options);
+    const { response } = createAllowResponse(reqId, options);
 
     const client = await connect({ target: options.daemonTarget });
 
@@ -222,7 +231,6 @@ export function createAllowCommand(connect: PermitClientConnector = connectToDae
         pendingPermissions,
         requestId: reqId,
         all: options.all,
-        requireUnambiguousPrefix: hasSingleRequestFields,
       });
 
       // Allow permissions

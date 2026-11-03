@@ -1,6 +1,6 @@
 import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
 import { describe, expect, it } from "vitest";
-import { resolvePermissionRequest, selectPermissionRequests } from "./allow.js";
+import { resolvePermissionRequest, selectPermissionRequests, shortPermissionId } from "./allow.js";
 
 const requests: AgentPermissionRequest[] = [
   { id: "permission-first", provider: "claude", name: "Read", kind: "tool" },
@@ -13,41 +13,21 @@ describe("permission response target selection", () => {
     expect(selectPermissionRequests({ pendingPermissions: requests, all: true })).toEqual(requests);
   });
 
-  it("requires an unambiguous request when a response action is selected", () => {
-    expect(() =>
-      selectPermissionRequests({
-        pendingPermissions: [
-          { ...requests[0]!, id: "permission-a" },
-          { ...requests[1]!, id: "permission-ab" },
-        ],
-        requestId: "permission-",
-        requireUnambiguousPrefix: true,
-      }),
-    ).toThrow("Permission request ID prefix is ambiguous");
-  });
-
-  it("preserves legacy first-prefix matching while preferring exact IDs for richer responses", () => {
+  it("rejects an ambiguous prefix, prefers an exact ID, and resolves the short ID ls shows", () => {
     const pendingPermissions = [
-      { ...requests[0]!, id: "permission-exact-extra" },
-      { ...requests[1]!, id: "permission-exact" },
+      { ...requests[0]!, id: "permission-3fa2b1c4-aaaa" },
+      { ...requests[1]!, id: "permission-3fa2b1c4" },
     ];
 
-    expect(resolvePermissionRequest({ pendingPermissions, requestId: "permission-exact" }).id).toBe(
-      "permission-exact-extra",
+    expect(() =>
+      selectPermissionRequests({ pendingPermissions, requestId: "permission-" }),
+    ).toThrow("Permission request ID prefix is ambiguous");
+    expect(
+      resolvePermissionRequest({ pendingPermissions, requestId: "permission-3fa2b1c4" }).id,
+    ).toBe("permission-3fa2b1c4");
+    expect(resolvePermissionRequest({ pendingPermissions: requests, requestId: "sec" }).id).toBe(
+      "permission-second",
     );
-    expect(
-      resolvePermissionRequest({
-        pendingPermissions,
-        requestId: "permission-exact",
-        requireUnambiguousPrefix: true,
-      }).id,
-    ).toBe("permission-exact");
-    expect(
-      resolvePermissionRequest({
-        pendingPermissions: requests,
-        requestId: "permission-f",
-        requireUnambiguousPrefix: true,
-      }).id,
-    ).toBe("permission-first");
+    expect(shortPermissionId("permission-3fa2b1c4-aaaa")).toBe("3fa2b1c4");
   });
 });

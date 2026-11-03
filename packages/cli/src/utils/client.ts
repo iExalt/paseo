@@ -290,13 +290,8 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
     return titleMatches[0].id;
   }
 
-  // Try partial title match
-  const partialTitleMatches = agents.filter((a) => a.title?.toLowerCase().includes(query));
-  if (partialTitleMatches.length === 1 && partialTitleMatches[0]) {
-    return partialTitleMatches[0].id;
-  }
-
-  // Several agents share the prefix and no title settles it: make the caller choose.
+  // Several agents share the prefix and no exact title settles it: make the caller choose
+  // before a title substring can pick one of them, or an unrelated agent.
   if (prefixMatches.length > 1) {
     throw {
       code: "AMBIGUOUS_AGENT_ID",
@@ -307,6 +302,12 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
         ),
       ].join("\n"),
     } satisfies CommandError;
+  }
+
+  // Try partial title match
+  const partialTitleMatches = agents.filter((a) => a.title?.toLowerCase().includes(query));
+  if (partialTitleMatches.length === 1 && partialTitleMatches[0]) {
+    return partialTitleMatches[0].id;
   }
 
   return null;
