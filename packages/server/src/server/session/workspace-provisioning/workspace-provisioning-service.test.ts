@@ -594,10 +594,16 @@ test("createWorkspaceForDirectory waits for an archive's delete and refuses the 
   const archiveHeld = new Promise<void>((resolve) => {
     releaseArchive = resolve;
   });
+  let lockAcquired!: () => void;
+  const lockHeld = new Promise<void>((resolve) => {
+    lockAcquired = resolve;
+  });
   const archive = withWorktreePathLock(repo, async () => {
+    lockAcquired();
     await archiveHeld;
     rmSync(repo, { recursive: true, force: true });
   });
+  await lockHeld;
   const created = provisioning.createWorkspaceForDirectory(repo);
   const outcome = created.then(
     () => "created",
