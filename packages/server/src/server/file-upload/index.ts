@@ -1,10 +1,34 @@
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, join } from "node:path";
 
 import { FileTransferOpcode, type FileTransferFrame } from "@getpaseo/protocol/binary-frames/index";
 import { getErrorMessage } from "@getpaseo/protocol/error-utils";
 import type { FileUploadRequest, FileUploadResponse } from "../messages.js";
+
+// Agents read an upload by path in the turn it was sent; a month covers resumed and re-read turns.
+const UPLOAD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** Deletes upload directories older than the retention window. Run at daemon start. */
+export async function removeExpiredUploads(options: {
+  paseoHome: string;
+  now?: number;
+}): Promise<void> {
+  const root = join(options.paseoHome, "uploads");
+  const entries = await readdir(root, { withFileTypes: true }).catch((error: unknown) => {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+    throw error;
+  });
+  const cutoff = (options.now ?? Date.now()) - UPLOAD_RETENTION_MS;
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory() && entry.name.startsWith("upload_"))
+      .map(async (entry) => {
+        const dir = join(root, entry.name);
+        if ((await stat(dir)).mtimeMs < cutoff) await rm(dir, { recursive: true, force: true });
+      }),
+  );
+}
 
 interface FileUploadStoreOptions {
   paseoHome: string;
