@@ -23,6 +23,11 @@ export type CompilerTask =
       environment: NodeJS.ProcessEnv;
     };
 
+/** Asks the worker to stop esbuild's service and exit on its own. */
+export interface CompilerShutdown {
+  kind: "shutdown";
+}
+
 interface TaskResult {
   entries: Awaited<ReturnType<typeof build.compilePlugin>>;
   directory: Awaited<ReturnType<typeof build.compileDirectoryPlugin>>;
@@ -30,6 +35,7 @@ interface TaskResult {
 }
 
 const IDLE_TIMEOUT_MS = 1_000;
+const SHUTDOWN_TIMEOUT_MS = 5_000;
 const source = import.meta.url.endsWith(".ts");
 const workerUrl = new URL(
   source ? "./compiler-worker.ts" : "./compiler-worker.js",
@@ -78,19 +84,19 @@ class PluginCompiler {
     this.worker = worker;
     // Keep error/exit ownership while idle too. The next caller gets a fresh
     // isolate after a crash; author build commands are never retried.
-    worker.on("error", () => this.stopWorker(worker));
+    worker.on("error", () => this.stopWorker(worker, "terminate"));
     worker.on("exit", () => {
-      if (this.worker === worker) this.stopWorker(worker);
+      if (this.worker === worker) this.stopWorker(worker, "terminate");
     });
     return worker;
   }
 
-  private stopWorker(worker: Worker): void {
+  private stopWorker(worker: Worker, mode: "shutdown" | "terminate" = "shutdown"): void {
     if (this.worker !== worker) return;
     this.worker = null;
     if (this.idleTimer) clearTimeout(this.idleTimer);
     this.idleTimer = null;
-    this.stopping = worker.terminate();
+    this.stopping = mode === "terminate" ? worker.terminate() : shutDownWorker(worker);
   }
 
   private async request<T extends CompilerTask>(
@@ -149,4 +155,17 @@ export function compilePlugin(entries: Parameters<typeof build.compilePlugin>[0]
 
 export function compileDirectoryPlugin(directory: string, version: string, builtinId?: string) {
   return runCompilerTask({ kind: "directory", directory, version, builtinId });
+}
+
+// Terminating the isolate while esbuild's service child runs leaves that child unreaped, one
+// zombie per build batch. Let the worker stop esbuild and exit; terminate only if it hangs.
+function shutDownWorker(worker: Worker): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => void worker.terminate(), SHUTDOWN_TIMEOUT_MS);
+    worker.once("exit", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    worker.postMessage({ kind: "shutdown" } satisfies CompilerShutdown, []);
+  });
 }
