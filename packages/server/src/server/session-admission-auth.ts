@@ -1,5 +1,5 @@
-import { compare } from "bcryptjs";
 import type { WSHelloMessage } from "@getpaseo/protocol/messages";
+import { verifyDaemonPassword } from "./auth.js";
 import { OWNER_PERMISSIONS } from "./authorization/index.js";
 import { matchesLocalCredential } from "./local-credential.js";
 import type { SessionAdmission } from "./websocket-server.js";
@@ -26,7 +26,7 @@ export async function resolveSessionAdmission(input: {
     }
     return { rejection: "incorrect_password" };
   }
-  return (await compare(credential.password, passwordHash))
+  return (await verifyDaemonPassword(credential.password, passwordHash))
     ? { admission: { principalId: "owner", permissions: OWNER_PERMISSIONS } }
     : { rejection: "incorrect_password" };
 }
