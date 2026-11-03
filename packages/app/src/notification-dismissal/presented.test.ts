@@ -5,7 +5,7 @@ import {
   presentedAtMs,
   type PresentedNotification,
 } from "./presented";
-import type { NotificationDismissalTracker } from "./tracker";
+import type { NotificationDismissal } from "./dismissal";
 
 const KEY = agentNotificationKey({ serverId: "host", agentId: "agent" });
 
@@ -21,14 +21,12 @@ function setup(shade: PresentedNotification[]) {
   const tracked: Array<{ reason: string; createdAt?: number }> = [];
   const forgotten: string[] = [];
   const dismissed: string[] = [];
-  const tracker: NotificationDismissalTracker = {
+  const tracker: Pick<NotificationDismissal, "track" | "forget"> = {
     track: (identity, reason, options) => {
       tracked.push({ reason, createdAt: options?.createdAt });
       return agentNotificationKey(identity);
     },
-    forget: (key) => forgotten.push(key),
-    reconcile: () => undefined,
-    dispose: () => undefined,
+    forget: (key) => void forgotten.push(key),
   };
   const sync = createPresentedNotificationSync({
     api: {

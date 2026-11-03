@@ -1,9 +1,7 @@
 import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import { isPushTestNotification } from "@/push-notifications/test-push";
-import { createCaughtUpTracker } from "./caught-up-tracker";
-import { createAppCaughtUpEnvironment } from "./environment";
-import { createAppNotificationDismissalTracker } from "./index";
+import { createAppNotificationDismissal } from "./index";
 import {
   createPresentedNotificationSync,
   presentedAtMs,
@@ -17,13 +15,12 @@ import {
 export function startPresentedNotificationDismissal(): () => void {
   let presented: PresentedNotificationSync | null = null;
   const sync = () => void presented?.sync().catch(() => undefined);
-  const tracker = createAppNotificationDismissalTracker((keys) => {
-    // Pushes that arrived after the dismissed ones stay; the follow-up sync tracks them.
-    void presented?.dismiss(keys).then(sync, sync);
-  });
-  const caughtUp = createCaughtUpTracker({
-    environment: createAppCaughtUpEnvironment(),
-    dismiss: (identifiers) => {
+  const dismissal = createAppNotificationDismissal({
+    dismissThreads: (keys) => {
+      // Pushes that arrived after the dismissed ones stay; the follow-up sync tracks them.
+      void presented?.dismiss(keys).then(sync, sync);
+    },
+    dismissPushes: (identifiers) => {
       void Promise.all(
         identifiers.map((identifier) =>
           Notifications.dismissNotificationAsync(identifier).catch(() => undefined),
@@ -43,14 +40,14 @@ export function startPresentedNotificationDismissal(): () => void {
         })),
       dismiss: (identifier) => Notifications.dismissNotificationAsync(identifier),
     },
-    tracker: () => tracker,
+    tracker: () => dismissal,
     isTrackable: (data) => !isPushTestNotification(data as Record<string, unknown> | undefined),
-    onUntracked: (pushes) => caughtUp.setPushes(pushes),
+    onUntracked: (pushes) => dismissal.setUntrackedPushes(pushes),
   });
   // Pushes Android posted while Paseo was closed predate the refresh this starts.
   const syncAndRefresh = () =>
     void presented?.sync().then(
-      () => caughtUp.refreshAll(),
+      () => dismissal.refreshAll(),
       () => undefined,
     );
   syncAndRefresh();
@@ -61,7 +58,6 @@ export function startPresentedNotificationDismissal(): () => void {
   return () => {
     appState.remove();
     received.remove();
-    tracker.dispose();
-    caughtUp.dispose();
+    dismissal.dispose();
   };
 }

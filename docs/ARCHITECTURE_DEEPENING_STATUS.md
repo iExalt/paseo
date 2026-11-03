@@ -28,8 +28,8 @@ module, interface, depth, seam, adapter, leverage, locality.
 | 5   | Dependency fingerprint  | merged  | [#321](https://github.com/iExalt/paseo/pull/321) | Rescoped (owner chose "Shrink it", 2026-11-03): one key CLI for both `ci.yml` jobs; Nix filter and release-please untouched; no Nix test                  |
 | 6   | Release asset catalog   | active  |                                                  | New catalog absorbs `release-manifest.mjs` `assetNames`; desktop delta naming stays in shipped `paseo-nix-update-delta.mjs`; one release dry run approved |
 | 3   | Fork updater controller | planned |                                                  |                                                                                                                                                           |
-| 2   | Notification policy     | active  |                                                  | Fork-owned `notification-policy.ts` takes both broadcast decisions and the rule and mute writes; push-title parsing moved to protocol                     |
-| 1   | Notification dismissal  | planned |                                                  | Android push proof needs the phone                                                                                                                        |
+| 2   | Notification policy     | merged  | [#324](https://github.com/iExalt/paseo/pull/324) | Fork-owned `notification-policy.ts` takes both broadcast decisions and the rule and mute writes; push-title parsing moved to protocol                     |
+| 1   | Notification dismissal  | active  |                                                  | One driver over two plans; desktop and browser sends move out of upstream `os-notifications.ts`; Android push proof needs the phone                       |
 | 7   | Reading position        | planned |                                                  | Interaction with upstream `bottomAnchorController` written down before building                                                                           |
 
 ## Review corrections to the cards
@@ -42,5 +42,10 @@ module, interface, depth, seam, adapter, leverage, locality.
 - Item 6: a partial catalog already existed (`release-manifest.mjs`
   `assetNames`), and desktop delta naming already had one shipped owner.
   `release-nix.sh` runs before Node is set up, so it stays out of scope.
+- Item 1: the daemon's title strings had already left `caught-up.ts` (#324).
+  Of the 53 tests the card counted, 34 are table tests over pure plans and
+  stay; only the 19 driver and send tests were piecewise. The shade port the
+  card drew would share only "dismiss these ids" across native, desktop and
+  browser, so the seam sits between one driver and its two plans instead.
 - Item 4: the "every step lands in one lane" property test already existed;
   the change removes name decoding rather than adding that test.
