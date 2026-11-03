@@ -5,7 +5,7 @@ import {
   formatAgentMessage,
   formatSystemNotificationPrompt,
 } from "./agent-messages/index.js";
-import { expect, test, vi, onTestFinished } from "vitest";
+import { describe, expect, test, vi, onTestFinished } from "vitest";
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12682,4 +12682,113 @@ test("an out-of-band command racing idle cleanup waits for the resumed runtime",
   expect(await command).toEqual({ disposition: "out_of_band" });
   expect(h.commands).toEqual(["/maintenance"]);
   expect(h.prompts).toEqual([]);
+});
+
+describe("attention after unread finishes, stops and archives", () => {
+  class FinishThenFailSession extends TestAgentSession {
+    private attempt = 0;
+
+    override async startTurn(): Promise<{ turnId: string }> {
+      this.attempt += 1;
+      const attempt = this.attempt;
+      const turnId = `turn-${attempt}`;
+      setTimeout(() => {
+        this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
+        this.pushEvent(
+          attempt === 1
+            ? { type: "turn_completed", provider: this.provider, turnId }
+            : { type: "turn_failed", provider: this.provider, error: "boom", turnId },
+        );
+      }, 0);
+      return { turnId };
+    }
+  }
+
+  function clientFor(createSession: (config: AgentSessionConfig) => AgentSession): AgentClient {
+    return {
+      provider: "codex",
+      capabilities: TEST_CAPABILITIES,
+      isAvailable: async () => true,
+      createSession: async (config: AgentSessionConfig) => createSession(config),
+      resumeSession: async (config?: Partial<AgentSessionConfig>) =>
+        createSession({ provider: "codex", cwd: config?.cwd ?? process.cwd() }),
+    } as AgentClient;
+  }
+
+  async function createAttentionFixture(
+    createSession: (config: AgentSessionConfig) => AgentSession,
+  ) {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-attention-lifecycle-"));
+    const reasons: Array<"finished" | "error" | "permission"> = [];
+    const manager = new AgentManager({
+      clients: { codex: clientFor(createSession) },
+      logger,
+      onAgentAttention: ({ reason }) => reasons.push(reason),
+    });
+    const agent = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    return { manager, agentId: agent.id, workdir, reasons };
+  }
+
+  test("an error after an unread finish replaces it and notifies", async () => {
+    const { manager, agentId, workdir, reasons } = await createAttentionFixture(
+      (config) => new FinishThenFailSession(config),
+    );
+    try {
+      await manager.runAgent(agentId, "finish");
+      await expect(manager.runAgent(agentId, "fail")).rejects.toThrow("boom");
+
+      expect(reasons).toEqual(["finished", "error"]);
+      expect(manager.getAgent(agentId)?.attention).toMatchObject({
+        requiresAttention: true,
+        attentionReason: "error",
+      });
+    } finally {
+      await manager.closeAgent(agentId).catch(() => undefined);
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
+
+  test("stopping a running turn raises no finished attention", async () => {
+    const { manager, agentId, workdir, reasons } = await createAttentionFixture(
+      (config) => new SteeringTestSession(config),
+    );
+    try {
+      await startAgentRun(manager, agentId, "work", logger);
+      await vi.waitFor(() => expect(manager.getAgent(agentId)?.lifecycle).toBe("running"));
+
+      await manager.cancelAgentRun(agentId);
+
+      expect(manager.getAgent(agentId)?.lifecycle).toBe("idle");
+      expect(reasons).toEqual([]);
+    } finally {
+      await manager.closeAgent(agentId).catch(() => undefined);
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
+
+  test("a send or steer while the agent is being archived fails instead of being accepted", async () => {
+    const { manager, agentId, workdir } = await createAttentionFixture(
+      (config) => new SteeringTestSession(config),
+    );
+    const archiving = deferred<void>();
+    try {
+      const archive = manager.whileArchiving(agentId, () => archiving.promise);
+
+      await expect(startAgentRun(manager, agentId, "late", logger)).rejects.toThrow(
+        "being archived",
+      );
+      await expect(manager.steerOrDeferBehindActiveTurn(agentId, "late steer")).rejects.toThrow(
+        "being archived",
+      );
+
+      archiving.resolve();
+      await archive;
+    } finally {
+      archiving.resolve();
+      await manager.closeAgent(agentId).catch(() => undefined);
+      rmSync(workdir, { recursive: true, force: true });
+    }
+  });
 });

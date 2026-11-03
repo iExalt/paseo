@@ -74,6 +74,10 @@ class FakeLifecycleAgentManager implements LifecycleAgentManager {
     this.clearedAttentionAgentIds.push(agentId);
   }
 
+  async whileArchiving<T>(_agentId: string, work: () => Promise<T>): Promise<T> {
+    return work();
+  }
+
   async archiveAgent(agentId: string): Promise<{ archivedAt: string }> {
     this.archivedAgentIds.push(agentId);
     this.liveAgents.delete(agentId);

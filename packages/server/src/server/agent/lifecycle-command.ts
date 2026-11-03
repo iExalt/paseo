@@ -16,6 +16,7 @@ export interface LifecycleAgentManager {
   cancelAgentRun(agentId: string): Promise<AgentRunCancellationResult>;
   clearAgentAttention(agentId: string): Promise<void>;
   archiveAgent(agentId: string): Promise<{ archivedAt: string }>;
+  whileArchiving<T>(agentId: string, work: () => Promise<T>): Promise<T>;
   archiveSnapshot(agentId: string, archivedAt: string): Promise<StoredAgentRecord>;
   closeAgent(agentId: string): Promise<void>;
   setLabels(agentId: string, labels: Record<string, string>): Promise<void>;
@@ -123,9 +124,11 @@ export async function archiveAgentCommand(
   const liveAgent = dependencies.agentManager.getAgent(agentId);
   let record: StoredAgentRecord | null;
   if (liveAgent) {
-    await requestAgentRunCancellation(dependencies, agentId);
-    await dependencies.agentManager.clearAgentAttention(agentId).catch(() => undefined);
-    const archived = await dependencies.agentManager.archiveAgent(agentId);
+    const archived = await dependencies.agentManager.whileArchiving(agentId, async () => {
+      await requestAgentRunCancellation(dependencies, agentId);
+      await dependencies.agentManager.clearAgentAttention(agentId).catch(() => undefined);
+      return dependencies.agentManager.archiveAgent(agentId);
+    });
     if (liveAgent.internal) {
       return { agentId, archivedAt: archived.archivedAt, record: null };
     }
