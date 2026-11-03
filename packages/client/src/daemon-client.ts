@@ -5164,13 +5164,18 @@ export class DaemonClient {
     });
   }
 
-  async stashPop(cwd: string, stashIndex: number, requestId?: string): Promise<StashPopPayload> {
+  async stashPop(
+    cwd: string,
+    stash: { index: number; hash?: string },
+    requestId?: string,
+  ): Promise<StashPopPayload> {
     return this.sendCorrelatedSessionRequest({
       requestId,
       message: {
         type: "stash_pop_request",
         cwd,
-        stashIndex,
+        stashIndex: stash.index,
+        ...(stash.hash ? { stashHash: stash.hash } : {}),
       },
       responseType: "stash_pop_response",
     });

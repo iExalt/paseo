@@ -2624,6 +2624,11 @@ export const StashPopRequestSchema = z.object({
   cwd: z.string(),
   /** Zero-based index from stash_list_response. */
   stashIndex: z.number().int().min(0),
+  /**
+   * The entry's hash from stash_list_response. The stash stack is shared by every worktree of a
+   * repository, so the daemon refuses the pop when stash@{stashIndex} is no longer this stash.
+   */
+  stashHash: z.string().optional(),
   requestId: z.string(),
 });
 
@@ -6255,6 +6260,8 @@ export const CheckoutRenameBranchResponseSchema = z.object({
 
 const StashEntrySchema = z.object({
   index: z.number().int().min(0),
+  /** The stash commit; pass it back as stash_pop_request.stashHash. */
+  hash: z.string().optional(),
   message: z.string(),
   branch: z.string().nullable(),
   isPaseo: z.boolean(),
