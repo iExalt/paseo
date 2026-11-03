@@ -12768,7 +12768,7 @@ describe("attention after unread finishes, stops and archives", () => {
     }
   });
 
-  test("a send while the agent is being archived fails instead of starting a turn", async () => {
+  test("a send or steer while the agent is being archived fails instead of being accepted", async () => {
     const { manager, agentId, workdir } = await createAttentionFixture(
       (config) => new SteeringTestSession(config),
     );
@@ -12777,6 +12777,9 @@ describe("attention after unread finishes, stops and archives", () => {
       const archive = manager.whileArchiving(agentId, () => archiving.promise);
 
       await expect(startAgentRun(manager, agentId, "late", logger)).rejects.toThrow(
+        "being archived",
+      );
+      await expect(manager.steerOrDeferBehindActiveTurn(agentId, "late steer")).rejects.toThrow(
         "being archived",
       );
 

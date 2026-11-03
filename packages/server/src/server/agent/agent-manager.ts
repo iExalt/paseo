@@ -2412,7 +2412,13 @@ export class AgentManager {
     this.emitState(agent);
   }
 
-  /** Rejects new turns for `agentId` until `work` settles. */
+  private assertNotArchiving(agentId: string): void {
+    if (this.archivingAgentIds.has(agentId)) {
+      throw new Error(`Agent ${agentId} is being archived`);
+    }
+  }
+
+  /** Rejects new turns and steers for `agentId` until `work` settles. */
   async whileArchiving<T>(agentId: string, work: () => Promise<T>): Promise<T> {
     this.archivingAgentIds.add(agentId);
     try {
@@ -2820,9 +2826,7 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
   ): AsyncGenerator<AgentStreamEvent> {
-    if (this.archivingAgentIds.has(agentId)) {
-      throw new Error(`Agent ${agentId} is being archived`);
-    }
+    this.assertNotArchiving(agentId);
     if (this.collectingRuntimes.has(agentId) || (!this.agents.has(agentId) && this.registry))
       return this.streamAfterRuntimeCollection(agentId, prompt, options);
     const existingAgent = this.requireSessionAgent(agentId);
@@ -3128,6 +3132,7 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options?: AgentSteerOptions,
   ): Promise<SteerResult> {
+    this.assertNotArchiving(agentId);
     const agent = this.requireSessionAgent(agentId);
     const expectedTurnId = agent.activeForegroundTurnId ?? agent.activeTurnId;
     if (!expectedTurnId || !agent.session.steerActiveTurn) {
@@ -3160,6 +3165,7 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options?: AgentSteerOptions,
   ): Promise<ActiveTurnSteerDispatchResult> {
+    this.assertNotArchiving(agentId);
     // A turn that is still starting has no id to steer yet. Replacing it would drop its
     // prompt, so wait until it is accepted (or fails) and steer the turn it became.
     await this.runs.waitForForegroundStart(agentId);
