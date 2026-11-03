@@ -79,3 +79,8 @@ calls the sticky paths. Upstream keeps calling the controller directly for
 drags, scroll, layout and content size. The module receives the same events
 from the host file and answers with what the host must pass on (the
 programmatic flag, whether to extend the settle).
+
+Where the host calls the module (`scrollStart` before it records the offset,
+`scrollEnd` before the bottom anchor, the settle calls inside upstream's
+settle) can't be pinned by the module's tests. It rests on review and the
+Cuttlefish run. The PR's base is `dev` at `50c61e532`.

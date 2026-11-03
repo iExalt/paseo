@@ -133,6 +133,18 @@ describe("native reading position", () => {
     expect(calls).toEqual(["offset 200 false", "index 3 false"]);
   });
 
+  it("keeps a retry's estimate scroll programmatic past the jump's own window", () => {
+    const { position, advance } = setup();
+    position.jumpToItem("r2");
+    advance(150);
+    position.scrollToIndexFailed({ averageItemLength: 100 });
+    advance(150);
+    expect(
+      position.scrollStart({ previousWidth: 800, width: 800, userScrollActive: false })
+        .programmatic,
+    ).toBe(true);
+  });
+
   it("restores the reading row after a width change once the rewrap settles, only while detached", () => {
     const { position, calls, view, settle } = setup();
     position.hold();
@@ -169,6 +181,27 @@ describe("native reading position", () => {
       return position.settleFrame();
     });
     expect(answers).toEqual([true, true, true, true, true, false]);
+  });
+
+  it("never freezes while stuck to the bottom, and caps the settle for content that never holds", () => {
+    const sticky = setup();
+    sticky.view("r1");
+    sticky.position.viewportChanged(800, 1200);
+    sticky.position.settleStart();
+    sticky.state.contentHeight += 100;
+    expect(sticky.position.settleFrame()).toBe(false);
+
+    const { position, state, view } = setup();
+    position.hold();
+    view("r1");
+    position.viewportChanged(800, 1200);
+    position.settleStart();
+    const answers = Array.from({ length: 60 }, () => {
+      state.contentHeight += 100;
+      return position.settleFrame();
+    });
+    expect(answers.lastIndexOf(true)).toBe(58);
+    expect(answers[59]).toBe(false);
   });
 
   it("lets a drag or a jump to bottom cancel a pending restore, but not a hold", () => {
