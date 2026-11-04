@@ -191,15 +191,13 @@ describe("desktop stops and terminals", () => {
     "host_remove",
     "quit",
     "app_update",
-    "version_mismatch",
     "restart",
   ];
 
-  it("keeps terminals only for an app update or version-mismatch restart, never on Windows", () => {
+  it("keeps terminals only for an app update, never on Windows", () => {
     for (const platform of ["darwin", "linux"] as const) {
       expect(reasons.filter((reason) => keepsTerminalsOnStop(reason, platform))).toEqual([
         "app_update",
-        "version_mismatch",
       ]);
     }
     expect(reasons.filter((reason) => keepsTerminalsOnStop(reason, "win32"))).toEqual([]);

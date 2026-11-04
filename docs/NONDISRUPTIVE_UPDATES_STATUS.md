@@ -22,14 +22,17 @@ PR to `dev`; a release and the live Mac check need separate approval.
   so replacing `/Applications/Paseo.app` neither waits for it nor swaps files under it.
   Nix keeps a running process's store paths alive, so pruning needs no change.
 - The first update into this version still stops the daemon: that restart runs the old
-  app's code.
+  app's code. A daemon older than 0.21.0 cannot stop only when idle, so the new app keeps
+  it; the `update-nix-paseo` skill adds `daemon stop` to its restart command only for one.
+- While the daemon is busy the app retries every 60 s; any unknown stop outcome re-reads
+  the daemon before deciding. Windows keeps the old behaviour.
 
 ## Chunks
 
 | Chunk | Outcome                                                                       | State                                        |
 | ----- | ----------------------------------------------------------------------------- | -------------------------------------------- |
-| 1     | Daemon stop-if-idle RPC, client gate, `paseo daemon stop --if-idle`           | active                                       |
-| 2     | Update restart and quit leave the daemon running; mismatch upgrades when idle | planned                                      |
+| 1     | Daemon stop-if-idle RPC, client gate, `paseo daemon stop --if-idle`           | complete: reviewer accepted 358608a50        |
+| 2     | Update restart and quit leave the daemon running; mismatch upgrades when idle | active                                       |
 | 3     | Daemon launched from the Nix store bundle on macOS                            | planned                                      |
 | D     | Live check on the Mac after a release (gate)                                  | deferred: needs a release and a user restart |
 
@@ -38,4 +41,5 @@ PR to `dev`; a release and the live Mac check need separate approval.
 Run after the user approves a release and restarts into it: update with an agent mid-turn;
 the turn finishes; the daemon upgrades once idle; `/Applications/Paseo.app` holds the new
 version; agents spawned by a store-launched daemon keep their macOS file-access (TCC)
-permissions.
+permissions; launching the `/Applications` copy while the store copy runs focuses the
+existing window (single-instance lock shared across both copies).

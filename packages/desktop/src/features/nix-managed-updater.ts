@@ -238,12 +238,10 @@ export function nixRelaunch(input: {
     : { kind: "exec", execPath: nixReleaseExecutable(input.activeOutputPath, input.platform) };
 }
 
-// Restart into the active profile generation. The daemon goes first because it keeps
-// running after the app quits, and only the instance the user confirmed may be stopped.
+// Restart into the active profile generation. The daemon keeps running, agents included; the
+// new app upgrades it once every agent is idle (daemon/daemon-upgrade.ts).
 export async function restartIntoActiveNixRelease(input: {
   runNixUpdate: (command: NixUpdateCommand) => Promise<NixUpdateResult>;
-  confirmedDaemon: ConfirmedDaemonInstance | null;
-  stopDaemon: (confirmed: ConfirmedDaemonInstance) => Promise<unknown>;
   relaunch: (target: NixRelaunch) => void;
   cliPath: string;
   pid: number;
@@ -251,7 +249,6 @@ export async function restartIntoActiveNixRelease(input: {
 }): Promise<void> {
   const { active } = await input.runNixUpdate("status");
   if (!active) fail("There is no active Nix release to restart into.");
-  if (input.confirmedDaemon) await input.stopDaemon(input.confirmedDaemon);
   input.relaunch(
     nixRelaunch({
       activeOutputPath: active.outputPath,

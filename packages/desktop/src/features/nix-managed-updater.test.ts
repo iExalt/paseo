@@ -172,19 +172,16 @@ describe("Nix restart into the active release", () => {
     running: { version: "0.2.2", outputPath },
   };
 
-  it("stops only the confirmed daemon, then hands the macOS restart to the running updater", async () => {
+  it("hands the macOS restart to the running updater and leaves the daemon running", async () => {
     const calls: string[] = [];
     await restartIntoActiveNixRelease({
       runNixUpdate: async () => status,
-      confirmedDaemon: { pid: 42, startedAt: "2026-10-15T00:00:00.000Z" },
-      stopDaemon: async (confirmed) => calls.push(`stop ${confirmed.pid}`),
       relaunch: (target) => calls.push(`relaunch ${JSON.stringify(target)}`),
       cliPath: installation.cliPath,
       pid: 7,
       platform: "darwin",
     });
     expect(calls).toEqual([
-      "stop 42",
       `relaunch ${JSON.stringify({
         kind: "handoff",
         command: installation.cliPath,
@@ -204,8 +201,6 @@ describe("Nix restart into the active release", () => {
     await expect(
       restartIntoActiveNixRelease({
         runNixUpdate: async () => ({ ...status, active: null }),
-        confirmedDaemon: null,
-        stopDaemon: vi.fn(),
         relaunch,
         cliPath: installation.cliPath,
         pid: 7,

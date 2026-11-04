@@ -50,6 +50,7 @@ import {
   closeLocalTransportSession,
 } from "./local-transport.js";
 import { createNodeEntrypointInvocation, resolveDaemonRunnerEntrypoint } from "./runtime-paths.js";
+import { createDaemonUpgrader, type IdleStopResult } from "./daemon-upgrade.js";
 import {
   ExternalCliCommandError,
   runExternalCliJsonCommand,
@@ -81,7 +82,6 @@ const DESKTOP_DAEMON_STOP_REASON_VALUES = [
   "host_remove",
   "quit",
   "app_update",
-  "version_mismatch",
   "restart",
 ] as const;
 export type DesktopDaemonStopReason = (typeof DESKTOP_DAEMON_STOP_REASON_VALUES)[number];
@@ -274,19 +274,6 @@ export async function resolveDesktopDaemonStatus(): Promise<DesktopDaemonStatus>
   }
 }
 
-function normalizeVersion(version: string | null): string | null {
-  const trimmed = version?.trim();
-  if (!trimmed) return null;
-  return trimmed.replace(/^v/i, "");
-}
-
-function shouldRestartForVersion(current: DesktopDaemonStatus): boolean {
-  if (!current.ownedByDesktop) return false;
-  const appVersion = normalizeVersion(resolveDesktopAppVersion());
-  const daemonVersion = normalizeVersion(current.version);
-  return Boolean(appVersion && daemonVersion && appVersion !== daemonVersion);
-}
-
 function assertBuiltInDaemonManagementEnabled(settings: DesktopSettings): void {
   if (!settings.daemon.manageBuiltInDaemon) {
     throw new Error("Built-in daemon management is disabled.");
@@ -295,28 +282,39 @@ function assertBuiltInDaemonManagementEnabled(settings: DesktopSettings): void {
 
 async function startDaemon(): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
+  return daemonUpgrader.ensure();
+}
 
-  const current = await resolveDesktopDaemonStatus();
-  logDesktopDaemonLifecycle("initial status check before start", {
-    status: current.status,
-    pid: current.pid,
-    listen: current.listen,
-    serverId: current.serverId || null,
-    error: current.error,
-    desktopManaged: current.desktopManaged,
-  });
-  if (current.status === "running" || current.status === "starting") {
-    if (shouldRestartForVersion(current)) {
-      logDesktopDaemonLifecycle("daemon version mismatch, restarting", {
-        appVersion: normalizeVersion(resolveDesktopAppVersion()),
-        daemonVersion: normalizeVersion(current.version),
-      });
-      await stopDesktopDaemon("version_mismatch");
-    } else {
-      return current;
-    }
+// Asks the running daemon to stop only if no agent has work; throws when the outcome is unknown.
+async function stopDaemonIfIdle(): Promise<IdleStopResult> {
+  try {
+    const result = (await runExternalCliJsonCommand([
+      "daemon",
+      "stop",
+      "--home",
+      getPaseoHome(),
+      "--if-idle",
+      "--json",
+    ])) as { action?: unknown };
+    return result.action === "declined" ? "declined" : "stopped";
+  } catch (error) {
+    if (error instanceof ExternalCliCommandError && error.code === "IDLE_SHUTDOWN_UNSUPPORTED")
+      return "unsupported";
+    throw error;
   }
+}
 
+const daemonUpgrader = createDaemonUpgrader({
+  appVersion: () => resolveDesktopAppVersion(),
+  platform: process.platform,
+  readStatus: () => resolveDesktopDaemonStatus(),
+  stopIfIdle: stopDaemonIfIdle,
+  launch: launchDaemon,
+  managementEnabled: async () => (await getDesktopSettingsStore().get()).daemon.manageBuiltInDaemon,
+  log: logDesktopDaemonLifecycle,
+});
+
+async function launchDaemon(): Promise<DesktopDaemonStatus> {
   const home = getPaseoHome();
   const invocation = createNodeEntrypointInvocation({
     entrypoint: resolveDaemonRunnerEntrypoint(),
@@ -431,16 +429,16 @@ export async function stopCapturedDaemon(input: StopCapturedDaemonInput): Promis
 
 /**
  * Whether a desktop stop keeps the daemon's terminals running for the daemon that replaces it.
- * Only when one comes straight back (an app update, a version-mismatch restart), and never on
- * Windows: a surviving terminal worker runs Paseo.exe and would lock the install folder the
- * update replaces. Quit, Settings, host removal and manual stops close terminals.
+ * Only when one comes straight back (an app update), and never on Windows: a surviving terminal
+ * worker runs Paseo.exe and would lock the install folder the update replaces. Quit, Settings,
+ * host removal and manual stops close terminals. An idle-only upgrade stop always keeps them.
  */
 export function keepsTerminalsOnStop(
   reason: DesktopDaemonStopReason,
   platform: NodeJS.Platform,
 ): boolean {
   if (platform === "win32") return false;
-  return reason === "app_update" || reason === "version_mismatch";
+  return reason === "app_update";
 }
 
 async function restartDaemon(): Promise<DesktopDaemonStatus> {
@@ -485,6 +483,7 @@ export function createDaemonCommandHandlers(
   input: {
     installation?: DesktopInstallation;
     runNixUpdate?: (command: NixUpdateCommand) => Promise<NixUpdateResult>;
+    quitForRelaunch?: () => void;
   } = {},
 ): Record<string, DesktopCommandHandler> {
   const installation = input.installation ?? resolveDesktopInstallation(process.resourcesPath);
@@ -572,16 +571,15 @@ export function createDaemonCommandHandlers(
     for (const command of NIX_UPDATE_COMMANDS) {
       handlers[`nix_update_${command}`] = () => runNixUpdate(command);
     }
-    handlers.nix_update_restart = (args) =>
+    handlers.nix_update_restart = () =>
       restartIntoActiveNixRelease({
         runNixUpdate,
-        confirmedDaemon: parseConfirmedDaemonInstance(args),
-        stopDaemon: (confirmed) => stopDesktopDaemon("manual_ipc", confirmed),
         relaunch: (target) => {
           if (target.kind === "exec") app.relaunch({ execPath: target.execPath });
           else spawn(target.command, target.args, { detached: true, stdio: "ignore" }).unref();
-          // Quit after the IPC reply is sent; the relaunch waits for this process to exit.
-          setImmediate(() => app.quit());
+          // Quit after the IPC reply is sent; the relaunch waits for this process to exit. The
+          // quit leaves the daemon running whatever keepRunningAfterQuit says.
+          setImmediate(() => (input.quitForRelaunch ?? (() => app.quit()))());
         },
         cliPath: installation.mode === "nix" ? installation.cliPath : "",
         pid: process.pid,
@@ -591,8 +589,16 @@ export function createDaemonCommandHandlers(
   return handlers;
 }
 
-export function registerDaemonManager(installation?: DesktopInstallation): void {
-  const handlers = createDaemonCommandHandlers({ installation });
+export function registerDaemonManager(
+  installation?: DesktopInstallation,
+  options: { quitForRelaunch?: () => void } = {},
+): void {
+  const handlers = createDaemonCommandHandlers({
+    installation,
+    quitForRelaunch: options.quitForRelaunch,
+  });
+  // A retry must not start a daemon while the app quits.
+  app.on("before-quit", () => daemonUpgrader.close());
 
   ipcMain.handle(
     "paseo:invoke",
