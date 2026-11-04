@@ -9,7 +9,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
-import { dirname, join, relative as relativePath, resolve } from "node:path";
+import { dirname, join, posix, relative as relativePath, resolve } from "node:path";
 import { promisify } from "node:util";
 import { execFile, spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
@@ -788,6 +788,63 @@ async function assertNoInheritedWorkflows(repositoryPath, devSha) {
   }
 }
 
+// The fork moved upstream's docs/*.md into docs/upstream/ once. A doc upstream adds later
+// replays at the top level of docs/, where fork docs live, and upstream edits to moved docs
+// keep links written for docs/ (such as ../public-docs/). Either replays without a conflict,
+// so a new top-level doc or a newly dead relative link stops the run.
+const DOCS_TOP_LEVEL = /^docs\/[^/]+\.md$/;
+const DOCS_LINKED = /^(docs\/.+|CLAUDE)\.md$/;
+
+async function treePaths(repositoryPath, revision) {
+  const names = await gitChecked(repositoryPath, ["ls-tree", "-r", "-z", "--name-only", revision]);
+  const files = names.split("\0").filter(Boolean);
+  const paths = new Set(files);
+  for (const file of files) {
+    for (let dir = posix.dirname(file); dir !== "."; dir = posix.dirname(dir)) paths.add(dir);
+  }
+  return { files, paths };
+}
+
+export function relativeLinkTargets(markdown) {
+  const targets = [];
+  for (const match of markdown.matchAll(/\]\(([^)\s#]+)(?:#[^)\s]*)?\)/g)) {
+    if (!/^([a-z][a-z0-9+.-]*:|\/)/i.test(match[1])) targets.push(match[1]);
+  }
+  return targets;
+}
+
+async function deadDocLinks(repositoryPath, revision) {
+  const { files, paths } = await treePaths(repositoryPath, revision);
+  const dead = new Set();
+  for (const file of files.filter((path) => DOCS_LINKED.test(path))) {
+    const text = (await gitBlob(repositoryPath, `${revision}:${file}`)).toString("utf8");
+    for (const target of relativeLinkTargets(text)) {
+      const resolved = posix.normalize(posix.join(posix.dirname(file), decodeURI(target)));
+      if (!paths.has(resolved.replace(/\/$/, ""))) dead.add(`${file} -> ${target}`);
+    }
+  }
+  return { files, dead };
+}
+
+async function assertDocsLayoutPreserved(repositoryPath, devSha) {
+  const before = await deadDocLinks(repositoryPath, devSha);
+  const after = await deadDocLinks(repositoryPath, "HEAD");
+  const owned = new Set(before.files);
+  const misplaced = after.files.filter((path) => DOCS_TOP_LEVEL.test(path) && !owned.has(path));
+  const broken = [...after.dead].filter((link) => !before.dead.has(link));
+  const problems = [];
+  if (misplaced.length > 0) {
+    problems.push(`adds upstream docs at the top of docs/: ${misplaced.join(", ")}`);
+  }
+  if (broken.length > 0) problems.push(`breaks doc links: ${broken.join(", ")}`);
+  if (problems.length > 0) {
+    throw new Error(
+      `Rebase ${problems.join("; ")}. Move new upstream docs to docs/upstream/ and fix the ` +
+        `links in ${FIXUPS_PREFIX}<upstream sha>.patch on the resolution branch.`,
+    );
+  }
+}
+
 // Upstream code can break the fork without any textual conflict, for example a new upstream
 // file written for an older toolchain than the fork pins. A reviewed patch keyed to the exact
 // captured upstream adapts it in one signed commit; a patch that does not apply stops the run.
@@ -1058,6 +1115,7 @@ export async function rebaseDev({
     });
     assertForkReleasePreserved(before, await readRelease());
     await assertNoInheritedWorkflows(repositoryPath, snapshots.dev);
+    await assertDocsLayoutPreserved(repositoryPath, snapshots.dev);
     let provenanceCommits = 0;
     if (before.config.upstreamBase !== snapshots.upstream) {
       // Keep replayed author/message metadata intact. Provenance is a separate,

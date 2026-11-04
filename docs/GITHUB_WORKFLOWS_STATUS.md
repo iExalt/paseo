@@ -113,6 +113,10 @@ tight.
 - **`rebase-dev` stops on an upstream workflow:** the fork keeps only the
   workflows on `dev`, so a workflow upstream adds stops the run. Delete it in
   `fixups/<upstream sha>.patch` on `rebase-resolutions` and dispatch again.
+- **`rebase-dev` stops on upstream docs:** a doc upstream adds lands at the top
+  of `docs/`, or an upstream edit leaves a dead relative link. Move the doc to
+  `docs/upstream/` and fix the links in the same fixup patch; see
+  [Rebasing dev](upstream/rebase-dev.md).
 
 ## Secrets and variables
 

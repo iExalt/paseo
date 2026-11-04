@@ -966,6 +966,45 @@ test("a workflow added upstream stops the run until a fixup deletes it", async (
   assert.equal(git(clone, "ls-tree", "--name-only", "HEAD", "--", ".github/workflows/"), "");
 });
 
+test("an upstream doc at the top of docs/ with a dead link stops the run until a fixup moves it", async () => {
+  const fixture = await makeFixture("misplaced-upstream-doc");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "upstream/main");
+  mkdirSync(join(seed, "docs"), { recursive: true });
+  writeFileSync(
+    join(seed, "docs", "new.md"),
+    "See [ok](../shared.txt) and [gone](../missing.md#x).\n",
+  );
+  commit(seed, "docs: add upstream doc");
+  git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
+  const upstreamSha = git(seed, "rev-parse", "HEAD");
+  const rebase = (name) => {
+    const clone = join(fixture.directory, name);
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    return { clone, result: rebaseDev({ repositoryPath: clone, ...signingOptions }) };
+  };
+
+  await assert.rejects(
+    rebase("misplaced").result,
+    /adds upstream docs at the top of docs\/: docs\/new\.md; breaks doc links: docs\/new\.md -> \.\.\/missing\.md\./,
+  );
+
+  mkdirSync(join(fixture.resolverPath, "fixups"));
+  writeFileSync(
+    join(fixture.resolverPath, "fixups", `${upstreamSha}.patch`),
+    "diff --git a/docs/new.md b/docs/new.md\ndeleted file mode 100644\n--- a/docs/new.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-See [ok](../shared.txt) and [gone](../missing.md#x).\n" +
+      "diff --git a/docs/upstream/new.md b/docs/upstream/new.md\nnew file mode 100644\n--- /dev/null\n+++ b/docs/upstream/new.md\n@@ -0,0 +1 @@\n+See [ok](../../shared.txt).\n",
+  );
+  commit(fixture.resolverPath, "fixup: move upstream doc");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+  const { clone, result } = rebase("moved");
+  assert.equal((await result).fixupCommits, 1);
+  assert.equal(
+    git(clone, "ls-tree", "-r", "--name-only", "HEAD", "--", "docs/"),
+    "docs/upstream/new.md",
+  );
+});
+
 test("a merge carrying hand edits stops before the replay", async () => {
   const fixture = await makeFixture("hand-edited-merge", { mergeHistory: "hand-edited" });
   const clone = join(fixture.directory, "checkout");
