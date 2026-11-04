@@ -554,7 +554,11 @@ For tighter loops, you can rebuild a single workspace:
 
 ## Dependency patches
 
-`patches/*.patch` are applied by `scripts/postinstall-patches.mjs` on every install. A patch only
+`patches/*.patch` are applied by `scripts/postinstall-patches.mjs`, the root `postinstall` script.
+`npm ci` and a plain `npm install` run it, but `npm install <package>` skips the root lifecycle
+scripts, so adding or bumping a dependency in a fresh checkout leaves every package unpatched.
+Typecheck then fails inside patched libraries, such as `sourceType` missing from
+`react-native-enriched-markdown`'s `LinkPressEvent`. Run `npm ci` afterwards. A patch only
 runs when its package is actually present, so add the package to that script's `patchedPackages`
 list when you introduce a new patch — otherwise the file sits in `patches/` and never applies.
 patch-package cannot apply a patch that changed after an earlier version was applied, so the
