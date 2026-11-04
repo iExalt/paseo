@@ -943,10 +943,10 @@ export class AgentManager {
     if (!unchangedAndIdle()) return false;
     // Probe concurrently under one short deadline: the caller's stop deadline also covers the
     // connection and the exit, and a late commit would stop a daemon the caller gave up on.
-    const probes = snapshot.map(({ agent }) =>
-      agent.session?.canStopRuntime ? agent.session.canStopRuntime() : Promise.resolve(true),
-    );
     try {
+      const probes = snapshot.map(({ agent }) =>
+        agent.session?.canStopRuntime ? agent.session.canStopRuntime() : Promise.resolve(true),
+      );
       const allowed = await withTimeout(
         Promise.all(probes),
         IDLE_SHUTDOWN_PROBE_DEADLINE_MS,
