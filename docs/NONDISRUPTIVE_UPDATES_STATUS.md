@@ -33,12 +33,12 @@ PR to `dev`; a release and the live Mac check need separate approval.
 
 ## Chunks
 
-| Chunk | Outcome                                                                       | State                                        |
-| ----- | ----------------------------------------------------------------------------- | -------------------------------------------- |
-| 1     | Daemon stop-if-idle RPC, client gate, `paseo daemon stop --if-idle`           | complete: reviewer accepted 358608a50        |
-| 2     | Update restart and quit leave the daemon running; mismatch upgrades when idle | complete: reviewer accepted 232a01e4d        |
-| 3     | Daemon launched from the Nix store bundle on macOS                            | complete: reviewer accepted 483247c2b        |
-| D     | Live check on the Mac after a release (gate)                                  | deferred: needs a release and a user restart |
+| Chunk | Outcome                                                                       | State                                                |
+| ----- | ----------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 1     | Daemon stop-if-idle RPC, client gate, `paseo daemon stop --if-idle`           | complete: accepted 358608a50; nit d952c69d8 reviewed |
+| 2     | Update restart and quit leave the daemon running; mismatch upgrades when idle | complete: accepted 232a01e4d; nit in 483247c2b       |
+| 3     | Daemon launched from the Nix store bundle on macOS                            | complete: accepted 483247c2b; fix 15724e957 accepted |
+| D     | Live check on the Mac after a release (gate)                                  | deferred: needs a release and a user restart         |
 
 ## Deferred gate D
 
