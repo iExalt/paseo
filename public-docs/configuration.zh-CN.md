@@ -24,9 +24,11 @@ Paseo 默认使用 `~/.paseo` 作为主目录。配置文件是：
 
 前台的 `paseo daemon run`、Docker 和直接由进程管理器启动的方式会在文件之后应用环境变量。已有的旧版进程管理器参数在 worker 重启后保持其优先级。修改部署覆盖项需要停止并重新启动该部署。列表类设置会在各个来源之间追加，包括主机名和 CORS 来源。
 
+默认值和旧版配置的优先级见 [Paseo 工具策略与迁移](/docs/mcp#configuration)。
+
 ## 示例 {#example}
 
-配置监听地址、主机名和 MCP 的最小示例：
+配置监听地址、主机名和原生 Agent 工具的最小示例：
 
 ```json
 {
@@ -35,7 +37,7 @@ Paseo 默认使用 `~/.paseo` 作为主目录。配置文件是：
   "daemon": {
     "listen": "127.0.0.1:6767",
     "hostnames": ["localhost", ".localhost"],
-    "mcp": { "enabled": true }
+    "agentTools": { "enabled": true }
   }
 }
 ```
@@ -68,7 +70,7 @@ daemon 会在应用任何内容之前校验整个文件。它会应用运行时�
 paseo daemon restart
 ```
 
-运行时安全的设置包括：中继启用、MCP 设置、浏览器工具、主机名、CORS 来源、受信任的代理、Git 进程限制、Agent 和终端配置、Provider 定义、元数据生成、应用基础 URL、Provider 目录超时，以及全局插件开关。删除其中某个设置会应用该字段缺省时的行为；删除某个 Provider 会把它从之后的启动中移除。
+运行时安全的设置包括：中继启用、原生 Agent 工具设置、浏览器工具、主机名、CORS 来源、受信任的代理、Git 进程限制、Agent 和终端配置、Provider 定义、元数据生成、应用基础 URL、Provider 目录超时，以及全局插件开关。删除其中某个设置会应用该字段缺省时的行为；删除某个 Provider 会把它从之后的启动中移除。
 
 当你删除 `daemon.relay.enabled` 时，新的主目录会保持中继关闭。如果 daemon 启动时其配置就已经省略了这个字段，它会为了兼容而保持旧版的中继开启行为。编辑较旧的配置时，请显式设置 `daemon.relay.enabled`。
 
