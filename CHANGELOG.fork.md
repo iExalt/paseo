@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.21.0](https://github.com/iExalt/paseo/compare/paseo-v0.20.0...paseo-v0.21.0) (2026-11-04)
+
+
+### Features
+
+* keep agents running through desktop updates ([#355](https://github.com/iExalt/paseo/issues/355)) ([f5b4bfc](https://github.com/iExalt/paseo/commit/f5b4bfc1b353c0ab72a4a9f51749d5afe3f53b53))
+
+
+### Bug Fixes
+
+* **skills:** route releases to the fork flow and fix fork doc drift ([#348](https://github.com/iExalt/paseo/issues/348)) ([3b85ef1](https://github.com/iExalt/paseo/commit/3b85ef18d5e717834730c00e1da9318dad8f7d52))
+
 ## [0.20.0](https://github.com/iExalt/paseo/compare/paseo-v0.19.0...paseo-v0.20.0) (2026-11-04)
 
 
