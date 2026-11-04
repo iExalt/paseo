@@ -44,13 +44,13 @@ The formula reserves three digits each for minor and patch. If either reaches `1
 
 ## Prerequisites (local dev)
 
-Local Android builds run on macOS (or Linux) and need the Android toolchain, pinned in `.tool-versions` (`java temurin-25.0.4+101.0.LTS`, `android-sdk 23.0`) and wired up by `.mise.toml` (which derives `ANDROID_HOME` and the command-line tool paths from the `android-sdk` entry). With [mise](https://mise.jdx.dev):
+Local Android builds run on macOS (or Linux) and need the Android toolchain, pinned in `.tool-versions` (`java temurin-25.0.4+101.0.LTS`, `android-sdk 23.0`) and wired up by `mise.toml` (which derives `ANDROID_HOME` and the command-line tool paths from the `android-sdk` entry). With [mise](https://mise.jdx.dev):
 
 ```bash
 mise install        # Temurin Java 25 + Android command-line tools 23.0
 ```
 
-> **Pin a real `android-sdk` version, not `latest`.** The mise `android-sdk` plugin's `latest` has resolved to the ancient `1.0` bundle, which predates the `emulator` package. Version `23.0` ships Android CLI; `sdkmanager` is now a deprecated compatibility wrapper. Keep the `android-sdk` version in `.tool-versions` and `[tools]` in `.mise.toml` synchronized; `.mise.toml` derives its Android paths from `.tool-versions`.
+> **Pin a real `android-sdk` version, not `latest`.** The mise `android-sdk` plugin's `latest` has resolved to the ancient `1.0` bundle, which predates the `emulator` package. Version `23.0` ships Android CLI; `sdkmanager` is now a deprecated compatibility wrapper. Keep the `android-sdk` version in `.tool-versions` and `[tools]` in `mise.toml` synchronized; `mise.toml` derives its Android paths from `.tool-versions`.
 
 `mise install` only lays down the command-line tools. Install the rest and create an emulator. On Apple Silicon:
 
@@ -353,6 +353,11 @@ adb exec-out screencap -p > screenshot.png
 ```
 
 ## Cloud build + submit (EAS)
+
+> **Fork note:** upstream only. The fork has no `android-apk-release.yml` and does not build or
+> submit through EAS on tag pushes; `release.yml` builds and signs the fork APK (see
+> [Fork release APK](#fork-release-apk) and
+> [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md#release-procedure)).
 
 Stable tag pushes like `v0.1.0` trigger:
 

@@ -14,7 +14,7 @@ Use the Paseo browser when:
 
 - **You're running agents remotely and want to watch.** You see the same browser the agent is driving, live in the Paseo desktop app — not a headless browser on a box you can't see.
 - **You want the browser inside Paseo.** It's a tab in the same session, not a separate agent window to manage.
-- **You don't want to set up extra tools.** It's built in — no separate MCP server or CLI to install and wire up.
+- **You don't want to set up extra tools.** It's built in — no separate browser server or CLI to install and wire up.
 
 Reach for Playwright or agent-browser when the browser work stands on its own — headless CI runs, an existing test suite, or automation that isn't tied to an agent session in Paseo.
 

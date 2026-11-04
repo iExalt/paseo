@@ -31,12 +31,12 @@ Trusted server plugins retain the authority of their runtime; they are not sandb
 
 ## Delegating agents
 
-Agent MCP discovers destination IDs with `list_hosts`. `create_workspace`, `list_workspaces`,
+Provider-native Paseo tools discover destination IDs with `list_hosts`. `create_workspace`, `list_workspaces`,
 `create_agent`, `send_agent_prompt`, `get_agent_status`, `get_agent_activity`, and `list_agents`
 accept `serverId`; omission selects the calling daemon. Remote creation requires a
 destination workspace and explicit provider/model. Caller filesystem defaults apply only on the
 calling daemon. Prompting a remote child acknowledges acceptance and uses the existing idle wait for
-finish notifications. Remote agent lists have no caller-directory default; pass `cwd` to filter them.
+finish notifications. Remote agent lists have no caller-directory default; pass `cwd` to filter them. CLI users list hosts with `paseo host ls` and target one with `--host`.
 
 The parent’s Subagents track shows qualified children across connected hosts. Opening a child uses
 the ordinary conversation on the destination's session. The runtime selects among that host's

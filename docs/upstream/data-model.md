@@ -312,7 +312,7 @@ agents that can access the host through a shell.
 session is created, resumed, imported, or reloaded, so configuration changes affect the next
 session rather than an already-running one.
 
-`agents.metadataGeneration.providers` selects the models for daemon-side metadata tasks: commit messages, PR text, branch names, and generated titles. An empty list is Automatic; a non-empty list is Manual and only those models are tried. See [public-docs/metadata-generation.md](../public-docs/metadata-generation.md#how-a-model-is-chosen).
+`agents.metadataGeneration.providers` selects the models for daemon-side metadata tasks: commit messages, PR text, branch names, and generated titles. An empty list is Automatic; a non-empty list is Manual and only those models are tried. See [public-docs/metadata-generation.md](../../public-docs/metadata-generation.md#how-a-model-is-chosen).
 
 ### Git process limits
 
@@ -354,7 +354,7 @@ Each use site owns its provider settings: `features.dictation.stt`,
 `features.voiceMode.stt`, and `features.voiceMode.tts`. `provider` selects a strict
 `local` or `openai` variant. Both STT variants carry `language`; normalization preserves
 it regardless of provider. `providers.local.modelsDir` remains shared storage.
-See [Voice configuration](../public-docs/voice.md) for fields, examples and env precedence.
+See [Voice configuration](../../public-docs/voice.md) for fields, examples and env precedence.
 
 On load, `persisted-config.ts` folds legacy `providers.openai` credentials and URLs
 into OpenAI sites that lack their own values, using endpoint settings before shared

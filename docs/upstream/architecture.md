@@ -67,7 +67,7 @@ retaining the daemon's runtime and wire-schema allocations. The server export te
 these dependency trees with tree-shaking disabled to match unbundled production imports.
 
 Terminals do not live in the daemon process: their PTYs run in a detached terminal worker that
-survives daemon restarts, crashes and upgrades. See [terminal-worker.md](terminal-worker.md).
+survives daemon restarts, crashes and upgrades. See [terminal-worker.md](../terminal-worker.md).
 
 Project identity is daemon-global rather than session-owned. After registry bootstrap, the daemon's
 project Git observer keeps one non-recursive watch on each lexically equivalent active project root
