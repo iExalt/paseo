@@ -132,6 +132,8 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .trim();
 }
 
+const IDLE_SHUTDOWN_PROBE_DEADLINE_MS = 5_000;
+
 export class AgentManagerShuttingDownError extends Error {
   constructor() {
     super("Agent manager is shutting down");
@@ -939,20 +941,21 @@ export class AgentManager {
           this.agentHasNoPendingWork(agent),
       );
     if (!unchangedAndIdle()) return false;
-    for (const { agent } of snapshot) {
-      if (!agent.session?.canStopRuntime) continue;
-      let allowed: boolean;
-      try {
-        allowed = await withTimeout(
-          agent.session.canStopRuntime(),
-          10_000,
-          `Runtime safety probe timed out for ${agent.id}`,
-        );
-      } catch (error) {
-        this.logger.warn({ err: error, agentId: agent.id }, "Idle shutdown probe failed");
-        return false;
-      }
-      if (allowed !== true) return false;
+    // Probe concurrently under one short deadline: the caller's stop deadline also covers the
+    // connection and the exit, and a late commit would stop a daemon the caller gave up on.
+    const probes = snapshot.map(({ agent }) =>
+      agent.session?.canStopRuntime ? agent.session.canStopRuntime() : Promise.resolve(true),
+    );
+    try {
+      const allowed = await withTimeout(
+        Promise.all(probes),
+        IDLE_SHUTDOWN_PROBE_DEADLINE_MS,
+        "Idle shutdown probes timed out",
+      );
+      if (!allowed.every((value) => value === true)) return false;
+    } catch (error) {
+      this.logger.warn({ err: error }, "Idle shutdown probe failed");
+      return false;
     }
     if (!unchangedAndIdle()) return false;
     this.prepareForShutdown();

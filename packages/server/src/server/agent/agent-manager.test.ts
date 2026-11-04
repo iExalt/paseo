@@ -12893,6 +12893,22 @@ describe("stopAdmittingIfIdle", () => {
     await expect(manager.stopAdmittingIfIdle()).resolves.toBe(true);
   });
 
+  test("declines within one deadline when several probes hang", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const { manager, create, setProbe } = idleShutdownHarness();
+    await create();
+    await create();
+    setProbe(() => new Promise<boolean>(() => {}));
+
+    const decision = manager.stopAdmittingIfIdle();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await expect(decision).resolves.toBe(false);
+  });
+
   test("declines when a turn is admitted while the provider probe is pending", async () => {
     const { manager, create, setProbe } = idleShutdownHarness();
     const agent = await create();
