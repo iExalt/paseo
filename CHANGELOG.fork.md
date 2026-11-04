@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/iExalt/paseo/compare/paseo-v0.19.0...paseo-v0.20.0) (2026-11-04)
+
+
+### Features
+
+* **app:** add alphabetical workspace sorting ([#346](https://github.com/iExalt/paseo/issues/346)) ([fcdbb1d](https://github.com/iExalt/paseo/commit/fcdbb1dd7ff6d53123854a7221d41b11240871dd))
+
 ## [0.19.0](https://github.com/iExalt/paseo/compare/paseo-v0.18.0...paseo-v0.19.0) (2026-11-03)
 
 
