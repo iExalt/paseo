@@ -221,7 +221,8 @@ export type NixRelaunch =
   | { kind: "handoff"; command: string; args: string[] };
 
 // On macOS the running app's updater takes over: once this process exits it
-// replaces /Applications/Paseo.app, which nothing runs from by then, and opens it.
+// replaces /Applications/Paseo.app and opens it. The daemon runs from its store bundle
+// and terminal workers outlive installs, so neither holds the copy.
 // Launching by bundle id could pick a stale registered store bundle.
 export function nixRelaunch(input: {
   activeOutputPath: string;

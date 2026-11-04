@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { app, ipcMain, powerMonitor } from "electron";
 import log from "electron-log/main";
@@ -51,6 +51,8 @@ import {
 } from "./local-transport.js";
 import { createNodeEntrypointInvocation, resolveDaemonRunnerEntrypoint } from "./runtime-paths.js";
 import { createDaemonUpgrader, type IdleStopResult } from "./daemon-upgrade.js";
+import type { NodeEntrypointInvocation } from "./node-entrypoint-launcher.js";
+import { daemonBundleRebase, rebaseDaemonLaunch, shouldSyncInstalledCopy } from "./store-bundle.js";
 import {
   ExternalCliCommandError,
   runExternalCliJsonCommand,
@@ -311,17 +313,47 @@ const daemonUpgrader = createDaemonUpgrader({
   stopIfIdle: stopDaemonIfIdle,
   launch: launchDaemon,
   managementEnabled: async () => (await getDesktopSettingsStore().get()).daemon.manageBuiltInDaemon,
+  isActiveRelease: () => isActiveRelease(),
+  onUpgraded: () => syncInstalledAppCopy(),
   log: logDesktopDaemonLifecycle,
 });
 
+// Set by registerDaemonManager for Nix installs: a stale app copy must not downgrade a newer
+// daemon, so only the active release replaces a daemon of another version.
+let isActiveRelease: () => Promise<boolean> = async () => true;
+let syncInstalledAppCopy: () => void = () => {};
+
+/** Moves a daemon launch onto the store bundle on Nix-managed macOS; see store-bundle.ts. */
+function launchFromStoreBundle(invocation: NodeEntrypointInvocation): NodeEntrypointInvocation {
+  const rebase = daemonBundleRebase({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    installation: resolveDesktopInstallation(process.resourcesPath),
+    resourcesPath: process.resourcesPath,
+    exists: existsSync,
+  });
+  if (!rebase) return invocation;
+  const moved = rebaseDaemonLaunch(invocation, rebase);
+  if (!existsSync(moved.command)) {
+    logDesktopDaemonLifecycle("store bundle helper missing; launching from the app bundle", {
+      command: moved.command,
+    });
+    return invocation;
+  }
+  logDesktopDaemonLifecycle("launching daemon from the store bundle", { command: moved.command });
+  return moved;
+}
+
 async function launchDaemon(): Promise<DesktopDaemonStatus> {
   const home = getPaseoHome();
-  const invocation = createNodeEntrypointInvocation({
-    entrypoint: resolveDaemonRunnerEntrypoint(),
-    argvMode: "node-script",
-    args: [],
-    baseEnv: process.env,
-  });
+  const invocation = launchFromStoreBundle(
+    createNodeEntrypointInvocation({
+      entrypoint: resolveDaemonRunnerEntrypoint(),
+      argvMode: "node-script",
+      args: [],
+      baseEnv: process.env,
+    }),
+  );
   try {
     await startDaemonInstance({
       home,
@@ -600,6 +632,7 @@ export function registerDaemonManager(
   });
   // A retry must not start a daemon while the app quits.
   app.on("before-quit", () => daemonUpgrader.close());
+  if (installation?.mode === "nix") configureNixDaemonUpgrade(installation);
 
   ipcMain.handle(
     "paseo:invoke",
@@ -611,4 +644,42 @@ export function registerDaemonManager(
       return await handler(args);
     },
   );
+}
+
+function configureNixDaemonUpgrade(
+  installation: Extract<DesktopInstallation, { mode: "nix" }>,
+): void {
+  const runNixUpdate = createNixUpdaterCommandRunner({
+    installation,
+    runningVersion: app.getVersion(),
+  });
+  // Cached for the session: activating a newer release changes nothing until the restart,
+  // because the app's and the daemon's versions stay the same until then.
+  let active: Promise<boolean> | null = null;
+  isActiveRelease = () => {
+    active ??= runNixUpdate("status")
+      .then((status) => status.active?.outputPath === installation.outputPath)
+      .catch((error) => {
+        active = null;
+        logDesktopDaemonLifecycle("could not read the active Nix release", {
+          error: String(error),
+        });
+        return false;
+      });
+    return active;
+  };
+  if (process.platform !== "darwin") return;
+  // A deferred copy leaves the app running from its store bundle and /Applications on an older
+  // release. Retry the copy once nothing runs from it; the updater skips a current or busy copy.
+  syncInstalledAppCopy = () => {
+    if (!shouldSyncInstalledCopy(process.resourcesPath)) return;
+    logDesktopDaemonLifecycle("syncing /Applications/Paseo.app with the running release");
+    const sync = spawn(installation.cliPath, ["install-app"], { detached: true, stdio: "ignore" });
+    sync.on("exit", (code) => logDesktopDaemonLifecycle("app copy sync finished", { code }));
+    sync.on("error", (error) =>
+      logDesktopDaemonLifecycle("app copy sync failed", { error: String(error) }),
+    );
+    sync.unref();
+  };
+  syncInstalledAppCopy();
 }

@@ -21,6 +21,10 @@ PR to `dev`; a release and the live Mac check need separate approval.
 - On Nix-managed macOS the daemon runs from the release's immutable `/nix/store` bundle,
   so replacing `/Applications/Paseo.app` neither waits for it nor swaps files under it.
   Nix keeps a running process's store paths alive, so pruning needs no change.
+  `PASEO_CLI` keeps its `/Applications` path: terminals hold it for life, and a store path
+  in an environment is no GC root. Terminal workers no longer count as running from the
+  copy. Only the active release replaces a daemon of another version, so a stale copy
+  cannot downgrade it; an app running from its store bundle retries the copy.
 - The first update into this version still stops the daemon: that restart runs the old
   app's code. A daemon older than 0.21.0 cannot stop only when idle, so the new app keeps
   it; the `update-nix-paseo` skill adds `daemon stop` to its restart command only for one.
@@ -32,8 +36,8 @@ PR to `dev`; a release and the live Mac check need separate approval.
 | Chunk | Outcome                                                                       | State                                        |
 | ----- | ----------------------------------------------------------------------------- | -------------------------------------------- |
 | 1     | Daemon stop-if-idle RPC, client gate, `paseo daemon stop --if-idle`           | complete: reviewer accepted 358608a50        |
-| 2     | Update restart and quit leave the daemon running; mismatch upgrades when idle | active                                       |
-| 3     | Daemon launched from the Nix store bundle on macOS                            | planned                                      |
+| 2     | Update restart and quit leave the daemon running; mismatch upgrades when idle | complete: reviewer accepted 232a01e4d        |
+| 3     | Daemon launched from the Nix store bundle on macOS                            | active                                       |
 | D     | Live check on the Mac after a release (gate)                                  | deferred: needs a release and a user restart |
 
 ## Deferred gate D
@@ -43,3 +47,6 @@ the turn finishes; the daemon upgrades once idle; `/Applications/Paseo.app` hold
 version; agents spawned by a store-launched daemon keep their macOS file-access (TCC)
 permissions; launching the `/Applications` copy while the store copy runs focuses the
 existing window (single-instance lock shared across both copies).
+Also check: the daemon's executable is under `/nix/store`; `/Applications/Paseo.app` updates
+while terminals stay open; after the restart, `ps` shows nothing but an ignored terminal
+worker running from `/Applications` (lingering Electron helpers would hold the copy).

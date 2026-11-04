@@ -29,6 +29,7 @@ function harness(input: {
   statuses: DaemonUpgradeStatus[];
   stops?: Array<IdleStopResult | Error>;
   managementEnabled?: boolean;
+  activeRelease?: boolean;
 }) {
   const statuses = [...input.statuses];
   const stops = [...(input.stops ?? [])];
@@ -49,6 +50,7 @@ function harness(input: {
       return OURS;
     },
     managementEnabled: async () => input.managementEnabled ?? true,
+    isActiveRelease: async () => input.activeRelease ?? true,
     log: () => {},
     schedule: (run, delayMs) => {
       const timer = { run, delayMs, cancelled: false };
@@ -112,6 +114,13 @@ describe("createDaemonUpgrader", () => {
     expect(pending()).toEqual([]);
   });
 
+  test("an app that is not the active release leaves a daemon of another version alone", async () => {
+    const { upgrader, calls, pending } = harness({ statuses: [OLD], activeRelease: false });
+    await expect(upgrader.ensure()).resolves.toBe(OLD);
+    expect(calls).toEqual({ stop: 0, launch: 0 });
+    expect(pending()).toEqual([]);
+  });
+
   test("keeps a daemon without idle stop and does not retry", async () => {
     const { upgrader, calls, pending } = harness({ statuses: [OLD], stops: ["unsupported"] });
     await expect(upgrader.ensure()).resolves.toBe(OLD);
@@ -168,6 +177,15 @@ describe("createDaemonUpgrader", () => {
     await stopped.fire();
     expect(stopped.calls).toEqual({ stop: 1, launch: 0 });
     expect(stopped.pending()).toEqual([]);
+  });
+
+  test("a stop during an attempt keeps the daemon stopped", async () => {
+    const run = harness({ statuses: [OLD, STOPPED], stops: [new Error("timed out")] });
+    // The user stops the daemon while the idle stop is in flight.
+    const attempt = run.upgrader.ensure();
+    run.upgrader.cancel();
+    await expect(attempt).resolves.toBe(STOPPED);
+    expect(run.calls.launch).toBe(0);
   });
 
   test("after an unknown outcome, a retry that finds the daemon gone starts ours", async () => {

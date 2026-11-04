@@ -23,6 +23,10 @@ export interface DaemonUpgradeDeps<Status extends DaemonUpgradeStatus> {
   launch: () => Promise<Status>;
   /** Whether the app may still manage the daemon; a retry stops once it may not. */
   managementEnabled: () => Promise<boolean>;
+  /** Whether this app is the release to converge on; a stale copy must not downgrade. */
+  isActiveRelease: () => Promise<boolean>;
+  /** Runs after an idle daemon was replaced. */
+  onUpgraded?: () => void;
   log: (message: string, details?: Record<string, unknown>) => void;
   schedule?: (run: () => void, delayMs: number) => () => void;
 }
@@ -73,6 +77,8 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
   let inFlight: Promise<Status> | null = null;
   let cancelRetry: (() => void) | null = null;
   let closed = false;
+  // Bumped by cancel(): an attempt or retry already under way must not undo a deliberate stop.
+  let generation = 0;
 
   /**
    * A retry belongs to the daemon it waited on. If that daemon is gone when it fires, someone
@@ -88,10 +94,11 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
   }
 
   async function retry(target: Status, launchIfGone: boolean): Promise<void> {
+    const started = generation;
     try {
       if (closed || !(await deps.managementEnabled())) return;
       const current = await deps.readStatus();
-      if (closed || cancelRetry || inFlight) return;
+      if (closed || cancelRetry || inFlight || generation !== started) return;
       if (isSameInstance(target, current) || (launchIfGone && !isLive(current))) await ensure();
     } catch (error) {
       deps.log("daemon upgrade retry failed", { error: String(error) });
@@ -100,13 +107,22 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
   }
 
   async function decide(): Promise<Status> {
+    const started = generation;
+    const launch = async () => {
+      if (generation !== started) return deps.readStatus();
+      return deps.launch();
+    };
     let current = await deps.readStatus();
     for (let decision = 0; decision < MAX_DECISIONS; decision += 1) {
-      if (!isLive(current)) return deps.launch();
+      if (!isLive(current)) return launch();
       const appVersion = deps.appVersion();
       if (!needsDaemonUpgrade({ status: current, appVersion, platform: deps.platform }))
         return current;
       const details = { pid: current.pid, daemonVersion: current.version, appVersion };
+      if (!(await deps.isActiveRelease())) {
+        deps.log("app is not the active release; leaving the daemon alone", details);
+        return current;
+      }
       let result: IdleStopResult;
       try {
         result = await deps.stopIfIdle();
@@ -131,7 +147,9 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
         return current;
       }
       deps.log("idle daemon stopped for upgrade", details);
-      return deps.launch();
+      const launched = await launch();
+      deps.onUpgraded?.();
+      return launched;
     }
     return current;
   }
@@ -150,6 +168,7 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
 
   /** Drops a pending retry; a deliberate stop must not be undone by a timer. */
   function cancel(): void {
+    generation += 1;
     cancelRetry?.();
     cancelRetry = null;
   }
