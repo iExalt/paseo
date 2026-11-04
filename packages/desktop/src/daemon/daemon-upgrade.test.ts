@@ -29,8 +29,9 @@ function harness(input: {
   statuses: DaemonUpgradeStatus[];
   stops?: Array<IdleStopResult | Error>;
   managementEnabled?: boolean;
-  activeRelease?: boolean;
+  activeRelease?: Array<"active" | "inactive" | "unknown">;
 }) {
+  const releases = [...(input.activeRelease ?? ["active"])];
   const statuses = [...input.statuses];
   const stops = [...(input.stops ?? [])];
   const timers: Array<{ run: () => void; delayMs: number; cancelled: boolean }> = [];
@@ -50,7 +51,7 @@ function harness(input: {
       return OURS;
     },
     managementEnabled: async () => input.managementEnabled ?? true,
-    isActiveRelease: async () => input.activeRelease ?? true,
+    isActiveRelease: async () => (releases.length > 1 ? releases.shift()! : releases[0]!),
     log: () => {},
     schedule: (run, delayMs) => {
       const timer = { run, delayMs, cancelled: false };
@@ -115,10 +116,22 @@ describe("createDaemonUpgrader", () => {
   });
 
   test("an app that is not the active release leaves a daemon of another version alone", async () => {
-    const { upgrader, calls, pending } = harness({ statuses: [OLD], activeRelease: false });
+    const { upgrader, calls, pending } = harness({ statuses: [OLD], activeRelease: ["inactive"] });
     await expect(upgrader.ensure()).resolves.toBe(OLD);
     expect(calls).toEqual({ stop: 0, launch: 0 });
     expect(pending()).toEqual([]);
+  });
+
+  test("retries when the active-release check fails", async () => {
+    const { upgrader, calls, fire } = harness({
+      statuses: [OLD],
+      stops: ["stopped"],
+      activeRelease: ["unknown", "active"],
+    });
+    await expect(upgrader.ensure()).resolves.toBe(OLD);
+    expect(calls.stop).toBe(0);
+    await fire();
+    expect(calls).toEqual({ stop: 1, launch: 1 });
   });
 
   test("keeps a daemon without idle stop and does not retry", async () => {

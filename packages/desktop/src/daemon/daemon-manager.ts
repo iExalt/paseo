@@ -50,7 +50,7 @@ import {
   closeLocalTransportSession,
 } from "./local-transport.js";
 import { createNodeEntrypointInvocation, resolveDaemonRunnerEntrypoint } from "./runtime-paths.js";
-import { createDaemonUpgrader, type IdleStopResult } from "./daemon-upgrade.js";
+import { createDaemonUpgrader, type ActiveRelease, type IdleStopResult } from "./daemon-upgrade.js";
 import type { NodeEntrypointInvocation } from "./node-entrypoint-launcher.js";
 import { daemonBundleRebase, rebaseDaemonLaunch, shouldSyncInstalledCopy } from "./store-bundle.js";
 import {
@@ -320,7 +320,7 @@ const daemonUpgrader = createDaemonUpgrader({
 
 // Set by registerDaemonManager for Nix installs: a stale app copy must not downgrade a newer
 // daemon, so only the active release replaces a daemon of another version.
-let isActiveRelease: () => Promise<boolean> = async () => true;
+let isActiveRelease: () => Promise<ActiveRelease> = async () => "active";
 let syncInstalledAppCopy: () => void = () => {};
 
 /** Moves a daemon launch onto the store bundle on Nix-managed macOS; see store-bundle.ts. */
@@ -655,16 +655,18 @@ function configureNixDaemonUpgrade(
   });
   // Cached for the session: activating a newer release changes nothing until the restart,
   // because the app's and the daemon's versions stay the same until then.
-  let active: Promise<boolean> | null = null;
+  let active: Promise<ActiveRelease> | null = null;
   isActiveRelease = () => {
     active ??= runNixUpdate("status")
-      .then((status) => status.active?.outputPath === installation.outputPath)
+      .then((status): ActiveRelease =>
+        status.active?.outputPath === installation.outputPath ? "active" : "inactive",
+      )
       .catch((error) => {
         active = null;
         logDesktopDaemonLifecycle("could not read the active Nix release", {
           error: String(error),
         });
-        return false;
+        return "unknown" as const;
       });
     return active;
   };

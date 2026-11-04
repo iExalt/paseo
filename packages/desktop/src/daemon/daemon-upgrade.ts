@@ -13,6 +13,8 @@ export interface DaemonUpgradeStatus {
 }
 
 export type IdleStopResult = "stopped" | "declined" | "unsupported";
+/** "unknown" when the check failed; the upgrade retries instead of giving up. */
+export type ActiveRelease = "active" | "inactive" | "unknown";
 
 export interface DaemonUpgradeDeps<Status extends DaemonUpgradeStatus> {
   appVersion: () => string | null;
@@ -24,7 +26,7 @@ export interface DaemonUpgradeDeps<Status extends DaemonUpgradeStatus> {
   /** Whether the app may still manage the daemon; a retry stops once it may not. */
   managementEnabled: () => Promise<boolean>;
   /** Whether this app is the release to converge on; a stale copy must not downgrade. */
-  isActiveRelease: () => Promise<boolean>;
+  isActiveRelease: () => Promise<ActiveRelease>;
   /** Runs after an idle daemon was replaced. */
   onUpgraded?: () => void;
   log: (message: string, details?: Record<string, unknown>) => void;
@@ -119,8 +121,10 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
       if (!needsDaemonUpgrade({ status: current, appVersion, platform: deps.platform }))
         return current;
       const details = { pid: current.pid, daemonVersion: current.version, appVersion };
-      if (!(await deps.isActiveRelease())) {
-        deps.log("app is not the active release; leaving the daemon alone", details);
+      const release = await deps.isActiveRelease();
+      if (release !== "active") {
+        deps.log(`app release is ${release}; leaving the daemon alone`, details);
+        if (release === "unknown") scheduleRetry(current, false);
         return current;
       }
       let result: IdleStopResult;
