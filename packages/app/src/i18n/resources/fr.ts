@@ -1211,6 +1211,7 @@ export const fr: TranslationResources = {
         label: "Tri",
         created: "Création",
         manual: "Manuel",
+        alphabetical: "Alphabétique",
         lastPrompt: "Dernier prompt",
         updateHost: "Mettez les hôtes à jour pour trier les espaces de travail",
       },

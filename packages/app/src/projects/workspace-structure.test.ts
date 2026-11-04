@@ -224,3 +224,21 @@ test("time ties use workspace identity so renaming cannot move Created rows", ()
     buildWorkspaceStructureProjects({ sessions, workspaceSort: "created" })[0].workspaceKeys,
   ).toEqual(["h:a", "h:b"]);
 });
+
+test("alphabetical sort ignores case and times, sorts numbers naturally, and breaks name ties by identity", () => {
+  const sessions = [
+    {
+      serverId: "h",
+      projects: [project({ id: "p", key: "p", root: "/p" })],
+      workspaces: ["Zulu", "task 10", "task 2", "alpha", "Alpha"].map((name, index) => {
+        const item = workspace(String(index), "p", "/p");
+        item.name = name;
+        item.createdAt = new Date(2026, 0, index + 1);
+        return item;
+      }),
+    },
+  ];
+  expect(
+    buildWorkspaceStructureProjects({ sessions, workspaceSort: "alphabetical" })[0].workspaceKeys,
+  ).toEqual(["h:3", "h:4", "h:2", "h:1", "h:0"]);
+});
