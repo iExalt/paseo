@@ -12,7 +12,7 @@
 ## Known bugs
 
 Found during the device runs for the 2026-11-03 architecture deepening
-(`ARCHITECTURE_DEEPENING_STATUS.md`). Each one also shows up on a build from
+(`complete-campaigns/ARCHITECTURE_DEEPENING_STATUS.md`). Each one also shows up on a build from
 before that work, so none of them comes from it. Screenshots and logs are in
 `~/dev/scratch/cf-arch` on the Mac.
 

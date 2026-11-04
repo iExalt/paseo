@@ -8,7 +8,7 @@ Tracks the seven deepening refactors from the 2026-11-03 architecture review
 (kept outside the repository at `.scratch/architecture-review-2026-11-03.html`
 in the owner's checkout; evidence checked at `f7d0538e0`). Each item ends in
 its own behaviour-preserving PR to `dev`. Module names go into the fork
-[glossary](GLOSSARY.md) as each lands. Terms follow the deep-module vocabulary:
+[glossary](../GLOSSARY.md) as each lands. Terms follow the deep-module vocabulary:
 module, interface, depth, seam, adapter, leverage, locality.
 
 ## Snapshot

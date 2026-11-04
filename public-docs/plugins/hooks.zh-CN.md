@@ -145,7 +145,7 @@ server.addHook("workspace.archive.after", async ({ workspace }) => {
 
 ## worktree.create.before {#worktreecreatebefore}
 
-为新 worktree 选择路径和创建选项。通过应用、CLI、MCP 或创建 Agent 新建 worktree 时，Paseo 在 `git worktree add` 之前等待此钩子。钩子收到 `{ request }`，返回完整的替换请求，或返回 `undefined` 保持原值。抛出错误、返回无效数据或超过 30 秒会终止创建，错误包含插件和钩子名称。
+为新 worktree 选择路径和创建选项。通过应用、CLI 或创建 Agent 新建 worktree 时，Paseo 在 `git worktree add` 之前等待此钩子。钩子收到 `{ request }`，返回完整的替换请求，或返回 `undefined` 保持原值。抛出错误、返回无效数据或超过 30 秒会终止创建，错误包含插件和钩子名称。
 
 ```ts
 import { basename, dirname, join } from "node:path";
@@ -424,8 +424,7 @@ Agent。抛出的错误会转换为 `{ isError: true, text: message }`，插件�
 在 `text` 中返回模型可见的文本。`structuredContent` 必须可序列化为 JSON；省略 `text` 时，
 Paseo 会将该值格式化为供模型读取的文本。设置 `isError: true` 可报告工具错误。
 
-Paseo 通过 Agent 工具传输提供附加的工具，按 Provider 的支持情况使用 MCP 或原生注册。
-同一份定义和回调适用于这两种方式。附加的工具遵循[与 Paseo 工具相同的限制](/docs/mcp#limit-paseo-tools-by-provider)。
+附加的工具只会到达支持原生 Paseo 工具的 Provider，并且仅在 `daemon.agentTools.enabled` 为 `true` 时生效（新配置的默认值为 `false`）。其他 Provider 看不到它们。附加的工具遵循[与 Paseo 工具相同的限制](/docs/mcp#limit-paseo-tools-by-provider)。
 只有该 Agent 能看到这些工具。
 
 名称必须匹配 `/^[a-z][a-z0-9_]*$/`，且不超过 64 个字符。如果名称与同一 Agent 的 Paseo

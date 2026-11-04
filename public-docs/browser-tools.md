@@ -30,7 +30,7 @@ Every row starts with `paseo browser`. Brackets denote optional arguments.
 | `screenshot <browser-id> --output <path> [--full-page]` | Write a PNG on the CLI machine.                                                                |
 | `logs <browser-id> [--max-entries <n>]`                 | Console and network entries; default 50, maximum 200.                                          |
 | `wait <browser-id> --text <text>`                       | Wait for visible text.                                                                         |
-| `click <browser-id> <ref>`                              | Click; accepts `--button left                                                                  | right | middle`, `--double-click`, repeatable `--modifier`. |
+| `click <browser-id> <ref>`                              | Click; accepts `--button left\|right\|middle`, `--double-click`, repeatable `--modifier`.      |
 | `fill <browser-id> <ref> <value>`                       | Replace input content.                                                                         |
 | `type <browser-id> <text> [--ref <ref>]`                | Type into a referenced or focused control.                                                     |
 | `keypress <browser-id> <key> [--ref <ref>]`             | Press Enter, Escape, Tab, or another key.                                                      |
