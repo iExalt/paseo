@@ -130,7 +130,10 @@ test("projects and pinned chats reorder while ordinary workspaces stay newest fi
   }
 });
 
-async function selectWorkspaceSort(page: Page, name: "Manual" | "Created" | "Last prompt") {
+async function selectWorkspaceSort(
+  page: Page,
+  name: "Manual" | "Created" | "Last prompt" | "Alphabetical",
+) {
   await page.getByLabel("Display preferences", { exact: true }).click();
   await page.getByRole("menuitem", { name: /^Sort/ }).click();
   await page.getByRole("menuitem", { name, exact: true }).click();
@@ -422,6 +425,33 @@ test("Manual restores pre-beta order and keeps drag order across sorting and rel
     await reconnectSidebar(page);
     await selectWorkspaceSort(page, "Manual");
     await expect.poll(() => rowTestIds(rows)).toEqual(ids);
+  } finally {
+    await seed.cleanup();
+  }
+});
+
+test("Alphabetical orders workspace names and persists across reloads", async ({ page }) => {
+  const seed = await seedWorkspace({ repoPrefix: "sidebar-alphabetical-" });
+  try {
+    const ids: string[] = [];
+    for (const title of ["Zulu", "alpha", "Task 10", "task 2"]) {
+      const result = await seed.client.createWorkspace({
+        source: { kind: "directory", path: seed.repoPath, projectId: seed.projectId },
+        title,
+      });
+      if (!result.workspace) throw new Error(result.error ?? "Workspace creation failed");
+      ids.push(`sidebar-workspace-row-${getServerId()}:${result.workspace.id}`);
+    }
+    const rows = page.locator(ids.map((id) => `[data-testid="${id}"]`).join(", "));
+    await gotoAppShell(page);
+    await waitForSidebarHydration(page);
+    await selectWorkspaceSort(page, "Alphabetical");
+    const expected = [ids[1], ids[3], ids[2], ids[0]];
+    await expect.poll(() => rowTestIds(rows)).toEqual(expected);
+    await reconnectSidebar(page);
+    await expect.poll(() => rowTestIds(rows)).toEqual(expected);
+    await page.getByLabel("Display preferences", { exact: true }).click();
+    await expect(page.getByRole("menuitem", { name: /^Sort/ })).toContainText("Alphabetical");
   } finally {
     await seed.cleanup();
   }

@@ -304,3 +304,9 @@ it("defaults to Created and persists the Last prompt choice across migration", (
 it("retains the manual sorting preference on reload", () => {
   expect(migrateSidebarViewState({ workspaceSort: "manual" }).workspaceSort).toBe("manual");
 });
+
+it("preserves the alphabetical sort preference during migration", () => {
+  expect(migrateSidebarViewState({ workspaceSort: "alphabetical" }).workspaceSort).toBe(
+    "alphabetical",
+  );
+});
