@@ -1,4 +1,4 @@
-/** Chunks of docs/PLATFORM_PARITY_PLAN.md that own a gap. */
+/** Chunks of docs/complete-campaigns/PLATFORM_PARITY_PLAN.md that own a gap. */
 export type ParityChunk = "B2" | "C3" | "E1" | "E2" | "E3" | "F1" | "F2";
 
 export type ParityEntry =

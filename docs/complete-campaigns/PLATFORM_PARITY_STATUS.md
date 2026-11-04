@@ -13,7 +13,7 @@ checklist, to current evidence. It is not a second checklist.
 | ---------------------------- | -------------------------------------------------------------------------------------------------- |
 | Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                                          |
 | Branch                       | Merged to `dev` as `669d95cd2` (#161)                                                              |
-| Open work                    | F1: a workspace service link, not yet seen on a device                                             |
+| Open work                    | None; closed 2026-11-04 with F1's workspace service link never seen on a device                    |
 | Overall state                | C–F device-checked on the phone; E device-checked on a virtual tablet                              |
 | Product or release readiness | Released in `paseo-v0.6.0`                                                                         |
 | Routine CI budget            | Advisory 5 min critical path from `plan` start (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
