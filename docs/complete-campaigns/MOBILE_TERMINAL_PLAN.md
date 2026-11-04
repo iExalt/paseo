@@ -4,9 +4,9 @@ On the user's Android phone with Samsung Keyboard, Paseo's terminal often
 prints one key twice, and typing feels slow. This plan fixes input first and
 then removes latency where measurements show it, before the move to acyclic.
 
-Status (2026-11-04): P0, P1 (#221), P2 (#227, #228) and P5 (#229, #239) are
-done. P3 is the only open increment; it is optional and opt-in, and nothing
-else waits on it. P4 is standing guidance, not work.
+Status: complete (closed 2026-11-04). P0, P1 (#221), P2 (#227, #228) and P5
+(#229, #239) are done. P3, the optional opt-in typing aids, was not started and
+is not planned. P4 is standing guidance, not work.
 
 ## Known facts
 
@@ -78,7 +78,7 @@ resent: printable keys still flow but Backspace stops working.
 ### Latency suspects (from source; measured in P0 and P2)
 
 The server pipeline, its invariants and the existing benchmarks are in
-[terminal-performance.md](upstream/terminal-performance.md). Those benchmarks
+[terminal-performance.md](../upstream/terminal-performance.md). Those benchmarks
 cover the daemon and the browser, not the native grid or a phone network.
 The table is the pre-measurement guess, kept as written. The P0 and P2
 results below replace it: on the phone the network round trip is nearly all
@@ -145,7 +145,7 @@ Acceptance:
 #### P0a result: virtual tablet, AOSP keyboard (2026-10-25, accepted)
 
 The trace (`EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE`, see
-[development.md](upstream/development.md)) ran in an APK built from dev
+[development.md](../upstream/development.md)) ran in an APK built from dev
 `7e2fee497` plus the trace at `002fab680` (sha256 `69d45330…`). Base failures
 were also reproduced on the tablet's untraced dev `9b38c3f65` APK. The field's input type was `0x2a0001`: text,
 multi-line and `NO_SUGGESTIONS`. Bytes were read back with a raw-mode byte

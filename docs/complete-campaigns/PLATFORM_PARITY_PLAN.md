@@ -111,7 +111,7 @@ each feature.
 
 ### F. Browser tabs and copy (P6)
 
-- [ ] F1. Browser tabs on native through a WebView, without automation tools.
+- [x] F1. Browser tabs on native through a WebView, without automation tools. Closed 2026-11-04 with the workspace service link never seen on a device.
       Verified on the phone; open only for a workspace service link, which
       needs a project with a service script.
 - [x] F2. Copying part or all of an assistant reply keeps its Markdown.
