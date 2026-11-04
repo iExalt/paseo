@@ -37,7 +37,7 @@ PR to `dev`; a release and the live Mac check need separate approval.
 | ----- | ----------------------------------------------------------------------------- | -------------------------------------------- |
 | 1     | Daemon stop-if-idle RPC, client gate, `paseo daemon stop --if-idle`           | complete: reviewer accepted 358608a50        |
 | 2     | Update restart and quit leave the daemon running; mismatch upgrades when idle | complete: reviewer accepted 232a01e4d        |
-| 3     | Daemon launched from the Nix store bundle on macOS                            | active                                       |
+| 3     | Daemon launched from the Nix store bundle on macOS                            | complete: reviewer accepted 483247c2b        |
 | D     | Live check on the Mac after a release (gate)                                  | deferred: needs a release and a user restart |
 
 ## Deferred gate D
@@ -50,3 +50,8 @@ existing window (single-instance lock shared across both copies).
 Also check: the daemon's executable is under `/nix/store`; `/Applications/Paseo.app` updates
 while terminals stay open; after the restart, `ps` shows nothing but an ignored terminal
 worker running from `/Applications` (lingering Electron helpers would hold the copy).
+
+## By the way
+
+- No CI job runs `scripts/*.test.mjs` (`node --test`), so the updater script tests, including
+  `bundleProcesses`, run only locally. Adding a CI step changes CI; leave it to its own PR.
