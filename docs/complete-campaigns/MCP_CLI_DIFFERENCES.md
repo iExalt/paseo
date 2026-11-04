@@ -2,7 +2,7 @@
 
 Paseo's served MCP endpoint, transport, admission exception, and runtime injection were removed in `635a4e413`. All 66 operations in the pre-removal inventory have dedicated CLI replacements. Provider-native tools, shared services, and third-party MCP support remain.
 
-This document records the completed migration from the inventory at `b48df9e24`; Git history retains the original gap analysis. Current usage belongs in the [CLI reference](../public-docs/cli.md), [tool policy and caller context](../public-docs/mcp.md), [browser reference](../public-docs/browser-tools.md), and [schedule reference](../public-docs/schedules-cli.md). Keeping this filename preserves existing handoff links; it is no longer an open implementation plan.
+This document records the completed migration from the inventory at `b48df9e24`; Git history retains the original gap analysis. Current usage belongs in the [CLI reference](../../public-docs/cli.md), [tool policy and caller context](../../public-docs/mcp.md), [browser reference](../../public-docs/browser-tools.md), and [schedule reference](../../public-docs/schedules-cli.md).
 
 ## Closure
 
@@ -93,13 +93,13 @@ Names on the left are historical MCP/native catalog IDs, not CLI syntax. Command
 
 ## Behavioral distinctions
 
-- [Close, stop, archive, and delete](../public-docs/cli.md#close-stop-archive-and-delete) are separate lifecycle operations. `kill_agent` maps to `agent close`, preserving history.
-- [Asynchronous delegation](../public-docs/cli.md#asynchronous-delegation) separates `--no-wait`, relationship selection, and caller notifications.
-- [Runtime updates](../public-docs/cli.md#agent-runtime-settings) accept features, resets, and metadata together, but apply sequentially with partial-failure reporting.
-- [Schedule replacement](../public-docs/schedules-cli.md#explicit-replacement) is explicit and matches name plus target; heartbeat update remains cadence-only.
-- [Screenshots](../public-docs/browser-tools.md#files-and-screenshots) require a CLI-local output path, including when controlling a remote daemon.
-- [Native policy](../public-docs/mcp.md#limit-paseo-tools-by-provider) controls exposed catalogs and guidance, not shell authorization. Host permissions still apply.
-- [Configuration precedence](../public-docs/mcp.md#configuration) gives `daemon.agentTools.enabled` priority over legacy persisted MCP settings. No setting restores the removed endpoint.
+- [Close, stop, archive, and delete](../../public-docs/cli.md#close-stop-archive-and-delete) are separate lifecycle operations. `kill_agent` maps to `agent close`, preserving history.
+- [Asynchronous delegation](../../public-docs/cli.md#asynchronous-delegation) separates `--no-wait`, relationship selection, and caller notifications.
+- [Runtime updates](../../public-docs/cli.md#agent-runtime-settings) accept features, resets, and metadata together, but apply sequentially with partial-failure reporting.
+- [Schedule replacement](../../public-docs/schedules-cli.md#explicit-replacement) is explicit and matches name plus target; heartbeat update remains cadence-only.
+- [Screenshots](../../public-docs/browser-tools.md#files-and-screenshots) require a CLI-local output path, including when controlling a remote daemon.
+- [Native policy](../../public-docs/mcp.md#limit-paseo-tools-by-provider) controls exposed catalogs and guidance, not shell authorization. Host permissions still apply.
+- [Configuration precedence](../../public-docs/mcp.md#configuration) gives `daemon.agentTools.enabled` priority over legacy persisted MCP settings. No setting restores the removed endpoint.
 
 ## Verification record
 
@@ -109,10 +109,10 @@ These are implementation receipts supplied in the handoff, not reruns from this 
 
 ## Source anchors
 
-- [CLI registration](../packages/cli/src/cli.ts) and [feature parser](../packages/cli/src/utils/feature-values.ts).
-- [Native catalog](../packages/server/src/server/agent/tools/paseo-tools.ts) and [browser catalog](../packages/server/src/server/browser-tools/tools.ts).
-- [Configuration resolution](../packages/server/src/server/config.ts) and [launch context](../packages/server/src/server/agent/agent-manager.ts).
-- [Schedule caller inheritance](../packages/server/src/server/schedule/caller-runtime.ts) and [replacement identity](../packages/server/src/server/schedule/store.ts).
+- [CLI registration](../../packages/cli/src/cli.ts) and [feature parser](../../packages/cli/src/utils/feature-values.ts).
+- [Native catalog](../../packages/server/src/server/agent/tools/paseo-tools.ts) and [browser catalog](../../packages/server/src/server/browser-tools/tools.ts).
+- [Configuration resolution](../../packages/server/src/server/config.ts) and [launch context](../../packages/server/src/server/agent/agent-manager.ts).
+- [Schedule caller inheritance](../../packages/server/src/server/schedule/caller-runtime.ts) and [replacement identity](../../packages/server/src/server/schedule/store.ts).
 
 The website landing-page automation demo in `packages/website/src/components/landing-page.tsx` still advertises Paseo MCP. Updating that interactive demo is outside this documentation-only change; it is a remaining stale product surface.
 
