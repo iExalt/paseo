@@ -12,12 +12,12 @@ Use the user's request and current conversation as input, including any argument
 
 ## Prerequisites
 
-Read the **paseo** skill. Call `list_profiles` before choosing the receiving agent. Do not create it until you have read the configured profiles and their `notes`.
+Read the **paseo** skill. Run `paseo profile ls --json` (or `list_profiles` when your provider has native Paseo tools) before choosing the receiving agent. Do not create it until you have read the configured profiles and their `notes`.
 
 ## Parsing arguments
 
-1. **Agent profile** — explicit profile name first; otherwise choose the profile whose `notes` best match the work. Materialize it into `create_agent` as described by the **paseo** skill. If no profile fits, use Paseo's provider discovery fallback.
-2. **Isolation** — "in a worktree" / "worktree" → create a workspace with `isolation: "worktree"`, using a short branch name derived from the task.
+1. **Agent profile** — explicit profile name first; otherwise choose the profile whose `notes` best match the work. Materialize it as described by the **paseo** skill (`paseo run --provider … --model … --mode … --thinking … --features-json …`, or the native `create_agent` tool when available). If no profile fits, use Paseo's provider discovery fallback.
+2. **Isolation** — "in a worktree" / "worktree" → create a workspace with `paseo workspace create --isolation worktree --new-branch <name>` (native `create_workspace` with `isolation: "worktree"` when available), using a short branch name derived from the task.
 3. **Task description** — anything else the user said.
 
 ## The handoff prompt
@@ -56,10 +56,10 @@ The receiving agent has zero context. Include:
 
 Prepare the handoff in a dedicated workspace:
 
-1. Select the current workspace or call `create_workspace` with the requested isolation.
-2. Call `create_agent` with a `[Handoff] <task>` title, the briefing as initial prompt, and the selected `workspaceId` when explicit placement is needed.
+1. Select the current workspace or run `paseo workspace create` with the requested isolation (native: `create_workspace`).
+2. Run `paseo run --no-wait --title "[Handoff] <task>" "<briefing>"`, adding `--workspace <workspace-id>` when explicit placement is needed (native: `create_agent` with `workspaceId`). Keep the default subagent relationship; do not pass `--relationship detached`.
 3. Return the agent and workspace to the user, explaining that it remains in your subagent track until they detach it manually.
 
-Do not encode independence as a create mode and do not invoke CLI or wire-level detach operations. Detach is a user gesture in the subagents track.
+Do not encode independence as a create mode and do not invoke CLI or wire-level detach operations (including `--relationship detached`). Detach is a user gesture in the subagents track.
 
 Do not wait or poll for the agent to finish.

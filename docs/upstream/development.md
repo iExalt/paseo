@@ -693,6 +693,7 @@ Do NOT use browser history (back/forward). Always navigate by clicking UI elemen
 
 `packages/app` exports a single-page Expo web app and deploys the `dist/`
 directory to Cloudflare Pages with `npm run deploy:web --workspace=@getpaseo/app`.
+That script deploys to upstream's `paseo-app` project; the fork deploys no web app, so do not run it.
 
 PWA install metadata lives in `packages/app/public/manifest.json` and is linked
 from `packages/app/public/index.html`. Keep the install icons in `public/` so

@@ -1,5 +1,11 @@
 # Release
 
+> **Fork note:** this is upstream's (getpaseo/paseo) release process. It does not apply to
+> iExalt/paseo. The fork releases from `dev` through release-please and `release.yml`, with no npm
+> publish, EAS, store submission, Docker image or beta channel. Follow
+> [GitHub workflows § Release procedure](../GITHUB_WORKFLOWS_STATUS.md#release-procedure) or the
+> `release-stable` skill. Never run the root `release:*` or `version:all:*` npm scripts.
+
 All workspaces share one version and release together.
 
 ## Two steps
@@ -377,7 +383,7 @@ There is no mobile-release workflow under `.github/workflows`. The EAS GitHub ap
 
 ### Store screenshots
 
-Each stable release publishes the screenshots committed under `assets/store-screenshots/output/` (see [its README](../assets/store-screenshots/README.md) for how they are made). To change the store screenshots, re-render and commit them before you tag.
+Each stable release publishes the screenshots committed under `assets/store-screenshots/output/` (see [its README](../../assets/store-screenshots/README.md) for how they are made). To change the store screenshots, re-render and commit them before you tag.
 
 - **App Store:** `submit_review` uploads `output/apple/` and `output/apple-ipad/` to the version it submits, replacing that version's `en-US` screenshots. Apple ties screenshots to an app version, so a version that is already live keeps the ones it shipped with. `Resubmit iOS for App Store review` uploads them again.
   - When `submit_review` fails with `appStoreVersions … is not in valid state`, the reason is in the API error's `meta.associatedErrors`, which fastlane does not print. Read it with a `POST /v1/reviewSubmissionItems` against the version. A required age-rating question that Apple added, such as `socialMedia`, fails this way; answer it under App Information > Age Rating in App Store Connect, then resubmit.

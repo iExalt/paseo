@@ -92,7 +92,7 @@ Provider checks follow the signals their runtimes expose:
   prevent collection. This does not inspect processes launched internally by the provider.
 
 These checks do not discover arbitrary detached processes or work hidden by third-party
-extensions. A provider plugin adds its own veto through the [runtime safety contract](../public-docs/plugins/providers.md#permit-idle-runtime-cleanup).
+extensions. A provider plugin adds its own veto through the [runtime safety contract](../../public-docs/plugins/providers.md#permit-idle-runtime-cleanup).
 
 A provider runtime can still die on its own — crash, OOM kill, host suspend. Work the agent parked
 inside that process dies with it: Claude Code's background Bash shells, `Monitor` watches, and

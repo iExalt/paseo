@@ -19,7 +19,7 @@ This is an npm workspace monorepo:
 
 `docs/` is the source of truth for system-level and process-level knowledge. **"The docs", "check the docs", or "check the X docs" always mean this directory — not the web.** Look here before fetching anything online; the docs capture gotchas and conventions you cannot derive from the code or external sources.
 
-Active fork-specific plans and notes live at the top level of `docs/`; completed campaigns live in `docs/complete-campaigns/`. Paseo's bundled documentation and evidence live in `docs/upstream/`.
+Active fork-specific plans and notes live at the top level of `docs/`; completed campaigns live in `docs/complete-campaigns/`. Paseo's bundled documentation and evidence live in `docs/upstream/`. Upstream code comments and lint messages cite these as `docs/<name>.md`; read `docs/upstream/<name>.md`. Upstream docs added since the move land at the top level of `docs/` (`markdown-renderer.md`, `native-text-selection.md`, `terminal-worker.md`). Process docs in `docs/upstream/` (release, Docker, EAS) describe upstream's pipeline unless a fork note says otherwise.
 
 [GitHub workflows](docs/GITHUB_WORKFLOWS_STATUS.md) is the operating doc for fork
 CI and releases: what each workflow does, the release procedure, secrets, caches
@@ -29,7 +29,7 @@ and recovery. The superseded campaign that built the old candidate pipeline is i
 The [completed fork automated-update plan](docs/complete-campaigns/PASEO_FORK_AUTO_UPDATE_PLAN.md) records
 the macOS Nix and Android APK delivery decisions, feasibility probe, and device
 acceptance evidence and the packaged recovery runbook. Canonical CI, signed delivery,
-both in-app update checks, and shipped-helper recovery passed; both devices run 200008.
+both in-app update checks, and shipped-helper recovery passed at release 200008.
 
 At the start of non-trivial work, list `docs/` and skim anything relevant to the task.
 
@@ -50,6 +50,10 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/complete-campaigns/QUESTION_IMAGES_STATUS.md](docs/complete-campaigns/QUESTION_IMAGES_STATUS.md)                         | Question images evidence: web, Android and push checks, the live Claude check, and parked limits                               |
 | [docs/MCP_CLI_DIFFERENCES.md](docs/MCP_CLI_DIFFERENCES.md)                                                                     | Completed Paseo MCP-to-CLI migration, operation mapping, and verification limits                                               |
 | [docs/DEV_UPSTREAM_SUPERSESSION.md](docs/DEV_UPSTREAM_SUPERSESSION.md)                                                         | Dev commits upstream superseded: bugs found, simplifications, history drops and rebase risks                                   |
+| [docs/GITHUB_WORKFLOWS_STATUS.md](docs/GITHUB_WORKFLOWS_STATUS.md)                                                             | Fork CI and releases: workflows, release procedure, secrets, caches and recovery                                               |
+| [docs/upstream/rebase-dev.md](docs/upstream/rebase-dev.md)                                                                     | Fork `rebase-dev` workflow: replay rules, rerere resolutions, fixups and deletions                                             |
+| [docs/PASEO_WISHLIST.md](docs/PASEO_WISHLIST.md)                                                                               | Deferred fork ideas and known bugs not yet scheduled                                                                           |
+| [docs/terminal-worker.md](docs/terminal-worker.md)                                                                             | Terminal worker process: terminals that survive daemon restarts, crashes and upgrades                                          |
 | [docs/upstream/product.md](docs/upstream/product.md)                                                                           | What Paseo is, who it's for, where it's going                                                                                  |
 | [docs/upstream/architecture.md](docs/upstream/architecture.md)                                                                 | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
 | [docs/upstream/agent-lifecycle.md](docs/upstream/agent-lifecycle.md)                                                           | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
@@ -97,7 +101,7 @@ At the start of non-trivial work, list `docs/` and skim anything relevant to the
 | [docs/upstream/browser-capture-harness.md](docs/upstream/browser-capture-harness.md)                                           | Real-Electron browser screenshot harness and compositor-surface gotcha                                                         |
 | [docs/upstream/android.md](docs/upstream/android.md)                                                                           | App variants, local/cloud builds, EAS workflows, version codes, F-Droid source builds and store metadata                       |
 | [docs/upstream/docker.md](docs/upstream/docker.md)                                                                             | Running the daemon and bundled web UI in Docker, volumes, agent images, security                                               |
-| [docs/upstream/release.md](docs/upstream/release.md)                                                                           | Release playbook, draft releases, completion checklist                                                                         |
+| [docs/upstream/release.md](docs/upstream/release.md)                                                                           | Upstream's release playbook only; fork releases follow docs/GITHUB_WORKFLOWS_STATUS.md                                         |
 | [docs/upstream/terminal-activity.md](docs/upstream/terminal-activity.md)                                                       | Terminal activity indicators — source-agnostic tracker, agent hook reporting, adding a new hook provider                       |
 | [SECURITY.md](SECURITY.md)                                                                                                     | Relay threat model, E2E encryption, DNS rebinding, agent auth                                                                  |
 | [public-docs/hub/security.md](public-docs/hub/security.md)                                                                     | Public Hub guide — trust boundaries, untrusted triggers, provider controls, and output authority                               |
@@ -142,7 +146,7 @@ npm run format:check                 # Check formatting without writing
 
 Repo dev commands use checkout-local state by default. In this checkout, `PASEO_HOME` resolves to `.dev/paseo-home`, and `npm run cli -- ...` targets that same dev home automatically. The packaged desktop app and production-style daemon keep using `~/.paseo` on port `6767`.
 
-When Mo requests an APK, use `npm run build:apk:arm64` for an ARM64 build: writes `artifacts/paseo-dogfood-arm64.apk` with diagnostics without starting a device; `npm run build:apk` builds all four Android architectures.
+To build an APK locally, use `npm run build:apk:arm64` for an ARM64 build: writes `artifacts/paseo-dogfood-arm64.apk` with diagnostics without starting a device; `npm run build:apk` builds all four Android architectures.
 
 See [docs/upstream/development.md](docs/upstream/development.md) for full setup, build sync requirements, and debugging.
 
@@ -150,9 +154,9 @@ See [docs/upstream/development.md](docs/upstream/development.md) for full setup,
 
 Open PRs against `dev` and merge them there; it is the fork's default branch. Never target
 `upstream/main`: it mirrors upstream, and `rebase-dev` rebases `dev` onto it. Releases cut from `dev` through release-please;
-see the [fork release procedure](docs/GITHUB_WORKFLOWS_STATUS.md#release-procedure).
-[Release base and source](docs/upstream/release.md#release-base-and-source) describes upstream's
-process, not the fork's.
+see the [fork release procedure](docs/GITHUB_WORKFLOWS_STATUS.md#release-procedure) and the `release-stable` skill.
+[docs/upstream/release.md](docs/upstream/release.md) and the root `release:*` npm scripts are
+upstream's npm, EAS and store process; never follow or run them in the fork.
 
 ## Critical rules
 
@@ -225,7 +229,7 @@ The app runs on iOS, Android, web (browser), and web (Electron desktop). Code is
   ```
   Import as `@/desktop/browser/pane` — Electron desktop gets the `.electron.tsx` file, browser web gets `.web.tsx`, and native gets the native/base implementation.
 - **NEVER use raw DOM APIs without `isWeb` guard.** DOM APIs crash native. Casting a RN ref to `HTMLElement` is a red flag — ensure the block is web-only.
-- **NEVER use `onPointerEnter`/`onPointerLeave`.** They don't fire on native iOS.
+- **Use `onPointerEnter`/`onPointerLeave` on a plain `View` for hover,** as [docs/upstream/hover.md](docs/upstream/hover.md) describes. They don't fire on native iOS, so hover-revealed UI must also show on native.
 - **Hover only works on web.** React Native's `onHoverIn`/`onHoverOut` on `Pressable` does NOT fire on native iOS/iPad — the underlying W3C pointer events are behind disabled experimental flags. For hover-to-show UI (kebab menus, action buttons), use `isHovered || isNative || isCompact` so the controls are always visible on native and hover-to-show on web.
 - **Don't use Platform.OS as a proxy for layout capabilities.** Use breakpoints for layout decisions, not platform checks.
 - **Import `isWeb`/`isNative` from `@/constants/platform`.** Never write `const isWeb = Platform.OS === "web"` locally.
