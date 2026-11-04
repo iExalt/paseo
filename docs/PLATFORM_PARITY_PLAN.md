@@ -96,13 +96,14 @@ work with the soft keyboard.
 
 ### E. Tablets (P5)
 
-- [ ] E0. Spike: hardware key events on native, which React Native does not
+- [x] E0. Spike: hardware key events on native, which React Native does not
       deliver without a native module, and a touch drag stack for pane
-      splits, since dnd-kit is DOM-only. E1–E3 follow the spike's findings.
-- [ ] E1. Keyboard shortcuts with a hardware keyboard on wide native layouts.
-- [ ] E2. Side-by-side diff on wide native layouts. Pane splits were dropped:
-      upstream keeps them web-only (see Deliberate differences).
-- [ ] E3. Chat outline rail on wide native layouts.
+      splits, since dnd-kit is DOM-only. E1–E3 follow the spike's findings. The
+      touch drag stack went with E2b.
+- [x] E1. Keyboard shortcuts with a hardware keyboard on wide native layouts.
+- [x] E2. Side-by-side diff on wide native layouts (E2a). Pane splits (E2b)
+      were dropped: upstream keeps them web-only (see Deliberate differences).
+- [x] E3. Chat outline rail on wide native layouts.
 
 Acceptance: unit tests for the gating; a Cuttlefish Android 17 virtual tablet
 (arm64, 2560x1600 at 320 dpi, sw800dp) on a KVM-capable Linux arm64 host shows
@@ -111,6 +112,8 @@ each feature.
 ### F. Browser tabs and copy (P6)
 
 - [ ] F1. Browser tabs on native through a WebView, without automation tools.
+      Verified on the phone; open only for a workspace service link, which
+      needs a project with a service script.
 - [x] F2. Copying part or all of an assistant reply keeps its Markdown.
 
 Acceptance: unit tests for the tab model; on Paseo Debug a browser tab opens

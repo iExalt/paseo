@@ -4,6 +4,10 @@ On the user's Android phone with Samsung Keyboard, Paseo's terminal often
 prints one key twice, and typing feels slow. This plan fixes input first and
 then removes latency where measurements show it, before the move to acyclic.
 
+Status (2026-11-04): P0, P1 (#221), P2 (#227, #228) and P5 (#229, #239) are
+done. P3 is the only open increment; it is optional and opt-in, and nothing
+else waits on it. P4 is standing guidance, not work.
+
 ## Known facts
 
 ### The acyclic app spike (2026-10-17)
@@ -71,11 +75,14 @@ newline in the text, or a `reset()` on focus, blur or show-keyboard. A
 reopened word, as in the spike, also latches the desync rather than being
 resent: printable keys still flow but Backspace stops working.
 
-### Latency suspects (from source; not yet measured)
+### Latency suspects (from source; measured in P0 and P2)
 
 The server pipeline, its invariants and the existing benchmarks are in
 [terminal-performance.md](upstream/terminal-performance.md). Those benchmarks
 cover the daemon and the browser, not the native grid or a phone network.
+The table is the pre-measurement guess, kept as written. The P0 and P2
+results below replace it: on the phone the network round trip is nearly all
+of send to paint.
 
 | Stage                                                                                                                                                     | Where                                                                                   | Expectation                                            |
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------ |

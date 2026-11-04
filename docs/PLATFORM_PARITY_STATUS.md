@@ -1,6 +1,6 @@
 # Desktop and mobile parity status
 
-Last updated: 2026-10-25
+Last updated: 2026-11-04
 
 ## Purpose
 
@@ -9,14 +9,14 @@ checklist, to current evidence. It is not a second checklist.
 
 ## Current snapshot
 
-| Field                        | Status                                                                   |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                |
-| Branch                       | Merged to `dev` as `669d95cd2` (#161)                                    |
-| Current chunk                | F: browser tabs and copy                                                 |
-| Overall state                | C–F device-checked on the phone; E device-checked on a virtual tablet    |
-| Product or release readiness | Released in `paseo-v0.6.0`                                               |
-| Routine CI budget            | Under 5 min per lane (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
+| Field                        | Status                                                                                             |
+| ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| Baseline                     | `e63be054f` (`chore(dev): release 0.5.0`)                                                          |
+| Branch                       | Merged to `dev` as `669d95cd2` (#161)                                                              |
+| Open work                    | F1: a workspace service link, not yet seen on a device                                             |
+| Overall state                | C–F device-checked on the phone; E device-checked on a virtual tablet                              |
+| Product or release readiness | Released in `paseo-v0.6.0`                                                                         |
+| Routine CI budget            | Advisory 5 min critical path from `plan` start (`docs/GITHUB_WORKFLOWS_STATUS.md`); baseline below |
 
 ### Routine CI baseline
 
@@ -360,9 +360,9 @@ host, with the limits below. iOS rests on code review and unit tests.
   deliberate. If that changes, a port would move:
   - D1: the WebView CodeMirror editor and bridge
     (`file-panels/source/editor/webview/*`, `editor/find.tsx`,
-    `find-messages*`, `view-contract.ts`, `scripts/build-webview-html.mjs`,
-    `webview-source-hash.mjs`) onto `file-panels/source/editor/view.tsx`,
-    which shows "Source editing is available on web and desktop" on native.
+    `find-messages*`, `view-contract.ts`, `webview-source-hash.mjs`; the
+    `scripts/build-webview-html.mjs` build script is removed too) onto
+    `file-panels/source/editor/view.tsx`, which shows "Source editing is available on web and desktop" on native.
   - C2: native literal find and wrapped-row layout
     (`file-panels/source/find/index.native.tsx`, `line-matches*`,
     `readonly/line-layout*`) onto `readonly/view.native.tsx`.
@@ -376,7 +376,7 @@ host, with the limits below. iOS rests on code review and unit tests.
   with the limits in its section. Not verified: iOS, the iPad, TalkBack,
   IME composition, and keyboard attach and detach.
 - Device checks are batched: the user asked for one phone session per large
-  chunk instead of a check per increment. Plan boxes stay open until then.
+  chunk instead of a check per increment. The batches have run (see the log).
 - Everything shipped in `paseo-v0.6.0`. B2 passed its release gate on the
   installed app, with three checks waived by the user.
 - Native behaviour is checked on Paseo Debug on the user's Android phone, and

@@ -3,8 +3,8 @@
 An audit of every fork `dev` commit for work that upstream Paseo now provides,
 so `dev` can be simplified, and what was done about it.
 
-Snapshot: `origin/dev` 5faba853f, `upstream/main` d0fd2e532, merge-base
-b8bb335c5 (2026-10-25). Each rebase of `dev` changes commit IDs and may change
+Snapshot as of 2026-10-25 (not current): `origin/dev` 5faba853f,
+`upstream/main` d0fd2e532, merge-base b8bb335c5. Each rebase of `dev` changes commit IDs and may change
 verdicts; recheck an item against current refs before acting on it.
 
 ## Result
@@ -28,7 +28,7 @@ The audit also found two live bugs on `dev`.
 | S2                                                              | Done in #234, with a new test for a commit that lands during a read                                        |
 | Both out-of-scope findings                                      | Fixed in #237                                                                                              |
 | History drops                                                   | Not done: they change no code. Do them at a manual rebase or leave them.                                   |
-| enriched-markdown patch conflict                                | Open until the next rebase onto upstream past 4845e1da5                                                    |
+| enriched-markdown patch conflict                                | Resolved by the 2026-10-30 rebase onto a4f696620 (`938101c62`)                                             |
 
 ## Bugs found
 
@@ -83,11 +83,13 @@ and 4ebf3e3d5 are intentional and stay.
 Neither is a supersession. The `@expo/cli` rename is done (#233).
 
 - `patches/react-native-enriched-markdown+…766fc0e67.patch`: upstream 4845e1da5
-  (#7859, above the merge-base) rewrote the md4c autolink hunk that dev also
-  changes, so the next rebase conflicts there. Upstream's version adds
-  trailing-punctuation trimming and may cover dev's; keep dev's `AccessibleMarkdownTextView.kt` focus hunk (067e4c0e8).
-- `patches/@expo+cli+57.0.28.patch` applies to the locked 57.0.32 with a
-  patch-package version warning; rename it to match.
+  (#7859) rewrote the md4c autolink hunk that dev also changed. The
+  2026-10-30 rebase onto a4f696620 (`938101c62`) took upstream's version;
+  `git diff origin/upstream/main origin/dev` on the patch no longer shows an
+  autolink hunk. What dev still adds: the `AccessibleMarkdownTextView.kt` focus
+  hunk (#226) and the web `center` image mode.
+- `patches/@expo+cli+57.0.28.patch` applied to the locked 57.0.32 with a
+  patch-package version warning; renamed to `@expo+cli+57.0.32.patch` (#233).
 
 ## Not superseded
 

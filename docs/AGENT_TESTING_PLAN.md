@@ -91,7 +91,7 @@ Results are in [agent-testing.md](agent-testing.md) and the status doc.
   - **Shared helper:** `connectToPaseoRenderer()`, which every `packages/desktop/e2e/*.mjs` should use (fixes empty `pages` from `connectOverCDP`).
   - **Isolation by default:** make dev Electron isolate userData by default, including the main checkout.
   - **Outcome (2026-10-31):** `npm run desktop:sandbox` runs the unpackaged app under Xvfb against a `qa:web` daemon, with the CDP URL in its JSON and `connectToPaseoRenderer()` in `packages/desktop/e2e/support/`. The existing e2e scripts keep their own connect code for now. Isolation by default: a direct unpackaged launch outside a worktree now uses `<appData>/Paseo-dev` instead of the installed app's `<appData>/Paseo` (#285).
-- [x] **13. Android agent helper (`scripts/android/agent-adb.sh` or similar):**
+- [x] **13. Android agent helper (`scripts/android/agent-adb.py`):**
   - print a dump as `id | text | desc | centre`;
   - tap by `id`, guarded on the app having focus;
   - wait for an `id`;
