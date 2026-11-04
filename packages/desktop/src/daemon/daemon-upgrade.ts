@@ -74,21 +74,28 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
   let cancelRetry: (() => void) | null = null;
   let closed = false;
 
-  function scheduleRetry(): void {
+  /**
+   * A retry belongs to the daemon it waited on. If that daemon is gone when it fires, someone
+   * stopped it on purpose and the retry drops, unless the last stop attempt's outcome was
+   * unknown: then the gone daemon may be that stop, finished late, and ours starts.
+   */
+  function scheduleRetry(target: Status, launchIfGone: boolean): void {
     if (closed || cancelRetry) return;
     cancelRetry = schedule(() => {
       cancelRetry = null;
-      void retry();
+      void retry(target, launchIfGone);
     }, DAEMON_UPGRADE_RETRY_MS);
   }
 
-  async function retry(): Promise<void> {
+  async function retry(target: Status, launchIfGone: boolean): Promise<void> {
     try {
       if (closed || !(await deps.managementEnabled())) return;
-      await ensure();
+      const current = await deps.readStatus();
+      if (closed || cancelRetry || inFlight) return;
+      if (isSameInstance(target, current) || (launchIfGone && !isLive(current))) await ensure();
     } catch (error) {
       deps.log("daemon upgrade retry failed", { error: String(error) });
-      scheduleRetry();
+      scheduleRetry(target, launchIfGone);
     }
   }
 
@@ -108,19 +115,19 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
         const after = await deps.readStatus();
         deps.log("idle stop outcome unknown", { ...details, error: String(error) });
         if (isSameInstance(current, after)) {
-          scheduleRetry();
+          scheduleRetry(current, true);
           return current;
         }
         current = after;
         continue;
       }
       if (result === "unsupported") {
-        deps.log("daemon cannot stop only when idle; keeping it until it is restarted", details);
+        deps.log("daemon cannot stop only when idle; keeping it until it is stopped", details);
         return current;
       }
       if (result === "declined") {
         deps.log("daemon busy; upgrade waits for its agents", details);
-        scheduleRetry();
+        scheduleRetry(current, false);
         return current;
       }
       deps.log("idle daemon stopped for upgrade", details);
@@ -141,11 +148,16 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
     return inFlight;
   }
 
-  function close(): void {
-    closed = true;
+  /** Drops a pending retry; a deliberate stop must not be undone by a timer. */
+  function cancel(): void {
     cancelRetry?.();
     cancelRetry = null;
   }
 
-  return { ensure, close };
+  function close(): void {
+    closed = true;
+    cancel();
+  }
+
+  return { ensure, cancel, close };
 }

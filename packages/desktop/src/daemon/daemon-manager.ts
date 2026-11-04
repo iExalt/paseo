@@ -344,6 +344,7 @@ export async function stopDesktopDaemon(
   reason: DesktopDaemonStopReason = DEFAULT_DESKTOP_DAEMON_STOP_REASON,
   confirmedInstance?: { pid: number; startedAt: string },
 ): Promise<DesktopDaemonStatus> {
+  daemonUpgrader.cancel();
   const home = getPaseoHome();
   const instance = await readDaemonInstance(home);
   const owned = Boolean(

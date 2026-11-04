@@ -156,6 +156,30 @@ describe("createDaemonUpgrader", () => {
     expect(calls).toEqual({ stop: 1, launch: 1 });
   });
 
+  test("a retry never starts a daemon someone stopped while it waited", async () => {
+    const cancelled = harness({ statuses: [OLD] });
+    await cancelled.upgrader.ensure();
+    cancelled.upgrader.cancel();
+    expect(cancelled.pending()).toEqual([]);
+
+    // Declined, then the user stops the daemon before the retry fires.
+    const stopped = harness({ statuses: [OLD, STOPPED] });
+    await stopped.upgrader.ensure();
+    await stopped.fire();
+    expect(stopped.calls).toEqual({ stop: 1, launch: 0 });
+    expect(stopped.pending()).toEqual([]);
+  });
+
+  test("after an unknown outcome, a retry that finds the daemon gone starts ours", async () => {
+    const { upgrader, calls, fire } = harness({
+      statuses: [OLD, OLD, STOPPED],
+      stops: [new Error("timed out")],
+    });
+    await expect(upgrader.ensure()).resolves.toBe(OLD);
+    await fire();
+    expect(calls).toEqual({ stop: 1, launch: 1 });
+  });
+
   test("stops retrying once closed or once the app no longer manages the daemon", async () => {
     const closed = harness({ statuses: [OLD] });
     await closed.upgrader.ensure();
