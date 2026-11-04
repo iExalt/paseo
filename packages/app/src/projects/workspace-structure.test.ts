@@ -230,11 +230,12 @@ test("alphabetical sort ignores case and times, sorts numbers naturally, and bre
     {
       serverId: "h",
       projects: [project({ id: "p", key: "p", root: "/p" })],
-      workspaces: ["Zulu", "task 10", "task 2", "alpha", "Alpha"].map((name, index) => ({
-        ...workspace(String(index), "p", "/p"),
-        name,
-        createdAt: new Date(2026, 0, index + 1),
-      })),
+      workspaces: ["Zulu", "task 10", "task 2", "alpha", "Alpha"].map((name, index) => {
+        const item = workspace(String(index), "p", "/p");
+        item.name = name;
+        item.createdAt = new Date(2026, 0, index + 1);
+        return item;
+      }),
     },
   ];
   expect(
