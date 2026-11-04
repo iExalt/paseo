@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { app, ipcMain, powerMonitor } from "electron";
 import log from "electron-log/main";
@@ -50,6 +50,9 @@ import {
   closeLocalTransportSession,
 } from "./local-transport.js";
 import { createNodeEntrypointInvocation, resolveDaemonRunnerEntrypoint } from "./runtime-paths.js";
+import { createDaemonUpgrader, type ActiveRelease, type IdleStopResult } from "./daemon-upgrade.js";
+import type { NodeEntrypointInvocation } from "./node-entrypoint-launcher.js";
+import { daemonBundleRebase, rebaseDaemonLaunch, shouldSyncInstalledCopy } from "./store-bundle.js";
 import {
   ExternalCliCommandError,
   runExternalCliJsonCommand,
@@ -81,7 +84,6 @@ const DESKTOP_DAEMON_STOP_REASON_VALUES = [
   "host_remove",
   "quit",
   "app_update",
-  "version_mismatch",
   "restart",
 ] as const;
 export type DesktopDaemonStopReason = (typeof DESKTOP_DAEMON_STOP_REASON_VALUES)[number];
@@ -274,19 +276,6 @@ export async function resolveDesktopDaemonStatus(): Promise<DesktopDaemonStatus>
   }
 }
 
-function normalizeVersion(version: string | null): string | null {
-  const trimmed = version?.trim();
-  if (!trimmed) return null;
-  return trimmed.replace(/^v/i, "");
-}
-
-function shouldRestartForVersion(current: DesktopDaemonStatus): boolean {
-  if (!current.ownedByDesktop) return false;
-  const appVersion = normalizeVersion(resolveDesktopAppVersion());
-  const daemonVersion = normalizeVersion(current.version);
-  return Boolean(appVersion && daemonVersion && appVersion !== daemonVersion);
-}
-
 function assertBuiltInDaemonManagementEnabled(settings: DesktopSettings): void {
   if (!settings.daemon.manageBuiltInDaemon) {
     throw new Error("Built-in daemon management is disabled.");
@@ -295,35 +284,76 @@ function assertBuiltInDaemonManagementEnabled(settings: DesktopSettings): void {
 
 async function startDaemon(): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
+  return daemonUpgrader.ensure();
+}
 
-  const current = await resolveDesktopDaemonStatus();
-  logDesktopDaemonLifecycle("initial status check before start", {
-    status: current.status,
-    pid: current.pid,
-    listen: current.listen,
-    serverId: current.serverId || null,
-    error: current.error,
-    desktopManaged: current.desktopManaged,
-  });
-  if (current.status === "running" || current.status === "starting") {
-    if (shouldRestartForVersion(current)) {
-      logDesktopDaemonLifecycle("daemon version mismatch, restarting", {
-        appVersion: normalizeVersion(resolveDesktopAppVersion()),
-        daemonVersion: normalizeVersion(current.version),
-      });
-      await stopDesktopDaemon("version_mismatch");
-    } else {
-      return current;
-    }
+// Asks the running daemon to stop only if no agent has work; throws when the outcome is unknown.
+async function stopDaemonIfIdle(): Promise<IdleStopResult> {
+  try {
+    const result = (await runExternalCliJsonCommand([
+      "daemon",
+      "stop",
+      "--home",
+      getPaseoHome(),
+      "--if-idle",
+      "--json",
+    ])) as { action?: unknown };
+    return result.action === "declined" ? "declined" : "stopped";
+  } catch (error) {
+    if (error instanceof ExternalCliCommandError && error.code === "IDLE_SHUTDOWN_UNSUPPORTED")
+      return "unsupported";
+    throw error;
   }
+}
 
-  const home = getPaseoHome();
-  const invocation = createNodeEntrypointInvocation({
-    entrypoint: resolveDaemonRunnerEntrypoint(),
-    argvMode: "node-script",
-    args: [],
-    baseEnv: process.env,
+const daemonUpgrader = createDaemonUpgrader({
+  appVersion: () => resolveDesktopAppVersion(),
+  platform: process.platform,
+  readStatus: () => resolveDesktopDaemonStatus(),
+  stopIfIdle: stopDaemonIfIdle,
+  launch: launchDaemon,
+  managementEnabled: async () => (await getDesktopSettingsStore().get()).daemon.manageBuiltInDaemon,
+  isActiveRelease: () => isActiveRelease(),
+  onUpgraded: () => syncInstalledAppCopy(),
+  log: logDesktopDaemonLifecycle,
+});
+
+// Set by registerDaemonManager for Nix installs: a stale app copy must not downgrade a newer
+// daemon, so only the active release replaces a daemon of another version.
+let isActiveRelease: () => Promise<ActiveRelease> = async () => "active";
+let syncInstalledAppCopy: () => void = () => {};
+
+/** Moves a daemon launch onto the store bundle on Nix-managed macOS; see store-bundle.ts. */
+function launchFromStoreBundle(invocation: NodeEntrypointInvocation): NodeEntrypointInvocation {
+  const rebase = daemonBundleRebase({
+    platform: process.platform,
+    isPackaged: app.isPackaged,
+    installation: resolveDesktopInstallation(process.resourcesPath),
+    resourcesPath: process.resourcesPath,
+    exists: existsSync,
   });
+  if (!rebase) return invocation;
+  const moved = rebaseDaemonLaunch(invocation, rebase);
+  if (!existsSync(moved.command)) {
+    logDesktopDaemonLifecycle("store bundle helper missing; launching from the app bundle", {
+      command: moved.command,
+    });
+    return invocation;
+  }
+  logDesktopDaemonLifecycle("launching daemon from the store bundle", { command: moved.command });
+  return moved;
+}
+
+async function launchDaemon(): Promise<DesktopDaemonStatus> {
+  const home = getPaseoHome();
+  const invocation = launchFromStoreBundle(
+    createNodeEntrypointInvocation({
+      entrypoint: resolveDaemonRunnerEntrypoint(),
+      argvMode: "node-script",
+      args: [],
+      baseEnv: process.env,
+    }),
+  );
   try {
     await startDaemonInstance({
       home,
@@ -346,6 +376,7 @@ export async function stopDesktopDaemon(
   reason: DesktopDaemonStopReason = DEFAULT_DESKTOP_DAEMON_STOP_REASON,
   confirmedInstance?: { pid: number; startedAt: string },
 ): Promise<DesktopDaemonStatus> {
+  daemonUpgrader.cancel();
   const home = getPaseoHome();
   const instance = await readDaemonInstance(home);
   const owned = Boolean(
@@ -431,16 +462,16 @@ export async function stopCapturedDaemon(input: StopCapturedDaemonInput): Promis
 
 /**
  * Whether a desktop stop keeps the daemon's terminals running for the daemon that replaces it.
- * Only when one comes straight back (an app update, a version-mismatch restart), and never on
- * Windows: a surviving terminal worker runs Paseo.exe and would lock the install folder the
- * update replaces. Quit, Settings, host removal and manual stops close terminals.
+ * Only when one comes straight back (an app update), and never on Windows: a surviving terminal
+ * worker runs Paseo.exe and would lock the install folder the update replaces. Quit, Settings,
+ * host removal and manual stops close terminals. An idle-only upgrade stop always keeps them.
  */
 export function keepsTerminalsOnStop(
   reason: DesktopDaemonStopReason,
   platform: NodeJS.Platform,
 ): boolean {
   if (platform === "win32") return false;
-  return reason === "app_update" || reason === "version_mismatch";
+  return reason === "app_update";
 }
 
 async function restartDaemon(): Promise<DesktopDaemonStatus> {
@@ -485,6 +516,7 @@ export function createDaemonCommandHandlers(
   input: {
     installation?: DesktopInstallation;
     runNixUpdate?: (command: NixUpdateCommand) => Promise<NixUpdateResult>;
+    quitForRelaunch?: () => void;
   } = {},
 ): Record<string, DesktopCommandHandler> {
   const installation = input.installation ?? resolveDesktopInstallation(process.resourcesPath);
@@ -572,16 +604,15 @@ export function createDaemonCommandHandlers(
     for (const command of NIX_UPDATE_COMMANDS) {
       handlers[`nix_update_${command}`] = () => runNixUpdate(command);
     }
-    handlers.nix_update_restart = (args) =>
+    handlers.nix_update_restart = () =>
       restartIntoActiveNixRelease({
         runNixUpdate,
-        confirmedDaemon: parseConfirmedDaemonInstance(args),
-        stopDaemon: (confirmed) => stopDesktopDaemon("manual_ipc", confirmed),
         relaunch: (target) => {
           if (target.kind === "exec") app.relaunch({ execPath: target.execPath });
           else spawn(target.command, target.args, { detached: true, stdio: "ignore" }).unref();
-          // Quit after the IPC reply is sent; the relaunch waits for this process to exit.
-          setImmediate(() => app.quit());
+          // Quit after the IPC reply is sent; the relaunch waits for this process to exit. The
+          // quit leaves the daemon running whatever keepRunningAfterQuit says.
+          setImmediate(() => (input.quitForRelaunch ?? (() => app.quit()))());
         },
         cliPath: installation.mode === "nix" ? installation.cliPath : "",
         pid: process.pid,
@@ -591,8 +622,17 @@ export function createDaemonCommandHandlers(
   return handlers;
 }
 
-export function registerDaemonManager(installation?: DesktopInstallation): void {
-  const handlers = createDaemonCommandHandlers({ installation });
+export function registerDaemonManager(
+  installation?: DesktopInstallation,
+  options: { quitForRelaunch?: () => void } = {},
+): void {
+  const handlers = createDaemonCommandHandlers({
+    installation,
+    quitForRelaunch: options.quitForRelaunch,
+  });
+  // A retry must not start a daemon while the app quits.
+  app.on("before-quit", () => daemonUpgrader.close());
+  if (installation?.mode === "nix") configureNixDaemonUpgrade(installation);
 
   ipcMain.handle(
     "paseo:invoke",
@@ -604,4 +644,44 @@ export function registerDaemonManager(installation?: DesktopInstallation): void 
       return await handler(args);
     },
   );
+}
+
+function configureNixDaemonUpgrade(
+  installation: Extract<DesktopInstallation, { mode: "nix" }>,
+): void {
+  const runNixUpdate = createNixUpdaterCommandRunner({
+    installation,
+    runningVersion: app.getVersion(),
+  });
+  // Cached for the session: activating a newer release changes nothing until the restart,
+  // because the app's and the daemon's versions stay the same until then.
+  let active: Promise<ActiveRelease> | null = null;
+  isActiveRelease = () => {
+    active ??= runNixUpdate("status")
+      .then((status): ActiveRelease =>
+        status.active?.outputPath === installation.outputPath ? "active" : "inactive",
+      )
+      .catch((error) => {
+        active = null;
+        logDesktopDaemonLifecycle("could not read the active Nix release", {
+          error: String(error),
+        });
+        return "unknown" as const;
+      });
+    return active;
+  };
+  if (process.platform !== "darwin") return;
+  // A deferred copy leaves the app running from its store bundle and /Applications on an older
+  // release. Retry the copy once nothing runs from it; the updater skips a current or busy copy.
+  syncInstalledAppCopy = () => {
+    if (!shouldSyncInstalledCopy(process.resourcesPath)) return;
+    logDesktopDaemonLifecycle("syncing /Applications/Paseo.app with the running release");
+    const sync = spawn(installation.cliPath, ["install-app"], { detached: true, stdio: "ignore" });
+    sync.on("exit", (code) => logDesktopDaemonLifecycle("app copy sync finished", { code }));
+    sync.on("error", (error) =>
+      logDesktopDaemonLifecycle("app copy sync failed", { error: String(error) }),
+    );
+    sync.unref();
+  };
+  syncInstalledAppCopy();
 }

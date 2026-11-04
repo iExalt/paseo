@@ -135,7 +135,7 @@ describe("Nix update operations", () => {
     expect(resolveNixUpdatePhase(useNixUpdateStore.getState()).kind).toBe("ready");
   });
 
-  it("warns about running agents, applies the update, then restarts the confirmed daemon", async () => {
+  it("says running agents keep working, applies the update, then restarts", async () => {
     await checkForNixUpdate({ userInitiated: false });
     harness.agents.set("a1", { id: "a1", title: "Fix login", status: "running" });
     harness.agents.set("a2", { id: "a2", title: "Idle one", status: "idle" });
@@ -145,14 +145,11 @@ describe("Nix update operations", () => {
 
     expect(harness.confirmDialog).toHaveBeenCalledOnce();
     const dialog = harness.confirmDialog.mock.calls[0][0];
-    expect(dialog.destructive).toBe(true);
-    expect(dialog.message).toContain("• Fix login");
-    expect(dialog.message).not.toContain("Idle one");
+    expect(dialog.destructive).toBeUndefined();
+    expect(dialog.confirmLabel).toBe("desktop.updates.nix.updateConfirm");
+    expect(dialog.message).toContain('desktop.updates.nix.agentsKeepRunning {"count":1}');
     expect(harness.bridge.activate).toHaveBeenCalledOnce();
-    expect(harness.bridge.restart).toHaveBeenCalledWith({
-      pid: 42,
-      startedAt: daemon.startedAt,
-    });
+    expect(harness.bridge.restart).toHaveBeenCalledWith();
   });
 
   it("runs one flow when the sidebar and Settings both start it", async () => {
@@ -165,20 +162,16 @@ describe("Nix update operations", () => {
     expect(harness.bridge.restart).toHaveBeenCalledOnce();
   });
 
-  it("asks again when an agent starts while the update is applied", async () => {
+  it("asks again when a newer release lands while the update is applied", async () => {
     harness.bridge.check.mockResolvedValue(result("check", { latest: v023, canStage: false }));
     await checkForNixUpdate({ userInitiated: false });
     harness.confirmDialog.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
-    harness.bridge.stage.mockImplementation(async () => {
-      harness.agents.set("late", { id: "late", title: "Started late", status: "running" });
-      return result("stage", { staged: v023 });
-    });
+    const v024 = { ...v023, version: "0.2.4" };
+    harness.bridge.activate.mockResolvedValue(result("activate", { active: v024 }));
 
     await confirmAndRunNixUpdate();
 
     expect(harness.confirmDialog).toHaveBeenCalledTimes(2);
-    expect(harness.confirmDialog.mock.calls[0][0].destructive).toBe(false);
-    expect(harness.confirmDialog.mock.calls[1][0].message).toContain("• Started late");
     expect(harness.bridge.restart).not.toHaveBeenCalled();
   });
 });

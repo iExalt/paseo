@@ -8,8 +8,8 @@ user-invocable: true
 
 Invoking this skill is permission to stage **and** activate the latest release.
 Neither touches running processes. Never quit the app, stop the daemon or restart
-anything yourself: this session runs inside Paseo and would die with it. The user
-restarts Paseo with the command printed in step 4.
+anything yourself: this session runs inside Paseo, and stopping an old daemon would
+end it. The user restarts Paseo with the command printed in step 4.
 
 Background and the recovery runbook: the README fork note and "Installation contract
 and managed CLI" in `docs/complete-campaigns/PASEO_FORK_AUTO_UPDATE_PLAN.md`.
@@ -57,25 +57,35 @@ Clean up with `rm -rf "$updater_dir"`.
 
 If `active.version` now differs from the running app's version
 (`packageVersion` in `/Applications/Paseo.app/Contents/Resources/paseo-nix-managed.json`),
-print this command and tell the user to run it **from a terminal outside Paseo**
-(Terminal.app, Ghostty, a zellij session not started by Paseo). Paseo's own terminals
-die with its daemon partway through:
+print a restart command for the user.
+
+Read the running daemon's version, not the app's, with
+`/Applications/Paseo.app/Contents/Resources/bin/paseo daemon status --json`. From 0.21.0
+the daemon survives the restart: agents keep running, and the new app upgrades the
+daemon once every agent is idle. The user can run this command anywhere, including a
+Paseo terminal:
 
 ```zsh
 pid=$(ps -axo pid=,args= | awk '$2 == "/Applications/Paseo.app/Contents/MacOS/Paseo" && NF == 2 { print $1 }') &&
 [ -n "$pid" ] &&
-/Applications/Paseo.app/Contents/Resources/bin/paseo daemon stop &&
 kill -TERM "$pid" &&
 "$HOME/Library/Application Support/Paseo/nix-update/profile/bin/paseo-nix-update" install-app --after-exit "$pid"
 ```
 
+A daemon older than 0.21.0 cannot stop only when idle, so the new app would leave it
+running indefinitely. For one, insert
+`/Applications/Paseo.app/Contents/Resources/bin/paseo daemon stop &&` before
+`kill -TERM`. Tell the user that this stops running agents, and that they must run it
+**from a terminal outside Paseo** (Terminal.app, Ghostty, a zellij session not started
+by Paseo), because Paseo's own terminals die with that daemon.
+
 `pgrep` cannot see the app's main process, hence `ps`. The app quits cleanly on
 `SIGTERM`. Unlike `osascript`, this needs no Automation permission, which nobody
 can grant over SSH, so the command also works from a remote shell.
-This mirrors the in-app restart: stop the daemon, quit the app, then the active
-release's updater waits for the app to exit, replaces `/Applications/Paseo.app` and
-opens it. The new app starts a matching daemon. If Paseo is not running, the user only
-needs the last line without `--after-exit "$pid"`, then `open /Applications/Paseo.app`.
+This mirrors the in-app restart: quit the app, then the active release's updater
+waits for the app to exit, replaces `/Applications/Paseo.app` and opens it. If Paseo is
+not running, the user only needs the last line without `--after-exit "$pid"`, then
+`open /Applications/Paseo.app`.
 
 The in-app equivalent is the restart button in Settings → About after activation.
 

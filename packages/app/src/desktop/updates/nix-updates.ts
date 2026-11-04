@@ -200,18 +200,13 @@ export function applyNixUpdate(): Promise<boolean> {
   });
 }
 
-export function restartIntoNixUpdate(
-  confirmedDaemon: {
-    pid: number;
-    startedAt: string;
-  } | null,
-): Promise<void> {
+export function restartIntoNixUpdate(): Promise<void> {
   return enqueue(async () => {
     const restart = getDesktopHost()?.nixUpdates?.restart;
     try {
       if (!restart) throw new Error("The managed Nix update bridge is unavailable.");
       useNixUpdateStore.setState({ busy: "restarting", failed: false });
-      await restart(confirmedDaemon ?? undefined);
+      await restart();
     } catch (error) {
       useNixUpdateStore.setState({ busy: null });
       recordError(error, true);

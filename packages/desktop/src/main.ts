@@ -984,7 +984,9 @@ async function bootstrap(): Promise<void> {
     },
   });
   ensureNotificationCenterRegistration();
-  registerDaemonManager(DESKTOP_INSTALLATION);
+  registerDaemonManager(DESKTOP_INSTALLATION, {
+    quitForRelaunch: () => quitLifecycle.quitForRelaunch(),
+  });
   registerWindowManager({ mode: DESKTOP_WINDOW_CHROME_MODE });
   registerDialogHandlers();
   registerNotificationHandlers();
@@ -1051,6 +1053,7 @@ function showDaemonShutdownDialog(): void {
 
 const quitLifecycle = createQuitLifecycle({
   app,
+  quit: () => app.quit(),
   closeTransportSessions: closeAllTransportSessions,
   stopDesktopManagedDaemonIfNeeded: () =>
     stopDesktopManagedDaemonOnQuitIfNeeded({

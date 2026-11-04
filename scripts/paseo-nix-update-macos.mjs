@@ -94,13 +94,18 @@ export function planAppInstall({ installed, activeOutputPath, activeMarker, busy
   return { action: "install" };
 }
 
-/** Process ids whose executable lives inside the bundle (`ps -axww -o pid=,command=`). */
+/**
+ * Process ids whose executable lives inside the bundle (`ps -axww -o pid=,command=`). A terminal
+ * worker is left out: it outlives installs by design, runs its code from its own copy, and only
+ * holds the mapped helper executable, which the rename-aside swap leaves intact.
+ */
 export function bundleProcesses(psOutput, bundle) {
   const prefix = `${bundle}/`;
   const pids = [];
   for (const line of psOutput.split("\n")) {
     const match = /^\s*(\d+)\s+(.*)$/.exec(line);
-    if (match?.[2].startsWith(prefix)) pids.push(Number(match[1]));
+    if (match?.[2].startsWith(prefix) && !match[2].includes(" --paseo-terminal-worker"))
+      pids.push(Number(match[1]));
   }
   return pids;
 }

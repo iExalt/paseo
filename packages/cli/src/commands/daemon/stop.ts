@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import {
+  requireIdleShutdownCapability,
   requireTerminalKeepCapability,
   type DaemonClient,
 } from "@getpaseo/client/internal/daemon-client";
@@ -17,6 +18,10 @@ export function daemonStopCommand(): Command {
     .option(
       "--keep-terminals",
       "Leave terminals running; the next daemon started for this home takes them back",
+    )
+    .option(
+      "--if-idle",
+      "Stop only when no agent has work, keeping terminals; otherwise leave it running",
     )
     .option("--kill-timeout <seconds>", "Forced exit deadline (default: 3)")
     .action(withOutput(runStopCommand));
@@ -43,14 +48,22 @@ async function runStop(options: CommandOptions, deps: StopCommandDeps) {
   const timeoutMs = parseTimeoutMs(options.timeout, 15_000);
   const deadline = Date.now() + timeoutMs;
   const remaining = () => Math.max(1, deadline - Date.now());
-  const keepTerminals = options.keepTerminals === true;
+  const onlyIfIdle = options.ifIdle === true;
+  // An idle-only stop must never fall back to a signal, which kills agents and terminals.
+  const keepTerminals = options.keepTerminals === true || onlyIfIdle;
   const requestShutdown = async (instance?: DaemonInstance) => {
     const client = await deps.connectToDaemon({ target, timeout: remaining(), instance });
     try {
       // Checked on the connection that carries the shutdown: a daemon without the capability
-      // would close the terminals it was asked to keep.
+      // would close the terminals it was asked to keep, or stop with agents running.
       if (keepTerminals) requireTerminalKeepCapability(client, describeDaemonTarget(target));
-      await client.shutdownServer({ timeout: remaining(), keepTerminals });
+      if (onlyIfIdle) requireIdleShutdownCapability(client, describeDaemonTarget(target));
+      const reply = await client.shutdownServer({
+        timeout: remaining(),
+        keepTerminals,
+        onlyIfIdle,
+      });
+      return reply.status === "shutdown_declined" ? ("declined" as const) : undefined;
     } finally {
       await client.close();
     }
@@ -59,6 +72,11 @@ async function runStop(options: CommandOptions, deps: StopCommandDeps) {
     throw {
       code: "INVALID_OPTIONS",
       message: "--force requires a local --home; an endpoint gives no remote process authority.",
+    };
+  if (options.force && onlyIfIdle)
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--force kills running agents; it cannot be combined with --if-idle.",
     };
   if (options.force && keepTerminals)
     throw {
@@ -84,18 +102,22 @@ async function runStop(options: CommandOptions, deps: StopCommandDeps) {
           })),
           home: target.home,
         }
-      : (await requestShutdown(),
-        { action: "shutdown_requested", host: describeDaemonTarget(target) });
+      : {
+          action: (await requestShutdown()) === "declined" ? "declined" : "shutdown_requested",
+          host: describeDaemonTarget(target),
+        };
   return {
     type: "single" as const,
     data: result,
     schema: {
       idField: "action" as const,
       columns: [],
-      renderHuman: () =>
-        target.kind === "endpoint"
+      renderHuman: () => {
+        if (result.action === "declined") return "Not stopped: an agent still has work.";
+        return target.kind === "endpoint"
           ? "Shutdown requested; remote process exit was not verified."
-          : `${result.action.replaceAll("_", " ")}: ${target.home}`,
+          : `${result.action.replaceAll("_", " ")}: ${target.home}`;
+      },
     },
   };
 }
