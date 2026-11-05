@@ -79,6 +79,10 @@ export function createWorkspaceCommand(): Command {
     workspace
       .command("archive")
       .description("Archive a workspace and everything it owns")
+      .addHelpText(
+        "after",
+        "\nArchiving your own workspace can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
+      )
       .argument("<workspace-id>", "Workspace id"),
   ).action(withOutput(runArchiveCommand));
 

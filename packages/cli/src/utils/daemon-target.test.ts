@@ -81,6 +81,62 @@ test("malformed endpoint diagnostics never expose the supplied credential", () =
   }
 });
 
+test.each(["EPERM", "EACCES"])(
+  "%s preserves the permission failure without start advice",
+  (code) => {
+    const diagnostic = buildDaemonConnectionCommandError({
+      target: { kind: "instance", home: "/tmp/selected-home" },
+      error: Object.assign(new Error("Operation not permitted"), { code }),
+    });
+    expect(diagnostic).toEqual({
+      code,
+      message: "Cannot connect to daemon at home /tmp/selected-home: Operation not permitted",
+      details:
+        "Permission denied while accessing the selected daemon or probing this system. Check this command's filesystem, process and network access.",
+    });
+  },
+);
+
+test("system-probe permission failures retain their system code and access remedy", () => {
+  const diagnostic = buildDaemonConnectionCommandError({
+    target: { kind: "instance", home: "/tmp/selected-home" },
+    error: Object.assign(new Error("uv_uptime returned EPERM (operation not permitted)"), {
+      code: "ERR_SYSTEM_ERROR",
+      info: { code: "EPERM", syscall: "uv_uptime" },
+    }),
+  });
+  expect(diagnostic.code).toBe("ERR_SYSTEM_ERROR");
+  expect(diagnostic.message).toBe(
+    "Cannot connect to daemon at home /tmp/selected-home: uv_uptime returned EPERM (operation not permitted)",
+  );
+  expect(diagnostic.details).toBe(
+    "Permission denied while accessing the selected daemon or probing this system. Check this command's filesystem, process and network access.",
+  );
+});
+
+test("connection diagnostics preserve structured messages and intentional details when wrapped again", () => {
+  const target = { kind: "instance" as const, home: "/tmp/selected-home" };
+  const failure = {
+    code: "AUTH_REQUIRED",
+    message: "Cannot connect to daemon at home /tmp/selected-home: Password required",
+    details: "Set PASEO_PASSWORD and retry.",
+  };
+  expect(buildDaemonConnectionCommandError({ target, error: failure })).toEqual(failure);
+});
+
+test.each([
+  ["DAEMON_NOT_RUNNING", true],
+  ["ERR_SYSTEM_ERROR", false],
+  ["ECONNREFUSED", false],
+  ["DAEMON_REQUEST_TIMEOUT", false],
+])("only a confirmed absent daemon suggests starting it: %s", (code, startAdvice) => {
+  const diagnostic = buildDaemonConnectionCommandError({
+    target: { kind: "instance", home: "/tmp/selected-home" },
+    error: { code, message: "Connection failed" },
+  });
+  expect(String(diagnostic.details).includes("paseo daemon start")).toBe(startAdvice);
+});
+
 test("CLI selects an explicit password before a matching local credential and never sends the latter remotely", async () => {
   const home = await mkdtemp(join(tmpdir(), "paseo-cli-credential-"));
   const previousPassword = process.env.PASEO_PASSWORD;

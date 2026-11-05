@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
+import { connectToDaemon } from "../../utils/client.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import type { CommandError, OutputSchema, SingleResult } from "../../output/index.js";
 
@@ -73,15 +73,7 @@ export async function runRenameCommand(
   }
   const title = resolveWorkspaceTitle({ title: titleInput, reset: options.reset });
 
-  const host = getDaemonHost({ target: options.daemonTarget });
-  const client = await connectToDaemon({ target: options.daemonTarget }).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    throw {
-      code: "DAEMON_NOT_RUNNING",
-      message: `Cannot connect to daemon at ${host}: ${message}`,
-      details: "Start the daemon with: paseo daemon start",
-    } satisfies CommandError;
-  });
+  const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     let resolvedWorkspaceId = targetWorkspaceId;
     const applied = options.current

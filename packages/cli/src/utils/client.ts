@@ -21,6 +21,7 @@ import {
 import type { CommandError } from "../output/index.js";
 import { getOrCreateCliClientId } from "./client-id.js";
 import { resolveCliVersion } from "../version.js";
+import { getErrorMessage } from "./errors.js";
 
 export interface ConnectOptions {
   target: DaemonTarget;
@@ -44,20 +45,33 @@ export function getDaemonHost(options: ConnectOptions): string {
 
 export function buildDaemonConnectionCommandError(options: ConnectOptions & { error: unknown }) {
   const error = options.error;
-  let message = error instanceof Error ? error.message : String(error);
-  if (error && typeof error === "object" && "message" in error) message = String(error.message);
+  let message = getErrorMessage(error);
   if (options.target.kind === "endpoint")
     message = message.replaceAll(options.target.host, describeDaemonTarget(options.target));
   let code = "DAEMON_UNREACHABLE";
   if (typeof error === "object" && error !== null && "code" in error) code = String(error.code);
   else if (message === "Password required") code = "AUTH_REQUIRED";
   else if (message === "Incorrect password") code = "AUTH_FAILED";
+  const systemInfo = error && typeof error === "object" && "info" in error ? error.info : null;
+  const systemCode =
+    systemInfo && typeof systemInfo === "object" && "code" in systemInfo
+      ? systemInfo.code
+      : undefined;
+  const permissionDenied = [code, systemCode].some(
+    (value) => value === "EPERM" || value === "EACCES",
+  );
+  let details: unknown = permissionDenied
+    ? "Permission denied while accessing the selected daemon or probing this system. Check this command's filesystem, process and network access."
+    : describeConnectionRemedy(code, options.target);
+  if (error && typeof error === "object" && "details" in error && error.details !== undefined) {
+    details = error.details;
+  }
   return {
     code,
     message: message.startsWith("Cannot connect to daemon at ")
       ? message
       : `Cannot connect to daemon at ${describeDaemonTarget(options.target)}: ${message}`,
-    details: describeConnectionRemedy(code, options.target),
+    details,
   };
 }
 
@@ -66,8 +80,10 @@ function describeConnectionRemedy(code: string, target: DaemonTarget): string {
     return "The daemon requires a password. Set PASEO_PASSWORD and retry.";
   if (code === "AUTH_FAILED")
     return "The daemon rejected the password. Check PASEO_PASSWORD and retry.";
-  if (target.kind === "instance")
+  if (target.kind === "instance" && code === "DAEMON_NOT_RUNNING")
     return `Start with: paseo daemon start --home ${JSON.stringify(target.home)}`;
+  if (target.kind === "instance")
+    return "Check the selected daemon and this command's local filesystem, process and network access.";
   return "Check the selected endpoint and credentials. SSH transport does not install or start the daemon.";
 }
 
@@ -284,14 +300,7 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
     return prefixMatches[0].id;
   }
 
-  // Try title/name match (case-insensitive)
-  const titleMatches = agents.filter((a) => a.title?.toLowerCase() === query);
-  if (titleMatches.length === 1 && titleMatches[0]) {
-    return titleMatches[0].id;
-  }
-
-  // Several agents share the prefix and no exact title settles it: make the caller choose
-  // before a title substring can pick one of them, or an unrelated agent.
+  // A title must not select an agent when its ID prefix is ambiguous.
   if (prefixMatches.length > 1) {
     throw {
       code: "AMBIGUOUS_AGENT_ID",
@@ -302,6 +311,12 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
         ),
       ].join("\n"),
     } satisfies CommandError;
+  }
+
+  // Try title/name match (case-insensitive)
+  const titleMatches = agents.filter((a) => a.title?.toLowerCase() === query);
+  if (titleMatches.length === 1 && titleMatches[0]) {
+    return titleMatches[0].id;
   }
 
   // Try partial title match

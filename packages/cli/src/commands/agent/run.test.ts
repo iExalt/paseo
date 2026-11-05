@@ -5,6 +5,7 @@ import { AgentSnapshotPayloadSchema } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
 import { resolveCallerAgentId as resolveRunCallerAgentId } from "../../utils/caller-agent.js";
 import {
+  addRunOptions,
   resolveExistingRunWorkspace,
   runRunCommand,
   waitsForFinish,
@@ -199,6 +200,47 @@ describe("runRunCommand option validation", () => {
       { newWorkspace: "worktree", worktreeMode: "container" },
       /Unsupported worktree mode/,
     );
+  });
+
+  it("accepts prompt flags without a positional prompt and requires an explicit provider", async () => {
+    const command = addRunOptions(new Command("run").exitOverride());
+    command.action(() => {});
+    command.parse(["--prompt", "do something"], { from: "user" });
+    expect(command.opts().prompt).toBe("do something");
+    await expect(
+      runRunCommand(undefined, { ...command.opts(), daemonTarget }, command),
+    ).rejects.toMatchObject({ code: "MISSING_PROVIDER" });
+    const fileCommand = addRunOptions(new Command("run").exitOverride());
+    fileCommand.action(() => {});
+    fileCommand.parse(["--prompt-file", "-", "--provider", "codex"], { from: "user" });
+    expect(fileCommand.opts()).toMatchObject({ promptFile: "-", provider: "codex" });
+  });
+
+  it.each([
+    {
+      prompt: undefined,
+      options: {},
+      code: "MISSING_PROMPT",
+    },
+    {
+      prompt: "task",
+      options: { promptFile: "-" },
+      code: "CONFLICTING_PROMPT_INPUT",
+    },
+    {
+      prompt: undefined,
+      options: { promptFile: "/nonexistent/paseo-prompt.txt" },
+      code: "PROMPT_FILE_READ_ERROR",
+    },
+    {
+      prompt: "task",
+      options: { waitTimeout: "7days" },
+      code: "INVALID_TIMEOUT",
+    },
+  ])("rejects $code before connecting", async ({ prompt, options, code }) => {
+    await expect(
+      runRunCommand(prompt, { ...options, provider: "codex", daemonTarget }, new Command()),
+    ).rejects.toMatchObject({ code });
   });
 });
 

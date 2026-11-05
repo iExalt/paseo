@@ -1,7 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { createCli } from "./cli.js";
+import { resolveCliVersion } from "./version.js";
 
 describe("canonical CLI surface", () => {
+  it.each([{ options: [] }, { options: ["--json"] }, { options: ["--format", "yaml"] }])(
+    "prints offline prime conventions with global options %j",
+    async ({ options }) => {
+      const cli = createCli();
+      const output: string[] = [];
+      const prime = cli.commands.find((command) => command.name() === "prime");
+      expect(prime).toBeDefined();
+      prime!.configureOutput({ writeOut: (text) => output.push(text) });
+      await cli.parseAsync(["--host", "not-a-daemon", ...options, "prime"], {
+        from: "user",
+      });
+
+      const text = output.join("");
+      expect(text).toContain(`Paseo CLI ${resolveCliVersion()} conventions`);
+      expect(text).toContain('quoted executable "$PASEO_CLI"');
+      expect(text).toContain("provider session IDs");
+      expect(text).toContain("run requires --provider");
+      expect(text).toContain("--prompt-file -");
+      expect(text).toContain("7d");
+      expect(text).toContain("parse stdout only");
+      expect(text).toContain("agent query --json");
+      expect(text).toContain("details under snapshot");
+      expect(text).toContain("Reconcile existing agents");
+      expect(text).toContain('Request --cwd "$PWD"');
+      expect(text).toContain("running agents still require --force");
+      expect(text).toContain("Send the handoff first");
+      expect(text).toContain("prime always prints text, even with --json");
+    },
+  );
+
   it.each(["send", "agent send"])("%s accepts an explicit behavior override", async (path) => {
     const cli = createCli();
     const owner =
@@ -52,6 +83,28 @@ describe("canonical CLI surface", () => {
     expect(query?.helpInformation()).toContain("--status <status>");
     expect(status?.helpInformation()).toContain("<agent-id>");
     expect(activity?.helpInformation()).toContain("--limit <number>");
+  });
+
+  it("explains managed terminal directories and self-archive handoff", () => {
+    const cli = createCli();
+    const terminal = cli.commands.find((command) => command.name() === "terminal");
+    const create = terminal?.commands.find((command) => command.name() === "create");
+    const workspace = cli.commands.find((command) => command.name() === "workspace");
+    const archiveWorkspace = workspace?.commands.find((command) => command.name() === "archive");
+    const agent = cli.commands.find((command) => command.name() === "agent");
+    const archiveAgent = agent?.commands.find((command) => command.name() === "archive");
+
+    expect(create?.helpInformation()).toContain("caller's scoped directory");
+    expect(create?.helpInformation()).toContain('--cwd "$PWD"');
+    const archiveHelp = [archiveWorkspace, archiveAgent].map((command) => {
+      const output: string[] = [];
+      command!.configureOutput({ writeOut: (text) => output.push(text) });
+      command!.outputHelp();
+      return output.join("");
+    });
+    expect(archiveHelp[0]).toContain("terminate the invoking shell");
+    expect(archiveHelp[1]).toContain("Self-archive with --force");
+    expect(archiveHelp[1]).toContain("Send the handoff first");
   });
 
   it("shows project, workspace, and heartbeat commands while hiding worktree compatibility", () => {

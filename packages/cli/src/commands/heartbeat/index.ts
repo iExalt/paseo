@@ -172,7 +172,7 @@ export function createHeartbeatCommand(): Command {
       .option("--timezone <iana>", "IANA time zone")
       .option("--name <name>", "Heartbeat name")
       .option("--max-runs <n>", "Maximum number of runs")
-      .option("--expires-in <duration>", "Time to live")
+      .option("--expires-in <duration>", "Time to live (e.g., 30s, 5m, 1h, 7d)")
       .option("--replace", "Replace an existing named heartbeat for this agent"),
   ).action(withOutput(runCreateHeartbeat));
   addJsonAndDaemonHostOptions(

@@ -10,7 +10,7 @@ import { withOutput } from "../../output/index.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
-import { resolveExactAgentTarget } from "../../utils/agent-target.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 
 interface SpeechSpeakResult {
   ok: true;
@@ -30,7 +30,7 @@ export function createSpeechCommand(): Command {
       .argument("<text>", "Text to speak (1–4000 characters)")
       .option(
         "--agent <id>",
-        "Agent (exact ID or full session ID) whose active voice session should speak",
+        "Agent (ID, prefix, or full session ID) whose active voice session should speak",
       ),
   ).action(withOutput(runSpeechSpeakCommand));
   return speech;
@@ -75,7 +75,7 @@ export async function runSpeechSpeakCommand(
       } satisfies CommandError;
     }
     const callerAgentId = requestedAgentId
-      ? await resolveExactAgentTarget(client, requestedAgentId)
+      ? await resolveAgentTarget(client, requestedAgentId)
       : await resolveCallerAgentId(client);
     await client.speakText(
       {

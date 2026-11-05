@@ -1,53 +1,56 @@
-import { describe, expect, test, vi } from "vitest";
-import { resolveExactAgentTarget, type ExactAgentTargetClient } from "./agent-target.js";
+import { describe, expect, test } from "vitest";
+import { resolveAgentTarget, type AgentTargetClient } from "./agent-target.js";
 
-function clientReturning(
-  agent: {
-    id: string;
-    runtimeInfo?: { sessionId: string | null };
-    persistence?: { sessionId: string } | null;
-  } | null,
-) {
-  const fetchAgent = vi.fn(async () => (agent ? { agent } : null));
-  return { client: { fetchAgent } as unknown as ExactAgentTargetClient, fetchAgent };
+function clientReturning(agent: { id: string } | null) {
+  const requestedIds: string[] = [];
+  const client: AgentTargetClient = {
+    async fetchAgent({ agentId }) {
+      requestedIds.push(agentId);
+      return agent ? { agent } : null;
+    },
+  };
+  return { client, requestedIds };
 }
 
-describe("resolveExactAgentTarget", () => {
-  test("maps a full session ID to the agent's Paseo ID", async () => {
-    const { client, fetchAgent } = clientReturning({
-      id: "agent-1",
-      runtimeInfo: { sessionId: "thread-abc" },
-    });
+describe("resolveAgentTarget", () => {
+  test.each(["agent-1", "agent", "thread-abc", "Build docs"])(
+    "returns the daemon's resolved Paseo ID for %s",
+    async (target) => {
+      const { client, requestedIds } = clientReturning({ id: "agent-1" });
+      await expect(resolveAgentTarget(client, ` ${target} `)).resolves.toBe("agent-1");
+      expect(requestedIds).toEqual([target]);
+    },
+  );
 
-    await expect(resolveExactAgentTarget(client, " thread-abc ")).resolves.toBe("agent-1");
-    expect(fetchAgent).toHaveBeenCalledWith({ agentId: "thread-abc" });
-  });
-
-  test("keeps an exact Paseo ID", async () => {
-    const { client } = clientReturning({ id: "agent-1", persistence: null });
-
-    await expect(resolveExactAgentTarget(client, "agent-1")).resolves.toBe("agent-1");
-  });
-
-  test("passes a prefix or title through so exact-ID commands stay exact", async () => {
-    const { client } = clientReturning({ id: "agent-1", persistence: { sessionId: "thread-abc" } });
-
-    await expect(resolveExactAgentTarget(client, "agent")).resolves.toBe("agent");
-  });
-
-  test("passes an unknown ID through for the daemon to reject", async () => {
+  test("explains the daemon scope and provider-session namespace for an unknown ID", async () => {
     const { client } = clientReturning(null);
-
-    await expect(resolveExactAgentTarget(client, "missing")).resolves.toBe("missing");
+    await expect(resolveAgentTarget(client, "missing")).rejects.toEqual({
+      code: "AGENT_NOT_FOUND",
+      message: "No agent found matching: missing",
+      details:
+        "Use `paseo agent ls --all --global` with the same --host or --home to check the selected daemon. Paseo agent IDs accept unambiguous prefixes; provider session IDs must be complete and already known to this daemon. Use `paseo import` to import a provider session.",
+    });
   });
 
-  test("propagates the daemon's ambiguity error", async () => {
-    const fetchAgent = vi.fn(async () => {
-      throw new Error('Session ID "thread-dup" matches 2 agents.');
+  test("rejects an empty target before asking the daemon", async () => {
+    const { client, requestedIds } = clientReturning(null);
+    await expect(resolveAgentTarget(client, " ")).rejects.toEqual({
+      code: "MISSING_AGENT_ID",
+      message: "Agent ID is required.",
     });
+    expect(requestedIds).toEqual([]);
+  });
 
-    await expect(
-      resolveExactAgentTarget({ fetchAgent } as unknown as ExactAgentTargetClient, "thread-dup"),
-    ).rejects.toThrow("matches 2 agents");
+  test.each([
+    'Session ID "thread-dup" matches 2 agents.',
+    'Agent identifier "agent" is ambiguous (agent-1, agent-2)',
+  ])("propagates daemon ambiguity: %s", async (message) => {
+    const error = new Error(message);
+    const client: AgentTargetClient = {
+      async fetchAgent() {
+        throw error;
+      },
+    };
+    await expect(resolveAgentTarget(client, "agent")).rejects.toBe(error);
   });
 });

@@ -6,6 +6,7 @@ import { createDaemonCommand } from "./commands/daemon/index.js";
 import { createPermitCommand } from "./commands/permit/index.js";
 import { createUsageCommand } from "./commands/usage/index.js";
 import { createProviderCommand } from "./commands/provider/index.js";
+import { createPrimeCommand } from "./commands/prime.js";
 import { createProfileCommand } from "./commands/profile/index.js";
 import { createPluginCommand } from "./commands/plugin/index.js";
 import { createProjectCommand } from "./commands/project/index.js";
@@ -62,6 +63,7 @@ export function createCli(): Command {
   addDaemonHostOption(program);
 
   program.addCommand(createHostCommand());
+  program.addCommand(createPrimeCommand());
 
   // Primary agent commands (top-level)
   addJsonAndDaemonHostOptions(addLsOptions(program.command("ls"))).action(withOutput(runLsCommand));

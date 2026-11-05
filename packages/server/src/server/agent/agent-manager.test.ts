@@ -3206,6 +3206,9 @@ test("createAgent passes daemon launch env through the provider launch context",
     model: "gpt-5.4",
     daemonAppendSystemPrompt: expect.stringMatching(/^Use the Paseo CLI /),
   });
+  expect(client.lastConfig?.daemonAppendSystemPrompt).toContain(
+    'Run "$PASEO_CLI" prime for version-matched CLI conventions',
+  );
   expect(client.lastLaunchContext).toEqual({
     agentId: snapshot.id,
     env: {

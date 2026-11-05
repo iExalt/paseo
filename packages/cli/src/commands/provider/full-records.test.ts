@@ -8,6 +8,7 @@ import {
 import { connectToDaemon } from "../../utils/client.js";
 import { runLsCommand } from "./ls.js";
 import { runModelsCommand } from "./models.js";
+import { createProviderCommand } from "./index.js";
 
 vi.mock("../../utils/client.js", () => ({ connectToDaemon: vi.fn() }));
 
@@ -28,6 +29,23 @@ function createClient() {
 
 describe("provider full record output", () => {
   beforeEach(() => vi.clearAllMocks());
+
+  it("accepts modes as the inspect command with the same provider and options", () => {
+    const command = createProviderCommand().exitOverride();
+    const inspect = command.commands.find((child) => child.name() === "inspect")!;
+    let selection: { provider: string; options: Record<string, unknown> } | undefined;
+    inspect.action((provider, options) => {
+      selection = { provider, options };
+    });
+
+    command.parse(["modes", "codex", "--cwd", "/workspace", "--json"], { from: "user" });
+
+    expect(inspect.name()).toBe("inspect");
+    expect(selection).toEqual({
+      provider: "codex",
+      options: { feature: [], cwd: "/workspace", json: true },
+    });
+  });
 
   it.each([
     { name: "empty provider snapshot", entries: [] },

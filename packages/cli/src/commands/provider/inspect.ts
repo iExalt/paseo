@@ -10,7 +10,7 @@ import { withOutput } from "../../output/index.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { collectMultiple } from "../../utils/command-options.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
-import { resolveExactAgentTarget } from "../../utils/agent-target.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 import { parseFeatureValues } from "../../utils/feature-values.js";
 
 export const providerInspectSchema: OutputSchema<ProviderInspectPayload> = {
@@ -85,7 +85,7 @@ export async function runProviderInspectCommand(
   const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     const callerAgentId = requestedCallerAgentId
-      ? await resolveExactAgentTarget(client, requestedCallerAgentId)
+      ? await resolveAgentTarget(client, requestedCallerAgentId)
       : await resolveCallerAgentId(client);
     if (!callerAgentId && !cwd) {
       throw {
@@ -124,7 +124,7 @@ export function addProviderInspectOptions(command: Command): Command {
     .option("--cwd <path>", "Working directory used to inspect provider capabilities")
     .option(
       "--caller-agent <id>",
-      "Use an agent caller context and its scoped working directory (exact ID or full session ID)",
+      "Use an agent caller context and its scoped working directory (ID, prefix, or full session ID)",
     )
     .option("--mode <id>", "Draft mode ID")
     .option("--model <id>", "Draft model ID")

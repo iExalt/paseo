@@ -8,7 +8,7 @@ import type { CommandError, CommandOptions, ListResult, OutputSchema } from "../
 import { connectToDaemon } from "../../utils/client.js";
 import { collectMultiple } from "../../utils/command-options.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
-import { resolveExactAgentTarget } from "../../utils/agent-target.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 
 export const agentQuerySchema: OutputSchema<AgentListItemPayload> = {
   idField: "id",
@@ -75,7 +75,7 @@ export function addAgentQueryOptions(command: Command): Command {
     .description("Find agents by scope, age, status, and visibility")
     .option(
       "--caller-agent <id>",
-      "Use an agent caller directory as the default scope (exact ID or full session ID)",
+      "Use an agent caller directory as the default scope (ID, prefix, or full session ID)",
     )
     .option("--cwd <path>", "Restrict results to this directory and its descendants")
     .option("--include-archived", "Include archived agents")
@@ -123,7 +123,7 @@ export async function runAgentQueryCommand(
       } satisfies CommandError;
     }
     const callerAgentId = requestedCallerId
-      ? await resolveExactAgentTarget(client, requestedCallerId)
+      ? await resolveAgentTarget(client, requestedCallerId)
       : await resolveCallerAgentId(client);
     const agents = await client.queryAgentDirectory({
       ...(options.includeBackground ? { includeBackground: true } : {}),

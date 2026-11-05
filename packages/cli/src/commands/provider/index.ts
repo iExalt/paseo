@@ -36,7 +36,10 @@ export function createProviderCommand(): Command {
 
   addProviderInspectOptions(
     addJsonAndDaemonHostOptions(
-      provider.command("inspect").description("Inspect provider capabilities and draft settings"),
+      provider
+        .command("inspect")
+        .alias("modes")
+        .description("Inspect provider modes, capabilities, and draft settings"),
     ).argument("<provider>", "Provider ID or provider/model"),
   ).action(providerInspectOutput);
 

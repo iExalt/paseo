@@ -19,6 +19,7 @@ import { parseDuration } from "../../utils/duration.js";
 import { collectMultiple } from "../../utils/command-options.js";
 import { resolveProviderAndModel } from "../../utils/provider-model.js";
 import { parseFeatureValues } from "../../utils/feature-values.js";
+import { resolvePromptInput } from "../../utils/prompt-input.js";
 import { buildWorkspaceSource } from "../workspace/create.js";
 
 export { resolveProviderAndModel } from "../../utils/provider-model.js";
@@ -27,7 +28,9 @@ export function addRunOptions(cmd: Command): Command {
   return (
     cmd
       .description("Create and start an agent with a task")
-      .argument("<prompt>", "The task/prompt for the agent")
+      .argument("[prompt]", "The task/prompt for the agent")
+      .option("--prompt <text>", "Provide the task/prompt inline as a flag")
+      .option("--prompt-file <path>", "Read the task/prompt from a UTF-8 text file (- for stdin)")
       .option("--no-wait", "Return immediately without waiting for completion")
       // COMPAT(backgroundRunFlag): --background was the documented spelling of
       // --no-wait. Added in v0.2.0; remove after 2027-04-01.
@@ -39,7 +42,7 @@ export function addRunOptions(cmd: Command): Command {
       .addOption(new Option("--name <name>", "Hidden alias for --title").hideHelp())
       .option(
         "--provider <provider>",
-        "Agent provider, or provider/model (e.g. codex or codex/gpt-5.4)",
+        "Required agent provider, or provider/model (discover with paseo provider ls/models)",
       )
       .option(
         "--model <model>",
@@ -105,7 +108,7 @@ export function addRunOptions(cmd: Command): Command {
       )
       .option(
         "--wait-timeout <duration>",
-        "Maximum time to wait for agent to finish (e.g., 30s, 5m, 1h). Default: no limit",
+        "Maximum time to wait for agent to finish (e.g., 30s, 5m, 1h, 1d). Default: no limit",
       )
       .option(
         "--output-schema <schema>",
@@ -136,6 +139,8 @@ export const agentRunSchema: OutputSchema<AgentRunResult> = {
 };
 
 export interface AgentRunOptions extends CommandOptions {
+  prompt?: string;
+  promptFile?: string;
   wait?: boolean;
   background?: boolean;
   detach?: boolean;
@@ -422,15 +427,7 @@ function validateRunWorkspaceOptions(options: AgentRunOptions): void {
   }
 }
 
-function validateRunOptions(prompt: string, options: AgentRunOptions, outputSchema: unknown): void {
-  if (!prompt || prompt.trim().length === 0) {
-    throw {
-      code: "MISSING_PROMPT",
-      message: "A prompt is required",
-      details: "Usage: paseo agent run [options] <prompt>",
-    } satisfies CommandError;
-  }
-
+function validateRunOptions(options: AgentRunOptions, outputSchema: unknown): void {
   if (options.background) {
     console.error("Warning: --background (-d) is deprecated. Use --no-wait instead.");
   }
@@ -820,13 +817,18 @@ async function runStandardAgent(
 }
 
 export async function runRunCommand(
-  prompt: string,
+  promptArgument: string | undefined,
   options: AgentRunOptions,
   _command: Command,
 ): Promise<SingleResult<AgentRunResult>> {
+  const prompt = await resolvePromptInput({
+    promptArgument,
+    promptOption: options.prompt,
+    promptFile: options.promptFile,
+  });
   const outputSchema = options.outputSchema ? loadOutputSchema(options.outputSchema) : undefined;
 
-  validateRunOptions(prompt, options, outputSchema);
+  validateRunOptions(options, outputSchema);
   const waitTimeoutMs = parseWaitTimeoutOption(options.waitTimeout);
 
   const resolvedProviderModel = resolveProviderAndModel(options);
