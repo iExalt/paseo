@@ -43,12 +43,14 @@ describe("resolveAgentId", () => {
     );
   });
 
-  test("a unique title still settles a prefix several agents share", () => {
+  test("an exact title does not settle a prefix several agents share", () => {
     const shared = [
       { id: "review-1", title: "Other" },
       { id: "review-2", title: "Review" },
     ];
-    expect(resolveAgentId("review", shared)).toBe("review-2");
+    expect(() => resolveAgentId("review", shared)).toThrow(
+      expect.objectContaining({ code: "AMBIGUOUS_AGENT_ID" }),
+    );
   });
 
   describe("provider session IDs", () => {

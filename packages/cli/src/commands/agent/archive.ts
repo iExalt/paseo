@@ -29,7 +29,11 @@ export function addArchiveOptions(cmd: Command): Command {
   return cmd
     .description("Archive an agent (soft-delete)")
     .argument("<id>", "Agent ID, full session ID, prefix, or name")
-    .option("--force", "Force archive a running agent or acknowledge an already archived agent");
+    .option("--force", "Force archive a running agent or acknowledge an already archived agent")
+    .addHelpText(
+      "after",
+      "\nSelf-archive with --force can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
+    );
 }
 
 export interface AgentArchiveOptions extends CommandOptions {

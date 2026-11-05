@@ -2,7 +2,7 @@ import { Command } from "commander";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { connectToDaemon, type ConnectOptions } from "../../utils/client.js";
-import { resolveExactAgentTarget } from "../../utils/agent-target.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { withOutput, type CommandOptions, type CommandResult } from "../../output/index.js";
 import { usageSchema } from "./presentation.js";
@@ -42,9 +42,7 @@ export async function runUsageCommand(
     if (selection.kind === "list") {
       const { reports } = await client.listUsageReports({
         agentId:
-          options.agent === undefined
-            ? undefined
-            : await resolveExactAgentTarget(client, options.agent),
+          options.agent === undefined ? undefined : await resolveAgentTarget(client, options.agent),
         forceRefresh: options.refresh,
       });
       return { type: "list", data: reports, schema: usageSchema };
@@ -72,7 +70,7 @@ function addListOptions(command: Command): Command {
   return addJsonAndDaemonHostOptions(command)
     .option(
       "--agent <id>",
-      "Show account quota associated with this agent, by exact ID or full session ID (not agent token consumption)",
+      "Show account quota associated with this agent, by ID, prefix, or full session ID (not agent token consumption)",
     )
     .option("--refresh", "Refresh usage instead of using the host cache");
 }

@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
+import { connectToDaemon } from "../../utils/client.js";
 import type {
   CommandError,
   CommandOptions,
@@ -36,15 +36,7 @@ export async function runUpdateCommand(
       details: "Usage: paseo workspace update <workspace-id> --notifications <on|off>",
     } satisfies CommandError;
   }
-  const host = getDaemonHost({ target: options.daemonTarget });
-  const client = await connectToDaemon({ target: options.daemonTarget }).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    throw {
-      code: "DAEMON_NOT_RUNNING",
-      message: `Cannot connect to daemon at ${host}: ${message}`,
-      details: "Start the daemon with: paseo daemon start",
-    } satisfies CommandError;
-  });
+  const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     const applied = await client.setWorkspaceNotifications(workspaceId, options.notifications);
     return {

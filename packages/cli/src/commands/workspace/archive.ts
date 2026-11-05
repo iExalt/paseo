@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
+import { connectToDaemon } from "../../utils/client.js";
 import type { CommandError, OutputSchema, SingleResult } from "../../output/index.js";
 
 interface WorkspaceArchiveResult {
@@ -24,14 +24,7 @@ export async function runArchiveCommand(
   options: { host?: string; daemonTarget: import("../../utils/daemon-target.js").DaemonTarget },
   _command: Command,
 ): Promise<SingleResult<WorkspaceArchiveResult>> {
-  const host = getDaemonHost({ target: options.daemonTarget });
-  const client = await connectToDaemon({ target: options.daemonTarget }).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    throw {
-      code: "DAEMON_NOT_RUNNING",
-      message: `Cannot connect to daemon at ${host}: ${message}`,
-    } satisfies CommandError;
-  });
+  const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     const payload = await client.archiveWorkspace(workspaceId);
     if (payload.error) {

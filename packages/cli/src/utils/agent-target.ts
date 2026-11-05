@@ -1,29 +1,27 @@
-import {
-  getProviderSessionId,
-  type ProviderSessionIdCandidate,
-} from "@getpaseo/protocol/agent-provider-session-id";
-
-export interface ExactAgentTargetClient {
-  fetchAgent(input: { agentId: string }): Promise<{ agent: ProviderSessionIdCandidate } | null>;
+export interface AgentTargetClient {
+  fetchAgent(input: { agentId: string }): Promise<{ agent: { id: string } } | null>;
 }
 
 /**
- * For options that take an exact agent ID: also accept the agent's full provider session ID (the ID
- * the app's "Copy session ID" copies) and return its Paseo ID. Anything else, including an ID
- * prefix or title, passes through unchanged so the daemon keeps its exact-ID semantics and errors.
- * A session ID several agents hold makes the daemon's lookup throw, listing them.
+ * Resolve through the daemon so prefixes, titles and full provider session IDs use its
+ * existing lookup and ambiguity rules before calling an RPC that requires a Paseo ID.
  */
-export async function resolveExactAgentTarget(
-  client: ExactAgentTargetClient,
+export async function resolveAgentTarget(
+  client: AgentTargetClient,
   target: string,
 ): Promise<string> {
   const trimmed = target.trim();
   if (!trimmed) {
-    return target;
+    throw { code: "MISSING_AGENT_ID", message: "Agent ID is required." };
   }
   const agent = (await client.fetchAgent({ agentId: trimmed }))?.agent;
-  if (agent && (agent.id === trimmed || getProviderSessionId(agent) === trimmed)) {
-    return agent.id;
+  if (!agent) {
+    throw {
+      code: "AGENT_NOT_FOUND",
+      message: `No agent found matching: ${trimmed}`,
+      details:
+        "Use `paseo agent ls --all --global` with the same --host or --home to check the selected daemon. Paseo agent IDs accept unambiguous prefixes; provider session IDs must be complete and already known to this daemon. Use `paseo import` to import a provider session.",
+    };
   }
-  return target;
+  return agent.id;
 }

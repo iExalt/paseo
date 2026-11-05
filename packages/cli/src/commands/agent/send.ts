@@ -15,7 +15,8 @@ import type {
   CommandError,
 } from "../../output/index.js";
 import { readFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { extname } from "node:path";
+import { resolvePromptInput } from "../../utils/prompt-input.js";
 
 /** Result type for agent send command */
 export interface AgentSendResult {
@@ -52,7 +53,7 @@ export function addSendOptions(cmd: Command): Command {
     .argument("<id>", "Agent ID, prefix, or full session ID")
     .argument("[prompt]", "The message to send")
     .option("--prompt <text>", "Provide the message inline as a flag")
-    .option("--prompt-file <path>", "Read the message from a UTF-8 text file")
+    .option("--prompt-file <path>", "Read the message from a UTF-8 text file (- for stdin)")
     .option("--image <path>", "Attach image(s) to the message", collectMultiple, [])
     .addOption(
       new Option(
@@ -117,56 +118,6 @@ async function readImageFiles(
       }
     }),
   );
-}
-
-async function resolvePromptInput(options: {
-  promptArgument: string | undefined;
-  promptOption: string | undefined;
-  promptFile: string | undefined;
-}): Promise<string> {
-  const promptText = options.promptArgument?.trim();
-  const promptOptionText = options.promptOption?.trim();
-  const promptFilePath = options.promptFile?.trim();
-  const providedSourceCount = [promptText, promptOptionText, promptFilePath].filter(Boolean).length;
-
-  if (providedSourceCount > 1) {
-    const error: CommandError = {
-      code: "CONFLICTING_PROMPT_INPUT",
-      message: "Provide exactly one of prompt argument, --prompt, or --prompt-file",
-    };
-    throw error;
-  }
-
-  if (promptText) {
-    return options.promptArgument as string;
-  }
-
-  if (promptOptionText) {
-    return options.promptOption as string;
-  }
-
-  if (!promptFilePath) {
-    const error: CommandError = {
-      code: "MISSING_PROMPT",
-      message: "A prompt is required",
-      details:
-        "Usage: paseo agent send [options] <id> [prompt] | --prompt <text> | --prompt-file <path>",
-    };
-    throw error;
-  }
-
-  try {
-    return await readFile(resolve(promptFilePath), "utf8");
-  } catch (err) {
-    if (err && typeof err === "object" && "code" in err) throw err;
-    const message = err instanceof Error ? err.message : String(err);
-    const error: CommandError = {
-      code: "PROMPT_FILE_READ_ERROR",
-      message: `Failed to read prompt file: ${promptFilePath}`,
-      details: message,
-    };
-    throw error;
-  }
 }
 
 type SendWaitState = Awaited<

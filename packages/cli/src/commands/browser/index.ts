@@ -11,7 +11,7 @@ import { normalizeBrowserHttpUrlInput } from "@getpaseo/protocol/browser-automat
 import { addJsonAndDaemonHostOptions, collectMultiple } from "../../utils/command-options.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { connectToDaemon } from "../../utils/client.js";
-import { resolveExactAgentTarget } from "../../utils/agent-target.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 import {
   withOutput,
   type CommandError,
@@ -153,7 +153,7 @@ function addBrowserAction(
   command
     .option(
       "--agent <id>",
-      "Agent (exact ID or full session ID) whose runtime directory scopes tab creation and listing",
+      "Agent (ID, prefix, or full session ID) whose runtime directory scopes tab creation and listing",
     )
     .option("--workspace <id>", "Workspace that scopes tab creation and listing");
   addJsonAndDaemonHostOptions(command);
@@ -200,7 +200,7 @@ function createBrowserAction(
       }
       const explicitAgentId = requestedAgentId?.trim();
       const agentId = explicitAgentId
-        ? await resolveExactAgentTarget(client, explicitAgentId)
+        ? await resolveAgentTarget(client, explicitAgentId)
         : await resolveCallerAgentId(client);
       const response = await client.executeBrowserCommand(
         {

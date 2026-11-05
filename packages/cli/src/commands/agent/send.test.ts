@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { Readable } from "node:stream";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { connectToDaemon } from "../../utils/client.js";
 import { addSendOptions, runSendCommand } from "./send.js";
+import { resolvePromptInput } from "../../utils/prompt-input.js";
 
 const daemonTarget = { kind: "endpoint" as const, host: "daemon.test:12345" };
 
@@ -81,5 +86,69 @@ describe("agent send --if-running", () => {
     expect(waited.data.agentId).toBe("agent-1");
     expect(queued.waitForFinish).not.toHaveBeenCalled();
     expect(noWait.data.agentId).toBe("agent-1");
+  });
+});
+
+describe("run and send prompt input", () => {
+  const noSources = { promptArgument: undefined, promptOption: undefined, promptFile: undefined };
+
+  it("preserves inline text and only reads stdin when explicitly selected", async () => {
+    const unreadStdin = {
+      [Symbol.asyncIterator](): AsyncIterator<string> {
+        throw new Error("stdin was read without --prompt-file -");
+      },
+    };
+    for (const source of ["promptArgument", "promptOption"] as const) {
+      await expect(
+        resolvePromptInput({ ...noSources, [source]: "  task\n" }, unreadStdin),
+      ).resolves.toBe("  task\n");
+    }
+    await expect(resolvePromptInput(noSources, unreadStdin)).rejects.toMatchObject({
+      code: "MISSING_PROMPT",
+    });
+  });
+
+  it("reads UTF-8 files unchanged and rejects blank or unreadable files", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "paseo-prompt-test-"));
+    const filename = join(directory, "prompt.txt");
+    try {
+      await writeFile(filename, "  café\nsecond line\n");
+      await expect(resolvePromptInput({ ...noSources, promptFile: filename })).resolves.toBe(
+        "  café\nsecond line\n",
+      );
+      await writeFile(filename, " \n\t");
+      await expect(
+        resolvePromptInput({ ...noSources, promptFile: filename }),
+      ).rejects.toMatchObject({ code: "MISSING_PROMPT" });
+      await expect(
+        resolvePromptInput({ ...noSources, promptFile: join(directory, "missing.txt") }),
+      ).rejects.toMatchObject({ code: "PROMPT_FILE_READ_ERROR" });
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("decodes stdin across UTF-8 chunk boundaries and rejects empty stdin", async () => {
+    const bytes = Buffer.from("  café\n");
+    await expect(
+      resolvePromptInput(
+        { ...noSources, promptFile: "-" },
+        Readable.from([bytes.subarray(0, 6), bytes.subarray(6)]),
+      ),
+    ).resolves.toBe("  café\n");
+    await expect(
+      resolvePromptInput({ ...noSources, promptFile: "-" }, Readable.from([" \n"])),
+    ).rejects.toMatchObject({ code: "MISSING_PROMPT" });
+  });
+
+  it.each([
+    { promptArgument: "task", promptOption: "other" },
+    { promptArgument: "task", promptFile: "-" },
+    { promptOption: "task", promptFile: "-" },
+    { promptArgument: "", promptFile: "-" },
+  ])("rejects conflicting explicit prompt sources: %j", async (sources) => {
+    await expect(resolvePromptInput({ ...noSources, ...sources })).rejects.toMatchObject({
+      code: "CONFLICTING_PROMPT_INPUT",
+    });
   });
 });

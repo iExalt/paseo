@@ -95,14 +95,7 @@ async function withDaemon<T>(
   operation: (client: Awaited<ReturnType<typeof connectToDaemon>>) => Promise<T>,
   failureCode: string,
 ): Promise<T> {
-  const client = await connectToDaemon({ target: options.daemonTarget }).catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    throw {
-      code: "DAEMON_NOT_RUNNING",
-      message: `Cannot connect to daemon: ${message}`,
-      details: "Start the daemon or choose an available --host.",
-    } satisfies CommandError;
-  });
+  const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     return await operation(client);
   } catch (error) {

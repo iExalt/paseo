@@ -1,5 +1,5 @@
 import type { Command } from "commander";
-import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
+import { connectToDaemon } from "../../utils/client.js";
 import type { CommandError, OutputSchema, SingleResult } from "../../output/index.js";
 
 interface WorkspaceSetupResult {
@@ -20,13 +20,7 @@ export async function runSetupCommand(
   options: { host?: string; daemonTarget: import("../../utils/daemon-target.js").DaemonTarget },
   _command: Command,
 ): Promise<SingleResult<WorkspaceSetupResult>> {
-  const host = getDaemonHost({ target: options.daemonTarget });
-  const client = await connectToDaemon({ target: options.daemonTarget }).catch((error: unknown) => {
-    throw {
-      code: "DAEMON_NOT_RUNNING",
-      message: `Cannot connect to daemon at ${host}: ${error instanceof Error ? error.message : String(error)}`,
-    } satisfies CommandError;
-  });
+  const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
     if (!client.getLastServerInfoMessage()?.features?.workspaceSetupRun) {

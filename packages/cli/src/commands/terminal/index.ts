@@ -28,9 +28,9 @@ export function createTerminalCommand(): Command {
   addJsonAndDaemonHostOptions(
     terminal
       .command("create")
-      .description("Create a terminal")
+      .description("Create a terminal (managed sessions default to the caller's scoped directory)")
       .option("--workspace <id>", "Workspace ID")
-      .option("--cwd <path>", "Working directory")
+      .option("--cwd <path>", 'Working directory; use --cwd "$PWD" for the shell directory')
       .option("--name <name>", "Terminal name"),
   ).action(withOutput(runCreateCommand));
 

@@ -12,10 +12,12 @@ The Paseo CLI lets you manage agents from your terminal. It's the same interface
 
 > **Agent orchestration:** You can tell coding agents to use the Paseo CLI to spawn and manage other agents. Paseo recognizes the calling agent, so CLI-created workers inherit caller workspace and parent defaults. See [caller context and native tool policy](/docs/mcp).
 
+Run `paseo prime` for compact conventions matched to the installed CLI version. It works offline and always prints plain text, including with `--json`. In managed sessions, use `"$PASEO_CLI" prime`.
+
 ## Quick reference
 
 ```bash
-paseo run "fix the tests"            # Start an agent
+paseo run --provider codex "fix the tests"  # Start an agent
 paseo ls                             # List running agents
 paseo attach <id>                    # Stream agent output
 paseo send <id> "also fix linting"   # Send follow-up task
@@ -103,26 +105,28 @@ The diagnostic includes the configured command, daemon `PATH` and shell, matchin
 
 ## Running agents
 
-Use `paseo run` to start a new agent with a task:
+Use `paseo run` to start a new agent with a task. `--provider` is required; discover providers and models with `provider ls` and `provider models`:
 
 ```bash
-paseo run "implement user authentication"
+paseo run --provider codex "implement user authentication"
 paseo run --provider codex "refactor the API layer"
-paseo run --no-wait "run the focused test suite"
-paseo run --output-schema schema.json "name this branch"
-paseo run --new-workspace worktree --worktree-mode branch-off --new-branch feature/x --base origin/main "implement feature X"
-paseo run --workspace <workspace-id> "review the current diff"
-paseo run --output-schema schema.json "extract release notes"
-paseo run --output-schema '{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]}' "summarize release notes"
+paseo run --provider codex --no-wait "run the focused test suite"
+paseo run --provider codex --output-schema schema.json "name this branch"
+paseo run --provider codex --new-workspace worktree --worktree-mode branch-off --new-branch feature/x --base origin/main "implement feature X"
+paseo run --provider codex --workspace <workspace-id> "review the current diff"
+paseo run --provider codex --output-schema schema.json "extract release notes"
+paseo run --provider codex --output-schema '{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]}' "summarize release notes"
 ```
 
-From a human shell, a bare `paseo run` creates a new local workspace for the current directory. Use `--workspace <id>` to add the agent to an existing workspace, or `--new-workspace local|worktree` to explicitly create a separate workspace for the run.
+From a human shell, a run without explicit workspace placement creates a new local workspace for the current directory. Use `--workspace <id>` to add the agent to an existing workspace, or `--new-workspace local|worktree` to explicitly create a separate workspace for the run.
 
 Worktree creation accepts `--worktree-mode branch-off|checkout-branch|checkout-pr` plus the matching `--new-branch`/`--base`, `--branch`, or `--pr-number`/`--forge` options. Use `--worktree-slug` to choose the managed directory slug.
 
 When an existing Paseo agent runs the same command, Paseo recognizes it through `PASEO_AGENT_ID`. Without explicit placement, the new agent becomes its subagent in the same workspace. `--workspace` can place that subagent elsewhere without changing its parent.
 
 Use `--output-schema` to return only matching JSON output. You can pass a schema file path or an inline JSON schema object. This mode cannot be used with `--no-wait`.
+
+Both `run` and `send` accept one prompt source: positional text, `--prompt <text>`, or `--prompt-file <path>`. Use `--prompt-file -` to read UTF-8 stdin explicitly; stdin is not read automatically. For example, `paseo run --provider codex --prompt-file task.md --no-wait --json`.
 
 By default, `paseo run` waits for completion. Use `--no-wait` to return immediately while the agent keeps running, the same flag `paseo send` takes.
 
@@ -195,7 +199,7 @@ from a human shell. Visibility is creation-only.
 
 ```bash
 paseo workspace create --isolation local --background --path /path/to/repo
-paseo run --workspace <workspace-id> --no-wait "review the checkout flow"
+paseo run --provider codex --workspace <workspace-id> --no-wait "review the checkout flow"
 ```
 
 Exact workspace and agent IDs remain accessible regardless of listing visibility.
@@ -205,7 +209,7 @@ Then list, use, rename, or archive it:
 ```bash
 paseo workspace ls
 paseo workspace ls --background               # Also include background workspaces
-paseo run --workspace <workspace-id> "implement authentication"
+paseo run --provider codex --workspace <workspace-id> "implement authentication"
 paseo workspace rename <workspace-id> "Auth rework"
 paseo workspace rename <workspace-id> --reset   # back to the branch or directory name
 paseo workspace archive <workspace-id>
@@ -241,7 +245,9 @@ paseo terminal kill <terminal-id>
 
 Creation defaults to the workspace directory. Add `--cwd <absolute-path>` to change the process directory while keeping that workspace as the owner. Unknown and archived workspace IDs fail.
 
-Without `--workspace`, creation opens the project at `--cwd` or the current directory and reuses its oldest active workspace. Listing without `--workspace` filters by `--cwd` or the current directory and can include multiple workspaces. `ls --all` lists every terminal on the host and cannot be combined with directory or workspace filters.
+Inside a managed agent session, creation defaults to the caller's scoped directory and workspace, even after the shell changes directory. Request the shell's current directory explicitly with `"$PASEO_CLI" terminal create --cwd "$PWD" --json`; caller directory restrictions still apply.
+
+Outside a managed session, creation without `--workspace` opens the project at `--cwd` or the current directory and reuses its oldest active workspace. Listing without `--workspace` filters by `--cwd` or the current directory and can include multiple workspaces. `ls --all` lists every terminal on the host and cannot be combined with directory or workspace filters.
 
 Create and list results include `id`, `name`, `cwd`, and `workspaceId`. Use `--json` for structured output and the global `--host` option to target another daemon. These commands require a host that supports the [workspace terminal API](/docs/sdk/reference#clientterminals); older hosts return an update message.
 
@@ -317,7 +323,7 @@ paseo agent status <exact-agent-id> --json
 paseo agent activity <exact-agent-id> --limit 20 --json
 ```
 
-Query defaults to 50 results and a 48-hour archived activity window; it uses the caller's directory when available. `agent status` returns the full snapshot, including stored-agent fallback, while `inspect` is a display-oriented projection. `agent activity` returns curated activity; `logs` provides timeline filtering and following. Do not treat their JSON shapes as interchangeable.
+Query defaults to 50 results and a 48-hour archived activity window; it uses the caller's directory when available. `agent status` returns the full snapshot, including stored-agent fallback, while `inspect` is a display-oriented projection. `agent activity` returns curated activity; `logs` provides timeline filtering and following. Do not treat their JSON shapes as interchangeable. See the [per-command JSON fields and parsing examples](#output-formats).
 
 ## Streaming output
 
@@ -407,7 +413,7 @@ paseo agent mode <id> plan     # Set plan mode
 paseo agent detach <id>        # Make a subagent top-level
 ```
 
-Detaching is an explicit lifecycle action, not a creation flag. The agent keeps running; only its relationship to its parent changes.
+Detaching an existing agent is an explicit lifecycle action. The agent keeps running; only its relationship to its parent changes. For a new independent agent, use `run --relationship detached`.
 
 ## Profiles and provider discovery
 
@@ -418,6 +424,8 @@ paseo provider models <provider> --full --json
 paseo provider inspect <provider> --cwd /absolute/repo --json
 paseo provider inspect <provider> --model <model> --mode <mode> --thinking <thinking> --json
 ```
+
+`provider modes <provider>` is an alias for `provider inspect <provider>` and returns the same modes and capabilities.
 
 Read profile notes before delegation. There is no `run --profile` flag: copy `provider`, `model`, `modeId`, `thinkingOptionId`, and `featureValues` into `--provider`, `--model`, `--mode`, `--thinking`, and `--features-json`. Omit absent values. `provider inspect` accepts draft settings and reports capabilities/features; `provider diagnostic` checks installation. `--full --json` on provider/model discovery preserves canonical records rather than the display projection.
 
@@ -448,7 +456,7 @@ Combined updates apply mode, model, thinking, each feature, then metadata. This 
 
 For a resolved caller, create/send default to finish, error, and permission notifications. Use `--no-notify-on-finish` for fire-and-forget work, or `--notify-on-finish` to state the intent explicitly. A human shell has no parent callback. Use `wait`, `agent status`, or `agent activity` when no callback is available; avoid repeated polling when notifications are enabled.
 
-Use the daemon-provided `"$PASEO_CLI"` inside managed sessions and preserve caller/home environment values. See [caller context and policy](/docs/mcp#caller-context-and-daemon-selection).
+Use the daemon-provided `"$PASEO_CLI"` inside managed sessions, even when `paseo` is not on `PATH`, and preserve caller/home environment values. Keep the quotes around the executable path. Detached launches already have independent parentage; do not clear parent labels afterward. See [caller context and policy](/docs/mcp#caller-context-and-daemon-selection).
 
 ## Close, stop, archive, and delete
 
@@ -458,6 +466,8 @@ Use the daemon-provided `"$PASEO_CLI"` inside managed sessions and preserve call
 | `paseo agent close <id>` | Close the runtime and persist its closed snapshot, preserving history. Replaces the former `kill_agent` operation. |
 | `paseo archive <id>`     | Remove from active use. A running agent requires `--force`; history remains.                                       |
 | `paseo delete <id>`      | Hard-delete stored state, interrupting if needed.                                                                  |
+
+Archiving your own agent or workspace can terminate the provider process and invoking shell before the CLI prints its result. A lost response or interrupted shell does not prove archive failed. Send the final handoff first, then have a parent or another external session perform cleanup and verify it with `agent status` or `workspace ls`. Workspace archive closes its agents and terminals; agent archive keeps the running-agent `--force` guard.
 
 ## Browser commands
 
@@ -578,7 +588,7 @@ Use it from anywhere:
 
 ```bash
 paseo --host 'https://app.paseo.sh/#offer=eyJ2IjoyLC...' ls
-paseo --host "$OFFER_URL" run "fix the failing tests"
+paseo --host "$OFFER_URL" run --provider codex "fix the failing tests"
 ```
 
 You can also set it once via `PASEO_HOST` instead of passing `--host` on every command. An explicit flag overrides the environment variable.
@@ -589,21 +599,21 @@ The CLI is designed to be used by agents themselves. You can instruct an agent t
 
 ```bash
 # Agent A spawns Agent B and waits for it
-agent_id=$(paseo run --no-wait --quiet --title api-agent "implement the API")
-paseo wait "$agent_id"
-paseo logs "$agent_id" --tail 5
+agent_id=$("$PASEO_CLI" run --provider codex --no-wait --quiet --title api-agent "implement the API")
+"$PASEO_CLI" wait "$agent_id"
+"$PASEO_CLI" logs "$agent_id" --tail 5
 ```
 
-Because Agent A's ID is present in the environment, Agent B is created as its subagent in the same workspace unless `--workspace` is specified.
+Agent B defaults to Agent A's workspace. A different `--workspace` changes placement; use `--relationship detached` to change parentage. See [Asynchronous delegation](#asynchronous-delegation).
 
 Simple implement + verify loop:
 
 ```bash
 # Requires jq
 while true; do
-  paseo run --provider codex "make the tests pass" >/dev/null
+  "$PASEO_CLI" run --provider codex "make the tests pass" >/dev/null
 
-  verdict=$(paseo run --provider claude --output-schema '{"type":"object","properties":{"criteria_met":{"type":"boolean"}},"required":["criteria_met"],"additionalProperties":false}' "ensure tests all pass")
+  verdict=$("$PASEO_CLI" run --provider claude --output-schema '{"type":"object","properties":{"criteria_met":{"type":"boolean"}},"required":["criteria_met"],"additionalProperties":false}' "ensure tests all pass")
   if echo "$verdict" | jq -e '.criteria_met == true' >/dev/null; then
     echo "criteria met"
     break
@@ -622,6 +632,37 @@ paseo ls --json                # JSON output
 paseo ls --format yaml         # YAML output
 paseo ls -q                    # IDs only (quiet)
 ```
+
+The JSON shape belongs to the command, not the output format. These existing fields are distinct contracts; scripts should use the command that supplies the data they need:
+
+| Command                                         | JSON shape and fields                                                                                                                                                                                                            |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent run --no-wait --json`                    | Object: `agentId`, `title` (nullable), `provider`, `cwd`, `status`.                                                                                                                                                              |
+| `agent ls --json`                               | Array of display summaries: `id`, `shortId`, `name`, `provider`, `thinking`, `status`, `cwd`, `created`. `provider` may include the model, `cwd` may start with `~`, and `created` is relative text.                             |
+| `agent query --json`                            | Array of rich directory entries: `id`, `title` (nullable), separate `provider` and `model`, absolute `cwd`, `createdAt`, `updatedAt`, `labels`, and optional attention fields such as `requiresAttention` and `attentionReason`. |
+| `agent status <id> --json`                      | Object: `status` and `snapshot`. Read identity and runtime settings from `snapshot.id`, `snapshot.title`, `snapshot.provider`, `snapshot.model`, and `snapshot.cwd`.                                                             |
+| `agent inspect <id> --json`                     | Display projection with capitalized fields such as `Id`, `Name`, `Provider`, `Model`, and `Cwd`. Prefer `status` for a full snapshot.                                                                                            |
+| `workspace ls --json`                           | Array with `workspaceId`, `name`, `project`, `cwd`, and nested `workspace`; the ID field is not `id`.                                                                                                                            |
+| `terminal create --json` / `terminal ls --json` | One object / an array with `id`, `name`, `cwd`, and `workspaceId`.                                                                                                                                                               |
+
+Use `agent query` for model, absolute-path, timestamp, or attention checks rather than parsing display strings. Optional fields may be absent; nullable fields may be `null`. For example:
+
+```bash
+paseo agent query --cwd "$PWD" --include-background --json \
+  | jq '.[] | {id, title, provider, model, cwd, createdAt, requiresAttention}'
+paseo agent status "$agent_id" --json | jq '.snapshot | {id, title, model, cwd}'
+paseo workspace ls --json | jq '.[] | {workspaceId, name, cwd}'
+```
+
+For launch scripts, parse stdout alone. Workspace notices and diagnostics go to stderr; merging them with `2>&1` makes JSON unparseable. In a managed session:
+
+```bash
+"$PASEO_CLI" agent run --provider codex --no-wait --title api-agent \
+  --label task=api-agent --json "implement the API" >agent-run.json 2>agent-run.stderr
+agent_id=$(jq -er '.agentId' agent-run.json)
+```
+
+Check both the launch exit status and the parser exit status before using the ID. A launch may have created an agent even if parsing or a later command fails. Choose a unique task label for each logical launch, then reconcile with `agent ls -a -g --label task=api-agent --json` and `agent status <id> --json` before retrying creation. In a compound launch-and-heartbeat script, a heartbeat failure calls for retrying the heartbeat alone once the agent is confirmed.
 
 ## Global options
 

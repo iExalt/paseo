@@ -1,6 +1,6 @@
 import type { Command } from "commander";
 import type { SingleResult } from "../../output/index.js";
-import { resolveExactAgentTarget } from "../../utils/agent-target.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 import { scheduleSchema } from "./schema.js";
 import {
   connectScheduleClient,
@@ -62,7 +62,7 @@ export async function runCreateCommand(
     if (input.target.type === "agent") {
       input.target = {
         ...input.target,
-        agentId: await resolveExactAgentTarget(client, input.target.agentId),
+        agentId: await resolveAgentTarget(client, input.target.agentId),
       };
     }
     const payload = await client.scheduleCreate({

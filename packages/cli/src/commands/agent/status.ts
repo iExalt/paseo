@@ -7,7 +7,7 @@ import type {
   SingleResult,
 } from "../../output/index.js";
 import { connectToDaemon } from "../../utils/client.js";
-import { resolveExactAgentTarget } from "../../utils/agent-target.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 
 export const agentStatusSchema: OutputSchema<AgentStatusResult> = {
   idField: (result) => result.snapshot.id,
@@ -27,7 +27,7 @@ export interface AgentStatusOptions extends CommandOptions {
 export function addAgentStatusOptions(command: Command): Command {
   return command
     .description("Return the complete current or stored agent snapshot")
-    .argument("<agent-id>", "Exact agent ID or full session ID");
+    .argument("<agent-id>", "Agent ID, prefix, or full session ID");
 }
 
 export async function runAgentStatusCommand(
@@ -45,7 +45,7 @@ export async function runAgentStatusCommand(
         details: "Update the daemon before reading agent status.",
       } satisfies CommandError;
     }
-    const result = await client.getAgentStatus(await resolveExactAgentTarget(client, agentId));
+    const result = await client.getAgentStatus(await resolveAgentTarget(client, agentId));
     return { type: "single", data: result, schema: agentStatusSchema };
   } finally {
     await client.close().catch(() => undefined);
