@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { useSidebarOrderStore } from "./sidebar-order-store";
 import type { StateStorage } from "zustand/middleware";
 import {
   createSidebarViewStorage,
@@ -305,8 +306,27 @@ it("retains the manual sorting preference on reload", () => {
   expect(migrateSidebarViewState({ workspaceSort: "manual" }).workspaceSort).toBe("manual");
 });
 
-it("preserves the alphabetical sort preference during migration", () => {
-  expect(migrateSidebarViewState({ workspaceSort: "alphabetical" }).workspaceSort).toBe(
-    "alphabetical",
-  );
+it("replaces the retired alphabetical workspace sort without losing other preferences", () => {
+  expect(
+    migrateSidebarViewState({ workspaceSort: "alphabetical", hostFilters: ["host-a"] })
+      .workspaceSort,
+  ).toBe("created");
+  expect(
+    migrateSidebarViewState({ workspaceSort: "alphabetical", hostFilters: ["host-a"] }).hostFilters,
+  ).toEqual(["host-a"]);
+});
+
+it("resets project drag order on every Project selection and preserves workspace order", () => {
+  const view = useSidebarViewStore.getState();
+  const order = useSidebarOrderStore.getState();
+  order.setWorkspaceOrder("project-a", ["w2", "w1"]);
+  order.setProjectOrder(["project-b", "project-a"]);
+  view.setGroupMode("status");
+  expect(useSidebarOrderStore.getState().projectOrder).toEqual(["project-b", "project-a"]);
+  view.setGroupMode("project");
+  expect(useSidebarOrderStore.getState().projectOrder).toEqual([]);
+  order.setProjectOrder(["project-b", "project-a"]);
+  view.setGroupMode("project");
+  expect(useSidebarOrderStore.getState().projectOrder).toEqual([]);
+  expect(order.getWorkspaceOrder("project-a")).toEqual(["w2", "w1"]);
 });

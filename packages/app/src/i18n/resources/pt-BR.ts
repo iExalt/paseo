@@ -1208,7 +1208,6 @@ export const ptBR: TranslationResources = {
         label: "Ordenação",
         created: "Criação",
         manual: "Manual",
-        alphabetical: "Alfabética",
         lastPrompt: "Último prompt",
         updateHost: "Atualize os hosts para ordenar os espaços de trabalho",
       },

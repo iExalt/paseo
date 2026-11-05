@@ -30,7 +30,7 @@ interface WorkspaceStructureSession {
   workspaces: Iterable<WorkspaceDescriptor>;
 }
 
-export type WorkspaceSort = "manual" | "created" | "lastPrompt" | "alphabetical";
+export type WorkspaceSort = "manual" | "created" | "lastPrompt";
 
 interface WorkspaceSortItem {
   workspaceName: string;
@@ -109,11 +109,7 @@ export function buildWorkspaceStructureProjects(input: {
       iconWorkingDir: draft.iconWorkingDir,
       hosts: Array.from(draft.hosts.values()),
       workspaceKeys: draft.workspaces
-        .sort(
-          !input.workspaceSort || input.workspaceSort === "alphabetical"
-            ? compareWorkspaceStructureItems
-            : compareWorkspaceTimes,
-        )
+        .sort(input.workspaceSort ? compareWorkspaceTimes : compareWorkspaceStructureItems)
         .map((workspace) => workspace.workspaceKey),
     }))
     .sort(
