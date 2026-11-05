@@ -66,13 +66,22 @@ export function createWorkspaceCommand(): Command {
   addJsonAndDaemonHostOptions(
     workspace
       .command("update")
-      .description("Update a workspace notification policy")
+      .description("Update workspace settings atomically")
       .argument("<workspace-id>", "Workspace id")
       .addOption(
-        new Option("--notifications <on|off>", "Workspace notifications")
-          .choices(["on", "off"])
-          .makeOptionMandatory(),
-      ),
+        new Option("--notifications <on|off>", "Workspace notifications").choices(["on", "off"]),
+      )
+      .option("--background", "Hide from normal discovery")
+      .option("--no-background", "Show in normal discovery")
+      .addOption(new Option("--title <title>", "Workspace title").conflicts("resetTitle"))
+      .addOption(
+        new Option("--reset-title", "Restore the branch or directory name").conflicts("title"),
+      )
+      .addOption(new Option("--pin", "Pin the workspace").conflicts("unpin"))
+      .addOption(new Option("--unpin", "Unpin the workspace").conflicts("pin"))
+      .option("--add-label <name>", "Assign an existing label (repeatable)", collectLabels)
+      .option("--remove-label <name>", "Remove a label assignment (repeatable)", collectLabels)
+      .allowExcessArguments(false),
   ).action(withOutput(runUpdateCommand));
 
   addJsonAndDaemonHostOptions(
@@ -87,4 +96,8 @@ export function createWorkspaceCommand(): Command {
   ).action(withOutput(runArchiveCommand));
 
   return workspace;
+}
+
+function collectLabels(value: string, previous: string[] = []): string[] {
+  return [...previous, value];
 }
