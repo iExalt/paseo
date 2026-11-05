@@ -69,7 +69,7 @@ export interface ForkUpdateView {
   /** The About row's button. */
   row: { labelKey: string; disabled: boolean };
   /** The sidebar icon, or null to hide it. */
-  icon: { version: string | null; downloading: boolean } | null;
+  icon: { version: string | null; busy: boolean } | null;
 }
 
 export interface ForkUpdateController {
@@ -219,7 +219,7 @@ function viewOf(state: State, shown: boolean, enabled: boolean): ForkUpdateView 
       shown && isPending(state)
         ? {
             version: state.update?.manifest.version ?? null,
-            downloading: state.status === "downloading",
+            busy: state.status === "downloading" || state.status === "installing",
           }
         : null,
   };

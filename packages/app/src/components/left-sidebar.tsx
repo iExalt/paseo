@@ -520,7 +520,8 @@ function SidebarUpdateButton() {
 function SidebarForkUpdateButton() {
   const { t } = useTranslation();
   const pending = useForkUpdate((view) => view.icon !== null);
-  const downloading = useForkUpdate((view) => view.icon?.downloading ?? false);
+  const busy = useForkUpdate((view) => view.icon?.busy ?? false);
+  const message = useForkUpdate((view) => view.message);
   const version = useForkUpdate((view) => view.icon?.version ?? null);
   const onPress = useCallback(() => void forkUpdater.send({ type: "press", via: "icon" }), []);
   if (!pending) return null;
@@ -530,11 +531,11 @@ function SidebarForkUpdateButton() {
       onPress={onPress}
       testID="sidebar-fork-update"
       label={
-        downloading
-          ? t("desktop.updates.nix.downloading", { version: formattedVersion })
+        busy
+          ? t(message.key, message.params)
           : t("desktop.updates.nix.updateTooltip", { version: formattedVersion })
       }
-      icon={downloading ? SpinningLoaderIcon : CircleArrowUp}
+      icon={busy ? SpinningLoaderIcon : CircleArrowUp}
       iconColor="accent"
     />
   );
