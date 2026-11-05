@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.22.0](https://github.com/iExalt/paseo/compare/paseo-v0.21.1...paseo-v0.22.0) (2026-11-05)
+
+
+### Features
+
+* **cli:** add prime guidance and fix agent ergonomics ([#358](https://github.com/iExalt/paseo/issues/358)) ([dfd91ac](https://github.com/iExalt/paseo/commit/dfd91ac793706156836f224a898e7108a675a316))
+* **workspaces:** update visibility and workspace settings atomically ([#360](https://github.com/iExalt/paseo/issues/360)) ([ae2c99e](https://github.com/iExalt/paseo/commit/ae2c99eb6940f6733b9fcdced9ee95df9dc9aac7))
+
+
+### Bug Fixes
+
+* **app:** sort projects when selecting project grouping ([#361](https://github.com/iExalt/paseo/issues/361)) ([48a48f2](https://github.com/iExalt/paseo/commit/48a48f224a8af9171a69424db966b753b91ffee8))
+
 ## [0.21.1](https://github.com/iExalt/paseo/compare/paseo-v0.21.0...paseo-v0.21.1) (2026-11-05)
 
 
