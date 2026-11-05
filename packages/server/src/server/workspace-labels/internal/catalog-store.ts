@@ -131,6 +131,27 @@ export class WorkspaceLabelCatalogStore {
     return result as TResult;
   }
 
+  // The catalog stays unchanged, so one registry write needs no compound recovery journal.
+  async updateWorkspace(
+    workspaceId: string,
+    update: (
+      labels: readonly WorkspaceLabelDefinition[],
+      workspace: PersistedWorkspaceRecord | undefined,
+    ) => PersistedWorkspaceRecord,
+  ): Promise<PersistedWorkspaceRecord> {
+    await this.initialize();
+    if (this.blocked) throw new WorkspaceLabelStorageUncertainError();
+    return this.workspaces.commitWorkspaceLabelMutation({
+      stage: (workspaces) => {
+        const workspace = update(this.labels, workspaces.get(workspaceId));
+        return { updates: [workspace], result: workspace, forcePersist: true };
+      },
+      beforeWorkspaceWrite: async () => {},
+      afterWorkspaceWrite: async () => {},
+      afterCommit: () => {},
+    });
+  }
+
   private async resolveFailedCommit(error: unknown): Promise<never> {
     let durable: WorkspaceLabelTransaction | null;
     try {

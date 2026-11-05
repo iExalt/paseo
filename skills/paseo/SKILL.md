@@ -65,7 +65,7 @@ paseo run --workspace <workspace-id> --provider <provider> --no-wait "Review the
 paseo workspace archive <workspace-id>
 ```
 
-Create a workspace before delegation when isolation is needed. Choose the base explicitly: `origin/main` uses the remote-tracking branch, `refs/heads/main` local main; bare `main` prefers local main. `--background` hides a new workspace from default discovery; omission inherits the caller workspace's setting and defaults false without a caller. Override only when asked. Use `workspace create --notifications on|off` before launching or `workspace update <id> --notifications on|off` for an existing workspace.
+Create a workspace before delegation when isolation is needed. Choose the base explicitly: `origin/main` uses the remote-tracking branch, `refs/heads/main` local main; bare `main` prefers local main. `--background` hides a new workspace from default discovery; omission inherits the caller workspace's setting and defaults false without a caller. Override only when asked. Use `workspace update <id>` to change existing workspace settings atomically: `--background`/`--no-background`, `--title <text>`/`--reset-title`, `--notifications on|off`, `--pin`/`--unpin`, and repeatable `--add-label <name>`/`--remove-label <name>`. Omitted settings stay unchanged; additions require existing labels. Use `workspace create --notifications on|off` to choose notifications before launching.
 
 Workspace archive archives its agents and terminals. Ordinary directories remain; an owned worktree is removed after its final active workspace reference is archived. Project deletion archives its active workspaces and removes the registry entry, preserving the project directory.
 

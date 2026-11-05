@@ -10,6 +10,43 @@ import {
 } from "./messages.js";
 
 describe("workspace message schemas", () => {
+  test("parses atomic settings messages while leaving existing messages unchanged", () => {
+    const patch = {
+      background: false,
+      title: null,
+      pinned: false,
+      notifications: "off",
+      addLabels: ["Review"],
+      removeLabels: ["Done"],
+    };
+    expect(
+      SessionInboundMessageSchema.parse({
+        type: "workspace.settings.update.request",
+        workspaceId: "ws",
+        requestId: "update",
+        patch,
+      }),
+    ).toMatchObject({ patch });
+    expect(
+      SessionOutboundMessageSchema.parse({
+        type: "workspace.settings.update.response",
+        payload: {
+          workspaceId: "ws",
+          requestId: "update",
+          accepted: true,
+          error: null,
+          settings: {
+            background: false,
+            title: null,
+            pinnedAt: null,
+            notifications: "off",
+            labels: ["Review"],
+          },
+        },
+      }),
+    ).toMatchObject({ payload: { accepted: true } });
+  });
+
   test("parses mark-unread request and response", () => {
     expect(
       SessionInboundMessageSchema.parse({

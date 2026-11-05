@@ -195,7 +195,8 @@ paseo workspace create \
 Add `--background` to hide a workspace from default discovery. Its agents and terminals keep
 ordinary history, persistence, hooks, and restart recovery. `--no-background` explicitly overrides
 caller-workspace inheritance; omission inherits when run by a Paseo agent and defaults to false
-from a human shell. Visibility is creation-only.
+from a human shell. Change an existing workspace with `workspace update --background` or
+`workspace update --no-background`.
 
 ```bash
 paseo workspace create --isolation local --background --path /path/to/repo
@@ -216,6 +217,23 @@ paseo workspace archive <workspace-id>
 ```
 
 Add `--forge <name>` to PR checkout when Paseo cannot infer the forge from the source checkout. See [Git worktrees](/docs/worktrees) for setup hooks and services.
+
+### Update workspace settings
+
+```bash
+paseo workspace update <workspace-id> --no-background --title "Review" --pin
+paseo workspace update <workspace-id> --reset-title --unpin
+paseo workspace update <workspace-id> --add-label "Review" --remove-label "Done"
+```
+
+Combine options to apply them atomically. Omitted settings stay unchanged. Label options
+are repeatable and use existing catalog names, ignoring case and extra whitespace;
+unknown additions fail, and removing an absent assignment succeeds. Conflicting options
+are rejected before any update. Editing a label's name or color is a separate catalog operation.
+
+These updates require a host with workspace settings support. The existing
+notification-only command below continues to work on hosts with notification support.
+`workspace rename` remains a shortcut for changing or resetting the title.
 
 ### Workspace notification policy
 
