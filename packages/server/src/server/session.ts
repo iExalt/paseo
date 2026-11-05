@@ -3611,6 +3611,8 @@ export class Session {
           msg.title,
           msg.requestId,
         );
+      case "workspace.settings.update.request":
+        return this.handleWorkspaceSettingsUpdateRequest(msg);
       case "workspace.notifications.set.request":
         return this.handleWorkspaceNotificationsSetRequest(
           msg.workspaceId,
@@ -4592,6 +4594,52 @@ export class Session {
         },
       });
       emitResponse(false, null, getErrorMessageOr(error, "Failed to pin workspace"));
+    }
+  }
+
+  private async handleWorkspaceSettingsUpdateRequest(
+    request: Extract<SessionInboundMessage, { type: "workspace.settings.update.request" }>,
+  ): Promise<void> {
+    const { workspaceId, requestId, patch } = request;
+    let updated: PersistedWorkspaceRecord;
+    try {
+      updated = await this.requireWorkspaceLabels().updateWorkspaceSettings(workspaceId, patch);
+    } catch (error) {
+      this.emit({
+        type: "workspace.settings.update.response",
+        payload: {
+          workspaceId,
+          requestId,
+          accepted: false,
+          settings: null,
+          error: getErrorMessage(error),
+        },
+      });
+      return;
+    }
+    this.emit({
+      type: "workspace.settings.update.response",
+      payload: {
+        workspaceId,
+        requestId,
+        accepted: true,
+        error: null,
+        settings: {
+          background: updated.background,
+          title: updated.title,
+          notifications: updated.notifications,
+          pinnedAt: updated.pinnedAt,
+          labels: updated.labels ?? [],
+        },
+      },
+    });
+    try {
+      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, workspaceId, requestId },
+        "Workspace settings committed but descriptor broadcast failed",
+      );
     }
   }
 

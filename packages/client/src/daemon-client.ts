@@ -3721,6 +3721,25 @@ export class DaemonClient {
     return { pinnedAt: payload.pinnedAt };
   }
 
+  async updateWorkspaceSettings(
+    workspaceId: string,
+    patch: import("@getpaseo/protocol/messages").WorkspaceSettingsPatch,
+    requestId?: string,
+  ): Promise<import("@getpaseo/protocol/messages").WorkspaceSettings> {
+    if (this.lastServerInfoMessage?.features?.workspaceSettingsUpdate !== true) {
+      throw new Error("Update the host to update workspace settings.");
+    }
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"workspace.settings.update.response">({
+        requestId,
+        message: { type: "workspace.settings.update.request", workspaceId, patch },
+      });
+    if (!payload.accepted || payload.settings === null) {
+      throw new Error(payload.error ?? "Workspace settings update rejected");
+    }
+    return payload.settings;
+  }
+
   async setWorkspaceNotifications(
     workspaceId: string,
     notifications: "on" | "off",
