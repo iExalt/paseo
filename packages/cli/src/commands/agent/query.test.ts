@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { ServerInfoStatusPayloadSchema } from "@getpaseo/protocol/messages";
+import {
+  AgentSnapshotPayloadSchema,
+  ServerInfoStatusPayloadSchema,
+} from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
 import { runAgentActivityCommand } from "./activity.js";
 import { runAgentQueryCommand } from "./query.js";
@@ -48,13 +51,41 @@ describe("agent query command gates", () => {
       }),
     );
     const query = vi.spyOn(client, "queryAgentDirectory").mockResolvedValue([]);
-    vi.spyOn(client, "fetchAgent").mockResolvedValue(null);
+    const agent = AgentSnapshotPayloadSchema.parse({
+      id: "caller",
+      provider: "claude",
+      cwd: "/workspace",
+      model: null,
+      createdAt: "2026-10-10T00:00:00.000Z",
+      updatedAt: "2026-10-10T00:00:00.000Z",
+      lastUserMessageAt: null,
+      status: "idle",
+      capabilities: {
+        supportsStreaming: true,
+        supportsSessionPersistence: true,
+        supportsDynamicModes: true,
+        supportsMcpServers: false,
+        supportsReasoningStream: true,
+        supportsToolInvocations: true,
+      },
+      currentModeId: null,
+      availableModes: [],
+      pendingPermissions: [],
+      persistence: null,
+      title: "Caller",
+      labels: {},
+    });
+    const fetchAgent = vi.spyOn(client, "fetchAgent").mockImplementation(async (input) => {
+      const agentId = typeof input === "string" ? input : input.agentId;
+      return agentId === "caller" ? { agent, project: null } : null;
+    });
     vi.spyOn(client, "close").mockResolvedValue();
     vi.mocked(connectToDaemon).mockResolvedValue(client);
 
     await runAgentQueryCommand({ daemonTarget, callerAgent: "caller" }, new Command());
     await runAgentQueryCommand({ daemonTarget, callerAgent: "caller", status: [] }, new Command());
 
+    expect(fetchAgent).toHaveBeenCalledWith({ agentId: "caller" });
     expect(query).toHaveBeenNthCalledWith(1, {
       callerAgentId: "caller",
       sinceHours: 48,

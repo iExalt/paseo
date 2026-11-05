@@ -1,6 +1,5 @@
-import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { describe, expect, it } from "vitest";
-import type { UsageReportEntry } from "@getpaseo/protocol/messages";
+import { AgentSnapshotPayloadSchema, type UsageReportEntry } from "@getpaseo/protocol/messages";
 import { render } from "../../output/index.js";
 import { createCli } from "../../cli.js";
 import { runUsageCommand } from "./index.js";
@@ -99,10 +98,37 @@ function host(entries = reports, supported = true) {
   const queries: Array<
     { agentId?: string; forceRefresh?: boolean; reportIds?: string[] } | undefined
   > = [];
+  const agent = AgentSnapshotPayloadSchema.parse({
+    id: "agent-123",
+    provider: "claude",
+    cwd: "/workspace",
+    model: null,
+    createdAt: "2026-10-10T00:00:00.000Z",
+    updatedAt: "2026-10-10T00:00:00.000Z",
+    lastUserMessageAt: null,
+    status: "idle",
+    capabilities: {
+      supportsStreaming: true,
+      supportsSessionPersistence: true,
+      supportsDynamicModes: true,
+      supportsMcpServers: false,
+      supportsReasoningStream: true,
+      supportsToolInvocations: true,
+    },
+    currentModeId: null,
+    availableModes: [],
+    pendingPermissions: [],
+    persistence: null,
+    title: "Caller",
+    labels: {},
+    runtimeInfo: { provider: "claude", sessionId: "thread-123" },
+  });
+  const agentLookups: string[] = [];
   let closed = 0;
   return {
     requests,
     queries,
+    agentLookups,
     get closed() {
       return closed;
     },
@@ -117,10 +143,13 @@ function host(entries = reports, supported = true) {
             : entries;
           return { requestId: "request", reports: selected };
         },
-        fetchAgent: (async ({ agentId }: { agentId: string }) =>
-          agentId === "thread-123"
-            ? { agent: { id: "agent-123", runtimeInfo: { sessionId: "thread-123" } } }
-            : null) as unknown as DaemonClient["fetchAgent"],
+        fetchAgent: async (target: string | { agentId: string }) => {
+          const agentId = typeof target === "string" ? target : target.agentId;
+          agentLookups.push(agentId);
+          return agentId === agent.id || agentId === agent.runtimeInfo?.sessionId
+            ? { agent, project: null }
+            : null;
+        },
         close: async () => {
           closed++;
         },
@@ -221,6 +250,7 @@ it("passes agent account selection and refresh without converting it to token co
     { kind: "list" },
     daemon.connect,
   );
+  expect(daemon.agentLookups).toEqual(["agent-123"]);
   expect(daemon.queries).toEqual([{ agentId: "agent-123", forceRefresh: true }]);
 });
 

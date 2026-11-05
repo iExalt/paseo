@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { BrowserCommandExecuteResponseSchema } from "@getpaseo/protocol/browser-automation/rpc-schemas";
-import { ServerInfoStatusPayloadSchema } from "@getpaseo/protocol/messages";
+import {
+  AgentSnapshotPayloadSchema,
+  ServerInfoStatusPayloadSchema,
+} from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
 import { createCli } from "../../cli.js";
 
@@ -42,7 +45,34 @@ describe("registered browser CLI commands", () => {
         },
       }).payload,
     );
-    vi.spyOn(client, "fetchAgent").mockResolvedValue(null);
+    const agent = AgentSnapshotPayloadSchema.parse({
+      id: "agent-1",
+      provider: "claude",
+      cwd: "/workspace",
+      model: null,
+      createdAt: "2026-10-10T00:00:00.000Z",
+      updatedAt: "2026-10-10T00:00:00.000Z",
+      lastUserMessageAt: null,
+      status: "idle",
+      capabilities: {
+        supportsStreaming: true,
+        supportsSessionPersistence: true,
+        supportsDynamicModes: true,
+        supportsMcpServers: false,
+        supportsReasoningStream: true,
+        supportsToolInvocations: true,
+      },
+      currentModeId: null,
+      availableModes: [],
+      pendingPermissions: [],
+      persistence: null,
+      title: "Caller",
+      labels: {},
+    });
+    const fetchAgent = vi.spyOn(client, "fetchAgent").mockImplementation(async (input) => {
+      const agentId = typeof input === "string" ? input : input.agentId;
+      return agentId === "agent-1" ? { agent, project: null } : null;
+    });
     vi.spyOn(client, "close").mockResolvedValue();
     vi.mocked(connectToDaemon).mockResolvedValueOnce(client);
     const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
@@ -61,6 +91,7 @@ describe("registered browser CLI commands", () => {
       "daemon.test:12345",
     ]);
 
+    expect(fetchAgent).toHaveBeenCalledWith({ agentId: "agent-1" });
     expect(executeBrowserCommand).toHaveBeenCalledWith(
       {
         command: { command: "new_tab", args: {} },
