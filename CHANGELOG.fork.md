@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.1](https://github.com/iExalt/paseo/compare/paseo-v0.21.0...paseo-v0.21.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** keep mobile update icon spinning during installation ([#356](https://github.com/iExalt/paseo/issues/356)) ([17ffbe1](https://github.com/iExalt/paseo/commit/17ffbe10b7a8bc5113bf313028f1432f9f4bc26f))
+
 ## [0.21.0](https://github.com/iExalt/paseo/compare/paseo-v0.20.0...paseo-v0.21.0) (2026-11-04)
 
 
