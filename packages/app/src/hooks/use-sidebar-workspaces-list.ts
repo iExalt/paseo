@@ -156,8 +156,7 @@ export function useSidebarWorkspacesList(options?: {
   const sortSupport = useHostFeatureMap(directoryServerIds, "workspaceSortTimes");
   const workspaceSortSupported = [...sortSupport.values()].every(Boolean);
   const sort =
-    groupMode === "project" &&
-    (workspaceSort === "manual" || workspaceSort === "alphabetical" || workspaceSortSupported)
+    groupMode === "project" && (workspaceSort === "manual" || workspaceSortSupported)
       ? workspaceSort
       : undefined;
   const { projects: hostProjects } = useWorkspaceStructure(directoryServerIds, sort);

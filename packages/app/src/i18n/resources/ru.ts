@@ -1199,7 +1199,6 @@ export const ru: TranslationResources = {
         label: "Сортировка",
         created: "Дата создания",
         manual: "Вручную",
-        alphabetical: "По алфавиту",
         lastPrompt: "Последний запрос",
         updateHost: "Обновите хосты для сортировки рабочих пространств",
       },

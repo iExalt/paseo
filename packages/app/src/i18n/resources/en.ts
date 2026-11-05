@@ -1232,7 +1232,6 @@ export const en = {
         label: "Sort",
         created: "Created",
         manual: "Manual",
-        alphabetical: "Alphabetical",
         lastPrompt: "Last prompt",
         updateHost: "Update hosts to sort workspaces",
       },

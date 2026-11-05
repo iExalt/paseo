@@ -1,3 +1,4 @@
+import { useSidebarOrderStore } from "@/stores/sidebar-order-store";
 import type { WorkspaceSort } from "@/projects/workspace-structure";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { create } from "zustand";
@@ -10,7 +11,7 @@ export type SidebarGroupMode = "project" | "status";
 
 const SIDEBAR_VIEW_STORAGE_KEY = "sidebar-view";
 const LEGACY_SIDEBAR_GROUP_MODE_STORAGE_KEY = "sidebar-group-mode";
-const SIDEBAR_VIEW_STORE_VERSION = 8;
+const SIDEBAR_VIEW_STORE_VERSION = 9;
 
 /**
  * The key standing for "this workspace carries no labels at all".
@@ -156,7 +157,8 @@ export function migrateSidebarViewState(persistedState: unknown): SidebarViewPer
   return {
     showBackground: state.showBackground ?? false,
     groupMode: state.groupMode === "status" ? "status" : "project",
-    workspaceSort: state.workspaceSort ?? "created",
+    workspaceSort:
+      state.workspaceSort === "alphabetical" ? "created" : (state.workspaceSort ?? "created"),
     hostFilters: readHostFilters(state),
     projectFilters: state.projectFilters ?? [],
     labelFilter: state.labelFilter
@@ -200,7 +202,11 @@ export const useSidebarViewStore = create<SidebarViewStoreState>()(
       projectFilters: [],
       labelFilter: emptyLabelFilter(),
       toggleBackground: () => set((state) => ({ showBackground: !state.showBackground })),
-      setGroupMode: (mode) => set({ groupMode: mode }),
+      setGroupMode: (mode) => {
+        // Clearing the drag override restores the structure's alphabetical project order.
+        if (mode === "project") useSidebarOrderStore.getState().setProjectOrder([]);
+        set({ groupMode: mode });
+      },
       setWorkspaceSort: (workspaceSort) => set({ workspaceSort }),
       toggleHostFilter: (serverId) =>
         set((state) => ({ hostFilters: toggleFilterEntry(state.hostFilters, serverId) })),
