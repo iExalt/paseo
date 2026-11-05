@@ -85,11 +85,12 @@ describe("fork updater controller", () => {
   it("downloads and opens the installer from the sidebar icon in one press", async () => {
     expect(view().icon).toBeNull();
     await backgroundCheck();
-    expect(view().icon).toEqual({ version: "0.1.1", downloading: false });
+    expect(view().icon).toEqual({ version: "0.1.1", busy: false });
 
     void icon();
     await vi.waitFor(() => expect(fake.install).toHaveBeenCalledWith(update, APK));
     expect(message()).toBe("settings.about.forkUpdates.installer");
+    expect(view().icon).toEqual({ version: "0.1.1", busy: true });
     expect(view().row).toEqual({ labelKey: "settings.about.forkUpdates.check", disabled: true });
   });
 
@@ -169,10 +170,13 @@ describe("fork updater controller", () => {
     await icon();
     expect(message()).toBe("settings.about.forkUpdates.canceled");
 
+    expect(view().icon).toEqual({ version: "0.1.1", busy: false });
+
     logs.length = 0;
     fake.install.mockRejectedValueOnce(new Error("INSTALL_FAILED"));
     await icon();
     expect(message()).toBe("settings.about.forkUpdates.installFailed");
+    expect(view().icon).toEqual({ version: "0.1.1", busy: false });
     expect(label()).toBe("install");
     expect(logs).toEqual([
       "[paseo-agent] update status status=installing version=0.1.1",
@@ -236,7 +240,7 @@ describe("fork updater controller", () => {
     void row();
     // Before the first progress event the APK's size stands in.
     expect(message()).toBe('settings.about.forkUpdates.downloadingProgress {"percent":0}');
-    expect(view().icon).toEqual({ version: "0.1.1", downloading: true });
+    expect(view().icon).toEqual({ version: "0.1.1", busy: true });
     fake.progress(50, 0);
     expect(message()).toBe('settings.about.forkUpdates.downloadingProgress {"percent":50}');
     fake.progress(20, 40);
