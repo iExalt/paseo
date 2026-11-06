@@ -2033,6 +2033,7 @@ export const zhCN: TranslationResources = {
     output: "输出",
   },
   turnSummary: {
+    agentMessage: "智能体消息",
     details: "查看轮次详情",
     sentBy: "由 {{name}} 发送",
     showMore: "展开",

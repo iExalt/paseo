@@ -2088,6 +2088,7 @@ export const ru: TranslationResources = {
     output: "Выходные данные",
   },
   turnSummary: {
+    agentMessage: "Сообщение агента",
     details: "Показать подробности хода",
     sentBy: "Отправлено агентом {{name}}",
     showMore: "Показать больше",
