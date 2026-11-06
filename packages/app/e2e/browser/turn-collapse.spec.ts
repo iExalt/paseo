@@ -202,9 +202,9 @@ test("received messages collapse separately from user prompts and open their sen
       .getByTestId("agent-message-content")
       .getByRole("button", { name: "Sent by Reviewer", exact: true });
     await expect(attribution).toBeVisible();
-    await expect(
-      page.getByTestId("agent-message-content").filter({ has: attribution }),
-    ).toContainText("I reviewed the turn-grouping changes.");
+    await expect(disclosure.getByTestId("agent-message-content")).toContainText(
+      "I reviewed the turn-grouping changes.",
+    );
     const labelColor = await attribution
       .getByText("Sent by Reviewer", { exact: true })
       .evaluate((element) => getComputedStyle(element).color);
