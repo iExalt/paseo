@@ -1,16 +1,17 @@
 # Immediate notification opens status
 
-Updated 2026-11-06. Implementation and approved Android verification are complete;
-publication awaits CI and merge. No release is authorized.
+Updated 2026-11-06. Implementation, approved Android verification and publication
+are complete. [PR #371](https://github.com/iExalt/paseo/pull/371) merged at
+17:43:31 UTC as `469753f5f6178765a68f2e052cdcaca96c4a84a1`. No release is authorized.
 
 ## Gates
 
-| Gate                                     | State                                      | Evidence                                                                                       |
-| ---------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| A: prepare before navigation             | Reviewer accepted                          | Held-readiness, bootstrap, demand adoption, cancellation and replay regressions                |
-| B: display-only notification content     | Reviewer accepted                          | Payload bounds, reconciliation/cursors, read-only rendering and native retap closure           |
-| C: approved Android first-frame behavior | Verified; final integration review pending | 16/16 S24U first readable frames already contain the new message; Cuttlefish functional matrix |
-| CI and merge                             | Pending                                    | Full routine suite runs in CI; no full local run                                               |
+| Gate                                     | State                       | Evidence                                                                                                                                                               |
+| ---------------------------------------- | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A: prepare before navigation             | Reviewer accepted           | Held-readiness, bootstrap, demand adoption, cancellation and replay regressions                                                                                        |
+| B: display-only notification content     | Reviewer accepted           | Payload bounds, reconciliation/cursors, read-only rendering and native retap closure                                                                                   |
+| C: approved Android first-frame behavior | Verified; reviewer accepted | 16/16 S24U first readable frames already contain the new message; Cuttlefish functional matrix                                                                         |
+| CI and merge                             | Passed; merged              | [Routine CI](https://github.com/iExalt/paseo/actions/runs/42263310009) passed at exact PR head `b8aa6090d`; [PR #371](https://github.com/iExalt/paseo/pull/371) merged |
 
 The [plan](NOTIFICATION_OPEN_PLAN.md) contains the current acceptance boundary.
 The user approved replacing the original under-100 ms callback-to-visible target
@@ -83,7 +84,11 @@ Cuttlefish and focused tests instead.
 - Twenty same-chat emulator taps completed, but its log ring retained only 14
   complete timing traces. The p95 following-JS-frame diagnostic was 344 ms;
   this incomplete emulator distribution is not physical timing proof.
-- Full routine CI remains the final automated gate and has not run locally.
+- Full routine CI passed all eight lanes and the required aggregate at exact
+  PR head `b8aa6090d613203730d85d7e821659e63825cb56`. Critical path: 174 s,
+  compared with 191 s for the comparable full-dev baseline (run 42259038265),
+  within the unchanged 300 s budget. New notification regressions ran in the
+  app lanes. The full routine suite did not run locally.
 
 ## Review ledger
 
@@ -95,7 +100,7 @@ Cuttlefish and focused tests instead.
 | B2              | 0 / 0 new        | B source accepted.                                                                                           |
 | C1              | 0 / 0            | Explicit per-tap anchor accepted; native retap regression closed.                                            |
 | Native evidence | 1 / 1            | Withdraw invalid legacy before-state; corrected proof independently accepted.                                |
-| Final recovery  | 0 / 0 so far     | Approved native gate independently recalculated and safe frame crops checked; final CI/PR review pending.    |
+| Final recovery  | 0 / 0            | Native gate independently recalculated, safe crops checked, and exact-head CI/PR accepted before merge.      |
 
 ## Evidence retention and cleanup
 
