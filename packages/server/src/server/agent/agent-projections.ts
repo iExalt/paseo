@@ -20,6 +20,7 @@ import type {
 } from "./agent-sdk-types.js";
 import type { ManagedAgent } from "./agent-manager.js";
 import type { JsonValue } from "../json-utils.js";
+import { persistedAsyncQuestions } from "./providers/codex/async-questions.js";
 import {
   isStoredAgentProviderAvailable,
   resolveStoredAgentUpdatedAt,
@@ -145,7 +146,10 @@ export function toAgentPayload(
     currentModeId: agent.currentModeId,
     availableModes: cloneAvailableModes(agent.availableModes),
     features: normalizeFeatures(agent.features),
-    pendingPermissions: sanitizePendingPermissions(agent.pendingPermissions),
+    pendingPermissions:
+      agent.lifecycle === "closed"
+        ? persistedAsyncQuestions(agent.persistence)
+        : sanitizePendingPermissions(agent.pendingPermissions),
     persistence: projectPersistenceHandleForWire(agent.persistence),
     title: options?.title ?? null,
     labels: agent.labels,
@@ -252,7 +256,7 @@ export function buildStoredAgentPayload(
     capabilities: defaultCapabilities,
     currentModeId: record.lastModeId ?? null,
     availableModes: [],
-    pendingPermissions: [],
+    pendingPermissions: persistedAsyncQuestions(persistence),
     persistence,
     title: record.title ?? null,
     requiresAttention: record.requiresAttention ?? false,

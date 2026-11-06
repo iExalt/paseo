@@ -310,6 +310,67 @@ test("worker restart preserves an already-running legacy supervisor's launch fla
   }
 }, 60_000);
 
+test("--replace-supervisor uses the installed runner and persisted config, retaining ownership and a live terminal", async () => {
+  const f = await fixture();
+  const home = f.homes[0]!;
+  const savedPort = await port(),
+    legacyPort = await port();
+  let client: Awaited<ReturnType<typeof connectToDaemon>> | undefined;
+  try {
+    await f.configure(home, `127.0.0.1:${savedPort}`);
+    const oldRunner = path.join(f.root, "legacy-supervisor.mjs");
+    const launches = path.join(f.root, "legacy-launches.txt");
+    await writeFile(
+      oldRunner,
+      `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(launches)}, 'old-launch\\n');\nawait import(${JSON.stringify(pathToFileURL(path.join(repo, "packages/server/dist/scripts/supervisor-entrypoint.js")).href)});\n`,
+    );
+    const launch = await startDaemonInstance({
+      home,
+      command: process.execPath,
+      args: [oldRunner],
+      env: { ...f.env, PASEO_LISTEN: `127.0.0.1:${legacyPort}` },
+      mode: "deployment",
+      desktopManaged: true,
+      timeoutMs: 30_000,
+    });
+    const before = await f.liveStatus(home);
+    expect(before.listen).toBe(`127.0.0.1:${legacyPort}`);
+    client = await connectToDaemon({ target: { kind: "instance", home }, timeout: 10_000 });
+    const workspace = await client.createWorkspace({ source: { kind: "directory", path: f.root } });
+    expect(workspace.workspace?.id).toBeTruthy();
+    const terminal = await client.createTerminal(f.root, "survive replacement", undefined, {
+      workspaceId: workspace.workspace!.id,
+      command: process.execPath,
+      args: ["-e", "setInterval(() => {}, 1000)"],
+    });
+    expect(terminal.error).toBeNull();
+    expect(terminal.terminal?.id).toBeTruthy();
+    const terminalId = terminal.terminal!.id;
+    await client.close();
+    const replaced = await f.ok(
+      ["daemon", "restart", "--home", home, "--replace-supervisor", "--timeout", "30"],
+      { PASEO_SERVER_ID: "unrelated-invoking-environment" },
+    );
+    expect(replaced.previousSupervisorPid).toBe(launch.instance.pid);
+    expect(replaced.supervisorPid).not.toBe(launch.instance.pid);
+    const after = await f.liveStatus(home);
+    expect(after.listen).toBe(`127.0.0.1:${savedPort}`);
+    expect(after.serverId).toBe(before.serverId);
+    expect(after.desktopManaged).toBe(true);
+    expect(after.daemonVersion).toBe(
+      JSON.parse(await readFile(path.join(repo, "packages/server/package.json"), "utf8")).version,
+    );
+    expect(await readFile(launches, "utf8")).toBe("old-launch\n");
+    client = await connectToDaemon({ target: { kind: "instance", home }, timeout: 10_000 });
+    expect((await client.listTerminals(f.root)).terminals.some((t) => t.id === terminalId)).toBe(
+      true,
+    );
+  } finally {
+    await client?.close();
+    await f.close();
+  }
+}, 90_000);
+
 test.skipIf(process.platform === "win32")(
   "POSIX stop ignores a wrong endpoint even with copied identities; supported live identity overrides still restart",
   async () => {

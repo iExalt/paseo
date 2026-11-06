@@ -55,8 +55,129 @@ worker running from `/Applications` (lingering Electron helpers would hold the c
 
 ## By the way
 
-- No CI job runs `scripts/*.test.mjs` (`node --test`), so the updater script tests, including
-  `bundleProcesses`, run only locally. Adding a CI step changes CI; leave it to its own PR.
+- The original implementation's updater script tests ran only locally. The current
+  routine CI helper lane includes the updater tests through
+  [the routine planner](../.github/scripts/ci-routine.mjs).
+
+## Restart recovery follow-up (2026-11-06)
+
+User approval: "All three chunks are approved." Scope: durable async question recovery,
+an explicit CLI supervisor replacement, and integration verification with one merged PR
+to `dev`. Medium autonomy; no release, installed-app change, or production restart.
+Baseline: `fd4f01a4c`. Preserve unrelated checkout changes.
+
+- [x] A: expose saved Codex async questions without launching idle runtimes; reopen the
+      original thread on answer; commit resolution after accepted delivery. Live approvals,
+      running turns, background work, and in-flight responses still block idle shutdown.
+- [x] B: add local `daemon restart --replace-supervisor`; preflight the invoked install,
+      retain home/configuration/desktop ownership and terminals, reject competing launches,
+      and preserve default worker-only restart semantics.
+- [ ] C: isolated cold-restart and actual CLI entry-point proof, affected full suites,
+      review, required CI and merge. Update durable usage docs.
+- [ ] D: user-added triage of project state after app reload: the closed-tab persistence
+      defect is repaired and verified; the broader sidebar/project-order symptom needs
+      clarification before it can be called resolved.
+
+Estimate for A–C: 45–90 minutes of agent wall-clock, 3–5 implementation/integration
+review rounds. Bounds: cold-recovery and supervisor orchestration tests, review latency,
+and CI. D is a separate diagnostic addition; initial allowance 10–25 minutes and one
+review, pending reproduction. Local warm baseline: `mise exec -- npm exec
+--workspace=@getpaseo/server -- vitest run
+src/server/agent/providers/codex-async-questions.test.ts`, 11 tests passed in 2.06 s
+before changes. Routine CI target: under five minutes; no required proof is waived.
+
+Acceptance includes startup with automatic turn resume disabled, a visible question
+before any runtime is reopened, answer delivery to its original thread, rejection/retry
+and concurrent-answer safety, and no resurrection after answer or dismissal. It does
+not claim exactly-once delivery across a crash between upstream acceptance and local
+persistence; that requires an upstream idempotency contract.
+
+Reviewer: persistent native `restart_reviewer`, Sol/high. A2 accepted with cold
+projection/answer loading, live-approval coexistence, accepted-start completion, and
+failed-delivery retry safeguards. Review ledger: A1 1 material / 1 total; A2 0 / 0.
+Current A checks: six affected server suites passed, 298 tests in 20.42 s; server
+typecheck passed. Cold-process answer/dismiss cases passed (2 tests, 12.04 s), using
+the real daemon/bootstrap and public WebSocket API with a deterministic Codex transport.
+This is not a real upstream Codex service check or an installed-app rollout.
+
+B2 and C2 code review accepted: B1 1 material / 1 total, B2 0 / 0; integration C1
+1 / 1, C2 0 / 0. The findings closed wrong-peer shutdown and inherited live-identity
+overrides. The installed-entry lifecycle case with a hostile identity environment failed
+before the pin and passed after rebuilding (32.61 s). It also proves legacy launch
+replacement by the invoked runner, saved managed configuration, desktop ownership, and
+terminal adoption. The full local CLI lifecycle suite passed 19 tests with one platform
+skip in 205 s before the final identity pin; its affected counterexample was rerun after.
+The replacement/Nix preflight suites passed 16 tests; missing store executables and
+invalid markers fail before shutdown. Default restart keeps its prior launch contract.
+
+D1 code review accepted (0 material / 0 total). A deterministic old-code probe showed
+an explicitly closed tab reappearing only when the hydrated directory reconciled after
+reload. The prior tested contract intentionally kept hidden-tab intent in memory only.
+The repair persists that intent per workspace and clears it on explicit reopen. Three
+affected app suites passed 195 tests; app typecheck passed. Browser QA and any separate
+sidebar-order diagnosis remain open; do not infer that every reported project-state
+symptom is explained by the tab reproduction.
+
+### Local verification limits and follow-up
+
+The complete server unit command (`npm run test:unit --workspace=@getpaseo/server --
+--maxWorkers=4`) ran with a temporary Git configuration that includes the user's normal
+configuration but disables tag signing, and a canonical `TMPDIR`. This changes no user
+configuration. The initial run inherited signed-tag settings, blocking synchronous Git
+fixtures; an unchanged-base probe reproduces the waits and passes when only tag signing
+is disabled. Canonical `TMPDIR` resolves the existing macOS `/var` versus `/private/var`
+assertion mismatch.
+
+The complete isolated-environment run remains **not green**: 482 files / 7,515 tests
+passed, two tests failed, 52 tests skipped, 344.58 s. Remaining cases are unchanged from
+`fd4f01a4c`, including their runtime dependencies; review confirmed the new manager code
+cannot execute in either case. No tests were skipped or timeouts raised for this change.
+Required CI at the PR head and the changed-path checks remain publication gates.
+
+No `acyclic` project configuration was found in this repository. Follow-up for a later
+test/bugfix run:
+
+- `providers/omp/session-descriptor.test.ts`: the 400-file cwd-overscan fixture exceeds
+  its existing 30 s test deadline on this Mac, including when selected separately.
+- `providers/pi/extensions/index.test.ts`: the child-tail filesystem poll fails under
+  broad local-suite load but passes in the focused run; capture its readiness/event race
+  before changing the implementation or its checks.
+- `cli/commands/plugin/scaffold.test.ts`: the unchanged npm-pack fixture exceeds its
+  existing 5 s deadline under the same local load. The final CLI unit run passed 539
+  tests with this one failure; an earlier run passed all 534 then-selected tests.
+
+### Rendered restoration and remaining investigation
+
+The production web build was exercised against an isolated mock daemon. Main-agent
+browser automation verified a closed tab stays absent after reload once the host is
+connected, while the retained tab stays selected; explicitly reopening the closed tab
+survives another reload. Independent browser QA verified close/reload/History-reopen
+on desktop and phone, and tab order/selection restoration on tablet. Tablet touch-close,
+native devices, and sidebar reorder/collapse round trips were not verified.
+
+Normal root-agent close also requests archival, so that browser journey is a neighboring
+workflow check. The failing-old/passing-new store regression specifically proves saved
+local suppression for active/layout-only agents, failed archives, and stale directory
+snapshots. It does not prove that every instance of the user's unspecified jumbled
+project state shares this cause.
+
+Additional browser findings, deferred to a separate startup/UI investigation:
+
+- A fresh browser opening a valid workspace URL lands on `/open-project`; both tester
+  and main reproduced it with the expected host/workspace present afterward and no
+  error boundary. Established-workspace reloads restore correctly. Startup route code
+  is unchanged by this change; the first-connection route-loss mechanism remains
+  unproven. Preserve the explicit destination through host registration as a follow-up.
+- The emulated touch phone shows a keyboard-shortcut hint. No visual redesign is part
+  of this change.
+
+Current publication boundary: A `4ac15ca47`, B `d0869c3d3`, and the closed-tab repair
+`bdd226042` are committed. Integration code review is complete with no material findings;
+the final dispatcher extraction was separately checked to preserve the original worker
+body. Repository typechecking passed (213.36 s under local filesystem load), plus
+format/lint. Required CI at the final PR head remains pending. Recent full routine CI on
+`dev` took 203–228 s against the existing advisory 300 s budget; compare the PR run
+without resetting that baseline.
 
 ## App and host update status (2026-11-06)
 
