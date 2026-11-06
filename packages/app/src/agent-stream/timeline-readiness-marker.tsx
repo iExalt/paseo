@@ -4,6 +4,7 @@ import { isWeb } from "@/constants/platform";
 import type { AgentScreenReadySyncState } from "@/hooks/use-agent-screen-state-machine";
 import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { agentLog } from "@/utils/agent-log";
+import { recordNotificationOpenStage } from "@/notification-open/trace";
 import {
   closedTurnsKey,
   readClosedTurns,
@@ -51,7 +52,11 @@ export function TimelineReadinessMarker({
 
   useEffect(() => {
     agentLog("timeline", "state", { agentId, state: readiness, turns });
-  }, [agentId, readiness, turns]);
+    recordNotificationOpenStage(serverId, agentId, "chat-mounted");
+    if (readiness === "running" || readiness === "settled") {
+      recordNotificationOpenStage(serverId, agentId, "current-commit");
+    }
+  }, [serverId, agentId, readiness, turns]);
 
   // Native leaves a contentless node out of the accessibility tree, so dumps never show it.
   if (!isWeb) return null;

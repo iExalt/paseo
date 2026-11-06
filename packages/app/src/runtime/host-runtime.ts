@@ -97,6 +97,7 @@ import { createPerformanceTrace } from "@/performance/native-trace";
 import { revokePushNotifications } from "@/push-notifications";
 import { createAppWebSocketFactory } from "./websocket-factory";
 import { agentLog, describeError } from "@/utils/agent-log";
+import { recordNotificationOpenStage } from "@/notification-open/trace";
 
 export type HostRuntimeConnectionStatus = "idle" | "connecting" | "online" | "offline" | "error";
 export type PairingNavigationTarget = "openProject" | "hostRoot" | "hostSettings";
@@ -2817,6 +2818,61 @@ export class HostRuntimeStore {
     const replica = this.timelineReplicaByServer.get(serverId);
     if (!replica) throw new Error(`Unknown host runtime for serverId ${serverId}`);
     await replica.prepare(agentId);
+  }
+
+  prepareAgentOpen(serverId: string, agentId: string): () => void {
+    let cancelled = false;
+    let stopObserving: (() => void) | undefined;
+    let releaseDemand: (() => void) | undefined;
+    let owner: ViewedTimelineOwner | null = null;
+    const release = () => {
+      if (cancelled) return;
+      cancelled = true;
+      clearTimeout(deadline);
+      stopObserving?.();
+      releaseDemand?.();
+    };
+    const deadline = setTimeout(release, 15_000);
+    void this.boot().catch((error) => {
+      console.warn("[NotificationOpen] startup failed", { serverId, error });
+    });
+    // Registry readiness does not depend on the optional localhost bootstrap probe.
+    void this.loadRegistry()
+      .then(() => {
+        if (cancelled || !this.getSnapshot(serverId)) return;
+        recordNotificationOpenStage(serverId, agentId, "runtime");
+        this.getSnapshot(serverId)?.client?.ensureConnected({ verify: true });
+        void this.prepareAgentTimeline(serverId, agentId)
+          .then(() => {
+            if (!cancelled) recordNotificationOpenStage(serverId, agentId, "cache");
+            return undefined;
+          })
+          .catch((error) => {
+            console.warn("[NotificationOpen] cache preparation failed", {
+              serverId,
+              agentId,
+              error,
+            });
+          });
+        const attach = (nextOwner: ViewedTimelineOwner | null) => {
+          if (cancelled || nextOwner === owner) return;
+          releaseDemand?.();
+          owner = nextOwner;
+          releaseDemand = owner?.prepareAgentOpen(agentId);
+          if (owner) recordNotificationOpenStage(serverId, agentId, "observation-requested");
+        };
+        stopObserving = useSessionStore.subscribe(
+          (state) => state.sessions[serverId]?.viewedTimelineSync ?? null,
+          attach,
+        );
+        attach(useSessionStore.getState().sessions[serverId]?.viewedTimelineSync ?? null);
+        return undefined;
+      })
+      .catch((error) => {
+        release();
+        console.warn("[NotificationOpen] preparation failed", { serverId, agentId, error });
+      });
+    return release;
   }
 
   async fetchAgentTimeline(

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createNotificationOpenRouter, parseNotificationOpenTarget } from "./model";
 import type { NotificationOpenSource, NotificationTap } from "./source";
 
@@ -61,8 +61,11 @@ describe("notification open", () => {
     const agents: unknown[] = [];
     const routes: string[] = [];
     const terminals: unknown[] = [];
+    const cancelPreparation = vi.fn();
+    const prepareAgent = vi.fn(() => cancelPreparation);
     const router = createNotificationOpenRouter({
       source,
+      prepareAgent,
       openAgent: (target) => {
         agents.push(target);
       },
@@ -74,7 +77,7 @@ describe("notification open", () => {
       },
       whenReadyToNavigate,
     });
-    return { source, agents, routes, terminals, router };
+    return { source, agents, routes, terminals, router, prepareAgent, cancelPreparation };
   }
 
   it("takes the launch tap once across remounts", async () => {
@@ -105,15 +108,54 @@ describe("notification open", () => {
     const readiness = new Promise<void>((resolve) => {
       ready = resolve;
     });
-    const { source, agents, router } = setup(() => readiness);
+    const { source, agents, router, prepareAgent } = setup(() => readiness);
     const stop = router.start();
     await flush();
     expect(agents).toEqual([]);
+    expect(prepareAgent).toHaveBeenCalledExactlyOnceWith({
+      kind: "agent",
+      serverId: "host",
+      agentId: "agent",
+    });
     expect(source.acknowledged).toEqual([]);
     ready();
     await flush();
     expect(agents).toEqual([{ serverId: "host", agentId: "agent" }]);
     expect(source.acknowledged).toEqual(["one"]);
+    stop();
+  });
+
+  it("supersedes a queued tap without letting replay reclaim navigation", async () => {
+    let ready = () => {};
+    const gate = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const { source, agents, router, prepareAgent, cancelPreparation } = setup(() => gate);
+    const stop = router.start();
+    await flush();
+    source.tap({ id: "two", data: { serverId: "host", agentId: "second" } });
+    source.tap(launch);
+    expect(cancelPreparation).toHaveBeenCalledTimes(1);
+    expect(prepareAgent).toHaveBeenCalledTimes(2);
+    ready();
+    await flush();
+    expect(agents).toEqual([{ serverId: "host", agentId: "second" }]);
+    expect(source.acknowledged).toEqual(["one", "two"]);
+    stop();
+  });
+
+  it("still navigates and acknowledges if preparation throws", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { source, agents, router, prepareAgent } = setup();
+    prepareAgent.mockImplementation(() => {
+      throw new Error("cache unavailable");
+    });
+    const stop = router.start();
+    await flush();
+    expect(agents).toEqual([{ serverId: "host", agentId: "agent" }]);
+    expect(source.acknowledged).toEqual(["one"]);
+    expect(warning).toHaveBeenCalledOnce();
+    warning.mockRestore();
     stop();
   });
 
@@ -139,12 +181,38 @@ describe("notification open", () => {
       id: "terminal",
       data: { serverId: "host", workspaceId: "ws", terminalId: "term" },
     });
+    await flush();
     source.tap({ id: "host", data: { serverId: "host" } });
     await flush();
     expect(routes).toEqual(["/h/host"]);
     expect(terminals).toEqual([
       { kind: "terminal", serverId: "host", workspaceId: "ws", terminalId: "term" },
     ]);
+    stop();
+  });
+
+  it("does not let a delayed launch response replace a newer live tap", async () => {
+    let launchReady = (_tap: NotificationTap) => {};
+    const source = new FakeSource(null);
+    source.takeLaunchTap = () =>
+      new Promise<NotificationTap>((resolve) => {
+        launchReady = resolve;
+      });
+    const openAgent = vi.fn();
+    const router = createNotificationOpenRouter({
+      source,
+      prepareAgent: () => () => {},
+      openAgent,
+      openRoute: () => {},
+      openTerminal: () => {},
+      whenReadyToNavigate: async () => {},
+    });
+    const stop = router.start();
+    source.tap({ id: "new", data: { serverId: "host", agentId: "new" } });
+    launchReady(launch);
+    await flush();
+    expect(openAgent).toHaveBeenCalledExactlyOnceWith({ serverId: "host", agentId: "new" });
+    expect(source.acknowledged).toEqual(["new", "one"]);
     stop();
   });
 });
