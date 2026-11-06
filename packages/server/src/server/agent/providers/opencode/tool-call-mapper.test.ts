@@ -319,14 +319,29 @@ describe("opencode tool-call mapper", () => {
     });
   });
 
-  it("maps skill calls to plain text detail with the loaded skill name", () => {
+  it("maps skill calls to Markdown detail without OpenCode's skill_content wrapper", () => {
+    const output = [
+      '<skill_content name="diagnose">',
+      "# Skill: diagnose",
+      "",
+      "Find the **cause** first.",
+      "",
+      "Base directory for this skill: /repo/.opencode/skills/diagnose",
+      "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
+      "Note: file list is sampled.",
+      "",
+      "<skill_files>",
+      "<file>/repo/.opencode/skills/diagnose/scripts/run.sh</file>",
+      "</skill_files>",
+      "</skill_content>",
+    ].join("\n");
     const item = expectMapped(
       mapOpencodeToolCall({
         toolName: "skill",
         callId: "opencode-skill-1",
         status: "completed",
         input: { name: "diagnose" },
-        output: '<skill_content name="diagnose"># Skill: diagnose</skill_content>',
+        output,
       }),
     );
 
@@ -334,7 +349,18 @@ describe("opencode tool-call mapper", () => {
       type: "plain_text",
       label: "diagnose",
       icon: "sparkles",
-      text: '<skill_content name="diagnose"># Skill: diagnose</skill_content>',
+      markdown: true,
+      text: [
+        "# Skill: diagnose",
+        "",
+        "Find the **cause** first.",
+        "",
+        "Base directory for this skill: /repo/.opencode/skills/diagnose",
+        "Relative paths in this skill (e.g., scripts/, reference/) are relative to this base directory.",
+        "Note: file list is sampled.",
+        "",
+        "- `/repo/.opencode/skills/diagnose/scripts/run.sh`",
+      ].join("\n"),
     });
   });
 
