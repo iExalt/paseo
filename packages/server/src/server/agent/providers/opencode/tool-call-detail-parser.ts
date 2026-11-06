@@ -347,8 +347,7 @@ const OpencodeKnownToolDetailSchema = z.union([
         type: "plain_text" as const,
         label: skillName,
         icon: "sparkles" as const,
-        markdown: true,
-        ...(output ? { text: toSkillMarkdown(output) } : {}),
+        ...(output ? skillOutputDetail(output) : {}),
       } satisfies ToolCallDetail;
     },
   ),
@@ -360,11 +359,15 @@ const SKILL_FILES_PATTERN = /\n<skill_files>\n([\s\S]*?)<\/skill_files>$/;
 /**
  * OpenCode's skill tool wraps SKILL.md in `<skill_content>` and lists sampled files in
  * `<skill_files>` (anomalyco/opencode packages/core/src/skill.ts `toModelOutput`). Unwrap it so
- * the detail renders as Markdown; other output passes through unchanged.
+ * the detail renders as Markdown; other output stays plain text.
  */
-function toSkillMarkdown(output: string): string {
+function skillOutputDetail(output: string): { text: string; markdown?: true } {
   const body = SKILL_CONTENT_PATTERN.exec(output)?.[1];
-  if (body === undefined) return output;
+  if (body === undefined) return { text: output };
+  return { text: unwrapSkillFiles(body), markdown: true };
+}
+
+function unwrapSkillFiles(body: string): string {
   return body.replace(SKILL_FILES_PATTERN, (_, list: string) => {
     const files = [...list.matchAll(/<file>(.*?)<\/file>/g)].map((match) => `- \`${match[1]}\``);
     return files.length > 0 ? `\n${files.join("\n")}` : "";

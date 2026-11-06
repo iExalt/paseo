@@ -924,7 +924,6 @@ describe("translateOpenCodeEvent", () => {
             type: "plain_text",
             label: "diagnose",
             icon: "sparkles",
-            markdown: true,
             text: '<skill_content name="diagnose"># Skill: diagnose</skill_content>',
           },
           error: null,

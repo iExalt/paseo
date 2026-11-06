@@ -22,8 +22,9 @@ function readSkillInputs(content: unknown): CodexSkillInput[] {
 }
 
 function stripFrontMatter(markdown: string): string {
-  const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(markdown);
-  return (match ? markdown.slice(match[0].length) : markdown).trim();
+  const text = markdown.replace(/^\uFEFF/, "");
+  const match = /^---\r?\n(?:[\s\S]*?\r?\n)?---(?:\r?\n|$)/.exec(text);
+  return (match ? text.slice(match[0].length) : text).trim();
 }
 
 async function readSkillText(skill: CodexSkillInput): Promise<string> {
