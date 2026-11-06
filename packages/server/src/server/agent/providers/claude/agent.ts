@@ -4765,6 +4765,8 @@ class ClaudeAgentSession implements AgentSession {
         this.appendSidechainResultEvents(message, events);
         break;
       case "assistant": {
+        // A SKILL.md body follows its tool result directly, never after model output.
+        this.lastSettledSkillCall = null;
         const timelineItems = await this.mapBlocksToTimeline(message.message.content, {
           suppressAssistantText: options?.suppressAssistantText ?? false,
           suppressReasoning: options?.suppressReasoning ?? false,
@@ -5968,6 +5970,11 @@ class ClaudeAgentSession implements AgentSession {
     historyTimestamp: string | null;
   }): boolean {
     const { entry, timeline, historyTimestamp } = input;
+    if (entry.type === "assistant") {
+      // A SKILL.md body follows its tool result directly, never after model output.
+      this.lastSettledSkillCall = null;
+      return false;
+    }
     const skillCall = entry.type === "user" ? this.takeSkillContentToolCall(entry) : null;
     if (!skillCall) return false;
     const item = limitAgentTimelineItemContent(skillCall);
@@ -5991,12 +5998,15 @@ class ClaudeAgentSession implements AgentSession {
     if (!skill) return null;
     const record = toObjectRecord(entry);
     if (!record || !isSyntheticUserEntry(record)) return null;
-    // History records name the call; the live stream does not, so it relies on ordering.
+    // History records name the call. The live stream does not, so there the body must follow the
+    // call directly and name the same skill.
     const sourceToolUseId = readTrimmedString(record.sourceToolUseID);
     if (sourceToolUseId && sourceToolUseId !== skill.callId) return null;
     const text = readClaudeSkillContent({
       content: toObjectRecord(record.message)?.content,
-      skillName: readTrimmedString(toObjectRecord(skill.input)?.skill) ?? null,
+      skillName: sourceToolUseId
+        ? null
+        : (readTrimmedString(toObjectRecord(skill.input)?.skill) ?? null),
     });
     if (!text) return null;
     this.lastSettledSkillCall = null;

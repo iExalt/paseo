@@ -801,13 +801,23 @@ describe("Claude Skill tool call detail", () => {
     }
   });
 
-  test("attaches the live SKILL.md body only to the Skill it names", async () => {
+  test("attaches the live SKILL.md body only to the Skill call it directly follows", async () => {
     const session = await client([
       skillToolUse("toolu_other", "other-skill"),
       skillToolResult("toolu_other", "other-skill"),
       {
         type: "user",
         uuid: "other-body",
+        isSynthetic: true,
+        parent_tool_use_id: null,
+        message: { role: "user", content: [{ type: "text", text: SKILL_BODY }] },
+      },
+      skillToolUse("toolu_stale", "triage-bugfix"),
+      skillToolResult("toolu_stale", "triage-bugfix"),
+      { type: "assistant", uuid: "between", message: { content: "Working on it." } },
+      {
+        type: "user",
+        uuid: "late-body",
         isSynthetic: true,
         parent_tool_use_id: null,
         message: { role: "user", content: [{ type: "text", text: SKILL_BODY }] },
