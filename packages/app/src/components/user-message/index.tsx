@@ -88,19 +88,28 @@ export function MessageSender({
       leftIcon={renderProviderIcon}
       style={styles.sender}
       textStyle={styles.senderText}
+      accessibilityLabel={t("turnSummary.sentBy", { name })}
       numberOfLines={1}
       disabled={!host}
       onPress={openSender}
     >
-      {t("turnSummary.sentBy", { name })}
+      {name}
     </Button>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
   body: { flexShrink: 0 },
-  sender: { paddingRight: 0, borderRightWidth: 0, maxWidth: "100%" },
-  senderText: { flexShrink: 1 },
+  sender: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderWidth: 0,
+    minHeight: 0,
+    height: 24,
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  senderText: { flexShrink: 1, fontSize: 13 },
   toggle: { alignSelf: "flex-start", paddingHorizontal: 0, minHeight: 0, borderWidth: 0 },
   expandedToggle: { marginTop: theme.spacing[2] },
   fade: { position: "absolute", bottom: 0, left: 0, right: 0, height: theme.spacing[12] },

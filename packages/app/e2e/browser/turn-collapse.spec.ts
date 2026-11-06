@@ -206,9 +206,51 @@ test("received messages collapse separately from user prompts and open their sen
       "I reviewed the turn-grouping changes.",
     );
     const labelColor = await attribution
-      .getByText("Sent by Reviewer", { exact: true })
+      .getByText("Reviewer", { exact: true })
       .evaluate((element) => getComputedStyle(element).color);
     await expect(attribution.locator("svg")).toHaveCSS("fill", labelColor);
+    const footer = disclosure.getByTestId("user-message-trailing-row");
+    await expect(
+      footer.getByRole("button", { name: "Sent by Reviewer", exact: true }),
+    ).toBeVisible();
+    const copy = footer.getByRole("button", { name: "Copy message", exact: true });
+    await expect(copy).toBeVisible();
+    const timestamp = footer.getByTestId("user-message-timestamp");
+    const copyBox = await copy.boundingBox();
+    const timeBox = await timestamp.boundingBox();
+    const senderBox = await attribution.boundingBox();
+    const footerBox = await footer.boundingBox();
+    const bodyBox = await disclosure.getByTestId("agent-message-content").boundingBox();
+    expect(copyBox).not.toBeNull();
+    expect(timeBox).not.toBeNull();
+    expect(senderBox).not.toBeNull();
+    expect(footerBox).not.toBeNull();
+    expect(bodyBox).not.toBeNull();
+    expect(copyBox!.x + copyBox!.width).toBeLessThanOrEqual(timeBox!.x + 0.5);
+    expect(timeBox!.x + timeBox!.width).toBeLessThanOrEqual(senderBox!.x + 0.5);
+    expect(
+      Math.abs(copyBox!.y + copyBox!.height / 2 - timeBox!.y - timeBox!.height / 2),
+    ).toBeLessThan(0.5);
+    expect(footerBox!.x - bodyBox!.x).toBeLessThan(20);
+    await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+    await copy.click();
+    await expect
+      .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+      .toBe(
+        "I reviewed the turn-grouping changes. Heartbeats now keep their own timing footer, and the previous response stays visible.",
+      );
+    const userMessage = page
+      .getByTestId("user-message")
+      .filter({ hasText: "A prompt from the user" });
+    await userMessage.hover();
+    const userFooter = userMessage.getByTestId("user-message-trailing-row");
+    const userTime = await userFooter.getByTestId("user-message-timestamp").boundingBox();
+    const userCopy = await userFooter
+      .getByRole("button", { name: "Copy message", exact: true })
+      .boundingBox();
+    expect(userTime).not.toBeNull();
+    expect(userCopy).not.toBeNull();
+    expect(userTime!.x).toBeLessThan(userCopy!.x);
 
     await attribution.scrollIntoViewIfNeeded();
     await page.screenshot({ path: testInfo.outputPath("agent-message-expanded.png") });
@@ -322,7 +364,7 @@ test("opening a turn keeps the received agent message expanded", async ({ page }
 });
 
 async function expectSenderTruncatedWithinMessage(attribution: Locator, title: string) {
-  const label = attribution.getByText(`Sent by ${title}`, { exact: true });
+  const label = attribution.getByText(title, { exact: true });
   await expect(label).toHaveCSS("white-space", "nowrap");
   await expect(label).toHaveCSS("text-overflow", "ellipsis");
   const bounds = await label.evaluate((element) => ({
