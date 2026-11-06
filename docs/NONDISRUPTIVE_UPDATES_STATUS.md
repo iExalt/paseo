@@ -60,10 +60,10 @@ worker running from `/Applications` (lingering Electron helpers would hold the c
 
 ## App and host update status (2026-11-06)
 
-User approval: “SGTM. Working in a worktree on dev-station, implement the plan with
-$iExalt:keep-me-in-the-loop.” Scope: app-only update controls in About; automatic
+User approval (conversation, 2026-11-06): “SGTM”, followed by the instruction to
+implement in a remote worktree using `keep-me-in-the-loop`. Scope: app-only update controls in About; automatic
 local daemon upgrade progress in Host Overview; links from About's connected hosts.
-Medium autonomy. Worktree: `/home/ubuntu/Projects/paseo-update-ui`, baseline
+Medium autonomy. Implementation uses a sibling Git worktree from baseline
 `388d619f2047d911bd444035118c4f6c741ea3b4`. No release or live laptop rollout authorized.
 
 - [x] A: app-update facts independent of daemon version; authoritative idle-upgrader
@@ -82,7 +82,7 @@ separate; renderer fixtures do not prove a signed-release installation.
 Review ledger: A1 round 1, 0 material / 0 total findings, reviewer accepted the
 frozen A1 source snapshot for B dependency. Ran five scoped Vitest files covering
 the idle upgrader, real manager event/status bridge, renderer parser, shared query
-subscription and app-update resolver: 44 passed in 1.19 s on dev-station (warm
+subscription and app-update resolver: 44 passed in 1.19 s in the isolated Linux worktree (warm
 outputs, one runner). Desktop typecheck passed. The initial baseline setup lacked
 workspace outputs; `node scripts/ensure-workspace-builds.mjs` built them once.
 Rendered live refresh/navigation and integration checks remain C gates.
@@ -92,6 +92,42 @@ B review ledger: round 1, 2 material / 2 total findings; round 2, 0 material /
 now retains the authoritative local identity during a stopped upgrade failure;
 About suppresses pending upgrade hints when management is paused. Original identity
 loader fails the new first-mount regression; repaired loader and card cases pass
-(7 tests, 2.22 s, warm dev-station). The host link follows the existing desktop
+(7 tests, 2.22 s, the warm Linux worktree). The host link follows the existing desktop
 replace / compact push navigation policy. New English copy uses the existing English
 fallback convention in other locales. Browser closure and integration remain C gates.
+
+C integration ledger: 0 material / 0 total findings; reviewer accepted A + B + the
+renderer tests and the missing CLI-status fixture response. Final combined local
+command `npx vitest run` with the eight changed test files passed 53 tests in
+5.23 s. Renderer commands, from the repository root with `E2E_DESKTOP_RUNTIME=1`:
+
+- `npx playwright test --config packages/desktop/playwright.config.ts --grep "Nix app and local host" --workers 1 --retries 0 --max-failures 1`:
+  3 passed in 43.3 s. Covers real successful app status before badge absence,
+  a genuine pending app restart as the positive control, About-to-Overview
+  navigation, live waiting/failed/upgrading/current states, safe retry dispatch,
+  first mount during a stopped failure, and pausing attached-daemon management.
+  No daemon stop or restart command was issued by the update-status flow.
+- The same command with `--grep "remote desktop-managed"`: 1 passed in 54.8 s;
+  ownership explanation remains and the fake disabled update action is absent.
+
+Independent headed visual QA exercised wide and narrow desktop windows in an
+isolated fixture; state/version text fit without clipping. Main checked dark
+Overview as well. Its status-modal error candidate was traced to the existing
+fixture returning null for `cli_daemon_status`, not production: the handler returns
+text. The Nix fixture now supplies that response; the actual modal was rechecked.
+No material product findings remain. Other locales use the existing English
+fallback for the new copy; native mobile input and signed Mac installation were
+not tested by this UI work. The installed Mac gate D remains separate.
+
+Workspace typecheck, changed-file lint and formatting passed. Comparable timing
+limits: typecheck took 27.68 s before host contention and 179.07 s on the same host under heavy contention from unrelated work. A renderer setup timed out before the test body during that
+contention. These are not comparable conditions for a code-regression claim;
+no timeout, retry or required assertion was weakened. Routine CI retains its
+existing budgets and remains the publication gate. The isolated headed QA fixture
+exited successfully and stopped its mock daemon and Metro server.
+
+The main renderer regression was also run against the original app-update resolver
+from baseline `388d619f`: it failed for the intended reason, receiving
+“v0.23.0 is installed; restart to use it” where “Up to date” was expected. The
+reviewed resolver was restored byte for byte after that temporary negative probe;
+the same full renderer journey then passed in 43.6 s.
