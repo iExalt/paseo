@@ -57,3 +57,32 @@ worker running from `/Applications` (lingering Electron helpers would hold the c
 
 - No CI job runs `scripts/*.test.mjs` (`node --test`), so the updater script tests, including
   `bundleProcesses`, run only locally. Adding a CI step changes CI; leave it to its own PR.
+
+## App and host update status (2026-11-06)
+
+User approval: “SGTM. Working in a worktree on dev-station, implement the plan with
+$iExalt:keep-me-in-the-loop.” Scope: app-only update controls in About; automatic
+local daemon upgrade progress in Host Overview; links from About's connected hosts.
+Medium autonomy. Worktree: `/home/ubuntu/Projects/paseo-update-ui`, baseline
+`388d619f2047d911bd444035118c4f6c741ea3b4`. No release or live laptop rollout authorized.
+
+- [x] A: app-update facts independent of daemon version; authoritative idle-upgrader
+      state through the desktop status/event bridge, with identity and cancellation guards.
+- [ ] B: Host Overview owns daemon progress; About app controls clear when current;
+      connected-host links open Overview. Remote/manual hosts retain their own capability
+      checks and are never assigned this desktop's pending target.
+- [ ] C: isolated browser journeys for waiting, failure, completion, app updates and
+      host navigation; integration review, required CI, PR merge and cleanup.
+
+Acceptance requires current scoped tests and browser evidence. A must be accepted
+before B consumes its state. A normal busy wait is informational; manual disruptive
+restart stays in Danger zone. The installed Mac acceptance gate above remains
+separate; renderer fixtures do not prove a signed-release installation.
+
+Review ledger: A1 round 1, 0 material / 0 total findings, reviewer accepted the
+frozen A1 source snapshot for B dependency. Ran five scoped Vitest files covering
+the idle upgrader, real manager event/status bridge, renderer parser, shared query
+subscription and app-update resolver: 44 passed in 1.19 s on dev-station (warm
+outputs, one runner). Desktop typecheck passed. The initial baseline setup lacked
+workspace outputs; `node scripts/ensure-workspace-builds.mjs` built them once.
+Rendered live refresh/navigation and integration checks remain C gates.

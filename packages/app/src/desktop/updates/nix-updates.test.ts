@@ -71,35 +71,34 @@ const daemon = {
 
 describe("Nix update phase", () => {
   it.each<[string, NixUpdateFacts, string]>([
-    ["no facts yet", { result: null, latest: null, daemon: null }, "unknown"],
-    ["latest is the active release", { result: result("check"), latest: v022, daemon }, "current"],
-    ["latest is newer", { result: result("check"), latest: v023, daemon }, "available"],
+    ["no facts yet", { result: null, latest: null }, "unknown"],
+    ["latest is the active release", { result: result("check"), latest: v022 }, "current"],
+    ["latest is newer", { result: result("check"), latest: v023 }, "available"],
     [
       "a newer release is staged",
-      { result: result("stage", { staged: v023 }), latest: v023, daemon },
+      { result: result("stage", { staged: v023 }), latest: v023 },
       "ready",
     ],
     [
       "a release newer than the staged one was published",
-      { result: result("check", { staged: v023 }), latest: release("0.2.4", "c"), daemon },
+      { result: result("check", { staged: v023 }), latest: release("0.2.4", "c") },
       "available",
     ],
     [
       "the app runs an older release than the active one",
-      { result: result("activate", { active: v023 }), latest: v023, daemon },
+      { result: result("activate", { active: v023 }), latest: v023 },
       "restart",
     ],
     [
-      "only the app was relaunched, so the desktop daemon is still old",
+      "the running app matches the active release",
       {
         result: result("status", {
           active: v023,
           running: { version: "0.2.3", outputPath: v023.outputPath },
         }),
         latest: v023,
-        daemon,
       },
-      "restart",
+      "current",
     ],
   ])("is right when %s", (_case, facts, kind) => {
     expect(resolveNixUpdatePhase(facts).kind).toBe(kind);
@@ -113,7 +112,6 @@ describe("Nix update operations", () => {
     useNixUpdateStore.setState({
       result: null,
       latest: null,
-      daemon: null,
       canStage: false,
       busy: null,
       error: null,

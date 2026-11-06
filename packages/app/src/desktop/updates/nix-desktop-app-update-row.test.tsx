@@ -98,7 +98,6 @@ describe("Nix desktop About update row", () => {
     useNixUpdateStore.setState({
       result: null,
       latest: null,
-      daemon: null,
       canStage: false,
       busy: null,
       error: null,

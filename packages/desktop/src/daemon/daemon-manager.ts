@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { app, ipcMain, powerMonitor } from "electron";
+import { app, BrowserWindow, ipcMain, powerMonitor } from "electron";
 import log from "electron-log/main";
 import {
   resolvePaseoHome,
@@ -315,6 +315,11 @@ const daemonUpgrader = createDaemonUpgrader({
   managementEnabled: async () => (await getDesktopSettingsStore().get()).daemon.manageBuiltInDaemon,
   isActiveRelease: () => isActiveRelease(),
   onUpgraded: () => syncInstalledAppCopy(),
+  onStateChanged: () => {
+    for (const window of BrowserWindow.getAllWindows()) {
+      window.webContents.send("paseo:event:desktop-daemon-upgrade-changed", {});
+    }
+  },
   log: logDesktopDaemonLifecycle,
 });
 
@@ -529,7 +534,10 @@ export function createDaemonCommandHandlers(
       appVersion: resolveDesktopAppVersion(),
       runningUnderARM64Translation: isRunningUnderARM64Translation(),
     }),
-    desktop_daemon_status: () => resolveDesktopDaemonStatus(),
+    desktop_daemon_status: async () => {
+      const status = await resolveDesktopDaemonStatus();
+      return { ...status, upgrade: daemonUpgrader.getState(status) };
+    },
     desktop_local_credential: async (args) => {
       const instance = await readDaemonInstance(getPaseoHome());
       if (!instance?.desktopManaged || typeof args?.listen !== "string") return null;

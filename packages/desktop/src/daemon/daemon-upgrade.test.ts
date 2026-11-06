@@ -5,10 +5,12 @@ import {
   needsDaemonUpgrade,
   type DaemonUpgradeStatus,
   type IdleStopResult,
+  type DaemonUpgradeState,
 } from "./daemon-upgrade.js";
 
 const OLD: DaemonUpgradeStatus = {
   status: "running",
+  serverId: "local",
   pid: 100,
   startedAt: "2026-11-04T00:00:00.000Z",
   version: "0.21.0",
@@ -29,6 +31,7 @@ function harness(input: {
   statuses: DaemonUpgradeStatus[];
   stops?: Array<IdleStopResult | Error>;
   managementEnabled?: boolean;
+  launchError?: Error;
   activeRelease?: Array<"active" | "inactive" | "unknown">;
 }) {
   const releases = [...(input.activeRelease ?? ["active"])];
@@ -36,6 +39,7 @@ function harness(input: {
   const stops = [...(input.stops ?? [])];
   const timers: Array<{ run: () => void; delayMs: number; cancelled: boolean }> = [];
   const calls = { stop: 0, launch: 0 };
+  const changes: Array<DaemonUpgradeState | null> = [];
   const upgrader = createDaemonUpgrader({
     appVersion: () => "0.22.0",
     platform: "darwin",
@@ -48,11 +52,13 @@ function harness(input: {
     },
     launch: async () => {
       calls.launch += 1;
+      if (input.launchError) throw input.launchError;
       return OURS;
     },
     managementEnabled: async () => input.managementEnabled ?? true,
     isActiveRelease: async () => (releases.length > 1 ? releases.shift()! : releases[0]!),
     log: () => {},
+    onStateChanged: () => changes.push(upgrader.getState(OLD)),
     schedule: (run, delayMs) => {
       const timer = { run, delayMs, cancelled: false };
       timers.push(timer);
@@ -68,7 +74,7 @@ function harness(input: {
     timer!.run();
     await new Promise((resolve) => setImmediate(resolve));
   };
-  return { upgrader, calls, pending, fire, statuses };
+  return { upgrader, calls, pending, fire, statuses, changes };
 }
 
 describe("needsDaemonUpgrade", () => {
@@ -103,15 +109,24 @@ describe("createDaemonUpgrader", () => {
   });
 
   test("keeps a busy daemon and replaces it once a retry finds it idle", async () => {
-    const { upgrader, calls, pending, fire } = harness({
+    const { upgrader, calls, pending, fire, changes } = harness({
       statuses: [OLD],
       stops: ["declined", "stopped"],
     });
     await expect(upgrader.ensure()).resolves.toBe(OLD);
+    expect(upgrader.getState(OLD)).toMatchObject({
+      phase: "waiting",
+      targetVersion: "0.22.0",
+      serverId: "local",
+    });
+    expect(upgrader.getState({ ...OLD, pid: 999 })).toBeNull();
+    expect(upgrader.getState({ ...OLD, serverId: "remote" })).toBeNull();
     expect(pending().map((timer) => timer.delayMs)).toEqual([DAEMON_UPGRADE_RETRY_MS]);
 
     await fire();
     expect(calls).toEqual({ stop: 2, launch: 1 });
+    expect(changes.map((state) => state?.phase ?? null)).toEqual(["waiting", "upgrading", null]);
+    expect(upgrader.getState(OURS)).toBeNull();
     expect(pending()).toEqual([]);
   });
 
@@ -130,6 +145,7 @@ describe("createDaemonUpgrader", () => {
     });
     await expect(upgrader.ensure()).resolves.toBe(OLD);
     expect(calls.stop).toBe(0);
+    expect(upgrader.getState(OLD)).toMatchObject({ phase: "checking", targetVersion: null });
     await fire();
     expect(calls).toEqual({ stop: 1, launch: 1 });
   });
@@ -138,7 +154,25 @@ describe("createDaemonUpgrader", () => {
     const { upgrader, calls, pending } = harness({ statuses: [OLD], stops: ["unsupported"] });
     await expect(upgrader.ensure()).resolves.toBe(OLD);
     expect(calls.launch).toBe(0);
+    expect(upgrader.getState(OLD)?.phase).toBe("unsupported");
     expect(pending()).toEqual([]);
+  });
+
+  test("retains a failed launch after the old daemon stopped, until cancelled", async () => {
+    const run = harness({
+      statuses: [OLD],
+      stops: ["stopped"],
+      launchError: new Error("launch failed"),
+    });
+    await expect(run.upgrader.ensure()).rejects.toThrow("launch failed");
+    expect(run.upgrader.getState(STOPPED)).toMatchObject({
+      phase: "failed",
+      serverId: "local",
+      error: "Error: launch failed",
+    });
+    expect(run.upgrader.getState({ ...OLD, pid: 999 })).toBeNull();
+    run.upgrader.cancel();
+    expect(run.upgrader.getState(STOPPED)).toBeNull();
   });
 
   test("an unknown outcome starts ours when the daemon is gone", async () => {
