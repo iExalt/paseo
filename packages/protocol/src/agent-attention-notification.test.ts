@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { boundNotificationPreview, NotificationPreviewSchema } from "./notification-preview.js";
 import {
   buildAgentAttentionNotificationPayload,
   findLatestAssistantMessageFromTimeline,
@@ -91,6 +92,13 @@ describe("buildAgentAttentionNotificationPayload", () => {
         workspaceId: "workspace-2",
         agentId: "agent-2",
         reason: "permission",
+        preview: {
+          v: 1,
+          kind: "permission",
+          requestId: "perm-1",
+          text: "Approve command - Run git push",
+          truncated: true,
+        },
       },
     });
   });
@@ -141,6 +149,44 @@ describe("buildAgentAttentionNotificationPayload", () => {
     });
 
     expect(payload.title).toBe("Agent finished");
+  });
+});
+
+describe("notification preview wire budget", () => {
+  const preview = {
+    v: 1 as const,
+    kind: "assistant" as const,
+    epoch: "epoch",
+    seqStart: 2,
+    seqEnd: 10,
+    timestamp: "2026-11-06T00:00:00.000Z",
+    text: '🙂漢字"\\\n'.repeat(1000),
+    truncated: false,
+  };
+
+  it("bounds serialized UTF-8 including escapes without splitting an emoji", () => {
+    const payload = { title: "Done", data: { preview } };
+    const bounded = boundNotificationPreview(payload, 1000);
+    expect(new TextEncoder().encode(JSON.stringify(bounded)).byteLength).toBeLessThanOrEqual(1000);
+    expect(bounded.data.preview.text.length).toBeGreaterThan(0);
+    expect(bounded.data.preview.truncated).toBe(true);
+    expect(bounded.data.preview.text).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(preview.text.startsWith(bounded.data.preview.text)).toBe(true);
+    expect(payload.data.preview.truncated).toBe(false);
+  });
+
+  it("removes the optional snapshot when even its metadata cannot fit", () => {
+    const bounded = boundNotificationPreview(
+      { title: "Done", data: { agentId: "a", preview } },
+      70,
+    );
+    expect(bounded.data).toEqual({ agentId: "a" });
+  });
+
+  it("accepts supported snapshots and rejects unknown or malformed versions at the feature boundary", () => {
+    expect(NotificationPreviewSchema.safeParse({ ...preview, text: "Done" }).success).toBe(true);
+    expect(NotificationPreviewSchema.safeParse({ ...preview, v: 2 }).success).toBe(false);
+    expect(NotificationPreviewSchema.safeParse({ ...preview, seqEnd: -1 }).success).toBe(false);
   });
 });
 

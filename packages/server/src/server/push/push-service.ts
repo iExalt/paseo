@@ -1,4 +1,5 @@
 import type pino from "pino";
+import { boundNotificationPreview } from "@getpaseo/protocol/notification-preview";
 
 export interface PushPayload {
   title: string;
@@ -132,11 +133,14 @@ export class PushService {
 }
 
 function toExpoMessage(token: string, payload: PushPayload): ExpoPushMessage {
-  return {
-    to: token,
-    title: payload.title,
-    body: payload.body,
-    data: payload.data,
-    sound: "default",
-  };
+  return boundNotificationPreview(
+    {
+      to: token,
+      title: payload.title,
+      body: payload.body,
+      data: payload.data,
+      sound: "default",
+    },
+    4_000,
+  );
 }

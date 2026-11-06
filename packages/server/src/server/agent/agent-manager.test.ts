@@ -695,6 +695,19 @@ test("uses an injected timeline store without making it a production requirement
     await expect(manager.getTimelineRows(agent.id)).resolves.toContainEqual(
       expect.objectContaining({ item: { type: "assistant_message", text: "stored" } }),
     );
+    await manager.appendTimelineItem(agent.id, { type: "assistant_message", text: " tail" });
+    const page = manager.fetchTimeline(agent.id, { direction: "tail", limit: 1 });
+    const last = page.rows.at(-1)!;
+    expect(manager.getNotificationPreview(agent.id)).toEqual({
+      v: 1,
+      kind: "assistant",
+      epoch: page.epoch,
+      seqStart: last.seqStart,
+      seqEnd: last.seqEnd,
+      timestamp: last.timestamp,
+      text: "stored tail",
+      truncated: false,
+    });
   } finally {
     if (agentId) await manager.closeAgent(agentId).catch(() => undefined);
     rmSync(workdir, { recursive: true, force: true });

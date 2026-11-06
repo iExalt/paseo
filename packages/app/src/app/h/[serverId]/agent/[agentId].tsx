@@ -12,6 +12,7 @@ import { getHostRuntimeStore, useHostRuntimeSnapshot, useHosts } from "@/runtime
 import { buildHostRootRoute, buildSettingsHostRoute } from "@/utils/host-routes";
 import { toErrorMessage } from "@/utils/error-messages";
 import { navigateToAgent } from "@/utils/navigate-to-agent";
+import { NotificationPreviewFallback } from "@/notification-open/preview-view";
 
 export default function HostAgentReadyRoute() {
   return (
@@ -150,16 +151,22 @@ function HostAgentReadyRouteContent() {
     // Agent URLs intentionally omit workspaceId. Keep this route mounted while the target host
     // reconnects, then resolve the workspace from the authoritative agent record.
     return (
-      <AgentRouteResolutionView
-        resolution={resolution}
-        hostName={hostName}
-        lastHostError={runtimeSnapshot?.lastError ?? null}
-        onRetry={handleRetry}
-        onManageHost={handleManageHost}
-        onBack={handleBack}
-      />
+      <NotificationPreviewFallback serverId={serverId} agentId={agentId}>
+        <AgentRouteResolutionView
+          resolution={resolution}
+          hostName={hostName}
+          lastHostError={runtimeSnapshot?.lastError ?? null}
+          onRetry={handleRetry}
+          onManageHost={handleManageHost}
+          onBack={handleBack}
+        />
+      </NotificationPreviewFallback>
     );
   }
 
-  return null;
+  return (
+    <NotificationPreviewFallback serverId={serverId} agentId={agentId}>
+      {null}
+    </NotificationPreviewFallback>
+  );
 }
