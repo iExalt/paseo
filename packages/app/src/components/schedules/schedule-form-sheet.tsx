@@ -54,7 +54,7 @@ import type {
   ScheduleFormSnapshot,
   ScheduleFormState,
 } from "@/schedules/schedule-form-model";
-import { validateCron } from "@/utils/schedule-format";
+import { resolveScheduleTitle, validateCron } from "@/utils/schedule-format";
 import { toErrorMessage } from "@/utils/error-messages";
 import { getDeviceTimeZone } from "@/utils/device-timezone";
 
@@ -442,6 +442,9 @@ function OpenScheduleFormSheet({
       footer={footer}
       testID="schedule-form-sheet"
     >
+      {mode === "edit" && schedule ? (
+        <ScheduleDetails schedule={schedule} serverId={mutationServerId} />
+      ) : null}
       <ScheduleFormFields
         model={model}
         state={state}
@@ -452,6 +455,88 @@ function OpenScheduleFormSheet({
         mutationServerId={mutationServerId}
       />
     </AdaptiveModalSheet>
+  );
+}
+
+function ScheduleDetails({
+  schedule,
+  serverId,
+}: {
+  schedule: ScheduleSummary;
+  serverId: string;
+}): ReactElement {
+  const { runScheduleNow, isRunningNow } = useScheduleMutations({ serverId });
+  const [runResult, setRunResult] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const runPendingRef = useRef(false);
+  const isHeartbeat = schedule.target.type === "agent";
+  const handleRun = useCallback(async () => {
+    if (runPendingRef.current) return;
+    runPendingRef.current = true;
+    setRunResult(null);
+    setRunError(null);
+    try {
+      await runScheduleNow(schedule.id);
+      setRunResult("Heartbeat triggered.");
+    } catch (error) {
+      setRunError(toErrorMessage(error));
+    } finally {
+      runPendingRef.current = false;
+    }
+  }, [runScheduleNow, schedule.id]);
+  const handleRunPress = useCallback(() => void handleRun(), [handleRun]);
+  const details = [
+    ["Created", new Date(schedule.createdAt).toLocaleString()],
+    ["Last run", schedule.lastRunAt ? new Date(schedule.lastRunAt).toLocaleString() : "Never run"],
+    ["Next run", schedule.nextRunAt ? new Date(schedule.nextRunAt).toLocaleString() : "None"],
+    ...(schedule.expiresAt ? [["Expires", new Date(schedule.expiresAt).toLocaleString()]] : []),
+  ];
+
+  return (
+    <View style={styles.details} testID="schedule-details">
+      {isHeartbeat ? (
+        <>
+          <Field label="Name">
+            <Text selectable style={styles.detailText}>
+              {resolveScheduleTitle(schedule)}
+            </Text>
+          </Field>
+          <Field label="Prompt">
+            <Text selectable style={styles.detailText}>
+              {schedule.prompt}
+            </Text>
+          </Field>
+        </>
+      ) : null}
+      {details.map(([label, value]) => (
+        <Field key={label} label={label}>
+          <Text selectable style={styles.detailText}>
+            {value}
+          </Text>
+        </Field>
+      ))}
+      {runResult ? (
+        <Text accessibilityLiveRegion="polite" style={styles.detailText}>
+          {runResult}
+        </Text>
+      ) : null}
+      {runError ? (
+        <Text accessibilityRole="alert" style={styles.submitError}>
+          {runError}
+        </Text>
+      ) : null}
+      {isHeartbeat ? (
+        <Button
+          variant="secondary"
+          onPress={handleRunPress}
+          loading={isRunningNow}
+          disabled={isRunningNow || schedule.status === "completed"}
+          testID="heartbeat-run-now"
+        >
+          Trigger heartbeat now
+        </Button>
+      ) : null}
+    </View>
   );
 }
 
@@ -906,9 +991,7 @@ function ScheduleAgentTargetField({
   return (
     <Field label="Target">
       <View style={fieldStyle} testID="schedule-agent-target">
-        <Text style={textStyle} numberOfLines={1}>
-          {label}
-        </Text>
+        <Text style={textStyle}>{label}</Text>
       </View>
     </Field>
   );
@@ -1037,6 +1120,17 @@ const styles = StyleSheet.create((theme) => {
   const geometry = createControlGeometry(theme);
 
   return {
+    details: {
+      gap: theme.spacing[4],
+      paddingBottom: theme.spacing[4],
+      borderBottomWidth: 1,
+      borderBottomColor: theme.colors.border,
+    },
+    detailText: {
+      color: theme.colors.foreground,
+      fontSize: theme.fontSize.base,
+      flexShrink: 1,
+    },
     multilineInput: {
       minHeight: 96,
     },
