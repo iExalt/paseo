@@ -1,13 +1,10 @@
 name: Deep verification
 
 on:
-  # Only release PRs need deep proof; each bumps the fork release version.
-  # release-please labels each new PR right after opening, so the labeled event
-  # replaces a separate opened run.
+  # Every PR reports the required gate; only release PRs run the deep lanes.
   pull_request:
-    types: [synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
     branches: [dev]
-    paths: [.github/fork-release.json]
   workflow_dispatch:
 
 permissions:
@@ -24,7 +21,6 @@ jobs:
     if: >-
       github.repository == 'iExalt/paseo' && !github.event.repository.private &&
       ((github.event_name == 'pull_request' && github.event.pull_request.state == 'open' &&
-        (github.event.action != 'labeled' || github.event.label.name == 'autorelease: pending') &&
         github.event.pull_request.head.repo.full_name == 'iExalt/paseo' &&
         startsWith(github.event.pull_request.head.ref, 'release-please--branches--')) ||
        (github.event_name == 'workflow_dispatch' && github.actor == 'iExalt' &&
@@ -86,3 +82,21 @@ jobs:
           path: .dev/github-workflows/deep/${{ matrix.lane }}/
           if-no-files-found: error
           retention-days: 1
+
+  required:
+    name: Deep verification required
+    if: always()
+    needs: browser
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - name: Require release deep success
+        env:
+          DEEP_REQUIRED: ${{ github.event_name != 'pull_request' || startsWith(github.event.pull_request.head.ref, 'release-please--branches--') }}
+          RESULT: ${{ needs.browser.result }}
+        run: |
+          if [[ "$DEEP_REQUIRED" == true ]]; then
+            test "$RESULT" = success
+          else
+            test "$RESULT" = skipped
+          fi
