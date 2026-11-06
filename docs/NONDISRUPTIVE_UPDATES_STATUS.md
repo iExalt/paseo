@@ -68,7 +68,7 @@ Medium autonomy. Worktree: `/home/ubuntu/Projects/paseo-update-ui`, baseline
 
 - [x] A: app-update facts independent of daemon version; authoritative idle-upgrader
       state through the desktop status/event bridge, with identity and cancellation guards.
-- [ ] B: Host Overview owns daemon progress; About app controls clear when current;
+- [x] B: Host Overview owns daemon progress; About app controls clear when current;
       connected-host links open Overview. Remote/manual hosts retain their own capability
       checks and are never assigned this desktop's pending target.
 - [ ] C: isolated browser journeys for waiting, failure, completion, app updates and
@@ -86,3 +86,12 @@ subscription and app-update resolver: 44 passed in 1.19 s on dev-station (warm
 outputs, one runner). Desktop typecheck passed. The initial baseline setup lacked
 workspace outputs; `node scripts/ensure-workspace-builds.mjs` built them once.
 Rendered live refresh/navigation and integration checks remain C gates.
+
+B review ledger: round 1, 2 material / 2 total findings; round 2, 0 material /
+0 total, accepted frozen B3. Both findings closed: first-mount host identification
+now retains the authoritative local identity during a stopped upgrade failure;
+About suppresses pending upgrade hints when management is paused. Original identity
+loader fails the new first-mount regression; repaired loader and card cases pass
+(7 tests, 2.22 s, warm dev-station). The host link follows the existing desktop
+replace / compact push navigation policy. New English copy uses the existing English
+fallback convention in other locales. Browser closure and integration remain C gates.

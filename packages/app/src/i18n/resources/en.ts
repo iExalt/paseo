@@ -1520,6 +1520,23 @@ export const en = {
       },
       advancedSettings: "Advanced settings",
       openAdvancedSettings: "Open advanced daemon settings",
+      upgrade: {
+        current: "Daemon version",
+        currentHint: "Running on this host",
+        checking: "Checking daemon update",
+        checkingHint: "Verifying which desktop release should manage this daemon.",
+        waiting: "Waiting for agents to finish",
+        waitingHint: "Updates automatically when idle. Keep Paseo open.",
+        upgrading: "Updating daemon",
+        upgradingHint: "Reconnecting automatically when the update finishes.",
+        failed: "Daemon update failed",
+        failedHint: "Retry checks whether the daemon can update safely; busy agents keep running.",
+        unsupported: "Daemon restart required",
+        unsupportedHint:
+          "This daemon cannot update without a restart. Use Danger zone when your agents have finished.",
+        retry: "Retry when idle",
+        retrying: "Retrying…",
+      },
       versionMismatch:
         "App and daemon versions don't match. Update both to the same version for the best experience.",
       loadFailed: "Unable to load desktop daemon status.",
@@ -2674,6 +2691,7 @@ export const en = {
       whatsNewHint: "Release notes for every version",
       thisDevice: "This device",
       connectedHosts: "Connected hosts",
+      hostOverview: "View host overview",
       offline: "Offline",
       versionDiffers: "Version differs from this device",
       releaseChannel: {

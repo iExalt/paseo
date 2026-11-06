@@ -1,3 +1,6 @@
+import { useDesktopSettings } from "@/desktop/settings/desktop-settings";
+import { useDaemonStatus } from "@/desktop/hooks/use-daemon-status";
+import { daemonUpgradeForHost } from "@/desktop/daemon/daemon-upgrade-status";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
@@ -497,7 +500,7 @@ function AboutSection({
           ) : null}
         </View>
       </SettingsSection>
-      <ConnectedHostsSection clientVersion={appVersion} />
+      <ConnectedHostsSection />
       <View style={styles.aboutCommunity}>
         <CommunityLinks />
       </View>
@@ -538,7 +541,7 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed.replace(/^v/i, "");
 }
 
-function ConnectedHostsSection({ clientVersion }: { clientVersion: string | null }) {
+function ConnectedHostsSection() {
   const { t } = useTranslation();
   const hosts = useHosts();
   if (hosts.length === 0) {
@@ -548,28 +551,30 @@ function ConnectedHostsSection({ clientVersion }: { clientVersion: string | null
     <SettingsSection title={t("settings.about.connectedHosts")}>
       <View style={settingsStyles.card}>
         {hosts.map((host, index) => (
-          <HostVersionRow
-            key={host.serverId}
-            host={host}
-            showBorder={index > 0}
-            clientVersion={clientVersion}
-          />
+          <HostVersionRow key={host.serverId} host={host} showBorder={index > 0} />
         ))}
       </View>
     </SettingsSection>
   );
 }
 
-function HostVersionRow({
-  host,
-  showBorder,
-  clientVersion,
-}: {
-  host: HostProfile;
-  showBorder: boolean;
-  clientVersion: string | null;
-}) {
+function HostVersionRow({ host, showBorder }: { host: HostProfile; showBorder: boolean }) {
   const { t } = useTranslation();
+  const router = useRouter();
+  const isCompactLayout = useIsCompactFormFactor();
+  const { theme } = useUnistyles();
+  const openOverview = useCallback(() => {
+    const target = buildSettingsHostSectionRoute(host.serverId, "host");
+    if (isCompactLayout) router.push(target);
+    else router.replace(target);
+  }, [router, host.serverId, isCompactLayout]);
+  const { data: localDaemon } = useDaemonStatus();
+  const { settings: desktopSettings } = useDesktopSettings();
+  const upgrade = daemonUpgradeForHost(
+    localDaemon?.status ?? null,
+    host.serverId,
+    desktopSettings.daemon.manageBuiltInDaemon,
+  );
   const isConnected = useHostRuntimeIsConnected(host.serverId);
   const daemonVersion = useSessionStore(
     (state) => state.sessions[host.serverId]?.serverInfo?.version ?? null,
@@ -581,10 +586,6 @@ function HostVersionRow({
   );
 
   const normalizedHost = normalizeVersion(daemonVersion);
-  const normalizedClient = normalizeVersion(clientVersion);
-  const isMismatch =
-    normalizedHost !== null && normalizedClient !== null && normalizedHost !== normalizedClient;
-
   let valueText: string;
   if (!isConnected) {
     valueText = t("settings.about.offline");
@@ -594,23 +595,27 @@ function HostVersionRow({
     valueText = "—";
   }
 
-  const valueStyle = useMemo(
-    () => [styles.aboutValue, isMismatch && styles.aboutVersionMismatch],
-    [isMismatch],
-  );
-
   return (
-    <View style={rowStyle}>
+    <Pressable
+      style={rowStyle}
+      accessibilityRole="button"
+      accessibilityLabel={host.label}
+      onPress={openOverview}
+      testID={`about-host-${host.serverId}`}
+    >
       <View style={settingsStyles.rowContent}>
         <Text style={settingsStyles.rowTitle} numberOfLines={1}>
           {host.label}
         </Text>
-        {isMismatch ? (
-          <Text style={settingsStyles.rowHint}>{t("settings.about.versionDiffers")}</Text>
-        ) : null}
+        <Text style={settingsStyles.rowHint}>
+          {upgrade
+            ? t(`desktop.daemon.upgrade.${upgrade.phase}`)
+            : t("settings.about.hostOverview")}
+        </Text>
       </View>
-      <Text style={valueStyle}>{valueText}</Text>
-    </View>
+      <Text style={styles.aboutValue}>{valueText}</Text>
+      <ChevronRight size={16} color={theme.colors.foregroundMuted} />
+    </Pressable>
   );
 }
 

@@ -1469,6 +1469,7 @@ export const ru: TranslationResources = {
       },
       advancedSettings: "Расширенные настройки",
       openAdvancedSettings: "Открыть дополнительные настройки демона",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Версии приложения и демона не совпадают. Обновите приложение и демон до одной версии, чтобы избежать проблем.",
       loadFailed: "Не удалось загрузить статус встроенного демона.",
