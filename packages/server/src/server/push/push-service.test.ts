@@ -50,4 +50,33 @@ describe("PushService.sendOne", () => {
       error: "Expo push API error 502 Bad Gateway",
     });
   });
+
+  test("bounds preview bytes in the actual per-device Expo envelope", async () => {
+    respond({ tickets: [{ status: "ok", id: "ticket" }] });
+    const service = new PushService(logger, () => undefined);
+    await service.sendOne("ExponentPushToken[" + "x".repeat(200) + "]", {
+      title: "Finished",
+      body: "A message",
+      data: {
+        serverId: "host",
+        agentId: "agent",
+        preview: {
+          v: 1,
+          kind: "assistant",
+          epoch: "epoch",
+          seqStart: 1,
+          seqEnd: 9,
+          timestamp: "2026-11-06T00:00:00.000Z",
+          text: '🙂漢字"\\\n'.repeat(1000),
+          truncated: false,
+        },
+      },
+    });
+    const request = vi.mocked(fetch).mock.calls[0]![1]!;
+    const messages = JSON.parse(String(request.body));
+    expect(messages).toHaveLength(1);
+    expect(Buffer.byteLength(JSON.stringify(messages[0]), "utf8")).toBeLessThanOrEqual(4000);
+    expect(messages[0].data.preview.text.length).toBeGreaterThan(0);
+    expect(messages[0].data.preview.truncated).toBe(true);
+  });
 });

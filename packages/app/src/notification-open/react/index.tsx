@@ -9,13 +9,15 @@ import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { createNotificationOpenRouter } from "../model";
 import { createNotificationOpenSource } from "../source";
 import { beginNotificationOpenTrace, recordNotificationOpenStage } from "../trace";
+import { receiveNotificationPreview } from "../preview";
 
 let ready = false;
 const waiters = new Set<() => void>();
 const notificationRouter = createNotificationOpenRouter({
   source: createNotificationOpenSource(),
-  prepareAgent: ({ serverId, agentId }) => {
+  prepareAgent: ({ serverId, agentId }, tap) => {
     beginNotificationOpenTrace(serverId, agentId);
+    receiveNotificationPreview(serverId, agentId, tap.id, tap.data);
     return getHostRuntimeStore().prepareAgentOpen(serverId, agentId);
   },
   openAgent: (target) => {

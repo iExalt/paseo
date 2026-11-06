@@ -27,7 +27,7 @@ export function parseNotificationOpenTarget(data: unknown): NotificationOpenTarg
 
 interface NotificationOpenRouterDeps {
   source: NotificationOpenSource;
-  prepareAgent: (target: { serverId: string; agentId: string }) => () => void;
+  prepareAgent: (target: { serverId: string; agentId: string }, tap: NotificationTap) => () => void;
   openAgent: (target: { serverId: string; agentId: string }) => void;
   openRoute: (route: string) => void;
   openTerminal: (target: Extract<NotificationOpenTarget, { kind: "terminal" }>) => void;
@@ -51,7 +51,7 @@ export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
     }
     if (target?.kind === "agent") {
       try {
-        cancelPreparation = deps.prepareAgent(target);
+        cancelPreparation = deps.prepareAgent(target, tap);
       } catch (error) {
         console.warn("[NotificationOpen] preparation failed", error);
       }

@@ -98,6 +98,7 @@ import { revokePushNotifications } from "@/push-notifications";
 import { createAppWebSocketFactory } from "./websocket-factory";
 import { agentLog, describeError } from "@/utils/agent-log";
 import { recordNotificationOpenStage } from "@/notification-open/trace";
+import { confirmNotificationReceipt, useNotificationReceipt } from "@/notification-open/preview";
 
 export type HostRuntimeConnectionStatus = "idle" | "connecting" | "online" | "offline" | "error";
 export type PairingNavigationTarget = "openProject" | "hostRoot" | "hostSettings";
@@ -2883,10 +2884,20 @@ export class HostRuntimeStore {
     const directory = this.directorySyncByServer.get(serverId);
     if (!directory) throw new Error(`Unknown host runtime for serverId ${serverId}`);
     const owner = useSessionStore.getState().sessions[serverId]?.viewedTimelineSync;
+    const receipt = useNotificationReceipt.getState().receipt;
     const page = await directory.fetchTimeline(agentId, request);
     if (owner && useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner) {
       owner.flushStreamAgent(agentId);
       owner.applyTimelineResponse(page);
+      if (
+        receipt?.serverId === serverId &&
+        receipt.agentId === agentId &&
+        !page.error &&
+        !page.hasNewer &&
+        page.direction !== "before"
+      ) {
+        confirmNotificationReceipt(receipt);
+      }
     }
     return page;
   }

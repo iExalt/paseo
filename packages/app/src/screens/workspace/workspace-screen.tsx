@@ -165,6 +165,7 @@ import {
   type WorkspaceRouteState,
 } from "@/screens/workspace/workspace-route-state";
 import { renderWorkspaceRouteGate } from "@/screens/workspace/workspace-route-state-views";
+import { NotificationWorkspaceFallback } from "@/notification-open/preview-view";
 import { useWorkspaceRecovery } from "@/workspace-recovery/use-workspace-recovery";
 import type { WorkspaceRecoveryModel } from "@/workspace-recovery/model";
 import {
@@ -3810,7 +3811,14 @@ function WorkspaceScreenContent({
   );
 
   if (gatedWorkspaceScreen) {
-    return gatedWorkspaceScreen;
+    return (
+      <NotificationWorkspaceFallback
+        serverId={normalizedServerId}
+        workspaceId={normalizedWorkspaceId}
+      >
+        {gatedWorkspaceScreen}
+      </NotificationWorkspaceFallback>
+    );
   }
   return (
     <WorkspaceContentProviders

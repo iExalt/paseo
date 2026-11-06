@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { buildAgentStreamRenderModel } from "./model";
 import { createStreamPresentation } from "./presentation";
 import { createReadingAnchor } from "./reading-anchor";
+import { preserveNotificationPreviewTransform } from "@/notification-open/preview";
 
 const runtime = {
   paseo: {},
@@ -104,6 +105,33 @@ const presentationOptions = {
   expandedTurnHostIds: new Set<string>(),
   isTurnActive: true,
 };
+
+it("keeps notification receipts read-only and visible when a plugin hides canonical assistant rows", () => {
+  const canonical: StreamItem = {
+    kind: "assistant_message",
+    id: "canonical",
+    text: "Previous reply",
+    timestamp: new Date(0),
+  };
+  const receipt: StreamItem = {
+    kind: "assistant_message",
+    id: "receipt",
+    text: "Latest notification",
+    timestamp: new Date(1),
+  };
+  const hideAssistants: TimelineItemTransform = ({ item }) =>
+    item.type === "assistant_message" ? [] : undefined;
+  const present = createStreamPresentation();
+  const result = present({
+    ...presentationOptions,
+    tail: [canonical],
+    head: [receipt],
+    transform: preserveNotificationPreviewTransform(hideAssistants, receipt.id),
+  });
+  expect(result.tail).toEqual([]);
+  expect(result.head).toEqual([receipt]);
+  expect(result.head[0]?.timelineCursor).toBeUndefined();
+});
 
 function streamHarness(transform?: TimelineItemTransform) {
   let state: { tail: StreamItem[]; head: StreamItem[] } = { tail: [], head: [] };

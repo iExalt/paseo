@@ -112,11 +112,14 @@ describe("notification open", () => {
     const stop = router.start();
     await flush();
     expect(agents).toEqual([]);
-    expect(prepareAgent).toHaveBeenCalledExactlyOnceWith({
-      kind: "agent",
-      serverId: "host",
-      agentId: "agent",
-    });
+    expect(prepareAgent).toHaveBeenCalledExactlyOnceWith(
+      {
+        kind: "agent",
+        serverId: "host",
+        agentId: "agent",
+      },
+      launch,
+    );
     expect(source.acknowledged).toEqual([]);
     ready();
     await flush();

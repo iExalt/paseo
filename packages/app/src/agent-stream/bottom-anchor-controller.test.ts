@@ -306,36 +306,39 @@ describe("bottom anchor controller driver", () => {
     });
   });
 
-  it("lets a user scroll away supersede a blocked route anchor", () => {
-    const harness = createDriverHarness({ authoritativeReady: false });
+  it.each(["resume", "notification-entry"] as const)(
+    "lets a user scroll supersede a blocked %s anchor",
+    (reason) => {
+      const harness = createDriverHarness({ authoritativeReady: false });
 
-    harness.driver.applyRouteRequest({
-      agentId: "agent-1",
-      reason: "resume",
-      requestKey: "route:agent-1:resume",
-    });
-    harness.scheduler.flushAll();
+      harness.driver.applyRouteRequest({
+        agentId: "agent-1",
+        reason,
+        requestKey: `route:agent-1:${reason}`,
+      });
+      harness.scheduler.flushAll();
 
-    harness.driver.beginUserScroll();
-    harness.context.nearBottom = false;
-    harness.driver.handleScrollNearBottomChange({
-      nextIsNearBottom: false,
-      scrollDelta: 48,
-    });
-    harness.driver.endUserScroll({ isNearBottom: false });
-    harness.context.authoritativeReady = true;
-    harness.driver.notifyAuthoritativeHistoryMaybeChanged();
-    harness.driver.reevaluate();
-    harness.scheduler.flushAll();
+      harness.driver.beginUserScroll();
+      harness.context.nearBottom = false;
+      harness.driver.handleScrollNearBottomChange({
+        nextIsNearBottom: false,
+        scrollDelta: 48,
+      });
+      harness.driver.endUserScroll({ isNearBottom: false });
+      harness.context.authoritativeReady = true;
+      harness.driver.notifyAuthoritativeHistoryMaybeChanged();
+      harness.driver.reevaluate();
+      harness.scheduler.flushAll();
 
-    expect(harness.scrollAttempts).toHaveLength(0);
-    expect(harness.driver.getSnapshot()).toMatchObject({
-      mode: "detached",
-      blockedReason: null,
-      pendingRequest: null,
-      pendingVerification: null,
-    });
-  });
+      expect(harness.scrollAttempts).toHaveLength(0);
+      expect(harness.driver.getSnapshot()).toMatchObject({
+        mode: "detached",
+        blockedReason: null,
+        pendingRequest: null,
+        pendingVerification: null,
+      });
+    },
+  );
 
   it("suppresses sticky maintenance while detached", () => {
     const harness = createDriverHarness();
@@ -425,7 +428,11 @@ describe("bottom anchor controller driver", () => {
   });
 
   it.each([
-    { scrolledTowardBottomByUser: true, mode: "sticky-bottom", scrollAttempts: 1 },
+    {
+      scrolledTowardBottomByUser: true,
+      mode: "sticky-bottom",
+      scrollAttempts: 1,
+    },
     { scrolledTowardBottomByUser: false, mode: "detached", scrollAttempts: 0 },
   ])(
     "re-attaches at the bottom without a drag only when the reader scrolled there: $scrolledTowardBottomByUser",
@@ -609,61 +616,64 @@ describe("bottom anchor controller driver", () => {
     });
   });
 
-  it("does not fulfill a web partial-virtualized resume request before a confirmation pass", () => {
-    const harness = createDriverHarness({
-      measurementState: createMeasurementState({
-        containerKey: "web-partial-virtualized",
-        viewportWidth: 828,
-        viewportHeight: 846,
-        contentHeight: 14322,
-        offsetY: 0,
-        viewportMeasuredForKey: "web-partial-virtualized",
-        contentMeasuredForKey: "web-partial-virtualized",
-      }),
-      isNearBottom: false,
-    });
+  it.each(["resume", "notification-entry"] as const)(
+    "confirms a web partial-virtualized %s request after layout",
+    (reason) => {
+      const harness = createDriverHarness({
+        measurementState: createMeasurementState({
+          containerKey: "web-partial-virtualized",
+          viewportWidth: 828,
+          viewportHeight: 846,
+          contentHeight: 14322,
+          offsetY: 0,
+          viewportMeasuredForKey: "web-partial-virtualized",
+          contentMeasuredForKey: "web-partial-virtualized",
+        }),
+        isNearBottom: false,
+      });
 
-    harness.setScrollToBottomBehavior(() => {
-      harness.context.measurementState.offsetY = Math.max(
-        0,
-        harness.context.measurementState.contentHeight -
-          harness.context.measurementState.viewportHeight,
-      );
-      harness.context.nearBottom = true;
-    });
+      harness.setScrollToBottomBehavior(() => {
+        harness.context.measurementState.offsetY = Math.max(
+          0,
+          harness.context.measurementState.contentHeight -
+            harness.context.measurementState.viewportHeight,
+        );
+        harness.context.nearBottom = true;
+      });
 
-    harness.driver.applyRouteRequest({
-      agentId: "agent-1",
-      reason: "resume",
-      requestKey: "route:agent-1:resume-confirmation",
-    });
+      harness.driver.applyRouteRequest({
+        agentId: "agent-1",
+        reason,
+        requestKey: `route:agent-1:${reason}-confirmation`,
+      });
 
-    harness.scheduler.flushFrame();
-    harness.scheduler.flushFrame();
+      harness.scheduler.flushFrame();
+      harness.scheduler.flushFrame();
 
-    expect(harness.driver.getSnapshot()).toMatchObject({
-      pendingRequest: {
-        reason: "resume",
-      },
-      blockedReason: "waiting_for_post_layout_verification",
-    });
+      expect(harness.driver.getSnapshot()).toMatchObject({
+        pendingRequest: {
+          reason,
+        },
+        blockedReason: "waiting_for_post_layout_verification",
+      });
 
-    harness.context.measurementState.contentHeight = 16230;
-    harness.context.nearBottom = false;
-    harness.driver.handleContentSizeChange({
-      previousContentHeight: 14322,
-      contentHeight: 16230,
-    });
+      harness.context.measurementState.contentHeight = 16230;
+      harness.context.nearBottom = false;
+      harness.driver.handleContentSizeChange({
+        previousContentHeight: 14322,
+        contentHeight: 16230,
+      });
 
-    harness.scheduler.flushFrame();
-    harness.scheduler.flushFrame();
-    harness.scheduler.flushFrame();
+      harness.scheduler.flushFrame();
+      harness.scheduler.flushFrame();
+      harness.scheduler.flushFrame();
 
-    expect(harness.scrollAttempts).toHaveLength(2);
-    expect(harness.driver.getSnapshot().pendingRequest).toMatchObject({
-      reason: "resume",
-    });
-  });
+      expect(harness.scrollAttempts).toHaveLength(2);
+      expect(harness.driver.getSnapshot().pendingRequest).toMatchObject({
+        reason,
+      });
+    },
+  );
 
   it("keeps sticky-bottom during viewport growth until bottom is re-verified", () => {
     const harness = createDriverHarness();
@@ -839,7 +849,10 @@ describe("bottom anchor controller driver", () => {
   });
   it("stays sticky through an animated jump whose scroll events reach JS late", () => {
     const harness = createDriverHarness({
-      transportBehavior: { verificationDelayFrames: 2, verificationRetryMode: "recheck" },
+      transportBehavior: {
+        verificationDelayFrames: 2,
+        verificationRetryMode: "recheck",
+      },
       measurementState: createMeasurementState({
         containerKey: "native-virtualized",
         viewportWidth: 1600,
@@ -877,7 +890,10 @@ describe("bottom anchor controller driver", () => {
     };
 
     harness.driver.detachByUser();
-    harness.driver.requestLocalAnchor({ agentId: "agent-1", reason: "jump-to-bottom" });
+    harness.driver.requestLocalAnchor({
+      agentId: "agent-1",
+      reason: "jump-to-bottom",
+    });
     // The verification frames pass before the animation's first scroll event reaches JS.
     for (let frame = 0; frame < 5; frame += 1) harness.scheduler.flushFrame();
     expect(harness.scrollAttempts).toEqual([true]);

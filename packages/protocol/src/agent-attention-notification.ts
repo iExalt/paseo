@@ -1,3 +1,5 @@
+import { boundNotificationPreview, type NotificationPreview } from "./notification-preview.js";
+
 const NOTIFICATION_PREVIEW_LIMIT = 220;
 
 export type AgentAttentionReason = "finished" | "error" | "permission";
@@ -8,6 +10,7 @@ export interface AgentAttentionNotificationData {
   workspaceId?: string;
   agentId: string;
   reason: AgentAttentionReason;
+  preview?: unknown;
 }
 
 export interface AgentAttentionNotificationPayload {
@@ -24,6 +27,7 @@ interface BuildAgentAttentionNotificationPayloadInput {
   agentTitle?: string | null;
   assistantMessage?: string | null;
   permissionRequest?: NotificationPermissionRequest | null;
+  preview?: NotificationPreview;
 }
 
 export interface NotificationPermissionRequest {
@@ -243,15 +247,30 @@ export function buildAgentAttentionNotificationPayload(
   const title = resolveAgentAttentionTitle(input.reason, input.agentTitle);
   const preview = resolveAgentAttentionPreview(input);
   const body = preview ?? resolveAgentAttentionFallbackBody(input.reason);
+  const snapshot: NotificationPreview | undefined =
+    input.preview ??
+    (input.reason === "permission" && input.permissionRequest
+      ? {
+          v: 1,
+          kind: "permission",
+          requestId: input.permissionRequest.id,
+          text: body,
+          truncated: true,
+        }
+      : undefined);
 
-  return {
-    title,
-    body,
-    data: {
-      serverId: input.serverId,
-      workspaceId: input.workspaceId,
-      agentId: input.agentId,
-      reason: input.reason,
+  return boundNotificationPreview(
+    {
+      title,
+      body,
+      data: {
+        serverId: input.serverId,
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        reason: input.reason,
+        ...(snapshot ? { preview: snapshot } : {}),
+      },
     },
-  };
+    3_000,
+  );
 }

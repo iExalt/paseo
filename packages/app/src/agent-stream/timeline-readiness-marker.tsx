@@ -5,6 +5,7 @@ import type { AgentScreenReadySyncState } from "@/hooks/use-agent-screen-state-m
 import { selectAgentTurnPresentation, useSessionStore } from "@/stores/session-store";
 import { agentLog } from "@/utils/agent-log";
 import { recordNotificationOpenStage } from "@/notification-open/trace";
+import { useNotificationReceipt } from "@/notification-open/preview";
 import {
   closedTurnsKey,
   readClosedTurns,
@@ -47,7 +48,15 @@ export function TimelineReadinessMarker({
   const key = closedTurnsKey(serverId, agentId);
   const readTurns = useCallback(() => readClosedTurns(key), [key]);
   const turns = useSyncExternalStore(subscribeClosedTurns, readTurns, readTurns);
-  const readiness = resolveTimelineReadiness({ sync: sync.status, isTurnActive });
+  const readiness = resolveTimelineReadiness({
+    sync: sync.status,
+    isTurnActive,
+  });
+  const tapId = useNotificationReceipt((state) =>
+    state.openIntent?.serverId === serverId && state.openIntent.agentId === agentId
+      ? state.openIntent.tapId
+      : null,
+  );
   const dataSet = useMemo(() => ({ agentId, turns }), [agentId, turns]);
 
   useEffect(() => {
@@ -56,7 +65,7 @@ export function TimelineReadinessMarker({
     if (readiness === "running" || readiness === "settled") {
       recordNotificationOpenStage(serverId, agentId, "current-commit");
     }
-  }, [serverId, agentId, readiness, turns]);
+  }, [serverId, agentId, readiness, turns, tapId]);
 
   // Native leaves a contentless node out of the accessibility tree, so dumps never show it.
   if (!isWeb) return null;
@@ -73,5 +82,12 @@ export function TimelineReadinessMarker({
 
 // 1×1 rather than empty: Playwright treats a zero-size node as hidden.
 const styles = StyleSheet.create({
-  marker: { position: "absolute", top: 0, left: 0, width: 1, height: 1, opacity: 0 },
+  marker: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 1,
+    height: 1,
+    opacity: 0,
+  },
 });

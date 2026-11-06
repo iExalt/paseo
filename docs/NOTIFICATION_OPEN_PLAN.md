@@ -28,7 +28,7 @@ new service, production daemon restart, release or paid resource.
       Preserve stale-hint routing and native replay/acknowledgement. Add content-free
       trace stages. Checks: held readiness and subscription tests, cancellation, visible
       adoption and replay. Native timing remains at C.
-- [ ] **B: Paint notification content while syncing.** Add an optional versioned,
+- [x] **B: Paint notification content while syncing.** Add an optional versioned,
       display-only assistant snapshot with identity sampled from the same projected rows
       as its text. Bound the actual serialized Expo payload by UTF-8 bytes. Show provisional
       content in cold route resolution and chat loading; reconcile canonical coverage
@@ -69,3 +69,18 @@ without resetting baselines or weakening checks. Do not run the full suite local
 - Push snapshots are presentation data, never synchronization authority. A projected
   anchor and its text must come from one snapshot, not independently sampled stores.
 - Background prefetch is optional and outside this change's critical path.
+
+## Verification checkpoint, 2026-11-06
+
+B is reviewer-accepted against the C1 source manifest and final Android test APK
+`76eba078fd9589e168cf2fcc542a2567f642e465990de743af86d610845effcc`.
+Native verification found and closed a detached-chat retap gap: each valid tap now
+requests latest content once, including legacy payloads without previews; later
+user scrolling remains authoritative.
+
+C remains open. Twenty repeated native emulator taps completed, but the log ring
+retained only fourteen complete callback-to-JS-rAF traces (p50 178 ms, p95/max
+344 ms). This is an incomplete emulated diagnostic, not proof of the physical
+under-100 ms target. iOS native verification, physical timing, CI, integration
+acceptance and merge are still required. The requested iOS pre-release deferral
+has not been approved.
