@@ -103,6 +103,7 @@ export type { AssistantForkTarget };
 
 interface UserMessageProps {
   sender?: AgentMessage["sender"];
+  onAgentMessageToggle?: () => void;
   serverId?: string;
   agentId?: string;
   messageId?: string;
@@ -430,6 +431,7 @@ const MESSAGE_TEXT_DATASET = { messageText: "true" };
 
 export const UserMessage = memo(function UserMessage({
   sender,
+  onAgentMessageToggle,
   serverId,
   agentId,
   messageId,
@@ -625,6 +627,7 @@ export const UserMessage = memo(function UserMessage({
         sender={sender}
         serverId={serverId}
         forceExpanded={Boolean(findHighlight)}
+        onBeforeToggle={onAgentMessageToggle}
         disableOuterSpacing={resolvedDisableOuterSpacing}
       >
         {messageContent}
@@ -638,19 +641,24 @@ function AgentMessageDisclosure({
   sender,
   serverId,
   forceExpanded,
+  onBeforeToggle,
   disableOuterSpacing,
   children,
 }: {
   sender: AgentMessage["sender"];
   serverId?: string;
   forceExpanded: boolean;
+  onBeforeToggle?: () => void;
   disableOuterSpacing: boolean;
   children: ReactNode;
 }) {
   const { t } = useTranslation();
   const { name } = useMessageSender(sender, serverId);
   const [expanded, setExpanded] = useState(false);
-  const toggle = useCallback(() => setExpanded((value) => !value), []);
+  const toggle = useCallback(() => {
+    onBeforeToggle?.();
+    setExpanded((value) => !value);
+  }, [onBeforeToggle]);
   const renderDetails = useCallback(() => children, [children]);
   return (
     <ExpandableBadge

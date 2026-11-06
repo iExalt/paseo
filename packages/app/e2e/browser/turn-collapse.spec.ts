@@ -299,10 +299,11 @@ test("opening a turn keeps the received agent message expanded", async ({ page }
     await expect(page.getByText("Completed 7 commands", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
-    await page
+    const toggle = page
       .getByTestId("agent-message")
-      .getByRole("button", { name: "Agent message Reviewer", exact: true })
-      .click();
+      .getByRole("button", { name: "Agent message Reviewer", exact: true });
+    await toggle.click();
+    await expect(toggle).toBeInViewport();
     const bubble = page.getByTestId("agent-message-content");
     await expect(bubble).toContainText("Review complete:");
     const originalBody = await bubble.elementHandle();
