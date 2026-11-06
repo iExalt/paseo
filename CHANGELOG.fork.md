@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.1](https://github.com/iExalt/paseo/compare/paseo-v0.23.0...paseo-v0.23.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **updates:** separate app updates from host daemon upgrades ([#375](https://github.com/iExalt/paseo/issues/375)) ([7c65693](https://github.com/iExalt/paseo/commit/7c65693d14c69ff4bca9fbfc0666805f56d11136))
+
 ## [0.23.0](https://github.com/iExalt/paseo/compare/paseo-v0.22.0...paseo-v0.23.0) (2026-11-06)
 
 
