@@ -31,6 +31,28 @@ interface LogRecord {
   err?: { message?: string };
 }
 
+function scriptedFactory(script: readonly unknown[]): ClaudeQueryFactory {
+  return (() => {
+    const messages = [...script];
+    return {
+      async next() {
+        const value = messages.shift();
+        return value ? { done: false, value } : { done: true, value: undefined };
+      },
+      close() {},
+      async return() {
+        return { done: true, value: undefined };
+      },
+      async supportedCommands() {
+        return [];
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+  }) as ClaudeQueryFactory;
+}
+
 describe("ClaudeAgentSession persisted history load", () => {
   let tempRoot: string;
   let cwd: string;
@@ -56,28 +78,10 @@ describe("ClaudeAgentSession persisted history load", () => {
   }
 
   function replyFactory(text: string, messageId = "live-reply"): ClaudeQueryFactory {
-    return (() => {
-      const messages = [
-        { type: "assistant", uuid: messageId, message: { content: text } },
-        { type: "result", subtype: "success", total_cost_usd: 0 },
-      ];
-      return {
-        async next() {
-          const value = messages.shift();
-          return value ? { done: false, value } : { done: true, value: undefined };
-        },
-        close() {},
-        async return() {
-          return { done: true, value: undefined };
-        },
-        async supportedCommands() {
-          return [];
-        },
-        [Symbol.asyncIterator]() {
-          return this;
-        },
-      };
-    }) as ClaudeQueryFactory;
+    return scriptedFactory([
+      { type: "assistant", uuid: messageId, message: { content: text } },
+      { type: "result", subtype: "success", total_cost_usd: 0 },
+    ]);
   }
 
   function transcriptPath(): string {
@@ -687,4 +691,159 @@ describe("ClaudeAgentSession persisted history load", () => {
       );
     },
   );
+});
+
+describe("Claude Skill tool call detail", () => {
+  const SKILL_BODY =
+    "Base directory for this skill: /home/me/.claude/skills/iExalt/skills/triage-bugfix\n\n# Triage\n\nFind the cause.";
+
+  function skillToolUse(id: string, skill: string) {
+    return {
+      type: "assistant",
+      uuid: `assistant-${id}`,
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id, name: "Skill", input: { skill } }],
+      },
+    };
+  }
+
+  function skillToolResult(id: string, skill: string) {
+    return {
+      type: "user",
+      uuid: `result-${id}`,
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: id, content: `Launching skill: ${skill}` }],
+      },
+    };
+  }
+
+  function skillDetails(events: AgentStreamEvent[]) {
+    return events.flatMap((event) =>
+      event.type === "timeline" && event.item.type === "tool_call" && event.item.name === "Skill"
+        ? [{ callId: event.item.callId, detail: event.item.detail }]
+        : [],
+    );
+  }
+
+  let tempRoot: string;
+  let cwd: string;
+
+  beforeEach(() => {
+    tempRoot = mkdtempSync(path.join(os.tmpdir(), "claude-skill-detail-"));
+    cwd = path.join(tempRoot, "repo");
+    mkdirSync(cwd, { recursive: true });
+    vi.stubEnv("CLAUDE_CONFIG_DIR", path.join(tempRoot, "claude-config"));
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  function client(script: readonly unknown[]) {
+    return new ClaudeAgentClient({
+      logger: pino({ level: "silent" }),
+      queryFactory: scriptedFactory(script),
+      resolveBinary: async () => process.execPath,
+      resolveVersion: async () => "2.1.220",
+    });
+  }
+
+  test("replays the SKILL.md body as the Skill call's Markdown output", async () => {
+    const transcript = path.join(
+      claudeProjectDirSync(cwd, { configDir: path.join(tempRoot, "claude-config") }),
+      `${SESSION_ID}.jsonl`,
+    );
+    mkdirSync(path.dirname(transcript), { recursive: true });
+    const entries = [
+      skillToolUse("toolu_skill", "iExalt:triage-bugfix"),
+      {
+        ...skillToolResult("toolu_skill", "iExalt:triage-bugfix"),
+        toolUseResult: { success: true },
+      },
+      {
+        type: "user",
+        uuid: "skill-body",
+        isMeta: true,
+        sourceToolUseID: "toolu_skill",
+        message: { role: "user", content: [{ type: "text", text: SKILL_BODY }] },
+      },
+    ];
+    writeFileSync(transcript, entries.map((entry) => JSON.stringify(entry)).join("\n") + "\n");
+    const session = await client([]).resumeSession(
+      { provider: "claude", sessionId: SESSION_ID },
+      { cwd },
+    );
+    try {
+      const history = await Array.fromAsync(session.streamHistory());
+      const details = skillDetails(history);
+      // The running card from tool_use comes first; the settled card carries the body.
+      expect(details.some((entry) => JSON.stringify(entry).includes("Launching skill"))).toBe(
+        false,
+      );
+      expect(details.at(-1)).toEqual({
+        callId: "toolu_skill",
+        detail: {
+          type: "plain_text",
+          label: "iExalt:triage-bugfix",
+          icon: "sparkles",
+          markdown: true,
+          text: SKILL_BODY,
+        },
+      });
+      expect(
+        history.some((event) => event.type === "timeline" && event.item.type === "user_message"),
+      ).toBe(false);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("attaches the live SKILL.md body only to the Skill call it directly follows", async () => {
+    const session = await client([
+      skillToolUse("toolu_other", "other-skill"),
+      skillToolResult("toolu_other", "other-skill"),
+      {
+        type: "user",
+        uuid: "other-body",
+        isSynthetic: true,
+        parent_tool_use_id: null,
+        message: { role: "user", content: [{ type: "text", text: SKILL_BODY }] },
+      },
+      skillToolUse("toolu_stale", "triage-bugfix"),
+      skillToolResult("toolu_stale", "triage-bugfix"),
+      { type: "assistant", uuid: "between", message: { content: "Working on it." } },
+      {
+        type: "user",
+        uuid: "late-body",
+        isSynthetic: true,
+        parent_tool_use_id: null,
+        message: { role: "user", content: [{ type: "text", text: SKILL_BODY }] },
+      },
+      skillToolUse("toolu_skill", "triage-bugfix"),
+      skillToolResult("toolu_skill", "triage-bugfix"),
+      {
+        type: "user",
+        uuid: "skill-body",
+        isSynthetic: true,
+        parent_tool_use_id: null,
+        message: { role: "user", content: [{ type: "text", text: SKILL_BODY }] },
+      },
+      { type: "result", subtype: "success", total_cost_usd: 0 },
+    ]).createSession({ provider: "claude", cwd });
+    try {
+      const live = await collectSessionTurnEvents(session, "triage this");
+      const details = skillDetails(live);
+      expect(
+        details.filter(
+          (entry) => entry.detail.type === "plain_text" && entry.detail.text === SKILL_BODY,
+        ),
+      ).toEqual([expect.objectContaining({ callId: "toolu_skill" })]);
+      expect(details.at(-1)?.detail).toMatchObject({ markdown: true, text: SKILL_BODY });
+    } finally {
+      await session.close();
+    }
+  });
 });

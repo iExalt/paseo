@@ -1568,6 +1568,45 @@ function isSyntheticUserEntry(entry: unknown): boolean {
   );
 }
 
+interface SettledSkillCall {
+  callId: string;
+  input: unknown;
+}
+
+function settledSkillCall(
+  item: Extract<AgentTimelineItem, { type: "tool_call" }> | null,
+  input: unknown,
+): SettledSkillCall | null {
+  if (item?.name !== "Skill" || item.status !== "completed") return null;
+  return { callId: item.callId, input: input ?? null };
+}
+
+const CLAUDE_SKILL_CONTENT_PREFIX = "Base directory for this skill: ";
+
+/**
+ * Reads the SKILL.md body Claude Code injects for a Skill call. The first line names the skill's
+ * directory, whose basename must match the skill (`plugin:name` loads from `.../name`).
+ */
+function readClaudeSkillContent(input: {
+  content: unknown;
+  skillName: string | null;
+}): string | null {
+  const blocks =
+    typeof input.content === "string" ? [{ type: "text", text: input.content }] : input.content;
+  if (!Array.isArray(blocks)) return null;
+  const text = blocks
+    .map((block) => toObjectRecord(block))
+    .find((block) => block?.type === "text" && typeof block.text === "string")?.text;
+  if (typeof text !== "string" || !text.startsWith(CLAUDE_SKILL_CONTENT_PREFIX)) return null;
+  if (input.skillName) {
+    const directory =
+      text.slice(CLAUDE_SKILL_CONTENT_PREFIX.length).split("\n", 1)[0]?.trim() ?? "";
+    const expected = input.skillName.slice(input.skillName.lastIndexOf(":") + 1);
+    if (directory.split(/[\\/]/).at(-1) !== expected) return null;
+  }
+  return text;
+}
+
 function isToolResultUserEntry(entry: unknown): boolean {
   const candidate = toObjectRecord(entry);
   if (!candidate) {
@@ -2362,6 +2401,9 @@ class ClaudeAgentSession implements AgentSession {
   private planResumeMode: PermissionMode | null = null;
   private availableModes: AgentMode[] = DEFAULT_MODES;
   private toolUseCache = new Map<string, ToolUseCacheEntry>();
+  // Claude Code sends a skill's SKILL.md as a synthetic user message right after the Skill
+  // tool's "Launching skill: <name>" result. Keep the settled call so that body can replace it.
+  private lastSettledSkillCall: SettledSkillCall | null = null;
   private toolUseIndexToId = new Map<number, string>();
   private toolUseInputBuffers = new Map<string, string>();
   private subagentHandbackIds = new Set<string>();
@@ -4723,6 +4765,8 @@ class ClaudeAgentSession implements AgentSession {
         this.appendSidechainResultEvents(message, events);
         break;
       case "assistant": {
+        // A SKILL.md body follows its tool result directly, never after model output.
+        this.lastSettledSkillCall = null;
         const timelineItems = await this.mapBlocksToTimeline(message.message.content, {
           suppressAssistantText: options?.suppressAssistantText ?? false,
           suppressReasoning: options?.suppressReasoning ?? false,
@@ -4978,6 +5022,10 @@ class ClaudeAgentSession implements AgentSession {
     events: AgentStreamEvent[],
   ): Promise<void> {
     if (isSyntheticUserEntry(message)) {
+      const skillCall = this.takeSkillContentToolCall(message);
+      if (skillCall) {
+        events.push({ type: "timeline", item: skillCall, provider: "claude" });
+      }
       return;
     }
     if (this.compacting) {
@@ -5636,6 +5684,9 @@ class ClaudeAgentSession implements AgentSession {
       }
       return;
     }
+    if (this.foldSkillContentIntoHistory({ entry, timeline, historyTimestamp })) {
+      return;
+    }
     const taskSnapshot = this.taskState.observe(entry);
     const items = [
       ...(taskSnapshot ? [taskSnapshot] : []),
@@ -5896,6 +5947,7 @@ class ClaudeAgentSession implements AgentSession {
         });
     this.pushToolCall(settledToolCall, items);
     this.rememberSettledSubagentToolCall(settledToolCall, entry);
+    this.lastSettledSkillCall = settledSkillCall(settledToolCall, entry?.input);
 
     items.push(
       ...(await renderClaudeToolResultImages({
@@ -5909,6 +5961,61 @@ class ClaudeAgentSession implements AgentSession {
     if (typeof block.tool_use_id === "string") {
       this.toolUseCache.delete(block.tool_use_id);
     }
+  }
+
+  /** Replaces the replayed Skill call with one whose output is the SKILL.md entry that follows. */
+  private foldSkillContentIntoHistory(input: {
+    entry: ClaudeHistoryEntry;
+    timeline: PersistedTimelineEntry[];
+    historyTimestamp: string | null;
+  }): boolean {
+    const { entry, timeline, historyTimestamp } = input;
+    if (entry.type === "assistant") {
+      // A SKILL.md body follows its tool result directly, never after model output.
+      this.lastSettledSkillCall = null;
+      return false;
+    }
+    const skillCall = entry.type === "user" ? this.takeSkillContentToolCall(entry) : null;
+    if (!skillCall) return false;
+    const item = limitAgentTimelineItemContent(skillCall);
+    const settled = timeline.findLastIndex(
+      (row) => row.item.type === "tool_call" && row.item.callId === skillCall.callId,
+    );
+    const previous = settled >= 0 ? timeline[settled] : undefined;
+    if (previous) {
+      timeline[settled] = { ...previous, item };
+    } else {
+      timeline.push({ item, timestamp: historyTimestamp ?? undefined });
+    }
+    return true;
+  }
+
+  /** Turns the synthetic SKILL.md message that follows a Skill call into that call's output. */
+  private takeSkillContentToolCall(
+    entry: unknown,
+  ): Extract<AgentTimelineItem, { type: "tool_call" }> | null {
+    const skill = this.lastSettledSkillCall;
+    if (!skill) return null;
+    const record = toObjectRecord(entry);
+    if (!record || !isSyntheticUserEntry(record)) return null;
+    // History records name the call. The live stream does not, so there the body must follow the
+    // call directly and name the same skill.
+    const sourceToolUseId = readTrimmedString(record.sourceToolUseID);
+    if (sourceToolUseId && sourceToolUseId !== skill.callId) return null;
+    const text = readClaudeSkillContent({
+      content: toObjectRecord(record.message)?.content,
+      skillName: sourceToolUseId
+        ? null
+        : (readTrimmedString(toObjectRecord(skill.input)?.skill) ?? null),
+    });
+    if (!text) return null;
+    this.lastSettledSkillCall = null;
+    return mapClaudeCompletedToolCall({
+      name: "Skill",
+      callId: skill.callId,
+      input: skill.input,
+      output: text,
+    });
   }
 
   private rememberSettledSubagentToolCall(

@@ -300,6 +300,8 @@ export type ToolCallDetail =
       label?: string;
       text?: string;
       icon?: ToolCallIconName;
+      /** Render `text` as Markdown instead of preformatted text. */
+      markdown?: boolean;
     }
   | {
       type: "plan";
