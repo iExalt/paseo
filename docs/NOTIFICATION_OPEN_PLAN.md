@@ -47,8 +47,9 @@ No background task dependency, new service, production daemon restart or release
       support the approved first-readable-frame criterion. Focused regression
       tests, root/app typechecks, scoped lint and review passed. Device state and
       test processes were restored or stopped.
-- [ ] **Publication.** Run the full routine suite in CI, obtain final integration
-      acceptance, then merge. No full suite runs locally.
+- [x] **Publication.** Full routine CI and final integration review passed.
+      [PR #371](https://github.com/iExalt/paseo/pull/371) merged as
+      `469753f5f6178765a68f2e052cdcaca96c4a84a1`. No full suite ran locally.
 
 ## Evidence and review
 
