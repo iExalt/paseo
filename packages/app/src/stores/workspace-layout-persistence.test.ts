@@ -151,3 +151,54 @@ it.each([1, 2])(
     expect(visible).toEqual(["agent-a"]);
   },
 );
+
+it("keeps explicitly closed agent tabs closed after reloading the project", async () => {
+  const saved = new Map<string, string>();
+  const storage = {
+    getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, value: string) => {
+      saved.set(key, value);
+    },
+    removeItem: (key: string) => {
+      saved.delete(key);
+    },
+  };
+  const key = "host:project-workspace";
+  const original = createWorkspaceLayoutStore(undefined, storage);
+  await original.persist.rehydrate();
+  for (const id of ["kept", "closed"])
+    original.getState().openTab({
+      workspaceKey: key,
+      target: { kind: "agent", agentId: id },
+      intent: "reveal",
+    });
+  original.getState().hideAgent(key, "closed");
+  original.getState().closeTab(key, "agent_closed");
+  const snapshot = {
+    agentsHydrated: true,
+    terminalsHydrated: true,
+    activeAgentIds: ["kept", "closed"],
+    autoOpenAgentIds: ["kept", "closed"],
+    knownTerminalIds: [],
+    standaloneTerminalIds: [],
+  };
+  original.getState().reconcileTabs(key, snapshot);
+  const agentIds = (store: ReturnType<typeof createWorkspaceLayoutStore>) =>
+    collectAllTabs(store.getState().layoutByWorkspace[key].root).flatMap((tab) =>
+      tab.target.kind === "agent" ? [tab.target.agentId] : [],
+    );
+  expect(agentIds(original)).toEqual(["kept"]);
+  const reloaded = createWorkspaceLayoutStore(undefined, storage);
+  await reloaded.persist.rehydrate();
+  expect(agentIds(reloaded)).toEqual(["kept"]);
+  reloaded.getState().reconcileTabs(key, snapshot);
+  expect(agentIds(reloaded)).toEqual(["kept"]);
+  reloaded
+    .getState()
+    .openTab({ workspaceKey: key, target: { kind: "agent", agentId: "closed" }, intent: "reveal" });
+  const reopened = createWorkspaceLayoutStore(undefined, storage);
+  await reopened.persist.rehydrate();
+  reopened.getState().reconcileTabs(key, snapshot);
+  expect(agentIds(reopened)).toEqual(["kept", "closed"]);
+  expect(reopened.getState().hiddenAgentIdsByWorkspace[key]).toBeUndefined();
+});
