@@ -38,15 +38,9 @@ before that work, so none of them comes from it. Screenshots and logs are in
 
 ## Image viewer QA follow-ups
 
-Found in production-browser QA for #368 on 2026-11-06. These paths were unchanged
+Found in production-browser QA for #368 on 2026-11-06. This path was unchanged
 by the image-sizing change; a separate baseline build has not been tested.
 
-- [ ] **Image toolbar buttons reject pointer clicks (web).** Enabled Zoom in
-      and Close image buttons retain `pointer-events: none` and zero opacity,
-      even after hovering the image canvas. The toolbar parent receives the
-      click. Keyboard activation, pinch zoom and backdrop dismissal work.
-      Check visibility updates in `zoomable-viewport/toolbar.tsx` and its
-      Unistyles style callback before changing zoom behavior.
 - [ ] **Crossing the compact layout boundary closes the image viewer (web).**
       Resizing from 375px to 1440px dismisses the lightbox as the workspace
       changes layout. Resizing within desktop or phone layout keeps it open
