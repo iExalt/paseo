@@ -53,6 +53,7 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
+import { codexUserMessageSkillCalls } from "./codex/skill-tool-call.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
 import { CodexThreadCost } from "./codex/thread-cost.js";
 import {
@@ -2065,7 +2066,18 @@ async function threadItemToTimelineEntries(
   if (!timelineItem) {
     return [];
   }
+  if (timelineItem.type === "user_message") {
+    return [timelineItem, ...(await userMessageSkillCalls(item))];
+  }
   return [timelineItem, ...(await mcpToolResultImagesToTimeline(item))];
+}
+
+async function userMessageSkillCalls(item: unknown): Promise<AgentTimelineItem[]> {
+  const record = toObjectRecord(item);
+  return await codexUserMessageSkillCalls({
+    messageId: nonEmptyString(record?.id) ?? null,
+    content: record?.content,
+  });
 }
 
 async function loadCodexThreadHistoryTimeline(params: {
@@ -6865,6 +6877,9 @@ export class CodexAppServerAgentSession implements AgentSession {
     const item = clientMessageId ? { ...timelineItem, clientMessageId } : timelineItem;
     this.activeClientMessageId = null;
     this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item });
+    for (const skillCall of await userMessageSkillCalls(parsed.item)) {
+      this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item: skillCall });
+    }
   }
 
   private warnUnknownNotificationMethod(method: string, params: unknown): void {
