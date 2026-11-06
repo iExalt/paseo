@@ -286,6 +286,12 @@ appear; use Metro (`PROBE_URL=http://localhost:8081`) when you need them.
 
 ## Isolated daemons
 
+Prepare a fresh local or remote QA checkout with `npm ci` at the repository root, then run
+`npm run build:server` and `npm run build:daemon-web-ui` there. Do not copy or symlink another
+checkout's whole `node_modules` tree into it: workspace links can resolve to the other checkout,
+and missing package-local dependencies can select an incompatible root dependency. Install and
+build in the QA checkout before starting its daemon or browser tests.
+
 `npm run qa:web` starts a scratch daemon that serves the web UI and prints one JSON line:
 
 ```sh
