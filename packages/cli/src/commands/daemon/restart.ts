@@ -9,10 +9,11 @@ import {
 import { setTimeout as delay } from "node:timers/promises";
 import type { DaemonGetStatusResponse } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
-import { withOutput, type CommandOptions } from "../../output/index.js";
+import { withOutput, type CommandOptions, type SingleResult } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { describeDaemonTarget } from "../../utils/daemon-target.js";
 import { parseTimeoutMs, rejectRemovedLaunchFlags } from "./local-daemon.js";
+import { replaceSupervisor } from "./replace-supervisor.js";
 
 export function daemonRestartCommand(): Command {
   return rejectRemovedLaunchFlags(
@@ -24,12 +25,22 @@ export function daemonRestartCommand(): Command {
   )
     .option("--timeout <seconds>", "Replacement readiness deadline (default: 600)")
     .option("--kill-terminals", "Close every terminal instead of keeping them across the restart")
+    .option("--replace-supervisor", "Replace the local supervisor with this installation's daemon")
     .action(withOutput(runRestartCommand));
 }
 
 type DaemonStatus = DaemonGetStatusResponse["payload"];
 
-export async function runRestartCommand(options: CommandOptions, _command: Command) {
+export async function runRestartCommand(
+  options: CommandOptions,
+  _command: Command,
+): Promise<SingleResult<Record<string, unknown>>> {
+  return options.replaceSupervisor === true
+    ? replaceSupervisor(options, _command)
+    : restartWorker(options);
+}
+
+async function restartWorker(options: CommandOptions) {
   const target = options.daemonTarget;
   const deadline = Date.now() + parseTimeoutMs(options.timeout);
   const remaining = () => Math.max(1, deadline - Date.now());

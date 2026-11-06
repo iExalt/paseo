@@ -55,8 +55,9 @@ worker running from `/Applications` (lingering Electron helpers would hold the c
 
 ## By the way
 
-- No CI job runs `scripts/*.test.mjs` (`node --test`), so the updater script tests, including
-  `bundleProcesses`, run only locally. Adding a CI step changes CI; leave it to its own PR.
+- The original implementation's updater script tests ran only locally. The current
+  routine CI helper lane includes the updater tests through
+  [the routine planner](../.github/scripts/ci-routine.mjs).
 
 ## Restart recovery follow-up (2026-11-06)
 
@@ -68,7 +69,7 @@ Baseline: `fd4f01a4c`. Preserve unrelated checkout changes.
 - [x] A: expose saved Codex async questions without launching idle runtimes; reopen the
       original thread on answer; commit resolution after accepted delivery. Live approvals,
       running turns, background work, and in-flight responses still block idle shutdown.
-- [ ] B: add local `daemon restart --replace-supervisor`; preflight the invoked install,
+- [x] B: add local `daemon restart --replace-supervisor`; preflight the invoked install,
       retain home/configuration/desktop ownership and terminals, reject competing launches,
       and preserve default worker-only restart semantics.
 - [ ] C: isolated cold-restart and actual CLI entry-point proof, affected full suites,
@@ -97,6 +98,24 @@ Current A checks: six affected server suites passed, 298 tests in 20.42 s; serve
 typecheck passed. Cold-process answer/dismiss cases passed (2 tests, 12.04 s), using
 the real daemon/bootstrap and public WebSocket API with a deterministic Codex transport.
 This is not a real upstream Codex service check or an installed-app rollout.
+
+B2 and C2 code review accepted: B1 1 material / 1 total, B2 0 / 0; integration C1
+1 / 1, C2 0 / 0. The findings closed wrong-peer shutdown and inherited live-identity
+overrides. The installed-entry lifecycle case with a hostile identity environment failed
+before the pin and passed after rebuilding (32.61 s). It also proves legacy launch
+replacement by the invoked runner, saved managed configuration, desktop ownership, and
+terminal adoption. The full local CLI lifecycle suite passed 19 tests with one platform
+skip in 205 s before the final identity pin; its affected counterexample was rerun after.
+The replacement/Nix preflight suites passed 16 tests; missing store executables and
+invalid markers fail before shutdown. Default restart keeps its prior launch contract.
+
+D1 code review accepted (0 material / 0 total). A deterministic old-code probe showed
+an explicitly closed tab reappearing only when the hydrated directory reconciled after
+reload. The prior tested contract intentionally kept hidden-tab intent in memory only.
+The repair persists that intent per workspace and clears it on explicit reopen. Three
+affected app suites passed 195 tests; app typecheck passed. Browser QA and any separate
+sidebar-order diagnosis remain open; do not infer that every reported project-state
+symptom is explained by the tab reproduction.
 
 ## App and host update status (2026-11-06)
 
