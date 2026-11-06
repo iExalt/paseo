@@ -82,6 +82,7 @@ export function ZoomableImage({
       maxScale={maxScale}
       minScale={minScale}
       onPressOutsideContent={onPressOutsideContent}
+      panWithWheel
       style={style}
       testID={testID}
       wheelActivation={wheelActivation}

@@ -7,6 +7,7 @@ import {
   isPointInsideTransformedContent,
   panContent,
   zoomContentAtPoint,
+  wheelPanDelta,
 } from "./geometry";
 
 const viewport = { width: 800, height: 600 };
@@ -128,6 +129,14 @@ describe("zoomable viewport geometry", () => {
         limits: { minScale: 1, maxScale: 8 },
       }),
     ).toEqual({ scale: 2, x: 400, y: -100 });
+  });
+
+  it.each([
+    [0, { x: -2, y: 3 }],
+    [1, { x: -32, y: 48 }],
+    [2, { x: -1600, y: 1800 }],
+  ])("converts wheel delta mode %i to viewport panning pixels", (deltaMode, expected) => {
+    expect(wheelPanDelta({ deltaX: 2, deltaY: -3, deltaMode }, viewport)).toEqual(expected);
   });
 
   it("allows Mermaid consumers to zoom below fit without inventing translation", () => {
