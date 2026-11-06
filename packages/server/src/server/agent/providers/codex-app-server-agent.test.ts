@@ -5764,8 +5764,9 @@ describe("Codex app-server provider", () => {
         skillCard,
       ]);
 
-      // History shows the text Codex gave the model, kept in the rollout, even after the file
-      // on disk changes.
+      // History shows the text Codex gave this turn, kept in the rollout, even after the file
+      // on disk changes. An earlier turn's injection without a card (a `$probe-skill` typed in
+      // the text) must not shift onto it, and a partial last line must not lose the rest.
       writeFileSync(path.join(skillDir, "SKILL.md"), "# Edited later\n");
       const rollout = path.join(root, "rollout.jsonl");
       const injected = `<skill>\n<name>probe-skill</name>\n<path>${path.join(skillDir, "SKILL.md")}</path>\n---\nname: probe-skill\n---\n\n# Probe Skill\n\nReply **PROBE OK**.\n</skill>`;
@@ -5773,6 +5774,16 @@ describe("Codex app-server provider", () => {
         rollout,
         [
           { type: "session_meta", payload: {} },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-typed" } },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: injected.replace("Reply", "Old text.") }],
+            },
+          },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-picked" } },
           {
             type: "response_item",
             payload: {
@@ -5783,13 +5794,15 @@ describe("Codex app-server provider", () => {
           },
         ]
           .map((line) => JSON.stringify(line))
-          .join("\n") + "\n",
+          .join("\n") + '\n{"type":"response_item","payload":{"text":"<skill>\\n<name>',
       );
       const replayed = createSession();
       replayed.client = {
         request: vi.fn(async (method: string) =>
           method === "thread/read"
-            ? { thread: { path: rollout, turns: [{ items: [userMessageItem] }] } }
+            ? {
+                thread: { path: rollout, turns: [{ id: "turn-picked", items: [userMessageItem] }] },
+              }
             : {},
         ),
       };

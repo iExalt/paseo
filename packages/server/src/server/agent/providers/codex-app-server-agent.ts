@@ -2065,14 +2065,17 @@ async function mcpToolResultImagesToTimeline(item: unknown): Promise<AgentTimeli
 
 async function threadItemToTimelineEntries(
   item: unknown,
-  options: { cwd: string | null; skillTexts: CodexSkillTextSource },
+  options: { cwd: string | null; skillTexts: CodexSkillTextSource; turnId: string | undefined },
 ): Promise<AgentTimelineItem[]> {
   const timelineItem = await threadItemToTimeline(item, options);
   if (!timelineItem) {
     return [];
   }
   if (timelineItem.type === "user_message") {
-    return [timelineItem, ...(await userMessageSkillCalls(item, options.skillTexts))];
+    return [
+      timelineItem,
+      ...(await userMessageSkillCalls(item, options.skillTexts, options.turnId)),
+    ];
   }
   return [timelineItem, ...(await mcpToolResultImagesToTimeline(item))];
 }
@@ -2080,10 +2083,12 @@ async function threadItemToTimelineEntries(
 async function userMessageSkillCalls(
   item: unknown,
   source: CodexSkillTextSource,
+  turnId?: string,
 ): Promise<AgentTimelineItem[]> {
   const record = toObjectRecord(item);
   return await codexUserMessageSkillCalls({
     messageId: nonEmptyString(record?.id) ?? null,
+    turnId,
     content: record?.content,
     source,
   });
@@ -2160,6 +2165,7 @@ async function projectCodexThreadHistory(
     for (const timelineItem of await threadItemToTimelineEntries(item, {
       cwd: params.cwd,
       skillTexts,
+      turnId: row.turnId,
     })) {
       const timestamp =
         readCodexHistoryTimestamp(item) ?? readCodexHistoryRowTimestamp(row, timelineItem);
@@ -6892,6 +6898,9 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.emittedProviderSubagentUserMessageKeys.add(childMessageKey);
       if (parsed.threadId) {
         this.emitProviderSubagentTimeline(parsed.threadId, timelineItem);
+      }
+      this.emitSubAgentActivityUpdate(childSubAgentCallId, "running");
+      if (parsed.threadId) {
         // History replays a child's skill cards too, so live shows them in the same place.
         for (const skillCall of await userMessageSkillCalls(
           parsed.item,
@@ -6900,7 +6909,6 @@ export class CodexAppServerAgentSession implements AgentSession {
           this.emitProviderSubagentTimeline(parsed.threadId, skillCall);
         }
       }
-      this.emitSubAgentActivityUpdate(childSubAgentCallId, "running");
       return;
     }
     if (!this.rememberCodexUserMessageTurn(timelineItem.messageId, parsed.turnId)) {
