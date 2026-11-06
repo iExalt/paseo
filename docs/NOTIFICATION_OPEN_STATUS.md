@@ -1,115 +1,116 @@
 # Immediate notification opens status
 
-Last updated: 2026-11-06 16:25 UTC
-
-## Current outcome
-
-Implementation is active on `feat/instant-notification-chat-implementation`.
-A is accepted and pushed as `2d64b5660`. B is reviewer-accepted against the C1 task manifest after rendered verification
-and closure of the native retap gap. C remains active; no release or merge has occurred.
-
-The [approved plan](NOTIFICATION_OPEN_PLAN.md) remains the acceptance boundary.
-Android Cuttlefish is authorized, and the user has approved up to two ten-minute
-USB S24U windows ending at 16:30 UTC (11:30 AM Toronto). iOS and physical-device
-p95 timing remain unverified.
+Updated 2026-11-06. Implementation and approved Android verification are complete;
+publication awaits CI and merge. No release is authorized.
 
 ## Gates
 
-| Gate                                      | State             | Remaining proof                                                     |
-| ----------------------------------------- | ----------------- | ------------------------------------------------------------------- |
-| A: prepare destination before navigation  | Reviewer accepted | Complete                                                            |
-| B: show display-only notification content | Reviewer accepted | Complete; C owns final timing/platform/CI gates                     |
-| C: verify and publish                     | Active            | Physical timing, platform boundary, CI, final integration and merge |
+| Gate                                     | State                                      | Evidence                                                                                       |
+| ---------------------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| A: prepare before navigation             | Reviewer accepted                          | Held-readiness, bootstrap, demand adoption, cancellation and replay regressions                |
+| B: display-only notification content     | Reviewer accepted                          | Payload bounds, reconciliation/cursors, read-only rendering and native retap closure           |
+| C: approved Android first-frame behavior | Verified; final integration review pending | 16/16 S24U first readable frames already contain the new message; Cuttlefish functional matrix |
+| CI and merge                             | Pending                                    | Full routine suite runs in CI; no full local run                                               |
 
-## Evidence
+The [plan](NOTIFICATION_OPEN_PLAN.md) contains the current acceptance boundary.
+The user approved replacing the original under-100 ms callback-to-visible target
+with the first-updated-chat-frame criterion, and dropped the iOS gate entirely.
+The original time target is not met; iOS is unverified.
 
-- Baseline `2c27bd2`: model/sync 57 tests, 5.32 s; A: 62 tests, 5.19 s.
-  Held navigation and held unrelated localhost bootstrap fail before their fixes.
-  Runtime preparation cases: three passed in 34.54 s. Root/app typecheck and
-  targeted lint passed. The A commit hook's typecheck took 76.36 s.
+## Native evidence
+
+APK SHA-256: `76eba078fd9589e168cf2fcc542a2567f642e465990de743af86d610845effcc`.
+The initial cold Android build took 37m23s; the incremental rebuild took 9m30s.
+The notification implementation is equivalent to the rebased source checkpoint;
+unrelated upstream image/message-disclosure changes were integrated afterward.
+
+Cuttlefish Android 17 checks show the receipt while the host is held or offline,
+then a single canonical message after release. Checks include a killed-process
+cold open, a deliberately stale workspace hint, an unknown agent, a Unicode
+snapshot bounded to exactly 3000 UTF-8 bytes with truncation indicated, the
+correct second workspace, and read-only permission content followed by the real
+question controls.
+
+Native testing exposed a detached-chat retap gap. The fix gives each valid tap
+one latest-content intent, including legacy payloads without a preview. The
+rebuilt APK reveals the new receipt from an older reading position. After the
+reader scrolls away, replay of the same tap preserves the anchor; canonical
+catch-up changes its measured position by one native pixel (1532 to 1533).
+The corrected legacy test positively establishes an offscreen latest message
+and visible jump-to-bottom button before the tap, then the latest canonical
+message in view afterward. An earlier identical before/after pair is withdrawn.
+
+On the S24U (Android 16), 16 distinct notification opens completed before the
+control deadline; 20 were planned. The host's traffic was held while actual
+Android notifications carried production-shaped receipt data. Video frame
+indices were mapped to Android's embedded elapsed-clock timestamps and the
+recorded callback clock. OCR calibration used positive app and negative shade
+frames. All 801 recorded frames through callback +400 ms lacked readable fixture
+chat content; the boundary-frame check then found the correct new message on the
+first readable app frame in all 16 cases.
+
+| S24U measurement                                              |   Median | p95 / maximum |
+| ------------------------------------------------------------- | -------: | ------------: |
+| React preview commit after callback                           |  18.5 ms |         38 ms |
+| Following JavaScript animation-frame callback                 | 121.5 ms |        177 ms |
+| First readable app frame, including Android return transition | 440.9 ms |      464.5 ms |
+
+These are separate measurements. They do not prove sub-100 ms visible pixels.
+The native helper exercises the real Android/Expo tap lifecycle, without proving
+cloud transport. The first cloud test was received but suppressed by the app's
+foreground policy; it was not a transport failure. The debug installation also
+auto-restored an older host profile with background relay traffic, so this is
+not an isolated performance benchmark. The final physical canonical read crossed
+automatic restoration and was withdrawn; canonical replacement is supported by
+Cuttlefish and focused tests instead.
+
+## Checks
+
+- Baseline model/sync: 57 tests in 5.32 s. A: 62 in 5.19 s. Held navigation and
+  unrelated-localhost-bootstrap regressions fail before their fixes.
+- Runtime preparation: three focused cases passed in 34.54 s.
 - B: protocol 15, app model/preview 23, push/websocket 15, producer one,
-  presentation 36 and fallback one focused tests passed. Root/app typecheck
-  and targeted lint passed. Fallback removal under hidden canonical coverage
-  fails against B1 and passes after B2. Preview reconciliation mutation fails.
-- Shared browser path: actual target history response held; preview visible,
-  then exactly one canonical message after release. Callback-to-following-rAF:
-  phone 26 ms, tablet 35 ms, desktop 21 ms. These are browser diagnostics,
-  not native pixels or a p95 distribution. Logs/screenshots are retained locally
-  under `.dev/notification-open/` (`web-tablet.log`, `web-desktop.log`,
-  `web-preview-{held,canonical}*.png`).
-- Android arm64 release test APK: SHA-256
-  `76eba078fd9589e168cf2fcc542a2567f642e465990de743af86d610845effcc`.
-  Initial build SHA was `0e29bb49573f5ac918f22b6c90640c240975539859ed1ca72a77187b6dfae267`;
-  the final incremental rebuild took 9m30s.
-  Cold Gradle build took 37m23s. Cuttlefish Android 17 has no Google Play services;
-  a local helper posts an actual Android notification carrying Expo-shaped data.
-  Native taps enter the real Expo lifecycle, without proving cloud delivery.
-- Cuttlefish held/offline open: notification text remains visible while the host
-  cannot connect, then becomes canonical on release. Native trace reported
-  preview commit 106 ms / following-rAF 121 ms (one emulated sample).
-  Killed-process cold tap also shows the receipt with a deliberately stale
-  workspace hint. Evidence: `native-b2.log`, `native-held.png`,
-  `native-cold-held.txt`; all local evidence, not tracked release artifacts.
-- Native testing found a material same-chat retap bug: a detached viewport kept
-  older paragraphs visible while the notification's new message stayed below it.
-  `native-detached-tap.{txt,png}` records the failing B2 build. C1 adds one explicit
-  notification-entry anchor per tap, retaining it across other chats' taps and
-  respecting later user scrolling. The rebuilt APK closes the gap: `native-c-detached-tap.txt` and
-  `native-c-preview.png` show the new receipt in view. User scroll, replay of the
-  same tap, and canonical catch-up retain the measured older-row anchor within
-  one native pixel (1532 -> 1533).
-- C1: preview/controller/route focused tests passed (39); fallback passes under
-  the app's test config (one, 7.80 s). A wrong-root fallback invocation failed
-  because its browser setup lacked matchMedia; this was a harness configuration
-  error. Targeted lint passed. Final root typecheck and all 29 task-file lint checks passed.
-- Corrected legacy proof: `native-c-legacy-detached-proven.txt` contains the jump-to-bottom
-  button and no latest message; `native-c-legacy-retap-proven.txt` shows that
-  message after a new tap, without a preview. The earlier identical before/after
-  pair was invalid and is withdrawn. Cold unknown-agent Unicode reply: payload
-  exactly 3000 UTF-8 bytes, truncated=true, receipt shown offline; canonical
-  LONG END appears once in the correct second workspace after reconnect.
-- Twenty repeated same-chat emulator notification taps completed. Only fourteen
-  complete traces survived the Android log ring: callback-to-following-JS-rAF
-  p50=178 ms, p95/max=344 ms. This incomplete emulated diagnostic does not meet or
-  establish the physical under-100 ms criterion.
-- Cuttlefish restored and verified at 16:22 UTC: original app, display and settings;
-  original reverse/daemon 6790 preserved; debug/helper packages, test reverses,
-  tunnel and exclusive lock removed. Own Metro process also stopped.
-- S24U test APK installed under its authorized debug package; no input or settings
-  changes made. The phone auto-locked while the final build completed and has
-  remained locked after the unlock request. Physical timing is still unverified.
+  presentation 36 and fallback one focused tests passed. Fallback and preview
+  mutation probes fail for the intended reasons.
+- C: preview/controller/route 39 tests passed; fallback one passed under the app
+  test configuration in 7.80 s. A wrong-root fallback invocation lacked
+  `matchMedia`; that was a test-configuration failure.
+- Root/app typechecks and all 29 task-source lint checks passed. B's commit hook
+  passed format/lint/typecheck in 30.88 s. A's earlier typecheck hook took 76.36 s.
+- Shared browser held-history checks show the receipt and then exactly one
+  canonical message at phone, tablet and desktop sizes. Following-JS-frame
+  diagnostics were 26, 35 and 21 ms respectively; these are not native pixels.
+- Twenty same-chat emulator taps completed, but its log ring retained only 14
+  complete timing traces. The p95 following-JS-frame diagnostic was 344 ms;
+  this incomplete emulator distribution is not physical timing proof.
+- Full routine CI remains the final automated gate and has not run locally.
 
 ## Review ledger
 
-Material means wrong, unsafe, lossy or below the agreed outcome.
+| Round           | Material / total | Disposition                                                                                                  |
+| --------------- | ---------------- | ------------------------------------------------------------------------------------------------------------ |
+| A1              | 1 / 2            | Separate registry readiness from the optional localhost probe; distinguish synchronization logs from pixels. |
+| A2              | 0 / 0 new        | A accepted.                                                                                                  |
+| B1              | 2 / 2            | Keep cold fallback until chat renders; prevent plugins hiding snapshot provenance. Both fixed.               |
+| B2              | 0 / 0 new        | B source accepted.                                                                                           |
+| C1              | 0 / 0            | Explicit per-tap anchor accepted; native retap regression closed.                                            |
+| Native evidence | 1 / 1            | Withdraw invalid legacy before-state; corrected proof independently accepted.                                |
+| Final recovery  | 0 / 0 so far     | Approved native gate independently recalculated and safe frame crops checked; final CI/PR review pending.    |
 
-| Round      | Material / total | Result                                                                                                                   |
-| ---------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| A1         | 1 / 2            | Unrelated localhost probe blocked preparation; fixed in A2. Current-commit is synchronization evidence, not pixel proof. |
-| A2         | 0 / 0 new        | A accepted.                                                                                                              |
-| B1         | 2 / 2            | Cold fallback could vanish before chat paints; plugins could hide provenance. Both fixed.                                |
-| B2         | 0 / 0 new        | Source accepted; rendered proof subsequently completed in C.                                                             |
-| C1         | 0 / 0            | Scroll intent accepted and native regression closed on final APK.                                                        |
-| C evidence | 1 / 1            | Invalid legacy before-state withdrawn; corrected proof verified.                                                         |
+## Evidence retention and cleanup
 
-The reviewer accepted the B checkpoint against the exact C1 task manifest after
-native closure; this acceptance excludes C's timing, iOS, CI and merge gates.
+Exact native first-frame proof and regression artifacts are retained locally in
+one `.dev/notification-open/evidence.tar.zstd` archive. It contains fixture-only
+frame crops, timing/index/OCR results, filtered notification traces, focused-check
+logs and selected historical review evidence. It excludes raw physical video,
+uncropped SystemUI frames, credentials and push tokens. Extract with Python's
+`tarfile` (`r:zst`) or a zstd-capable `tar`. This local archive is retained for
+verification/reproduction, not published as a repository artifact.
 
-## Decisions and workspace protection
-
-- Ignore notification workspace hints; current agent ownership is authoritative.
-- Push content never advances canonical cursors or grants permission/file/fork actions.
-- A valid tap records entry intent even when an older host supplies no preview.
-- User requested keeping this checkout after another session changed its branch
-  during the A commit hook. Preserve the resulting accepted A commit and unrelated
-  `.qa/`, attachment/zoom and wishlist edits. Stage only task allowlisted paths.
-- Main daemon and production app state are outside the test setup. Test fixtures
-  use a separate daemon on 6823, own temporary tunnel and a separate debug package.
-
-## Next
-
-Run physical timing after device unlock within the authorized window, or obtain
-new access/explicit gate disposition. Obtain the pending iOS verification decision.
-Then run CI once, obtain final integration acceptance, and merge when C passes.
-The scratch daemon remains available for the phone window; no production daemon
-restart or release is authorized.
+Cuttlefish was restored at 16:22 UTC: original app, display, settings and 6790
+connection preserved; debug/helper packages, test reverses, tunnel and lock
+removed. The S24U was restored at 16:39:56 UTC: original Settings screen and
+recorded timeout/stay-awake settings restored, both test packages removed and
+reverse mappings cleared. Its recording was saved locally and the user was told
+they could unplug. Own Metro, tunnel, proxy and scratch daemon were stopped.
+No production daemon restart or release occurred.
