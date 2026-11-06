@@ -336,6 +336,11 @@ the restore to 31 minutes. HARNESS.md records the restore and the rule to sync b
 
 ## Current boundary
 
+- Open local-test defect, reproduced on unchanged `ab7bf020b` on 2026-11-06:
+  `src/usage/format.test.ts` assumes its local dates stay within seven elapsed days across
+  daylight saving time. The November fixture fails in `America/Toronto` and passes in UTC.
+  Follow up by making that boundary fixture timezone-independent; product code was not changed.
+
 - `?open=` has no automated fork guard. Upstream #7918's hook test covers the hydration demand;
   the route wiring is covered only by the tablet pass, and upstream plans to remove `?open=` after
   2027-01-22.

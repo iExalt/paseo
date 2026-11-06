@@ -380,6 +380,14 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     marginTop: theme.spacing[2],
   },
+  agentTrailingRow: {
+    alignSelf: "stretch",
+    minWidth: 0,
+  },
+  agentCopyButton: {
+    marginLeft: -theme.spacing[1],
+    marginRight: 0,
+  },
   trailingRowHidden: {
     opacity: 0,
   },
@@ -389,6 +397,7 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
   timestampText: {
     color: theme.colors.foregroundMuted,
     fontSize: STREAM_METADATA_FONT_SIZE,
+    flexShrink: 0,
   },
 }));
 
@@ -482,22 +491,10 @@ export const UserMessage = memo(function UserMessage({
   const hasText = message.trim().length > 0;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
-  const showTrailingRow = !isPending && hasText && (isCompact || isNative || isHovered);
-  const formattedTimestamp = useMemo(
-    () => formatMessageTimestamp(new Date(timestamp)),
-    [timestamp],
-  );
-  const rewindMutation = useRewindAgentMutation({ serverId, agentId, client, messageId });
-
+  const showTrailingRow =
+    !isPending && (Boolean(sender) || (hasText && (isCompact || isNative || isHovered)));
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
-  const getMessageContent = useCallback(() => message, [message]);
-  const handleRewind = useCallback(
-    (input: { mode: RewindMode; rewoundText: string }) => {
-      return rewindMutation.rewindAgent(input);
-    },
-    [rewindMutation],
-  );
 
   const containerStyle = useMemo(
     () => [
@@ -524,16 +521,6 @@ export const UserMessage = memo(function UserMessage({
     ],
     [hasText],
   );
-  const trailingRowStyle = useMemo(
-    () => [
-      userMessageStylesheet.trailingRow,
-      showTrailingRow
-        ? userMessageStylesheet.trailingRowVisible
-        : userMessageStylesheet.trailingRowHidden,
-    ],
-    [showTrailingRow],
-  );
-
   const presentation = userMessagePresentation(sender);
   const Preview = presentation.Preview;
   const messageContent = (
@@ -547,7 +534,6 @@ export const UserMessage = memo(function UserMessage({
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
       >
-        {sender ? <MessageSender sender={sender} serverId={serverId} /> : null}
         <View style={presentation.body}>
           <Preview>
             {hasImages ? (
@@ -593,29 +579,18 @@ export const UserMessage = memo(function UserMessage({
             ) : null}
           </Preview>
         </View>
-        {hasText ? (
-          <View
-            style={trailingRowStyle}
-            pointerEvents={showTrailingRow ? "auto" : "none"}
-            testID="user-message-trailing-row"
-          >
-            <Text style={userMessageStylesheet.timestampText} testID="user-message-timestamp">
-              {formattedTimestamp}
-            </Text>
-            {capabilities && messageId ? (
-              <RewindMenu
-                capabilities={capabilities}
-                isPending={rewindMutation.isPending}
-                rewoundText={message}
-                onRewind={handleRewind}
-              />
-            ) : null}
-            <TurnCopyButton
-              getContent={getMessageContent}
-              containerStyle={userMessageStylesheet.copyButton}
-              accessibilityLabel={t("message.actions.copyMessage")}
-            />
-          </View>
+        {hasText || sender ? (
+          <UserMessageFooter
+            sender={sender}
+            serverId={serverId}
+            agentId={agentId}
+            messageId={messageId}
+            message={message}
+            timestamp={timestamp}
+            capabilities={capabilities}
+            client={client}
+            visible={showTrailingRow}
+          />
         ) : null}
       </View>
       <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
@@ -636,6 +611,90 @@ export const UserMessage = memo(function UserMessage({
   }
   return messageContent;
 });
+
+function UserMessageFooter({
+  sender,
+  serverId,
+  agentId,
+  messageId,
+  message,
+  timestamp,
+  capabilities,
+  client,
+  visible,
+}: Pick<
+  UserMessageProps,
+  | "sender"
+  | "serverId"
+  | "agentId"
+  | "messageId"
+  | "message"
+  | "timestamp"
+  | "capabilities"
+  | "client"
+> & { visible: boolean }) {
+  const { t } = useTranslation();
+  const hasText = message.trim().length > 0;
+  const formattedTimestamp = useMemo(
+    () => formatMessageTimestamp(new Date(timestamp)),
+    [timestamp],
+  );
+  const rewindMutation = useRewindAgentMutation({ serverId, agentId, client, messageId });
+  const getMessageContent = useCallback(() => message, [message]);
+  const handleRewind = useCallback(
+    (input: { mode: RewindMode; rewoundText: string }) => rewindMutation.rewindAgent(input),
+    [rewindMutation],
+  );
+  const copyButton = hasText ? (
+    <TurnCopyButton
+      getContent={getMessageContent}
+      containerStyle={[
+        userMessageStylesheet.copyButton,
+        sender ? userMessageStylesheet.agentCopyButton : null,
+      ]}
+      accessibilityLabel={t("message.actions.copyMessage")}
+    />
+  ) : null;
+  const rewindMenu =
+    capabilities && messageId ? (
+      <RewindMenu
+        capabilities={capabilities}
+        isPending={rewindMutation.isPending}
+        rewoundText={message}
+        onRewind={handleRewind}
+      />
+    ) : null;
+  const timestampLabel = (
+    <Text style={userMessageStylesheet.timestampText} testID="user-message-timestamp">
+      {formattedTimestamp}
+    </Text>
+  );
+  return (
+    <View
+      style={[
+        userMessageStylesheet.trailingRow,
+        sender ? userMessageStylesheet.agentTrailingRow : null,
+        visible
+          ? userMessageStylesheet.trailingRowVisible
+          : userMessageStylesheet.trailingRowHidden,
+      ]}
+      pointerEvents={visible ? "auto" : "none"}
+      testID="user-message-trailing-row"
+    >
+      {sender ? copyButton : timestampLabel}
+      {rewindMenu}
+      {sender ? (
+        <>
+          {timestampLabel}
+          <Text style={userMessageStylesheet.timestampText}>·</Text>
+          <MessageSender sender={sender} serverId={serverId} />
+        </>
+      ) : (
+        copyButton
+      )}
+    </View>
+  );
+}
 
 function AgentMessageDisclosure({
   sender,
