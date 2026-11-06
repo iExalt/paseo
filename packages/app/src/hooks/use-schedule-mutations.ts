@@ -41,6 +41,16 @@ interface ScheduleListSnapshot {
   previous: Array<[QueryKey, FetchAggregatedSchedulesState | undefined]>;
 }
 
+export function requireSuccessfulScheduleRun(
+  payload: Awaited<ReturnType<DaemonClient["scheduleRunOnce"]>>,
+): void {
+  if (payload.error) throw new Error(payload.error);
+  const run = payload.schedule?.runs.at(-1);
+  if (!run || run.status !== "succeeded") {
+    throw new Error(run?.error ?? "The schedule did not complete successfully.");
+  }
+}
+
 export function updateAggregatedSchedulesData(
   current: FetchAggregatedSchedulesState | undefined,
   updateSchedules: (schedules: AggregatedSchedule[]) => AggregatedSchedule[],
@@ -209,9 +219,7 @@ export function useScheduleMutations({
     mutationFn: async (id: string): Promise<void> => {
       const client = requireClient(serverId, t("common.errors.daemonClientUnavailable"));
       const payload = await client.scheduleRunOnce({ id });
-      if (payload.error) {
-        throw new Error(payload.error);
-      }
+      requireSuccessfulScheduleRun(payload);
     },
     onSettled: invalidate,
   });
