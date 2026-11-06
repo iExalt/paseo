@@ -24,6 +24,35 @@ async function activate(control: Locator, touch: boolean): Promise<void> {
   else await control.click();
 }
 
+async function expectFeedbackVisible(feedback: Locator): Promise<void> {
+  await expect
+    .poll(() =>
+      feedback.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        return element.contains(
+          document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2),
+        );
+      }),
+    )
+    .toBe(true);
+}
+
+async function failSecondRunResponse(page: Page): Promise<void> {
+  let responses = 0;
+  await page.routeWebSocket("**/ws", (socket) => {
+    const server = socket.connectToServer();
+    server.onMessage((message) => {
+      const data = JSON.parse(message.toString());
+      if (data.message?.type === "schedule/run-once/response" && ++responses === 2) {
+        const run = data.message.payload.schedule.runs.at(-1);
+        run.status = "failed";
+        run.error = "Heartbeat target unavailable";
+        socket.send(JSON.stringify(data));
+      } else socket.send(message);
+    });
+  });
+}
+
 for (const viewport of [
   { name: "phone", width: 375, height: 812, hasTouch: true },
   { name: "small desktop", width: 720, height: 600, hasTouch: false },
@@ -55,6 +84,7 @@ for (const viewport of [
         expect(created.error).toBeNull();
         expect(created.schedule).not.toBeNull();
         scheduleId = created.schedule!.id;
+        await failSecondRunResponse(page);
         await page.goto(buildSchedulesRoute());
         const row = page.getByTestId(`schedule-row-${scheduleId}`);
         await expect(row).toContainText("Never run");
@@ -71,6 +101,7 @@ for (const viewport of [
         await expectNoDetailsOverflow(page);
         await activate(page.getByTestId("heartbeat-run-now"), viewport.hasTouch);
         await expect(details).toContainText("Heartbeat triggered.", { timeout: 30_000 });
+        await expectFeedbackVisible(details.getByText("Heartbeat triggered.", { exact: true }));
         await expect
           .poll(async () => (await client.scheduleInspect({ id: scheduleId! })).schedule?.lastRunAt)
           .not.toBeNull();
@@ -93,6 +124,7 @@ for (const viewport of [
           )
           .not.toBe(previousRun);
         await expect(details).not.toBeVisible();
+        await expect(row.getByRole("alert")).toHaveText("Heartbeat target unavailable");
       } finally {
         if (scheduleId) await client.scheduleDelete({ id: scheduleId });
         await workspace.cleanup();

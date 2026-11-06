@@ -515,6 +515,16 @@ function ScheduleDetails({
           </Text>
         </Field>
       ))}
+      {runResult ? (
+        <Text accessibilityLiveRegion="polite" style={styles.detailText}>
+          {runResult}
+        </Text>
+      ) : null}
+      {runError ? (
+        <Text accessibilityRole="alert" style={styles.submitError}>
+          {runError}
+        </Text>
+      ) : null}
       {isHeartbeat ? (
         <Button
           variant="secondary"
@@ -525,16 +535,6 @@ function ScheduleDetails({
         >
           Trigger heartbeat now
         </Button>
-      ) : null}
-      {runResult ? (
-        <Text accessibilityLiveRegion="polite" style={styles.detailText}>
-          {runResult}
-        </Text>
-      ) : null}
-      {runError ? (
-        <Text accessibilityRole="alert" style={styles.submitError}>
-          {runError}
-        </Text>
       ) : null}
     </View>
   );
