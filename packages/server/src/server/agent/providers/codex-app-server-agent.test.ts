@@ -3809,7 +3809,10 @@ describe("Codex app-server provider", () => {
     const childUserMessage = {
       type: "userMessage",
       id: "child-user-message",
-      content: [{ type: "text", text: "Inspect this path." }],
+      content: [
+        { type: "text", text: "Inspect this path." },
+        { type: "skill", name: "gone", path: "/nonexistent/gone/SKILL.md" },
+      ],
     };
 
     await asInternals(session).handleNotification("item/started", {
@@ -3830,6 +3833,26 @@ describe("Codex app-server provider", () => {
           event.event.item.type === "user_message",
       ),
     ).toHaveLength(1);
+    // The child's skill card lands in the child's timeline, as history replays it, and an
+    // unreadable SKILL.md fails the card instead of passing for skill text.
+    const childSkillCards = events.flatMap((event) =>
+      event.type === "provider_subagent" &&
+      event.event.type === "timeline" &&
+      event.event.id === "user-child-thread" &&
+      event.event.item.type === "tool_call"
+        ? [event.event.item]
+        : [],
+    );
+    expect(childSkillCards).toEqual([
+      expect.objectContaining({
+        callId: "codex-skill:child-user-message:0",
+        name: "Skill",
+        status: "failed",
+        error: {
+          message: expect.stringContaining("Paseo could not read /nonexistent/gone/SKILL.md"),
+        },
+      }),
+    ]);
   });
 
   test("keeps the parent running when a MultiAgentV2 sub-agent finishes", async () => {
@@ -5741,10 +5764,46 @@ describe("Codex app-server provider", () => {
         skillCard,
       ]);
 
+      // History shows the text Codex gave this turn, kept in the rollout, even after the file
+      // on disk changes. An earlier turn's injection without a card (a `$probe-skill` typed in
+      // the text) must not shift onto it, and a partial last line must not lose the rest.
+      writeFileSync(path.join(skillDir, "SKILL.md"), "# Edited later\n");
+      const rollout = path.join(root, "rollout.jsonl");
+      const injected = `<skill>\n<name>probe-skill</name>\n<path>${path.join(skillDir, "SKILL.md")}</path>\n---\nname: probe-skill\n---\n\n# Probe Skill\n\nReply **PROBE OK**.\n</skill>`;
+      writeFileSync(
+        rollout,
+        [
+          { type: "session_meta", payload: {} },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-typed" } },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: injected.replace("Reply", "Old text.") }],
+            },
+          },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-picked" } },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: injected }],
+            },
+          },
+        ]
+          .map((line) => JSON.stringify(line))
+          .join("\n") + '\n{"type":"response_item","payload":{"text":"<skill>\\n<name>',
+      );
       const replayed = createSession();
       replayed.client = {
         request: vi.fn(async (method: string) =>
-          method === "thread/read" ? { thread: { turns: [{ items: [userMessageItem] }] } } : {},
+          method === "thread/read"
+            ? {
+                thread: { path: rollout, turns: [{ id: "turn-picked", items: [userMessageItem] }] },
+              }
+            : {},
         ),
       };
       const history = await Array.fromAsync(replayed.streamHistory());

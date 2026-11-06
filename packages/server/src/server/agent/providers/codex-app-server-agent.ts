@@ -53,7 +53,12 @@ import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
-import { codexUserMessageSkillCalls } from "./codex/skill-tool-call.js";
+import {
+  type CodexSkillTextSource,
+  codexUserMessageSkillCalls,
+  createHistoryCodexSkillTextSource,
+  liveCodexSkillTextSource,
+} from "./codex/skill-tool-call.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
 import { CodexThreadCost } from "./codex/thread-cost.js";
 import {
@@ -2060,24 +2065,44 @@ async function mcpToolResultImagesToTimeline(item: unknown): Promise<AgentTimeli
 
 async function threadItemToTimelineEntries(
   item: unknown,
-  options?: { includeUserMessage?: boolean; cwd?: string | null },
+  options: { cwd: string | null; skillTexts: CodexSkillTextSource; turnId: string | undefined },
 ): Promise<AgentTimelineItem[]> {
   const timelineItem = await threadItemToTimeline(item, options);
   if (!timelineItem) {
     return [];
   }
   if (timelineItem.type === "user_message") {
-    return [timelineItem, ...(await userMessageSkillCalls(item))];
+    return [
+      timelineItem,
+      ...(await userMessageSkillCalls(item, options.skillTexts, options.turnId)),
+    ];
   }
   return [timelineItem, ...(await mcpToolResultImagesToTimeline(item))];
 }
 
-async function userMessageSkillCalls(item: unknown): Promise<AgentTimelineItem[]> {
+async function userMessageSkillCalls(
+  item: unknown,
+  source: CodexSkillTextSource,
+  turnId?: string,
+): Promise<AgentTimelineItem[]> {
   const record = toObjectRecord(item);
   return await codexUserMessageSkillCalls({
     messageId: nonEmptyString(record?.id) ?? null,
+    turnId,
     content: record?.content,
+    source,
   });
+}
+
+/** The thread's rollout file, where Codex keeps the SKILL.md text it gave the model. */
+async function readCodexRolloutPath(
+  client: CodexAppServerClientLike,
+  threadId: string,
+): Promise<string | null> {
+  const response = toObjectRecord(
+    await client.request("thread/read", { threadId, includeTurns: false }),
+  );
+  return nonEmptyString(toObjectRecord(response?.thread)?.path) ?? null;
 }
 
 async function loadCodexThreadHistoryTimeline(params: {
@@ -2113,6 +2138,9 @@ async function projectCodexThreadHistory(
   },
 ): Promise<void> {
   const { timeline, subAgentTimelineIndexByThreadId } = projection;
+  const skillTexts = createHistoryCodexSkillTextSource(() =>
+    readCodexRolloutPath(params.client, params.threadId),
+  );
   for await (const row of readCodexThreadHistory(params.client, params.threadId)) {
     const { item } = row;
     const historicalSubAgentActivity = readCodexSubAgentActivity(item);
@@ -2134,7 +2162,11 @@ async function projectCodexThreadHistory(
         continue;
       }
     }
-    for (const timelineItem of await threadItemToTimelineEntries(item, { cwd: params.cwd })) {
+    for (const timelineItem of await threadItemToTimelineEntries(item, {
+      cwd: params.cwd,
+      skillTexts,
+      turnId: row.turnId,
+    })) {
       const timestamp =
         readCodexHistoryTimestamp(item) ?? readCodexHistoryRowTimestamp(row, timelineItem);
       const settledTimelineItem =
@@ -6868,6 +6900,15 @@ export class CodexAppServerAgentSession implements AgentSession {
         this.emitProviderSubagentTimeline(parsed.threadId, timelineItem);
       }
       this.emitSubAgentActivityUpdate(childSubAgentCallId, "running");
+      if (parsed.threadId) {
+        // History replays a child's skill cards too, so live shows them in the same place.
+        for (const skillCall of await userMessageSkillCalls(
+          parsed.item,
+          liveCodexSkillTextSource,
+        )) {
+          this.emitProviderSubagentTimeline(parsed.threadId, skillCall);
+        }
+      }
       return;
     }
     if (!this.rememberCodexUserMessageTurn(timelineItem.messageId, parsed.turnId)) {
@@ -6877,7 +6918,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     const item = clientMessageId ? { ...timelineItem, clientMessageId } : timelineItem;
     this.activeClientMessageId = null;
     this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item });
-    for (const skillCall of await userMessageSkillCalls(parsed.item)) {
+    for (const skillCall of await userMessageSkillCalls(parsed.item, liveCodexSkillTextSource)) {
       this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item: skillCall });
     }
   }
