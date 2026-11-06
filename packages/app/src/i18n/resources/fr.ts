@@ -2102,6 +2102,7 @@ export const fr: TranslationResources = {
     output: "Sortie",
   },
   turnSummary: {
+    agentMessage: "Message d’agent",
     details: "Voir les détails du tour",
     sentBy: "Envoyé par {{name}}",
     showMore: "Afficher plus",

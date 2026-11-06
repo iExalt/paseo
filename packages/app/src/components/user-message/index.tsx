@@ -53,6 +53,17 @@ export function MessagePreview({ children }: { children: ReactNode }) {
   );
 }
 
+export function useMessageSender(sender: AgentMessage["sender"] | undefined, serverId?: string) {
+  const host = sender?.serverId ?? serverId;
+  const agent = useSessionStore((state) => {
+    const session = host ? state.sessions[host] : undefined;
+    return sender
+      ? (session?.agents.get(sender.id) ?? session?.agentDetails.get(sender.id))
+      : undefined;
+  });
+  return { host, agent, name: agent?.title ?? sender?.title ?? sender?.id };
+}
+
 export function MessageSender({
   sender,
   serverId,
@@ -61,11 +72,7 @@ export function MessageSender({
   serverId?: string;
 }) {
   const { t } = useTranslation();
-  const host = sender.serverId ?? serverId;
-  const agent = useSessionStore((state) => {
-    const session = host ? state.sessions[host] : undefined;
-    return session?.agents.get(sender.id) ?? session?.agentDetails.get(sender.id);
-  });
+  const { host, agent, name } = useMessageSender(sender, serverId);
   const ProviderIcon = useProviderIcon(agent?.provider ?? "", host);
   const renderProviderIcon = useCallback(
     (color: string) => <ProviderIcon size={16} color={color} />,
@@ -85,7 +92,7 @@ export function MessageSender({
       disabled={!host}
       onPress={openSender}
     >
-      {t("turnSummary.sentBy", { name: agent?.title ?? sender.title ?? sender.id })}
+      {t("turnSummary.sentBy", { name })}
     </Button>
   );
 }

@@ -1,4 +1,4 @@
-import { MessagePreview, MessageSender } from "@/components/user-message";
+import { MessagePreview, MessageSender, useMessageSender } from "@/components/user-message";
 import { useLiveElapsedMs } from "@/components/live-elapsed";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
@@ -52,6 +52,7 @@ import {
   FileSymlink,
   Info,
   MicVocal,
+  MessagesSquare,
   Plus,
   Scissors,
   TextCursor,
@@ -309,6 +310,14 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     justifyContent: "flex-end",
     ...(isWeb ? { userSelect: "text" as const } : {}),
   },
+  agentContainer: {
+    justifyContent: "flex-start",
+    padding: theme.spacing[3],
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  agentContent: { alignItems: "stretch", width: "100%" },
+  agentBody: { paddingVertical: theme.spacing[2] },
   content: {
     alignItems: "flex-end",
     maxWidth: "100%",
@@ -397,6 +406,24 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
       <AttachmentThumbnail metadata={image} />
     </AttachmentFrame>
   );
+}
+
+function userMessagePresentation(sender: AgentMessage["sender"] | undefined) {
+  return sender
+    ? {
+        container: userMessageStylesheet.agentContainer,
+        content: [userMessageStylesheet.content, userMessageStylesheet.agentContent],
+        body: userMessageStylesheet.agentBody,
+        testID: "agent-message-content",
+        Preview: React.Fragment,
+      }
+    : {
+        container: undefined,
+        content: userMessageStylesheet.content,
+        body: userMessageStylesheet.bubble,
+        testID: "user-message",
+        Preview: MessagePreview,
+      };
 }
 
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
@@ -505,16 +532,22 @@ export const UserMessage = memo(function UserMessage({
     [showTrailingRow],
   );
 
-  return (
-    <View style={containerStyle} testID="user-message" aria-busy={isPending}>
+  const presentation = userMessagePresentation(sender);
+  const Preview = presentation.Preview;
+  const messageContent = (
+    <View
+      style={[containerStyle, presentation.container]}
+      testID={presentation.testID}
+      aria-busy={isPending}
+    >
       <View
-        style={userMessageStylesheet.content}
+        style={presentation.content}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
       >
         {sender ? <MessageSender sender={sender} serverId={serverId} /> : null}
-        <View style={userMessageStylesheet.bubble}>
-          <MessagePreview>
+        <View style={presentation.body}>
+          <Preview>
             {hasImages ? (
               <View style={imagePreviewContainerStyle}>
                 {images.map((image) => (
@@ -556,7 +589,7 @@ export const UserMessage = memo(function UserMessage({
                 {messageText}
               </Text>
             ) : null}
-          </MessagePreview>
+          </Preview>
         </View>
         {hasText ? (
           <View
@@ -586,7 +619,52 @@ export const UserMessage = memo(function UserMessage({
       <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
     </View>
   );
+  if (sender) {
+    return (
+      <AgentMessageDisclosure
+        sender={sender}
+        serverId={serverId}
+        forceExpanded={Boolean(findHighlight)}
+        disableOuterSpacing={resolvedDisableOuterSpacing}
+      >
+        {messageContent}
+      </AgentMessageDisclosure>
+    );
+  }
+  return messageContent;
 });
+
+function AgentMessageDisclosure({
+  sender,
+  serverId,
+  forceExpanded,
+  disableOuterSpacing,
+  children,
+}: {
+  sender: AgentMessage["sender"];
+  serverId?: string;
+  forceExpanded: boolean;
+  disableOuterSpacing: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const { name } = useMessageSender(sender, serverId);
+  const [expanded, setExpanded] = useState(false);
+  const toggle = useCallback(() => setExpanded((value) => !value), []);
+  const renderDetails = useCallback(() => children, [children]);
+  return (
+    <ExpandableBadge
+      label={t("turnSummary.agentMessage")}
+      secondaryLabel={name}
+      icon={MessagesSquare}
+      isExpanded={expanded || forceExpanded}
+      onToggle={toggle}
+      renderDetails={renderDetails}
+      disableOuterSpacing={disableOuterSpacing}
+      testID="agent-message"
+    />
+  );
+}
 
 interface AssistantTurnFooterProps {
   getContent?: () => string;
@@ -2267,6 +2345,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     >
       <Pressable
         {...pressHandlers}
+        aria-expanded={isInteractive ? isExpanded : undefined}
         disabled={!isInteractive}
         accessibilityState={accessibilityState}
         style={pressableStyle}

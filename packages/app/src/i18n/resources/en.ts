@@ -2124,6 +2124,7 @@ export const en = {
   turnSummary: {
     details: "View turn details",
     sentBy: "Sent by {{name}}",
+    agentMessage: "Agent message",
     showMore: "Show more",
     showLess: "Show less",
   },
