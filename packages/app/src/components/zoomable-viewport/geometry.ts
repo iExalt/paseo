@@ -20,6 +20,7 @@ export interface ViewportScaleLimits {
 }
 
 export interface ViewportFitOptions {
+  allowUpscale?: boolean;
   padding?: number;
   maxWidth?: number;
   maxHeight?: number;
@@ -65,7 +66,11 @@ export function fitContentSize(
     0,
     Math.min(viewport.height - padding * 2, options.maxHeight ?? Number.POSITIVE_INFINITY),
   );
-  const fitScale = Math.min(availableWidth / content.width, availableHeight / content.height);
+  const fitScale = Math.min(
+    options.allowUpscale === false ? 1 : Number.POSITIVE_INFINITY,
+    availableWidth / content.width,
+    availableHeight / content.height,
+  );
   return {
     width: content.width * fitScale,
     height: content.height * fitScale,
