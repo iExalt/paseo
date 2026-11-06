@@ -27,7 +27,9 @@ PR to `dev`; a release and the live Mac check need separate approval.
   cannot downgrade it; an app running from its store bundle retries the copy.
 - The first update into this version still stops the daemon: that restart runs the old
   app's code. A daemon older than 0.21.0 cannot stop only when idle, so the new app keeps
-  it; the `update-nix-paseo` skill adds `daemon stop` to its restart command only for one.
+  it. The `update-nix-paseo` skill stages and activates safely, then requires explicit
+  approval before a disruptive legacy-daemon stop. App-only restarts use the dedicated
+  relaunch path, or ordinary quit only with `keepRunningAfterQuit` enabled.
 - While the daemon is busy the app retries every 60 s; any unknown stop outcome re-reads
   the daemon before deciding. Windows keeps the old behaviour.
 
