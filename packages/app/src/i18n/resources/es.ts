@@ -1487,6 +1487,7 @@ export const es: TranslationResources = {
       },
       advancedSettings: "Configuraciones avanzadas",
       openAdvancedSettings: "Abrir configuración avanzada del demonio",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Las versiones de la aplicación y del demonio no coinciden. Actualice ambos a la misma versión para obtener la mejor experiencia.",
       loadFailed: "No se puede cargar el estado del demonio del escritorio.",

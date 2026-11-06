@@ -5,8 +5,6 @@ import {
   type DesktopNixReleaseSummary,
   type DesktopNixUpdateResult,
 } from "@/desktop/host";
-import { getDesktopDaemonStatus } from "@/desktop/daemon/desktop-daemon";
-import { isVersionMismatch } from "./desktop-updates";
 
 export const NIX_UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -19,15 +17,9 @@ export type NixUpdatePhase =
 
 export type NixUpdateBusy = "checking" | "downloading" | "applying" | "restarting";
 
-export interface NixLocalDaemon {
-  version: string | null;
-  desktopManaged: boolean;
-}
-
 export interface NixUpdateFacts {
   result: DesktopNixUpdateResult | null;
   latest: DesktopNixReleaseSummary | null;
-  daemon: NixLocalDaemon | null;
 }
 
 interface NixUpdateState extends NixUpdateFacts {
@@ -44,7 +36,6 @@ interface NixUpdateState extends NixUpdateFacts {
 export const useNixUpdateStore = create<NixUpdateState>(() => ({
   result: null,
   latest: null,
-  daemon: null,
   canStage: false,
   busy: null,
   error: null,
@@ -61,7 +52,7 @@ function isNewer(
 }
 
 export function resolveNixUpdatePhase(facts: NixUpdateFacts): NixUpdatePhase {
-  const { result, latest, daemon } = facts;
+  const { result, latest } = facts;
   if (!result) return { kind: "unknown" };
   const { active, running } = result;
   const staged = result.staged ?? null;
@@ -71,10 +62,6 @@ export function resolveNixUpdatePhase(facts: NixUpdateFacts): NixUpdatePhase {
     return { kind: "ready", release: staged };
   }
   if (active && active.outputPath !== running.outputPath) {
-    return { kind: "restart", release: active };
-  }
-  // The desktop daemon outlives the app, so an app-only relaunch can leave it on the old release.
-  if (active && daemon?.desktopManaged && isVersionMismatch(active.version, daemon.version)) {
     return { kind: "restart", release: active };
   }
   if (latest && isNewer(latest, active)) return { kind: "available", release: latest };
@@ -94,8 +81,7 @@ export function getNixUpdatePhase(): NixUpdatePhase {
 export function useNixUpdatePhase(): NixUpdatePhase {
   const result = useNixUpdateStore((state) => state.result);
   const latest = useNixUpdateStore((state) => state.latest);
-  const daemon = useNixUpdateStore((state) => state.daemon);
-  return resolveNixUpdatePhase({ result, latest, daemon });
+  return resolveNixUpdatePhase({ result, latest });
 }
 
 type NixCommand = "status" | "check" | "stage" | "activate";
@@ -115,20 +101,6 @@ function absorb(result: DesktopNixUpdateResult): void {
     lastCheckedAt: result.action === "check" ? Date.now() : state.lastCheckedAt,
     error: result.latestError ?? null,
   }));
-}
-
-async function refreshDaemon(): Promise<void> {
-  try {
-    const status = await getDesktopDaemonStatus();
-    useNixUpdateStore.setState({
-      daemon:
-        status.status === "running"
-          ? { version: status.version, desktopManaged: status.desktopManaged }
-          : null,
-    });
-  } catch {
-    // The daemon check only refines the restart prompt; the update facts still stand.
-  }
 }
 
 // Every updater command goes through one queue so a background download and a
@@ -161,7 +133,6 @@ export function refreshNixUpdateStatus(): Promise<void> {
   return enqueue(async () => {
     try {
       await step("checking", "status");
-      await refreshDaemon();
     } catch (error) {
       recordError(error, false);
     }
@@ -175,7 +146,6 @@ export function checkForNixUpdate({ userInitiated }: { userInitiated: boolean })
     try {
       useNixUpdateStore.setState({ failed: false });
       await step("checking", "check");
-      await refreshDaemon();
       if (shouldDownloadInBackground(useNixUpdateStore.getState())) {
         await step("downloading", "stage");
       }

@@ -1,3 +1,4 @@
+import { desktopDaemonServerId } from "@/desktop/daemon/daemon-upgrade-status";
 import { useQuery } from "@tanstack/react-query";
 import { getDesktopDaemonStatus, shouldUseDesktopDaemon } from "@/desktop/daemon/desktop-daemon";
 
@@ -9,10 +10,7 @@ interface DesktopDaemonServerIdResult {
 
 async function loadDesktopDaemonServerId(): Promise<DesktopDaemonServerIdResult> {
   const status = await getDesktopDaemonStatus();
-  const serverId = status.serverId.trim();
-  return {
-    serverId: serverId.length > 0 ? serverId : null,
-  };
+  return { serverId: desktopDaemonServerId(status) };
 }
 
 function useLocalDaemonServerIdQuery() {

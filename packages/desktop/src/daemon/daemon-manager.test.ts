@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => ({
   })),
   spawnProcess: vi.fn(),
   logInfo: vi.fn(),
+  sendEvent: vi.fn(),
   logError: vi.fn(),
   appLogPath: "",
   getElectronLogFile: vi.fn(),
@@ -41,6 +42,7 @@ vi.mock("electron", () => ({
     getVersion: vi.fn(() => "1.2.3"),
     isPackaged: true,
   },
+  BrowserWindow: { getAllWindows: () => [{ webContents: { send: mocks.sendEvent } }] },
   ipcMain: { handle: vi.fn() },
   powerMonitor: { getSystemIdleTime: vi.fn(() => 0) },
 }));
@@ -99,6 +101,7 @@ describe("daemon-manager commands", () => {
     mocks.createNodeEntrypointInvocation.mockReturnValue({ command: "node", args: [], env: {} });
     mocks.spawnProcess.mockReset();
     mocks.logInfo.mockReset();
+    mocks.sendEvent.mockReset();
     mocks.logError.mockReset();
     mocks.getElectronLogFile.mockReset();
     mocks.getElectronLogFile.mockReturnValue({ path: mocks.appLogPath });
@@ -160,6 +163,61 @@ describe("daemon-manager commands", () => {
 
     expect(status).toMatchObject({ serverId: "", status: "errored", pid: null });
     expect(status.error).toBeTruthy();
+  });
+
+  it("publishes the real idle-upgrader decision through status and the renderer event bridge", async () => {
+    mkdirSync(mocks.paseoHome);
+    const startedAt = new Date().toISOString();
+    writeFileSync(
+      path.join(mocks.paseoHome, "paseo.pid"),
+      JSON.stringify({
+        pid: process.pid,
+        startedAt,
+        hostname: hostname(),
+        uid: process.getuid?.() ?? 0,
+        listen: "127.0.0.1:6799",
+        desktopManaged: true,
+      }),
+    );
+    mocks.settings = {
+      ...DEFAULT_DESKTOP_SETTINGS,
+      daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: true },
+    };
+    mocks.runExternalCliJsonCommand.mockImplementation(async (args: string[]) =>
+      args.includes("stop")
+        ? { action: "declined" }
+        : {
+            localDaemon: "running",
+            serverId: "srv_local",
+            pid: process.pid,
+            startedAt,
+            daemonVersion: "1.2.2",
+            desktopManaged: true,
+          },
+    );
+    const handlers = createDaemonCommandHandlers();
+    try {
+      await handlers.start_desktop_daemon();
+      expect(await handlers.desktop_daemon_status()).toMatchObject({
+        upgrade: {
+          phase: "waiting",
+          serverId: "srv_local",
+          targetVersion: "1.2.3",
+          pid: process.pid,
+        },
+      });
+      expect(mocks.sendEvent).toHaveBeenCalledWith(
+        "paseo:event:desktop-daemon-upgrade-changed",
+        {},
+      );
+      expect(mocks.runExternalCliJsonCommand).toHaveBeenCalledWith(
+        expect.arrayContaining(["stop", "--if-idle"]),
+      );
+    } finally {
+      // This fixture is attached, never owned: no confirmed instance means cancel only.
+      await handlers.stop_desktop_daemon();
+    }
+    expect((await handlers.desktop_daemon_status()).upgrade).toBeNull();
   });
 
   it("returns a local credential only for its live managed daemon listen", async () => {
