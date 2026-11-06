@@ -58,6 +58,46 @@ worker running from `/Applications` (lingering Electron helpers would hold the c
 - No CI job runs `scripts/*.test.mjs` (`node --test`), so the updater script tests, including
   `bundleProcesses`, run only locally. Adding a CI step changes CI; leave it to its own PR.
 
+## Restart recovery follow-up (2026-11-06)
+
+User approval: "All three chunks are approved." Scope: durable async question recovery,
+an explicit CLI supervisor replacement, and integration verification with one merged PR
+to `dev`. Medium autonomy; no release, installed-app change, or production restart.
+Baseline: `fd4f01a4c`. Preserve unrelated checkout changes.
+
+- [x] A: expose saved Codex async questions without launching idle runtimes; reopen the
+      original thread on answer; commit resolution after accepted delivery. Live approvals,
+      running turns, background work, and in-flight responses still block idle shutdown.
+- [ ] B: add local `daemon restart --replace-supervisor`; preflight the invoked install,
+      retain home/configuration/desktop ownership and terminals, reject competing launches,
+      and preserve default worker-only restart semantics.
+- [ ] C: isolated cold-restart and actual CLI entry-point proof, affected full suites,
+      review, required CI and merge. Update durable usage docs.
+- [ ] D: user-added triage of project state after app reload: establish the persistence,
+      hydration and sidebar reconciliation cause and report evidence and remediation.
+
+Estimate for A–C: 45–90 minutes of agent wall-clock, 3–5 implementation/integration
+review rounds. Bounds: cold-recovery and supervisor orchestration tests, review latency,
+and CI. D is a separate diagnostic addition; initial allowance 10–25 minutes and one
+review, pending reproduction. Local warm baseline: `mise exec -- npm exec
+--workspace=@getpaseo/server -- vitest run
+src/server/agent/providers/codex-async-questions.test.ts`, 11 tests passed in 2.06 s
+before changes. Routine CI target: under five minutes; no required proof is waived.
+
+Acceptance includes startup with automatic turn resume disabled, a visible question
+before any runtime is reopened, answer delivery to its original thread, rejection/retry
+and concurrent-answer safety, and no resurrection after answer or dismissal. It does
+not claim exactly-once delivery across a crash between upstream acceptance and local
+persistence; that requires an upstream idempotency contract.
+
+Reviewer: persistent native `restart_reviewer`, Sol/high. A2 accepted with cold
+projection/answer loading, live-approval coexistence, accepted-start completion, and
+failed-delivery retry safeguards. Review ledger: A1 1 material / 1 total; A2 0 / 0.
+Current A checks: six affected server suites passed, 298 tests in 20.42 s; server
+typecheck passed. Cold-process answer/dismiss cases passed (2 tests, 12.04 s), using
+the real daemon/bootstrap and public WebSocket API with a deterministic Codex transport.
+This is not a real upstream Codex service check or an installed-app rollout.
+
 ## App and host update status (2026-11-06)
 
 User approval (conversation, 2026-11-06): “SGTM”, followed by the instruction to
