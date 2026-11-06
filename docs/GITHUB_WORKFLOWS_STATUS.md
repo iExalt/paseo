@@ -14,14 +14,14 @@ under five minutes; this latency budget is advisory and does not block merges.
 
 ## Workflows
 
-| Workflow             | Trigger                                           | What it does                                                                                                                                         |
-| -------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ci.yml`             | Every PR and `dev` push                           | Plans lanes from `.github/ci-paths.json`, runs `mise run ci:routine` per lane, then the `Routine CI required` gate                                   |
-| `ci-deep.yml`        | Release PRs (labeled/synchronize), owner dispatch | Browser, integration and Electron journeys at the exact release PR head                                                                              |
-| `release-please.yml` | `dev` push                                        | Keeps the one release PR (`chore(dev): release X`) current and its Nix hash fresh; its merge tags `paseo-vX` with a draft and dispatches the release |
-| `release.yml`        | Dispatch on `dev` (release-please or owner)       | Builds, smoke-tests, signs and publishes the macOS closure, Android APK, Linux Nix closures and Windows installer                                    |
-| `rebase-dev.yml`     | Owner dispatch                                    | Rebases `dev` onto the `upstream/main` mirror, runs routine CI on the result, then pushes a backup and the new `dev` atomically                      |
-| `upstream-sync.yml`  | Daily 07:23 UTC, dispatch                         | Fast-forwards the `upstream/main` mirror branch                                                                                                      |
+| Workflow             | Trigger                                     | What it does                                                                                                                                         |
+| -------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ci.yml`             | Every PR and `dev` push                     | Plans lanes from `.github/ci-paths.json`, runs `mise run ci:routine` per lane, then the `Routine CI required` gate                                   |
+| `ci-deep.yml`        | Every PR to `dev`, owner dispatch           | Reports `Deep verification required`; release PRs run browser, integration and Electron journeys at the exact release PR head                        |
+| `release-please.yml` | `dev` push                                  | Keeps the one release PR (`chore(dev): release X`) current and its Nix hash fresh; its merge tags `paseo-vX` with a draft and dispatches the release |
+| `release.yml`        | Dispatch on `dev` (release-please or owner) | Builds, smoke-tests, signs and publishes the macOS closure, Android APK, Linux Nix closures and Windows installer                                    |
+| `rebase-dev.yml`     | Owner dispatch                              | Rebases `dev` onto the `upstream/main` mirror, runs routine CI on the result, then pushes a backup and the new `dev` atomically                      |
+| `upstream-sync.yml`  | Daily 07:23 UTC, dispatch                   | Fast-forwards the `upstream/main` mirror branch                                                                                                      |
 
 Routine CI details live in `.github/scripts/ci-routine.mjs`: lanes `quality`,
 `workspaces`, `app-1..2`, `server-1..3` and `integration`. Each step declares
@@ -37,6 +37,12 @@ and routine lane success, then reports the five-minute latency budget from the
 Partial reruns retain the old `plan` start time, so their latency can include
 time between attempts. Use **Re-run all jobs** for a fresh latency measurement;
 **Re-run failed jobs** remains sufficient to retry failed checks.
+
+The `dev` ruleset requires both `Routine CI required` and `Deep verification
+required`. The deep gate requires all three deep lanes to succeed on release PRs;
+ordinary PRs pass with the lanes skipped. Repository auto-merge is enabled, but
+must be selected per PR. Merging a release PR starts publication, so enable its
+auto-merge only after approval for that release.
 
 Dev pushes refresh the installed dependency cache (`install-cache`); PR lanes
 only restore it. `.github/scripts/dependency-fingerprint.mjs routine-key`
