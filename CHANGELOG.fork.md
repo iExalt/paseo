@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.23.0](https://github.com/iExalt/paseo/compare/paseo-v0.22.0...paseo-v0.23.0) (2026-11-06)
+
+
+### Features
+
+* show skill text as Markdown for OpenCode and Codex ([#364](https://github.com/iExalt/paseo/issues/364)) ([e840615](https://github.com/iExalt/paseo/commit/e840615ee04ce4bb0db8524a09b919aa7b792ab5))
+
+
+### Bug Fixes
+
+* **app:** collapse agent-to-agent messages in chat ([#370](https://github.com/iExalt/paseo/issues/370)) ([67dd514](https://github.com/iExalt/paseo/commit/67dd514c9655440469ea551c6ad367cbd8e8f404))
+* **app:** fit image previews to native size and screen ([#368](https://github.com/iExalt/paseo/issues/368)) ([6198d8a](https://github.com/iExalt/paseo/commit/6198d8a86cb7f5711e64d567e42acc6e77af0ce3))
+* **app:** make image panning follow mouse, touch and trackpad ([#369](https://github.com/iExalt/paseo/issues/369)) ([2efa296](https://github.com/iExalt/paseo/commit/2efa296c438cffc58476b26a4bc008cd0b37a84f))
+* **claude:** show the skill's text in the Skill tool call detail ([#362](https://github.com/iExalt/paseo/issues/362)) ([01a4b43](https://github.com/iExalt/paseo/commit/01a4b43c95f79b4408e5e867cbb3192f89686c59))
+* **codex:** show the skill text the model saw, and bound skill reads ([#365](https://github.com/iExalt/paseo/issues/365)) ([65bf45f](https://github.com/iExalt/paseo/commit/65bf45f1327b2cd8320f0ee4463a4bfa44a2e152))
+* **schedules:** show full details and trigger heartbeats now ([#366](https://github.com/iExalt/paseo/issues/366)) ([2c27bd2](https://github.com/iExalt/paseo/commit/2c27bd2ef741967693ad49928b153cc07f0ed3e4))
+
+
+### Performance Improvements
+
+* **app:** show notification messages on the first chat frame ([#371](https://github.com/iExalt/paseo/issues/371)) ([469753f](https://github.com/iExalt/paseo/commit/469753f5f6178765a68f2e052cdcaca96c4a84a1))
+
 ## [0.22.0](https://github.com/iExalt/paseo/compare/paseo-v0.21.1...paseo-v0.22.0) (2026-11-05)
 
 
