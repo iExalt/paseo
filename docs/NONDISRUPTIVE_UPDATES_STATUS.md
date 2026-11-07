@@ -72,11 +72,11 @@ Baseline: `fd4f01a4c`. Preserve unrelated checkout changes.
 - [x] B: add local `daemon restart --replace-supervisor`; preflight the invoked install,
       retain home/configuration/desktop ownership and terminals, reject competing launches,
       and preserve default worker-only restart semantics.
-- [ ] C: isolated cold-restart and actual CLI entry-point proof, affected full suites,
+- [x] C: isolated cold-restart and actual CLI entry-point proof, affected full suites,
       review, required CI and merge. Update durable usage docs.
-- [ ] D: user-added triage of project state after app reload: the closed-tab persistence
-      defect is repaired and verified; the broader sidebar/project-order symptom needs
-      clarification before it can be called resolved.
+- [ ] D: user clarified "Sidebar project order." The closed-tab repair is separate;
+      project-key transition restoration is implemented and reviewed, with rendered QA
+      and publication in progress below.
 
 Estimate for A–C: 45–90 minutes of agent wall-clock, 3–5 implementation/integration
 review rounds. Bounds: cold-recovery and supervisor orchestration tests, review latency,
@@ -114,9 +114,9 @@ D1 code review accepted (0 material / 0 total). A deterministic old-code probe s
 an explicitly closed tab reappearing only when the hydrated directory reconciled after
 reload. The prior tested contract intentionally kept hidden-tab intent in memory only.
 The repair persists that intent per workspace and clears it on explicit reopen. Three
-affected app suites passed 195 tests; app typecheck passed. Browser QA and any separate
-sidebar-order diagnosis remain open; do not infer that every reported project-state
-symptom is explained by the tab reproduction.
+affected app suites passed 195 tests; app typecheck passed. The rendered tab checks below
+complete that verification. The separate sidebar-order diagnosis follows in the
+2026-11-07 section; the tab reproduction does not explain project ordering.
 
 ### Local verification limits and follow-up
 
@@ -171,13 +171,53 @@ Additional browser findings, deferred to a separate startup/UI investigation:
 - The emulated touch phone shows a keyboard-shortcut hint. No visual redesign is part
   of this change.
 
-Current publication boundary: A `4ac15ca47`, B `d0869c3d3`, and the closed-tab repair
-`bdd226042` are committed. Integration code review is complete with no material findings;
-the final dispatcher extraction was separately checked to preserve the original worker
-body. Repository typechecking passed (213.36 s under local filesystem load), plus
-format/lint. Required CI at the final PR head remains pending. Recent full routine CI on
-`dev` took 203–228 s against the existing advisory 300 s budget; compare the PR run
-without resetting that baseline.
+Restart publication: [PR #379](https://github.com/iExalt/paseo/pull/379) merged as
+`f849e8830913e448cb187a4a23c1d71ed0211159`. Both required checks and all eight routine
+lanes passed at reviewed head `033dcbbac`; the routine critical path was 183 s, below
+the advisory 300 s budget. Recent `dev` runs took 203–228 s; this is not a controlled
+speedup comparison. Local-suite limits above remain recorded. No release or installation
+was performed.
+
+### Sidebar project-order diagnosis (2026-11-07)
+
+User clarification: "Sidebar project order." Read-only inspection was explicitly
+authorized; the running app was not reloaded or rearranged and chat contents were not
+read. Saved order contained a host/project placement key at an earlier position and its
+current shared project key at the end. The same stable project ID remains in the daemon's
+directory. This supports an identity mismatch, rather than missing saved order; no
+historical before/after snapshot establishes the exact transition that occurred.
+
+The production-function reproducer establishes the mechanism: directory metadata or
+duplicate-checkout grouping changes a project's view key from a host/project placement
+to its shared repository key. Rendering no longer recognizes its saved position, and
+reconciliation appends the new key. The reverse shared-to-split transition has the same
+failure. The old project reorder browser case resets grouping after dragging, so it never
+checked project-order persistence across reload; workspace sorting coverage did not guard
+this identity transition.
+
+- [x] Reproduce through the real directory projection, rendering selector and persisted
+      order reconciliation: four of five new regressions fail before the fix.
+- [x] Resolve known placement/shared aliases consistently before rendering and persistence;
+      retain unknown/offline keys and honor explicit current-key positions.
+- [ ] Finish rendered drag/reload/collapse checks, required CI and merged PR.
+
+Five affected suites pass: 85 tests, 1.26 s. App typechecking passes after rebuilding
+workspace dependencies for the current `dev` base. R1 review: 0 material / 0 total;
+independent merge/collision/offline probes and 120 order permutations also pass. The
+production web build restores a seeded placement-key order and rewrites it using current
+keys; independent rendered interaction checks are in progress.
+
+Decisions: use existing project/host identity metadata without changing project grouping
+or the storage schema. A current key explicitly present in saved order wins over an old
+alias, so the repair does not guess at an already-corrupted historical arrangement or
+undo a later deliberate drag. Split projects inherit the former shared slot together in
+deterministic directory order; genuinely unseen projects retain the existing policy.
+Collapsed sections, workspace sorting and the separate first-connection route issue are
+outside this project-order repair.
+
+Estimate for this clarified diagnostic/fix: 20–40 minutes, one or two review rounds,
+bounded by reproduction, the web build, rendered checks and required CI. Awaiting the
+read-only inspection answer did not block independent work.
 
 ## App and host update status (2026-11-06)
 
