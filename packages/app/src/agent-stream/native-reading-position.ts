@@ -74,8 +74,9 @@ export function createNativeReadingPosition(input: {
   let settleFrames = 0;
   let stableFrames = 0;
   let settleContentHeight = 0;
-  // The row the reader just opened or closed, its last measured height, and its expiry.
-  let heldRow: { id: string; height: number; timer: unknown } | null = null;
+  // The row the reader just opened or closed, how far its header sat above the viewport's
+  // bottom edge, and when the hold expires.
+  let heldRow: { id: string; headerFromBottom: number; timer: unknown } | null = null;
 
   function releaseHeldRow(): void {
     if (heldRow) timers.clearTimeout(heldRow.timer);
@@ -83,15 +84,16 @@ export function createNativeReadingPosition(input: {
   }
 
   // The list is inverted, so a row that grows keeps its bottom edge and pushes its header up.
-  // Scrolling by the height change puts the header back under the reader's finger, so the row
-  // opens downwards and closes upwards, as it would in a list that is not inverted.
-  function keepHeldRowHeader(rowId: string, height: number): void {
-    if (heldRow?.id !== rowId || height === heldRow.height) return;
-    const delta = height - heldRow.height;
-    heldRow.height = height;
+  // Scrolling the header back to where it was opens the row downwards and closes it upwards,
+  // as in a list that is not inverted. The target is absolute: the offset the host records
+  // lags programmatic scrolls, and maintainVisibleContentPosition may already have moved it.
+  function keepHeldRowHeader(rowId: string, layout: NativeRowLayout): void {
+    if (heldRow?.id !== rowId) return;
+    const offset = Math.max(0, layout.y + layout.height - heldRow.headerFromBottom);
+    if (offset === list.offsetY()) return;
     holdProgrammaticScroll();
     list.armScrollBudget();
-    list.scrollToOffset({ offset: Math.max(0, list.offsetY() + delta), animated: false });
+    list.scrollToOffset({ offset, animated: false });
   }
 
   // Jumps, find and held reading positions can land near the bottom. Until their scroll
@@ -159,7 +161,7 @@ export function createNativeReadingPosition(input: {
     /** Cell geometry: record before FlatList's own onLayout, whose viewability pass reads it. */
     rowLayout(rowId: string, layout: NativeRowLayout): void {
       if (!geometry.record(rowId, layout)) return;
-      keepHeldRowHeader(rowId, layout.height);
+      keepHeldRowHeader(rowId, layout);
       if (viewableRows?.some((row) => row.id === rowId)) updateReadingRow(false);
     },
     forgetRow(rowId: string): void {
@@ -200,9 +202,10 @@ export function createNativeReadingPosition(input: {
       }));
       updateReadingRow(true);
     },
-    /** A drag always wins over a pending restore. */
+    /** A drag always wins over a pending restore and a held row. */
     beginDrag(): void {
       readingAnchor.cancel();
+      releaseHeldRow();
     },
     /** Jump to bottom: cancel first, so a late restore cannot undo it. */
     cancel(): void {
@@ -218,9 +221,13 @@ export function createNativeReadingPosition(input: {
       anchor.detachByUser();
       holdProgrammaticScroll();
       releaseHeldRow();
-      const height = geometry.get(rowId)?.height;
-      if (height === undefined) return;
-      heldRow = { id: rowId, height, timer: timers.setTimeout(releaseHeldRow, HELD_ROW_LAYOUT_MS) };
+      const layout = geometry.get(rowId);
+      if (!layout) return;
+      heldRow = {
+        id: rowId,
+        headerFromBottom: layout.y + layout.height - list.offsetY(),
+        timer: timers.setTimeout(releaseHeldRow, HELD_ROW_LAYOUT_MS),
+      };
     },
     jumpToMessage(messageId: string): void {
       readingAnchor.cancel();
@@ -295,6 +302,7 @@ export function createNativeReadingPosition(input: {
     reset(): void {
       viewableRows = null;
       readingAnchor.cancel();
+      releaseHeldRow();
     },
     dispose(): void {
       if (quietTimer !== null) timers.clearTimeout(quietTimer);

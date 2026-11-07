@@ -61,22 +61,25 @@ const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
 // (ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN in codex-app-server-agent.ts) so two messages do not run
 // together. The rule only separates messages that sit next to each other; after tool calls,
 // a summary or a received message it divides nothing, so those rows drop it.
-const MESSAGE_BOUNDARY = /^\s*---\n+/;
+const MESSAGE_BOUNDARY = "\n\n---\n\n";
 const unruledMessageCache = new WeakMap<AssistantMessageItem, AssistantMessageItem>();
 
 function withoutOrphanedBoundary(item: StreamItem, previous: StreamItem | undefined): StreamItem {
   if (item.kind !== "assistant_message" || previous?.kind === "assistant_message") return item;
-  if (!MESSAGE_BOUNDARY.test(item.text)) return item;
+  if (!item.text.startsWith(MESSAGE_BOUNDARY)) return item;
   let unruled = unruledMessageCache.get(item);
   if (!unruled) {
-    unruled = { ...item, text: item.text.replace(MESSAGE_BOUNDARY, "") };
+    unruled = { ...item, text: item.text.slice(MESSAGE_BOUNDARY.length) };
     unruledMessageCache.set(item, unruled);
   }
   return unruled;
 }
 
 /** Returns `rows` itself when no row changes, so retained history keeps its identity. */
-function dropOrphanedBoundaries(rows: StreamItem[], previous: StreamItem | undefined): StreamItem[] {
+function dropOrphanedBoundaries(
+  rows: StreamItem[],
+  previous: StreamItem | undefined,
+): StreamItem[] {
   let output: StreamItem[] | undefined;
   for (let index = 0; index < rows.length; index += 1) {
     const row = rows[index]!;
