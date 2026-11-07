@@ -10,7 +10,7 @@ import {
   type ToolCallDetailLevel,
   type ToolCallDetailProjection,
 } from "@/tool-calls/detail-level/projection";
-import type { StreamItem, UserMessageItem } from "@/types/stream";
+import type { AssistantMessageItem, StreamItem, UserMessageItem } from "@/types/stream";
 import { collapseTurns, type TurnCollapse } from "./turn-collapse/model";
 import type { ReadingRowReplacements } from "./reading-anchor";
 
@@ -57,6 +57,39 @@ const NO_COLLAPSED_TURNS: StreamPresentation["turns"] = collapseTurns({
 // rebuild every user message projection on every such switch.
 const userMessageCache = new WeakMap<UserMessageItem, UserMessageItem>();
 
+// The Codex adapter starts each later message of a turn with a Markdown rule
+// (ASSISTANT_MESSAGE_BOUNDARY_MARKDOWN in codex-app-server-agent.ts) so two messages do not run
+// together. The rule only separates messages that sit next to each other; after tool calls,
+// a summary or a received message it divides nothing, so those rows drop it.
+const MESSAGE_BOUNDARY = "\n\n---\n\n";
+const unruledMessageCache = new WeakMap<AssistantMessageItem, AssistantMessageItem>();
+
+function withoutOrphanedBoundary(item: StreamItem, previous: StreamItem | undefined): StreamItem {
+  if (item.kind !== "assistant_message" || previous?.kind === "assistant_message") return item;
+  if (!item.text.startsWith(MESSAGE_BOUNDARY)) return item;
+  let unruled = unruledMessageCache.get(item);
+  if (!unruled) {
+    unruled = { ...item, text: item.text.slice(MESSAGE_BOUNDARY.length) };
+    unruledMessageCache.set(item, unruled);
+  }
+  return unruled;
+}
+
+/** Returns `rows` itself when no row changes, so retained history keeps its identity. */
+function dropOrphanedBoundaries(
+  rows: StreamItem[],
+  previous: StreamItem | undefined,
+): StreamItem[] {
+  let output: StreamItem[] | undefined;
+  for (let index = 0; index < rows.length; index += 1) {
+    const row = rows[index]!;
+    const presented = withoutOrphanedBoundary(row, index === 0 ? previous : rows[index - 1]);
+    if (presented !== row) output ??= rows.slice(0, index);
+    output?.push(presented);
+  }
+  return output ?? rows;
+}
+
 /** Source messages reach plugins before display projection. */
 export function createStreamPresentation() {
   function presentUserMessage(item: UserMessageItem): UserMessageItem {
@@ -86,6 +119,8 @@ export function createStreamPresentation() {
   let collapsedIsLatestTurnOpen = false;
   let collapsedExpandedHostIds: ReadonlySet<string> | undefined;
   let collapsed: TurnCollapse | undefined;
+  let unruledSource: StreamItem[] | undefined;
+  let unruledTail: StreamItem[] = [];
 
   function presentRows(item: StreamItem): StreamItem[] {
     if (item.kind === "tool_call") item = presentPaseoSend(item);
@@ -195,7 +230,17 @@ export function createStreamPresentation() {
       preparedHistory,
       isTurnActive: input.isTurnActive,
     });
-    const result = collapse(projection, input);
+    const collapsedResult = collapse(projection, input);
+    // The tail is walked again only when it changes, not on each live text update.
+    if (unruledSource !== collapsedResult.tail) {
+      unruledTail = dropOrphanedBoundaries(collapsedResult.tail, undefined);
+      unruledSource = collapsedResult.tail;
+    }
+    const result = {
+      ...collapsedResult,
+      tail: unruledTail,
+      head: dropOrphanedBoundaries(collapsedResult.head, collapsedResult.tail.at(-1)),
+    };
     // Only the trailing retained group can absorb head rows. Reuse the retained
     // index across streaming updates rather than walking the full history again.
     const last = projection.tail.at(-1);

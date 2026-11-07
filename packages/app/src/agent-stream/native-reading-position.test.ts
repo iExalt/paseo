@@ -271,6 +271,43 @@ describe("native reading position", () => {
     expect(calls).toEqual(["detach", "nearBottom false", "index 2 false"]);
   });
 
+  it("keeps an opened row's header in place while it opens and closes, then lets go", () => {
+    const { position, state, calls, advance } = setup();
+    state.offsetY = 100;
+    position.rowLayout("r1", { y: 200, height: 40 });
+    position.holdRow("r1");
+    calls.length = 0;
+    // The inverted list grows the row upwards; scrolling the header back opens it downwards.
+    // The second layout lands before the first scroll is reported, so the offset is stale.
+    position.rowLayout("r1", { y: 200, height: 240 });
+    position.rowLayout("r1", { y: 200, height: 260 });
+    expect(calls).toEqual(["offset 300 false", "offset 320 false"]);
+    expect(state.budget).toBe(3);
+    // Other rows and layouts after the hold expires are the reader's own.
+    calls.length = 0;
+    position.rowLayout("r2", { y: 300, height: 90 });
+    advance(600);
+    position.rowLayout("r1", { y: 200, height: 250 });
+    expect(calls).toEqual([]);
+    // Closing scrolls back by the shrink, never past the bottom.
+    state.offsetY = 310;
+    position.holdRow("r1");
+    position.rowLayout("r1", { y: 200, height: 40 });
+    state.offsetY = 0;
+    position.holdRow("r1");
+    position.rowLayout("r1", { y: 200, height: 0 });
+    // A drag lets go of the row, and a row without a measured frame is only held in place.
+    position.holdRow("r1");
+    position.beginDrag();
+    position.rowLayout("r1", { y: 200, height: 300 });
+    position.holdRow("unmeasured");
+    position.rowLayout("unmeasured", { y: 0, height: 50 });
+    expect(calls.filter((call) => call !== "detach")).toEqual([
+      "offset 100 false",
+      "offset 0 false",
+    ]);
+  });
+
   it("forgets the viewable rows and the pending restore for a different agent", () => {
     const { position, reported, calls, view, settle } = setup();
     position.hold();

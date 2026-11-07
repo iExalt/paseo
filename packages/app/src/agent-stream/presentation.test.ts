@@ -874,3 +874,47 @@ it.each(["message", "finished", "errored", "permission-required", "closed"] as c
     });
   },
 );
+
+it("keeps the Codex message rule only between messages that sit next to each other", () => {
+  const timestamp = new Date();
+  const reply = (id: string, text: string): StreamItem => ({
+    kind: "assistant_message",
+    id,
+    text,
+    timestamp,
+    turnId: "run",
+  });
+  const tail: StreamItem[] = [
+    { kind: "user_message", id: "prompt", text: "Work", timestamp, turnId: "run" },
+    reply("first", "Starting."),
+    reply("second", "\n\n---\n\nStill going."),
+    { ...toolCall("shell", "Bash"), turnId: "run" },
+    reply("third", "\n\n---\n\nDone."),
+  ];
+  const present = createStreamPresentation();
+  const input = {
+    ...presentationOptions,
+    transform: undefined,
+    tail,
+    head: [reply("live", "\n\n---\n\nMore.")],
+    isTurnActive: true,
+  };
+  const text = (presented: StreamItem[], id: string) => {
+    const row = presented.find((candidate) => candidate.id === id);
+    return row?.kind === "assistant_message" ? row.text : undefined;
+  };
+  const full = present({ ...input, display: "full" });
+  expect(text(full.tail, "second")).toBe("\n\n---\n\nStill going.");
+  expect(text(full.tail, "third")).toBe("Done.");
+  expect(text(full.head, "live")).toBe("\n\n---\n\nMore.");
+  // A later live update reuses the retained rows.
+  expect(present({ ...input, display: "full" }).tail).toBe(full.tail);
+  const withoutHead = present({
+    ...input,
+    head: [],
+    isTurnActive: false,
+    display: "collapseTurns",
+  });
+  expect(withoutHead.tail.map((row) => row.id)).toEqual(["prompt", "third"]);
+  expect(text(withoutHead.tail, "third")).toBe("Done.");
+});
