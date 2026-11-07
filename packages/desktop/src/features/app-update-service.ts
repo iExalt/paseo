@@ -447,19 +447,6 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
       return buildDeferredInstallResult(currentVersion);
     }
 
-    if (isReadyToInstallVersion(readyVersion)) {
-      await performQuitAndInstall(deps.runtime, {
-        targetVersion: readyVersion,
-        onBeforeQuit,
-        restart,
-      });
-      return {
-        installed: true,
-        version: readyVersion,
-        message: "Update installation requested. The app will restart when the installer starts.",
-      };
-    }
-
     try {
       const preparation = await ensureUpdateDownloaded(readyVersion, signal);
       if (preparation === "aborted") {

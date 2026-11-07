@@ -16,8 +16,8 @@ fail() {
   exit 1
 }
 
-# Only the macOS asset names are part of the signed manifest's contract; the
-# Linux ones sit beside it unsigned, and Nix checks their paths' signatures.
+# The primary manifest covers macOS; the separate signed desktop inventory
+# covers Linux union closures. Nix also checks every imported path signature.
 case "$(uname -sm)" in
   "Darwin arm64") platform=macos-arm64 system=aarch64-darwin attrs=(desktop) suffix=nix-desktop ;;
   "Linux x86_64") platform=linux-x64 system=x86_64-linux attrs=(paseo desktop) suffix=nix ;;

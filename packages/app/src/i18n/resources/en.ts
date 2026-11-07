@@ -1602,7 +1602,8 @@ export const en = {
         installingDescription: "Installing and restarting...",
         versionReady: "{{version}} is ready to install.",
         newVersionReady: "A new version is ready to install.",
-        restartWarning: "Upgrading the app will stop running agents and close terminal sessions.",
+        restartWarning:
+          "The update waits for active agents and terminals to finish before restarting.",
       },
     },
     settings: {

@@ -1502,7 +1502,7 @@ export const zhCN: TranslationResources = {
         installingDescription: "正在安装并重启...",
         versionReady: "{{version}} 已准备好安装。",
         newVersionReady: "新版本已准备好安装。",
-        restartWarning: "升级 app 会停止正在运行的 agents，并关闭 terminal 会话。",
+        restartWarning: "更新会等待运行中的代理和终端结束后再重启。",
       },
     },
     settings: {

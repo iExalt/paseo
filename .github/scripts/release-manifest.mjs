@@ -1,5 +1,5 @@
 // Builds, signs and verifies the signed release manifest for release.yml.
-//   node release-manifest.mjs build <assets dir>   writes paseo-release-manifest.{json,sig}
+//   node release-manifest.mjs build <assets dir>   writes primary and desktop .json/.sig inventories
 //   node release-manifest.mjs notes <version>      prints the CHANGELOG.fork.md section
 // build reads VERSION, SOURCE_SHA, UPSTREAM_BASE, MAC_OUTPUT_PATH, APK_VERSION_CODE,
 // APK_CERT_SHA256 and PASEO_RELEASE_MANIFEST_PRIVATE_KEY from the environment.

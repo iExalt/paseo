@@ -925,3 +925,24 @@ it("restores only once when the native adapter reports a late handoff failure", 
   await onFailure!();
   expect(restored).toBe(1);
 });
+
+it("returns a safety refusal for the already-downloaded target used by the enabled Update button", async () => {
+  const { runtime, service } = createService();
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  await service.checkForAppUpdate({
+    currentVersion: "1.2.3",
+    releaseChannel: "stable",
+    intent: "manual",
+  });
+  runtime.finishUpdateDownload(rolledOutUpdate);
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  const result = await service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => {
+      throw new Error("Fork update is waiting for active agents to finish.");
+    },
+  );
+  expect(result.installed).toBe(false);
+  expect(result.message).toContain("waiting for active agents");
+  expect(runtime.installedVersions).toEqual([]);
+});

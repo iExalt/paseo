@@ -1524,7 +1524,7 @@ export const ko: TranslationResources = {
         installingDescription: "설치 후 재시작 중...",
         versionReady: "{{version}} 설치가 준비되었습니다.",
         newVersionReady: "새 버전 설치가 준비되었습니다.",
-        restartWarning: "앱을 업그레이드하면 실행 중인 에이전트가 중지되고 터미널 세션이 닫힙니다.",
+        restartWarning: "업데이트는 실행 중인 에이전트와 터미널이 종료된 후 다시 시작합니다.",
       },
     },
     settings: {

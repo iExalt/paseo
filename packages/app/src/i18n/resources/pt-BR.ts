@@ -1545,7 +1545,7 @@ export const ptBR: TranslationResources = {
         versionReady: "{{version}} está pronta para instalar.",
         newVersionReady: "Uma nova versão está pronta para instalar.",
         restartWarning:
-          "Atualizar o app vai interromper agentes em execução e fechar sessões de terminal.",
+          "A atualização aguarda o término dos agentes e terminais ativos antes de reiniciar.",
       },
     },
     settings: {

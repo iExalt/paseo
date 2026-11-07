@@ -1,6 +1,6 @@
 # Fork updates across desktop platforms
 
-Status: approved; implementation active on dev-station.
+Status: implementation verified at the approved code-only boundary; final integration review and required PR checks pending.
 Baseline: `4ed3b1cb5`. Prepared 2026-11-06 UTC.
 Progress record: [workflow status](GITHUB_WORKFLOWS_STATUS.md#desktop-fork-updates).
 
@@ -12,9 +12,9 @@ shipped desktop target: macOS ARM64, Windows x64, and Linux Nix x64/ARM64.
 Preserve Android ARM64's signed APK and system-installer flow.
 
 The user selected: "Expand to automatic Windows/Linux updates; prepare a larger
-plan and estimate first." Implementation approved 2026-11-07 UTC: "OK, I'm good with the implementation. Work on dev-station /iExalt:keep-me-in-the-loop".
+plan and estimate first." Implementation approved 2026-11-07 UTC: "OK, I'm good with the implementation." The user also directed execution on the designated remote development host with keep-me-in-the-loop.
 Release publication remains excluded. Autonomy is medium.
-Implementation baseline: `4a3a8be53` on dev-station; the local checkout belongs to another task.
+Implementation baseline: `4a3a8be53` on the Linux development host; the local checkout belongs to another task.
 
 Automatic updates means background discovery and an in-app update flow. Applying
 or restarting remains explicit. Active agent work must not be terminated to apply
@@ -181,7 +181,7 @@ estimate and record the calibration result in `~/.local/state/agent-estimates.md
 ## Progress
 
 2026-11-07 UTC: A is verified and reviewer-accepted. Release fixtures: 9/9 pass
-in 0.46 s on dev-station, warm dependencies (baseline 7/7 in 0.47 s).
+in 0.46 s on the Linux development host, warm dependencies (baseline 7/7 in 0.47 s).
 Protocol typecheck and scoped lint pass. Review: A1 1 material/1 total;
 A2 0/0, closing the producer-entrypoint proof gap. Windows/Linux installation
 and UI remain unimplemented; no release was published.
@@ -206,3 +206,14 @@ signed Linux CLI roots use an explicit daemon-profile guard. Hard process exits
 retain the existing manual stale-lock recovery policy. Native Windows install,
 Linux import/activation and Mac/Android installed-client upgrades remain unrun.
 The station's untrusted Nix daemon lacks the release key; no configuration changed.
+
+2026-11-07 UTC: UI and integration checks pass. About shows Fork updates without a
+channel selector; refused installs retain their reason and retry action in About
+and the sidebar. App updater/i18n/row checks: 72/72; Android compatibility and
+related updater checks: 57/57; native service: 28/28; sidebar resolver: 11/11.
+Browser bridge journeys: 6/6 in 58.2 s, followed by the extended Windows
+sidebar/About journey: 1/1 in 24.6 s. Desktop, tablet and phone browser dogfood
+reported no defects; native installers and device UI remain unverified. Root
+typecheck, lint and formatting pass. C1 1 material/1 total; C2 0/0. Final
+integration acceptance and required CI remain publication gates. No release
+or installation on the user's devices was performed.
