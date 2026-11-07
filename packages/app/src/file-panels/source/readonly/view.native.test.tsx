@@ -8,7 +8,7 @@ import { FileSourceView } from "./view.native";
 interface ListProps {
   onScrollToIndexFailed: (info: { index: number; averageItemLength: number }) => void;
   onContentSizeChange: (width: number, height: number) => void;
-  onViewableItemsChanged: (info: { viewableItems: unknown[] }) => void;
+  onViewableItemsChanged: (info: { viewableItems: Array<{ index: number | null }> }) => void;
   onScrollBeginDrag: () => void;
 }
 
@@ -49,7 +49,7 @@ afterEach(() => {
 });
 
 describe("native source line navigation", () => {
-  it("retries a distant line after real row measurements arrive, then leaves scrolling alone", () => {
+  it("keeps a distant reveal pending until its row is measured and visible", () => {
     list.scrollToIndex.mockImplementationOnce(() => {
       list.props.onScrollToIndexFailed({ index: 449, averageItemLength: 35 });
     });
@@ -61,6 +61,10 @@ describe("native source line navigation", () => {
       animated: false,
       viewPosition: 0.5,
     });
+    const beforeVisible = list.scrollToIndex.mock.calls.length;
+    act(() => list.props.onViewableItemsChanged({ viewableItems: [{ index: 448 }] }));
+    expect(list.scrollToIndex).toHaveBeenCalledTimes(beforeVisible + 1);
+    act(() => list.props.onViewableItemsChanged({ viewableItems: [{ index: 449 }] }));
     const calls = list.scrollToIndex.mock.calls.length;
     act(() => list.props.onViewableItemsChanged({ viewableItems: [] }));
     expect(list.scrollToIndex).toHaveBeenCalledTimes(calls);

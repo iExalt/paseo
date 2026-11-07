@@ -49,9 +49,17 @@ export function FileSourceView({
   const revealPendingLine = useCallback(() => {
     const index = pendingLine.current;
     if (index === null) return;
-    pendingLine.current = null;
     listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
   }, []);
+  const handleViewableLines = useCallback(
+    ({ viewableItems }: { viewableItems: Array<{ index: number | null }> }) => {
+      const index = pendingLine.current;
+      if (index === null) return;
+      revealPendingLine();
+      if (viewableItems.some((row) => row.index === index)) pendingLine.current = null;
+    },
+    [revealPendingLine],
+  );
   const cancelPendingLine = useCallback(() => {
     pendingLine.current = null;
   }, []);
@@ -63,7 +71,10 @@ export function FileSourceView({
     [],
   );
   useEffect(() => {
-    if (!location.lineStart || lineCount === 0) return;
+    if (!location.lineStart || lineCount === 0) {
+      pendingLine.current = null;
+      return;
+    }
     pendingLine.current = Math.min(location.lineStart - 1, lineCount - 1);
     revealPendingLine();
   }, [lineCount, location.lineStart, navigationRevision, revealPendingLine]);
@@ -78,7 +89,7 @@ export function FileSourceView({
       // Wrapped rows and font scaling need the list's measured heights.
       onScrollToIndexFailed={handleUnmeasuredLine}
       onContentSizeChange={revealPendingLine}
-      onViewableItemsChanged={revealPendingLine}
+      onViewableItemsChanged={handleViewableLines}
       onScrollBeginDrag={cancelPendingLine}
       bounces={false}
       overScrollMode="never"
