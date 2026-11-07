@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.3](https://github.com/iExalt/paseo/compare/paseo-v0.24.2...paseo-v0.24.3) (2026-11-07)
+
+
+### Bug Fixes
+
+* **app:** open received messages downwards and fix their spacing ([#393](https://github.com/iExalt/paseo/issues/393)) ([38fa21e](https://github.com/iExalt/paseo/commit/38fa21e43b754f6187359bdfcc39fea87da8069b))
+
 ## [0.24.2](https://github.com/iExalt/paseo/compare/paseo-v0.24.1...paseo-v0.24.2) (2026-11-07)
 
 
