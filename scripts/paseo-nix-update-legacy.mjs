@@ -14,6 +14,7 @@ import {
   rm,
   writeFile,
 } from "node:fs/promises";
+import { linuxUpdatePaths } from "./paseo-nix-update-linux.mjs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
@@ -29,7 +30,10 @@ export const NIX_RELEASE_PUBLIC_KEY =
   "paseo-nix-release-1:hOc4RkmgnDMh/+aZWDdwQKuZHDVvVPh0Fya+DNAA+b8=";
 export const RELEASE_MANIFEST_ASSET = "paseo-release-manifest.json";
 export const RELEASE_SIGNATURE_ASSET = "paseo-release-manifest.sig";
-export const DATA_ROOT = join(homedir(), "Library", "Application Support", "Paseo", "nix-update");
+export const DATA_ROOT =
+  process.platform === "linux"
+    ? linuxUpdatePaths().root
+    : join(homedir(), "Library", "Application Support", "Paseo", "nix-update");
 export const ACTIVE_PROFILE = join(DATA_ROOT, "profile");
 export const STAGING_PROFILE = join(DATA_ROOT, "staging-profile");
 
@@ -341,11 +345,15 @@ export async function chooseHighestVerifiedStableRelease(
 }
 
 function nix(args, { capture = false, allowFailure = false, quiet = false } = {}) {
-  const result = spawnSync("nix", args, {
-    cwd: ROOT,
-    encoding: capture ? "utf8" : undefined,
-    stdio: nixOutputMode(capture, quiet),
-  });
+  const result = spawnSync(
+    "nix",
+    ["--extra-experimental-features", "nix-command flakes", ...args],
+    {
+      cwd: ROOT,
+      encoding: capture ? "utf8" : undefined,
+      stdio: nixOutputMode(capture, quiet),
+    },
+  );
   if (result.error) {
     fail(`Could not run nix ${args[0]}: ${result.error.message}`);
   }
@@ -372,10 +380,16 @@ function nixEnv(args, { capture = false, allowFailure = false, quiet = false } =
   return { status: result.status, stdout: capture ? String(result.stdout ?? "") : "" };
 }
 
-export function setProfile(profilePath, outputPath, { fixture = false, quiet = false } = {}) {
-  const validOutput = fixture
-    ? /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/.test(outputPath)
-    : /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/.test(outputPath);
+export function setProfile(
+  profilePath,
+  outputPath,
+  { fixture = false, quiet = false, product = "desktop" } = {},
+) {
+  let pattern = /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+$/;
+  if (fixture) pattern = /^\/nix\/store\/[a-z0-9]{32}-[^/]+$/;
+  else if (product === "daemon") pattern = /^\/nix\/store\/[a-z0-9]{32}-paseo-[^/]+$/;
+  const validOutput =
+    (fixture || product === "desktop" || product === "daemon") && pattern.test(outputPath);
   if (!isAbsolute(profilePath) || !validOutput) {
     fail("Profile activation requires an absolute profile path and exact verified store output.");
   }

@@ -280,7 +280,9 @@ manifest. The release producer and asset catalog require both new sidecars.
 Nine fixture checks pass on dev-station; protocol typecheck and scoped lint pass.
 Review A1: 1 material/1 total; A2: 0/0. Windows adapter code and safety fixtures
 now pass (57 updater/safety checks, root types and scoped lint); BW1 2/2, BW2 0/0.
-Linux adapter and shared UI remain unfinished.
+Linux adapter fixtures now pass (14 helper checks, including the real command
+controller with fake Nix/network boundaries; BL1 2/2, BL2 0/0). Shared UI and final
+integration remain unfinished.
 No release publication or native-client upgrade has run.
 
 ## Toolchain

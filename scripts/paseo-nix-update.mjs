@@ -54,9 +54,53 @@ import {
 import {
   appBundle,
   launchDesktopApp,
-  syncDesktopApp,
+  syncDesktopApp as syncMacDesktopApp,
   waitForExit,
 } from "./paseo-nix-update-macos.mjs";
+
+import { latestVerifiedDesktopRelease, verifyDesktopReleaseBytes } from "./desktop-release.mjs";
+import {
+  assertLinuxLauncherOwnership,
+  syncLinuxLauncher,
+  removeCreatedLinuxLaunchers,
+  validateLinuxNixPrerequisites,
+  executeLinuxBootstrap,
+} from "./paseo-nix-update-linux.mjs";
+
+async function syncDesktopApp(outputPath) {
+  return process.platform === "linux"
+    ? syncLinuxLauncher(ACTIVE_PROFILE)
+    : syncMacDesktopApp(outputPath);
+}
+function assertSupportedNixHost() {
+  if (process.platform === "linux" && ["x64", "arm64"].includes(process.arch)) return;
+  assertMacArm();
+}
+export function desktopNixArtifact(manifest, arch = process.arch) {
+  if (manifest.schemaVersion !== 1) return macArtifact(manifest);
+  const artifact = manifest.artifacts.find(
+    (entry) => entry.platform === "linux" && entry.arch === arch && entry.kind === "nix-desktop",
+  );
+  assert.ok(artifact, "Release has no Nix desktop for this Linux architecture");
+  return artifact;
+}
+function runningLinuxOutput() {
+  const output = process.env.PASEO_NIX_OUTPUT_PATH;
+  assert.match(
+    output ?? "",
+    /^\/nix\/store\/[0-9abcdfghijklmnpqrsvwxyz]{32}-paseo-desktop-([0-9]+\.[0-9]+\.[0-9]+)$/,
+    "Run the Linux updater from its immutable Nix wrapper",
+  );
+  return output;
+}
+function linuxRunningVersion() {
+  return runningLinuxOutput().split("-paseo-desktop-")[1];
+}
+async function linuxPreflight() {
+  const store = JSON.parse(nix(["store", "info", "--json"], { capture: true }).stdout);
+  const configuration = JSON.parse(nix(["config", "show", "--json"], { capture: true }).stdout);
+  validateLinuxNixPrerequisites(store, configuration, NIX_RELEASE_PUBLIC_KEY);
+}
 
 export {
   DATA_ROOT,
@@ -173,7 +217,7 @@ export async function latestVerifiedRelease({
 }
 
 export function validateNixClosureManifest(bytes, manifest) {
-  return validateNixArtifactClosure(bytes, macArtifact(manifest), manifest);
+  return validateNixArtifactClosure(bytes, desktopNixArtifact(manifest), manifest);
 }
 
 export function validateNixArtifactClosure(bytes, artifact, manifest) {
@@ -201,17 +245,31 @@ export function validateNixArtifactClosure(bytes, artifact, manifest) {
     previous = entry.path;
   }
   assert.ok(closure.closure.some((entry) => entry.path === artifact.outputPath));
+  if (artifact.platform === "linux") {
+    assert.deepEqual(
+      closure.outputPaths,
+      artifact.outputPaths,
+      "Linux union outputs differ from signed inventory",
+    );
+    for (const output of artifact.outputPaths)
+      assert.ok(
+        closure.closure.some((entry) => entry.path === output),
+        "Linux union closure omits a signed output",
+      );
+  }
   return closure;
 }
 
 async function verifyClosure(receipt) {
   const closure = validateNixClosureManifest(receipt.nixManifestBytes, receipt.manifest);
-  const output = macArtifact(receipt.manifest).outputPath;
-  nix(["store", "verify", "--recursive", "--sigs-needed", "1", ...nixOptions(), output], {
+  const artifact = desktopNixArtifact(receipt.manifest);
+  const outputs = artifact.outputPaths ?? [artifact.outputPath];
+  nix(["store", "verify", "--recursive", "--sigs-needed", "1", ...nixOptions(), ...outputs], {
     quiet: true,
   });
   const actual = JSON.parse(
-    nix(["path-info", "--json", "--recursive", ...nixOptions(), output], { capture: true }).stdout,
+    nix(["path-info", "--json", "--recursive", ...nixOptions(), ...outputs], { capture: true })
+      .stdout,
   );
   const expected = closure.closure.map(({ path, narHash, narSize }) => ({
     path,
@@ -256,12 +314,25 @@ async function loadReceipt(target) {
     readFile(join(directory, "release-manifest.sig")),
     readFile(join(directory, "nix-closure-manifest.json")),
   ]);
-  const manifest = verifyReleaseManifestBytes(manifestBytes, signatureBytes);
+  const primaryBytes =
+    process.platform === "linux" ? await readFile(join(directory, "primary-manifest.json")) : null;
+  const primarySignature =
+    process.platform === "linux" ? await readFile(join(directory, "primary-manifest.sig")) : null;
+  const manifest = primaryBytes
+    ? verifyDesktopReleaseBytes(manifestBytes, signatureBytes, primaryBytes, primarySignature)
+    : verifyReleaseManifestBytes(manifestBytes, signatureBytes);
   assert.equal(identity(manifest), target.identity);
   assert.equal(manifest.version, target.version);
-  assert.equal(macArtifact(manifest).outputPath, target.outputPath);
+  assert.equal(desktopNixArtifact(manifest).outputPath, target.outputPath);
   validateNixClosureManifest(nixManifestBytes, manifest);
-  return { manifest, manifestBytes, signatureBytes, nixManifestBytes };
+  return {
+    manifest,
+    manifestBytes,
+    signatureBytes,
+    nixManifestBytes,
+    primaryBytes,
+    primarySignature,
+  };
 }
 
 async function persistReceipt(receipt) {
@@ -271,6 +342,12 @@ async function persistReceipt(receipt) {
     ["release-manifest.json", receipt.manifestBytes],
     ["release-manifest.sig", receipt.signatureBytes],
     ["nix-closure-manifest.json", receipt.nixManifestBytes],
+    ...(receipt.primaryBytes
+      ? [
+          ["primary-manifest.json", receipt.primaryBytes],
+          ["primary-manifest.sig", receipt.primarySignature],
+        ]
+      : []),
   ];
   if (await exists(destination)) {
     for (const [name, bytes] of files)
@@ -296,7 +373,7 @@ function targetFor(manifest) {
     lineage: FORK_RELEASE_LINEAGE,
     generation: null,
     identity: identity(manifest),
-    outputPath: macArtifact(manifest).outputPath,
+    outputPath: desktopNixArtifact(manifest).outputPath,
     version: manifest.version,
   };
 }
@@ -312,7 +389,7 @@ export async function importWithFallback({ fast, full, warn }) {
 }
 
 async function stageRelease(verified) {
-  const artifact = macArtifact(verified.manifest);
+  const artifact = desktopNixArtifact(verified.manifest);
   const nixManifestBytes = await fetchMetadata(
     releaseDownloadUrl(verified.tag, artifact.closureManifest.name),
     "the Nix closure manifest",
@@ -320,14 +397,16 @@ async function stageRelease(verified) {
   const closure = validateNixClosureManifest(nixManifestBytes, verified.manifest);
   const receipt = { ...verified, nixManifestBytes };
   const importCache = async (cache) => {
-    nix(localCacheCopyArgs(cache, artifact.outputPath), { quiet: true });
-    nix(localCacheCopySignaturesArgs(cache, artifact.outputPath), { quiet: true });
+    for (const output of artifact.outputPaths ?? [artifact.outputPath]) {
+      nix(localCacheCopyArgs(cache, output), { quiet: true });
+      nix(localCacheCopySignaturesArgs(cache, output), { quiet: true });
+    }
     await verifyClosure(receipt);
   };
   const directory = await mkdtemp(join(STATE_ROOT, "download-"));
   const indexed = join(directory, "indexed");
   try {
-    await importWithFallback({
+    const transfer = {
       // Fetches only the paths this store lacks: a delta against an installed
       // release, else that path's range of the tar (paseo-nix-update-delta.mjs).
       async fast() {
@@ -368,8 +447,16 @@ async function stageRelease(verified) {
         process.stderr.write(
           `Partial update download failed (${message.slice(0, 2000)}); downloading the full archive.\n`,
         ),
-    });
+    };
+    if (artifact.platform === "linux") await transfer.full();
+    else await importWithFallback(transfer);
     await persistReceipt(receipt);
+    if (artifact.platform === "linux")
+      setProfile(
+        join(STATE_ROOT, "receipts", identity(verified.manifest), "cli-profile"),
+        artifact.outputPaths[0],
+        { quiet: true, product: "daemon" },
+      );
     setProfile(STAGING_PROFILE, artifact.outputPath, { quiet: true });
     const target = targetFor(verified.manifest);
     await writeJson(join(STATE_ROOT, "staged.json"), target);
@@ -382,6 +469,25 @@ async function stageRelease(verified) {
 // Deleting a generation only drops its GC root; Nix still keeps any store path a
 // running process holds, so an app left running on a pruned version survives GC.
 async function pruneGenerations(keep) {
+  if (process.platform === "linux") {
+    const state = validateState(await readOptional(join(STATE_ROOT, "profile-state.json")));
+    const staged = await readOptional(join(STATE_ROOT, "staged.json"));
+    const identities = new Set(
+      [state.current, state.highWater, ...state.generations, staged]
+        .filter(Boolean)
+        .map((target) => target.identity),
+    );
+    const receipts = join(STATE_ROOT, "receipts");
+    for (const name of await readdir(receipts)) {
+      if (!/^[a-f0-9]{40}-v[0-9]+\.[0-9]+\.[0-9]+$/.test(name) || identities.has(name)) continue;
+      for (const file of await readdir(join(receipts, name))) {
+        const root = join(receipts, name, file);
+        if (/^cli-profile(-[1-9][0-9]*-link)?$/.test(file) && (await lstat(root)).isSymbolicLink())
+          await rm(root);
+      }
+    }
+  }
+
   const stale = (await profileGenerations(ACTIVE_PROFILE))
     .filter((entry) => !entry.current && !keep.includes(entry.generation))
     .map((entry) => String(entry.generation));
@@ -444,7 +550,12 @@ function productionAdapters() {
         );
       }
     },
-    selectTarget: (target) => setProfile(ACTIVE_PROFILE, target.outputPath, { quiet: true }),
+    selectTarget: (target) =>
+      target.generation === null
+        ? setProfile(ACTIVE_PROFILE, target.outputPath, { quiet: true })
+        : nixEnv(["--profile", ACTIVE_PROFILE, "--switch-generation", String(target.generation)], {
+            quiet: true,
+          }),
     pruneGenerations,
     syncDesktopApp,
   };
@@ -624,6 +735,7 @@ async function installApp(args) {
 export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
   const [command = "help", ...rest] = argv;
   const commands = [
+    "bootstrap",
     "check",
     "stage",
     "activate",
@@ -651,7 +763,7 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
     "Expected only optional --json",
   );
   assert.ok(commands.includes(command), "Unsupported updater command");
-  assertMacArm();
+  assertSupportedNixHost();
   await mkdir(DATA_ROOT, { recursive: true, mode: 0o700 });
   const root = await lstat(DATA_ROOT);
   assert.ok(root.isDirectory() && !root.isSymbolicLink(), "Invalid updater state root");
@@ -681,10 +793,59 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
       clearStaged: () => rm(join(STATE_ROOT, "staged.json"), { force: true }),
       loadReceipt,
       legacySnapshot: readLegacyRecoverySnapshot,
-      latest: () => latestVerifiedRelease(),
+      latest: async () => {
+        if (process.platform !== "linux") return latestVerifiedRelease();
+        const release = await latestVerifiedDesktopRelease();
+        assert.ok(
+          compareForkVersions(release.manifest.version, linuxRunningVersion()) >= 0,
+          "Latest release is older than the running Linux version",
+        );
+        return release;
+      },
       stage: stageRelease,
     };
-    const result = await executeCommand(command, adapters);
+    let result;
+    if (process.platform === "linux") {
+      await assertLinuxLauncherOwnership(ACTIVE_PROFILE);
+      if (command === "bootstrap") {
+        result = await executeLinuxBootstrap({
+          runningOutput: runningLinuxOutput(),
+          artifact: desktopNixArtifact,
+          assertOwnership: async () => {
+            const state = await adapters.readState();
+            const actual = await adapters.current();
+            assert.ok(
+              state !== null || actual === null || (await adapters.readJournal()),
+              "Dedicated profile exists without updater ownership; refusing adoption",
+            );
+          },
+          preflight: linuxPreflight,
+          prepareLauncher: () => syncLinuxLauncher(ACTIVE_PROFILE),
+          rollbackLauncher: async (created) => {
+            if ((await adapters.current()) === null) await removeCreatedLinuxLaunchers(created);
+          },
+          runningRelease: () =>
+            latestVerifiedDesktopRelease({
+              resolveTag: async () => forkReleaseTag(linuxRunningVersion()),
+            }),
+          stage: stageRelease,
+          activate: () => executeCommand("activate", adapters),
+        });
+        result.action = "bootstrap";
+      } else {
+        assert.ok(
+          await adapters.readState(),
+          "Linux fork updates require one bootstrap: run the installed paseo-nix-update bootstrap, then use its dedicated launcher",
+        );
+        if (["stage", "activate"].includes(command)) await linuxPreflight();
+        if (["activate", "rollback", "reactivate-high-water"].includes(command))
+          await syncLinuxLauncher(ACTIVE_PROFILE);
+        result = await executeCommand(command, adapters);
+      }
+    } else {
+      assert.notEqual(command, "bootstrap", "Linux bootstrap is not used on macOS");
+      result = await executeCommand(command, adapters);
+    }
     process.stdout.write(
       rest.includes("--json")
         ? `${JSON.stringify(result)}\n`

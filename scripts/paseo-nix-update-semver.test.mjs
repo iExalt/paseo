@@ -591,3 +591,365 @@ test("Dock migration repoints store-pinned Paseo tiles at the installed app and 
     process.stderr.write = stderr;
   }
 });
+
+import { execFileSync, spawnSync } from "node:child_process";
+import {
+  linuxUpdatePaths,
+  assertLinuxLauncherOwnership,
+  syncLinuxLauncher,
+  validateLinuxNixPrerequisites,
+  executeLinuxBootstrap,
+} from "./paseo-nix-update-linux.mjs";
+import { desktopNixArtifact } from "./paseo-nix-update.mjs";
+
+test("Linux launcher follows only its dedicated profile and preserves foreign files", async () => {
+  const home = await mkdtemp(join(tmpdir(), "paseo linux home 'quoted "));
+  const paths = linuxUpdatePaths({ home, env: {} });
+  const profile = join(paths.root, "profile");
+  try {
+    await syncLinuxLauncher(profile, paths);
+    const original = await readFile(paths.launcher, "utf8");
+    for (const version of ["one", "two"]) {
+      const output = join(home, version);
+      await mkdir(join(output, "bin"), { recursive: true });
+      await writeFile(join(output, "bin", "paseo-desktop"), `#!/bin/sh\nprintf '${version}\\n'\n`, {
+        mode: 0o755,
+      });
+      await mkdir(paths.root, { recursive: true });
+      await rm(profile, { force: true });
+      await symlink(output, profile);
+      assert.equal(execFileSync(paths.launcher, [], { encoding: "utf8" }).trim(), version);
+      await syncLinuxLauncher(profile, paths);
+      assert.equal(await readFile(paths.launcher, "utf8"), original);
+    }
+    await rm(paths.launcher);
+    await symlink(join(home, "two", "bin", "paseo-desktop"), paths.launcher);
+    await assert.rejects(assertLinuxLauncherOwnership(profile, paths), /externally managed/);
+    assert.equal((await lstat(paths.launcher)).isSymbolicLink(), true);
+    assert.equal(execFileSync(paths.launcher, [], { encoding: "utf8" }).trim(), "two");
+    assert.throws(
+      () => linuxUpdatePaths({ home, env: { XDG_STATE_HOME: "relative" } }),
+      /absolute/,
+    );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Linux bootstrap command controller verifies running output and ownership before adoption, and retries interruptions", async () => {
+  const artifact = {
+    platform: "linux",
+    arch: "x64",
+    kind: "nix-desktop",
+    outputPath: target().outputPath,
+  };
+  const release = { manifest: { schemaVersion: 1, artifacts: [artifact] } };
+  const events = [];
+  let failStage = true;
+  const adapters = {
+    runningOutput: target().outputPath,
+    artifact: (manifest) => desktopNixArtifact(manifest, "x64"),
+    assertOwnership: async () => {
+      events.push("ownership");
+    },
+    preflight: async () => {
+      events.push("permissions");
+    },
+    runningRelease: async () => release,
+    prepareLauncher: async () => {
+      events.push("launcher");
+    },
+    stage: async () => {
+      events.push("stage");
+      if (failStage) throw new Error("interrupted import");
+    },
+    rollbackLauncher: async () => {
+      events.push("undo-launcher");
+    },
+    activate: async () => {
+      events.push("activate");
+      return { ok: true };
+    },
+  };
+  await assert.rejects(executeLinuxBootstrap(adapters), /interrupted/);
+  assert.equal(events.includes("activate"), false);
+  failStage = false;
+  events.length = 0;
+  assert.deepEqual(await executeLinuxBootstrap(adapters), { ok: true });
+  assert.deepEqual(events, ["ownership", "permissions", "stage", "launcher", "activate"]);
+  events.length = 0;
+  await assert.rejects(
+    executeLinuxBootstrap({ ...adapters, runningOutput: target("0.2.0").outputPath }),
+    /differs/,
+  );
+  assert.equal(events.includes("stage"), false);
+  await assert.rejects(
+    executeLinuxBootstrap({
+      ...adapters,
+      assertOwnership: async () => {
+        throw new Error("foreign profile");
+      },
+    }),
+    /foreign/,
+  );
+  await assert.rejects(
+    executeLinuxBootstrap({
+      ...adapters,
+      runningRelease: async () => {
+        throw new Error("missing signed sidecar");
+      },
+    }),
+    /sidecar/,
+  );
+  assert.throws(
+    () =>
+      validateLinuxNixPrerequisites(
+        { trusted: false },
+        { "trusted-public-keys": { value: [] } },
+        "fork-key",
+      ),
+    /administrator/,
+  );
+  validateLinuxNixPrerequisites(
+    { trusted: false },
+    { "trusted-public-keys": { value: ["fork-key"] } },
+    "fork-key",
+  );
+});
+
+test("packaged updater imports its shipped contracts and real CLI fails closed on untrusted Nix", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "paseo-packaged-helper-"));
+  try {
+    const recipe = await readFile(new URL("../nix/desktop-package.nix", import.meta.url), "utf8");
+    for (const [prefix, destination] of [
+      ["scripts/paseo-nix-update.mjs", "scripts"],
+      ["packages/protocol/src/release-manifest.ts", "packages/protocol/src"],
+    ]) {
+      const start = recipe.indexOf(`cp ${prefix}`);
+      const end = recipe.indexOf(`"$updater_root/${destination}/"`, start);
+      assert.ok(start >= 0 && end > start);
+      const files = recipe
+        .slice(start + 3, end)
+        .replaceAll("\\", "")
+        .trim()
+        .split(/\s+/);
+      await mkdir(join(directory, destination), { recursive: true });
+      for (const file of files)
+        await cp(
+          new URL(`../${file}`, import.meta.url),
+          join(directory, destination, file.split("/").at(-1)),
+        );
+    }
+    await writeFile(join(directory, "package.json"), '{"type":"module"}');
+    const cli = join(directory, "scripts", "paseo-nix-update.mjs");
+    assert.match(
+      execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8" }),
+      /bootstrap/,
+    );
+    await mkdir(join(directory, "bin"));
+    await writeFile(
+      join(directory, "bin", "nix"),
+      `#!/bin/sh\ncase "$*" in\n *"store info"*) printf '{"trusted":false}' ;;\n *"config show"*) printf '{"trusted-public-keys":{"value":[]}}' ;;\n *) exit 99 ;;\nesac\n`,
+      { mode: 0o755 },
+    );
+    const result = spawnSync(process.execPath, [cli, "bootstrap", "--json"], {
+      encoding: "utf8",
+      timeout: 10_000,
+      env: {
+        ...process.env,
+        HOME: directory,
+        XDG_STATE_HOME: join(directory, "state"),
+        XDG_DATA_HOME: join(directory, "data"),
+        PASEO_NIX_OUTPUT_PATH: target().outputPath,
+        PATH: `${join(directory, "bin")}:${process.env.PATH}`,
+      },
+    });
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(JSON.parse(result.stdout).error, /must trust the Paseo release key/);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+import { desktopManifestBytes, describeAsset } from "../.github/scripts/release-manifest.mjs";
+import { releaseAssets } from "../.github/scripts/release-assets.mjs";
+test("real Linux CLI verifies dual receipts, imports both roots, recovers interrupted selection and prunes only obsolete roots", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "paseo-linux-rehearsal-"));
+  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const pin = publicKey.export({ format: "jwk" }).x;
+  const signature = (bytes) => Buffer.from(sign(null, bytes, privateKey).toString("base64url"));
+  const roots = {};
+  const macRoots = {};
+  const output = (version, product) => `/nix/store/${"a".repeat(32)}-${product}-${version}`;
+  const signedStateRoot = join(directory, "state", "paseo", "nix-update");
+  const nixStateFile = join(directory, "nix-state.json");
+  try {
+    for (const version of ["0.1.0", "0.2.0", "0.3.0"]) {
+      const names = releaseAssets(version),
+        destination = join(directory, "releases", version);
+      await mkdir(destination, { recursive: true });
+      const primary = forkReleaseManifestV3Fixture(version);
+      let primaryBytes;
+      const archive = Buffer.from(`fixture signed union archive ${version}`);
+      const outputs = [output(version, "paseo"), output(version, "paseo-desktop")];
+      const closure = outputs.map((path) => ({
+        path,
+        narHash: `sha256-${Buffer.alloc(32).toString("base64")}`,
+        narSize: 1,
+      }));
+      for (const value of outputs) roots[value] = closure;
+      macRoots[outputs[1]] = [closure[1]];
+      const macClosure = Buffer.from(
+        JSON.stringify({
+          schemaVersion: 2,
+          kind: "paseo-verification-candidate",
+          sourceSha: primary.sourceSha,
+          forkVersion: version,
+          system: "aarch64-darwin",
+          outputPath: outputs[1],
+          provenance: "local-ci-build",
+          closure: [closure[1]],
+        }),
+      );
+      await writeFile(join(destination, names.macArchive), archive);
+      await writeFile(join(destination, names.macClosure), macClosure);
+      Object.assign(
+        primary.artifacts.find((entry) => entry.platform === "macos"),
+        describeAsset(names.macArchive, archive),
+        { outputPath: outputs[1], closureManifest: describeAsset(names.macClosure, macClosure) },
+      );
+      primaryBytes = Buffer.from(JSON.stringify(primary));
+
+      const linux = [];
+      for (const arch of ["x64", "arm64"]) {
+        const prefix = `paseo-${version}-linux-${arch}-nix`;
+        const system = arch === "x64" ? "x86_64-linux" : "aarch64-linux";
+        const closureBytes = Buffer.from(
+          JSON.stringify({
+            schemaVersion: 2,
+            kind: "paseo-verification-candidate",
+            sourceSha: primary.sourceSha,
+            forkVersion: version,
+            system,
+            outputPath: outputs[1],
+            outputPaths: outputs,
+            provenance: "local-ci-build",
+            closure,
+          }),
+        );
+        await writeFile(join(destination, `${prefix}.tar`), archive);
+        await writeFile(join(destination, `${prefix}.json`), closureBytes);
+        linux.push(
+          Object.assign(describeAsset(`${prefix}.tar`, archive), {
+            platform: "linux",
+            arch,
+            kind: "nix-desktop",
+            system,
+            outputPath: outputs[1],
+            outputPaths: outputs,
+            closureManifest: describeAsset(`${prefix}.json`, closureBytes),
+          }),
+        );
+      }
+      const installer = Buffer.from("fixture installer");
+      const desktop = desktopManifestBytes(primaryBytes, {
+        linux,
+        windows: {
+          platform: "windows",
+          arch: "x64",
+          kind: "nsis",
+          ...describeAsset(names.windowsInstaller, installer),
+          sha512: createHash("sha512").update(installer).digest("base64"),
+        },
+      });
+      for (const [name, bytes] of [
+        [names.manifest, primaryBytes],
+        [names.signature, signature(primaryBytes)],
+        [names.desktopManifest, desktop],
+        [names.desktopSignature, signature(desktop)],
+      ])
+        await writeFile(join(destination, name), bytes);
+    }
+    await writeFile(join(directory, "closures.json"), JSON.stringify(roots));
+    await writeFile(join(directory, "mac-closures.json"), JSON.stringify(macRoots));
+    await writeFile(nixStateFile, JSON.stringify({ profiles: {}, imported: [], calls: [] }));
+    const env = {
+      ...process.env,
+      HOME: directory,
+      XDG_STATE_HOME: join(directory, "state"),
+      XDG_DATA_HOME: join(directory, "data"),
+      PASEO_UPDATE_FIXTURE: directory,
+      PASEO_UPDATE_FIXTURE_PIN: pin,
+      PASEO_NIX_OUTPUT_PATH: output("0.1.0", "paseo-desktop"),
+      PASEO_UPDATE_LATEST: "0.1.0",
+    };
+    const run = (command, additions = {}) =>
+      spawnSync(
+        process.execPath,
+        [
+          "--import",
+          new URL("./test-fixtures/linux-update-hooks.mjs", import.meta.url).pathname,
+          new URL("./paseo-nix-update.mjs", import.meta.url).pathname,
+          command,
+          "--json",
+        ],
+        { env: { ...env, PASEO_UPDATE_FAIL: "", ...additions }, encoding: "utf8", timeout: 15_000 },
+      );
+    const result = (command, additions) => {
+      const child = run(command, additions);
+      assert.equal(child.status, 0, `${command}: ${child.stdout}\n${child.stderr}`);
+      return JSON.parse(child.stdout);
+    };
+    let failed = run("bootstrap", { PASEO_UPDATE_FAIL: "import" });
+    assert.equal(failed.status, 1, failed.stderr);
+    assert.match(failed.stdout, /interrupted import/);
+    const paths = linuxUpdatePaths({ home: directory, env });
+    await assert.rejects(lstat(paths.desktop), { code: "ENOENT" });
+    failed = run("bootstrap", { PASEO_UPDATE_FAIL: "select-before" });
+    assert.equal(failed.status, 1, failed.stdout);
+    await assert.rejects(lstat(paths.desktop), { code: "ENOENT" });
+    failed = run("bootstrap", { PASEO_UPDATE_FAIL: "select-after" });
+    assert.equal(failed.status, 73, failed.stdout);
+    assert.ok(await lstat(join(signedStateRoot, "semver-v1", "pending-activation.json")));
+    assert.match(run("bootstrap").stdout, /stale lock/);
+    // The fixture owns the exited subprocess; production requires this explicit stale-lock recovery too.
+    await rm(join(signedStateRoot, "operation.lock"));
+    assert.equal(result("bootstrap").active.version, "0.1.0");
+    assert.equal(result("status").highWaterVersion, "0.1.0");
+    for (const version of ["0.2.0", "0.3.0"]) {
+      assert.equal(result("stage", { PASEO_UPDATE_LATEST: version }).staged.version, version);
+      assert.equal(result("activate").active.version, version);
+    }
+    const state = JSON.parse(await readFile(nixStateFile, "utf8"));
+    for (const version of ["0.1.0", "0.2.0", "0.3.0"])
+      for (const product of ["paseo", "paseo-desktop"])
+        assert.ok(state.imported.includes(output(version, product)));
+    assert.ok(
+      state.calls.some(
+        (args) =>
+          args[0] === "store" &&
+          args[1] === "verify" &&
+          args.filter((value) => value.startsWith("/nix/store/")).length === 2,
+      ),
+    );
+    const receipt = (version) =>
+      join(signedStateRoot, "semver-v1", "receipts", `${"b".repeat(40)}-v${version}`);
+    for (const version of ["0.2.0", "0.3.0"]) {
+      assert.ok((await lstat(join(receipt(version), "cli-profile"))).isSymbolicLink());
+      assert.ok(await readFile(join(receipt(version), "primary-manifest.sig")));
+    }
+    await assert.rejects(lstat(join(receipt("0.1.0"), "cli-profile")), { code: "ENOENT" });
+    assert.equal(result("rollback").active.version, "0.2.0");
+    assert.equal(result("reactivate-high-water").active.version, "0.3.0");
+    // The same real retained-generation selector also serves existing schema-3 Mac receipts.
+    const macEnv = { PASEO_UPDATE_MAC: "1", PASEO_UPDATE_LATEST: "0.1.0" };
+    result("stage", macEnv);
+    assert.equal(result("activate", macEnv).active.version, "0.1.0");
+    result("stage", { ...macEnv, PASEO_UPDATE_LATEST: "0.2.0" });
+    assert.equal(result("activate", macEnv).active.version, "0.2.0");
+    assert.equal(result("rollback", macEnv).active.version, "0.1.0");
+    assert.equal(result("reactivate-high-water", macEnv).active.version, "0.2.0");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});

@@ -114,7 +114,7 @@ or a distinct required proof. Optional cleanup does not prolong the review loop.
       readers still accept unchanged schema-3 fixtures and ignore the new sidecars;
       reject changed signatures, assets, identity, target cells and digests. Windows
       and Linux adapters depend on acceptance of this contract.
-- [ ] **B. Working platform adapters.** Implement and review Windows and Linux as
+- [x] **B. Working platform adapters.** Implement and review Windows and Linux as
       separate increments. Exercise the real NSIS provider/download/configuration
       entry point and Nix command/transaction entry point with controlled fixtures.
       Cover wrong architecture, stale releases, cached tampering, interrupted download,
@@ -195,3 +195,14 @@ revalidate the native installer path after safe shutdown. Pending-create fixture
 proves disconnect/create survival, without a deterministic scheduling barrier.
 Actual Windows installation and late-error app survival remain unverified.
 Linux and UI are next.
+
+2026-11-07 UTC: Linux adapter is verified at the code-only boundary and
+reviewer-accepted. Helper suites: 14/14 in 2.40 s; native marker/updater suites:
+13/13 in 0.14 s. Scoped lint, desktop types and Nix syntax pass. BL1 2 material/2
+total; BL2 0/0. Actual CLI fixture rehearses signed dual receipts, both closure
+roots, failed bootstrap cleanup, interrupted activation replay, retention and
+Linux/Mac recovery. Retained recovery now selects its existing Nix generation;
+signed Linux CLI roots use an explicit daemon-profile guard. Hard process exits
+retain the existing manual stale-lock recovery policy. Native Windows install,
+Linux import/activation and Mac/Android installed-client upgrades remain unrun.
+The station's untrusted Nix daemon lacks the release key; no configuration changed.
