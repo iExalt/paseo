@@ -48,10 +48,37 @@ function parseMarker(bytes: Buffer): NixManagedMarker {
   return value as NixManagedMarker;
 }
 
+export function resolveLinuxDesktopInstallation(
+  appRoot: string,
+  fileSystem: InstallFileSystem = { readFileSync, realpathSync, statSync },
+): DesktopInstallation {
+  try {
+    const root = fileSystem.realpathSync(appRoot);
+    const marker = parseMarker(fileSystem.readFileSync(path.join(root, NIX_MANAGED_MARKER_NAME)));
+    if (
+      !marker.outputPath ||
+      !STORE_OUTPUT.test(marker.outputPath) ||
+      root !== path.join(marker.outputPath, "share", "paseo-desktop", "electron-app")
+    )
+      throw new Error("Linux installation marker does not identify its immutable app root.");
+    const cliPath = path.join(marker.outputPath, "bin", "paseo-nix-update");
+    if (fileSystem.realpathSync(cliPath) !== cliPath || !fileSystem.statSync(cliPath).isFile())
+      throw new Error("Linux managed updater is missing from its Nix output.");
+    return { mode: "nix", outputPath: marker.outputPath, cliPath, marker };
+  } catch (error) {
+    return {
+      mode: "nix-invalid",
+      error: error instanceof Error ? error.message : "Invalid Linux app root.",
+    };
+  }
+}
+
 export function resolveDesktopInstallation(
   resourcesPath: string | undefined,
   fileSystem: InstallFileSystem = { readFileSync, realpathSync, statSync },
 ): DesktopInstallation {
+  if (process.env.PASEO_NIX_APP_ROOT)
+    return resolveLinuxDesktopInstallation(process.env.PASEO_NIX_APP_ROOT, fileSystem);
   if (!resourcesPath) return { mode: "electron" };
   const markerPath = path.join(resourcesPath, NIX_MANAGED_MARKER_NAME);
   let markerBytes: Buffer;

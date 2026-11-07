@@ -206,9 +206,9 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # Linux and Windows assets sit beside the signed manifest, which carries only
-  # the macOS and Android cells: installed clients reject any other cell set.
-  # Users install and upgrade them by hand.
+  # Preserve the primary Mac/Android inventory for installed clients. The signed
+  # desktop sidecar binds Linux/Windows assets for updater-capable clients; older
+  # clients need one manual bootstrap installation.
   linux-build:
     name: Build and sign Linux Nix closure (${{ matrix.arch }})
     needs: [resolve]

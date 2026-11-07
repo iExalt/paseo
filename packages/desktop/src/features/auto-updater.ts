@@ -7,6 +7,7 @@ import log from "electron-log/main";
 import { resolveDesktopInstallation } from "./nix-managed-install.js";
 import {
   createAppUpdateService,
+  type BeforeUpdateQuit,
   type AppUpdateCheckResult,
   type AppUpdateInstallRequest,
   type AppUpdateInstallResult,
@@ -35,8 +36,7 @@ export {
 
 let cachedStagingUserIdPromise: Promise<string> | null = null;
 
-const UPDATE_CHANNEL_NOT_PUBLISHED_CODE = "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND";
-type ElectronAutoUpdater = typeof import("electron-updater").autoUpdater;
+type ElectronAutoUpdater = import("./windows-fork-updater.js").ForkNsisUpdater;
 
 const DESKTOP_INSTALLATION = resolveDesktopInstallation(process.resourcesPath);
 
@@ -62,9 +62,22 @@ export function createElectronAutoUpdaterLoader<T>(input: {
   };
 }
 
+let prepareForkInstall: ((version: string) => Promise<void>) | null = null;
+
 const loadAutoUpdater = createElectronAutoUpdaterLoader({
   mode: DESKTOP_INSTALLATION.mode,
-  load: () => import("electron-updater").then((module) => module.autoUpdater),
+  load: async () => {
+    const { ForkNsisUpdater, configureForkWindowsUpdater } =
+      await import("./windows-fork-updater.js");
+    const autoUpdater = new ForkNsisUpdater();
+    prepareForkInstall = configureForkWindowsUpdater(autoUpdater, {
+      platform: process.platform,
+      arch: process.arch,
+      stateDirectory: app.getPath("userData"),
+      runningVersion: app.getVersion(),
+    });
+    return autoUpdater;
+  },
 });
 
 function loadElectronAutoUpdater(): Promise<ElectronAutoUpdater> {
@@ -119,15 +132,6 @@ export function createAppUpdateLifecycleLogger(logger: AppUpdateLogSink) {
 
 const updateLifecycleLog = createAppUpdateLifecycleLogger(log);
 
-function isUpdateChannelNotPublished(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "code" in error &&
-    error.code === UPDATE_CHANNEL_NOT_PUBLISHED_CODE
-  );
-}
-
 export function shouldAdmitToRollout(args: {
   channel: AppReleaseChannel;
   rolloutHours: number | undefined;
@@ -175,9 +179,9 @@ export function shouldInstallAppUpdateOnQuit(input: {
   platform: NodeJS.Platform;
   isAppImage: boolean;
 }): boolean {
-  // AppImage's no-relaunch install path blocks while launching the replacement
-  // binary, which can hang after the running file has already been replaced.
-  return !(input.platform === "linux" && input.isAppImage);
+  // Fork updates apply explicitly after the platform safety gate.
+  void input;
+  return false;
 }
 
 class ElectronAppUpdateRuntime implements AppUpdateRuntime {
@@ -207,8 +211,8 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
     // Electron's built-in handler would install an older download without checking
     // whether a newer release has superseded it.
     autoUpdater.autoInstallOnAppQuit = false;
-    autoUpdater.allowPrerelease = input.releaseChannel === "beta";
-    autoUpdater.channel = input.releaseChannel === "beta" ? "beta" : "latest";
+    autoUpdater.allowPrerelease = false;
+    autoUpdater.channel = "latest";
     autoUpdater.allowDowngrade = false;
     autoUpdater.isUserWithinRollout = async (info) => {
       try {
@@ -244,7 +248,6 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
       this.configuration?.onUpdateDownloaded(updateInfo);
     });
     autoUpdater.on("error", (error) => {
-      if (isUpdateChannelNotPublished(error)) return;
       this.configuration?.onError(error);
     });
   }
@@ -261,18 +264,13 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
   }
 
   async checkForUpdates(): Promise<RuntimeUpdateCheckResult | null> {
-    try {
-      const autoUpdater = await this.getConfiguredUpdater();
-      const result = await autoUpdater.checkForUpdates();
-      if (!result) return null;
-      return {
-        isUpdateAvailable: result.isUpdateAvailable,
-        updateInfo: result.updateInfo as RuntimeUpdateInfo,
-      };
-    } catch (error) {
-      if (isUpdateChannelNotPublished(error)) return null;
-      throw error;
-    }
+    const autoUpdater = await this.getConfiguredUpdater();
+    const result = await autoUpdater.checkForUpdates();
+    if (!result) return null;
+    return {
+      isUpdateAvailable: result.isUpdateAvailable,
+      updateInfo: result.updateInfo as RuntimeUpdateInfo,
+    };
   }
 
   async downloadUpdate(targetVersion: string): Promise<unknown> {
@@ -281,7 +279,16 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
     return autoUpdater.downloadUpdate();
   }
 
-  quitAndInstall({ targetVersion, isSilent, isForceRunAfter }: AppUpdateInstallRequest): void {
+  async prepareInstall(targetVersion: string): Promise<void> {
+    await this.getConfiguredUpdater();
+    if (!prepareForkInstall) throw new Error("Fork updater is not configured.");
+    await prepareForkInstall(targetVersion);
+  }
+
+  quitAndInstall(
+    { targetVersion, isSilent, isForceRunAfter }: AppUpdateInstallRequest,
+    onFailure?: () => Promise<void>,
+  ): void {
     if (!this.autoUpdater) {
       throw new Error("The Electron updater is unavailable for this installation.");
     }
@@ -291,6 +298,12 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
       targetVersion,
       isSilent,
       isForceRunAfter,
+    });
+    autoUpdater.once("error", () => {
+      autoUpdater.resetForkHandoff();
+      void onFailure?.().catch((error) =>
+        console.error("[auto-updater] Failed to restore daemon after installer error", error),
+      );
     });
     autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
   }
@@ -329,7 +342,7 @@ export async function checkForAppUpdate({
   updateLifecycleLog.checkStarted({ currentVersion, releaseChannel, intent });
   const result = await appUpdateService.checkForAppUpdate({
     currentVersion,
-    releaseChannel,
+    releaseChannel: "stable",
     intent,
   });
   updateLifecycleLog.checkCompleted({
@@ -352,11 +365,12 @@ export async function downloadAndInstallUpdate(
     currentVersion: string;
     releaseChannel: AppReleaseChannel;
   },
-  onBeforeQuit?: () => Promise<void>,
+  onBeforeQuit?: BeforeUpdateQuit,
 ): Promise<AppUpdateInstallResult> {
   assertElectronAutoUpdaterEnabled();
+  void releaseChannel;
   return appUpdateService.downloadAndInstallUpdate(
-    { currentVersion, releaseChannel },
+    { currentVersion, releaseChannel: "stable" },
     onBeforeQuit,
   );
 }

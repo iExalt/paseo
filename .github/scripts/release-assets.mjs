@@ -25,6 +25,8 @@ export function releaseAssets(version) {
   return {
     manifest: MANIFEST_ASSET,
     signature: SIGNATURE_ASSET,
+    desktopManifest: "paseo-desktop-manifest.json",
+    desktopSignature: "paseo-desktop-manifest.sig",
     macArchive: `${mac}.tar`,
     macClosure: `${mac}.json`,
     macIndex: indexAssetName(`${mac}.tar`),

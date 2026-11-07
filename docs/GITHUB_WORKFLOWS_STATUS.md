@@ -4,7 +4,7 @@ How the fork's CI and releases work today and what to do when they fail. The
 fork has one user, so releases are "builds plus smoke": macOS Nix closure,
 Android APK, Linux x64/arm64 Nix closures and a Windows x64 installer,
 smoke-tested, signed and published. There is no attestation, candidate
-authority, Windows arm64 build or Windows/Linux upgrade testing. The retired
+authority, Windows arm64 build or native Windows/Linux upgrade proof. The retired
 candidate pipeline and the campaign that built it live in git history (before
 `ci: delete the retired release candidate pipeline`) and in
 [complete-campaigns](complete-campaigns/GITHUB_WORKFLOWS_PLAN.md).
@@ -131,7 +131,7 @@ tight.
 | `PASEO_NIX_RELEASE_SIGNING_KEY`                                   | `release.yml` `macos-build`, `linux-build`: signs the closures       |
 | `PASEO_FORK_GOOGLE_SERVICES_JSON`                                 | `release.yml` `android-build`: Firebase config                       |
 | `PASEO_FORK_SIGNING_KEY_PKCS8_PEM`, `PASEO_FORK_SIGNING_CERT_PEM` | `release.yml` `android-sign`: APK signer                             |
-| `PASEO_RELEASE_MANIFEST_PRIVATE_KEY`                              | `release.yml` `publish`: signs the manifest                          |
+| `PASEO_RELEASE_MANIFEST_PRIVATE_KEY`                              | `release.yml` `publish`: signs both inventories                      |
 | `PASEO_RELEASE_APP_PRIVATE_KEY`, variable `_APP_CLIENT_ID`        | `release-please.yml`: mints the `paseo-release` App token            |
 | `PASEO_REBASE_SSH_SIGNING_KEY`                                    | `rebase-dev.yml`: signs rebased commits                              |
 | `PASEO_SYNC_APP_PRIVATE_KEY`, variable `_APP_CLIENT_ID`           | `upstream-sync.yml`, `rebase-dev.yml`: `iexalt-paseo-sync` App token |
@@ -180,19 +180,36 @@ base that `release.yml` reads.
 
 ### Linux and Windows assets
 
-These sit beside the manifest, unsigned by it, and have no in-app updater; you
-install and upgrade them by hand. Adding their cells would need a new manifest
-schema, which every installed client rejects.
+`paseo-desktop-manifest.json` and `.sig` cover Windows x64 and Linux Nix
+x64/ARM64 separately. They reuse the Ed25519 release key and bind the original
+manifest bytes and release identity; the primary schema-3 inventory stays unchanged
+for installed Mac/Android readers. Publication requires all three desktop targets.
+Windows verifies signed SHA-256, SHA-512 and size, including cached installers.
+Linux verifies the signed union closure and roots both CLI and desktop outputs.
+No new signing secret or paid publisher certificate is required.
+
+Existing Windows/Linux clients need one manual installation of the first release
+with this updater. Later checks, downloads and explicit apply/restart run in-app.
+Windows waits for active agents and terminals; ordinary quit does not install.
+Linux uses a dedicated user-owned profile, leaving system and Home Manager profiles
+untouched. An old release without the desktop sidecars reports an unavailable
+update channel rather than claiming the app is current.
 
 - `paseo-X-linux-{x64,arm64}-nix.tar` is a `file://` binary cache holding the
   CLI/daemon (`.#paseo`) and the desktop (`.#desktop`), signed with the Nix
   release key like the macOS tar. Its `.json` lists both store paths in
   `outputPaths` and the closure. To install, add the release key
   (`release_public_key` in `.github/scripts/release-nix.sh`) to
-  `trusted-public-keys` in `nix.conf`, extract the tar, then run
-  `nix copy --from file://<dir> <paths>` and `nix profile install <paths>`.
-  The smoke test imports both with only the release key trusted, runs the
-  CLI, and launches the desktop under xvfb.
+  `trusted-public-keys` in the effective Nix daemon configuration, extract the
+  tar, and import its paths with `nix copy --from file://<dir> <paths>`.
+  From the imported desktop output, run `bin/paseo-nix-update bootstrap` once.
+  It verifies that exact running release, adopts it into a dedicated profile,
+  and installs an owned `~/.local/bin/paseo-desktop` launcher. Switch to that
+  launcher explicitly if another manager owned the previous installation.
+  Conflicting launchers are preserved. Missing Nix trust is reported before
+  import; the app never changes system configuration or adds trusted users.
+  The release smoke imports both outputs and launches the desktop under xvfb;
+  the command rehearsal uses signed fixtures and fake Nix/network boundaries.
 - `paseo-X-windows-x64.exe` is the unsigned NSIS installer; there is no
   publisher certificate, so SmartScreen warns. The build smoke-tests the
   unpacked app (`PASEO_DESKTOP_SMOKE`), then installs silently and runs the
@@ -270,6 +287,26 @@ configuration-cache problems: `node` path lookups run with `.execute()` in the
 generated `app/build.gradle` and `react-native-keyboard-controller`, and one in
 the diff prototype module, deleted since. That count is historical; recount it
 before acting on it. Revisit only if the RN plugin stops reading that file.
+
+## Desktop fork updates
+
+[Approved implementation plan](FORK_UPDATES_PLAN.md). A is verified: a separate
+signed desktop inventory covers Windows x64 and Linux Nix x64/ARM64, binding
+both Linux outputs and installer SHA-512 to the unchanged primary Mac/Android
+manifest. The release producer and asset catalog require both new sidecars.
+Nine fixture checks pass on the Linux development host; protocol typecheck and scoped lint pass.
+Review A1: 1 material/1 total; A2: 0/0. Windows adapter code and safety fixtures
+now pass (57 updater/safety checks, root types and scoped lint); BW1 2/2, BW2 0/0.
+Linux adapter fixtures now pass (14 helper checks, including the real command
+controller with fake Nix/network boundaries; BL1 2/2, BL2 0/0). Shared Fork updates
+UI and waiting/retry behavior pass unit and browser-bridge checks (six journeys,
+plus an extended sidebar/About Windows journey). Desktop, tablet and phone browser
+dogfood reported no defects. C1 1/1, C2 0/0; final integration I1 0/0 accepted.
+Root typecheck, lint and formatting pass. [PR #381](https://github.com/iExalt/paseo/pull/381)
+records required-check and merge evidence; initial CI found and the reviewed repair
+corrected a stale producer-test message expectation without changing its rejection
+invariant.
+No release publication or native-client upgrade has run.
 
 ## Toolchain
 

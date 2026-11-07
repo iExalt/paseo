@@ -84,3 +84,24 @@ describe("Nix-managed desktop marker", () => {
     ).toEqual({ mode: "electron" });
   });
 });
+
+import { resolveLinuxDesktopInstallation } from "./nix-managed-install";
+it("uses Linux's immutable wrapper app-root rather than shared Electron resources", () => {
+  const appRoot = `${outputPath}/share/paseo-desktop/electron-app`;
+  const bytes = Buffer.from(JSON.stringify({ ...JSON.parse(marker.toString()), outputPath }));
+  const fs = { ...testFileSystem(bytes), realpathSync: (value: string) => value };
+  expect(resolveLinuxDesktopInstallation(appRoot, fs)).toMatchObject({
+    mode: "nix",
+    outputPath,
+    cliPath: `${outputPath}/bin/paseo-nix-update`,
+  });
+  expect(resolveLinuxDesktopInstallation("/nix/store/shared-electron/resources", fs).mode).toBe(
+    "nix-invalid",
+  );
+  expect(
+    resolveLinuxDesktopInstallation(appRoot, {
+      ...fs,
+      realpathSync: (value) => (value.endsWith("paseo-nix-update") ? "/elsewhere/updater" : value),
+    }).mode,
+  ).toBe("nix-invalid");
+});

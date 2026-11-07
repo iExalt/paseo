@@ -6,6 +6,7 @@
   python3,
   makeWrapper,
   zstd,
+  nix,
   autoPatchelfHook,
   copyDesktopItems,
   makeDesktopItem,
@@ -218,11 +219,16 @@ buildNpmPackage {
       printf '%s\n' 'require("../packages/desktop/dist/main.js");' \
         > $out/share/paseo-desktop/electron-app/index.js
 
+      printf '{"schemaVersion":1,"managedBy":"nix","packageVersion":"%s","buildVersion":"%s","outputPath":"%s"}\n' \
+        "$version" ${lib.escapeShellArg buildVersion} "$out" \
+        > "$out/share/paseo-desktop/electron-app/paseo-nix-managed.json"
+
       # Chromium's setuid sandbox cannot live in the immutable Nix store.
       makeWrapper ${electron}/bin/electron $out/bin/paseo-desktop \
         --add-flags "$out/share/paseo-desktop/electron-app" \
         --add-flags "--no-sandbox" \
         --add-flags "--class=paseo-desktop" \
+        --set PASEO_NIX_APP_ROOT "$out/share/paseo-desktop/electron-app" \
         --set EXPO_DEV_URL "paseo://app/" \
         --set CHROME_DESKTOP "paseo-desktop.desktop"
 
@@ -244,6 +250,9 @@ buildNpmPackage {
         > "$out/Applications/Paseo.app/Contents/Resources/paseo-nix-managed.json"
       ln -s ../Applications/Paseo.app/Contents/MacOS/Paseo "$out/bin/paseo-desktop"
 
+
+    ''}
+
       # Keep the signed updater and its portable release contract beside the
       # desktop output. The wrapper pins the Node runtime from this closure, so
       # the active and previous profile generations both retain a usable CLI.
@@ -251,16 +260,18 @@ buildNpmPackage {
       mkdir -p "$updater_root/scripts" "$updater_root/packages/protocol/src"
       cp scripts/paseo-nix-update.mjs scripts/paseo-nix-update-legacy.mjs \
         scripts/paseo-nix-update-state.mjs scripts/paseo-nix-update-macos.mjs \
-        scripts/paseo-nix-update-delta.mjs "$updater_root/scripts/"
+        scripts/paseo-nix-update-delta.mjs scripts/paseo-nix-update-linux.mjs \
+        scripts/desktop-release.mjs "$updater_root/scripts/"
       cp packages/protocol/src/release-manifest.ts packages/protocol/src/release-manifest-v2.ts \
-        packages/protocol/src/fork-version.ts "$updater_root/packages/protocol/src/"
+        packages/protocol/src/fork-version.ts packages/protocol/src/desktop-release-manifest.ts \
+        packages/protocol/src/desktop-release-verifier.ts "$updater_root/packages/protocol/src/"
       printf '%s\n' '{ "type": "module" }' > "$updater_root/package.json"
       # zstd applies the update deltas (scripts/paseo-nix-update-delta.mjs). Node's
       # zlib zstd takes a dictionary only as an in-memory buffer, and the base is a 0.5 GB NAR.
       makeWrapper ${nodejs_26}/bin/node "$out/bin/paseo-nix-update" \
-        --prefix PATH : ${lib.makeBinPath [zstd]} \
+        --prefix PATH : ${lib.makeBinPath ([zstd] ++ lib.optionals stdenv.hostPlatform.isLinux [nix])} \
+        --set PASEO_NIX_OUTPUT_PATH "$out" \
         --add-flags "$updater_root/scripts/paseo-nix-update.mjs"
-    ''}
 
     runHook postInstall
   '';

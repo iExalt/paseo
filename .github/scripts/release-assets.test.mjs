@@ -7,13 +7,15 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { expectedAssets, parseDeltaAsset, releaseAssets } from "./release-assets.mjs";
 
-// paseo-v0.18.0 as published: `gh release view paseo-v0.18.0 --json assets` and its index's deltas.
+// paseo-v0.18.0 asset fixture plus the required signed desktop sidecars: `gh release view paseo-v0.18.0 --json assets` and its index's deltas.
 const published = {
   version: "0.18.0",
   deltas: ["0.17.1", "0.16.0", "0.15.0", "0.14.0"].map(
     (from) => `paseo-0.18.0-macos-arm64-nix-desktop.delta-from-${from}.zst`,
   ),
   assets: [
+    "paseo-desktop-manifest.json",
+    "paseo-desktop-manifest.sig",
     "paseo-0.18.0-android-arm64.apk",
     "paseo-0.18.0-android-arm64.apk.delta-from-0.14.0.zst",
     "paseo-0.18.0-android-arm64.apk.delta-from-0.15.0.zst",
@@ -39,7 +41,7 @@ const published = {
 };
 const index = (deltas) => ({ deltas: deltas.map((asset) => ({ asset })) });
 
-test("the catalog names exactly what the last published release carries", () => {
+test("the catalog preserves published artifact names and requires desktop sidecars", () => {
   const { version, assets, deltas } = published;
   assert.deepEqual(expectedAssets(version, assets, index(deltas)), [...assets].sort());
   for (const name of assets.filter((asset) => asset.includes(".delta-from-")))
@@ -51,6 +53,8 @@ test("the upload set rejects missing, extra, duplicate and misnamed assets", () 
   const { version, assets, deltas } = published;
   const without = (name) => assets.filter((asset) => asset !== name);
   const fixed = Object.values(releaseAssets(version));
+  for (const name of ["paseo-desktop-manifest.json", "paseo-desktop-manifest.sig"])
+    assert.throws(() => expectedAssets(version, without(name), index(deltas)), /asset set/);
   for (const [label, files, listed, message] of [
     ["a missing fixed asset", without(fixed[2]), deltas, /asset set/],
     ["an unlisted desktop delta file", assets, deltas.slice(1), /asset set/],

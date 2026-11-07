@@ -59,12 +59,7 @@ import { ChatSection } from "@/screens/settings/chat/chat-section";
 import { getSettingsSidebarInnerStyle } from "@/screens/settings/sidebar/inner-style";
 import { SidebarNavSection } from "@/screens/settings/sidebar/sidebar-nav-section";
 import { SendingSection } from "@/screens/settings/general/sending-section";
-import {
-  useAppSettings,
-  useSettings,
-  type AppSettings,
-  type Settings as EffectiveSettings,
-} from "@/hooks/use-settings";
+import { useAppSettings, type AppSettings } from "@/hooks/use-settings";
 import { useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import {
@@ -86,7 +81,6 @@ import { EditorSection } from "@/screens/settings/editor-section";
 import { FilesSection } from "@/screens/settings/files-section";
 import { Button } from "@/components/ui/button";
 import { CommunityLinks } from "@/components/community-links";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DesktopPermissionsSection } from "@/desktop/components/desktop-permissions-section";
 import { NotificationsSection } from "@/screens/settings/notifications/notifications-section";
@@ -635,7 +629,6 @@ function getUpdateButtonLabel(
 
 function DesktopAppUpdateRow() {
   const { t } = useTranslation();
-  const { settings, updateSettings } = useSettings();
   const {
     isDesktopApp,
     statusText,
@@ -663,20 +656,6 @@ function DesktopAppUpdateRow() {
     }
     void checkForUpdates();
   }, [checkForUpdates, isDesktopApp]);
-
-  const handleReleaseChannelChange = useCallback(
-    (releaseChannel: EffectiveSettings["releaseChannel"]) => {
-      void updateSettings({ releaseChannel });
-    },
-    [updateSettings],
-  );
-  const releaseChannelOptions = useMemo(
-    () => [
-      { value: "stable" as const, label: t("settings.about.releaseChannel.stable") },
-      { value: "beta" as const, label: t("settings.about.releaseChannel.beta") },
-    ],
-    [t],
-  );
 
   const handleInstallUpdate = useCallback(() => {
     if (!isDesktopApp) {
@@ -713,54 +692,31 @@ function DesktopAppUpdateRow() {
   }
 
   return (
-    <>
-      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>{t("settings.about.releaseChannel.label")}</Text>
-          <Text style={settingsStyles.rowHint}>
-            {t("settings.about.releaseChannel.description")}
-          </Text>
-        </View>
-        <SegmentedControl
+    <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="desktop-fork-update-row">
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>{t("settings.about.forkUpdates.label")}</Text>
+        <Text style={settingsStyles.rowHint}>{statusText}</Text>
+        {errorMessage ? <Text style={styles.aboutErrorText}>{errorMessage}</Text> : null}
+      </View>
+      <View style={styles.aboutUpdateActions}>
+        <Button
+          variant="outline"
           size="sm"
-          value={settings.releaseChannel}
-          onValueChange={handleReleaseChannelChange}
-          options={releaseChannelOptions}
-        />
+          onPress={handleCheckForUpdates}
+          disabled={isChecking || isInstalling}
+        >
+          {isChecking ? t("settings.about.updates.checking") : t("settings.about.updates.check")}
+        </Button>
+        <Button
+          variant="default"
+          size="sm"
+          onPress={handleInstallUpdate}
+          disabled={isChecking || isInstalling || !isUpdateReady}
+        >
+          {getUpdateButtonLabel(t, isInstalling, readyUpdateVersion)}
+        </Button>
       </View>
-      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>{t("settings.about.updates.label")}</Text>
-          <Text style={settingsStyles.rowHint}>{statusText}</Text>
-          {readyUpdateVersion ? (
-            <Text style={settingsStyles.rowHint}>
-              {t("settings.about.updates.readyToInstall", {
-                version: formatVersionWithPrefix(readyUpdateVersion),
-              })}
-            </Text>
-          ) : null}
-          {errorMessage ? <Text style={styles.aboutErrorText}>{errorMessage}</Text> : null}
-        </View>
-        <View style={styles.aboutUpdateActions}>
-          <Button
-            variant="outline"
-            size="sm"
-            onPress={handleCheckForUpdates}
-            disabled={isChecking || isInstalling}
-          >
-            {isChecking ? t("settings.about.updates.checking") : t("settings.about.updates.check")}
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onPress={handleInstallUpdate}
-            disabled={isChecking || isInstalling || !isUpdateReady}
-          >
-            {getUpdateButtonLabel(t, isInstalling, readyUpdateVersion)}
-          </Button>
-        </View>
-      </View>
-    </>
+    </View>
   );
 }
 

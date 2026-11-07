@@ -119,6 +119,7 @@ describe("Nix desktop About update row", () => {
 
   it("offers one button that moves from Check to Update to Restart", async () => {
     render(<NixDesktopAppUpdateRow />);
+    expect(screen.getByText("settings.about.forkUpdates.label")).toBeTruthy();
     fireEvent.click(await button("check"));
     fireEvent.click(await button("update"));
     await button("restart");

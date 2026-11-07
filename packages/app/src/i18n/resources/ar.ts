@@ -1515,7 +1515,7 @@ export const ar: TranslationResources = {
         installingDescription: "التثبيت وإعادة التشغيل...",
         versionReady: "{{version}}جاهز للتثبيت.",
         newVersionReady: "إصدار جديد جاهز للتثبيت.",
-        restartWarning: "ستؤدي ترقية التطبيق إلى إيقاف تشغيل الوكلاء وإغلاق الجلسات الطرفية.",
+        restartWarning: "ينتظر التحديث انتهاء الوكلاء والجلسات الطرفية النشطة قبل إعادة التشغيل.",
       },
     },
     settings: {

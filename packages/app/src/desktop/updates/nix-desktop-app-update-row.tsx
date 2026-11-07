@@ -84,7 +84,7 @@ export function NixDesktopAppUpdateRow({ appVersion = null }: { appVersion?: str
   return (
     <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="nix-desktop-update-row">
       <View style={settingsStyles.rowContent}>
-        <Text style={settingsStyles.rowTitle}>{t("settings.about.nixUpdates.label")}</Text>
+        <Text style={settingsStyles.rowTitle}>{t("settings.about.forkUpdates.label")}</Text>
         <Text style={settingsStyles.rowHint} testID="nix-desktop-update-status">
           {`${version} · ${state}`}
         </Text>
