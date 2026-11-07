@@ -2101,10 +2101,6 @@ export const ja: TranslationResources = {
       other: "{{count}}回検索",
     },
     sentMessages: { one: "{{count}}件のメッセージを送信", other: "{{count}}件のメッセージを送信" },
-    receivedMessages: {
-      one: "{{count}}件のメッセージを受信",
-      other: "{{count}}件のメッセージを受信",
-    },
     otherTools: {
       one: "その他のツールを{{count}}回使用",
       other: "その他のツールを{{count}}回使用",

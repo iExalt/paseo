@@ -2117,10 +2117,6 @@ export const ru: TranslationResources = {
       one: "отправлено {{count}} сообщение",
       other: "отправлено {{count}} сообщений",
     },
-    receivedMessages: {
-      one: "получено {{count}} сообщение",
-      other: "получено {{count}} сообщений",
-    },
     otherTools: {
       one: "использован {{count}} другой инструмент",
       other: "использованы другие инструменты ({{count}})",

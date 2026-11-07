@@ -190,7 +190,11 @@ test("received messages collapse separately from user prompts and open their sen
     await expectComposerVisible(page);
     await expect(page.getByTestId("user-message")).toContainText("A prompt from the user");
     const disclosure = page.getByTestId("agent-message");
-    const toggle = disclosure.getByRole("button", { name: "Agent message Reviewer", exact: true });
+    // The closed row names the sender and previews the message's first line.
+    const toggle = disclosure.getByRole("button", {
+      name: "Reviewer I reviewed the turn-grouping changes. Heartbeats now keep their own timing footer, and the previous response stays visible.",
+      exact: true,
+    });
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(disclosure.getByTestId("agent-message-content")).toHaveCount(0);
     await disclosure.scrollIntoViewIfNeeded();
@@ -292,7 +296,12 @@ test("long sender attribution stays on one line in compact chat", async ({ page 
     await openAgentRoute(page, recipient);
     await expectComposerVisible(page);
     const disclosure = page.getByTestId("agent-message");
-    await disclosure.getByRole("button", { name: `Agent message ${title}`, exact: true }).click();
+    await disclosure
+      .getByRole("button", {
+        name: `${title} The sender label stays on one line, even when the agent has a long name.`,
+        exact: true,
+      })
+      .click();
     const attribution = disclosure
       .getByTestId("agent-message-content")
       .getByRole("button", { name: `Sent by ${title}`, exact: true });
@@ -341,9 +350,10 @@ test("opening a turn keeps the received agent message expanded", async ({ page }
     await expect(page.getByText("Completed 7 commands", { exact: true })).toBeVisible({
       timeout: 30_000,
     });
-    const toggle = page
-      .getByTestId("agent-message")
-      .getByRole("button", { name: "Agent message Reviewer", exact: true });
+    const toggle = page.getByTestId("agent-message").getByRole("button", {
+      name: "Reviewer Review complete: the regression is red on the baseline and green with the fix.",
+      exact: true,
+    });
     await toggle.click();
     await expect(toggle).toBeInViewport();
     const bubble = page.getByTestId("agent-message-content");

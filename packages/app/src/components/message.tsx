@@ -600,6 +600,7 @@ export const UserMessage = memo(function UserMessage({
     return (
       <AgentMessageDisclosure
         sender={sender}
+        message={message}
         serverId={serverId}
         forceExpanded={Boolean(findHighlight)}
         onBeforeToggle={onAgentMessageToggle}
@@ -696,8 +697,18 @@ function UserMessageFooter({
   );
 }
 
+/** The message's first line, shown beside the sender while the message is closed. */
+function agentMessagePreview(message: string): string | undefined {
+  const line = message
+    .split("\n")
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .find(Boolean);
+  return line ? line.slice(0, 200) : undefined;
+}
+
 function AgentMessageDisclosure({
   sender,
+  message,
   serverId,
   forceExpanded,
   onBeforeToggle,
@@ -705,6 +716,7 @@ function AgentMessageDisclosure({
   children,
 }: {
   sender: AgentMessage["sender"];
+  message: string;
   serverId?: string;
   forceExpanded: boolean;
   onBeforeToggle?: () => void;
@@ -713,6 +725,7 @@ function AgentMessageDisclosure({
 }) {
   const { t } = useTranslation();
   const { name } = useMessageSender(sender, serverId);
+  const preview = useMemo(() => agentMessagePreview(message), [message]);
   const [expanded, setExpanded] = useState(false);
   const toggle = useCallback(() => {
     onBeforeToggle?.();
@@ -721,9 +734,10 @@ function AgentMessageDisclosure({
   const renderDetails = useCallback(() => children, [children]);
   return (
     <ExpandableBadge
-      label={t("turnSummary.agentMessage")}
-      secondaryLabel={name}
+      label={name ?? t("turnSummary.agentMessage")}
+      secondaryLabel={preview}
       icon={MessagesSquare}
+      surface
       isExpanded={expanded || forceExpanded}
       onToggle={toggle}
       renderDetails={renderDetails}
@@ -1112,6 +1126,10 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   },
   pressablePressed: {
     opacity: 0.9,
+  },
+  pressableSurface: {
+    backgroundColor: theme.colors.surface1,
+    borderColor: theme.colors.border,
   },
   headerRow: {
     flexDirection: "row",
@@ -1767,6 +1785,8 @@ interface ExpandableBadgeProps {
   isLastInSequence?: boolean;
   disableOuterSpacing?: boolean;
   borderlessWhenExpanded?: boolean;
+  /** Sits on a bordered surface even when closed, marking a turn's input rather than its work. */
+  surface?: boolean;
   testID?: string;
 }
 
@@ -2146,6 +2166,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   isLastInSequence = false,
   disableOuterSpacing,
   borderlessWhenExpanded = false,
+  surface,
   testID,
 }: ExpandableBadgeProps) {
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
@@ -2314,6 +2335,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const pressableStyle = useMemo(
     () => [
       expandableBadgeStylesheet.pressable,
+      surface && expandableBadgeStylesheet.pressableSurface,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
       isExpanded && expandableBadgeStylesheet.pressableExpanded,
       isExpanded &&
@@ -2321,7 +2343,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
           ? expandableBadgeStylesheet.pressableExpandedDetached
           : expandableBadgeStylesheet.pressableExpandedAttached),
     ],
-    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed],
+    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed, surface],
   );
 
   const detailWrapperStyle = useMemo(
@@ -2342,10 +2364,10 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const labelStyle = useMemo(
     () => [
       expandableBadgeStylesheet.label,
-      isActive && expandableBadgeStylesheet.labelActive,
+      (isActive || surface) && expandableBadgeStylesheet.labelActive,
       isLoading && expandableBadgeStylesheet.labelLoading,
     ],
-    [isActive, isLoading],
+    [isActive, isLoading, surface],
   );
 
   const secondaryLabelStyle = useMemo(
@@ -2471,6 +2493,7 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.isLastInSequence !== next.isLastInSequence) return false;
   if (previous.disableOuterSpacing !== next.disableOuterSpacing) return false;
   if (previous.borderlessWhenExpanded !== next.borderlessWhenExpanded) return false;
+  if (previous.surface !== next.surface) return false;
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;

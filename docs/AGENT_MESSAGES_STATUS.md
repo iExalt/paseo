@@ -8,16 +8,26 @@ with keep-me-in-the-loop and an isolated worktree on 2026-11-06.
 One increment shares the stream presentation boundary:
 
 - [x] Agree grouping and CLI normalization with the persistent reviewer.
-- [x] Implement sent/received counts, same-turn grouping, and CLI send cards.
+- [x] Implement sent counts and CLI send cards. Received counts and same-turn
+      grouping were replaced by input rows on 2026-11-07.
 - [x] Verify parser, projection, turn boundaries, translations, and typecheck.
 - [x] Close production browser verification and reviewer acceptance.
 - [x] Ready for publication; required checks and merge are tracked by the enclosing PR.
 
-All received delivery types group and count in collapsed views, including agent
-completion, error, permission, and closure notifications. Expanding retains each
-event's label and body. Full view retains its existing attributed message disclosure
-and lifecycle event presentation. Canonical turn IDs and legacy trigger boundaries
-continue to separate turns.
+Received deliveries are turn inputs, so they stay visible in every chat display and
+are never grouped or counted with the agent's work. A received message renders as a
+closed row on a bordered surface, showing the sender and the message's first line.
+The collapsed turn's summary sits under it, the same way it sits under a user
+message. Agent completion, error, permission, and closure notifications keep their
+lifecycle rows. Canonical turn IDs and legacy trigger boundaries continue to separate
+turns.
+
+The first version (#389) folded deliveries into the tool-call groups and counted
+"received N messages" next to the agent's own work. On a phone that read as clunky.
+The summary mixed cause and effect and cut off the sender. A turn started by a
+delivery was left with no visible input, only its footer and the gap between turns.
+And whether a delivery became a group or a lone row depended on hidden reasoning.
+The user picked the input row from mockups on 2026-11-07.
 
 Literal standalone Paseo CLI sends use the existing message presentation catalog.
 Ambiguous shell commands keep their shell presentation. Send details retain the

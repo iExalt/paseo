@@ -7,7 +7,6 @@ const DIRECT_SEARCH_TOOL_SUFFIX_PATTERN = /(?:^|[_.:/])(?:web_search|llm_context
 
 export interface OverviewSummary {
   sentMessageCount: number;
-  receivedMessageCount: number;
   thoughtCount: number;
   editedFileCount: number;
   commandCount: number;
@@ -33,7 +32,6 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
   const editedFiles = new Set<string>();
   const readFiles = new Set<string>();
   let sentMessageCount = 0;
-  let receivedMessageCount = 0;
   let thoughtCount = 0;
   let commandCount = 0;
   let searchCount = 0;
@@ -43,10 +41,6 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
   for (const call of calls) {
     if (call.kind === "thought") {
       thoughtCount += 1;
-      continue;
-    }
-    if (call.payload.source === "agent" && call.payload.data.agentMessage !== undefined) {
-      receivedMessageCount += 1;
       continue;
     }
     if (isTurnTrigger(call)) continue;
@@ -72,7 +66,6 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
 
   return {
     sentMessageCount,
-    receivedMessageCount,
     thoughtCount,
     editedFileCount: editedFiles.size,
     commandCount,
