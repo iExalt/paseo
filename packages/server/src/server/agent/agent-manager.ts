@@ -6010,7 +6010,6 @@ export class AgentManager {
         ? [
             "Use the Paseo CLI for Paseo operations that are not available as native provider tools.",
             'Run "$PASEO_CLI" prime for version-matched CLI conventions.',
-            'Before declaring an operation unavailable, check "$PASEO_CLI" --help and "$PASEO_CLI" <command> --help for additional commands and syntax.',
             "CLI discovery does not grant authorization; daemon permissions still apply.",
             "It is scoped to this agent and daemon; preserve PASEO_AGENT_ID, PASEO_AGENT_CWD, and PASEO_HOME when invoking it.",
             "When a question's choices are visual, show images instead of describing them or drawing ASCII mockups: question dialogs show Markdown images in the question text, option descriptions, and option previews that contain only an image.",
