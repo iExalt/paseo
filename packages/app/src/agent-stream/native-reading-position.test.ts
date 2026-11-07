@@ -302,7 +302,10 @@ describe("native reading position", () => {
     position.rowLayout("r1", { y: 200, height: 300 });
     position.holdRow("unmeasured");
     position.rowLayout("unmeasured", { y: 0, height: 50 });
-    expect(calls.filter((call) => call !== "detach")).toEqual(["offset 100 false"]);
+    expect(calls.filter((call) => call !== "detach")).toEqual([
+      "offset 100 false",
+      "offset 0 false",
+    ]);
   });
 
   it("forgets the viewable rows and the pending restore for a different agent", () => {

@@ -90,7 +90,6 @@ export function createNativeReadingPosition(input: {
   function keepHeldRowHeader(rowId: string, layout: NativeRowLayout): void {
     if (heldRow?.id !== rowId) return;
     const offset = Math.max(0, layout.y + layout.height - heldRow.headerFromBottom);
-    if (offset === list.offsetY()) return;
     holdProgrammaticScroll();
     list.armScrollBudget();
     list.scrollToOffset({ offset, animated: false });
