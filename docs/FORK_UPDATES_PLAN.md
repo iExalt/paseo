@@ -1,6 +1,7 @@
 # Fork updates across desktop platforms
 
-Status: implementation verified at the approved code-only boundary; final integration review and required PR checks pending.
+Status: implementation verified and reviewer-accepted at the approved code-only boundary.
+Publication and required-check evidence: [PR #381](https://github.com/iExalt/paseo/pull/381).
 Baseline: `4ed3b1cb5`. Prepared 2026-11-06 UTC.
 Progress record: [workflow status](GITHUB_WORKFLOWS_STATUS.md#desktop-fork-updates).
 
@@ -123,12 +124,12 @@ or a distinct required proof. Optional cleanup does not prolong the review loop.
       Windows proof includes refused shutdown and daemon/terminal/installer ordering.
       Add native runner upgrade-smoke
       coverage where it can run without publishing or changing the user's machine.
-- [ ] **C. Consistent UI and integration.** Show Fork updates for Mac, Windows,
+- [x] **C. Consistent UI and integration.** Show Fork updates for Mac, Windows,
       Linux and Android, with appropriate check/download/ready/waiting/error/retry
       states. Remove the channel selector and prevent legacy background checks and
       quit handlers from bypassing the new policy. Verify the rendered UI and actions,
-      run combined checks, obtain final integration acceptance, then open and merge
-      one PR to `dev` under the user's personal-repository policy.
+      run combined checks and obtain final integration acceptance. Publication is
+      tracked in PR #381; merge to `dev` requires its required checks to pass.
 
 Approval covers autonomous execution of these chunks, reports between chunks,
 reviewed commits/pushes and PR merge. It does not cover release publication,
@@ -217,3 +218,12 @@ reported no defects; native installers and device UI remain unverified. Root
 typecheck, lint and formatting pass. C1 1 material/1 total; C2 0/0. Final
 integration acceptance and required CI remain publication gates. No release
 or installation on the user's devices was performed.
+
+2026-11-07 UTC: Final integration I1 accepted with 0 material/0 total; nine
+substantive rounds overall. A mechanical discriminated-union type repair passed
+root types and reviewer delta acceptance. PR #381 contains the accepted source.
+Initial Routine CI caught one stale producer-test error-message expectation after
+the shared Linux validator changed its wording. The rejection invariant remained
+intact; the one-line assertion repair passed 9/9 producer/catalog checks and review.
+Required-check results and merge state are recorded on the PR. Native installation
+and published-release proof remain outside this implementation's acceptance.

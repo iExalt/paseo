@@ -301,8 +301,11 @@ Linux adapter fixtures now pass (14 helper checks, including the real command
 controller with fake Nix/network boundaries; BL1 2/2, BL2 0/0). Shared Fork updates
 UI and waiting/retry behavior pass unit and browser-bridge checks (six journeys,
 plus an extended sidebar/About Windows journey). Desktop, tablet and phone browser
-dogfood reported no defects. C1 1/1, C2 0/0; final integration acceptance and
-required PR CI remain pending. Root typecheck, lint and formatting pass.
+dogfood reported no defects. C1 1/1, C2 0/0; final integration I1 0/0 accepted.
+Root typecheck, lint and formatting pass. [PR #381](https://github.com/iExalt/paseo/pull/381)
+records required-check and merge evidence; initial CI found and the reviewed repair
+corrected a stale producer-test message expectation without changing its rejection
+invariant.
 No release publication or native-client upgrade has run.
 
 ## Toolchain
