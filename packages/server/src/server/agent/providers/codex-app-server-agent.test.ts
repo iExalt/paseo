@@ -966,6 +966,37 @@ process.stdin.on("data", (chunk) => {
 }
 
 describe("Codex app-server provider", () => {
+  test("refreshes changed skills without interrupting the active turn", async () => {
+    const session = createSession();
+    let skills = [
+      { name: "before", description: "original", path: "/skills/before/SKILL.md", enabled: true },
+    ];
+    const request = vi.fn(async () => ({ data: [{ skills }] }));
+    session.client = { request };
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    expect(await session.listCommands()).toContainEqual(
+      expect.objectContaining({ name: "before" }),
+    );
+    skills = [
+      { name: "after", description: "changed", path: "/skills/after/SKILL.md", enabled: true },
+    ];
+    await asInternals(session).handleNotification("skills/changed", {});
+    expect(events).toEqual([{ type: "commands_changed", provider: "codex" }]);
+    await session.refreshSkills();
+    const commands = await session.listCommands();
+    expect(commands).toContainEqual(
+      expect.objectContaining({ name: "after", description: "changed" }),
+    );
+    expect(commands.some((command) => command.name === "before")).toBe(false);
+    expect(request.mock.calls.every((call) => call[0] === "skills/list")).toBe(true);
+    expect(request).toHaveBeenCalledWith(
+      "skills/list",
+      expect.objectContaining({ forceReload: true }),
+    );
+    expect(session.activeForegroundTurnId).toBe("test-turn");
+  });
+
   test("getAvailableModes includes auto-review when the Codex version supports it", async () => {
     const session = createSession({}, { autoReviewEnabled: true });
 
