@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.24.1](https://github.com/iExalt/paseo/compare/paseo-v0.24.0...paseo-v0.24.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **agents:** discover Paseo commands through installed CLI help ([#383](https://github.com/iExalt/paseo/issues/383)) ([9d0f69d](https://github.com/iExalt/paseo/commit/9d0f69d0511fdcc4f7698dea781f8759326f5421))
+* **agents:** trim CLI discovery guidance ([#386](https://github.com/iExalt/paseo/issues/386)) ([930b4de](https://github.com/iExalt/paseo/commit/930b4de8038dc37715d1d6a998e205f158100455))
+* **app:** collapse agent messages and present CLI sends ([#389](https://github.com/iExalt/paseo/issues/389)) ([2930346](https://github.com/iExalt/paseo/commit/293034650fc93971d4e6a0fbb9cce16944685dc4))
+* **app:** stop file readers at document edges ([#388](https://github.com/iExalt/paseo/issues/388)) ([a77df23](https://github.com/iExalt/paseo/commit/a77df232a69f02967ea5848dd047ae4ddcef828f))
+
+
+### Performance Improvements
+
+* **cli:** defer runtime imports during command startup ([#385](https://github.com/iExalt/paseo/issues/385)) ([0d0f96c](https://github.com/iExalt/paseo/commit/0d0f96ca65307822b98241136b4c40d2181d4465))
+
 ## [0.24.0](https://github.com/iExalt/paseo/compare/paseo-v0.23.1...paseo-v0.24.0) (2026-11-07)
 
 
