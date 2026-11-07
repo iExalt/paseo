@@ -771,7 +771,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
 
     const setToolCallGroupExpanded = toolCallExpansion.setGroupExpanded;
 
-    const holdReadingPosition = useCallback(() => viewportRef.current?.holdReadingPosition(), []);
+    const holdReadingPosition = useCallback(
+      (rowId?: string) => viewportRef.current?.holdReadingPosition(rowId),
+      [],
+    );
 
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {

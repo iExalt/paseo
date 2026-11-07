@@ -271,6 +271,38 @@ describe("native reading position", () => {
     expect(calls).toEqual(["detach", "nearBottom false", "index 2 false"]);
   });
 
+  it("keeps an opened row's header in place while it opens and closes, then lets go", () => {
+    const { position, state, calls, advance } = setup();
+    state.offsetY = 300;
+    position.rowLayout("r1", { y: 200, height: 40 });
+    position.holdRow("r1");
+    calls.length = 0;
+    // The inverted list grows the row upwards; scrolling by the growth opens it downwards.
+    position.rowLayout("r1", { y: 200, height: 240 });
+    state.offsetY = 500;
+    position.rowLayout("r1", { y: 200, height: 260 });
+    expect(calls).toEqual(["offset 500 false", "offset 520 false"]);
+    expect(state.budget).toBe(3);
+    // Other rows and later layouts are the reader's own.
+    calls.length = 0;
+    position.rowLayout("r2", { y: 300, height: 90 });
+    advance(600);
+    position.rowLayout("r1", { y: 200, height: 40 });
+    expect(calls).toEqual([]);
+    // Closing scrolls back by the shrink, never past the bottom.
+    state.offsetY = 100;
+    position.holdRow("r1");
+    calls.length = 0;
+    position.rowLayout("r1", { y: 200, height: 0 });
+    expect(calls).toEqual(["offset 60 false"]);
+    position.holdRow("r1");
+    calls.length = 0;
+    position.rowLayout("r1", { y: 200, height: 300 });
+    position.holdRow("unmeasured");
+    position.rowLayout("unmeasured", { y: 0, height: 50 });
+    expect(calls).toEqual(["offset 400 false", "detach"]);
+  });
+
   it("forgets the viewable rows and the pending restore for a different agent", () => {
     const { position, reported, calls, view, settle } = setup();
     position.hold();

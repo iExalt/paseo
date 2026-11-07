@@ -103,7 +103,8 @@ export type { AssistantForkTarget };
 
 interface UserMessageProps {
   sender?: AgentMessage["sender"];
-  onAgentMessageToggle?: () => void;
+  /** Called with the row id before a received message opens or closes. */
+  onAgentMessageToggle?: (rowId?: string) => void;
   serverId?: string;
   agentId?: string;
   messageId?: string;
@@ -521,6 +522,10 @@ export const UserMessage = memo(function UserMessage({
     ],
     [hasText],
   );
+  const handleAgentMessageToggle = useCallback(
+    () => onAgentMessageToggle?.(findItemId),
+    [findItemId, onAgentMessageToggle],
+  );
   const presentation = userMessagePresentation(sender);
   const Preview = presentation.Preview;
   const messageContent = (
@@ -603,7 +608,7 @@ export const UserMessage = memo(function UserMessage({
         message={message}
         serverId={serverId}
         forceExpanded={Boolean(findHighlight)}
-        onBeforeToggle={onAgentMessageToggle}
+        onBeforeToggle={handleAgentMessageToggle}
         disableOuterSpacing={resolvedDisableOuterSpacing}
       >
         {messageContent}

@@ -1,5 +1,6 @@
 import type { StreamItem } from "@/types/stream";
 import { SPACING } from "@/styles/theme";
+import { continuesTurn } from "./turn-membership";
 
 export function getAssistantMessageSpacing(params: {
   item: StreamItem;
@@ -10,7 +11,11 @@ export function getAssistantMessageSpacing(params: {
     : "default";
 }
 
-const isUserMessageItem = (item?: StreamItem | null) => item?.kind === "user_message";
+/** A received agent message: a closed row that starts a turn, not a bubble with its own margins. */
+export const isReceivedMessageItem = (item?: StreamItem | null) =>
+  item?.kind === "user_message" && item.sender !== undefined;
+const isUserMessageItem = (item?: StreamItem | null) =>
+  item?.kind === "user_message" && item.sender === undefined;
 const isToolSequenceItem = (item?: StreamItem | null) =>
   item?.kind === "tool_call" || item?.kind === "thought" || item?.kind === "todo_list";
 
@@ -22,16 +27,20 @@ export function getGapBetweenStreamItems(
     return 0;
   }
 
+  // A received message starts a turn: a turn's gap above it, and close to the rest of its turn.
+  if (isReceivedMessageItem(item) || isReceivedMessageItem(belowItem)) {
+    return isReceivedMessageItem(item) && continuesTurn(item, belowItem) ? SPACING[1] : SPACING[4];
+  }
   if (isUserMessageItem(item) && isUserMessageItem(belowItem)) {
     return SPACING[1];
   }
-  if (item.kind === "user_message" && belowItem.kind === "assistant_message") {
+  if (isUserMessageItem(item) && belowItem.kind === "assistant_message") {
     return 0;
   }
   if (isToolSequenceItem(item) && isToolSequenceItem(belowItem)) {
     return 0;
   }
-  if (item.kind === "user_message" && isToolSequenceItem(belowItem)) {
+  if (isUserMessageItem(item) && isToolSequenceItem(belowItem)) {
     return SPACING[4];
   }
   if (item.kind === "assistant_message" && isToolSequenceItem(belowItem)) {
