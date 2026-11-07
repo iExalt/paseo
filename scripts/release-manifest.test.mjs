@@ -299,7 +299,7 @@ test("release build entrypoint signs actual Windows/Linux assets and validates u
           },
           pin,
         ),
-      /Linux closure omits an output/,
+      /Linux union closure omits a signed output/,
     );
   } finally {
     rmSync(directory, { recursive: true, force: true });
