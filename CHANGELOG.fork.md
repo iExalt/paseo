@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.2](https://github.com/iExalt/paseo/compare/paseo-v0.24.1...paseo-v0.24.2) (2026-11-07)
+
+
+### Bug Fixes
+
+* **app:** show received agent messages as turn inputs ([#391](https://github.com/iExalt/paseo/issues/391)) ([7f37aa3](https://github.com/iExalt/paseo/commit/7f37aa3a77afefca59827a240418b8cfe47d107e))
+
 ## [0.24.1](https://github.com/iExalt/paseo/compare/paseo-v0.24.0...paseo-v0.24.1) (2026-11-07)
 
 
