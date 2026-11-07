@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.24.0](https://github.com/iExalt/paseo/compare/paseo-v0.23.1...paseo-v0.24.0) (2026-11-07)
+
+
+### Features
+
+* **skills:** refresh catalogs and slash menus during sessions ([#380](https://github.com/iExalt/paseo/issues/380)) ([4a3a8be](https://github.com/iExalt/paseo/commit/4a3a8be5329f29c8f5bce0eac35b7bca87dd663c))
+* **updates:** add automatic fork updates on Windows and Linux ([#381](https://github.com/iExalt/paseo/issues/381)) ([2eea412](https://github.com/iExalt/paseo/commit/2eea412a3e47e3b81278d9520732c03cb7987868))
+
+
+### Bug Fixes
+
+* **app:** align received agent message footers with replies ([#377](https://github.com/iExalt/paseo/issues/377)) ([fd4f01a](https://github.com/iExalt/paseo/commit/fd4f01a4c8faa29f4993dc4859c607ec8ff26bbe))
+* **app:** preserve project order across directory identity changes ([#382](https://github.com/iExalt/paseo/issues/382)) ([226b500](https://github.com/iExalt/paseo/commit/226b5000ec5b4f2457c5a6cc3911ec8d1bf32608))
+* preserve session state across daemon and app restarts ([#379](https://github.com/iExalt/paseo/issues/379)) ([f849e88](https://github.com/iExalt/paseo/commit/f849e8830913e448cb187a4a23c1d71ed0211159))
+
 ## [0.23.1](https://github.com/iExalt/paseo/compare/paseo-v0.23.0...paseo-v0.23.1) (2026-11-06)
 
 
