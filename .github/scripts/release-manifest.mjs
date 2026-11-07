@@ -22,6 +22,8 @@ import {
   validateNixArtifactClosure,
   verifyReleaseManifestBytes,
 } from "../../scripts/paseo-nix-update.mjs";
+import { validateDesktopReleaseManifest } from "../../packages/protocol/src/desktop-release-manifest.ts";
+import { verifyDesktopReleaseBytes } from "../../scripts/desktop-release.mjs";
 import { MANIFEST_ASSET, releaseAssets, SIGNATURE_ASSET } from "./release-assets.mjs";
 
 export function describeAsset(name, bytes) {
@@ -69,6 +71,7 @@ export function signManifest(
   bytes,
   privateKeyPem,
   publicPin = PASEO_RELEASE_MANIFEST_PUBLIC_KEY_BASE64URL,
+  verifyBytes = verifyReleaseManifestBytes,
 ) {
   const key = createPrivateKey(privateKeyPem);
   assert.equal(key.asymmetricKeyType, "ed25519", "Release manifest key must be Ed25519");
@@ -80,7 +83,7 @@ export function signManifest(
   const signature = Buffer.from(sign(null, bytes, key).toString("base64url"));
   assert.equal(signature.length, 86);
   // Verify with the client's own verifier and validator before anything is uploaded.
-  verifyReleaseManifestBytes(bytes, signature, publicPin);
+  verifyBytes(bytes, signature, publicPin);
   return signature;
 }
 
@@ -99,7 +102,24 @@ export function changelogSection(changelog, version) {
   return `${body}\n`;
 }
 
-function build(directory, env) {
+export function desktopManifestBytes(primaryBytes, { windows, linux }) {
+  const primary = JSON.parse(primaryBytes);
+  const { schemaVersion: _schema, artifacts: _artifacts, ...identity } = primary;
+  const manifest = {
+    schemaVersion: 1,
+    ...identity,
+    primaryManifestSha256: createHash("sha256").update(primaryBytes).digest("hex"),
+    artifacts: [windows, ...linux],
+  };
+  validateDesktopReleaseManifest(manifest, primary);
+  return Buffer.from(`${JSON.stringify(manifest)}\n`);
+}
+
+export function buildReleaseManifests(
+  directory,
+  env,
+  publicPin = PASEO_RELEASE_MANIFEST_PUBLIC_KEY_BASE64URL,
+) {
   const version = env.VERSION;
   const names = releaseAssets(version);
   const read = (name) => readFileSync(join(directory, name));
@@ -130,7 +150,48 @@ function build(directory, env) {
     },
     { sourceSha: env.SOURCE_SHA, version },
   );
-  const signature = signManifest(bytes, env.PASEO_RELEASE_MANIFEST_PRIVATE_KEY);
+  const signature = signManifest(bytes, env.PASEO_RELEASE_MANIFEST_PRIVATE_KEY, publicPin);
+  const installer = read(names.windowsInstaller);
+  const desktopBytes = desktopManifestBytes(bytes, {
+    windows: {
+      platform: "windows",
+      arch: "x64",
+      kind: "nsis",
+      ...describeAsset(names.windowsInstaller, installer),
+      sha512: createHash("sha512").update(installer).digest("base64"),
+    },
+    linux: ["x64", "arm64"].map((arch) => {
+      const archiveName = arch === "x64" ? names.linuxX64Archive : names.linuxArm64Archive;
+      const closureName = arch === "x64" ? names.linuxX64Closure : names.linuxArm64Closure;
+      const linuxClosureBytes = read(closureName);
+      const closure = JSON.parse(linuxClosureBytes);
+      const artifact = Object.assign(describeAsset(archiveName, read(archiveName)), {
+        platform: "linux",
+        arch,
+        kind: "nix-desktop",
+        system: arch === "x64" ? "x86_64-linux" : "aarch64-linux",
+        outputPath: closure.outputPath,
+        outputPaths: closure.outputPaths,
+        closureManifest: describeAsset(closureName, linuxClosureBytes),
+      });
+      validateNixArtifactClosure(linuxClosureBytes, artifact, JSON.parse(bytes));
+      assert.ok(
+        artifact.outputPaths.every((output) =>
+          closure.closure.some((entry) => entry.path === output),
+        ),
+        "Linux closure omits an output",
+      );
+      return artifact;
+    }),
+  });
+  const desktopSignature = signManifest(
+    desktopBytes,
+    env.PASEO_RELEASE_MANIFEST_PRIVATE_KEY,
+    publicPin,
+    (data, sig, pin) => verifyDesktopReleaseBytes(data, sig, bytes, signature, pin),
+  );
+  writeFileSync(join(directory, names.desktopManifest), desktopBytes, { flag: "wx" });
+  writeFileSync(join(directory, names.desktopSignature), desktopSignature, { flag: "wx" });
   writeFileSync(join(directory, MANIFEST_ASSET), bytes, { flag: "wx" });
   writeFileSync(join(directory, SIGNATURE_ASSET), signature, { flag: "wx" });
   process.stdout.write(bytes);
@@ -138,7 +199,7 @@ function build(directory, env) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const [command, argument] = process.argv.slice(2);
-  if (command === "build") build(argument, process.env);
+  if (command === "build") buildReleaseManifests(argument, process.env);
   else if (command === "notes")
     process.stdout.write(changelogSection(readFileSync("CHANGELOG.fork.md", "utf8"), argument));
   else throw new Error("Usage: release-manifest.mjs build <dir> | notes <version>");

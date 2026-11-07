@@ -271,6 +271,16 @@ generated `app/build.gradle` and `react-native-keyboard-controller`, and one in
 the diff prototype module, deleted since. That count is historical; recount it
 before acting on it. Revisit only if the RN plugin stops reading that file.
 
+## Desktop fork updates
+
+[Approved implementation plan](FORK_UPDATES_PLAN.md). A is verified: a separate
+signed desktop inventory covers Windows x64 and Linux Nix x64/ARM64, binding
+both Linux outputs and installer SHA-512 to the unchanged primary Mac/Android
+manifest. The release producer and asset catalog require both new sidecars.
+Nine fixture checks pass on dev-station; protocol typecheck and scoped lint pass.
+Review A1: 1 material/1 total; A2: 0/0. Platform adapters and UI are next.
+No release publication or native-client upgrade has run.
+
 ## Toolchain
 
 Node is 26.11.1 and npm 11.20.0 everywhere: workflows, `.tool-versions` and
