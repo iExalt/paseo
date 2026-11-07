@@ -814,7 +814,7 @@ it.each([false, true])(
 );
 
 it.each(["message", "finished", "errored", "permission-required", "closed"] as const)(
-  "counts %s deliveries in collapsed views and invalidates full-view projection",
+  "keeps %s deliveries visible as turn inputs in every display",
   (event) => {
     const timestamp = new Date();
     const received = toolCall("received", "agent_message");
@@ -831,13 +831,13 @@ it.each(["message", "finished", "errored", "permission-required", "closed"] as c
       command: '"$PASEO_CLI" agent send --no-wait worker "Continue"',
     };
     const tail: StreamItem[] = [
-      { kind: "user_message", id: "prompt", text: "Work", timestamp },
-      toolCall("shell", "Bash"),
-      received,
-      sent,
-      { kind: "assistant_message", id: "reply", text: "Done", timestamp },
+      { kind: "user_message", id: "prompt", text: "Work", timestamp, turnId: "prompted" },
+      { ...toolCall("shell", "Bash"), turnId: "prompted" },
+      { kind: "assistant_message", id: "reply", text: "Started", timestamp, turnId: "prompted" },
+      { ...received, turnId: "delivered" },
+      { ...sent, turnId: "delivered" },
+      { kind: "assistant_message", id: "answer", text: "Done", timestamp, turnId: "delivered" },
     ];
-    for (const item of tail) item.turnId = "run";
     const present = createStreamPresentation();
     const input = {
       ...presentationOptions,
@@ -846,20 +846,31 @@ it.each(["message", "finished", "errored", "permission-required", "closed"] as c
       head: [],
       isTurnActive: false,
     };
-    const grouped = present({ ...input, display: "collapseToolCalls" });
-    expect(grouped.tail.map((item) => item.id)).toEqual(["prompt", "tool-shell", "reply"]);
-    expect(grouped.groupsByHostId.get("tool-shell")?.summary).toMatchObject({
-      sentMessageCount: 1,
-      receivedMessageCount: 1,
-    });
-    expect(
-      present({ ...input, display: "full" }).tail.find((item) => item.id === received.id)?.kind,
-    ).toBe(event === "message" ? "user_message" : "tool_call");
+    const kind = event === "message" ? "user_message" : "tool_call";
+    for (const display of ["full", "collapseToolCalls"] as const) {
+      const presented = present({ ...input, display }).tail;
+      expect(presented.map((item) => item.id)).toEqual([
+        "prompt",
+        "tool-shell",
+        "reply",
+        received.id,
+        "tool-sent",
+        "answer",
+      ]);
+      expect(presented[3]?.kind).toBe(kind);
+    }
+    // The delivery hosts its own turn, so its summary counts only the agent's work.
     const collapsed = present({ ...input, display: "collapseTurns" });
-    expect(collapsed.tail.map((item) => item.id)).toEqual(["prompt", "reply"]);
-    expect(collapsed.turns.turnsByHostId.get("prompt")?.summary.tools).toMatchObject({
+    expect(collapsed.tail.map((item) => item.id)).toEqual([
+      "prompt",
+      "reply",
+      received.id,
+      "answer",
+    ]);
+    expect(collapsed.tail[2]?.kind).toBe(kind);
+    expect(collapsed.turns.turnsByHostId.get(received.id)?.summary.tools).toMatchObject({
+      commandCount: 0,
       sentMessageCount: 1,
-      receivedMessageCount: 1,
     });
   },
 );

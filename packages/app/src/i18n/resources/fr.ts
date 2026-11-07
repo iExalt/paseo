@@ -2128,7 +2128,6 @@ export const fr: TranslationResources = {
       other: "{{count}} recherches effectuées",
     },
     sentMessages: { one: "a envoyé {{count}} message", other: "a envoyé {{count}} messages" },
-    receivedMessages: { one: "a reçu {{count}} message", other: "a reçu {{count}} messages" },
     otherTools: {
       one: "{{count}} autre outil utilisé",
       other: "{{count}} autres outils utilisés",

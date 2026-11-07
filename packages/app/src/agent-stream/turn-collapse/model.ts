@@ -48,10 +48,7 @@ function summarizeTurn(
 ): TurnSummary {
   const calls: (ToolCallItem | ThoughtItem)[] = [];
   for (const item of items) {
-    if (
-      (item.kind === "tool_call" || item.kind === "thought") &&
-      (!isTurnTrigger(item) || isAgentDelivery(item))
-    )
+    if ((item.kind === "tool_call" || item.kind === "thought") && !isTurnTrigger(item))
       calls.push(...(getGroupedCalls(item.id) ?? [item]));
   }
   return { tools: summarizeToolCalls(calls) };
@@ -62,16 +59,8 @@ function hasWork(summary: TurnSummary): boolean {
   return Object.keys(paseoActions).length > 0 || Object.values(counts).some((count) => count > 0);
 }
 
-function isAgentDelivery(item: StreamItem): boolean {
-  return (
-    item.kind === "tool_call" &&
-    item.payload.source === "agent" &&
-    item.payload.data.agentMessage !== undefined
-  );
-}
-
 function staysVisibleWhenCollapsed(item: StreamItem): boolean {
-  return (isTurnTrigger(item) && !isAgentDelivery(item)) || item.kind === "compaction";
+  return isTurnTrigger(item) || item.kind === "compaction";
 }
 
 function findLastAssistantIndex(tail: StreamItem[], start: number, end: number): number {

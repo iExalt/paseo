@@ -75,7 +75,6 @@ export function createStreamPresentation() {
   }
 
   let historySource: StreamItem[] | undefined;
-  let historyDisplay: ChatDisplay | undefined;
   let historyTransform: TimelineItemTransform | undefined;
   let historyRows: StreamItem[] = [];
   let preparedTail: StreamItem[] | undefined;
@@ -88,11 +87,11 @@ export function createStreamPresentation() {
   let collapsedExpandedHostIds: ReadonlySet<string> | undefined;
   let collapsed: TurnCollapse | undefined;
 
-  function presentRows(item: StreamItem, display: ChatDisplay): StreamItem[] {
+  function presentRows(item: StreamItem): StreamItem[] {
     if (item.kind === "tool_call") item = presentPaseoSend(item);
     if (item.kind === "tool_call" && item.payload.source === "agent") {
       const message = item.payload.data.agentMessage;
-      if (message?.event === "message" && display === "full") {
+      if (message?.event === "message") {
         return [
           {
             kind: "user_message",
@@ -164,21 +163,16 @@ export function createStreamPresentation() {
   return (input: PresentationInput): StreamPresentation => {
     const level: ToolCallDetailLevel = input.display === "full" ? "detailed" : "overview";
     // Retained history is not reprojected or regrouped on each live text update.
-    if (
-      historySource !== input.tail ||
-      historyTransform !== input.transform ||
-      historyDisplay !== input.display
-    ) {
+    if (historySource !== input.tail || historyTransform !== input.transform) {
       historyRows = projectPluginTimelineItems(input.tail, input.transform).flatMap<StreamItem>(
-        (item) => presentRows(item, input.display),
+        (item) => presentRows(item),
       );
       historySource = input.tail;
-      historyDisplay = input.display;
       historyTransform = input.transform;
     }
     const head: StreamItem[] = [];
     for (const item of projectPluginTimelineItems(input.head, input.transform, "streaming")) {
-      const blocks = presentRows(item, input.display);
+      const blocks = presentRows(item);
       head.push(...blocks);
     }
     if (
