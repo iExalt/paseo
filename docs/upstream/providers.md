@@ -22,6 +22,23 @@ provider icon map. You do not need a core manifest entry or provider factory.
 | Antigravity | Installed `agy` CLI                        | [Antigravity](../../public-docs/supported-providers.md#antigravity) |
 | Muse Code   | MSP over one `muse serve` host per session | [Muse Code](../../public-docs/muse-code.md)                         |
 
+## Skill changes during a session
+
+The provider owns skill discovery and enablement. Paseo watches skill directories, including
+symlink targets, and invalidates command menus when files or a native command catalog change.
+Catalog notifications do not become conversation messages or create a turn.
+
+Claude Code and Codex reload their skill catalogs without restarting the runtime. Other
+providers use native command updates and, when needed, resume the same durable conversation
+once the runtime is idle. Pending permissions, foreground work and running children defer
+that resume. Providers may veto it for additional background work. OpenCode helpers can be
+shared, so all affected sessions must be safe and all old leases must close before any resume.
+A provider without native reload or negotiated resume support keeps its existing runtime.
+
+Refreshing cannot remove instructions already present in conversation history. New discovery
+and subsequent skill reads use the refreshed catalog; an already-running model call keeps the
+context it started with.
+
 ## Provider-native session options
 
 The provider owns validation and application of the opaque record in

@@ -1,3 +1,4 @@
+import { skillRoots, watchSkillChanges } from "./skill-catalog-watch.js";
 import type { AttachedAgentTool, PluginAgentToolsRuntime } from "../plugins/agent-tools.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
 import type { RuntimeCleanupCandidate } from "./idle-runtime-cleanup/index.js";
@@ -250,6 +251,7 @@ export type {
 } from "./agent-timeline-store-types.js";
 
 export type AgentManagerEvent =
+  | { type: "commands_changed"; agentId: string; cwd: string; provider: AgentProvider }
   | { type: "agent_state"; agent: ManagedAgent }
   | { type: "agent_removed"; agentId: string; workspaceId?: string; internal: boolean }
   | { type: "provider_subagent"; event: ProviderSubagentStoreEvent }
@@ -795,6 +797,7 @@ export class AgentManager {
   private readonly inFlightAgentCloses = new Map<string, Promise<void>>();
   private readonly reloadedSessionCloses = new WeakMap<AgentSession, Promise<void>>();
   private readonly runtimeCleanupIdentities = new WeakMap<AgentSession, object>();
+  private skillRefreshBarrier: Promise<void> | null = null;
   private readonly collectingRuntimes = new Set<string>();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   // Agents an archive is stopping: a send that arrives meanwhile fails instead of starting a
@@ -1441,7 +1444,11 @@ export class AgentManager {
     agentId: string | undefined,
     options: CreateAgentOptions,
   ): Promise<ManagedAgent> {
-    return this.trackAgentRegistrationOperation(this.createAgentInternal(config, agentId, options));
+    const create = async () => {
+      await this.skillRefreshBarrier;
+      return this.createAgentInternal(config, agentId, options);
+    };
+    return this.trackAgentRegistrationOperation(create());
   }
 
   private async createAgentInternal(
@@ -1532,8 +1539,9 @@ export class AgentManager {
       agentId ?? this.idFactory(),
       "resumeAgentFromPersistence",
     );
-    return this.trackAgentRegistrationOperation(
-      this.runLifecycleMutation(resolvedAgentId, () =>
+    const resume = async () => {
+      await this.skillRefreshBarrier;
+      return this.runLifecycleMutation(resolvedAgentId, () =>
         this.resumeAgentFromPersistenceInternal(
           handle,
           overrides,
@@ -1541,8 +1549,9 @@ export class AgentManager {
           options,
           resumeOptions,
         ),
-      ),
-    );
+      );
+    };
+    return this.trackAgentRegistrationOperation(resume());
   }
 
   private async resumeAgentFromPersistenceInternal(
@@ -4063,7 +4072,7 @@ export class AgentManager {
       await this.persistSnapshot(managed);
       this.assertAgentRegistrationActive(managed);
       this.emitState(managed, { persist: false });
-      this.subscribeToSession(managed);
+      await this.subscribeToSession(managed);
       await this.drainSessionEvents(managed.id);
       this.assertAgentRegistrationActive(managed);
       return { ...managed };
@@ -4281,15 +4290,191 @@ export class AgentManager {
       });
     }
   }
-  private subscribeToSession(agent: ActiveManagedAgent): void {
+  /** Hot reload where supported; otherwise resume only a provably idle durable conversation. */
+  async refreshAgentSkills(agentId: string): Promise<boolean> {
+    const agent = this.agents.get(agentId);
+    if (!agent) return true;
+    if (agent.session.refreshSkills) {
+      await withTimeout(agent.session.refreshSkills(), 5_000, "Skill reload timed out");
+    } else {
+      if (this.skillRefreshBarrier || this.agentRegistrationTasks.size > 0) return false;
+      const group = agent.session.skillRefreshGroup;
+      const affected = group
+        ? [...this.agents.values()].filter((entry) => entry.session.skillRefreshGroup === group)
+        : [agent];
+      if (!this.registry) return false;
+      if (
+        affected.some(
+          (entry) =>
+            !entry.persistence?.sessionId ||
+            !entry.session.capabilities.supportsSessionPersistence ||
+            entry.session.canResumeRuntime?.() === false,
+        )
+      ) {
+        this.logger.debug(
+          { agentId },
+          "Skill refresh relies on native updates: runtime cannot resume",
+        );
+        return true;
+      }
+      if (
+        affected.some(
+          (entry) => this.collectingRuntimes.has(entry.id) || !this.runtimeHasNoPendingWork(entry),
+        )
+      )
+        return false;
+      const unchanged = () =>
+        affected.every(
+          (entry) => this.agents.get(entry.id) === entry && this.runtimeHasNoPendingWork(entry),
+        );
+      for (const entry of affected) this.collectingRuntimes.add(entry.id);
+      const lock = (index: number, operation: () => Promise<boolean>): Promise<boolean> => {
+        const entry = affected[index];
+        return entry
+          ? this.runLifecycleMutation(entry.id, () => lock(index + 1, operation))
+          : operation();
+      };
+      const operation = this.trackAgentRegistrationOperation(
+        lock(0, async () => {
+          const allowed = await withTimeout(
+            Promise.all(
+              affected.map((entry) => entry.session.canStopRuntime?.() ?? Promise.resolve(true)),
+            ),
+            3_000,
+            "Skill refresh idle probe timed out",
+          );
+          if (!allowed.every(Boolean) || !unchanged()) return false;
+          // Close every lease before any resume, so shared helpers discard their skill caches.
+          const released: ActiveManagedAgent[] = [];
+          const errors: unknown[] = [];
+          for (const entry of affected) {
+            try {
+              await this.closeReloadedSession(entry.session, entry.id);
+              released.push(entry);
+            } catch (error) {
+              entry.lifecycle = "error";
+              entry.lastError = error instanceof Error ? error.message : String(error);
+              this.emitState(entry);
+              errors.push(error);
+              break;
+            }
+          }
+          // A failing sibling must not strand a conversation whose writer already closed.
+          for (const entry of released) {
+            try {
+              await this.reloadAgentSessionInternal(entry.id);
+            } catch (error) {
+              errors.push(error);
+            }
+          }
+          if (errors.length)
+            throw new AggregateError(errors, "Skill refresh could not resume every runtime");
+          return true;
+        }),
+      );
+      const barrier = operation.then(
+        () => undefined,
+        () => undefined,
+      );
+      this.skillRefreshBarrier = barrier;
+      try {
+        if (!(await operation)) return false;
+      } finally {
+        if (this.skillRefreshBarrier === barrier) this.skillRefreshBarrier = null;
+        for (const entry of affected) this.collectingRuntimes.delete(entry.id);
+      }
+      for (const entry of affected) {
+        const current = this.agents.get(entry.id);
+        if (current)
+          this.dispatch({
+            type: "commands_changed",
+            agentId: current.id,
+            cwd: current.config.cwd,
+            provider: current.provider,
+          });
+      }
+      return true;
+    }
+
+    const current = this.agents.get(agentId);
+    if (current)
+      this.dispatch({
+        type: "commands_changed",
+        agentId,
+        cwd: current.config.cwd,
+        provider: current.provider,
+      });
+    return true;
+  }
+
+  watchSkills(
+    config: AgentSessionConfig & { env?: NodeJS.ProcessEnv },
+    onChange: () => Promise<void> | void,
+  ) {
+    return watchSkillChanges(skillRoots(config), onChange, (err) => {
+      this.logger.warn({ err, provider: config.provider, cwd: config.cwd }, "Skill refresh failed");
+    });
+  }
+
+  private async subscribeToSession(agent: ActiveManagedAgent): Promise<void> {
     if (agent.unsubscribeSession) {
       return;
     }
     const agentId = agent.id;
     const unsubscribe = agent.session.subscribe((event: AgentStreamEvent) => {
+      if (event.type === "commands_changed") {
+        this.dispatch({
+          type: "commands_changed",
+          agentId,
+          cwd: agent.config.cwd,
+          provider: agent.provider,
+        });
+        return;
+      }
       this.enqueueSessionEvent(agentId, event);
     });
-    agent.unsubscribeSession = unsubscribe;
+    if (!agent.session.listCommands && !agent.session.refreshSkills) {
+      agent.unsubscribeSession = unsubscribe;
+      return;
+    }
+    let disposed = false;
+    let refreshing = false;
+    let dirty = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const refresh = async () => {
+      dirty = true;
+      if (refreshing || disposed) return;
+      refreshing = true;
+      clearTimeout(retry);
+      try {
+        while (dirty) {
+          if (disposed) return;
+          dirty = false;
+          if (!(await this.refreshAgentSkills(agentId))) {
+            retry = setTimeout(() => {
+              void refresh().catch(reportError);
+            }, 1_000);
+            retry.unref();
+            return;
+          }
+        }
+      } finally {
+        refreshing = false;
+      }
+    };
+    const reportError = (err: unknown) =>
+      this.logger.warn({ err, agentId }, "Skill refresh failed");
+    const skills = this.watchSkills(
+      { ...agent.config, env: { ...agent.launchEnv, ...agent.session.usageSession?.()?.env } },
+      refresh,
+    );
+    agent.unsubscribeSession = () => {
+      disposed = true;
+      clearTimeout(retry);
+      unsubscribe();
+      skills.close();
+    };
+    await skills.ready;
   }
 
   private enqueueSessionEvent(agentId: string, event: AgentStreamEvent): void {
@@ -5670,7 +5855,9 @@ export class AgentManager {
     for (const subscriber of this.subscribers) {
       if (
         subscriber.agentId &&
-        (event.type === "agent_stream" || event.type === "agent_removed") &&
+        (event.type === "agent_stream" ||
+          event.type === "agent_removed" ||
+          event.type === "commands_changed") &&
         subscriber.agentId !== event.agentId
       ) {
         continue;
@@ -5707,7 +5894,8 @@ export class AgentManager {
   private eventBelongsToInternalAgent(event: AgentManagerEvent): boolean {
     if (event.type === "agent_state") return event.agent.internal === true;
     if (event.type === "agent_removed") return event.internal;
-    if (event.type === "agent_stream") return this.agents.get(event.agentId)?.internal === true;
+    if (event.type === "agent_stream" || event.type === "commands_changed")
+      return this.agents.get(event.agentId)?.internal === true;
     if (event.type !== "provider_subagent") return false;
     const parentAgentId =
       event.event.type === "upsert"

@@ -43,6 +43,12 @@ class ForegroundQuery {
           ],
         },
       } as SDKMessage;
+      yield {
+        type: "system",
+        subtype: "commands_changed",
+        commands: [],
+        session_id: "settings-session",
+      } as SDKMessage;
       await this.work.promise;
       if (this.stopped) return;
       yield { type: "assistant", message: { content: "DONE" } } as SDKMessage;
@@ -72,6 +78,11 @@ class ForegroundQuery {
   }
   async setPermissionMode() {}
   async setModel() {}
+  reloadCount = 0;
+  async reloadSkills() {
+    this.reloadCount++;
+    return { commands: [] };
+  }
   async supportedCommands() {
     return [];
   }
@@ -80,7 +91,7 @@ class ForegroundQuery {
   }
 }
 
-test.each(["mode", "model", "commands"] as const)(
+test.each(["mode", "model", "commands", "skills"] as const)(
   "a pending thinking change preserves the current turn during a %s request",
   async (control) => {
     const queries: ForegroundQuery[] = [];
@@ -128,7 +139,13 @@ test.each(["mode", "model", "commands"] as const)(
       });
       if (control === "mode") await session.setMode("acceptEdits");
       else if (control === "model") await session.setModel("claude-sonnet-5-6");
-      else await session.listCommands();
+      else if (control === "skills") {
+        await session.refreshSkills?.();
+        expect(queries[0].reloadCount).toBe(1);
+        await expect
+          .poll(() => events.find((event) => event.type === "commands_changed"))
+          .toEqual({ type: "commands_changed", provider: "claude" });
+      } else await session.listCommands();
       queries[0].work.resolve();
       expect(
         await Promise.race([
