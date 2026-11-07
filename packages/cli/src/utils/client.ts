@@ -1,4 +1,4 @@
-import { createHostClient, parseHostTarget } from "@getpaseo/client/node";
+import { parseHostTarget } from "@getpaseo/protocol/host-target";
 import {
   waitForDaemonReady,
   resolvePaseoHome,
@@ -12,7 +12,7 @@ import {
   normalizeHostPort,
   parseConnectionUri,
 } from "@getpaseo/protocol/daemon-endpoints";
-import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import {
   findAgentsByProviderSessionId,
   formatAmbiguousProviderSessionIdError,
@@ -201,6 +201,7 @@ export function resolveDaemonCredential(
 }
 
 async function connectSelectedDaemon(options: ConnectOptions): Promise<DaemonClient> {
+  const { createHostClient } = await import("@getpaseo/client/node");
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const host =
     options.target.kind === "endpoint"
