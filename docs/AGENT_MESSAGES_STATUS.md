@@ -29,6 +29,14 @@ delivery was left with no visible input, only its footer and the gap between tur
 And whether a delivery became a group or a lone row depended on hidden reasoning.
 The user picked the input row from mockups on 2026-11-07.
 
+The row has its own spacing, a turn's gap above and 4 dp to the rest of its turn. Your
+own bubbles carry their group margins inside the bubble, and the row keeps them inside
+its closed body, so sharing the bubble rules spaced it backwards. On native, the
+inverted list grows a row upwards, so opening a message scrolls by the change to keep
+its header under the finger. Codex starts each later message of a turn with a Markdown
+rule; the app drops it unless another message sits directly above, because after tool
+calls, a summary or a received message it divides nothing.
+
 Literal standalone Paseo CLI sends use the existing message presentation catalog.
 Ambiguous shell commands keep their shell presentation. Send details retain the
 prompt or prompt-file reference, target, original command, and result. No release,
