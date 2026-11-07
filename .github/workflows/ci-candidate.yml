@@ -1,0 +1,172 @@
+name: Exact candidate rehearsal
+
+on:
+  pull_request:
+    types: [opened]
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      controller_sha:
+        description: Full reviewed controller commit at its dedicated non-dev ref
+        required: true
+        type: string
+      candidate_sha:
+        description: Full reviewed current head of the same-repository candidate PR
+        required: true
+        type: string
+      pr_number:
+        description: Open candidate PR number
+        required: true
+        type: string
+      target:
+        description: Approved controller proof target; native adapters remain disabled
+        required: true
+        type: choice
+        options: [controller, controller-failure]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: candidate-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: false
+
+jobs:
+  admission:
+    if: github.repository == 'iExalt/paseo' && !github.event.repository.private
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    outputs:
+      controller: ${{ steps.admit.outputs.controllerSha }}
+      candidate: ${{ steps.admit.outputs.candidateSha }}
+      target: ${{ steps.admit.outputs.target }}
+      pr: ${{ steps.admit.outputs.prNumber }}
+    env:
+      CONTROLLER_SHA: ${{ github.event.pull_request.head.sha || inputs.controller_sha }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr_number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.CONTROLLER_SHA }}
+          path: controller
+          persist-credentials: false
+      # Validate the runtime YAML and local tooling before loading controller code.
+      - name: Require reviewed controller blobs and current ref
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          [[ "$CONTROLLER_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$WORKFLOW_SHA" =~ ^[a-f0-9]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$CONTROLLER_SHA"
+          git fetch --no-tags origin "$WORKFLOW_SHA"
+          for file in .github/workflows/ci-candidate.yml .github/scripts/ci-candidate.mjs .github/scripts/ci-candidate-self-check.mjs .github/scripts/deep-cleanup.mjs scripts/ci-candidate.test.mjs .github/actions/setup-ci-tools/action.yml; do
+            test "$(git rev-parse "$CONTROLLER_SHA:$file")" = "$(git rev-parse "$WORKFLOW_SHA:$file")"
+          done
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$GITHUB_REF" = "refs/heads/ci-candidate/controller-${CONTROLLER_SHA:0:12}"
+            test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$CONTROLLER_SHA"
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install: false
+          cache: false
+      - name: Activate exact runtime
+        run: |
+          set -euo pipefail
+          mise link node@26.11.1 "$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
+          mise trust controller/mise.toml
+          mise trust controller/.tool-versions
+          test "$(mise exec node@26.11.1 -- node --version)" = v26.11.1
+      - name: Capture current PR identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/iExalt/paseo/pulls/$PR_NUMBER" > "$RUNNER_TEMP/candidate-pr.json"
+      - name: Admit exact source and target
+        id: admit
+        working-directory: controller
+        run: mise exec node@26.11.1 -- node .github/scripts/ci-candidate.mjs admit "$RUNNER_TEMP/candidate-pr.json"
+      - name: Verify controller admission contracts
+        working-directory: controller
+        run: mise exec node@26.11.1 -- node --test scripts/ci-candidate.test.mjs
+
+  execute:
+    needs: admission
+    runs-on: ubuntu-26.04
+    timeout-minutes: 3
+    env:
+      CONTROLLER_SHA: ${{ needs.admission.outputs.controller }}
+      CANDIDATE_SHA: ${{ needs.admission.outputs.candidate }}
+      TARGET: ${{ needs.admission.outputs.target }}
+      PR_NUMBER: ${{ needs.admission.outputs.pr }}
+      WORKFLOW_SHA: ${{ github.workflow_sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.admission.outputs.controller }}
+          path: controller
+          persist-credentials: false
+      - name: Recheck runtime controller and current ref
+        working-directory: controller
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$WORKFLOW_SHA"
+          for file in .github/workflows/ci-candidate.yml .github/scripts/ci-candidate.mjs .github/scripts/ci-candidate-self-check.mjs .github/scripts/deep-cleanup.mjs scripts/ci-candidate.test.mjs .github/actions/setup-ci-tools/action.yml; do
+            test "$(git rev-parse "$CONTROLLER_SHA:$file")" = "$(git rev-parse "$WORKFLOW_SHA:$file")"
+          done
+          if [[ "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+            test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$CONTROLLER_SHA"
+          fi
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.11.1"
+          package-manager-cache: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install: false
+          cache: false
+      - name: Activate exact runtime
+        run: |
+          set -euo pipefail
+          mise link node@26.11.1 "$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
+          mise trust controller/mise.toml
+          mise trust controller/.tool-versions
+          test "$(mise exec node@26.11.1 -- node --version)" = v26.11.1
+      - name: Recheck candidate PR before source loading
+        working-directory: controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/iExalt/paseo/pulls/$PR_NUMBER" > "$RUNNER_TEMP/candidate-pr.json"
+          mise exec node@26.11.1 -- node .github/scripts/ci-candidate.mjs admit "$RUNNER_TEMP/candidate-pr.json"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.admission.outputs.candidate }}
+          path: candidate
+          persist-credentials: false
+      - name: Execute bounded candidate command
+        id: command
+        run: |
+          mkdir -p "$RUNNER_TEMP/candidate-evidence"
+          mise exec node@26.11.1 -- node controller/.github/scripts/ci-candidate.mjs execute "$CONTROLLER_SHA" "$CANDIDATE_SHA" "$TARGET" "$PR_NUMBER" candidate "$RUNNER_TEMP/candidate-evidence"
+      - name: Bound retained diagnostics
+        id: diagnostics
+        if: ${{ !cancelled() && steps.command.outcome != 'skipped' }}
+        run: test "$(du -sb "$RUNNER_TEMP/candidate-evidence" | cut -f1)" -le 26214400
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: ${{ !cancelled() && steps.diagnostics.outcome == 'success' }}
+        with:
+          name: candidate-${{ env.CONTROLLER_SHA }}-${{ env.CANDIDATE_SHA }}-${{ env.TARGET }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/candidate-evidence/
+          if-no-files-found: error
+          retention-days: 1

@@ -24,6 +24,7 @@ test("only fork-owned workflows are installed", () => {
     .filter((name) => /\.ya?ml$/.test(name))
     .sort();
   assert.deepEqual(workflows, [
+    "ci-candidate.yml",
     "ci-deep.yml",
     "ci.yml",
     "rebase-dev.yml",
