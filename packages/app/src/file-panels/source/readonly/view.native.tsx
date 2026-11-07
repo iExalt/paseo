@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { FlatList, Text, View, type ListRenderItem } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { HighlightToken } from "@getpaseo/highlight";
@@ -45,14 +45,28 @@ export function FileSourceView({
     return buildSourceLines({ content, filename, presentation, firstLines }, setLines);
   }, [content, filename, presentation]);
   const lineCount = lines?.length ?? 0;
+  const pendingLine = useRef<number | null>(null);
+  const revealPendingLine = useCallback(() => {
+    const index = pendingLine.current;
+    if (index === null) return;
+    pendingLine.current = null;
+    listRef.current?.scrollToIndex({ index, animated: false, viewPosition: 0.5 });
+  }, []);
+  const cancelPendingLine = useCallback(() => {
+    pendingLine.current = null;
+  }, []);
+  const handleUnmeasuredLine = useCallback(
+    ({ index, averageItemLength }: { index: number; averageItemLength: number }) => {
+      pendingLine.current = index;
+      listRef.current?.scrollToOffset({ offset: index * averageItemLength, animated: false });
+    },
+    [],
+  );
   useEffect(() => {
     if (!location.lineStart || lineCount === 0) return;
-    listRef.current?.scrollToIndex({
-      index: Math.min(location.lineStart - 1, lineCount - 1),
-      animated: false,
-      viewPosition: 0.5,
-    });
-  }, [lineCount, location.lineStart, navigationRevision]);
+    pendingLine.current = Math.min(location.lineStart - 1, lineCount - 1);
+    revealPendingLine();
+  }, [lineCount, location.lineStart, navigationRevision, revealPendingLine]);
   if (!lines) return <FilePanelLoading />;
   return (
     <FlatList
@@ -61,7 +75,14 @@ export function FileSourceView({
       keyExtractor={sourceLineKey}
       initialNumToRender={24}
       windowSize={9}
-      getItemLayout={sourceLineLayout}
+      // Wrapped rows and font scaling need the list's measured heights.
+      onScrollToIndexFailed={handleUnmeasuredLine}
+      onContentSizeChange={revealPendingLine}
+      onViewableItemsChanged={revealPendingLine}
+      onScrollBeginDrag={cancelPendingLine}
+      bounces={false}
+      overScrollMode="never"
+      testID="file-source-scroll"
       renderItem={renderSourceLine}
     />
   );
@@ -107,10 +128,6 @@ function sameSourceLine(previous: SourceLineProps, next: SourceLineProps): boole
 
 function sourceLineKey(_tokens: HighlightToken[], index: number): string {
   return String(index);
-}
-
-function sourceLineLayout(_data: ArrayLike<HighlightToken[]> | null | undefined, index: number) {
-  return { length: 20, offset: index * 20, index };
 }
 
 const renderSourceLine: ListRenderItem<HighlightToken[]> = ({ item, index }) => (
