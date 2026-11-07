@@ -1,3 +1,4 @@
+import { presentPaseoSend } from "@/tool-calls/paseo-send";
 import { isTurnBoundary } from "./turn-membership";
 import type { ChatDisplay } from "@/hooks/use-settings";
 import type { TimelineItemTransform } from "@/plugins/timeline/model";
@@ -74,6 +75,7 @@ export function createStreamPresentation() {
   }
 
   let historySource: StreamItem[] | undefined;
+  let historyDisplay: ChatDisplay | undefined;
   let historyTransform: TimelineItemTransform | undefined;
   let historyRows: StreamItem[] = [];
   let preparedTail: StreamItem[] | undefined;
@@ -86,10 +88,11 @@ export function createStreamPresentation() {
   let collapsedExpandedHostIds: ReadonlySet<string> | undefined;
   let collapsed: TurnCollapse | undefined;
 
-  function presentRows(item: StreamItem): StreamItem[] {
+  function presentRows(item: StreamItem, display: ChatDisplay): StreamItem[] {
+    if (item.kind === "tool_call") item = presentPaseoSend(item);
     if (item.kind === "tool_call" && item.payload.source === "agent") {
       const message = item.payload.data.agentMessage;
-      if (message?.event === "message") {
+      if (message?.event === "message" && display === "full") {
         return [
           {
             kind: "user_message",
@@ -161,16 +164,21 @@ export function createStreamPresentation() {
   return (input: PresentationInput): StreamPresentation => {
     const level: ToolCallDetailLevel = input.display === "full" ? "detailed" : "overview";
     // Retained history is not reprojected or regrouped on each live text update.
-    if (historySource !== input.tail || historyTransform !== input.transform) {
+    if (
+      historySource !== input.tail ||
+      historyTransform !== input.transform ||
+      historyDisplay !== input.display
+    ) {
       historyRows = projectPluginTimelineItems(input.tail, input.transform).flatMap<StreamItem>(
-        (item) => presentRows(item),
+        (item) => presentRows(item, input.display),
       );
       historySource = input.tail;
+      historyDisplay = input.display;
       historyTransform = input.transform;
     }
     const head: StreamItem[] = [];
     for (const item of projectPluginTimelineItems(input.head, input.transform, "streaming")) {
-      const blocks = presentRows(item);
+      const blocks = presentRows(item, input.display);
       head.push(...blocks);
     }
     if (

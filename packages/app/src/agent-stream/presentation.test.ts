@@ -700,6 +700,7 @@ it("presents received agent messages as attributed bubbles with the original tur
     transform: undefined,
     tail: [call],
     head: [],
+    display: "full",
   });
   expect(result.tail[0]).toMatchObject({
     kind: "user_message",
@@ -809,5 +810,56 @@ it.each([false, true])(
     expect(opened.tail).toEqual(tail);
     expect(opened.turns.nestedItemIds.has("thought")).toBe(true);
     expect(opened.groupsByHostId.size).toBe(0);
+  },
+);
+
+it.each(["message", "finished", "errored", "permission-required", "closed"] as const)(
+  "counts %s deliveries in collapsed views and invalidates full-view projection",
+  (event) => {
+    const timestamp = new Date();
+    const received = toolCall("received", "agent_message");
+    if (received.payload.source !== "agent") throw new Error("Expected agent tool");
+    received.payload.data.agentMessage = {
+      event,
+      sender: { id: "worker" },
+      text: "Ready",
+    };
+    const sent = toolCall("sent", "Bash");
+    if (sent.payload.source !== "agent") throw new Error("Expected agent tool");
+    sent.payload.data.detail = {
+      type: "shell",
+      command: '"$PASEO_CLI" agent send --no-wait worker "Continue"',
+    };
+    const tail: StreamItem[] = [
+      { kind: "user_message", id: "prompt", text: "Work", timestamp },
+      toolCall("shell", "Bash"),
+      received,
+      sent,
+      { kind: "assistant_message", id: "reply", text: "Done", timestamp },
+    ];
+    for (const item of tail) item.turnId = "run";
+    const present = createStreamPresentation();
+    const input = {
+      ...presentationOptions,
+      transform: undefined,
+      tail,
+      head: [],
+      isTurnActive: false,
+    };
+    const grouped = present({ ...input, display: "collapseToolCalls" });
+    expect(grouped.tail.map((item) => item.id)).toEqual(["prompt", "tool-shell", "reply"]);
+    expect(grouped.groupsByHostId.get("tool-shell")?.summary).toMatchObject({
+      sentMessageCount: 1,
+      receivedMessageCount: 1,
+    });
+    expect(
+      present({ ...input, display: "full" }).tail.find((item) => item.id === received.id)?.kind,
+    ).toBe(event === "message" ? "user_message" : "tool_call");
+    const collapsed = present({ ...input, display: "collapseTurns" });
+    expect(collapsed.tail.map((item) => item.id)).toEqual(["prompt", "reply"]);
+    expect(collapsed.turns.turnsByHostId.get("prompt")?.summary.tools).toMatchObject({
+      sentMessageCount: 1,
+      receivedMessageCount: 1,
+    });
   },
 );

@@ -2129,6 +2129,8 @@ export const es: TranslationResources = {
       one: "buscó {{count}} vez",
       other: "buscó {{count}} veces",
     },
+    sentMessages: { one: "envió {{count}} mensaje", other: "envió {{count}} mensajes" },
+    receivedMessages: { one: "recibió {{count}} mensaje", other: "recibió {{count}} mensajes" },
     otherTools: {
       one: "usó {{count}} herramienta adicional",
       other: "usó {{count}} herramientas adicionales",

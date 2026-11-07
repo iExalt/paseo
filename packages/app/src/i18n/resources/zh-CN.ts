@@ -2058,6 +2058,8 @@ export const zhCN: TranslationResources = {
       one: "搜索了 {{count}} 次",
       other: "搜索了 {{count}} 次",
     },
+    sentMessages: { one: "发送了 {{count}} 条消息", other: "发送了 {{count}} 条消息" },
+    receivedMessages: { one: "收到了 {{count}} 条消息", other: "收到了 {{count}} 条消息" },
     otherTools: {
       one: "使用了 {{count}} 个其他工具",
       other: "使用了 {{count}} 个其他工具",

@@ -2080,6 +2080,8 @@ export const ar: TranslationResources = {
       one: "بحث {{count}} مرة",
       other: "بحث {{count}} مرات",
     },
+    sentMessages: { one: "تم إرسال {{count}} رسالة", other: "تم إرسال {{count}} رسائل" },
+    receivedMessages: { one: "تم استلام {{count}} رسالة", other: "تم استلام {{count}} رسائل" },
     otherTools: {
       one: "استخدم {{count}} أداة أخرى",
       other: "استخدم {{count}} أدوات أخرى",
