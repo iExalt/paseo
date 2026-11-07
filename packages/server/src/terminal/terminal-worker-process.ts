@@ -201,6 +201,7 @@ function runWorker(argv: string[]): void {
   // The conpty failure signal is process-scoped, not request-scoped. Serializing
   // creates keeps an async spawn failure attributable to exactly one request.
   let createTerminalQueue: Promise<void> = Promise.resolve();
+  let pendingCreateCount = 0;
 
   // node-pty completes its Windows conpty spawn asynchronously on a separate
   // conout worker thread. When that spawn fails (bad cwd, missing command, etc.)
@@ -260,7 +261,13 @@ function runWorker(argv: string[]): void {
   }
 
   function exitIfIdle(): void {
-    if (!controller && everControlled && sessionsById.size === 0) {
+    if (
+      !controller &&
+      everControlled &&
+      sessionsById.size === 0 &&
+      pendingCreateCount === 0 &&
+      closingTerminalIds.size === 0
+    ) {
       exitWorker(0);
     }
   }
@@ -449,7 +456,13 @@ function runWorker(argv: string[]): void {
   }
 
   function enqueueCreateTerminalRequest(message: TerminalCreateRequest): Promise<void> {
-    const nextRequest = createTerminalQueue.then(() => handleCreateTerminalRequest(message));
+    pendingCreateCount += 1;
+    const nextRequest = createTerminalQueue
+      .then(() => handleCreateTerminalRequest(message))
+      .finally(() => {
+        pendingCreateCount -= 1;
+        exitIfIdle();
+      });
     createTerminalQueue = nextRequest.catch(() => {});
     return nextRequest;
   }
@@ -564,6 +577,7 @@ function runWorker(argv: string[]): void {
             .finally(() => {
               closingTerminalIds.delete(closing.id);
               persistRecord();
+              exitIfIdle();
             });
         }
         // Removal is owned by session.onExit -> terminalExit; the parent mirror

@@ -30,12 +30,20 @@ vi.mock("electron", () => ({
   autoUpdater: electronAutoUpdaterMock,
   app: {
     getPath: vi.fn(),
+    getVersion: vi.fn(() => "1.2.3"),
     isPackaged: true,
   },
 }));
 
 vi.mock("electron-updater", () => ({
-  autoUpdater: autoUpdaterMock,
+  default: { autoUpdater: autoUpdaterMock },
+}));
+
+vi.mock("./windows-fork-updater.js", () => ({
+  configureForkWindowsUpdater: vi.fn(() => async () => {}),
+  ForkNsisUpdater: function MockForkNsisUpdater() {
+    return autoUpdaterMock;
+  },
 }));
 
 import {
@@ -89,7 +97,7 @@ describe("electron updater loading", () => {
 });
 
 describe("checkForAppUpdate", () => {
-  it("treats an unpublished channel manifest as an unavailable update", async () => {
+  it("reports missing update metadata rather than claiming the app is current", async () => {
     const error = Object.assign(new Error("Cannot find latest-mac.yml"), {
       code: "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND",
     });
@@ -113,9 +121,9 @@ describe("checkForAppUpdate", () => {
       latestVersion: "1.2.3",
       body: null,
       date: null,
-      errorMessage: null,
+      errorMessage: "Cannot find latest-mac.yml",
     });
-    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
   });
 
@@ -187,9 +195,9 @@ describe("checkForAppUpdate", () => {
 describe("shouldInstallAppUpdateOnQuit", () => {
   it("keeps Linux AppImage updates on the manual install path", () => {
     expect(shouldInstallAppUpdateOnQuit({ platform: "linux", isAppImage: true })).toBe(false);
-    expect(shouldInstallAppUpdateOnQuit({ platform: "linux", isAppImage: false })).toBe(true);
-    expect(shouldInstallAppUpdateOnQuit({ platform: "darwin", isAppImage: false })).toBe(true);
-    expect(shouldInstallAppUpdateOnQuit({ platform: "win32", isAppImage: false })).toBe(true);
+    expect(shouldInstallAppUpdateOnQuit({ platform: "linux", isAppImage: false })).toBe(false);
+    expect(shouldInstallAppUpdateOnQuit({ platform: "darwin", isAppImage: false })).toBe(false);
+    expect(shouldInstallAppUpdateOnQuit({ platform: "win32", isAppImage: false })).toBe(false);
   });
 });
 
@@ -358,4 +366,28 @@ describe("shouldAdmitToRollout", () => {
       await rm(tempDir, { force: true, recursive: true });
     }
   });
+});
+
+import { execFileSync } from "node:child_process";
+it("loads the installed CommonJS updater through its default namespace in native Node", () => {
+  const result = execFileSync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "-e",
+      `
+    import { createRequire } from "node:module";
+    const require = createRequire(import.meta.url);
+    require("electron");
+    require.cache[require.resolve("electron")].exports = { app: { getVersion: () => "1.2.3" } };
+    const namespace = await import("electron-updater");
+    const updater = namespace.default?.autoUpdater ?? namespace.autoUpdater;
+    updater.autoDownload = true;
+    if (updater.autoDownload !== true) throw new Error("updater missing");
+    console.log("configured");
+  `,
+    ],
+    { encoding: "utf8" },
+  );
+  expect(result.trim()).toBe("configured");
 });

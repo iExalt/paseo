@@ -143,6 +143,8 @@ class FakeAppUpdateRuntime implements AppUpdateRuntime {
     }
   }
 
+  async prepareInstall(_version: string): Promise<void> {}
+
   quitAndInstall({ targetVersion, isSilent, isForceRunAfter }: AppUpdateInstallRequest): void {
     if (this.downloadedUpdate) {
       this.installedVersions.push(this.downloadedUpdate.version);
@@ -841,4 +843,85 @@ describe("app update service", () => {
       errorMessage: null,
     });
   });
+});
+
+it("revalidates signed installer before daemon stop and prevents handoff when safety declines", async () => {
+  const { runtime, service } = createService();
+  const events: string[] = [];
+  runtime.prepareInstall = async () => {
+    events.push("revalidate");
+  };
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  const result = await service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => {
+      events.push("safety");
+      throw new Error("waiting for active work");
+    },
+  );
+  expect(events).toEqual(["revalidate", "safety"]);
+  expect(result.installed).toBe(false);
+  expect(runtime.installedVersions).toEqual([]);
+});
+
+it("serializes background checks through apply and restores on final verification failure", async () => {
+  const { runtime, service } = createService();
+  let validationCount = 0;
+  runtime.prepareInstall = async () => {
+    if (++validationCount === 2) throw new Error("installer changed during safety wait");
+  };
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  runtime.nextCheck({ isUpdateAvailable: false, updateInfo: rolledOutUpdate });
+  let releaseSafety!: () => void;
+  let reachedSafety!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    reachedSafety = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    releaseSafety = resolve;
+  });
+  let restored = 0;
+  const install = service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => {
+      reachedSafety();
+      await gate;
+      return async () => {
+        restored += 1;
+      };
+    },
+  );
+  await ready;
+  const check = service.checkForAppUpdate({
+    currentVersion: "1.2.3",
+    releaseChannel: "stable",
+    intent: "automatic",
+  });
+  await Promise.resolve();
+  expect(runtime.checkCount).toBe(1);
+  releaseSafety();
+  expect((await install).installed).toBe(false);
+  await check;
+  expect(restored).toBe(1);
+  expect(runtime.installedVersions).toEqual([]);
+});
+
+it("restores only once when the native adapter reports a late handoff failure", async () => {
+  const { runtime, service } = createService();
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  let onFailure: (() => Promise<void>) | undefined;
+  runtime.quitAndInstall = (_request, failure) => {
+    onFailure = failure;
+  };
+  let restored = 0;
+  await service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => async () => {
+      restored += 1;
+    },
+  );
+  expect(onFailure).toBeDefined();
+  await onFailure!();
+  await onFailure!();
+  expect(restored).toBe(1);
 });

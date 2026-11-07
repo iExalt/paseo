@@ -185,3 +185,13 @@ in 0.46 s on dev-station, warm dependencies (baseline 7/7 in 0.47 s).
 Protocol typecheck and scoped lint pass. Review: A1 1 material/1 total;
 A2 0/0, closing the producer-entrypoint proof gap. Windows/Linux installation
 and UI remain unimplemented; no release was published.
+
+2026-11-07 UTC: Windows adapter is verified at the code-only boundary and
+reviewer-accepted. Five updater/safety suites: 57/57 in 0.38 s; worker lifecycle
+fixture: 4/4 in 1.42 s; read-only blocker query: 1/1; existing manager checks: 10/10.
+Root typecheck and scoped lint pass. BW1 2 material/2 total; BW2 0/0. The repairs
+serialize apply/checks, block app-owned daemon starts through handoff, and
+revalidate the native installer path after safe shutdown. Pending-create fixture
+proves disconnect/create survival, without a deterministic scheduling barrier.
+Actual Windows installation and late-error app survival remain unverified.
+Linux and UI are next.

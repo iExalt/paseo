@@ -1,3 +1,7 @@
+import { createWindowsUpdateAdmission } from "../features/windows-update-admission.js";
+import { terminalUpdateBlockers } from "@getpaseo/server/terminal-update-blockers";
+import { prepareWindowsAppUpdate } from "../features/windows-update-safety.js";
+import { setTimeout as delay } from "node:timers/promises";
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -75,6 +79,7 @@ import {
 import { tailFile } from "../diagnostics/tail-file.js";
 
 const DAEMON_LOG_FILENAME = "daemon.log";
+const windowsUpdateAdmission = createWindowsUpdateAdmission();
 let ownedLaunch: { home: string; instance: DaemonInstance } | null = null;
 
 type DesktopDaemonState = "starting" | "running" | "stopped" | "errored";
@@ -282,9 +287,70 @@ function assertBuiltInDaemonManagementEnabled(settings: DesktopSettings): void {
   }
 }
 
+async function prepareWindowsUpdate(): Promise<() => Promise<void>> {
+  const releaseAdmission = await windowsUpdateAdmission.acquire();
+  try {
+    daemonUpgrader.cancel();
+    const home = getPaseoHome();
+    await prepareWindowsAppUpdate({
+      readStatus: resolveDesktopDaemonStatus,
+      async assertNoWorkers(allowEmptyWorkers) {
+        const deadline = Date.now() + (allowEmptyWorkers ? 0 : 10_000);
+        while (await terminalUpdateBlockers(home, { allowEmptyWorkers })) {
+          if (Date.now() >= deadline)
+            throw new Error(
+              "Fork update is waiting for terminals and their workers to exit. Close terminals, then retry.",
+            );
+          await delay(100);
+        }
+      },
+      async stopOwnedIfIdle() {
+        const instance = await readDaemonInstance(home);
+        if (!instance) return "stopped";
+        if (
+          !ownedLaunch ||
+          ownedLaunch.home !== home ||
+          !isSameDaemonInstance(instance, ownedLaunch.instance)
+        )
+          throw new Error("The daemon changed; fork update is waiting for it to exit.");
+        const result = await stopDaemonInstance(home, {
+          instance,
+          keepTerminals: true,
+          timeoutMs: 15_000,
+          requestShutdown: async (ready) => {
+            const reply = (await runExternalCliJsonCommand([
+              "daemon",
+              "stop",
+              "--host",
+              ready.listen,
+              "--if-idle",
+              "--json",
+            ])) as { action?: unknown };
+            return reply.action === "declined" ? "declined" : undefined;
+          },
+        });
+        if (result.action === "declined") return "declined";
+        ownedLaunch = null;
+        return "stopped";
+      },
+      restoreDaemon: async () => {
+        releaseAdmission();
+        await startDaemon();
+      },
+    });
+    return async () => {
+      releaseAdmission();
+      await startDaemon();
+    };
+  } catch (error) {
+    releaseAdmission();
+    throw error;
+  }
+}
+
 async function startDaemon(): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
-  return daemonUpgrader.ensure();
+  return windowsUpdateAdmission.run(() => daemonUpgrader.ensure());
 }
 
 // Asks the running daemon to stop only if no agent has work; throws when the outcome is unknown.
@@ -350,6 +416,7 @@ function launchFromStoreBundle(invocation: NodeEntrypointInvocation): NodeEntryp
 }
 
 async function launchDaemon(): Promise<DesktopDaemonStatus> {
+  windowsUpdateAdmission.assertOpen();
   const home = getPaseoHome();
   const invocation = launchFromStoreBundle(
     createNodeEntrypointInvocation({
@@ -480,8 +547,10 @@ export function keepsTerminalsOnStop(
 }
 
 async function restartDaemon(): Promise<DesktopDaemonStatus> {
-  await runExternalCliJsonCommand(["daemon", "restart", "--home", getPaseoHome(), "--json"]);
-  return resolveDesktopDaemonStatus();
+  return windowsUpdateAdmission.run(async () => {
+    await runExternalCliJsonCommand(["daemon", "restart", "--home", getPaseoHome(), "--json"]);
+    return resolveDesktopDaemonStatus();
+  });
 }
 
 function getDaemonLogs(): DesktopDaemonLogs {
@@ -598,7 +667,9 @@ export function createDaemonCommandHandlers(
       return downloadAndInstallUpdate(
         { currentVersion, releaseChannel: await resolveRequestedReleaseChannel(args) },
         async () => {
+          if (process.platform === "win32") return prepareWindowsUpdate();
           await stopDesktopDaemon("app_update");
+          return undefined;
         },
       );
     },

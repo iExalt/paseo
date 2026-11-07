@@ -278,7 +278,9 @@ signed desktop inventory covers Windows x64 and Linux Nix x64/ARM64, binding
 both Linux outputs and installer SHA-512 to the unchanged primary Mac/Android
 manifest. The release producer and asset catalog require both new sidecars.
 Nine fixture checks pass on dev-station; protocol typecheck and scoped lint pass.
-Review A1: 1 material/1 total; A2: 0/0. Platform adapters and UI are next.
+Review A1: 1 material/1 total; A2: 0/0. Windows adapter code and safety fixtures
+now pass (57 updater/safety checks, root types and scoped lint); BW1 2/2, BW2 0/0.
+Linux adapter and shared UI remain unfinished.
 No release publication or native-client upgrade has run.
 
 ## Toolchain

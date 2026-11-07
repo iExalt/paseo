@@ -28,6 +28,11 @@
       "source": "./src/terminal/agent-hooks/provider-registry.ts",
       "default": "./dist/server/terminal/agent-hooks/provider-registry.js"
     },
+    "./terminal-update-blockers": {
+      "types": "./dist/server/terminal/terminal-update-blockers.d.ts",
+      "source": "./src/terminal/terminal-update-blockers.ts",
+      "default": "./dist/server/terminal/terminal-update-blockers.js"
+    },
     "./daemon-control": {
       "types": "./dist/server/server/daemon-instance.d.ts",
       "source": "./src/server/daemon-instance.ts",
