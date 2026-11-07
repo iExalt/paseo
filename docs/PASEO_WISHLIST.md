@@ -45,3 +45,10 @@ by the image-sizing change; a separate baseline build has not been tested.
       Resizing from 375px to 1440px dismisses the lightbox as the workspace
       changes layout. Resizing within desktop or phone layout keeps it open
       and correctly refits the picture.
+
+## File reader QA follow-ups
+
+- [ ] **Last line overlaps Android's three-button navigation bar.** Markdown
+      Preview and Source need a bottom system inset. Seen at phone width on
+      Android 17 with both 0.17.1 and the #388 diagnostic build; this is separate
+      from edge overscroll and source row measurement.
