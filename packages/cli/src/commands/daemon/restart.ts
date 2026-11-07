@@ -13,7 +13,6 @@ import { withOutput, type CommandOptions, type SingleResult } from "../../output
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { describeDaemonTarget } from "../../utils/daemon-target.js";
 import { parseTimeoutMs, rejectRemovedLaunchFlags } from "./local-daemon.js";
-import { replaceSupervisor } from "./replace-supervisor.js";
 
 export function daemonRestartCommand(): Command {
   return rejectRemovedLaunchFlags(
@@ -35,9 +34,11 @@ export async function runRestartCommand(
   options: CommandOptions,
   _command: Command,
 ): Promise<SingleResult<Record<string, unknown>>> {
-  return options.replaceSupervisor === true
-    ? replaceSupervisor(options, _command)
-    : restartWorker(options);
+  if (options.replaceSupervisor === true) {
+    const { replaceSupervisor } = await import("./replace-supervisor.js");
+    return replaceSupervisor(options, _command);
+  }
+  return restartWorker(options);
 }
 
 async function restartWorker(options: CommandOptions) {

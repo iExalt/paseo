@@ -1,9 +1,5 @@
 import { Command } from "commander";
-import {
-  requireIdleShutdownCapability,
-  requireTerminalKeepCapability,
-  type DaemonClient,
-} from "@getpaseo/client/internal/daemon-client";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { stopDaemonInstance, type DaemonInstance } from "@getpaseo/server/daemon-control";
 import { connectToDaemon, type ConnectOptions } from "../../utils/client.js";
 import { withOutput, type CommandOptions } from "../../output/index.js";
@@ -52,6 +48,8 @@ async function runStop(options: CommandOptions, deps: StopCommandDeps) {
   // An idle-only stop must never fall back to a signal, which kills agents and terminals.
   const keepTerminals = options.keepTerminals === true || onlyIfIdle;
   const requestShutdown = async (instance?: DaemonInstance) => {
+    const { requireIdleShutdownCapability, requireTerminalKeepCapability } =
+      await import("@getpaseo/client/internal/daemon-client");
     const client = await deps.connectToDaemon({ target, timeout: remaining(), instance });
     try {
       // Checked on the connection that carries the shutdown: a daemon without the capability

@@ -1,19 +1,21 @@
 import { renderError, toCommandError, defaultOutputOptions } from "./output/render.js";
 import { createCli } from "./cli.js";
 import { classifyInvocation } from "./classify.js";
-import { openDesktopWithProject } from "./commands/open.js";
+import type { Command } from "commander";
 
 export interface RunCliOptions {
   cwd?: string;
   nodeArgv?: [string, string];
 }
 
-export function createCliParseArgv(input: {
-  argv: string[];
-  cwd: string;
-  nodeArgv?: [string, string];
-}): string[] | { kind: "open-project"; resolvedPath: string } {
-  const program = createCli();
+export function createCliParseArgv(
+  input: {
+    argv: string[];
+    cwd: string;
+    nodeArgv?: [string, string];
+  },
+  program: Command = createCli(),
+): string[] | { kind: "open-project"; resolvedPath: string } {
   const knownCommands = new Set(program.commands.map((command) => command.name()));
   const invocation = classifyInvocation({
     argv: input.argv,
@@ -51,19 +53,22 @@ export async function runCli(argv: string[], options: RunCliOptions = {}): Promi
     process.stdout.on("error", ignoreClosedStdout);
   }
 
-  const parseArgv = createCliParseArgv({
-    argv,
-    cwd: options.cwd ?? process.cwd(),
-    nodeArgv: options.nodeArgv,
-  });
-
-  if (!Array.isArray(parseArgv)) {
-    await openDesktopWithProject(parseArgv.resolvedPath);
-    return typeof process.exitCode === "number" ? process.exitCode : 0;
-  }
-
   const program = createCli();
+  const parseArgv = createCliParseArgv(
+    {
+      argv,
+      cwd: options.cwd ?? process.cwd(),
+      nodeArgv: options.nodeArgv,
+    },
+    program,
+  );
+
   try {
+    if (!Array.isArray(parseArgv)) {
+      const { openDesktopWithProject } = await import("./commands/open.js");
+      await openDesktopWithProject(parseArgv.resolvedPath);
+      return typeof process.exitCode === "number" ? process.exitCode : 0;
+    }
     await program.parseAsync(parseArgv, { from: "node" });
   } catch (error) {
     process.stderr.write(

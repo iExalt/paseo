@@ -91,6 +91,21 @@ describe("runCli", () => {
     ).toEqual(["node", "paseo", "daemon", "set-password"]);
   });
 
+  it.each(["agent", "plugin", "worktree"])(
+    "keeps %s command precedence over an existing directory",
+    (name) => {
+      const root = mkdtempSync(path.join(tmpdir(), "paseo-command-directory-"));
+      mkdirSync(path.join(root, name));
+      try {
+        expect(
+          createCliParseArgv({ argv: [name], cwd: root, nodeArgv: ["node", "paseo"] }, createCli()),
+        ).toEqual(["node", "paseo", name]);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    },
+  );
+
   it("preserves the hooks command argv", () => {
     expect(
       createCliParseArgv({

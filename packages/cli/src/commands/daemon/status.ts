@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
 import {
   readDaemonInstance,
   daemonLogPath,
@@ -53,6 +52,7 @@ async function probeDaemonStatus(
   instance: Awaited<ReturnType<typeof readDaemonInstance>>,
   local: Record<string, unknown>,
 ) {
+  const { DaemonConnectionError } = await import("@getpaseo/client/internal/daemon-client");
   let connectedDaemon = "unreachable";
   let note: string | undefined;
   let live: Record<string, unknown> = {};

@@ -1,5 +1,4 @@
 import type { DaemonTarget } from "../../utils/daemon-target.js";
-import { createPaseoApi } from "@getpaseo/client";
 import { connectToDaemon, getDaemonHost } from "../../utils/client.js";
 import type { CommandError, CommandOptions } from "../../output/index.js";
 
@@ -15,6 +14,7 @@ interface TerminalLike {
 export async function connectTerminalClient(target: DaemonTarget) {
   const daemonHost = getDaemonHost({ target });
   try {
+    const { createPaseoApi } = await import("@getpaseo/client");
     const client = await connectToDaemon({ target });
     return {
       client: createPaseoApi(client),

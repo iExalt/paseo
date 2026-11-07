@@ -293,3 +293,83 @@ describe("run feature values", () => {
     }
   });
 });
+
+describe("structured run output", () => {
+  beforeEach(() => {
+    vi.stubEnv("PASEO_AGENT_ID", "parent-agent");
+    vi.stubEnv("PASEO_WORKSPACE_ID", "");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function fixture(response: string) {
+    const client = new DaemonClient({
+      url: "ws://daemon.test",
+      clientId: "cli-structured-run-test",
+      reconnect: { enabled: false },
+    });
+    vi.spyOn(client, "getLastServerInfoMessage").mockReturnValue({
+      status: "server_info",
+      serverId: "cli-structured-run-test",
+      features: { agentOrchestrationParity: true },
+    });
+    vi.spyOn(client, "fetchAgent").mockResolvedValue({
+      agent: createAgentSnapshot("parent-agent"),
+      project: null,
+    });
+    const createAgent = vi
+      .spyOn(client, "createAgent")
+      .mockResolvedValue(createAgentSnapshot("structured-agent"));
+    const waitForFinish = vi.spyOn(client, "waitForFinish").mockResolvedValue({
+      status: "idle",
+      final: createAgentSnapshot("structured-agent"),
+      error: null,
+      lastMessage: response,
+    });
+    const sendMessage = vi.spyOn(client, "sendMessage").mockResolvedValue();
+    const close = vi.spyOn(client, "close").mockResolvedValue();
+    vi.mocked(connectToDaemon).mockResolvedValueOnce(client);
+    const run = () =>
+      runRunCommand(
+        "Answer the question",
+        {
+          provider: "codex",
+          daemonTarget,
+          outputSchema: JSON.stringify({
+            type: "object",
+            properties: { answer: { type: "string" } },
+            required: ["answer"],
+            additionalProperties: false,
+          }),
+        },
+        new Command("run"),
+      );
+    return { run, createAgent, waitForFinish, sendMessage, close };
+  }
+
+  it("loads the real schema validator and serializes a valid response", async () => {
+    const context = fixture('{"answer":"ready"}');
+    const result = await context.run();
+    expect(result.data).toMatchObject({ agentId: "structured-agent", status: "completed" });
+    expect(result.schema.serialize!(result.data)).toEqual({ answer: "ready" });
+    expect(context.createAgent).toHaveBeenCalledTimes(1);
+    expect(context.waitForFinish).toHaveBeenCalledTimes(1);
+    expect(context.sendMessage).not.toHaveBeenCalled();
+    expect(context.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("exhausts schema retries and renders the lazy validator's failure", async () => {
+    const context = fixture('{"answer":42}');
+    await expect(context.run()).rejects.toMatchObject({
+      code: "OUTPUT_SCHEMA_FAILED",
+      message: "Agent response did not match the required output schema",
+      details: expect.stringContaining("must be string"),
+    });
+    expect(context.createAgent).toHaveBeenCalledTimes(1);
+    expect(context.waitForFinish).toHaveBeenCalledTimes(3);
+    expect(context.sendMessage).toHaveBeenCalledTimes(2);
+    expect(context.close).toHaveBeenCalledTimes(1);
+  });
+});

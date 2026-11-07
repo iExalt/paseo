@@ -1,8 +1,4 @@
 import { Command, Option } from "commander";
-import {
-  getStructuredAgentResponse,
-  StructuredAgentResponseError,
-} from "@getpaseo/server/agent-response";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { connectToDaemon } from "../../utils/client.js";
@@ -284,6 +280,8 @@ async function fetchStructuredOutput(
   prompt: string,
   outputSchema: ReturnType<typeof loadOutputSchema>,
 ): Promise<Record<string, unknown>> {
+  const { getStructuredAgentResponse, StructuredAgentResponseError } =
+    await import("@getpaseo/server/agent-response");
   try {
     return await getStructuredAgentResponse<Record<string, unknown>>({
       caller,
