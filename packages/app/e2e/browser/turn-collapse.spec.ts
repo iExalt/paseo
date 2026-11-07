@@ -296,6 +296,8 @@ test("long sender attribution stays on one line in compact chat", async ({ page 
     await openAgentRoute(page, recipient);
     await expectComposerVisible(page);
     const disclosure = page.getByTestId("agent-message");
+    // The closed row truncates the long sender and still shows the preview.
+    await expect(disclosure.getByText("The sender label stays on one line,")).toBeVisible();
     await disclosure
       .getByRole("button", {
         name: `${title} The sender label stays on one line, even when the agent has a long name.`,

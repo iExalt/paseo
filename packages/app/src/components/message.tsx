@@ -1159,6 +1159,12 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   labelActive: {
     color: theme.colors.foreground,
   },
+  // A sender name truncates instead of pushing the message preview out of the row.
+  labelSurface: {
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: "60%",
+  },
   labelLoading: {
     color: theme.colors.foreground,
     opacity: 0.72,
@@ -2365,6 +2371,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
     () => [
       expandableBadgeStylesheet.label,
       (isActive || surface) && expandableBadgeStylesheet.labelActive,
+      surface && expandableBadgeStylesheet.labelSurface,
       isLoading && expandableBadgeStylesheet.labelLoading,
     ],
     [isActive, isLoading, surface],
