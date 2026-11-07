@@ -56,7 +56,7 @@ describe("collapseTurns", () => {
     });
     expect(expanded.hostIdByHiddenRowId.size).toBe(0);
   });
-  it("keeps lifecycle events and compaction recognizable beside a semantic action summary", () => {
+  it("counts lifecycle deliveries while keeping compaction visible", () => {
     const create = shell("create");
     if (create.payload.source !== "agent") throw new Error("Expected agent tool");
     create.payload.data.name = "mcp__paseo__create_agent";
@@ -83,8 +83,9 @@ describe("collapseTurns", () => {
       reply("done"),
     ].map((item) => Object.assign(item, { turnId: "same-run" }));
     const result = collapse(items);
-    expect(ids(result.tail)).toEqual(["u1", "finished", "compaction", "done"]);
+    expect(ids(result.tail)).toEqual(["u1", "compaction", "done"]);
     expect(result.turnsByHostId.get("u1")?.summary.tools).toMatchObject({
+      receivedMessageCount: 1,
       commandCount: 1,
       otherToolCount: 0,
       paseoActions: { "Created agent": 1 },

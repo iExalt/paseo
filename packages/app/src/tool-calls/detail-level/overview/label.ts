@@ -33,6 +33,8 @@ export function useOverviewSummaryLabel(
       [summary.readFileCount, "toolCallGroup.readFiles"],
       [summary.searchCount, "toolCallGroup.searches"],
       [summary.otherToolCount, "toolCallGroup.otherTools"],
+      [summary.sentMessageCount, "toolCallGroup.sentMessages"],
+      [summary.receivedMessageCount, "toolCallGroup.receivedMessages"],
     ] as const;
     for (const [count, key] of entries) {
       if (count > 0) {

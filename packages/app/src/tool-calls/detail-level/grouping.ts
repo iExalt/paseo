@@ -70,7 +70,11 @@ export function isGroupableToolCall(
   autoExpandReasoning = false,
 ): item is GroupableItem {
   if (item.kind === "thought") return !autoExpandReasoning;
-  if (item.kind !== "tool_call" || isTurnTrigger(item)) {
+  if (
+    item.kind !== "tool_call" ||
+    (isTurnTrigger(item) &&
+      !(item.payload.source === "agent" && item.payload.data.agentMessage !== undefined))
+  ) {
     return false;
   }
   const descriptor = describeToolCall(item);

@@ -2168,6 +2168,8 @@ export const en = {
       one: "searched {{count}} time",
       other: "searched {{count}} times",
     },
+    sentMessages: { one: "sent {{count}} message", other: "sent {{count}} messages" },
+    receivedMessages: { one: "received {{count}} message", other: "received {{count}} messages" },
     otherTools: {
       one: "used {{count}} other tool",
       other: "used {{count}} other tools",

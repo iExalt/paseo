@@ -2090,6 +2090,8 @@ export const ko: TranslationResources = {
       one: "{{count}}회 검색함",
       other: "{{count}}회 검색함",
     },
+    sentMessages: { one: "메시지 {{count}}개 전송", other: "메시지 {{count}}개 전송" },
+    receivedMessages: { one: "메시지 {{count}}개 수신", other: "메시지 {{count}}개 수신" },
     otherTools: {
       one: "기타 도구 {{count}}개 사용함",
       other: "기타 도구 {{count}}개 사용함",

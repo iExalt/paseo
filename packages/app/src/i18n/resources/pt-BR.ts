@@ -2113,6 +2113,8 @@ export const ptBR: TranslationResources = {
       one: "pesquisou {{count}} vez",
       other: "pesquisou {{count}} vezes",
     },
+    sentMessages: { one: "enviou {{count}} mensagem", other: "enviou {{count}} mensagens" },
+    receivedMessages: { one: "recebeu {{count}} mensagem", other: "recebeu {{count}} mensagens" },
     otherTools: {
       one: "usou {{count}} outra ferramenta",
       other: "usou {{count}} outras ferramentas",
