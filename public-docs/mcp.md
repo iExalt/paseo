@@ -47,7 +47,9 @@ Configure `agents.providers.<provider-id>.paseoTools` for each exact provider ID
 }
 ```
 
-With the global switch enabled, omitting `paseoTools` enables the catalog. `enabled: false` disables it; `disabledTools` omits exact native tool IDs. Custom providers do not inherit this policy from `extends`. Children use their own provider's policy. The policy also filters generated CLI guidance; it does not deny shell commands or grant daemon permissions. A shell-capable agent can still invoke the CLI, subject to ordinary daemon authorization.
+With the global switch enabled, omitting `paseoTools` enables the catalog. `enabled: false` disables it and CLI guidance; `disabledTools` omits exact native tool IDs. Custom providers do not inherit this policy from `extends`. Children use their own provider's policy. The policy does not deny shell commands or grant daemon permissions. A shell-capable agent can still invoke the CLI, subject to ordinary daemon authorization.
+
+Managed agents discover commands through the installed CLI instead of an injected command list. Run `"$PASEO_CLI" prime` for version-matched conventions. Before concluding that an operation is unavailable, check `"$PASEO_CLI" --help` and `"$PASEO_CLI" <command> --help`.
 
 Browser commands require `daemon.browserTools.enabled` and a connected browser host. The voice-only `speak` native tool is separate from this catalog policy. See [browser commands](/docs/browser-tools) and [CLI speech](/docs/cli#speech).
 

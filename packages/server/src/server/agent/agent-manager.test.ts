@@ -3222,6 +3222,13 @@ test("createAgent passes daemon launch env through the provider launch context",
   expect(client.lastConfig?.daemonAppendSystemPrompt).toContain(
     'Run "$PASEO_CLI" prime for version-matched CLI conventions',
   );
+  expect(client.lastConfig?.daemonAppendSystemPrompt).toContain(
+    'Before declaring an operation unavailable, check "$PASEO_CLI" --help and "$PASEO_CLI" <command> --help',
+  );
+  expect(client.lastConfig?.daemonAppendSystemPrompt).toContain(
+    "CLI discovery does not grant authorization; daemon permissions still apply.",
+  );
+  expect(client.lastConfig?.daemonAppendSystemPrompt).not.toContain("Available commands:");
   expect(client.lastLaunchContext).toEqual({
     agentId: snapshot.id,
     env: {
@@ -3792,7 +3799,8 @@ test("applies the global native tools gate before provider policy", async () => 
 
   expect(enabledClient.lastLaunchContext?.paseoTools).toBe(paseoTools);
   expect(enabledClient.lastLaunchContext?.env.PASEO_CLI).toBeTruthy();
-  expect(enabledClient.lastConfig?.daemonAppendSystemPrompt).toContain("agent status");
+  expect(enabledClient.lastConfig?.daemonAppendSystemPrompt).toContain('"$PASEO_CLI" --help');
+  expect(enabledClient.lastConfig?.daemonAppendSystemPrompt).not.toContain("agent status");
   expect(enabledClient.lastConfig?.daemonAppendSystemPrompt).not.toContain("agent query");
   expect(enabledManager.getPaseoToolPolicy(enabledAgent.id)).toEqual({
     disabledTools: ["list_agents"],

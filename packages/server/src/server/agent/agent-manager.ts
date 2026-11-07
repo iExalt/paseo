@@ -98,7 +98,6 @@ import { PASEO_MCP_SERVER_NAME, stripLegacyInternalPaseoMcpServer } from "./runt
 import { resolveCreateAgentTitles } from "./create-agent-title.js";
 import type { PaseoToolCatalogFactory } from "./tools/types.js";
 import { isPaseoToolPolicyEnabled } from "./paseo-tool-policy.js";
-import { getPaseoCliCommands } from "./paseo-cli-guidance.js";
 import {
   ProviderSubagentStore,
   type ProviderSubagentDescriptor,
@@ -5991,26 +5990,28 @@ export class AgentManager {
     const paseoToolPolicy = this.agentToolsEnabled
       ? this.resolvePaseoToolPolicy(storedConfig.provider)
       : { enabled: false };
-    const cliCommands = this.shouldExposePaseoCli(paseoToolPolicy)
-      ? getPaseoCliCommands(paseoToolPolicy)
-      : [];
-    const launchConfig = this.applyDaemonAppendSystemPrompt(storedConfig, cliCommands);
+    const launchConfig = this.applyDaemonAppendSystemPrompt(
+      storedConfig,
+      this.shouldExposePaseoCli(paseoToolPolicy),
+    );
     return { storedConfig, launchConfig, paseoToolPolicy };
   }
 
   private applyDaemonAppendSystemPrompt(
     config: AgentSessionConfig,
-    cliCommands: readonly string[],
+    exposePaseoCli: boolean,
   ): AgentSessionConfig {
     const daemonAppendSystemPrompt = this.appendSystemPrompt.trim();
     const next = { ...config };
     delete next.daemonAppendSystemPrompt;
     const runtimeInstructions = [
       daemonAppendSystemPrompt,
-      cliCommands.length > 0
+      exposePaseoCli
         ? [
             "Use the Paseo CLI for Paseo operations that are not available as native provider tools.",
-            `Available commands: ${cliCommands.join(", ")}. Run "$PASEO_CLI" prime for version-matched CLI conventions; use "$PASEO_CLI" <command> --help for syntax.`,
+            'Run "$PASEO_CLI" prime for version-matched CLI conventions.',
+            'Before declaring an operation unavailable, check "$PASEO_CLI" --help and "$PASEO_CLI" <command> --help for additional commands and syntax.',
+            "CLI discovery does not grant authorization; daemon permissions still apply.",
             "It is scoped to this agent and daemon; preserve PASEO_AGENT_ID, PASEO_AGENT_CWD, and PASEO_HOME when invoking it.",
             "When a question's choices are visual, show images instead of describing them or drawing ASCII mockups: question dialogs show Markdown images in the question text, option descriptions, and option previews that contain only an image.",
             "Put each image on its own line with alt text, as a PNG inside the workspace (relative to your cwd) or an absolute path.",
