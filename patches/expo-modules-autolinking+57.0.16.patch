@@ -35,3 +35,42 @@ index 3aca925b1..4224cd66d 100644
    }
  }
  
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts
+index ba61caf5f..4c50f402e 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts
+@@ -14,7 +14,7 @@ repositories {
+ dependencies {
+   implementation(project(":expo-autolinking-plugin-shared"))
+   implementation(gradleApi())
+-  compileOnly("com.android.tools.build:gradle:8.5.0")
++  compileOnly("com.android.tools.build:gradle:9.2.1")
+ }
+ 
+ java {
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
+index da66c6436..924711824 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
+@@ -15,7 +15,7 @@ repositories {
+ dependencies {
+   implementation(project(":expo-autolinking-plugin-shared"))
+   implementation(gradleApi())
+-  compileOnly("com.android.tools.build:gradle:8.5.0")
++  compileOnly("com.android.tools.build:gradle:9.2.1")
+ 
+   testImplementation("junit:junit:4.13.2")
+   testImplementation("com.google.truth:truth:1.1.2")
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
+index 1e09909bb..6e5e6d18c 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
+@@ -14,7 +14,7 @@ repositories {
+ dependencies {
+   implementation(project(":expo-autolinking-plugin-shared"))
+   implementation(gradleApi())
+-  compileOnly("com.android.tools.build:gradle:8.5.0")
++  compileOnly("com.android.tools.build:gradle:9.2.1")
+ 
+   testImplementation("junit:junit:4.13.2")
+   testImplementation("com.google.truth:truth:1.1.2")

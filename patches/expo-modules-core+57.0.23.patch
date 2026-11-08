@@ -143,7 +143,7 @@ index 0000000..89a8eb1
 +  }
 +}
 diff --git a/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts b/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
-index 837bb4ff6..6434930de 100644
+index 837bb4ff6..b1cdd33a8 100644
 --- a/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
 +++ b/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
 @@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -155,3 +155,27 @@ index 837bb4ff6..6434930de 100644
    id("java-gradle-plugin")
  }
  
+@@ -29,7 +29,7 @@ val isExpoAutolinkingSettingsPluginAvailable = expoAutolinkingSettingsPlugin ==
+ 
+ dependencies {
+   implementation(gradleApi())
+-  compileOnly("com.android.tools.build:gradle:8.5.0")
++  compileOnly("com.android.tools.build:gradle:9.2.1")
+   implementation("com.facebook.react:react-native-gradle-plugin")
+   implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
+   implementation("io.github.lukmccall.pika:pika-gradle:0.3.2")
+diff --git a/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt b/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt
+index 9bfae8d79..69c35d0d5 100644
+--- a/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt
++++ b/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt
+@@ -6,8 +6,9 @@ internal fun LibraryExtension.applySDKVersions(compileSdk: Int, minSdk: Int, tar
+   this.compileSdk = compileSdk
+   defaultConfig {
+     this@defaultConfig.minSdk = minSdk
+-    this@defaultConfig.targetSdk = targetSdk
+   }
++  testOptions.targetSdk = targetSdk
++  lint.targetSdk = targetSdk
+ }
+ 
+ internal fun LibraryExtension.applyLinterOptions() {
