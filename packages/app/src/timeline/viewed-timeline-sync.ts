@@ -573,11 +573,6 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
           await ports.fetchLatestTail(agentId);
           if (!ownsCatchUp(agentId, generation)) return;
           catchUps.set(agentId, { generation, status: "complete" });
-          const pendingCatchUp = pendingCatchUps.get(agentId);
-          if (pendingCatchUp) {
-            startCatchUp(agentId, { request: pendingCatchUp, supersede: true });
-            return;
-          }
           setVisibilityCatchUpReady(agentId);
           return;
         }
