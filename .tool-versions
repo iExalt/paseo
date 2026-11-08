@@ -1,4 +1,4 @@
-rust        1.99.0
-nodejs      26.11.1
-java        temurin-25.0.4+101.0.LTS
+rust        1.99.1
+nodejs      26.13.0
+java        temurin-25.0.5+8.0.LTS
 android-sdk 23.0
