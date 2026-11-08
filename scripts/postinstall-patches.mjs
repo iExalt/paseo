@@ -10,8 +10,9 @@ import { resolveOpenCodePatchTarget } from "./postinstall-patches-target.mjs";
 // the patch's node_modules/... paths relative to its working directory.
 const openCodePatchTarget = resolveOpenCodePatchTarget(existsSync);
 const patchedPackages = [
-  // Gradle 9.8 embeds Kotlin 2.4. Keep these build-plugin compilers aligned until
-  // Expo and React Native ship compatible compiler pins.
+  // Gradle 9.8 needs newer Kotlin metadata support; Expo's Pika compiler caps
+  // the version at 2.3.20. Keep these plugin compilers consistent until Expo and
+  // React Native ship compatible pins.
   {
     nodeModulesPath: "node_modules/@react-native/gradle-plugin",
     patchPrefix: "@react-native+gradle-plugin+",
@@ -26,7 +27,7 @@ const patchedPackages = [
   },
   // Backport for expo-modules-core 57.0.23: https://github.com/expo/expo/pull/49634.
   // Remove the Activity hunks when Expo includes that fix; retain the Gradle plugin
-  // compiler alignment until Expo ships a Kotlin 2.4 compatible pin.
+  // compiler alignment until Expo ships a compatible pin.
   {
     nodeModulesPath: "node_modules/expo-modules-core",
     patchPrefix: "expo-modules-core+",

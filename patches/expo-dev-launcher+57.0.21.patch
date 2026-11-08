@@ -1,5 +1,4 @@
 diff --git a/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts
-index 0b097aa69..aece4616d 100644
 --- a/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts
 +++ b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts
 @@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
@@ -7,7 +6,7 @@ index 0b097aa69..aece4616d 100644
  
  plugins {
 -  kotlin("jvm") version "2.1.20"
-+  kotlin("jvm") version "2.4.21"
++  kotlin("jvm") version "2.3.20"
    id("java-gradle-plugin")
  }
  

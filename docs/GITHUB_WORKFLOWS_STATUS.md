@@ -323,8 +323,9 @@ and Linux. The Expo Android plugin pins Gradle 9.8.2 and its distribution
 SHA-256 on every prebuild, including clean regeneration.
 [Gradle 9.8 supports Java 27](https://docs.gradle.org/9.8.2/release-notes.html).
 
-Gradle 9.8 embeds Kotlin 2.4. The app uses Kotlin 2.4.21, and postinstall patches
-align the Expo and React Native Gradle plugin compilers with it. The patches also
+Gradle 9.8 embeds Kotlin 2.4. The app uses Kotlin 2.3.20, the newest published
+compiler pairing for Expo's Pika 0.3.2 plugin. Postinstall patches align the
+Expo and React Native Gradle plugin compilers with it. The patches also
 migrate Expo's compiler-options DSL and React Native's Kotlin API target from
 1.8 to 2.0. Retain them until the installed packages support this toolchain;
 the Expo Modules Core patch also contains an independent Activity recreation fix.

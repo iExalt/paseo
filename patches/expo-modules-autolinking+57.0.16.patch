@@ -1,15 +1,13 @@
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
-index ced05f1ed..8aa9ba8ea 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
 @@ -1,4 +1,4 @@
  plugins {
 -  kotlin("jvm") version "2.1.20" apply false
-+  kotlin("jvm") version "2.4.21" apply false
++  kotlin("jvm") version "2.3.20" apply false
    id("java-gradle-plugin")
  }
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
-index 3aca925b1..4224cd66d 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
 @@ -1,9 +1,10 @@
@@ -20,7 +18,7 @@ index 3aca925b1..4224cd66d 100644
  plugins {
    kotlin("jvm")
 -  kotlin("plugin.serialization") version "1.9.24"
-+  kotlin("plugin.serialization") version "2.4.21"
++  kotlin("plugin.serialization") version "2.3.20"
  }
  
  repositories {

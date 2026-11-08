@@ -252,7 +252,7 @@ export default {
           },
           android: {
             minSdkVersion: 29,
-            kotlinVersion: "2.4.21",
+            kotlinVersion: "2.3.20",
             // Allow HTTP connections for local network hosts in release builds
             usesCleartextTraffic: true,
             enableMinifyInReleaseBuilds: true,
