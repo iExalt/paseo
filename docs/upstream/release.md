@@ -3,8 +3,7 @@
 > **Fork note:** this is upstream's (getpaseo/paseo) release process. It does not apply to
 > iExalt/paseo. The fork releases from `dev` through release-please and `release.yml`, with no npm
 > publish, EAS, store submission, Docker image or beta channel. Follow
-> [GitHub workflows § Release procedure](../GITHUB_WORKFLOWS_STATUS.md#release-procedure) or the
-> `release-stable` skill. Never run the root `release:*` or `version:all:*` npm scripts.
+> [release-stable](../../.agents/skills/release-stable/SKILL.md). Never run the root `release:*` or `version:all:*` npm scripts.
 
 All workspaces share one version and release together.
 

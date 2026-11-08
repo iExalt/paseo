@@ -3,8 +3,7 @@
 How an agent checks a change or reproduces a bug in the running app without a committed test.
 Committed suites live in [mobile-testing.md](upstream/mobile-testing.md) (Maestro, agent-device)
 and [testing.md](upstream/testing.md); an in-process daemon for scripts is in
-[ad-hoc-daemon-testing.md](upstream/ad-hoc-daemon-testing.md). The plan behind this doc is
-[AGENT_TESTING_PLAN.md](AGENT_TESTING_PLAN.md).
+[ad-hoc-daemon-testing.md](upstream/ad-hoc-daemon-testing.md).
 
 Never drive, quit or restart the user's own app or the daemon on port 6767. Test against an
 isolated daemon and app instance.
@@ -128,8 +127,7 @@ It waits for about a second without accessibility events, so a running agent blo
 
 On the phone-width tablet, dumps succeed at default scales with the app idle, during a cold start,
 and with an agent running while no status ring is on screen. A visible running ring (sidebar open,
-or any wide layout) needs the scale recipe above. The phone was not measured; results are in
-[AGENT_TESTING_STATUS.md](AGENT_TESTING_STATUS.md#e-motion-and-dumps).
+or any wide layout) needs the scale recipe above. The phone was not measured.
 
 The shared Cuttlefish tablet's harness guide is `/home/dev/cuttlefish/HARNESS.md` in the dev pod.
 

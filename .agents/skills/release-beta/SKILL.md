@@ -11,5 +11,5 @@ updater channel or beta workflow. The beta flow in `docs/upstream/release.md` an
 `release:beta:*` npm scripts are upstream's; never follow or run them.
 
 Tell the user there is no beta channel. If they want to test before release, offer a dry run of
-`release.yml` (see [GitHub workflows § Release procedure](../../../docs/GITHUB_WORKFLOWS_STATUS.md#release-procedure))
+`.github/workflows/release.yml`
 or a stable release through the `release-stable` skill.

@@ -8,8 +8,8 @@ user-invocable: true
 
 The fork releases from `dev` through release-please. `docs/upstream/release.md` and the root
 `release:*`, `version:all:*` and `release:publish*` npm scripts are upstream's npm, EAS and store
-process; never follow or run them. The procedure and recovery steps are in
-[GitHub workflows § Release procedure](../../../docs/GITHUB_WORKFLOWS_STATUS.md#release-procedure).
+process; never follow or run them. Follow the steps below and inspect
+`.github/workflows/release.yml` for the current release pipeline.
 
 1. Find the release PR and read its version from the title (`chore(dev): release X.Y.Z`):
    `gh pr list -R iExalt/paseo --label "autorelease: pending" --json number,title,url`.
@@ -25,4 +25,4 @@ process; never follow or run them. The procedure and recovery steps are in
    disabled). Do not bypass required checks.
 5. Release-please tags `paseo-vX.Y.Z`, opens a draft release and dispatches `release.yml` on `dev`.
    Watch that run to completion with a bounded watcher, then confirm the release is published and
-   marked Latest. On failure, follow the Recovery section of the procedure doc.
+   marked Latest. On failure, inspect the failed job and `.github/workflows/release.yml` before retrying.

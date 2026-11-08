@@ -11,7 +11,6 @@ const PANE_DRAG_WEB_ONLY =
  * new platform split or gated settings section is missing here, or an entry goes
  * stale. Runtime gates inside shared files are listed by hand; the test cannot find
  * new ones. A chunk that closes a gap deletes its entries in the same commit.
- * See docs/complete-campaigns/PLATFORM_PARITY_PLAN.md.
  */
 export const PARITY_MANIFEST: ParityManifest = {
   splitModules: {
