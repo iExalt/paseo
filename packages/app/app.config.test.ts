@@ -96,9 +96,22 @@ it("allows all orientations on iPhone and iPad", async () => {
   }
 }, 30_000);
 
-const { configureGradleWrapper } = require("./plugins/with-android-gradle");
+const {
+  configureGradleWrapper,
+  configureAndroidBuildGradle,
+} = require("./plugins/with-android-gradle");
 
 describe("withAndroidGradle", () => {
+  it("pins AGP 9 without changing other build dependencies", () => {
+    const configured = configureAndroidBuildGradle(
+      "classpath('com.android.tools.build:gradle')\nclasspath('com.facebook.react:react-native-gradle-plugin')\n",
+    );
+    expect(configured).toBe(
+      "classpath('com.android.tools.build:gradle:9.2.1')\nclasspath('com.facebook.react:react-native-gradle-plugin')\n",
+    );
+    expect(configureAndroidBuildGradle(configured)).toBe(configured);
+    expect(() => configureAndroidBuildGradle("dependencies {}\n")).toThrow("plugin dependency");
+  });
   it("pins a Java 27 compatible distribution and its checksum, preserving wrapper settings", () => {
     const configured = configureGradleWrapper(
       "distributionBase=GRADLE_USER_HOME\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.1-bin.zip\nnetworkTimeout=10000\ndistributionSha256Sum=old\n",

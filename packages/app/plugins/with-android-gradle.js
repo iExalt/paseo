@@ -1,6 +1,10 @@
 const fs = require("node:fs/promises");
 const path = require("node:path");
-const { withDangerousMod } = require("expo/config-plugins");
+const {
+  withDangerousMod,
+  withGradleProperties,
+  withProjectBuildGradle,
+} = require("expo/config-plugins");
 
 const distributionUrl = "https\\://services.gradle.org/distributions/gradle-9.8.2-bin.zip";
 const distributionSha256Sum = "21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607";
@@ -15,7 +19,30 @@ function configureGradleWrapper(source) {
   return `${configured.trimEnd()}\ndistributionSha256Sum=${distributionSha256Sum}\n`;
 }
 
+function configureAndroidBuildGradle(source) {
+  const dependency = /classpath\(['"]com\.android\.tools\.build:gradle(?::[^'"]+)?['"]\)/;
+  if (!dependency.test(source)) {
+    throw new Error("Could not find the Android Gradle plugin dependency");
+  }
+  return source.replace(dependency, "classpath('com.android.tools.build:gradle:9.2.1')");
+}
+
 function withAndroidGradle(config) {
+  config = withProjectBuildGradle(config, (modConfig) => {
+    modConfig.modResults.contents = configureAndroidBuildGradle(modConfig.modResults.contents);
+    return modConfig;
+  });
+  config = withGradleProperties(config, (modConfig) => {
+    // shortcut: Expo SDK 57 needs AGP 9 legacy flags; remove after its AGP 9 migration.
+    for (const key of ["android.builtInKotlin", "android.newDsl"]) {
+      const existing = modConfig.modResults.find(
+        (property) => property.type === "property" && property.key === key,
+      );
+      if (existing) existing.value = "false";
+      else modConfig.modResults.push({ type: "property", key, value: "false" });
+    }
+    return modConfig;
+  });
   return withDangerousMod(config, [
     "android",
     async (modConfig) => {
@@ -31,3 +58,4 @@ function withAndroidGradle(config) {
 
 module.exports = withAndroidGradle;
 module.exports.configureGradleWrapper = configureGradleWrapper;
+module.exports.configureAndroidBuildGradle = configureAndroidBuildGradle;

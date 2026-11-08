@@ -328,3 +328,8 @@ align the Expo and React Native Gradle plugin compilers with it. The patches als
 migrate Expo's compiler-options DSL and React Native's Kotlin API target from
 1.8 to 2.0. Retain them until the installed packages support this toolchain;
 the Expo Modules Core patch also contains an independent Activity recreation fix.
+
+The Android prebuild also pins AGP 9.2.1: AGP 8.x uses an internal Gradle API
+removed in Gradle 9.6. For Expo SDK 57 compatibility, it sets
+`android.builtInKotlin=false` and `android.newDsl=false`. Remove these opt-outs
+after upgrading the framework to its AGP 9 migration; AGP 10 removes them.
