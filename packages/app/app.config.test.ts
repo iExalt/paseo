@@ -95,3 +95,31 @@ it("allows all orientations on iPhone and iPad", async () => {
     await rm(root, { recursive: true, force: true });
   }
 }, 30_000);
+
+const { configureGradleWrapper } = require("./plugins/with-android-gradle");
+
+describe("withAndroidGradle", () => {
+  it("pins a Java 27 compatible distribution and its checksum, preserving wrapper settings", () => {
+    const configured = configureGradleWrapper(
+      "distributionBase=GRADLE_USER_HOME\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.1-bin.zip\nnetworkTimeout=10000\ndistributionSha256Sum=old\n",
+    );
+    expect(configured).toContain(
+      "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.8.2-bin.zip\n",
+    );
+    expect(configured).toContain(
+      "distributionSha256Sum=21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607\n",
+    );
+    expect(configured).toContain("distributionBase=GRADLE_USER_HOME\n");
+    expect(configured).toContain("networkTimeout=10000\n");
+    expect(configureGradleWrapper(configured)).toBe(configured);
+  });
+
+  it("adds the checksum when Expo's template has none", () => {
+    const configured = configureGradleWrapper("distributionUrl=https\\://example.com/gradle.zip\n");
+    expect(configured.match(/^distributionSha256Sum=/gm)).toHaveLength(1);
+  });
+
+  it("rejects a template without a distribution URL", () => {
+    expect(() => configureGradleWrapper("networkTimeout=10000\n")).toThrow("distribution URL");
+  });
+});

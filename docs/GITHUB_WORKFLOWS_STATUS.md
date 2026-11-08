@@ -317,7 +317,8 @@ so there is no seed release; `release-nix.sh` fails if the build would compile
 Node from source. When updating nixpkgs, check its Node and npm versions
 against the hosted pins.
 
-Java stays on Temurin 25 LTS (25.0.5+8.0.LTS in Mise, 25.0.5 in Android
-release jobs). The Android wrapper uses Gradle 9.3.1, which supports Java 25;
-[Java 27 support starts in Gradle 9.8](https://docs.gradle.org/9.8.0/release-notes.html).
-Upgrade and verify the Android Gradle toolchain before switching Java majors.
+Mise and Android release jobs use Temurin Java 27.0.1. Mise pins the release
+without a build suffix because Temurin publishes different build numbers for
+macOS and Linux. The Expo Android plugin pins Gradle 9.8.2 and its distribution
+SHA-256 on every prebuild, including clean regeneration.
+[Gradle 9.8 supports Java 27](https://docs.gradle.org/9.8.2/release-notes.html).
