@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.7](https://github.com/iExalt/paseo/compare/paseo-v0.24.6...paseo-v0.24.7) (2026-11-08)
+
+
+### Bug Fixes
+
+* **daemon:** use installed Nix release for settings restart ([#405](https://github.com/iExalt/paseo/issues/405)) ([ae213eb](https://github.com/iExalt/paseo/commit/ae213eb3aa0a6e84f5c0acc228b418bf52cc49a5))
+
 ## [0.24.6](https://github.com/iExalt/paseo/compare/paseo-v0.24.5...paseo-v0.24.6) (2026-11-08)
 
 
