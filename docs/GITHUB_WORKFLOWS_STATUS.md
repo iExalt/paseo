@@ -310,7 +310,14 @@ No release publication or native-client upgrade has run.
 
 ## Toolchain
 
-Node is 26.11.1 and npm 11.20.0 everywhere: workflows, `.tool-versions` and
-the Nix packages. Nix takes `nodejs_26` from the pinned nixpkgs, which cache.nixos.org
-serves, so there is no seed release; `release-nix.sh` fails if the build would
-compile Node from source. When nixpkgs moves Node, bump every pin together.
+Mise and hosted workflows use Node 26.13.0 with bundled npm 11.20.0.
+Nix takes `nodejs_26` from the separately pinned nixpkgs inputs; this Mise
+update leaves those inputs unchanged. cache.nixos.org serves the Nix runtime,
+so there is no seed release; `release-nix.sh` fails if the build would compile
+Node from source. When updating nixpkgs, check its Node and npm versions
+against the hosted pins.
+
+Java stays on Temurin 25 LTS (25.0.5+8.0.LTS in Mise, 25.0.5 in Android
+release jobs). The Android wrapper uses Gradle 9.3.1, which supports Java 25;
+[Java 27 support starts in Gradle 9.8](https://docs.gradle.org/9.8.0/release-notes.html).
+Upgrade and verify the Android Gradle toolchain before switching Java majors.
