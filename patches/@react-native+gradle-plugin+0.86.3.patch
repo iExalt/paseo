@@ -67,3 +67,71 @@ index 85dadeba0..c4f92db2e 100644
      // See comment above on JDK 11 support
      jvmTarget.set(JvmTarget.JVM_11)
      allWarningsAsErrors.set(
+diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
+index e7859ff6a..55ea56069 100644
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
+@@ -9,6 +9,7 @@ package com.facebook.react
+ 
+ import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+ import com.android.build.api.variant.LibraryAndroidComponentsExtension
++import com.android.build.gradle.BaseExtension
+ import com.android.build.gradle.internal.tasks.factory.dependsOn
+ import com.facebook.react.internal.PrivateReactExtension
+ import com.facebook.react.tasks.GenerateAutolinkingNewArchitecturesFileTask
+@@ -61,6 +62,9 @@ class ReactPlugin : Plugin<Project> {
+ 
+     // App Only Configuration
+     project.pluginManager.withPlugin("com.android.application") {
++      // Register cross-project DSL hooks once, before libraries are finalized.
++      configureBuildConfigFieldsForLibraries(project)
++      configureNamespaceForLibraries(project)
+       // We wire the root extension with the values coming from the app (either user populated or
+       // defaults).
+       rootExtension.root.set(extension.root)
+@@ -98,8 +102,6 @@ class ReactPlugin : Plugin<Project> {
+     }
+ 
+     // Library Only Configuration
+-    configureBuildConfigFieldsForLibraries(project)
+-    configureNamespaceForLibraries(project)
+     project.pluginManager.withPlugin("com.android.library") {
+       configureCodegen(project, extension, rootExtension, isLibrary = true)
+     }
+@@ -234,12 +236,12 @@ class ReactPlugin : Plugin<Project> {
+     if (isLibrary) {
+       project.extensions.getByType(LibraryAndroidComponentsExtension::class.java).finalizeDsl { ext
+         ->
+-        ext.sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
++        project.extensions.getByType(BaseExtension::class.java).sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
+       }
+     } else {
+       project.extensions.getByType(ApplicationAndroidComponentsExtension::class.java).finalizeDsl {
+           ext ->
+-        ext.sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
++        project.extensions.getByType(BaseExtension::class.java).sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
+       }
+     }
+ 
+diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt
+index c4a7b359d..a7f509bdb 100644
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt
+@@ -9,7 +9,7 @@ package com.facebook.react.utils
+ 
+ import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+ import com.android.build.api.variant.LibraryAndroidComponentsExtension
+-import com.android.build.gradle.LibraryExtension
++import com.android.build.gradle.BaseExtension
+ import com.facebook.react.ReactExtension
+ import com.facebook.react.utils.ProjectUtils.isEdgeToEdgeEnabled
+ import com.facebook.react.utils.ProjectUtils.isHermesEnabled
+@@ -118,7 +118,7 @@ internal object AgpConfiguratorUtils {
+             .getByType(LibraryAndroidComponentsExtension::class.java)
+             .finalizeDsl { ext ->
+               if (ext.namespace == null) {
+-                val android = subproject.extensions.getByType(LibraryExtension::class.java)
++                val android = subproject.extensions.getByType(BaseExtension::class.java)
+                 val manifestFile = android.sourceSets.getByName("main").manifest.srcFile
+ 
+                 manifestFile
