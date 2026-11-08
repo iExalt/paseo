@@ -21,7 +21,11 @@ function fixture() {
       serverId: "same-host",
       features: { terminalsSurviveRestart: true },
     }),
-    getDaemonStatus: vi.fn(async () => ({ pid, version: "2.0.0", serverId: "same-host" })),
+    getDaemonStatus: vi.fn(async () => ({
+      pid,
+      version: "2.0.0",
+      serverId: "same-host",
+    })),
     shutdownServer: vi.fn(async () => ({ status: "shutdown_requested" })),
     close: vi.fn(async () => {}),
   }));
@@ -58,6 +62,16 @@ function fixture() {
 }
 
 describe("restart --replace-supervisor", () => {
+  test("a delayed settings handoff cannot replace another worker", async () => {
+    const { run, deps, connections } = fixture();
+    await expect(run({ expectedWorkerPid: "999" })).rejects.toMatchObject({
+      code: "DAEMON_REPLACED",
+    });
+    expect(deps.stopDaemonInstance).not.toHaveBeenCalled();
+    expect(connections[0]!.shutdownServer).not.toHaveBeenCalled();
+    expect(deps.startDaemonInstance).not.toHaveBeenCalled();
+  });
+
   test("a stale endpoint cannot shut down another daemon", async () => {
     const { run, deps, previous, connections } = fixture();
     deps.readDaemonInstance
@@ -71,7 +85,7 @@ describe("restart --replace-supervisor", () => {
 
   test("preflights and replaces the captured instance, retaining desktop ownership and terminals", async () => {
     const { run, deps, previous, connections } = fixture();
-    expect((await run()).data).toMatchObject({
+    expect((await run({ expectedWorkerPid: "1000" })).data).toMatchObject({
       replacedSupervisor: true,
       previousSupervisorPid: 100,
       supervisorPid: 200,
@@ -144,13 +158,18 @@ describe("restart --replace-supervisor", () => {
       serverId: "same-host",
       features: {} as never,
     });
-    await expect(run()).rejects.toMatchObject({ code: "TERMINALS_KEEP_UNSUPPORTED" });
+    await expect(run()).rejects.toMatchObject({
+      code: "TERMINALS_KEEP_UNSUPPORTED",
+    });
     expect(deps.stopDaemonInstance).not.toHaveBeenCalled();
   });
 
   test("never claims or kills a competing supervisor", async () => {
     const { run, deps, next } = fixture();
-    deps.startDaemonInstance.mockResolvedValue({ spawned: false, instance: next });
+    deps.startDaemonInstance.mockResolvedValue({
+      spawned: false,
+      instance: next,
+    });
     await expect(run()).rejects.toMatchObject({ code: "DAEMON_REPLACED" });
     expect(deps.stopDaemonInstance).toHaveBeenCalledTimes(1);
     expect(deps.connectToDaemon).toHaveBeenCalledTimes(1);
@@ -166,7 +185,9 @@ describe("restart --replace-supervisor", () => {
         serverId: "same-host",
         [field]: field === "pid" ? 1000 : "wrong",
       });
-      await expect(run()).rejects.toMatchObject({ code: "RESTART_NOT_CONFIRMED" });
+      await expect(run()).rejects.toMatchObject({
+        code: "RESTART_NOT_CONFIRMED",
+      });
     },
   );
 
