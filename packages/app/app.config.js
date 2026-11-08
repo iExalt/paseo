@@ -4,6 +4,7 @@ const pkg = require("./package.json");
 const withAndroidAsyncStorageSize = require("./plugins/with-android-async-storage-size");
 const withAndroidOptionalCamera = require("./plugins/with-android-optional-camera");
 const withAndroidProfileable = require("./plugins/with-android-profileable");
+const withAndroidGradle = require("./plugins/with-android-gradle");
 const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
@@ -189,6 +190,7 @@ export default {
       searchPaths: ["../../node_modules", "./node_modules"],
     },
     plugins: [
+      withAndroidGradle,
       "expo-router",
       withPasteInput,
       withAndroidScroll,
@@ -250,7 +252,7 @@ export default {
           },
           android: {
             minSdkVersion: 29,
-            kotlinVersion: "2.1.20",
+            kotlinVersion: "2.3.20",
             // Allow HTTP connections for local network hosts in release builds
             usesCleartextTraffic: true,
             enableMinifyInReleaseBuilds: true,
@@ -259,6 +261,8 @@ export default {
             // small. zstd-jni ships no consumer rules and its JNI reads Java fields.
             extraProguardRules: [
               "-dontobfuscate",
+              // Preserve the old default file's optimization policy under AGP 9.
+              "-dontoptimize",
               "-keep class com.github.luben.zstd.** { *; }",
             ].join("\n"),
           },

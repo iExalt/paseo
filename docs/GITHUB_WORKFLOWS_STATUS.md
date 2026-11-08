@@ -317,7 +317,22 @@ so there is no seed release; `release-nix.sh` fails if the build would compile
 Node from source. When updating nixpkgs, check its Node and npm versions
 against the hosted pins.
 
-Java stays on Temurin 25 LTS (25.0.5+8.0.LTS in Mise, 25.0.5 in Android
-release jobs). The Android wrapper uses Gradle 9.3.1, which supports Java 25;
-[Java 27 support starts in Gradle 9.8](https://docs.gradle.org/9.8.0/release-notes.html).
-Upgrade and verify the Android Gradle toolchain before switching Java majors.
+Mise and Android release jobs use Temurin Java 27.0.1. Mise pins the release
+without a build suffix because its Temurin identifiers differ between macOS
+and Linux. The Expo Android plugin pins Gradle 9.8.2 and its distribution
+SHA-256 on every prebuild, including clean regeneration.
+[Gradle 9.8 supports Java 27](https://docs.gradle.org/9.8.2/release-notes.html).
+
+Gradle 9.8 embeds Kotlin 2.4. The app uses Kotlin 2.3.20, the newest published
+compiler pairing for Expo's Pika 0.3.2 plugin. Postinstall patches align the
+Expo and React Native Gradle plugin compilers with it. The patches also
+migrate Expo's compiler-options DSL and React Native's Kotlin API target from
+1.8 to 2.0. Retain them until the installed packages support this toolchain;
+the Expo Modules Core patch also contains an independent Activity recreation fix.
+
+The Android prebuild also pins AGP 9.2.1: AGP 8.x uses an internal Gradle API
+removed in Gradle 9.6. For Expo SDK 57 compatibility, it sets
+`android.builtInKotlin=false` and `android.newDsl=false`. Remove these opt-outs
+after upgrading the framework to its AGP 9 migration; AGP 10 removes them.
+`android.onlyEnableUnitTestForTheTestedBuildType=false` retains the release
+JVM test tasks used by CI and `test:android`.

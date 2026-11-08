@@ -506,7 +506,7 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "25.0.5"
+          java-version: "27.0.1"
       - name: Restore the pinned Android build cache
         if: steps.pin.outputs.build_key != ''
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
@@ -566,7 +566,7 @@ jobs:
           mkdir -p "$CCACHE_DIR" "$PASEO_GRADLE_BUILD_CACHE"
           # The restored cache carries earlier runs' counters; report this build's alone.
           ccache --zero-stats > /dev/null
-          grep -qF 'gradle-9.3.1-bin.zip' packages/app/android/gradle/wrapper/gradle-wrapper.properties
+          grep -qF 'gradle-9.8.2-bin.zip' packages/app/android/gradle/wrapper/gradle-wrapper.properties
           cd packages/app/android
           started_at=$SECONDS
           # The updater's gunzip test rides on this run: a separate Gradle run would pay
@@ -675,7 +675,7 @@ jobs:
       - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
-          java-version: "25.0.5"
+          java-version: "27.0.1"
       - name: Install Android build tools
         run: |
           set +o pipefail

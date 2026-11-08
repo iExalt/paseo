@@ -21,7 +21,7 @@ const env = {
   // GOOGLE_SERVICES_FILE_FORK and FIREBASE_PROJECT_ID_FORK.
   APP_VARIANT: fork ? "fork" : "production",
   PASEO_WATCHDOG_BUILD: "1",
-  // AGP runs Prefab on Gradle's JDK. On the pinned Java 25, Prefab's JNA prints a native-access
+  // AGP runs Prefab on Gradle's JDK. On the pinned Java 27, Prefab's JNA prints a native-access
   // warning that AGP misreads as a configure error; release.yml sets the same flag.
   JAVA_TOOL_OPTIONS: [process.env.JAVA_TOOL_OPTIONS, "--enable-native-access=ALL-UNNAMED"]
     .filter(Boolean)
