@@ -1,4 +1,5 @@
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
+index ced05f1ed..8aa9ba8ea 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
 @@ -1,4 +1,4 @@
@@ -8,9 +9,14 @@ diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/bu
    id("java-gradle-plugin")
  }
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
+index 3aca925b1..4224cd66d 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
-@@ -4,6 +4,6 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+@@ -1,9 +1,10 @@
+ import org.gradle.api.tasks.testing.logging.TestExceptionFormat
++import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+ 
  plugins {
    kotlin("jvm")
 -  kotlin("plugin.serialization") version "1.9.24"
@@ -18,3 +24,14 @@ diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/ex
  }
  
  repositories {
+@@ -23,8 +24,8 @@ java {
+ }
+ 
+ tasks.withType<KotlinCompile> {
+-  kotlinOptions {
+-    jvmTarget = JavaVersion.VERSION_11.toString()
++  compilerOptions {
++    jvmTarget.set(JvmTarget.JVM_11)
+   }
+ }
+ 

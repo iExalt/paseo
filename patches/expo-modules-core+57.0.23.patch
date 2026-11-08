@@ -142,3 +142,16 @@ index 0000000..89a8eb1
 +    replacement.pause().stop().destroy()
 +  }
 +}
+diff --git a/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts b/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
+index 837bb4ff6..6434930de 100644
+--- a/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
++++ b/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
+@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+ 
+ plugins {
+-  kotlin("jvm") version "2.1.20"
++  kotlin("jvm") version "2.4.21"
+   id("java-gradle-plugin")
+ }
+ 
