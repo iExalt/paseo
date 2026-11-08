@@ -10,7 +10,7 @@ diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/bu
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
-@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+@@ -4,6 +4,6 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
  plugins {
    kotlin("jvm")
 -  kotlin("plugin.serialization") version "1.9.24"
