@@ -20,6 +20,10 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/expo-modules-autolinking",
     patchPrefix: "expo-modules-autolinking+",
   },
+  {
+    nodeModulesPath: "node_modules/expo-dev-launcher",
+    patchPrefix: "expo-dev-launcher+",
+  },
   // Backport for expo-modules-core 57.0.23: https://github.com/expo/expo/pull/49634.
   // Remove the Activity hunks when Expo includes that fix; retain the Gradle plugin
   // compiler alignment until Expo ships a Kotlin 2.4 compatible pin.
