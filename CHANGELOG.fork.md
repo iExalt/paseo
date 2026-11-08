@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.4](https://github.com/iExalt/paseo/compare/paseo-v0.24.3...paseo-v0.24.4) (2026-11-08)
+
+
+### Bug Fixes
+
+* **app:** refresh connected chats on notification taps ([#398](https://github.com/iExalt/paseo/issues/398)) ([85b79b0](https://github.com/iExalt/paseo/commit/85b79b094c898f257ea8fa9a599a2666ad44df3c))
+
 ## [0.24.3](https://github.com/iExalt/paseo/compare/paseo-v0.24.2...paseo-v0.24.3) (2026-11-07)
 
 
