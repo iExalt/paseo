@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.5](https://github.com/iExalt/paseo/compare/paseo-v0.24.4...paseo-v0.24.5) (2026-11-08)
+
+
+### Bug Fixes
+
+* **daemon:** allow idle upgrades with unlaunched Claude sessions ([#401](https://github.com/iExalt/paseo/issues/401)) ([7b56719](https://github.com/iExalt/paseo/commit/7b5671935078d0a4250a4902bc064b9f72720dd2))
+
 ## [0.24.4](https://github.com/iExalt/paseo/compare/paseo-v0.24.3...paseo-v0.24.4) (2026-11-08)
 
 
