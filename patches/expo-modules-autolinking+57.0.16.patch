@@ -74,3 +74,18 @@ index 1e09909bb..6e5e6d18c 100644
  
    testImplementation("junit:junit:4.13.2")
    testImplementation("com.google.truth:truth:1.1.2")
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt
+index 702910510..e22dbde9b 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt
+@@ -87,8 +87,8 @@ open class ExpoAutolinkingPlugin : Plugin<Project> {
+       .dependsOn(generatePackagesList)
+ 
+     // Adds the generated file to the source set.
+-    project.extensions.getByType(AndroidComponentsExtension::class.java).finalizeDsl { ext ->
+-      ext
++    project.extensions.getByType(AndroidComponentsExtension::class.java).finalizeDsl {
++      project.extensions.getByType(BaseExtension::class.java)
+         .sourceSets
+         .getByName("main")
+         .java
