@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import {
   readDaemonInstance,
   isSameDaemonInstance,
@@ -25,6 +25,7 @@ export function daemonRestartCommand(): Command {
     .option("--timeout <seconds>", "Replacement readiness deadline (default: 600)")
     .option("--kill-terminals", "Close every terminal instead of keeping them across the restart")
     .option("--replace-supervisor", "Replace the local supervisor with this installation's daemon")
+    .addOption(new Option("--expected-worker-pid <pid>").hideHelp())
     .action(withOutput(runRestartCommand));
 }
 
@@ -109,7 +110,9 @@ async function restartWorker(options: CommandOptions) {
         if (replacement.getLastServerInfoMessage()?.serverId !== serverId)
           throw new Error("Connected peer identity changed");
         // Status probes every provider, so it can take seconds on a healthy worker.
-        const status = await replacement.getDaemonStatus({ timeout: remaining() });
+        const status = await replacement.getDaemonStatus({
+          timeout: remaining(),
+        });
         if (status.pid !== workerPid) {
           await checkSupervisor();
           await confirmTerminalsClosed(status);
@@ -127,7 +130,9 @@ async function restartWorker(options: CommandOptions) {
               idField: "action" as const,
               columns: [],
               renderHuman: () =>
-                `Restarted worker ${workerPid} → ${status.pid} at ${describeDaemonTarget(target)}. Supervisor launch retained.`,
+                `Restarted worker ${workerPid} → ${status.pid} at ${describeDaemonTarget(
+                  target,
+                )}. Supervisor launch retained.`,
             },
           };
         }
@@ -144,7 +149,9 @@ async function restartWorker(options: CommandOptions) {
   }
   throw {
     code: "RESTART_NOT_CONFIRMED",
-    message: `Replacement was not confirmed for ${describeDaemonTarget(target)}. Restart acknowledged: ${acknowledged}. Last observation: ${String(lastError)}`,
+    message: `Replacement was not confirmed for ${describeDaemonTarget(
+      target,
+    )}. Restart acknowledged: ${acknowledged}. Last observation: ${String(lastError)}`,
   };
 }
 

@@ -48,13 +48,26 @@ export function createSupervisorReplacement(deps: typeof runtime = runtime) {
       );
     const launch = deps.prepareLocalDaemonLaunch();
     deps.readPersistedConfig(target.home);
-    const client = await deps.connectToDaemon({ target, instance: previous, timeout: remaining() });
+    const client = await deps.connectToDaemon({
+      target,
+      instance: previous,
+      timeout: remaining(),
+    });
     const keepTerminals = options.killTerminals !== true;
     let previousWorkerPid: number;
     let serverId: string;
     try {
       if (keepTerminals) requireTerminalKeepCapability(client, target.home);
       const before = await client.getDaemonStatus({ timeout: remaining() });
+      if (
+        options.expectedWorkerPid !== undefined &&
+        String(before.pid) !== String(options.expectedWorkerPid)
+      ) {
+        throw new DaemonInstanceError(
+          "DAEMON_REPLACED",
+          "The worker requesting this restart was replaced; refusing to stop another worker.",
+        );
+      }
       if (
         !previous.serverId ||
         before.serverId !== previous.serverId ||
@@ -100,7 +113,9 @@ export function createSupervisorReplacement(deps: typeof runtime = runtime) {
     });
     let workerPid: number;
     try {
-      const status = await replacement.getDaemonStatus({ timeout: remaining() });
+      const status = await replacement.getDaemonStatus({
+        timeout: remaining(),
+      });
       const current = await deps.readDaemonInstance(target.home);
       if (
         !current ||
