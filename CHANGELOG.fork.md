@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.6](https://github.com/iExalt/paseo/compare/paseo-v0.24.5...paseo-v0.24.6) (2026-11-08)
+
+
+### Bug Fixes
+
+* **server:** show Claude's reason on bypass-mode permission prompts ([#403](https://github.com/iExalt/paseo/issues/403)) ([6cea773](https://github.com/iExalt/paseo/commit/6cea773f37e741ccd890877adb6fc8a86be3a3dc))
+
 ## [0.24.5](https://github.com/iExalt/paseo/compare/paseo-v0.24.4...paseo-v0.24.5) (2026-11-08)
 
 
