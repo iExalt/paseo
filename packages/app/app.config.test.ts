@@ -99,9 +99,20 @@ it("allows all orientations on iPhone and iPad", async () => {
 const {
   configureGradleWrapper,
   configureAndroidBuildGradle,
+  configureAndroidAppBuildGradle,
 } = require("./plugins/with-android-gradle");
 
 describe("withAndroidGradle", () => {
+  it("uses the default ProGuard file supported by AGP 9", () => {
+    const configured = configureAndroidAppBuildGradle(
+      "proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'",
+    );
+    expect(configured).toBe(
+      "proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'",
+    );
+    expect(configureAndroidAppBuildGradle(configured)).toBe(configured);
+    expect(() => configureAndroidAppBuildGradle("android {}\n")).toThrow("ProGuard");
+  });
   it("pins AGP 9 without changing other build dependencies", () => {
     const configured = configureAndroidBuildGradle(
       "classpath('com.android.tools.build:gradle')\nclasspath('com.facebook.react:react-native-gradle-plugin')\n",

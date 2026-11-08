@@ -261,6 +261,8 @@ export default {
             // small. zstd-jni ships no consumer rules and its JNI reads Java fields.
             extraProguardRules: [
               "-dontobfuscate",
+              // Preserve the old default file's optimization policy under AGP 9.
+              "-dontoptimize",
               "-keep class com.github.luben.zstd.** { *; }",
             ].join("\n"),
           },

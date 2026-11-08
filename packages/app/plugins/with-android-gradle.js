@@ -4,6 +4,7 @@ const {
   withDangerousMod,
   withGradleProperties,
   withProjectBuildGradle,
+  withAppBuildGradle,
 } = require("expo/config-plugins");
 
 const distributionUrl = "https\\://services.gradle.org/distributions/gradle-9.8.2-bin.zip";
@@ -27,7 +28,18 @@ function configureAndroidBuildGradle(source) {
   return source.replace(dependency, "classpath('com.android.tools.build:gradle:9.2.1')");
 }
 
+function configureAndroidAppBuildGradle(source) {
+  if (!/proguard-android(?:-optimize)?\.txt/.test(source)) {
+    throw new Error("Could not find the Android app's default ProGuard configuration");
+  }
+  return source.replaceAll("proguard-android.txt", "proguard-android-optimize.txt");
+}
+
 function withAndroidGradle(config) {
+  config = withAppBuildGradle(config, (modConfig) => {
+    modConfig.modResults.contents = configureAndroidAppBuildGradle(modConfig.modResults.contents);
+    return modConfig;
+  });
   config = withProjectBuildGradle(config, (modConfig) => {
     modConfig.modResults.contents = configureAndroidBuildGradle(modConfig.modResults.contents);
     return modConfig;
@@ -59,3 +71,4 @@ function withAndroidGradle(config) {
 module.exports = withAndroidGradle;
 module.exports.configureGradleWrapper = configureGradleWrapper;
 module.exports.configureAndroidBuildGradle = configureAndroidBuildGradle;
+module.exports.configureAndroidAppBuildGradle = configureAndroidAppBuildGradle;
