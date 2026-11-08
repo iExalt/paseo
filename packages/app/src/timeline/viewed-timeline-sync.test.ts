@@ -64,6 +64,40 @@ test("a notification prepares before visibility and transfers its in-flight fetc
   world.sync.dispose();
 });
 
+test.each(["complete", "running", "overflow", "error"] as const)(
+  "a notification refreshes an already demanded chat whose catch-up is %s",
+  async (status) => {
+    const world = new TimelineWorld();
+    if (status === "overflow") world.cursors.set("target", { epoch: "epoch-target", endSeq: 1 });
+    world.sync.replaceVisibleAgentIds("pane", ["target"]);
+    world.sync.setConnected(true);
+    (await world.nextMembership()).succeed();
+    const previous = await world.nextFetch("target");
+    if (status === "complete") {
+      previous.respond({ hasNewer: false });
+      await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("ready"));
+    } else if (status === "error") {
+      previous.fail("Disconnected");
+      await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("error"));
+    }
+    const release = world.sync.prepareAgentOpen("target");
+    if (status === "running" || status === "overflow") {
+      world.expectNoPendingFetch();
+      previous.respond({ hasNewer: status === "overflow" });
+      if (status === "overflow") {
+        (await world.nextFetch("target")).respond({ hasNewer: false });
+      }
+    }
+    await vi.waitFor(() => expect(world.pendingFetchCount).toBe(1));
+    (await world.nextFetch("target")).respond({ hasNewer: false });
+    await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("ready"));
+    world.expectNoPendingFetch();
+    world.expectNoPendingMembership();
+    release();
+    world.sync.dispose();
+  },
+);
+
 test("cancelling one pending open does not cancel another caller's demand", async () => {
   const world = new TimelineWorld();
   const first = world.sync.prepareAgentOpen("target");
