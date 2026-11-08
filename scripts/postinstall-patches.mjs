@@ -21,7 +21,8 @@ const patchedPackages = [
     patchPrefix: "expo-modules-autolinking+",
   },
   // Backport for expo-modules-core 57.0.23: https://github.com/expo/expo/pull/49634.
-  // Remove when the installed Expo SDK includes the Activity recreation fix.
+  // Remove the Activity hunks when Expo includes that fix; retain the Gradle plugin
+  // compiler alignment until Expo ships a Kotlin 2.4 compatible pin.
   {
     nodeModulesPath: "node_modules/expo-modules-core",
     patchPrefix: "expo-modules-core+",
