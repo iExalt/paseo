@@ -11,9 +11,6 @@ those steps yourself when the preconditions below hold. A check-only request is
 read-only. Never stop or restart the daemon to finish an app update while agents
 have pending work. A daemon that stays on its old version can be the expected result.
 
-Read `docs/NONDISRUPTIVE_UPDATES_STATUS.md` for the idle-upgrade contract and
-`docs/complete-campaigns/PASEO_FORK_AUTO_UPDATE_PLAN.md` for signed delivery and recovery.
-
 ## 1. Preflight and baseline
 
 Require macOS arm64 (`uname -sm`). Record these separately:

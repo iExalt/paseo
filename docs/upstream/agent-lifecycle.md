@@ -118,9 +118,6 @@ Accepting new work after an ambiguous interruption would create a split-brain se
 
 ## Relationships
 
-For workspace notification settings and their relationship to agent attention,
-see the [workspace notifications plan](../complete-campaigns/CONFIGURABLE_NOTIFICATIONS.md).
-
 Agents launch workers with `paseo run --no-wait`. Caller-scoped creation defaults to a subagent and stamps `paseo.parent-agent-id`; `--relationship detached` explicitly selects independent work. Omit `--workspace` to use the caller's workspace, or pass an ID returned by `paseo workspace create`. Placement never changes parentage. See [CLI delegation](../../public-docs/cli.md#asynchronous-delegation) for waiting and notification behavior.
 
 - **Subagents** — exist as part of the creating agent's work, appear in that agent's subagent track, and are archived with it.

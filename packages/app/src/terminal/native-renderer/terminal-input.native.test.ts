@@ -405,7 +405,7 @@ describe("native terminal input keys and focus", () => {
 // `c` (text change), `k` (keypress), `hook` (a captured hardware key clearing
 // the field), `reset` (focus, blur or show-keyboard) and `at` (clock, ms).
 // "AOSP" rows follow the AOSP keyboard's order and "Samsung" rows Samsung
-// Keyboard's, both traced on devices (docs/complete-campaigns/MOBILE_TERMINAL_PLAN.md, P0b).
+// Keyboard's, both traced on devices.
 type InputEvent =
   | readonly ["c" | "k", string]
   | readonly ["at", number]

@@ -226,7 +226,7 @@ project `paseo-18157` and `sh.paseo.iexalt`. A separate signer job receives only
 `PASEO_FORK_SIGNING_KEY_PKCS8_PEM` and `PASEO_FORK_SIGNING_CERT_PEM`, and fails
 unless the APK's single signer matches `FORK_ANDROID_CERTIFICATE_SHA256`, the
 certificate clients pin. The Firebase Admin SDK key stays server-side for Expo
-FCM V1. See [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md) for the release
+FCM V1. See the [release-stable skill](../../.agents/skills/release-stable/SKILL.md) for the release
 procedure.
 
 ## Running on an emulator against a worktree daemon
@@ -357,7 +357,7 @@ adb exec-out screencap -p > screenshot.png
 > **Fork note:** upstream only. The fork has no `android-apk-release.yml` and does not build or
 > submit through EAS on tag pushes; `release.yml` builds and signs the fork APK (see
 > [Fork release APK](#fork-release-apk) and
-> [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md#release-procedure)).
+> [release-stable](../../.agents/skills/release-stable/SKILL.md)).
 
 Stable tag pushes like `v0.1.0` trigger:
 

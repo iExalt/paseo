@@ -10,7 +10,7 @@ GitHub marks a signed commit verified only when its committer email is a verifie
 
 Like `git rebase`, the replay drops merge commits and replays the rest in topological order. A merge is accepted only when its tree is exactly Git's automatic merge of its two parents, so dropping it loses nothing; a merge with conflict resolutions or other hand edits stops the run, and you must linearize that history by hand. Replays also fail closed if the commit mapping changes or metadata cannot be represented exactly.
 
-After the replay the run may add up to three signed commits of its own: `chore(rebase): adapt incorporated upstream to the fork` applies a reviewed fixup patch (below), `chore(rebase): capture incorporated upstream` records the new upstream base in `.github/fork-release.json`, and `chore(rebase): point release-please at the rebased release` records the rewritten release commit for release-please, as [Release boundary](../GITHUB_WORKFLOWS_STATUS.md#release-boundary) explains.
+After the replay the run may add up to three signed commits of its own: `chore(rebase): adapt incorporated upstream to the fork` applies a reviewed fixup patch (below), `chore(rebase): capture incorporated upstream` records the new upstream base in `.github/fork-release.json`, and `chore(rebase): point release-please at the rebased release` records the rewritten release commit for release-please.
 
 ## Resolution branch format
 
@@ -55,4 +55,4 @@ git -C ../paseo-resolutions push origin HEAD:refs/heads/rebase-resolutions
 
 The exporter creates the schema when needed and writes only complete regular-file pairs. It ignores `thisimage` and incomplete active records, rejects symlinked completed variants, and refuses to overwrite different content in the destination. Review the exported diff before committing. Retry the workflow from current `dev` after the resolution branch update.
 
-Validation uses the retained Git fixture tests, the existing upstream-sync workflow contract test, a server-stack build to produce workspace declarations, package typechecking, and the protocol workspace tests. The atomic Git push uses an `iexalt-paseo-sync` App token minted after validation, because `GITHUB_TOKEN` cannot push commits that change workflow files (see [GitHub workflows](../GITHUB_WORKFLOWS_STATUS.md#secrets-and-variables)). If the platform rejects the push, the run reports that failure and leaves the backup/dev refs unchanged because the update is atomic.
+Validation uses the retained Git fixture tests, the existing upstream-sync workflow contract test, a server-stack build to produce workspace declarations, package typechecking, and the protocol workspace tests. The atomic Git push uses an `iexalt-paseo-sync` App token minted after validation, because `GITHUB_TOKEN` cannot push commits that change workflow files. If the platform rejects the push, the run reports that failure and leaves the backup/dev refs unchanged because the update is atomic.
