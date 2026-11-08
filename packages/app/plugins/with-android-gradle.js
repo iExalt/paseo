@@ -46,7 +46,12 @@ function withAndroidGradle(config) {
   });
   config = withGradleProperties(config, (modConfig) => {
     // shortcut: Expo SDK 57 needs AGP 9 legacy flags; remove after its AGP 9 migration.
-    for (const key of ["android.builtInKotlin", "android.newDsl"]) {
+    for (const key of [
+      "android.builtInKotlin",
+      "android.newDsl",
+      // CI and test:android require the release JVM test tasks as well as debug.
+      "android.onlyEnableUnitTestForTheTestedBuildType",
+    ]) {
       const existing = modConfig.modResults.find(
         (property) => property.type === "property" && property.key === key,
       );

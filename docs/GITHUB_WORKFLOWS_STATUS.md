@@ -318,8 +318,8 @@ Node from source. When updating nixpkgs, check its Node and npm versions
 against the hosted pins.
 
 Mise and Android release jobs use Temurin Java 27.0.1. Mise pins the release
-without a build suffix because Temurin publishes different build numbers for
-macOS and Linux. The Expo Android plugin pins Gradle 9.8.2 and its distribution
+without a build suffix because its Temurin identifiers differ between macOS
+and Linux. The Expo Android plugin pins Gradle 9.8.2 and its distribution
 SHA-256 on every prebuild, including clean regeneration.
 [Gradle 9.8 supports Java 27](https://docs.gradle.org/9.8.2/release-notes.html).
 
@@ -333,3 +333,5 @@ The Android prebuild also pins AGP 9.2.1: AGP 8.x uses an internal Gradle API
 removed in Gradle 9.6. For Expo SDK 57 compatibility, it sets
 `android.builtInKotlin=false` and `android.newDsl=false`. Remove these opt-outs
 after upgrading the framework to its AGP 9 migration; AGP 10 removes them.
+`android.onlyEnableUnitTestForTheTestedBuildType=false` retains the release
+JVM test tasks used by CI and `test:android`.

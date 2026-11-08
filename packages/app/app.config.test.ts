@@ -103,6 +103,26 @@ const {
 } = require("./plugins/with-android-gradle");
 
 describe("withAndroidGradle", () => {
+  it("generates the compatibility flags and retains release JVM test tasks", async () => {
+    const { exp } = await getPrebuildConfigAsync(__dirname, { platforms: ["android"] });
+    await compileModsAsync(exp, {
+      projectRoot: __dirname,
+      introspect: true,
+      platforms: ["android"],
+      assertMissingModProviders: false,
+    });
+    const properties = exp._internal.modResults.android.gradleProperties;
+    for (const key of [
+      "android.builtInKotlin",
+      "android.newDsl",
+      "android.onlyEnableUnitTestForTheTestedBuildType",
+    ]) {
+      expect(properties.find((property: { key: string }) => property.key === key)?.value).toBe(
+        "false",
+      );
+    }
+  }, 30_000);
+
   it("uses the default ProGuard file supported by AGP 9", () => {
     const configured = configureAndroidAppBuildGradle(
       "proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'",
