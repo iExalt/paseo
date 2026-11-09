@@ -13,7 +13,6 @@ const variants = {
   },
   fork: {
     name: "Paseo iExalt",
-    iosBundleIdentifier: "sh.paseo",
     androidPackage: "sh.paseo.iexalt",
   },
 };

@@ -14,7 +14,7 @@
     "android:release": "npm run android:production",
     "android:clear": "node -e \"require('node:fs').rmSync('android', { recursive: true, force: true })\"",
     "ios": "npm run dev:ios",
-    "ios:release": "npm --prefix ../.. run build:client && expo run:ios --configuration Release",
+    "ios:release": "node -e \"require('./plugins/with-fork-build').assertForkBuildPlatform(process.env.APP_VARIANT, 'ios')\" && npm --prefix ../.. run build:client && expo run:ios --configuration Release",
     "web": "npm --prefix ../.. run build:client && concurrently --kill-others --names protocol,client,expo --prefix-colors yellow,blue,magenta \"npm --prefix ../.. run watch:protocol\" \"npm --prefix ../.. run watch:client\" \"npm run web:expo\"",
     "web:expo": "expo start --web",
     "lint": "expo lint",
