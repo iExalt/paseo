@@ -39,9 +39,20 @@ creation. Reconcile existing agents (use a unique --label task=<key> with
 agent ls -a -g --label task=<key> --json) before retrying a launch. If a heartbeat
 fails after launch, confirm the agent and retry only the heartbeat.
 
-Delegation: --no-wait changes waiting, not parentage. --relationship detached
-creates independent work; do not clear parent labels afterward. Caller completion
-notifications are enabled by default; use --no-notify-on-finish when appropriate.
+Delegation: --no-wait changes waiting, not parentage. An agent-launched run
+without --relationship detached becomes the caller's subagent, even in a new
+workspace or project; pass --relationship detached for independent work. Use
+agent detach <id> to make an existing subagent independent; never edit labels.
+Caller completion notifications are enabled by default; use
+--no-notify-on-finish when appropriate.
+
+Placement: for a visible worker, create its workspace first with
+workspace create --project <id> --no-background --json, then
+run --workspace <workspaceId>. run --new-workspace takes its project from the
+path and inherits the caller's background setting. Pass mode, model and
+thinking IDs from provider inspect and provider models, not labels. After
+launch, confirm with agent status --json: snapshot.workspaceId, model,
+thinkingOptionId, currentModeId, and no labels["paseo.parent-agent-id"].
 
 Directories: managed terminal create defaults to the caller's scoped directory
 and workspace, even after shell cd. Request --cwd "$PWD" for the shell directory;

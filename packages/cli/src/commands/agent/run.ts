@@ -18,6 +18,7 @@ import { parseFeatureValues } from "../../utils/feature-values.js";
 import { resolvePromptInput } from "../../utils/prompt-input.js";
 import { buildWorkspaceSource } from "../workspace/create.js";
 import { warnAboutAliasedProject } from "../workspace/alias-warning.js";
+import { assertModeBeforeWorkspaceCreate } from "./run-mode-check.js";
 
 export { resolveProviderAndModel } from "../../utils/provider-model.js";
 
@@ -636,6 +637,12 @@ async function resolveRunWorkspace(
     const workspace = await resolveExistingRunWorkspace(client, ambientWorkspaceId);
     return options.cwd !== undefined ? { ...workspace, cwd: resolve(cwd) } : workspace;
   }
+
+  await assertModeBeforeWorkspaceCreate(
+    client,
+    resolveProviderAndModel(options).provider,
+    options.mode,
+  );
 
   // TODO: thread the run `prompt` as firstAgentContext so workspace-level
   // title/branch generation picks up the task description (U8/U6 deferred).
