@@ -373,3 +373,107 @@ describe("structured run output", () => {
     expect(context.close).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("mode check before workspace creation", () => {
+  const modes = {
+    entries: [
+      {
+        provider: "codex",
+        modes: [
+          { id: "auto", label: "Default Permissions" },
+          { id: "full-access", label: "Full Access" },
+        ],
+      },
+    ],
+  };
+
+  function setup(callerAgentId?: string) {
+    const client = new DaemonClient({
+      url: "ws://daemon.test",
+      clientId: "cli-run-mode-test",
+      reconnect: { enabled: false },
+    });
+    vi.spyOn(client, "getLastServerInfoMessage").mockReturnValue({
+      status: "server_info",
+      serverId: "cli-run-mode-test",
+      features: { agentOrchestrationParity: true },
+    });
+    if (callerAgentId) {
+      vi.spyOn(client, "fetchAgent").mockResolvedValue({
+        agent: createAgentSnapshot(callerAgentId),
+        project: null,
+      });
+    }
+    const getProvidersSnapshot = vi
+      .spyOn(client, "getProvidersSnapshot")
+      .mockResolvedValue(modes as never);
+    const createWorkspace = vi.spyOn(client, "createWorkspace").mockResolvedValue({
+      workspace: { id: "ws-new", name: "new", workspaceDirectory: "/workspace", projectId: "prj" },
+    } as never);
+    const fetchWorkspaces = vi.spyOn(client, "fetchWorkspaces").mockResolvedValue({
+      entries: [{ id: "ws-existing", workspaceDirectory: "/workspace/existing" }],
+      pageInfo: { nextCursor: null },
+    } as never);
+    vi.spyOn(client, "createAgent").mockResolvedValue(createAgentSnapshot("created-agent"));
+    vi.spyOn(client, "close").mockResolvedValue();
+    vi.mocked(connectToDaemon).mockResolvedValueOnce(client);
+    return { getProvidersSnapshot, createWorkspace, fetchWorkspaces };
+  }
+
+  beforeEach(() => {
+    vi.stubEnv("PASEO_AGENT_ID", "");
+    vi.stubEnv("PASEO_WORKSPACE_ID", "");
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  const run = (options: Partial<AgentRunOptions>) =>
+    runRunCommand(
+      "do something",
+      { provider: "codex", wait: false, daemonTarget, ...options },
+      new Command("run"),
+    );
+
+  it("rejects a mode label before creating a workspace", async () => {
+    const { createWorkspace } = setup();
+    await expect(run({ newWorkspace: "local", mode: "Full Access" })).rejects.toMatchObject({
+      code: "INVALID_MODE",
+      message: expect.stringContaining("use the mode id 'full-access'"),
+    });
+    expect(createWorkspace).not.toHaveBeenCalled();
+  });
+
+  it("creates the workspace for a valid mode id, and when the snapshot fails", async () => {
+    const valid = setup();
+    await expect(run({ newWorkspace: "local", mode: "full-access" })).resolves.toMatchObject({
+      data: { agentId: "created-agent" },
+    });
+    expect(valid.createWorkspace).toHaveBeenCalledOnce();
+
+    const offline = setup();
+    offline.getProvidersSnapshot.mockRejectedValue(new Error("offline"));
+    await expect(run({ newWorkspace: "local", mode: "turbo" })).resolves.toMatchObject({
+      data: { agentId: "created-agent" },
+    });
+    expect(offline.createWorkspace).toHaveBeenCalledOnce();
+  });
+
+  it("skips the check when the run reuses a workspace", async () => {
+    const explicit = setup();
+    await expect(run({ workspace: "ws-existing", mode: "turbo" })).resolves.toMatchObject({
+      data: { agentId: "created-agent" },
+    });
+    expect(explicit.getProvidersSnapshot).not.toHaveBeenCalled();
+
+    vi.stubEnv("PASEO_AGENT_ID", "parent-agent");
+    const caller = setup("parent-agent");
+    await expect(run({ mode: "turbo" })).resolves.toMatchObject({
+      data: { agentId: "created-agent" },
+    });
+    expect(caller.getProvidersSnapshot).not.toHaveBeenCalled();
+  });
+});
