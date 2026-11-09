@@ -347,6 +347,15 @@ jobs:
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
         run: node scripts/npm-retry.mjs ci
+      - name: Exercise Windows update recovery before packaging
+        timeout-minutes: 3
+        run: |
+          npm run build:protocol
+          npx vitest run --root packages/desktop --bail=1 \
+            src/features/windows-fork-updater.test.ts \
+            src/features/auto-updater.test.ts \
+            src/features/app-update-service.test.ts \
+            src/features/windows-update-safety.test.ts
       # afterPack smoke-tests the unpacked app (packages/desktop/scripts/after-pack.js).
       - name: Build the installer and smoke-test the unpacked app
         timeout-minutes: 30

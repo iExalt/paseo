@@ -52,7 +52,7 @@ export interface AppUpdateRuntime {
   checkForUpdates(): Promise<RuntimeUpdateCheckResult | null>;
   downloadUpdate(targetVersion: string): Promise<unknown>;
   prepareInstall?(targetVersion: string): Promise<void>;
-  quitAndInstall(input: AppUpdateInstallRequest, onFailure?: () => Promise<void>): void;
+  quitAndInstall(input: AppUpdateInstallRequest): Promise<void>;
 }
 
 export type BeforeUpdateQuit = () => Promise<void | (() => Promise<void>)>;
@@ -121,21 +121,11 @@ async function performQuitAndInstall(
 ): Promise<void> {
   await runtime.prepareInstall?.(targetVersion);
   const rollback = await onBeforeQuit?.();
-  let rolledBack = false;
-  const recover = async () => {
-    if (!rolledBack) {
-      rolledBack = true;
-      await rollback?.();
-    }
-  };
   try {
     await runtime.prepareInstall?.(targetVersion);
-    runtime.quitAndInstall(
-      { targetVersion, isSilent: !restart, isForceRunAfter: restart },
-      recover,
-    );
+    await runtime.quitAndInstall({ targetVersion, isSilent: !restart, isForceRunAfter: restart });
   } catch (error) {
-    await recover();
+    await rollback?.();
     throw error;
   }
 }
@@ -471,6 +461,7 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
         message: "Update installation requested. The app will restart when the installer starts.",
       };
     } catch (error) {
+      downloadedUpdateVersion = null;
       const message = error instanceof Error ? error.message : String(error);
       deps.reportInstallError?.(message);
       return {

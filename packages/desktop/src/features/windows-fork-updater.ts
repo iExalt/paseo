@@ -23,6 +23,39 @@ export class ForkNsisUpdater extends NsisUpdater {
   resetForkHandoff(): void {
     this.quitAndInstallCalled = false;
   }
+  async clearForkDownload(): Promise<void> {
+    await this.downloadedUpdateHelper?.clear();
+  }
+  /** BaseUpdater quits before its asynchronous NSIS spawn can report failure. */
+  async launchForkInstaller(isSilent: boolean, isForceRunAfter: boolean): Promise<void> {
+    const installerPath = this.installerPath;
+    const info = this.downloadedUpdateHelper?.downloadedFileInfo;
+    if (!installerPath || !info) throw new Error("Fork installer is unavailable. Download again.");
+    if (this.quitAndInstallCalled) throw new Error("Fork installer launch is already in progress.");
+    this.quitAndInstallCalled = true;
+    const args = ["--updated"];
+    if (isSilent) args.push("/S");
+    if (isForceRunAfter) args.push("--force-run");
+    if (this.installDirectory) args.push(`/D=${this.installDirectory}`);
+    const elevate = () =>
+      this.spawnLog(path.join(process.resourcesPath, "elevate.exe"), [installerPath, ...args]);
+    try {
+      if (info.isAdminRightsRequired) {
+        await elevate();
+      } else {
+        try {
+          await this.spawnLog(installerPath, args);
+        } catch (error) {
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== "EACCES" && code !== "UNKNOWN") throw error;
+          await elevate();
+        }
+      }
+    } catch (error) {
+      this.resetForkHandoff();
+      throw error;
+    }
+  }
 }
 import type { UpdateInfo, CustomPublishOptions } from "builder-util-runtime";
 const releases = "https://github.com/iExalt/paseo/releases";
@@ -196,7 +229,14 @@ export function configureForkWindowsUpdater(
     const selectedPath = updater.forkInstallerPath;
     if (!selectedPath || selectedPath !== downloadedFile || downloadedVersion !== version)
       throw new Error("Fork installer selection changed. Check and download again.");
-    await verifyForkInstaller(selectedPath, installer(manifest));
+    try {
+      await verifyForkInstaller(selectedPath, installer(manifest));
+    } catch (error) {
+      downloadedFile = null;
+      downloadedVersion = null;
+      await updater.clearForkDownload();
+      throw error;
+    }
     if (
       updater.forkInstallerPath !== selectedPath ||
       downloadedFile !== selectedPath ||

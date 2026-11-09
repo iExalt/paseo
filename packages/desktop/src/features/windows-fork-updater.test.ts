@@ -40,7 +40,13 @@ async function fixture() {
   const config = path.join(directory, "app-update.yml");
   await writeFile(config, "updaterCacheDirName: fixture-updater\n");
   const quit = vi.fn();
-  const updater = new ForkNsisUpdater(undefined, {
+  class InstallerProbe extends ForkNsisUpdater {
+    readonly launches = vi.fn(async (_command: string, _args: string[]) => true);
+    protected override spawnLog(command: string, args: string[] = []) {
+      return this.launches(command, args);
+    }
+  }
+  const updater = new InstallerProbe(undefined, {
     version: "1.2.3",
     name: "Paseo",
     isPackaged: true,
@@ -79,6 +85,44 @@ async function fixture() {
   };
 }
 describe("actual NSIS fork provider and download orchestration", () => {
+  it("does not quit on a failed installer spawn and allows retry with the NSIS relaunch arguments", async () => {
+    const f = await fixture();
+    await expect(f.updater.launchForkInstaller(false, true)).rejects.toThrow("unavailable");
+    const checked = await f.updater.checkForUpdates();
+    await checked?.downloadPromise;
+    f.updater.installDirectory = path.join(f.directory, "Paseo install");
+    f.updater.launches.mockRejectedValueOnce(new Error("spawn failed"));
+    await expect(f.updater.launchForkInstaller(false, true)).rejects.toThrow("spawn failed");
+    expect(f.quit).not.toHaveBeenCalled();
+    await f.updater.launchForkInstaller(false, true);
+    expect(f.updater.launches).toHaveBeenLastCalledWith(f.updater.forkInstallerPath, [
+      "--updated",
+      "--force-run",
+      `/D=${f.updater.installDirectory}`,
+    ]);
+    await expect(f.updater.launchForkInstaller(false, true)).rejects.toThrow("already in progress");
+  });
+  it("awaits elevation failure before allowing a silent installer retry", async () => {
+    const f = await fixture();
+    const checked = await f.updater.checkForUpdates();
+    await checked?.downloadPromise;
+    vi.stubGlobal("process", { ...process, resourcesPath: f.directory });
+    try {
+      f.updater.launches
+        .mockRejectedValueOnce(Object.assign(new Error("denied"), { code: "EACCES" }))
+        .mockRejectedValueOnce(new Error("elevation failed"));
+      await expect(f.updater.launchForkInstaller(true, false)).rejects.toThrow("elevation failed");
+      expect(f.updater.launches).toHaveBeenLastCalledWith(path.join(f.directory, "elevate.exe"), [
+        f.updater.forkInstallerPath,
+        "--updated",
+        "/S",
+      ]);
+      expect(f.quit).not.toHaveBeenCalled();
+      await expect(f.updater.launchForkInstaller(true, false)).resolves.toBeUndefined();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
   it("loads the compiled CommonJS updater with the real electron-updater exports", () => {
     const desktopDirectory = path.resolve(import.meta.dirname, "../..");
     const config = ts.readConfigFile(path.join(desktopDirectory, "tsconfig.json"), ts.sys.readFile);
@@ -117,6 +161,10 @@ describe("actual NSIS fork provider and download orchestration", () => {
     await writeFile(files![0], Buffer.alloc(bytes.length));
     await expect(f.prepare("1.2.4")).rejects.toThrow("digest");
     expect(f.quit).not.toHaveBeenCalled();
+    const retry = await f.updater.checkForUpdates();
+    await retry?.downloadPromise;
+    await expect(f.prepare("1.2.4")).resolves.toBeUndefined();
+    expect(f.download).toHaveBeenCalledTimes(2);
   });
   it("refuses superseded releases and interrupted downloads, then retries the same target", async () => {
     const f = await fixture();

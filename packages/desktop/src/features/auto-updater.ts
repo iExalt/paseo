@@ -267,6 +267,8 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
     const autoUpdater = await this.getConfiguredUpdater();
     const result = await autoUpdater.checkForUpdates();
     if (!result) return null;
+    // Download failures are surfaced by the error event; also consume the rejected promise.
+    void result.downloadPromise?.catch(() => undefined);
     return {
       isUpdateAvailable: result.isUpdateAvailable,
       updateInfo: result.updateInfo as RuntimeUpdateInfo,
@@ -285,10 +287,11 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
     await prepareForkInstall(targetVersion);
   }
 
-  quitAndInstall(
-    { targetVersion, isSilent, isForceRunAfter }: AppUpdateInstallRequest,
-    onFailure?: () => Promise<void>,
-  ): void {
+  async quitAndInstall({
+    targetVersion,
+    isSilent,
+    isForceRunAfter,
+  }: AppUpdateInstallRequest): Promise<void> {
     if (!this.autoUpdater) {
       throw new Error("The Electron updater is unavailable for this installation.");
     }
@@ -299,13 +302,10 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
       isSilent,
       isForceRunAfter,
     });
-    autoUpdater.once("error", () => {
-      autoUpdater.resetForkHandoff();
-      void onFailure?.().catch((error) =>
-        console.error("[auto-updater] Failed to restore daemon after installer error", error),
-      );
-    });
-    autoUpdater.quitAndInstall(isSilent, isForceRunAfter);
+    await autoUpdater.launchForkInstaller(isSilent, isForceRunAfter);
+    const { autoUpdater: nativeUpdater } = await import("electron");
+    nativeUpdater.emit("before-quit-for-update");
+    app.quit();
   }
 }
 
