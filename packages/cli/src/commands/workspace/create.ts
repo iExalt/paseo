@@ -160,12 +160,15 @@ export async function runCreateCommand(
     if (!payload.workspace) {
       throw new Error(payload.error ?? "Workspace creation failed");
     }
-    await warnAboutAliasedProject({
-      client,
-      daemonTarget: options.daemonTarget,
-      workspaceId: payload.workspace.id,
-      projectId: payload.workspace.projectId,
-    });
+    // An explicit --project is a deliberate choice; only a path-derived project can be a stray.
+    if (!options.project) {
+      await warnAboutAliasedProject({
+        client,
+        daemonTarget: options.daemonTarget,
+        workspaceId: payload.workspace.id,
+        projectId: payload.workspace.projectId,
+      });
+    }
     return { type: "single", data: toWorkspaceRow(payload.workspace), schema: workspaceSchema };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error) throw error;

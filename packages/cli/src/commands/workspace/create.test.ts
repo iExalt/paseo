@@ -1,3 +1,6 @@
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { buildWorkspaceSource } from "./create.js";
 
@@ -163,5 +166,63 @@ describe("workspace create source", () => {
     expect(() => buildWorkspaceSource({ isolation: "container" })).toThrow(
       "Unsupported workspace isolation",
     );
+  });
+
+  it("warns about a duplicate project only when --project did not choose it", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "paseo-create-alias-"));
+    try {
+      const real = path.join(root, "real");
+      const alias = path.join(root, "alias");
+      mkdirSync(real);
+      symlinkSync(real, alias, process.platform === "win32" ? "junction" : "dir");
+      const projects = [
+        {
+          projectId: "prj_alias",
+          projectDisplayName: "alias",
+          projectRootPath: alias,
+          projectKind: "git" as const,
+        },
+        {
+          projectId: "prj_real",
+          projectDisplayName: "real",
+          projectRootPath: real,
+          projectKind: "git" as const,
+        },
+      ];
+      listProjects.mockResolvedValue({ projects } as never);
+      createWorkspace.mockResolvedValue({
+        workspace: {
+          id: "ws-twin",
+          projectId: "prj_real",
+          projectDisplayName: "real",
+          name: "twin",
+          workspaceDirectory: real,
+          workspaceKind: "local_checkout",
+          notifications: "on" as const,
+        },
+      } as never);
+      const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const stdout = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const target = { kind: "instance", home: "/tmp/workspace-create-test" } as const;
+
+      await runCreateCommand({ daemonTarget: target, isolation: "local", path: real }, {} as never);
+      expect(stderr).toHaveBeenCalledOnce();
+      expect(String(stderr.mock.calls[0]![0])).toContain("was created in project prj_real");
+
+      stderr.mockClear();
+      await runCreateCommand(
+        { daemonTarget: target, isolation: "local", path: real, project: "prj_real" },
+        {} as never,
+      );
+      expect(stderr).not.toHaveBeenCalled();
+      expect(stdout).not.toHaveBeenCalled();
+      stderr.mockRestore();
+      stdout.mockRestore();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      listProjects.mockReset();
+      listProjects.mockResolvedValue({ projects: [] });
+      createWorkspace.mockReset();
+    }
   });
 });
