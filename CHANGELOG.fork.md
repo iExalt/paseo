@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.24.8](https://github.com/iExalt/paseo/compare/paseo-v0.24.7...paseo-v0.24.8) (2026-11-09)
+
+
+### Bug Fixes
+
+* **app:** guard unsupported fork iOS builds explicitly ([#411](https://github.com/iExalt/paseo/issues/411)) ([0c81af8](https://github.com/iExalt/paseo/commit/0c81af8df2cfdd3e0aeed2ab378956b7aa807673))
+* **desktop:** load NSIS updater from its CommonJS export ([#407](https://github.com/iExalt/paseo/issues/407)) ([bbcd511](https://github.com/iExalt/paseo/commit/bbcd511ada8bf9d71be652971ea3f84973a842ed))
+* **desktop:** recover Windows update downloads and installer launches ([#409](https://github.com/iExalt/paseo/issues/409)) ([68c2659](https://github.com/iExalt/paseo/commit/68c2659d9aa56bd365fc90b24b699855ed745d21))
+* **linux:** preserve update recovery and active CLI routing ([#410](https://github.com/iExalt/paseo/issues/410)) ([6beec7d](https://github.com/iExalt/paseo/commit/6beec7ddd66a4097d59f1bae9296a2e6a69a8d42))
+
 ## [0.24.7](https://github.com/iExalt/paseo/compare/paseo-v0.24.6...paseo-v0.24.7) (2026-11-08)
 
 
