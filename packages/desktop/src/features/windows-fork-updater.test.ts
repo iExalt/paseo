@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import ts from "typescript";
 import {
   ForkNsisUpdater,
   configureForkWindowsUpdater,
@@ -76,6 +79,28 @@ async function fixture() {
   };
 }
 describe("actual NSIS fork provider and download orchestration", () => {
+  it("loads the compiled CommonJS updater with the real electron-updater exports", () => {
+    const desktopDirectory = path.resolve(import.meta.dirname, "../..");
+    const config = ts.readConfigFile(path.join(desktopDirectory, "tsconfig.json"), ts.sys.readFile);
+    const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, desktopDirectory);
+    const fileName = path.join(import.meta.dirname, "windows-fork-updater.ts");
+    const compiled = ts.transpileModule(readFileSync(fileName, "utf8"), {
+      fileName,
+      compilerOptions: parsed.options,
+    });
+    // Vitest's import interop differs from the CommonJS code shipped by tsc.
+    expect(
+      execFileSync(
+        process.execPath,
+        ["-e", `${compiled.outputText}\nconsole.log(typeof exports.ForkNsisUpdater);`],
+        {
+          cwd: desktopDirectory,
+          encoding: "utf8",
+          timeout: 10_000,
+        },
+      ).trim(),
+    ).toBe("function");
+  });
   it("uses the custom signed provider, full-download path and revalidates even in-memory cached bytes", async () => {
     const f = await fixture();
     const checked = await f.updater.checkForUpdates();

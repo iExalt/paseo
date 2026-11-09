@@ -367,27 +367,3 @@ describe("shouldAdmitToRollout", () => {
     }
   });
 });
-
-import { execFileSync } from "node:child_process";
-it("loads the installed CommonJS updater through its default namespace in native Node", () => {
-  const result = execFileSync(
-    process.execPath,
-    [
-      "--input-type=module",
-      "-e",
-      `
-    import { createRequire } from "node:module";
-    const require = createRequire(import.meta.url);
-    require("electron");
-    require.cache[require.resolve("electron")].exports = { app: { getVersion: () => "1.2.3" } };
-    const namespace = await import("electron-updater");
-    const updater = namespace.default?.autoUpdater ?? namespace.autoUpdater;
-    updater.autoDownload = true;
-    if (updater.autoDownload !== true) throw new Error("updater missing");
-    console.log("configured");
-  `,
-    ],
-    { encoding: "utf8" },
-  );
-  expect(result.trim()).toBe("configured");
-});
