@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.25.0](https://github.com/iExalt/paseo/compare/paseo-v0.24.8...paseo-v0.25.0) (2026-11-09)
+
+
+### Features
+
+* **cli:** check run modes before creating a workspace and teach worker placement in prime ([#413](https://github.com/iExalt/paseo/issues/413)) ([3e2fddf](https://github.com/iExalt/paseo/commit/3e2fddf925b881fa44c8b0d36d90fc9db312e508))
+* **cli:** warn when a new workspace lands in a duplicate project for the same checkout ([#412](https://github.com/iExalt/paseo/issues/412)) ([2d9f1dd](https://github.com/iExalt/paseo/commit/2d9f1dd869181adbd448318bf4ac251dad4ebcd9))
+
 ## [0.24.8](https://github.com/iExalt/paseo/compare/paseo-v0.24.7...paseo-v0.24.8) (2026-11-09)
 
 
