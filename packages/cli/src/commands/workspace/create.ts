@@ -3,6 +3,7 @@ import { connectToDaemon } from "../../utils/client.js";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import type { CommandError, CommandOptions, SingleResult } from "../../output/index.js";
 import { toWorkspaceRow, workspaceSchema, type WorkspaceRow } from "./shared.js";
+import { warnAboutAliasedProject } from "./alias-warning.js";
 
 export interface WorkspaceCreateOptions extends CommandOptions {
   isolation?: string;
@@ -159,6 +160,12 @@ export async function runCreateCommand(
     if (!payload.workspace) {
       throw new Error(payload.error ?? "Workspace creation failed");
     }
+    await warnAboutAliasedProject({
+      client,
+      daemonTarget: options.daemonTarget,
+      workspaceId: payload.workspace.id,
+      projectId: payload.workspace.projectId,
+    });
     return { type: "single", data: toWorkspaceRow(payload.workspace), schema: workspaceSchema };
   } catch (error) {
     if (error && typeof error === "object" && "code" in error) throw error;

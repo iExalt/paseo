@@ -12,9 +12,10 @@ const createWorkspace = vi.fn(async () => ({
   },
 }));
 const close = vi.fn(async () => undefined);
+const listProjects = vi.fn(async () => ({ projects: [] }));
 
 vi.mock("../../utils/client.js", () => ({
-  connectToDaemon: vi.fn(async () => ({ createWorkspace, close })),
+  connectToDaemon: vi.fn(async () => ({ createWorkspace, close, listProjects })),
   getDaemonHost: vi.fn(() => "ws://127.0.0.1:6767"),
 }));
 
@@ -38,6 +39,7 @@ describe("workspace create source", () => {
     });
     expect(result.data).toMatchObject({ workspaceId: "ws-created", notifications: "off" });
     expect(close).toHaveBeenCalledOnce();
+    expect(listProjects).toHaveBeenCalledOnce();
     createWorkspace.mockClear();
     close.mockClear();
   });
