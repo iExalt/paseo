@@ -62,15 +62,33 @@ import { latestVerifiedDesktopRelease, verifyDesktopReleaseBytes } from "./deskt
 import {
   assertLinuxLauncherOwnership,
   syncLinuxLauncher,
+  syncLinuxCli,
   removeCreatedLinuxLaunchers,
   validateLinuxNixPrerequisites,
   executeLinuxBootstrap,
 } from "./paseo-nix-update-linux.mjs";
 
 async function syncDesktopApp(outputPath) {
-  return process.platform === "linux"
-    ? syncLinuxLauncher(ACTIVE_PROFILE)
-    : syncMacDesktopApp(outputPath);
+  if (process.platform !== "linux") return syncMacDesktopApp(outputPath);
+  await syncLinuxLauncher(ACTIVE_PROFILE);
+  await syncLinuxCli(ACTIVE_PROFILE, async (candidate, version) => {
+    for (const name of await readdir(join(STATE_ROOT, "receipts"))) {
+      if (!new RegExp(`^[a-f0-9]{40}-v${version.replaceAll(".", "\\.")}$`).test(name)) continue;
+      try {
+        await loadReceipt({
+          lineage: FORK_RELEASE_LINEAGE,
+          identity: name,
+          version,
+          outputPath: candidate,
+          generation: null,
+        });
+        return true;
+      } catch {
+        // Unknown or damaged historical receipts never authorize replacing a user's CLI.
+      }
+    }
+    return false;
+  });
 }
 function assertSupportedNixHost() {
   if (process.platform === "linux" && ["x64", "arm64"].includes(process.arch)) return;
@@ -621,10 +639,11 @@ async function executeMutation(command, state, staged, adapters) {
     return { state: next, staged: null };
   }
   if (command === "rollback" || command === "reactivate-high-water") {
-    assert.equal(staged, null, "Another release is staged; finish it before recovery");
     const target = recoveryTarget(state, command);
     if (target.identity !== state.current?.identity)
       state = await executeTransaction(state, command, target, adapters);
+    await adapters.clearStaged();
+    staged = null;
   }
   return { state, staged };
 }

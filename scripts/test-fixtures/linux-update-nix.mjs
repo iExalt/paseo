@@ -33,6 +33,8 @@ export function nix(args) {
     return { status: 0, stdout: "" };
   }
   if (args[0] === "store" && ["copy-sigs", "verify"].includes(args[1])) {
+    if (args[1] === "verify" && process.env.PASEO_UPDATE_FAIL === "verify")
+      throw new Error("fixture verification refused");
     for (const output of outputs)
       assert.ok(state.imported.includes(output), "Output was never imported");
     return { status: 0, stdout: "" };
@@ -84,6 +86,8 @@ export function nixEnv(args) {
     return { status: 0, stdout: "", stderr: "" };
   }
   if (args.includes("--switch-generation")) {
+    if (process.env.PASEO_UPDATE_FAIL === "select-before")
+      throw new Error("fixture recovery refused");
     const state = read();
     const generation = Number(args[args.indexOf("--switch-generation") + 1]);
     assert.ok(state.profiles[profile].some((entry) => entry.generation === generation));
@@ -91,6 +95,7 @@ export function nixEnv(args) {
     unlinkSync(profile);
     symlinkSync(`${profile}-${generation}-link`, profile);
     save(state);
+    if (process.env.PASEO_UPDATE_FAIL === "select-after") process.exit(73);
     return { status: 0, stdout: "", stderr: "" };
   }
   assert.ok(args.includes("--delete-generations"), "Unexpected fixture nix-env operation");

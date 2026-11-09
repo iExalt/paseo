@@ -1,5 +1,15 @@
 import assert from "node:assert/strict";
-import { lstat, mkdir, readFile, link, rm, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readFile,
+  readlink,
+  rename,
+  symlink,
+  link,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 export function linuxUpdatePaths({ home = homedir(), env = process.env } = {}) {
@@ -118,5 +128,35 @@ export async function executeLinuxBootstrap(adapters) {
   } catch (error) {
     await adapters.rollbackLauncher(created);
     throw error;
+  }
+}
+
+export function linuxProfileCli(profile) {
+  return join(profile, "share", "paseo-desktop", "packages", "cli", "bin", "paseo");
+}
+
+/** Move only an explicitly installed CLI whose immutable source has a verified receipt. */
+export async function syncLinuxCli(profile, ownsOutput, paths = linuxUpdatePaths()) {
+  const file = join(dirname(paths.launcher), "paseo");
+  let source;
+  try {
+    if (!(await lstat(file)).isSymbolicLink()) return;
+    source = await readlink(file);
+  } catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  const stable = linuxProfileCli(profile);
+  if (source === stable) return;
+  const match = source.match(
+    /^(\/nix\/store\/[0-9abcdfghijklmnpqrsvwxyz]{32}-paseo-desktop-([0-9]+\.[0-9]+\.[0-9]+))\/share\/paseo-desktop\/packages\/cli\/bin\/paseo$/,
+  );
+  if (!match || !(await ownsOutput(match[1], match[2]))) return;
+  const temporary = `${file}.${process.pid}.${Date.now()}.tmp`;
+  try {
+    await symlink(stable, temporary);
+    if ((await readlink(file)) === source) await rename(temporary, file);
+  } finally {
+    await rm(temporary, { force: true });
   }
 }

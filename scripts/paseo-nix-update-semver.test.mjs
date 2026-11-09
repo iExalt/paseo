@@ -7,6 +7,7 @@ import {
   mkdir,
   mkdtemp,
   readFile,
+  readlink,
   readdir,
   symlink,
   writeFile,
@@ -597,6 +598,8 @@ import {
   linuxUpdatePaths,
   assertLinuxLauncherOwnership,
   syncLinuxLauncher,
+  syncLinuxCli,
+  linuxProfileCli,
   validateLinuxNixPrerequisites,
   executeLinuxBootstrap,
 } from "./paseo-nix-update-linux.mjs";
@@ -631,6 +634,45 @@ test("Linux launcher follows only its dedicated profile and preserves foreign fi
       () => linuxUpdatePaths({ home, env: { XDG_STATE_HOME: "relative" } }),
       /absolute/,
     );
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("Linux CLI migration requires exact verified ownership and follows active profile switches", async () => {
+  const home = await mkdtemp(join(tmpdir(), "paseo-cli-profile-"));
+  const paths = linuxUpdatePaths({ home, env: {} });
+  const profile = join(paths.root, "profile");
+  const cli = join(home, ".local/bin/paseo");
+  const output = target("0.1.0").outputPath;
+  const legacySource = `${output}/share/paseo-desktop/packages/cli/bin/paseo`;
+  try {
+    await syncLinuxCli(profile, async () => true, paths);
+    await assert.rejects(lstat(cli), { code: "ENOENT" });
+    await mkdir(dirname(cli), { recursive: true });
+    await symlink(legacySource, cli);
+    await syncLinuxCli(profile, async () => false, paths);
+    assert.equal(await readlink(cli), legacySource);
+    await syncLinuxCli(profile, async (candidate) => candidate === output, paths);
+    assert.equal(await readlink(cli), linuxProfileCli(profile));
+    await mkdir(paths.root, { recursive: true });
+    for (const version of ["one", "two"]) {
+      const source = join(home, version);
+      const entry = linuxProfileCli(source);
+      await mkdir(dirname(entry), { recursive: true });
+      await writeFile(entry, `#!/bin/sh\nprintf '${version}\\n'\n`, { mode: 0o755 });
+      await rm(profile, { force: true });
+      await symlink(source, profile);
+      assert.equal(execFileSync(cli, [], { encoding: "utf8" }).trim(), version);
+    }
+    await rm(cli);
+    await symlink("/foreign/missing/cli", cli);
+    await syncLinuxCli(profile, async () => true, paths);
+    assert.equal(await readlink(cli), "/foreign/missing/cli");
+    await rm(cli);
+    await writeFile(cli, "foreign file");
+    await syncLinuxCli(profile, async () => true, paths);
+    assert.equal(await readFile(cli, "utf8"), "foreign file");
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -784,7 +826,7 @@ test("real Linux CLI verifies dual receipts, imports both roots, recovers interr
   const signedStateRoot = join(directory, "state", "paseo", "nix-update");
   const nixStateFile = join(directory, "nix-state.json");
   try {
-    for (const version of ["0.1.0", "0.2.0", "0.3.0"]) {
+    for (const version of ["0.1.0", "0.2.0", "0.3.0", "0.4.0"]) {
       const names = releaseAssets(version),
         destination = join(directory, "releases", version);
       await mkdir(destination, { recursive: true });
@@ -939,8 +981,42 @@ test("real Linux CLI verifies dual receipts, imports both roots, recovers interr
       assert.ok(await readFile(join(receipt(version), "primary-manifest.sig")));
     }
     await assert.rejects(lstat(join(receipt("0.1.0"), "cli-profile")), { code: "ENOENT" });
-    assert.equal(result("rollback").active.version, "0.2.0");
+    const installedCli = join(directory, ".local/bin/paseo");
+    await symlink(
+      `${output("0.1.0", "paseo-desktop")}/share/paseo-desktop/packages/cli/bin/paseo`,
+      installedCli,
+    );
+    assert.equal(result("stage", { PASEO_UPDATE_LATEST: "0.4.0" }).staged.version, "0.4.0");
+    failed = run("rollback", { PASEO_UPDATE_FAIL: "verify" });
+    assert.equal(failed.status, 1, failed.stdout);
+    assert.match(failed.stdout, /fixture verification refused/);
+    assert.equal(result("status").staged.version, "0.4.0");
+    failed = run("rollback", { PASEO_UPDATE_FAIL: "select-before" });
+    assert.equal(failed.status, 1, failed.stdout);
+    assert.match(failed.stdout, /fixture recovery refused/);
+    assert.equal(result("status").staged.version, "0.4.0");
+    failed = run("rollback", { PASEO_UPDATE_FAIL: "select-after" });
+    assert.equal(failed.status, 73, failed.stdout);
+    await rm(join(signedStateRoot, "operation.lock"));
+    const rolledBack = result("rollback");
+    assert.equal(rolledBack.active.version, "0.2.0");
+    assert.equal(rolledBack.highWaterVersion, "0.3.0");
+    assert.equal(rolledBack.staged, null);
+    assert.equal(await readlink(installedCli), linuxProfileCli(join(signedStateRoot, "profile")));
+    await rm(installedCli);
+    await symlink("/foreign/missing/cli", installedCli);
+    assert.equal(result("stage", { PASEO_UPDATE_LATEST: "0.4.0" }).staged.version, "0.4.0");
+    const reactivated = result("reactivate-high-water");
+    assert.equal(reactivated.active.version, "0.3.0");
+    assert.equal(reactivated.highWaterVersion, "0.3.0");
+    assert.equal(reactivated.staged, null);
+    assert.equal(await readlink(installedCli), "/foreign/missing/cli");
+    await rm(installedCli);
+    const legacyCli = `${output("0.1.0", "paseo-desktop")}/share/paseo-desktop/packages/cli/bin/paseo`;
+    await symlink(legacyCli, installedCli);
+    await writeFile(join(receipt("0.1.0"), "primary-manifest.sig"), "A".repeat(86));
     assert.equal(result("reactivate-high-water").active.version, "0.3.0");
+    assert.equal(await readlink(installedCli), legacyCli);
     // The same real retained-generation selector also serves existing schema-3 Mac receipts.
     const macEnv = { PASEO_UPDATE_MAC: "1", PASEO_UPDATE_LATEST: "0.1.0" };
     result("stage", macEnv);
