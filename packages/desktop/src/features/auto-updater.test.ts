@@ -20,9 +20,9 @@ const { autoUpdaterMock, electronAutoUpdaterMock } = vi.hoisted(() => {
       on: vi.fn((event: string, handler: (value: unknown) => void) => {
         handlers.set(event, handler);
       }),
-      quitAndInstall: vi.fn(),
+      launchForkInstaller: vi.fn(),
     },
-    electronAutoUpdaterMock: { on: vi.fn() },
+    electronAutoUpdaterMock: { on: vi.fn(), emit: vi.fn() },
   };
 });
 
@@ -32,6 +32,7 @@ vi.mock("electron", () => ({
     getPath: vi.fn(),
     getVersion: vi.fn(() => "1.2.3"),
     isPackaged: true,
+    quit: vi.fn(),
   },
 }));
 
@@ -57,7 +58,9 @@ import {
   rolloutManifestSchema,
   shouldAdmitToRollout,
   shouldInstallAppUpdateOnQuit,
+  downloadAndInstallUpdate,
 } from "./auto-updater";
+import { app } from "electron";
 
 describe("electron updater loading", () => {
   it("registers the built-in Electron quit event without loading electron-updater", async () => {
@@ -97,6 +100,82 @@ describe("electron updater loading", () => {
 });
 
 describe("checkForAppUpdate", () => {
+  it("keeps the app open until the installer starts, and reports a launch failure", async () => {
+    autoUpdaterMock.checkForUpdates.mockImplementation(async () => {
+      const info = { version: "1.2.5" };
+      autoUpdaterMock.handlers.get("update-available")?.(info);
+      autoUpdaterMock.handlers.get("update-downloaded")?.(info);
+      return { isUpdateAvailable: true, updateInfo: info };
+    });
+    let finishLaunch!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finishLaunch = resolve;
+    });
+    autoUpdaterMock.launchForkInstaller.mockRejectedValueOnce(new Error("blocked installer"));
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const failed = await downloadAndInstallUpdate({
+        currentVersion: "1.2.3",
+        releaseChannel: "stable",
+      });
+      expect(failed.installed).toBe(false);
+      expect(failed.message).toContain("blocked installer");
+      expect(app.quit).not.toHaveBeenCalled();
+      let reachedLaunch!: () => void;
+      const started = new Promise<void>((resolve) => {
+        reachedLaunch = resolve;
+      });
+      autoUpdaterMock.launchForkInstaller.mockImplementationOnce(() => {
+        reachedLaunch();
+        return gate;
+      });
+      const install = downloadAndInstallUpdate({
+        currentVersion: "1.2.3",
+        releaseChannel: "stable",
+      });
+      await started;
+      expect(app.quit).not.toHaveBeenCalled();
+      finishLaunch();
+      expect((await install).installed).toBe(true);
+      expect(electronAutoUpdaterMock.emit).toHaveBeenCalledWith("before-quit-for-update");
+      expect(app.quit).toHaveBeenCalledOnce();
+    } finally {
+      errorLog.mockRestore();
+      autoUpdaterMock.checkForUpdates.mockReset();
+    }
+  });
+  it("observes background download rejection and keeps its failure visible", async () => {
+    const error = new Error("download interrupted");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let failDownload!: () => void;
+    const download = new Promise<never>((_resolve, reject) => {
+      failDownload = () => {
+        autoUpdaterMock.handlers.get("error")?.(error);
+        reject(error);
+      };
+    });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    autoUpdaterMock.checkForUpdates.mockImplementationOnce(async () => {
+      const info = { version: "1.2.4" };
+      autoUpdaterMock.handlers.get("update-available")?.(info);
+      queueMicrotask(failDownload);
+      return { isUpdateAvailable: true, updateInfo: info, downloadPromise: download };
+    });
+    try {
+      const result = await checkForAppUpdate({
+        currentVersion: "1.2.3",
+        releaseChannel: "stable",
+        intent: "manual",
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(result.errorMessage).toBe("download interrupted");
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      consoleError.mockRestore();
+    }
+  });
   it("reports missing update metadata rather than claiming the app is current", async () => {
     const error = Object.assign(new Error("Cannot find latest-mac.yml"), {
       code: "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND",

@@ -145,7 +145,11 @@ class FakeAppUpdateRuntime implements AppUpdateRuntime {
 
   async prepareInstall(_version: string): Promise<void> {}
 
-  quitAndInstall({ targetVersion, isSilent, isForceRunAfter }: AppUpdateInstallRequest): void {
+  async quitAndInstall({
+    targetVersion,
+    isSilent,
+    isForceRunAfter,
+  }: AppUpdateInstallRequest): Promise<void> {
     if (this.downloadedUpdate) {
       this.installedVersions.push(this.downloadedUpdate.version);
       this.installModes.push({ targetVersion, isSilent, isForceRunAfter });
@@ -906,23 +910,31 @@ it("serializes background checks through apply and restores on final verificatio
   expect(runtime.installedVersions).toEqual([]);
 });
 
-it("restores only once when the native adapter reports a late handoff failure", async () => {
+it("awaits installer launch failure, restores the daemon once, and permits retry", async () => {
   const { runtime, service } = createService();
   runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
-  let onFailure: (() => Promise<void>) | undefined;
-  runtime.quitAndInstall = (_request, failure) => {
-    onFailure = failure;
-  };
+  const failure = Promise.reject(new Error("installer could not start"));
+  void failure.catch(() => undefined);
+  const launch = runtime.quitAndInstall.bind(runtime);
+  runtime.quitAndInstall = () => failure;
   let restored = 0;
-  await service.downloadAndInstallUpdate(
+  const result = await service.downloadAndInstallUpdate(
     { currentVersion: "1.2.3", releaseChannel: "stable" },
     async () => async () => {
       restored += 1;
     },
   );
-  expect(onFailure).toBeDefined();
-  await onFailure!();
-  await onFailure!();
+  expect(result.installed).toBe(false);
+  expect(result.message).toContain("installer could not start");
+  expect(restored).toBe(1);
+  runtime.quitAndInstall = launch;
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  const retry = await service.downloadAndInstallUpdate({
+    currentVersion: "1.2.3",
+    releaseChannel: "stable",
+  });
+  expect(retry.installed).toBe(true);
+  expect(runtime.downloadCallCount).toBe(2);
   expect(restored).toBe(1);
 });
 
