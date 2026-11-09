@@ -17,6 +17,7 @@ import { resolveProviderAndModel } from "../../utils/provider-model.js";
 import { parseFeatureValues } from "../../utils/feature-values.js";
 import { resolvePromptInput } from "../../utils/prompt-input.js";
 import { buildWorkspaceSource } from "../workspace/create.js";
+import { warnAboutAliasedProject } from "../workspace/alias-warning.js";
 
 export { resolveProviderAndModel } from "../../utils/provider-model.js";
 
@@ -655,6 +656,12 @@ async function resolveRunWorkspace(
   const branch = result.workspace.gitRuntime?.currentBranch;
   const label = branch ? `${result.workspace.name} (${branch})` : result.workspace.name;
   console.error(`Created workspace ${result.workspace.id} - ${label}`);
+  await warnAboutAliasedProject({
+    client,
+    daemonTarget: options.daemonTarget,
+    workspaceId: result.workspace.id,
+    projectId: result.workspace.projectId,
+  });
   if (result.setupSkippedReason) console.error(result.setupSkippedReason);
   console.error(
     "Tip: pass --workspace <id> (or set PASEO_WORKSPACE_ID) to run in an existing workspace.",
