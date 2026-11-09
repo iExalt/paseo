@@ -15,8 +15,7 @@ import {
 } from "@getpaseo/protocol/desktop-release-manifest";
 import { verifyDesktopReleaseBytes } from "@getpaseo/protocol/desktop-release-verifier";
 import { Provider, type ProviderRuntimeOptions } from "electron-updater/out/providers/Provider.js";
-import updaterModule, { type AppUpdater } from "electron-updater";
-const { NsisUpdater } = updaterModule;
+import { NsisUpdater, type AppUpdater } from "electron-updater";
 export class ForkNsisUpdater extends NsisUpdater {
   get forkInstallerPath(): string | null {
     return this.installerPath;
