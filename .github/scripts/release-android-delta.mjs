@@ -11,7 +11,7 @@ import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { fetchRange, hashFile, zstdDecompress } from "../../scripts/paseo-nix-update-delta.mjs";
-import { latestVerifiedRelease, releaseDownloadUrl } from "../../scripts/paseo-nix-update.mjs";
+import { verifiedReleaseForTag, releaseDownloadUrl } from "../../scripts/paseo-nix-update.mjs";
 import { DELTA_BASE_RELEASES, deltaBaseTags, listReleases } from "./release-mac-index.mjs";
 import { apkDeltaAssetName, releaseAssets } from "./release-assets.mjs";
 
@@ -30,7 +30,7 @@ function signedApk(manifest) {
 
 /** Fetches a previous release's APK and checks it against that release's signed manifest. */
 async function previousApk(tag, work) {
-  const { manifest } = await latestVerifiedRelease({ resolveTag: async () => tag });
+  const { manifest } = await verifiedReleaseForTag(tag);
   const apk = signedApk(manifest);
   const file = join(work, "base.apk");
   const { sha256 } = await fetchRange(

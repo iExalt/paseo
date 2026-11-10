@@ -58,7 +58,12 @@ import {
   waitForExit,
 } from "./paseo-nix-update-macos.mjs";
 
-import { latestVerifiedDesktopRelease, verifyDesktopReleaseBytes } from "./desktop-release.mjs";
+import {
+  latestVerifiedDesktopRelease,
+  verifiedDesktopReleaseForTag,
+  verifyDesktopReleaseBytes,
+} from "./desktop-release.mjs";
+import { discoverVerifiedForkRelease } from "../packages/protocol/src/fork-release-discovery.ts";
 import {
   assertLinuxLauncherOwnership,
   syncLinuxLauncher,
@@ -153,8 +158,8 @@ const METADATA_TIMEOUT_MS = 30_000;
 const ARCHIVE_TIMEOUT_MS = 30 * 60_000;
 
 // Unauthenticated REST calls share GitHub's 60-per-hour budget per IP address,
-// often a whole office's. Release pages and download URLs do not count against
-// it, so the updater resolves and downloads everything through them.
+// often a whole office's. The normal Latest lookup and downloads use release
+// pages and asset URLs; only fallback discovery needs REST requests.
 export function releaseDownloadUrl(tag, name) {
   assert.ok(forkVersionFromTag(tag) !== null, "Not a fork release tag");
   assert.match(name, /^[A-Za-z0-9][A-Za-z0-9._-]*$/, "Invalid release asset name");
@@ -201,7 +206,12 @@ export async function resolveLatestTag(fetchOnce = fetch) {
 export async function fetchMetadata(url, what) {
   const response = await fetchHttps(
     url,
-    { Accept: "application/octet-stream" },
+    {
+      Accept:
+        new URL(url).hostname === "api.github.com"
+          ? "application/vnd.github+json"
+          : "application/octet-stream",
+    },
     { signal: AbortSignal.timeout(METADATA_TIMEOUT_MS) },
   );
   if (!response.ok || !response.body) throw httpFailure(what, response);
@@ -215,15 +225,20 @@ export async function fetchMetadata(url, what) {
   return Buffer.concat(chunks);
 }
 
-// GitHub's Latest is never a draft or prerelease. An invalid latest release
-// fails closed instead of falling back to an older one; high-water still
-// refuses anything at or below the newest activated version.
+// Only discovery falls back; callers verifying an explicit historical tag stay pinned to it.
 export async function latestVerifiedRelease({
   resolveTag = resolveLatestTag,
   fetchBytes = fetchMetadata,
   publicKey,
 } = {}) {
-  const tag = await resolveTag();
+  return discoverVerifiedForkRelease({
+    resolveTag,
+    fetchBytes,
+    verifyTag: (tag) => verifiedReleaseForTag(tag, { fetchBytes, publicKey }),
+  });
+}
+
+export async function verifiedReleaseForTag(tag, { fetchBytes = fetchMetadata, publicKey } = {}) {
   const [manifestBytes, signatureBytes] = await Promise.all([
     fetchBytes(releaseDownloadUrl(tag, RELEASE_MANIFEST_ASSET), "the release manifest"),
     fetchBytes(releaseDownloadUrl(tag, RELEASE_SIGNATURE_ASSET), "the release signature"),
@@ -843,10 +858,7 @@ export async function runPaseoNixUpdate(argv = process.argv.slice(2)) {
           rollbackLauncher: async (created) => {
             if ((await adapters.current()) === null) await removeCreatedLinuxLaunchers(created);
           },
-          runningRelease: () =>
-            latestVerifiedDesktopRelease({
-              resolveTag: async () => forkReleaseTag(linuxRunningVersion()),
-            }),
+          runningRelease: () => verifiedDesktopReleaseForTag(forkReleaseTag(linuxRunningVersion())),
           stage: stageRelease,
           activate: () => executeCommand("activate", adapters),
         });

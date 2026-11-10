@@ -3,11 +3,14 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
+import { generateKeyPairSync, sign } from "node:crypto";
+import { forkReleaseManifestV3Fixture } from "../../../../scripts/test-fixtures/fork-release-manifest";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ts from "typescript";
 import {
   ForkNsisUpdater,
+  latestWindowsRelease,
   configureForkWindowsUpdater,
   installedForkFloor,
   verifyForkInstaller,
@@ -199,5 +202,94 @@ describe("actual NSIS fork provider and download orchestration", () => {
     const bad = path.join(f.directory, "bad.exe");
     await writeFile(bad, "bad");
     await expect(verifyForkInstaller(bad, artifact)).rejects.toThrow("size");
+  });
+});
+
+describe("Windows signed release discovery", () => {
+  it("falls back from an invalid Latest signature and verifies both inventories", async () => {
+    const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+    const pin = publicKey.export({ format: "jwk" }).x!;
+    // Keep signature checks real while using a fixture signing key.
+    const verifier = await import("@getpaseo/protocol/desktop-release-verifier");
+    const originalVerify = verifier.verifyDesktopReleaseBytes;
+    const verify = vi
+      .spyOn(verifier, "verifyDesktopReleaseBytes")
+      .mockImplementation((manifestBytes, signature, primary, primarySignature) =>
+        originalVerify(manifestBytes, signature, primary, primarySignature, pin),
+      );
+    const primary = forkReleaseManifestV3Fixture("1.2.4");
+    const primaryBytes = Buffer.from(JSON.stringify(primary));
+    const desktop = {
+      ...primary,
+      schemaVersion: 1,
+      primaryManifestSha256: createHash("sha256").update(primaryBytes).digest("hex"),
+      artifacts: [
+        artifact,
+        ...(["x64", "arm64"] as const).map((arch) => ({
+          platform: "linux",
+          arch,
+          kind: "nix-desktop",
+          name: `paseo-1.2.4-linux-${arch}-nix.tar`,
+          bytes: 123,
+          sha256: "a".repeat(64),
+          system: arch === "x64" ? "x86_64-linux" : "aarch64-linux",
+          outputPath: `/nix/store/${"b".repeat(32)}-paseo-desktop-1.2.4`,
+          outputPaths: [
+            `/nix/store/${"a".repeat(32)}-paseo-1.2.4`,
+            `/nix/store/${"b".repeat(32)}-paseo-desktop-1.2.4`,
+          ],
+          closureManifest: {
+            name: `paseo-1.2.4-linux-${arch}-nix.json`,
+            bytes: 12,
+            sha256: "a".repeat(64),
+          },
+        })),
+      ],
+    };
+    const desktopBytes = Buffer.from(JSON.stringify(desktop));
+    const signed = (data: Buffer) =>
+      Buffer.from(sign(null, data, privateKey).toString("base64url"));
+    const files = new Map([
+      ["paseo-release-manifest.json", primaryBytes],
+      ["paseo-release-manifest.sig", signed(primaryBytes)],
+      ["paseo-desktop-manifest.json", desktopBytes],
+      ["paseo-desktop-manifest.sig", signed(desktopBytes)],
+    ]);
+    const requests: string[] = [];
+    const releaseList = ["1.2.9", "1.2.4"].map((version) => ({
+      tag_name: `paseo-v${version}`,
+      draft: false,
+      prerelease: false,
+    }));
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        requests.push(url);
+        if (url === "https://github.com/iExalt/paseo/releases/latest") {
+          return new Response(null, {
+            status: 302,
+            headers: { location: "https://github.com/iExalt/paseo/releases/tag/paseo-v1.2.9" },
+          });
+        }
+        if (url === "https://api.github.com/repos/iExalt/paseo/releases?per_page=6&page=1") {
+          return new Response(JSON.stringify(releaseList));
+        }
+        const file = files.get(url.split("/").at(-1)!);
+        if (!file) throw new Error(`Unexpected request: ${url}`);
+        return new Response(
+          new Uint8Array(url.includes("paseo-v1.2.9/") ? Buffer.from("invalid") : file).buffer,
+        );
+      }),
+    );
+    try {
+      expect((await latestWindowsRelease()).version).toBe("1.2.4");
+      expect(verify).toHaveBeenCalledTimes(2);
+      expect(requests.filter((url) => url.endsWith("/latest"))).toHaveLength(1);
+      expect(requests.filter((url) => url.includes("?per_page="))).toHaveLength(1);
+    } finally {
+      vi.unstubAllGlobals();
+      verify.mockRestore();
+    }
   });
 });

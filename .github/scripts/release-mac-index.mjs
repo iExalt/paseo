@@ -32,7 +32,7 @@ import {
 import { fetchHttps } from "../../scripts/paseo-nix-update-legacy.mjs";
 import {
   fetchMetadata,
-  latestVerifiedRelease,
+  verifiedReleaseForTag,
   macArtifact,
   releaseDownloadUrl,
   validateNixArtifactClosure,
@@ -101,7 +101,7 @@ async function locateByWalking(url, artifact, storePath) {
 
 /** Fetches a previous release's desktop NAR and checks it against that release's signed closure. */
 async function previousNar(tag, work) {
-  const { manifest } = await latestVerifiedRelease({ resolveTag: async () => tag });
+  const { manifest } = await verifiedReleaseForTag(tag);
   const artifact = macArtifact(manifest);
   const closure = validateNixClosureManifest(
     await fetchMetadata(

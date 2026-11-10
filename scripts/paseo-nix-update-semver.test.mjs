@@ -36,6 +36,7 @@ import {
   validateNixArtifactClosure,
   httpFailure,
   latestVerifiedRelease,
+  verifiedReleaseForTag,
   macArtifact,
   releaseDownloadUrl,
   resolveLatestTag,
@@ -161,8 +162,23 @@ async function assertSignedReleaseVerification(manifest) {
     `https://github.com/iExalt/paseo/releases/download/${manifest.releaseTag}/paseo-release-manifest.json`,
     `https://github.com/iExalt/paseo/releases/download/${manifest.releaseTag}/paseo-release-manifest.sig`,
   ]);
+  const fallback = await latestVerifiedRelease({
+    resolveTag: async () => "paseo-v9.9.9",
+    publicKey,
+    fetchBytes: async (url) =>
+      url.startsWith("https://api.github.com/")
+        ? Buffer.from(
+            JSON.stringify([
+              { tag_name: "paseo-v9.9.9", draft: false, prerelease: false },
+              { tag_name: manifest.releaseTag, draft: false, prerelease: false },
+            ]),
+          )
+        : fetchBytes(url),
+  });
+  assert.equal(fallback.tag, manifest.releaseTag);
+  assert.deepEqual(fallback.manifest, manifest);
   await assert.rejects(
-    latestVerifiedRelease({ resolveTag: async () => "paseo-v9.9.9", fetchBytes, publicKey }),
+    verifiedReleaseForTag("paseo-v9.9.9", { fetchBytes, publicKey }),
     /names another release/,
   );
 }

@@ -13,6 +13,7 @@ import {
   type DesktopReleaseManifest,
   type DesktopReleaseArtifact,
 } from "@getpaseo/protocol/desktop-release-manifest";
+import { discoverVerifiedForkRelease } from "@getpaseo/protocol/fork-release-discovery";
 import { verifyDesktopReleaseBytes } from "@getpaseo/protocol/desktop-release-verifier";
 import { Provider, type ProviderRuntimeOptions } from "electron-updater/out/providers/Provider.js";
 import { NsisUpdater, type AppUpdater } from "electron-updater";
@@ -78,6 +79,13 @@ async function metadata(url: string): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 export async function latestWindowsRelease(): Promise<DesktopReleaseManifest> {
+  return discoverVerifiedForkRelease({
+    resolveTag: latestWindowsTag,
+    fetchBytes: metadata,
+    verifyTag: verifiedWindowsReleaseForTag,
+  });
+}
+async function latestWindowsTag(): Promise<string> {
   const response = await fetch(`${releases}/latest`, {
     redirect: "manual",
     signal: AbortSignal.timeout(30_000),
@@ -94,6 +102,9 @@ export async function latestWindowsRelease(): Promise<DesktopReleaseManifest> {
     forkVersionFromTag(tag) === null
   )
     throw new Error("The latest release is not a stable Paseo fork release.");
+  return tag;
+}
+async function verifiedWindowsReleaseForTag(tag: string): Promise<DesktopReleaseManifest> {
   const [bytes, signature, primary, primarySignature] = await Promise.all(
     [
       DESKTOP_MANIFEST_ASSET,
