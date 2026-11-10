@@ -5,7 +5,7 @@ import type { DaemonClient, FetchAgentHistoryEntry } from "@getpaseo/client/inte
 
 export function addDeleteOptions(cmd: Command): Command {
   return cmd
-    .description("Delete an agent (interrupt if running, then hard-delete)")
+    .description("Delete an agent; archive its workspace when no unarchived agents remain")
     .argument("[id]", "Agent ID, prefix, or full session ID - optional if --all or --cwd specified")
     .option("--all", "Delete all agents")
     .option("--cwd <path>", "Delete all agents in directory");

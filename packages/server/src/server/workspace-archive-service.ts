@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { withWorkspaceLifecycleLock } from "./workspace-lifecycle-lock.js";
 
 import type { Logger } from "pino";
 
@@ -79,6 +80,8 @@ export interface ArchiveResult {
 export interface ArchiveByScopeRequest {
   scope: ArchiveScope;
   requestId: string;
+  // Internal lifecycle cascade, never a user-selectable archive mode.
+  onlyIfEmpty?: boolean;
 }
 
 export async function requireActiveWorkspaceForArchive(
@@ -138,7 +141,10 @@ export async function archiveByScope(
   dependencies: ArchiveDependencies,
   request: ArchiveByScopeRequest,
 ): Promise<ArchiveResult> {
-  return runWithGitCommandPriority("high", () => archiveByScopeWithPriority(dependencies, request));
+  const target = await resolveArchiveTarget(dependencies, request.scope);
+  return withWorkspaceLifecycleLock(target.workspaceIds, () =>
+    runWithGitCommandPriority("high", () => archiveByScopeWithPriority(dependencies, request)),
+  );
 }
 
 async function archiveByScopeWithPriority(
@@ -147,6 +153,24 @@ async function archiveByScopeWithPriority(
 ): Promise<ArchiveResult> {
   const target = await resolveArchiveTarget(dependencies, request.scope);
   const targetWorkspaceIds = target.workspaceIds;
+  if (request.onlyIfEmpty) {
+    if (targetWorkspaceIds.length === 0) {
+      return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
+    }
+    for (const workspaceId of targetWorkspaceIds) {
+      const records = await dependencies.agentStorage.listByWorkspace(workspaceId);
+      const archivedIds = new Set(
+        records.filter((record) => record.archivedAt).map((record) => record.id),
+      );
+      const hasChat =
+        records.some((record) => !record.archivedAt) ||
+        dependencies.agentManager
+          .listAgents({ includeInternal: true })
+          .some((agent) => agent.workspaceId === workspaceId && !archivedIds.has(agent.id));
+      if (hasChat)
+        return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
+    }
+  }
 
   await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
 
@@ -385,7 +409,7 @@ async function archiveTargetRecords(
 
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
-  request: Pick<ArchiveByScopeRequest, "requestId">,
+  request: Pick<ArchiveByScopeRequest, "requestId" | "onlyIfEmpty">,
   target: ArchiveTarget,
   archivedWorkspaceIds: string[],
 ): Promise<{
@@ -410,6 +434,30 @@ async function maybeRemoveDirectory(
       };
     }
     return { removedDirectory: false };
+  }
+
+  if (request.onlyIfEmpty) {
+    let reason: string | undefined;
+    try {
+      const snapshot = await dependencies.workspaceGitService.getSnapshot(backing.path, {
+        force: true,
+        reason: "archive-empty-workspace",
+      });
+      if (snapshot?.git.isDirty !== false)
+        reason = "uncommitted work or unknown working tree state";
+      else if (!snapshot.git.upstreamRef || snapshot.git.aheadOfOrigin === null)
+        reason = "no upstream or unknown publication state";
+      else if (snapshot.git.aheadOfOrigin > 0) reason = "unpushed commits";
+    } catch {
+      reason = "unable to verify working tree and publication state";
+    }
+    if (reason) {
+      dependencies.sessionLogger?.warn(
+        { targetPath: backing.path, reason, requestId: request.requestId },
+        "Worktree directory left in place during automatic workspace archive",
+      );
+      return { removedDirectory: false, directoryLeftBehind: { path: backing.path, reason } };
+    }
   }
 
   const archivedWorkspaceIdSet = new Set(archivedWorkspaceIds);

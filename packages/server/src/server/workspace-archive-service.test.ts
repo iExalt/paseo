@@ -1082,3 +1082,137 @@ describe("resolveWorkspaceIdAtPath", () => {
     expect(result).toBe("ws-nested");
   });
 });
+
+describe("last-agent workspace archive", () => {
+  test.each(["stored closed", "live", "internal"])(
+    "keeps a workspace with a remaining %s agent",
+    async (kind) => {
+      const { tempDir, repoDir } = createGitRepo();
+      const workspaceId = "ws-remaining";
+      const deps = createArchiveDeps({
+        paseoHome: tempDir,
+        activeWorkspaces: [{ workspaceId, cwd: repoDir, kind: "local_checkout" }],
+      });
+      if (kind === "stored closed")
+        deps.agentStorage.listByWorkspace = async () =>
+          [
+            { id: "remaining", workspaceId, archivedAt: null, lastStatus: "closed" },
+          ] as StoredAgentRecord[];
+      else
+        deps.agentManager.listAgents = () =>
+          [{ id: "remaining", workspaceId, internal: kind === "internal" }] as ManagedAgent[];
+      const result = await archiveByScope(deps, {
+        scope: { kind: "workspace", workspaceId },
+        requestId: "empty-check",
+        onlyIfEmpty: true,
+      });
+      expect(result.archivedWorkspaceIds).toEqual([]);
+      expect(deps.killTerminalsForWorkspace).not.toHaveBeenCalled();
+    },
+  );
+
+  test("archives the last chat's local workspace and keeps its checkout", async () => {
+    const { tempDir, repoDir } = createGitRepo();
+    const workspaceId = "ws-empty-local";
+    const deps = createArchiveDeps({
+      paseoHome: tempDir,
+      activeWorkspaces: [
+        { workspaceId, cwd: repoDir, kind: "local_checkout", isPaseoOwnedWorktree: false },
+      ],
+    });
+    deps.agentStorage.listByWorkspace = async () =>
+      [{ id: "archived", workspaceId, archivedAt: "2026-01-01" }] as StoredAgentRecord[];
+    // A loaded history pane is archived residency, not another active chat.
+    deps.agentManager.listAgents = () => [{ id: "archived", workspaceId }] as ManagedAgent[];
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId },
+      requestId: "empty-local",
+      onlyIfEmpty: true,
+    });
+    expect(result.archivedWorkspaceIds).toEqual([workspaceId]);
+    expect(result.removedDirectory).toBe(false);
+    expect(existsSync(repoDir)).toBe(true);
+  });
+
+  test.each([
+    { name: "dirty", git: { isDirty: true, upstreamRef: "origin/main", aheadOfOrigin: 0 } },
+    { name: "unpushed", git: { isDirty: false, upstreamRef: "origin/main", aheadOfOrigin: 1 } },
+    { name: "no-upstream", git: { isDirty: false, upstreamRef: null, aheadOfOrigin: null } },
+    { name: "unknown", git: { isDirty: null, upstreamRef: "origin/main", aheadOfOrigin: 0 } },
+    { name: "failed", git: null },
+  ])("leaves $name work in place without running teardown", async ({ name, git }) => {
+    const { tempDir, repoDir } = createGitRepo();
+    const marker = path.join(tempDir, "teardown-ran");
+    writeFileSync(
+      path.join(repoDir, "paseo.json"),
+      JSON.stringify({
+        scripts: { teardown: [`node -e "require('fs').writeFileSync('${marker}', 'ran')"`] },
+      }),
+    );
+    execFileSync("git", ["add", "paseo.json"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "teardown fixture"], {
+      cwd: repoDir,
+      stdio: "pipe",
+    });
+    const worktree = await createPaseoOwnedWorktree(repoDir, tempDir, `retained-${name}`);
+    const workspaceId = `ws-${name}`;
+    const deps = createArchiveDeps({
+      paseoHome: tempDir,
+      activeWorkspaces: [{ workspaceId, cwd: worktree.worktreePath, kind: "worktree" }],
+    });
+    deps.workspaceGitService.getSnapshot = vi.fn(async () => {
+      if (!git) throw new Error("git unavailable");
+      return { git } as Awaited<ReturnType<WorkspaceGitService["getSnapshot"]>>;
+    });
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId },
+      requestId: name,
+      onlyIfEmpty: true,
+    });
+    expect(result.archivedWorkspaceIds).toEqual([workspaceId]);
+    expect(result.directoryLeftBehind).toEqual({
+      path: worktree.worktreePath,
+      reason: expect.any(String),
+    });
+    expect(existsSync(worktree.worktreePath)).toBe(true);
+    expect(existsSync(marker)).toBe(false);
+  });
+
+  test.each([false, true])(
+    "removes clean published work only without a sibling reference (sibling=%s)",
+    async (sibling) => {
+      const { tempDir, repoDir } = createGitRepo();
+      const worktree = await createPaseoOwnedWorktree(repoDir, tempDir, "published-empty");
+      const workspaceId = "ws-published";
+      const deps = createArchiveDeps({
+        paseoHome: tempDir,
+        activeWorkspaces: [
+          { workspaceId, cwd: worktree.worktreePath, kind: "worktree" },
+          ...(sibling
+            ? [
+                {
+                  workspaceId: "sibling",
+                  cwd: worktree.worktreePath,
+                  kind: "local_checkout" as const,
+                },
+              ]
+            : []),
+        ],
+      });
+      deps.workspaceGitService.getSnapshot = vi.fn(
+        async () =>
+          ({ git: { isDirty: false, upstreamRef: "origin/main", aheadOfOrigin: 0 } }) as Awaited<
+            ReturnType<WorkspaceGitService["getSnapshot"]>
+          >,
+      );
+      const result = await archiveByScope(deps, {
+        scope: { kind: "workspace", workspaceId },
+        requestId: "published",
+        onlyIfEmpty: true,
+      });
+      expect(result.archivedWorkspaceIds).toEqual([workspaceId]);
+      expect(result.removedDirectory).toBe(!sibling);
+      expect(existsSync(worktree.worktreePath)).toBe(sibling);
+    },
+  );
+});

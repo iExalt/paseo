@@ -1,3 +1,5 @@
+import { archiveByScope, type ArchiveDependencies } from "../workspace-archive-service.js";
+import { withWorkspaceLifecycleLock } from "../workspace-lifecycle-lock.js";
 import { createIdleRuntimeCleanup } from "./idle-runtime-cleanup/index.js";
 import { resolvePaseoCliExecutablePath } from "../../terminal/paseo-cli-path.js";
 import {
@@ -13085,4 +13087,157 @@ test("skill refresh resumes an idle shared helper only after every writer closes
     await manager.closeAgent(second.id);
     rmSync(workdir, { recursive: true, force: true });
   }
+});
+
+describe("empty workspace cascade admission", () => {
+  async function fixture(client: TestAgentClient = new TestAgentClient()) {
+    const cwd = mkdtempSync(join(tmpdir(), "empty-workspace-cascade-"));
+    const storage = new AgentStorage(join(cwd, "agents"), logger);
+    const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+    onTestFinished(async () => {
+      await Promise.all(
+        manager.listAgents({ includeInternal: true }).map((agent) => manager.closeAgent(agent.id)),
+      );
+      await manager.flush();
+      rmSync(cwd, { recursive: true, force: true });
+    });
+    const workspaceId = "ws-cascade";
+    let active = true;
+    const checked = deferred<void>();
+    const deps: ArchiveDependencies = {
+      github: { invalidate: () => {} } as ArchiveDependencies["github"],
+      workspaceGitService: { getSnapshot: vi.fn(), invalidateWorktrees: () => {} },
+      agentManager: manager,
+      agentStorage: storage,
+      findWorkspaceIdForCwd: async () => workspaceId,
+      listActiveWorkspaces: async () =>
+        active ? [{ workspaceId, cwd, kind: "local_checkout", isPaseoOwnedWorktree: false }] : [],
+      archiveWorkspaceRecord: async () => {
+        active = false;
+      },
+      emitWorkspaceUpdatesForWorkspaceIds: async () => {},
+      markWorkspaceArchiving: () => {},
+      clearWorkspaceArchiving: () => {},
+      killTerminalsForWorkspace: async () => {},
+    };
+    manager.setWorkspaceLifecycle({
+      assertActive: async () => {
+        if (!active) throw new Error("Workspace is archived");
+      },
+      onAgentRemoved: async () => {
+        try {
+          await archiveByScope(deps, {
+            scope: { kind: "workspace", workspaceId },
+            requestId: "last-chat",
+            onlyIfEmpty: true,
+          });
+        } finally {
+          checked.resolve();
+        }
+      },
+    });
+    return {
+      manager,
+      storage,
+      workspaceId,
+      cwd,
+      deps,
+      checked,
+      isActive: () => active,
+      create: () => manager.createAgent({ provider: "codex", cwd }, undefined, { workspaceId }),
+    };
+  }
+
+  test.each(["live archive", "stored archive", "delete", "internal archive"])(
+    "%s archives its last workspace after the agent lifecycle settles",
+    async (operation) => {
+      const f = await fixture();
+      const agent =
+        operation === "internal archive"
+          ? await f.manager.createAgent(
+              { provider: "codex", cwd: f.cwd, internal: true },
+              undefined,
+              { workspaceId: f.workspaceId },
+            )
+          : await f.create();
+      if (operation === "stored archive") {
+        await f.manager.closeAgent(agent.id);
+        expect(f.isActive()).toBe(true);
+        await f.manager.archiveSnapshot(agent.id, new Date().toISOString());
+      } else if (operation === "delete") {
+        await f.manager.closeAgent(agent.id);
+        await f.manager.flush();
+        await f.storage.remove(agent.id);
+        await f.manager.deleteAgentState(agent.id);
+        f.manager.notifyAgentRemoved(agent);
+      } else await f.manager.archiveAgent(agent.id);
+      await f.checked.promise;
+      expect(f.manager.getAgent(agent.id)).toBeNull();
+      expect(f.isActive()).toBe(false);
+    },
+  );
+
+  test("never-used workspaces and closed chats stay active", async () => {
+    const f = await fixture();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(f.isActive()).toBe(true);
+    const first = await f.create();
+    const remaining = await f.create();
+    await f.manager.closeAgent(remaining.id);
+    await f.manager.archiveAgent(first.id);
+    await f.checked.promise;
+    expect(f.isActive()).toBe(true);
+    expect((await f.storage.get(remaining.id))?.archivedAt).toBeFalsy();
+  });
+
+  test("create holding admission wins over last-agent archive", async () => {
+    const f = await fixture();
+    const old = await f.create();
+    const entered = deferred<void>();
+    const release = deferred<void>();
+    const reservation = withWorkspaceLifecycleLock([f.workspaceId], async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+    const create = f.create();
+    await f.manager.archiveAgent(old.id);
+    release.resolve();
+    await reservation;
+    const next = await create;
+    await f.checked.promise;
+    expect(f.isActive()).toBe(true);
+    expect(f.manager.getAgent(next.id)).not.toBeNull();
+  });
+
+  test("archive winning admission rejects queued create and unarchive; history still opens", async () => {
+    const f = await fixture();
+    const old = await f.create();
+    await f.manager.archiveAgent(old.id);
+    await f.checked.promise;
+    await expect(f.create()).rejects.toThrow("Workspace is archived");
+    await expect(f.manager.unarchiveSnapshot(old.id)).rejects.toThrow("Workspace is archived");
+    const record = (await f.storage.get(old.id))!;
+    await f.manager.resumeAgentFromPersistence(
+      record.persistence!,
+      { provider: "codex", cwd: f.cwd },
+      old.id,
+      { workspaceId: f.workspaceId },
+      { purpose: "history" },
+    );
+    expect((await f.storage.get(old.id))?.archivedAt).toBeTruthy();
+    expect(f.isActive()).toBe(false);
+  });
+
+  test("explicit workspace archive does not deadlock its agent callbacks", async () => {
+    const f = await fixture();
+    await f.create();
+    const result = await archiveByScope(f.deps, {
+      scope: { kind: "workspace", workspaceId: f.workspaceId },
+      requestId: "explicit",
+    });
+    await f.checked.promise;
+    expect(result.archivedWorkspaceIds).toEqual([f.workspaceId]);
+    expect(f.isActive()).toBe(false);
+  });
 });
