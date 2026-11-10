@@ -8,6 +8,7 @@ import {
   mkdtemp,
   readFile,
   readlink,
+  realpath,
   readdir,
   symlink,
   writeFile,
@@ -776,7 +777,7 @@ test("Linux bootstrap command controller verifies running output and ownership b
 });
 
 test("packaged updater imports its shipped contracts and real CLI fails closed on untrusted Nix", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "paseo-packaged-helper-"));
+  const directory = await realpath(await mkdtemp(join(tmpdir(), "paseo-packaged-helper-")));
   try {
     const recipe = await readFile(new URL("../nix/desktop-package.nix", import.meta.url), "utf8");
     for (const [prefix, destination] of [
@@ -800,8 +801,13 @@ test("packaged updater imports its shipped contracts and real CLI fails closed o
     }
     await writeFile(join(directory, "package.json"), '{"type":"module"}');
     const cli = join(directory, "scripts", "paseo-nix-update.mjs");
+    const cliArgs = [
+      "--import",
+      new URL("./test-fixtures/update-platform.mjs", import.meta.url).pathname,
+      cli,
+    ];
     assert.match(
-      execFileSync(process.execPath, [cli, "--help"], { encoding: "utf8" }),
+      execFileSync(process.execPath, [...cliArgs, "--help"], { encoding: "utf8" }),
       /bootstrap/,
     );
     await mkdir(join(directory, "bin"));
@@ -810,7 +816,7 @@ test("packaged updater imports its shipped contracts and real CLI fails closed o
       `#!/bin/sh\ncase "$*" in\n *"store info"*) printf '{"trusted":false}' ;;\n *"config show"*) printf '{"trusted-public-keys":{"value":[]}}' ;;\n *) exit 99 ;;\nesac\n`,
       { mode: 0o755 },
     );
-    const result = spawnSync(process.execPath, [cli, "bootstrap", "--json"], {
+    const result = spawnSync(process.execPath, [...cliArgs, "bootstrap", "--json"], {
       encoding: "utf8",
       timeout: 10_000,
       env: {
