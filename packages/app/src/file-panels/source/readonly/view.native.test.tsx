@@ -24,7 +24,7 @@ vi.mock("react-native", () => ({
     return null;
   },
   Text: () => null,
-  View: () => null,
+  View: ({ children }: { children?: React.ReactNode }) => children,
 }));
 vi.mock("react-native-unistyles", () => ({ StyleSheet: { create: () => ({}) } }));
 vi.mock("../../loading", () => ({ FilePanelLoading: () => null }));
