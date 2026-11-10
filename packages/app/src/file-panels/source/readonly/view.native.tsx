@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FlatList, Text, View, type ListRenderItem } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import type { HighlightToken } from "@getpaseo/highlight";
@@ -6,6 +6,7 @@ import { syntaxTokenStyleFor } from "@/styles/syntax-token-styles";
 import type { WorkspaceFileLocation } from "@/workspace/file-open";
 import type { EditorVisualTheme } from "../editor/extensions.web";
 import { FilePanelLoading } from "../../loading";
+import { useReaderBottomInset } from "../../use-reader-bottom-inset";
 import type { SourcePresentation } from "./presentation";
 import { buildSourceLines } from "./source-lines";
 
@@ -33,6 +34,8 @@ export function FileSourceView({
   navigationRevision,
   presentation,
 }: FileSourceViewProps) {
+  const { ref, onLayout, bottomPadding } = useReaderBottomInset();
+  const contentStyle = useMemo(() => ({ paddingBottom: bottomPadding }), [bottomPadding]);
   const listRef = useRef<FlatList<HighlightToken[]>>(null);
   const [lines, setLines] = useState<HighlightToken[][] | null>(null);
   // Navigating within the file does not rebuild its lines; a new build starts at the latest line.
@@ -80,22 +83,26 @@ export function FileSourceView({
   }, [lineCount, location.lineStart, navigationRevision, revealPendingLine]);
   if (!lines) return <FilePanelLoading />;
   return (
-    <FlatList
-      ref={listRef}
-      data={lines}
-      keyExtractor={sourceLineKey}
-      initialNumToRender={24}
-      windowSize={9}
-      // Wrapped rows and font scaling need the list's measured heights.
-      onScrollToIndexFailed={handleUnmeasuredLine}
-      onContentSizeChange={revealPendingLine}
-      onViewableItemsChanged={handleViewableLines}
-      onScrollBeginDrag={cancelPendingLine}
-      bounces={false}
-      overScrollMode="never"
-      testID="file-source-scroll"
-      renderItem={renderSourceLine}
-    />
+    <View ref={ref} onLayout={onLayout} style={styles.container}>
+      <FlatList
+        ref={listRef}
+        style={styles.container}
+        contentContainerStyle={contentStyle}
+        data={lines}
+        keyExtractor={sourceLineKey}
+        initialNumToRender={24}
+        windowSize={9}
+        // Wrapped rows and font scaling need the list's measured heights.
+        onScrollToIndexFailed={handleUnmeasuredLine}
+        onContentSizeChange={revealPendingLine}
+        onViewableItemsChanged={handleViewableLines}
+        onScrollBeginDrag={cancelPendingLine}
+        bounces={false}
+        overScrollMode="never"
+        testID="file-source-scroll"
+        renderItem={renderSourceLine}
+      />
+    </View>
   );
 }
 
@@ -146,6 +153,7 @@ const renderSourceLine: ListRenderItem<HighlightToken[]> = ({ item, index }) => 
 );
 
 const styles = StyleSheet.create((theme) => ({
+  container: { flex: 1, minHeight: 0 },
   line: { flexDirection: "row", minHeight: theme.fontSize.code * 1.45 },
   gutter: {
     width: 56,
