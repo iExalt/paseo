@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.26.0](https://github.com/iExalt/paseo/compare/paseo-v0.25.1...paseo-v0.26.0) (2026-11-10)
+
+
+### Features
+
+* **server:** archive workspaces with their last agent ([#430](https://github.com/iExalt/paseo/issues/430)) ([54a8905](https://github.com/iExalt/paseo/commit/54a8905a129c5f53586368d96850516bb0dae060))
+
+
+### Bug Fixes
+
+* **android:** preserve root layout after rotation ([#429](https://github.com/iExalt/paseo/issues/429)) ([5311a29](https://github.com/iExalt/paseo/commit/5311a29f2715a08580734f1c94448f70f8ae0b71))
+* **app:** preserve workspace links during host discovery ([#422](https://github.com/iExalt/paseo/issues/422)) ([1c98d70](https://github.com/iExalt/paseo/commit/1c98d70f9043a200bb2484cc97e153dde577edfc))
+* expose readable diff and image descriptions ([#424](https://github.com/iExalt/paseo/issues/424)) ([2b6a506](https://github.com/iExalt/paseo/commit/2b6a506fc2ebb236429877b069a51a943e20d2d6))
+* **hooks:** check staged mjs files with format and lint ([#420](https://github.com/iExalt/paseo/issues/420)) ([9f55783](https://github.com/iExalt/paseo/commit/9f55783afcea83c3367f9dc2e4818ecf0d0b3ae8))
+* keep file readers above Android navigation ([#427](https://github.com/iExalt/paseo/issues/427)) ([6a3b166](https://github.com/iExalt/paseo/commit/6a3b166a0bb0cb1818dba8ce03411a2f67316c08))
+* keep image viewer open across layout changes ([#428](https://github.com/iExalt/paseo/issues/428)) ([68be6f0](https://github.com/iExalt/paseo/commit/68be6f081b41089d580a9a0786a32ef651d63ce3))
+* **server:** notify callers when detached CLI workers finish ([#431](https://github.com/iExalt/paseo/issues/431)) ([cffca66](https://github.com/iExalt/paseo/commit/cffca66ee1e450200d72229e305d707ecb76a875))
+* **updates:** add bounded release fallbacks on desktop platforms ([#417](https://github.com/iExalt/paseo/issues/417)) ([09f9bfa](https://github.com/iExalt/paseo/commit/09f9bfae1a3f6274bc5d10e99ad5fdcf00581b59))
+
 ## [0.25.1](https://github.com/iExalt/paseo/compare/paseo-v0.25.0...paseo-v0.25.1) (2026-11-10)
 
 
