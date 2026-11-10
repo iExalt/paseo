@@ -42,6 +42,36 @@ function setup(shade: PresentedNotification[]) {
 }
 
 describe("presented notification sync", () => {
+  it("recognizes tagged foreign rows and protects a same-time unobserved replacement", async () => {
+    const tag = (nonce: string) => `paseo-agent-v1:host:agent:permission:${nonce}`;
+    const foreign = (nonce: string) =>
+      `expo-notifications://foreign_notifications?tag=${encodeURIComponent(tag(nonce))}&id=0`;
+    const old = foreign("12345678-1234-4abc-8def-123456789abc");
+    const newer = foreign("22345678-1234-4abc-8def-123456789abc");
+    const { shade, sync, tracked, dismissed } = setup([
+      { identifier: old, deliveredAt: 100, data: {} },
+    ]);
+    await sync.sync();
+    expect(tracked).toEqual([{ reason: "permission", createdAt: 100 }]);
+    shade.push({ identifier: newer, deliveredAt: 100, data: {} });
+    await sync.sync();
+    await sync.dismiss([KEY]);
+    expect(dismissed).toEqual([old]);
+  });
+
+  it("keeps a conflicting identity ambiguous rather than tracking or dismissing it", async () => {
+    const tag = "paseo-agent-v1:other:agent:permission:12345678-1234-4abc-8def-123456789abc";
+    const row = {
+      identifier: `expo-notifications://foreign_notifications?tag=${encodeURIComponent(tag)}&id=0`,
+      deliveredAt: 100,
+      data: { serverId: "host", agentId: "agent", reason: "permission" },
+    };
+    const { sync, tracked, dismissed } = setup([row]);
+    await sync.sync();
+    await sync.dismiss([KEY]);
+    expect(tracked).toEqual([]);
+    expect(dismissed).toEqual([]);
+  });
   it("tracks each thread once, by its newest push, and skips test and foreign notifications", async () => {
     const { shade, sync, tracked } = setup([
       push("a", 100, "permission"),

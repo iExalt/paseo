@@ -1,3 +1,4 @@
+import { decodeExpoForeignAgentIdentifier } from "@getpaseo/protocol/android-notification-tag";
 import {
   agentNotificationKey,
   readAgentNotificationData,
@@ -27,6 +28,20 @@ export interface PresentedNotificationSync {
   dismiss(keys: string[]): Promise<void>;
 }
 
+function readPresentedAgent(notification: PresentedNotification) {
+  const data = readAgentNotificationData(notification.data);
+  const tagged = decodeExpoForeignAgentIdentifier(notification.identifier);
+  if (
+    data &&
+    tagged &&
+    (data.serverId !== tagged.serverId ||
+      data.agentId !== tagged.agentId ||
+      data.reason !== tagged.reason)
+  )
+    return null;
+  return data ?? tagged;
+}
+
 /**
  * Mirrors the OS notification shade into the tracker. Pushes arrive while the app is not
  * running, so the shade, not the send path, is the list of notifications to track. Android
@@ -41,6 +56,7 @@ export function createPresentedNotificationSync(input: {
 }): PresentedNotificationSync {
   /** Newest delivery tracked per thread; a dismissal covers nothing delivered after it. */
   const trackedAt = new Map<string, number>();
+  const trackedIdentifiers = new Map<string, Set<string>>();
 
   async function readThreads() {
     const threads = new Map<
@@ -49,12 +65,13 @@ export function createPresentedNotificationSync(input: {
         identity: { serverId: string; agentId: string };
         reason: TrackedNotificationReason;
         deliveredAt: number;
+        identifiers: Set<string>;
       }
     >();
     const untracked: UntrackedPush[] = [];
     for (const notification of await input.api.list()) {
       if (input.isTrackable && !input.isTrackable(notification.data)) continue;
-      const agent = readAgentNotificationData(notification.data);
+      const agent = readPresentedAgent(notification);
       if (!agent) {
         untracked.push({
           identifier: notification.identifier,
@@ -71,9 +88,11 @@ export function createPresentedNotificationSync(input: {
           identity: { serverId: agent.serverId, agentId: agent.agentId },
           reason: agent.reason,
           deliveredAt: notification.deliveredAt,
+          identifiers: new Set([notification.identifier]),
         });
         continue;
       }
+      thread.identifiers.add(notification.identifier);
       // The newest notification decides what the thread is waiting on. A tie can't tell a
       // question from a turn end, so it waits for both to clear.
       if (notification.deliveredAt > thread.deliveredAt) {
@@ -95,6 +114,7 @@ export function createPresentedNotificationSync(input: {
     const tracker = input.tracker();
     for (const [key, thread] of threads) {
       if ((trackedAt.get(key) ?? -1) >= thread.deliveredAt) continue;
+      trackedIdentifiers.set(key, thread.identifiers);
       tracker.track(thread.identity, thread.reason, { createdAt: thread.deliveredAt });
       trackedAt.set(key, thread.deliveredAt);
     }
@@ -102,6 +122,7 @@ export function createPresentedNotificationSync(input: {
     for (const key of trackedAt.keys()) {
       if (threads.has(key)) continue;
       trackedAt.delete(key);
+      trackedIdentifiers.delete(key);
       tracker.forget(key);
     }
   }
@@ -131,13 +152,24 @@ export function createPresentedNotificationSync(input: {
     sync,
     async dismiss(keys) {
       const cutoffs = new Map(keys.map((key) => [key, trackedAt.get(key) ?? -1]));
-      for (const key of keys) trackedAt.delete(key);
+      const observed = new Map(
+        keys.map((key) => [key, trackedIdentifiers.get(key) ?? new Set<string>()]),
+      );
+      for (const key of keys) {
+        trackedAt.delete(key);
+        trackedIdentifiers.delete(key);
+      }
       const dismissals: Promise<void>[] = [];
       for (const notification of await input.api.list()) {
-        const agent = readAgentNotificationData(notification.data);
+        const agent = readPresentedAgent(notification);
         const cutoff = agent ? cutoffs.get(agentNotificationKey(agent)) : undefined;
         // A push that arrived after the tracked one waits for the next sync.
-        if (cutoff === undefined || notification.deliveredAt > cutoff) continue;
+        if (
+          cutoff === undefined ||
+          notification.deliveredAt > cutoff ||
+          !observed.get(agentNotificationKey(agent!))?.has(notification.identifier)
+        )
+          continue;
         dismissals.push(input.api.dismiss(notification.identifier).catch(() => undefined));
       }
       await Promise.all(dismissals);
