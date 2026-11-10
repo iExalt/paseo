@@ -1,6 +1,9 @@
 import { expect } from "@playwright/test";
 import { test } from "../support/fixtures";
 import { gotoWorkspace } from "../support/helpers/launcher";
+import { getE2EDaemonPort } from "../support/helpers/daemon-port";
+import { getServerId } from "../support/helpers/server-id";
+import { buildHostWorkspaceRoute } from "../../src/utils/host-routes";
 import { seedWorkspace } from "../support/helpers/seed-client";
 
 test("a workspace with an existing agent never presents New during startup", async ({ page }) => {
@@ -44,6 +47,41 @@ test("a workspace with an existing agent never presents New during startup", asy
       false,
     );
   } finally {
+    await workspace.cleanup();
+  }
+});
+
+test("a fresh browser preserves a workspace URL while its first host registers", async ({
+  browser,
+  baseURL,
+}) => {
+  const workspace = await seedWorkspace({ repoPrefix: "first-host-startup-" });
+  const context = await browser.newContext();
+  try {
+    await context.route(/:(6767)\b/, (route) => route.abort());
+    await context.routeWebSocket(/:(6767)\b/, async (ws) => {
+      await ws.close({ code: 1008, reason: "Blocked connection to localhost:6767 during e2e." });
+    });
+    await context.addInitScript((listen) => {
+      Reflect.set(globalThis, "__PASEO_INITIAL_DAEMON_CONNECTION__", { listen });
+    }, `127.0.0.1:${getE2EDaemonPort()}`);
+    const page = await context.newPage();
+    const destination = new URL(
+      buildHostWorkspaceRoute(getServerId(), workspace.workspaceId),
+      baseURL,
+    ).href;
+    await page.goto(destination);
+    await expect(
+      page.getByTestId("workspace-tabs-row").filter({ visible: true }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(destination);
+    await page.reload();
+    await expect(
+      page.getByTestId("workspace-tabs-row").filter({ visible: true }).first(),
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(page).toHaveURL(destination);
+  } finally {
+    await context.close();
     await workspace.cleanup();
   }
 });
