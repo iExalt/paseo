@@ -136,7 +136,7 @@ async function createAgentInBranchOffWorktree(options?: {
   return { repoDir, agentId: created.id, worktreePath: created.cwd };
 }
 
-test("create_agent_request auto-archives its workspace and retains an unpublished worktree after the first turn", async () => {
+test("create_agent_request creates a worktree and auto-archives both after the first turn while retaining unpublished work", async () => {
   const repoDir = createGitRepo();
   const worktree: CreateAgentWorktreeTarget = {
     mode: "branch-off",
