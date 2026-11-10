@@ -4855,6 +4855,54 @@ describe("HostRuntimeStore initial connection hint bootstrap", () => {
     store.syncHosts([]);
   });
 
+  it("settles initial discovery after the hint registers its host", async () => {
+    const probeStarted = createDeferred<void>();
+    const releaseProbe = createDeferred<void>();
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async () => {
+          probeStarted.resolve();
+          await releaseProbe.promise;
+          return {
+            client: makeConnectedProbeClient(5) as unknown as DaemonClient,
+            serverId: "srv_hint",
+            hostname: "hint host",
+          };
+        },
+        getClientId: async () => "cid_test_runtime",
+        readInitialConnectionHint: () => ({ listen: "daemon-origin:6767" }),
+      },
+      storage: createMemoryHostRuntimeStorage(),
+    });
+    const boot = store.boot();
+    await probeStarted.promise;
+    expect(store.getHostRegistryStatus()).toBe("ready");
+    expect(store.isInitialDiscoverySettled()).toBe(false);
+    releaseProbe.resolve();
+    await boot;
+    expect(store.getHosts().map((host) => host.serverId)).toContain("srv_hint");
+    expect(store.isInitialDiscoverySettled()).toBe(true);
+    store.syncHosts([]);
+  });
+
+  it("settles initial discovery when the hinted and default probes fail", async () => {
+    const store = new HostRuntimeStore({
+      deps: {
+        createClient: () => new FakeDaemonClient() as unknown as DaemonClient,
+        connectToDaemon: async () => {
+          throw new Error("unavailable");
+        },
+        getClientId: async () => "cid_test_runtime",
+        readInitialConnectionHint: () => ({ listen: "daemon-origin:6767" }),
+      },
+      storage: createMemoryHostRuntimeStorage(),
+    });
+    await store.boot();
+    expect(store.getHosts()).toHaveLength(0);
+    expect(store.isInitialDiscoverySettled()).toBe(true);
+  });
+
   it("attempts the explicit initial connection hint before default localhost bootstrap", async () => {
     const seenProbes: { endpoint: string; useTls?: boolean }[] = [];
     const store = new HostRuntimeStore({

@@ -2,8 +2,13 @@ import { Redirect, Stack, useLocalSearchParams } from "expo-router";
 import { useHostRuntimeBootstrapState } from "@/app/_layout";
 import { HostRouteProvider } from "@/navigation/host-route-context";
 import { resolveStartupRoute } from "@/navigation/host-runtime-bootstrap";
+import { StartupSplashScreen } from "@/screens/startup-splash-screen";
 import { ThemedStack } from "@/navigation/themed-stack";
-import { useHostRegistryStatus, useHosts } from "@/runtime/host-runtime";
+import {
+  useHostRegistryStatus,
+  useHosts,
+  useInitialHostDiscoverySettled,
+} from "@/runtime/host-runtime";
 
 const HOST_STACK_SCREEN_OPTIONS = {
   headerShown: false,
@@ -28,8 +33,13 @@ function KnownHostRoute() {
     route: { kind: "host", serverId: routeServerId },
     startupBlocker: bootstrapState.startupBlocker,
     hostRegistryStatus,
+    initialDiscoverySettled: useInitialHostDiscoverySettled(),
     hosts,
   });
+
+  if (startupRoute.kind === "splash") {
+    return <StartupSplashScreen bootstrapState={bootstrapState} />;
+  }
 
   if (startupRoute.kind === "redirect") {
     return <Redirect href={startupRoute.href} />;
