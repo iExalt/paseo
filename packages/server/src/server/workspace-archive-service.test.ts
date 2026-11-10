@@ -1,3 +1,9 @@
+import { withWorkspaceLifecycleLock } from "./workspace-lifecycle-lock.js";
+import { createWorkspaceRecoveryService } from "./session/workspace-recovery/workspace-recovery-service.js";
+import {
+  createPersistedWorkspaceRecord,
+  createPersistedProjectRecord,
+} from "./workspace-registry.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1215,4 +1221,148 @@ describe("last-agent workspace archive", () => {
       expect(existsSync(worktree.worktreePath)).toBe(sibling);
     },
   );
+});
+
+function deferredSignal() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
+test("workspace recovery waits for archival and recreates the removed directory before unarchive", async () => {
+  const { tempDir, repoDir } = createGitRepo();
+  const worktree = await createPaseoOwnedWorktree(repoDir, tempDir, "recovery-race");
+  const workspaceId = "ws-recovery-race";
+  const now = new Date().toISOString();
+  let record = createPersistedWorkspaceRecord({
+    workspaceId,
+    projectId: "project",
+    displayName: "recovery-race",
+    cwd: worktree.worktreePath,
+    kind: "worktree",
+    worktreeRoot: worktree.worktreePath,
+    mainRepoRoot: repoDir,
+    isPaseoOwnedWorktree: true,
+    branch: "recovery-race",
+    baseBranch: "main",
+    createdAt: now,
+    updatedAt: now,
+  });
+  const deps = createArchiveDeps({ paseoHome: tempDir, activeWorkspaces: [record] });
+  deps.getWorkspace = async () => record;
+  deps.workspaceGitService.getSnapshot = vi.fn(
+    async () =>
+      ({ git: { isDirty: false, upstreamRef: "origin/main", aheadOfOrigin: 0 } }) as Awaited<
+        ReturnType<WorkspaceGitService["getSnapshot"]>
+      >,
+  );
+  const archived = deferredSignal();
+  const finishArchive = deferredSignal();
+  const archiveRecord = deps.archiveWorkspaceRecord;
+  deps.archiveWorkspaceRecord = async (id) => {
+    await archiveRecord(id);
+    record = { ...record, archivedAt: now };
+    archived.resolve();
+    await finishArchive.promise;
+  };
+  let recoveryRead = false;
+  const recovery = createWorkspaceRecoveryService({
+    paseoHome: tempDir,
+    getWorkspace: async () => {
+      recoveryRead = true;
+      return record;
+    },
+    getProject: async () =>
+      createPersistedProjectRecord({
+        projectId: "project",
+        rootPath: repoDir,
+        displayName: "repo",
+        kind: "git",
+        createdAt: now,
+        updatedAt: now,
+      }),
+    isDirectory: async (cwd) => existsSync(cwd),
+    unarchiveWorkspace: async () => {
+      expect(existsSync(record.cwd)).toBe(true);
+      record = { ...record, archivedAt: null };
+    },
+  });
+  const archive = archiveByScope(deps, {
+    scope: { kind: "workspace", workspaceId },
+    requestId: "archive-recovery-race",
+    onlyIfEmpty: true,
+  });
+  await archived.promise;
+  const restore = recovery.restore(workspaceId);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(recoveryRead).toBe(false);
+  finishArchive.resolve();
+  expect((await archive).removedDirectory).toBe(true);
+  expect(await restore).toEqual({ workspaceId, action: "restore" });
+  expect(record.archivedAt).toBeNull();
+  expect(existsSync(worktree.worktreePath)).toBe(true);
+});
+
+test("worktree archive retries its lock set when another workspace appears", async () => {
+  const { tempDir, repoDir } = createGitRepo();
+  const deps = createArchiveDeps({
+    paseoHome: tempDir,
+    activeWorkspaces: [{ workspaceId: "first", cwd: repoDir, kind: "local_checkout" }],
+  });
+  const read = deps.listActiveWorkspaces;
+  const discovered = deferredSignal();
+  let calls = 0;
+  deps.listActiveWorkspaces = async () => {
+    if (++calls === 2) {
+      deps.activeWorkspaces.push({ workspaceId: "fresh", cwd: repoDir, kind: "local_checkout" });
+      discovered.resolve();
+    }
+    return read();
+  };
+  const releaseFresh = deferredSignal();
+  const freshLocked = deferredSignal();
+  const reservation = withWorkspaceLifecycleLock(["fresh"], async () => {
+    freshLocked.resolve();
+    await releaseFresh.promise;
+  });
+  await freshLocked.promise;
+  const archive = archiveByScope(deps, {
+    scope: { kind: "worktree", targetPath: repoDir },
+    requestId: "fresh-workspace-lock",
+  });
+  await discovered.promise;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(deps.killTerminalsForWorkspace).not.toHaveBeenCalled();
+  releaseFresh.resolve();
+  await reservation;
+  expect((await archive).archivedWorkspaceIds.sort()).toEqual(["first", "fresh"]);
+});
+
+test("a retained provider runtime prevents implicit worktree teardown even after a sibling archive", async () => {
+  const { tempDir, repoDir } = createGitRepo();
+  const worktree = await createPaseoOwnedWorktree(repoDir, tempDir, "failed-runtime");
+  const workspaceId = "ws-failed-runtime";
+  const deps = createArchiveDeps({
+    paseoHome: tempDir,
+    activeWorkspaces: [{ workspaceId, cwd: worktree.worktreePath, kind: "worktree" }],
+  });
+  deps.agentStorage.listByWorkspace = async () =>
+    [{ id: "failed", workspaceId, archivedAt: "2026-01-01" }] as StoredAgentRecord[];
+  deps.agentManager.listAgents = () => [{ id: "failed", workspaceId }] as ManagedAgent[];
+  deps.agentManager.getAgent = () => ({ id: "failed", workspaceId }) as ManagedAgent;
+  deps.agentManager.archiveAgent = async () => {
+    throw new Error("writer remains live");
+  };
+  const result = await archiveByScope(deps, {
+    scope: { kind: "workspace", workspaceId },
+    requestId: "failed-runtime",
+    onlyIfEmpty: true,
+  });
+  expect(result.directoryLeftBehind).toEqual({
+    path: worktree.worktreePath,
+    reason: "agent runtime failed to close",
+  });
+  expect(existsSync(worktree.worktreePath)).toBe(true);
 });

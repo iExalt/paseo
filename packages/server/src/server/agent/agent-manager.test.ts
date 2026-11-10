@@ -13213,10 +13213,22 @@ describe("empty workspace cascade admission", () => {
   test("archive winning admission rejects queued create and unarchive; history still opens", async () => {
     const f = await fixture();
     const old = await f.create();
+    const archiveEntered = deferred<void>();
+    const archiveAllowed = deferred<void>();
+    const archiveRecord = f.deps.archiveWorkspaceRecord;
+    f.deps.archiveWorkspaceRecord = async (id) => {
+      await archiveRecord(id);
+      archiveEntered.resolve();
+      await archiveAllowed.promise;
+    };
     await f.manager.archiveAgent(old.id);
-    await f.checked.promise;
-    await expect(f.create()).rejects.toThrow("Workspace is archived");
-    await expect(f.manager.unarchiveSnapshot(old.id)).rejects.toThrow("Workspace is archived");
+    await archiveEntered.promise;
+    const createRejected = expect(f.create()).rejects.toThrow("Workspace is archived");
+    const restoreRejected = expect(f.manager.unarchiveSnapshot(old.id)).rejects.toThrow(
+      "Workspace is archived",
+    );
+    archiveAllowed.resolve();
+    await Promise.all([createRejected, restoreRejected, f.checked.promise]);
     const record = (await f.storage.get(old.id))!;
     await f.manager.resumeAgentFromPersistence(
       record.persistence!,
@@ -13240,4 +13252,46 @@ describe("empty workspace cascade admission", () => {
     expect(result.archivedWorkspaceIds).toEqual([f.workspaceId]);
     expect(f.isActive()).toBe(false);
   });
+});
+
+test("failed provider close never schedules empty-workspace cleanup", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "failed-close-cascade-"));
+  const storage = new AgentStorage(join(cwd, "agents"), logger);
+  let failClose = true;
+  class Client extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      return new (class extends TestAgentSession {
+        override async close(): Promise<void> {
+          if (failClose) throw new Error("provider writer still live");
+        }
+      })(config);
+    }
+  }
+  const manager = new AgentManager({ clients: { codex: new Client() }, registry: storage, logger });
+  const checked = deferred<void>();
+  let checks = 0;
+  manager.setWorkspaceLifecycle({
+    assertActive: async () => {},
+    onAgentRemoved: async () => {
+      checks++;
+      checked.resolve();
+    },
+  });
+  onTestFinished(async () => {
+    failClose = false;
+    await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+    await manager.flush();
+    rmSync(cwd, { recursive: true, force: true });
+  });
+  const agent = await manager.createAgent({ provider: "codex", cwd }, undefined, {
+    workspaceId: "failed-close-workspace",
+  });
+  await expect(manager.archiveAgent(agent.id)).rejects.toThrow("provider writer still live");
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  expect(checks).toBe(0);
+  expect(manager.getAgent(agent.id)).not.toBeNull();
+  failClose = false;
+  await manager.archiveAgent(agent.id);
+  await checked.promise;
+  expect(checks).toBe(1);
 });

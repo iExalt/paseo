@@ -141,17 +141,29 @@ export async function archiveByScope(
   dependencies: ArchiveDependencies,
   request: ArchiveByScopeRequest,
 ): Promise<ArchiveResult> {
-  const target = await resolveArchiveTarget(dependencies, request.scope);
-  return withWorkspaceLifecycleLock(target.workspaceIds, () =>
-    runWithGitCommandPriority("high", () => archiveByScopeWithPriority(dependencies, request)),
-  );
+  let target = await resolveArchiveTarget(dependencies, request.scope);
+  for (;;) {
+    const workspaceIds =
+      request.scope.kind === "workspace" ? [request.scope.workspaceId] : target.workspaceIds;
+    let result: ArchiveResult | undefined;
+    await withWorkspaceLifecycleLock(workspaceIds, async () => {
+      target = await resolveArchiveTarget(dependencies, request.scope);
+      // A worktree-scope request can discover another workspace while queued.
+      // Acquire the complete sorted set before touching any of their agents.
+      if (target.workspaceIds.some((id) => !workspaceIds.includes(id))) return;
+      result = await runWithGitCommandPriority("high", () =>
+        archiveByScopeWithPriority(dependencies, request, target),
+      );
+    });
+    if (result) return result;
+  }
 }
 
 async function archiveByScopeWithPriority(
   dependencies: ArchiveDependencies,
   request: ArchiveByScopeRequest,
+  target: ArchiveTarget,
 ): Promise<ArchiveResult> {
-  const target = await resolveArchiveTarget(dependencies, request.scope);
   const targetWorkspaceIds = target.workspaceIds;
   if (request.onlyIfEmpty) {
     if (targetWorkspaceIds.length === 0) {
@@ -407,6 +419,25 @@ async function archiveTargetRecords(
   return { archivedAgents, archivedWorkspaceIds };
 }
 
+async function unpublishedWorkReason(
+  dependencies: ArchiveDependencies,
+  worktreePath: string,
+): Promise<string | undefined> {
+  try {
+    const snapshot = await dependencies.workspaceGitService.getSnapshot(worktreePath, {
+      force: true,
+      reason: "archive-empty-workspace",
+    });
+    if (snapshot?.git.isDirty !== false) return "uncommitted work or unknown working tree state";
+    if (!snapshot.git.upstreamRef || snapshot.git.aheadOfOrigin === null)
+      return "no upstream or unknown publication state";
+    if (snapshot.git.aheadOfOrigin > 0) return "unpushed commits";
+  } catch {
+    return "unable to verify working tree and publication state";
+  }
+  return undefined;
+}
+
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
   request: Pick<ArchiveByScopeRequest, "requestId" | "onlyIfEmpty">,
@@ -438,18 +469,15 @@ async function maybeRemoveDirectory(
 
   if (request.onlyIfEmpty) {
     let reason: string | undefined;
-    try {
-      const snapshot = await dependencies.workspaceGitService.getSnapshot(backing.path, {
-        force: true,
-        reason: "archive-empty-workspace",
-      });
-      if (snapshot?.git.isDirty !== false)
-        reason = "uncommitted work or unknown working tree state";
-      else if (!snapshot.git.upstreamRef || snapshot.git.aheadOfOrigin === null)
-        reason = "no upstream or unknown publication state";
-      else if (snapshot.git.aheadOfOrigin > 0) reason = "unpushed commits";
-    } catch {
-      reason = "unable to verify working tree and publication state";
+    if (
+      dependencies.agentManager
+        .listAgents({ includeInternal: true })
+        .some((agent) => target.workspaceIds.includes(agent.workspaceId ?? ""))
+    ) {
+      reason = "agent runtime failed to close";
+    }
+    if (!reason) {
+      reason = await unpublishedWorkReason(dependencies, backing.path);
     }
     if (reason) {
       dependencies.sessionLogger?.warn(
@@ -461,6 +489,7 @@ async function maybeRemoveDirectory(
   }
 
   const archivedWorkspaceIdSet = new Set(archivedWorkspaceIds);
+
   const teardownTargets = target.teardownTargets.filter(
     (teardownTarget) =>
       teardownTarget.workspaceId === null || archivedWorkspaceIdSet.has(teardownTarget.workspaceId),

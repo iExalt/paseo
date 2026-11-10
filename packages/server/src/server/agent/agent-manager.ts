@@ -842,6 +842,16 @@ export class AgentManager {
     });
   }
 
+  private async assertWorkspaceResumeAllowed(
+    record: StoredAgentRecord | null,
+    options: { workspaceId?: string } | undefined,
+    purpose: string,
+  ): Promise<void> {
+    const workspaceId = options?.workspaceId ?? record?.workspaceId;
+    if (purpose !== "history" && workspaceId)
+      await this.workspaceLifecycle?.assertActive(workspaceId);
+  }
+
   private async withWorkspaceAdmission<T>(
     workspaceId: string | undefined,
     work: () => Promise<T>,
@@ -1628,10 +1638,7 @@ export class AgentManager {
       ? { purpose: record.archivedAt ? ("history" as const) : ("interactive" as const) }
       : resumeOptions;
     const purpose = currentResumeOptions?.purpose ?? "interactive";
-    const admissionWorkspaceId = options?.workspaceId ?? record?.workspaceId;
-    if (purpose !== "history" && admissionWorkspaceId) {
-      await this.workspaceLifecycle?.assertActive(admissionWorkspaceId);
-    }
+    await this.assertWorkspaceResumeAllowed(record, options, purpose);
 
     const { workspaceId = null, labels = {} } = options ?? {};
     const { title = mergedConfig.title ?? null, labels: recordLabels = labels } = record ?? {};
@@ -2181,6 +2188,7 @@ export class AgentManager {
     this.discardRetainedAgentState(agentId);
 
     await this.cascadeArchiveChildren(stored);
+    this.deferEmptyWorkspaceCheck(stored);
 
     return { archivedAt };
   }
@@ -2280,8 +2288,6 @@ export class AgentManager {
   }
 
   private async fireAgentArchived(agentId: string): Promise<void> {
-    const record = await this.registry?.get(agentId);
-    if (record) this.deferEmptyWorkspaceCheck(record);
     const callback = this.onAgentArchived;
     if (!callback) {
       return;
@@ -2638,6 +2644,7 @@ export class AgentManager {
 
     await this.fireAgentArchived(agentId);
     await this.cascadeArchiveChildren(record);
+    this.deferEmptyWorkspaceCheck(record);
 
     return nextRecord;
   }
