@@ -4,7 +4,7 @@ import { registerHooks, createRequire, syncBuiltinESMExports } from "node:module
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as nixRuntime from "./linux-update-nix.mjs";
-import "./update-platform.mjs";
+await import("./update-platform.mjs");
 const directory = process.env.PASEO_UPDATE_FIXTURE;
 assert.ok(directory);
 const mac = new URL("../paseo-nix-update-macos.mjs", import.meta.url).href;
