@@ -27,7 +27,7 @@ import { parseNarinfo, prepareIndexedCache } from "../../scripts/paseo-nix-updat
 import { assertFreeSpace, downloadAsset } from "../../scripts/paseo-nix-update-legacy.mjs";
 import {
   extractNixCacheTar,
-  latestVerifiedRelease,
+  verifiedReleaseForTag,
   localCacheCopyArgs,
   localCacheCopySignaturesArgs,
   macArtifact,
@@ -141,7 +141,7 @@ async function seedPreviousRelease(scratch, version) {
     version,
   );
   assert.ok(previous, "There is no earlier stable release");
-  const { manifest } = await latestVerifiedRelease({ resolveTag: async () => previous.tag });
+  const { manifest } = await verifiedReleaseForTag(previous.tag);
   const artifact = macArtifact(manifest);
   const file = join(scratch, artifact.name);
   await downloadAsset(

@@ -264,7 +264,8 @@ buildNpmPackage {
         scripts/desktop-release.mjs "$updater_root/scripts/"
       cp packages/protocol/src/release-manifest.ts packages/protocol/src/release-manifest-v2.ts \
         packages/protocol/src/fork-version.ts packages/protocol/src/desktop-release-manifest.ts \
-        packages/protocol/src/desktop-release-verifier.ts "$updater_root/packages/protocol/src/"
+        packages/protocol/src/desktop-release-verifier.ts packages/protocol/src/fork-release-discovery.ts \
+        "$updater_root/packages/protocol/src/"
       printf '%s\n' '{ "type": "module" }' > "$updater_root/package.json"
       # zstd applies the update deltas (scripts/paseo-nix-update-delta.mjs). Node's
       # zlib zstd takes a dictionary only as an in-memory buffer, and the base is a 0.5 GB NAR.

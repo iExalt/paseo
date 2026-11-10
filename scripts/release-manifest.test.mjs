@@ -68,7 +68,11 @@ test("release notes are the changelog section of the released version", () => {
 
 // A separately signed inventory must not change bytes consumed by strict schema-3 clients.
 import { desktopManifestBytes } from "../.github/scripts/release-manifest.mjs";
-import { verifyDesktopReleaseBytes, latestVerifiedDesktopRelease } from "./desktop-release.mjs";
+import {
+  verifyDesktopReleaseBytes,
+  latestVerifiedDesktopRelease,
+  verifiedDesktopReleaseForTag,
+} from "./desktop-release.mjs";
 import { createHash, sign } from "node:crypto";
 const digest = (algorithm, bytes, encoding = "hex") =>
   createHash(algorithm).update(bytes).digest(encoding);
@@ -122,6 +126,37 @@ test("signed desktop discovery binds both inventories and preserves old readers"
     },
   });
   assert.equal(discovered.manifest.artifacts.length, 3);
+  const fetchFallbackBytes = async (url) => {
+    if (url.startsWith("https://api.github.com/"))
+      return Buffer.from(
+        JSON.stringify([
+          { tag_name: "paseo-v9.9.9", draft: false, prerelease: false },
+          { tag_name: "paseo-v0.2.0", draft: false, prerelease: false },
+        ]),
+      );
+    return files.get(url.split("/").at(-1));
+  };
+  const fallback = await latestVerifiedDesktopRelease({
+    resolveTag: async () => "paseo-v9.9.9",
+    fetchBytes: fetchFallbackBytes,
+    publicKey: pin,
+  });
+  assert.equal(fallback.tag, "paseo-v0.2.0");
+  assert.deepEqual(fallback.manifest, discovered.manifest);
+  await assert.rejects(
+    verifiedDesktopReleaseForTag("paseo-v9.9.9", {
+      fetchBytes: async (url) => {
+        assert.ok(
+          !url.startsWith("https://api.github.com/"),
+          "explicit tag lookup must never list fallbacks",
+        );
+        return files.get(url.split("/").at(-1));
+      },
+      publicKey: pin,
+    }),
+    /names another release/,
+  );
+
   assert.equal(
     verifyReleaseManifestBytes(files.get(names.manifest), files.get(names.signature), pin).artifacts
       .length,
