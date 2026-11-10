@@ -1,4 +1,9 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import { parseAgentMessages } from "../agent/agent-messages/envelope.js";
+import { getFullAccessConfig } from "../daemon-e2e/agent-configs.js";
 import type { z } from "zod";
 import { BUILTIN_PROVIDER_IDS } from "@getpaseo/protocol/provider-manifest";
 import { WebSocket } from "ws";
@@ -628,3 +633,122 @@ test("Hub-shaped keyed agent worktree creation uses workspace setup and preserve
     await rm(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 }, 60000);
+
+async function mintLocalWorkspace(client: DaemonClient, cwd: string): Promise<string> {
+  const result = await client.createWorkspace({ source: { kind: "directory", path: cwd } });
+  if (!result.workspace) throw new Error(result.error ?? "Failed to create workspace");
+  return result.workspace.id;
+}
+
+test.each(["COMPLETE_HANDOFF", "BLOCKED_APPROVAL_HANDOFF"])(
+  "detached CLI run wakes an idle caller with its terminal %s",
+  async (handoff) => {
+    const release = Promise.withResolvers<void>();
+    const received: Array<{ at: string; prompt: string }> = [];
+    const daemon = await createCreationDaemon({
+      agentClients: createTestAgentClients({
+        beforeTurnComplete: (prompt) =>
+          String(prompt).includes("HOLD_CHILD") ? release.promise : Promise.resolve(),
+        onStartTurn: (prompt) => {
+          if (String(prompt).includes('kind="agent-notification"')) {
+            received.push({ at: new Date().toISOString(), prompt: String(prompt) });
+          }
+        },
+      }),
+    });
+    const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    try {
+      await client.connect();
+      await client.fetchAgents({ subscribe: {} });
+      const parentWorkspace = await mintLocalWorkspace(client, daemon.staticDir);
+      const workerWorkspace = await mintLocalWorkspace(client, daemon.staticDir);
+      const parent = await client.createAgent({
+        ...getFullAccessConfig("codex"),
+        cwd: daemon.staticDir,
+        workspaceId: parentWorkspace,
+        title: "Idle CLI caller",
+      });
+      await client.sendMessage(parent.id, "respond with exactly: WAITING_PARENT");
+      expect((await client.waitForFinish(parent.id, 5000)).lastMessage).toBe("WAITING_PARENT");
+      const registeredAfter = new Date().toISOString();
+      const { stdout } = await promisify(execFile)(
+        process.execPath,
+        [
+          "--conditions=source",
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
+          "--host",
+          `127.0.0.1:${daemon.port}`,
+          "run",
+          "--provider",
+          "codex",
+          "--mode",
+          "full-access",
+          "--workspace",
+          workerWorkspace,
+          "--relationship",
+          "detached",
+          "--notify-on-finish",
+          "--no-wait",
+          "--json",
+          `HOLD_CHILD\nrespond with exactly: ${handoff}`,
+        ],
+        {
+          env: {
+            ...process.env,
+            PASEO_HOME: daemon.paseoHome,
+            PASEO_AGENT_ID: parent.id,
+            PASEO_AGENT_CWD: daemon.staticDir,
+          },
+          timeout: 20000,
+        },
+      );
+      const workerId = JSON.parse(stdout).agentId as string;
+      expect(workerId).toBeTruthy();
+      const worker = (await client.fetchAgent(workerId))!.agent;
+      expect(worker.workspaceId).toBe(workerWorkspace);
+      expect(worker.labels[PARENT_AGENT_ID_LABEL]).toBeUndefined();
+      const registrations = JSON.parse(
+        await readFile(join(daemon.paseoHome, "finish-subscriptions.json"), "utf8"),
+      );
+      expect(registrations).toEqual([
+        expect.objectContaining({ callerAgentId: parent.id, childAgentId: workerId }),
+      ]);
+      expect((await client.fetchAgent(parent.id))!.agent.status).toBe("idle");
+      expect(received).toEqual([]);
+      const releasedAt = new Date().toISOString();
+      release.resolve();
+      expect((await client.waitForFinish(workerId, 5000)).lastMessage).toBe(handoff);
+      await expect.poll(() => received.length, { timeout: 5000 }).toBe(1);
+      const notification = parseAgentMessages(received[0]!.prompt)![0]!;
+      expect(notification.source).toMatchObject({
+        kind: "agent-notification",
+        agentId: workerId,
+        event: "finished",
+      });
+      expect(notification.text).toContain(`<agent-response>\n${handoff}\n</agent-response>`);
+      const response = await client.waitForFinish(parent.id, 5000);
+      expect(response.status).toBe("idle");
+      expect(response.lastMessage).toBe("Hello world");
+      console.info(
+        JSON.stringify({
+          handoff,
+          parentId: parent.id,
+          workerId,
+          registeredAfter,
+          registrations,
+          releasedAt,
+          receivedAt: received[0]!.at,
+          respondedAt: new Date().toISOString(),
+          response: response.lastMessage,
+        }),
+      );
+    } finally {
+      release.resolve();
+      await client.close();
+      await daemon.close();
+    }
+  },
+  30000,
+);
