@@ -282,6 +282,7 @@ function createGitRepository(): { tempDir: string; repoDir: string } {
   const repoDir = join(tempDir, "repo");
   mkdirSync(repoDir);
   execFileSync("git", ["init", "-b", "main"], { cwd: repoDir, stdio: "pipe" });
+  execFileSync("git", ["config", "commit.gpgsign", "false"], { cwd: repoDir, stdio: "pipe" });
   execFileSync("git", ["config", "user.email", "test@example.com"], {
     cwd: repoDir,
     stdio: "pipe",
