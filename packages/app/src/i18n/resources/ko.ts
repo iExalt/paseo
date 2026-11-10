@@ -2066,6 +2066,7 @@ export const ko: TranslationResources = {
     output: "출력",
   },
   turnSummary: {
+    messages: { one: "메시지 {{count}}개 작성", other: "메시지 {{count}}개 작성" },
     agentMessage: "에이전트 메시지",
     details: "턴 세부 정보 보기",
     sentBy: "{{name}}이(가) 보냄",

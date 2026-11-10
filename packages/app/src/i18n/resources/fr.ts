@@ -2103,6 +2103,7 @@ export const fr: TranslationResources = {
     output: "Sortie",
   },
   turnSummary: {
+    messages: { one: "a écrit {{count}} message", other: "a écrit {{count}} messages" },
     agentMessage: "Message d’agent",
     details: "Voir les détails du tour",
     sentBy: "Envoyé par {{name}}",

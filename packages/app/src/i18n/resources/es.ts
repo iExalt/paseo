@@ -2105,6 +2105,7 @@ export const es: TranslationResources = {
     output: "Producción",
   },
   turnSummary: {
+    messages: { one: "escribió {{count}} mensaje", other: "escribió {{count}} mensajes" },
     agentMessage: "Mensaje de agente",
     details: "Ver detalles del turno",
     sentBy: "Enviado por {{name}}",
