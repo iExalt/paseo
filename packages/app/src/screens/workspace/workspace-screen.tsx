@@ -1,3 +1,4 @@
+import { WorkspaceLightboxProvider } from "@/components/attachment-lightbox-context";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 import { useHostFeature } from "@/runtime/host-features";
 import {
@@ -782,15 +783,19 @@ function WorkspaceContentProviders({
   children,
   workspaceKey,
   sheetPaneHost,
+  active,
 }: {
   children: ReactNode;
   workspaceKey: string | null;
   sheetPaneHost: SheetPaneHost | null;
+  active: boolean;
 }) {
   return (
     <WorkspaceFocusProvider workspaceKey={workspaceKey}>
       <DiffDocumentWorkspaceCacheProvider>
-        <SheetPaneHostProvider value={sheetPaneHost}>{children}</SheetPaneHostProvider>
+        <SheetPaneHostProvider value={sheetPaneHost}>
+          <WorkspaceLightboxProvider active={active}>{children}</WorkspaceLightboxProvider>
+        </SheetPaneHostProvider>
       </DiffDocumentWorkspaceCacheProvider>
     </WorkspaceFocusProvider>
   );
@@ -3825,6 +3830,7 @@ function WorkspaceScreenContent({
       key={persistenceKey}
       workspaceKey={persistenceKey}
       sheetPaneHost={sheetPaneHost}
+      active={isRouteFocused}
     >
       <AssistantFileLinkResolverProvider
         client={client}
