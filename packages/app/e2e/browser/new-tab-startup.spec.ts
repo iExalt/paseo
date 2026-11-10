@@ -1,10 +1,12 @@
 import { expect } from "@playwright/test";
 import { test } from "../support/fixtures";
 import { gotoWorkspace } from "../support/helpers/launcher";
-import { getE2EDaemonPort } from "../support/helpers/daemon-port";
+import { daemonWsRoutePattern, getE2EDaemonPort } from "../support/helpers/daemon-port";
 import { getServerId } from "../support/helpers/server-id";
 import { buildHostWorkspaceRoute } from "../../src/utils/host-routes";
 import { seedWorkspace } from "../support/helpers/seed-client";
+
+const ignoreCloseError = () => {};
 
 test("a workspace with an existing agent never presents New during startup", async ({ page }) => {
   const workspace = await seedWorkspace({ repoPrefix: "new-tab-startup-agent-" });
@@ -57,20 +59,59 @@ test("a fresh browser preserves a workspace URL while its first host registers",
 }) => {
   const workspace = await seedWorkspace({ repoPrefix: "first-host-startup-" });
   const context = await browser.newContext();
+  let releaseProbe = () => {};
+  let probeStarted = false;
+  let heldSocketClosed = false;
+  let holdFirstProbe = true;
+  const probeGate = new Promise<void>((resolve) => {
+    releaseProbe = resolve;
+  });
   try {
     await context.route(/:(6767)\b/, (route) => route.abort());
     await context.routeWebSocket(/:(6767)\b/, async (ws) => {
       await ws.close({ code: 1008, reason: "Blocked connection to localhost:6767 during e2e." });
     });
+    await context.routeWebSocket(daemonWsRoutePattern(), async (ws) => {
+      if (holdFirstProbe) {
+        let server: ReturnType<typeof ws.connectToServer> | undefined;
+        ws.onClose(async (code, reason) => {
+          heldSocketClosed = true;
+          await server?.close({ code, reason }).catch(ignoreCloseError);
+        });
+        holdFirstProbe = false;
+        probeStarted = true;
+        await probeGate;
+        if (!heldSocketClosed) server = ws.connectToServer();
+        return;
+      }
+      ws.connectToServer();
+    });
     await context.addInitScript((listen) => {
       Reflect.set(globalThis, "__PASEO_INITIAL_DAEMON_CONNECTION__", { listen });
     }, `127.0.0.1:${getE2EDaemonPort()}`);
     const page = await context.newPage();
+    await page.clock.install({ time: new Date("2026-01-01T00:00:00Z") });
+    await page.clock.pauseAt(new Date("2026-01-01T00:00:00Z"));
     const destination = new URL(
       buildHostWorkspaceRoute(getServerId(), workspace.workspaceId),
       baseURL,
     ).href;
     await page.goto(destination);
+    await expect.poll(() => probeStarted).toBe(true);
+    await expect(page.getByTestId("startup-splash")).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/h/${getServerId()}`));
+    await expect
+      .poll(() => {
+        const url = new URL(page.url());
+        return (
+          url.pathname.endsWith(`/workspace/${workspace.workspaceId}`) ||
+          url.searchParams.get("workspaceId") === workspace.workspaceId
+        );
+      })
+      .toBe(true);
+    expect(heldSocketClosed).toBe(false);
+    releaseProbe();
+    await page.clock.resume();
     await expect(
       page.getByTestId("workspace-tabs-row").filter({ visible: true }).first(),
     ).toBeVisible({ timeout: 30_000 });
@@ -81,7 +122,9 @@ test("a fresh browser preserves a workspace URL while its first host registers",
     ).toBeVisible({ timeout: 30_000 });
     await expect(page).toHaveURL(destination);
   } finally {
+    releaseProbe();
     await context.close();
+    if (probeStarted) await expect.poll(() => heldSocketClosed).toBe(true);
     await workspace.cleanup();
   }
 });
