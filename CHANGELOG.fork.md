@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.1](https://github.com/iExalt/paseo/compare/paseo-v0.25.0...paseo-v0.25.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **app:** check latest Android release before bounded fallbacks ([#415](https://github.com/iExalt/paseo/issues/415)) ([966184c](https://github.com/iExalt/paseo/commit/966184c48d79b68e7ea0a4bf4135dcecf1d3bf3d))
+
 ## [0.25.0](https://github.com/iExalt/paseo/compare/paseo-v0.24.8...paseo-v0.25.0) (2026-11-09)
 
 
