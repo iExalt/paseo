@@ -4,12 +4,9 @@ import { registerHooks, createRequire, syncBuiltinESMExports } from "node:module
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import * as nixRuntime from "./linux-update-nix.mjs";
+import "./update-platform.mjs";
 const directory = process.env.PASEO_UPDATE_FIXTURE;
 assert.ok(directory);
-if (process.env.PASEO_UPDATE_MAC) {
-  Object.defineProperty(process, "platform", { value: "darwin" });
-  Object.defineProperty(process, "arch", { value: "arm64" });
-}
 const mac = new URL("../paseo-nix-update-macos.mjs", import.meta.url).href;
 const macProxy = pathToFileURL(join(directory, "mac-proxy.mjs")).href;
 writeFileSync(
