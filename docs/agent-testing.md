@@ -232,6 +232,19 @@ a second.
 For a browser-only check, write a [browser probe](#browser-probes), or start a daemon with
 [`npm run qa:web`](#isolated-daemons).
 
+### Notification receipts
+
+For an isolated Playwright Electron process, `packages/desktop/e2e/support/notification-receipts.mjs`
+can record notification outcomes by ID. Install it before sending with cases using
+`scripted-show`, `scripted-failed`, `scripted-timeout`, or `native`; read a receipt after
+the send promise settles and restore the controller and dismiss test IDs in `finally`. Each
+receipt is a snapshot: a native event can arrive after a timeout was recorded. Scripted cases exercise the
+main handler and preload without using the OS notification service. Native mode calls Electron's
+original `show()` and preserves its support check. A `timeout` receipt means no show or failure
+event arrived before the handler's fallback: a returned `true` alone does not prove display.
+To exercise native pass-through on Linux, run the desktop lifecycle test inside a private D-Bus
+session with `PASEO_ELECTRON_NATIVE_RECEIPT=1`; the test logs support and any observed receipt.
+
 ## Desktop sandbox
 
 `npm run desktop:sandbox` runs the unpackaged desktop app against a fresh
