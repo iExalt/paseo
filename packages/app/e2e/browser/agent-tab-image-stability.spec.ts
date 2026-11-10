@@ -164,9 +164,12 @@ test("opens a timeline image in a zoomable lightbox", async ({
   page,
 }) => {
   test.setTimeout(120_000);
+  await page.setViewportSize({ width: 375, height: 800 });
   const image = await createSmallAssistantPng(workspace, {
     alt: "Zoomable timeline image",
     fileName: "zoomable-timeline-image.png",
+    width: 640,
+    height: 400,
   });
   const imageAgent = await createSettledMockAgent(workspace, "Zoomable image timeline");
   await emitSettledAssistantImage(workspace.client, imageAgent, image);
@@ -177,6 +180,25 @@ test("opens a timeline image in a zoomable lightbox", async ({
   const lightboxImage = page.getByTestId("attachment-lightbox-image");
   const canvas = page.getByTestId("attachment-lightbox-canvas");
   await expect(lightboxImage).toBeVisible();
+  const imageState = () =>
+    lightboxImage.evaluate((element) => {
+      const img = element instanceof HTMLImageElement ? element : element.querySelector("img");
+      return { src: img?.currentSrc ?? null, width: img?.naturalWidth ?? 0 };
+    });
+  await expect(canvas).toBeVisible();
+  await expect.poll(async () => (await imageState()).width).toBe(640);
+  const before = await imageState();
+  expect(before.src).toBeTruthy();
+  await lightboxImage.evaluate((element) => element.setAttribute("data-qa-viewer", "original"));
+  const compactWidth = (await canvas.boundingBox())!.width;
+  for (const width of [550, 1440, 1200, 375, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(lightboxImage).toBeVisible();
+    await expect(lightboxImage).toHaveAttribute("data-qa-viewer", "original");
+    await expect.poll(imageState).toEqual(before);
+    if (width === 1440) expect((await canvas.boundingBox())!.width).toBeGreaterThan(compactWidth);
+  }
+
   await page.getByTestId("zoomable-viewport-toolbar").hover();
   const transformedContent = canvas.locator(":scope > div").first();
   const initialBox = await transformedContent.boundingBox();
