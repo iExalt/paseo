@@ -6,6 +6,38 @@ import path from "node:path";
 import net from "node:net";
 import { _electron as electron, expect } from "playwright/test";
 import { readDaemonInstance } from "@getpaseo/server/daemon-control";
+import {
+  installNotificationReceipts,
+  notificationReceipt,
+  restoreNotificationReceipts,
+} from "./support/notification-receipts.mjs";
+
+async function verifyNativeNotificationReceipt(desktop, page) {
+  const supported = await page.evaluate(() => window.paseoDesktop.notification.isSupported());
+  console.log("Native notification support:", supported);
+  if (!supported) return;
+  const id = "paseo-qa-receipt:native";
+  await installNotificationReceipts(desktop, [{ id, mode: "native" }]);
+  try {
+    const sent = await page.evaluate(
+      (payload) => window.paseoDesktop.notification.sendNotification(payload),
+      { id, title: "Native notification receipt" },
+    );
+    const receipt = await notificationReceipt(desktop, id);
+    expect(receipt).toMatchObject({ id, mode: "native" });
+    expect(["show", "failed", "timeout"]).toContain(receipt.outcome);
+    console.log("Native notification receipt:", JSON.stringify(receipt), "returned", sent);
+  } finally {
+    try {
+      await page.evaluate(
+        (wantedId) => window.paseoDesktop.notification.dismissNotifications([wantedId]),
+        id,
+      );
+    } finally {
+      await restoreNotificationReceipts(desktop);
+    }
+  }
+}
 
 // Run under a private Xvfb display. Dialog answers stay in this test process;
 // daemon operations still cross the real preload and IPC.
@@ -153,6 +185,55 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
     console.log(
       "PASS: real Desktop renderer pauses management without stopping an attached daemon, then confirms and stops that instance.",
     );
+
+    const notificationCases = [
+      { id: "paseo-qa-receipt:show", mode: "scripted-show", outcome: "show", expected: true },
+      {
+        id: "paseo-qa-receipt:failed",
+        mode: "scripted-failed",
+        outcome: "failed",
+        expected: false,
+      },
+      {
+        id: "paseo-qa-receipt:timeout",
+        mode: "scripted-timeout",
+        outcome: "timeout",
+        expected: true,
+      },
+    ];
+    await installNotificationReceipts(desktop, notificationCases);
+    try {
+      for (const test of notificationCases) {
+        const title = `Receipt ${test.mode}`;
+        const sent = await page.evaluate(
+          (payload) => window.paseoDesktop.notification.sendNotification(payload),
+          { id: test.id, title },
+        );
+        expect(sent).toBe(test.expected);
+        const receipt = await notificationReceipt(desktop, test.id);
+        expect(receipt).toMatchObject({
+          id: test.id,
+          title,
+          mode: "scripted",
+          outcome: test.outcome,
+        });
+        if (test.outcome === "failed") expect(receipt.error).toBe("injected failure");
+        console.log("Notification receipt:", JSON.stringify(receipt), "returned", sent);
+      }
+    } finally {
+      try {
+        await page.evaluate(
+          (ids) => window.paseoDesktop.notification.dismissNotifications(ids),
+          notificationCases.map((test) => test.id),
+        );
+      } finally {
+        await restoreNotificationReceipts(desktop);
+      }
+    }
+
+    if (process.env.PASEO_ELECTRON_NATIVE_RECEIPT === "1") {
+      await verifyNativeNotificationReceipt(desktop, page);
+    }
 
     const appearance = () =>
       page
