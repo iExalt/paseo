@@ -1,3 +1,4 @@
+import { isDelegatedAgent } from "@getpaseo/protocol/agent-labels";
 import type { FinishSubscriptions } from "../finish-subscriptions/index.js";
 import type { AgentPromptSource } from "../agent-messages/index.js";
 import type { Logger } from "pino";
@@ -186,7 +187,7 @@ export async function createAgentCommand(
           {
             childAgentId: snapshot.id,
             callerAgentId: input.callerAgentId,
-            requireParentOwnership: !(input.kind === "mcp" && (input.detached ?? false)),
+            requireParentOwnership: isDelegatedAgent(snapshot),
           },
           true,
         )
