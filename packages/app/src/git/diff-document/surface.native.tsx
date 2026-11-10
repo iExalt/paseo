@@ -33,6 +33,8 @@ import { useKeyboardShift, useSettledKeyboardShift } from "@/keyboard/shift";
 import { ReviewEditorRevealContext, resolveRevealScrollTop } from "@/review/reveal";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { DocumentFileHeader } from "./document-file-header";
+import { diffAccessibilitySummary } from "./accessibility-summary";
+import { createAccessibilitySampler } from "./accessibility-sampler";
 import {
   diffInteractionWindowTop,
   diffMaterializationWindow,
@@ -155,6 +157,8 @@ export function DiffSurface(props: DiffSurfaceProps) {
   } | null>(null);
   const consumedFocusRef = useRef<string | null>(null);
   const scrollTop = useSharedValue(0);
+  const lastAccessibilitySample = useSharedValue(0);
+  const [accessibilityTop, setAccessibilityTop] = useState(0);
   const { bottomInset } = useKeyboardShift();
   const rootRef = useRef<View>(null);
   const focusedEditorRef = useRef<View | null>(null);
@@ -490,9 +494,34 @@ export function DiffSurface(props: DiffSurfaceProps) {
     [fileWindowTop, model.files, viewport.height],
   );
 
+  const accessibilitySampler = useMemo(
+    () => createAccessibilitySampler(() => scrollTop.get(), setAccessibilityTop),
+    [scrollTop],
+  );
+  useEffect(() => () => accessibilitySampler.dispose(), [accessibilitySampler]);
+  const sampleAccessibilityTop = useCallback(
+    (top: number) => accessibilitySampler.sample(top),
+    [accessibilitySampler],
+  );
+  useAnimatedReaction(
+    () => scrollTop.value,
+    (top, previous) => {
+      if (top === previous) return;
+      const now = Date.now();
+      if (now - lastAccessibilitySample.value >= 200) {
+        lastAccessibilitySample.value = now;
+        scheduleOnRN(sampleAccessibilityTop, top);
+      }
+    },
+    [sampleAccessibilityTop],
+  );
   const scrollHandler = useAnimatedScrollHandler((event) => {
     scrollTop.value = event.contentOffset.y;
   });
+  const accessibilitySummary = useMemo(
+    () => diffAccessibilitySummary(model, accessibilityTop, viewport.height),
+    [model, accessibilityTop, viewport.height],
+  );
 
   const layout = useCallback((event: LayoutChangeEvent) => {
     const { width, height } = event.nativeEvent.layout;
@@ -646,6 +675,15 @@ export function DiffSurface(props: DiffSurfaceProps) {
           <NativeReviewOverlays model={model} mode={props.mode} />
         </ReviewEditorRevealContext.Provider>
       </AnimatedScrollView>
+      {accessibilitySummary ? (
+        <View
+          accessible
+          accessibilityLabel={accessibilitySummary}
+          testID="git-diff-accessibility-summary"
+          pointerEvents="none"
+          style={styles.accessibilitySummary}
+        />
+      ) : null}
       {selectionDragActive ? null : (
         <NativeSelectionActionBar
           model={model}
@@ -1339,6 +1377,7 @@ function NativeSlabCode({
 
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0, position: "relative", overflow: "hidden" },
+  accessibilitySummary: { position: "absolute", top: 0, left: 0, width: 1, height: 1 },
   scroll: { backgroundColor: "transparent" },
   handleStem: {
     position: "absolute",
