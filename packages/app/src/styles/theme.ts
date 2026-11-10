@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
+import { TERMINAL_NERD_FONT_FAMILY } from "@/terminal/runtime/terminal-font";
 
 export const baseColors = {
   // Base colors
@@ -638,8 +639,12 @@ export const DEFAULT_UI_FONT_STACK: string = Platform.select({
   web: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
 });
 
+// Android's "monospace" (Droid Sans Mono) has no box-drawing glyphs, and native text
+// can't fall back per glyph to a same-width font, so diagrams in code blocks drift
+// out of column. The bundled terminal font covers them at the same advance width.
 export const DEFAULT_MONO_FONT_STACK: string = Platform.select({
   ios: "ui-monospace",
+  android: TERMINAL_NERD_FONT_FAMILY,
   default: "monospace",
   web: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
 });
