@@ -137,7 +137,8 @@ test.describe("Turn collapse", () => {
       await expandAndCollapseLongPrompt(page);
 
       const summary = page.getByTestId("turn-summary").last().getByRole("button");
-      await expect(summary).toHaveText(/^Edited 1 file/);
+      // Folded messages lead the label, so readers know the turn hides text.
+      await expect(summary).toHaveText(/^Wrote \d+ messages?, edited 1 file/);
       // Text chunks that stream back to back merge into one message, so the reply holds
       // at least the stream's last chunk.
       await expect(page.getByTestId("assistant-message").last()).toHaveText(

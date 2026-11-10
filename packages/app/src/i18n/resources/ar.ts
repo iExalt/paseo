@@ -2056,6 +2056,7 @@ export const ar: TranslationResources = {
     output: "الإخراج",
   },
   turnSummary: {
+    messages: { one: "كتب {{count}} رسالة", other: "كتب {{count}} رسائل" },
     agentMessage: "رسالة وكيل",
     details: "عرض تفاصيل الجولة",
     sentBy: "أرسلها {{name}}",
