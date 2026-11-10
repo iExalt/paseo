@@ -13,6 +13,7 @@ import {
   GZIP_SUFFIX,
   approvedAndroidArtifact,
   findHighestVerifiedForkRelease,
+  releaseVersionFromTag,
   isNewerThanInstalled,
   verifyReleaseBinding,
   verifySignedManifest,
@@ -27,6 +28,8 @@ const HIGH_WATER_VERSION_KEY = "@getpaseo/fork-update/semver-v1/high-water";
 const STAGED_UPDATE_KEY = "@getpaseo/fork-update/semver-v1/staged";
 const PENDING_STAGED_UPDATE_KEY = "@getpaseo/fork-update/semver-v1/staged-pending";
 const MAX_RELEASE_PAGES = 10;
+const MAX_FALLBACK_RELEASES = 5;
+const RELEASE_PAGE_SIZE = MAX_FALLBACK_RELEASES + 1;
 const MAX_RELEASE_LIST_BYTES = 1_048_576;
 
 function stagedApkFileName(update: VerifiedForkUpdate): string {
@@ -88,19 +91,29 @@ function parseReleaseList(value: unknown): GitHubRelease[] {
   return value as GitHubRelease[];
 }
 
-async function readStableReleases(): Promise<GitHubRelease[]> {
+async function readStableReleases(excludeTag: string | undefined): Promise<GitHubRelease[]> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
   const releases: GitHubRelease[] = [];
   for (let page = 1; page <= MAX_RELEASE_PAGES; page += 1) {
     const body = await forkUpdatesNative.fetchText(
-      `${RELEASES_URL}?per_page=100&page=${page}`,
+      `${RELEASES_URL}?per_page=${RELEASE_PAGE_SIZE}&page=${page}`,
       MAX_RELEASE_LIST_BYTES,
     );
     const batch = parseReleaseList(JSON.parse(body));
-    releases.push(...batch);
-    if (batch.length < 100) return releases;
+    releases.push(
+      ...batch.filter(
+        (release) =>
+          !release.draft &&
+          !release.prerelease &&
+          release.tag_name !== excludeTag &&
+          releaseVersionFromTag(release.tag_name) !== null,
+      ),
+    );
+    if (releases.length >= MAX_FALLBACK_RELEASES || batch.length < RELEASE_PAGE_SIZE) {
+      return releases.slice(0, MAX_FALLBACK_RELEASES);
+    }
   }
-  throw new Error("The fork release list exceeded the safe lookup limit.");
+  return releases;
 }
 
 function releaseAssetUrl(tag: string, name: string): string {
@@ -163,16 +176,9 @@ async function requireNewerInstalledUpdate(
   return verified;
 }
 
-export async function checkForForkUpdate(): Promise<{
-  update: VerifiedForkUpdate | null;
-  installedVersion: string;
-}> {
+async function verifyCandidate(release: GitHubRelease): Promise<VerifiedForkUpdate | null> {
   if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
-  const [{ installedVersion, highWaterVersion }, releases] = await Promise.all([
-    readInstalledState(),
-    readStableReleases(),
-  ]);
-  const { verified } = await findHighestVerifiedForkRelease(releases, async (release) => {
+  try {
     const manifestAssets = release.assets.filter((asset) => asset.name === RELEASE_MANIFEST_NAME);
     const signatureAssets = release.assets.filter((asset) => asset.name === RELEASE_SIGNATURE_NAME);
     if (manifestAssets.length !== 1 || signatureAssets.length !== 1) return null;
@@ -195,17 +201,42 @@ export async function checkForForkUpdate(): Promise<{
     ]);
     const manifestBytes = new TextEncoder().encode(manifestText);
     if (manifestBytes.byteLength !== manifestAsset.size) return null;
-    try {
-      return verifyReleaseBinding(
-        release,
-        verifySignedManifest(manifestBytes, signatureText),
-        manifestText,
-        signatureText,
-      );
-    } catch {
-      return null;
-    }
-  });
+    return verifyReleaseBinding(
+      release,
+      verifySignedManifest(manifestBytes, signatureText),
+      manifestText,
+      signatureText,
+    );
+  } catch {
+    return null;
+  }
+}
+
+async function findVerifiedUpdate(): Promise<VerifiedForkUpdate> {
+  if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
+  let latestTag: string | undefined;
+  try {
+    const latest: GitHubRelease = JSON.parse(
+      await forkUpdatesNative.fetchText(`${RELEASES_URL}/latest`, MAX_RELEASE_LIST_BYTES),
+    );
+    latestTag = latest.tag_name;
+    return (await findHighestVerifiedForkRelease([latest], verifyCandidate)).verified;
+  } catch {
+    // An unavailable or unverifiable latest release gets at most five fallback candidates.
+  }
+  const releases = await readStableReleases(latestTag);
+  return (await findHighestVerifiedForkRelease(releases, verifyCandidate)).verified;
+}
+
+export async function checkForForkUpdate(): Promise<{
+  update: VerifiedForkUpdate | null;
+  installedVersion: string;
+}> {
+  if (!forkUpdatesNative) throw new Error("Fork updates are unavailable in this app build.");
+  const [{ installedVersion, highWaterVersion }, verified] = await Promise.all([
+    readInstalledState(),
+    findVerifiedUpdate(),
+  ]);
   const update = isNewerThanInstalled(verified, installedVersion, highWaterVersion)
     ? verified
     : null;
