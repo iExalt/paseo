@@ -27,12 +27,12 @@ export const archiveSchema: OutputSchema<AgentArchiveResult> = {
 
 export function addArchiveOptions(cmd: Command): Command {
   return cmd
-    .description("Archive an agent (soft-delete)")
+    .description("Archive an agent and its workspace when it is the last unarchived agent")
     .argument("<id>", "Agent ID, full session ID, prefix, or name")
     .option("--force", "Force archive a running agent or acknowledge an already archived agent")
     .addHelpText(
       "after",
-      "\nSelf-archive with --force can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
+      "\nThe last unarchived agent also archives its workspace. Local checkouts are kept; managed worktrees with uncommitted, unpushed, or unverifiable work are kept and their paths logged by the daemon.\n\nSelf-archive with --force can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
     );
 }
 

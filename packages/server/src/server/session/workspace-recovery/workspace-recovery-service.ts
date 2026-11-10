@@ -1,3 +1,4 @@
+import { withWorkspaceLifecycleLock } from "../../workspace-lifecycle-lock.js";
 import { randomUUID } from "node:crypto";
 import { basename } from "node:path";
 
@@ -133,6 +134,12 @@ export function createWorkspaceRecoveryService(deps: {
   }
 
   async function restore(
+    workspaceId: string,
+  ): Promise<{ workspaceId: string; action: WorkspaceRecoveryAction }> {
+    return withWorkspaceLifecycleLock([workspaceId], () => restoreUnlocked(workspaceId));
+  }
+
+  async function restoreUnlocked(
     workspaceId: string,
   ): Promise<{ workspaceId: string; action: WorkspaceRecoveryAction }> {
     const resolved = await resolveRecovery(workspaceId);

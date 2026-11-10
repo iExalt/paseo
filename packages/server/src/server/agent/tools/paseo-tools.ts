@@ -2252,7 +2252,7 @@ function createToolCatalog(
     {
       title: "Archive agent",
       description:
-        "Archive an agent (soft-delete). The agent is interrupted if running and removed from the active list.",
+        "Archive an agent (soft-delete). Interrupts it if running. Archiving the last unarchived agent also archives its workspace; unpublished worktrees are kept. Send a handoff before archiving yourself.",
       inputSchema: {
         agentId: z.string(),
       },
