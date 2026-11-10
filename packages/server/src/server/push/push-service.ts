@@ -1,4 +1,6 @@
 import type pino from "pino";
+import { randomUUID } from "node:crypto";
+import { encodeAndroidAgentTag } from "@getpaseo/protocol/android-notification-tag";
 import { boundNotificationPreview } from "@getpaseo/protocol/notification-preview";
 
 export interface PushPayload {
@@ -13,6 +15,7 @@ interface ExpoPushMessage {
   body: string;
   data?: Record<string, unknown>;
   sound?: "default";
+  tag?: string;
 }
 
 interface ExpoPushTicket {
@@ -49,7 +52,20 @@ export class PushService {
       return;
     }
 
-    const messages = tokens.map((token) => toExpoMessage(token, payload));
+    const data = payload.data;
+    const reason = data?.reason;
+    const tag =
+      typeof data?.serverId === "string" &&
+      typeof data.agentId === "string" &&
+      (reason === "finished" || reason === "error" || reason === "permission")
+        ? encodeAndroidAgentTag({
+            serverId: data.serverId,
+            agentId: data.agentId,
+            reason,
+            nonce: randomUUID(),
+          })
+        : null;
+    const messages = tokens.map((token) => toExpoMessage(token, payload, tag));
 
     // Batch tokens (max 100 per request per Expo limits)
     const batches: ExpoPushMessage[][] = [];
@@ -132,15 +148,18 @@ export class PushService {
   }
 }
 
-function toExpoMessage(token: string, payload: PushPayload): ExpoPushMessage {
-  return boundNotificationPreview(
+function toExpoMessage(token: string, payload: PushPayload, tag?: string | null): ExpoPushMessage {
+  const ordinary = boundNotificationPreview(
     {
       to: token,
       title: payload.title,
       body: payload.body,
       data: payload.data,
-      sound: "default",
+      sound: "default" as const,
     },
     4_000,
   );
+  if (!tag) return ordinary;
+  const tagged = { ...ordinary, tag };
+  return new TextEncoder().encode(JSON.stringify(tagged)).byteLength <= 4_000 ? tagged : ordinary;
 }
