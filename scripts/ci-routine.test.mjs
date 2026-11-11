@@ -163,8 +163,8 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
 });
 
 test("new Node test files require an explicit routine or package classification", () => {
-  const actual = readdirSync(join(root, "scripts"))
-    .filter((name) => name.endsWith(".test.mjs"))
+  const actual = readdirSync(join(root, "scripts"), { recursive: true })
+    .filter((name) => name.endsWith(".test.mjs") && !name.includes("node_modules"))
     .map((name) => `scripts/${name}`)
     .sort();
   const classified = [...coreTests, ...helperTests, ...vitestHelpers, ...packageTests]

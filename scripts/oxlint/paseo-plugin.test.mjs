@@ -150,3 +150,23 @@ test("sync IO exceptions must be removed when a module stops using the API", () 
   assert.equal(result.failed, true, result.output);
   assert.match(result.output, /Remove the unused sync IO exception for readFileSync/);
 });
+
+test("useRef inside a returned literal is reported", () => {
+  const result = lint(
+    'import { useRef } from "react";\n' +
+      "export function useThing() {\n  return { ref: useRef(null), size: 0 };\n}\n",
+    "paseo/no-inline-use-ref",
+  );
+  assert.equal(result.failed, true);
+  assert.match(result.output, /no-inline-use-ref/);
+});
+
+test("useRef assigned to a variable, or read through .current, is allowed", () => {
+  const result = lint(
+    'import { useRef } from "react";\n' +
+      "export function useThing() {\n  const ref = useRef(null);\n  const first = useRef(0).current;\n" +
+      "  return { ref, first };\n}\n",
+    "paseo/no-inline-use-ref",
+  );
+  assert.equal(result.failed, false, result.output);
+});
