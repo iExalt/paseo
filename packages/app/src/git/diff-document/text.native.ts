@@ -281,7 +281,7 @@ function createFragmentParagraph(input: {
   palette: DiffPalette;
   textStyles: NativeTextLayoutStore["textStyles"];
 }): SkParagraph {
-  const builder = Skia.ParagraphBuilder.Make(
+  const builder = makeParagraphBuilder(
     paragraphStyle(input.families, input.fontSize, input.lineHeight),
     input.provider,
   );
@@ -312,7 +312,7 @@ function createParagraph(input: {
   lineHeight: number;
   color: ReturnType<typeof Skia.Color>;
 }): SkParagraph {
-  const paragraph = Skia.ParagraphBuilder.Make(
+  const paragraph = makeParagraphBuilder(
     paragraphStyle(input.families, input.fontSize, input.lineHeight),
     input.provider,
   )
@@ -326,6 +326,15 @@ function createParagraph(input: {
     .build();
   paragraph.layout(PARAGRAPH_WIDTH);
   return paragraph;
+}
+
+// Native Skia throws on an explicit undefined provider, which is what the diff passes
+// until the bundled font has loaded, so only pass one that exists.
+function makeParagraphBuilder(
+  style: ReturnType<typeof paragraphStyle>,
+  provider: SkTypefaceFontProvider | undefined,
+) {
+  return provider ? Skia.ParagraphBuilder.Make(style, provider) : Skia.ParagraphBuilder.Make(style);
 }
 
 function paragraphStyle(families: string[], fontSize: number, lineHeight: number) {
