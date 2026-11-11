@@ -40,8 +40,8 @@ function familyName(font: DataView): string {
   throw new Error("no family name");
 }
 
-// Code points in the format 12 (full Unicode) cmap subtable.
-function hasGlyphs(font: DataView, codePoints: number[]): boolean[] {
+// Glyph IDs from the format 12 (full Unicode) cmap subtable; undefined when unmapped.
+function glyphIds(font: DataView, codePoints: number[]): (number | undefined)[] {
   const cmap = tableOffset(font, "cmap");
   for (let i = 0; i < font.getUint16(cmap + 2); i++) {
     const subtable = cmap + font.getUint32(cmap + 4 + i * 8 + 4);
@@ -52,14 +52,28 @@ function hasGlyphs(font: DataView, codePoints: number[]): boolean[] {
     return codePoints.map((codePoint) => {
       for (let g = 0; g < groups; g++) {
         const group = subtable + 16 + g * 12;
-        if (codePoint >= font.getUint32(group) && codePoint <= font.getUint32(group + 4)) {
-          return true;
+        const first = font.getUint32(group);
+        if (codePoint >= first && codePoint <= font.getUint32(group + 4)) {
+          return font.getUint32(group + 8) + codePoint - first;
         }
       }
-      return false;
+      return undefined;
     });
   }
   throw new Error("no format 12 cmap");
+}
+
+function hasGlyphs(font: DataView, codePoints: number[]): boolean[] {
+  return glyphIds(font, codePoints).map((id) => id !== undefined);
+}
+
+// Glyphs past numberOfHMetrics share the last advance width.
+function advanceWidths(font: DataView, codePoints: number[]): (number | undefined)[] {
+  const metricCount = font.getUint16(tableOffset(font, "hhea") + 34);
+  const hmtx = tableOffset(font, "hmtx");
+  return glyphIds(font, codePoints).map((id) =>
+    id === undefined ? undefined : font.getUint16(hmtx + Math.min(id, metricCount - 1) * 4),
+  );
 }
 
 describe.each(FONT_FILES)("bundled terminal font %s", (file) => {
@@ -74,5 +88,13 @@ describe.each(FONT_FILES)("bundled terminal font %s", (file) => {
     // Typst (logos) and V (Seti-UI) symbols, and braille for TUI spinners.
     const codePoints = [0xf0001, 0xf4b7, 0xef01, 0xf37f, 0xe6ac, 0x2800];
     expect(hasGlyphs(font, codePoints)).toEqual(codePoints.map(() => true));
+  });
+
+  it("draws box-drawing at the ASCII advance width", () => {
+    // Android's monospace has none of these, and native text borrows them from a
+    // font with another width, so code-block diagrams drift out of column.
+    const boxDrawing = [..."─│┌┐└┘├┤┬┴┼═║╭╮╯╰"].map((char) => char.codePointAt(0)!);
+    const [ascii] = advanceWidths(font, ["M".codePointAt(0)!]);
+    expect(advanceWidths(font, boxDrawing)).toEqual(boxDrawing.map(() => ascii));
   });
 });

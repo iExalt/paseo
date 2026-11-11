@@ -106,6 +106,8 @@ import {
   type NativeTextLayout,
   type NativeHeaderTextLayout,
 } from "./text.native";
+import { useBundledSkiaFont } from "./bundled-font.native";
+import { DEFAULT_MONO_FONT_STACK } from "@/styles/theme";
 import type {
   DiffDocumentModel,
   DiffFileSection,
@@ -116,7 +118,6 @@ import type {
 } from "./types";
 
 const AnimatedScrollView = createAnimatedComponent(ScrollView);
-const SYSTEM_MONO = "monospace";
 const CODE_LEFT_PADDING = 8;
 /** Matches the web surface's selection fill. */
 const SELECTION_OPACITY = 0.45;
@@ -210,7 +211,8 @@ export function DiffSurface(props: DiffSurfaceProps) {
     [revealFocusedEditor],
   );
   const horizontalOffsets = useSharedValue<DiffHorizontalOffsets>({});
-  const family = props.displayPreferences.monoFontFamily.trim() || SYSTEM_MONO;
+  const family = props.displayPreferences.monoFontFamily.trim() || DEFAULT_MONO_FONT_STACK;
+  const bundledFont = useBundledSkiaFont(family);
   const typography = useMemo<DiffTypography>(
     () => ({
       family,
@@ -220,8 +222,13 @@ export function DiffSurface(props: DiffSurfaceProps) {
     [family, props.displayPreferences.codeFontSize],
   );
   const measurement = useMemo<TextMeasurer>(
-    () => createNativeTextMeasurer({ configuredFamily: family, fontSize: typography.size }),
-    [family, typography.size],
+    () =>
+      createNativeTextMeasurer({
+        configuredFamily: family,
+        bundledFont,
+        fontSize: typography.size,
+      }),
+    [family, bundledFont, typography.size],
   );
   const reviewActions = props.mode.kind === "working" ? props.mode.reviewActions : undefined;
   const model = useMemo(() => {
@@ -445,11 +452,12 @@ export function DiffSurface(props: DiffSurfaceProps) {
     () =>
       createNativeTextLayoutStore({
         configuredFamily: family,
+        bundledFont,
         fontSize: typography.size,
         lineHeight: typography.lineHeight,
         palette: props.palette,
       }),
-    [family, props.palette, typography.lineHeight, typography.size],
+    [family, bundledFont, props.palette, typography.lineHeight, typography.size],
   );
   const textLayout = useMemo(
     () =>

@@ -9,6 +9,31 @@ const BUNDLED_FONT_FACES = [
 
 let bundledFontLoad: Promise<boolean> | null = null;
 let bundledFontLoaded = false;
+let registeredFaces: FontFace[] | null = null;
+
+// Declares the faces without fetching them: the browser downloads a face the first
+// time text asks for the family, so code surfaces get the font without app startup
+// paying for it. Returns null where FontFace doesn't exist (native, tests).
+export function registerBundledMonoFont(): FontFace[] | null {
+  if (registeredFaces) {
+    return registeredFaces;
+  }
+  if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
+    return null;
+  }
+  const faces = BUNDLED_FONT_FACES.map(
+    (face) =>
+      new FontFace(TERMINAL_NERD_FONT_FAMILY, `url(${face.url}) format("woff2")`, {
+        weight: face.weight,
+        display: "swap",
+      }),
+  );
+  for (const face of faces) {
+    document.fonts.add(face);
+  }
+  registeredFaces = faces;
+  return faces;
+}
 
 export function isBundledTerminalFontLoaded(): boolean {
   return bundledFontLoaded;
@@ -22,22 +47,11 @@ export function loadBundledTerminalFont(): Promise<boolean> {
     return bundledFontLoad;
   }
   bundledFontLoad = (async () => {
-    if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
-      return false;
-    }
-    const faces: FontFace[] = [];
+    let faces: FontFace[] = [];
     try {
-      faces.push(
-        ...BUNDLED_FONT_FACES.map(
-          (face) =>
-            new FontFace(TERMINAL_NERD_FONT_FAMILY, `url(${face.url}) format("woff2")`, {
-              weight: face.weight,
-              display: "block",
-            }),
-        ),
-      );
-      for (const face of faces) {
-        document.fonts.add(face);
+      faces = registerBundledMonoFont() ?? [];
+      if (faces.length === 0) {
+        return false;
       }
       await Promise.all(faces.map((face) => face.load()));
       bundledFontLoaded = true;
@@ -48,6 +62,7 @@ export function loadBundledTerminalFont(): Promise<boolean> {
       for (const face of faces) {
         document.fonts.delete(face);
       }
+      registeredFaces = null;
       bundledFontLoad = null;
       return false;
     }
@@ -69,4 +84,5 @@ export function withoutBundledTerminalFont(fontFamily: string): string {
 export function resetBundledTerminalFontForTest(): void {
   bundledFontLoad = null;
   bundledFontLoaded = false;
+  registeredFaces = null;
 }

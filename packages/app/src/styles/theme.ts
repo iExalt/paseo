@@ -1,5 +1,6 @@
 import { Platform } from "react-native";
 import { darkHighlightColors, lightHighlightColors } from "@getpaseo/highlight";
+import { TERMINAL_NERD_FONT_FAMILY } from "@/terminal/runtime/terminal-font";
 
 export const baseColors = {
   // Base colors
@@ -638,10 +639,13 @@ export const DEFAULT_UI_FONT_STACK: string = Platform.select({
   web: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
 });
 
+// The bundled terminal font on every platform: it draws box-drawing at the ASCII
+// advance width, so diagrams in code blocks stay in column. Android's own monospace
+// has none of those glyphs, and native text can't fall back per glyph to a same-width
+// font. Web keeps system monospaces behind it while the font downloads.
 export const DEFAULT_MONO_FONT_STACK: string = Platform.select({
-  ios: "ui-monospace",
-  default: "monospace",
-  web: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  default: TERMINAL_NERD_FONT_FAMILY,
+  web: `'${TERMINAL_NERD_FONT_FAMILY}', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace`,
 });
 
 // Chat and markdown content column; the appearance updater patches the user's width in.
