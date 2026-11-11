@@ -960,8 +960,22 @@ export function extractUserMessageText(content: unknown): string | null {
   return combined.length > 0 ? combined : null;
 }
 
+function withPromptWarning(
+  response: Extract<AgentPermissionResponse, { behavior: "deny" }>,
+  decisionReason: string | undefined,
+): Extract<AgentPermissionResponse, { behavior: "deny" }> {
+  if (!decisionReason) {
+    return response;
+  }
+  const base = (response.message ?? "Permission request denied").replace(/\.$/, "");
+  return { ...response, message: `${base}. The permission prompt warned: ${decisionReason}` };
+}
+
 interface PendingPermission {
   request: AgentPermissionRequest;
+  // Why Claude's safety check asked; added to a user's deny so the agent
+  // learns the reason without the user typing it.
+  decisionReason?: string;
   resolve: (result: PermissionResult) => void;
   reject: (error: Error) => void;
   cleanup?: () => void;
@@ -3040,7 +3054,12 @@ class ClaudeAgentSession implements AgentSession {
       };
       pending.resolve(result);
     } else {
-      pending.resolve(this.resolveDeniedPermission(pending.request, response));
+      pending.resolve(
+        this.resolveDeniedPermission(
+          pending.request,
+          withPromptWarning(response, pending.decisionReason),
+        ),
+      );
       return;
     }
 
@@ -5425,6 +5444,7 @@ class ClaudeAgentSession implements AgentSession {
 
       this.pendingPermissions.set(requestId, {
         request,
+        ...(decisionReason ? { decisionReason } : {}),
         resolve,
         reject,
         cleanup,
