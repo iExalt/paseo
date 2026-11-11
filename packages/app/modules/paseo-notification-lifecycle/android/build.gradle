@@ -1,0 +1,22 @@
+apply plugin: 'com.android.library'
+group = 'sh.paseo.notifications'
+version = '0.1.0'
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useExpoPublishing()
+useDefaultAndroidSdkVersions()
+android { namespace "sh.paseo.notifications" }
+dependencies {
+  implementation "androidx.lifecycle:lifecycle-process:2.9.3"
+  if (findProject(':expo-notifications') != null) {
+    implementation project(':expo-notifications')
+  } else {
+    // SDK57 autolinks prebuilt modules from its local Maven repository.
+    def configFile = ["node", "--print", "require.resolve('expo-notifications/expo-module.config.json')"].execute(null, rootDir).text.trim()
+    def publication = new groovy.json.JsonSlurper().parse(new File(configFile)).android.publication
+    implementation "${publication.groupId}:${publication.artifactId}:${publication.version}"
+  }
+  testImplementation "junit:junit:4.13.2"
+}

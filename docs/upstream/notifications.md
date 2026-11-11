@@ -69,25 +69,89 @@ agent-directory refresh requested after it arrived, and a resolved condition mus
 1.5 s before the notification goes. Cached or offline state never dismisses anything; the
 tracker holds directory demand for every host it has notifications for.
 
-| Platform            | Tracked notifications                              | Limit                                                                                                                                        |
-| ------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| Browser             | Sent by this page; `tag` = thread key              | A reload loses them; they stay until the user clears them.                                                                                   |
-| Electron, macOS     | Sent this launch, plus `Notification.getHistory()` | Needs a signed build. The reason rides in `groupId`. Replaced notifications stay held for the session, since macOS reports no event.         |
-| Electron, Win/Linux | Sent this launch                                   | Notifications from an earlier launch can't be reached.                                                                                       |
-| iOS, Android        | Whatever is in the notification shade              | Synced on start, on foreground and when a push arrives. Pushes resolved while the app was closed go on the next open. Android stacks pushes. |
+| Platform            | Tracked notifications                              | Limit                                                                                                                                                                         |
+| ------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser             | Sent by this page; `tag` = thread key              | A reload loses them; they stay until the user clears them.                                                                                                                    |
+| Electron, macOS     | Sent this launch, plus `Notification.getHistory()` | Needs a signed build. The reason rides in `groupId`. Replaced notifications stay held for the session, since macOS reports no event.                                          |
+| Electron, Win/Linux | Sent this launch                                   | Notifications from an earlier launch can't be reached.                                                                                                                        |
+| iOS, Android        | Whatever is in the notification shade              | Synced on start, foreground and push receipt. Capable Android registrations also process background resolution; other registrations reconcile on open. Android stacks pushes. |
 
-When Paseo is killed or in the background on Android, the Firebase SDK posts pushes itself, with
-only a title and body: no data says which thread they belong to. Those go once nothing that
-could have raised them still waits (`notification-dismissal/caught-up.ts`). A `❓️` question is
-held by a pending question whose thread title matches the push, or whose agent isn't in the
-directory yet. Any other push is held by an unread thread whose title matches, or that became
-unread no more than 10 minutes before the push arrived, in case it was renamed since. An
-unread thread that is days old with another title no longer keeps every push. Archived agents
-and subagents don't count: subagents never push. Every saved host must be online with a fresh
-directory, so one offline host keeps them all, and only pushes delivered before every host's
-latest refresh are considered. Two threads with the same title hold each other's pushes.
-While such pushes wait, the app holds every host's directory and refreshes them all on
-foreground. The push test notification is never dismissed.
+### Android background lifecycle
+
+A daemon advertising `features.androidNotificationLifecycle` accepts an optional
+`androidLifecycleRegistrationId` with a push token. The Android app supplies it
+only after registering the Expo TaskManager handler and native lifecycle owner.
+Older apps, hosts and iOS keep existing delivery. Terminal and test pushes do not
+use this lifecycle. F-Droid excludes the push lifecycle and TaskManager modules.
+
+Managed Android attention uses data-only Expo messages with a nested
+`data.paseoLifecycle` envelope. No top-level alert fields or native `data.title` /
+`data.message` keys are sent. Expo delivers the task; the local native module
+owns durable state and the final Android post/remove calls. Do not replace that
+owner with `scheduleNotificationAsync`: on the pinned SDK its promise resolves
+before asynchronous native presentation finishes, allowing a canceled alert to
+post later. The module reuses Expo's builder and marshalled request for taps and
+enumeration. Existing display-only `data.preview` anchors travel alongside the
+lifecycle envelope, use the same byte-budget helper, and are restored to local
+notification data for the normal tap handler. The owner then rechecks durable desired state after building and calls
+Android notify/cancel under the shared process lock.
+
+Each host/agent has two independent episode IDs. Finished/error attention keeps
+one ID while unread; read clears that episode. A later unread episode gets a new
+ID. Error still does not generate a background alert. Permission requests share
+one question episode from the first pending request until the pending set is
+empty. Reading a chat or resolving only one of several questions does not close
+that episode. Unavailable provider state is unknown, never proof of resolution.
+Archive/delete closes both lanes after the source mutation commits. Existing
+read commands remain unconditional at daemon processing time; the cancellation
+identifies only the episode actually cleared.
+
+The daemon persists active identities and an outbox of resolutions. A partial
+source/lifecycle commit blocks the next source transition until repaired; flush
+also retries committed clears/deletes. Source reconstruction occurs on startup,
+not from a stale list during live sync. Expo acceptance removes an outbox item;
+it is not proof that a device received it. The total active/outbox record bound
+holds new episode creation rather than evicting undelivered resolutions.
+
+The native owner persists a tombstone before canceling, so a late or duplicate
+alert cannot recreate a resolved episode or cancel a newer one. Alert expiry is
+immutable and bounded to 24 hours; retries cannot extend it. Closed entries stay
+through expiry plus five minutes of clock allowance. At local capacity, dropped
+resolution identities block that host's alerts through their possible expiry.
+Removing a host disables its registration before canceling its rows; re-pairing
+uses another registration ID. No headless host-list loading state implies removal.
+
+Foreground catch-up snapshots the device's observed episode IDs before requesting
+the daemon's active IDs. It resolves only those observed IDs missing from the
+reply, so a delayed reply cannot remove a newer arrival. Managed rows are excluded
+from legacy presented-notification reconciliation; every managed removal goes
+through the native owner.
+
+Background execution and transport remain best effort. Android can delay normal
+priority cancellation and suppress task execution; high-priority silent delivery
+can be deprioritized. Force-stopped apps need reopening. Pending native work is
+reconciled when the owner runs again, using deterministic notification IDs. A
+crash between notify and recording its receipt can repeat an unresolved alert;
+normal recovery does not recreate rows the user dismissed after a recorded post.
+A committed tombstone always blocks a later managed post. Uninstall/data clearing
+removes this local ordering history. Non-force-stopped process death requires its
+own native proof; it is not implied by a disconnected-background test.
+
+### Legacy Android reconciliation
+
+Firebase posts legacy background alert messages itself. Validated unique Android
+tags from the attribution fix identify the owning host, agent and reason even
+when Expo's presented row has no data. A current owning-host refresh can remove
+its resolved row without waiting for an unrelated offline host. Dismiss only the
+observed identifier snapshot so a newer notification survives.
+
+Unknown/untagged rows retain conservative fallback in
+`notification-dismissal/caught-up.ts`. A question is held by a pending question
+whose thread title matches, or whose agent is missing from the directory. Other
+rows are held by matching unread threads or ones unread within ten minutes of
+delivery. Archived agents and subagents do not hold them. Every saved host must
+have a fresh online directory before ambiguous rows can clear; two same-title
+threads can hold each other's rows. Test notifications are never reconciled away.
 
 On every Electron platform, a notification the user clears stays tracked until its thread
 resolves: main does not forward the close to the renderer.

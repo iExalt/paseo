@@ -623,6 +623,12 @@ export class VoiceAssistantWebSocketServer {
   private readonly applicationSocketLease = new ApplicationSocketLease<WebSocketLike>();
   private eventLoopDelayMonitor: ReturnType<typeof monitorEventLoopDelay> | null = null;
   private unsubscribeSpeechReadiness: (() => void) | null = null;
+  private unsubscribeLifecycle: (() => void) | null = null;
+  private lifecycleRetry: ReturnType<typeof setInterval> | null = null;
+  private lifecycleDrain: Promise<void> | null = null;
+  private readonly notificationAbort = new AbortController();
+  private readonly attentionSnapshots = new Set<Promise<unknown>>();
+  private readonly attentionSends = new Set<Promise<void>>();
   private unsubscribeDaemonConfigChange: (() => void) | null = null;
   private unsubscribeTerminalActivity: (() => void) | null = null;
   private readonly browserToolsBroker: BrowserToolsBroker | null;
@@ -814,6 +820,14 @@ export class VoiceAssistantWebSocketServer {
       filePath: join(paseoHome, "push-tokens.json"),
     });
     this.pushNotificationSender = pushNotificationSender ?? this.pushNotifications;
+    const retryLifecycle = () =>
+      void this.flushLifecycleResolutions().catch((err) => {
+        this.logger.warn({ err }, "Failed to deliver lifecycle resolutions; retained for retry");
+      });
+    this.unsubscribeLifecycle = this.agentStorage.notificationLifecycle.subscribe(retryLifecycle);
+    this.lifecycleRetry = setInterval(retryLifecycle, 30_000);
+    this.lifecycleRetry.unref();
+    retryLifecycle();
 
     this.agentManager.setAgentAttentionCallback((params) => {
       void this.broadcastAgentAttention(params).catch((err) => {
@@ -1144,6 +1158,12 @@ export class VoiceAssistantWebSocketServer {
 
   public prepareForShutdown(): void {
     this.connectionLifecycle = "stopping";
+    this.agentManager.setAgentAttentionCallback(() => {});
+    this.unsubscribeLifecycle?.();
+    this.unsubscribeLifecycle = null;
+    if (this.lifecycleRetry) clearInterval(this.lifecycleRetry);
+    this.lifecycleRetry = null;
+    this.notificationAbort.abort();
   }
 
   public beginAcceptingConnections(): void {
@@ -1154,6 +1174,11 @@ export class VoiceAssistantWebSocketServer {
 
   public async close(): Promise<void> {
     this.prepareForShutdown();
+    // No new notification writes can be admitted after the shutdown barrier.
+    await Promise.allSettled([...this.attentionSnapshots, ...this.attentionSends]);
+    await this.lifecycleDrain?.catch((err) => {
+      this.logger.warn({ err }, "Lifecycle resolution retained during shutdown");
+    });
     await this.agentMessages.close();
     await this.connectedHosts.close();
     this.unsubscribeSpeechReadiness?.();
@@ -2041,6 +2066,7 @@ export class VoiceAssistantWebSocketServer {
         ...(this.advertiseRelayKeepAwake ? { relayKeepAwake: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: true,
+        androidNotificationLifecycle: true,
         // COMPAT(pushTest): added in v0.5.1, remove gate after 2027-04-16.
         pushTest: true,
         // COMPAT(plugins): added in v0.3.0, remove gate after 2027-08-07.
@@ -2900,17 +2926,54 @@ export class VoiceAssistantWebSocketServer {
     return clientEntries;
   }
 
+  private flushLifecycleResolutions(): Promise<void> {
+    if (this.notificationAbort.signal.aborted) return Promise.resolve();
+    if (this.lifecycleDrain) return this.lifecycleDrain;
+    const work = async () => {
+      await this.agentStorage.flush();
+      for (const episode of await this.agentStorage.notificationLifecycle.pending()) {
+        if (this.notificationAbort.signal.aborted) break;
+        const accepted = await this.pushNotifications.resolveLifecycle?.(
+          this.serverId,
+          episode,
+          this.notificationAbort.signal,
+        );
+        // An accepted but unacknowledged cancellation remains safe to retry after restart.
+        if (!accepted || this.notificationAbort.signal.aborted) break;
+        await this.agentStorage.notificationLifecycle.delivered(episode.episodeId);
+      }
+    };
+    this.lifecycleDrain = work().finally(() => {
+      this.lifecycleDrain = null;
+    });
+    return this.lifecycleDrain;
+  }
+
   private async broadcastAgentAttention(params: {
     agentId: string;
     provider: AgentProvider;
     reason: "finished" | "error" | "permission";
     completionSubject?: CompletionSubject;
   }): Promise<void> {
+    if (this.notificationAbort.signal.aborted) return;
     const agent = this.agentManager.getAgent(params.agentId);
     const workspaceId = agent?.workspaceId;
     if (!workspaceId) {
       return;
     }
+    // Capture a durable identity before asynchronous preview/policy work can race a read.
+    const snapshot = this.agentStorage.applySnapshot(agent);
+    this.attentionSnapshots.add(snapshot);
+    let episodes: Awaited<typeof snapshot>;
+    try {
+      episodes = await snapshot;
+    } finally {
+      this.attentionSnapshots.delete(snapshot);
+    }
+    if (this.notificationAbort.signal.aborted) return;
+    const lifecycle = episodes.find(
+      (episode) => episode.lane === (params.reason === "permission" ? "question" : "attention"),
+    );
     const subscriptionAgent = { ...agent, workspaceId };
     const clientEntries = await this.collectAgentAttentionClients(subscriptionAgent);
 
@@ -2945,10 +3008,18 @@ export class VoiceAssistantWebSocketServer {
       nowMs,
     });
 
+    if (this.notificationAbort.signal.aborted) return;
     if (delivery.push) {
-      void this.pushNotificationSender.send(notification).catch((err) => {
-        this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
-      });
+      const send = this.pushNotificationSender
+        .send(
+          { ...notification, ...(lifecycle ? { lifecycle } : {}) },
+          this.notificationAbort.signal,
+        )
+        .catch((err) => {
+          this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
+        });
+      this.attentionSends.add(send);
+      void send.finally(() => this.attentionSends.delete(send));
     }
 
     for (const { ws } of clientEntries) {

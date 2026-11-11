@@ -2581,11 +2581,23 @@ export class DaemonClient {
     });
   }
 
-  registerPushToken(token: string): void {
+  registerPushToken(token: string, androidLifecycleRegistrationId?: string): void {
     this.sendSessionMessage({
       type: "register_push_token",
       token,
+      ...(androidLifecycleRegistrationId ? { androidLifecycleRegistrationId } : {}),
     });
+  }
+
+  async syncNotificationLifecycle(): Promise<string[]> {
+    const requestId = this.createRequestId();
+    const response = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: { type: "push.lifecycle.sync.request", requestId },
+      responseType: "push.lifecycle.sync.response",
+      timeout: PUSH_TOKEN_REVOCATION_TIMEOUT_MS,
+    });
+    return response.activeEpisodeIds;
   }
 
   async unregisterPushToken(token: string): Promise<void> {

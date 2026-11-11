@@ -136,6 +136,16 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   );
   const integration = commands.find((step) => step.name === "focused server integration");
   const pattern = new RegExp(integration.args.at(-1));
+  assert.ok(
+    integration.args.includes("src/server/push/lifecycle.e2e.test.ts"),
+    "The hosted integration lane must run the notification lifecycle journey",
+  );
+  assert.equal(
+    pattern.test(
+      "actual daemon RPCs keep question and attention episodes independent across two clients",
+    ),
+    true,
+  );
   assert.equal(
     pattern.test("Antigravity creates an agent and answers a prompt with real agy"),
     false,

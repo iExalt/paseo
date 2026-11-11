@@ -217,6 +217,7 @@ export function planCommands(selection, cwd = root) {
         "src/server/daemon-e2e/live-preferences.e2e.test.ts",
         "src/server/agent/model-catalog.e2e.test.ts",
         "src/server/plugins/plugin-paseo-api.e2e.test.ts",
+        "src/server/push/lifecycle.e2e.test.ts",
       ],
       ["-t", "^(?!.*Antigravity creates an agent and answers a prompt with real agy).*$"],
     );
