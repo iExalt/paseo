@@ -274,3 +274,55 @@ test("managed HTTP transport bounds existing chat preview without losing identit
     vi.unstubAllGlobals();
   }
 });
+
+test("aborted lifecycle delivery cannot revoke a token from a late Expo response", async () => {
+  const revoked = vi.fn();
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() => {
+      entered();
+      return new Promise<Response>((resolve) => {
+        release = () =>
+          resolve(
+            Response.json({
+              data: [{ status: "error", details: { error: "DeviceNotRegistered" } }],
+            }),
+          );
+      });
+    }),
+  );
+  const abort = new AbortController();
+  const issuedAt = Date.now();
+  const service = new PushService(logger, revoked);
+  const operation = service.sendLifecycle(
+    [{ token: "token", registrationId: "11111111-1111-4111-8111-111111111111" }],
+    "host",
+    {
+      agentId: "agent",
+      lane: "attention",
+      episodeId: "22222222-2222-4222-8222-222222222222",
+      issuedAt,
+      expiresAt: issuedAt + 60000,
+    },
+    undefined,
+    abort.signal,
+  );
+  try {
+    await started;
+    abort.abort();
+    const signal = vi.mocked(fetch).mock.calls[0]![1]!.signal;
+    expect(signal?.aborted).toBe(true);
+    release();
+    expect(await operation).toBe(false);
+    expect(revoked).not.toHaveBeenCalled();
+  } finally {
+    release();
+    await operation;
+    vi.unstubAllGlobals();
+  }
+});

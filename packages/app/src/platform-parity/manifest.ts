@@ -133,6 +133,11 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
     "plugins/react-native/clipboard": equivalent,
     "projects/icon-cache-storage": equivalent,
+    "push-notifications/background-lifecycle": {
+      kind: "deliberate",
+      reason:
+        "Android uses a headless task for app-owned notification posting; other platforms retain their existing notification delivery paths",
+    },
     "push-notifications/index": {
       kind: "equivalent",
       note: "Desktop notifies through the OS; native subscribes to push",

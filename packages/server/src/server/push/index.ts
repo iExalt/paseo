@@ -10,9 +10,13 @@ const PUSH_TOKEN_LEASE_MS = 48 * 60 * 60 * 1000;
 
 export interface PushNotifications {
   renew(token: string, registrationId?: string | null): void;
-  resolveLifecycle?(serverId: string, episode: NotificationEpisode): Promise<boolean>;
+  resolveLifecycle?(
+    serverId: string,
+    episode: NotificationEpisode,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   revoke(token: string): void;
-  send(payload: PushPayload): Promise<void>;
+  send(payload: PushPayload, signal?: AbortSignal): Promise<void>;
   /** Send to one registered device and report Expo's answer. */
   sendTest(token: string, payload: PushPayload): Promise<PushDeliveryOutcome>;
 }
@@ -23,7 +27,7 @@ export function createPushNotifications(options: {
   logger: pino.Logger;
   filePath: string;
   now?: () => number;
-  deliver?: (tokens: string[], payload: PushPayload) => Promise<void>;
+  deliver?: (tokens: string[], payload: PushPayload, signal?: AbortSignal) => Promise<void>;
   deliverOne?: (token: string, payload: PushPayload) => Promise<PushDeliveryOutcome>;
 }): PushNotifications {
   const now = options.now ?? Date.now;
@@ -31,7 +35,8 @@ export function createPushNotifications(options: {
   const service = new PushService(options.logger, (token) => store.revokeToken(token));
   const deliver =
     options.deliver ??
-    ((tokens: string[], payload: PushPayload) => service.sendPush(tokens, payload));
+    ((tokens: string[], payload: PushPayload, signal?: AbortSignal) =>
+      service.sendPush(tokens, payload, signal));
   const deliverOne =
     options.deliverOne ??
     ((token: string, payload: PushPayload) => service.sendOne(token, payload));
@@ -43,7 +48,8 @@ export function createPushNotifications(options: {
     revoke(token) {
       store.revokeToken(token);
     },
-    async send(payload) {
+    async send(payload, signal) {
+      if (signal?.aborted) return;
       const subscriptions = store.getActiveSubscriptions();
       // Only explicitly capable Android registrations receive app-owned payloads.
       const managedKind =
@@ -55,22 +61,29 @@ export function createPushNotifications(options: {
         await deliver(
           legacy.map((sub) => sub.token),
           payload,
+          signal,
         );
       if (payload.lifecycle && typeof payload.data?.serverId === "string") {
         const managed = subscriptions.filter(
           (sub): sub is { token: string; registrationId: string } => !!sub.registrationId,
         );
         if (
-          !(await service.sendLifecycle(managed, payload.data.serverId, payload.lifecycle, payload))
+          !(await service.sendLifecycle(
+            managed,
+            payload.data.serverId,
+            payload.lifecycle,
+            payload,
+            signal,
+          ))
         )
           throw new Error("Expo did not accept managed alert");
       }
     },
-    resolveLifecycle(serverId, episode) {
+    resolveLifecycle(serverId, episode, signal) {
       const subscriptions = store
         .getActiveSubscriptions()
         .filter((sub): sub is { token: string; registrationId: string } => !!sub.registrationId);
-      return service.sendLifecycle(subscriptions, serverId, episode);
+      return service.sendLifecycle(subscriptions, serverId, episode, undefined, signal);
     },
     sendTest(token, payload) {
       return deliverOne(token, payload);

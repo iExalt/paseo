@@ -53,8 +53,8 @@ export class PushService {
     this.revokeToken = revokeToken;
   }
 
-  async sendPush(tokens: string[], payload: PushPayload): Promise<void> {
-    if (tokens.length === 0) {
+  async sendPush(tokens: string[], payload: PushPayload, signal?: AbortSignal): Promise<void> {
+    if (tokens.length === 0 || signal?.aborted) {
       return;
     }
 
@@ -79,7 +79,7 @@ export class PushService {
       batches.push(messages.slice(i, i + MAX_BATCH_SIZE));
     }
 
-    await Promise.all(batches.map((batch) => this.sendBatch(batch)));
+    await Promise.all(batches.map((batch) => this.sendBatch(batch, signal)));
   }
 
   async sendLifecycle(
@@ -87,7 +87,9 @@ export class PushService {
     serverId: string,
     episode: NotificationEpisode,
     payload?: PushPayload,
+    signal?: AbortSignal,
   ): Promise<boolean> {
+    if (signal?.aborted) return false;
     const messages: ExpoPushMessage[] = [];
     for (const subscription of subscriptions) {
       const event = parseAndroidNotificationLifecycle(
@@ -131,14 +133,7 @@ export class PushService {
     }
     for (let i = 0; i < messages.length; i += MAX_BATCH_SIZE) {
       const batch = messages.slice(i, i + MAX_BATCH_SIZE);
-      const result = await this.postBatch(batch);
-      if ("error" in result) return false;
-      this.handleTickets(batch, result.tickets);
-      if (
-        result.tickets.length !== batch.length ||
-        result.tickets.some((ticket) => ticket.status !== "ok")
-      )
-        return false;
+      if (!(await this.sendBatch(batch, signal))) return false;
     }
     return true;
   }
@@ -157,13 +152,19 @@ export class PushService {
     };
   }
 
-  private async sendBatch(messages: ExpoPushMessage[]): Promise<void> {
-    const result = await this.postBatch(messages);
-    if ("tickets" in result) this.handleTickets(messages, result.tickets);
+  private async sendBatch(messages: ExpoPushMessage[], signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted) return false;
+    const result = await this.postBatch(messages, signal);
+    if ("error" in result || signal?.aborted) return false;
+    this.handleTickets(messages, result.tickets);
+    return (
+      result.tickets.length === messages.length &&
+      result.tickets.every((ticket) => ticket.status === "ok")
+    );
   }
 
   /** Errors are logged and returned, never thrown. */
-  private async postBatch(messages: ExpoPushMessage[]): Promise<BatchResult> {
+  private async postBatch(messages: ExpoPushMessage[], signal?: AbortSignal): Promise<BatchResult> {
     try {
       const response = await fetch(EXPO_PUSH_URL, {
         method: "POST",
@@ -173,7 +174,9 @@ export class PushService {
         },
         body: JSON.stringify(messages),
         // A hung Expo request must not hold a test request open after the app gave up.
-        signal: AbortSignal.timeout(EXPO_REQUEST_TIMEOUT_MS),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(EXPO_REQUEST_TIMEOUT_MS)])
+          : AbortSignal.timeout(EXPO_REQUEST_TIMEOUT_MS),
       });
 
       if (!response.ok) {

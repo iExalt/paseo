@@ -5759,6 +5759,9 @@ export class AgentManager {
   }
 
   private enqueueBackgroundPersist(agent: ManagedAgent): void {
+    // Late provider events cannot replace shutdown/restart snapshots. Explicit close persistence
+    // still writes its final closed record through persistSnapshot.
+    if (!this.acceptingAgentRegistrations) return;
     const task = this.persistSnapshot(agent).catch((err) => {
       this.logger.error({ err, agentId: agent.id }, "Failed to persist agent snapshot");
     });

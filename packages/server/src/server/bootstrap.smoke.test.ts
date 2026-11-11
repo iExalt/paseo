@@ -1248,6 +1248,12 @@ test.each(["reject", "stall"] as const)(
       expect((await handle.daemon.agentStorage.get(agent.id))?.lastStatus).toBe("closed");
       expect(handle.daemon.agentManager.getAgent(agent.id)).toBeNull();
       expect((await handle.daemon.agentStorage.get(peer.id))?.lastStatus).toBe("running");
+      // Late provider completion cannot overwrite the authoritative shutdown/restart snapshots.
+      finishStream();
+      await Promise.all([run, peerRun]);
+      await handle.daemon.agentManager.flushForShutdown();
+      expect((await handle.daemon.agentStorage.get(agent.id))?.lastStatus).toBe("closed");
+      expect((await handle.daemon.agentStorage.get(peer.id))?.lastStatus).toBe("running");
     } finally {
       finishStream();
       if (child && child.exitCode === null && child.signalCode === null) {
