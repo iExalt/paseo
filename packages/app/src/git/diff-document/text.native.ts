@@ -4,6 +4,8 @@ import {
   matchFont,
   type SkFont,
   type SkParagraph,
+  type SkTypeface,
+  type SkTypefaceFontProvider,
 } from "@shopify/react-native-skia";
 import { fragmentTextForRange, visibleRowRange } from "./model";
 import { codeTextColor } from "./palette";
@@ -17,6 +19,13 @@ import {
 import type { DiffCell, DiffDocumentModel, DiffFragment, DiffPalette, TextMeasurer } from "./types";
 
 const PARAGRAPH_WIDTH = 100_000;
+
+/** A font the app bundles, loaded into Skia because its system font manager can't see it. */
+export interface BundledSkiaFont {
+  family: string;
+  typeface: SkTypeface;
+  provider: SkTypefaceFontProvider;
+}
 
 export interface NativeTextLayout {
   font: SkFont;
@@ -90,6 +99,7 @@ export interface NativeTextLayoutStore {
   textStyles: Map<string, ReturnType<typeof textStyle>>;
   ownedParagraphs: Set<SkParagraph>;
   families: string[];
+  bundledFont: BundledSkiaFont | null;
   fontSize: number;
   lineHeight: number;
   palette: DiffPalette;
@@ -105,12 +115,13 @@ export function disposeNativeTextLayout(layout: NativeTextLayoutStore): void {
 
 export function createNativeTextLayoutStore(input: {
   configuredFamily: string;
+  bundledFont: BundledSkiaFont | null;
   fontSize: number;
   lineHeight: number;
   palette: DiffPalette;
 }): NativeTextLayoutStore {
   const families = nativeFontFamilies(input.configuredFamily);
-  const font = primaryFont(families, input.fontSize);
+  const font = primaryFont(families, input.fontSize, input.bundledFont);
   return {
     font,
     asciiMetrics: createCachedAsciiTextMetrics({
@@ -121,6 +132,7 @@ export function createNativeTextLayoutStore(input: {
     textStyles: new Map(),
     ownedParagraphs: new Set(),
     families,
+    bundledFont: input.bundledFont,
     fontSize: input.fontSize,
     lineHeight: input.lineHeight,
     palette: input.palette,
@@ -167,6 +179,7 @@ export function prepareNativeTextLayout(
             cell,
             fragment,
             families: store.families,
+            provider: store.bundledFont?.provider,
             fontSize: store.fontSize,
             lineHeight: store.lineHeight,
             palette: store.palette,
@@ -193,10 +206,11 @@ export function prepareNativeTextLayout(
 
 export function createNativeTextMeasurer(input: {
   configuredFamily: string;
+  bundledFont: BundledSkiaFont | null;
   fontSize: number;
 }): TextMeasurer {
   const families = nativeFontFamilies(input.configuredFamily);
-  const font = primaryFont(families, input.fontSize);
+  const font = primaryFont(families, input.fontSize, input.bundledFont);
   const primary = {
     glyphIds: (text: string) => font.getGlyphIDs(text),
     measure: (text: string) => font.getTextWidth(text),
@@ -207,6 +221,7 @@ export function createNativeTextMeasurer(input: {
     createParagraph({
       text,
       families,
+      provider: input.bundledFont?.provider,
       fontSize: input.fontSize,
       lineHeight: Math.round(input.fontSize * 1.5),
       color: black,
@@ -259,6 +274,7 @@ function createFragmentParagraph(input: {
   cell: DiffCell;
   fragment: DiffFragment;
   families: string[];
+  provider: SkTypefaceFontProvider | undefined;
   fontSize: number;
   lineHeight: number;
   palette: DiffPalette;
@@ -266,6 +282,7 @@ function createFragmentParagraph(input: {
 }): SkParagraph {
   const builder = Skia.ParagraphBuilder.Make(
     paragraphStyle(input.families, input.fontSize, input.lineHeight),
+    input.provider,
   );
   if (input.cell.tokens.length === 0 || input.cell.type === "header") {
     const color = codeTextColor(input.cell, input.palette);
@@ -289,12 +306,14 @@ function createFragmentParagraph(input: {
 function createParagraph(input: {
   text: string;
   families: string[];
+  provider: SkTypefaceFontProvider | undefined;
   fontSize: number;
   lineHeight: number;
   color: ReturnType<typeof Skia.Color>;
 }): SkParagraph {
   const paragraph = Skia.ParagraphBuilder.Make(
     paragraphStyle(input.families, input.fontSize, input.lineHeight),
+    input.provider,
   )
     .pushStyle({
       fontFamilies: input.families,
@@ -338,9 +357,12 @@ function textStyle(families: string[], fontSize: number, color: string) {
   return { fontFamilies: families, fontSize, color: Skia.Color(color) };
 }
 
-function primaryFont(families: string[], size: number): SkFont {
+function primaryFont(families: string[], size: number, bundled: BundledSkiaFont | null): SkFont {
   const available = new Set(listFontFamilies());
-  const family = families.find((candidate) => available.has(candidate)) ?? "System";
+  const family =
+    families.find((candidate) => candidate === bundled?.family || available.has(candidate)) ??
+    "System";
+  if (bundled && family === bundled.family) return Skia.Font(bundled.typeface, size);
   return matchFont({ fontFamily: family, fontSize: size });
 }
 
