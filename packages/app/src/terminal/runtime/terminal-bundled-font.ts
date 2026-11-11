@@ -9,30 +9,36 @@ const BUNDLED_FONT_FACES = [
 
 let bundledFontLoad: Promise<boolean> | null = null;
 let bundledFontLoaded = false;
-let registeredFaces: FontFace[] | null = null;
+// By weight. A face that fails to load is dropped, so the next registration
+// retries it while the faces that loaded stay.
+const registeredFaces = new Map<string, FontFace>();
 
 // Declares the faces without fetching them: the browser downloads a face the first
 // time text asks for the family, so code surfaces get the font without app startup
-// paying for it. Returns null where FontFace doesn't exist (native, tests).
-export function registerBundledMonoFont(): FontFace[] | null {
-  if (registeredFaces) {
-    return registeredFaces;
-  }
+// paying for it. Returns no faces where FontFace doesn't exist (native, tests).
+export function registerBundledMonoFont(): FontFace[] {
   if (typeof FontFace === "undefined" || typeof document === "undefined" || !document.fonts) {
-    return null;
+    return [];
   }
-  const faces = BUNDLED_FONT_FACES.map(
-    (face) =>
-      new FontFace(TERMINAL_NERD_FONT_FAMILY, `url(${face.url}) format("woff2")`, {
-        weight: face.weight,
-        display: "swap",
-      }),
-  );
-  for (const face of faces) {
-    document.fonts.add(face);
+  for (const face of BUNDLED_FONT_FACES) {
+    if (registeredFaces.has(face.weight)) {
+      continue;
+    }
+    const fontFace = new FontFace(TERMINAL_NERD_FONT_FAMILY, `url(${face.url}) format("woff2")`, {
+      weight: face.weight,
+      display: "swap",
+    });
+    document.fonts.add(fontFace);
+    registeredFaces.set(face.weight, fontFace);
   }
-  registeredFaces = faces;
-  return faces;
+  return [...registeredFaces.values()];
+}
+
+function dropFace(face: FontFace): void {
+  document.fonts.delete(face);
+  if (registeredFaces.get(face.weight) === face) {
+    registeredFaces.delete(face.weight);
+  }
 }
 
 export function isBundledTerminalFontLoaded(): boolean {
@@ -47,25 +53,28 @@ export function loadBundledTerminalFont(): Promise<boolean> {
     return bundledFontLoad;
   }
   bundledFontLoad = (async () => {
-    let faces: FontFace[] = [];
-    try {
-      faces = registerBundledMonoFont() ?? [];
-      if (faces.length === 0) {
-        return false;
-      }
-      await Promise.all(faces.map((face) => face.load()));
-      bundledFontLoaded = true;
-      return true;
-    } catch {
-      // All or nothing: drop a face that did load so the family stays absent,
-      // and let a later mount retry, e.g. after the network comes back.
-      for (const face of faces) {
-        document.fonts.delete(face);
-      }
-      registeredFaces = null;
-      bundledFontLoad = null;
+    const faces = registerBundledMonoFont();
+    if (faces.length === 0) {
       return false;
     }
+    const results = await Promise.allSettled(faces.map((face) => face.load()));
+    let failed = false;
+    results.forEach((result, index) => {
+      if (result.status === "rejected") {
+        failed = true;
+        dropFace(faces[index]!);
+      }
+    });
+    // The next call retries what failed, e.g. after the network comes back. Terminals
+    // stop calling once Regular has loaded, so a failed Bold comes back only when
+    // applyAppearance registers it again; until it loads, bold text is synthesized.
+    if (failed) {
+      bundledFontLoad = null;
+    }
+    // The terminal needs Regular. Without Bold the browser synthesizes it from
+    // Regular at the same advance width, so cells still line up.
+    bundledFontLoaded = registeredFaces.get("400")?.status === "loaded";
+    return bundledFontLoaded;
   })();
   return bundledFontLoad;
 }
@@ -84,5 +93,8 @@ export function withoutBundledTerminalFont(fontFamily: string): string {
 export function resetBundledTerminalFontForTest(): void {
   bundledFontLoad = null;
   bundledFontLoaded = false;
-  registeredFaces = null;
+  for (const face of registeredFaces.values()) {
+    document.fonts.delete(face);
+  }
+  registeredFaces.clear();
 }

@@ -27,6 +27,7 @@ export const helperTests = [
   "scripts/agent-adb.test.mjs",
   "scripts/daemon-launch-contract.test.mjs",
   "scripts/is-main-module.test.mjs",
+  "scripts/oxlint/paseo-plugin.test.mjs",
   "scripts/paseo-nix-update.test.mjs",
   "scripts/paseo-nix-update-delta.test.mjs",
   "scripts/paseo-nix-update-semver.test.mjs",
