@@ -7,6 +7,8 @@ import type { BundledSkiaFont } from "./text.native";
 // Skia's Android font manager lists only system fonts, not the ones expo-font embeds,
 // so the diff surface loads the bundled mono font into its own provider. It loads
 // once per process; until then, diffs draw with the system mono font.
+// Skia never settles Data.fromURI when it can't open the asset, so give up loudly.
+const LOAD_TIMEOUT_MS = 10_000;
 let font: BundledSkiaFont | null = null;
 let loading = false;
 const listeners = new Set<() => void>();
@@ -15,7 +17,17 @@ async function loadFont(): Promise<BundledSkiaFont> {
   const { uri } = Image.resolveAssetSource(
     require("../../../assets/fonts/meslolgs-nf/meslolgs_nf_regular.ttf"),
   );
-  const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(await Skia.Data.fromURI(uri));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`no font data after ${LOAD_TIMEOUT_MS} ms`)),
+      LOAD_TIMEOUT_MS,
+    );
+  });
+  const data = await Promise.race([Skia.Data.fromURI(uri), timeout]).finally(() =>
+    clearTimeout(timer),
+  );
+  const typeface = Skia.Typeface.MakeFreeTypeFaceFromData(data);
   if (!typeface) throw new Error("bundled mono font did not parse");
   const provider = Skia.TypefaceFontProvider.Make();
   provider.registerFont(typeface, TERMINAL_NERD_FONT_FAMILY);
