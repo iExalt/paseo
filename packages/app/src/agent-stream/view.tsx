@@ -1811,9 +1811,15 @@ function PermissionRequestCard({
 
   return (
     <View style={permissionStyles.container}>
-      <Text style={permissionStyles.title}>{title}</Text>
+      <Text selectable style={permissionStyles.title}>
+        {title}
+      </Text>
 
-      {description ? <Text style={permissionStyles.description}>{description}</Text> : null}
+      {description ? (
+        <Text selectable style={permissionStyles.description}>
+          {description}
+        </Text>
+      ) : null}
 
       {planMarkdown ? (
         <PlanCard
