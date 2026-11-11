@@ -770,6 +770,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     });
 
     const setToolCallGroupExpanded = toolCallExpansion.setGroupExpanded;
+    // Every disclosure keeps its header under the pointer and opens downward. Compact layouts
+    // open tool calls in a sheet, where toggles leave the timeline's height alone.
+    useEffect(() => {
+      if (isMobile) return;
+      return toolCallExpansion.subscribeBeforeToggle(() =>
+        viewportRef.current?.holdReadingPosition(),
+      );
+    }, [isMobile, toolCallExpansion]);
 
     const holdReadingPosition = useCallback(
       (rowId?: string) => viewportRef.current?.holdReadingPosition(rowId),
