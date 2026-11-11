@@ -17,6 +17,7 @@ import {
   type CachedAsciiTextMetrics,
 } from "./text-measurement";
 import type { DiffCell, DiffDocumentModel, DiffFragment, DiffPalette, TextMeasurer } from "./types";
+import { namesTerminalNerdFont, TERMINAL_NERD_FONT_FAMILY } from "@/terminal/runtime/terminal-font";
 
 const PARAGRAPH_WIDTH = 100_000;
 
@@ -370,6 +371,8 @@ export function nativeFontFamilies(configuredFamily: string): string[] {
   const configured = configuredFamily
     .split(",")
     .map((family) => family.trim().replace(/^['"]|['"]$/g, ""))
-    .filter(Boolean);
+    .filter(Boolean)
+    // The bundled font registers under one exact name; accept any casing of it.
+    .map((family) => (namesTerminalNerdFont(family) ? TERMINAL_NERD_FONT_FAMILY : family));
   return [...new Set([...configured, "Menlo", "SF Mono", "monospace", "System"])];
 }

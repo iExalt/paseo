@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from "react";
 import { Image } from "react-native";
 import { Skia } from "@shopify/react-native-skia";
-import { TERMINAL_NERD_FONT_FAMILY } from "@/terminal/runtime/terminal-font";
+import { namesTerminalNerdFont, TERMINAL_NERD_FONT_FAMILY } from "@/terminal/runtime/terminal-font";
 import type { BundledSkiaFont } from "./text.native";
 
 // Skia's Android font manager lists only system fonts, not the ones expo-font embeds,
@@ -43,6 +43,6 @@ const subscribeNever = () => () => {};
 
 /** The bundled mono font as a Skia font, once loaded, when `families` names it. */
 export function useBundledSkiaFont(families: string): BundledSkiaFont | null {
-  const wanted = families.includes(TERMINAL_NERD_FONT_FAMILY);
+  const wanted = namesTerminalNerdFont(families);
   return useSyncExternalStore(wanted ? subscribe : subscribeNever, () => (wanted ? font : null));
 }
