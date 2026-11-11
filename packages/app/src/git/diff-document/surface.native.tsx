@@ -106,7 +106,7 @@ import {
   type NativeTextLayout,
   type NativeHeaderTextLayout,
 } from "./text.native";
-import { useBundledSkiaFont } from "./bundled-font";
+import { useBundledSkiaFont } from "./bundled-font.native";
 import { DEFAULT_MONO_FONT_STACK } from "@/styles/theme";
 import type {
   DiffDocumentModel,

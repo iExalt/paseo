@@ -34,11 +34,10 @@ export function registerBundledMonoFont(): FontFace[] {
   return [...registeredFaces.values()];
 }
 
-function dropFace(weight: string): void {
-  const face = registeredFaces.get(weight);
-  if (face) {
-    document.fonts.delete(face);
-    registeredFaces.delete(weight);
+function dropFace(face: FontFace): void {
+  document.fonts.delete(face);
+  if (registeredFaces.get(face.weight) === face) {
+    registeredFaces.delete(face.weight);
   }
 }
 
@@ -63,10 +62,12 @@ export function loadBundledTerminalFont(): Promise<boolean> {
     results.forEach((result, index) => {
       if (result.status === "rejected") {
         failed = true;
-        dropFace(faces[index]!.weight);
+        dropFace(faces[index]!);
       }
     });
-    // A later mount retries what failed, e.g. after the network comes back.
+    // The next call retries what failed, e.g. after the network comes back. Terminals
+    // stop calling once Regular has loaded, so a failed Bold comes back only when
+    // applyAppearance registers it again; until it loads, bold text is synthesized.
     if (failed) {
       bundledFontLoad = null;
     }

@@ -5,8 +5,10 @@ import { namesTerminalNerdFont, TERMINAL_NERD_FONT_FAMILY } from "@/terminal/run
 import type { BundledSkiaFont } from "./text.native";
 
 // Skia's Android font manager lists only system fonts, not the ones expo-font embeds,
-// so the diff surface loads the bundled mono font into its own provider. It loads
-// once per process; until then, diffs draw with the system mono font.
+// so the diff surface loads the bundled mono font into its own provider. iOS loads it
+// too: CoreText probably lists the embedded font already, but nothing here has shown
+// that on a device, and the provider path is the one known to work. It loads once per
+// process; until then, diffs draw with the system mono font.
 // Skia never settles Data.fromURI when it can't open the asset, so give up loudly.
 const LOAD_TIMEOUT_MS = 10_000;
 let font: BundledSkiaFont | null = null;

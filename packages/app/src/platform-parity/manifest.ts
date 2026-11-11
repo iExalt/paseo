@@ -104,10 +104,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
     "file-panels/source/editor/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "file-panels/source/readonly/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
-    "git/diff-document/bundled-font": {
-      kind: "equivalent",
-      note: "Only Android's Skia needs the bundled mono font loaded; iOS CoreText already lists it",
-    },
     "git/diff-document/horizontal-scroll": equivalent,
     "git/diff-document/paint": equivalent,
     "git/diff-document/surface": equivalent,
