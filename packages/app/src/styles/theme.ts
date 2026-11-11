@@ -639,14 +639,13 @@ export const DEFAULT_UI_FONT_STACK: string = Platform.select({
   web: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
 });
 
-// Android's "monospace" (Droid Sans Mono) has no box-drawing glyphs, and native text
-// can't fall back per glyph to a same-width font, so diagrams in code blocks drift
-// out of column. The bundled terminal font covers them at the same advance width.
+// The bundled terminal font on every platform: it draws box-drawing at the ASCII
+// advance width, so diagrams in code blocks stay in column. Android's own monospace
+// has none of those glyphs, and native text can't fall back per glyph to a same-width
+// font. Web keeps system monospaces behind it while the font downloads.
 export const DEFAULT_MONO_FONT_STACK: string = Platform.select({
-  ios: "ui-monospace",
-  android: TERMINAL_NERD_FONT_FAMILY,
-  default: "monospace",
-  web: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
+  default: TERMINAL_NERD_FONT_FAMILY,
+  web: `'${TERMINAL_NERD_FONT_FAMILY}', SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace`,
 });
 
 // Chat and markdown content column; the appearance updater patches the user's width in.
