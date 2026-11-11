@@ -1,3 +1,8 @@
+import {
+  prepareLifecycle,
+  removeLifecycleHost,
+  watchLifecycle,
+} from "../background-lifecycle.native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
@@ -97,19 +102,67 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
   const { serverId } = input;
   let stopped = false;
   let token: string | null = null;
+  let registrationId: string | undefined;
+  let stopLifecycle: (() => void) | undefined;
+  let preparing: Promise<void> | null = null;
+  let registerAgain = false;
+  const sendRegistration = () => {
+    if (stopped || !token || !input.client.isConnected) return;
+    const supported =
+      input.client.getLastServerInfoMessage()?.features?.androidNotificationLifecycle === true;
+    if (supported && registrationId) input.client.registerPushToken(token, registrationId);
+    else input.client.registerPushToken(token);
+    setPushRegistrationStatus(serverId, "sent");
+  };
   const register = () => {
     if (stopped || !token) return;
     if (!input.client.isConnected) {
       setPushRegistrationStatus(serverId, "not-connected");
       return;
     }
-    input.client.registerPushToken(token);
-    setPushRegistrationStatus(serverId, "sent");
+    if (preparing) {
+      registerAgain = true;
+      return;
+    }
+    if (input.client.getLastServerInfoMessage()?.features?.androidNotificationLifecycle !== true) {
+      stopLifecycle?.();
+      stopLifecycle = undefined;
+      registrationId = undefined;
+      sendRegistration();
+      return;
+    }
+    preparing = prepareLifecycle(input.client, serverId)
+      .then((id) => {
+        if (stopped) return undefined;
+        registrationId = id;
+        stopLifecycle?.();
+        stopLifecycle = id ? watchLifecycle(input.client, serverId, id) : undefined;
+        sendRegistration();
+        return undefined;
+      })
+      .catch((error) => {
+        if (stopped) return;
+        registrationId = undefined;
+        stopLifecycle?.();
+        stopLifecycle = undefined;
+        console.warn(
+          "[PushNotifications] Background task unavailable; retaining ordinary push delivery",
+          error,
+        );
+        sendRegistration();
+      })
+      .finally(() => {
+        preparing = null;
+        if (registerAgain) {
+          registerAgain = false;
+          register();
+        }
+      });
   };
   const resolve = ({ prompt }: { prompt: boolean }) => {
     setPushRegistrationStatus(serverId, "pending");
     void resolveToken(serverId, prompt)
-      .then((result) => {
+      .then(async (result) => {
         if (stopped) return undefined;
         token = result.token;
         if (result.token === null) setPushRegistrationStatus(serverId, result.reason);
@@ -135,6 +188,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
 
   return () => {
     stopped = true;
+    stopLifecycle?.();
     stopReregister();
     unsubscribe();
     appState.remove();
@@ -142,6 +196,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
 }
 
 export async function revokeSubscription(input: RevokePushNotificationsInput): Promise<void> {
+  await removeLifecycleHost(input.serverId);
   const key = storageKey(input.serverId);
   const token = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
   if (

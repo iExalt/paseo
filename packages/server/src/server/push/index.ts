@@ -1,3 +1,4 @@
+import type { NotificationEpisode } from "./lifecycle-store.js";
 import type pino from "pino";
 
 import { PushService, type PushDeliveryOutcome, type PushPayload } from "./push-service.js";
@@ -8,7 +9,8 @@ export type { PushDeliveryOutcome, PushPayload };
 const PUSH_TOKEN_LEASE_MS = 48 * 60 * 60 * 1000;
 
 export interface PushNotifications {
-  renew(token: string): void;
+  renew(token: string, registrationId?: string | null): void;
+  resolveLifecycle?(serverId: string, episode: NotificationEpisode): Promise<boolean>;
   revoke(token: string): void;
   send(payload: PushPayload): Promise<void>;
   /** Send to one registered device and report Expo's answer. */
@@ -35,17 +37,40 @@ export function createPushNotifications(options: {
     ((token: string, payload: PushPayload) => service.sendOne(token, payload));
 
   return {
-    renew(token) {
-      store.renewToken(token);
+    renew(token, registrationId) {
+      store.renewToken(token, registrationId);
     },
     revoke(token) {
       store.revokeToken(token);
     },
     async send(payload) {
-      const tokens = store.getActiveTokens();
-      options.logger.info({ tokenCount: tokens.length }, "Sending push notification");
-      if (tokens.length === 0) return;
-      await deliver(tokens, payload);
+      const subscriptions = store.getActiveSubscriptions();
+      // Only explicitly capable Android registrations receive app-owned payloads.
+      const managedKind =
+        typeof payload.data?.serverId === "string" &&
+        typeof payload.data.agentId === "string" &&
+        (payload.data.reason === "finished" || payload.data.reason === "permission");
+      const legacy = subscriptions.filter((sub) => !sub.registrationId || !managedKind);
+      if (legacy.length)
+        await deliver(
+          legacy.map((sub) => sub.token),
+          payload,
+        );
+      if (payload.lifecycle && typeof payload.data?.serverId === "string") {
+        const managed = subscriptions.filter(
+          (sub): sub is { token: string; registrationId: string } => !!sub.registrationId,
+        );
+        if (
+          !(await service.sendLifecycle(managed, payload.data.serverId, payload.lifecycle, payload))
+        )
+          throw new Error("Expo did not accept managed alert");
+      }
+    },
+    resolveLifecycle(serverId, episode) {
+      const subscriptions = store
+        .getActiveSubscriptions()
+        .filter((sub): sub is { token: string; registrationId: string } => !!sub.registrationId);
+      return service.sendLifecycle(subscriptions, serverId, episode);
     },
     sendTest(token, payload) {
       return deliverOne(token, payload);

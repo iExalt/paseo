@@ -167,3 +167,110 @@ describe("ordinary attention push tags", () => {
     expect(Buffer.byteLength(JSON.stringify(message), "utf8")).toBeLessThanOrEqual(4000);
   });
 });
+
+describe("managed lifecycle transport", () => {
+  afterEach(() => vi.unstubAllGlobals());
+  test("actual Expo HTTP payload stays data-only and distinguishes alert/cancellation priority", async () => {
+    respond({ tickets: [{ status: "ok", id: "accepted" }] });
+    const service = new PushService(logger, () => undefined);
+    const issuedAt = Date.now();
+    const episode = {
+      agentId: "agent",
+      lane: "question" as const,
+      episodeId: "22222222-2222-4222-8222-222222222222",
+      issuedAt,
+      expiresAt: issuedAt + 60000,
+    };
+    const subscriptions = [
+      { token: "ExponentPushToken[test]", registrationId: "11111111-1111-4111-8111-111111111111" },
+    ];
+    await service.sendLifecycle(subscriptions, "host", episode, {
+      title: "Question",
+      body: "Allow?",
+      data: { reason: "permission" },
+    });
+    await service.sendLifecycle(subscriptions, "host", episode);
+    const calls = vi.mocked(fetch).mock.calls;
+    const alert = JSON.parse(String(calls[0]![1]!.body))[0];
+    const resolve = JSON.parse(String(calls[1]![1]!.body))[0];
+    for (const message of [alert, resolve]) {
+      expect(message).not.toHaveProperty("title");
+      expect(message).not.toHaveProperty("body");
+      expect(message).not.toHaveProperty("sound");
+      expect(message.data).not.toHaveProperty("title");
+      expect(message.data).not.toHaveProperty("message");
+      expect(message.data.paseoLifecycle).toMatchObject(episode);
+    }
+    expect(alert.priority).toBe("high");
+    expect(resolve.priority).toBe("normal");
+    expect(resolve.ttl).toBe(86400);
+    expect(resolve.data.paseoLifecycle.operation).toBe("resolve");
+  });
+  test("resolution is not acknowledged when Expo rejects or omits its ticket", async () => {
+    respond({ tickets: [] });
+    const service = new PushService(logger, () => undefined);
+    const issuedAt = Date.now();
+    expect(
+      await service.sendLifecycle(
+        [{ token: "token", registrationId: "11111111-1111-4111-8111-111111111111" }],
+        "host",
+        {
+          agentId: "agent",
+          lane: "attention",
+          episodeId: "22222222-2222-4222-8222-222222222222",
+          issuedAt,
+          expiresAt: issuedAt + 1,
+        },
+      ),
+    ).toBe(false);
+  });
+});
+
+test("managed HTTP transport bounds existing chat preview without losing identity or native safety", async () => {
+  respond({ tickets: [{ status: "ok", id: "ticket" }] });
+  try {
+    const issuedAt = Date.now();
+    const episode = {
+      agentId: "agent",
+      lane: "attention" as const,
+      episodeId: "22222222-2222-4222-8222-222222222222",
+      issuedAt,
+      expiresAt: issuedAt + 60000,
+    };
+    const preview = {
+      v: 1,
+      kind: "assistant",
+      epoch: "epoch",
+      seqStart: 12,
+      seqEnd: 14,
+      timestamp: "2026-11-11T00:00:00.000Z",
+      text: "🌋".repeat(1900),
+      truncated: false,
+    };
+    await new PushService(logger, () => undefined).sendLifecycle(
+      [{ token: "token", registrationId: "11111111-1111-4111-8111-111111111111" }],
+      "host",
+      episode,
+      { title: "Finished", body: "B".repeat(1000), data: { reason: "finished", preview } },
+    );
+    const message = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body))[0];
+    expect(new TextEncoder().encode(JSON.stringify(message)).byteLength).toBeLessThanOrEqual(4000);
+    expect(message.data.paseoLifecycle).toMatchObject(episode);
+    expect(message.data.preview).toMatchObject({
+      v: 1,
+      kind: "assistant",
+      epoch: "epoch",
+      seqStart: 12,
+      seqEnd: 14,
+      timestamp: preview.timestamp,
+      truncated: true,
+    });
+    expect(message.data.preview.text.length).toBeLessThan(preview.text.length);
+    expect(message).not.toHaveProperty("title");
+    expect(message).not.toHaveProperty("body");
+    expect(message.data).not.toHaveProperty("title");
+    expect(message.data).not.toHaveProperty("message");
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

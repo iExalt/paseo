@@ -429,6 +429,8 @@ interface HandleStreamEventOptions {
 }
 
 interface ManagedAgentBase {
+  /** False after an unsuccessful provider pending-state read; never infer resolution from that. */
+  permissionStateKnown?: boolean;
   id: string;
   provider: AgentProvider;
   cwd: string;
@@ -4727,8 +4729,9 @@ export class AgentManager {
     try {
       const pending = agent.session.getPendingPermissions();
       agent.pendingPermissions = new Map(pending.map((request) => [request.id, request]));
+      agent.permissionStateKnown = true;
     } catch {
-      agent.pendingPermissions.clear();
+      agent.permissionStateKnown = false;
     }
 
     this.syncFeaturesFromSession(agent);

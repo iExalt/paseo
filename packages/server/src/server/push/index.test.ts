@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type pino from "pino";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 
 import { createPushNotifications } from "./index.js";
 
@@ -64,4 +64,50 @@ describe("push notifications", () => {
 
     expect(deliveries).toEqual([]);
   });
+});
+
+test("only capable Android devices switch delivery ownership, without falling back on closed episodes", async () => {
+  const home = mkdtempSync(path.join(tmpdir(), "paseo-routing-"));
+  const deliveries: string[][] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ data: [{ status: "ok", id: "ticket" }] })),
+  );
+  try {
+    const push = createPushNotifications({
+      logger: createLogger(),
+      filePath: path.join(home, "tokens.json"),
+      deliver: async (tokens) => {
+        deliveries.push(tokens);
+      },
+    });
+    push.renew("legacy");
+    push.renew("managed", "11111111-1111-4111-8111-111111111111");
+    const payload = {
+      title: "Finished",
+      body: "Done",
+      data: { serverId: "host", agentId: "agent", reason: "finished" },
+    };
+    await push.send(payload);
+    expect(deliveries).toEqual([["legacy"]]);
+    expect(fetch).not.toHaveBeenCalled();
+    const issuedAt = Date.now();
+    await push.send({
+      ...payload,
+      lifecycle: {
+        agentId: "agent",
+        lane: "attention",
+        episodeId: "22222222-2222-4222-8222-222222222222",
+        issuedAt,
+        expiresAt: issuedAt + 60000,
+      },
+    });
+    expect(deliveries).toEqual([["legacy"], ["legacy"]]);
+    const messages = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body));
+    expect(messages[0].to).toBe("managed");
+    expect(messages[0]).not.toHaveProperty("title");
+  } finally {
+    vi.unstubAllGlobals();
+    rmSync(home, { recursive: true, force: true });
+  }
 });

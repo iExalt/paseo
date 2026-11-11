@@ -41,7 +41,9 @@ export function startPresentedNotificationDismissal(): () => void {
       dismiss: (identifier) => Notifications.dismissNotificationAsync(identifier),
     },
     tracker: () => dismissal,
-    isTrackable: (data) => !isPushTestNotification(data as Record<string, unknown> | undefined),
+    isTrackable: (data) =>
+      !isPushTestNotification(data as Record<string, unknown> | undefined) &&
+      !(data && typeof data === "object" && "paseoLifecycle" in data),
     onUntracked: (pushes) => dismissal.setUntrackedPushes(pushes),
   });
   // Pushes Android posted while Paseo was closed predate the refresh this starts.

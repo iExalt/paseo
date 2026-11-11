@@ -4,13 +4,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
 import type { AgentManager } from "./agent/agent-manager.js";
-import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import { createProviderSnapshotManagerStub, asAgentStorage } from "./test-utils/session-stubs.js";
 import type { PushNotificationSender, PushPayload } from "./push/index.js";
 import type { WorkspaceAutoName } from "./workspace-auto-name.js";
 import { ReplyRuleMatcher } from "./agent/reply-rule-matcher.js";
@@ -102,6 +101,7 @@ function createServer(
   workspaceRegistry?: WorkspaceRegistry,
   daemonConfigStoreOverrides?: Record<string, unknown>,
   agentStorageRecord: { title: string } | null = null,
+  agentStorageOverrides: Record<string, unknown> = {},
 ) {
   const pushNotifications = new RecordingPushNotificationSender();
   const logger = createLogger();
@@ -135,7 +135,7 @@ function createServer(
     createStub<pino.Logger>(logger),
     "srv-test",
     createStub<AgentManager>(agentManager),
-    createStub<AgentStorage>({ get: vi.fn(async () => agentStorageRecord) }),
+    asAgentStorage({ get: vi.fn(async () => agentStorageRecord), ...agentStorageOverrides }),
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
@@ -671,4 +671,41 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
       expect(modernPayload?.notification.data.workspaceId).toBe(WORKSPACE_ID);
     },
   );
+});
+
+it("an old broadcast keeps its exact committed episode across a read and newer finish", async () => {
+  const issuedAt = Date.now();
+  const a = {
+    agentId: "agent-1",
+    lane: "attention" as const,
+    episodeId: "11111111-1111-4111-8111-111111111111",
+    issuedAt,
+    expiresAt: issuedAt + 60000,
+  };
+  const b = { ...a, episodeId: "22222222-2222-4222-8222-222222222222" };
+  let release: (episodes: (typeof a)[]) => void = () => undefined;
+  const sourceCommit = new Promise<(typeof a)[]>((resolve) => {
+    release = resolve;
+  });
+  const applySnapshot = vi.fn(() => sourceCommit);
+  const active = vi.fn(async () => [a]);
+  const { server, pushNotifications } = createServer(undefined, undefined, undefined, null, {
+    applySnapshot,
+    notificationLifecycle: {
+      subscribe: () => () => {},
+      pending: async () => [],
+      active,
+      delivered: async () => {},
+    },
+  });
+  const broadcast = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention;
+  const pending = broadcast.call(server, { agentId: "agent-1", reason: "finished" });
+  expect(applySnapshot).toHaveBeenCalledOnce();
+  // A was cleared and a new unread B now exists before A's continuation is resumed.
+  active.mockResolvedValue([b]);
+  release([a]);
+  await pending;
+  expect(pushNotifications.sent).toHaveLength(1);
+  expect(pushNotifications.sent[0]!.lifecycle?.episodeId).toBe(a.episodeId);
+  expect(active).not.toHaveBeenCalled();
 });
