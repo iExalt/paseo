@@ -1230,10 +1230,16 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
         setFollowOutput(false);
         const scrollContainer = scrollContainerRef.current;
         readingAnchor.scroll(scrollContainer?.scrollTop ?? 0);
-        // Remember the row the toggle sits in, so its opened content can be revealed.
-        const row = lastInteractionTargetRef.current?.closest<HTMLElement>("[data-history-row-id]");
-        // A later hold without a press of its own, such as chat find opening a turn, reveals nothing.
+        // Remember the row the toggle sits in, so its opened content can be revealed. Pressing a
+        // toggle focuses it; a hold from elsewhere, such as chat find or the outline opening a
+        // turn, has moved focus away from any earlier press and reveals nothing.
+        const target = lastInteractionTargetRef.current;
         lastInteractionTargetRef.current = null;
+        const focused = document.activeElement;
+        const row =
+          target && focused?.contains(target)
+            ? target.closest<HTMLElement>("[data-history-row-id]")
+            : null;
         pendingRevealRef.current =
           row && scrollContainer?.contains(row)
             ? {
