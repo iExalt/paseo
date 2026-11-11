@@ -19,11 +19,24 @@ export function createPermitCommand(): Command {
       .argument("<agent>", "Agent ID, prefix, or full session ID")
       .argument("[req_id]", "Permission request ID (optional if --all)")
       .option("--all", "Allow all pending permissions for this agent")
-      .option("--input <json>", "Modified input parameters (JSON)")
+      .option("--input <json>", 'Modified input; questions use {"answers":{"<header>":"<answer>"}}')
       .option("--selected-action-id <id>", "Selected permission action ID (requires one request)")
       .option(
         "--updated-permissions <json>",
         "Updated permissions array (JSON; requires one request)",
+      )
+      .addHelpText(
+        "after",
+        `
+Answer a question:
+  paseo permit ls --json
+  paseo permit allow <agent> <req_id> --input '{"answers":{"Question 1":"chosen label or free text"}}'
+
+Copy the headers from request.input.questions; include a string for every header,
+not the question IDs or Codex's raw answer objects. Answers must be nonblank unless
+the question explicitly allows an empty answer. For multi-select, join labels with
+commas. All selected questions are validated before any responses are sent.
+`,
       ),
   ).action(withOutput(runAllowCommand));
 
