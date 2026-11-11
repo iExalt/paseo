@@ -20,7 +20,7 @@ const requests: AgentPermissionRequest[] = [
 ];
 
 class PermissionClient implements PermitClient {
-  readonly pending = [...requests];
+  readonly pending: AgentPermissionRequest[];
   readonly responses = new Map<string, AgentPermissionResponse>();
   closed = false;
   private notifyReceived = () => {};
@@ -31,6 +31,10 @@ class PermissionClient implements PermitClient {
       reject: (error: Error) => void;
     }
   >();
+
+  constructor(initial = requests) {
+    this.pending = [...initial];
+  }
 
   async fetchAgent() {
     return { agent: { id: agentId, pendingPermissions: this.pending } };
@@ -85,6 +89,94 @@ class PermissionClient implements PermitClient {
     confirmation.reject(error);
   }
 }
+
+const question: AgentPermissionRequest = {
+  id: "permission-question",
+  provider: "codex",
+  name: "request_user_input_async",
+  kind: "question",
+  input: {
+    questions: [
+      { id: "0", header: "Question 1" },
+      { id: "1", header: "Destination" },
+    ],
+  },
+};
+
+describe("permit allow question answers", () => {
+  it.each([
+    undefined,
+    { answers: { "0": { answers: ["Green"] } } },
+    { "0": "Green" },
+    { answers: { "0": "Green" } },
+    { answers: { "Question 1": "Green" } },
+    { answers: { "Question 1": " ", Destination: "Here" } },
+    { answers: { "Question 1": "Green", Destination: ["Here"] } },
+    { answers: { "Question 1": "Green", Destination: "Here", Typo: "Oops" } },
+  ])(
+    "rejects malformed/incomplete answers before sending any selected response: %j",
+    async (input) => {
+      const client = new PermissionClient([...requests, question]);
+      await expect(
+        createAllowCommand(async () => client)(
+          agentId,
+          undefined,
+          {
+            ...options,
+            all: true,
+            ...(input === undefined ? {} : { input: JSON.stringify(input) }),
+          },
+          new Command(),
+        ),
+      ).rejects.toMatchObject({ code: "INVALID_QUESTION_ANSWERS" });
+      expect(client.responses.size).toBe(0);
+      expect(client.pending).toEqual([...requests, question]);
+      expect(client.closed).toBe(true);
+    },
+  );
+
+  it("submits complete answers keyed by headers and waits for confirmation", async () => {
+    const client = new PermissionClient([question]);
+    const input = {
+      answers: { "Question 1": "Green", Destination: "Free text, with punctuation" },
+    };
+    const command = createAllowCommand(async () => client)(
+      agentId,
+      question.id,
+      {
+        ...options,
+        input: JSON.stringify(input),
+      },
+      new Command(),
+    );
+    await client.waitForResponses(1);
+    expect(client.responses.get(question.id)).toEqual({ behavior: "allow", updatedInput: input });
+    expect(client.pending).toEqual([question]);
+    client.confirm(question.id);
+    expect((await command).data[0].result).toBe("allowed");
+    expect(client.pending).toEqual([]);
+  });
+
+  it("permits an empty answer only when the question explicitly allows it", async () => {
+    const optionalQuestion = {
+      ...question,
+      input: { questions: [{ header: "Optional", allowEmpty: true }] },
+    };
+    const client = new PermissionClient([optionalQuestion]);
+    const command = createAllowCommand(async () => client)(
+      agentId,
+      question.id,
+      {
+        ...options,
+        input: JSON.stringify({ answers: { Optional: "" } }),
+      },
+      new Command(),
+    );
+    await client.waitForResponses(1);
+    client.confirm(question.id);
+    expect((await command).data[0].result).toBe("allowed");
+  });
+});
 
 const options = {
   daemonTarget: { kind: "endpoint" as const, host: "test.invalid" },

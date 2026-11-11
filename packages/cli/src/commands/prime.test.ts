@@ -10,10 +10,14 @@ function primeText(): string {
 }
 
 describe("prime", () => {
-  it("teaches launchers to place workers explicitly", () => {
+  it("teaches launchers to place workers explicitly and answer their questions", () => {
     const text = primeText();
     expect(text).toContain("--relationship detached");
     expect(text).toContain("workspace create --project <id> --no-background");
     expect(text).toContain("agent detach <id>");
+    expect(text).toContain(
+      'permit allow <agent> <req_id> --input \'{"answers":{"Question 1":"chosen label or free text"}}\'',
+    );
+    expect(text).toContain("Use every question's header as the key");
   });
 });

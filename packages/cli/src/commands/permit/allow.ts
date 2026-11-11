@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { z } from "zod";
 import { AgentPermissionResponseSchema } from "@getpaseo/protocol/messages";
 import type {
   AgentPermissionRequest,
@@ -189,6 +190,42 @@ export type PermitClientConnector = (
   options: Parameters<typeof connectToDaemon>[0],
 ) => Promise<PermitClient>;
 
+function validateQuestionResponse(
+  permission: AgentPermissionRequest,
+  response: AgentPermissionResponse,
+): void {
+  if (permission.kind !== "question" || response.behavior !== "allow") return;
+  const questions = z
+    .array(
+      z.object({
+        header: z.string().min(1),
+        allowEmpty: z.boolean().optional(),
+      }),
+    )
+    .min(1)
+    .safeParse(permission.input?.questions);
+  const answers = z.record(z.string(), z.string()).safeParse(response.updatedInput?.answers);
+  if (
+    !questions.success ||
+    !answers.success ||
+    questions.data.some(
+      (question) =>
+        !Object.hasOwn(answers.data, question.header) ||
+        (!question.allowEmpty && !answers.data[question.header].trim()),
+    ) ||
+    Object.keys(answers.data).some(
+      (header) => !questions.data.some((question) => question.header === header),
+    )
+  ) {
+    throw {
+      code: "INVALID_QUESTION_ANSWERS",
+      message: `Invalid answers for question request ${permission.id}; no responses were sent.`,
+      details:
+        'Use --input \'{"answers":{"Question 1":"chosen label or free text"}}\'. Copy every header from request.input.questions in "paseo permit ls --json"; each answer must be a nonblank string unless that question allows an empty answer.',
+    } satisfies CommandError;
+  }
+}
+
 export function createAllowCommand(connect: PermitClientConnector = connectToDaemon) {
   return async function runAllowCommand(
     agentIdOrPrefix: string,
@@ -232,6 +269,9 @@ export function createAllowCommand(connect: PermitClientConnector = connectToDae
         requestId: reqId,
         all: options.all,
       });
+
+      // Preflight the whole selection so one malformed question cannot partially allow a batch.
+      for (const permission of permissionsToAllow) validateQuestionResponse(permission, response);
 
       // Allow permissions
       const results: PermissionResponseItem[] = await Promise.all(

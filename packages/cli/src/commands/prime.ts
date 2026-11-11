@@ -34,6 +34,14 @@ agent query --json: id/title, separate provider/model, absolute cwd, createdAt,
 and optional attention fields. agent status --json nests details under snapshot.
 workspace ls --json uses workspaceId. prime always prints text, even with --json.
 
+Questions: inspect request.input.questions in permit ls --json, then answer with
+permit allow <agent> <req_id> --input '{"answers":{"Question 1":"chosen label or free text"}}'.
+Use every question's header as the key, not its id; values are strings, not Codex
+answer objects. Use comma-separated labels for multi-select. Answers must be
+nonblank unless the question allows empty answers. Invalid question answers are
+rejected before any selected response is sent. If a request disappeared, inspect
+the agent state: another client may have answered it concurrently.
+
 Retries: a lost response, parse error, or later failure may follow successful
 creation. Reconcile existing agents (use a unique --label task=<key> with
 agent ls -a -g --label task=<key> --json) before retrying a launch. If a heartbeat
