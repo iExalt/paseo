@@ -43,9 +43,21 @@ export async function runStart(options: CommandOptions, _command: Command) {
 export function daemonRunCommand(): Command {
   return rejectRemovedLaunchFlags(addLocalDaemonOptions(new Command("run")))
     .description("Run a local daemon in the foreground with deployment environment overrides")
+    .addHelpText(
+      "after",
+      "\nForeground output streams text logs; --json and --format json/yaml are not supported. Use daemon start or daemon status with --json for machine-readable results.",
+    )
     .option("--no-agent-tools", "Disable native Paseo tools for agents")
     .action(
       withOutput(async (options: CommandOptions & { agentTools?: boolean }, _command: Command) => {
+        const format = options.json ? "json" : options.format?.trim().toLowerCase();
+        if (format === "json" || format === "yaml") {
+          throw {
+            code: "INVALID_FORMAT",
+            message:
+              "daemon run streams text logs and does not support JSON or YAML output. Use daemon start or daemon status with --json for machine-readable results.",
+          };
+        }
         if (options.daemonTarget.kind !== "instance") throw new Error("Run requires a local home");
         const result = await launchLocalDaemon({
           home: options.daemonTarget.home,

@@ -22,7 +22,14 @@ export function createWorkspaceCommand(): Command {
     workspace
       .command("create")
       .description("Create a workspace")
-      .requiredOption("--isolation <local|worktree>", "Workspace isolation")
+      .requiredOption(
+        "--isolation <local|worktree>",
+        "Register a local directory or create a managed worktree",
+      )
+      .addHelpText(
+        "after",
+        "\n--isolation local registers --path without creating a worktree. Returned isolation and workspace.kind reflect the directory's actual Git classification: an external linked worktree reports worktree even when registered with local. Classification does not establish Paseo ownership.",
+      )
       .option("--path <path>", "Local directory or source checkout (default: current)")
       .option("--project <id>", "Existing project id")
       .option("--title <title>", "Workspace title")
@@ -90,7 +97,7 @@ export function createWorkspaceCommand(): Command {
       .description("Archive a workspace and everything it owns")
       .addHelpText(
         "after",
-        "\nArchiving your own workspace can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
+        "\nExplicit archive deletes a Paseo-owned worktree, including dirty, untracked, and ignored files. External directories not owned by Paseo are preserved.\n\nArchiving your own workspace can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
       )
       .argument("<workspace-id>", "Workspace id"),
   ).action(withOutput(runArchiveCommand));
