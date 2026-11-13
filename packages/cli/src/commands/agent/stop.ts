@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { renderTable } from "../../output/index.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { isSameOrDescendantPath } from "../../utils/paths.js";
 import type {
@@ -27,6 +28,16 @@ export const stopSchema: OutputSchema<StopResult> = {
   // For quiet mode, output the stopped agent IDs (one per line)
   idField: (item) => item.agentIds.join("\n"),
   columns: [{ header: "INTERRUPTED", field: "stoppedCount" }],
+  renderHuman: (result, options) => {
+    const errors =
+      result.type === "single"
+        ? (result.data.results ?? []).filter((target) => target.error !== undefined)
+        : [];
+    return [
+      renderTable(result, options),
+      ...errors.map((target) => `Failed to stop agent ${target.agentId}: ${target.error}`),
+    ].join("\n");
+  },
 };
 
 export function addStopOptions(cmd: Command): Command {
@@ -74,7 +85,7 @@ function collectStopResults(
           message: `Failed to stop agent ${result.id}: ${result.message}`,
         } satisfies CommandError;
       }
-      console.error(`Warning: Failed to stop agent ${result.id.slice(0, 7)}: ${result.message}`);
+      process.exitCode = 1;
       results.push({ agentId: result.id, error: result.message });
       continue;
     }

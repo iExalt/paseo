@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
 
 import { runDeleteCommand } from "./delete.js";
+import { render } from "../../output/index.js";
 
 const agent = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -39,7 +40,7 @@ const cancelAgent = vi.fn(async () => {
 const fetchAgentHistory = vi.fn(async (options: { page: { cursor?: string } }) =>
   historyPage(options.page.cursor),
 );
-const deleteAgent = vi.fn(async () => undefined);
+const deleteAgent = vi.fn(async (_id: string) => undefined);
 const close = vi.fn(async () => undefined);
 
 vi.mock("../../utils/client.js", () => ({
@@ -55,9 +56,16 @@ vi.mock("../../utils/client.js", () => ({
 }));
 
 describe("runDeleteCommand", () => {
+  const originalExitCode = process.exitCode;
+  afterEach(() => {
+    process.exitCode = originalExitCode;
+  });
   beforeEach(() => {
     daemonAgents = [agent];
-    deleteAgent.mockClear();
+    process.exitCode = undefined;
+    deleteAgent.mockReset().mockResolvedValue(undefined);
+    cancelAgent.mockClear();
+    close.mockClear();
     fetchAgentHistory.mockClear();
   });
 
@@ -81,6 +89,10 @@ describe("runDeleteCommand", () => {
     expect(result.data).toEqual({
       deletedCount: 3,
       agentIds: [agent.id, archivedAgent.id, archivedOutsideAgent.id],
+      results: [agent, archivedAgent, archivedOutsideAgent].map(({ id }) => ({
+        agentId: id,
+        deleted: true,
+      })),
     });
   });
 
@@ -96,6 +108,69 @@ describe("runDeleteCommand", () => {
     expect(result.data).toEqual({
       deletedCount: 2,
       agentIds: [agent.id, archivedAgent.id],
+      results: [agent, archivedAgent].map(({ id }) => ({ agentId: id, deleted: true })),
     });
+  });
+  it("collects coded failures without losing successful deletions", async () => {
+    daemonAgents = [agent, archivedAgent, archivedOutsideAgent];
+    deleteAgent.mockImplementation(async (id) => {
+      if (id === archivedAgent.id) {
+        throw Object.assign(new Error("refused"), { code: "REFUSED" });
+      }
+    });
+
+    const result = await runDeleteCommand(undefined, { daemonTarget, all: true }, {} as never);
+
+    expect(result.data).toEqual({
+      deletedCount: 2,
+      agentIds: [agent.id, archivedOutsideAgent.id],
+      results: [
+        { agentId: agent.id, deleted: true },
+        { agentId: archivedAgent.id, error: "refused" },
+        { agentId: archivedOutsideAgent.id, deleted: true },
+      ],
+    });
+    expect(JSON.parse(render(result, { format: "json" }))).toEqual(result.data);
+    expect(render(result, { noColor: true })).toContain(
+      "Failed to delete agent " + archivedAgent.id + ": refused",
+    );
+    expect([...deleteAgent.mock.calls].sort()).toEqual([
+      [agent.id],
+      [archivedAgent.id],
+      [archivedOutsideAgent.id],
+    ]);
+    expect(close).toHaveBeenCalledOnce();
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("reports every target when all deletions fail", async () => {
+    daemonAgents = [agent, archivedAgent];
+    deleteAgent.mockRejectedValue(new Error("offline"));
+    const result = await runDeleteCommand(undefined, { daemonTarget, all: true }, {} as never);
+
+    expect(result.data).toEqual({
+      deletedCount: 0,
+      agentIds: [],
+      results: [agent, archivedAgent].map(({ id }) => ({ agentId: id, error: "offline" })),
+    });
+    expect(deleteAgent).toHaveBeenCalledTimes(2);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("succeeds without mutations for an empty bulk selection", async () => {
+    daemonAgents = [];
+    const result = await runDeleteCommand(undefined, { daemonTarget, all: true }, {} as never);
+
+    expect(result.data).toEqual({ deletedCount: 0, agentIds: [], results: [] });
+    expect(deleteAgent).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
+
+  it("preserves single-target coded failures", async () => {
+    const error = Object.assign(new Error("refused"), { code: "REFUSED" });
+    deleteAgent.mockRejectedValue(error);
+
+    await expect(runDeleteCommand(agent.id, { daemonTarget }, {} as never)).rejects.toBe(error);
+    expect(close).toHaveBeenCalledOnce();
   });
 });
