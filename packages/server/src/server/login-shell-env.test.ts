@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { inheritLoginShellEnv } from "./login-shell-env";
+import { inheritLoginShellEnv, LOGIN_SHELL_ENV_RESOLVED_KEY } from "./login-shell-env";
 
 const zsh = "/bin/zsh";
 const describeIfZsh = existsSync(zsh) ? describe : describe.skip;
@@ -112,6 +112,51 @@ async function createShellHome(): Promise<string> {
 }
 
 describe("login shell env retry behavior", () => {
+  it("skips the login shell when a launcher already resolved the env", () => {
+    const env = { ...createEnv(fakeHome), [LOGIN_SHELL_ENV_RESOLVED_KEY]: "1" };
+    const logger = new RecordingLoginShellLogger();
+    const spawnSync: LoginShellSpawnSync = () => {
+      throw new Error("login shell should not run");
+    };
+
+    inheritLoginShellEnv({ env, logger, platform: "darwin", spawnSync });
+
+    expect(env.PATH).toBe(basePath);
+    expect(logger.infos).toEqual([]);
+  });
+
+  it("keeps inherited PATH entries the login shell dropped when asked", () => {
+    const env = { ...createEnv(fakeHome), PATH: "/image/bin:/usr/bin:/bin" };
+    const logger = new RecordingLoginShellLogger();
+    const calls: RecordedSpawn[] = [];
+    const spawnSync: LoginShellSpawnSync = (shell, args, options) => {
+      const recordedArgs = Array.isArray(args) ? args.map(String) : [];
+      calls.push({
+        argv0: options?.argv0,
+        shell: String(shell),
+        args: recordedArgs,
+        timeoutMs: options?.timeout,
+      });
+      return successResult(String(recordedArgs.at(-1)), {
+        ...env,
+        PATH: "/home/me/.local/bin:/usr/bin:/bin",
+      });
+    };
+
+    inheritLoginShellEnv({
+      env,
+      logger,
+      platform: "linux",
+      spawnSync,
+      defaultTimeoutMs: 8_000,
+      keepInheritedPathEntries: true,
+    });
+
+    expect(env.PATH).toBe("/home/me/.local/bin:/usr/bin:/bin:/image/bin");
+    expect(env[LOGIN_SHELL_ENV_RESOLVED_KEY]).toBe("1");
+    expect(calls[0]?.timeoutMs).toBe(4_000);
+  });
+
   it("applies the interactive env without retrying", () => {
     const env = createEnv(fakeHome);
     const logger = new RecordingLoginShellLogger();

@@ -6,24 +6,39 @@ import type { SpawnSyncReturns } from "node:child_process";
 import { spawnSync as defaultSpawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { userInfo as defaultUserInfo } from "node:os";
-import { basename } from "node:path";
-import defaultLog from "electron-log/main";
+import { basename, delimiter } from "node:path";
 
 const DEFAULT_RESOLVE_TIMEOUT_MS = 30_000;
 const TIMEOUT_ENV_KEY = "PASEO_SHELL_ENV_TIMEOUT_MS";
+// Set after a successful resolution. Processes launched from a resolved environment
+// (the desktop app's daemon launch, agent shells) inherit it and skip a second login shell.
+export const LOGIN_SHELL_ENV_RESOLVED_KEY = "PASEO_LOGIN_SHELL_ENV_RESOLVED";
 const STDERR_LOG_LIMIT = 2000;
 
-type LoginShellEnvLogger = Pick<typeof defaultLog, "info" | "warn">;
+export interface LoginShellEnvLogger {
+  info(message: string, fields: Record<string, unknown>): void;
+  warn(message: string, fields: Record<string, unknown>): void;
+}
 type ShellEnvAttemptKind = "interactive" | "non-interactive";
 
-interface LoginShellEnvDependencies {
+export interface LoginShellEnvOptions {
+  logger: LoginShellEnvLogger;
   env?: NodeJS.ProcessEnv;
-  logger?: LoginShellEnvLogger;
+  // Used when PASEO_SHELL_ENV_TIMEOUT_MS is unset.
+  defaultTimeoutMs?: number;
+  // Keep inherited PATH entries the login shell dropped, after the login shell's own entries.
+  // A shell profile that resets PATH (Debian's /etc/profile) would otherwise drop entries the
+  // launcher added on purpose, such as a container image's ENV PATH.
+  keepInheritedPathEntries?: boolean;
   now?: () => number;
   platform?: NodeJS.Platform;
   spawnSync?: typeof defaultSpawnSync;
   userInfo?: typeof defaultUserInfo;
 }
+
+type LoginShellEnvDependencies = Required<
+  Pick<LoginShellEnvOptions, "env" | "logger" | "now" | "platform" | "spawnSync" | "userInfo">
+>;
 
 function truncateForLog(value: string | undefined): string | undefined {
   if (!value) return undefined;
@@ -94,7 +109,7 @@ interface ThrowIfShellFailedInput {
 }
 
 interface ShellEnvForAttemptInput {
-  deps: Required<LoginShellEnvDependencies>;
+  deps: LoginShellEnvDependencies;
   shellEnv: NodeJS.ProcessEnv;
   shell: string;
   command: string;
@@ -110,7 +125,7 @@ interface ShellAttemptErrorDetailsInput {
 }
 
 interface LogShellAttemptFailureInput {
-  deps: Required<LoginShellEnvDependencies>;
+  deps: LoginShellEnvDependencies;
   error: unknown;
   details: ShellEnvErrorDetails;
   durationMs: number;
@@ -125,16 +140,30 @@ interface RestoreElectronEnvInput {
 }
 
 interface ResolveShellEnvInput {
-  deps: Required<LoginShellEnvDependencies>;
+  deps: LoginShellEnvDependencies;
   timeoutMs: number;
 }
 
-function timeoutMsFromEnv(env: NodeJS.ProcessEnv): number {
+function timeoutMsFromEnv(env: NodeJS.ProcessEnv, defaultTimeoutMs: number): number {
   const rawTimeoutMs = env[TIMEOUT_ENV_KEY];
-  if (!rawTimeoutMs) return DEFAULT_RESOLVE_TIMEOUT_MS;
+  if (!rawTimeoutMs) return defaultTimeoutMs;
 
   const timeoutMs = Number.parseInt(rawTimeoutMs, 10);
-  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_RESOLVE_TIMEOUT_MS;
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : defaultTimeoutMs;
+}
+
+function mergePathEntries(resolved: string | null, inherited: string | null): string | null {
+  if (!inherited) return resolved;
+  if (!resolved) return inherited;
+  const entries = resolved.split(delimiter);
+  const seen = new Set(entries);
+  for (const entry of inherited.split(delimiter)) {
+    if (entry && !seen.has(entry)) {
+      seen.add(entry);
+      entries.push(entry);
+    }
+  }
+  return entries.join(delimiter);
 }
 
 function timeoutMsForAttempt({
@@ -214,7 +243,7 @@ function throwIfShellFailed({ result, regex, shell, attempt }: ThrowIfShellFaile
 }
 
 function getSystemShell(
-  deps: Required<Pick<LoginShellEnvDependencies, "env" | "platform" | "userInfo">>,
+  deps: Pick<LoginShellEnvDependencies, "env" | "platform" | "userInfo">,
 ): string {
   const shell = deps.env.SHELL;
   if (shell) return shell;
@@ -489,29 +518,38 @@ function resolveShellEnv({ deps, timeoutMs }: ResolveShellEnvInput): ResolvedShe
 }
 
 /**
- * On macOS/Linux, Electron inherits a minimal environment when launched from
- * Finder/Dock. Spawn the user's login shell and capture its full environment
- * via Node's JSON.stringify(process.env), so the daemon and all child processes
- * see the same tools and variables as a normal terminal session.
+ * On macOS/Linux, a process launched from Finder/Dock, launchd, or a stripped shell
+ * (`zsh -f`, `env -i`) inherits a minimal environment. Spawn the user's login shell and
+ * capture its full environment via Node's JSON.stringify(process.env), so the daemon and all
+ * child processes see the same tools and variables as a normal terminal session.
  *
  * Approach borrowed from VS Code (src/vs/platform/shell/node/shellEnv.ts).
  */
-export function inheritLoginShellEnv(input: LoginShellEnvDependencies = {}): void {
-  const deps: Required<LoginShellEnvDependencies> = {
-    env: input.env ?? process.env,
-    logger: input.logger ?? defaultLog,
-    now: input.now ?? Date.now,
-    platform: input.platform ?? process.platform,
-    spawnSync: input.spawnSync ?? defaultSpawnSync,
-    userInfo: input.userInfo ?? defaultUserInfo,
+export function inheritLoginShellEnv(options: LoginShellEnvOptions): void {
+  const deps: LoginShellEnvDependencies = {
+    env: options.env ?? process.env,
+    logger: options.logger,
+    now: options.now ?? Date.now,
+    platform: options.platform ?? process.platform,
+    spawnSync: options.spawnSync ?? defaultSpawnSync,
+    userInfo: options.userInfo ?? defaultUserInfo,
   };
+  if (deps.env[LOGIN_SHELL_ENV_RESOLVED_KEY] === "1") return;
   const beforePath = pathEnv(deps.env);
   const startedAt = deps.now();
-  const timeoutMs = timeoutMsFromEnv(deps.env);
+  const timeoutMs = timeoutMsFromEnv(
+    deps.env,
+    options.defaultTimeoutMs ?? DEFAULT_RESOLVE_TIMEOUT_MS,
+  );
 
   try {
     const { env, attemptKind } = resolveShellEnv({ deps, timeoutMs });
+    if (options.keepInheritedPathEntries) {
+      const merged = mergePathEntries(pathEnv(env), beforePath);
+      if (merged !== null) env.PATH = merged;
+    }
     Object.assign(deps.env, env);
+    deps.env[LOGIN_SHELL_ENV_RESOLVED_KEY] = "1";
     deps.logger.info("[login-shell-env] applied", {
       attemptKind,
       durationMs: deps.now() - startedAt,
