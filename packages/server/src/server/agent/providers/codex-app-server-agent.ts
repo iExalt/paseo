@@ -5060,8 +5060,8 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   async canStopRuntime(): Promise<boolean> {
     if (
-      !this.client ||
-      this.client.hasPendingRequests() ||
+      this.connectionPromise ||
+      this.client?.hasPendingRequests() ||
       !this.currentThreadId ||
       this.activeForegroundTurnId ||
       this.currentTurnId ||
@@ -5071,6 +5071,8 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.pendingSubAgentNotificationsByThreadId.size
     )
       return false;
+    // History-only resumes read disk without owning a provider process.
+    if (!this.client) return this.connectionState === "history-ready";
     // Older app servers reject this request. A failed or malformed probe must retain
     // the process: command completion alone does not mean its terminal has exited.
     const loaded = z
