@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.26.1](https://github.com/iExalt/paseo/compare/paseo-v0.26.0...paseo-v0.26.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* **android:** dismiss background alerts after remote interaction ([#439](https://github.com/iExalt/paseo/issues/439)) ([5edc63e](https://github.com/iExalt/paseo/commit/5edc63ed06f6288d710554fbaed9278de99085b5))
+* **app:** count folded agent messages in the turn summary line ([#432](https://github.com/iExalt/paseo/issues/432)) ([bd0e87c](https://github.com/iExalt/paseo/commit/bd0e87cc2f27e3f0e4f890eced0ad3e47670c5dd))
+* **app:** let users select and copy permission prompt text ([#437](https://github.com/iExalt/paseo/issues/437)) ([a143205](https://github.com/iExalt/paseo/commit/a1432055c41bafb799f27cdde161b128b06fa612))
+* **app:** open every stream disclosure below its header ([#440](https://github.com/iExalt/paseo/issues/440)) ([b350abc](https://github.com/iExalt/paseo/commit/b350abca40d674f8bf1e7a71ba6bed560c67be4c))
+* **app:** scope Android push dismissal to its owning host ([#434](https://github.com/iExalt/paseo/issues/434)) ([85a3875](https://github.com/iExalt/paseo/commit/85a3875b47fcf73834cc6c738b9bed2b38441ccf))
+* **app:** stop the web Markdown preview crash and finish the mono font follow-ups ([#438](https://github.com/iExalt/paseo/issues/438)) ([c9e4884](https://github.com/iExalt/paseo/commit/c9e4884f9ddf7f1b0860bd0e03877a3771634058))
+* **app:** use the bundled mono font everywhere so box-drawing lines up ([#436](https://github.com/iExalt/paseo/issues/436)) ([34f25f3](https://github.com/iExalt/paseo/commit/34f25f37b7ae7653e6374f899b4a3e5d61713944))
+* **cli:** validate question answers before submission ([#441](https://github.com/iExalt/paseo/issues/441)) ([d55a22d](https://github.com/iExalt/paseo/commit/d55a22d423996886f6896e4d480cdd26e3dc7801))
+* **server:** tell Claude the permission prompt's warning when the user denies it ([#435](https://github.com/iExalt/paseo/issues/435)) ([8eb436a](https://github.com/iExalt/paseo/commit/8eb436a72165abc11a44235c102eb76b8a2dafcf))
+
 ## [0.26.0](https://github.com/iExalt/paseo/compare/paseo-v0.25.1...paseo-v0.26.0) (2026-11-10)
 
 
