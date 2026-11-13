@@ -732,23 +732,17 @@ function configureNixDaemonUpgrade(
     installation,
     runningVersion: app.getVersion(),
   });
-  // Cached for the session: activating a newer release changes nothing until the restart,
-  // because the app's and the daemon's versions stay the same until then.
-  let active: Promise<ActiveRelease> | null = null;
-  isActiveRelease = () => {
-    active ??= runNixUpdate("status")
+  isActiveRelease = () =>
+    runNixUpdate("status")
       .then((status): ActiveRelease =>
         status.active?.outputPath === installation.outputPath ? "active" : "inactive",
       )
       .catch((error) => {
-        active = null;
         logDesktopDaemonLifecycle("could not read the active Nix release", {
           error: String(error),
         });
         return "unknown" as const;
       });
-    return active;
-  };
   if (process.platform !== "darwin") return;
   // A deferred copy leaves the app running from its store bundle and /Applications on an older
   // release. Retry the copy once nothing runs from it; the updater skips a current or busy copy.
