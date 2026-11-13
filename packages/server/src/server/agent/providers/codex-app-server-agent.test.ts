@@ -2024,6 +2024,7 @@ describe("Codex app-server provider", () => {
     });
 
     expect(threadRequests).toEqual(["thread/read", "thread/read"]);
+    expect(await session.canStopRuntime?.()).toBe(true);
     await session.close();
     appServer.assertNoErrors();
   });
