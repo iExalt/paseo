@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.26.2](https://github.com/iExalt/paseo/compare/paseo-v0.26.1...paseo-v0.26.2) (2026-11-13)
+
+
+### Bug Fixes
+
+* **desktop:** close remaining idle daemon upgrade stalls ([#444](https://github.com/iExalt/paseo/issues/444)) ([15b18ef](https://github.com/iExalt/paseo/commit/15b18ef491ac03ef1284ea0ba9e8ee0c156539b4))
+* **server:** allow idle shutdown after history-only Codex resume ([#442](https://github.com/iExalt/paseo/issues/442)) ([dfa6b10](https://github.com/iExalt/paseo/commit/dfa6b1077edf0da424ea456d94d48907c9bfa511))
+
 ## [0.26.1](https://github.com/iExalt/paseo/compare/paseo-v0.26.0...paseo-v0.26.1) (2026-11-11)
 
 
