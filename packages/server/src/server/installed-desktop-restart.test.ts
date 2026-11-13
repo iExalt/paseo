@@ -16,13 +16,22 @@ const fixture = vi.hoisted(() => ({
   spawn: vi.fn(),
 }));
 const cli = "/Applications/Paseo.app/Contents/Resources/bin/paseo";
+const oldCli = "/nix/store/old-paseo/Applications/Paseo.app/Contents/Resources/bin/paseo";
 vi.mock("node:child_process", () => ({ spawn: fixture.spawn }));
 vi.mock("node:fs/promises", async (importOriginal) => {
   const fs = await importOriginal<typeof import("node:fs/promises")>();
   return {
     ...fs,
-    realpath: async (file: string) => (file === cli ? file : fs.realpath(file)),
+    realpath: async (file: string) => ([cli, oldCli].includes(file) ? file : fs.realpath(file)),
     readFile: async (file: string) => {
+      if (file.startsWith("/nix/store/old-paseo/"))
+        return Buffer.from(
+          JSON.stringify({
+            ...fixture.marker,
+            packageVersion: "1.0.0",
+            outputPath: "/nix/store/old-paseo",
+          }),
+        );
       if (file.endsWith("paseo-nix-managed.json"))
         return Buffer.from(
           file.startsWith("/nix/store/") && fixture.storeMarker
@@ -100,7 +109,6 @@ test.each([
   { platform: "win32" },
   { platform: "linux" },
   { version: "2.0.0" },
-  { env: {} },
 ])("retains ordinary restart for an ineligible installation: %j", async (overrides) => {
   expect(await restarter(overrides)(intent)).toBe(false);
   expect(fixture.spawn).not.toHaveBeenCalled();
@@ -131,3 +139,13 @@ test("duplicate requests share one handoff; a failed launch permits another expl
   expect(await restart(intent)).toBe(true);
   expect(fixture.spawn).toHaveBeenCalledTimes(2);
 });
+
+test.each([{}, { PASEO_CLI: oldCli }])(
+  "settings restart finds the installed app independently of the worker environment: %j",
+  async (env) => {
+    expect(await restarter({ env })(intent)).toBe(true);
+    expect(fixture.spawn.mock.calls[0]?.[0]).toBe(
+      "/nix/store/installed-paseo/Applications/Paseo.app/Contents/Resources/bin/paseo",
+    );
+  },
+);

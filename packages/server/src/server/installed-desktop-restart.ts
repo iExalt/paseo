@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { open, readFile, realpath } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { DaemonLifecycleIntent } from "./bootstrap.js";
 
@@ -19,13 +19,12 @@ export function createInstalledDesktopRestarter(input: {
       !input.desktopManaged ||
       input.platform !== "darwin" ||
       intent.type !== "restart" ||
-      !intent.reason?.startsWith("settings_daemon_restart_") ||
-      !input.env.PASEO_CLI
+      !intent.reason?.startsWith("settings_daemon_restart_")
     )
       return false;
 
-    const cli = await realpath(input.env.PASEO_CLI);
-    const resources = path.dirname(path.dirname(cli));
+    // PASEO_CLI belongs to the old worker launch and may be absent or store-pinned.
+    const resources = "/Applications/Paseo.app/Contents/Resources";
     const markerPath = path.join(resources, "paseo-nix-managed.json");
     let markerBytes: Buffer;
     try {
