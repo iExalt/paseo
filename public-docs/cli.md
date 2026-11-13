@@ -192,6 +192,11 @@ paseo workspace create \
   --pr-number 2186
 ```
 
+`--isolation local` registers the supplied directory without creating a worktree.
+Returned `isolation` and `workspace.kind` describe its actual Git classification: an external
+linked worktree reports `worktree` even when registered with `local`. Classification does
+not establish Paseo ownership.
+
 Add `--background` to hide a workspace from default discovery. Its agents and terminals keep
 ordinary history, persistence, hooks, and restart recovery. `--no-background` explicitly overrides
 caller-workspace inheritance; omission inherits when run by a Paseo agent and defaults to false
@@ -215,6 +220,9 @@ paseo workspace rename <workspace-id> "Auth rework"
 paseo workspace rename <workspace-id> --reset   # back to the branch or directory name
 paseo workspace archive <workspace-id>
 ```
+
+Explicit workspace archive deletes a Paseo-owned worktree, including dirty, untracked,
+and ignored files. External directories not owned by Paseo are preserved.
 
 Add `--forge <name>` to PR checkout when Paseo cannot infer the forge from the source checkout. See [Git worktrees](/docs/worktrees) for setup hooks and services.
 
@@ -543,6 +551,10 @@ Use environment overrides with the foreground deployment command:
 ```bash
 PASEO_LISTEN=127.0.0.1:6799 PASEO_RELAY_ENABLED=false paseo daemon run --home ~/paseo-test
 ```
+
+Foreground output streams text logs. `daemon run` rejects `--json` and `--format json/yaml`
+before launching a process. Use `daemon start --json` or `daemon status --json` for
+machine-readable results.
 
 It stays attached until the supervisor exits or you cancel, without a readiness timeout. Worker restart retains these launch inputs. Stop and relaunch the deployment to change them. If the home already has a live supervisor, `run` returns `already_running` without owning or launching a foreground process.
 

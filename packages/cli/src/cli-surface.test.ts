@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import YAML from "yaml";
+
+vi.mock("./commands/daemon/local-daemon.js", async (original) => ({
+  ...(await original<typeof import("./commands/daemon/local-daemon.js")>()),
+  launchLocalDaemon: vi.fn(),
+}));
+
+import { launchLocalDaemon } from "./commands/daemon/local-daemon.js";
 import { createCli } from "./cli.js";
 import { resolveCliVersion } from "./version.js";
 
@@ -105,6 +113,29 @@ describe("canonical CLI surface", () => {
     expect(archiveHelp[0]).toContain("terminate the invoking shell");
     expect(archiveHelp[1]).toContain("Self-archive with --force");
     expect(archiveHelp[1]).toContain("Send the handoff first");
+  });
+
+  it("explains workspace classification, archive ownership, and foreground output", () => {
+    const cli = createCli();
+    const workspace = cli.commands.find((command) => command.name() === "workspace")!;
+    const daemon = cli.commands.find((command) => command.name() === "daemon")!;
+    const help = (owner: typeof cli, name: string) => {
+      const output: string[] = [];
+      const command = owner.commands.find((entry) => entry.name() === name)!;
+      command.configureOutput({ writeOut: (text) => output.push(text) });
+      command.outputHelp();
+      return output.join("");
+    };
+    expect(help(workspace, "create")).toContain("actual Git classification");
+    expect(help(workspace, "create")).toContain(
+      "Classification does not establish Paseo ownership",
+    );
+    expect(help(workspace, "archive")).toContain("dirty, untracked, and ignored files");
+    expect(help(workspace, "archive")).toContain(
+      "External directories not owned by Paseo are preserved",
+    );
+    expect(help(daemon, "run")).toContain("Foreground output streams text logs");
+    expect(help(daemon, "run")).toContain("daemon start or daemon status with --json");
   });
 
   it("shows project, workspace, and heartbeat commands while hiding worktree compatibility", () => {
@@ -238,4 +269,58 @@ it("preserves omitted and explicit false workspace background intent", () => {
   expect(readOptions([]).background).toBeUndefined();
   expect(readOptions(["--background"]).background).toBe(true);
   expect(readOptions(["--no-background"]).background).toBe(false);
+});
+
+describe("foreground daemon output contract", () => {
+  const exitCode = process.exitCode;
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(launchLocalDaemon).mockReset();
+    process.exitCode = exitCode;
+  });
+
+  it.each([
+    { args: ["--json"], format: "json" },
+    { args: ["--format", "json"], format: "json" },
+    { args: ["--format", " JSON "], format: "json" },
+    { args: ["--format", "yaml"], format: "yaml" },
+    { args: ["--format", " YAML "], format: "yaml" },
+  ])("rejects $args before launching", async ({ args }) => {
+    const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    vi.spyOn(process, "exit").mockImplementation((code) => {
+      throw new Error(`exit ${code}`);
+    });
+
+    await expect(
+      createCli().parseAsync(["daemon", "run", ...args], { from: "user" }),
+    ).rejects.toThrow("exit 1");
+
+    expect(launchLocalDaemon).not.toHaveBeenCalled();
+    expect(stdout).not.toHaveBeenCalled();
+    expect(stderr).toHaveBeenCalledTimes(1);
+    const error = String(stderr.mock.calls[0][0]);
+    expect(YAML.parse(error).error).toMatchObject({
+      code: "INVALID_FORMAT",
+      message: expect.stringContaining("streams text logs"),
+    });
+  });
+
+  it.each([{ args: [] }, { args: ["--format", "table"] }, { args: ["--format", "cli"] }])(
+    "retains foreground launch in text mode $args",
+    async ({ args }) => {
+      vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      vi.mocked(launchLocalDaemon).mockResolvedValue({
+        spawned: true,
+        instance: { pid: 123 } as Awaited<ReturnType<typeof launchLocalDaemon>>["instance"],
+        exitCode: 7,
+      });
+      await createCli().parseAsync(["daemon", "run", ...args], { from: "user" });
+      expect(launchLocalDaemon).toHaveBeenCalledExactlyOnceWith({
+        home: expect.any(String),
+        foreground: true,
+      });
+      expect(process.exitCode).toBe(7);
+    },
+  );
 });
