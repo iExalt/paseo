@@ -76,7 +76,7 @@ paseo --host <host:port> provider diagnostic <provider> --json
 
 当你从 Dock 或 Finder 打开**桌面应用**时，操作系统给它的是一个精简过的环境，而不是你终端里的 `PATH`。为了弥补这一点，Paseo 会在启动时运行一次你的登录 shell（`$SHELL -i -l -c`），捕获它的环境，并把它交给 daemon 及其启动的所有进程。经验法则：**如果一个全新的终端能运行该命令，Paseo 也应该能。** 这也是检验方法：打开一个新终端，在那里试一试。
 
-来自桌面应用的 daemon 在启动时也会执行这一步（除非应用已经执行过），因此无论它如何启动，都能拿到你登录 shell 的 `PATH`：由应用启动，或由应用自带的 `paseo` CLI 从脚本、`launchd` 或 `zsh -f` 启动。通过 npm 安装或在 Docker 中运行的 daemon 会跳过这一步，直接继承启动它时的环境。
+来自桌面应用的 daemon 在启动时也会执行这一步（除非应用已经执行过），因此无论它如何启动，都能拿到你登录 shell 的 `PATH`：由应用启动，或由应用自带的 `paseo` CLI 从脚本、`launchd` 或 `zsh -f` 启动。这时以启动它的环境为准：登录 shell 只补充其中缺少的变量，启动环境额外加入的 `PATH` 条目仍排在登录 shell 的条目之前。通过 npm 安装或在 Docker 中运行的 daemon 会跳过这一步，直接继承启动它时的环境。
 
 无论哪种方式，缺少工具的修复都在你的 shell 配置（`.zshrc`、`.zprofile` 等）中，而不在 Paseo 中。通过版本管理器（asdf、mise、nvm 等）安装的工具最常出问题，请确保它们在干净的登录 shell 中也会初始化，而不仅仅是在你已经打开的 shell 中。
 

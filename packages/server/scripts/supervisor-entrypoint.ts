@@ -9,6 +9,7 @@ import {
   updatePidLock,
 } from "../src/server/pid-lock.js";
 import { resolvePaseoHome } from "../src/server/paseo-home.js";
+import { DAEMON_SETTING_ENV_KEYS } from "../src/server/config-environment.js";
 import { daemonLogPath } from "../src/server/daemon-instance.js";
 import { PRIVATE_FILE_MODE } from "../src/server/private-files.js";
 import { loadPersistedConfig } from "../src/server/persisted-config.js";
@@ -101,21 +102,6 @@ function resolvePackagedNodeEntrypointRunnerPath(currentScriptPath: string): str
 
 async function main(): Promise<void> {
   const config = parseConfig(process.argv.slice(2));
-  const startupLog: Array<{ message: string; fields: Record<string, unknown> }> = [];
-  // The packaged app's supervisor (desktop launch or its bundled CLI) is often started from a
-  // stripped environment: launchd, Finder, `zsh -f`, `env -i`. Workers, agents and terminals
-  // inherit this environment, so without the login shell's PATH every provider CLI is missing.
-  // npm, Docker and test launches run under plain Node and keep the environment they were given.
-  // Stay well inside the launcher's 30 s readiness wait.
-  if (process.env.ELECTRON_RUN_AS_NODE === "1" && !config.devMode) {
-    const record = (message: string, fields: Record<string, unknown>) =>
-      startupLog.push({ message, fields });
-    inheritLoginShellEnv({
-      logger: { info: record, warn: record },
-      defaultTimeoutMs: 10_000,
-      keepInheritedPathEntries: true,
-    });
-  }
   const workerEntry = config.devMode ? resolveDevWorkerEntry() : resolveWorkerEntry();
   const workerExecArgv = resolveWorkerExecArgv(workerEntry, config.devMode);
   const workerEnv: NodeJS.ProcessEnv = { ...process.env };
@@ -137,6 +123,25 @@ async function main(): Promise<void> {
       failStartup(error.message, error.message);
     }
     throw error;
+  }
+
+  const startupLog: Array<{ message: string; fields: Record<string, unknown> }> = [];
+  // The packaged app's supervisor (desktop launch or its bundled CLI) is often started from a
+  // stripped environment: launchd, Finder, `zsh -f`, `env -i`. Workers, agents and terminals
+  // inherit workerEnv, so without the login shell's PATH every provider CLI is missing. The
+  // launcher's values win, and settings a managed launch stripped stay stripped. npm, Docker,
+  // dev and test launches run under plain Node and keep the environment they were given. The
+  // fixed budget stays inside the desktop's 30 s readiness wait.
+  if (process.env.ELECTRON_RUN_AS_NODE === "1" && !config.devMode && process.platform !== "win32") {
+    const record = (message: string, fields: Record<string, unknown>) =>
+      startupLog.push({ message, fields });
+    inheritLoginShellEnv({
+      env: workerEnv,
+      logger: { info: record, warn: record },
+      timeoutMs: 10_000,
+      preferInherited: true,
+      ignoreKeys: ["PASEO_HOME", ...DAEMON_SETTING_ENV_KEYS],
+    });
   }
 
   let lockReleased = false;

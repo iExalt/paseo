@@ -10,6 +10,9 @@ import { basename, delimiter } from "node:path";
 
 const DEFAULT_RESOLVE_TIMEOUT_MS = 30_000;
 const TIMEOUT_ENV_KEY = "PASEO_SHELL_ENV_TIMEOUT_MS";
+// The PATH a GUI or launchd launch starts with. Starting the login shell from it, not from the
+// launcher's PATH, separates what the shell profile adds from what the launcher added.
+const BASELINE_PATH = "/usr/bin:/bin:/usr/sbin:/sbin";
 // Set after a successful resolution. Processes launched from a resolved environment
 // (the desktop app's daemon launch, agent shells) inherit it and skip a second login shell.
 export const LOGIN_SHELL_ENV_RESOLVED_KEY = "PASEO_LOGIN_SHELL_ENV_RESOLVED";
@@ -24,12 +27,14 @@ type ShellEnvAttemptKind = "interactive" | "non-interactive";
 export interface LoginShellEnvOptions {
   logger: LoginShellEnvLogger;
   env?: NodeJS.ProcessEnv;
-  // Used when PASEO_SHELL_ENV_TIMEOUT_MS is unset.
-  defaultTimeoutMs?: number;
-  // Keep inherited PATH entries the login shell dropped, after the login shell's own entries.
-  // A shell profile that resets PATH (Debian's /etc/profile) would otherwise drop entries the
-  // launcher added on purpose, such as a container image's ENV PATH.
-  keepInheritedPathEntries?: boolean;
+  // Total budget for both attempts; overrides PASEO_SHELL_ENV_TIMEOUT_MS.
+  timeoutMs?: number;
+  // The launcher's environment wins: the login shell only fills in variables it lacks, and PATH
+  // keeps the launcher's own entries (those the login shell lacks) ahead of the login shell's.
+  // Without this, the login shell's values replace the launcher's.
+  preferInherited?: boolean;
+  // Variables never taken from the login shell, such as settings a launcher stripped on purpose.
+  ignoreKeys?: readonly string[];
   now?: () => number;
   platform?: NodeJS.Platform;
   spawnSync?: typeof defaultSpawnSync;
@@ -140,6 +145,7 @@ interface RestoreElectronEnvInput {
 }
 
 interface ResolveShellEnvInput {
+  shellPath?: string;
   deps: LoginShellEnvDependencies;
   timeoutMs: number;
 }
@@ -152,18 +158,28 @@ function timeoutMsFromEnv(env: NodeJS.ProcessEnv, defaultTimeoutMs: number): num
   return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : defaultTimeoutMs;
 }
 
-function mergePathEntries(resolved: string | null, inherited: string | null): string | null {
+function launcherPathFirst(resolved: string | null, inherited: string | null): string | null {
   if (!inherited) return resolved;
   if (!resolved) return inherited;
-  const entries = resolved.split(delimiter);
-  const seen = new Set(entries);
-  for (const entry of inherited.split(delimiter)) {
-    if (entry && !seen.has(entry)) {
-      seen.add(entry);
-      entries.push(entry);
-    }
+  const loginEntries = resolved.split(delimiter).filter(Boolean);
+  const loginSet = new Set(loginEntries);
+  const launcherEntries = inherited
+    .split(delimiter)
+    .filter((entry) => entry && !loginSet.has(entry));
+  return [...new Set([...launcherEntries, ...loginEntries])].join(delimiter);
+}
+
+function fillMissing(
+  resolved: Record<string, string>,
+  inherited: NodeJS.ProcessEnv,
+): Record<string, string> {
+  const result: Record<string, string> = {};
+  for (const [key, value] of Object.entries(resolved)) {
+    if (inherited[key] === undefined) result[key] = value;
   }
-  return entries.join(delimiter);
+  const path = launcherPathFirst(pathEnv(resolved), pathEnv(inherited));
+  if (path !== null) result.PATH = path;
+  return result;
 }
 
 function timeoutMsForAttempt({
@@ -420,7 +436,7 @@ function restoreElectronEnv({ env, savedRunAsNode, savedNoAttach }: RestoreElect
   delete env.XDG_RUNTIME_DIR;
 }
 
-function resolveShellEnv({ deps, timeoutMs }: ResolveShellEnvInput): ResolvedShellEnv {
+function resolveShellEnv({ deps, timeoutMs, shellPath }: ResolveShellEnvInput): ResolvedShellEnv {
   if (deps.platform === "win32") {
     throw new ShellEnvError("login shell env is not resolved on Windows", { reason: "win32" });
   }
@@ -435,6 +451,7 @@ function resolveShellEnv({ deps, timeoutMs }: ResolveShellEnvInput): ResolvedShe
   const { command, attempts } = shellEnvCommand({ shell, mark });
 
   const shellEnv = { ...deps.env };
+  if (shellPath) shellEnv.PATH = shellPath;
   delete shellEnv.PASEO_NODE_ENV;
   delete shellEnv.PASEO_DESKTOP_MANAGED;
   delete shellEnv.PASEO_SUPERVISED;
@@ -537,18 +554,17 @@ export function inheritLoginShellEnv(options: LoginShellEnvOptions): void {
   if (deps.env[LOGIN_SHELL_ENV_RESOLVED_KEY] === "1") return;
   const beforePath = pathEnv(deps.env);
   const startedAt = deps.now();
-  const timeoutMs = timeoutMsFromEnv(
-    deps.env,
-    options.defaultTimeoutMs ?? DEFAULT_RESOLVE_TIMEOUT_MS,
-  );
+  const timeoutMs = options.timeoutMs ?? timeoutMsFromEnv(deps.env, DEFAULT_RESOLVE_TIMEOUT_MS);
 
   try {
-    const { env, attemptKind } = resolveShellEnv({ deps, timeoutMs });
-    if (options.keepInheritedPathEntries) {
-      const merged = mergePathEntries(pathEnv(env), beforePath);
-      if (merged !== null) env.PATH = merged;
-    }
-    Object.assign(deps.env, env);
+    const { env, attemptKind } = resolveShellEnv({
+      deps,
+      timeoutMs,
+      shellPath: options.preferInherited ? BASELINE_PATH : undefined,
+    });
+    const applied = options.preferInherited ? fillMissing(env, deps.env) : env;
+    for (const key of options.ignoreKeys ?? []) delete applied[key];
+    Object.assign(deps.env, applied);
     deps.env[LOGIN_SHELL_ENV_RESOLVED_KEY] = "1";
     deps.logger.info("[login-shell-env] applied", {
       attemptKind,

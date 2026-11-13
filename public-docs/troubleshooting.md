@@ -78,7 +78,7 @@ The same mismatch shows up anywhere Paseo runs your tools, an agent, or a termin
 
 When you open the **desktop app** from the Dock or Finder, the OS hands it a stripped-down environment, not your terminal's `PATH`. To compensate, Paseo runs your login shell once at startup (`$SHELL -i -l -c`), captures its environment, and hands that to the daemon and everything it spawns. The rule of thumb: **if a brand-new terminal can run the command, Paseo should too.** That's also the test, open a fresh terminal and try it there.
 
-A daemon from the desktop app runs the same step when it starts, unless the app already did, so it gets your login shell's `PATH` however it was launched: by the app, or by the app's bundled `paseo` CLI from a script, `launchd` or `zsh -f`. A daemon installed with npm or run in Docker skips the step and inherits the environment it was started with.
+A daemon from the desktop app runs the same step when it starts, unless the app already did, so it gets your login shell's `PATH` however it was launched: by the app, or by the app's bundled `paseo` CLI from a script, `launchd` or `zsh -f`. Here the launching environment wins: the login shell only fills in variables it lacks, and `PATH` entries it adds stay ahead of your login shell's. A daemon installed with npm or run in Docker skips the step and inherits the environment it was started with.
 
 Either way, the fix for a missing tool lives in your shell config (`.zshrc`, `.zprofile`, …), not in Paseo. Tools installed through version managers (asdf, mise, nvm, …) are the usual offenders, make sure they initialize for a clean login shell, not only inside one you've already opened.
 

@@ -29,6 +29,7 @@ interface RecordedSpawn {
   shell: string;
   args: string[];
   timeoutMs: number | undefined;
+  pathSeenByShell?: string;
 }
 
 interface SpawnResultFields {
@@ -125,8 +126,13 @@ describe("login shell env retry behavior", () => {
     expect(logger.infos).toEqual([]);
   });
 
-  it("keeps inherited PATH entries the login shell dropped when asked", () => {
-    const env = { ...createEnv(fakeHome), PATH: "/image/bin:/usr/bin:/bin" };
+  it("lets the launcher's environment win when asked", () => {
+    const env: NodeJS.ProcessEnv = {
+      ...createEnv(fakeHome),
+      PATH: "/launcher/bin:/usr/bin:/bin",
+      AWS_PROFILE: "work",
+      PASEO_HOME: "/srv/paseo",
+    };
     const logger = new RecordingLoginShellLogger();
     const calls: RecordedSpawn[] = [];
     const spawnSync: LoginShellSpawnSync = (shell, args, options) => {
@@ -136,10 +142,15 @@ describe("login shell env retry behavior", () => {
         shell: String(shell),
         args: recordedArgs,
         timeoutMs: options?.timeout,
+        pathSeenByShell: options?.env?.PATH,
       });
       return successResult(String(recordedArgs.at(-1)), {
         ...env,
         PATH: "/home/me/.local/bin:/usr/bin:/bin",
+        AWS_PROFILE: "default",
+        PASEO_HOME: "/home/me/.paseo-dev",
+        LANG: "en_US.UTF-8",
+        PORT: "9999",
       });
     };
 
@@ -148,11 +159,17 @@ describe("login shell env retry behavior", () => {
       logger,
       platform: "linux",
       spawnSync,
-      defaultTimeoutMs: 8_000,
-      keepInheritedPathEntries: true,
+      timeoutMs: 8_000,
+      preferInherited: true,
+      ignoreKeys: ["PORT"],
     });
 
-    expect(env.PATH).toBe("/home/me/.local/bin:/usr/bin:/bin:/image/bin");
+    expect(calls[0]?.pathSeenByShell).toBe("/usr/bin:/bin:/usr/sbin:/sbin");
+    expect(env.PATH).toBe("/launcher/bin:/home/me/.local/bin:/usr/bin:/bin");
+    expect(env.AWS_PROFILE).toBe("work");
+    expect(env.PASEO_HOME).toBe("/srv/paseo");
+    expect(env.LANG).toBe("en_US.UTF-8");
+    expect(env.PORT).toBeUndefined();
     expect(env[LOGIN_SHELL_ENV_RESOLVED_KEY]).toBe("1");
     expect(calls[0]?.timeoutMs).toBe(4_000);
   });
