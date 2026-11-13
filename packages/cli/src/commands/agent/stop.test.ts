@@ -119,7 +119,7 @@ describe("runStopCommand cancellation outcomes", () => {
     const client = createClient(true);
     await setTargets(client, ["stopped", "failed", "idle"]);
     client.cancelAgent.mockImplementation(async (id) => {
-      if (id === "failed") throw Object.assign(new Error("refused"), { code: "REFUSED" });
+      if (id === "failed") throw { code: "REFUSED", message: "refused" };
       return id === "stopped";
     });
     const stdout = vi.spyOn(process.stdout, "write").mockReturnValue(true);

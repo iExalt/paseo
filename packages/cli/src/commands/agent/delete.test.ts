@@ -111,11 +111,14 @@ describe("runDeleteCommand", () => {
       results: [agent, archivedAgent].map(({ id }) => ({ agentId: id, deleted: true })),
     });
   });
-  it("collects coded failures without losing successful deletions", async () => {
+  it.each([
+    Object.assign(new Error("refused"), { code: "REFUSED" }),
+    { code: "REFUSED", message: "refused" },
+  ])("collects coded failures without losing successful deletions: %s", async (error) => {
     daemonAgents = [agent, archivedAgent, archivedOutsideAgent];
     deleteAgent.mockImplementation(async (id) => {
       if (id === archivedAgent.id) {
-        throw Object.assign(new Error("refused"), { code: "REFUSED" });
+        throw error;
       }
     });
 

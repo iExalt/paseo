@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import { renderTable } from "../../output/index.js";
+import { getErrorMessage } from "../../utils/errors.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { isSameOrDescendantPath } from "../../utils/paths.js";
 import type {
@@ -66,7 +67,7 @@ async function cancelStopTarget(
     }
     return { ok: true as const, id: agentId, cancelled };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = getErrorMessage(err);
     return { ok: false as const, id: agentId, message };
   }
 }

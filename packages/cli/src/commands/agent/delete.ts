@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import { renderTable } from "../../output/index.js";
+import { getErrorMessage } from "../../utils/errors.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { isSameOrDescendantPath } from "../../utils/paths.js";
 import type { DaemonClient, FetchAgentHistoryEntry } from "@getpaseo/client/internal/daemon-client";
@@ -109,7 +110,7 @@ export async function runDeleteCommand(
           return { ok: true as const, id: agent.id };
         } catch (err) {
           if (singleTarget) throw err;
-          const message = err instanceof Error ? err.message : String(err);
+          const message = getErrorMessage(err);
           return { ok: false as const, id: agent.id, message };
         }
       }),
