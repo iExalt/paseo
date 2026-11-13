@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.27.0](https://github.com/iExalt/paseo/compare/paseo-v0.26.2...paseo-v0.27.0) (2026-11-13)
+
+
+### Features
+
+* **server:** resolve the login shell env in the packaged supervisor ([#446](https://github.com/iExalt/paseo/issues/446)) ([0fc5d1a](https://github.com/iExalt/paseo/commit/0fc5d1a981cced4969f34b14cfe7078ab266119b))
+
+
+### Bug Fixes
+
+* **server:** find installed app independently of worker launch ([#445](https://github.com/iExalt/paseo/issues/445)) ([0695e80](https://github.com/iExalt/paseo/commit/0695e8059836b6a92e3ba4ec94385e6d2c590334))
+
 ## [0.26.2](https://github.com/iExalt/paseo/compare/paseo-v0.26.1...paseo-v0.26.2) (2026-11-13)
 
 
