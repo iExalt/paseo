@@ -260,7 +260,7 @@ npm run desktop:sandbox -- --stop <home>
 - To launch Electron yourself from a directory outside the repo, call
   `node_modules/electron/dist/electron` directly: `node_modules/.bin/electron` goes through the
   mise `node` shim, which has no version outside the repo.
-- It runs on Linux under `xvfb-run`, so no window opens; run it on dev-station. On macOS it
+- It runs on Linux under `xvfb-run`, so no window opens; run it on a Linux host. On macOS it
   refuses unless `--allow-window`. Without a setuid-root `chrome-sandbox` it adds `--no-sandbox`.
 - The renderer is the daemon-served web UI (`EXPO_DEV_URL=<url>`); `--metro <url>` uses a Metro
   server instead, for development builds and React warnings (not yet tried).
