@@ -167,7 +167,17 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
       if (generation !== started) return deps.readStatus();
       const launched = await deps.launch();
       if (generation === started) {
-        if (launched.status === "running") updateState(null);
+        if (
+          needsDaemonUpgrade({
+            status: launched,
+            appVersion: deps.appVersion(),
+            platform: deps.platform,
+          }) ||
+          (launched.status === "starting" && launched.desktopManaged && deps.platform !== "win32")
+        ) {
+          report(launched, "checking", deps.appVersion());
+          scheduleRetry(launched, false);
+        } else if (launched.status === "running") updateState(null);
         else if (state)
           updateState({
             ...state,
@@ -181,6 +191,11 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
     for (let decision = 0; decision < MAX_DECISIONS; decision += 1) {
       if (!isLive(current)) return launch();
       const appVersion = deps.appVersion();
+      if (current.status === "starting" && current.desktopManaged && deps.platform !== "win32") {
+        report(current, "checking", appVersion);
+        scheduleRetry(current, false);
+        return current;
+      }
       if (!needsDaemonUpgrade({ status: current, appVersion, platform: deps.platform })) {
         updateState(null);
         return current;

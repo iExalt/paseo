@@ -32,6 +32,7 @@ function harness(input: {
   stops?: Array<IdleStopResult | Error>;
   managementEnabled?: boolean;
   launchError?: Error;
+  launchStatus?: DaemonUpgradeStatus;
   activeRelease?: Array<"active" | "inactive" | "unknown">;
 }) {
   const releases = [...(input.activeRelease ?? ["active"])];
@@ -53,7 +54,7 @@ function harness(input: {
     launch: async () => {
       calls.launch += 1;
       if (input.launchError) throw input.launchError;
-      return OURS;
+      return input.launchStatus ?? OURS;
     },
     managementEnabled: async () => input.managementEnabled ?? true,
     isActiveRelease: async () => (releases.length > 1 ? releases.shift()! : releases[0]!),
@@ -257,4 +258,27 @@ describe("createDaemonUpgrader", () => {
     expect(unmanaged.calls.stop).toBe(1);
     expect(unmanaged.pending()).toEqual([]);
   });
+});
+
+test("waits for an existing starting daemon before deciding its upgrade", async () => {
+  const starting = { ...OLD, status: "starting" as const };
+  const run = harness({ statuses: [starting, OLD, OLD], stops: ["stopped"] });
+  await expect(run.upgrader.ensure()).resolves.toBe(starting);
+  expect(run.calls).toEqual({ stop: 0, launch: 0 });
+  expect(run.pending()).toHaveLength(1);
+  await run.fire();
+  expect(run.calls).toEqual({ stop: 1, launch: 1 });
+  expect(run.pending()).toEqual([]);
+});
+
+test("rechecks a mismatched daemon returned by launch after a transient status failure", async () => {
+  const input = { statuses: [STOPPED], stops: ["stopped" as const], launchStatus: OLD };
+  const run = harness(input);
+  await expect(run.upgrader.ensure()).resolves.toBe(OLD);
+  expect(run.pending()).toHaveLength(1);
+  run.statuses.splice(0, run.statuses.length, OLD);
+  input.launchStatus = OURS;
+  await run.fire();
+  expect(run.calls).toEqual({ stop: 1, launch: 2 });
+  expect(run.pending()).toEqual([]);
 });

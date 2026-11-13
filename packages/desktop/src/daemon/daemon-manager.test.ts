@@ -7,6 +7,7 @@ import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
 import { ExternalCliCommandError } from "./cli/external";
 import {
   createDaemonCommandHandlers,
+  registerDaemonManager,
   keepsTerminalsOnStop,
   stopCapturedDaemon,
   type DesktopDaemonStopReason,
@@ -14,6 +15,7 @@ import {
 
 const mocks = vi.hoisted(() => ({
   paseoHome: "",
+  runNixUpdate: vi.fn(),
   settings: {
     releaseChannel: "stable",
     daemon: {
@@ -38,6 +40,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
   app: {
+    on: vi.fn(),
     getPath: vi.fn(() => mocks.paseoHome),
     getVersion: vi.fn(() => "1.2.3"),
     isPackaged: true,
@@ -85,6 +88,15 @@ vi.mock("./cli/external.js", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   runExternalCliJsonCommand: mocks.runExternalCliJsonCommand,
   runExternalCliTextCommand: mocks.runExternalCliTextCommand,
+}));
+
+vi.mock("../features/nix-managed-updater.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  createNixUpdaterCommandRunner: () => mocks.runNixUpdate,
+}));
+vi.mock("./store-bundle.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  shouldSyncInstalledCopy: () => false,
 }));
 
 describe("daemon-manager commands", () => {
@@ -195,7 +207,20 @@ describe("daemon-manager commands", () => {
             desktopManaged: true,
           },
     );
-    const handlers = createDaemonCommandHandlers();
+    const installation = {
+      mode: "nix" as const,
+      outputPath: "/nix/store/current",
+      cliPath: "/nix/store/current/bin/paseo-nix-update",
+      marker: {
+        schemaVersion: 1 as const,
+        managedBy: "nix" as const,
+        packageVersion: "1.2.3",
+        buildVersion: "1.2.3",
+      },
+    };
+    mocks.runNixUpdate.mockResolvedValue({ active: { outputPath: installation.outputPath } });
+    registerDaemonManager(installation);
+    const handlers = createDaemonCommandHandlers({ installation });
     try {
       await handlers.start_desktop_daemon();
       expect(await handlers.desktop_daemon_status()).toMatchObject({
@@ -213,6 +238,13 @@ describe("daemon-manager commands", () => {
       expect(mocks.runExternalCliJsonCommand).toHaveBeenCalledWith(
         expect.arrayContaining(["stop", "--if-idle"]),
       );
+      mocks.runNixUpdate.mockResolvedValue({ active: { outputPath: "/nix/store/newer" } });
+      await handlers.start_desktop_daemon();
+      expect(mocks.runNixUpdate).toHaveBeenCalledTimes(2);
+      expect(
+        mocks.runExternalCliJsonCommand.mock.calls.filter(([args]) => args.includes("stop")),
+      ).toHaveLength(1);
+      expect((await handlers.desktop_daemon_status()).upgrade).toBeNull();
     } finally {
       // This fixture is attached, never owned: no confirmed instance means cancel only.
       await handlers.stop_desktop_daemon();

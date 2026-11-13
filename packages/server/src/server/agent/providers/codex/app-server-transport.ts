@@ -256,6 +256,10 @@ export class CodexAppServerClient {
     this.requestHandlers.set(method, handler);
   }
 
+  hasExited(): boolean {
+    return typeof this.child.exitCode === "number" || typeof this.child.signalCode === "string";
+  }
+
   hasPendingRequests(): boolean {
     return this.pending.size > 0 || this.activeProviderRequests > 0;
   }
