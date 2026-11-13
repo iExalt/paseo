@@ -168,6 +168,8 @@
               "server/local-credential.ts": ["readFileSync"],
               // Startup logger construction: create the log directory before opening the logging destination.
               "server/logger.ts": ["mkdirSync"],
+              // Startup only: the supervisor and desktop app resolve the login shell env once, before any worker or window starts.
+              "server/login-shell-env.ts": ["spawnSync"],
               // TODO: runtime skill commands resolve their bundled source through a synchronous targets capability; migrate the capability and controller together.
               "server/orchestration-skills/internal/paths.ts": ["existsSync"],
               // Module initialization: the package version is resolved once and cached at import.

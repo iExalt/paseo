@@ -43,6 +43,11 @@
       "source": "./src/server/config.ts",
       "default": "./dist/server/server/config.js"
     },
+    "./login-shell-env": {
+      "types": "./dist/server/server/login-shell-env.d.ts",
+      "source": "./src/server/login-shell-env.ts",
+      "default": "./dist/server/server/login-shell-env.js"
+    },
     "./process": {
       "types": "./dist/server/utils/spawn.d.ts",
       "source": "./src/utils/spawn.ts",
