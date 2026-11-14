@@ -2,8 +2,18 @@ import { z } from "zod";
 import type {
   AgentPermissionRequest,
   AgentPermissionResponse,
+  AgentPersistenceHandle,
   ToolCallTimelineItem,
 } from "../../agent-sdk-types.js";
+
+/** Only completed async messages have answers that survive losing the provider process. */
+export function persistedAsyncQuestions(
+  handle: AgentPersistenceHandle | null,
+): AgentPermissionRequest[] {
+  return handle?.provider === "codex" && handle.sessionId
+    ? new CodexAsyncQuestions(handle.metadata?.asyncQuestions).pending()
+    : [];
+}
 
 const QuestionSchema = z.object({
   title: z.string().trim().min(1),
