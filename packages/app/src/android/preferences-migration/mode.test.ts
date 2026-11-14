@@ -1,3 +1,4 @@
+import { describe, expect, it } from "vitest";
 import { resolvePreferencesMigrationMode } from "./mode";
 
 const { resolvePreferencesMigrationBridge } = require("../../../app-variant");
