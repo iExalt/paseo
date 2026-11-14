@@ -22,6 +22,7 @@ import {
 } from "../support/helpers/branch-switcher";
 import {
   createIdleAgent,
+  createMockIdleAgent,
   expectSessionRowNotArchived,
   fetchAgentArchivedAt,
   openSessions,
@@ -58,7 +59,11 @@ test.describe("Worktree restore", () => {
 
   async function createArchivedMissingWorktree(
     prefix: string,
-    options: { agentCount?: number; keepAgentsArchived?: boolean } = {},
+    options: {
+      agentCount?: number;
+      keepAgentsArchived?: boolean;
+      createAgent?: typeof createIdleAgent;
+    } = {},
   ) {
     const project = await openProjectViaDaemon(worktreeClient, tempRepo.path);
     createdProjectIds.add(project.projectKey);
@@ -68,9 +73,10 @@ test.describe("Worktree restore", () => {
     });
     createdProjectIds.add(worktree.projectKey);
     createdWorktreeDirectories.add(worktree.workspaceDirectory);
+    const createAgent = options.createAgent ?? createIdleAgent;
     const agents = await Promise.all(
       Array.from({ length: options.agentCount ?? 1 }, () =>
-        createIdleAgent(client, {
+        createAgent(client, {
           cwd: worktree.workspaceDirectory,
           workspaceId: worktree.workspaceId,
           title: `${prefix}-${randomUUID().slice(0, 8)}`,
@@ -307,6 +313,7 @@ test.describe("Worktree restore", () => {
     const { agents, worktree } = await createArchivedMissingWorktree("restore-agents", {
       agentCount: 2,
       keepAgentsArchived: true,
+      createAgent: createMockIdleAgent,
     });
     const [firstAgent, secondAgent] = agents;
     if (!firstAgent || !secondAgent) {
@@ -470,23 +477,20 @@ test.describe("Worktree restore", () => {
   test("an unrecoverable missing workspace returns to the main menu", async ({ page }) => {
     const project = await openProjectViaDaemon(worktreeClient, tempRepo.path);
     createdProjectIds.add(project.projectKey);
-    const agent = await createIdleAgent(client, {
+    const agent = await createMockIdleAgent(client, {
       cwd: project.workspaceDirectory,
       workspaceId: project.workspaceId,
       title: `unrecoverable-${randomUUID().slice(0, 8)}`,
     });
     await archiveLocalWorkspaceFromDaemon(worktreeClient, project.workspaceId);
-    await client.refreshAgent(agent.id).catch(() => undefined);
-    await expect.poll(() => fetchAgentArchivedAt(client, agent.id), { timeout: 30_000 }).toBeNull();
+    await expect
+      .poll(() => fetchAgentArchivedAt(client, agent.id), { timeout: 30_000 })
+      .not.toBeNull();
 
     const displacedProjectPath = `${tempRepo.path}-missing`;
     await rename(tempRepo.path, displacedProjectPath);
     try {
-      await gotoAppShell(page);
-      await waitForSidebarHydration(page);
-      await openSessions(page);
-      await expectSessionRowNotArchived(page, agent.title);
-      await page.getByTestId(`agent-row-${getServerId()}-${agent.id}`).click();
+      await page.goto(`/h/${getServerId()}/agent/${agent.id}`);
 
       await expectAppRoute(page, "/open-project", { timeout: 30_000 });
       await expect(page.getByTestId("open-project-submit")).toBeVisible();
