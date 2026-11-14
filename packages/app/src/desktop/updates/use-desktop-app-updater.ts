@@ -8,7 +8,6 @@ import {
   type DesktopAppUpdateCheckIntent,
   type DesktopAppUpdateInstallResult,
 } from "@/desktop/updates/desktop-updates";
-import { useDesktopSettings } from "@/desktop/settings/desktop-settings";
 import { useDesktopIpcErrorReporter } from "@/desktop/hooks/desktop-ipc-error";
 import {
   PENDING_RECHECK_MS,
@@ -26,6 +25,7 @@ export interface UseDesktopAppUpdaterReturn {
   statusText: string;
   availableUpdate: DesktopAppUpdateCheckResult | null;
   errorMessage: string | null;
+  installMessage: string | null;
   lastCheckedAt: number | null;
   isChecking: boolean;
   isInstalling: boolean;
@@ -38,8 +38,7 @@ export interface UseDesktopAppUpdaterReturn {
 
 export function useDesktopAppUpdater(): UseDesktopAppUpdaterReturn {
   const isDesktopApp = shouldShowDesktopUpdateSection();
-  const { settings: desktopSettings } = useDesktopSettings();
-  const releaseChannel = desktopSettings.releaseChannel;
+  const releaseChannel = "stable";
   const reportError = useDesktopIpcErrorReporter();
 
   const updater = useMemo(
@@ -116,6 +115,7 @@ export function useDesktopAppUpdater(): UseDesktopAppUpdaterReturn {
     }),
     availableUpdate: snapshot.availableUpdate,
     errorMessage: snapshot.errorMessage,
+    installMessage: snapshot.installMessage,
     lastCheckedAt: snapshot.lastCheckedAt,
     isChecking: snapshot.isChecking,
     isInstalling: snapshot.isInstalling,

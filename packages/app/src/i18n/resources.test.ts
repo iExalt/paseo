@@ -753,7 +753,7 @@ describe("translation resources", () => {
     expect(en.desktop.updates.callout.versionReady).toBe("{{version}} is ready to install.");
     expect(en.desktop.updates.callout.newVersionReady).toBe("A new version is ready to install.");
     expect(en.desktop.updates.callout.restartWarning).toBe(
-      "Upgrading the app will stop running agents and close terminal sessions.",
+      "The update waits for active agents and terminals to finish before restarting.",
     );
     expect(en.desktop.rosetta.title).toBe("Download the Apple Silicon build");
     expect(en.desktop.rosetta.runningIntel).toBe(

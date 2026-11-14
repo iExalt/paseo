@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { isPlatform } from "../test-utils/platform.js";
@@ -71,4 +71,58 @@ describe("terminal worker authentication", () => {
     connection.disconnect();
     await waitUntil(() => !existsSync(recordPath), 10_000);
   });
+});
+
+it("keeps a terminal created during controller disconnect alive until explicit fixture cleanup", async () => {
+  const paseoHome = mkdtempSync(path.join(tmpdir(), "tw-disconnect-create-"));
+  temporaryDirs.push(paseoHome);
+  const { record, recordPath } = await launchTerminalWorker({
+    paseoHome,
+    paseoVersion: "0.0.0-test",
+  });
+  const connection = await connectTerminalWorker({
+    socketPath: record.socketPath,
+    secret: record.secret,
+  });
+  try {
+    await new Promise<void>((resolve, reject) =>
+      connection.send(
+        {
+          type: "createTerminal",
+          requestId: "create-race",
+          options: {
+            id: "race-terminal",
+            cwd: paseoHome,
+            workspaceId: "fixture",
+            command: process.execPath,
+            args: ["-e", "setInterval(() => {}, 1000)"],
+          },
+        },
+        (error) => (error ? reject(error) : resolve()),
+      ),
+    );
+    connection.disconnect();
+    await waitUntil(() => {
+      expect(existsSync(recordPath)).toBe(true);
+      return JSON.parse(readFileSync(recordPath, "utf8")).terminals.some(
+        (entry: { id: string }) => entry.id === "race-terminal",
+      );
+    }, 10_000);
+    const cleanup = await connectTerminalWorker({
+      socketPath: record.socketPath,
+      secret: record.secret,
+    });
+    cleanup.send({ type: "shutdown", requestId: "fixture-cleanup" }, () => {});
+    await waitUntil(() => !existsSync(recordPath), 10_000);
+    cleanup.disconnect();
+  } finally {
+    connection.disconnect();
+    if (existsSync(recordPath)) {
+      try {
+        process.kill(record.pid, "SIGKILL");
+      } catch {
+        /* fixture worker already exited */
+      }
+    }
+  }
 });

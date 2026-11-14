@@ -55,12 +55,7 @@ import { TerminalSection } from "@/screens/settings/terminal/terminal-section";
 import { ChatSection } from "@/screens/settings/chat/chat-section";
 import { SidebarNavSection } from "@/screens/settings/sidebar/sidebar-nav-section";
 import { SendingSection } from "@/screens/settings/general/sending-section";
-import {
-  useAppSettings,
-  useSettings,
-  type AppSettings,
-  type Settings as EffectiveSettings,
-} from "@/hooks/use-settings";
+import { useAppSettings, type AppSettings } from "@/hooks/use-settings";
 import { useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import {
@@ -82,14 +77,18 @@ import { EditorSection } from "@/screens/settings/editor-section";
 import { FilesSection } from "@/screens/settings/files-section";
 import { Button } from "@/components/ui/button";
 import { CommunityLinks } from "@/components/community-links";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DesktopPermissionsSection } from "@/desktop/components/desktop-permissions-section";
 import { DesktopNotificationsSection } from "@/desktop/components/desktop-notifications-section";
 import { BrowserDataSection } from "@/desktop/browser/settings/browser-data-section";
 import { IntegrationsSection } from "@/desktop/components/integrations-section";
 import { isElectronRuntime } from "@/desktop/host";
+import { NixDesktopAppUpdateRow } from "@/desktop/updates/nix-desktop-app-update-row";
+import { isNixManagedDesktopInstallation } from "@/desktop/updates/desktop-updates";
 import { useDesktopAppUpdater } from "@/desktop/updates/use-desktop-app-updater";
+import { ForkAndroidUpdateRow } from "@/android/fork-updates/about-row";
+import { preferencesMigrationMode } from "@/android/preferences-migration/mode";
+import { PreferencesTransferRow } from "@/android/preferences-migration/preferences-transfer-row";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { resolveAppVersion } from "@/utils/app-version";
 import { openChangelog } from "@/changelog";
@@ -450,9 +449,29 @@ interface AboutSectionProps {
   appVersion: string | null;
   appVersionText: string;
   isDesktopApp: boolean;
+  isNixManagedApp: boolean;
+  preferencesTransferMode: "bridge" | "receiver" | null;
+  daemonIds: readonly string[];
 }
 
-function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSectionProps) {
+function renderAboutDesktopUpdateRow(
+  isNixManagedApp: boolean,
+  isDesktopApp: boolean,
+  appVersion: string | null,
+): ReactNode {
+  if (isNixManagedApp) return <NixDesktopAppUpdateRow appVersion={appVersion} />;
+  if (isDesktopApp) return <DesktopAppUpdateRow />;
+  return null;
+}
+
+function AboutSection({
+  appVersion,
+  appVersionText,
+  isDesktopApp,
+  isNixManagedApp,
+  preferencesTransferMode,
+  daemonIds,
+}: AboutSectionProps) {
   const { t } = useTranslation();
   return (
     <>
@@ -466,7 +485,11 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
             <Text style={styles.aboutValue}>{appVersionText}</Text>
           </View>
           <WhatsNewRow />
-          {isDesktopApp ? <DesktopAppUpdateRow /> : null}
+          {renderAboutDesktopUpdateRow(isNixManagedApp, isDesktopApp, appVersion)}
+          <ForkAndroidUpdateRow />
+          {preferencesTransferMode ? (
+            <PreferencesTransferRow mode={preferencesTransferMode} daemonIds={daemonIds} />
+          ) : null}
         </View>
       </SettingsSection>
       <ConnectedHostsSection clientVersion={appVersion} />
@@ -602,7 +625,6 @@ function getUpdateButtonLabel(
 
 function DesktopAppUpdateRow() {
   const { t } = useTranslation();
-  const { settings, updateSettings } = useSettings();
   const {
     isDesktopApp,
     statusText,
@@ -630,20 +652,6 @@ function DesktopAppUpdateRow() {
     }
     void checkForUpdates();
   }, [checkForUpdates, isDesktopApp]);
-
-  const handleReleaseChannelChange = useCallback(
-    (releaseChannel: EffectiveSettings["releaseChannel"]) => {
-      void updateSettings({ releaseChannel });
-    },
-    [updateSettings],
-  );
-  const releaseChannelOptions = useMemo(
-    () => [
-      { value: "stable" as const, label: t("settings.about.releaseChannel.stable") },
-      { value: "beta" as const, label: t("settings.about.releaseChannel.beta") },
-    ],
-    [t],
-  );
 
   const handleInstallUpdate = useCallback(() => {
     if (!isDesktopApp) {
@@ -680,54 +688,31 @@ function DesktopAppUpdateRow() {
   }
 
   return (
-    <>
-      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>{t("settings.about.releaseChannel.label")}</Text>
-          <Text style={settingsStyles.rowHint}>
-            {t("settings.about.releaseChannel.description")}
-          </Text>
-        </View>
-        <SegmentedControl
+    <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="desktop-fork-update-row">
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>{t("settings.about.forkUpdates.label")}</Text>
+        <Text style={settingsStyles.rowHint}>{statusText}</Text>
+        {errorMessage ? <Text style={styles.aboutErrorText}>{errorMessage}</Text> : null}
+      </View>
+      <View style={styles.aboutUpdateActions}>
+        <Button
+          variant="outline"
           size="sm"
-          value={settings.releaseChannel}
-          onValueChange={handleReleaseChannelChange}
-          options={releaseChannelOptions}
-        />
+          onPress={handleCheckForUpdates}
+          disabled={isChecking || isInstalling}
+        >
+          {isChecking ? t("settings.about.updates.checking") : t("settings.about.updates.check")}
+        </Button>
+        <Button
+          variant="default"
+          size="sm"
+          onPress={handleInstallUpdate}
+          disabled={isChecking || isInstalling || !isUpdateReady}
+        >
+          {getUpdateButtonLabel(t, isInstalling, readyUpdateVersion)}
+        </Button>
       </View>
-      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>{t("settings.about.updates.label")}</Text>
-          <Text style={settingsStyles.rowHint}>{statusText}</Text>
-          {readyUpdateVersion ? (
-            <Text style={settingsStyles.rowHint}>
-              {t("settings.about.updates.readyToInstall", {
-                version: formatVersionWithPrefix(readyUpdateVersion),
-              })}
-            </Text>
-          ) : null}
-          {errorMessage ? <Text style={styles.aboutErrorText}>{errorMessage}</Text> : null}
-        </View>
-        <View style={styles.aboutUpdateActions}>
-          <Button
-            variant="outline"
-            size="sm"
-            onPress={handleCheckForUpdates}
-            disabled={isChecking || isInstalling}
-          >
-            {isChecking ? t("settings.about.updates.checking") : t("settings.about.updates.check")}
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onPress={handleInstallUpdate}
-            disabled={isChecking || isInstalling || !isUpdateReady}
-          >
-            {getUpdateButtonLabel(t, isInstalling, readyUpdateVersion)}
-          </Button>
-        </View>
-      </View>
-    </>
+    </View>
   );
 }
 
@@ -775,6 +760,7 @@ function SidebarSectionButton({
       accessibilityState={accessibilityState}
       onPress={handlePress}
       style={isSelected ? selectedSidebarItemStyle : sidebarItemStyle}
+      testID={`settings-section-${itemId}`}
     >
       <IconComponent
         size={densityIconSize(rt, "md")}
@@ -1104,6 +1090,8 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   const [playbackTestResult, setPlaybackTestResult] = useState<string | null>(null);
   const lastOpenedAddHostIntentRef = useRef<string | null>(null);
   const isDesktopApp = isElectronRuntime();
+  const isNixManagedApp = isNixManagedDesktopInstallation();
+  const preferencesTransferMode = preferencesMigrationMode();
   const appVersion = resolveAppVersion();
   const appVersionText = formatVersionWithPrefix(appVersion);
   const isCompactLayout = useIsCompactFormFactor();
@@ -1370,6 +1358,9 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
               appVersion={appVersion}
               appVersionText={appVersionText}
               isDesktopApp={isDesktopApp}
+              isNixManagedApp={isNixManagedApp}
+              preferencesTransferMode={preferencesTransferMode}
+              daemonIds={hosts.map((host) => host.serverId)}
             />
           );
         default:

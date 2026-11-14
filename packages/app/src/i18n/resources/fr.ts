@@ -1482,6 +1482,33 @@ export const fr: TranslationResources = {
       loadFailed: "Impossible de charger le statut du daemon de l’application de bureau.",
     },
     updates: {
+      nix: {
+        checking: "Recherche de mises à jour…",
+        downloading: "Téléchargement de {{version}}…",
+        applying: "Installation de {{version}}…",
+        restarting: "Redémarrage…",
+        failed: "Échec de la mise à jour : {{error}}",
+        ready: "{{version}} est téléchargée et prête à être installée",
+        available: "{{version}} est disponible",
+        restartRequired: "{{version}} est installée ; redémarrez pour l’utiliser",
+        upToDate: "À jour (vérifié à {{time}})",
+        notChecked: "Pas encore vérifié",
+        checkAction: "Vérifier",
+        updateAction: "Mettre à jour",
+        restartAction: "Redémarrer",
+        updateTitle: "Mettre à jour vers {{version}} ?",
+        updateMessage: "Paseo va installer la mise à jour et redémarrer.",
+        updateConfirm: "Mettre à jour",
+        restartTitle: "Redémarrer pour terminer la mise à jour vers {{version}} ?",
+        restartMessage: "Paseo va redémarrer et utiliser la nouvelle version.",
+        restartConfirm: "Redémarrer",
+        lastAttemptFailed: "La dernière tentative a échoué : {{error}}",
+        updateTooltip: "Mettre à jour vers {{version}}",
+        restartTooltip: "Redémarrer pour terminer la mise à jour vers {{version}}",
+        failedTooltip: "Échec de la mise à jour",
+        failedTitle: "Échec de la mise à jour",
+        tryAgain: "Réessayer",
+      },
       status: {
         checking: "Recherche de mises à jour de l’application…",
         installing: "Installation de la mise à jour de l’application…",
@@ -1516,7 +1543,7 @@ export const fr: TranslationResources = {
         versionReady: "La version {{version}} est prête à être installée.",
         newVersionReady: "Une nouvelle version est prête à être installée.",
         restartWarning:
-          "La mise à jour de l’application arrêtera les agents en cours et fermera les sessions de terminal.",
+          "La mise à jour attend la fin des agents et des terminaux actifs avant de redémarrer.",
       },
     },
     settings: {
@@ -2483,6 +2510,7 @@ export const fr: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "À propos",
       appVersion: "Version de l’application",
       whatsNewHint: "Les nouveautés de chaque version",
@@ -2510,6 +2538,10 @@ export const fr: TranslationResources = {
         checking: "Vérification…",
         alertTitle: "Erreur",
         alertMessage: "Impossible d’ouvrir la boîte de dialogue de confirmation de mise à jour.",
+      },
+      nixUpdates: {
+        label: "Mises à jour gérées par Nix",
+        invalidMarker: "Cette installation Nix n’a pas pu être vérifiée.",
       },
     },
     appearance: {
@@ -2810,6 +2842,7 @@ export const fr: TranslationResources = {
           reset: "Réinitialiser",
           save: "Enregistrer",
           saving: "Enregistrement…",
+        },
         replyRules: {
           title: "Règles de notification des réponses",
           scope: "S’applique à tous les espaces de travail de {{host}}.",
