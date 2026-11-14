@@ -37,8 +37,11 @@ mutate() {
   done
 }
 
+# release-assets.mjs owns the asset names and makes every set comparison.
+assets_cli() { VERSION="$VERSION" node "$(dirname "$0")/release-assets.mjs" "$@"; }
 
 check_assets() {
+  assets_cli check "$ASSETS" > /dev/null || exit 1
 }
 
 draft() {
@@ -76,15 +79,18 @@ draft() {
       --data-binary "@$ASSETS/$file" \
       "https://uploads.github.com/repos/$repo/releases/$id/assets?name=$file" > /dev/null
     echo "Uploaded $file"
+  done < <(assets_cli check "$ASSETS")
 
   # Re-download every asset from the release and compare it with the signed bytes.
   local listing="$RUNNER_TEMP/release-assets.json"
   request "$api/releases/$id/assets?per_page=100" > "$listing"
+  assets_cli check-listing "$listing" "$ASSETS" || exit 1
   while IFS= read -r file; do
     asset_id="$(jq -er --arg name "$file" '.[] | select(.name == $name and .state == "uploaded") | .id' "$listing")"
     [[ "$(request --location --header "Accept: application/octet-stream" "$api/releases/assets/$asset_id" | shasum -a 256 | cut -d' ' -f1)" \
       == "$(shasum -a 256 "$ASSETS/$file" | cut -d' ' -f1)" ]] || fail "Downloaded $file differs from the signed bytes."
     echo "Verified $file"
+  done < <(assets_cli check "$ASSETS")
 }
 
 publish() {

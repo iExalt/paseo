@@ -12,6 +12,7 @@ import { FORK_ANDROID_CERTIFICATE_SHA256 } from "../packages/protocol/src/releas
 import { verifyReleaseManifestBytes } from "./paseo-nix-update.mjs";
 
 const version = "0.2.0";
+const names = releaseAssets(version);
 const release = (overrides = {}) => ({
   version,
   sourceSha: "a".repeat(40),

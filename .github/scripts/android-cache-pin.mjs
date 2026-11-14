@@ -14,6 +14,7 @@ import { appendFile, rm, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dependencyFingerprint } from "./dependency-fingerprint.mjs";
+import { releaseAssets } from "./release-assets.mjs";
 
 const HEX = /^[0-9a-f]{64}$/;
 const BUILD_KEY = /^paseo-android-build-v2-([0-9a-f]{64})$/;
@@ -99,6 +100,10 @@ export function choosePinAsset(release) {
   const pinAssets = (release.assets ?? []).filter((asset) =>
     asset.name.endsWith("-android-cache-pin.json"),
   );
+  if (pinAssets.length !== 1 || pinAssets[0].name !== releaseAssets(version).androidCachePin) {
+    throw new Error(
+      `Expected exactly ${releaseAssets(version).androidCachePin} on ${release.tag_name}`,
+    );
   }
   return { version, asset: pinAssets[0] };
 }
