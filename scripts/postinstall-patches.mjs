@@ -36,6 +36,9 @@ const patchedPackages = [
   // Android measurements across parent clones. Remove those hunks when upgrading past
   // 1.2.0-nightly-20261019-926ef06f0; reconcile the other local patch hunks separately.
   {
+    nodeModulesPath: "node_modules/@expo/cli",
+    patchPrefix: "@expo+cli+",
+  },
   // npm nests or hoists this package depending on the rest of the tree; patch either.
   {
     nodeModulesPath: "packages/app/node_modules/react-native-enriched-markdown",
