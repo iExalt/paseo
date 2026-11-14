@@ -1,3 +1,4 @@
+import type { NotificationDelivery } from "./push/notification-delivery.js";
 import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import { SessionDelivery } from "./session/owned-subscriptions/index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -788,12 +789,12 @@ it("shutdown aborts and drains a resolution without acknowledging its durable ou
     },
   });
   const internals = asInternals<{
-    flushLifecycleResolutions(): Promise<void>;
+    notificationDelivery: NotificationDelivery;
     pushNotifications: {
       resolveLifecycle(server: string, episode: unknown, signal?: AbortSignal): Promise<boolean>;
     };
   }>(server);
-  await internals.flushLifecycleResolutions();
+  await internals.notificationDelivery.flushResolutions();
   let release!: (accepted: boolean) => void;
   let entered!: () => void;
   let signal: AbortSignal | undefined;
@@ -809,7 +810,7 @@ it("shutdown aborts and drains a resolution without acknowledging its durable ou
     });
   };
   pending.mockResolvedValue([episode]);
-  const drain = internals.flushLifecycleResolutions();
+  const drain = internals.notificationDelivery.flushResolutions();
   await started;
   const closing = server.close();
   try {
@@ -855,5 +856,62 @@ it("shutdown waits for an already launched attention send to acknowledge cancell
   } finally {
     release();
     await Promise.all([publication, closing]);
+  }
+});
+
+it("retries a failed lifecycle drain and shares an in-flight retry", async () => {
+  const episode = {
+    agentId: "agent-1",
+    lane: "attention" as const,
+    episodeId: "11111111-1111-4111-8111-111111111111",
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  };
+  const pending = vi.fn(async () => [] as (typeof episode)[]);
+  const delivered = vi.fn(async () => {});
+  const { server } = createServer(undefined, undefined, undefined, null, {
+    notificationLifecycle: {
+      subscribe: () => () => {},
+      pending,
+      active: async () => [],
+      delivered,
+    },
+  });
+  const internals = asInternals<{
+    notificationDelivery: NotificationDelivery;
+    pushNotifications: {
+      resolveLifecycle(serverId: string, episode: unknown, signal?: AbortSignal): Promise<boolean>;
+    };
+  }>(server);
+  const delivery = internals.notificationDelivery;
+  await delivery.flushResolutions();
+  const failure = new Error("delivery unavailable");
+  const resolveLifecycle = vi.fn(async () => true).mockRejectedValueOnce(failure);
+  internals.pushNotifications.resolveLifecycle = resolveLifecycle;
+  pending.mockResolvedValue([episode]);
+  try {
+    await expect(delivery.flushResolutions()).rejects.toBe(failure);
+    expect(delivered).not.toHaveBeenCalled();
+    let entered!: () => void;
+    let release!: (accepted: boolean) => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const response = new Promise<boolean>((resolve) => {
+      release = resolve;
+    });
+    resolveLifecycle.mockImplementationOnce(() => {
+      entered();
+      return response;
+    });
+    const retry = delivery.flushResolutions();
+    expect(delivery.flushResolutions()).toBe(retry);
+    await started;
+    release(true);
+    await retry;
+    expect(resolveLifecycle).toHaveBeenCalledTimes(2);
+    expect(delivered).toHaveBeenCalledExactlyOnceWith(episode.episodeId);
+  } finally {
+    await server.close();
   }
 });
