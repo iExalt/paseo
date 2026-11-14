@@ -3,6 +3,7 @@ import equal from "fast-deep-equal";
 import type { PrHint } from "@/git/pr-hint";
 import { selectPrHintFromStatus } from "@/git/pr-hint";
 import { type HostProjectListItem } from "@/projects/host-project-model";
+import { resolveProjectOrder } from "@/projects/project-order";
 import type { PendingCreateAttempt } from "@/stores/create-flow-store";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 import type {
@@ -59,6 +60,7 @@ export interface SidebarWorkspaceEntry extends SidebarStatusWorkspacePlacement {
 
 export interface SidebarProjectEntry {
   viewKey: string;
+  projectKey?: string | null;
   projectName: string;
   projectKind: WorkspaceStructureProject["projectKind"];
   iconWorkingDir: string;
@@ -444,6 +446,7 @@ export function buildSidebarProjectsFromHostProjects(input: {
 
   return input.projects.map((project) => ({
     viewKey: project.viewKey,
+    projectKey: project.projectKey,
     projectName: project.projectName,
     projectKind: project.projectKind,
     iconWorkingDir: project.iconWorkingDir,
@@ -567,10 +570,13 @@ export function computeSidebarOrderUpdates(input: {
   }
 
   const nextProjectOrder = appendMissingOrderKeys({
-    currentOrder: input.persistedProjectOrder,
+    currentOrder: resolveProjectOrder(input.projects, input.persistedProjectOrder),
     visibleKeys: input.projects.map((project) => project.viewKey),
   });
-  const projectOrder = nextProjectOrder === input.persistedProjectOrder ? null : nextProjectOrder;
+  const unchanged =
+    nextProjectOrder.length === input.persistedProjectOrder.length &&
+    nextProjectOrder.every((key, index) => key === input.persistedProjectOrder[index]);
+  const projectOrder = unchanged ? null : nextProjectOrder;
 
   const workspaceOrders: Array<{ projectViewKey: string; order: string[] }> = [];
   for (const project of input.projects) {
