@@ -93,13 +93,28 @@ jobs:
             experimental-features = nix-command flakes
       - run: bash scripts/update-nix.sh
       - name: Push the refreshed hash
+        shell: bash
         env:
           GH_TOKEN: ${{ steps.token.outputs.token }}
-          APP_SLUG: ${{ steps.token.outputs.app-slug }}
         run: |
           git diff --quiet package-lock.json nix/npm-deps.hash && exit 0
-          bot="${APP_SLUG}[bot]"
-          git config user.name "$bot"
-          git config user.email "$(gh api "/users/$bot" --jq .id)+$bot@users.noreply.github.com"
-          git commit -m "chore(nix): refresh the npm dependency hash" -- package-lock.json nix/npm-deps.hash
-          git push origin "HEAD:refs/heads/$BRANCH"
+          # GitHub signs API-created commits; unsigned PR heads can block even squash merges.
+          HEAD_OID="$(git rev-parse HEAD)" node <<'NODE' | gh api graphql --input - | jq -er '.data.createCommitOnBranch.commit | if .signature.isValid then .oid else error("Refresh commit is not Verified") end'
+          const { readFileSync } = require("node:fs");
+          process.stdout.write(JSON.stringify({
+            query: `mutation($input: CreateCommitOnBranchInput!) {
+              createCommitOnBranch(input: $input) { commit { oid signature { isValid } } }
+            }`,
+            variables: { input: {
+              branch: {
+                repositoryNameWithOwner: process.env.GITHUB_REPOSITORY,
+                branchName: process.env.BRANCH,
+              },
+              expectedHeadOid: process.env.HEAD_OID,
+              message: { headline: "chore(nix): refresh the npm dependency hash" },
+              fileChanges: { additions: ["package-lock.json", "nix/npm-deps.hash"].map(path => ({
+                path, contents: readFileSync(path).toString("base64"),
+              })) },
+            } },
+          }));
+          NODE
