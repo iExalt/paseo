@@ -1,6 +1,6 @@
 import { Terminal as ReplaySource } from "@xterm/xterm";
 import { SerializeAddon } from "@xterm/addon-serialize";
-import { page } from "@vitest/browser/context";
+import { page } from "vitest/browser";
 import { afterEach, describe, expect, it } from "vitest";
 import { encodeTerminalOutput, TerminalEmulatorRuntime } from "./terminal-emulator-runtime";
 
