@@ -1,5 +1,14 @@
 import Svg, { Path } from "react-native-svg";
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   Keyboard,
   type LayoutChangeEvent,
@@ -97,6 +106,34 @@ function initialNativeTerminalSize(): TerminalMeasuredSize {
   return { rows: MIN_NATIVE_TERMINAL_ROWS, cols: MIN_NATIVE_TERMINAL_COLS };
 }
 
+interface TerminalScreenStore {
+  get: () => TerminalScreenState | null;
+  set: (screen: TerminalScreenState) => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
+// React renders an external store's change at sync priority in a microtask,
+// while a state update from a socket or timer callback waits for its
+// scheduler, which cost about 10 ms per echo on Android.
+function createTerminalScreenStore(initial: TerminalScreenState | null): TerminalScreenStore {
+  let screen = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => screen,
+    set: (next) => {
+      if (next === screen) return;
+      screen = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
 function NativeTerminalEmulator({
   ref,
   streamKey,
@@ -152,11 +189,20 @@ function NativeTerminalEmulator({
     ...inputModeTrackerRef.current.getState(),
     applicationCursorKeys: false,
   });
-  const [terminalScreen, setTerminalScreen] = useState<TerminalScreenState | null>(null);
+  const [screenStore] = useState(() => createTerminalScreenStore(null));
+  const terminalScreen = useSyncExternalStore(screenStore.subscribe, screenStore.get);
+  const renderedScreenRef = useRef<TerminalScreenState | null>(null);
+  if (renderedScreenRef.current !== terminalScreen) {
+    renderedScreenRef.current = terminalScreen;
+    traceTerminalLatency("render", 0);
+  }
   const [selectionRange, setSelectionRange] = useState<TerminalSelectionRange | null>(null);
   const selectionRangeRef = useRef<TerminalSelectionRange | null>(null);
   const hasNotifiedSelectionRef = useRef(false);
   const terminalScreenRef = useRef<TerminalScreenState | null>(terminalScreen);
+  useLayoutEffect(() => {
+    traceTerminalLatency("commit", 0);
+  }, [terminalScreen]);
   const callbacksRef = useRef({
     onFocus,
     onInput,
@@ -202,11 +248,14 @@ function NativeTerminalEmulator({
     emitInputModeChange();
   }, [emitInputModeChange]);
 
-  const commitTerminalScreen = useCallback((screen: TerminalScreenState) => {
-    latestResolvedScreenRef.current = screen;
-    terminalScreenRef.current = screen;
-    setTerminalScreen(screen);
-  }, []);
+  const commitTerminalScreen = useCallback(
+    (screen: TerminalScreenState) => {
+      latestResolvedScreenRef.current = screen;
+      terminalScreenRef.current = screen;
+      screenStore.set(screen);
+    },
+    [screenStore],
+  );
 
   const commitSelectionRange = useCallback((range: TerminalSelectionRange | null) => {
     selectionRangeRef.current = range;
@@ -294,6 +343,7 @@ function NativeTerminalEmulator({
         write: async (chunk) => {
           inputModeTrackerRef.current.feed(chunk);
           await terminal.write(chunk);
+          traceTerminalLatency("written", chunk.length);
           writeRevisionRef.current += 1;
           emitInputModeChange();
         },
@@ -322,6 +372,9 @@ function NativeTerminalEmulator({
         },
         scheduleFrame: requestAnimationFrame,
         cancelFrame: cancelAnimationFrame,
+        // A lone echo paints without waiting for a frame callback, which costs
+        // two or three frames on Android; bursts still paint once per frame.
+        idlePaintMs: 16,
       }),
     [commitTerminalScreen, emitInputModeChange, resolveTerminalScreen, syncSelectionWithTerminal],
   );

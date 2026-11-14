@@ -33,6 +33,13 @@ export interface NativeTerminalOutputDrainOptions {
   cancelFrame?: (frame: number) => void;
   chunkChars?: number;
   chunksPerTurn?: number;
+  /**
+   * When set, output that ends a drain turn after at least this long without
+   * a paint is painted at once instead of on the next frame callback, so a
+   * lone echo skips the frame wait while bursts still paint once per frame.
+   */
+  idlePaintMs?: number;
+  now?: () => number;
 }
 
 function defaultScheduleWork(callback: () => void): void {
@@ -66,6 +73,7 @@ export function createNativeTerminalOutputDrain(
   const cancelFrame = options.cancelFrame ?? defaultCancelFrame;
   const chunkChars = options.chunkChars ?? NATIVE_TERMINAL_PARSE_CHUNK_CHARS;
   const chunksPerTurn = options.chunksPerTurn ?? NATIVE_TERMINAL_PARSE_CHUNKS_PER_TURN;
+  const now = options.now ?? nativeTerminalPerformanceNow;
   const idleWaiters: Array<() => void> = [];
   type Operation =
     | { type: "write"; text: string }
@@ -80,6 +88,7 @@ export function createNativeTerminalOutputDrain(
   let paintFrame: number | null = null;
   let generation = 0;
   const replayDecoder = new TextDecoder();
+  let lastPaintAt = Number.NEGATIVE_INFINITY;
 
   function resolveIdleIfReady(): void {
     if (drainScheduled || draining || operations.length > 0) {
@@ -96,14 +105,32 @@ export function createNativeTerminalOutputDrain(
     }
     paintFrame = scheduleFrame(() => {
       paintFrame = null;
-      if (disposed) {
-        return;
-      }
-      const state = options.getViewportState();
-      if (state) {
-        options.onPaint(state);
-      }
+      paint();
     });
+  }
+
+  function paint(): void {
+    if (disposed) {
+      return;
+    }
+    lastPaintAt = now();
+    const state = options.getViewportState();
+    if (state) {
+      options.onPaint(state);
+    }
+  }
+
+  function paintNowIfIdle(): void {
+    if (
+      options.idlePaintMs === undefined ||
+      paintFrame === null ||
+      operations.length > 0 ||
+      now() - lastPaintAt < options.idlePaintMs
+    ) {
+      return;
+    }
+    cancelPendingPaint();
+    paint();
   }
 
   function cancelPendingPaint(): void {
@@ -169,6 +196,7 @@ export function createNativeTerminalOutputDrain(
       if (!disposed && operations.length > 0) {
         scheduleDrain();
       }
+      paintNowIfIdle();
       resolveIdleIfReady();
     }
   }
