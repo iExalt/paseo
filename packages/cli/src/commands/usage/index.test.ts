@@ -1,3 +1,5 @@
+import { Command } from "commander";
+import { runSpendCommand } from "./spend.js";
 import { describe, expect, it } from "vitest";
 import { AgentSnapshotPayloadSchema, type UsageReportEntry } from "@getpaseo/protocol/messages";
 import { render } from "../../output/index.js";
@@ -312,7 +314,7 @@ it("propagates connection and request failures", async () => {
 describe("usage CLI registration", () => {
   it("registers default, ls and inspect with the accepted selectors", () => {
     const usage = createCli().commands.find((command) => command.name() === "usage")!;
-    expect(usage.commands.map((command) => command.name())).toEqual(["ls", "inspect"]);
+    expect(usage.commands.map((command) => command.name())).toEqual(["ls", "inspect", "spend"]);
     expect(usage.helpInformation()).toContain("--agent <id>");
     expect(usage.commands[0]!.helpInformation()).toContain("--refresh");
     expect(usage.commands[1]!.helpInformation()).toContain("<report-id>");
@@ -354,4 +356,113 @@ it("shows retained values with current failures and separates successful time fr
   expect(render(inspected)).toContain("Retained usage:");
   expect(render(inspected)).toContain("Five hours: 12.5% used");
   expect(render(inspected)).toContain("Reason: Rate limited");
+});
+
+describe("host spend", () => {
+  it("preserves canonical spend including carry and forwards the time zone", async () => {
+    let closed = false;
+    const summary = {
+      trackingSince: "2026-11-01T00:00:00Z",
+      providers: [
+        {
+          provider: "codex",
+          todayUsd: 0.123456,
+          last7DaysUsd: 2,
+          thisMonthUsd: 3,
+          allTimeUsd: 8,
+          carriedUsd: 5,
+        },
+      ],
+    };
+    const result = await runSpendCommand(
+      { daemonTarget: { kind: "endpoint", host: "host:1234" }, timeZone: "America/Toronto" },
+      new Command(),
+      async (connectionOptions) => {
+        expect(connectionOptions.target).toEqual({ kind: "endpoint", host: "host:1234" });
+        return {
+          getLastServerInfoMessage: () => ({
+            status: "server_info",
+            serverId: "host",
+            features: { usageSpendSummary: true },
+          }),
+          getSpendSummary: async (request) => {
+            expect(request).toEqual({ timeZone: "America/Toronto" });
+            return { requestId: "spend", summary };
+          },
+          close: async () => {
+            closed = true;
+          },
+        };
+      },
+    );
+    expect(result.data).toBe(summary);
+    expect(closed).toBe(true);
+  });
+  it("rejects invalid zones before connection and gates unsupported hosts", async () => {
+    let called = false;
+    const connect = async () => {
+      called = true;
+      throw new Error("must not connect");
+    };
+    const spendOptions = { daemonTarget: { kind: "endpoint" as const, host: "host:1234" } };
+    await expect(
+      runSpendCommand({ ...spendOptions, timeZone: "Invalid/Zone" }, new Command(), connect),
+    ).rejects.toMatchObject({ code: "INVALID_TIME_ZONE" });
+    expect(called).toBe(false);
+    let closed = false;
+    await expect(
+      runSpendCommand(spendOptions, new Command(), async () => ({
+        getLastServerInfoMessage: () => null,
+        getSpendSummary: async () => {
+          throw new Error("must not request");
+        },
+        close: async () => {
+          closed = true;
+        },
+      })),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_HOST" });
+    expect(closed).toBe(true);
+  });
+});
+
+it("spend renders an empty ledger and rejects inherited selectors", async () => {
+  const spendOptions = { daemonTarget: { kind: "endpoint" as const, host: "host:1234" } };
+  const result = await runSpendCommand(spendOptions, new Command(), async () => ({
+    getLastServerInfoMessage: () => ({
+      status: "server_info",
+      serverId: "host",
+      features: { usageSpendSummary: true },
+    }),
+    getSpendSummary: async () => ({
+      requestId: "empty",
+      summary: { trackingSince: null, providers: [] },
+    }),
+    close: async () => {},
+  }));
+  expect(result.data).toEqual({ trackingSince: null, providers: [] });
+  expect(
+    render(result, { format: "table", quiet: false, noHeaders: false, noColor: true }),
+  ).toContain("No spend recorded");
+  for (const extra of [{ agent: "a" }, { refresh: true }]) {
+    await expect(
+      runSpendCommand({ ...spendOptions, ...extra }, new Command(), async () => {
+        throw new Error("must not connect");
+      }),
+    ).rejects.toMatchObject({ code: "INVALID_OPTIONS" });
+  }
+});
+
+it("parses spend with a host and JSON output", async () => {
+  const program = createCli().exitOverride();
+  const usage = program.commands.find((command) => command.name() === "usage")!;
+  const spend = usage.commands.find((command) => command.name() === "spend")!;
+  let selected: unknown;
+  spend.action((_commandOptions, parsedCommand: Command) => {
+    selected = parsedCommand.optsWithGlobals();
+  });
+  await program.parseAsync(
+    ["usage", "spend", "--host", "host:1234", "--json", "--time-zone", "UTC"],
+    { from: "user" },
+  );
+  expect(selected).toMatchObject({ host: "host:1234", json: true, timeZone: "UTC" });
 });
