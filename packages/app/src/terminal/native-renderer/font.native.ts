@@ -1,57 +1,28 @@
 import { Platform } from "react-native";
-import { resolveTerminalFontFamily } from "../runtime/terminal-font";
+import {
+  resolveTerminalFontFamily,
+  splitFontFamilyStack,
+  TERMINAL_NERD_FONT_FAMILY,
+} from "../runtime/terminal-font";
 
-const IOS_LOADED_MONO_FAMILIES: ReadonlySet<string> = new Set(["courier", "courier new", "menlo"]);
+// Families a user can name that are always installed. Generic names and aliases
+// are left out: they stand in for "some monospace font", and the bundled font
+// serves that better because it also carries the prompt and TUI icons.
+const IOS_NAMED_MONO_FAMILIES: ReadonlySet<string> = new Set(["courier", "courier new", "menlo"]);
 
-const ANDROID_LOADED_MONO_FAMILIES: ReadonlySet<string> = new Set([
-  "monospace",
-  "sans-serif-monospace",
-]);
+// Embedded by the expo-font plugin in app.config.js under this family name.
+const BUNDLED_FAMILY = TERMINAL_NERD_FONT_FAMILY.toLowerCase();
 
-const IOS_MONO_ALIASES = new Map<string, string>([
-  ["sf mono", "Menlo"],
-  ["sfmono-regular", "Menlo"],
-  ["ui-monospace", "Menlo"],
-]);
-
-const NATIVE_MONO_FALLBACK =
-  Platform.select({ ios: "Menlo", android: "monospace", default: "monospace" }) ?? "monospace";
-
-function stripFontQuotes(family: string): string {
-  const trimmed = family.trim();
-  if (
-    (trimmed.startsWith("'") && trimmed.endsWith("'")) ||
-    (trimmed.startsWith('"') && trimmed.endsWith('"'))
-  ) {
-    return trimmed.slice(1, -1).trim();
-  }
-  return trimmed;
-}
-
-function splitFontStack(fontFamily: string): string[] {
-  return fontFamily
-    .split(",")
-    .map(stripFontQuotes)
-    .filter((family) => family.length > 0);
-}
-
-function loadedNativeFontFamily(family: string): string | null {
-  const normalized = family.toLowerCase();
-  if (Platform.OS === "ios") {
-    const alias = IOS_MONO_ALIASES.get(normalized);
-    if (alias) return alias;
-    return IOS_LOADED_MONO_FAMILIES.has(normalized) ? family : null;
-  }
-  if (Platform.OS === "android") {
-    return ANDROID_LOADED_MONO_FAMILIES.has(normalized) ? family : null;
-  }
-  return normalized === "monospace" ? family : null;
-}
-
+// Native text can't fall back per glyph to a bundled font, so one family draws
+// everything: a named system font the user chose, otherwise the bundled one.
 export function resolveNativeTerminalFontFamily(fontFamily: string | undefined): string {
-  const stack = resolveTerminalFontFamily(fontFamily);
-  const loadedFamily = splitFontStack(stack)
-    .map(loadedNativeFontFamily)
-    .find((family): family is string => family !== null);
-  return loadedFamily ?? NATIVE_MONO_FALLBACK;
+  const families = splitFontFamilyStack(resolveTerminalFontFamily(fontFamily));
+  const named = families.find((family) => {
+    const normalized = family.toLowerCase();
+    return (
+      normalized === BUNDLED_FAMILY ||
+      (Platform.OS === "ios" && IOS_NAMED_MONO_FAMILIES.has(normalized))
+    );
+  });
+  return named && named.toLowerCase() !== BUNDLED_FAMILY ? named : TERMINAL_NERD_FONT_FAMILY;
 }

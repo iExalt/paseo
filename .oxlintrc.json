@@ -571,6 +571,7 @@
     {
       "files": ["packages/app/src/**/*.{ts,tsx}"],
       "rules": {
+        "paseo/no-inline-use-ref": "error",
         "paseo/no-raw-pressable": "error"
       }
     },
