@@ -243,11 +243,13 @@ Workspace cleanup runs after the agent lifecycle settles, without waiting inside
 archive lock. Self-archive can still terminate the caller: send the handoff first and let an
 external session archive and verify it.
 
-Workspace archive also has its own lifecycle. Archiving or removing a worktree can close a surviving
-agent record without setting the agent's `archivedAt`, while its `workspaceId` still points at the
-archived workspace. History navigation must not infer workspace lifecycle from `agent.archivedAt`
-or mutate either lifecycle. The workspace route asks the daemon for authoritative recovery state;
-only the route's explicit Unarchive or Restore action changes the archived workspace.
+Workspace and agent archive are separate lifecycle facts. Historical persisted data can contain
+a closed, unarchived agent whose `workspaceId` points at an archived workspace. History must read
+workspace recovery from the daemon and must not infer workspace lifecycle from `agent.archivedAt`
+or mutate either record. The current worktree archive operation archives the workspace and every
+in-scope agent together; a surviving unarchived agent is a historical state, not the result of that
+operation. The explicit **Restore** action changes the workspace lifecycle; **Unarchive** changes
+the agent lifecycle.
 
 History navigation opens the selected agent without changing either archive state. Workspace
 **Restore** recovers only the workspace; the selected archived agent stays open with its callout.
