@@ -109,4 +109,19 @@ describe("indexeddb attachment store", () => {
       byteSize: 4,
     });
   });
+
+  it("collects nothing without IndexedDB but still refuses to save", async () => {
+    Reflect.deleteProperty(globalThis, "indexedDB");
+    const store = createIndexedDbAttachmentStore();
+
+    await expect(store.garbageCollect({ referencedIds: new Set() })).resolves.toBeUndefined();
+    await expect(
+      store.save({
+        id: "att_unavailable",
+        mimeType: "image/png",
+        fileName: null,
+        source: { kind: "bytes", bytes: new Uint8Array([0]) },
+      }),
+    ).rejects.toThrow("IndexedDB is unavailable in this runtime.");
+  });
 });
