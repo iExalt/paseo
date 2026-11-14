@@ -1,0 +1,6 @@
+self-hosted-runner:
+  # GitHub-hosted since 2026-09-17 (actions/runner-images#14747), but actionlint
+  # 1.7.12 predates them. Drop these once a pinned actionlint knows the labels.
+  labels:
+    - ubuntu-26.04
+    - ubuntu-26.04-arm

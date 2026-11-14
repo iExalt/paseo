@@ -17,6 +17,7 @@ concurrency:
 jobs:
   resolve:
     name: Resolve release identity
+    runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -64,6 +65,7 @@ jobs:
   macos-build:
     name: Build and sign macOS Nix closure
     needs: [resolve]
+    runs-on: macos-26
     timeout-minutes: 90
     permissions:
       contents: read
@@ -119,6 +121,7 @@ jobs:
   macos-smoke:
     name: Install and launch macOS closure on a fresh runner
     needs: [resolve, macos-build]
+    runs-on: macos-26
     timeout-minutes: 30
     permissions:
       contents: read
@@ -180,7 +183,9 @@ jobs:
       matrix:
         include:
           - arch: x64
+            runner: ubuntu-26.04
           - arch: arm64
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     permissions:
@@ -226,7 +231,9 @@ jobs:
       matrix:
         include:
           - arch: x64
+            runner: ubuntu-26.04
           - arch: arm64
+            runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -356,11 +363,15 @@ jobs:
   android-build:
     name: Build unsigned Android APK
     needs: [resolve]
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     permissions:
       contents: read
       packages: read
+    outputs:
+      build_sha256: ${{ steps.pack.outputs.build_sha256 }}
       deps_inputs: ${{ steps.pin.outputs.deps_inputs }}
+      deps_sha256: ${{ steps.pack.outputs.deps_sha256 }}
       modules_inputs: ${{ steps.pin.outputs.modules_inputs }}
       modules_sha256: ${{ steps.modules.outputs.modules_sha256 }}
     env:
@@ -470,9 +481,43 @@ jobs:
         with:
           distribution: temurin
           java-version: "27.0.1"
+      - name: Restore the pinned Android build cache
+        if: steps.pin.outputs.build_key != ''
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         timeout-minutes: 3
+        continue-on-error: true
         with:
+          path: ${{ runner.temp }}/android-cache/build.tar
+          key: ${{ steps.pin.outputs.build_key }}
+      - name: Restore the pinned Gradle dependency cache
+        if: steps.pin.outputs.deps_key != ''
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 5
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/deps.tar
+          key: ${{ steps.pin.outputs.deps_key }}
+      - name: Verify and unpack the pinned caches
+        id: unpack
+        env:
+          BUILD_SHA256: ${{ steps.pin.outputs.build_sha256 }}
+          DEPS_SHA256: ${{ steps.pin.outputs.deps_sha256 }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/android-cache"
+          mkdir -p "$dir" "$RUNNER_TEMP/android-build-cache" "$HOME/.gradle"
+          if [[ -n "$BUILD_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$dir/build.tar" "$BUILD_SHA256" | grep -qx ok=true; then
+            tar -xf "$dir/build.tar" -C "$RUNNER_TEMP/android-build-cache"
+            echo "restored pinned build cache, sha256 verified"
+          fi
+          deps=false
+          if [[ -n "$DEPS_SHA256" ]] && node .github/scripts/android-cache-pin.mjs verify "$dir/deps.tar" "$DEPS_SHA256" | grep -qx ok=true; then
+            tar -xf "$dir/deps.tar" -C "$HOME/.gradle"
+            deps=true
+            echo "restored pinned Gradle dependency cache, sha256 verified"
+          fi
+          rm -f "$dir/build.tar" "$dir/deps.tar"
+          echo "deps_restored=$deps" >> "$GITHUB_OUTPUT"
       - name: Install Android SDK packages and runner swap
         run: |
           set -euo pipefail
@@ -510,11 +555,54 @@ jobs:
             --build-cache --init-script "$GITHUB_WORKSPACE/.github/scripts/android-build-cache.init.gradle"
           echo "gradle_elapsed_seconds=$((SECONDS - started_at))"
           ccache --show-stats
+      # Each save is keyed by its tar's sha256 so the publish job can pin it. The
+      # dependency cache is re-pinned instead of saved when the pinned entry was
+      # restored and its inputs are unchanged.
+      - name: Pack the Android caches
+        id: pack
+        env:
           INPUTS: ${{ steps.pin.outputs.deps_inputs }}
+          DEPS_RESTORED: ${{ steps.unpack.outputs.deps_restored }}
+          DEPS_INPUTS_MATCH: ${{ steps.pin.outputs.deps_inputs_match }}
+          PINNED_DEPS_SHA256: ${{ steps.pin.outputs.deps_sha256 }}
+        run: |
+          set -euo pipefail
+          dir="$RUNNER_TEMP/android-cache"
+          mkdir -p "$dir"
+          tar -cf "$dir/build.tar" -C "$RUNNER_TEMP/android-build-cache" .
+          build_sha256="$(sha256sum "$dir/build.tar" | cut -d' ' -f1)"
+          if [[ "$DEPS_RESTORED" == true && "$DEPS_INPUTS_MATCH" == true ]]; then
+            deps_sha256="$PINNED_DEPS_SHA256" save_deps=false
+          else
+            # Gradle rewrites its lock and GC files on every start; --no-daemon leaves none held.
+            tar -cf "$dir/deps.tar" -C "$HOME/.gradle" --exclude='*.lock' --exclude=gc.properties caches wrapper
+            deps_sha256="$(sha256sum "$dir/deps.tar" | cut -d' ' -f1)" save_deps=true
+          fi
+          {
+            echo "build_sha256=$build_sha256"
+            echo "build_key=paseo-android-build-v2-$build_sha256"
+            echo "deps_sha256=$deps_sha256"
+            echo "deps_key=paseo-gradle-deps-v2-$INPUTS-$deps_sha256"
+            echo "save_deps=$save_deps"
+          } | tee -a "$GITHUB_OUTPUT"
+          ls -l "$dir"
+      # An existing key (a rerun, or one squatted first) fails the save; the pin
+      # still names it and the next restore's digest check falls back to cold.
+      - name: Save the Android build cache
         uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
         timeout-minutes: 5
         continue-on-error: true
         with:
+          path: ${{ runner.temp }}/android-cache/build.tar
+          key: ${{ steps.pack.outputs.build_key }}
+      - name: Save the Gradle dependency cache
+        if: steps.pack.outputs.save_deps == 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 10
+        continue-on-error: true
+        with:
+          path: ${{ runner.temp }}/android-cache/deps.tar
+          key: ${{ steps.pack.outputs.deps_key }}
       - name: Disable runner swap and remove Firebase config
         if: always()
         run: |
@@ -537,6 +625,7 @@ jobs:
   android-sign:
     name: Sign Android APK
     needs: [resolve, android-build]
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -616,6 +705,7 @@ jobs:
   android-delta:
     name: Make APK deltas from recent releases
     needs: [resolve, android-sign]
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
     permissions:
       contents: read
@@ -673,6 +763,7 @@ jobs:
       needs.macos-smoke.result == 'success' && needs.linux-build.result == 'success' &&
       needs.linux-smoke.result == 'success' && needs.windows-build.result == 'success' &&
       needs.android-build.result == 'success' && needs.android-sign.result == 'success'
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
       contents: write
@@ -695,8 +786,16 @@ jobs:
           pattern: release-{macos,android,android-delta,linux-x64,linux-arm64,windows-x64}
           path: ${{ runner.temp }}/release-assets
           merge-multiple: true
+      - name: Pin the Android caches this run saved
+        env:
+          BUILD_SHA256: ${{ needs.android-build.outputs.build_sha256 }}
+          DEPS_INPUTS: ${{ needs.android-build.outputs.deps_inputs }}
+          DEPS_SHA256: ${{ needs.android-build.outputs.deps_sha256 }}
           MODULES_INPUTS: ${{ needs.android-build.outputs.modules_inputs }}
           MODULES_SHA256: ${{ needs.android-build.outputs.modules_sha256 }}
+        run: |
+          node .github/scripts/android-cache-pin.mjs pin \
+            "$RUNNER_TEMP/release-assets/paseo-$VERSION-android-cache-pin.json" "$VERSION"
       - name: Build, sign and verify the release manifest
         env:
           UPSTREAM_BASE: ${{ needs.resolve.outputs.upstream_base }}

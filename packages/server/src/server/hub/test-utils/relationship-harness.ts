@@ -21,6 +21,7 @@ import type {
   SessionOutboundMessage,
 } from "../../messages.js";
 import { createPaseoDaemon, type PaseoDaemon, type PaseoDaemonConfig } from "../../bootstrap.js";
+import { BuiltinPluginLoader } from "../../plugins/builtin/index.js";
 import type { WebSocketLike } from "../../websocket-server.js";
 import type {
   AgentClient,
@@ -1422,7 +1423,11 @@ export class HubRelationshipHarness {
         done();
       },
     });
+    // Built-in plugins (about 800 ms) and an eager terminal worker (about 500 ms) slow every
+    // start; Hub tests use neither, and a terminal request still launches the worker.
     this.daemon = await createPaseoDaemon(this.config, pino({ level: "trace" }, destination), {
+      builtinPlugins: new BuiltinPluginLoader(undefined, []),
+      deferTerminalWorkerLaunch: true,
       hubRelationshipRemote: this.remote,
       hubRelationshipClock: this.clock,
       hubRelationshipRetryPolicy: this.clock,
