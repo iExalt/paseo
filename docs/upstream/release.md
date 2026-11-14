@@ -4,6 +4,11 @@
 > iExalt/paseo. The fork releases from `dev` through release-please and `release.yml`, with no npm
 > publish, EAS, store submission, Docker image or beta channel. Follow
 > [release-stable](../../.agents/skills/release-stable/SKILL.md). Never run the root `release:*` or `version:all:*` npm scripts.
+>
+> Fork iOS builds are blocked: no fork Apple identity or distribution contract has been selected.
+> The retained production EAS and Fastlane profiles describe upstream delivery, not a fork update
+> channel. Fork Android Firebase credentials are checked during Android prebuild, not generic
+> config evaluation.
 
 All workspaces share one version and release together.
 
