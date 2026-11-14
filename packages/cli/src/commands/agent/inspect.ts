@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import { contextWindowPercent } from "../../utils/agent-usage.js";
 import { connectToDaemon } from "../../utils/client.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 
@@ -25,10 +26,13 @@ interface AgentInspect {
   CreatedAt: string;
   UpdatedAt: string;
   LastUsage: {
-    InputTokens: number;
-    OutputTokens: number;
-    CachedTokens: number;
-    CostUsd: number;
+    InputTokens: number | null;
+    OutputTokens: number | null;
+    CachedTokens: number | null;
+    CostUsd: number | null;
+    ContextWindowUsedTokens: number | null;
+    ContextWindowMaxTokens: number | null;
+    ContextWindowPercent: number | null;
   } | null;
   Capabilities: {
     Streaming: boolean;
@@ -88,7 +92,8 @@ function shortenPath(path: string): string {
 }
 
 /** Format cost in USD */
-function formatCost(costUsd: number): string {
+function formatCost(costUsd: number | null): string {
+  if (costUsd === null) return "null";
   if (costUsd === 0) return "$0.00";
   if (costUsd < 0.01) return `$${costUsd.toFixed(4)}`;
   return `$${costUsd.toFixed(2)}`;
@@ -108,10 +113,13 @@ function resolveModel(snapshot: AgentSnapshotPayload): string | null {
 function buildLastUsage(snapshot: AgentSnapshotPayload): AgentInspect["LastUsage"] {
   if (!snapshot.lastUsage) return null;
   return {
-    InputTokens: snapshot.lastUsage.inputTokens ?? 0,
-    OutputTokens: snapshot.lastUsage.outputTokens ?? 0,
-    CachedTokens: snapshot.lastUsage.cachedInputTokens ?? 0,
-    CostUsd: snapshot.lastUsage.totalCostUsd ?? 0,
+    InputTokens: snapshot.lastUsage.inputTokens ?? null,
+    OutputTokens: snapshot.lastUsage.outputTokens ?? null,
+    CachedTokens: snapshot.lastUsage.cachedInputTokens ?? null,
+    CostUsd: snapshot.lastUsage.totalCostUsd ?? null,
+    ContextWindowUsedTokens: snapshot.lastUsage.contextWindowUsedTokens ?? null,
+    ContextWindowMaxTokens: snapshot.lastUsage.contextWindowMaxTokens ?? null,
+    ContextWindowPercent: contextWindowPercent(snapshot.lastUsage),
   };
 }
 
@@ -174,7 +182,7 @@ function toInspectRows(agent: AgentInspect): InspectRow[] {
   if (agent.LastUsage) {
     rows.push({
       key: "LastUsage",
-      value: `InputTokens: ${agent.LastUsage.InputTokens}, OutputTokens: ${agent.LastUsage.OutputTokens}, CachedTokens: ${agent.LastUsage.CachedTokens}, CostUsd: ${formatCost(agent.LastUsage.CostUsd)}`,
+      value: `InputTokens: ${agent.LastUsage.InputTokens}, OutputTokens: ${agent.LastUsage.OutputTokens}, CachedTokens: ${agent.LastUsage.CachedTokens}, CostUsd: ${formatCost(agent.LastUsage.CostUsd)}, ContextWindowUsedTokens: ${agent.LastUsage.ContextWindowUsedTokens}, ContextWindowMaxTokens: ${agent.LastUsage.ContextWindowMaxTokens}, ContextWindowPercent: ${agent.LastUsage.ContextWindowPercent}`,
     });
   }
 
@@ -217,7 +225,18 @@ export async function runInspectCommand(
   options: AgentInspectOptions,
   _command: Command,
 ): Promise<AgentInspectResult> {
-  // Validate arguments
+  return inspectAgent(agentIdArg, options);
+}
+
+export async function inspectAgent(
+  agentIdArg: string,
+  options: AgentInspectOptions,
+  connect: (
+    options: Parameters<typeof connectToDaemon>[0],
+  ) => Promise<
+    Pick<Awaited<ReturnType<typeof connectToDaemon>>, "fetchAgent" | "close">
+  > = connectToDaemon,
+): Promise<AgentInspectResult> {
   if (!agentIdArg || agentIdArg.trim().length === 0) {
     const error: CommandError = {
       code: "MISSING_AGENT_ID",
@@ -227,7 +246,7 @@ export async function runInspectCommand(
     throw error;
   }
 
-  const client = await connectToDaemon({ target: options.daemonTarget });
+  const client = await connect({ target: options.daemonTarget });
 
   try {
     const fetchResult = await client.fetchAgent({ agentId: agentIdArg });
