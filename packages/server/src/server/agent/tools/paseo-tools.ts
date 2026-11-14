@@ -2252,6 +2252,7 @@ function createToolCatalog(
     {
       title: "Archive agent",
       description:
+        "Archive an agent (soft-delete). Interrupts it if running. Archiving the last unarchived agent also archives its workspace; Paseo-owned worktrees are removed even with unpublished work, unless another active workspace references them. Send a handoff before archiving yourself.",
       inputSchema: {
         agentId: z.string(),
       },
