@@ -1,7 +1,8 @@
 import type { AttachedAgentTool, PluginAgentToolsRuntime } from "../plugins/agent-tools.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
 import type { RuntimeCleanupCandidate } from "./idle-runtime-cleanup/index.js";
-import { ensureAgentLoaded } from "./agent-loading.js";
+import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
+import { persistedAsyncQuestions } from "./providers/codex/async-questions.js";
 import { projectTimelineRows } from "./timeline-projection.js";
 import type { PluginLifecycle } from "../plugins/lifecycle/index.js";
 import { describeHookAgent, publishAgentStream } from "../plugins/lifecycle/index.js";
@@ -1989,12 +1990,13 @@ export class AgentManager {
 
   /** No turn, permission, mutation or running subagent a daemon stop would cut off. */
   private agentHasNoPendingWork(agent: ManagedAgent): boolean {
+    const durableQuestions = new Set(persistedAsyncQuestions(agent.persistence).map((q) => q.id));
     return (
       (agent.lifecycle === "idle" || agent.lifecycle === "error" || agent.lifecycle === "closed") &&
       agent.activeForegroundTurnId === null &&
       !this.runs.hasRun(agent.id) &&
       !agent.pendingReplacement &&
-      agent.pendingPermissions.size === 0 &&
+      [...agent.pendingPermissions.keys()].every((id) => durableQuestions.has(id)) &&
       agent.inFlightPermissionResponses.size === 0 &&
       (this.collectingRuntimes.has(agent.id) || !this.lifecycleMutationTails.has(agent.id)) &&
       !this.foregroundMutationTails.has(agent.id) &&
@@ -3458,6 +3460,15 @@ export class AgentManager {
     requestId: string,
     response: AgentPermissionResponse,
   ): Promise<AgentPermissionResult | void> {
+    this.assertAdmittingTurns();
+    if (!this.agents.has(agentId) || this.collectingRuntimes.has(agentId)) {
+      await ensureUnarchivedAgentLoaded(agentId, {
+        agentManager: this,
+        agentStorage: this.requireRegistry(),
+        logger: this.logger,
+      });
+    }
+    this.assertAdmittingTurns();
     const agent = this.requireAgent(agentId);
     if (agent.inFlightPermissionResponses.has(requestId)) {
       throw new Error("A response to this permission request is already being submitted");
@@ -3466,6 +3477,25 @@ export class AgentManager {
 
     try {
       const result = await agent.session.respondToPermission(requestId, response);
+      if (result?.complete && result.followUpPrompt) {
+        const durableIds = new Set(persistedAsyncQuestions(agent.persistence).map((q) => q.id));
+        if ([...agent.pendingPermissions.keys()].some((id) => !durableIds.has(id))) {
+          throw new Error(
+            "Resolve the live permission request before answering this saved question",
+          );
+        }
+        const stream = this.streamAgent(agentId, result.followUpPrompt);
+        // The first yield follows the provider's successful start, not merely dispatch.
+        await stream.next();
+        void (async () => {
+          for await (const _ of stream) {
+            /* Events are published by the manager. */
+          }
+        })().catch((err: unknown) =>
+          this.logger.error({ err, agentId }, "Question follow-up failed"),
+        );
+        result.complete();
+      }
       agent.pendingPermissions.delete(requestId);
 
       try {
@@ -3484,7 +3514,7 @@ export class AgentManager {
         this.dispatchStream(agent.id, bufferedResolution, { timestamp: new Date().toISOString() });
       }
 
-      return result;
+      return result?.complete ? undefined : result;
     } finally {
       agent.inFlightPermissionResponses.delete(requestId);
       agent.bufferedPermissionResolutions.delete(requestId);
@@ -5077,7 +5107,12 @@ export class AgentManager {
       this.formatTurnFailedMessage(event),
       options,
     );
-    this.resolvePendingPermissionsForAgent(agent, event.provider, options, "Turn failed");
+    this.resolvePendingPermissionsForAgent(
+      agent,
+      event.provider,
+      { ...options, preserveDurableQuestions: true },
+      "Turn failed",
+    );
     if (!isForegroundEvent && !agent.activeForegroundTurnId) {
       this.emitState(agent);
     }
@@ -5198,10 +5233,16 @@ export class AgentManager {
   private resolvePendingPermissionsForAgent(
     agent: ActiveManagedAgent,
     provider: AgentProvider,
-    options: { fromHistory?: boolean } | undefined,
+    options: { fromHistory?: boolean; preserveDurableQuestions?: boolean } | undefined,
     message: string,
   ): void {
+    const retained = new Set(
+      options?.preserveDurableQuestions
+        ? persistedAsyncQuestions(agent.session.describePersistence()).map((q) => q.id)
+        : [],
+    );
     for (const [requestId] of agent.pendingPermissions) {
+      if (retained.has(requestId)) continue;
       agent.pendingPermissions.delete(requestId);
       if (!options?.fromHistory) {
         this.dispatchStream(agent.id, {
