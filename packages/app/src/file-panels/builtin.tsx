@@ -1,5 +1,5 @@
 import { useWorkspace, useFileUrl, type PluginFilePanelProps } from "@getpaseo/plugin/client";
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ScrollView, Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { ZoomableImage } from "@/components/zoomable-viewport/image";
@@ -7,6 +7,7 @@ import { useSessionStore } from "@/stores/session-store";
 import { FileHtmlPreview } from "./html-preview";
 import { FilePanelLoading } from "./loading";
 import { FileMarkdownPreview } from "./markdown-preview";
+import { useReaderBottomInset } from "./use-reader-bottom-inset";
 import { TextFilePanel, type TextFilePreviewProps } from "./source/panel";
 import type { RenderingFilePanel, SourceFilePanel } from "./catalog";
 
@@ -29,17 +30,20 @@ function HtmlPanel(props: PluginFilePanelProps) {
 function MarkdownPreview({ text, params, workspaceId, host }: TextFilePreviewProps) {
   const client = useSessionStore((state) => state.sessions[host.id]?.client ?? null);
   const workspaceRoot = useWorkspace(workspaceId, (workspace) => workspace.directory);
+  const { ref, onLayout, bottomPadding } = useReaderBottomInset();
+  const contentStyle = useMemo(() => ({ paddingBottom: bottomPadding }), [bottomPadding]);
   const [rendered, setRendered] = useState(false);
   const handleLayout = useCallback(() => setRendered(true), []);
   return (
+    <View ref={ref} onLayout={onLayout} style={styles.container}>
       <ScrollView
         style={styles.container}
+        contentContainerStyle={contentStyle}
         showsVerticalScrollIndicator
         bounces={false}
         overScrollMode="never"
         testID="markdown-preview-scroll"
       >
-    <View style={styles.container}>
         <View onLayout={handleLayout}>
           <FileMarkdownPreview
             source={text}
