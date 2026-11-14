@@ -1,4 +1,5 @@
 # Release
+> [release-stable](../../.agents/skills/release-stable/SKILL.md). Never run the root `release:*` or `version:all:*` npm scripts.
 
 All workspaces share one version and release together.
 
@@ -502,7 +503,6 @@ There is no mobile-release workflow under `.github/workflows`. The EAS GitHub ap
 
 ### Store screenshots
 
-Each stable release publishes the screenshots committed under `assets/store-screenshots/output/` (see [its README](../assets/store-screenshots/README.md) for how they are made). To change the store screenshots, re-render and commit them before you tag.
 
 - **App Store:** `submit_review` uploads `output/apple/` and `output/apple-ipad/` to the version it submits, replacing that version's `en-US` screenshots. Apple ties screenshots to an app version, so a version that is already live keeps the ones it shipped with. `Resubmit iOS for App Store review` uploads them again.
   - When `submit_review` fails with `appStoreVersions … is not in valid state`, the reason is in the API error's `meta.associatedErrors`, which fastlane does not print. Read it with a `POST /v1/reviewSubmissionItems` against the version. A required age-rating question that Apple added, such as `socialMedia`, fails this way; answer it under App Information > Age Rating in App Store Connect, then resubmit.
@@ -703,7 +703,7 @@ intentionally unavailable to desktop updater clients.
   commits `chore(release): cut <version>` without creating a tag. `release:push` creates and pushes
   the tag atomically after release-branch CI passes.
 - `release:push` refuses `main` and any branch outside `release/*`.
-- The npm `version` lifecycle regenerates F-Droid changelog files from `CHANGELOG.md` for stable releases only (`npm run fdroid:changelogs`) and stages them, so the release commit and tag carry them. Betas are a no-op. A stable run **aborts the release** if `CHANGELOG.md` has no entry for the version being cut — commit the changelog entry first. See [docs/android.md](android.md) for why these files are generated per ABI.
+- The npm `version` lifecycle regenerates F-Droid changelog files from `CHANGELOG.md` for stable releases only (`npm run fdroid:changelogs`) and stages them, so the release commit and tag carry them. Betas are a no-op. A stable run **aborts the release** if `CHANGELOG.md` has no entry for the version being cut — commit the changelog entry first. See [docs/upstream/android.md](android.md) for why these files are generated per ABI.
 - `release:prepare` refreshes workspace `node_modules` links to prevent stale types.
 - `npm run dev:desktop` and `npm run build:desktop` target the Electron desktop package in `packages/desktop`.
 - `release:publish` and `release:publish:beta` run `scripts/publish-release-packages.mjs`: if a run

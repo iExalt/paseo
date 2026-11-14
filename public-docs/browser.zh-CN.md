@@ -36,7 +36,7 @@ Paseo 中的 Agent 可以操作真实的浏览器标签页，也就是你在 Pas
 }
 ```
 
-这些工具属于 [Paseo MCP 工具集](/docs/mcp)，因此同一页面上的 **启用 Paseo tools** 也必须开启，Agent 才能获得它们。已有的 Agent 可能需要重新加载才能获得新工具。
+使用 [`paseo browser`](/docs/browser-tools) 控制标签页。**启用 Paseo tools** 还会在支持的 Provider 中提供原生浏览器工具，并生成 CLI 指引；在 shell 中调用 CLI 不需要开启它。已有的 Agent 需要重新加载，才能获得变更后的指引或原生工具目录。参阅[工具策略](/docs/mcp)。
 
 > 浏览器工具允许 Agent 访问和控制 Paseo 浏览器标签页，包括已登录的浏览器状态。只为你信任的 Agent 启用。
 
@@ -46,7 +46,7 @@ Paseo 中的 Agent 可以操作真实的浏览器标签页，也就是你在 Pas
 
 ## Agent 如何看到页面 {#how-an-agent-sees-a-page}
 
-主要工具是 `browser_snapshot`，它以无障碍树的形式返回页面（标题、文本、表单状态和层级结构），而不是原始 HTML：
+主要命令是 `paseo browser snapshot <browser-id>`，它以无障碍树的形式返回页面（标题、文本、表单状态和层级结构），而不是原始 HTML：
 
 ```yaml
 - document "Settings"
@@ -56,18 +56,18 @@ Paseo 中的 Agent 可以操作真实的浏览器标签页，也就是你在 Pas
   - button "Save changes" [ref=@e3]
 ```
 
-可交互元素带有类似 `@e3` 的引用。Agent 把引用传给 `browser_click`、`browser_fill` 和其他操作工具。引用来自该标签页的最新快照，页面变化后会失效；使用过期的引用会返回错误，而不是作用到错误的元素上。
+可交互元素带有类似 `@e3` 的引用。Agent 把引用传给 `paseo browser click`、`paseo browser fill` 和其他操作命令。引用来自该标签页的最新快照，页面变化后会失效；使用过期的引用会返回错误，而不是作用到错误的元素上。
 
-对于无障碍树无法捕获的内容，Agent 会退回到 `browser_screenshot`，`browser_logs` 则提供控制台消息和网络耗时。
+对于无障碍树无法捕获的内容，Agent 会使用 `paseo browser screenshot <browser-id> --output <path>`，`paseo browser logs` 则提供控制台消息和网络耗时。
 
 ## 架构 {#architecture}
 
 ```
-agent ──MCP──▶ daemon (broker) ──▶ browser host (desktop app) ──▶ webview
+agent ──CLI/native tools──▶ daemon (broker) ──▶ browser host (desktop app) ──▶ webview
 ```
 
 - **按工作区隔离的标签页。** Agent 只能看到和控制自己工作区中的标签页。新标签页在后台打开，不会抢走你的焦点。
-- **标签页到宿主的路由。** daemon 记住每个标签页属于哪个宿主，并把标签页命令路由过去。`browser_list_tabs` 汇总所有已连接的宿主。
+- **标签页到宿主的路由。** daemon 记住每个标签页属于哪个宿主，并把标签页命令路由过去。`paseo browser list-tabs` 汇总所有已连接的宿主。
 - **可信输入。** 点击、按键、悬停和拖动都以真实的浏览器输入事件派发：CSS `:hover` 会触发，页面无法区分 Agent 的点击和用户的点击。每个操作都会先等待目标可见、可用且稳定。
 - **对话框永不阻塞。** `alert` 会被接受；`confirm`、`prompt` 和 `beforeunload` 会被取消。每个被处理的对话框都会在工具结果中报告，让 Agent 知道页面流程发生了变化。
 
@@ -77,4 +77,4 @@ agent ──MCP──▶ daemon (broker) ──▶ browser host (desktop app) �
 - 文件上传只能引用 Agent 工作区内的文件。
 - 标签页共享你在 Paseo 中使用的浏览器配置，包括 cookie 和登录状态。这正是登录后测试能够工作的原因，也是该功能需要按主机手动开启的原因。
 
-完整的工具列表见[工具参考](/docs/browser-tools)。
+全部 22 条命令见[工具参考](/docs/browser-tools)。

@@ -29,6 +29,8 @@ Before you write a contribution, read its section in the docs:
 | [Publishing](https://paseo.sh/docs/plugins/publishing.md)       | The listing page, npm, Git, and the plugin registry                                                              |
 | [Migration](https://paseo.sh/docs/plugins/migration.md)         | Plugins written before 0.8 runtime entries, and renamed APIs                                                     |
 
+For maintainer guidance in the Paseo repository, see `docs/upstream/plugins.md`.
+
 If the docs and this skill disagree, follow the docs.
 
 ## Choose the contributions

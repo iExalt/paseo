@@ -6,4 +6,6 @@ user-invocable: true
 
 # Release stable
 
-Follow the applicable flow and the **Stable release (or promotion)** completion checklist in `docs/release.md` end-to-end.
+process; never follow or run them. Follow the steps below and inspect
+`.github/workflows/release.yml` for the current release pipeline.
+   marked Latest. On failure, inspect the failed job and `.github/workflows/release.yml` before retrying.
