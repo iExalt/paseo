@@ -39,7 +39,7 @@ describe("createBranchSwitcherOperations", () => {
     await operations.getBranchSuggestions(200);
     await operations.listPaseoStashes();
     await operations.saveStash("main");
-    await operations.popStash(0);
+    await operations.popStash({ index: 0, hash: "abc123" });
     await operations.switchBranch("feature");
 
     expect(cwds).toEqual([
