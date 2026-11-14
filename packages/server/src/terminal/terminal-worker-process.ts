@@ -220,11 +220,17 @@ function runWorker(argv: string[]): void {
     writeTerminalWorkerRecord(args.paseoHome, state);
   });
 
+  // Closed terminals whose programs are still being reaped. Their record entries stay until the
+  // reap ends, so a worker that dies meanwhile leaves them for the reaper.
+  const closingTerminalIds = new Set<string>();
+
   async function persistRecord(): Promise<void> {
     if (!record || exiting) return;
     record = {
       ...record,
-      terminals: record.terminals.filter((entry) => sessionsById.has(entry.id)),
+      terminals: record.terminals.filter(
+        (entry) => sessionsById.has(entry.id) || closingTerminalIds.has(entry.id),
+      ),
     };
     await recordPublisher.publish(record);
   }
@@ -569,8 +575,23 @@ function runWorker(argv: string[]): void {
       }
 
       case "killTerminal": {
+        const closing = sessionsById.get(message.terminalId);
+        if (closing) {
+          closingTerminalIds.add(closing.id);
+        }
         manager.killTerminal(message.terminalId);
+        if (closing) {
+          void closing
+            .killAndWait()
+            .catch(() => undefined)
+            .finally(() => {
+              closingTerminalIds.delete(closing.id);
+              void persistRecord().catch((error) => {
+                if (!exiting) console.error("Cannot publish terminal reap:", error);
+              });
               exitIfIdle();
+            });
+        }
         // Removal is owned by session.onExit -> terminalExit; the parent mirror
         // clears contribution and emits terminalsChanged from that single path.
         sendToController({ type: "response", requestId: message.requestId, ok: true });
