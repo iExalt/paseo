@@ -82,6 +82,20 @@ test("keeps the inspected bottom viewport fixed when output arrives", async () =
   await write("padding\r\n".repeat(30) + "inspected needle");
   runtime.find.search("needle");
   const term = window.__paseoTerminal!;
+  const scrollbar = root.querySelector<HTMLElement>(
+    ".xterm-scrollable-element > .scrollbar.vertical",
+  );
+  const screen = root.querySelector<HTMLElement>(".xterm-screen");
+  expect(scrollbar).not.toBeNull();
+  const scrollbarRect = scrollbar!.getBoundingClientRect();
+  const screenRect = screen!.getBoundingClientRect();
+  const rootRect = root.getBoundingClientRect();
+  expect(getComputedStyle(scrollbar!).width).toBe("8px");
+  expect(scrollbarRect.width).toBe(8);
+  expect(screenRect.right).toBeLessThanOrEqual(scrollbarRect.left + 1);
+  expect(scrollbarRect.right).toBeLessThanOrEqual(rootRect.right + 1);
+  expect(term.cols).toBeGreaterThan(0);
+  expect(screen?.clientWidth).toBeGreaterThan(0);
   const inspected = term.buffer.active.viewportY;
   await write("\r\nnew output".repeat(30));
   await expect.poll(() => term.buffer.active.viewportY).toBe(inspected);
@@ -151,11 +165,21 @@ test("preserves inspection through multiple real parser turns of queued output",
   const subscription = term.onWriteParsed(() => {
     samples.push({ viewport: term.buffer.active.viewportY, base: term.buffer.active.baseY });
   });
-  for (let i = 0; i < 150; i++) {
-    runtime.write({ data: encodeTerminalOutput("\rprogress".repeat(1000)) });
+  for (let batch = 0; batch < 2; batch++) {
+    await Promise.all(
+      Array.from(
+        { length: 10 },
+        () =>
+          new Promise<void>((resolve) => {
+            runtime.write({
+              data: encodeTerminalOutput("\rprogress".repeat(1000)),
+              onCommitted: resolve,
+            });
+          }),
+      ),
+    );
   }
   await write("\r\nnew output".repeat(100));
-  await new Promise((resolve) => setTimeout(resolve, 350));
   subscription.dispose();
   expect(samples.length).toBeGreaterThan(1);
   expect(samples[0].base).toBe(inspected);
