@@ -4,7 +4,7 @@ import { addArchiveOptions, runArchiveCommand } from "./archive.js";
 import { addDeleteOptions, runDeleteCommand } from "./delete.js";
 import { addLsOptions, runLsCommand } from "./ls.js";
 import { addRunOptions, runRunCommand } from "./run.js";
-import { addLogsOptions, runLogsCommand } from "./logs.js";
+import { addLogsOptions, runLogsCommand, runPromptsCommand } from "./logs.js";
 import { addStopOptions, runStopCommand } from "./stop.js";
 import { addSendOptions, runSendCommand } from "./send.js";
 import { addInspectOptions, runInspectCommand } from "./inspect.js";
@@ -56,6 +56,13 @@ export function createAgentCommand(): Command {
   addDaemonHostOption(addAttachOptions(agent.command("attach"))).action(
     withGlobalOptions(runAttachCommand),
   );
+
+  addJsonAndDaemonHostOptions(
+    agent
+      .command("prompts")
+      .description("List timeline prompt positions and previews")
+      .argument("<id>", "Agent ID, prefix, or full session ID"),
+  ).action(withGlobalOptions(runPromptsCommand));
 
   addDaemonHostOption(addLogsOptions(agent.command("logs"))).action(
     withGlobalOptions(runLogsCommand),
