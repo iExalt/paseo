@@ -8,6 +8,50 @@ import { createFileObserver } from "../index.js";
 import { createLinuxBackend } from "./linux.js";
 import { createObserverPaths } from "./paths.js";
 
+test("a file created immediately before new directory coverage is discovered", async () => {
+  const root = await mkdtemp(join(tmpdir(), "linux-coverage-"));
+  const nested = join(root, "nested");
+  const created = join(nested, "during-attach.txt");
+  const paths = createObserverPaths(process.platform);
+  const observer = createFileObserver();
+  let active = true;
+  const delivered: string[] = [];
+  const backend = createLinuxBackend(
+    {
+      root,
+      metrics: observer.getDiagnostics(),
+      isActive: () => active,
+      isIgnored: () => false,
+      isIgnoredRoot: () => false,
+      isPathInside: paths.isInside,
+      queueEvent: (type, path) => {
+        if (type === "create") delivered.push(path);
+      },
+      fail: (error) => {
+        throw error;
+      },
+    },
+    paths,
+    (directory) => {
+      // No notification: the write happens just before the OS watch attaches.
+      if (directory === nested) writeFileSync(created, "created before coverage");
+      return { close: () => {}, on: () => {} } as never;
+    },
+  );
+  try {
+    await backend.start();
+    expect(delivered).toEqual([]);
+    await mkdir(nested);
+    await backend.updateIgnore();
+    expect(delivered).toContain(created);
+  } finally {
+    active = false;
+    await backend.close();
+    await observer.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 // This backend keeps no file-level inventory and runs no periodic full-tree
 // safety audit (see the comment on MAX_QUEUED_CLASSIFICATIONS in linux.ts), so
 // a shed classification could never be recovered later the way the native
