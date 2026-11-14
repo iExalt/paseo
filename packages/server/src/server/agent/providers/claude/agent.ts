@@ -1,3 +1,4 @@
+import { ClaudeSkillContent } from "./skill-tool-call.js";
 import { setImmediate } from "node:timers/promises";
 import { ClaudeRuntimeSafety } from "./runtime-safety.js";
 import { validateProviderOptions } from "../../provider-options.js";
@@ -2362,6 +2363,9 @@ class ClaudeAgentSession implements AgentSession {
   private planResumeMode: PermissionMode | null = null;
   private availableModes: AgentMode[] = DEFAULT_MODES;
   private toolUseCache = new Map<string, ToolUseCacheEntry>();
+  // Claude Code sends a skill's SKILL.md as a synthetic user message right after the Skill
+  // tool's "Launching skill: <name>" result. Keep the settled call so that body can replace it.
+  private readonly skillContent = new ClaudeSkillContent();
   private toolUseIndexToId = new Map<number, string>();
   private toolUseInputBuffers = new Map<string, string>();
   private subagentHandbackIds = new Set<string>();
@@ -4726,6 +4730,8 @@ class ClaudeAgentSession implements AgentSession {
         this.appendSidechainResultEvents(message, events);
         break;
       case "assistant": {
+        // A SKILL.md body follows its tool result directly, never after model output.
+        this.skillContent.reset();
         const timelineItems = await this.mapBlocksToTimeline(message.message.content, {
           suppressAssistantText: options?.suppressAssistantText ?? false,
           suppressReasoning: options?.suppressReasoning ?? false,
@@ -4981,6 +4987,10 @@ class ClaudeAgentSession implements AgentSession {
     events: AgentStreamEvent[],
   ): Promise<void> {
     if (isSyntheticUserEntry(message)) {
+      const skillCall = this.skillContent.consume(message);
+      if (skillCall) {
+        events.push({ type: "timeline", item: skillCall, provider: "claude" });
+      }
       return;
     }
     if (this.compacting) {
@@ -5639,6 +5649,9 @@ class ClaudeAgentSession implements AgentSession {
       }
       return;
     }
+    if (this.foldSkillContentIntoHistory({ entry, timeline, historyTimestamp })) {
+      return;
+    }
     const taskSnapshot = this.taskState.observe(entry);
     const items = [
       ...(taskSnapshot ? [taskSnapshot] : []),
@@ -5899,6 +5912,7 @@ class ClaudeAgentSession implements AgentSession {
         });
     this.pushToolCall(settledToolCall, items);
     this.rememberSettledSubagentToolCall(settledToolCall, entry);
+    this.skillContent.remember(settledToolCall, entry?.input);
 
     items.push(
       ...(await renderClaudeToolResultImages({
@@ -5912,6 +5926,33 @@ class ClaudeAgentSession implements AgentSession {
     if (typeof block.tool_use_id === "string") {
       this.toolUseCache.delete(block.tool_use_id);
     }
+  }
+
+  /** Replaces the replayed Skill call with one whose output is the SKILL.md entry that follows. */
+  private foldSkillContentIntoHistory(input: {
+    entry: ClaudeHistoryEntry;
+    timeline: PersistedTimelineEntry[];
+    historyTimestamp: string | null;
+  }): boolean {
+    const { entry, timeline, historyTimestamp } = input;
+    if (entry.type === "assistant") {
+      // A SKILL.md body follows its tool result directly, never after model output.
+      this.skillContent.reset();
+      return false;
+    }
+    const skillCall = entry.type === "user" ? this.skillContent.consume(entry) : null;
+    if (!skillCall) return false;
+    const item = limitAgentTimelineItemContent(skillCall);
+    const settled = timeline.findLastIndex(
+      (row) => row.item.type === "tool_call" && row.item.callId === skillCall.callId,
+    );
+    const previous = settled >= 0 ? timeline[settled] : undefined;
+    if (previous) {
+      timeline[settled] = { ...previous, item };
+    } else {
+      timeline.push({ item, timestamp: historyTimestamp ?? undefined });
+    }
+    return true;
   }
 
   private rememberSettledSubagentToolCall(
