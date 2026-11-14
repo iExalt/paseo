@@ -4,7 +4,8 @@ import { i18n } from "@/i18n/i18next";
 export type UpdateCalloutBody =
   | { kind: "available"; versionLabel: string | null }
   | { kind: "installing" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "waiting"; message: string };
 
 export type UpdateCalloutActionRole = "changelog" | "install" | "retry";
 
@@ -33,6 +34,7 @@ export interface ResolveUpdateCalloutInput {
   isInstalling: boolean;
   availableUpdate: { latestVersion?: string | null } | null;
   errorMessage: string | null;
+  installMessage?: string | null;
 }
 
 function formatVersionLabel(latestVersion: string | null | undefined): string | null {
@@ -44,13 +46,14 @@ export function resolveUpdateCalloutDescriptor(
   input: ResolveUpdateCalloutInput,
 ): UpdateCalloutDescriptor | null {
   if (!input.isDesktopApp) return null;
-  if (input.status !== "available" && input.status !== "installing" && input.status !== "error") {
+  if (!["available", "installing", "error", "waiting"].includes(input.status)) {
     return null;
   }
 
   const isError = input.status === "error";
+  const isWaiting = input.status === "waiting";
   const isInstalling = input.isInstalling;
-  const isAvailable = !isInstalling && !isError;
+  const isAvailable = !isInstalling && !isError && !isWaiting;
 
   const latestVersion = input.availableUpdate?.latestVersion ?? null;
   const dismissalKey = `desktop-update:${input.status}:${latestVersion ?? "unknown"}`;
@@ -65,6 +68,12 @@ export function resolveUpdateCalloutDescriptor(
     body = {
       kind: "error",
       message: input.errorMessage ?? i18n.t("desktop.updates.callout.genericError"),
+    };
+  } else if (isWaiting) {
+    title = i18n.t("desktop.updates.callout.availableTitle");
+    body = {
+      kind: "waiting",
+      message: input.installMessage ?? i18n.t("desktop.updates.callout.genericError"),
     };
   } else {
     title = i18n.t("desktop.updates.callout.availableTitle");
@@ -81,7 +90,7 @@ export function resolveUpdateCalloutDescriptor(
       role: "install",
       label: isInstalling
         ? i18n.t("desktop.updates.callout.installingAction")
-        : i18n.t("desktop.updates.callout.installAndRestart"),
+        : i18n.t(isWaiting ? "common.actions.retry" : "desktop.updates.callout.installAndRestart"),
       variant: "primary",
       disabled: isInstalling,
     });

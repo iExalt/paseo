@@ -20,7 +20,7 @@ const CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 function renderBody(body: UpdateCalloutBody, t: ReturnType<typeof useTranslation>["t"]): ReactNode {
   if (body.kind === "installing") return t("desktop.updates.callout.installingDescription");
-  if (body.kind === "error") return body.message;
+  if (body.kind === "error" || body.kind === "waiting") return body.message;
   return <UpdateAvailableDescription versionLabel={body.versionLabel ?? undefined} t={t} />;
 }
 
@@ -45,6 +45,7 @@ export function UpdateCalloutSource() {
     status,
     availableUpdate,
     errorMessage,
+    installMessage,
     checkForUpdates,
     installUpdate,
     isInstalling,
@@ -80,6 +81,7 @@ export function UpdateCalloutSource() {
       isInstalling,
       availableUpdate,
       errorMessage,
+      installMessage,
     });
     if (!descriptor) return;
 
@@ -104,6 +106,7 @@ export function UpdateCalloutSource() {
     availableUpdate,
     callouts,
     errorMessage,
+    installMessage,
     install,
     isDesktopApp,
     isInstalling,

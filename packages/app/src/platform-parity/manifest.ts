@@ -3,5 +3,6 @@ const FOLLOWS_UPSTREAM_WEB_ONLY =
   "Pane splits are web-only, following upstream, so drag-to-split and tab drag are too";
     "file-panels/source/editor/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "file-panels/source/readonly/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
+    "android/fork-updates/updater.ts": {
     "constants/layout.ts": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "file-panels/source/panel.tsx": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },

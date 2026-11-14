@@ -143,7 +143,13 @@ class FakeAppUpdateRuntime implements AppUpdateRuntime {
     }
   }
 
-  quitAndInstall({ targetVersion, isSilent, isForceRunAfter }: AppUpdateInstallRequest): void {
+  async prepareInstall(_version: string): Promise<void> {}
+
+  async quitAndInstall({
+    targetVersion,
+    isSilent,
+    isForceRunAfter,
+  }: AppUpdateInstallRequest): Promise<void> {
     if (this.downloadedUpdate) {
       this.installedVersions.push(this.downloadedUpdate.version);
       this.installModes.push({ targetVersion, isSilent, isForceRunAfter });
@@ -841,4 +847,114 @@ describe("app update service", () => {
       errorMessage: null,
     });
   });
+});
+
+it("revalidates signed installer before daemon stop and prevents handoff when safety declines", async () => {
+  const { runtime, service } = createService();
+  const events: string[] = [];
+  runtime.prepareInstall = async () => {
+    events.push("revalidate");
+  };
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  const result = await service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => {
+      events.push("safety");
+      throw new Error("waiting for active work");
+    },
+  );
+  expect(events).toEqual(["revalidate", "safety"]);
+  expect(result.installed).toBe(false);
+  expect(runtime.installedVersions).toEqual([]);
+});
+
+it("serializes background checks through apply and restores on final verification failure", async () => {
+  const { runtime, service } = createService();
+  let validationCount = 0;
+  runtime.prepareInstall = async () => {
+    if (++validationCount === 2) throw new Error("installer changed during safety wait");
+  };
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  runtime.nextCheck({ isUpdateAvailable: false, updateInfo: rolledOutUpdate });
+  let releaseSafety!: () => void;
+  let reachedSafety!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    reachedSafety = resolve;
+  });
+  const gate = new Promise<void>((resolve) => {
+    releaseSafety = resolve;
+  });
+  let restored = 0;
+  const install = service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => {
+      reachedSafety();
+      await gate;
+      return async () => {
+        restored += 1;
+      };
+    },
+  );
+  await ready;
+  const check = service.checkForAppUpdate({
+    currentVersion: "1.2.3",
+    releaseChannel: "stable",
+    intent: "automatic",
+  });
+  await Promise.resolve();
+  expect(runtime.checkCount).toBe(1);
+  releaseSafety();
+  expect((await install).installed).toBe(false);
+  await check;
+  expect(restored).toBe(1);
+  expect(runtime.installedVersions).toEqual([]);
+});
+
+it("awaits installer launch failure, restores the daemon once, and permits retry", async () => {
+  const { runtime, service } = createService();
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  const failure = Promise.reject(new Error("installer could not start"));
+  void failure.catch(() => undefined);
+  const launch = runtime.quitAndInstall.bind(runtime);
+  runtime.quitAndInstall = () => failure;
+  let restored = 0;
+  const result = await service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => async () => {
+      restored += 1;
+    },
+  );
+  expect(result.installed).toBe(false);
+  expect(result.message).toContain("installer could not start");
+  expect(restored).toBe(1);
+  runtime.quitAndInstall = launch;
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  const retry = await service.downloadAndInstallUpdate({
+    currentVersion: "1.2.3",
+    releaseChannel: "stable",
+  });
+  expect(retry.installed).toBe(true);
+  expect(runtime.downloadCallCount).toBe(2);
+  expect(restored).toBe(1);
+});
+
+it("returns a safety refusal for the already-downloaded target used by the enabled Update button", async () => {
+  const { runtime, service } = createService();
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  await service.checkForAppUpdate({
+    currentVersion: "1.2.3",
+    releaseChannel: "stable",
+    intent: "manual",
+  });
+  runtime.finishUpdateDownload(rolledOutUpdate);
+  runtime.nextCheck({ isUpdateAvailable: true, updateInfo: rolledOutUpdate });
+  const result = await service.downloadAndInstallUpdate(
+    { currentVersion: "1.2.3", releaseChannel: "stable" },
+    async () => {
+      throw new Error("Fork update is waiting for active agents to finish.");
+    },
+  );
+  expect(result.installed).toBe(false);
+  expect(result.message).toContain("waiting for active agents");
+  expect(runtime.installedVersions).toEqual([]);
 });
