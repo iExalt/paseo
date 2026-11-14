@@ -48,6 +48,10 @@ workspace label ls/update/delete manage the host catalog. label create requires
 --workspace and --color: it creates and assigns, retaining existing catalog colors.
 label delete needs --force; --inspect reads the affected count without deleting.
 workspace recover <id> --inspect reads recovery state; omit --inspect to restore.
+workspace refs --query <q> [--kind pr|branch] searches the checkout's refs;
+--path selects its host directory and the forge is inferred from the checkout.
+workspace validate-branch <branch> reads existence without switching branches.
+clone --search <q> lists GitHub repositories without cloning; omit repo/dir/protocol.
 prime always prints text, even with --json.
 
 Timeline: agent logs <id> --json returns complete projected entries and page metadata.

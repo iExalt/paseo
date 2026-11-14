@@ -5,6 +5,7 @@ import { runArchiveCommand } from "./archive.js";
 import { runCreateCommand } from "./create.js";
 import { runInspectCommand } from "./inspect.js";
 import { createWorkspaceLabelCommand } from "./label.js";
+import { runRefsCommand, runValidateBranchCommand } from "./refs.js";
 import { runRecoverCommand } from "./recover.js";
 import { runLsCommand } from "./ls.js";
 import { runRenameCommand } from "./rename.js";
@@ -122,6 +123,28 @@ export function createWorkspaceCommand(): Command {
       .argument("<workspace-id>")
       .option("--inspect", "Read recovery availability without restoring"),
   ).action(withOutput(runRecoverCommand));
+  addJsonAndDaemonHostOptions(
+    workspace
+      .command("refs")
+      .allowExcessArguments(false)
+      .description("Search branches and pull requests; forge is inferred from checkout")
+      .option("--path <cwd>", "Checkout directory on the host (default: current)")
+      .option("--query <query>", "Search query")
+      .addOption(
+        new Option("--kind <kind>", "Search only branches or pull requests").choices([
+          "pr",
+          "branch",
+        ]),
+      ),
+  ).action(withOutput(runRefsCommand));
+  addJsonAndDaemonHostOptions(
+    workspace
+      .command("validate-branch")
+      .allowExcessArguments(false)
+      .description("Validate an existing branch without switching it")
+      .argument("<branch>")
+      .option("--path <cwd>", "Checkout directory on the host (default: current)"),
+  ).action(withOutput(runValidateBranchCommand));
   return workspace;
 }
 

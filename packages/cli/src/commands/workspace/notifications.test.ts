@@ -25,6 +25,11 @@ const createWorkspace = vi.fn(async () => ({
     notifications: "off" as const,
   },
 }));
+const getBranchSuggestions = vi.fn();
+const searchForge = vi.fn();
+const validateBranch = vi.fn();
+const searchGithubRepositories = vi.fn();
+const cloneGithubProject = vi.fn();
 const listWorkspaceLabels = vi.fn();
 const setWorkspaceLabel = vi.fn();
 const updateWorkspaceLabel = vi.fn();
@@ -33,7 +38,12 @@ const inspectWorkspaceLabelDelete = vi.fn();
 const inspectWorkspaceRecovery = vi.fn();
 const restoreWorkspace = vi.fn();
 const getLastServerInfoMessage = vi.fn(() => ({
-  features: { workspaceLabels: true, workspaceRecovery: true },
+  features: {
+    workspaceLabels: true,
+    workspaceRecovery: true,
+    forgeSearch: true,
+    workspaceGithubRepositorySearch: true,
+  },
 }));
 const fetchWorkspaces = vi.fn();
 const fetchWorkspaceSetupStatus = vi.fn();
@@ -42,6 +52,11 @@ const close = vi.fn(async () => undefined);
 
 vi.mock("../../utils/client.js", () => ({
   connectToDaemon: vi.fn(async () => ({
+    getBranchSuggestions,
+    searchForge,
+    validateBranch,
+    searchGithubRepositories,
+    cloneGithubProject,
     listWorkspaceLabels,
     setWorkspaceLabel,
     updateWorkspaceLabel,
@@ -490,7 +505,12 @@ describe("workspace label catalog and recovery", () => {
   });
   it("refuses unavailable capabilities and closes connections", async () => {
     getLastServerInfoMessage.mockReturnValueOnce({
-      features: { workspaceLabels: false, workspaceRecovery: true },
+      features: {
+        workspaceLabels: false,
+        workspaceRecovery: true,
+        forgeSearch: true,
+        workspaceGithubRepositorySearch: true,
+      },
     });
     const exit = vi.spyOn(process, "exit").mockImplementation(() => {
       throw new Error("CLI exit");
@@ -502,5 +522,197 @@ describe("workspace label catalog and recovery", () => {
     } finally {
       exit.mockRestore();
     }
+  });
+});
+
+import { createCloneCommand, runCloneSearchCommand, runCloneCommand } from "../clone.js";
+import { runRefsCommand, runValidateBranchCommand } from "./refs.js";
+describe("workspace ref and repository search", () => {
+  const options = {
+    daemonTarget: { kind: "instance" as const, home: "/tmp/refs-test" },
+    path: "/remote/repo",
+    query: "fix",
+  };
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  it("routes registered refs to branch and forge reads with the same host cwd", async () => {
+    getBranchSuggestions.mockResolvedValueOnce({
+      branches: ["fix-one"],
+      branchDetails: [],
+      error: null,
+    });
+    searchForge.mockResolvedValueOnce({ items: [], authState: "authenticated", error: null });
+    await createWorkspaceCommand().parseAsync(["refs", "--path", "/repo", "--query", "fix"], {
+      from: "user",
+    });
+    expect(getBranchSuggestions).toHaveBeenCalledExactlyOnceWith({
+      cwd: "/repo",
+      query: "fix",
+      limit: 50,
+    });
+    expect(searchForge).toHaveBeenCalledExactlyOnceWith({
+      cwd: "/repo",
+      query: "fix",
+      limit: 50,
+      kinds: ["change_request"],
+    });
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("limits branch search without needing forge support", async () => {
+    getBranchSuggestions.mockResolvedValueOnce({ branches: [], error: null });
+    const result = await runRefsCommand({ ...options, kind: "branch" }, {} as never);
+    expect(result.data.pullRequests).toBeNull();
+    expect(searchForge).not.toHaveBeenCalled();
+  });
+  it("preserves PR metadata and auth state without a branch request", async () => {
+    const item = {
+      kind: "change_request",
+      forge: "gitlab",
+      number: 7,
+      title: "Fix",
+      url: "https://example.test/7",
+      state: "open",
+      body: null,
+      labels: [],
+      headRefName: "fix",
+    };
+    searchForge.mockResolvedValueOnce({ items: [item], authState: "authenticated", error: null });
+    const result = await runRefsCommand({ ...options, kind: "pr" }, {} as never);
+    expect(result.data.pullRequests?.items).toEqual([item]);
+    expect(result.data.pullRequests?.authState).toBe("authenticated");
+    expect(getBranchSuggestions).not.toHaveBeenCalled();
+  });
+  it("rejects malformed PR rows and host error payloads with cleanup", async () => {
+    searchForge.mockResolvedValueOnce({ items: [{}], error: null });
+    await expect(runRefsCommand({ ...options, kind: "pr" }, {} as never)).rejects.toThrow();
+    getBranchSuggestions.mockResolvedValueOnce({ branches: [], error: "not a checkout" });
+    await expect(runRefsCommand({ ...options, kind: "branch" }, {} as never)).rejects.toMatchObject(
+      { code: "BRANCH_SEARCH_FAILED" },
+    );
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+  it("returns branch absence as data and host validation errors as failures", async () => {
+    validateBranch.mockResolvedValueOnce({
+      exists: false,
+      resolvedRef: null,
+      isRemote: false,
+      error: null,
+    });
+    const result = await runValidateBranchCommand("missing", options, {} as never);
+    expect(result.data).toMatchObject({ exists: false, resolvedRef: null, isRemote: false });
+    validateBranch.mockResolvedValueOnce({ error: "invalid repo" });
+    await expect(runValidateBranchCommand("main", options, {} as never)).rejects.toMatchObject({
+      code: "BRANCH_VALIDATION_FAILED",
+    });
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+  it("routes clone --search to repository search without cloning", async () => {
+    searchGithubRepositories.mockResolvedValueOnce({
+      status: "success",
+      repositories: [],
+      error: null,
+    });
+    await createCloneCommand().parseAsync(["--search", "paseo"], { from: "user" });
+    expect(searchGithubRepositories).toHaveBeenCalledExactlyOnceWith({ query: "paseo", limit: 30 });
+    expect(cloneGithubProject).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it.each(["unavailable", "unauthenticated", "error"])(
+    "surfaces repository search %s",
+    async (status) => {
+      searchGithubRepositories.mockResolvedValueOnce({
+        status,
+        repositories: [],
+        error: "search unavailable",
+      });
+      await expect(
+        runCloneSearchCommand(undefined, { ...options, search: "paseo" }, {} as never),
+      ).rejects.toMatchObject({ code: `REPOSITORY_SEARCH_${status.toUpperCase()}` });
+      expect(close).toHaveBeenCalledOnce();
+    },
+  );
+  it("rejects incompatible or incomplete clone inputs before connecting", async () => {
+    for (const input of [
+      { repo: "owner/repo", search: "paseo" },
+      { dir: "/repo", search: "paseo" },
+      { protocol: "https" as const, search: "paseo" },
+      { search: " " },
+    ]) {
+      await expect(
+        runCloneSearchCommand(
+          "repo" in input ? input.repo : undefined,
+          { ...options, ...input },
+          {} as never,
+        ),
+      ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+    }
+    await expect(runCloneCommand(undefined, options, {} as never)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    await expect(runCloneCommand("owner/repo", options, {} as never)).rejects.toMatchObject({
+      code: "INVALID_ARGUMENT",
+    });
+    expect(close).not.toHaveBeenCalled();
+    expect(cloneGithubProject).not.toHaveBeenCalled();
+  });
+});
+
+describe("search capability and command boundaries", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  it("rejects unavailable forge/repository features without issuing requests", async () => {
+    const target = { daemonTarget: { kind: "instance" as const, home: "/tmp/feature-test" } };
+    getLastServerInfoMessage.mockReturnValueOnce({
+      features: {
+        workspaceLabels: true,
+        workspaceRecovery: true,
+        forgeSearch: false,
+        workspaceGithubRepositorySearch: true,
+      },
+    });
+    await expect(runRefsCommand({ ...target, kind: "pr" }, {} as never)).rejects.toMatchObject({
+      code: "DAEMON_UPDATE_REQUIRED",
+    });
+    getLastServerInfoMessage.mockReturnValueOnce({
+      features: {
+        workspaceLabels: true,
+        workspaceRecovery: true,
+        forgeSearch: true,
+        workspaceGithubRepositorySearch: false,
+      },
+    });
+    await expect(
+      runCloneSearchCommand(undefined, { ...target, search: "paseo" }, {} as never),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_BY_HOST" });
+    expect(searchForge).not.toHaveBeenCalled();
+    expect(searchGithubRepositories).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+  it("registers branch validation without checking out a branch", async () => {
+    validateBranch.mockResolvedValueOnce({
+      exists: true,
+      resolvedRef: "refs/heads/main",
+      isRemote: false,
+      error: null,
+    });
+    await createWorkspaceCommand().parseAsync(["validate-branch", "main", "--path", "/repo"], {
+      from: "user",
+    });
+    expect(validateBranch).toHaveBeenCalledExactlyOnceWith({ cwd: "/repo", branchName: "main" });
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("rejects extra clone arguments at registration", async () => {
+    const command = createCloneCommand()
+      .exitOverride()
+      .configureOutput({ writeErr: () => undefined });
+    await expect(
+      command.parseAsync(["owner/repo", "extra", "--dir", "/repo", "--protocol", "https"], {
+        from: "user",
+      }),
+    ).rejects.toThrow();
+    expect(cloneGithubProject).not.toHaveBeenCalled();
+    expect(close).not.toHaveBeenCalled();
   });
 });
