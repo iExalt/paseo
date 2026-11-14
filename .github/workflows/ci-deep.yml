@@ -1,13 +1,74 @@
+name: Deep verification
+
+on:
+  pull_request:
     branches: [dev]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deep-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
     if: >-
       github.repository == 'iExalt/paseo' && !github.event.repository.private &&
        (github.event_name == 'workflow_dispatch' && github.actor == 'iExalt' &&
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        lane: [browser, integration, electron]
     permissions:
       contents: read
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+      DEEP_LANE: ${{ matrix.lane }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-tools
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.SOURCE_SHA }}
+          persist-credentials: false
+      - name: Validate exact source and isolated configuration
+        run: node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA" --plan
+      - name: Install locked dependencies
+        env:
+          npm_config_fetch_timeout: "30000"
+          npm_config_fetch_retries: "2"
+          npm_config_fetch_retry_mintimeout: "1000"
+          npm_config_fetch_retry_maxtimeout: "5000"
+        run: |
           test "$(node --version)" = v26.13.0
+          test "$(npm --version)" = 11.20.0
+          echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+          time npm ci --cache "$RUNNER_TEMP/npm-cache"
+      - name: Exercise isolated deep contracts
+        run: node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA"
+      - name: Bound retained diagnostics
+        id: diagnostics
+        if: ${{ !cancelled() && matrix.lane != 'integration' }}
+        run: |
+          directory=".dev/github-workflows/deep/$DEEP_LANE"
+          test -d "$directory"
+          bytes="$(du -sb "$directory" | cut -f1)"
+          test "$bytes" -le 26214400
+      - name: Retain screenshot and trace for review
+        if: ${{ !cancelled() && steps.diagnostics.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deep-${{ matrix.lane }}-${{ env.SOURCE_SHA }}-${{ github.run_attempt }}
+          path: .dev/github-workflows/deep/${{ matrix.lane }}/
+          if-no-files-found: error
+          retention-days: 1
