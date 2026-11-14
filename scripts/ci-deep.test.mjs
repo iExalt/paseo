@@ -129,6 +129,7 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
   assert.deepEqual(workflow.on.pull_request, {
     branches: ["dev"],
   });
+  const runs = new Function("github", "startsWith", `return (${workflow.jobs.browser.if});`);
   const startsWith = (value, prefix) => value.startsWith(prefix);
   const pr = {
     repository: "iExalt/paseo",
@@ -140,6 +141,7 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
       },
     },
   };
+  const admitted = (github) => Boolean(runs(github, startsWith));
   assert.equal(admitted(pr), true);
   for (const mutate of [
     (x) => {
@@ -164,8 +166,12 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
     repository: "iExalt/paseo",
     event_name: "workflow_dispatch",
     event: { repository: { private: false } },
+    ref: "refs/heads/dev",
     actor: "iExalt",
   };
+  assert.equal(admitted(dispatch), true);
+  assert.equal(admitted({ ...dispatch, actor: "other" }), false);
+  assert.equal(admitted({ ...dispatch, ref: "refs/heads/other" }), false);
 });
 
 test("deep verification requires exact source and isolated harness configuration", () => {
