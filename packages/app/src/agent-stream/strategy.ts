@@ -89,7 +89,7 @@ export interface StreamRenderInput {
   isAuthoritativeHistoryReady: boolean;
   onNearBottomChange: (value: boolean) => void;
   // The history row under the top of the viewport, for surfaces that mark where the reader
-  // is in the transcript. Only the web viewport measures it today.
+  // is in the transcript. Web measures row geometry; native reads its list's viewable items.
   onReadingPositionChange?: (rowId: string | null) => void;
   onNearHistoryStart: () => boolean | Promise<boolean>;
   isLoadingOlderHistory: boolean;
@@ -137,6 +137,7 @@ export interface StreamStrategy {
   shouldAnchorBottomOnContentSizeChange: () => boolean;
   shouldAnimateManualScrollToBottom: () => boolean;
   shouldUseVirtualizedList: () => boolean;
+  shouldFillTimelineGaps: () => boolean;
 }
 
 interface StreamStrategyConfig {
@@ -156,6 +157,12 @@ interface StreamStrategyConfig {
   anchorBottomOnContentSizeChange: boolean;
   animateManualScrollToBottom: boolean;
   useVirtualizedList: boolean;
+  // Load the hole between a prompt jump's window and the tail as the reader scrolls toward
+  // it. Off unless a strategy opts in. Native does not: the transcript hole after an outline
+  // jump remains a known bug there. A gap page inserts newer rows at lower indices of the
+  // inverted FlatList while scrollToIndex is still aiming at the target, so device runs
+  // landed a jump to prompt 12 on 42 or 46, or ran out of retries.
+  fillTimelineGaps?: boolean;
   isNearBottom: (input: StreamNearBottomInput) => boolean;
   getBottomOffset: (metrics: StreamViewportMetrics) => number;
 }
@@ -244,6 +251,7 @@ export function createStreamStrategy(config: StreamStrategyConfig): StreamStrate
     shouldAnchorBottomOnContentSizeChange: () => config.anchorBottomOnContentSizeChange,
     shouldAnimateManualScrollToBottom: () => config.animateManualScrollToBottom,
     shouldUseVirtualizedList: () => config.useVirtualizedList,
+    shouldFillTimelineGaps: () => config.fillTimelineGaps === true,
   };
 }
 
