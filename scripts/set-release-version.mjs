@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { computeNextReleaseVersion } from "./release-version-utils.mjs";
@@ -59,6 +59,12 @@ const nextVersion = computeNextReleaseVersion(currentVersion, args.mode);
 if (args.print) {
   process.stdout.write(`${nextVersion}\n`);
   process.exit(0);
+}
+
+if (existsSync(path.join(rootDir, ".github/fork-release.json"))) {
+  throw new Error(
+    "Fork versions are proposed by release-please; the upstream version/tag writer is disabled.",
+  );
 }
 
 execFileSync(

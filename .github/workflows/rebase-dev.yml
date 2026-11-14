@@ -1,2 +1,41 @@
+name: Rebase dev onto upstream mirror
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rebase-dev
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    timeout-minutes: 45
+    permissions:
+    steps:
+        with:
+          fetch-depth: 0
+
+        with:
           install_args: node@26.13.0 actionlint@1.7.12
+
+      - name: Rebase captured dev on captured upstream and import known resolutions
+        id: rebase
+        run: node .github/scripts/rebase-dev.mjs
+        env:
+          REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+
           test "$(node --version)" = v26.13.0
+
+      - name: Publish backup and rebased dev atomically
+        env:
+          DEV_SHA: ${{ steps.rebase.outputs.dev-sha }}
+          UPSTREAM_SHA: ${{ steps.rebase.outputs.upstream-sha }}
+          RESOLUTIONS_SHA: ${{ steps.rebase.outputs.resolutions-sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+
+        if: failure()

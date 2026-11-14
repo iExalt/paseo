@@ -7,6 +7,7 @@ import {
   type ForkReleaseManifest,
   type ForkReleaseArtifact,
 } from "@getpaseo/protocol/release-manifest-v2";
+import { compareForkVersions, forkVersionFromTag } from "@getpaseo/protocol/fork-version";
 export { FORK_REPOSITORY };
 export {
   FORK_ANDROID_PACKAGE_ID as FORK_PACKAGE_ID,
@@ -52,6 +53,7 @@ export interface VerifiedForkUpdate {
 }
 
 export function releaseVersionFromTag(tag: string): string | null {
+  return forkVersionFromTag(tag);
 }
 
 export async function findHighestVerifiedForkRelease<T>(

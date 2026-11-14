@@ -122,7 +122,13 @@ export function registerNotificationHandlers(): void {
     // macOS refuses a request (unsigned bundle, notifications turned off) only
     // through "failed", after show() has returned.
     const delivered = new Promise<boolean>((resolve) => {
+      const fallback = setTimeout(() => resolve(true), 5_000);
+      notification.once("show", () => {
+        clearTimeout(fallback);
+        resolve(true);
+      });
       notification.once("failed", (_failure, error) => {
+        clearTimeout(fallback);
         console.warn(`[notifications] Delivery failed: ${error}`);
         resolve(false);
       });

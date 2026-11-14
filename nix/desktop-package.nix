@@ -99,8 +99,14 @@ buildNpmPackage {
   buildPhase = ''
     runHook preBuild
 
+    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
+      # Bind stalled-build diagnostics to this exact output and active build root.
+      node -e 'console.error("PASEO_DESKTOP_BUILD_IDENTITY=" + JSON.stringify({root: process.env.NIX_BUILD_TOP, output: process.env.out}))'
+    ''}
+
     # Apply repository patches without enabling unrelated install scripts.
     PATH="$PWD/node_modules/.bin:$PATH" node scripts/postinstall-patches.mjs
+
     # Native deps (terminal emulation; libuv-linked on Linux)
     npm rebuild node-pty
 
@@ -116,8 +122,11 @@ buildNpmPackage {
     # no swap, and emit the same files; three are slower than two, and the
     # runner's default count ran out of memory (42627fc1a). The 4 GiB
     # old-space limit is per process, not a total RSS limit.
+    (
+      cd packages/app
+      ${lib.optionalString stdenv.hostPlatform.isDarwin "NODE_OPTIONS=--max-old-space-size=4096"} \
         PASEO_WEB_PLATFORM=electron npx expo export --platform web ${lib.optionalString stdenv.hostPlatform.isDarwin "--max-workers 2"}
-    ( cd packages/app && PASEO_WEB_PLATFORM=electron npx expo export --platform web )
+    )
 
     # Desktop main process
     npm run build:main --workspace=@getpaseo/desktop
@@ -272,6 +281,9 @@ buildNpmPackage {
   # Info.plist unbound), and macOS then refuses every notification request
   # (UNErrorDomain error 1). Sign the finished bundle ad hoc as Paseo, after
   # fixup has rewritten its last file. Ad hoc signatures carry no timestamp, so
+  # the output is deterministic for a given codesign. This uses the host
+  # codesign, as nixpkgs' sigtool cannot seal bundle resources; the candidate
+  # runtime re-verifies the signature on the imported store path.
   postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
     app="$out/Applications/Paseo.app"
     /usr/bin/codesign --force --deep --sign - --timestamp=none "$app"
