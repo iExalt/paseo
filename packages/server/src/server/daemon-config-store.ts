@@ -340,16 +340,22 @@ function pickRelayPatch(
   return Object.keys(picked).length > 0 ? { relay: picked } : {};
 }
 
-function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMutableConfigPatch {
+function pickToolPatch(patch: MutableDaemonConfigPatch) {
   return {
-    ...pickRelayPatch(patch.relay),
-    usage: patch.usage,
-    ...(patch.mcp?.injectIntoAgents !== undefined
-      ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
       : {}),
     ...(patch.browserTools?.enabled !== undefined
       ? { browserTools: { enabled: patch.browserTools.enabled } }
       : {}),
+  };
+}
+
+function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMutableConfigPatch {
+  return {
+    ...pickRelayPatch(patch.relay),
+    usage: patch.usage,
+    ...pickToolPatch(patch),
+    ...(patch.mcp?.injectIntoAgents !== undefined
+      ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
     ...(patch.providers !== undefined ? { providers: patch.providers } : {}),
     ...(patch.removeProviders !== undefined ? { removeProviders: patch.removeProviders } : {}),
     ...(patch.metadataGeneration?.providers !== undefined
@@ -444,6 +450,9 @@ export class DaemonConfigStore {
     this.speechOwner = options.speech;
     this.startupPersisted = options.startupPersisted ?? loadPersistedConfig(paseoHome, this.logger);
     this.lastKnownPersisted = this.startupPersisted;
+    const replyRules = freezeReplyRules(
+      this.startupPersisted.replyRules ?? initial.replyRules ?? [],
+    );
     this.replyRuleMatcher = ReplyRuleMatcher.compile(replyRules);
     this.current = MutableDaemonConfigSchema.parse({
       ...foldConfigProfiles({ config: initial, providers: initial.providers, source: "stored" }),
