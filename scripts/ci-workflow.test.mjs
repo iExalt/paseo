@@ -452,6 +452,12 @@ if [ -f "$ACTIVE_SWAP_FILE" ]; then cat "$ACTIVE_SWAP_FILE"; fi
     assert.equal(existsSync(ownerDirectory), false);
     assert.equal(existsSync(swapFile), false);
 
+    const cleanupAs = (environment) =>
+      spawnSync("bash", [runnerSwapPath, "cleanup"], {
+        encoding: "utf8",
+        timeout: 5000,
+      }).status;
+
     writeFileSync(swapFile, "pre-existing runner file");
     const existingPath = spawnSync("bash", [runnerSwapPath, "enable"], {
       encoding: "utf8",
