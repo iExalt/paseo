@@ -57,6 +57,8 @@ export interface SingleResult<T> {
 
 /** Result type for commands returning a list */
 export interface ListResult<T> {
+  /** Set after rendering a complete result containing unsuccessful items. */
+  exitCode?: 1;
   type: "list";
   /** The structured data to render */
   data: T[];

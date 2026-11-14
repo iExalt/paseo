@@ -6,6 +6,8 @@ import { withOutput } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 
 const batchResponseHelp = `
+Every selected request reports confirmed, failed (not sent), or unconfirmed.
+Any failed or unconfirmed result exits 1 after printing all outcomes.
 Batch responses can partially complete. An unconfirmed response may have applied.
 Run "paseo permit ls --json" before retrying, then pass each still-pending request ID
 explicitly.
