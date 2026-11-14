@@ -1,11 +1,10 @@
 import type { Command } from "commander";
 import { AgentPermissionResponseSchema } from "@getpaseo/protocol/messages";
+import { settlePermissionResponses } from "./response.js";
 import { connectToDaemon } from "../../utils/client.js";
 import type { CommandOptions, ListResult, CommandError } from "../../output/index.js";
 import {
-  permitResponseSchema,
   selectPermissionRequests,
-  toPermissionResponseItem,
   type PermissionResponseItem,
   type PermitClientConnector,
 } from "./allow.js";
@@ -89,35 +88,13 @@ export function createDenyCommand(connect: PermitClientConnector = connectToDaem
         all: options.all,
       });
 
-      // Deny permissions
-      const results: PermissionResponseItem[] = await Promise.all(
-        permissionsToDeny.map(async (permission) => {
-          try {
-            await client.respondToPermissionAndWait(resolvedAgentId, permission.id, {
-              ...response,
-            });
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            const error: CommandError = {
-              code: "PERMISSION_RESPONSE_UNCONFIRMED",
-              message: `Permission response unconfirmed for request ${permission.id}: ${message}`,
-              details: 'Use "paseo permit ls" to check whether the request is still pending',
-            };
-            throw error;
-          }
-          return toPermissionResponseItem(resolvedAgentId, permission, "denied");
-        }),
-      );
-
-      await client.close();
-
-      return {
-        type: "list",
-        data: results,
-        schema: permitResponseSchema,
-      };
+      return await settlePermissionResponses({
+        client,
+        agentId: resolvedAgentId,
+        permissions: permissionsToDeny,
+        response,
+      });
     } catch (err) {
-      await client.close().catch(() => {});
       // Re-throw CommandErrors
       if (err && typeof err === "object" && "code" in err) {
         throw err;
@@ -128,6 +105,8 @@ export function createDenyCommand(connect: PermitClientConnector = connectToDaem
         message: `Failed to deny permission: ${message}`,
       };
       throw error;
+    } finally {
+      await client.close().catch(() => {});
     }
   };
 }

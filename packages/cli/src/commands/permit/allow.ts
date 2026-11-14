@@ -5,6 +5,7 @@ import type {
   AgentPermissionRequest,
   AgentPermissionResponse,
 } from "@getpaseo/protocol/agent-types";
+import { settlePermissionResponses } from "./response.js";
 import { connectToDaemon } from "../../utils/client.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 
@@ -14,7 +15,9 @@ export interface PermissionResponseItem {
   agentId: string;
   agentShortId: string;
   name: string;
-  result: string;
+  result: "allowed" | "denied" | "failed" | "unconfirmed";
+  status: "confirmed" | "failed" | "unconfirmed";
+  error?: string;
 }
 
 /** Schema for permit allow/deny output */
@@ -34,6 +37,8 @@ export const permitResponseSchema: OutputSchema<PermissionResponseItem> = {
         return undefined;
       },
     },
+    { header: "STATUS", field: "status" },
+    { header: "ERROR", field: "error" },
   ],
 };
 
@@ -49,6 +54,7 @@ export function toPermissionResponseItem(
     agentShortId: agentId.slice(0, 7),
     name: permission.name,
     result,
+    status: "confirmed",
   };
 }
 
@@ -270,38 +276,14 @@ export function createAllowCommand(connect: PermitClientConnector = connectToDae
         all: options.all,
       });
 
-      // Preflight the whole selection so one malformed question cannot partially allow a batch.
-      for (const permission of permissionsToAllow) validateQuestionResponse(permission, response);
-
-      // Allow permissions
-      const results: PermissionResponseItem[] = await Promise.all(
-        permissionsToAllow.map(async (permission) => {
-          try {
-            await client.respondToPermissionAndWait(resolvedAgentId, permission.id, {
-              ...response,
-            });
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            const error: CommandError = {
-              code: "PERMISSION_RESPONSE_UNCONFIRMED",
-              message: `Permission response unconfirmed for request ${permission.id}: ${message}`,
-              details: 'Use "paseo permit ls" to check whether the request is still pending',
-            };
-            throw error;
-          }
-          return toPermissionResponseItem(resolvedAgentId, permission, "allowed");
-        }),
-      );
-
-      await client.close();
-
-      return {
-        type: "list",
-        data: results,
-        schema: permitResponseSchema,
-      };
+      return await settlePermissionResponses({
+        client,
+        agentId: resolvedAgentId,
+        permissions: permissionsToAllow,
+        response,
+        validate: validateQuestionResponse,
+      });
     } catch (err) {
-      await client.close().catch(() => {});
       // Re-throw CommandErrors
       if (err && typeof err === "object" && "code" in err) {
         throw err;
@@ -312,6 +294,8 @@ export function createAllowCommand(connect: PermitClientConnector = connectToDae
         message: `Failed to allow permission: ${message}`,
       };
       throw error;
+    } finally {
+      await client.close().catch(() => {});
     }
   };
 }
