@@ -1,3 +1,4 @@
+        getPluginTools: () => [],
     const patch = vi.fn(async (input: { replyRules: Array<{ source: string; flags: string }> }) => {
       await Promise.resolve();
     await expect(catalog.executeTool("clear_daemon_notification_rules", {})).resolves.toMatchObject(

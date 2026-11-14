@@ -315,30 +315,30 @@ describe("paseo config file substrate", () => {
     );
   });
 
-  // POSIX-only: Windows mtime granularity can collapse the two revisions in this fixture.
-  it.skipIf(isPlatform("win32"))(
-    "rejects stale writes when the current revision changed before rename",
-    async () => {
-      writeFileSync(join(tempDir, "paseo.json"), JSON.stringify({ worktree: { setup: "old" } }));
-      const expectedRevision = await statPaseoConfigPath(tempDir);
-      writeFileSync(join(tempDir, "paseo.json"), JSON.stringify({ worktree: { setup: "new" } }));
-      const currentRevision = await statPaseoConfigPath(tempDir);
+  // Different sizes distinguish revisions even when filesystem timestamps coincide.
+  it("rejects stale writes when the current revision changed before rename", async () => {
+    writeFileSync(join(tempDir, "paseo.json"), JSON.stringify({ worktree: { setup: "old" } }));
+    const expectedRevision = await statPaseoConfigPath(tempDir);
+    writeFileSync(
+      join(tempDir, "paseo.json"),
+      JSON.stringify({ worktree: { setup: "new revision" } }),
+    );
+    const currentRevision = await statPaseoConfigPath(tempDir);
 
-      const result = await writePaseoConfigForEdit({
-        repoRoot: tempDir,
-        config: { worktree: { setup: "from editor" } },
-        expectedRevision,
-      });
+    const result = await writePaseoConfigForEdit({
+      repoRoot: tempDir,
+      config: { worktree: { setup: "from editor" } },
+      expectedRevision,
+    });
 
-      expect(result).toEqual({
-        ok: false,
-        error: { code: "stale_project_config", currentRevision },
-      });
-      expect(readFileSync(join(tempDir, "paseo.json"), "utf8")).toBe(
-        JSON.stringify({ worktree: { setup: "new" } }),
-      );
-    },
-  );
+    expect(result).toEqual({
+      ok: false,
+      error: { code: "stale_project_config", currentRevision },
+    });
+    expect(readFileSync(join(tempDir, "paseo.json"), "utf8")).toBe(
+      JSON.stringify({ worktree: { setup: "new revision" } }),
+    );
+  });
 
   it("round-trips unknown top-level, worktree, and script-entry fields", async () => {
     const config = {

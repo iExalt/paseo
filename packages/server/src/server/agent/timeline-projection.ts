@@ -3,6 +3,12 @@ import type { AgentTimelineItem, ToolCallDetail } from "./agent-sdk-types.js";
 import { timelineItemIdentity } from "@getpaseo/protocol/timeline-identity";
 
 import type { AgentTimelineRow } from "./agent-timeline-store-types.js";
+import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
+
+// Whole-turn expansion is best effort. Oversized turns use ordinary pagination
+// rather than growing a single response beyond the client's 100 MiB frame limit.
+const WHOLE_TURN_WINDOW_MAX_BYTES = 8 * 1024 * 1024;
+const WHOLE_TURN_WINDOW_MAX_ROWS = 2048;
 
 export type TimelineProjectionMode = "canonical" | "projected";
 
@@ -427,7 +433,10 @@ export class TimelineProjection {
     const limit = Math.max(0, Math.floor(input.limit ?? 0));
     const requestedStart = limit === 0 ? 0 : Math.max(0, this.rows.length - limit);
     const coveredStart = this.spans[this.spanIndex(requestedStart)].start;
-    const start = input.wholeTurns ? this.wholeTurnWindowStart(coveredStart) : coveredStart;
+    const start = input.wholeTurns
+      ? this.wholeTurnWindow({ start: coveredStart, end: this.rows.length, extendRight: false })
+          .start
+      : coveredStart;
     return {
       entries: this.rows.slice(start),
       startSeq: this.rows[start].seqStart,
@@ -437,15 +446,67 @@ export class TimelineProjection {
     };
   }
 
-  private wholeTurnWindowStart(requestedStart: number): number {
+  private continuesTurnAt(index: number): boolean {
+    return (
+      index > 0 &&
+      index < this.rows.length &&
+      continuesProjectedTurn(this.rows[index - 1], this.rows[index])
+    );
+  }
+
+  private wholeTurnWindow(input: { start: number; end: number; extendRight: boolean }): {
+    start: number;
+    end: number;
+  } {
+    const { start: requestedStart, end: requestedEnd, extendRight } = input;
+    const fallback = { start: requestedStart, end: requestedEnd };
+    const extendsLeft =
+      this.continuesTurnAt(requestedStart) ||
+      this.spans[this.spanIndex(requestedStart)].start < requestedStart;
+    const extendsRight = extendRight && this.continuesTurnAt(requestedEnd);
+    // Most pages already end at turn boundaries; do not serialize them again.
+    if (!extendsLeft && !extendsRight) return fallback;
+    let rowCount = 0;
+    let bytes = 2;
+    const fits = (index: number): boolean => {
+      if (++rowCount > WHOLE_TURN_WINDOW_MAX_ROWS) return false;
+      const row = this.rows[index];
+      // Count JSON escaping and UTF-8, not just string length. Leave room for
+      // the provider field and separators added when constructing wire entries.
+      bytes +=
+        Buffer.byteLength(
+          JSON.stringify({ ...row, item: limitAgentTimelineItemContent(row.item) }),
+          "utf8",
+        ) + 128;
+      return bytes <= WHOLE_TURN_WINDOW_MAX_BYTES;
+    };
+    for (let index = requestedStart; index < requestedEnd; index++) {
+      if (!fits(index)) return fallback;
+    }
+
     let start = requestedStart;
     for (;;) {
-      while (start > 0 && continuesProjectedTurn(this.rows[start - 1], this.rows[start])) start--;
-      // Source coverage can pull in an earlier tool and therefore its entire run.
+      while (this.continuesTurnAt(start)) {
+        if (!fits(start - 1)) return fallback;
+        start--;
+      }
+      // Keep source-coverage spans intact. If an expansion exceeds the budget,
+      // revert the entire expansion instead of skipping interleaved tool rows.
       const coveredStart = this.spans[this.spanIndex(start)].start;
-      if (coveredStart === start) return start;
-      start = coveredStart;
+      if (coveredStart === start) break;
+      while (start > coveredStart) {
+        if (!fits(start - 1)) return fallback;
+        start--;
+      }
     }
+    let end = requestedEnd;
+    if (extendRight) {
+      while (this.continuesTurnAt(end)) {
+        if (!fits(end)) return fallback;
+        end++;
+      }
+    }
+    return { start, end };
   }
 
   private selectAfter(input: ProjectedTimelinePageOptions): ProjectedTimelinePageSelection {
@@ -496,16 +557,19 @@ export class TimelineProjection {
       }
       const limit = Math.max(0, Math.floor(input.limit ?? 0));
       const requestedStart = limit === 0 ? 0 : Math.max(0, low - limit);
-      const start = input.wholeTurns ? this.wholeTurnWindowStart(requestedStart) : requestedStart;
       // Choose the window before extending the right edge, so a prompt jump
       // cannot lose its target when the next turn is arbitrarily large.
-      if (input.wholeTurns) {
-        while (low < this.rows.length && continuesProjectedTurn(this.rows[low - 1], this.rows[low]))
-          low++;
-      }
+      const window = input.wholeTurns
+        ? this.wholeTurnWindow({ start: requestedStart, end: low, extendRight: true })
+        : { start: requestedStart, end: low };
       let selectedEnd = endSeq;
-      if (input.wholeTurns)
-        selectedEnd = low === this.rows.length ? input.bounds.maxSeq : this.rows[low].seqStart - 1;
+      if (window.end > low)
+        selectedEnd =
+          window.end === this.rows.length
+            ? input.bounds.maxSeq
+            : this.rows[window.end].seqStart - 1;
+      const start = window.start;
+      low = window.end;
       return {
         entries: this.rows.slice(start, low),
         startSeq: this.rows[start]?.seqStart ?? null,

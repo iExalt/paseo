@@ -1,7 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 import { expect, test as baseTest } from "../support/fixtures";
 import {
-  awaitToolCall,
+  awaitToolCallSummary,
   expectAgentIdle,
   expectAgentReadyToInterrupt,
   expectAgentSurfacesIdle,
@@ -305,7 +305,8 @@ async function expectRejectedSubmissionRestored(
     await expect(page.getByTestId("turn-working-indicator")).toBeVisible();
     return;
   }
-  await expect(page.getByRole("button", { name: "Send message" })).toBeEnabled();
+  // Exact: the dev error toast for the rejection is a button named "…Failed to send message…".
+  await expect(page.getByRole("button", { name: "Send message", exact: true })).toBeEnabled();
   await expect(page.getByTestId("turn-working-indicator")).toHaveCount(0);
 }
 
@@ -337,7 +338,7 @@ async function selectSteerInSettings(page: Page): Promise<void> {
   await selectSendBehaviorInSettings(page, "Steer", "steer");
 }
 
-/** Steer is the default, so the interrupt path only gets exercised by opting back into it. */
+/** Queue is the default, so the interrupt path only gets exercised by opting into it. */
 async function configureInterruptInSettings(page: Page): Promise<void> {
   const modifier = process.platform === "darwin" ? "Meta" : "Control";
   await page.keyboard.press(`${modifier}+Comma`);
@@ -376,7 +377,7 @@ async function replaySteeredSleepTurnInBrowser(
     prompt: `Replay a ${shape}-shaped foreground shell tool call while the user steers this turn.`,
   });
   try {
-    await expect(page.getByTestId("tool-call-badge").last()).toBeVisible({ timeout: 30_000 });
+    await awaitToolCallSummary(page, "Ran 1 command");
     await expectComposerVisible(page);
     await submitMessage(page, "hello");
 
@@ -681,7 +682,7 @@ async function expectStaleCanonicalPagePreservesNewerLiveOutput(
     await openAgentRoute(page, { workspaceId: agent.workspaceId, agentId: agent.agentId });
     await expectComposerVisible(page);
     await agent.client.sendAgentMessage(agent.agentId, "End the snapshot at a tool call.");
-    await awaitToolCall(page, "read");
+    await awaitToolCallSummary(page, "Read");
     await page
       .getByRole("button", { name: /stop|cancel/i })
       .first()
@@ -1039,6 +1040,10 @@ test.describe("Agent message submission", () => {
     try {
       await openAgentRoute(page, agent);
       await expectComposerVisible(page);
+      // Queue is the default; under it Enter queues instead of submitting into the turn.
+      await configureSteerInSettings(page);
+      await page.goBack();
+      await expectComposerVisible(page);
       await submitMessage(page, "Keep running while the next prompt is submitted.");
       await expectAgentReadyToInterrupt(page);
 
@@ -1181,7 +1186,7 @@ test.describe("Agent message submission", () => {
         hasText: "I'll take a look at the scroll anchor behavior you described.",
       }),
     ).toBeVisible();
-    await awaitToolCall(page, "Read");
+    await awaitToolCallSummary(page, "Read");
     await finishTimelineRowStabilityCheck();
   });
 
