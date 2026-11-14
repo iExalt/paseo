@@ -4,6 +4,7 @@ import { Scan, ZoomIn, ZoomOut } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import {
   iconButtonChromeGlyphSize,
   iconButtonChromeStyle,
@@ -83,6 +84,7 @@ function ViewportToolbarButton({
 }) {
   const Icon = action.icon;
   const isCompact = useIsCompactFormFactor();
+  const shown = visible || isCompact;
   const iconSize = iconButtonChromeGlyphSize("small", isCompact);
   const buttonStyle = React.useCallback(
     ({ hovered, pressed }: { hovered?: boolean; pressed: boolean }) =>
@@ -91,9 +93,9 @@ function ViewportToolbarButton({
         compact: isCompact,
         state: { hovered, pressed },
         disabled,
-        style: visible ? styles.button : styles.buttonHidden,
+        style: [styles.button, inlineUnistylesStyle({ opacity: shown ? 1 : 0 })],
       }),
-    [disabled, isCompact, visible],
+    [disabled, isCompact, shown],
   );
   return (
     <Pressable
@@ -102,6 +104,7 @@ function ViewportToolbarButton({
       disabled={disabled}
       hitSlop={isCompact ? 6 : 4}
       onPress={action.onPress}
+      pointerEvents={shown ? "auto" : "none"}
       style={buttonStyle}
       testID={action.testID}
     >
@@ -124,13 +127,6 @@ const styles = StyleSheet.create((theme) => ({
   },
   button: {
     backgroundColor: theme.colors.surface2,
-    opacity: 1,
-    pointerEvents: "auto",
-  },
-  buttonHidden: {
-    backgroundColor: theme.colors.surface2,
-    opacity: 0,
-    pointerEvents: "none",
   },
   icon: { color: theme.colors.foregroundMuted },
   iconHovered: { color: theme.colors.foreground },
