@@ -512,6 +512,7 @@ jobs:
       - name: Generate fork Android project
         working-directory: packages/app
         run: npx expo prebuild --platform android --no-install --non-interactive
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "27.0.1"
@@ -680,6 +681,7 @@ jobs:
         with:
           name: release-android-unsigned
           path: ${{ runner.temp }}/release-android-unsigned
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
         with:
           distribution: temurin
           java-version: "27.0.1"
