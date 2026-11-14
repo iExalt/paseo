@@ -3062,6 +3062,9 @@ export class VoiceAssistantWebSocketServer {
       agentTitle: storedAgent?.title,
       assistantMessage,
       permissionRequest: findLatestPermissionRequest(agent.pendingPermissions),
+      ...(params.reason === "finished"
+        ? { preview: this.agentManager.getNotificationPreview(params.agentId) }
+        : {}),
     });
 
     const delivery = await decideNotificationDelivery(this.notificationPolicySources(), {
