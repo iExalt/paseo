@@ -10,6 +10,11 @@ import {
 } from "@/types/stream";
 import { summarizeToolCalls, type OverviewSummary } from "@/tool-calls/detail-level/overview/model";
 
+export interface TurnSummary {
+  tools: OverviewSummary;
+  messageCount: number;
+}
+
 export interface TurnCollapse {
   tail: StreamItem[];
   /** Rows of expanded turns, which render inside the turn's indent rail. */
@@ -43,13 +48,15 @@ const EMPTY_HOSTS: ReadonlyMap<string, string> = new Map();
 function summarizeTurn(
   items: readonly StreamItem[],
   getGroupedCalls: CollapseTurnsInput["getGroupedCalls"],
-): OverviewSummary {
+): TurnSummary {
   const calls: (ToolCallItem | ThoughtItem)[] = [];
+  const messageIds = new Set<string>();
   for (const item of items) {
+    if (getAssistantReply(item)) messageIds.add(getStreamItemMessageId(item));
     if ((item.kind === "tool_call" || item.kind === "thought") && !isTurnTrigger(item))
       calls.push(...(getGroupedCalls(item.id) ?? [item]));
   }
-  return summarizeToolCalls(calls);
+  return { tools: summarizeToolCalls(calls), messageCount: messageIds.size };
 }
 
 function hasWork(tools: OverviewSummary): boolean {
@@ -77,14 +84,17 @@ function summaryRow(
   expanded: boolean,
   tools: OverviewSummary,
   previous: TurnSummaryItem | undefined,
-): TurnSummaryItem {
+  messageCount: number,
+): TurnSummaryItem & { messageCount: number } {
   if (
     previous &&
     previous.expanded === expanded &&
+    "messageCount" in previous &&
+    previous.messageCount === messageCount &&
     hasSameWork(previous.tools, tools) &&
     hasSamePosition(previous.timelineCursor, host.timelineCursor)
   ) {
-    return previous;
+    return previous as TurnSummaryItem & { messageCount: number };
   }
   return {
     kind: "turn_summary",
@@ -97,6 +107,7 @@ function summaryRow(
     hostId: host.id,
     expanded,
     tools,
+    messageCount,
   };
 }
 
@@ -149,7 +160,8 @@ export function collapseTurns(input: CollapseTurnsInput): TurnCollapse {
       return;
     }
     const folded = tail.slice(runStart, replyIndex);
-    const tools = summarizeTurn(folded, input.getGroupedCalls);
+    const work = summarizeTurn(folded, input.getGroupedCalls);
+    const { tools, messageCount } = work;
     if (!hasWork(tools) && !folded.some((item) => getAssistantReply(item))) {
       output.push(...tail.slice(runStart, runEnd));
       return;
@@ -160,6 +172,7 @@ export function collapseTurns(input: CollapseTurnsInput): TurnCollapse {
       expanded,
       tools,
       input.previousSummaryRowsByHostId.get(host.id),
+      messageCount,
     );
     summaryRowsByHostId.set(host.id, summary);
     const revealed = expanded
