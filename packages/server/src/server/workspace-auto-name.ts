@@ -3,6 +3,7 @@ import type { FirstAgentContext } from "@getpaseo/protocol/messages";
 
 import { resolveFirstAgentPromptTitle } from "./agent/create-agent-title.js";
 import type { AgentManager } from "./agent/agent-manager.js";
+import type { AgentStorage } from "./agent/agent-storage.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
@@ -24,6 +25,7 @@ type CurrentSelection = GenerateBranchNameFromFirstAgentContextOptions["currentS
 
 interface WorkspaceAutoNameOptions {
   agentManager: AgentManager;
+  agentStorage: Pick<AgentStorage, "listByWorkspace">;
   workspaceRegistry: Pick<WorkspaceRegistry, "update">;
   workspaceGitService: WorkspaceGitService;
   providerSnapshotManager: ProviderSnapshotManager;
@@ -41,6 +43,7 @@ interface ScheduleContext {
 
 export class WorkspaceAutoName {
   private readonly agentManager: AgentManager;
+  private readonly agentStorage: Pick<AgentStorage, "listByWorkspace">;
   private readonly workspaceRegistry: Pick<WorkspaceRegistry, "update">;
   private readonly workspaceGitService: WorkspaceGitService;
   private readonly providerSnapshotManager: ProviderSnapshotManager;
@@ -53,6 +56,7 @@ export class WorkspaceAutoName {
 
   constructor(options: WorkspaceAutoNameOptions) {
     this.agentManager = options.agentManager;
+    this.agentStorage = options.agentStorage;
     this.workspaceRegistry = options.workspaceRegistry;
     this.workspaceGitService = options.workspaceGitService;
     this.providerSnapshotManager = options.providerSnapshotManager;
@@ -146,6 +150,10 @@ export class WorkspaceAutoName {
       ...(result.renamed ? { branch: result.branchName } : {}),
       promptTitle: resolveFirstAgentPromptTitle(input.firstAgentContext),
     });
+    await this.applyGeneratedAgentTitles(input.workspace.workspaceId, {
+      title: generatedTitle,
+      promptTitle: resolveFirstAgentPromptTitle(input.firstAgentContext),
+    });
     if (result.renamed) {
       await this.gitMutation.notifyGitMutation(worktreeRoot, "rename-branch");
     }
@@ -173,6 +181,10 @@ export class WorkspaceAutoName {
       title,
       promptTitle: resolveFirstAgentPromptTitle(input.firstAgentContext),
     });
+    await this.applyGeneratedAgentTitles(input.workspaceId, {
+      title,
+      promptTitle: resolveFirstAgentPromptTitle(input.firstAgentContext),
+    });
     await this.emitWorkspaceUpdateForWorkspaceId(input.workspaceId);
   }
 
@@ -192,6 +204,27 @@ export class WorkspaceAutoName {
         updatedAt: new Date().toISOString(),
       };
     });
+  }
+
+  // The first agent's tab starts with the prompt's first line as its title, which can be
+  // noise such as a code fence. Give it the generated title unless it was renamed since.
+  private async applyGeneratedAgentTitles(
+    workspaceId: string,
+    input: { title: string; promptTitle: string | null },
+  ): Promise<void> {
+    if (!input.promptTitle) {
+      return;
+    }
+    const records = await this.agentStorage.listByWorkspace(workspaceId);
+    for (const record of records) {
+      if (record.archivedAt || record.title !== input.promptTitle) {
+        continue;
+      }
+      if (!this.agentManager.getAgent(record.id)) {
+        continue;
+      }
+      await this.agentManager.setTitle(record.id, input.title);
+    }
   }
 
   private generateFromContext(input: {
