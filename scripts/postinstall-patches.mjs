@@ -40,14 +40,7 @@ const patchedPackages = [
   // https://github.com/jpudysz/react-native-unistyles/pull/1203.
   // Adaptive themes: keep until colorScheme reads no longer consume listener-owned media changes.
   // withUnistyles: also keep the uniProps filter until upstream consumes its control prop.
-  // Android configuration: backport 3.5.3; remove the two NativePlatform hunks at >= 3.5.3.
-  // https://github.com/jpudysz/react-native-unistyles/compare/v3.5.2...v3.5.3
-  // Layout constraints: backport of https://github.com/jpudysz/react-native-unistyles/pull/1357
-  // (commit from the root the commit hands us, so a concurrent window-size commit is kept).
-  // Remove the ShadowTreeManager hunk when the installed release includes that PR.
-  // Web stylesheet: backport of https://github.com/jpudysz/react-native-unistyles/pull/1354
-  // (3.8.0). Classes are added and removed as CSSOM rules, not by rewriting the style tag, which
-  // made the browser restyle the whole document. Remove the web/css hunks at >= 3.8.0.
+  // Android: retain the project NDK pin; configuration fixes are upstream in 3.8.1.
   {
     nodeModulesPath: "node_modules/react-native-unistyles",
     patchPrefix: "react-native-unistyles+",
