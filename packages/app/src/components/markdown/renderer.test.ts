@@ -573,7 +573,7 @@ it("keeps paragraph, heading and table-row boundaries when stripping HTML", () =
 it("normalizes images following HTML code in the same HTML block", () => {
   const prepared = prepareMarkdownSource('<code>\nx\n</code>\n<img src="shot.png">');
   expect(prepared.images.map((image) => image.source)).toEqual(["shot.png"]);
-  expect(prepared.render(new Map([["shot.png", "blob:shot"]]))).toContain("![](<blob:shot>)");
+  expect(prepared.render(new Map([["shot.png", "blob:shot"]]))).toContain("![Image](<blob:shot>)");
   expect(prepared.render()).toContain("`\nx\n`");
 });
 
@@ -819,3 +819,27 @@ it.each([false, true])(
     expect(markdownStyle.codeBlock?.fontSize).toBe(theme.fontSize.code);
   },
 );
+
+it("shows a readable fallback for unavailable images without alt text", () => {
+  const source =
+    "Before ![](missing.png) and ![][broken] after\n\n[broken]: https://example.com/broken.png";
+  const prepared = prepareMarkdownSource(source);
+  expect(
+    prepared.render(new Map(), new Set(["missing.png", "https://example.com/broken.png"])),
+  ).toContain("Before Image unavailable and Image unavailable after");
+  expect(prepareMarkdownSource("![](badge.svg)", undefined, { supportsSvg: false }).render()).toBe(
+    "Image unavailable",
+  );
+});
+
+it("gives unlabelled images readable names without changing the source", () => {
+  const source = "![](https://example.com/a.png) ![][ref]\n\n[ref]: data:image/png;base64,AAAA";
+  const prepared = prepareMarkdownSource(source);
+  expect(source).toContain("![](");
+  const rendered = prepared.render();
+  expect(rendered).toContain("![Image](<https://example.com/a.png>)");
+  expect(rendered).toContain("![Image](<data:image/png;base64,AAAA>)");
+  expect(
+    prepareMarkdownSource("![A chart](shot.png)").render(new Map([["shot.png", "blob:123"]])),
+  ).toBe("![A chart](<blob:123>)");
+});

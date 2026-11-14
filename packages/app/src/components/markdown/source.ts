@@ -100,6 +100,10 @@ export interface MarkdownImage {
   end: number;
 }
 
+function imageLabel(alt: string, fallback: string): string {
+  return alt.trim() ? alt : fallback;
+}
+
 function workspaceHoverTitle(link: Link, markup: string, workspaceRoot?: string): string | null {
   if (link.title !== null || !workspaceRoot || !link.url.startsWith(`${workspaceRoot}/`))
     return null;
@@ -112,7 +116,7 @@ function workspaceHoverTitle(link: Link, markup: string, workspaceRoot?: string)
 export function prepareMarkdownSource(
   source: string,
   workspaceRoot?: string,
-  options: { supportsSvg?: boolean } = {},
+  options: { supportsSvg?: boolean; imageLabel?: string; imageUnavailableLabel?: string } = {},
 ) {
   source = normalizeMarkdownHtml(source);
   const images: MarkdownImage[] = [];
@@ -151,7 +155,13 @@ export function prepareMarkdownSource(
       options.supportsSvg === false &&
       /(?:\.svg(?:[?#]|$)|^data:image\/svg\+xml)/i.test(target.url)
     ) {
-      edits.push({ start, end, text: escapeMarkdownText(node.alt ?? "") });
+      edits.push({
+        start,
+        end,
+        text: escapeMarkdownText(
+          imageLabel(node.alt ?? "", options.imageUnavailableLabel ?? "Image unavailable"),
+        ),
+      });
       return;
     }
     if (target)
@@ -249,15 +259,20 @@ export function prepareMarkdownSource(
       for (const image of images) {
         const unavailable = unavailableImages.has(image.source);
         const pending = pendingImages.has(image.source);
-        if (!unavailable && !pending && /^(https?:|data:|blob:)/i.test(image.source)) continue;
-        let url = unavailable ? undefined : urls.get(image.source);
+        const direct = /^(https?:|data:|blob:)/i.test(image.source);
+        if (!unavailable && !pending && direct && image.alt.trim()) continue;
+        let url = unavailable
+          ? undefined
+          : (urls.get(image.source) ?? (direct ? image.source : undefined));
         if (pending && !unavailable) url = PENDING_MARKDOWN_IMAGE;
         replacements.push({
           start: image.start,
           end: image.end,
           text: url
-            ? `![${image.alt.replace(/[[\]\\]/g, "\\$&")}](<${url}>${image.title ? ` ${JSON.stringify(image.title)}` : ""})`
-            : escapeMarkdownText(image.alt),
+            ? `![${imageLabel(image.alt, options.imageLabel ?? "Image").replace(/[[\]\\]/g, "\\$&")}](<${url}>${image.title ? ` ${JSON.stringify(image.title)}` : ""})`
+            : escapeMarkdownText(
+                imageLabel(image.alt, options.imageUnavailableLabel ?? "Image unavailable"),
+              ),
         });
       }
       let result = source;
