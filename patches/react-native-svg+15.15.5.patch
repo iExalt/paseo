@@ -1,3 +1,97 @@
+diff --git a/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/SvgView.java b/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/SvgView.java
+index f04da14..f34724e 100644
+--- a/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/SvgView.java
++++ b/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/SvgView.java
+@@ -131,6 +131,20 @@ public class SvgView extends ReactViewGroup implements ReactCompoundView, ReactC
+       return;
+     }
+     super.onDraw(canvas);
++    // Plain shape trees (icons) record straight into the hardware canvas. Rasterizing each
++    // SvgView into its own bitmap on the main thread, then uploading it, dominated the first
++    // frame of a chat full of icons. Masks, clips, filters, markers and group opacity read the
++    // canvas matrix, which a recording canvas does not report, so they keep the bitmap path.
++    if (toDataUrlTask == null && canDrawDirectly()) {
++      if (mBitmap != null) {
++        mBitmap.recycle();
++        mBitmap = null;
++      }
++      int count = canvas.save();
++      drawChildren(canvas);
++      canvas.restoreToCount(count);
++      return;
++    }
+     if (mBitmap == null) {
+       mBitmap = drawOutput();
+     }
+@@ -150,6 +164,53 @@ public class SvgView extends ReactViewGroup implements ReactCompoundView, ReactC
+     }
+   }
+ 
++  private boolean canDrawDirectly() {
++    if (getWidth() < 1 || getHeight() < 1) {
++      return false;
++    }
++    for (int i = 0; i < getChildCount(); i++) {
++      if (!isDirectlyDrawable(getChildAt(i))) {
++        return false;
++      }
++    }
++    return true;
++  }
++
++  private static boolean isDirectlyDrawable(View view) {
++    Class<?> type = view.getClass();
++    boolean isShape =
++        type == PathView.class
++            || type == CircleView.class
++            || type == EllipseView.class
++            || type == LineView.class
++            || type == RectView.class;
++    if (!isShape && type != GroupView.class) {
++      return false;
++    }
++    RenderableView node = (RenderableView) view;
++    if (node.mMask != null
++        || node.hasClipPath()
++        || node.mFilter != null
++        || node.mMarkerStart != null
++        || node.mMarkerMid != null
++        || node.mMarkerEnd != null) {
++      return false;
++    }
++    if (type != GroupView.class) {
++      return true;
++    }
++    if (node.mOpacity != 1) {
++      return false;
++    }
++    GroupView group = (GroupView) view;
++    for (int i = 0; i < group.getChildCount(); i++) {
++      if (!isDirectlyDrawable(group.getChildAt(i))) {
++        return false;
++      }
++    }
++    return true;
++  }
++
+   private Runnable toDataUrlTask = null;
+ 
+   void setToDataUrlTask(Runnable task) {
+diff --git a/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/VirtualView.java b/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/VirtualView.java
+index 4d71806..102c5fe 100644
+--- a/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/VirtualView.java
++++ b/node_modules/react-native-svg/android/src/main/java/com/horcrux/svg/VirtualView.java
+@@ -63,6 +63,10 @@ public abstract class VirtualView extends ReactViewGroup {
+ 
+   int mClipRule;
+   private @Nullable String mClipPath;
++
++  boolean hasClipPath() {
++    return mClipPath != null;
++  }
+   @Nullable String mMask;
+   @Nullable String mMarkerStart;
+   @Nullable String mMarkerMid;
 diff --git a/node_modules/react-native-svg/lib/commonjs/lib/extract/extractTransform.js b/node_modules/react-native-svg/lib/commonjs/lib/extract/extractTransform.js
 index f22cca3..0a73681 100644
 --- a/node_modules/react-native-svg/lib/commonjs/lib/extract/extractTransform.js
