@@ -49,6 +49,7 @@ class AgentHeldMessages {
     private readonly onEmpty: () => void,
   ) {}
 
+  hold(params: HoldMessageParams): Promise<HeldMessageOutcome> {
     let settle!: (outcome: HeldMessageOutcome) => void;
     const outcome = new Promise<HeldMessageOutcome>((resolve) => {
       settle = resolve;
@@ -70,6 +71,7 @@ class AgentHeldMessages {
       "agent.held_message.held",
     );
     this.pump();
+    return outcome;
   }
 
   outcomeOf(messageId: string): Promise<HeldMessageOutcome> | null {
@@ -197,6 +199,7 @@ export function holdMessage(
   agentId: string,
   params: HoldMessageParams,
   logger: Logger,
+): Promise<HeldMessageOutcome> {
   const agents = agentsFor(manager);
   let held = agents.get(agentId);
   if (!held) {
@@ -206,6 +209,7 @@ export function holdMessage(
     agents.set(agentId, created);
     held = created;
   }
+  return held.hold(params);
 }
 
 /** Resolves once a held message is dispatched or discarded; null when it is not held. */
