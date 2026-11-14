@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { createMarkdownParser } from "./markdown-parser";
 
-// Every string markdown-it's typographer would rewrite, with the character it
-// would rewrite it to. Sourced from markdown-it/lib/rules_core/replacements.js
-// and smartquotes.js. `--flag` is deliberately absent: the en-dash rules need
+// Sequences handled by markdown-it's replacements and smartquotes rules.
+// `--flag` is deliberately absent: the en-dash rules need
 // whitespace or a word character on both sides, so a CLI flag after a space is
 // never touched and asserting on it would prove nothing.
 const REWRITTEN_BY_TYPOGRAPHER = [
@@ -13,8 +12,6 @@ const REWRITTEN_BY_TYPOGRAPHER = [
   "(R)",
   "(tm)",
   "(TM)",
-  "(p)",
-  "(P)",
   "+-",
   "two dots .. here",
   "wait for it...",
