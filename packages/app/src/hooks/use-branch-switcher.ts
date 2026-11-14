@@ -104,7 +104,7 @@ export function useBranchSwitcher({
           cancelLabel: t("branchSwitcher.later"),
         });
         if (!shouldRestore) return;
-        const popPayload = await operations.popStash(targetStash.index);
+        const popPayload = await operations.popStash(targetStash);
         if (popPayload.error) {
           toast.error(popPayload.error.message);
         } else {

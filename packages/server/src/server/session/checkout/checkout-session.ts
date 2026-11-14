@@ -683,6 +683,7 @@ export class CheckoutSession {
         cwd,
         timeout: 120_000,
       });
+      this.workspaceGitService.invalidateStashes();
       await this.gitMutation.notifyGitMutation(cwd, "stash-push");
       this.scheduleDiffRefresh(cwd);
       this.host.emit({
@@ -700,12 +701,25 @@ export class CheckoutSession {
   async handleStashPopRequest(
     msg: Extract<SessionInboundMessage, { type: "stash_pop_request" }>,
   ): Promise<void> {
-    const { cwd, stashIndex, requestId } = msg;
+    const { cwd, stashIndex, stashHash, requestId } = msg;
+    const stashRef = `stash@{${stashIndex}}`;
     try {
-      await runGitCommand(["stash", "pop", `stash@{${stashIndex}}`], {
+      if (stashHash !== undefined) {
+        // The stash stack is shared by every worktree of the repository, so the index the client
+        // read may now name another worktree's stash.
+        const { stdout } = await runGitCommand(["rev-parse", "--verify", stashRef], {
+          cwd,
+          timeout: 120_000,
+        });
+        if (stdout.trim() !== stashHash) {
+          throw new Error("The stash list changed since it was read. Refresh it and try again.");
+        }
+      }
+      await runGitCommand(["stash", "pop", stashRef], {
         cwd,
         timeout: 120_000,
       });
+      this.workspaceGitService.invalidateStashes();
       await this.gitMutation.notifyGitMutation(cwd, "stash-pop");
       this.scheduleDiffRefresh(cwd);
       this.host.emit({
@@ -713,6 +727,8 @@ export class CheckoutSession {
         payload: { cwd, success: true, error: null, requestId },
       });
     } catch (error) {
+      // A refused pop means the client's list is stale; let its refresh read the stack again.
+      this.workspaceGitService.invalidateStashes();
       this.host.emit({
         type: "stash_pop_response",
         payload: { cwd, success: false, error: toCheckoutError(error), requestId },
