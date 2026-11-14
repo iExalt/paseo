@@ -7,8 +7,12 @@ import {
   createAssistantImageFilePreviewAttachmentId,
 } from "./acquisition-cache";
 
+// A preview never needs more; the daemon refuses a larger file instead of streaming all of it.
+// The daemon also picks "image" by extension alone, so ![x](big.log) would otherwise be read whole.
+export const ASSISTANT_IMAGE_MAX_BYTES = 20 * 1024 * 1024;
+
 export interface AssistantImageFileAcquisitionPort {
-  readFile(cwd: string, path: string): Promise<FileReadResult>;
+  readFile(cwd: string, path: string, maxBytes: number): Promise<FileReadResult>;
   persist(input: {
     id: string;
     bytes: Uint8Array;
@@ -44,7 +48,7 @@ export function createAssistantImageFileAcquisition(input: {
       if (!port) {
         throw new Error(input.unavailableMessage);
       }
-      const file = await port.readFile(resolution.cwd, resolution.path);
+      const file = await port.readFile(resolution.cwd, resolution.path, ASSISTANT_IMAGE_MAX_BYTES);
       if (file.kind !== "image") {
         throw new Error(input.unavailableMessage);
       }

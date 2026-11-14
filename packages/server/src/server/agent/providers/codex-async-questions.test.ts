@@ -9,6 +9,9 @@ import {
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
 import { AgentManager } from "../agent-manager.js";
+import { startAgentRun } from "../agent-prompt.js";
+import { respondToAgentPermission } from "../permission-response.js";
+import { waitForHeldMessage } from "../held-messages.js";
 
 const questionItem = {
   type: "agentMessage",
@@ -216,6 +219,70 @@ test("manager publishes and saves the provider state after rewind", async () => 
     expect(snapshot.persistence).toEqual(session.describePersistence());
     expect(snapshot.persistence?.sessionId).toBe("forked-thread");
   } finally {
+  } finally {
+    await manager.closeAgent(agent.id);
+  }
+});
+
+test("an idle question answer starts before queued messages without canceling either turn", async () => {
+  const { session, appServer, ask, finish } = await setup();
+  await ask();
+  await finish();
+  const { manager, agent } = await manage(session);
+  const events: AgentStreamEvent[] = [];
+  const unsubscribe = manager.subscribe(
+    (event) => {
+      if (event.type === "agent_stream") events.push(event.event);
+    },
+    { agentId: agent.id, replayState: false },
+  );
+  const logger = createTestLogger();
+  const starts = () => appServer.requests().filter((r) => r.method === "turn/start");
+  try {
+    await expect(
+      startAgentRun(manager, agent.id, "Queued work", logger, {
+        activeTurnBehavior: "queue",
+        runOptions: { clientMessageId: "queued-work" },
+      }),
+    ).resolves.toEqual({ disposition: "queued" });
+    const queued = waitForHeldMessage(manager, agent.id, "queued-work");
+    expect(queued).not.toBeNull();
+
+    await respondToAgentPermission({
+      agentManager: manager,
+      agentId: agent.id,
+      requestId: "permission-async-question-1",
+      response: answer,
+      logger,
+    });
+    expect(events.filter((event) => event.type === "turn_failed")).toEqual([]);
+    expect(starts()).toHaveLength(2);
+    expect(starts()[1]).toMatchObject({
+      params: {
+        input: [{ type: "text", text: "Answers to your questions:\n\nWhich color?\nGreen" }],
+      },
+    });
+    expect(manager.getPendingPermissions(agent.id)).toEqual([]);
+    expect(waitForHeldMessage(manager, agent.id, "queued-work")).toBe(queued);
+
+    appServer.startsTurn({ threadId: "thread-1", turnId: "answer-turn" });
+    appServer.completeTurn();
+    await expect(queued).resolves.toBe("dispatched");
+    await expect.poll(() => starts().length).toBe(3);
+    expect(starts()[2]).toMatchObject({
+      params: {
+        input: [{ type: "text", text: "Queued work" }],
+      },
+    });
+    appServer.startsTurn({ threadId: "thread-1", turnId: "queued-turn" });
+    appServer.completeTurn();
+    await expect.poll(() => manager.hasInFlightRun(agent.id)).toBe(false);
+    expect(
+      events.filter((event) => event.type === "turn_failed" || event.type === "turn_canceled"),
+    ).toEqual([]);
+    expect(appServer.requests().filter((r) => r.method === "turn/interrupt")).toEqual([]);
+  } finally {
+    unsubscribe();
     await manager.closeAgent(agent.id);
   }
 });
