@@ -4,6 +4,7 @@ import {
   computeCanStartDictation,
   type MessageInputEnterContext,
   resolveActiveSendBehavior,
+  resolveImmediateTurnBehavior,
   resolveComposerSurfacePresentation,
   resolveComposerSurfaceText,
   resolveGlyphRailOffset,
@@ -195,10 +196,16 @@ describe("dictation transcript behavior", () => {
 });
 
 describe("composer send behavior", () => {
-  it("sends immediately when queue mode cannot advance past a permission", () => {
-    expect(resolveActiveSendBehavior("queue", true)).toBe("interrupt");
+  it("steers immediately when queue mode cannot advance past a permission", () => {
+    expect(resolveActiveSendBehavior("queue", true)).toBe("steer");
     expect(resolveActiveSendBehavior("queue", false)).toBe("queue");
-    expect(resolveActiveSendBehavior("steer", true)).toBe("steer");
+    expect(resolveActiveSendBehavior("interrupt", true)).toBe("interrupt");
+  });
+
+  it("interrupts a running turn only when the setting is Interrupt", () => {
+    expect(resolveImmediateTurnBehavior("interrupt")).toBe("interrupt");
+    expect(resolveImmediateTurnBehavior("steer")).toBe("steer");
+    expect(resolveImmediateTurnBehavior("queue")).toBe("steer");
   });
 
   function actions() {
