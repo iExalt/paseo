@@ -72,6 +72,19 @@ async function expectAgentAbsentFromActiveList(agentId: string): Promise<void> {
     .toBe(false);
 }
 
+async function expectWorkspaceAbsentFromActiveList(workspaceId: string | undefined): Promise<void> {
+  if (!workspaceId) throw new Error("Agent has no workspace");
+  await expect
+    .poll(
+      async () => {
+        const workspaces = await ctx.client.fetchWorkspaces();
+        return workspaces.entries.map((workspace) => workspace.id).includes(workspaceId);
+      },
+      { timeout: 10000, interval: 100 },
+    )
+    .toBe(false);
+}
+
 async function expectAgentPresentInActiveList(agentId: string): Promise<void> {
   const active = await ctx.client.fetchAgents();
   expect(active.entries.map((entry) => entry.agent.id)).toContain(agentId);
@@ -123,7 +136,6 @@ async function createAgentInBranchOffWorktree(options?: {
   return { repoDir, agentId: created.id, worktreePath: created.cwd };
 }
 
-test("create_agent_request creates a worktree and auto-archives both after the first turn", async () => {
   const repoDir = createGitRepo();
   const worktree: CreateAgentWorktreeTarget = {
     mode: "branch-off",
@@ -156,18 +168,11 @@ test("create_agent_request creates a worktree and auto-archives both after the f
 
   await ctx.client.waitForFinish(created.id, 10000);
 
-  // Auto-archive is asynchronous after the agent turns complete; poll until the
-  // last-reference worktree directory is gone.
   await expectAgentAbsentFromActiveList(created.id);
-  await expect.poll(() => existsSync(created.cwd), { timeout: 10000, interval: 100 }).toBe(false);
-  // Archived tabs can continue asking for history, and those reads are served from
-  // persisted state. They must not recreate the removed worktree or its workspace
-  // observation, and must not compromise the next agent lifecycle.
   const staleTimelineReads = await Promise.allSettled(
     Array.from({ length: 10 }, () => ctx.client.fetchAgentTimeline(created.id, { limit: 20 })),
   );
   expect(staleTimelineReads.every((result) => result.status === "fulfilled")).toBe(true);
-  expect(existsSync(created.cwd)).toBe(false);
   expect((await ctx.client.fetchWorkspaces()).entries).toHaveLength(0);
   const subsequent = await ctx.client.createAgent({
     config: { ...getFullAccessConfig("codex"), cwd: repoDir },
@@ -221,7 +226,6 @@ test("create_agent_request auto-archives a nested workspace from an existing Pas
       { timeout: 10000, interval: 100 },
     )
     .toBe(false);
-  await expect.poll(() => existsSync(created.cwd), { timeout: 10000, interval: 100 }).toBe(false);
   expect(existsSync(source.worktreePath)).toBe(true);
 
   await ctx.client.archivePaseoWorktree({ worktreePath: source.worktreePath });
@@ -280,7 +284,7 @@ test("failed nested worktree creation cleans up the created workspace and backin
   await ctx.client.archivePaseoWorktree({ worktreePath: source.worktreePath });
 }, 30000);
 
-test("create_agent_request with autoArchive archives only the agent when no worktree was created", async () => {
+test("create_agent_request with autoArchive archives its local workspace while retaining the checkout", async () => {
   const repoDir = createGitRepo();
   const created = await ctx.client.createAgent({
     config: {
@@ -298,6 +302,8 @@ test("create_agent_request with autoArchive archives only the agent when no work
   expect(archived.entries.map((entry) => entry.agent.id)).toContain(created.id);
   const worktrees = await ctx.client.getPaseoWorktreeList({ cwd: repoDir });
   expect(worktrees.worktrees).toEqual([]);
+  await expectWorkspaceAbsentFromActiveList(created.workspaceId);
+  expect(existsSync(repoDir)).toBe(true);
 });
 
 test("create_agent_request with autoArchive archives an agent whose first turn fails", async () => {

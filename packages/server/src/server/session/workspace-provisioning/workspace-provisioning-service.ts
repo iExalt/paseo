@@ -2,6 +2,7 @@ import type { PluginLifecycle } from "../../plugins/lifecycle/index.js";
 import { describeHookWorkspace } from "../../plugins/lifecycle/index.js";
 import { stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { withWorkspaceLifecycleLock } from "../../workspace-lifecycle-lock.js";
 import { withWorktreePathLock } from "../../../utils/worktree-path-lock.js";
 import type { ProjectCheckoutLitePayload } from "@getpaseo/protocol/messages";
 import type { Logger } from "pino";
@@ -384,12 +385,17 @@ export function createWorkspaceProvisioningService(deps: {
           Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
           left.workspaceId.localeCompare(right.workspaceId),
       );
-    const active = workspaces.find((workspace) => !workspace.archivedAt);
-    if (active) return refreshWorkspaceRecord(active);
-    const archived = workspaces.find((workspace) => workspace.archivedAt);
-    if (archived) {
-      const project = await projectRegistry.get(archived.projectId);
-      if (project && !project.archivedAt) return ensureWorkspaceRecordUnarchived(archived);
+    const selected = workspaces.find((workspace) => !workspace.archivedAt) ?? workspaces[0];
+    if (selected) {
+      return withWorkspaceLifecycleLock([selected.workspaceId], async () => {
+        const current = await workspaceRegistry.get(selected.workspaceId);
+        if (current && !current.archivedAt) return refreshWorkspaceRecord(current);
+        if (current) {
+          const project = await projectRegistry.get(current.projectId);
+          if (project && !project.archivedAt) return ensureWorkspaceRecordUnarchived(current);
+        }
+        return createWorkspaceForDirectory(normalizedCwd);
+      });
     }
     return createWorkspaceForDirectory(normalizedCwd);
   }
@@ -427,6 +433,10 @@ export function createWorkspaceProvisioningService(deps: {
   async function ensureWorkspaceRecordUnarchived(
     workspace: PersistedWorkspaceRecord,
   ): Promise<PersistedWorkspaceRecord> {
+    // Recovery and path discovery hold this workspace's lifecycle lock.
+    const current = await workspaceRegistry.get(workspace.workspaceId);
+    if (!current) throw new Error(`Unknown workspace: ${workspace.workspaceId}`);
+    workspace = current;
     const project = await projectRegistry.get(workspace.projectId);
     if (!project) throw new Error(`Unknown project: ${workspace.projectId}`);
     const timestamp = new Date().toISOString();
