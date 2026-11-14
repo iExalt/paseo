@@ -4,6 +4,8 @@ import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { runArchiveCommand } from "./archive.js";
 import { runCreateCommand } from "./create.js";
 import { runInspectCommand } from "./inspect.js";
+import { createWorkspaceLabelCommand } from "./label.js";
+import { runRecoverCommand } from "./recover.js";
 import { runLsCommand } from "./ls.js";
 import { runRenameCommand } from "./rename.js";
 import { runSetupCommand } from "./setup.js";
@@ -111,6 +113,15 @@ export function createWorkspaceCommand(): Command {
       .argument("<workspace-id>", "Workspace id"),
   ).action(withOutput(runArchiveCommand));
 
+  workspace.addCommand(createWorkspaceLabelCommand());
+  addJsonAndDaemonHostOptions(
+    workspace
+      .command("recover")
+      .allowExcessArguments(false)
+      .description("Restore a recoverable workspace")
+      .argument("<workspace-id>")
+      .option("--inspect", "Read recovery availability without restoring"),
+  ).action(withOutput(runRecoverCommand));
   return workspace;
 }
 

@@ -39,6 +39,10 @@ and optional attention fields. agent status --json nests details under snapshot.
 workspace ls/inspect --json retain workspaceId and expose the full host payload
 under descriptor. workspace inspect requires an exact ID and includes background
 workspaces. workspace setup <id> --status reads setup without running it.
+workspace label ls/update/delete manage the host catalog. label create requires
+--workspace and --color: it creates and assigns, retaining existing catalog colors.
+label delete needs --force; --inspect reads the affected count without deleting.
+workspace recover <id> --inspect reads recovery state; omit --inspect to restore.
 prime always prints text, even with --json.
 
 Timeline: agent logs <id> --json returns complete projected entries and page metadata.
