@@ -2026,6 +2026,7 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,
         scheduleCliParity: true,
+        scheduleCallerArchiveOnFinish: true,
         // COMPAT(agentOrchestrationParity): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
         agentOrchestrationParity: true,
         // COMPAT(browserCommandCli): added in v0.11.2; remove gate after 2027-04-10 once daemon floor >= v0.11.2.

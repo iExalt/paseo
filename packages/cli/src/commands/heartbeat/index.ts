@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import type { CommandOptions, OutputSchema, SingleResult } from "../../output/index.js";
+import type { CommandOptions, OutputSchema, ListResult, SingleResult } from "../../output/index.js";
 import { withOutput } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { parseDuration } from "../../utils/duration.js";
@@ -161,6 +161,49 @@ async function runDeleteHeartbeat(
   }
 }
 
+async function runListHeartbeats(
+  options: HeartbeatOptions,
+  _command: Command,
+): Promise<ListResult<ScheduleRow>> {
+  const { client } = await connectScheduleClient(options.daemonTarget);
+  try {
+    const agentId = await requireCallerAgentId(client);
+    const payload = await client.scheduleList();
+    if (payload.error) throw new Error(payload.error);
+    const schedules = payload.schedules.filter(
+      (schedule) => schedule.target.type === "agent" && schedule.target.agentId === agentId,
+    );
+    return { type: "list", data: schedules.map(toScheduleRow), schema: scheduleSchema };
+  } catch (error) {
+    throw toScheduleCommandError("HEARTBEAT_LIST_FAILED", "list heartbeats", error);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+async function runHeartbeatState(
+  id: string,
+  options: HeartbeatOptions,
+  operation: "pause" | "resume",
+): Promise<SingleResult<ScheduleRow>> {
+  const { client } = await connectScheduleClient(options.daemonTarget);
+  try {
+    const agentId = await requireCallerAgentId(client);
+    await requireOwnedHeartbeat(client, id, agentId);
+    const payload =
+      operation === "pause"
+        ? await client.schedulePause({ id })
+        : await client.scheduleResume({ id });
+    if (payload.error || !payload.schedule)
+      throw new Error(payload.error ?? `Failed to ${operation} heartbeat: ${id}`);
+    return { type: "single", data: toScheduleRow(payload.schedule), schema: scheduleSchema };
+  } catch (error) {
+    throw toScheduleCommandError("HEARTBEAT_STATE_FAILED", `${operation} heartbeat`, error);
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
 export function createHeartbeatCommand(): Command {
   const heartbeat = new Command("heartbeat").description("Manage this agent's heartbeats");
   addJsonAndDaemonHostOptions(
@@ -186,5 +229,20 @@ export function createHeartbeatCommand(): Command {
   addJsonAndDaemonHostOptions(
     heartbeat.command("delete").description("Delete a heartbeat").argument("<id>", "Heartbeat ID"),
   ).action(withOutput(runDeleteHeartbeat));
+  addJsonAndDaemonHostOptions(
+    heartbeat.command("ls").description("List this agent's heartbeats"),
+  ).action(withOutput(runListHeartbeats));
+  for (const operation of ["pause", "resume"] as const) {
+    addJsonAndDaemonHostOptions(
+      heartbeat
+        .command(operation)
+        .description(`${operation} a heartbeat`)
+        .argument("<id>", "Heartbeat ID"),
+    ).action(
+      withOutput((id: string, options: HeartbeatOptions, _command: Command) =>
+        runHeartbeatState(id, options, operation),
+      ),
+    );
+  }
   return heartbeat;
 }

@@ -162,6 +162,9 @@ export interface ScheduleRunOncePayload {
 }
 
 export interface UpdateScheduleNewAgentConfig {
+  thinkingOptionId?: string | null;
+  isolation?: "local" | "worktree";
+  archiveOnFinish?: boolean;
   provider?: string;
   model?: string | null;
   modeId?: string | null;

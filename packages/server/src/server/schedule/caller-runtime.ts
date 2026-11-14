@@ -10,6 +10,7 @@ export interface CallerScheduleOverrides {
   modeId?: string;
   thinkingOptionId?: string;
   isolation?: "local" | "worktree";
+  archiveOnFinish?: boolean;
 }
 
 interface ResolveScheduleTargetInput {
@@ -90,6 +91,7 @@ function buildScheduleConfig(
   if (model) config.model = model;
   if (modeId) config.modeId = modeId;
   if (thinkingOptionId) config.thinkingOptionId = thinkingOptionId;
+  if (overrides.archiveOnFinish !== undefined) config.archiveOnFinish = overrides.archiveOnFinish;
   if (overrides.isolation) config.isolation = overrides.isolation;
   if (callerAgent?.provider === provider && callerAgent.config.providerOptions) {
     config.providerOptions = callerAgent.config.providerOptions;

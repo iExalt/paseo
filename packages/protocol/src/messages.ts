@@ -4093,6 +4093,8 @@ export const ServerInfoStatusPayloadSchema = z
         agentOrchestrationParity: z.boolean().optional(),
         // COMPAT(scheduleCliParity): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
         scheduleCliParity: z.boolean().optional(),
+        // COMPAT(scheduleCallerArchiveOnFinish): added in v0.27.0, remove after 2027-11-14.
+        scheduleCallerArchiveOnFinish: z.boolean().optional(),
         // COMPAT(browserCommandCli): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
         browserCommandCli: z.boolean().optional(),
         // COMPAT(voiceSpeakCli): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.

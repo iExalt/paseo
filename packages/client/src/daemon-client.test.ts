@@ -1300,7 +1300,7 @@ test("sends new-agent run options when creating schedules", async () => {
   clients.push(client);
 
   const connectPromise = client.connect();
-  mock.triggerOpen({ features: { scheduleCliParity: true } });
+  mock.triggerOpen({ features: { scheduleCliParity: true, scheduleCallerArchiveOnFinish: true } });
   await connectPromise;
 
   const createPromise = client.scheduleCreate({
@@ -1440,6 +1440,42 @@ test("requires scheduleCliParity before sending caller or replacement fields", a
     }),
   ).rejects.toThrow("Update the host to use schedule and heartbeat CLI parity features");
   expect(mock.sent).toHaveLength(0);
+});
+
+test("managed schedule archive override requires host support without gating ordinary create", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "clsk_unit_test",
+    logger: createMockLogger(),
+    reconnect: { enabled: false },
+    transportFactory: () => mock.transport,
+  });
+  clients.push(client);
+  const connected = client.connect();
+  mock.triggerOpen({ features: { scheduleCliParity: true } });
+  await connected;
+  const input = {
+    prompt: "Task",
+    cadence: { type: "cron" as const, expression: "0 0 1 1 *" },
+    target: {
+      type: "new-agent" as const,
+      config: { provider: "claude", cwd: "/repo", archiveOnFinish: false },
+    },
+    callerContext: { agentId: "00000000-0000-0000-0000-000000000001" },
+  };
+  await expect(client.scheduleCreate(input)).rejects.toThrow(
+    "Update the host to set archive-on-finish",
+  );
+  expect(mock.sent).toHaveLength(0);
+  const ordinary = client.scheduleCreate({
+    ...input,
+    target: { type: "new-agent", config: { provider: "claude", cwd: "/repo" } },
+  });
+  expect(mock.sent).toHaveLength(1);
+  const request = parseSentFrame(mock.sent[0]);
+  respondToScheduleRequest(mock, request);
+  await ordinary;
 });
 
 test("sends typed browser automation execute responses", async () => {

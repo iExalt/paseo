@@ -21,6 +21,7 @@ export interface ScheduleCreateOptions extends ScheduleCommandOptions {
   mode?: string;
   thinking?: string;
   isolation?: "local" | "worktree";
+  archiveOnFinish?: boolean;
   cwd?: string;
   maxRuns?: string;
   expiresIn?: string;
@@ -50,6 +51,10 @@ export async function runCreateCommand(
       provider: options.provider,
       mode: options.mode,
       thinking: options.thinking,
+      archiveOnFinish:
+        command.getOptionValueSource("archiveOnFinish") === "cli"
+          ? options.archiveOnFinish
+          : undefined,
       isolation: options.isolation,
       cwd: options.cwd,
       callerAgent,
