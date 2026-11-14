@@ -1,6 +1,6 @@
+import { MessagePreview, MessageSender, useMessageSender } from "@/components/user-message";
 import { useDisclosureHold } from "@/agent-stream/disclosure";
 import { useLiveElapsedMs } from "@/components/live-elapsed";
-import { MessagePreview, MessageSender } from "@/components/user-message";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
@@ -21,12 +21,7 @@ import { matchPartsOffset, renderMatchParts } from "@/find-highlight/match-parts
 import { splitTextForMatches } from "@/find-highlight/split";
 import { searchPattern } from "@getpaseo/protocol/chat-search-text";
 import { useRetainedPanelActive } from "@/components/retained-panel";
-import {
-  isRewindableMessage,
-  RewindMenu,
-  useRewindAgentMutation,
-  type RewindMode,
-} from "@/components/rewind";
+import { RewindMenu, useRewindAgentMutation, type RewindMode } from "@/components/rewind";
 import { TaskListRow } from "@/components/task-list-row";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -62,6 +57,7 @@ import {
   FileSymlink,
   Info,
   MicVocal,
+  MessagesSquare,
   Plus,
   Scissors,
   TextCursor,
@@ -321,6 +317,14 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     justifyContent: "flex-end",
     ...(isWeb ? { userSelect: "text" as const } : {}),
   },
+  agentContainer: {
+    justifyContent: "flex-start",
+    padding: theme.spacing[3],
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  agentContent: { alignItems: "stretch", width: "100%" },
+  agentBody: { paddingVertical: theme.spacing[2] },
   content: {
     alignItems: "flex-end",
     maxWidth: "100%",
@@ -382,6 +386,14 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
     gap: theme.spacing[2],
     marginTop: theme.spacing[2],
   },
+  agentTrailingRow: {
+    alignSelf: "stretch",
+    minWidth: 0,
+  },
+  agentCopyButton: {
+    marginLeft: -theme.spacing[1],
+    marginRight: 0,
+  },
   trailingRowHidden: {
     opacity: 0,
   },
@@ -391,6 +403,7 @@ const userMessageStylesheet = StyleSheet.create((theme) => ({
   timestampText: {
     color: theme.colors.foregroundMuted,
     fontSize: STREAM_METADATA_FONT_SIZE,
+    flexShrink: 0,
   },
 }));
 
@@ -409,6 +422,28 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
       <AttachmentThumbnail metadata={image} />
     </AttachmentFrame>
   );
+}
+
+function UntruncatedMessagePreview({ children }: { children: ReactNode; itemId?: string }) {
+  return <>{children}</>;
+}
+
+function userMessagePresentation(sender: AgentMessage["sender"] | undefined) {
+  return sender
+    ? {
+        container: userMessageStylesheet.agentContainer,
+        content: [userMessageStylesheet.content, userMessageStylesheet.agentContent],
+        body: userMessageStylesheet.agentBody,
+        testID: "agent-message-content",
+        Preview: UntruncatedMessagePreview,
+      }
+    : {
+        container: undefined,
+        content: userMessageStylesheet.content,
+        body: userMessageStylesheet.bubble,
+        testID: "user-message",
+        Preview: MessagePreview,
+      };
 }
 
 const MESSAGE_TEXT_DATASET = { messageText: "true" };
@@ -465,22 +500,10 @@ export const UserMessage = memo(function UserMessage({
   const hasText = message.trim().length > 0;
   const hasImages = images.length > 0;
   const hasAttachments = attachments.length > 0;
-  const showTrailingRow = !isPending && hasText && (isCompact || isNative || isHovered);
-  const formattedTimestamp = useMemo(
-    () => formatMessageTimestamp(new Date(timestamp)),
-    [timestamp],
-  );
-  const rewindMutation = useRewindAgentMutation({ serverId, agentId, client, messageId });
-
+  const showTrailingRow =
+    !isPending && (Boolean(sender) || (hasText && (isCompact || isNative || isHovered)));
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
-  const getMessageContent = useCallback(() => message, [message]);
-  const handleRewind = useCallback(
-    (input: { mode: RewindMode; rewoundText: string }) => {
-      return rewindMutation.rewindAgent(input);
-    },
-    [rewindMutation],
-  );
 
   const containerStyle = useMemo(
     () => [
@@ -507,26 +530,21 @@ export const UserMessage = memo(function UserMessage({
     ],
     [hasText],
   );
-  const trailingRowStyle = useMemo(
-    () => [
-      userMessageStylesheet.trailingRow,
-      showTrailingRow
-        ? userMessageStylesheet.trailingRowVisible
-        : userMessageStylesheet.trailingRowHidden,
-    ],
-    [showTrailingRow],
-  );
-
-  return (
-    <View style={containerStyle} testID="user-message" aria-busy={isPending}>
+  const presentation = userMessagePresentation(sender);
+  const Preview = presentation.Preview;
+  const messageContent = (
+    <View
+      style={[containerStyle, presentation.container]}
+      testID={presentation.testID}
+      aria-busy={isPending}
+    >
       <View
-        style={userMessageStylesheet.content}
+        style={presentation.content}
         onPointerEnter={handlePointerEnter}
         onPointerLeave={handlePointerLeave}
       >
-        {sender ? <MessageSender sender={sender} serverId={serverId} /> : null}
-        <View style={userMessageStylesheet.bubble}>
-          <MessagePreview itemId={itemId}>
+        <View style={presentation.body}>
+          <Preview itemId={itemId}>
             {hasImages ? (
               <View style={imagePreviewContainerStyle}>
                 {images.map((image) => (
@@ -568,37 +586,173 @@ export const UserMessage = memo(function UserMessage({
                 {messageText}
               </Text>
             ) : null}
-          </MessagePreview>
+          </Preview>
         </View>
-        {hasText ? (
-          <View
-            style={trailingRowStyle}
-            pointerEvents={showTrailingRow ? "auto" : "none"}
-            testID="user-message-trailing-row"
-          >
-            <Text style={userMessageStylesheet.timestampText} testID="user-message-timestamp">
-              {formattedTimestamp}
-            </Text>
-            {capabilities && isRewindableMessage(messageId, message) ? (
-              <RewindMenu
-                capabilities={capabilities}
-                isPending={rewindMutation.isPending}
-                rewoundText={message}
-                onRewind={handleRewind}
-              />
-            ) : null}
-            <TurnCopyButton
-              getContent={getMessageContent}
-              containerStyle={userMessageStylesheet.copyButton}
-              accessibilityLabel={t("message.actions.copyMessage")}
-            />
-          </View>
+        {hasText || sender ? (
+          <UserMessageFooter
+            sender={sender}
+            serverId={serverId}
+            agentId={agentId}
+            messageId={messageId}
+            message={message}
+            timestamp={timestamp}
+            capabilities={capabilities}
+            client={client}
+            visible={showTrailingRow}
+          />
         ) : null}
       </View>
       {localLightbox}
     </View>
   );
+  if (sender) {
+    return (
+      <AgentMessageDisclosure
+        sender={sender}
+        message={message}
+        serverId={serverId}
+        forceExpanded={Boolean(findHighlight)}
+        disableOuterSpacing={resolvedDisableOuterSpacing}
+      >
+        {messageContent}
+      </AgentMessageDisclosure>
+    );
+  }
+  return messageContent;
 });
+
+function UserMessageFooter({
+  sender,
+  serverId,
+  agentId,
+  messageId,
+  message,
+  timestamp,
+  capabilities,
+  client,
+  visible,
+}: Pick<
+  UserMessageProps,
+  | "sender"
+  | "serverId"
+  | "agentId"
+  | "messageId"
+  | "message"
+  | "timestamp"
+  | "capabilities"
+  | "client"
+> & { visible: boolean }) {
+  const { t } = useTranslation();
+  const hasText = message.trim().length > 0;
+  const formattedTimestamp = useMemo(
+    () => formatMessageTimestamp(new Date(timestamp)),
+    [timestamp],
+  );
+  const rewindMutation = useRewindAgentMutation({ serverId, agentId, client, messageId });
+  const getMessageContent = useCallback(() => message, [message]);
+  const handleRewind = useCallback(
+    (input: { mode: RewindMode; rewoundText: string }) => rewindMutation.rewindAgent(input),
+    [rewindMutation],
+  );
+  const copyButton = hasText ? (
+    <TurnCopyButton
+      getContent={getMessageContent}
+      containerStyle={[
+        userMessageStylesheet.copyButton,
+        sender ? userMessageStylesheet.agentCopyButton : null,
+      ]}
+      accessibilityLabel={t("message.actions.copyMessage")}
+    />
+  ) : null;
+  const rewindMenu =
+    capabilities && messageId ? (
+      <RewindMenu
+        capabilities={capabilities}
+        isPending={rewindMutation.isPending}
+        rewoundText={message}
+        onRewind={handleRewind}
+      />
+    ) : null;
+  const timestampLabel = (
+    <Text style={userMessageStylesheet.timestampText} testID="user-message-timestamp">
+      {formattedTimestamp}
+    </Text>
+  );
+  return (
+    <View
+      style={[
+        userMessageStylesheet.trailingRow,
+        sender ? userMessageStylesheet.agentTrailingRow : null,
+        visible
+          ? userMessageStylesheet.trailingRowVisible
+          : userMessageStylesheet.trailingRowHidden,
+      ]}
+      pointerEvents={visible ? "auto" : "none"}
+      testID="user-message-trailing-row"
+    >
+      {sender ? copyButton : timestampLabel}
+      {rewindMenu}
+      {sender ? (
+        <>
+          {timestampLabel}
+          <Text style={userMessageStylesheet.timestampText}>·</Text>
+          <MessageSender sender={sender} serverId={serverId} />
+        </>
+      ) : (
+        copyButton
+      )}
+    </View>
+  );
+}
+
+/** The message's first line, shown beside the sender while the message is closed. */
+function agentMessagePreview(message: string): string | undefined {
+  const line = message
+    .split("\n")
+    .map((part) => part.replace(/\s+/g, " ").trim())
+    .find(Boolean);
+  return line ? line.slice(0, 200) : undefined;
+}
+
+function AgentMessageDisclosure({
+  sender,
+  message,
+  serverId,
+  forceExpanded,
+  disableOuterSpacing,
+  children,
+}: {
+  sender: AgentMessage["sender"];
+  message: string;
+  serverId?: string;
+  forceExpanded: boolean;
+  disableOuterSpacing: boolean;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const { name } = useMessageSender(sender, serverId);
+  const preview = useMemo(() => agentMessagePreview(message), [message]);
+  const [expanded, setExpanded] = useState(false);
+  const hold = useDisclosureHold();
+  const toggle = useCallback(
+    () => hold(() => setExpanded((value) => !value), { triggerEdge: "top" }),
+    [hold],
+  );
+  const renderDetails = useCallback(() => children, [children]);
+  return (
+    <ExpandableBadge
+      label={name ?? t("turnSummary.agentMessage")}
+      secondaryLabel={preview}
+      icon={MessagesSquare}
+      surface
+      isExpanded={expanded || forceExpanded}
+      onToggle={toggle}
+      renderDetails={renderDetails}
+      disableOuterSpacing={disableOuterSpacing}
+      testID="agent-message"
+    />
+  );
+}
 
 interface AssistantTurnFooterProps {
   getContent?: () => string;
@@ -1026,6 +1180,10 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
   },
+  pressableSurface: {
+    backgroundColor: theme.colors.surface1,
+    borderColor: theme.colors.border,
+  },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -1053,6 +1211,12 @@ const expandableBadgeStylesheet = StyleSheet.create((theme) => ({
   },
   labelActive: {
     color: theme.colors.foreground,
+  },
+  // A sender name truncates instead of pushing the message preview out of the row.
+  labelSurface: {
+    flexShrink: 1,
+    minWidth: 0,
+    maxWidth: "60%",
   },
   labelLoading: {
     color: theme.colors.foreground,
@@ -1677,6 +1841,8 @@ interface ExpandableBadgeProps {
   isLastInSequence?: boolean;
   disableOuterSpacing?: boolean;
   borderlessWhenExpanded?: boolean;
+  /** Sits on a bordered surface even when closed, marking a turn's input rather than its work. */
+  surface?: boolean;
   testID?: string;
 }
 
@@ -2017,6 +2183,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   isLastInSequence = false,
   disableOuterSpacing,
   borderlessWhenExpanded = false,
+  surface,
   testID,
 }: ExpandableBadgeProps) {
   const { t } = useTranslation();
@@ -2181,6 +2348,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const pressableStyle = useMemo(
     () => [
       expandableBadgeStylesheet.pressable,
+      surface && expandableBadgeStylesheet.pressableSurface,
       isPressed && isInteractive ? expandableBadgeStylesheet.pressablePressed : null,
       isExpanded && expandableBadgeStylesheet.pressableExpanded,
       isExpanded &&
@@ -2188,7 +2356,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
           ? expandableBadgeStylesheet.pressableExpandedDetached
           : expandableBadgeStylesheet.pressableExpandedAttached),
     ],
-    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed],
+    [borderlessWhenExpanded, isExpanded, isInteractive, isPressed, surface],
   );
 
   const detailWrapperStyle = useMemo(
@@ -2209,10 +2377,11 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const labelStyle = useMemo(
     () => [
       expandableBadgeStylesheet.label,
-      isActive && expandableBadgeStylesheet.labelActive,
+      (isActive || surface) && expandableBadgeStylesheet.labelActive,
+      surface && expandableBadgeStylesheet.labelSurface,
       isLoading && expandableBadgeStylesheet.labelLoading,
     ],
-    [isActive, isLoading],
+    [isActive, isLoading, surface],
   );
 
   const secondaryLabelStyle = useMemo(
@@ -2280,6 +2449,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
       <View style={[pressableStyle, expandableBadgeStylesheet.headerRow]}>
         <Pressable
           {...pressHandlers}
+          aria-expanded={isInteractive ? isExpanded : undefined}
           disabled={!isInteractive}
           accessibilityState={accessibilityState}
           style={expandableBadgeStylesheet.disclosureButton}
@@ -2344,6 +2514,7 @@ function areExpandableBadgePropsEqual(previous: ExpandableBadgeProps, next: Expa
   if (previous.isLastInSequence !== next.isLastInSequence) return false;
   if (previous.disableOuterSpacing !== next.disableOuterSpacing) return false;
   if (previous.borderlessWhenExpanded !== next.borderlessWhenExpanded) return false;
+  if (previous.surface !== next.surface) return false;
   if (previous.testID !== next.testID) return false;
   if (previous.onToggle !== next.onToggle) return false;
   if (previous.onOpenFile !== next.onOpenFile) return false;
