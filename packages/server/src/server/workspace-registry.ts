@@ -278,17 +278,31 @@ class FileBackedRegistry<TRecord extends RegistryRecord> {
     }
 
     this.cache.clear();
+    let raw: string;
     try {
-      const raw = await fs.readFile(this.filePath, "utf8");
+      raw = await fs.readFile(this.filePath, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        // Stay unloaded so no write can replace the file with a partial registry.
+        throw error;
+      }
+      this.loaded = true;
+      return;
+    }
+    try {
       const parsed = z.array(this.schema).parse(JSON.parse(raw));
       for (const record of parsed) {
         this.cache.set(this.getId(record), record);
       }
     } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
-        this.logger.error({ err: error, filePath: this.filePath }, "Failed to load registry file");
-      }
+      // Keep the unreadable registry for recovery; the next write starts a new file.
+      const quarantinePath = `${this.filePath}.invalid-${Date.now()}`;
+      await fs.rename(this.filePath, quarantinePath);
+      this.cache.clear();
+      this.logger.error(
+        { err: error, filePath: this.filePath, quarantinePath },
+        "Quarantined unreadable registry file",
+      );
     }
     this.loaded = true;
   }
