@@ -9,7 +9,7 @@ esac
 
 # Follow symlinks so `/usr/local/bin/paseo` resolves back into the app bundle.
 while [ -L "$SCRIPT_PATH" ]; do
-  SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)
+  SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)
   LINK_TARGET=$(readlink "$SCRIPT_PATH")
   case "$LINK_TARGET" in
     /*) SCRIPT_PATH="$LINK_TARGET" ;;
@@ -17,8 +17,8 @@ while [ -L "$SCRIPT_PATH" ]; do
   esac
 done
 
-SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)
-RESOURCES_DIR=$(CDPATH= cd -- "${SCRIPT_DIR}/.." && pwd)
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$SCRIPT_PATH")" && pwd)
+RESOURCES_DIR=$(CDPATH='' cd -- "${SCRIPT_DIR}/.." && pwd)
 
 MACOS_DIR="${RESOURCES_DIR}/../MacOS"
 MACOS_HELPER_EXECUTABLE="${RESOURCES_DIR}/../Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper"
@@ -44,4 +44,25 @@ fi
 RUNNER_PATH="${RESOURCES_DIR}/app.asar.unpacked/dist/daemon/node-entrypoint-runner.js"
 CLI_ENTRYPOINT="${RESOURCES_DIR}/app.asar/node_modules/@getpaseo/cli/dist/index.js"
 
-exec env ELECTRON_RUN_AS_NODE=1 PASEO_NODE_ENV=production PASEO_CLI="${SCRIPT_PATH}" "${APP_EXECUTABLE}" --disable-warning=DEP0040 "${RUNNER_PATH}" node-script "${CLI_ENTRYPOINT}" "$@"
+CLI_PATH=$SCRIPT_PATH
+invoked=${ARGV0:-}
+if [ -n "${APPIMAGE:-}" ] && [ -n "${APPDIR:-}" ] &&
+   [ "${invoked##*/}" = paseo ] &&
+   [ "$(CDPATH='' cd -- "$APPDIR" && pwd -P)" = "$(CDPATH='' cd -- "$RESOURCES_DIR/.." && pwd -P)" ]; then
+  case "$invoked" in
+    */*) CLI_PATH=$invoked ;;
+    *) CLI_PATH=$(command -v -- "$invoked") ;;
+  esac
+  case "$CLI_PATH" in
+    /*) ;;
+    *) CLI_PATH="${OWD:-$(pwd)}/$CLI_PATH" ;;
+  esac
+  # Canonicalize the containing directory, preserving the installed link itself.
+  CLI_PATH="$(CDPATH='' cd -- "$(dirname -- "$CLI_PATH")" && pwd -P)/$(basename -- "$CLI_PATH")"
+  if [ ! "$CLI_PATH" -ef "$APPIMAGE" ]; then
+    echo 'AppImage CLI link does not refer to this AppImage' >&2
+    exit 1
+  fi
+fi
+
+exec env ELECTRON_RUN_AS_NODE=1 PASEO_NODE_ENV=production PASEO_CLI="${CLI_PATH}" "${APP_EXECUTABLE}" --disable-warning=DEP0040 "${RUNNER_PATH}" node-script "${CLI_ENTRYPOINT}" "$@"
