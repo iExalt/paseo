@@ -3458,6 +3458,18 @@ export class Session {
         return this.daemonSession.handleDiagnosticsRequest(msg);
       case "daemon.update.request":
         return this.daemonSession.handleUpdateRequest(msg);
+      case "daemon.config.edit.request":
+        return this.daemonConfigStore
+          .editRemote(msg.path, { value: msg.value, unset: msg.unset })
+          .then((config) =>
+            this.emit({
+              type: "daemon.config.edit.response",
+              payload: {
+                requestId: msg.requestId,
+                config: this.getDaemonConfigForCurrentClient(config),
+              },
+            }),
+          );
       case "set_daemon_config_request":
         return this.daemonConfigStore.patch(msg.config).then((config) => {
           return this.emit({

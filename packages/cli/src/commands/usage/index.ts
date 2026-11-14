@@ -1,3 +1,4 @@
+import { remoteConfigEdit } from "../daemon/config.js";
 import { runSpendCommand } from "./spend.js";
 import { Command } from "commander";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -78,6 +79,17 @@ function addListOptions(command: Command): Command {
 
 export function createUsageCommand(): Command {
   const usage = addListOptions(new Command("usage").description("Show account usage reports"));
+  for (const [verb, enabled] of [
+    ["on", true],
+    ["off", false],
+  ] as const)
+    addJsonAndDaemonHostOptions(
+      usage.command(verb).description(`Turn usage reporting ${verb}`),
+    ).action(
+      withOutput((options: CommandOptions, _command: Command) =>
+        remoteConfigEdit("usage.enabled", { value: enabled }, options),
+      ),
+    );
   const list = (options: CommandOptions, _command: Command) =>
     runUsageCommand(options, { kind: "list" });
   usage.action(withOutput(list));

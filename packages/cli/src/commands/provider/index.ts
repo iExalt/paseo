@@ -1,3 +1,5 @@
+import { ACP_PROVIDER_CATALOG_DATA } from "@getpaseo/protocol/acp-provider-catalog";
+import { remoteConfigEdit } from "../daemon/config.js";
 import { runProviderCommandsCommand } from "../agent/commands.js";
 import { runProviderFeaturesCommand } from "./features.js";
 import { runRefreshCommand } from "./refresh.js";
@@ -84,6 +86,52 @@ export function createProviderCommand(): Command {
     withOutput(
       (id: string, options: Parameters<typeof runProviderCommandsCommand>[1], command: Command) =>
         runProviderCommandsCommand(id, options, command),
+    ),
+  );
+  for (const [verb, enabled] of [
+    ["enable", true],
+    ["disable", false],
+  ] as const) {
+    addJsonAndDaemonHostOptions(
+      provider.command(`${verb} <provider>`).description(`${verb} a provider`),
+    ).action(
+      withOutput((id: string, options: CommandOptions, _command: Command) =>
+        remoteConfigEdit(`providers.${id}.enabled`, { value: enabled }, options),
+      ),
+    );
+  }
+  addJsonAndDaemonHostOptions(
+    provider.command("rm <provider>").description("Remove a configured provider"),
+  ).action(
+    withOutput((id: string, options: CommandOptions, _command: Command) =>
+      remoteConfigEdit(`providers.${id}`, { unset: true }, options),
+    ),
+  );
+  addJsonAndDaemonHostOptions(
+    provider
+      .command("add <provider> [config]")
+      .description("Add from the ACP catalog, or supply a provider JSON object"),
+  ).action(
+    withOutput(
+      async (id: string, raw: string | undefined, options: CommandOptions, _command: Command) => {
+        const entry = ACP_PROVIDER_CATALOG_DATA.find((candidate) => candidate.id === id);
+        if (!raw && !entry)
+          throw new Error(`Unknown catalog provider: ${id}; supply its JSON configuration`);
+        const value: unknown = raw
+          ? JSON.parse(raw)
+          : entry &&
+            ("bundledProvider" in entry && entry.bundledProvider
+              ? { enabled: true }
+              : {
+                  extends: "acp",
+                  label: entry.title,
+                  description: entry.description,
+                  command: [...entry.command],
+                  ...("env" in entry ? { env: entry.env } : {}),
+                  ...("params" in entry ? { params: entry.params } : {}),
+                });
+        return remoteConfigEdit(`providers.${id}`, { value }, options);
+      },
     ),
   );
   return provider;

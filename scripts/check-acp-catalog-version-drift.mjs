@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 
-const CATALOG_PATH = new URL("../packages/app/src/data/acp-provider-catalog.ts", import.meta.url);
+const CATALOG_PATH = new URL("../packages/protocol/src/acp-provider-catalog.ts", import.meta.url);
 const EXACT_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:[-+].*)?$/;
 const HELP_TEXT = `Usage: npm run acp:version-drift [-- --json] [-- --fail-on-drift] [-- --no-network] [-- --update]
 
@@ -48,7 +48,7 @@ function parseArgs(argv) {
 }
 
 function getCatalogBodyRange(source) {
-  const startToken = "const CATALOG_DATA = [";
+  const startToken = "export const ACP_PROVIDER_CATALOG_DATA = [";
   const startIndex = source.indexOf(startToken);
   if (startIndex === -1) {
     throw new Error("Could not find CATALOG_DATA in ACP provider catalog");

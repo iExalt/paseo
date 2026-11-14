@@ -43,6 +43,13 @@ add --latency for a bounded round-trip measurement. daemon diagnostics collects 
 host report. daemon logs --tail 100 [-f] reads a local home's log; remote endpoints
 are not supported. provider refresh [provider] [--cwd <daemon-path>] refreshes discovery.
 
+Configuration: daemon config get/set/unset --home uses persisted local paths.
+With --host it uses effective config paths (usage.enabled, providers.<id>, etc.).
+Remote edits exclude agentTools, envOverrides, hostnames, cors, trustedProxies and relay.
+Unset removes the saved value and restores the host default. provider enable/disable,
+provider add <id> [JSON] (ACP catalog by default), provider rm, and usage on/off
+use the connected host. JSON edit output reports the path and operation.
+
 Spend: usage spend --json returns this host's recorded API spend by provider,
 including trackingSince and carry already included in all-time. --time-zone <iana>
 selects daily/monthly boundaries; it defaults to the caller's time zone.
