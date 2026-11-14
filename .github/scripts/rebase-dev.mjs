@@ -30,6 +30,7 @@ const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
 const DELETIONS_PATH = "deletions.json";
 const FIXUPS_PREFIX = "fixups/";
 const WORKFLOWS_DIR = ".github/workflows/";
+const LEDGER_PATH = "docs/upstream-rebase-inventory.json";
 const RELEASE_PLEASE_CONFIG_PATH = "release-please-config.json";
 const SIGNING_NAME = "Clement Liaw";
 const SIGNING_EMAIL = "clliaw@nvidia.com";
@@ -471,6 +472,217 @@ async function replayCommitIds(repositoryPath, upstreamSha, devSha) {
     range,
   ]);
   return output.trim() ? output.trim().split("\n") : [];
+}
+
+// A patch identity survives changed parents and signatures, but never authorizes a changed patch.
+export async function commitIdentity(repositoryPath, sha) {
+  const subject = (await gitChecked(repositoryPath, ["show", "-s", "--format=%s", sha])).trimEnd();
+  const patchId = await new Promise((resolvePatch, reject) => {
+    const options = { cwd: repositoryPath, env: { ...process.env, LC_ALL: "C" } };
+    const diff = spawn(
+      "git",
+      [
+        "show",
+        "--format=",
+        "--binary",
+        "--no-ext-diff",
+        "--no-textconv",
+        "--no-renames",
+        "--ignore-submodules=none",
+        "--no-color",
+        sha,
+      ],
+      options,
+    );
+    const hash = spawn("git", ["patch-id", "--stable"], options);
+    let output = "";
+    let errors = "";
+    diff.stdout.pipe(hash.stdin);
+    // A failed child can close its pipe before the other process exits.
+    hash.stdin.on("error", () => {});
+    for (const child of [diff, hash]) {
+      child.stderr.on("data", (chunk) => {
+        errors += chunk;
+      });
+      child.once("error", reject);
+    }
+    hash.stdout.on("data", (chunk) => {
+      output += chunk;
+    });
+    Promise.all([diff, hash].map((child) => new Promise((done) => child.once("close", done)))).then(
+      (codes) => {
+        if (codes.some((code) => code !== 0))
+          return reject(new Error(`Patch identity failed for ${sha}: ${errors}`));
+        else if (output.trim() && !/^[0-9a-f]{40} [0-9a-f]{40}\s*$/.test(output))
+          return reject(new Error(`Invalid patch identity for ${sha}`));
+        else return resolvePatch(output.trim().split(" ")[0] || null);
+      },
+    );
+  });
+  if (
+    patchId === null &&
+    (
+      await gitChecked(repositoryPath, [
+        "diff-tree",
+        "--root",
+        "--no-commit-id",
+        "--raw",
+        "--no-renames",
+        "--ignore-submodules=none",
+        "-r",
+        sha,
+      ])
+    ).trim()
+  )
+    throw new Error(`Nonempty commit has no patch identity: ${sha}`);
+  return { subject, patch_id: patchId };
+}
+
+function ledgerIdentities(rows) {
+  const identities = new Map();
+  const hints = new Set();
+  const subjects = new Set();
+  const categories = new Set([
+    "keep",
+    "partially superseded",
+    "fully superseded",
+    "empty/history-only",
+  ]);
+  for (const row of rows) {
+    if (
+      !/^[0-9a-f]{40}$/.test(row.sha ?? "") ||
+      typeof row.subject !== "string" ||
+      !row.subject ||
+      !(row.patch_id === null || /^[0-9a-f]{40}$/.test(row.patch_id ?? "")) ||
+      !categories.has(row.category) ||
+      typeof row.reason !== "string" ||
+      !row.reason
+    )
+      throw new Error("Invalid supersession ledger row");
+    const key = JSON.stringify([row.subject, row.patch_id]);
+    if (identities.has(key) || hints.has(row.sha))
+      throw new Error("Duplicate supersession ledger identity");
+    identities.set(key, row);
+    hints.add(row.sha);
+    subjects.add(row.subject);
+  }
+  return { identities, hints, subjects };
+}
+
+async function replayPlan(repositoryPath, snapshots, originalCommits, boundaries) {
+  const blob = await gitChecked(repositoryPath, ["ls-tree", snapshots.dev, "--", LEDGER_PATH]);
+  if (!blob) return { retained: originalCommits, drops: [] };
+  const ledger = JSON.parse(
+    await gitChecked(repositoryPath, ["show", `${snapshots.dev}:${LEDGER_PATH}`]),
+  );
+  if (
+    ledger.version !== 2 ||
+    !Array.isArray(ledger.fork) ||
+    !/^[0-9a-f]{40}$/.test(ledger.refs?.target ?? "")
+  )
+    throw new Error("Unsupported supersession ledger; refresh it before rebasing");
+  if (
+    (
+      await git(repositoryPath, [
+        "merge-base",
+        "--is-ancestor",
+        ledger.refs.target,
+        snapshots.upstream,
+      ])
+    ).code !== 0
+  )
+    throw new Error("Supersession ledger target is not incorporated by captured upstream");
+  const { identities, hints, subjects } = ledgerIdentities(ledger.fork);
+  const retained = [];
+  const drops = [];
+  const matched = new Set();
+  for (const sha of originalCommits) {
+    const identity = await commitIdentity(repositoryPath, sha);
+    const key = JSON.stringify([identity.subject, identity.patch_id]);
+    const row = identities.get(key);
+    if (!row) {
+      if (hints.has(sha) || subjects.has(identity.subject))
+        throw new Error(`Supersession ledger key mismatch for ${sha}`);
+      retained.push(sha);
+      continue;
+    }
+    if (matched.has(key)) throw new Error(`Ambiguous supersession ledger match for ${sha}`);
+    matched.add(key);
+    if (row.category === "partially superseded")
+      throw new Error(`Supersession review required for ${sha}: ${row.reason}`);
+    if (row.category === "keep") {
+      retained.push(sha);
+      continue;
+    }
+    if (boundaries.has(sha)) throw new Error(`Refusing to drop release boundary ${sha}`);
+    drops.push({ sha, ...identity, category: row.category, reason: row.reason });
+  }
+  return { retained, drops };
+}
+
+async function startReplay(repositoryPath, upstream, drops) {
+  const directory = await mkdtemp(join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-replay-plan-"));
+  try {
+    const editor = join(directory, "editor.cjs");
+    const plan = join(directory, "drops.json");
+    await writeFile(plan, JSON.stringify(drops.map(({ sha }) => sha)));
+    await writeFile(
+      editor,
+      `
+const fs = require("node:fs");
+const { execFileSync } = require("node:child_process");
+const drops = new Set(JSON.parse(fs.readFileSync(process.argv[2], "utf8")));
+const seen = new Set();
+const todo = process.argv[3];
+const lines = fs.readFileSync(todo, "utf8").split("\\n").map((line) => {
+  if (!line || line.startsWith("#")) return line;
+  const match = /^pick ([0-9a-f]{7,40})( .*)?$/.exec(line);
+  if (!match) throw new Error("Unexpected replay instruction: " + line);
+  const sha = execFileSync("git", ["rev-parse", "--verify", match[1] + "^{commit}"], { encoding: "utf8" }).trim();
+  if (!drops.has(sha)) return line;
+  if (seen.has(sha)) throw new Error("Duplicate planned drop: " + sha);
+  seen.add(sha);
+  return line.replace(/^pick /, "drop ");
+});
+if (seen.size !== drops.size) throw new Error("Planned supersession drop missing from replay");
+fs.writeFileSync(todo, lines.join("\\n"));
+`,
+    );
+    const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+    return await git(
+      repositoryPath,
+      [
+        "-c",
+        "rerere.enabled=true",
+        "-c",
+        "rerere.autoupdate=true",
+        "-c",
+        "user.name=Rebase staging",
+        "-c",
+        "user.email=rebase-staging@users.noreply.github.com",
+        "-c",
+        "rebase.abbreviateCommands=false",
+        "-c",
+        "rebase.instructionFormat=%s",
+        "-c",
+        "rebase.updateRefs=false",
+        "-c",
+        "rebase.autoSquash=false",
+        "rebase",
+        "--interactive",
+        "--no-autosquash",
+        "--no-rebase-merges",
+        "--merge",
+        "--keep-empty",
+        "--reapply-cherry-picks",
+        "--empty=stop",
+        upstream,
+      ],
+      { env: { GIT_SEQUENCE_EDITOR: [process.execPath, editor, plan].map(quote).join(" ") } },
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
 }
 
 function replayCommitter(original, sha) {
@@ -1063,25 +1275,34 @@ export async function rebaseDev({
       snapshots.upstream,
       snapshots.dev,
     );
+    const releaseConfigBefore = JSON.parse(
+      await gitChecked(repositoryPath, [
+        "show",
+        `${snapshots.dev}:${RELEASE_PLEASE_CONFIG_PATH}`,
+      ]).catch((error) => {
+        // Older fixtures/branches need no configured boundary; absence is distinct from invalid JSON.
+        return gitChecked(repositoryPath, [
+          "ls-tree",
+          snapshots.dev,
+          "--",
+          RELEASE_PLEASE_CONFIG_PATH,
+        ]).then((found) => {
+          if (found) throw error;
+          return "{}";
+        });
+      }),
+    );
+    const boundaries = new Set([
+      ...(await releaseTagCommits(repositoryPath, remote)),
+      releaseConfigBefore["last-release-sha"],
+    ]);
+    const plan = await replayPlan(repositoryPath, snapshots, originalCommits, boundaries);
+    const drops = plan.drops;
+    snapshots.drops = drops;
     await importResolutions(repositoryPath, snapshots.resolutions);
     const deletionRecords = await loadDeletionResolutions(repositoryPath, snapshots.resolutions);
     await gitChecked(repositoryPath, ["checkout", "--detach", snapshots.dev]);
-    const rebaseResult = await git(repositoryPath, [
-      "-c",
-      "rerere.enabled=true",
-      "-c",
-      "rerere.autoupdate=true",
-      "-c",
-      "user.name=Rebase staging",
-      "-c",
-      "user.email=rebase-staging@users.noreply.github.com",
-      "rebase",
-      "--merge",
-      "--keep-empty",
-      "--reapply-cherry-picks",
-      "--empty=stop",
-      snapshots.upstream,
-    ]);
+    const rebaseResult = await startReplay(repositoryPath, snapshots.upstream, drops);
     if (rebaseResult.code !== 0) {
       await continueKnownResolutions(
         repositoryPath,
@@ -1094,7 +1315,7 @@ export async function rebaseDev({
     const signedCommits = await signRebasedCommits(
       repositoryPath,
       snapshots.upstream,
-      originalCommits,
+      plan.retained,
       signingKey,
       publicKey,
     );
@@ -1137,7 +1358,7 @@ export async function rebaseDev({
         throw error;
       }),
     );
-    const boundary = releaseBoundary(originalCommits, rebasedCommits, [
+    const boundary = releaseBoundary(plan.retained, rebasedCommits, [
       ...(await releaseTagCommits(repositoryPath, remote)),
       releaseConfig["last-release-sha"],
     ]);
@@ -1315,6 +1536,7 @@ async function main() {
     diagnosticsPath: process.env.REBASE_DEV_DIAGNOSTICS,
     signingKey,
   });
+  for (const drop of snapshots.drops ?? []) console.log(`Ledger drop: ${JSON.stringify(drop)}`);
   const outputsPath = process.env.GITHUB_OUTPUT;
   if (outputsPath) {
     await appendFile(
