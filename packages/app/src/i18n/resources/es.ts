@@ -2210,6 +2210,8 @@ export const es: TranslationResources = {
     output: "Producción",
   },
   turnSummary: {
+    messages: { one: "escribió {{count}} mensaje", other: "escribió {{count}} mensajes" },
+    agentMessage: "Mensaje de agente",
     details: "Ver detalles del turno",
     sentBy: "Enviado por {{name}}",
     showMore: "Mostrar más",
@@ -2233,6 +2235,7 @@ export const es: TranslationResources = {
       one: "buscó {{count}} vez",
       other: "buscó {{count}} veces",
     },
+    sentMessages: { one: "envió {{count}} mensaje", other: "envió {{count}} mensajes" },
     otherTools: {
       one: "usó {{count}} herramienta adicional",
       other: "usó {{count}} herramientas adicionales",
