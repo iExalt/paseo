@@ -59,8 +59,10 @@ vi.mock("@/components/adaptive-modal-sheet", async () => {
   };
 });
 
-vi.mock("react-native-reanimated", () => ({
-  default: { View: "div" },
+vi.mock("react-native-reanimated", async () => ({
+  default: {
+    View: (await vi.importActual<typeof import("react-native")>("react-native")).View,
+  },
   Keyframe: class {
     duration() {
       return this;

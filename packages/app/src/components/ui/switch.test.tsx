@@ -21,9 +21,9 @@ const { theme } = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("react-native-reanimated", () => ({
+vi.mock("react-native-reanimated", async () => ({
   default: {
-    View: "div",
+    View: (await vi.importActual<typeof import("react-native")>("react-native")).View,
   },
   Easing: {
     ease: "ease",
