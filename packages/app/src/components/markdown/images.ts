@@ -1,4 +1,5 @@
 import { Image } from "react-native";
+import { useTranslation } from "react-i18next";
 import { isWeb } from "@/constants/platform";
 import { useMemo, useEffect, useId } from "react";
 import { useFetchQueries } from "@/data/query";
@@ -46,6 +47,9 @@ export function useMarkdownSource(
 ) {
   const occurrenceKey = useId();
   const { commandNames, forgeReferencePattern, external } = links;
+  const { t } = useTranslation();
+  const imageLabel = t("panels.file.filePanels.builtin.image");
+  const imageUnavailableLabel = t("message.attachments.imageUnavailable");
   const prepared = useMemo(
     () =>
       prepareMarkdownSource(text, context.workspaceRoot, {
@@ -53,8 +57,10 @@ export function useMarkdownSource(
         commandNames,
         forgeReferencePattern,
         external,
+        imageLabel,
+        imageUnavailableLabel,
       }),
-    [text, context.workspaceRoot, commandNames, forgeReferencePattern, external],
+    [text, context.workspaceRoot, commandNames, forgeReferencePattern, external, imageLabel, imageUnavailableLabel],
   );
   const sources = [...new Set(prepared.images.map((image) => image.source))];
   const acquisitions = sources.map((source) => {
