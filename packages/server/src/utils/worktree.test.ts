@@ -189,6 +189,39 @@ describe("paseo worktree manager", () => {
     });
   });
 
+  it("rejects a hand-made directory under a custom worktrees root", async () => {
+    const customRoot = join(tempDir, "custom-worktrees");
+    const handMade = join(customRoot, "notes", "drafts");
+    mkdirSync(handMade, { recursive: true });
+
+    const ownership = await isPaseoOwnedWorktreeCwd(handMade, {
+      paseoHome,
+      worktreesRoot: customRoot,
+    });
+
+    expect(ownership.allowed).toBe(false);
+  });
+
+  it("still owns this repository's worktree under a custom root by path shape", async () => {
+    const customRoot = join(tempDir, "custom-worktrees");
+    const created = await createLegacyWorktreeForTest({
+      cwd: repoDir,
+      worktreeSlug: "custom-root",
+      source: { kind: "branch-off", baseBranch: "main", branchName: "custom-root-branch" },
+      paseoHome,
+      worktreesRoot: customRoot,
+    });
+    // Drop the marker so only the path-shape rule can prove ownership.
+    rmSync(join(repoDir, ".git", "worktrees", "custom-root", "paseo"), {
+      recursive: true,
+      force: true,
+    });
+
+    await expect(
+      isPaseoOwnedWorktreeCwd(created.worktreePath, { paseoHome, worktreesRoot: customRoot }),
+    ).resolves.toMatchObject({ allowed: true });
+  });
+
   it("rejects paths that are not under the paseo worktrees root", async () => {
     const outsidePath = join(tempDir, "outside-paseo-home");
     mkdirSync(outsidePath, { recursive: true });
