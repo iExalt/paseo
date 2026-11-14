@@ -44,7 +44,7 @@ If you want a feature, you can open a discussion via the [issues](https://github
 
 ## Style Guide
 
-We use Biome for linting and formatting: https://www.npmjs.com/package/@biomejs/biome
+We use [oxfmt](https://oxc.rs/docs/guide/usage/formatter) for formatting and `expo-module lint` for linting. `npm run format` checks formatting; `npm run format:fix` applies it.
 
 You can run linting and formatting using the scripts:
 

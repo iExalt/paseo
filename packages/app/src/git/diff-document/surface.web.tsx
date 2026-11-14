@@ -53,8 +53,8 @@ import type {
   TextMeasurer,
 } from "./types";
 import { useDiffDocumentWorkspaceCache } from "./workspace-cache";
+import { DEFAULT_MONO_FONT_STACK } from "@/styles/theme";
 
-const DEFAULT_MONO_STACK = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 const RESIZE_SETTLE_DELAY_MS = 120;
 
 interface StickyHeaderCanvasSlot {
@@ -127,7 +127,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     top: number;
   } | null>(null);
   const hasHoveredAffordanceRef = useRef(false);
-  const family = props.displayPreferences.monoFontFamily.trim() || DEFAULT_MONO_STACK;
+  const family = props.displayPreferences.monoFontFamily.trim() || DEFAULT_MONO_FONT_STACK;
   useLayoutEffect(() => {
     const stats = (window as typeof window & { __PASEO_DIFF_REACT_STATS__?: { commits: number } })
       .__PASEO_DIFF_REACT_STATS__;
@@ -146,7 +146,9 @@ export function DiffSurface(props: DiffSurfaceProps) {
       workspaceCache.typography({
         typography: desiredTypography,
         load: async () => {
-          await Promise.all([
+          // A face that fails to download (offline, flaky relay) leaves its family to
+          // the fallback fonts; measure with those rather than never drawing the diff.
+          await Promise.allSettled([
             document.fonts.load(`400 ${desiredTypography.size}px ${desiredTypography.family}`),
             document.fonts.load(`600 ${desiredTypography.size}px ${desiredTypography.family}`),
             document.fonts.load(
