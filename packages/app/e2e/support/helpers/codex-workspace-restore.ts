@@ -1,8 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
 import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { z } from "zod";
 import type { TestInfo } from "@playwright/test";
 import { test as base, expect, type Page } from "../fixtures";
@@ -24,20 +23,22 @@ const workspaceSchema = z.object({
   isolation: z.literal("worktree"),
 });
 
-async function callPaseoTool(
-  mcp: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<unknown> {
-  const result = await mcp.callTool({ name, arguments: args }, undefined, { timeout: 240_000 });
-  expect(result).not.toMatchObject({ isError: true });
-  return result.structuredContent;
+function runCliJson<T>(args: string[], options: { host: string; home: string; cwd: string }): T {
+  const env = { ...process.env, PASEO_HOME: options.home } as NodeJS.ProcessEnv;
+  delete env.PASEO_HOST;
+  const paseoCli = path.resolve(process.cwd(), "../cli/bin/paseo");
+  const output = execFileSync(
+    process.execPath,
+    [paseoCli, ...args, "--host", options.host, "--json"],
+    { cwd: options.cwd, env, encoding: "utf8", timeout: 240_000 },
+  );
+  return JSON.parse(output) as T;
 }
 
-async function defaultCodexModel(mcp: Client): Promise<string> {
+function defaultCodexModel(options: { host: string; home: string; cwd: string }): string {
   const result = z
     .object({ models: z.array(z.object({ id: z.string(), isDefault: z.boolean() })) })
-    .parse(await callPaseoTool(mcp, "list_models", { provider: "codex" }));
+    .parse(runCliJson(["provider", "models", "codex", "--full"], options));
   const model = result.models.find((entry) => entry.isDefault);
   if (!model) throw new Error("Codex did not advertise a default model");
   return model.id;
@@ -59,7 +60,11 @@ function recordTimelineWire(page: Page): string[] {
 
 async function createCodexRestoreJourney(page: Page, client: SeedDaemonClient, info: TestInfo) {
   const repo = await createTempGitRepo("codex-worktree-restore-");
-  const mcp = new Client({ name: "worktree-codex-restore-playwright", version: "1.0.0" });
+  const cliTarget = {
+    host: `127.0.0.1:${getE2EDaemonPort()}`,
+    home: process.env.E2E_PASEO_HOME ?? "",
+    cwd: repo.path,
+  };
   const wire = recordTimelineWire(page);
   let workspace: z.infer<typeof workspaceSchema> | undefined;
   let agentId: string | undefined;
@@ -78,28 +83,55 @@ async function createCodexRestoreJourney(page: Page, client: SeedDaemonClient, i
 
   return {
     async createWorktreeWithCodex() {
-      await mcp.connect(
-        new StreamableHTTPClientTransport(
-          new URL(`http://127.0.0.1:${getE2EDaemonPort()}/mcp/agents`),
-        ),
+      const createdWorkspace = runCliJson<{
+        workspaceId: string;
+        cwd: string;
+        isolation: "worktree";
+        workspace: { projectId: string };
+      }>(
+        [
+          "workspace",
+          "create",
+          "--isolation",
+          "worktree",
+          "--path",
+          repo.path,
+          "--base",
+          "main",
+          "--title",
+          "Codex worktree restore reproduction",
+        ],
+        cliTarget,
       );
-      workspace = workspaceSchema.parse(
-        await callPaseoTool(mcp, "create_workspace", {
-          isolation: "worktree",
-          path: repo.path,
-          baseBranch: "main",
-          title: "Codex worktree restore reproduction",
-        }),
-      );
-      const agent = z.object({ agentId: z.string() }).parse(
-        await callPaseoTool(mcp, "create_agent", {
-          workspaceId: workspace.workspaceId,
-          provider: `codex/${await defaultCodexModel(mcp)}`,
-          settings: { modeId: "full-access", thinkingOptionId: "low" },
-          title: "Codex worktree restore reproduction",
-          initialPrompt: `Reply with exactly ${REPLY} and nothing else. Do not use tools.`,
-        }),
-      );
+      workspace = workspaceSchema.parse({
+        workspaceId: createdWorkspace.workspaceId,
+        projectId: createdWorkspace.workspace.projectId,
+        cwd: createdWorkspace.cwd,
+        isolation: createdWorkspace.isolation,
+      });
+      const agent = z
+        .object({ agentId: z.string() })
+        .parse(
+          runCliJson(
+            [
+              "agent",
+              "run",
+              `Reply with exactly ${REPLY} and nothing else. Do not use tools.`,
+              "--no-wait",
+              "--workspace",
+              workspace.workspaceId,
+              "--provider",
+              `codex/${defaultCodexModel(cliTarget)}`,
+              "--mode",
+              "full-access",
+              "--thinking",
+              "low",
+              "--title",
+              "Codex worktree restore reproduction",
+            ],
+            cliTarget,
+          ),
+        );
       agentId = agent.agentId;
     },
     async waitForCompletedReply() {
@@ -234,7 +266,7 @@ async function createCodexRestoreJourney(page: Page, client: SeedDaemonClient, i
       } catch (error) {
         errors.push(error);
       }
-      const cleanup: Array<() => Promise<unknown>> = [() => mcp.close()];
+      const cleanup: Array<() => Promise<unknown>> = [];
       if (!testFailed || process.env.E2E_KEEP_PASEO_HOME !== "1") {
         const projectId = workspace?.projectId;
         if (projectId) cleanup.push(() => client.removeProject(projectId));

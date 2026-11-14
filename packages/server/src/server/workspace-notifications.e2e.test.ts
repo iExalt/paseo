@@ -21,6 +21,7 @@ async function readPersistedPolicy(
   return records.find((record) => record.workspaceId === workspaceId)?.notifications;
 }
 
+test("CLI creates and updates durable workspace notification policies", async () => {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), "paseo-workspace-notifications-"));
   const homeRoot = path.join(fixtureRoot, "home");
   const staticDir = path.join(fixtureRoot, "static");
@@ -67,6 +68,19 @@ async function readPersistedPolicy(
       host: `127.0.0.1:${daemon.port}`,
     };
     const workspaceRegistryPath = path.join(daemon.paseoHome, "projects", "workspaces.json");
+    const nonDirectoryFile = path.join(fixtureRoot, "not-a-directory");
+    const missingDirectory = path.join(fixtureRoot, "missing-directory");
+    await writeFile(nonDirectoryFile, "file, not directory\n");
+    const beforeInvalidCreates = await runLsCommand({ daemonTarget }, {} as never);
+
+    for (const invalidPath of [missingDirectory, nonDirectoryFile]) {
+      await expect(
+        runCreateCommand({ daemonTarget, isolation: "local", path: invalidPath }, {} as never),
+      ).rejects.toThrow();
+    }
+    expect((await runLsCommand({ daemonTarget }, {} as never)).data).toEqual(
+      beforeInvalidCreates.data,
+    );
 
     const local = await runCreateCommand(
       {
@@ -126,7 +140,9 @@ async function readPersistedPolicy(
     );
   } finally {
     try {
+      await daemon?.close();
     } finally {
+      await rm(fixtureRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
     }
   }
 });

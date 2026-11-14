@@ -11,6 +11,7 @@ import { renderTable } from "./table.js";
 import { renderJson } from "./json.js";
 import { renderYaml } from "./yaml.js";
 import { renderQuiet } from "./quiet.js";
+import { getErrorMessage } from "../utils/errors.js";
 
 /** Default output options */
 export const defaultOutputOptions: OutputOptions = {
@@ -54,17 +55,9 @@ export function toCommandError(error: unknown): CommandError {
     return { ...error, code: error.code, message: error.message, details: error.details };
   }
 
-  if (error instanceof Error) {
-    return {
-      code: "UNKNOWN_ERROR",
-      message: error.message,
-      details: error.stack,
-    };
-  }
-
   return {
     code: "UNKNOWN_ERROR",
-    message: String(error),
+    message: getErrorMessage(error),
   };
 }
 

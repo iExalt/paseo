@@ -44,6 +44,7 @@ export async function launchLocalDaemon(options: {
   home: string;
   timeoutMs?: number;
   foreground?: boolean;
+  agentToolsEnabled?: boolean;
 }) {
   const abort = new AbortController();
   const cancel = () => abort.abort();
@@ -53,6 +54,10 @@ export async function launchLocalDaemon(options: {
     const entry = resolveDaemonRunnerEntry();
     return await startDaemonInstance({
       home: resolvePaseoHome({ PASEO_HOME: options.home }),
+      args: [
+        ...(launch?.args ?? [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry]),
+        ...(options.agentToolsEnabled === false ? ["--no-agent-tools"] : []),
+      ],
       command: process.execPath,
       args: [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry],
       env: process.env,
@@ -85,8 +90,8 @@ const REMOVED_LAUNCH_FLAGS: Record<string, string> = {
   "--relay": "daemon.relay.enabled",
   "--no-relay": "daemon.relay.enabled",
   "--relay-use-tls": "daemon.relay.useTls",
-  "--no-mcp": "daemon.mcp.enabled",
-  "--no-inject-mcp": "daemon.mcp.injectIntoAgents",
+  "--no-mcp": "daemon.agentTools.enabled",
+  "--no-inject-mcp": "daemon.agentTools.enabled",
   "--web-ui": "features.webUi.enabled",
   "--no-web-ui": "features.webUi.enabled",
   "--hostnames <hosts>": "daemon.hostnames",

@@ -1,8 +1,13 @@
-import { Command, Option } from "commander";
+import { readAgentProfile, withProfileDefaults } from "../../utils/agent-profile.js";
 import {
-  getStructuredAgentResponse,
-  StructuredAgentResponseError,
-} from "@getpaseo/server/agent-response";
+  mergeAttachments,
+  collectAttachment,
+  prepareAttachments,
+  resolveAttachments,
+} from "../../utils/agent-attachments.js";
+import { prepareAgentFork, validateAgentForkBoundary } from "./fork.js";
+import type { CreateAgentRequestOptions } from "@getpaseo/client/internal/daemon-client";
+import { Command, Option } from "commander";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { connectToDaemon } from "../../utils/client.js";
@@ -18,7 +23,11 @@ import { lookup } from "mime-types";
 import { parseDuration } from "../../utils/duration.js";
 import { collectMultiple } from "../../utils/command-options.js";
 import { resolveProviderAndModel } from "../../utils/provider-model.js";
+import { parseFeatureValues } from "../../utils/feature-values.js";
+import { resolvePromptInput } from "../../utils/prompt-input.js";
 import { buildWorkspaceSource } from "../workspace/create.js";
+import { warnAboutAliasedProject } from "../workspace/alias-warning.js";
+import { assertModeBeforeWorkspaceCreate } from "./run-mode-check.js";
 
 export { resolveProviderAndModel } from "../../utils/provider-model.js";
 
@@ -26,7 +35,15 @@ export function addRunOptions(cmd: Command): Command {
   return (
     cmd
       .description("Create and start an agent with a task")
-      .argument("<prompt>", "The task/prompt for the agent")
+      .argument("[prompt]", "The task/prompt for the agent")
+      .option(
+        "--attach <kind:value>",
+        "Attach text:<text>, file:<local-path>, github-issue:<url>, or github-pr:<url> (repeatable)",
+        collectAttachment,
+        [],
+      )
+      .option("--prompt <text>", "Provide the task/prompt inline as a flag")
+      .option("--prompt-file <path>", "Read the task/prompt from a UTF-8 text file (- for stdin)")
       .option("--no-wait", "Return immediately without waiting for completion")
       // COMPAT(backgroundRunFlag): --background was the documented spelling of
       // --no-wait. Added in v0.2.0; remove after 2027-04-01.
@@ -38,14 +55,36 @@ export function addRunOptions(cmd: Command): Command {
       .addOption(new Option("--name <name>", "Hidden alias for --title").hideHelp())
       .option(
         "--provider <provider>",
-        "Agent provider, or provider/model (e.g. codex or codex/gpt-5.4)",
+        "Agent provider or provider/model; required without --profile (discover with paseo provider ls/models)",
       )
+      .option("--profile <id>", "Saved profile ID; explicit settings override its defaults")
       .option(
         "--model <model>",
         "Model to use (e.g., claude-sonnet-4-20250514, claude-3-5-haiku-20241022)",
       )
       .option("--thinking <id>", "Thinking option ID to use for this run")
       .option("--mode <mode>", "Provider-specific mode (e.g., plan, default, bypass)")
+      .option(
+        "--feature <id=value>",
+        "Set provider feature values (repeatable or comma-separated; use true, false, null, or strings)",
+        collectMultiple,
+        [],
+      )
+      .option("--features-json <object>", "Set provider feature values from a JSON object")
+      .addOption(
+        new Option("--relationship <relationship>", "Set the new agent relationship").choices([
+          "subagent",
+          "detached",
+        ]),
+      )
+      .option("--notify-on-finish", "Notify the calling agent when this agent finishes")
+      .option("--no-notify-on-finish", "Do not notify the calling agent when this agent finishes")
+      .addOption(
+        new Option(
+          "--notifications <policy>",
+          "Set notifications for a newly created workspace",
+        ).choices(["on", "off"]),
+      )
       .option("--new-workspace <local|worktree>", "Create a separate local or worktree workspace")
       .addOption(new Option("--worktree <name>", "Legacy workspace isolation alias").hideHelp())
       .option(
@@ -83,7 +122,7 @@ export function addRunOptions(cmd: Command): Command {
       )
       .option(
         "--wait-timeout <duration>",
-        "Maximum time to wait for agent to finish (e.g., 30s, 5m, 1h). Default: no limit",
+        "Maximum time to wait for agent to finish (e.g., 30s, 5m, 1h, 1d). Default: no limit",
       )
       .option(
         "--output-schema <schema>",
@@ -114,6 +153,9 @@ export const agentRunSchema: OutputSchema<AgentRunResult> = {
 };
 
 export interface AgentRunOptions extends CommandOptions {
+  forkSource?: { agentId: string; boundaryMessageId?: string };
+  prompt?: string;
+  promptFile?: string;
   wait?: boolean;
   background?: boolean;
   detach?: boolean;
@@ -123,6 +165,11 @@ export interface AgentRunOptions extends CommandOptions {
   model?: string;
   thinking?: string;
   mode?: string;
+  feature?: string[];
+  featuresJson?: string;
+  relationship?: "subagent" | "detached";
+  notifyOnFinish?: boolean;
+  notifications?: "on" | "off";
   newWorkspace?: string;
   worktree?: string;
   worktreeMode?: string;
@@ -134,15 +181,28 @@ export interface AgentRunOptions extends CommandOptions {
   forge?: string;
   workspace?: string;
   image?: string[];
+  attach?: string[];
   cwd?: string;
   env?: string[];
   label?: string[];
   waitTimeout?: string;
   outputSchema?: string;
+  profile?: string;
 }
 
 function resolveNewWorkspaceKind(options: AgentRunOptions): string | undefined {
   return options.newWorkspace ?? (options.worktree ? "worktree" : undefined);
+}
+
+function shouldUseExplicitRuntimeCwd(
+  options: AgentRunOptions,
+  callerAgentId: string | undefined,
+): boolean {
+  return (
+    options.cwd !== undefined &&
+    !resolveNewWorkspaceKind(options) &&
+    Boolean(options.workspace?.trim() || process.env.PASEO_WORKSPACE_ID?.trim() || callerAgentId)
+  );
 }
 
 function buildRunWorkspaceSource(options: AgentRunOptions, cwd: string) {
@@ -241,6 +301,8 @@ async function fetchStructuredOutput(
   prompt: string,
   outputSchema: ReturnType<typeof loadOutputSchema>,
 ): Promise<Record<string, unknown>> {
+  const { getStructuredAgentResponse, StructuredAgentResponseError } =
+    await import("@getpaseo/server/agent-response");
   try {
     return await getStructuredAgentResponse<Record<string, unknown>>({
       caller,
@@ -384,15 +446,7 @@ function validateRunWorkspaceOptions(options: AgentRunOptions): void {
   }
 }
 
-function validateRunOptions(prompt: string, options: AgentRunOptions, outputSchema: unknown): void {
-  if (!prompt || prompt.trim().length === 0) {
-    throw {
-      code: "MISSING_PROMPT",
-      message: "A prompt is required",
-      details: "Usage: paseo agent run [options] <prompt>",
-    } satisfies CommandError;
-  }
-
+function validateRunOptions(options: AgentRunOptions, outputSchema: unknown): void {
   if (options.background) {
     console.error("Warning: --background (-d) is deprecated. Use --no-wait instead.");
   }
@@ -404,6 +458,42 @@ function validateRunOptions(prompt: string, options: AgentRunOptions, outputSche
       code: "INVALID_OPTIONS",
       message: "--output-schema cannot be used with --no-wait",
       details: "Structured output requires waiting for the agent to finish",
+    } satisfies CommandError;
+  }
+}
+
+function validateRunCreateIntent(
+  options: AgentRunOptions,
+  callerAgentId: string | undefined,
+  runtimeCwdRequested: boolean,
+  orchestrationParityAvailable: boolean,
+): void {
+  if (options.relationship === "subagent" && !callerAgentId) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--relationship subagent requires a calling agent context",
+    } satisfies CommandError;
+  }
+  if (
+    (options.relationship !== undefined ||
+      options.notifyOnFinish !== undefined ||
+      callerAgentId ||
+      runtimeCwdRequested) &&
+    !orchestrationParityAvailable
+  ) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "Update the host to use agent orchestration parity options.",
+    } satisfies CommandError;
+  }
+  if (
+    options.notifications !== undefined &&
+    !resolveNewWorkspaceKind(options) &&
+    (options.workspace?.trim() || process.env.PASEO_WORKSPACE_ID?.trim() || callerAgentId)
+  ) {
+    throw {
+      code: "INVALID_OPTIONS",
+      message: "--notifications can only be set when creating a workspace",
     } satisfies CommandError;
   }
 }
@@ -546,23 +636,32 @@ async function resolveRunWorkspace(
   options: AgentRunOptions,
   cwd: string,
   callerAgentId: string | undefined,
+  notifications: "on" | "off" | undefined,
 ): Promise<RunWorkspace> {
   const newWorkspace = resolveNewWorkspaceKind(options);
   const explicit = newWorkspace ? undefined : options.workspace?.trim();
   if (explicit) {
     console.error(`Using workspace ${explicit}`);
-    return resolveExistingRunWorkspace(client, explicit);
+    const workspace = await resolveExistingRunWorkspace(client, explicit);
+    return options.cwd !== undefined ? { ...workspace, cwd: resolve(cwd) } : workspace;
   }
 
   if (!newWorkspace && callerAgentId) {
-    return { cwd };
+    return { cwd: options.cwd !== undefined ? resolve(cwd) : cwd };
   }
 
   const ambientWorkspaceId = newWorkspace ? undefined : process.env.PASEO_WORKSPACE_ID?.trim();
   if (ambientWorkspaceId) {
     console.error(`Using workspace ${ambientWorkspaceId}`);
-    return resolveExistingRunWorkspace(client, ambientWorkspaceId);
+    const workspace = await resolveExistingRunWorkspace(client, ambientWorkspaceId);
+    return options.cwd !== undefined ? { ...workspace, cwd: resolve(cwd) } : workspace;
   }
+
+  await assertModeBeforeWorkspaceCreate(
+    client,
+    resolveProviderAndModel(options).provider,
+    options.mode,
+  );
 
   // TODO: thread the run `prompt` as firstAgentContext so workspace-level
   // title/branch generation picks up the task description (U8/U6 deferred).
@@ -570,6 +669,7 @@ async function resolveRunWorkspace(
   const result = await client.createWorkspace({
     source,
     ...(callerAgentId ? { callerAgentId } : {}),
+    ...(notifications !== undefined ? { notifications } : {}),
   });
 
   if (!result.workspace) {
@@ -582,6 +682,12 @@ async function resolveRunWorkspace(
   const branch = result.workspace.gitRuntime?.currentBranch;
   const label = branch ? `${result.workspace.name} (${branch})` : result.workspace.name;
   console.error(`Created workspace ${result.workspace.id} - ${label}`);
+  await warnAboutAliasedProject({
+    client,
+    daemonTarget: options.daemonTarget,
+    workspaceId: result.workspace.id,
+    projectId: result.workspace.projectId,
+  });
   if (result.setupSkippedReason) console.error(result.setupSkippedReason);
   console.error(
     "Tip: pass --workspace <id> (or set PASEO_WORKSPACE_ID) to run in an existing workspace.",
@@ -589,22 +695,188 @@ async function resolveRunWorkspace(
   return { id: result.workspace.id, cwd: result.workspace.workspaceDirectory ?? cwd };
 }
 
+interface StructuredRunRequest {
+  client: ConnectedDaemonClient;
+  attachments?: CreateAgentRequestOptions["attachments"];
+  prompt: string;
+  outputSchema: ReturnType<typeof loadOutputSchema>;
+  provider: AgentRunOptions["provider"];
+  model: string | undefined;
+  mode: string | undefined;
+  title: string | undefined;
+  thinkingOptionId: string | undefined;
+  featureValues: Record<string, unknown>;
+  hasFeatureValues: boolean;
+  env: Record<string, string> | undefined;
+  labels: Record<string, string>;
+  images: Array<{ data: string; mimeType: string }> | undefined;
+  workspaceId: string | undefined;
+  cwd: string;
+  callerAgentId: string | undefined;
+  relationship: AgentRunOptions["relationship"];
+  notifyOnFinish: boolean | undefined;
+  runtimeCwd: string | undefined;
+  waitTimeoutMs: number;
+  runOptions: Pick<AgentRunOptions, "wait" | "background" | "detach">;
+}
+
+async function runStructuredAgent(
+  request: StructuredRunRequest,
+): Promise<SingleResult<AgentRunResult>> {
+  let structuredAgent: AgentSnapshotPayload | null = null;
+  const callStructuredTurn = async (structuredPrompt: string): Promise<string> => {
+    if (!structuredAgent) {
+      structuredAgent = await request.client.createAgent({
+        provider: request.provider,
+        cwd: request.cwd,
+        workspaceId: request.workspaceId,
+        callerAgentId: request.callerAgentId,
+        relationship: request.relationship,
+        ...(request.notifyOnFinish !== undefined || request.callerAgentId
+          ? { notifyOnFinish: request.notifyOnFinish ?? true }
+          : {}),
+        ...(request.runtimeCwd !== undefined ? { runtimeCwd: request.runtimeCwd } : {}),
+        title: request.title,
+        modeId: request.mode,
+        model: request.model,
+        thinkingOptionId: request.thinkingOptionId,
+        ...(request.hasFeatureValues ? { featureValues: request.featureValues } : {}),
+        initialPrompt: structuredPrompt,
+        outputSchema: request.outputSchema,
+        images: request.images,
+        attachments: request.attachments,
+        env: request.env,
+        labels: Object.keys(request.labels).length > 0 ? request.labels : undefined,
+      });
+    } else {
+      await request.client.sendMessage(structuredAgent.id, structuredPrompt);
+    }
+
+    const state = await request.client.waitForFinish(structuredAgent.id, request.waitTimeoutMs);
+    if (state.status === "timeout") {
+      throw new StructuredRunStatusError("timeout", "Timed out waiting for structured output");
+    }
+    if (state.status === "permission") {
+      throw new StructuredRunStatusError(
+        "permission",
+        "Agent is waiting for permission before producing structured output",
+      );
+    }
+    if (state.status === "error") {
+      throw new StructuredRunStatusError(
+        "error",
+        state.error ?? "Agent failed before producing structured output",
+      );
+    }
+
+    const lastMessage = await resolveStructuredResponseMessage({
+      client: request.client,
+      agentId: structuredAgent.id,
+      lastMessage: state.lastMessage,
+    });
+    if (!lastMessage) {
+      throw new StructuredRunStatusError(
+        "empty",
+        "Agent finished without a structured output message",
+      );
+    }
+
+    return lastMessage;
+  };
+
+  const output = await fetchStructuredOutput(
+    callStructuredTurn,
+    request.prompt,
+    request.outputSchema,
+  );
+  if (!structuredAgent) {
+    throw {
+      code: "OUTPUT_SCHEMA_FAILED",
+      message: "Agent finished without a structured output message",
+    } satisfies CommandError;
+  }
+
+  await request.client.close();
+  return {
+    type: "single",
+    data: toRunResult(structuredAgent, "completed"),
+    schema: structuredRunSchema(output),
+  };
+}
+
+async function runStandardAgent(
+  request: Omit<StructuredRunRequest, "outputSchema">,
+): Promise<SingleResult<AgentRunResult>> {
+  const agent = await request.client.createAgent({
+    provider: request.provider,
+    cwd: request.cwd,
+    workspaceId: request.workspaceId,
+    callerAgentId: request.callerAgentId,
+    relationship: request.relationship,
+    ...(request.notifyOnFinish !== undefined || request.callerAgentId
+      ? { notifyOnFinish: request.notifyOnFinish ?? true }
+      : {}),
+    ...(request.runtimeCwd !== undefined ? { runtimeCwd: request.runtimeCwd } : {}),
+    title: request.title,
+    modeId: request.mode,
+    model: request.model,
+    thinkingOptionId: request.thinkingOptionId,
+    ...(request.hasFeatureValues ? { featureValues: request.featureValues } : {}),
+    initialPrompt: request.prompt,
+    images: request.images,
+    attachments: request.attachments,
+    env: request.env,
+    labels: Object.keys(request.labels).length > 0 ? request.labels : undefined,
+  });
+
+  if (waitsForFinish(request.runOptions)) {
+    const state = await request.client.waitForFinish(agent.id, request.waitTimeoutMs);
+    await request.client.close();
+
+    const finalAgent = state.final ?? agent;
+    const status: AgentRunResult["status"] = state.status === "idle" ? "completed" : state.status;
+    return {
+      type: "single",
+      data: toRunResult(finalAgent, status),
+      schema: agentRunSchema,
+    };
+  }
+
+  await request.client.close();
+  return {
+    type: "single",
+    data: toRunResult(agent),
+    schema: agentRunSchema,
+  };
+}
+
 export async function runRunCommand(
-  prompt: string,
+  promptArgument: string | undefined,
   options: AgentRunOptions,
   _command: Command,
 ): Promise<SingleResult<AgentRunResult>> {
+  validateRunProfileOptions(options);
+  validateAgentForkBoundary(options);
+  const prompt = await resolvePromptInput({
+    promptArgument,
+    promptOption: options.prompt,
+    promptFile: options.promptFile,
+  });
+  const preparedAttachments = await prepareAttachments(options.attach);
   const outputSchema = options.outputSchema ? loadOutputSchema(options.outputSchema) : undefined;
 
-  validateRunOptions(prompt, options, outputSchema);
+  validateRunOptions(options, outputSchema);
   const waitTimeoutMs = parseWaitTimeoutOption(options.waitTimeout);
-
-  const resolvedProviderModel = resolveProviderAndModel(options);
-  const resolvedTitle = options.title ?? options.name;
+  validateRunProviderOptions(options);
 
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
+    if (options.profile)
+      options = withProfileDefaults(options, await readAgentProfile(client, options.profile));
+    const forkAttachments = await prepareAgentFork(client, options);
+    const resolvedProviderModel = resolveProviderAndModel(options);
+    const resolvedTitle = options.title ?? options.name;
     // Resolve working directory
     const cwd = options.cwd ?? process.cwd();
     const thinkingOptionId = options.thinking?.trim();
@@ -622,126 +894,81 @@ export async function runRunCommand(
 
     const labels = parseRunLabels(options.label);
     const env = parseRunEnv(options.env);
+    const featureValues = parseFeatureValues(options.feature, options.featuresJson);
+    const hasFeatureValues = Boolean(options.feature?.length) || options.featuresJson !== undefined;
     const requestEnv = Object.keys(env).length > 0 ? env : undefined;
 
     const callerAgentId = await resolveCallerAgentId(client);
-    const workspace = await resolveRunWorkspace(client, options, cwd, callerAgentId);
+    const runtimeCwdRequested = shouldUseExplicitRuntimeCwd(options, callerAgentId);
+    validateRunCreateIntent(
+      options,
+      callerAgentId,
+      runtimeCwdRequested,
+      client.getLastServerInfoMessage()?.features?.agentOrchestrationParity === true,
+    );
+    const workspace = await resolveRunWorkspace(
+      client,
+      options,
+      cwd,
+      callerAgentId,
+      options.notifications,
+    );
     const workspaceId = workspace.id;
     const runCwd = workspace.cwd;
+    const explicitAttachments = await resolveAttachments(client, preparedAttachments, runCwd);
+    const attachments = mergeAttachments(explicitAttachments, forkAttachments);
+    const runtimeCwd = runtimeCwdRequested ? runCwd : undefined;
 
     if (outputSchema) {
-      let structuredAgent: AgentSnapshotPayload | null = null;
-
-      const callStructuredTurn = async (structuredPrompt: string): Promise<string> => {
-        if (!structuredAgent) {
-          structuredAgent = await client.createAgent({
-            provider: resolvedProviderModel.provider,
-            cwd: runCwd,
-            workspaceId,
-            callerAgentId,
-            title: resolvedTitle,
-            modeId: options.mode,
-            model: resolvedProviderModel.model,
-            thinkingOptionId,
-            initialPrompt: structuredPrompt,
-            outputSchema,
-            images,
-            env: requestEnv,
-            labels: Object.keys(labels).length > 0 ? labels : undefined,
-          });
-        } else {
-          await client.sendMessage(structuredAgent.id, structuredPrompt);
-        }
-
-        const state = await client.waitForFinish(structuredAgent.id, waitTimeoutMs);
-        if (state.status === "timeout") {
-          throw new StructuredRunStatusError("timeout", "Timed out waiting for structured output");
-        }
-        if (state.status === "permission") {
-          throw new StructuredRunStatusError(
-            "permission",
-            "Agent is waiting for permission before producing structured output",
-          );
-        }
-        if (state.status === "error") {
-          throw new StructuredRunStatusError(
-            "error",
-            state.error ?? "Agent failed before producing structured output",
-          );
-        }
-
-        const lastMessage = await resolveStructuredResponseMessage({
-          client,
-          agentId: structuredAgent.id,
-          lastMessage: state.lastMessage,
-        });
-        if (!lastMessage) {
-          throw new StructuredRunStatusError(
-            "empty",
-            "Agent finished without a structured output message",
-          );
-        }
-
-        return lastMessage;
-      };
-
-      const output = await fetchStructuredOutput(callStructuredTurn, prompt, outputSchema);
-
-      if (!structuredAgent) {
-        const error: CommandError = {
-          code: "OUTPUT_SCHEMA_FAILED",
-          message: "Agent finished without a structured output message",
-        };
-        throw error;
-      }
-
-      await client.close();
-
-      return {
-        type: "single",
-        data: toRunResult(structuredAgent, "completed"),
-        schema: structuredRunSchema(output),
-      };
+      return await runStructuredAgent({
+        client,
+        attachments,
+        prompt,
+        outputSchema,
+        provider: resolvedProviderModel.provider,
+        model: resolvedProviderModel.model,
+        mode: options.mode,
+        title: resolvedTitle,
+        thinkingOptionId,
+        featureValues,
+        hasFeatureValues,
+        env: requestEnv,
+        labels,
+        images,
+        workspaceId,
+        cwd: runCwd,
+        callerAgentId,
+        relationship: options.relationship,
+        notifyOnFinish: options.notifyOnFinish,
+        runtimeCwd,
+        waitTimeoutMs,
+        runOptions: options,
+      });
     }
 
-    // Create the agent
-    const agent = await client.createAgent({
+    return await runStandardAgent({
+      client,
+      attachments,
+      prompt,
       provider: resolvedProviderModel.provider,
-      cwd: runCwd,
-      workspaceId,
-      callerAgentId,
-      title: resolvedTitle,
-      modeId: options.mode,
       model: resolvedProviderModel.model,
+      mode: options.mode,
+      title: resolvedTitle,
       thinkingOptionId,
-      initialPrompt: prompt,
-      images,
+      featureValues,
+      hasFeatureValues,
       env: requestEnv,
-      labels: Object.keys(labels).length > 0 ? labels : undefined,
+      labels,
+      images,
+      workspaceId,
+      cwd: runCwd,
+      callerAgentId,
+      relationship: options.relationship,
+      notifyOnFinish: options.notifyOnFinish,
+      runtimeCwd,
+      waitTimeoutMs,
+      runOptions: options,
     });
-
-    // Default run behavior is foreground: wait for completion unless --no-wait is set.
-    if (waitsForFinish(options)) {
-      const state = await client.waitForFinish(agent.id, waitTimeoutMs);
-      await client.close();
-
-      const finalAgent = state.final ?? agent;
-      const status: AgentRunResult["status"] = state.status === "idle" ? "completed" : state.status;
-
-      return {
-        type: "single",
-        data: toRunResult(finalAgent, status),
-        schema: agentRunSchema,
-      };
-    }
-
-    await client.close();
-
-    return {
-      type: "single",
-      data: toRunResult(agent),
-      schema: agentRunSchema,
-    };
   } catch (err) {
     await client.close().catch(() => {});
 
@@ -756,4 +983,13 @@ export async function runRunCommand(
     };
     throw error;
   }
+}
+
+function validateRunProfileOptions(options: AgentRunOptions): void {
+  if (options.profile && options.forkSource)
+    throw new Error("--profile cannot be combined with fork");
+}
+
+function validateRunProviderOptions(options: AgentRunOptions): void {
+  if (!options.forkSource && !options.profile) resolveProviderAndModel(options);
 }

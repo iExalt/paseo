@@ -130,6 +130,43 @@ describe("runArchiveCommand", () => {
     expect(archiveCalls[0]?.input.worktreePath).toBe(worktreePath);
   });
 
+  it("refuses a name that is one worktree's directory and another's branch", async () => {
+    const archiveCalls: unknown[] = [];
+    const fakeClient = createFakeDaemonClient({
+      getPaseoWorktreeList: async () => ({
+        worktrees: [
+          {
+            worktreePath: "/tmp/paseo-home/worktrees/repo/feat",
+            branchName: "renamed",
+            head: "abc123",
+            createdAt: "2026-04-12T00:00:00.000Z",
+          },
+          {
+            worktreePath: "/tmp/paseo-home/worktrees/repo/other",
+            branchName: "feat",
+            head: "def456",
+            createdAt: "2026-04-12T00:00:00.000Z",
+          },
+        ],
+        error: null,
+        requestId: "req-list",
+      }),
+      archivePaseoWorktree: async (input) => {
+        archiveCalls.push(input);
+        return { success: true, removedAgents: [], error: null, requestId: "req-archive" };
+      },
+    });
+
+    await expect(
+      runArchiveCommandWithDeps(
+        "feat",
+        { daemonTarget },
+        { connectToDaemon: async () => fakeClient },
+      ),
+    ).rejects.toMatchObject({ code: "AMBIGUOUS_WORKTREE" });
+    expect(archiveCalls).toHaveLength(0);
+  });
+
   it("throws a CommandError when the worktree is not found", async () => {
     const fakeClient = createFakeDaemonClient({
       getPaseoWorktreeList: async () => ({

@@ -26,9 +26,11 @@ Managed `start` and Desktop use defaults, then `config.json`. Inherited daemon-s
 
 Foreground `paseo daemon run`, Docker, and direct supervisor launches apply environment variables after the file. Existing legacy supervisor flags retain their precedence across worker restart. Changing deployment overrides requires stopping and relaunching that deployment. Lists append across sources, including hostnames and CORS origins.
 
+See [Paseo tool policy and migration](/docs/mcp#configuration) for the default and legacy configuration precedence.
+
 ## Example
 
-Minimal example that configures listening address, hostnames, and MCP:
+Minimal example that configures listening address, hostnames, and native agent tools:
 
 ```json
 {
@@ -37,7 +39,7 @@ Minimal example that configures listening address, hostnames, and MCP:
   "daemon": {
     "listen": "127.0.0.1:6767",
     "hostnames": ["localhost", ".localhost"],
-    "mcp": { "enabled": true }
+    "agentTools": { "enabled": true }
   }
 }
 ```
@@ -70,7 +72,7 @@ The daemon validates the complete file before applying anything. It applies runt
 paseo daemon restart
 ```
 
-Runtime-safe settings include relay enablement, MCP settings, browser tools, hostnames, CORS origins, trusted proxies, Git process limits, agent and terminal profiles, provider definitions, metadata generation, the app base URL, provider catalog timeout, and the global plugin switch. Removing one of these settings applies its omitted-field behavior; removing a provider removes it from future launches.
+Runtime-safe settings include relay enablement, native agent tool settings, browser tools, hostnames, CORS origins, trusted proxies, Git process limits, agent and terminal profiles, provider definitions, metadata generation, the app base URL, provider catalog timeout, and the global plugin switch. Removing one of these settings applies its omitted-field behavior; removing a provider removes it from future launches.
 
 New homes keep relay disabled when you remove `daemon.relay.enabled`. A daemon whose config already omitted this field when it started keeps the legacy relay-enabled behavior for compatibility. Set `daemon.relay.enabled` explicitly when editing an older config.
 

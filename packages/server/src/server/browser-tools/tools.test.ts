@@ -570,6 +570,10 @@ describe("registerBrowserTools", () => {
 
     expect(harness.broker.calls).toEqual([
       {
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+        signal: undefined,
         agentId: "agent-1",
         cwd: "/repo",
         workspaceId: "wks_workspace_a",
@@ -592,6 +596,10 @@ describe("registerBrowserTools", () => {
 
     expect(harness.broker.calls).toEqual([
       {
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+        signal: undefined,
         agentId: "agent-1",
         cwd: "/repo",
         workspaceId: "wks_workspace_a",
@@ -755,6 +763,10 @@ describe("registerBrowserTools", () => {
 
     expect(harness.broker.calls).toEqual([
       {
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+        signal: undefined,
         agentId: "agent-1",
         cwd: "/repo",
         workspaceId: "wks_workspace_a",
@@ -793,6 +805,10 @@ describe("registerBrowserTools", () => {
 
       expect(harness.broker.calls).toEqual([
         {
+          requestId: expect.stringMatching(
+            /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+          ),
+          signal: undefined,
           agentId: "agent-1",
           cwd: "/repo",
           workspaceId: "wks_workspace_a",
@@ -966,6 +982,10 @@ describe("registerBrowserTools", () => {
 
     expect(harness.broker.calls).toEqual([
       {
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+        signal: undefined,
         agentId: "agent-1",
         cwd: "/repo",
         workspaceId: "wks_workspace_a",
@@ -986,7 +1006,16 @@ describe("registerBrowserTools", () => {
     const response = await harness.execute("browser_snapshot", { browserId: BROWSER_ID });
 
     expect(harness.broker.calls).toEqual([
-      { command: { command: "snapshot", args: { browserId: BROWSER_ID } } },
+      {
+        requestId: expect.stringMatching(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+        ),
+        signal: undefined,
+        agentId: undefined,
+        cwd: undefined,
+        workspaceId: undefined,
+        command: { command: "snapshot", args: { browserId: BROWSER_ID } },
+      },
     ]);
     expect(response.structuredContent).toEqual({
       ok: true,

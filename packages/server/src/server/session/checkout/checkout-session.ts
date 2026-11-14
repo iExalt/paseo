@@ -1472,7 +1472,13 @@ function isValidPullRequestTimelineIdentity(options: {
   if (!Number.isInteger(options.prNumber) || options.prNumber <= 0) {
     return false;
   }
-  return isValidGitHubRepoSegment(options.repoOwner) && isValidGitHubRepoSegment(options.repoName);
+  return (
+    options.repoOwner
+      .split("/")
+      .every(
+        (segment) => segment !== "." && segment !== ".." && isValidGitHubRepoSegment(segment),
+      ) && isValidGitHubRepoSegment(options.repoName)
+  );
 }
 
 function isValidGitHubRepoSegment(value: string): boolean {

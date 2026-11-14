@@ -21,6 +21,11 @@ import type { z } from "zod";
 import type { SessionEventSubscription } from "@getpaseo/protocol/messages";
 import type { LocalSpeechModel } from "@getpaseo/protocol/speech/rpc-schemas";
 import { CLIENT_CAPS, type ClientCapability } from "@getpaseo/protocol/client-capabilities";
+import type {
+  BrowserAutomationCommand,
+  BrowserCommandExecuteResponse,
+} from "@getpaseo/protocol/browser-automation/rpc-schemas";
+import type { VoiceSpeakResponse } from "@getpaseo/protocol/messages";
 import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import { MAX_WEBSOCKET_MESSAGE_BYTES } from "@getpaseo/protocol/websocket-message-limit";
 import {
@@ -35,7 +40,7 @@ import {
   ShutdownRequestedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
-  type ActiveTurnBehavior,
+  type AgentSendBehavior,
   type ServerInfoStatusPayload,
 } from "@getpaseo/protocol/messages";
 import { validateWSOutboundMessage } from "@getpaseo/protocol/validation/ws-outbound";
@@ -104,6 +109,15 @@ import type {
   GetProvidersSnapshotResponseMessage,
   RefreshProvidersSnapshotResponseMessage,
   ProviderDiagnosticResponseMessage,
+  ProfileListPayload,
+  PermissionListPayload,
+  ProviderInspectPayload,
+  ProviderInspectRequest,
+  AgentDirectoryQueryRequest,
+  AgentActivityGetRequest,
+  AgentListItemPayload,
+  AgentStatusResult,
+  AgentActivityResult,
   ProviderUsageListResponseMessage,
   UsageReportEntry,
   DaemonGetStatusResponse,
@@ -117,6 +131,8 @@ import type {
   SubscribeTerminalRequest,
   CloseItemsResponse,
   KillTerminalResponse,
+  TerminalInputResponse,
+  TerminalKeysSendResponse,
   CaptureTerminalResponse,
   TerminalInput,
   SessionInboundMessage,
@@ -462,7 +478,8 @@ export interface SendMessageOptions {
   sessionMode?: string;
   messageId?: string;
   /** What happens when the agent is mid-turn. The daemon interrupts the turn when omitted. */
-  activeTurnBehavior?: ActiveTurnBehavior;
+  activeTurnBehavior?: AgentSendBehavior;
+  notifyOnFinish?: boolean;
   images?: Array<{ data: string; mimeType: string }>;
   attachments?: SendAgentMessageRequest["attachments"];
 }
@@ -486,6 +503,9 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
   env?: CreateAgentRequestMessage["env"];
   workspaceId?: string;
   callerAgentId?: string;
+  relationship?: CreateAgentRequestMessage["relationship"];
+  notifyOnFinish?: CreateAgentRequestMessage["notifyOnFinish"];
+  runtimeCwd?: CreateAgentRequestMessage["runtimeCwd"];
   initialPrompt?: string;
   idempotencyKey?: string;
   clientMessageId?: string;
@@ -503,12 +523,38 @@ export interface CreateAgentRequestOptions extends AgentConfigOverrides {
   labels?: Record<string, string>;
 }
 
+function legacyCreateAgentParityFields(
+  options: CreateAgentRequestOptions,
+): Pick<CreateAgentRequestMessage, "relationship" | "notifyOnFinish" | "runtimeCwd"> {
+  return {
+    ...(options.relationship !== undefined ? { relationship: options.relationship } : {}),
+    ...(options.notifyOnFinish !== undefined ? { notifyOnFinish: options.notifyOnFinish } : {}),
+    ...(options.runtimeCwd !== undefined ? { runtimeCwd: options.runtimeCwd } : {}),
+  };
+}
+
+function sendAgentMessageOptions(
+  options: SendMessageOptions | undefined,
+): Pick<
+  SendAgentMessageRequest,
+  "activeTurnBehavior" | "sessionMode" | "notifyOnFinish" | "images" | "attachments"
+> {
+  return {
+    ...(options?.activeTurnBehavior ? { activeTurnBehavior: options.activeTurnBehavior } : {}),
+    ...(options?.sessionMode !== undefined ? { sessionMode: options.sessionMode } : {}),
+    ...(options?.notifyOnFinish !== undefined ? { notifyOnFinish: options.notifyOnFinish } : {}),
+    ...(options?.images ? { images: options.images } : {}),
+    ...(options?.attachments ? { attachments: options.attachments } : {}),
+  };
+}
+
 export interface CreateWorkspaceRequestOptions {
   source: WorkspaceCreateRequest["source"];
   title?: string;
   /** Workspace discovery visibility; contents retain normal durability. */
   background?: boolean;
   callerAgentId?: string;
+  callerContext?: WorkspaceCreateRequest["callerContext"];
   notifications?: WorkspaceCreateRequest["notifications"];
   idempotencyKey?: string;
   workspaceId?: string;
@@ -652,6 +698,8 @@ export type RenameTerminalResult = z.infer<typeof RenameTerminalResponseSchema>[
 type SubscribeTerminalPayload = SubscribeTerminalResponse["payload"];
 type CloseItemsPayload = CloseItemsResponse["payload"];
 type KillTerminalPayload = KillTerminalResponse["payload"];
+type TerminalInputPayload = TerminalInputResponse["payload"];
+type TerminalKeysSendPayload = TerminalKeysSendResponse["payload"];
 type CaptureTerminalPayload = CaptureTerminalResponse["payload"];
 type ScheduleCreatePayload = Extract<
   SessionOutboundMessage,
@@ -909,13 +957,26 @@ export interface CreateScheduleOptions {
           mcpServers?: AgentSessionConfig["mcpServers"];
         };
       };
+  callerContext?: {
+    agentId: string;
+    provider?: string;
+    model?: string;
+    cwd?: string;
+    modeId?: string;
+    thinkingOptionId?: string;
+    isolation?: "local" | "worktree";
+  };
+  callerAgentId?: string;
+  replaceExisting?: boolean;
   maxRuns?: number;
   expiresAt?: string;
+  expiresIn?: string;
   runOnCreate?: boolean;
   requestId?: string;
 }
 export interface InspectScheduleOptions {
   id: string;
+  callerAgentId?: string;
   requestId?: string;
 }
 export interface UpdateScheduleNewAgentConfig {
@@ -929,6 +990,7 @@ export interface UpdateScheduleNewAgentConfig {
 }
 export interface UpdateScheduleOptions {
   id: string;
+  callerAgentId?: string;
   name?: string | null;
   prompt?: string;
   cadence?: {
@@ -939,6 +1001,7 @@ export interface UpdateScheduleOptions {
   newAgentConfig?: UpdateScheduleNewAgentConfig;
   maxRuns?: number | null;
   expiresAt?: string | null;
+  expiresIn?: string;
   requestId?: string;
 }
 export interface RenameBranchInput {
@@ -989,6 +1052,7 @@ interface WaitHandle<T> {
 interface WaitOptions {
   skipQueue?: boolean;
   requestId?: string;
+  signal?: AbortSignal;
 }
 
 interface CorrelatedResponseIdentity {
@@ -1047,7 +1111,10 @@ export class DaemonConnectionError extends Error {
   readonly outcome?: "unknown";
   constructor(
     message: string,
-    readonly code: "DAEMON_CONNECTION_LOST" | "DAEMON_REQUEST_TIMEOUT" = "DAEMON_CONNECTION_LOST",
+    readonly code:
+      | "DAEMON_CONNECTION_LOST"
+      | "DAEMON_REQUEST_TIMEOUT"
+      | "DAEMON_UPDATE_REQUIRED" = "DAEMON_CONNECTION_LOST",
     context?: { serverId?: string; outcome?: "unknown"; cause?: Error },
   ) {
     super(message, context?.cause ? { cause: context.cause } : undefined);
@@ -1340,6 +1407,22 @@ function buildFetchAgentsRequest(
       ? { includeBackground: options.includeBackground }
       : {}),
   });
+}
+
+export interface AgentDirectoryQueryClientOptions extends Omit<
+  AgentDirectoryQueryRequest,
+  "type" | "requestId"
+> {}
+
+export interface AgentRequestOptions {
+  requestId?: string;
+}
+
+export interface AgentActivityRequestOptions extends Pick<
+  AgentActivityGetRequest,
+  "agentId" | "limit"
+> {
+  requestId?: string;
 }
 
 export class DaemonClient {
@@ -2229,7 +2312,7 @@ export class DaemonClient {
     message: SessionInboundMessage;
     timeout?: number;
     select: (msg: SessionOutboundMessage) => T | null;
-    options?: { skipQueue?: boolean };
+    options?: WaitOptions;
   }): Promise<T> {
     const wire = this.owned.prepareRequest(params.message);
     const timeout = params.timeout ?? DEFAULT_SESSION_RPC_TIMEOUT_MS;
@@ -2284,13 +2367,14 @@ export class DaemonClient {
     timeout?: number;
     responseType: TResponseType;
     options?: { skipQueue?: boolean };
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     return this.sendRequest({
       requestId: params.requestId,
       message: params.message,
       timeout: params.timeout,
-      options: params.options,
+      options: { ...params.options, signal: params.signal },
       select: (msg) => {
         const correlated = msg as CorrelatedResponseMessage;
         if (correlated.type !== params.responseType) {
@@ -2316,6 +2400,7 @@ export class DaemonClient {
     message: { type: SessionInboundMessage["type"] } & Record<string, unknown>;
     responseType: TResponseType;
     timeout?: number;
+    signal?: AbortSignal;
     selectPayload?: (payload: CorrelatedResponsePayload<TResponseType>) => TResult | null;
   }): Promise<TResult> {
     const resolvedRequestId = this.createRequestId(params.requestId);
@@ -2328,6 +2413,7 @@ export class DaemonClient {
       message,
       responseType: params.responseType,
       timeout: params.timeout,
+      signal: params.signal,
       options: { skipQueue: true },
       ...(params.selectPayload ? { selectPayload: params.selectPayload } : {}),
     });
@@ -2671,6 +2757,46 @@ export class DaemonClient {
       { type: "browser.host.register.request", ...registration },
       options,
     );
+  }
+
+  async executeBrowserCommand(
+    input: { command: BrowserAutomationCommand; agentId?: string; workspaceId?: string },
+    options?: { signal?: AbortSignal; timeout?: number },
+  ): Promise<BrowserCommandExecuteResponse["payload"]> {
+    const signal = options?.signal;
+    if (signal?.aborted) {
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Browser command aborted", "AbortError");
+    }
+
+    const requestId = this.createRequestId();
+    const cancelBrowserCommand = () => {
+      try {
+        this.sendSessionMessage({
+          type: "browser.command.cancel.request",
+          requestId: this.createRequestId(),
+          targetRequestId: requestId,
+        });
+      } catch {
+        // The local waiter is already aborted; closing this source also aborts it on the server.
+      }
+    };
+    signal?.addEventListener("abort", cancelBrowserCommand, { once: true });
+    try {
+      return await this.sendCorrelatedSessionRequest({
+        requestId,
+        message: {
+          type: "browser.command.execute.request",
+          ...input,
+        },
+        responseType: "browser.command.execute.response",
+        timeout: options?.timeout,
+        signal,
+      });
+    } finally {
+      signal?.removeEventListener("abort", cancelBrowserCommand);
+    }
   }
 
   observeEvents(
@@ -3228,6 +3354,18 @@ export class DaemonClient {
     }
   }
 
+  private requireScheduleCliParity(): void {
+    if (this.lastServerInfoMessage?.features?.scheduleCliParity !== true) {
+      throw new Error("Update the host to use schedule and heartbeat CLI parity features.");
+    }
+  }
+
+  private requireAgentOrchestrationParity(): void {
+    if (this.lastServerInfoMessage?.features?.agentOrchestrationParity !== true) {
+      throw new Error("Update the host to use agent orchestration parity options.");
+    }
+  }
+
   supportsBackgroundWorkspaces(): boolean {
     return this.lastServerInfoMessage?.features?.backgroundWorkspaces === true;
   }
@@ -3239,6 +3377,13 @@ export class DaemonClient {
       );
     }
     if (options.background !== undefined) this.requireBackgroundWorkspaces();
+    if (
+      options.relationship !== undefined ||
+      options.notifyOnFinish !== undefined ||
+      options.runtimeCwd !== undefined
+    ) {
+      this.requireAgentOrchestrationParity();
+    }
     const result = await this.creations.createAgent({
       ...options,
       config: resolveAgentConfig(options),
@@ -3260,6 +3405,7 @@ export class DaemonClient {
       ...(options.env ? { env: options.env } : {}),
       ...(options.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
       ...(options.callerAgentId !== undefined ? { callerAgentId: options.callerAgentId } : {}),
+      ...legacyCreateAgentParityFields(options),
       ...(options.initialPrompt ? { initialPrompt: options.initialPrompt } : {}),
       idempotencyKey: options.idempotencyKey,
       ...(options.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
@@ -3363,6 +3509,19 @@ export class DaemonClient {
     }
   }
 
+  /** Closes the agent runtime while retaining its history; callers must gate on `server_info.features.agentClose`. */
+  async closeAgent(agentId: string): Promise<void> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.close.response">({
+      message: {
+        type: "agent.close.request",
+        agentId,
+      },
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "closeAgent rejected");
+    }
+  }
+
   async updateAgent(
     agentId: string,
     updates: { name?: string; labels?: Record<string, string> },
@@ -3463,6 +3622,29 @@ export class DaemonClient {
       throw new Error(payload.error ?? "setWorkspaceTitle rejected");
     }
     return { title: payload.title };
+  }
+
+  async setCurrentWorkspaceTitle(
+    callerAgentId: string,
+    title: string | null,
+    requestId?: string,
+  ): Promise<{ workspaceId: string; title: string | null }> {
+    if (this.lastServerInfoMessage?.features?.workspaceCallerContext !== true) {
+      throw new Error("Update the host to rename the caller's workspace.");
+    }
+    const payload = await this.sendCorrelatedSessionRequest({
+      requestId,
+      message: {
+        type: "workspace.title.set.request",
+        callerContext: { agentId: callerAgentId },
+        title,
+      },
+      responseType: "workspace.title.set.response",
+    });
+    if (!payload.accepted) {
+      throw new Error(payload.error ?? "setCurrentWorkspaceTitle rejected");
+    }
+    return { workspaceId: payload.workspaceId, title: payload.title };
   }
 
   async setWorkspacePinned(
@@ -3862,19 +4044,13 @@ export class DaemonClient {
     agentId: string,
     text: string,
     options: SendMessageOptions = {},
-  ): Promise<{ deliveryStatus?: "queued" }> {
-    if (
-      options.sourceAgentId &&
-      this.lastServerInfoMessage?.features?.agentMessageProvenance !== true
-    ) {
-      throw new Error("Update the Paseo host to send messages with agent provenance.");
-    }
-    if (
-      options.sourceAgentServerId &&
-      this.lastServerInfoMessage?.features?.agentMessageBatching !== true
-    ) {
-      throw new Error("Update the Paseo host to send messages with a qualified agent address.");
-    }
+  ): Promise<{
+    /** The Paseo ID the daemon resolved `agentId` to, which may have been a prefix or session ID. */
+    agentId: string;
+    deliveryStatus?: "queued";
+    disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
+  }> {
+    this.requireSendAgentMessageCapabilities(options);
     const requestId = this.createRequestId();
     const messageId = options.messageId ?? crypto.randomUUID();
     const message = SessionInboundMessageSchema.parse({
@@ -3886,9 +4062,7 @@ export class DaemonClient {
       sourceAgentServerId: options.sourceAgentServerId,
       sessionMode: options.sessionMode,
       ...(messageId ? { messageId } : {}),
-      activeTurnBehavior: options.activeTurnBehavior,
-      images: options.images,
-      attachments: options.attachments,
+      ...sendAgentMessageOptions(options),
     });
     const payload = await this.sendRequest({
       requestId,
@@ -3907,15 +4081,48 @@ export class DaemonClient {
     if (!payload.accepted) {
       throw new Error(payload.error ?? "sendAgentMessage rejected");
     }
-    return payload.deliveryStatus ? { deliveryStatus: payload.deliveryStatus } : {};
+    return {
+      agentId: payload.agentId,
+      ...(payload.deliveryStatus ? { deliveryStatus: payload.deliveryStatus } : {}),
+      ...(payload.disposition ? { disposition: payload.disposition } : {}),
+    };
+  }
+
+  private requireSendAgentMessageCapabilities(options?: SendMessageOptions): void {
+    if (
+      options?.sourceAgentId &&
+      this.lastServerInfoMessage?.features?.agentMessageProvenance !== true
+    ) {
+      throw new Error("Update the Paseo host to send messages with agent provenance.");
+    }
+    if (
+      options?.sourceAgentServerId &&
+      this.lastServerInfoMessage?.features?.agentMessageBatching !== true
+    ) {
+      throw new Error("Update the Paseo host to send messages with a qualified agent address.");
+    }
+    if (options?.sessionMode !== undefined || options?.notifyOnFinish !== undefined) {
+      this.requireAgentOrchestrationParity();
+    }
+    if (
+      options?.activeTurnBehavior === "queue" &&
+      this.lastServerInfoMessage?.features?.agentSendQueue !== true
+    ) {
+      throw new DaemonConnectionError(
+        "Update the Paseo host to queue messages for a running agent.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
   }
 
   async sendMessage(
     agentId: string,
     text: string,
     options?: SendMessageOptions,
+  ): Promise<{
+    deliveryStatus?: "queued";
     disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
-  ): Promise<{ deliveryStatus?: "queued" }> {
+  }> {
     return this.sendAgentMessage(agentId, text, options);
   }
 
@@ -3952,7 +4159,7 @@ export class DaemonClient {
     return payload;
   }
 
-  async cancelAgent(agentId: string): Promise<void> {
+  async cancelAgent(agentId: string): Promise<boolean | undefined> {
     const requestId = this.createRequestId();
     const message = SessionInboundMessageSchema.parse({
       type: "cancel_agent_request",
@@ -3976,6 +4183,7 @@ export class DaemonClient {
     if (payload.error) {
       throw new Error(payload.error);
     }
+    return payload.cancelled;
   }
 
   async setAgentMode(agentId: string, modeId: string): Promise<AgentProviderNotice | null> {
@@ -4248,6 +4456,46 @@ export class DaemonClient {
       throw new Error((response.error ?? "Failed to set voice mode") + codeSuffix);
     }
     return response;
+  }
+
+  async speakText(
+    input: { text: string; callerAgentId?: string },
+    options?: { signal?: AbortSignal; timeout?: number },
+  ): Promise<VoiceSpeakResponse["payload"]> {
+    const signal = options?.signal;
+    if (signal?.aborted) {
+      throw signal.reason instanceof Error
+        ? signal.reason
+        : new DOMException("Speak request aborted", "AbortError");
+    }
+
+    const requestId = this.createRequestId();
+    const cancelSpeakRequest = () => {
+      try {
+        this.sendSessionMessage({
+          type: "voice.speak.cancel.request",
+          requestId: this.createRequestId(),
+          targetRequestId: requestId,
+        });
+      } catch {
+        // The local waiter is already aborted; source detach also aborts server work.
+      }
+    };
+    signal?.addEventListener("abort", cancelSpeakRequest, { once: true });
+    try {
+      return await this.sendCorrelatedSessionRequest({
+        requestId,
+        message: {
+          type: "voice.speak.request",
+          ...input,
+        },
+        responseType: "voice.speak.response",
+        timeout: options?.timeout ?? 0,
+        signal,
+      });
+    } finally {
+      signal?.removeEventListener("abort", cancelSpeakRequest);
+    }
   }
 
   async sendVoiceAudioChunk(audio: string, format: string, isLast = false): Promise<void> {
@@ -4998,6 +5246,12 @@ export class DaemonClient {
     requestId?: string,
   ): Promise<WorkspaceCreatePayload> {
     const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
+    if (
+      input.callerContext !== undefined &&
+      this.lastServerInfoMessage?.features?.workspaceCallerContext !== true
+    ) {
+      throw new Error("Update the host to use caller-scoped workspace creation.");
+    }
     if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
     if (input.agent?.background !== undefined)
       throw new Error("Configure background on the workspace, not its initial agent.");
@@ -5034,6 +5288,7 @@ export class DaemonClient {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.background !== undefined ? { background: input.background } : {}),
         ...(input.callerAgentId ? { callerAgentId: input.callerAgentId } : {}),
+        ...(input.callerContext !== undefined ? { callerContext: input.callerContext } : {}),
         ...(input.notifications !== undefined ? { notifications: input.notifications } : {}),
         ...(input.firstAgentContext !== undefined
           ? { firstAgentContext: input.firstAgentContext }
@@ -5549,6 +5804,72 @@ export class DaemonClient {
     });
   }
 
+  async listAgentProfiles(requestId?: string): Promise<ProfileListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"profile.list.response">({
+      requestId,
+      message: { type: "profile.list.request" },
+    });
+  }
+
+  async listPendingAgentPermissions(requestId?: string): Promise<PermissionListPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"permission.list.response">({
+      requestId,
+      message: { type: "permission.list.request" },
+    });
+  }
+
+  async queryAgentDirectory(
+    query: AgentDirectoryQueryClientOptions,
+    options?: AgentRequestOptions,
+  ): Promise<AgentListItemPayload[]> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.directory.query.response">({
+        requestId: options?.requestId,
+        message: { type: "agent.directory.query.request", ...query },
+      });
+    if (payload.error) throw new Error(payload.error);
+    if (!payload.agents) throw new Error("Agent query returned no result");
+    return payload.agents;
+  }
+
+  async getAgentStatus(agentId: string, options?: AgentRequestOptions): Promise<AgentStatusResult> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"agent.status.get.response">({
+      requestId: options?.requestId,
+      message: { type: "agent.status.get.request", agentId },
+    });
+    if (payload.error) throw new Error(payload.error);
+    if (!payload.result) throw new Error("Agent status returned no result");
+    return payload.result;
+  }
+
+  async getAgentActivity(input: AgentActivityRequestOptions): Promise<AgentActivityResult> {
+    const payload =
+      await this.sendNamespacedCorrelatedSessionRequest<"agent.activity.get.response">({
+        requestId: input.requestId,
+        message: {
+          type: "agent.activity.get.request",
+          agentId: input.agentId,
+          ...(input.limit !== undefined ? { limit: input.limit } : {}),
+        },
+      });
+    if (payload.error) throw new Error(payload.error);
+    if (!payload.result) throw new Error("Agent activity returned no result");
+    return payload.result;
+  }
+
+  async inspectProvider(
+    input: Omit<ProviderInspectRequest, "type" | "requestId">,
+    options?: { requestId?: string },
+  ): Promise<ProviderInspectPayload> {
+    const payload = await this.sendNamespacedCorrelatedSessionRequest<"provider.inspect.response">({
+      requestId: options?.requestId,
+      message: { type: "provider.inspect.request", ...input },
+    });
+    if (payload.error) throw new Error(payload.error);
+    if (!payload.result) throw new Error("Provider inspection returned no result");
+    return payload.result;
+  }
+
   async getDaemonNotificationRules(requestId?: string): Promise<{
     requestId: string;
     replyRules: ReplyRule[];
@@ -5663,6 +5984,15 @@ export class DaemonClient {
       message: {
         type: "diagnostics.request",
       },
+    });
+  }
+
+  async editDaemonConfig(
+    path: string,
+    edit: { value?: unknown; unset?: boolean; expectedValue?: unknown },
+  ): Promise<{ requestId: string; config: MutableDaemonConfig }> {
+    return this.sendNamespacedCorrelatedSessionRequest<"daemon.config.edit.response">({
+      message: { type: "daemon.config.edit.request", path, ...edit },
     });
   }
 
@@ -6370,7 +6700,11 @@ export class DaemonClient {
     });
   }
 
-  async waitForFinish(agentId: string, timeout = 60000): Promise<WaitForFinishResult> {
+  async waitForFinish(
+    agentId: string,
+    timeout = 60000,
+    options?: { messageId?: string },
+  ): Promise<WaitForFinishResult> {
     const requestId = this.createRequestId();
     const hasTimeout = Number.isFinite(timeout) && timeout > 0;
     const message = SessionInboundMessageSchema.parse({
@@ -6378,6 +6712,7 @@ export class DaemonClient {
       requestId,
       agentId,
       ...(hasTimeout ? { timeoutMs: timeout } : {}),
+      ...(options?.messageId ? { messageId: options.messageId } : {}),
     });
     const payload = await this.sendCorrelatedRequest({
       requestId,
@@ -6414,21 +6749,39 @@ export class DaemonClient {
   async listTerminals(
     cwd?: string,
     requestId?: string,
-    options?: { workspaceId?: string },
+    options?: {
+      workspaceId?: string;
+      callerContext?: Extract<
+        SessionInboundMessage,
+        { type: "list_terminals_request" }
+      >["callerContext"];
+    },
   ): Promise<ListTerminalsPayload> {
+    if (
+      options?.callerContext !== undefined &&
+      this.lastServerInfoMessage?.features?.workspaceCallerContext !== true
+    ) {
+      throw new DaemonConnectionError(
+        "Update the host to use agent-scoped terminal context.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
     const resolvedRequestId = this.createRequestId(requestId);
     const message = SessionInboundMessageSchema.parse({
       type: "list_terminals_request",
       ...(cwd === undefined ? {} : { cwd }),
       ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
+      ...(options?.callerContext !== undefined ? { callerContext: options.callerContext } : {}),
       requestId: resolvedRequestId,
     });
-    return this.sendCorrelatedRequest({
+    const payload = await this.sendCorrelatedRequest({
       requestId: resolvedRequestId,
       message,
       responseType: "list_terminals_response",
       options: { skipQueue: true },
     });
+    if (payload.error) throw new Error(payload.error);
+    return payload;
   }
 
   async createTerminal(
@@ -6437,18 +6790,32 @@ export class DaemonClient {
     requestId?: string,
     options?: {
       agentId?: string;
+      callerContext?: Extract<
+        SessionInboundMessage,
+        { type: "create_terminal_request" }
+      >["callerContext"];
       command?: string;
       args?: string[];
       workspaceId?: string;
       size?: { rows: number; cols: number };
     },
   ): Promise<CreateTerminalPayload> {
+    if (
+      options?.callerContext !== undefined &&
+      this.lastServerInfoMessage?.features?.workspaceCallerContext !== true
+    ) {
+      throw new DaemonConnectionError(
+        "Update the host to use agent-scoped terminal context.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
     const resolvedRequestId = this.createRequestId(requestId);
     const message = SessionInboundMessageSchema.parse({
       type: "create_terminal_request",
       cwd,
       name,
       agentId: options?.agentId,
+      ...(options?.callerContext !== undefined ? { callerContext: options.callerContext } : {}),
       command: options?.command,
       args: options?.args,
       ...(options?.workspaceId !== undefined ? { workspaceId: options.workspaceId } : {}),
@@ -6563,6 +6930,65 @@ export class DaemonClient {
     this.sendSessionMessage({ type: "terminal_input", terminalId, message });
   }
 
+  async sendTerminalInputAndWait(terminalId: string, data: string): Promise<TerminalInputPayload> {
+    if (this.lastServerInfoMessage?.features?.terminalInputAck !== true) {
+      throw new DaemonConnectionError(
+        "Update the host to use acknowledged terminal input.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "terminal.input.request",
+      terminalId,
+      data,
+      requestId,
+    });
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message,
+      responseType: "terminal.input.response",
+      options: { skipQueue: true },
+    });
+    if (!payload.success) {
+      throw new Error(payload.error ?? `Failed to send input to terminal ${terminalId}`);
+    }
+    return payload;
+  }
+
+  /** Sends key tokens that the host encodes for the terminal's current input mode. */
+  async sendTerminalKeysAndWait(
+    terminalId: string,
+    keys: readonly string[],
+    options: { literal?: boolean } = {},
+  ): Promise<TerminalKeysSendPayload> {
+    // COMPAT(terminalKeys): added in v0.12.1, remove gate after 2027-04-26.
+    if (this.lastServerInfoMessage?.features?.terminalKeys !== true) {
+      throw new DaemonConnectionError(
+        "Update the host to send terminal keys.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
+    const requestId = this.createRequestId();
+    const message = SessionInboundMessageSchema.parse({
+      type: "terminal.keys.send.request",
+      terminalId,
+      keys: [...keys],
+      ...(options.literal ? { literal: true } : {}),
+      requestId,
+    });
+    const payload = await this.sendCorrelatedRequest({
+      requestId,
+      message,
+      responseType: "terminal.keys.send.response",
+      options: { skipQueue: true },
+    });
+    if (!payload.success) {
+      throw new Error(payload.error ?? `Failed to send keys to terminal ${terminalId}`);
+    }
+    return payload;
+  }
+
   async killTerminal(terminalId: string, requestId?: string): Promise<KillTerminalPayload> {
     const resolvedRequestId = this.createRequestId(requestId);
     const message = SessionInboundMessageSchema.parse({
@@ -6620,6 +7046,28 @@ export class DaemonClient {
   }
 
   async scheduleCreate(options: CreateScheduleOptions): Promise<ScheduleCreatePayload> {
+    const hasCallerArchiveOverride =
+      options.callerContext !== undefined &&
+      options.target.type === "new-agent" &&
+      options.target.config.archiveOnFinish !== undefined;
+    // COMPAT(scheduleCallerArchiveOnFinish): added in v0.27.0, remove after 2027-11-14.
+    if (
+      hasCallerArchiveOverride &&
+      this.lastServerInfoMessage?.features?.scheduleCallerArchiveOnFinish !== true
+    ) {
+      throw new DaemonConnectionError(
+        "Update the host to set archive-on-finish for a caller-scoped schedule.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
+    if (
+      options.callerContext !== undefined ||
+      options.callerAgentId !== undefined ||
+      options.replaceExisting !== undefined ||
+      options.expiresIn !== undefined
+    ) {
+      this.requireScheduleCliParity();
+    }
     return this.sendCorrelatedSessionRequest({
       requestId: options.requestId,
       message: {
@@ -6627,9 +7075,15 @@ export class DaemonClient {
         prompt: options.prompt,
         cadence: options.cadence,
         target: options.target,
+        ...(options.callerContext ? { callerContext: options.callerContext } : {}),
+        ...(options.callerAgentId ? { callerAgentId: options.callerAgentId } : {}),
+        ...(options.replaceExisting !== undefined
+          ? { replaceExisting: options.replaceExisting }
+          : {}),
         ...(options.name ? { name: options.name } : {}),
         ...(typeof options.maxRuns === "number" ? { maxRuns: options.maxRuns } : {}),
         ...(options.expiresAt ? { expiresAt: options.expiresAt } : {}),
+        ...(options.expiresIn ? { expiresIn: options.expiresIn } : {}),
         ...(typeof options.runOnCreate === "boolean" ? { runOnCreate: options.runOnCreate } : {}),
       },
       responseType: "schedule/create/response",
@@ -6691,11 +7145,13 @@ export class DaemonClient {
   }
 
   async scheduleDelete(options: InspectScheduleOptions): Promise<ScheduleDeletePayload> {
+    if (options.callerAgentId !== undefined) this.requireScheduleCliParity();
     return this.sendCorrelatedSessionRequest({
       requestId: options.requestId,
       message: {
         type: "schedule/delete",
         scheduleId: options.id,
+        ...(options.callerAgentId ? { callerAgentId: options.callerAgentId } : {}),
       },
       responseType: "schedule/delete/response",
     });
@@ -6713,17 +7169,22 @@ export class DaemonClient {
   }
 
   async scheduleUpdate(options: UpdateScheduleOptions): Promise<ScheduleUpdatePayload> {
+    if (options.callerAgentId !== undefined || options.expiresIn !== undefined) {
+      this.requireScheduleCliParity();
+    }
     return this.sendCorrelatedSessionRequest({
       requestId: options.requestId,
       message: {
         type: "schedule/update",
         scheduleId: options.id,
+        ...(options.callerAgentId ? { callerAgentId: options.callerAgentId } : {}),
         ...(options.name !== undefined ? { name: options.name } : {}),
         ...(options.prompt !== undefined ? { prompt: options.prompt } : {}),
         ...(options.cadence !== undefined ? { cadence: options.cadence } : {}),
         ...(options.newAgentConfig !== undefined ? { newAgentConfig: options.newAgentConfig } : {}),
         ...(options.maxRuns !== undefined ? { maxRuns: options.maxRuns } : {}),
         ...(options.expiresAt !== undefined ? { expiresAt: options.expiresAt } : {}),
+        ...(options.expiresIn ? { expiresIn: options.expiresIn } : {}),
       },
       responseType: "schedule/update/response",
     });
@@ -6777,6 +7238,9 @@ export class DaemonClient {
     // COMPAT(daemonConfigReload): added in v0.4.0, remove gate after 2027-02-14.
     if (this.lastServerInfoMessage?.features?.daemonConfigReload !== true) {
       throw new Error("Update the host to reload daemon configuration.");
+    }
+  }
+
   private requireReplyRuleFilteringSupport(): void {
     if (this.lastServerInfoMessage?.features?.replyRuleFiltering !== true) {
       throw new Error("Update the host to manage daemon-wide notification rules.");
@@ -7530,16 +7994,19 @@ export class DaemonClient {
     let waiter: Waiter<T> | null = null;
     let settled = false;
     let rejectFn: ((error: Error) => void) | null = null;
+    let removeAbortListener = () => {};
 
     const promise = new Promise<T>((resolve, reject) => {
       const wrappedResolve = (value: T) => {
         if (settled) return;
         settled = true;
+        removeAbortListener();
         resolve(value);
       };
       const wrappedReject = (error: Error) => {
         if (settled) return;
         settled = true;
+        removeAbortListener();
         reject(error);
       };
       rejectFn = wrappedReject;
@@ -7563,6 +8030,23 @@ export class DaemonClient {
         submitted: false,
       };
       this.waiters.add(waiter);
+
+      const signal = options?.signal;
+      if (signal) {
+        const abort = () => {
+          if (waiter) {
+            this.waiters.delete(waiter);
+            if (waiter.timeoutHandle) clearTimeout(waiter.timeoutHandle);
+          }
+          const reason = signal.reason;
+          wrappedReject(
+            reason instanceof Error ? reason : new DOMException("Request aborted", "AbortError"),
+          );
+        };
+        removeAbortListener = () => signal.removeEventListener("abort", abort);
+        if (signal.aborted) abort();
+        else signal.addEventListener("abort", abort, { once: true });
+      }
     });
 
     const cancel = (error: Error) => {
@@ -7576,6 +8060,8 @@ export class DaemonClient {
           clearTimeout(waiter.timeoutHandle);
         }
       }
+
+      removeAbortListener();
 
       if (rejectFn) {
         rejectFn(error);

@@ -94,6 +94,20 @@ describe("BrowserToolsBroker", () => {
     });
   });
 
+  test("a pre-aborted request does not reach a browser host", async () => {
+    const broker = createBroker();
+    const client = new FakeBrowserHostClient("host-1");
+    broker.registerClient(client);
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      broker.execute({ command: snapshotCommand(), signal: controller.signal }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(client.receivedRequests).toEqual([]);
+    expect(broker.getPendingRequestCount()).toBe(0);
+  });
+
   test("invalid browser requests return structured failures without contacting a host", async () => {
     const broker = createBroker();
     const client = new FakeBrowserHostClient("host-1");
@@ -805,6 +819,37 @@ describe("BrowserToolsBroker", () => {
       },
     });
     expect(broker.getPendingRequestCount()).toBe(0);
+  });
+
+  test("abort clears a pending host request and ignores its late response", async () => {
+    const broker = createBroker();
+    const client = new FakeBrowserHostClient("host-1");
+    broker.registerClient(client);
+    const controller = new AbortController();
+    const pending = broker.execute({ command: snapshotCommand(), signal: controller.signal });
+    const request = client.receivedRequests.at(-1);
+    if (!request) throw new Error("Browser host did not receive the request");
+
+    controller.abort(new Error("caller cancelled"));
+
+    await expect(pending).rejects.toThrow("caller cancelled");
+    expect(broker.getPendingRequestCount()).toBe(0);
+    expect(
+      client.resolveRequestWith(broker, request, {
+        requestId: request.requestId,
+        ok: true,
+        result: {
+          command: "snapshot",
+          browserId: BROWSER_ID,
+          url: "https://example.com",
+          title: "Example",
+          format: "aria-yaml",
+          snapshot: "- document Example",
+          truncated: false,
+          stats: { nodeCount: 1, refCount: 0, textLength: 1 },
+        },
+      }),
+    ).toBe(false);
   });
 
   test("disconnect resolves retryable failure and clears pending request", async () => {

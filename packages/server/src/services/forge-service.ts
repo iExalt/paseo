@@ -240,12 +240,14 @@ export type ForgeReadOptions =
 export type ListPullRequestsOptions = {
   cwd: string;
   query?: string;
+  state?: "all";
   limit?: number;
 } & ForgeReadOptions;
 
 export type ListIssuesOptions = {
   cwd: string;
   query?: string;
+  state?: "all";
   limit?: number;
 } & ForgeReadOptions;
 

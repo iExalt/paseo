@@ -1,3 +1,4 @@
+import { REMOTE_CONFIG_PATHS, editRemoteConfig } from "./remote-config-edit.js";
 import {
   loadPersistedConfig,
   savePersistedConfigAsync,
@@ -21,8 +22,8 @@ type MutableDaemonConfigPatch = import("@getpaseo/protocol/messages").MutableDae
 type ProviderOverride = import("./agent/provider-launch-config.js").ProviderOverride;
 
 interface SupportedMutableConfigPatch {
+  agentTools?: { enabled?: boolean };
   relay?: { enabled?: boolean; requireProtectedSecurity?: boolean };
-  mcp?: { injectIntoAgents?: boolean };
   usage?: { enabled: boolean };
   browserTools?: { enabled?: boolean };
   providers?: MutableDaemonConfig["providers"];
@@ -183,8 +184,7 @@ function isEqualValue(a: unknown, b: unknown): boolean {
 const RELOADABLE_PATHS = [
   "daemon.relay.enabled",
   "daemon.relay.requireProtectedSecurity",
-  "daemon.mcp.enabled",
-  "daemon.mcp.injectIntoAgents",
+  "daemon.agentTools.enabled",
   "daemon.usage.enabled",
   "daemon.browserTools.enabled",
   "daemon.hostnames",
@@ -212,8 +212,7 @@ const RELOADABLE_PATHS = [
 const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.relay.enabled", "relay.enabled"],
   ["daemon.relay.requireProtectedSecurity", "relay.requireProtectedSecurity"],
-  ["daemon.mcp.enabled", "mcp.enabled"],
-  ["daemon.mcp.injectIntoAgents", "mcp.injectIntoAgents"],
+  ["daemon.agentTools.enabled", "agentTools.enabled"],
   ["daemon.usage.enabled", "usage.enabled"],
   ["daemon.browserTools.enabled", "browserTools.enabled"],
   ["daemon.hostnames", "hostnames"],
@@ -287,6 +286,8 @@ function pickRelayPatch(
 
 function pickToolPatch(patch: MutableDaemonConfigPatch) {
   return {
+    ...(patch.agentTools?.enabled !== undefined
+      ? { agentTools: { enabled: patch.agentTools.enabled } }
       : {}),
     ...(patch.browserTools?.enabled !== undefined
       ? { browserTools: { enabled: patch.browserTools.enabled } }
@@ -299,8 +300,6 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...pickRelayPatch(patch.relay),
     usage: patch.usage,
     ...pickToolPatch(patch),
-    ...(patch.mcp?.injectIntoAgents !== undefined
-      ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
     ...(patch.providers !== undefined ? { providers: patch.providers } : {}),
     ...(patch.removeProviders !== undefined ? { removeProviders: patch.removeProviders } : {}),
     ...(patch.metadataGeneration?.providers !== undefined
@@ -436,6 +435,82 @@ export class DaemonConfigStore {
         ),
       ),
     );
+  }
+
+  public editRemote(
+    field: string,
+    edit: { value?: unknown; unset?: boolean; expectedValue?: unknown },
+  ): Promise<MutableDaemonConfig> {
+    return this.enqueue(async () => {
+      if (!this.reloadSource)
+        throw new Error("Configuration editing is unavailable for this daemon instance");
+      if (Object.hasOwn(edit, "expectedValue")) {
+        const currentValue =
+          field === "agentProfiles"
+            ? (this.current.agentProfiles ?? [])
+            : this.current[field as keyof MutableDaemonConfig];
+        if (JSON.stringify(currentValue) !== JSON.stringify(edit.expectedValue))
+          throw new Error("Configuration changed since it was read; read it again before editing");
+      }
+      const previous = await loadPersistedConfigAsync(this.paseoHome, this.logger);
+      const { persisted, root } = editRemoteConfig(previous, field, edit);
+      const resolved = this.reloadSource.resolve(persisted);
+      const desired = MutableDaemonConfigSchema.parse({
+        ...resolved.mutable,
+        ...this.readSpeech(persisted),
+        replyRules: persisted.replyRules ?? [],
+      });
+      const next = { ...this.current, [root]: desired[root as keyof MutableDaemonConfig] };
+      if (root === "features") next.envOverrides = desired.envOverrides;
+      const removedProviders =
+        root === "providers"
+          ? Object.keys(this.current.providers).filter(
+              (id) => !Object.hasOwn(desired.providers, id),
+            )
+          : [];
+      if (root === "providers" && removedProviders.length) {
+        next.metadataGeneration = {
+          ...next.metadataGeneration,
+          providers: next.metadataGeneration.providers.filter(
+            (entry) => !removedProviders.includes(entry.provider),
+          ),
+        };
+        if (persisted.agents?.metadataGeneration)
+          persisted.agents.metadataGeneration.providers = (
+            persisted.agents.metadataGeneration.providers ?? []
+          ).filter((entry) => !removedProviders.includes(entry.provider));
+      }
+      const matcher =
+        root === "replyRules"
+          ? ReplyRuleMatcher.compile(freezeReplyRules(next.replyRules ?? []))
+          : undefined;
+      await savePersistedConfigAsync(this.paseoHome, persisted, this.logger);
+      try {
+        this.applyReplacement(next, { removedProviders }, matcher);
+      } catch (error) {
+        await savePersistedConfigAsync(this.paseoHome, previous, this.logger);
+        throw error;
+      }
+      const known = structuredClone(this.lastKnownPersisted) as Record<string, unknown>;
+      const persistedPath = REMOTE_CONFIG_PATHS[root]!.split(".");
+      const copyPath = (parts: string[]) => {
+        let target = known;
+        let source = persisted as Record<string, unknown> | undefined;
+        for (const part of parts.slice(0, -1)) {
+          target[part] ??= {};
+          target = target[part] as Record<string, unknown>;
+          source = source?.[part] as Record<string, unknown> | undefined;
+        }
+        const key = parts.at(-1)!;
+        if (source && Object.hasOwn(source, key)) target[key] = source[key];
+        else delete target[key];
+      };
+      copyPath(persistedPath);
+      if (removedProviders.length) copyPath(["agents", "metadataGeneration"]);
+      this.lastKnownPersisted = known as PersistedConfig;
+      if (root === "features") this.speechOwner?.apply(this.lastKnownPersisted);
+      return this.current;
+    });
   }
 
   public setAgentSkillSelection(selection: AgentSkillSelection): Promise<MutableDaemonConfig> {
@@ -819,8 +894,8 @@ function mergeMutableDaemonPatch(
   if (patch.relay?.requireProtectedSecurity !== undefined) {
     next.relay = { ...next.relay, requireProtectedSecurity: patch.relay.requireProtectedSecurity };
   }
-  if (patch.mcp?.injectIntoAgents !== undefined) {
-    next.mcp = { ...next.mcp, injectIntoAgents: patch.mcp.injectIntoAgents };
+  if (patch.agentTools?.enabled !== undefined) {
+    next.agentTools = { ...next.agentTools, enabled: patch.agentTools.enabled };
   }
   if (patch.usage) next.usage = patch.usage;
   if (patch.browserTools?.enabled !== undefined) {

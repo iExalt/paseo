@@ -20,3 +20,9 @@ checkout's whole `node_modules` tree into it: workspace links can resolve to the
 and missing package-local dependencies can select an incompatible root dependency. Install and
 build in the QA checkout before starting its daemon or browser tests.
 
+- `paseo daemon start` (managed) ignores setting overrides such as `PASEO_LISTEN`, `PORT` and
+  `PASEO_CORS_ORIGINS`, and names the ones it ignores on stderr. Put settings in
+  `<home>/config.json`, or use `paseo daemon run` in the foreground, which keeps them.
+- `paseo daemon pair --home <home> --app-url paseo:// --json` prints a pairing link and QR that
+  open the app directly (`paseo:///#offer=…`). With no daemon running, it builds the offer from
+  `<home>/config.json` without contacting the relay; `daemon.relay.enabled` must be true there.

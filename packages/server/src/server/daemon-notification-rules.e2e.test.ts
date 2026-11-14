@@ -1,4 +1,5 @@
 import { expect, test } from "vitest";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -9,6 +10,7 @@ import {
 import { createTestPaseoDaemon } from "./test-utils/paseo-daemon.js";
 import { createTestAgentClients } from "./test-utils/fake-agent-client.js";
 
+test("CLI manages daemon notification rules through the authorized local daemon", async () => {
   const fixtureRoot = await mkdtemp(path.join(tmpdir(), "paseo-daemon-notification-rules-"));
   const paseoHomeRoot = path.join(fixtureRoot, "home");
   const staticDir = path.join(fixtureRoot, "static");

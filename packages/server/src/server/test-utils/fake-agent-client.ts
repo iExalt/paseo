@@ -68,6 +68,7 @@ interface FakeAgentSessionOptions {
 export interface TestAgentClientOptions {
   beforeCreateSession?: (config: AgentSessionConfig) => Promise<void>;
   beforeResumeSession?: (handle: AgentPersistenceHandle) => Promise<void>;
+  onLaunchContext?: (context: AgentLaunchContext | undefined, config: AgentSessionConfig) => void;
   closeSession?: () => Promise<void>;
   onStartTurn?: (prompt: AgentPromptInput, config: AgentSessionConfig) => void;
   beforeTurnComplete?: (prompt: AgentPromptInput) => Promise<void>;
@@ -1234,9 +1235,10 @@ class FakeAgentClient implements AgentClient {
 
   async createSession(
     config: AgentSessionConfig,
-    _launchContext?: AgentLaunchContext,
+    launchContext?: AgentLaunchContext,
   ): Promise<AgentSession> {
     await this.options.beforeCreateSession?.(config);
+    this.options.onLaunchContext?.(launchContext, config);
     return new FakeAgentSession({
       providerName: this.provider,
       config: { ...config },

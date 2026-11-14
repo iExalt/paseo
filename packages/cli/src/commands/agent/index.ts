@@ -1,19 +1,29 @@
+import { runAgentCommandsCommand } from "./commands.js";
+import { addRewindOptions, runRewindCommand } from "./rewind.js";
+import type { AgentRunOptions } from "./run.js";
+
+import { createSubagentsCommand } from "./subagents.js";
 import { Command } from "commander";
+import { addAckOptions, runAckCommand } from "./ack.js";
 import { runModeCommand } from "./mode.js";
 import { addArchiveOptions, runArchiveCommand } from "./archive.js";
 import { addDeleteOptions, runDeleteCommand } from "./delete.js";
 import { addLsOptions, runLsCommand } from "./ls.js";
 import { addRunOptions, runRunCommand } from "./run.js";
-import { addLogsOptions, runLogsCommand } from "./logs.js";
+import { addLogsOptions, runLogsCommand, runPromptsCommand } from "./logs.js";
 import { addStopOptions, runStopCommand } from "./stop.js";
 import { addSendOptions, runSendCommand } from "./send.js";
 import { addInspectOptions, runInspectCommand } from "./inspect.js";
 import { addWaitOptions, runWaitCommand } from "./wait.js";
 import { addAttachOptions, runAttachCommand } from "./attach.js";
 import { addReloadOptions, runReloadCommand } from "./reload.js";
-import { addImportOptions, runImportCommand } from "./import.js";
+import { addImportOptions, runImportCommand, type AgentImportData } from "./import.js";
 import { runUpdateCommand } from "./update.js";
 import { runDetachCommand } from "./detach.js";
+import { addCloseOptions, runCloseCommand } from "./close.js";
+import { addAgentQueryOptions, runAgentQueryCommand } from "./query.js";
+import { addAgentStatusOptions, runAgentStatusCommand } from "./status.js";
+import { addAgentActivityOptions, runAgentActivityCommand } from "./activity.js";
 import { addOpenOptions, runOpenCommand } from "./open.js";
 import { withOutput } from "../../output/index.js";
 import {
@@ -25,21 +35,80 @@ import {
 
 export function createAgentCommand(): Command {
   const agent = new Command("agent").description("Manage agents (advanced operations)");
+  agent.addCommand(createSubagentsCommand());
+  addJsonAndDaemonHostOptions(
+    agent
+      .command("commands")
+      .description("List provider slash commands and skills for an agent")
+      .argument("<id>", "Agent ID, prefix, or full session ID"),
+  ).action(
+    withOutput(
+      (id: string, options: Parameters<typeof runAgentCommandsCommand>[1], command: Command) =>
+        runAgentCommandsCommand(id, options, command),
+    ),
+  );
+
+  addJsonAndDaemonHostOptions(addAckOptions(agent.command("ack"))).action(
+    withOutput(runAckCommand),
+  );
+
+  addJsonAndDaemonHostOptions(addRewindOptions(agent.command("rewind"))).action(
+    withOutput(runRewindCommand),
+  );
+  addJsonAndDaemonHostOptions(
+    addRunOptions(agent.command("fork").argument("<id>", "Source agent ID"))
+      .description("Fork chat history into a new agent and send a prompt")
+      .option("--at <message-id>", "Include history through this assistant message"),
+  ).action(
+    withOutput(
+      (id: string, prompt: string | undefined, options: AgentRunOptions, command: Command) =>
+        runRunCommand(
+          prompt,
+          {
+            ...options,
+            forkSource: {
+              agentId: id,
+              boundaryMessageId: typeof options.at === "string" ? options.at : undefined,
+            },
+          },
+          command,
+        ),
+    ),
+  );
 
   // Primary agent commands (same as top-level)
   addJsonAndDaemonHostOptions(addLsOptions(agent.command("ls"))).action(withOutput(runLsCommand));
+
+  addJsonAndDaemonHostOptions(addAgentQueryOptions(agent.command("query"))).action(
+    withOutput(runAgentQueryCommand),
+  );
+
+  addJsonAndDaemonHostOptions(addAgentStatusOptions(agent.command("status"))).action(
+    withOutput(runAgentStatusCommand),
+  );
+
+  addJsonAndDaemonHostOptions(addAgentActivityOptions(agent.command("activity"))).action(
+    withOutput(runAgentActivityCommand),
+  );
 
   addJsonAndDaemonHostOptions(addRunOptions(agent.command("run"))).action(
     withOutput(runRunCommand),
   );
 
   addJsonAndDaemonHostOptions(addImportOptions(agent.command("import"))).action(
-    withOutput(runImportCommand),
+    withOutput<AgentImportData, [string | undefined]>(runImportCommand),
   );
 
   addDaemonHostOption(addAttachOptions(agent.command("attach"))).action(
     withGlobalOptions(runAttachCommand),
   );
+
+  addJsonAndDaemonHostOptions(
+    agent
+      .command("prompts")
+      .description("List timeline prompt positions and previews")
+      .argument("<id>", "Agent ID, prefix, or full session ID"),
+  ).action(withGlobalOptions(runPromptsCommand));
 
   addDaemonHostOption(addLogsOptions(agent.command("logs"))).action(
     withGlobalOptions(runLogsCommand),
@@ -55,6 +124,10 @@ export function createAgentCommand(): Command {
 
   addJsonAndDaemonHostOptions(addDeleteOptions(agent.command("delete"))).action(
     withOutput(runDeleteCommand),
+  );
+
+  addJsonAndDaemonHostOptions(addCloseOptions(agent.command("close"))).action(
+    withOutput(runCloseCommand),
   );
 
   addJsonAndDaemonHostOptions(addSendOptions(agent.command("send"))).action(
@@ -74,7 +147,7 @@ export function createAgentCommand(): Command {
     agent
       .command("mode")
       .description("Change an agent's operational mode")
-      .argument("<id>", "Agent ID (or prefix)")
+      .argument("<id>", "Agent ID, prefix, or full session ID")
       .argument("[mode]", "Mode to set (required unless --list)")
       .option("--list", "List available modes for this agent"),
   ).action(withOutput(runModeCommand));
@@ -91,16 +164,28 @@ export function createAgentCommand(): Command {
     agent
       .command("detach")
       .description("Make a subagent independent without stopping or moving it")
-      .argument("<id>", "Agent ID, prefix, or name"),
+      .argument("<id>", "Agent ID, full session ID, prefix, or name"),
   ).action(withOutput(runDetachCommand));
 
   addJsonAndDaemonHostOptions(
     agent
       .command("update")
       .description("Update an agent's settings or metadata")
-      .argument("<id>", "Agent ID (or prefix)")
+      .argument("<id>", "Agent ID, prefix, or full session ID")
       .option("--name <name>", "Update the agent's display name")
+      .option("--mode <id>", "Update the agent's provider mode ID")
+      .option("--model <id>", "Update the agent's model ID")
+      .option("--clear-model", "Clear the agent's model override")
       .option("--thinking <id>", "Update the agent's thinking option ID")
+      .option("--profile <id>", "Apply a saved profile; explicit runtime settings override it")
+      .option("--clear-thinking", "Clear the agent's thinking option override")
+      .option(
+        "--feature <id=value>",
+        "Set provider feature values (repeatable or comma-separated; use true, false, null, or strings)",
+        collectMultiple,
+        [],
+      )
+      .option("--features-json <object>", "Set provider feature values from a JSON object")
       .option(
         "--label <label>",
         "Add/set label(s) on the agent (can be used multiple times or comma-separated)",

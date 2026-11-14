@@ -291,6 +291,36 @@ test("a failed submission releases the request so the user can retry", async () 
   }
 });
 
+test("malformed answers leave the async question pending until a corrected retry", async () => {
+  const { session, appServer, events, ask } = await setup();
+  const { manager, agent } = await manage(session);
+  try {
+    await ask();
+    const [permission] = session.getPendingPermissions();
+    for (const updatedInput of [
+      { answers: { "0": { answers: ["Green"] } } },
+      { "0": "Green" },
+      { answers: { "0": "Green" } },
+      { answers: { "Question 1": " " } },
+    ]) {
+      await expect(
+        manager.respondToPermission(agent.id, permission.id, { behavior: "allow", updatedInput }),
+      ).rejects.toThrow();
+      expect(session.getPendingPermissions()).toEqual([permission]);
+      expect(toAgentPayload(manager.getAgent(agent.id)!).pendingPermissions).toEqual([permission]);
+      expect(appServer.requests().filter((request) => request.method === "turn/steer")).toEqual([]);
+      expect(events.filter((event) => event.type === "permission_resolved")).toEqual([]);
+    }
+    await manager.respondToPermission(agent.id, permission.id, answer);
+    expect(session.getPendingPermissions()).toEqual([]);
+    expect(appServer.requests().filter((request) => request.method === "turn/steer")).toHaveLength(
+      1,
+    );
+  } finally {
+    await manager.closeAgent(agent.id);
+  }
+});
+
 test("shows an async question, keeps streaming, and delivers its answer without interrupting", async () => {
   const { session, appServer, events, ask, say } = await setup();
   try {

@@ -4,7 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "vitest";
 import type { HubCredentialStore, StoredHubCredential } from "./credentials.js";
-import { HubCommandError } from "./error.js";
 import { runHubExport } from "./export.js";
 
 const directories: string[] = [];
@@ -60,7 +59,7 @@ describe("Hub trigger export", () => {
     });
   });
 
-  it("leaves identical files alone and refuses to overwrite changed files without --force", async () => {
+  it("leaves identical files alone and overwrites changed files", async () => {
     const cwd = await temporaryDirectory();
     const destination = path.join(cwd, "trigger.yml");
     const credentials = new MemoryCredentials({ origin: "https://hub.test", credential: "secret" });
@@ -85,12 +84,7 @@ describe("Hub trigger export", () => {
     assert.equal((await runHubExport(".", {}, dependencies)).data.unchanged, 1);
 
     await writeFile(destination, "local changes\n");
-    await assert.rejects(runHubExport(".", {}, dependencies), (error: unknown) => {
-      assert.ok(error instanceof HubCommandError);
-      assert.equal(error.code, "HUB_EXPORT_CONFLICT");
-      return true;
-    });
-    await runHubExport(".", { force: true }, dependencies);
+    assert.equal((await runHubExport(".", {}, dependencies)).data.exported, 1);
     assert.equal(await readFile(destination, "utf8"), "name: trigger\n");
   });
 });

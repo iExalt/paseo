@@ -513,6 +513,7 @@ Required fields for ACP providers:
 - `label`
 - `command` — the command to spawn the agent process (must support ACP over stdio)
 
+ACP agents use the Paseo CLI for host operations when they have shell access. Paseo no longer injects its own MCP server. Some ACP adapters cannot create sessions with third-party `mcpServers`; declare that limitation with `options.supportsMcpServers: false`:
 
 ```json
 {

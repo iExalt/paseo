@@ -1,6 +1,7 @@
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { chromium, devices, expect, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
+import { access, mkdir } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { test as baseSupportTest } from "../support/fixtures";
@@ -290,6 +291,7 @@ async function removeCreatedWorkspaceProject(
 test.describe("configurable notifications journey", () => {
   test.describe.configure({ timeout: notificationOsProof ? 300_000 : 120_000 });
 
+  test("keeps workspace and reply rules authoritative across CLI, app controls, and live turns", async ({
     page,
     e2eWorkerClient,
   }, testInfo) => {
@@ -392,6 +394,13 @@ test.describe("configurable notifications journey", () => {
       expect(
         cliListedOn.find((workspace) => workspace.workspaceId === workspaceId)?.notifications,
       ).toBe("on");
+      const listedOn = runCliJson<Array<{ workspaceId: string; notifications: string }>>(
+        ["workspace", "ls"],
+        cliTarget,
+      );
+      expect(
+        listedOn.find((workspace) => workspace.workspaceId === workspaceId)?.notifications,
+      ).toBe("on");
       await page.getByTestId("workspace-header-menu-trigger").click();
       await expect(workspacePolicyItem).toContainText("Mute notifications");
 
@@ -402,6 +411,11 @@ test.describe("configurable notifications journey", () => {
       expect(cliOff).toEqual({ workspaceId, notifications: "off" });
       await expect(workspacePolicyItem).toContainText("Unmute notifications");
 
+      const externalOn = runCliJson<{ workspaceId: string; notifications: string }>(
+        ["workspace", "update", workspaceId, "--notifications", "on"],
+        cliTarget,
+      );
+      expect(externalOn).toEqual({ workspaceId, notifications: "on" });
       await expect(workspacePolicyItem).toContainText("Mute notifications");
 
       await page.goto(buildSettingsHostSectionRoute(serverId, "agents"), { waitUntil: "commit" });
@@ -416,14 +430,29 @@ test.describe("configurable notifications journey", () => {
       await page.getByTestId("reply-rules-save").click();
       await expect
         .poll(async () => {
+          const result = runCliJson<{ replyRules: unknown[] }>(
+            ["daemon", "notifications", "rules", "get"],
+            cliTarget,
+          );
+          return result.replyRules;
         })
         .toEqual([matchingRule]);
 
       await flagsInput.fill("x");
       await page.getByTestId("reply-rules-save").click();
       await expect(page.getByText(/Could not save rules:/)).toBeVisible();
+      const retainedRules = runCliJson<{ replyRules: unknown[] }>(
+        ["daemon", "notifications", "rules", "get"],
+        cliTarget,
+      );
+      expect(retainedRules).toEqual({ replyRules: [matchingRule] });
 
       const externalRule = { source: "^External update\\.$", flags: "u" };
+      const updatedRules = runCliJson<{ replyRules: unknown[] }>(
+        ["daemon", "notifications", "rules", "set", JSON.stringify([externalRule])],
+        cliTarget,
+      );
+      expect(updatedRules).toEqual({ replyRules: [externalRule] });
       await expect(page.getByTestId("reply-rules-conflict")).toBeVisible();
       await expect(sourceInput).toHaveValue(matchingRule.source);
       await expect(flagsInput).toHaveValue("x");
@@ -433,7 +462,17 @@ test.describe("configurable notifications journey", () => {
       await flagsInput.fill("u");
       await page.getByTestId("reply-rules-clear").click();
       await expect(page.getByTestId("reply-rules-empty")).toBeVisible();
+      const clearedRules = runCliJson<{ replyRules: unknown[] }>(
+        ["daemon", "notifications", "rules", "get"],
+        cliTarget,
+      );
+      expect(clearedRules).toEqual({ replyRules: [] });
 
+      const savedForDelivery = runCliJson<{ replyRules: unknown[] }>(
+        ["daemon", "notifications", "rules", "set", JSON.stringify([matchingRule])],
+        cliTarget,
+      );
+      expect(savedForDelivery).toEqual({ replyRules: [matchingRule] });
       await expect(sourceInput).toHaveValue(matchingRule.source);
       const evidenceDirectory = path.resolve(
         process.cwd(),
@@ -502,6 +541,11 @@ test.describe("configurable notifications journey", () => {
         "Trial 1/4: notification expected — workspace on, no rule match, reply: Unrelated answer",
       );
 
+      const workspaceOff = runCliJson<{ workspaceId: string; notifications: string }>(
+        ["workspace", "update", workspaceId, "--notifications", "off"],
+        cliTarget,
+      );
+      expect(workspaceOff).toEqual({ workspaceId, notifications: "off" });
       expect(await readWorkspaceNotifications(e2eWorkerClient, workspaceId)).toBe("off");
       await turn(
         "Send a muted completion",
@@ -509,12 +553,22 @@ test.describe("configurable notifications journey", () => {
         "Trial 2/4: suppressed — workspace off, reply: Muted completion",
       );
 
+      const workspaceOn = runCliJson<{ workspaceId: string; notifications: string }>(
+        ["workspace", "update", workspaceId, "--notifications", "on"],
+        cliTarget,
+      );
+      expect(workspaceOn).toEqual({ workspaceId, notifications: "on" });
       expect(await readWorkspaceNotifications(e2eWorkerClient, workspaceId)).toBe("on");
       await turn(
         "Send a matching completion",
         "No news.",
         "Trial 3/4: suppressed — matching reply rule, reply: No news.",
       );
+      const clearForDelivery = runCliJson<{ replyRules: unknown[] }>(
+        ["daemon", "notifications", "rules", "clear"],
+        cliTarget,
+      );
+      expect(clearForDelivery).toEqual({ replyRules: [] });
       await turn(
         "Send the cleared-rule completion",
         "No news.",

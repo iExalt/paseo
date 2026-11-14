@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import { connectToDaemon } from "../../utils/client.js";
 import type {
   CommandError,
   CommandOptions,
@@ -27,6 +28,7 @@ export async function runUpdateCommand(
   workspaceId: string,
   options: WorkspaceUpdateOptions,
 ): Promise<SingleResult<WorkspaceUpdateResult>> {
+  const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     return {
       type: "single",

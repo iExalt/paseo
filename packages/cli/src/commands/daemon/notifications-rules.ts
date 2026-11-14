@@ -95,6 +95,7 @@ async function withDaemon<T>(
   operation: (client: Awaited<ReturnType<typeof connectToDaemon>>) => Promise<T>,
   failureCode: string,
 ): Promise<T> {
+  const client = await connectToDaemon({ target: options.daemonTarget });
   try {
     return await operation(client);
   } catch (error) {

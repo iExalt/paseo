@@ -28,6 +28,7 @@ const daemon = await createPaseoDaemon(
     paseoHome,
     corsAllowedOrigins: [],
     hostnames: true,
+    agentToolsEnabled: false,
     staticDir,
     agentClients: {},
     agentStoragePath: path.join(paseoHome, "agents"),

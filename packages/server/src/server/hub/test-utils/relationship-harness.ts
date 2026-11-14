@@ -1402,9 +1402,8 @@ export class HubRelationshipHarness {
       paseoHome: this.paseoHome,
       corsAllowedOrigins: [],
       hostnames: true,
-      mcpEnabled: this.mcpEnabled,
+      agentToolsEnabled: this.mcpEnabled,
       staticDir,
-      mcpDebug: false,
       agentClients: this.agentClients ?? {
         ...createTestAgentClients(),
         codex: this.codex,
