@@ -50,6 +50,12 @@ Unset removes the saved value and restores the host default. provider enable/dis
 provider add <id> [JSON] (ACP catalog by default), provider rm, and usage on/off
 use the connected host. JSON edit output reports the path and operation.
 
+Project setup: project create <name> --mkdir --parent <daemon-path> creates one
+new directory under an existing parent and registers it. project config get/set
+requires --project <id> or --path <daemon-root>. set takes a full config JSON object;
+pass --revision with get's revision JSON to reject stale edits (null for a missing
+file). Omitting --revision intentionally replaces against a fresh host read.
+
 Spend: usage spend --json returns this host's recorded API spend by provider,
 including trackingSince and carry already included in all-time. --time-zone <iana>
 selects daily/monthly boundaries; it defaults to the caller's time zone.
