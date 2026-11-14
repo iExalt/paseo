@@ -7,6 +7,9 @@ export const es: TranslationResources = {
     empty: "Sin resultados",
     failed: "La búsqueda falló: {{message}}",
   },
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "No se pudo buscar en este chat. Comprueba la conexión con el host y vuelve a intentarlo.",
@@ -342,6 +345,9 @@ export const es: TranslationResources = {
     actions: {
       copyCode: "Copiar código",
       copyTurn: "Copiar turno",
+      selectText: "Seleccionar texto",
+      selectTextTruncated:
+        "Se muestran los primeros 50.000 caracteres. Copiar turno lo copia todo.",
       copyMessage: "Copiar mensaje",
       forkMenu: "Bifurcar mensaje",
       forkInNewTab: "Bifurcar en una pestaña nueva",
@@ -2386,7 +2392,7 @@ export const es: TranslationResources = {
     editor: {
       title: "Editor",
       vimKeybindings: "Atajos de Vim",
-      vimHint: "Se aplica a archivos fuente en web y escritorio.",
+      vimHint: "Se aplica a archivos fuente en el editor.",
     },
     files: {
       title: "Archivos",
@@ -2740,7 +2746,6 @@ export const es: TranslationResources = {
     shortcuts: {
       dialogTitle: "Atajos",
       searchPlaceholder: "Buscar atajos",
-      unavailableOnMobile: "Los atajos de teclado solo están disponibles en el escritorio",
       capturePrompt: "Presione el acceso directo...",
       captureIndexPrompt: "Termina con un número del 1 al 9.",
       unassigned: "Sin asignar",

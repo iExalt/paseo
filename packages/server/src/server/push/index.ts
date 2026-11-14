@@ -1,15 +1,17 @@
 import type pino from "pino";
 
-import { PushService, type PushPayload } from "./push-service.js";
+import { PushService, type PushDeliveryOutcome, type PushPayload } from "./push-service.js";
 import { PushTokenStore } from "./token-store.js";
 
-export type { PushPayload };
+export type { PushDeliveryOutcome, PushPayload };
 
 const PUSH_TOKEN_LEASE_MS = 48 * 60 * 60 * 1000;
 
 export interface PushNotifications {
   renew(token: string): void;
   revoke(token: string): void;
+  /** Send to one registered device and report Expo's answer. */
+  sendTest(token: string, payload: PushPayload): Promise<PushDeliveryOutcome>;
   send(payload: PushPayload): Promise<void>;
 }
 
@@ -19,6 +21,7 @@ export function createPushNotifications(options: {
   logger: pino.Logger;
   filePath: string;
   now?: () => number;
+  deliverOne?: (token: string, payload: PushPayload) => Promise<PushDeliveryOutcome>;
   deliver?: (tokens: string[], payload: PushPayload) => Promise<void>;
 }): PushNotifications {
   const now = options.now ?? Date.now;
@@ -26,6 +29,9 @@ export function createPushNotifications(options: {
   const service = new PushService(options.logger, (token) => store.revokeToken(token));
   const deliver =
     options.deliver ??
+  const deliverOne =
+    options.deliverOne ??
+    ((token: string, payload: PushPayload) => service.sendOne(token, payload));
     ((tokens: string[], payload: PushPayload) => service.sendPush(tokens, payload));
 
   return {
@@ -35,6 +41,8 @@ export function createPushNotifications(options: {
     revoke(token) {
       store.revokeToken(token);
     },
+    sendTest(token, payload) {
+      return deliverOne(token, payload);
     async send(payload) {
       const tokens = store.getActiveTokens();
       options.logger.info({ tokenCount: tokens.length }, "Sending push notification");

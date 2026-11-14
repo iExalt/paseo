@@ -7,6 +7,9 @@ export const ru: TranslationResources = {
     empty: "Нет результатов",
     failed: "Не удалось выполнить поиск: {{message}}",
   },
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "Не удалось выполнить поиск в чате. Проверьте подключение к хосту и повторите попытку.",
@@ -341,6 +344,8 @@ export const ru: TranslationResources = {
     actions: {
       copyCode: "Скопировать код",
       copyTurn: "Скопировать ответ",
+      selectText: "Выделить текст",
+      selectTextTruncated: "Показаны первые 50 000 символов. «Скопировать ответ» копирует всё.",
       copyMessage: "Копировать сообщение",
       forkMenu: "Форкнуть чат отсюда",
       forkInNewTab: "Создать форк в новой вкладке",
@@ -2372,7 +2377,7 @@ export const ru: TranslationResources = {
     editor: {
       title: "Редактор",
       vimKeybindings: "Сочетания клавиш Vim",
-      vimHint: "Применяется к исходным файлам в веб- и настольной версии.",
+      vimHint: "Применяется к исходным файлам в редакторе.",
     },
     files: {
       title: "Файлы",
@@ -2727,7 +2732,6 @@ export const ru: TranslationResources = {
     shortcuts: {
       dialogTitle: "Сочетания клавиш",
       searchPlaceholder: "Поиск сочетаний клавиш",
-      unavailableOnMobile: "Сочетания клавиш доступны только на рабочем столе.",
       capturePrompt: "Нажмите сочетание клавиш...",
       captureIndexPrompt: "Завершите цифрой от 1 до 9.",
       unassigned: "Не задано",

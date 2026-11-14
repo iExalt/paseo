@@ -56,6 +56,32 @@ describe("buildWorkspaceTabMenuEntries", () => {
     ]);
   });
 
+  it("offers Find first when the caller can open the tab's find bar", () => {
+    const onFind = vi.fn();
+    const entries = buildWorkspaceTabMenuEntries({
+      surface: "mobile",
+      tab: createAgentTab(),
+      index: 0,
+      tabCount: 1,
+      menuTestIDBase: "menu",
+      onCopyResumeCommand: vi.fn(),
+      onCopyAgentId: vi.fn(),
+      onCopyTerminalId: vi.fn(),
+      onCopyFilePath: vi.fn(),
+      onReloadAgent: vi.fn(),
+      onRenameTab: vi.fn(),
+      onCloseTab: vi.fn(),
+      onCloseTabsBefore: vi.fn(),
+      onCloseTabsAfter: vi.fn(),
+      onCloseOtherTabs: vi.fn(),
+      onFind,
+    });
+    const first = entries[0];
+    expect(first).toMatchObject({ key: "find", label: "Find", testID: "menu-find" });
+    if (first?.kind === "item") first.onSelect();
+    expect(onFind).toHaveBeenCalledWith(createAgentTab());
+  });
+
   it("uses stacked ordering labels for mobile menus", () => {
     const entries = buildWorkspaceTabMenuEntries({
       surface: "mobile",
