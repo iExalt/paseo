@@ -17,6 +17,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { PairingTargetTracker } from "@/components/pair-link-credentials";
 import { buildDirectConnectionUri } from "@/components/direct-connection-host";
+import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 
 const FLEX_ONE_STYLE = { flex: 1 } as const;
 
@@ -210,6 +211,8 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
   const [advancedUri, setAdvancedUri] = useState("");
   const [inputResetKey, bumpInputResetKey] = useReducer((key: number) => key + 1, 0);
   const advancedTarget = useRef(new PairingTargetTracker("", true));
+  const portInputRef = useRef<EditingTextInputHandle | null>(null);
+  const focusPortInput = useCallback(() => portInputRef.current?.focus(), []);
 
   const connectIcon = useMemo(() => <ThemedLink2 size={16} />, []);
   const hostFieldStyle = useMemo(() => [styles.field, styles.hostField], []);
@@ -444,12 +447,16 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
             autoCorrect={false}
             keyboardType="url"
             editable={!isSaving}
+            selectTextOnFocus
             returnKeyType="next"
+            blurOnSubmit={false}
+            onSubmitEditing={focusPortInput}
           />
         </View>
         <View style={portFieldStyle}>
           <Text style={styles.label}>{t("pairing.direct.fields.port")}</Text>
           <ThemedAdaptiveTextInput
+            ref={portInputRef}
             testID="direct-port-input"
             nativeID="direct-port-input"
             accessibilityLabel={t("pairing.direct.fields.port")}
@@ -462,6 +469,7 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
             autoCorrect={false}
             keyboardType="number-pad"
             editable={!isSaving}
+            selectTextOnFocus
             returnKeyType="done"
             onSubmitEditing={handleSubmitEditing}
           />

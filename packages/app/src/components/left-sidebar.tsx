@@ -9,7 +9,16 @@ import {
   type LucideIcon,
 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type RefObject,
+} from "react";
 import {
   Pressable,
   ScrollView,
@@ -53,6 +62,9 @@ import {
   mapLayout,
   TOOLBAR_CONTROL_SIZES,
 } from "@/components/ui/control-geometry";
+import { SidebarUpdateButton, SidebarForkUpdateButton } from "@/components/sidebar/fork-updates";
+import { useNixUpdatePhase, useNixUpdateStore } from "@/desktop/updates/nix-updates";
+import { useForkUpdate } from "@/android/fork-updates/updater";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
@@ -295,11 +307,14 @@ function FooterIconButton({
   icon,
   iconSizeAdjustment = 0,
   shortcutKeys,
+  iconColor,
 }: {
   onPress: () => void;
   testID: string;
   label: string;
-  icon: LucideIcon;
+  icon: ComponentType<{ size: number; color: string }>;
+  /** Overrides the muted/hover colors for a glyph that signals state. */
+  iconColor?: "accent" | "destructive";
   /** Only for a glyph that reads larger than the others at the same size. */
   iconSizeAdjustment?: number;
   shortcutKeys?: ReturnType<typeof useShortcutKeys>;
@@ -326,7 +341,7 @@ function FooterIconButton({
                 icon={icon}
                 size="md"
                 sizeAdjustment={iconSizeAdjustment}
-                color={hovered ? "foreground" : "foregroundMuted"}
+                color={iconColor ?? (hovered ? "foreground" : "foregroundMuted")}
               />
             </>
           )}
@@ -431,6 +446,16 @@ function SidebarFooter({
   const newAgentKeys = useShortcutKeys("new-agent");
   const settingsKeys = useShortcutKeys("toggle-settings");
   const isCompactLayout = useIsCompactFormFactor();
+  const nixUpdatePhase = useNixUpdatePhase();
+  const nixUpdateFailed = useNixUpdateStore((state) => state.failed);
+  const forkUpdatePending = useForkUpdate((view) => view.icon !== null);
+  const updateActionCount =
+    Number(
+      nixUpdatePhase.kind === "available" ||
+        nixUpdatePhase.kind === "ready" ||
+        nixUpdatePhase.kind === "restart" ||
+        Boolean(nixUpdateFailed),
+    ) + Number(forkUpdatePending);
   const [rowWidth, setRowWidth] = useState(0);
   const handleRowLayout = useCallback((event: LayoutChangeEvent) => {
     setRowWidth(event.nativeEvent.layout.width);
@@ -438,12 +463,15 @@ function SidebarFooter({
   const { inline, overflow } = useMemo(
     () =>
       resolveSidebarFooterLayout({
-        rowWidth,
+        rowWidth: Math.max(
+          0,
+          rowWidth - updateActionCount * TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)],
+        ),
         controlSize: TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)],
         rowPadding: FOOTER_ROW_PADDING,
         actions: SIDEBAR_FOOTER_ACTIONS,
       }),
-    [rowWidth, isCompactLayout],
+    [rowWidth, isCompactLayout, updateActionCount],
   );
   const isInline = (action: SidebarFooterAction) => inline.includes(action);
 
@@ -476,6 +504,12 @@ function SidebarFooter({
             />
           ) : null}
           <View style={styles.footerSpacer} />
+          {rowWidth > 0 ? (
+            <>
+              <SidebarUpdateButton Button={FooterIconButton} />
+              <SidebarForkUpdateButton Button={FooterIconButton} />
+            </>
+          ) : null}
           {isInline("help") ? <SidebarHelpMenu /> : null}
           {overflow.length > 0 ? (
             <SidebarFooterOverflowMenu
