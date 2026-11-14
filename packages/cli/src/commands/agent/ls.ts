@@ -4,6 +4,7 @@ import { connectToDaemon } from "../../utils/client.js";
 import { fetchAllAgents } from "../../utils/agent-directory.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 import { collectMultiple } from "../../utils/command-options.js";
+import { contextWindowPercent } from "../../utils/agent-usage.js";
 import { isSameOrDescendantPath } from "../../utils/paths.js";
 
 type FetchAgentsOptions = NonNullable<
@@ -35,6 +36,8 @@ export interface AgentListItem {
   status: string;
   cwd: string;
   created: string;
+  lastUsage: AgentSnapshotPayload["lastUsage"] | null;
+  contextWindowPercent: number | null;
 }
 
 /** Helper to get relative time string */
@@ -101,6 +104,8 @@ function toListItem(agent: AgentSnapshotPayload): AgentListItem {
     status: agent.status,
     cwd: shortenPath(agent.cwd),
     created: relativeTime(agent.createdAt),
+    lastUsage: agent.lastUsage ?? null,
+    contextWindowPercent: contextWindowPercent(agent.lastUsage),
   };
 }
 

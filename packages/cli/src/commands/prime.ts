@@ -29,6 +29,10 @@ Durations accept s, m, h, and d, including 2h30m and 7d.
 JSON: parse stdout only; keep stderr separate, never merge 2>&1 into a parser.
 run --no-wait --json returns agentId/title. agent ls --json returns display
 summaries with id/name, possibly shortened cwd and relative created text.
+Usage: ls JSON includes lastUsage (raw provider fields) and contextWindowPercent.
+Inspect LastUsage includes nullable token counts, CostUsd, ContextWindowUsedTokens,
+ContextWindowMaxTokens and ContextWindowPercent. Null means unreported; zero is measured.
+agent status --json exposes raw lastUsage under snapshot.
 agent inspect --json uses capitalized Id/Name/Cwd. For rich metadata, use
 agent query --json: id/title, separate provider/model, absolute cwd, createdAt,
 and optional attention fields. agent status --json nests details under snapshot.
