@@ -86,7 +86,11 @@ export type PromptDispatchDisposition =
 export type PromptDispatchResult =
   | { disposition: "turn_started"; started: Promise<void> }
   | { disposition: "steered" | "out_of_band" }
-  | { disposition: "deferred" | "queued"; held: Promise<HeldMessageOutcome>; withdrawHeld(): void };
+  | {
+      disposition: "deferred" | "queued";
+      held: Promise<HeldMessageOutcome>;
+      withdrawHeld(): boolean;
+    };
 
 type SteerDispatch =
   | { kind: "steered" }
@@ -295,11 +299,7 @@ function shouldWaitForHeldMessages(
 ): boolean {
   // An earlier deferred prompt may be taking the newly available turn. The queue itself
   // redispatches with an admission callback and must be able to start that run.
-  return (
-    !options?.admit &&
-    options?.holdIfBusy !== false &&
-    hasHeldMessages(agentManager, agentId)
-  );
+  return !options?.admit && options?.holdIfBusy !== false && hasHeldMessages(agentManager, agentId);
 }
 
 async function trySteering(
@@ -600,6 +600,7 @@ export async function sendPromptToAgent(
       prompt: params.prompt,
       source: await resolvePromptSource(source, params.agentManager, params.agentStorage),
       messageId,
+      activeTurnBehavior: params.activeTurnBehavior,
       sessionMode: params.sessionMode,
       unarchive: params.unarchive,
     },

@@ -1,7 +1,12 @@
 import type { ChangeRequestWatches } from "../change-request-watches/index.js";
 import { changeRequestStatusSchema } from "../../../services/change-request-source.js";
 import { registerPluginTools } from "./plugin-tools.js";
-import type { FinishSubscriptions, FinishRegistration } from "../finish-subscriptions/index.js";
+import {
+  acceptOnDispatch,
+  type FinishSubscriptions,
+  type FinishRegistration,
+} from "../finish-subscriptions/index.js";
+import type { HeldMessageOutcome } from "../held-messages.js";
 import type { AgentMessageDelivery } from "../agent-messages/index.js";
 import {
   createHostResolver,
@@ -2080,8 +2085,14 @@ function createToolCatalog(
                 .register({ childAgentId: agentId, callerAgentId }, true);
             })()
           : undefined;
-      function confirmDispatch(_disposition: PromptDispatchDisposition): void {
-        notification?.accept();
+      function confirmDispatch(
+        _disposition: PromptDispatchDisposition,
+        held?: Promise<HeldMessageOutcome>,
+      ): void {
+        if (!notification) return;
+        acceptOnDispatch(notification, held).catch((error) =>
+          childLogger.error({ err: error, agentId }, "Failed to settle finish subscription"),
+        );
       }
       function rejectNotification(): void {
         void notification
