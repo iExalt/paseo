@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 import { fetchRange, hashFile, zstdDecompress } from "../../scripts/paseo-nix-update-delta.mjs";
 import { verifiedReleaseForTag, releaseDownloadUrl } from "../../scripts/paseo-nix-update.mjs";
 import { DELTA_BASE_RELEASES, deltaBaseTags, listReleases } from "./release-mac-index.mjs";
+import { apkDeltaAssetName, releaseAssets } from "./release-assets.mjs";
 
 // The phone decodes in one pass into the mapped output, which needs no window limit, but
 // the encoder can only reach back this far into the base: 256 MiB covers MAX_APK_BYTES.
@@ -46,6 +47,7 @@ async function previousApk(tag, work) {
  * would not save at least half of the .gz download.
  */
 export async function makeApkDelta({ base, next, directory, work, zstd = runZstd }) {
+  const asset = apkDeltaAssetName(next.version, base.version);
   if (Math.max(base.bytes, next.bytes) > 2 ** APK_WINDOW_LOG) {
     console.log(`Skipped the delta from ${base.version}: an APK exceeds the zstd window`);
     return null;
@@ -91,6 +93,7 @@ async function runZstd(args) {
 async function main() {
   const [apkPath, directory] = process.argv.slice(2);
   const { VERSION: version } = process.env;
+  assert.equal(basename(apkPath), releaseAssets(version).apk);
   await mkdir(directory, { recursive: true });
   let tags = [];
   try {
@@ -104,6 +107,7 @@ async function main() {
     console.log(`::warning::Could not list earlier releases for APK deltas: ${error.message}`);
   }
   const next = {
+    version,
     file: apkPath,
     bytes: (await stat(apkPath)).size,
     sha256: (await hashFile(apkPath)).toString("hex"),

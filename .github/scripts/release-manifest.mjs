@@ -24,6 +24,7 @@ import {
 } from "../../scripts/paseo-nix-update.mjs";
 import { validateDesktopReleaseManifest } from "../../packages/protocol/src/desktop-release-manifest.ts";
 import { verifyDesktopReleaseBytes } from "../../scripts/desktop-release.mjs";
+import { MANIFEST_ASSET, releaseAssets, SIGNATURE_ASSET } from "./release-assets.mjs";
 
 export function describeAsset(name, bytes) {
   return { name, bytes: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
@@ -120,6 +121,7 @@ export function buildReleaseManifests(
   publicPin = PASEO_RELEASE_MANIFEST_PUBLIC_KEY_BASE64URL,
 ) {
   const version = env.VERSION;
+  const names = releaseAssets(version);
   const read = (name) => readFileSync(join(directory, name));
   const closureBytes = read(names.macClosure);
   const mac = {

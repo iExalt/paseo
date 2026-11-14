@@ -22,6 +22,13 @@ Android cache pin both use it (`.github/scripts/dependency-fingerprint.mjs`).
 Nix filters the lockfile separately for its own fetch.
 _Avoid_: cache inputs, lock hash
 
+**Release asset catalog**:
+The one list of every asset a fork release carries, by role, and the exact
+upload set the publish job checks, including which delta files belong
+(`.github/scripts/release-assets.mjs`). Desktop delta names come from the
+shipped updater; the app's own readers keep their copies.
+_Avoid_: asset list, expected assets
+
 ## Server
 
 **Notification policy**:
