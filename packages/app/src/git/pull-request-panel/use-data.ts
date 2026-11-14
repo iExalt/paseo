@@ -15,7 +15,7 @@ import { prPaneTimelineQueryKey } from "./query-keys";
 
 type CheckoutPrStatus = CheckoutPrStatusResponse["payload"]["status"];
 type CheckoutPrStatusPayloadError = CheckoutPrStatusResponse["payload"]["error"];
-type PullRequestTimeline = PullRequestTimelineResponse["payload"];
+type PullRequestTimeline = NonNullable<PullRequestTimelineResponse["payload"]>;
 
 export interface UsePrPaneDataOptions {
   serverId: string;
@@ -125,12 +125,23 @@ export async function fetchPrPaneTimelinePage(
   input: FetchPrPaneTimelinePageInput,
 ): Promise<PullRequestTimeline> {
   try {
-    return await input.client.pullRequestTimeline({
+    const timeline = await input.client.pullRequestTimeline({
       cwd: input.cwd,
       prNumber: input.prNumber,
       repoOwner: input.repoOwner,
       repoName: input.repoName,
     });
+    return (
+      timeline ?? {
+        cwd: input.cwd,
+        prNumber: input.prNumber,
+        items: [],
+        truncated: false,
+        error: null,
+        requestId: "",
+        githubFeaturesEnabled: true,
+      }
+    );
   } catch (error) {
     if (isUnsupportedTimelineError(error)) {
       input.registry.add(
