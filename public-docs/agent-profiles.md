@@ -51,4 +51,4 @@ The orchestrator reads the profiles, selects settings for each task, and launche
 
 The bundled [Paseo skill](/docs/skills#paseo-paseo-reference) instructs agents to check profiles and read their notes before delegating. If none fit, it directs the agent to discover configured providers and models and tell you about the fallback.
 
-See [Common workflows](/docs/orchestration-workflows) for delegation examples or the [MCP reference](/docs/mcp#agent-profiles) for the tool interface.
+See [Common workflows](/docs/orchestration-workflows) for delegation examples or the [CLI profile reference](/docs/cli#profiles-and-provider-discovery) for the command interface.

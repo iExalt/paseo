@@ -111,7 +111,7 @@ export function createRequireBearerMiddleware(
   };
 }
 
-const SELF_AUTHENTICATING_ROUTES = new Set(["/api/files/download", "/mcp/agents"]);
+const SELF_AUTHENTICATING_ROUTES = new Set(["/api/files/download"]);
 
 function isBearerFreeRoute(path: string): boolean {
   return path === "/api/health" || SELF_AUTHENTICATING_ROUTES.has(path);
@@ -122,21 +122,4 @@ export function shouldBypassBearerAuth(method: string, path: string): boolean {
     return true;
   }
   return isBearerFreeRoute(path);
-}
-
-/**
- * Authorizes a request to the Agent MCP endpoint (/mcp/agents), which is exempt
- * from the global daemon-password middleware. Accepts either the per-daemon-run
- * capability token the daemon injects into its own agents' configs and MCP
- * client, or a valid daemon-password bearer (so existing password-authenticated
- * callers keep working). When no daemon password is configured the endpoint is
- * open, matching the global middleware's behavior.
- */
-export async function isAgentMcpRequestAuthorized(input: {
-  password: string | undefined;
-  capabilityToken: string | null;
-  authorizationHeader: string | undefined;
-}): Promise<boolean> {
-  }
-  }
 }

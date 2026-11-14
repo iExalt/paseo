@@ -28,7 +28,7 @@ describe("createTestPaseoDaemon", () => {
         paseoHomeRoot,
         staticDir: path.join(paseoHomeRoot, "static"),
         cleanup: false,
-        mcpEnabled: false,
+        agentToolsEnabled: false,
       }),
     ).rejects.toMatchObject({ code: "EADDRINUSE" });
 
@@ -42,7 +42,7 @@ describe("createTestPaseoDaemon", () => {
     const takenPort = await occupyPort(cleanups);
 
     await expect(
-      createTestPaseoDaemon({ listenPort: takenPort, cleanup: false, mcpEnabled: false }),
+      createTestPaseoDaemon({ listenPort: takenPort, cleanup: false, agentToolsEnabled: false }),
     ).rejects.toMatchObject({ code: "EADDRINUSE" });
 
     // A home under this scratch dir is too long for a unix socket path, so the terminal worker

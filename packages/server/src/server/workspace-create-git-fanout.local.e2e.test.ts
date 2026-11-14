@@ -138,7 +138,7 @@ async function startObservedFixture(siblingCount: number): Promise<ReturnType<ty
   daemon = await createTestPaseoDaemon({
     paseoHomeRoot: fixture.paseoHomeRoot,
     cleanup: false,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -619,7 +619,7 @@ test("workspace archive is admitted while 52 sibling observations hydrate", asyn
   daemon = await createTestPaseoDaemon({
     paseoHomeRoot: fixture.paseoHomeRoot,
     cleanup: false,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -661,7 +661,7 @@ test("workspace create is admitted while 100 sibling observations hydrate", asyn
   daemon = await createTestPaseoDaemon({
     paseoHomeRoot: fixture.paseoHomeRoot,
     cleanup: false,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   configureGitProcessPolicy({ maxProcessConcurrency: 8, maxProcessesPerSecond: 64 });
   client = new DaemonClient({
