@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -82,6 +83,9 @@ test(
   { skip: process.platform !== "linux" },
   async () => {
     const owner = randomUUID();
+    const child = spawn("sleep", ["30"], {
+      env: { ...process.env, CI_DEEP_OWNER: owner },
+    });
     try {
       await once(child, "spawn");
       assert.ok(ownedProcesses(owner).includes(child.pid));
@@ -126,7 +130,9 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
   );
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.deepEqual(Object.keys(workflow.on), ["pull_request", "workflow_dispatch"]);
+  // All PRs report the required gate, including those without release changes.
   assert.deepEqual(workflow.on.pull_request, {
+    types: ["opened", "synchronize", "reopened"],
     branches: ["dev"],
   });
   const runs = new Function("github", "startsWith", `return (${workflow.jobs.browser.if});`);
@@ -135,9 +141,14 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
     repository: "iExalt/paseo",
     event_name: "pull_request",
     event: {
+      action: "opened",
       repository: { private: false },
       pull_request: {
         state: "open",
+        head: {
+          repo: { full_name: "iExalt/paseo" },
+          ref: "release-please--branches--dev",
+        },
       },
     },
   };
@@ -172,6 +183,43 @@ test("deep workflow runs only for open release PRs or trusted dispatches", async
   assert.equal(admitted(dispatch), true);
   assert.equal(admitted({ ...dispatch, actor: "other" }), false);
   assert.equal(admitted({ ...dispatch, ref: "refs/heads/other" }), false);
+});
+
+test("required deep gate rejects incomplete release matrices and admits ordinary PR skips", () => {
+  const workflow = load(
+    readFileSync(new URL("../.github/workflows/ci-deep.yml", import.meta.url), "utf8"),
+  );
+  const gate = workflow.jobs.required;
+  assert.equal(gate.name, "Deep verification required");
+  assert.equal(gate.if, "always()");
+  assert.equal(gate.needs, "browser");
+  const step = gate.steps[0];
+  const required = new Function(
+    "github",
+    "startsWith",
+    `return (${step.env.DEEP_REQUIRED.slice(3, -2)});`,
+  );
+  for (const [event_name, ref, expected] of [
+    ["pull_request", "release-please--branches--dev", true],
+    ["pull_request", "ci/ordinary-change", false],
+    ["workflow_dispatch", undefined, true],
+  ]) {
+    const github = { event_name, event: { pull_request: { head: { ref } } } };
+    assert.equal(
+      required(github, (value, prefix) => value.startsWith(prefix)),
+      expected,
+    );
+    for (const result of ["success", "failure", "cancelled", "skipped", ""]) {
+      const outcome = spawnSync("bash", ["-c", step.run], {
+        env: {
+          ...process.env,
+          DEEP_REQUIRED: String(expected),
+          RESULT: result,
+        },
+      });
+      assert.equal(outcome.status === 0, result === (expected ? "success" : "skipped"));
+    }
+  }
 });
 
 test("deep verification requires exact source and isolated harness configuration", () => {
