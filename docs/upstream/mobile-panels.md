@@ -101,6 +101,17 @@ definition, no longer eligible to begin.
   stall across a panel settle loses the final position, and the next React commit reverts the overlay
   to its last synced props: a backdrop over the workspace while the store says closed. Upstream fixed
   the collector in 4.4.3, which needs React Native 0.83.
+- `ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS` is on in `packages/app/package.json`. Reanimated writes
+  transform, opacity and background/border colors straight to the native view instead of committing
+  the whole shadow tree every frame; that commit was a third of the Android main thread while any
+  ring or loader turned. The fast path throws on the UI thread for values it cannot encode:
+  `rotate`/`skew*` must be strings ending in `deg` or `rad` (never numbers), string `translate*` and
+  `borderRadius` must be percentages, and an animated style must not return `undefined` for
+  `opacity`, `zIndex` or a radius. Text `color` and layout props (width, height, padding) still
+  commit. Fast-path values reach the shadow tree only at the next React commit, so `measure()` reads
+  the last React-committed transform, including after an animation settles. A fast-path write to a
+  view that is not mounted yet is dropped, not deferred; continuously animated views repaint on the
+  next frame, but a one-shot value set during a mount can be lost.
 - Gesture start and progress must not update React state. The retained overlay is already mounted and
   offscreen; only the shared position and its derived native styles move during a drag.
 - Hidden tabs and workspaces use `RetainedPanel`. It owns a non-collapsible native root, visibility,
