@@ -793,7 +793,15 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     prepareAgentOpen(agentId) {
       const source = {};
       opening.set(source, agentId);
+      // A new tap needs post-tap authority even when this chat is already subscribed.
+      const current = catchUps.get(agentId);
+      if (current) {
+        pendingCatchUps.set(agentId, planTimelineResumeFetch(ports.readCursor(agentId)));
+      }
       publishVisibleMembership();
+      if (current && current.status !== "running") {
+        startCatchUp(agentId, { request: pendingCatchUps.get(agentId), supersede: true });
+      }
       startAcknowledgedCatchUps();
       return () => {
         if (!opening.delete(source)) return;
