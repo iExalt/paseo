@@ -21,6 +21,8 @@ interface ExternalQuitSignalSource {
 interface QuitLifecycle {
   handleBeforeQuit(event: BeforeQuitEvent): void;
   handleBeforeQuitForUpdate(): void;
+  /** Quits for a relaunch into a new release: the daemon and its agents keep running. */
+  quitForRelaunch(): void;
 }
 
 interface DeferredUpdateQuit {
@@ -93,6 +95,7 @@ function createDeferredUpdateQuit(): DeferredUpdateQuit {
 
 export function createQuitLifecycle({
   app,
+  quit,
   closeTransportSessions,
   stopDesktopManagedDaemonIfNeeded,
   installAppUpdateOnQuit,
@@ -101,6 +104,7 @@ export function createQuitLifecycle({
   onUpdateError,
 }: {
   app: BeforeQuitApp;
+  quit: () => void;
   closeTransportSessions: () => void;
   stopDesktopManagedDaemonIfNeeded: () => Promise<boolean>;
   installAppUpdateOnQuit: (signal: AbortSignal) => Promise<boolean>;
@@ -162,6 +166,10 @@ export function createQuitLifecycle({
     handleBeforeQuitForUpdate() {
       quittingForUpdate = true;
       updateQuit.resolve();
+    },
+    quitForRelaunch() {
+      quittingForUpdate = true;
+      quit();
     },
   };
 }

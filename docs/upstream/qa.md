@@ -72,6 +72,7 @@ Tests are evidence only when they exercise the real thing.
 
 - A bug fix needs a regression test that fails on the old code for the reported reason.
 - A feature needs tests that go through the same interface a user or a caller uses.
+- Packaged daemon lifecycle fixes must cover automatic upgrades and explicit Settings restarts. Model the actual launch environment and installation paths, including missing variables and paths pinned to the previous release.
 - Web flows need an actual Playwright run, not a mocked-out approximation of one.
 - Agent provider work needs manual verification against the real provider by someone who can tell that it worked. A fixture and a mock prove the fixture parses, nothing more.
 

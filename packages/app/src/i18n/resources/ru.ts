@@ -1519,6 +1519,7 @@ export const ru: TranslationResources = {
       },
       advancedSettings: "Расширенные настройки",
       openAdvancedSettings: "Открыть дополнительные настройки демона",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Версии приложения и демона не совпадают. Обновите приложение и демон до одной версии, чтобы избежать проблем.",
       loadFailed: "Не удалось загрузить статус встроенного демона.",
@@ -1544,6 +1545,8 @@ export const ru: TranslationResources = {
         restartTitle: "Перезапустить, чтобы завершить обновление до {{version}}?",
         restartMessage: "Paseo перезапустится и будет использовать новую версию.",
         restartConfirm: "Перезапустить",
+        agentsKeepRunning:
+          "Работающие агенты ({{count}}) продолжат работу; фоновая служба обновится после их завершения.",
         lastAttemptFailed: "Последняя попытка не удалась: {{error}}",
         updateTooltip: "Обновить до {{version}}",
         restartTooltip: "Перезапустить, чтобы завершить обновление до {{version}}",
