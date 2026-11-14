@@ -1,5 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile, stat } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
+  stat,
+  appendFile,
+  rename,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -639,10 +648,9 @@ test("foreground deployment retains environment until its owner ends the launch;
       .toBe(deploymentEndpoint);
     const before = await f.liveStatus(home);
     expect(before.configuredListen).toBe(fileEndpoint);
-    expect(await f.ok(["daemon", "run", "--home", home])).toMatchObject({
-      action: "already_running",
-      pid: before.pid,
-    });
+    const alreadyRunning = await f.run(["daemon", "run", "--home", home]);
+    expect(alreadyRunning.code, alreadyRunning.stderr).toBe(0);
+    expect((await f.liveStatus(home)).pid).toBe(before.pid);
     expect((await f.liveStatus(home)).workerPid).toBe(before.workerPid);
     const changed = await f.ok([
       "daemon",
@@ -758,3 +766,86 @@ test("onboarding preserves native tool choice unless explicitly disabled", async
     await f.close();
   }
 }, 60_000);
+
+test("daemon info exposes capabilities, diagnostics and local log tails", async () => {
+  const f = await fixture();
+  const home = f.homes[0]!;
+  try {
+    await f.configure(home, `127.0.0.1:${await port()}`);
+    await f.ok(["daemon", "start", "--home", home, "--timeout", "30"]);
+    const status = await f.ok(["daemon", "status", "--home", home, "--latency"]);
+    expect(status).toMatchObject({
+      connectedDaemon: "reachable",
+      capabilities: expect.any(Object),
+      features: { daemonDiagnostics: true },
+      latencyMs: expect.any(Number),
+    });
+    const diagnostic = await f.ok(["daemon", "diagnostics", "--home", home]);
+    expect(diagnostic.diagnostic).toEqual(expect.any(String));
+    expect(diagnostic.diagnostic.length).toBeGreaterThan(0);
+    const logs = await f.ok(["daemon", "logs", "--home", home, "--tail", "2"]);
+    expect(logs.file).toBe(path.join(home, "daemon.log"));
+    expect(logs.text.split("\n").length).toBeLessThanOrEqual(2);
+    expect(await f.ok(["daemon", "logs", "--home", home, "--tail", "0"])).toMatchObject({
+      text: "",
+    });
+    const rejected = await f.run(["daemon", "logs", "--host", "127.0.0.1:1"]);
+    expect(rejected.code).not.toBe(0);
+  } finally {
+    await f.close();
+  }
+}, 60_000);
+
+test("daemon logs follow preserves unfinished lines and follows truncation and replacement", async () => {
+  const f = await fixture();
+  const home = f.homes[0]!;
+  await mkdir(home, { recursive: true });
+  const file = path.join(home, "daemon.log");
+  await writeFile(file, "abc");
+  const child = spawn(process.execPath, [cli, "daemon", "logs", "--home", home, "--follow"], {
+    env: f.env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout.on("data", (data) => {
+    output += data;
+  });
+  const closed = new Promise((resolve) => child.once("close", resolve));
+  try {
+    await expect.poll(() => output).toBe("abc");
+    await appendFile(file, "def\n");
+    await expect.poll(() => output).toBe("abcdef\n");
+    await writeFile(file, "x\n");
+    await expect.poll(() => output).toBe("abcdef\nx\n");
+    await rename(file, file + ".old");
+    await writeFile(file, "replacement\n");
+    await expect.poll(() => output).toBe("abcdef\nx\nreplacement\n");
+  } finally {
+    child.kill("SIGTERM");
+    await closed;
+    await f.close();
+  }
+  expect(output).toBe("abcdef\nx\nreplacement\n");
+}, 15_000);
+
+test("daemon log follow rejects normalized structured formats before reading", async () => {
+  const f = await fixture();
+  try {
+    for (const format of ["JSON", " YaMl "]) {
+      const result = await f.run([
+        "--format",
+        format,
+        "daemon",
+        "logs",
+        "--home",
+        f.homes[0]!,
+        "-f",
+      ]);
+      expect(result.code).not.toBe(0);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain("INVALID_FORMAT");
+    }
+  } finally {
+    await f.close();
+  }
+});

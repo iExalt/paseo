@@ -1,3 +1,5 @@
+import { daemonLogsCommand } from "./logs.js";
+import { daemonDiagnosticsCommand } from "./diagnostics.js";
 import { Command } from "commander";
 import { startCommand, daemonRunCommand } from "./start.js";
 import { daemonStatusCommand } from "./status.js";
@@ -17,6 +19,8 @@ export function createDaemonCommand(): Command {
     startCommand(),
     daemonRunCommand(),
     daemonStatusCommand(),
+    daemonDiagnosticsCommand(),
+    daemonLogsCommand(),
     daemonStopCommand(),
     daemonRestartCommand(),
     daemonReloadCommand(),

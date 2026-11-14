@@ -1,3 +1,4 @@
+import { runRefreshCommand } from "./refresh.js";
 import { Command } from "commander";
 import { runLsCommand } from "./ls.js";
 import type { ProviderListItem, ProviderLsFullResult } from "./ls.js";
@@ -5,7 +6,7 @@ import { runModelsCommand } from "./models.js";
 import type { ModelListItem, ProviderModelsFullResult } from "./models.js";
 import { runDiagnosticCommand } from "./diagnostic.js";
 import { addProviderInspectOptions, providerInspectOutput } from "./inspect.js";
-import { withOutput } from "../../output/index.js";
+import { withOutput, type CommandOptions } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 
 export function createProviderCommand(): Command {
@@ -43,5 +44,16 @@ export function createProviderCommand(): Command {
     ).argument("<provider>", "Provider ID or provider/model"),
   ).action(providerInspectOutput);
 
+  addJsonAndDaemonHostOptions(
+    provider
+      .command("refresh")
+      .description("Refresh provider discovery")
+      .argument("[provider]", "Refresh only this provider")
+      .option("--cwd <path>", "Daemon-side working directory"),
+  ).action(
+    withOutput((providerId: string | undefined, options: CommandOptions, command: Command) =>
+      runRefreshCommand(providerId, options, command),
+    ),
+  );
   return provider;
 }

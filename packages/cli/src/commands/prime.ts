@@ -26,6 +26,11 @@ run/send accept exactly one prompt source: positional text, --prompt <text>, or
 --prompt-file <path>. --prompt-file - explicitly reads UTF-8 stdin.
 Durations accept s, m, h, and d, including 2h30m and 7d.
 
+Host inspection: daemon status --json exposes features, sourceId and desktopManaged;
+add --latency for a bounded round-trip measurement. daemon diagnostics collects the
+host report. daemon logs --tail 100 [-f] reads a local home's log; remote endpoints
+are not supported. provider refresh [provider] [--cwd <daemon-path>] refreshes discovery.
+
 JSON: parse stdout only; keep stderr separate, never merge 2>&1 into a parser.
 run --no-wait --json returns agentId/title. agent ls --json returns display
 summaries with id/name, possibly shortened cwd and relative created text.
