@@ -1,4 +1,6 @@
 [tools]
+java = "temurin-27.0.1"
+android-sdk = "23.0"
 
 [vars]
 android_sdk_version = '{{ read_file(path=".tool-versions") | split(pat="android-sdk") | last | trim | split(pat="\n") | first | trim }}'

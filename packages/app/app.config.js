@@ -4,6 +4,7 @@ const pkg = require("./package.json");
 const withAndroidAsyncStorageSize = require("./plugins/with-android-async-storage-size");
 const withAndroidOptionalCamera = require("./plugins/with-android-optional-camera");
 const withAndroidProfileable = require("./plugins/with-android-profileable");
+const withAndroidGradle = require("./plugins/with-android-gradle");
 const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
@@ -144,6 +145,7 @@ export default {
     },
     plugins: [
       "./modules/paseo-hardware-keyboard/app.plugin",
+      withAndroidGradle,
       "expo-router",
       withPasteInput,
       withAndroidScroll,
@@ -175,12 +177,17 @@ export default {
       [
         "expo-build-properties",
         {
-          ios: { enableSceneSupport: true },
+          ios: {
+            enableSceneSupport: true,
+            deploymentTarget: "16.4",
+          },
           android: {
             minSdkVersion: 29,
-            kotlinVersion: "2.1.20",
+            kotlinVersion: "2.3.20",
             // Allow HTTP connections for local network hosts in release builds
             usesCleartextTraffic: true,
+              // Preserve the old default file's optimization policy under AGP 9.
+              "-dontoptimize",
           },
         },
       ],
