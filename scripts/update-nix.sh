@@ -32,10 +32,13 @@ NIXPKGS_URL="$(node -p "
   'github:' + n.owner + '/' + n.repo + '/' + n.rev;
 ")"
 
+# The fetch reads only the registry entries of the lockfile (see nix/package.nix).
+REGISTRY_LOCK="$(nix build --no-link --print-out-paths "$ROOT_DIR#paseo.registryLockfile")/package-lock.json"
+
 STDERR_LOG="$(mktemp)"
 trap "rm -f '$STDERR_LOG'" EXIT
 
-if ! NEW_HASH="$(nix shell "${NIXPKGS_URL}#prefetch-npm-deps" -c prefetch-npm-deps "$LOCK_FILE" 2>"$STDERR_LOG")"; then
+if ! NEW_HASH="$(nix shell "${NIXPKGS_URL}#prefetch-npm-deps" -c prefetch-npm-deps "$REGISTRY_LOCK" 2>"$STDERR_LOG")"; then
   echo "ERROR: prefetch-npm-deps failed:" >&2
   tail -20 "$STDERR_LOG" >&2
   exit 1
