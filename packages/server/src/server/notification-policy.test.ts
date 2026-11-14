@@ -90,6 +90,20 @@ describe("decideNotificationDelivery", () => {
     });
   });
 
+  it("notifies in app the recipient the presence plan picks, not the first one", async () => {
+    const { sources } = createSources();
+    const delivery = await decideNotificationDelivery(sources, {
+      target: finished(),
+      workspaceId: "ws-1",
+      recipients: [
+        { recipient: "earlier", state: { ...elsewhere, lastActivityAtMs: NOW - 5_000 } },
+        { recipient: "latest", state: elsewhere },
+      ],
+      nowMs: NOW,
+    });
+    expect(delivery).toEqual({ push: false, inAppRecipient: "latest" });
+  });
+
   it("silences a finished turn whose complete reply matches a rule, in app and as a push", async () => {
     const { sources } = createSources({ rules: [NO_NEWS] });
     const silent = { push: false, inAppRecipient: null };

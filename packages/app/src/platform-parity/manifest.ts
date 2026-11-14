@@ -113,6 +113,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       kind: "equivalent",
       note: "Web reads DOM key events; native gets hardware keys from the PaseoHardwareKeyboard module",
     },
+    "notification-dismissal/start-presented": {
+      kind: "equivalent",
+      note: "Native mirrors pushes in the notification shade; web and desktop track notifications as they send them",
+    },
     "notification-open/source": {
       kind: "equivalent",
       note: "Each platform reports notification taps from its own source: expo-notifications, Electron, or the web click event",
@@ -125,6 +129,11 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
     "plugins/react-native/clipboard": equivalent,
     "projects/icon-cache-storage": equivalent,
+    "push-notifications/background-lifecycle": {
+      kind: "deliberate",
+      reason:
+        "Android uses a headless task for app-owned notification posting; other platforms retain their existing notification delivery paths",
+    },
     "push-notifications/index": {
       kind: "equivalent",
       note: "Desktop notifies through the OS; native subscribes to push",

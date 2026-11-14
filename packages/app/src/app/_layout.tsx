@@ -133,9 +133,13 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
+import { startPresentedNotificationDismissal } from "@/notification-dismissal/start-presented";
+import {
+  adoptDeliveredOsNotifications,
+  ensureOsNotificationPermission,
+} from "@/utils/os-notifications";
 import { agentLog, describeError } from "@/utils/agent-log";
 import { loadAgentSwitches } from "@/diagnostics/agent-switches";
-import { ensureOsNotificationPermission } from "@/utils/os-notifications";
 
 polyfillCrypto();
 // Before anything reads a switch, and so the log shows them at every launch.
@@ -862,8 +866,11 @@ function WorkspaceRouteNavigationBridge() {
 }
 
 function AppShell() {
+  useEffect(() => startPresentedNotificationDismissal(), []);
   useEffect(() => {
-    if (getDesktopHost()) void ensureOsNotificationPermission();
+    if (!getDesktopHost()) return;
+    void ensureOsNotificationPermission();
+    void adoptDeliveredOsNotifications();
   }, []);
   return (
     <MobilePanelsProvider>
