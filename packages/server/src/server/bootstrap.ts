@@ -1,6 +1,7 @@
 import { createRestartRecovery } from "./agent/restart-recovery/index.js";
 import { sendPromptToAgent } from "./agent/agent-prompt.js";
 import { createIdleRuntimeCleanup } from "./agent/idle-runtime-cleanup/index.js";
+import { removeExpiredUploads } from "./file-upload/index.js";
 import {
   createFinishSubscriptions,
   createFinishObservation,
@@ -657,6 +658,9 @@ export async function createPaseoDaemon(
   // Best-effort, so a failure is logged here rather than crashing startup.
   void reconcileManagedProcessLedger(managedProcesses, logger).catch((error) => {
     logger.warn({ err: error }, "Failed to reconcile managed helper process ledger");
+  });
+  void removeExpiredUploads({ paseoHome: config.paseoHome }).catch((error) => {
+    logger.warn({ err: error }, "Failed to remove expired uploads");
   });
   let relayRuntime: RelayRuntime | null = null;
   const keepAwake = createKeepAwakeController({
