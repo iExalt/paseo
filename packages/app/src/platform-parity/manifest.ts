@@ -157,6 +157,7 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Hidden only in a plain browser; native has its own section",
     },
     permissions: { kind: "equivalent", note: "Hidden only in a plain browser" },
+    editor: { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
   },
   runtimeGates: {
     "android/fork-updates/updater.ts": {
