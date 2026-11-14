@@ -299,7 +299,7 @@ async function expectNoVisibleImageInstability(page: Page): Promise<void> {
   expect(observation).toEqual({ errorSeen: false, missingSeen: false });
 }
 
-function encodeDeterministicPng(width: number, height: number): Buffer {
+export function encodeDeterministicPng(width: number, height: number): Buffer {
   const stride = width * 4 + 1;
   const scanlines = Buffer.allocUnsafe(stride * height);
   let state = 0x9e3779b9;

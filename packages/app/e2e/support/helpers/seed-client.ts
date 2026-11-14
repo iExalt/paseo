@@ -120,6 +120,7 @@ export interface SeedDaemonClient {
     initialPrompt?: string;
     labels?: Record<string, string>;
     background?: boolean;
+    runtimeCwd?: string;
   }): Promise<{ id: string; status: string }>;
   fetchAgents(options?: { scope?: "active" }): Promise<{
     entries: Array<{
