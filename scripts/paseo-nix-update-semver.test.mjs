@@ -34,6 +34,7 @@ import {
   executeCommand,
   verifyReleaseManifestBytes,
   validateNixClosureManifest,
+  validateNixArtifactClosure,
   httpFailure,
   latestVerifiedRelease,
   verifiedReleaseForTag,
@@ -138,6 +139,11 @@ async function assertSignedReleaseVerification(manifest) {
     ),
   );
   assert.equal(validateNixClosureManifest(closure, manifest).forkVersion, "0.1.0");
+  assert.deepEqual(
+    validateNixArtifactClosure(closure, artifact, manifest),
+    validateNixClosureManifest(closure, manifest),
+  );
+  assert.throws(() => validateNixClosureManifest(closure, { ...manifest, artifacts: [artifact] }));
   assert.throws(() =>
     validateNixClosureManifest(Buffer.concat([closure, Buffer.from(" ")]), manifest),
   );

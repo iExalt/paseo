@@ -251,6 +251,9 @@ export async function verifiedReleaseForTag(tag, { fetchBytes = fetchMetadata, p
 
 export function validateNixClosureManifest(bytes, manifest) {
   return validateNixArtifactClosure(bytes, desktopNixArtifact(manifest), manifest);
+}
+
+export function validateNixArtifactClosure(bytes, artifact, manifest) {
   assert.equal(bytes.length, artifact.closureManifest.bytes);
   assert.equal(
     hash(bytes),
