@@ -24,6 +24,9 @@ Launch: run requires --provider <provider-or-provider/model>; discover with
 provider ls, provider models, and provider inspect (alias: provider modes).
 run/send accept exactly one prompt source: positional text, --prompt <text>, or
 --prompt-file <path>. --prompt-file - explicitly reads UTF-8 stdin.
+Discover provider slash commands and skills with agent commands <id> or
+provider commands <provider[/model]> --cwd <host-path> [--mode <id>].
+Invoke a listed command with agent send <id> '/command args'; provider handling applies.
 run/send accept repeatable --attach text:<literal>, file:<local-path>,
 github-issue:<https-url>, or github-pr:<https-url>. Quote each value; commas stay literal.
 Files upload to the selected host; forge links resolve in the target workspace.

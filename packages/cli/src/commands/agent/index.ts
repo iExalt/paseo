@@ -1,3 +1,4 @@
+import { runAgentCommandsCommand } from "./commands.js";
 import { addRewindOptions, runRewindCommand } from "./rewind.js";
 import type { AgentRunOptions } from "./run.js";
 
@@ -35,6 +36,17 @@ import {
 export function createAgentCommand(): Command {
   const agent = new Command("agent").description("Manage agents (advanced operations)");
   agent.addCommand(createSubagentsCommand());
+  addJsonAndDaemonHostOptions(
+    agent
+      .command("commands")
+      .description("List provider slash commands and skills for an agent")
+      .argument("<id>", "Agent ID, prefix, or full session ID"),
+  ).action(
+    withOutput(
+      (id: string, options: Parameters<typeof runAgentCommandsCommand>[1], command: Command) =>
+        runAgentCommandsCommand(id, options, command),
+    ),
+  );
 
   addJsonAndDaemonHostOptions(addAckOptions(agent.command("ack"))).action(
     withOutput(runAckCommand),
