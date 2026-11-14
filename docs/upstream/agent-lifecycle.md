@@ -243,6 +243,8 @@ Archive is a **soft delete**: the agent record stays on disk with `archivedAt` s
 Archive sets `archivedAt`, invokes the provider's native archive hook, and cascades to managed
 children.
 
+`create_agent_request` can opt an agent into `autoArchive`. In that mode the daemon archives the agent after the first terminal turn event (`turn_completed`, `turn_failed`, or `turn_canceled`). The same last-agent workspace cascade applies to auto-archive. Other unarchived chats in that workspace stay active.
+
 Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/agent/agent-manager.ts`):
 
 1. Snapshot the current session into the registry
@@ -253,11 +255,18 @@ Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/
 
 Cascade is what keeps subagent fleets from outliving their orchestrator.
 
-Workspace archive is a separate lifecycle. Archiving or removing a worktree can close a surviving
-agent record without setting the agent's `archivedAt`, while its `workspaceId` still points at the
-archived workspace. History navigation must not infer workspace lifecycle from `agent.archivedAt`
-or mutate either lifecycle. The workspace route asks the daemon for authoritative recovery state;
-the route exposes explicit Unarchive and Restore actions.
+Archiving or deleting the last unarchived agent also archives its workspace. Closed, unarchived
+chats count as remaining agents; `agent close` only releases the runtime. Fresh workspaces waiting
+for their first agent stay active. Creation and restore serialize with the final empty check:
+a creation admitted first keeps the workspace active; one arriving after archive must restore the
+workspace first.
+
+The cascade uses the same ownership and reference checks as explicit workspace archive.
+Workspace cleanup runs after the agent lifecycle settles, outside the agent archive lock.
+Send a handoff before self-archive and let an external session verify it.
+
+Historical persisted data can contain a closed, unarchived agent whose workspace is archived.
+Read recovery state from the daemon; history navigation changes neither lifecycle.
 
 Workspace archive is undoable from the archived toast, or with Cmd/Ctrl+Z, while the toast is up.
 The daemon runs one archive lane per workspace, shared by every connection

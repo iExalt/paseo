@@ -49,10 +49,6 @@ interface AgentLifecycleEvents {
 
 const inactiveRegistration: LifecycleRegistration = { cancel: async () => undefined };
 
-type AutoArchiveTarget =
-  | { kind: "agent-only" }
-  | { kind: "created-worktree"; result: CreatePaseoWorktreeWorkflowResult };
-
 export class CreateAgentLifecycleDispatch {
   private readonly autoArchiveAgentIds = new Set<string>();
 
@@ -105,10 +101,7 @@ export class CreateAgentLifecycleDispatch {
       return inactiveRegistration;
     }
 
-    return this.registerAutoArchiveOnTerminalState(
-      input.agentId,
-      toAutoArchiveTarget(input.createdWorktree),
-    );
+    return this.registerAutoArchiveOnTerminalState(input.agentId);
   }
 
   async cleanupCreatedWorktreeAfterFailedAgentCreate(input: {
@@ -134,32 +127,21 @@ export class CreateAgentLifecycleDispatch {
     });
   }
 
-  private registerAutoArchiveOnTerminalState(
-    agentId: string,
-    target: AutoArchiveTarget,
-  ): LifecycleRegistration {
+  private registerAutoArchiveOnTerminalState(agentId: string): LifecycleRegistration {
     return registerAgentAutoArchive({
       agentManager: this.dependencies.agentManager,
       agentId,
-      archive: () => this.autoArchiveAgentOnce(agentId, target),
+      archive: () => this.autoArchiveAgentOnce(agentId),
     });
   }
 
-  private async autoArchiveAgentOnce(agentId: string, target: AutoArchiveTarget): Promise<void> {
+  private async autoArchiveAgentOnce(agentId: string): Promise<void> {
     if (this.autoArchiveAgentIds.has(agentId)) {
       return;
     }
     this.autoArchiveAgentIds.add(agentId);
 
     try {
-      if (target.kind === "created-worktree") {
-        await this.archiveAutoCreatedWorktree({
-          agentId,
-          createdWorktree: target.result,
-        });
-        return;
-      }
-
       await this.dependencies.archiveAgentForClose(agentId);
     } catch (error) {
       this.dependencies.logger.warn({ err: error, agentId }, "Failed to auto-archive agent");
@@ -244,12 +226,4 @@ export function registerAgentAutoArchive(input: {
     { agentId: input.agentId, replayState: false },
   );
   return registration;
-}
-
-function toAutoArchiveTarget(
-  createdWorktree: CreatePaseoWorktreeWorkflowResult | null,
-): AutoArchiveTarget {
-  return createdWorktree
-    ? { kind: "created-worktree", result: createdWorktree }
-    : { kind: "agent-only" };
 }
