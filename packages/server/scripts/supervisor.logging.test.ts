@@ -23,6 +23,7 @@ async function runSupervisorFixture(options: {
   workerSource: string;
   restartOnCrash?: boolean;
   timeoutMs?: number;
+  workerTerminationGraceMs?: number;
   /** POSIX RLIMIT_FSIZE for the supervisor, in 512-byte blocks: writes past it fail like a full disk. */
   fileSizeLimitBlocks?: number;
   /** Occupy the log path with a directory so the supervisor cannot open daemon.log. */
@@ -63,6 +64,7 @@ async function runSupervisorFixture(options: {
         workerEnv: process.env,
         workerExecArgv: [],
         restartOnCrash: ${JSON.stringify(options.restartOnCrash ?? false)},
+        workerTerminationGraceMs: ${JSON.stringify(options.workerTerminationGraceMs)},
         logFile: {
           path: ${JSON.stringify(logPath)},
           rotate: { maxSize: "1m", maxFiles: 2 },
@@ -315,7 +317,8 @@ describe("supervisor durable logging", () => {
 
   test("forces shutdown when a worker ignores the graceful shutdown request", async () => {
     const result = await runSupervisorFixture({
-      timeoutMs: 15_000,
+      timeoutMs: 8_000,
+      workerTerminationGraceMs: 500,
       workerSource: `
           process.send?.({ type: "paseo:shutdown", reason: "stalled_worker_shutdown" });
           setInterval(() => {}, 1_000);
@@ -328,7 +331,7 @@ describe("supervisor durable logging", () => {
     expect(result.log).toContain(
       '"msg":"Worker did not exit after graceful shutdown request; forcing process tree kill"',
     );
-  }, 20_000);
+  }, 12_000);
 
   test.skipIf(isPlatform("win32"))(
     "restarts after worker exit while a descendant retains the worker stdio",

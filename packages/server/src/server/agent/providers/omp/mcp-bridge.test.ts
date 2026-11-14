@@ -119,7 +119,8 @@ describe("OMP MCP host tools", () => {
 
   test("starts with a healthy server when another never answers initialize", async () => {
     await mkdir("/tmp/paseo-omp-agent-test", { recursive: true });
-    const omp = new OmpHarness();
+    const serverTimeoutMs = 2_000;
+    const omp = new OmpHarness({ mcpServerTimeoutMs: serverTimeoutMs });
     const started = Date.now();
     await omp.start({
       mcpServers: {
@@ -132,7 +133,10 @@ describe("OMP MCP host tools", () => {
       },
     });
     try {
-      expect(Date.now() - started).toBeLessThan(15_000);
+      // The silent server is abandoned at the per-server timeout, not skipped and not waited out.
+      const elapsedMs = Date.now() - started;
+      expect(elapsedMs).toBeGreaterThanOrEqual(serverTimeoutMs - 100);
+      expect(elapsedMs).toBeLessThan(serverTimeoutMs + 5_000);
       expect(
         omp
           .registeredHostTools()
@@ -142,7 +146,7 @@ describe("OMP MCP host tools", () => {
     } finally {
       await omp.close();
     }
-  }, 80_000);
+  }, 20_000);
 
   test("passes runtime and launch env to stdio, then applies server env", async () => {
     await mkdir("/tmp/paseo-omp-agent-test", { recursive: true });

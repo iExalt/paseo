@@ -33,6 +33,7 @@ export class OmpMcpBridge {
     cwd: string,
     logger: Logger,
     env: NodeJS.ProcessEnv,
+    serverTimeoutMs = SERVER_TIMEOUT_MS,
   ): Promise<OmpMcpBridge> {
     const bridge = new OmpMcpBridge();
     const connections = await Promise.all(
@@ -40,8 +41,8 @@ export class OmpMcpBridge {
         const client = new Client({ name: "paseo-omp-mcp", version: "1.0.0" });
         try {
           const transport = makeTransport(config, cwd, env);
-          await client.connect(transport, { timeout: SERVER_TIMEOUT_MS });
-          const listed = await client.listTools(undefined, { timeout: SERVER_TIMEOUT_MS });
+          await client.connect(transport, { timeout: serverTimeoutMs });
+          const listed = await client.listTools(undefined, { timeout: serverTimeoutMs });
           return { serverName, client, tools: listed.tools };
         } catch (error) {
           logger.warn({ err: error, server: serverName }, "OMP MCP server unavailable");
