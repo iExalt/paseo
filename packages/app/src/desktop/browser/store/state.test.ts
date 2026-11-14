@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyBrowserPatch,
+  buildBrowserNavigationPatch,
   type BrowserIndexState,
   createFixedBrowserViewport,
   createBrowserRecord,
@@ -187,5 +188,47 @@ describe("normalizeBrowserIndexState", () => {
     expect(
       normalizeBrowserIndexState({ browsersById: { b1: legacy } }).browsersById.b1?.viewport,
     ).toEqual({ mode: "responsive" });
+  });
+});
+
+describe("buildBrowserNavigationPatch", () => {
+  const navigation = {
+    title: "",
+    canGoBack: true,
+    canGoForward: false,
+    loading: false,
+  };
+
+  it("swaps the favicon for the new origin's and drops the old title on a URL change", () => {
+    expect(
+      buildBrowserNavigationPatch(
+        { url: "https://a.test/", faviconUrl: "https://a.test/favicon.ico" },
+        { ...navigation, url: "localhost:3000/docs" },
+      ),
+    ).toEqual({
+      url: "http://localhost:3000/docs",
+      canGoBack: true,
+      canGoForward: false,
+      isLoading: false,
+      faviconUrl: "http://localhost:3000/favicon.ico",
+      title: "",
+    });
+    expect(
+      buildBrowserNavigationPatch(null, { ...navigation, url: "about:blank" }).faviconUrl,
+    ).toBeNull();
+  });
+
+  it("keeps the favicon and title for a report on the same URL until the page names itself", () => {
+    const existing = { url: "https://a.test/", faviconUrl: "https://a.test/favicon.ico" };
+    expect(
+      buildBrowserNavigationPatch(existing, { ...navigation, url: "https://a.test/" }),
+    ).toEqual({ url: "https://a.test/", canGoBack: true, canGoForward: false, isLoading: false });
+    expect(
+      buildBrowserNavigationPatch(existing, {
+        ...navigation,
+        url: "https://a.test/",
+        title: " Docs ",
+      }).title,
+    ).toBe("Docs");
   });
 });

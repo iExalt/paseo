@@ -55,7 +55,7 @@ function useBrowserPanelDescriptor(target: {
 }
 
 function BrowserPanel() {
-  const { serverId, workspaceId, target } = usePaneContext();
+  const { serverId, workspaceId, target, openUrlInBrowserTab } = usePaneContext();
   const { focusPane, isInteractive } = usePaneFocus();
   const cwd = useWorkspaceDirectory(serverId, workspaceId);
   invariant(target.kind === "browser", "BrowserPanel requires browser target");
@@ -67,6 +67,7 @@ function BrowserPanel() {
       cwd={cwd}
       isInteractive={isInteractive}
       onFocusPane={focusPane}
+      onOpenUrlInNewTab={openUrlInBrowserTab}
     />
   );
 }
