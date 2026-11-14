@@ -8,6 +8,7 @@ import type { ScheduleDerivedState } from "@/schedules/schedule-derivation";
 import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
 import { resolveScheduleTitle, scheduleProductName } from "@/utils/schedule-format";
+import { toErrorMessage } from "@/utils/error-messages";
 
 /** A schedule plus the client-derived fields the row renders. */
 export interface ScheduleRowView {
@@ -75,15 +76,16 @@ function SchedulesTableRow({
   const { id, serverId } = schedule;
   const mutations = useScheduleMutations({ serverId });
   const [pending, setPending] = useState<ScheduleRowPending>(NO_PENDING);
+  const [runError, setRunError] = useState<string | null>(null);
 
   const runAction = useCallback(
     async (key: keyof ScheduleRowPending, action: () => Promise<void>): Promise<void> => {
       setPending((current) => ({ ...current, [key]: true }));
+      if (key === "runNow") setRunError(null);
       try {
         await action();
-      } catch {
-        // Mutations roll back their own optimistic cache writes on error and
-        // re-fetch on settle; surfacing per-row toasts here is out of scope.
+      } catch (error) {
+        if (key === "runNow") setRunError(toErrorMessage(error));
       } finally {
         setPending((current) => {
           const next = { ...current };
@@ -138,6 +140,7 @@ function SchedulesTableRow({
       singleHost={row.singleHost}
       isFirst={isFirst}
       pending={pending}
+      runError={runError}
       onEdit={handleEdit}
       onPause={handlePause}
       onResume={handleResume}
