@@ -1,5 +1,5 @@
 import { QueryClient } from "@tanstack/react-query";
-import type { ScheduleSummary } from "@getpaseo/protocol/schedule/types";
+import type { ScheduleSummary, ScheduleRun } from "@getpaseo/protocol/schedule/types";
 import { describe, expect, it } from "vitest";
 import type {
   AggregatedSchedule,
@@ -7,7 +7,10 @@ import type {
   FetchAggregatedSchedulesState,
 } from "@/schedules/aggregated-schedules";
 import { schedulesQueryBaseKey } from "@/schedules/aggregated-schedules";
-import { updateAggregatedSchedulesData } from "./use-schedule-mutations";
+import {
+  requireSuccessfulScheduleRun,
+  updateAggregatedSchedulesData,
+} from "./use-schedule-mutations";
 
 function schedule(overrides: Partial<AggregatedSchedule> = {}): AggregatedSchedule {
   const base: ScheduleSummary = {
@@ -31,6 +34,49 @@ function schedule(overrides: Partial<AggregatedSchedule> = {}): AggregatedSchedu
 function pauseSchedules(schedules: AggregatedSchedule[]): AggregatedSchedule[] {
   return schedules.map((entry) => ({ ...entry, status: "paused" }));
 }
+
+describe("manual schedule run results", () => {
+  const run: ScheduleRun = {
+    id: "run-1",
+    scheduledFor: "2026-07-01T00:00:00Z",
+    startedAt: "2026-07-01T00:00:00Z",
+    endedAt: "2026-07-01T00:00:01Z",
+    status: "failed",
+    agentId: null,
+    output: null,
+    error: "Target agent unavailable",
+  };
+  const payload = (runs: ScheduleRun[]) => ({
+    requestId: "request-1",
+    error: null,
+    schedule: { ...schedule(), runs },
+  });
+
+  it("surfaces recorded execution failures even when the RPC succeeds", () => {
+    expect(() => requireSuccessfulScheduleRun(payload([run]))).toThrow("Target agent unavailable");
+  });
+
+  it("uses the latest run, allowing a successful retry after a failure", () => {
+    expect(() =>
+      requireSuccessfulScheduleRun(
+        payload([run, { ...run, id: "run-2", status: "succeeded", error: null }]),
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects RPC errors and missing results", () => {
+    expect(() =>
+      requireSuccessfulScheduleRun({
+        requestId: "request-1",
+        error: "Already running",
+        schedule: null,
+      }),
+    ).toThrow("Already running");
+    expect(() => requireSuccessfulScheduleRun(payload([]))).toThrow(
+      "did not complete successfully",
+    );
+  });
+});
 
 function pauseAggregatedSchedules(
   current: FetchAggregatedSchedulesState | undefined,
