@@ -15,7 +15,7 @@ import type {
 import type { FetchAgentsEntry } from "@getpaseo/client/internal/daemon-client";
 import { AgentDirectoryReplica } from "@/runtime/directory-sync/agent-replica";
 import { WorkspaceDirectoryReplica } from "@/runtime/directory-sync/workspace-replica";
-import type { CachedTimeline } from "@/runtime/replica-cache";
+import type { CachedTimeline, CommittedTimeline } from "@/runtime/replica-cache";
 import {
   normalizeWorkspaceDescriptor,
   selectAgentTimelineState,
@@ -37,6 +37,11 @@ import {
   type ViewedTimelineOwner,
   type ViewedTimelineOwnerPorts,
 } from "./viewed-timeline-sync";
+
+// What a storage read returns for a commit: the replica joins the live head after the tail.
+function joinCommitted({ head, ...timeline }: CommittedTimeline): CachedTimeline {
+  return { ...timeline, items: [...timeline.items, ...(head ?? [])] };
+}
 
 const SERVER_ID = "timeline-replica-host";
 const AGENT_ID = "agent-1";
@@ -420,7 +425,7 @@ describe("viewed timeline persistence", () => {
     const storage: TimelineReplicaStorage = {
       readTimeline: async () => durable,
       commitTimeline: (_serverId, _agentId, timeline) => {
-        pending = timeline;
+        pending = joinCommitted(timeline);
       },
     };
     const first = createOwner(storage);
@@ -608,7 +613,7 @@ describe("viewed timeline persistence", () => {
     const commits: CachedTimeline[] = [];
     const owner = createOwner({
       readTimeline: async () => undefined,
-      commitTimeline: (_serverId, _agentId, timeline) => commits.push(timeline),
+      commitTimeline: (_serverId, _agentId, timeline) => commits.push(joinCommitted(timeline)),
     });
     owner.applyStreamEvent(AGENT_ID, {
       event: {
@@ -1348,7 +1353,7 @@ describe("the turn footer changes together with its messages", () => {
     const owner = createOwner(
       {
         readTimeline: async () => undefined,
-        commitTimeline: (_serverId, _agentId, timeline) => commits.push(timeline),
+        commitTimeline: (_serverId, _agentId, timeline) => commits.push(joinCommitted(timeline)),
       },
       (_agentId, transitions) => {
         for (const transition of transitions) setTurn(transition);
@@ -1727,7 +1732,7 @@ describe("a chat that was empty when it went offline", () => {
         reasoning,
         storage: {
           readTimeline: async () => undefined,
-          commitTimeline: (_serverId, _agentId, timeline) => commits.push(timeline),
+          commitTimeline: (_serverId, _agentId, timeline) => commits.push(joinCommitted(timeline)),
         },
       });
       try {
@@ -1766,7 +1771,7 @@ describe("a chat that was empty when it went offline", () => {
       reasoning: true,
       storage: {
         readTimeline: async () => undefined,
-        commitTimeline: (_serverId, _agentId, timeline) => commits.push(timeline),
+        commitTimeline: (_serverId, _agentId, timeline) => commits.push(joinCommitted(timeline)),
       },
     });
     try {
@@ -1790,7 +1795,7 @@ describe("a chat that was empty when it went offline", () => {
       reasoning: true,
       storage: {
         readTimeline: async () => undefined,
-        commitTimeline: (_serverId, _agentId, timeline) => commits.push(timeline),
+        commitTimeline: (_serverId, _agentId, timeline) => commits.push(joinCommitted(timeline)),
       },
     });
     try {

@@ -446,10 +446,15 @@ function commitUnsettledTurn(
   return current;
 }
 
-function latestTasksFromStream(items: readonly StreamItem[]): TodoEntry[] {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item?.kind === "todo_list") return item.items;
+function latestTasksFromStream(
+  tail: readonly StreamItem[],
+  head: readonly StreamItem[],
+): TodoEntry[] {
+  for (const items of [head, tail]) {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item?.kind === "todo_list") return item.items;
+    }
   }
   return [];
 }
@@ -583,6 +588,7 @@ interface SessionStoreActions {
       head?: StreamItem[];
       acknowledgedClientMessageIds?: readonly string[];
       taskSnapshot?: TodoEntry[];
+      timelineCursor?: AgentTimelineCursorState;
     },
   ) => void;
   beginAgentMessageSubmission: (
@@ -1144,7 +1150,23 @@ export const useSessionStore = create<SessionStore>()(
           const agentTasks = updateAgentTasks(session.agentTasks, agentId, state.taskSnapshot);
           const changedTasks = agentTasks !== session.agentTasks;
 
-          if (!changedTail && !changedHead && !changedSubmissions && !changedTasks) {
+          let agentTimelineCursor = session.agentTimelineCursor;
+          if (
+            state.timelineCursor !== undefined &&
+            session.agentTimelineCursor.get(agentId) !== state.timelineCursor
+          ) {
+            agentTimelineCursor = new Map(session.agentTimelineCursor);
+            agentTimelineCursor.set(agentId, state.timelineCursor);
+          }
+          const changedCursor = agentTimelineCursor !== session.agentTimelineCursor;
+
+          if (
+            !changedTail &&
+            !changedHead &&
+            !changedSubmissions &&
+            !changedTasks &&
+            !changedCursor
+          ) {
             return prev;
           }
 
@@ -1168,6 +1190,7 @@ export const useSessionStore = create<SessionStore>()(
                 agentStreamHead: nextHead,
                 agentTasks,
                 messageSubmissions,
+                agentTimelineCursor,
               },
             },
           };
@@ -1579,10 +1602,11 @@ export const useSessionStore = create<SessionStore>()(
             agentId,
             state,
           );
-          const tasks = latestTasksFromStream([...state.items, ...state.head]);
-          const agentTasks = new Map(session.agentTasks);
-          if (tasks.length > 0) agentTasks.set(agentId, tasks);
-          else agentTasks.delete(agentId);
+          const agentTasks = updateAgentTasks(
+            session.agentTasks,
+            agentId,
+            latestTasksFromStream(state.items, state.head),
+          );
 
           return {
             ...prev,
