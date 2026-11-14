@@ -15,6 +15,7 @@
     "*.lock",
     "**/*.gen.ts",
     "**/*.gen.tsx",
-    "packages/react-native-enriched-markdown/**"
+    "packages/react-native-enriched-markdown/**",
+    "/CHANGELOG.fork.md"
   ]
 }

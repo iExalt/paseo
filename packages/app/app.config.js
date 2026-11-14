@@ -73,10 +73,8 @@ function resolveSecretFile(params) {
   return undefined;
 }
 
-const variants = {
+const firebaseVariants = {
   production: {
-    name: "Paseo",
-    packageId: "sh.paseo",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_PROD",
       fallbackRelativePath: "./.secrets/google-services.prod.json",
@@ -87,8 +85,6 @@ const variants = {
     }),
   },
   development: {
-    name: "Paseo Debug",
-    packageId: "sh.paseo.debug",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_DEBUG",
       fallbackRelativePath: "./.secrets/google-services.debug.json",
@@ -100,14 +96,21 @@ const variants = {
   },
 };
 
-const variant = variants[appVariant] ?? variants.production;
 const nativeReleaseVersion = getNativeReleaseVersion(pkg.version);
+const variantIdentity = resolveAppVariant(
+  appVariant,
+  nativeReleaseVersion.androidVersionCode,
   pkg.version,
+  process.env.PASEO_ANDROID_VERSION_CODE,
+);
+const variant =
+  appVariant === "fork"
+    : (firebaseVariants[appVariant] ?? firebaseVariants.production);
 
 export default {
   expo: {
+    name: variantIdentity.name,
     slug: "paseo",
-    name: variant.name,
     version: nativeReleaseVersion.appVersion,
     orientation: "default",
     icon: "./assets/images/icon.png",
@@ -120,7 +123,7 @@ export default {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
       },
-      bundleIdentifier: variant.packageId,
+      bundleIdentifier: variantIdentity.iosBundleIdentifier,
       ...(variant.googleServiceInfoPlist
         ? { googleServicesFile: variant.googleServiceInfoPlist }
         : {}),
@@ -143,9 +146,8 @@ export default {
           ? ["REQUEST_INSTALL_PACKAGES", "UPDATE_PACKAGES_WITHOUT_USER_ACTION"]
           : []),
       ],
+      package: variantIdentity.androidPackage,
       versionCode: isPreferencesMigrationBridge ? 11001 : variantIdentity.androidVersionCode,
-      package: variant.packageId,
-      versionCode: nativeReleaseVersion.androidVersionCode,
       ...(variant.googleServicesFile ? { googleServicesFile: variant.googleServicesFile } : {}),
     },
     web: {

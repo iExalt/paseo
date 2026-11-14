@@ -162,19 +162,12 @@ export {
 // Mutable daemon config schemas (shared between server store and client)
 // ---------------------------------------------------------------------------
 
-export const DAEMON_PERMISSIONS = [
-  "daemon.read",
-  "daemon.manage",
-  "tunnel.manage",
-  "access.manage",
-  "workspace.read",
-  "workspace.write",
-  "workspace.manage",
-  "automation.manage",
-  "hub.execute",
-] as const;
-export const DaemonPermissionSchema = z.enum(DAEMON_PERMISSIONS);
-export type DaemonPermission = z.infer<typeof DaemonPermissionSchema>;
+import { DaemonPermissionSchema } from "./daemon-permissions.js";
+export {
+  DAEMON_PERMISSIONS,
+  DaemonPermissionSchema,
+  type DaemonPermission,
+} from "./daemon-permissions.js";
 
 const MutableDaemonProviderModelSchema = z
   .object({
@@ -221,8 +214,8 @@ const MutableRelayConfigSchema = z
   })
   .passthrough();
 
-export const ReplyRuleSchema = z.object({ source: z.string(), flags: z.string() }).strict();
-export type ReplyRule = z.infer<typeof ReplyRuleSchema>;
+import { ReplyRuleSchema } from "./reply-rule.js";
+export { ReplyRuleSchema, type ReplyRule } from "./reply-rule.js";
 
 export const MutableDaemonConfigSchema = z
   .object({
