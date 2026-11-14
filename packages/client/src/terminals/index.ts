@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TerminalActivitySchema } from "@getpaseo/protocol/terminal-activity";
 import type { DaemonClient } from "../daemon-client.js";
 
 const TerminalSchema = z.object({
@@ -6,6 +7,8 @@ const TerminalSchema = z.object({
   workspaceId: z.string(),
   cwd: z.string(),
   name: z.string(),
+  title: z.string().optional(),
+  activity: TerminalActivitySchema.nullable().optional(),
 });
 
 export type PaseoTerminal = z.infer<typeof TerminalSchema>;
