@@ -249,6 +249,7 @@ function projectAppPreferences(rawApp: string | null, daemonIds: ReadonlySet<str
           : null,
     },
     autoExpandReasoning: normalized.autoExpandReasoning,
+    chatDisplay: normalized.chatDisplay,
     chatOutlineEnabled: normalized.chatOutlineEnabled,
     vimKeybindings: normalized.vimKeybindings,
     openInSidePane: normalized.openInSidePane,
@@ -597,8 +598,15 @@ interface PreferenceImportContext {
 
 async function appendAppearanceImport(context: PreferenceImportContext): Promise<void> {
   const current = parseObject(await context.storage.getItem(KEYS.app));
+  const { toolCallDetailLevel, ...transferred } = context.transfer.app;
+  const usageServerId = transferred.usage.serverId;
   const app = {
+    ...transferred,
+    chatDisplay:
+      transferred.chatDisplay ??
+      (toolCallDetailLevel === "overview" ? "collapseToolCalls" : "full"),
     usage: {
+      ...transferred.usage,
       serverId: usageServerId && context.matched.has(usageServerId) ? usageServerId : null,
     },
   };

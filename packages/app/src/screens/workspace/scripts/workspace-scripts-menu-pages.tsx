@@ -57,7 +57,8 @@ export interface UseWorkspaceScriptsMenuPagesInput {
   scripts: WorkspaceDescriptor["scripts"];
   liveTerminalIds: readonly string[];
   onViewTerminal: (terminalId: string) => void;
-  onOpenUrlInBrowserTab: (url: string) => void;
+  /** Absent where the app cannot open a browser tab; links then open externally. */
+  onOpenUrlInBrowserTab?: (url: string) => void;
 }
 
 export interface WorkspaceScriptsMenuPages {
@@ -232,7 +233,8 @@ interface ScriptPageProps {
   actions: WorkspaceScriptActions;
   liveTerminalId: string | null;
   onViewTerminal: (terminalId: string) => void;
-  onOpenUrlInBrowserTab: (url: string) => void;
+  /** Absent where the app cannot open a browser tab; links then open externally. */
+  onOpenUrlInBrowserTab?: (url: string) => void;
 }
 
 function ScriptPage(props: ScriptPageProps): ReactElement {

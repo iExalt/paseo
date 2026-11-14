@@ -205,7 +205,6 @@ export async function createAgentCommand(
           {
             childAgentId: snapshot.id,
             callerAgentId: input.callerAgentId,
-            requireParentOwnership: !(input.detached ?? false),
           },
           true,
         )
