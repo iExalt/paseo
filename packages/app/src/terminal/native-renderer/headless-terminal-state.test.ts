@@ -19,6 +19,20 @@ function expectedBenchmarkLine(index: number): string {
 }
 
 describe("native headless terminal state", () => {
+  test("parses a write without waiting for a timer", async () => {
+    const terminal = createNativeHeadlessTerminal({ rows: 2, cols: 10 });
+    // Microtasks only: xterm's own setTimeout cannot run before this settles.
+    const microtasks = (async () => {
+      for (let turn = 0; turn < 5; turn += 1) {
+        await Promise.resolve();
+      }
+      return "timer";
+    })();
+    const first = await Promise.race([terminal.write("hi").then(() => "write"), microtasks]);
+    expect(first).toBe("write");
+    expect(terminal.getViewportState().grid[0]?.[1]?.char).toBe("i");
+  });
+
   test("exposes application cursor key mode from headless xterm", async () => {
     const terminal = createNativeHeadlessTerminal({ rows: 5, cols: COLS });
 
