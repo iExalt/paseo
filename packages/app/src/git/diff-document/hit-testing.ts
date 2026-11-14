@@ -165,7 +165,8 @@ export function selectAllSource(
   for (const row of model.rows) {
     if (row.kind !== "line") continue;
     row.cells.forEach((cell, cellIndex) => {
-      if (!cell || (splitCellIndex !== null && cellIndex !== splitCellIndex)) return;
+      if (!cell || cell.type === "header") return;
+      if (splitCellIndex !== null && cellIndex !== splitCellIndex) return;
       const side = cell.reviewTarget?.side ?? (cellIndex === 0 ? "old" : "new");
       first ??= {
         fileIndex: row.fileIndex,
@@ -208,12 +209,16 @@ function selectedCellRanges(
 ): SelectedCellRange[] {
   const { start, end } = orderedSelection(selection);
   const sameSplitSide = model.layout === "split" && start.cellIndex === end.cellIndex;
+  // Hunk headers are navigation chrome, not source: leave them out of range
+  // selections (copy and highlight) but keep an explicit single-cell copy.
+  const singleCell = start.rowIndex === end.rowIndex && start.cellIndex === end.cellIndex;
   const ranges: SelectedCellRange[] = [];
   for (let rowIndex = start.rowIndex; rowIndex <= end.rowIndex; rowIndex += 1) {
     const row = model.rows[rowIndex];
     if (!row || row.kind !== "line") continue;
     row.cells.forEach((cell, cellIndex) => {
       if (!cell || (sameSplitSide && cellIndex !== start.cellIndex)) return;
+      if (cell.type === "header" && !singleCell) return;
       const position = { rowIndex, cellIndex };
       if (compareCell(position, start) < 0 || compareCell(position, end) > 0) return;
       const rangeStart =
@@ -259,6 +264,8 @@ export function selectionRectangles(input: {
         width: selected,
         height: input.model.lineHeight,
         fileIndex: row.fileIndex,
+        rowIndex: range.rowIndex,
+        cellIndex: range.cellIndex,
         clipX: range.cellIndex * columnWidth + file.gutterWidth + CODE_LEFT_PADDING,
         clipWidth: columnWidth - file.gutterWidth - CODE_LEFT_PADDING,
       });
@@ -267,12 +274,14 @@ export function selectionRectangles(input: {
   return rectangles;
 }
 
-interface SelectionRectangle {
+export interface SelectionRectangle {
   x: number;
   y: number;
   width: number;
   height: number;
   fileIndex: number;
+  rowIndex: number;
+  cellIndex: number;
   clipX: number;
   clipWidth: number;
 }
