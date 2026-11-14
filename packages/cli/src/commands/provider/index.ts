@@ -1,3 +1,4 @@
+import { runProviderFeaturesCommand } from "./features.js";
 import { runRefreshCommand } from "./refresh.js";
 import { Command } from "commander";
 import { runLsCommand } from "./ls.js";
@@ -53,6 +54,20 @@ export function createProviderCommand(): Command {
   ).action(
     withOutput((providerId: string | undefined, options: CommandOptions, command: Command) =>
       runRefreshCommand(providerId, options, command),
+    ),
+  );
+  addJsonAndDaemonHostOptions(
+    provider
+      .command("features")
+      .description("List features for a provider draft")
+      .argument("<provider>", "Provider ID")
+      .requiredOption("--cwd <path>", "Daemon-side working directory")
+      .option("--mode <id>", "Mode ID")
+      .option("--model <id>", "Model ID")
+      .option("--thinking <id>", "Thinking option ID"),
+  ).action(
+    withOutput((providerId: string, options: CommandOptions, command: Command) =>
+      runProviderFeaturesCommand(providerId, options, command),
     ),
   );
   return provider;

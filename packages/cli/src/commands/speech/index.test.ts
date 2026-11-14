@@ -1,3 +1,4 @@
+import { runSpeechModelsCommand, runSpeechModelsListCommand } from "./models.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -113,4 +114,75 @@ describe("registered speech CLI command", () => {
     expect(speakText).not.toHaveBeenCalled();
     expect(close).toHaveBeenCalledOnce();
   });
+});
+
+it.each(["ls", "download", "rm"] as const)(
+  "speech models %s uses the selected host and reports the action",
+  async (action) => {
+    const calls: string[] = [];
+    const target = { kind: "endpoint" as const, host: "speech-host:1234" };
+    const connectModels: NonNullable<Parameters<typeof runSpeechModelsListCommand>[2]> = async (
+      connectionOptions,
+    ) => {
+      expect(connectionOptions.target).toEqual(target);
+      return {
+        getLastServerInfoMessage: () => ({
+          status: "server_info",
+          serverId: "host",
+          features: { speechSettings: true },
+        }),
+        listLocalSpeechModels: async () => {
+          calls.push("ls");
+          return [];
+        },
+        downloadLocalSpeechModel: async (id) => {
+          calls.push("download:" + id);
+        },
+        deleteLocalSpeechModel: async (id) => {
+          calls.push("rm:" + id);
+        },
+        close: async () => {
+          calls.push("close");
+        },
+      };
+    };
+    const result =
+      action === "ls"
+        ? await runSpeechModelsListCommand({ daemonTarget: target }, new Command(), connectModels)
+        : await runSpeechModelsCommand(
+            action,
+            " model ",
+            { daemonTarget: target, force: true },
+            new Command(),
+            connectModels,
+          );
+    expect(calls).toEqual([action === "ls" ? "ls" : action + ":model", "close"]);
+    if (action === "ls") expect(result.data).toEqual({ models: [] });
+    else expect(result.data).toMatchObject({ modelId: "model" });
+  },
+);
+
+it("speech model deletion refuses without force and unsupported hosts close without RPC", async () => {
+  const target = { kind: "endpoint" as const, host: "speech-host:1234" };
+  await expect(
+    runSpeechModelsCommand("rm", "m", { daemonTarget: target }, new Command(), async () => {
+      throw new Error("must not connect");
+    }),
+  ).rejects.toMatchObject({ code: "FORCE_REQUIRED" });
+  let closed = false;
+  const unavailable = async () => {
+    throw new Error("must not request");
+  };
+  await expect(
+    runSpeechModelsListCommand({ daemonTarget: target }, new Command(), async () => ({
+      getLastServerInfoMessage: () => null,
+      listLocalSpeechModels: unavailable,
+      downloadLocalSpeechModel: unavailable,
+      deleteLocalSpeechModel: unavailable,
+      close: async () => {
+        closed = true;
+      },
+    })),
+  ).rejects.toMatchObject({ code: "UNSUPPORTED_HOST" });
+  expect(closed).toBe(true);
 });

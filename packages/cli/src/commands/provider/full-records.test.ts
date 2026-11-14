@@ -1,3 +1,4 @@
+import { runProviderFeaturesCommand } from "./features.js";
 import { runRefreshCommand } from "./refresh.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
@@ -226,4 +227,55 @@ it("refresh forwards the daemon cwd and provider filter and returns its acknowle
   );
   expect(result.data).toBe(response);
   expect(closed).toBe(true);
+});
+
+it("provider feature discovery forwards draft settings and preserves host errors", async () => {
+  const payload = {
+    provider: "codex",
+    features: [],
+    error: null,
+    fetchedAt: "2026-11-14T00:00:00Z",
+    requestId: "features",
+  };
+  let closed = 0;
+  const result = await runProviderFeaturesCommand(
+    "Codex",
+    { daemonTarget, cwd: "/remote/project", mode: "plan", model: "model", thinking: "high" },
+    new Command(),
+    async () => ({
+      listProviderFeatures: async (draft) => {
+        expect(draft).toEqual({
+          provider: "codex",
+          cwd: "/remote/project",
+          modeId: "plan",
+          model: "model",
+          thinkingOptionId: "high",
+        });
+        return payload;
+      },
+      close: async () => {
+        closed++;
+      },
+    }),
+  );
+  expect(result.data).toBe(payload);
+  await expect(
+    runProviderFeaturesCommand(
+      "codex",
+      { daemonTarget, cwd: "/remote" },
+      new Command(),
+      async () => ({
+        listProviderFeatures: async () => ({ ...payload, error: "bad draft" }),
+        close: async () => {
+          closed++;
+        },
+      }),
+    ),
+  ).rejects.toMatchObject({ code: "PROVIDER_ERROR", message: "bad draft" });
+  expect(closed).toBe(2);
+  await expect(
+    runProviderFeaturesCommand("codex", { daemonTarget }, new Command(), async () => {
+      throw new Error("must not connect");
+    }),
+  ).rejects.toMatchObject({ code: "INVALID_OPTIONS" });
 });
