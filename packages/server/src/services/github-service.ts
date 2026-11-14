@@ -2040,7 +2040,11 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       return cached({
         cwd: input.cwd,
         method: "listPullRequests",
-        args: { query: input.query ?? "", limit: input.limit ?? 20 },
+        args: {
+          query: input.query ?? "",
+          limit: input.limit ?? 20,
+          ...(input.state ? { state: input.state } : {}),
+        },
         readOptions: input,
         load: async () => {
           const items = await runGhJson(
@@ -2049,6 +2053,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
               "list",
               "--search",
               input.query ?? "",
+              ...(input.state ? ["--state", input.state] : []),
               "--json",
               "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
               "--limit",
@@ -2067,7 +2072,11 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
       return cached({
         cwd: input.cwd,
         method: "listIssues",
-        args: { query: input.query ?? "", limit: input.limit ?? 20 },
+        args: {
+          query: input.query ?? "",
+          limit: input.limit ?? 20,
+          ...(input.state ? { state: input.state } : {}),
+        },
         readOptions: input,
         load: async () => {
           const items = await runGhJson(
@@ -2076,6 +2085,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
               "list",
               "--search",
               input.query ?? "",
+              ...(input.state ? ["--state", input.state] : []),
               "--json",
               "number,title,url,state,body,labels,updatedAt",
               "--limit",
@@ -2402,11 +2412,13 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
         : { force: false, reason: input.reason };
       const enterpriseHost = await resolveRepoHostCached(input.cwd).catch(() => null);
       const query = normalizeGitHubSearchQuery(input.query, enterpriseHost);
+      const state = query !== input.query.trim() ? ("all" as const) : undefined;
       const [issuesResult, prsResult] = await Promise.allSettled([
         shouldFetchIssues
           ? this.listIssues({
               cwd: input.cwd,
               query,
+              state,
               limit: input.limit,
               ...readOptions,
             })
@@ -2415,6 +2427,7 @@ export function createGitHubService(options: CreateGitHubServiceOptions = {}): G
           ? this.listPullRequests({
               cwd: input.cwd,
               query,
+              state,
               limit: input.limit,
               ...readOptions,
             })

@@ -29,7 +29,7 @@ Superset publishes its source under the Elastic License 2.0. You can use and mod
 
 Both tools run agents on machines you control and can connect to remote hosts.
 
-Paseo's daemon runs independently of its clients. Desktop, web, mobile, CLI, SDK, and MCP clients can connect directly, and local use does not require an account.
+Paseo's daemon runs independently of its clients. Desktop, web, mobile, CLI, and SDK clients can connect directly, and local use does not require an account.
 
 Superset requires a Superset account and GitHub sign-in when opening the app. Its synchronization, remote access, and team workflows use Superset's cloud services.
 
@@ -55,7 +55,7 @@ Paseo also gives each worktree its own service URL, such as `web--fix-auth--my-a
 
 ## Automation
 
-Both tools expose workspace and agent operations through a CLI, TypeScript SDK, and MCP server. They can create workspaces, launch agents, follow progress, and manage scheduled work.
+Both tools expose workspace and agent operations through a CLI and TypeScript SDK. They can create workspaces, launch agents, follow progress, and manage scheduled work.
 
 ## Pricing
 

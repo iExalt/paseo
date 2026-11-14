@@ -69,7 +69,7 @@ Paseo has diff review with comments that go to the agent and opens pull requests
 
 ## Automation
 
-Paseo exposes workspace and agent operations through its CLI, TypeScript SDK, and MCP server:
+Paseo exposes workspace and agent operations through its CLI and TypeScript SDK:
 
 ```bash
 paseo run --provider codex "implement OAuth"

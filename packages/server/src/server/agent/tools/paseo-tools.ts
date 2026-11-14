@@ -8,7 +8,6 @@ import {
   type HostOperations,
   type ToolHosts,
 } from "../host-operations/index.js";
-import { AgentDirectory } from "../directory.js";
 import { stat } from "node:fs/promises";
 import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
@@ -20,6 +19,9 @@ import type { AgentManager } from "../agent-manager.js";
 import {
   ActiveTurnBehaviorSchema,
   AgentProfileSchema,
+  AgentSendBehaviorSchema,
+  DEFAULT_AGENT_SEND_BEHAVIOR,
+  type AgentSendBehavior,
   ReplyRuleSchema,
   WorkspaceNotificationsSchema,
 } from "@getpaseo/protocol/messages";
@@ -27,21 +29,14 @@ import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import {
   AgentFeatureSchema,
-  AgentPermissionRequestPayloadSchema,
+  AgentPendingPermissionPayloadSchema,
   AgentListItemPayloadSchema,
   AgentPermissionResponseSchema,
   AgentSnapshotPayloadSchema,
   WorkspaceScriptPayloadSchema,
 } from "../../messages.js";
-import {
-  buildStoredAgentPayload,
-  selectAgentListItems,
-  toAgentPayload,
-} from "../agent-projections.js";
-import { summarizeAgentActivity } from "../activity-curator.js";
 import type { AgentStorage } from "../agent-storage.js";
-import { AgentNotFoundError, ensureAgentLoaded } from "../agent-loading.js";
-import { isStoredAgentProviderAvailable } from "../../persistence-hooks.js";
+import { AgentNotFoundError } from "../agent-loading.js";
 import {
   archiveByScope,
   killTerminalsForWorkspace,
@@ -51,9 +46,10 @@ import {
 import { createAgentCommand } from "../create-agent/create.js";
 import { inheritWorkspaceBackground } from "../create-agent/intent.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js";
+import { speakWithHandler } from "../speak-service.js";
 import type { FirstAgentContext } from "../../messages.js";
 import { everyMsToFiveFieldCron } from "@getpaseo/protocol/schedule/cadence";
-import { expandUserPath, isSameOrDescendantPath, resolvePathFromBase } from "../../path-utils.js";
+import { expandUserPath, isSameOrDescendantPath } from "../../path-utils.js";
 import type { TerminalManager } from "../../../terminal/terminal-manager.js";
 import { encodeTerminalKeyInput } from "@getpaseo/protocol/terminal-key-input";
 import { TerminalInputModeTracker } from "@getpaseo/protocol/terminal-input-mode";
@@ -64,6 +60,8 @@ import {
   ScheduleStateConflictError,
   type ScheduleService,
 } from "../../schedule/service.js";
+import { resolveNewAgentScheduleTarget } from "../../schedule/caller-runtime.js";
+import { scheduleExpiryFromDuration } from "../../schedule/expiry.js";
 import {
   ScheduleRunSchema,
   ScheduleSummarySchema,
@@ -80,10 +78,10 @@ import {
   ProviderSummarySchema,
   parseDurationString,
   resolveRequiredProviderModel,
-  sanitizePermissionRequest,
-  serializeSnapshotWithMetadata,
   toScheduleSummary,
 } from "../mcp-shared.js";
+import { listPendingAgentPermissions } from "../permission-list.js";
+import { getAgentActivity, getAgentStatus, queryAgentDirectory } from "../agent-query-service.js";
 import {
   type PromptDispatchDisposition,
   sendPromptToAgent,
@@ -124,6 +122,8 @@ import {
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
 import { SessionAuthorization } from "../../authorization/index.js";
+import { resolveScopedAgentCwd } from "../scoped-cwd.js";
+import { inspectProviderCapabilities } from "../provider-inspection-service.js";
 
 export interface PaseoToolHostDependencies {
   agentMessages?: () => AgentMessageDelivery;
@@ -344,28 +344,6 @@ function toProviderSummary(entry: {
   };
 }
 
-function resolveScheduleProviderAndModel(params: {
-  provider?: string;
-  defaultProvider: AgentProvider;
-}): { provider: AgentProvider; model?: string } {
-  const providerInput = params.provider?.trim() || params.defaultProvider;
-  const slashIndex = providerInput.indexOf("/");
-  if (slashIndex === -1) {
-    return { provider: providerInput };
-  }
-
-  const provider = providerInput.slice(0, slashIndex).trim();
-  const model = providerInput.slice(slashIndex + 1).trim();
-  if (!provider || !model) {
-    throw new PaseoToolInputError("provider must be <provider> or <provider>/<model>");
-  }
-
-  return {
-    provider: provider,
-    model,
-  };
-}
-
 function resolveScheduleUpdateProviderAndModel(params: {
   provider?: string;
   model?: string | null;
@@ -532,7 +510,7 @@ function resolveScheduleUpdateExpiresAt(input: ScheduleUpdateToolInput): string 
     throw new PaseoToolInputError("Specify at most one of expiresIn or clearExpires");
   }
   if (input.expiresIn !== undefined) {
-    return new Date(Date.now() + parseDurationString(input.expiresIn)).toISOString();
+    return scheduleExpiryFromDuration({ expiresIn: input.expiresIn }) ?? null;
   }
   if (input.clearExpires) {
     return null;
@@ -563,25 +541,6 @@ function buildScheduleUpdateInput(input: ScheduleUpdateToolInput): UpdateSchedul
     ...(expiresAt !== undefined ? { expiresAt } : {}),
     ...(Object.keys(newAgentConfig).length > 0 ? { newAgentConfig } : {}),
   };
-}
-
-function resolveChildAgentCwd(params: {
-  parentCwd: string;
-  requestedCwd?: string;
-  lockedCwd?: string;
-  allowCustomCwd: boolean;
-}): string {
-  const lockedCwd = params.lockedCwd?.trim();
-  if (lockedCwd) {
-    return expandUserPath(lockedCwd);
-  }
-
-  const requestedCwd = params.requestedCwd?.trim();
-  if (!requestedCwd || !params.allowCustomCwd) {
-    return params.parentCwd;
-  }
-
-  return resolvePathFromBase(params.parentCwd, requestedCwd);
 }
 
 const TerminalSummarySchema = z.object({
@@ -868,6 +827,7 @@ function createToolCatalog(
           (name === "create_agent" && hasWorkspaceNotificationPolicy(input)))
       ) {
         throw new Error("Workspace notification policies are not supported by this server.");
+      }
       return tool.handler(await parseToolInput(tool, input), context);
     },
   });
@@ -886,12 +846,6 @@ function createToolCatalog(
       expression,
       ...(timezone !== undefined ? { timezone } : {}),
     };
-  };
-
-  const buildScheduleExpiry = (expiresIn: string | undefined): string | undefined => {
-    return expiresIn === undefined
-      ? undefined
-      : new Date(Date.now() + parseDurationString(expiresIn)).toISOString();
   };
 
   const resolveCallerAgent = () => {
@@ -924,25 +878,12 @@ function createToolCatalog(
   };
 
   const resolveScopedCwd = (requestedCwd?: string, opts?: { required?: boolean }): string => {
-    const callerAgent = resolveCallerAgent();
-    if (callerAgent) {
-      return resolveChildAgentCwd({
-        parentCwd: callerAgent.cwd,
-        requestedCwd,
-        lockedCwd: callerContext?.lockedCwd,
-        allowCustomCwd: callerContext?.allowCustomCwd ?? true,
-      });
-    }
-
-    const trimmedCwd = requestedCwd?.trim();
-    if (!trimmedCwd) {
-      if (opts?.required) {
-        throw new PaseoToolInputError("cwd is required");
-      }
-      throw new PaseoToolInputError("cwd is required outside an agent-scoped session");
-    }
-
-    return expandUserPath(trimmedCwd);
+    return resolveScopedAgentCwd({
+      requestedCwd,
+      callerAgent: resolveCallerAgent(),
+      callerContext,
+      required: opts?.required,
+    });
   };
 
   async function resolveTerminalWorkspaceId(resolvedCwd: string): Promise<string> {
@@ -980,88 +921,6 @@ function createToolCatalog(
     }
     throw new PaseoToolInputError("workspaceId is required outside an agent-scoped session");
   }
-
-  const buildCallerAgentScheduleConfigExtras = (
-    callerAgent: NonNullable<ReturnType<typeof resolveCallerAgent>>,
-    resolvedProvider: string,
-  ): Record<string, unknown> => {
-    return {
-      ...(callerAgent.config.thinkingOptionId
-        ? { thinkingOptionId: callerAgent.config.thinkingOptionId }
-        : {}),
-      ...(callerAgent.provider === resolvedProvider && callerAgent.config.providerOptions
-        ? { providerOptions: callerAgent.config.providerOptions }
-        : {}),
-      ...(callerAgent.config.systemPrompt ? { systemPrompt: callerAgent.config.systemPrompt } : {}),
-      ...(callerAgent.config.mcpServers ? { mcpServers: callerAgent.config.mcpServers } : {}),
-    };
-  };
-
-  const buildCallerAgentScheduleConfig = (
-    callerAgent: NonNullable<ReturnType<typeof resolveCallerAgent>>,
-    params?: { provider?: string; cwd?: string },
-  ) => {
-    const hasProviderOverride = params?.provider !== undefined;
-    const resolvedProviderModel = hasProviderOverride
-      ? resolveScheduleProviderAndModel({
-          provider: params?.provider,
-          defaultProvider: callerAgent.provider,
-        })
-      : null;
-    const resolvedProvider = resolvedProviderModel?.provider ?? callerAgent.provider;
-    let resolvedModel: string | undefined;
-    if (resolvedProviderModel?.model) {
-      resolvedModel = resolvedProviderModel.model;
-    } else if (!hasProviderOverride && callerAgent.config.model) {
-      resolvedModel = callerAgent.config.model;
-    }
-    return {
-      provider: resolvedProvider,
-      cwd: params?.cwd?.trim() ? expandUserPath(params.cwd) : callerAgent.cwd,
-      ...(callerAgent.currentModeId && callerAgent.provider === resolvedProvider
-        ? {
-            modeId: callerAgent.currentModeId,
-          }
-        : {}),
-      ...(resolvedModel ? { model: resolvedModel } : {}),
-      ...buildCallerAgentScheduleConfigExtras(callerAgent, resolvedProvider),
-    };
-  };
-
-  const resolveNewAgentScheduleTarget = (params?: {
-    provider?: string;
-    cwd?: string;
-    isolation?: "local" | "worktree";
-  }) => {
-    const callerAgent = resolveCallerAgent();
-    if (callerAgent) {
-      return {
-        type: "new-agent" as const,
-        config: {
-          ...buildCallerAgentScheduleConfig(callerAgent, params),
-          ...(params?.isolation ? { isolation: params.isolation } : {}),
-        },
-      };
-    }
-
-    if (!params?.provider?.trim()) {
-      throw new PaseoToolInputError("provider is required when target is new-agent");
-    }
-
-    const resolvedProviderModel = resolveScheduleProviderAndModel({
-      provider: params?.provider,
-      defaultProvider: params.provider,
-    });
-    return {
-      type: "new-agent" as const,
-      config: {
-        provider: resolvedProviderModel.provider,
-        cwd: params?.cwd?.trim() ? expandUserPath(params.cwd) : process.cwd(),
-        ...(resolvedProviderModel.model ? { model: resolvedProviderModel.model } : {}),
-        ...(params?.isolation ? { isolation: params.isolation } : {}),
-      },
-    };
-  };
 
   async function requireScheduleTarget(id: string, type: "agent" | "new-agent") {
     if (!scheduleService) {
@@ -1332,6 +1191,11 @@ function createToolCatalog(
     agentId: z.string(),
     prompt: z.string(),
     sessionMode: z.string().optional().describe("Optional mode to set before running the prompt."),
+    ifRunning: AgentSendBehaviorSchema.optional()
+      .default(DEFAULT_AGENT_SEND_BEHAVIOR)
+      .describe(
+        "What to do when the agent is mid-turn: steer adds the prompt to the running turn, queue runs it as a new turn once the agent is idle, interrupt cancels the turn and starts a new one.",
+      ),
   };
   const agentToAgentSendAgentPromptInputSchema = {
     ...commonSendAgentPromptInputSchema,
@@ -1391,18 +1255,10 @@ function createToolCatalog(
         },
       },
       async (args, context) => {
-        if (!callerAgentId) {
-          throw new PaseoToolInputError("speak is only available to agent-scoped tool sessions");
-        }
-        const handler = resolveSpeakHandler?.(callerAgentId) ?? null;
-        if (!handler) {
-          throw new PaseoToolInputError(
-            `No speak handler registered for your session '${callerAgentId}'`,
-          );
-        }
-        await handler({
+        await speakWithHandler({
           text: args.text,
           callerAgentId,
+          resolveSpeakHandler: (agentId) => resolveSpeakHandler?.(agentId) ?? null,
           signal: context?.signal,
         });
         return {
@@ -2159,7 +2015,9 @@ function createToolCatalog(
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),
-        disposition: z.enum(["turn_started", "out_of_band", "steered"]).optional(),
+        disposition: z
+          .enum(["turn_started", "steered", "deferred", "queued", "out_of_band"])
+          .optional(),
         deliveryStatus: z.literal("queued").optional(),
         messageId: z.string().optional(),
         status: AgentStatusEnum,
@@ -2170,9 +2028,12 @@ function createToolCatalog(
       agentId,
       prompt,
       sessionMode,
+      ifRunning = DEFAULT_AGENT_SEND_BEHAVIOR,
       notifyOnFinish = Boolean(callerAgentId),
-      activeTurnBehavior = callerAgentId ? "steer" : "interrupt",
+      activeTurnBehavior: legacyActiveTurnBehavior,
     }) => {
+      // Upstream's activeTurnBehavior still wins when given; ifRunning adds queue and defaults to steer.
+      const activeTurnBehavior: AgentSendBehavior = legacyActiveTurnBehavior ?? ifRunning;
       if (callerAgentId && !agentManager.getAgent(agentId) && !(await agentStorage.get(agentId))) {
         throw new PaseoToolInputError(`Agent ${agentId} not found`);
       }
@@ -2214,6 +2075,7 @@ function createToolCatalog(
               },
               sessionMode,
               activeTurnBehavior,
+              clearPendingPermissions: true,
               onDispatch: confirmDispatch,
             });
           } catch (error) {
@@ -2246,6 +2108,7 @@ function createToolCatalog(
         source: callerAgentId ? { kind: "agent-message", agentId: callerAgentId } : undefined,
         sessionMode,
         activeTurnBehavior,
+        clearPendingPermissions: true,
         onDispatch: confirmDispatch,
         logger: childLogger,
       }).catch((error) => {
@@ -2298,38 +2161,19 @@ function createToolCatalog(
       },
     },
     async ({ agentId }) => {
-      const snapshot = agentManager.getAgent(agentId);
-      if (snapshot) {
-        const structuredSnapshot = await serializeSnapshotWithMetadata(
+      const result = await getAgentStatus({
+        dependencies: {
+          agentManager,
           agentStorage,
-          snapshot,
-          childLogger,
-        );
-        return {
-          content: [],
-          structuredContent: ensureValidJson({
-            status: snapshot.lifecycle,
-            snapshot: structuredSnapshot,
-          }),
-        };
-      }
-
-      const record = await agentStorage.get(agentId);
-      if (!record || record.internal) {
-        throw new PaseoToolInputError(`Agent ${agentId} not found`);
-      }
-
-      const structuredSnapshot = buildStoredAgentPayload(
-        record,
-        new Set(providerSnapshotManager.listRegisteredProviderIds()),
-        (provider, own) => agentManager.effectiveOptionsFor(provider, own),
-      );
+          providerSnapshotManager,
+          workspaceRegistry: options.workspaceRegistry,
+          logger: childLogger,
+        },
+        agentId,
+      });
       return {
         content: [],
-        structuredContent: ensureValidJson({
-          status: structuredSnapshot.status,
-          snapshot: structuredSnapshot,
-        }),
+        structuredContent: ensureValidJson(result),
       };
     },
   );
@@ -2365,33 +2209,24 @@ function createToolCatalog(
       statuses,
       limit = 50,
     }) => {
-      const callerCwd = callerAgentId ? resolveCallerAgent()?.cwd : undefined;
-      const requestedCwd = cwd?.trim() ? expandUserPath(cwd) : callerCwd;
-      if (!options.workspaceRegistry) throw new Error("Workspace registry is not configured");
-      const directory = new AgentDirectory({
-        manager: agentManager,
-        storage: agentStorage,
-        workspaces: options.workspaceRegistry,
-        projectLive: (snapshot) =>
-          serializeSnapshotWithMetadata(agentStorage, snapshot, childLogger),
-        projectStored: (record) =>
-          buildStoredAgentPayload(
-            record,
-            new Set(providerSnapshotManager.listRegisteredProviderIds()),
-            (provider, own) => agentManager.effectiveOptionsFor(provider, own),
-          ),
-        isProviderVisible: () => true,
-        isStoredProviderAvailable: (record) =>
-          isStoredAgentProviderAvailable(
-            record,
-            new Set(providerSnapshotManager.listRegisteredProviderIds()),
-          ),
+      const agents = await queryAgentDirectory({
+        dependencies: {
+          agentManager,
+          agentStorage,
+          providerSnapshotManager,
+          workspaceRegistry: options.workspaceRegistry,
+          logger: childLogger,
+        },
+        query: {
+          includeBackground,
+          includeArchived,
+          cwd,
+          callerAgentId,
+          sinceHours,
+          statuses,
+          limit,
+        },
       });
-      const agents = selectAgentListItems(
-        await directory.list({ includeBackground, includeArchived }),
-        { cwd: requestedCwd, statuses, sinceHours, limit },
-      );
-
       return {
         content: [],
         structuredContent: ensureValidJson({ agents }),
@@ -2885,14 +2720,17 @@ function createToolCatalog(
         throw new Error("Schedule service is not configured");
       }
 
-      const expiresAt = buildScheduleExpiry(expiresIn);
+      const expiresAt = scheduleExpiryFromDuration({ expiresIn });
       const schedule = await scheduleService.createOrReplace({
         prompt: prompt.trim(),
         cadence: buildCronScheduleCadence({
           cron,
           ...(timezone !== undefined ? { timezone } : {}),
         }),
-        target: resolveNewAgentScheduleTarget({ provider, cwd, isolation }),
+        target: resolveNewAgentScheduleTarget({
+          callerAgent: resolveCallerAgent(),
+          overrides: { provider, cwd, isolation },
+        }),
         ...(name?.trim() ? { name: name.trim() } : {}),
         ...(maxRuns === undefined ? {} : { maxRuns }),
         ...(expiresAt === undefined ? {} : { expiresAt }),
@@ -2936,7 +2774,7 @@ function createToolCatalog(
       }
       resolveCallerAgent();
 
-      const expiresAt = buildScheduleExpiry(expiresIn);
+      const expiresAt = scheduleExpiryFromDuration({ expiresIn });
       const schedule = await scheduleService.createOrReplace({
         prompt: prompt.trim(),
         cadence: buildCronScheduleCadence({
@@ -3314,45 +3152,20 @@ function createToolCatalog(
       },
     },
     async ({ provider, cwd, settings }) => {
-      const resolvedProviderModel = resolveScheduleProviderAndModel({
-        provider,
-        defaultProvider: provider,
-      });
-      const providerId = resolvedProviderModel.provider;
-      const resolvedCwd = resolveScopedCwd(cwd, { required: true });
-      const entry = await providerSnapshotManager.getProvider({
-        cwd: resolvedCwd,
-        provider: providerId,
-        wait: true,
-      });
-      const summary = toProviderSummary(entry);
-      if (!entry.enabled) {
-        throw new PaseoToolInputError(`Provider '${providerId}' is disabled`);
-      }
-      if (entry.status !== "ready") {
-        throw new PaseoToolInputError(entry.error ?? `Provider '${providerId}' is unavailable`);
-      }
-      const selectedModel = settings?.model ?? resolvedProviderModel.model;
-      const { controls, options: effectiveOptions } = await agentManager.listDraftControls({
-        provider: providerId,
-        cwd: resolvedCwd,
-        ...(settings?.modeId ? { modeId: settings.modeId } : {}),
-        ...(selectedModel ? { model: selectedModel } : {}),
-        ...(settings?.thinkingOptionId ? { thinkingOptionId: settings.thinkingOptionId } : {}),
-        ...(settings?.features ? { providerOptions: settings.features } : {}),
+      const result = await inspectProviderCapabilities({
+        input: {
+          provider,
+          cwd,
+          callerAgentId,
+          settings,
+        },
+        agentManager,
+        providerSnapshotManager,
+        resolveCallerContext,
       });
       return {
         content: [],
-        structuredContent: ensureValidJson({
-          provider: providerId,
-          label: summary.label,
-          description: summary.description,
-          enabled: summary.enabled,
-          status: summary.status,
-          modes: summary.modes,
-          selectedModel: selectedModel ?? null,
-          features: featuresFromControls({ controls, options: effectiveOptions }),
-        }),
+        structuredContent: ensureValidJson(result),
       };
     },
   );
@@ -3377,21 +3190,20 @@ function createToolCatalog(
       },
     },
     async ({ agentId, limit }) => {
-      await ensureAgentLoaded(agentId, {
-        agentManager,
-        agentStorage,
-        logger: childLogger,
+      const result = await getAgentActivity({
+        dependencies: {
+          agentManager,
+          agentStorage,
+          providerSnapshotManager,
+          workspaceRegistry: options.workspaceRegistry,
+          logger: childLogger,
+        },
+        agentId,
+        limit,
       });
-      const timeline = agentManager.getTimeline(agentId);
-      const snapshot = agentManager.getAgent(agentId);
-
       return {
         content: [],
-        structuredContent: ensureValidJson({
-          agentId,
-          ...summarizeAgentActivity(timeline, limit),
-          currentModeId: snapshot?.currentModeId ?? null,
-        }),
+        structuredContent: ensureValidJson(result),
       };
     },
   );
@@ -3428,24 +3240,11 @@ function createToolCatalog(
         "Return all pending permission requests across all agents with the normalized payloads.",
       inputSchema: {},
       outputSchema: {
-        permissions: z.array(
-          z.object({
-            agentId: z.string(),
-            status: AgentStatusEnum,
-            request: AgentPermissionRequestPayloadSchema,
-          }),
-        ),
+        permissions: z.array(AgentPendingPermissionPayloadSchema),
       },
     },
     async () => {
-      const permissions = agentManager.listAgents().flatMap((agent) => {
-        const payload = toAgentPayload(agent);
-        return payload.pendingPermissions.map((request) => ({
-          agentId: agent.id,
-          status: payload.status,
-          request: sanitizePermissionRequest(request),
-        }));
-      });
+      const permissions = listPendingAgentPermissions({ agentManager });
 
       return {
         content: [],

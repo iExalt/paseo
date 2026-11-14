@@ -8,7 +8,7 @@ Paseo is a mobile app for monitoring and controlling your local AI coding agents
 
 This is an npm workspace monorepo:
 
-- `packages/server` — Daemon: agent lifecycle, WebSocket API, MCP server
+- `packages/server` — Daemon: agent lifecycle, WebSocket API, provider-native tools
 - `packages/app` — Mobile + web client (Expo)
 - `packages/cli` — Docker-style CLI (`paseo run/ls/logs/wait`)
 - `packages/relay` — E2E encrypted relay for remote access
@@ -140,6 +140,7 @@ see the `release-stable` skill.
   - For full suite verification, push to CI and check GitHub Actions instead.
 - Add tests to existing suites and reuse their npm scripts and CI jobs instead of creating feature-specific ones.
 - **Always run typecheck and lint after every change.**
+- **Keep remote-only checks remote.** When a task assigns verification to another host, verify the same source revision there first, then use `LEFTHOOK=0 git commit` locally. The pre-commit hook otherwise reruns typecheck and can trigger builds on the Mac. Record the remote checks and confirm the staged source matches what passed before skipping the duplicate hook.
 - **Build workspace packages before diagnosing cross-package type errors.** This repo consumes generated declarations across workspaces. If typecheck fails in a package that depends on another workspace, rebuild the owning stack first so `dist` declarations are current:
   - `npm run build:client` — rebuild protocol and client declarations.
   - `npm run build:server` — rebuild highlight, relay, protocol, client, server, and CLI when server/CLI types may be stale.
