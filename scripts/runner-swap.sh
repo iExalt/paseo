@@ -12,8 +12,12 @@ fail() {
   return 1
 }
 
+# Trusted builds are runs on dev by iExalt, or by github-actions[bot] when
+# release-please.yml dispatches a release.
 require_github_linux_context() {
   local trusted_ref=false
+  if [[ "${GITHUB_REF:-}" == refs/heads/dev &&
+    ("${GITHUB_ACTOR:-}" == iExalt || "${GITHUB_ACTOR:-}" == "github-actions[bot]") ]]; then
     trusted_ref=true
   fi
   if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_OS:-}" != Linux || \
