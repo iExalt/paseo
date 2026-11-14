@@ -1,3 +1,4 @@
+import { REMOTE_CONFIG_PATHS, editRemoteConfig } from "./remote-config-edit.js";
 import {
   loadPersistedConfig,
   savePersistedConfigAsync,
@@ -437,6 +438,74 @@ export class DaemonConfigStore {
         ),
       ),
     );
+  }
+
+  public editRemote(
+    field: string,
+    edit: { value?: unknown; unset?: boolean },
+  ): Promise<MutableDaemonConfig> {
+    return this.enqueue(async () => {
+      if (!this.reloadSource)
+        throw new Error("Configuration editing is unavailable for this daemon instance");
+      const previous = await loadPersistedConfigAsync(this.paseoHome, this.logger);
+      const { persisted, root } = editRemoteConfig(previous, field, edit);
+      const resolved = this.reloadSource.resolve(persisted);
+      const desired = MutableDaemonConfigSchema.parse({
+        ...resolved.mutable,
+        ...this.readSpeech(persisted),
+        replyRules: persisted.replyRules ?? [],
+      });
+      const next = { ...this.current, [root]: desired[root as keyof MutableDaemonConfig] };
+      if (root === "features") next.envOverrides = desired.envOverrides;
+      const removedProviders =
+        root === "providers"
+          ? Object.keys(this.current.providers).filter(
+              (id) => !Object.hasOwn(desired.providers, id),
+            )
+          : [];
+      if (root === "providers" && removedProviders.length) {
+        next.metadataGeneration = {
+          ...next.metadataGeneration,
+          providers: next.metadataGeneration.providers.filter(
+            (entry) => !removedProviders.includes(entry.provider),
+          ),
+        };
+        if (persisted.agents?.metadataGeneration)
+          persisted.agents.metadataGeneration.providers = (
+            persisted.agents.metadataGeneration.providers ?? []
+          ).filter((entry) => !removedProviders.includes(entry.provider));
+      }
+      const matcher =
+        root === "replyRules"
+          ? ReplyRuleMatcher.compile(freezeReplyRules(next.replyRules ?? []))
+          : undefined;
+      await savePersistedConfigAsync(this.paseoHome, persisted, this.logger);
+      try {
+        this.applyReplacement(next, { removedProviders }, matcher);
+      } catch (error) {
+        await savePersistedConfigAsync(this.paseoHome, previous, this.logger);
+        throw error;
+      }
+      const known = structuredClone(this.lastKnownPersisted) as Record<string, unknown>;
+      const persistedPath = REMOTE_CONFIG_PATHS[root]!.split(".");
+      const copyPath = (parts: string[]) => {
+        let target = known;
+        let source = persisted as Record<string, unknown> | undefined;
+        for (const part of parts.slice(0, -1)) {
+          target[part] ??= {};
+          target = target[part] as Record<string, unknown>;
+          source = source?.[part] as Record<string, unknown> | undefined;
+        }
+        const key = parts.at(-1)!;
+        if (source && Object.hasOwn(source, key)) target[key] = source[key];
+        else delete target[key];
+      };
+      copyPath(persistedPath);
+      if (removedProviders.length) copyPath(["agents", "metadataGeneration"]);
+      this.lastKnownPersisted = known as PersistedConfig;
+      if (root === "features") this.speechOwner?.apply(this.lastKnownPersisted);
+      return this.current;
+    });
   }
 
   public setAgentSkillSelection(selection: AgentSkillSelection): Promise<MutableDaemonConfig> {

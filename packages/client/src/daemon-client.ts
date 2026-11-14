@@ -6094,6 +6094,15 @@ export class DaemonClient {
     });
   }
 
+  async editDaemonConfig(
+    path: string,
+    edit: { value?: unknown; unset?: boolean },
+  ): Promise<{ requestId: string; config: MutableDaemonConfig }> {
+    return this.sendNamespacedCorrelatedSessionRequest<"daemon.config.edit.response">({
+      message: { type: "daemon.config.edit.request", path, ...edit },
+    });
+  }
+
   async patchDaemonConfig(
     config: MutableDaemonConfigPatch,
     requestId?: string,

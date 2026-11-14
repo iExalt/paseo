@@ -1175,6 +1175,8 @@ describe("DaemonConfigStore reload", () => {
           if (options.overrideControlledPaths?.includes("daemon.relay.enabled")) {
             mutable.relay = initialMutable.relay;
           }
+          if (options.overrideControlledPaths?.includes("daemon.usage.enabled"))
+            mutable.usage = initialMutable.usage;
           return {
             mutable,
             overrideControlledPaths: options.overrideControlledPaths ?? [],
@@ -1188,6 +1190,104 @@ describe("DaemonConfigStore reload", () => {
   function writeConfig(paseoHome: string, config: unknown): void {
     writeFileSync(path.join(paseoHome, "config.json"), `${JSON.stringify(config, null, 2)}\n`);
   }
+
+  test("remote edits unset persisted values and apply only the selected area", async () => {
+    const { store, paseoHome } = createReloadableStore({
+      initialPersisted: { daemon: { usage: { enabled: false }, terminalProfiles: [] } },
+    });
+    await store.editRemote("usage.enabled", { unset: true });
+    expect(store.get().usage).toEqual({ enabled: true });
+    expect(loadPersistedConfig(paseoHome).daemon?.usage).toEqual({});
+    await store.editRemote("terminalProfiles", { unset: true });
+    expect(store.get().terminalProfiles).toBeUndefined();
+    writeConfig(paseoHome, { daemon: { browserTools: { enabled: true } } });
+    await store.editRemote("usage.enabled", { value: false });
+    expect(store.get().browserTools.enabled).toBe(false);
+    expect(loadPersistedConfig(paseoHome).daemon?.browserTools?.enabled).toBe(true);
+  });
+
+  test("remote edits reject excluded and unknown keys without changing disk or runtime", async () => {
+    const { store, paseoHome } = createReloadableStore({
+      initialPersisted: { daemon: { usage: { enabled: true } } },
+    });
+    const before = readFileSync(path.join(paseoHome, "config.json"), "utf8");
+    for (const field of [
+      "agentTools.enabled",
+      "relay.enabled",
+      "envOverrides",
+      "hostnames",
+      "cors",
+      "trustedProxies",
+      "usage.__proto__",
+    ])
+      await expect(store.editRemote(field, { value: false })).rejects.toThrow();
+    await expect(
+      store.editRemote("browserTools", { value: { enabled: true, unknown: true } }),
+    ).rejects.toThrow();
+    await expect(
+      store.editRemote("providers.bad", { value: { extends: "acp", label: "bad" } }),
+    ).rejects.toThrow();
+    expect(readFileSync(path.join(paseoHome, "config.json"), "utf8")).toBe(before);
+    expect(store.get().usage).toEqual({ enabled: true });
+  });
+
+  test("remote edits cannot remove local-only speech settings or smuggle excluded profile features", async () => {
+    const { store, paseoHome } = createReloadableStore({
+      initialPersisted: { features: { webUi: { enabled: true } } },
+    });
+    const before = readFileSync(path.join(paseoHome, "config.json"), "utf8");
+    await expect(store.editRemote("features", { unset: true })).rejects.toThrow();
+    await expect(store.editRemote("features", { value: {} })).rejects.toThrow();
+    await expect(
+      store.editRemote("agentProfiles", {
+        value: [{ id: "x", name: "x", provider: "codex", featureValues: { agentTools: true } }],
+      }),
+    ).rejects.toThrow();
+    expect(readFileSync(path.join(paseoHome, "config.json"), "utf8")).toBe(before);
+  });
+
+  test("failed remote live application restores runtime and persistent configuration", async () => {
+    const { store, paseoHome } = createReloadableStore({
+      initialPersisted: { daemon: { usage: { enabled: true } } },
+    });
+    const before = loadPersistedConfig(paseoHome);
+    store.onApply(() => {
+      throw new Error("owner failed");
+    });
+    await expect(store.editRemote("usage.enabled", { value: false })).rejects.toThrow(
+      "owner failed",
+    );
+    expect(store.get().usage).toEqual({ enabled: true });
+    expect(loadPersistedConfig(paseoHome)).toEqual(before);
+  });
+
+  test("remote edits save configured values while returning environment-controlled effective values", async () => {
+    const { store, paseoHome } = createReloadableStore({
+      overrideControlledPaths: ["daemon.usage.enabled"],
+    });
+    await store.editRemote("usage.enabled", { value: false });
+    expect(loadPersistedConfig(paseoHome).daemon?.usage?.enabled).toBe(false);
+    expect(store.get().usage?.enabled).toBe(true);
+  });
+
+  test("remote provider replacement removes omitted fields and serial edits preserve siblings", async () => {
+    const { store, paseoHome } = createReloadableStore({
+      initialPersisted: {
+        agents: { providers: { codex: { enabled: true, env: { KEY: "value" } } } },
+      },
+    });
+    await Promise.all([
+      store.editRemote("providers.codex.enabled", { value: false }),
+      store.editRemote("appendSystemPrompt", { value: "hello" }),
+    ]);
+    expect(loadPersistedConfig(paseoHome).agents?.providers?.codex).toEqual({
+      enabled: false,
+      env: { KEY: "value" },
+    });
+    await store.editRemote("providers.codex", { value: { enabled: true } });
+    expect(loadPersistedConfig(paseoHome).agents?.providers?.codex).toEqual({ enabled: true });
+    expect(store.get().appendSystemPrompt).toBe("hello");
+  });
 
   test("applies overlapping plugin mutations to the latest committed sources", async () => {
     const { store } = createReloadableStore({

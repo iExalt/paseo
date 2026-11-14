@@ -1807,6 +1807,18 @@ export const ProviderInspectResponseMessageSchema = z.object({
 export type ProviderInspectRequest = z.infer<typeof ProviderInspectRequestMessageSchema>;
 export type ProviderInspectPayload = z.infer<typeof ProviderInspectResultSchema>;
 
+export const DaemonConfigEditRequestSchema = z.object({
+  type: z.literal("daemon.config.edit.request"),
+  requestId: z.string(),
+  path: z.string(),
+  value: z.unknown().optional(),
+  unset: z.boolean().optional(),
+});
+export const DaemonConfigEditResponseSchema = z.object({
+  type: z.literal("daemon.config.edit.response"),
+  payload: z.object({ requestId: z.string(), config: MutableDaemonConfigSchema }),
+});
+
 export const SetDaemonConfigRequestMessageSchema = z.object({
   type: z.literal("set_daemon_config_request"),
   requestId: z.string(),
@@ -3615,6 +3627,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   PermissionListRequestMessageSchema,
   ProviderInspectRequestMessageSchema,
   SetDaemonConfigRequestMessageSchema,
+  DaemonConfigEditRequestSchema,
   ReadProjectConfigRequestMessageSchema,
   WriteProjectConfigRequestMessageSchema,
   DictationStreamStartMessageSchema,
@@ -4006,6 +4019,7 @@ export const ServerInfoStatusPayloadSchema = z
         daemonStatusRpc: z.boolean().optional(),
         // COMPAT(daemonConfigReload): added in v0.4.0, remove gate after 2027-02-14.
         daemonConfigReload: z.boolean().optional(),
+        daemonConfigEdit: z.boolean().optional(),
         // COMPAT(speechSettings): added in v0.12.0, remove gate after 2027-04-18.
         speechSettings: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
@@ -7548,6 +7562,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   PermissionListResponseMessageSchema,
   ProviderInspectResponseMessageSchema,
   SetDaemonConfigResponseMessageSchema,
+  DaemonConfigEditResponseSchema,
   ReadProjectConfigResponseMessageSchema,
   WriteProjectConfigResponseMessageSchema,
   SetAgentModeResponseMessageSchema,
