@@ -21,5 +21,6 @@ describe("isWebSocketSameOrigin", () => {
   test("rejects non-loopback cross-origin upgrades", () => {
     expect(isWebSocketSameOrigin("http://evil.example:32775", "localhost:32775")).toBe(false);
     expect(isWebSocketSameOrigin("http://127.0.0.1:32775", "paseo.example.com:32775")).toBe(false);
+    expect(isWebSocketSameOrigin("http://a--b.localhost:6767", "localhost:6767")).toBe(false);
   });
 });
