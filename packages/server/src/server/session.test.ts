@@ -41,6 +41,7 @@ import {
   terminalWorkerDirectory,
   writeTerminalCleanupRecord,
 } from "../terminal/terminal-worker-record.js";
+import { DaemonConfigStore } from "./daemon-config-store.js";
 import { OWNER_PERMISSIONS, type DaemonPermission } from "./authorization/index.js";
 import { DownloadTokenStore } from "./file-download/token-store.js";
 import { StructuredAgentFallbackError } from "./agent/agent-response-loop.js";
@@ -346,6 +347,7 @@ interface SessionForTestOptions {
   downloadTokenStore?: SessionOptions["downloadTokenStore"];
   pushNotifications?: SessionOptions["pushNotifications"];
   messages?: unknown[];
+  daemonConfigStore?: SessionOptions["daemonConfigStore"];
   targetedMessages?: Array<{ source: object; message: SessionOutboundMessage }>;
   binaryMessages?: Uint8Array[];
   pluginRuntime?: SessionOptions["pluginRuntime"];
@@ -437,14 +439,16 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     checkoutDiffManager: asCheckoutDiffManager(checkoutDiffManager),
     github: asGitHubService(github),
     workspaceGitService: asWorkspaceGitService(workspaceGitService),
-    daemonConfigStore: asDaemonConfigStore({
-      readServicePorts: async () => undefined,
-      get: vi.fn(() => ({
-        mcp: { injectIntoAgents: false },
-        providers: {},
-      })),
-      onChange: vi.fn(() => () => {}),
-    }),
+    daemonConfigStore:
+      options.daemonConfigStore ??
+      asDaemonConfigStore({
+        readServicePorts: async () => undefined,
+        get: vi.fn(() => ({
+          mcp: { injectIntoAgents: false },
+          providers: {},
+        })),
+        onChange: vi.fn(() => () => {}),
+      }),
     pluginRuntime: options.pluginRuntime,
     orchestrationSkills: options.orchestrationSkills,
     stt: options.stt ?? null,
@@ -2049,6 +2053,110 @@ describe("daemon status + pairing RPC", () => {
     tempDirs.push(home);
     return home;
   }
+
+  test("daemon notification rule RPCs read and persist the daemon-wide list", async () => {
+    const home = makeHome();
+    const store = new DaemonConfigStore(home, {
+      relay: { enabled: false },
+      mcp: { injectIntoAgents: false },
+      browserTools: { enabled: false },
+      providers: {},
+      metadataGeneration: { providers: [] },
+      autoArchiveAfterMerge: false,
+      enableTerminalAgentHooks: false,
+      appendSystemPrompt: "",
+    });
+    const messages: SessionOutboundMessage[] = [];
+    const session = createSessionForTest({ messages, paseoHome: home, daemonConfigStore: store });
+    const rules = [{ source: "^No news\\.$", flags: "i" }];
+
+    await session.handleMessage({
+      type: "daemon.notifications.rules.get.request",
+      requestId: "rules-before",
+    });
+    await session.handleMessage({
+      type: "daemon.notifications.rules.set.request",
+      requestId: "rules-set",
+      replyRules: rules,
+    });
+    await session.handleMessage({
+      type: "daemon.notifications.rules.get.request",
+      requestId: "rules-after",
+    });
+
+    expect(messages).toEqual([
+      {
+        type: "daemon.notifications.rules.get.response",
+        payload: { requestId: "rules-before", replyRules: [] },
+      },
+      {
+        type: "daemon.notifications.rules.set.response",
+        payload: { requestId: "rules-set", replyRules: rules },
+      },
+      {
+        type: "daemon.notifications.rules.get.response",
+        payload: { requestId: "rules-after", replyRules: rules },
+      },
+    ]);
+  });
+
+  test("daemon notification rule RPCs await persistence and report asynchronous failures", async () => {
+    const messages: SessionOutboundMessage[] = [];
+    let currentRules: Array<{ source: string; flags: string }> = [];
+    let finishWrite!: () => void;
+    const write = new Promise<void>((resolve) => {
+      finishWrite = resolve;
+    });
+    const patch = vi.fn(async ({ replyRules }: { replyRules: typeof currentRules }) => {
+      await write;
+      currentRules = replyRules;
+    });
+    const session = createSessionForTest({
+      messages,
+      daemonConfigStore: asDaemonConfigStore({
+        get: () => ({ providers: {} }),
+        getReplyRules: () => currentRules,
+        patch,
+      }),
+    });
+    const rules = [{ source: "hello", flags: "i" }];
+    const request = session.handleMessage({
+      type: "daemon.notifications.rules.set.request",
+      requestId: "rules-pending",
+      replyRules: rules,
+    });
+    await vi.waitFor(() => expect(patch).toHaveBeenCalledOnce());
+    expect(messages).toEqual([]);
+    finishWrite();
+    await request;
+    expect(messages).toEqual([
+      {
+        type: "daemon.notifications.rules.set.response",
+        payload: { requestId: "rules-pending", replyRules: rules },
+      },
+    ]);
+
+    messages.length = 0;
+    patch.mockRejectedValueOnce(new Error("config write failed"));
+    await session.handleMessage({
+      type: "daemon.notifications.rules.set.request",
+      requestId: "rules-failed",
+      replyRules: [],
+    });
+    expect(messages).toContainEqual({
+      type: "rpc_error",
+      payload: {
+        requestId: "rules-failed",
+        requestType: "daemon.notifications.rules.set.request",
+        error: "Request failed: config write failed",
+        code: "handler_error",
+      },
+    });
+    expect(
+      messages.some((message) => message.type === "daemon.notifications.rules.set.response"),
+    ).toBe(false);
+    expect(currentRules).toEqual(rules);
+  });
 
   test("daemon.get_status.request reports identity, runtime config, and mapped providers", async () => {
     const messages: unknown[] = [];

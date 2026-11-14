@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { withOutput } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { runArchiveCommand } from "./archive.js";
@@ -6,6 +6,7 @@ import { runCreateCommand } from "./create.js";
 import { runLsCommand } from "./ls.js";
 import { runRenameCommand } from "./rename.js";
 import { runSetupCommand } from "./setup.js";
+import { runUpdateCommand } from "./update.js";
 
 export function createWorkspaceCommand(): Command {
   const workspace = new Command("workspace").description("Manage workspaces");
@@ -25,6 +26,9 @@ export function createWorkspaceCommand(): Command {
       .option("--path <path>", "Local directory or source checkout (default: current)")
       .option("--project <id>", "Existing project id")
       .option("--title <title>", "Workspace title")
+      .addOption(
+        new Option("--notifications <on|off>", "Workspace notifications").choices(["on", "off"]),
+      )
       .option(
         "--mode <mode>",
         "Worktree mode: branch-off, checkout-branch, or checkout-pr (default: branch-off)",
@@ -60,6 +64,10 @@ export function createWorkspaceCommand(): Command {
 
   addJsonAndDaemonHostOptions(
     workspace
+      .command("update")
+      .argument("<workspace-id>", "Workspace id")
+      .addOption(
+  ).action(withOutput(runUpdateCommand));
       .command("archive")
       .description("Archive a workspace and everything it owns")
       .argument("<workspace-id>", "Workspace id"),

@@ -1,5 +1,4 @@
 import { compare, hashSync } from "bcryptjs";
-import { timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
 import { matchesLocalCredential } from "./local-credential.js";
 
@@ -138,18 +137,6 @@ export async function isAgentMcpRequestAuthorized(input: {
   capabilityToken: string | null;
   authorizationHeader: string | undefined;
 }): Promise<boolean> {
-  if (!input.password) {
-    return true;
   }
-  const token = extractHttpBearerToken(input.authorizationHeader);
-  if (input.capabilityToken !== null && token !== null) {
-    // Constant-time compare; length-guard first because timingSafeEqual throws
-    // on differing buffer lengths.
-    const provided = Buffer.from(token);
-    const expected = Buffer.from(input.capabilityToken);
-    if (provided.length === expected.length && timingSafeEqual(provided, expected)) {
-      return true;
-    }
   }
-  return isBearerTokenValidAsync({ password: input.password, token });
 }

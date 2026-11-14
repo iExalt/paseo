@@ -20,6 +20,10 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import type { Logger } from "pino";
 import { z } from "zod";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
+import {
+  setWorkspaceNotifications,
+  WORKSPACE_NOTIFICATIONS_ENABLED,
+} from "./notification-policy.js";
 
 export type ListenTarget =
   | { type: "tcp"; host: string; port: number }
@@ -219,9 +223,9 @@ import {
 import { terminateWithTreeKill } from "../utils/tree-kill.js";
 import { withTimeout } from "../utils/promise-timeout.js";
 import { isHostnameAllowed, type HostnamesConfig } from "./hostnames.js";
+import { SessionAuthorization } from "./authorization/index.js";
 import {
   createRequireBearerMiddleware,
-  isAgentMcpRequestAuthorized,
   type DaemonAuthConfig,
 } from "./auth.js";
 import { deleteLocalCredential, writeLocalCredential } from "./local-credential.js";
@@ -1119,7 +1123,7 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
-    context?: { callerWorkspaceId?: string },
+    context?: { callerWorkspaceId?: string; notifications?: "on" | "off" },
   ): Promise<string> => {
     const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
       cwd,
@@ -1172,7 +1176,7 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateAndBroadcastExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
-    context?: { callerWorkspaceId?: string },
+    context?: { callerWorkspaceId?: string; notifications?: "on" | "off" },
   ): Promise<string> => {
     const workspaceId = await ensureWorkspaceForCreateExternal(cwd, firstAgentContext, context);
     await emitWorkspaceUpdatesExternal([workspaceId]);
@@ -1520,6 +1524,7 @@ export async function createPaseoDaemon(
 
   const createAgentToolHostDependencies = (
     runtime: PaseoToolRuntimeContext,
+    hostAuthorization?: SessionAuthorization,
   ): PaseoToolHostDependencies => ({
     finishSubscriptions: () => finishSubscriptions,
     agentMessages: () => {
@@ -1538,6 +1543,8 @@ export async function createPaseoDaemon(
     scheduleService,
     providerSnapshotManager,
     daemonConfigStore,
+    ...(hostAuthorization ? { hostAuthorization } : {}),
+    replyRuleFilteringEnabled: hostAuthorization !== undefined,
     github,
     workspaceGitService,
     findWorkspaceIdForCwd: findWorkspaceIdForCwdExternal,
@@ -1545,6 +1552,24 @@ export async function createPaseoDaemon(
     archiveWorkspaceRecord: archiveWorkspaceRecordExternal,
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
+    updateWorkspaceNotifications: async (workspaceId, notifications) => {
+      const workspace = await setWorkspaceNotifications(
+        workspaceRegistry,
+        workspaceId,
+        notifications,
+      );
+      if (workspace) {
+        try {
+          await emitWorkspaceUpdatesExternal([workspaceId]);
+        } catch (error) {
+          logger.warn(
+            { err: error, workspaceId },
+            "Failed to publish workspace descriptor after notification policy update",
+          );
+        }
+      }
+      return workspace;
+    },
     projectRegistry,
     createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
@@ -1579,6 +1604,7 @@ export async function createPaseoDaemon(
     clearWorkspaceArchiving: clearWorkspaceArchivingExternal,
     ensureWorkspaceForCreate: createAgentCommandDependencies.ensureWorkspaceForCreate,
     createPaseoWorktree: createAgentCommandDependencies.createPaseoWorktree,
+    workspaceNotificationsEnabled: WORKSPACE_NOTIFICATIONS_ENABLED,
     browserToolsEnabled: browserToolsPolicy.isEnabled(),
     browserToolsBroker,
     paseoToolPolicy:
@@ -1609,14 +1635,7 @@ export async function createPaseoDaemon(
   {
     const agentMcpRoute = "/mcp/agents";
 
-    const createAgentMcpSession = async (callerAgentId?: string) => {
       const agentMcpServer = await createAgentMcpServer(
-        createAgentToolHostDependencies({
-          callerAgentId,
-          paseoToolPolicy: callerAgentId
-            ? agentManager.getPaseoToolPolicy(callerAgentId)
-            : undefined,
-        }),
       );
 
       // Stateless mode: each HTTP request builds a fresh server + transport that is
@@ -1652,13 +1671,6 @@ export async function createPaseoDaemon(
       // authenticates here using the injected capability token (or a valid
       // daemon password). Without this, a password-protected daemon would be
       // wide open on its agent control plane.
-      if (
-        !(await isAgentMcpRequestAuthorized({
-          password: config.auth?.password,
-          capabilityToken: agentMcpAuthToken,
-          authorizationHeader: req.header("authorization"),
-        }))
-      ) {
         res.status(401).json({ error: "Unauthorized" });
         return;
       }
@@ -1696,7 +1708,6 @@ export async function createPaseoDaemon(
         } else if (Array.isArray(callerAgentIdRaw) && typeof callerAgentIdRaw[0] === "string") {
           callerAgentId = callerAgentIdRaw[0];
         }
-        const { server, transport } = await createAgentMcpSession(callerAgentId);
         res.on("close", () => {
           void transport.close();
           void server.close();

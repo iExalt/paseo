@@ -67,6 +67,7 @@ import { useProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsOptInCard } from "./browser-tools-card";
 import { RestartRecoveryCard } from "./restart-recovery-card";
 import { IdleRuntimeCleanupCard } from "./idle-runtime-cleanup-card";
+import { ReplyRulesSection } from "./reply-rules-section";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
 
 const ThemedRestart = withUnistyles(RotateCw);
@@ -295,6 +296,7 @@ export function HostAgentsPage({ serverId }: { serverId: string }) {
           <AppendSystemPromptCard serverId={serverId} />
           <RestartRecoveryCard serverId={serverId} />
           <IdleRuntimeCleanupCard serverId={serverId} />
+          <ReplyRulesSection key={serverId} serverId={serverId} hostLabel={host.label} />
         </SettingsSection>
       ) : (
         <View style={[settingsStyles.card, styles.emptyCard]}>
