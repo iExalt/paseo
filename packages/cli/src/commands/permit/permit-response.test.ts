@@ -4,9 +4,15 @@ import type {
   AgentPermissionRequest,
   AgentPermissionResponse,
 } from "@getpaseo/protocol/agent-types";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createAllowCommand, type PermitClient } from "./allow.js";
+import { withOutput } from "../../output/index.js";
 import { createDenyCommand } from "./deny.js";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  process.exitCode = 0;
+});
 
 const agentId = "2d85f428-fdaf-4d98-906f-c583de2b805f";
 const requests: AgentPermissionRequest[] = [
@@ -119,23 +125,46 @@ describe("permit allow question answers", () => {
     "rejects malformed/incomplete answers before sending any selected response: %j",
     async (input) => {
       const client = new PermissionClient([...requests, question]);
-      await expect(
-        createAllowCommand(async () => client)(
-          agentId,
-          undefined,
-          {
-            ...options,
-            all: true,
-            ...(input === undefined ? {} : { input: JSON.stringify(input) }),
-          },
-          new Command(),
-        ),
-      ).rejects.toMatchObject({ code: "INVALID_QUESTION_ANSWERS" });
+      const result = await createAllowCommand(async () => client)(
+        agentId,
+        undefined,
+        {
+          ...options,
+          all: true,
+          ...(input === undefined ? {} : { input: JSON.stringify(input) }),
+        },
+        new Command(),
+      );
+      expect(result.exitCode).toBe(1);
+      expect(result.data).toHaveLength(3);
+      expect(result.data.every((item) => item.status === "failed")).toBe(true);
+      expect(result.data[2].error).toContain("Invalid answers");
       expect(client.responses.size).toBe(0);
       expect(client.pending).toEqual([...requests, question]);
       expect(client.closed).toBe(true);
     },
   );
+
+  it("prints every not-sent outcome when batch preflight fails", async () => {
+    const client = new PermissionClient([...requests, question]);
+    let stdout = "";
+    vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+      stdout += String(chunk);
+      return true;
+    });
+    const cmd = new Command().option("--json").option("--all");
+    cmd.parse(["--json", "--all"], { from: "user" });
+    await withOutput(createAllowCommand(async () => client))(agentId, undefined, options, cmd);
+    expect(process.exitCode).toBe(1);
+    const rows = JSON.parse(stdout);
+    expect(rows.map((item: { requestId: string }) => item.requestId)).toEqual(
+      [...requests, question].map((item) => item.id),
+    );
+    expect(rows.every((item: { status: string }) => item.status === "failed")).toBe(true);
+    expect(rows[0].error).toContain("not sent");
+    expect(rows[2].error).toContain("Invalid answers");
+    expect(client.sentRequestIds).toEqual([]);
+  });
 
   it("submits complete answers keyed by headers and waits for confirmation", async () => {
     const client = new PermissionClient([question]);
@@ -216,6 +245,7 @@ for (const action of actions) {
           agentShortId: agentId.slice(0, 7),
           name: "CodexBash",
           result: action.result,
+          status: "confirmed",
         },
       ]);
       expect(client.closed).toBe(true);
@@ -248,7 +278,61 @@ for (const action of actions) {
       expect(client.pending).toEqual([]);
     });
 
-    it("does not roll back or retry confirmed requests when another batch response is unconfirmed", async () => {
+    it.each(["success-first", "failure-first"])(
+      "retains complete mixed outcomes: %s",
+      async (order) => {
+        const client = new PermissionClient();
+        const command = action.create(async () => client)(
+          agentId,
+          undefined,
+          { ...options, all: true },
+          new Command(),
+        );
+        await client.waitForResponses(2);
+        if (order === "success-first") client.confirm(requests[0].id);
+        else client.fail(requests[1].id, new Error("Acknowledgement lost"));
+        await waitForCommandContinuations();
+        expect(client.closed).toBe(false);
+        if (order === "success-first")
+          client.fail(requests[1].id, new Error("Acknowledgement lost"));
+        else client.confirm(requests[0].id);
+        const result = await command;
+        expect(result.exitCode).toBe(1);
+        expect(result.data.map((item) => [item.requestId, item.status, item.result])).toEqual([
+          [requests[0].id, "confirmed", action.result],
+          [requests[1].id, "unconfirmed", "unconfirmed"],
+        ]);
+        expect(result.data[1].error).toBe("Acknowledgement lost");
+        expect(client.pending).toEqual([requests[1]]);
+        expect(client.sentRequestIds).toEqual(requests.map((request) => request.id));
+        expect(client.closed).toBe(true);
+      },
+    );
+
+    it("returns a single unconfirmed result even if client cleanup fails", async () => {
+      const client = new PermissionClient();
+      client.close = async () => {
+        throw new Error("Close failed");
+      };
+      const command = action.create(async () => client)(
+        agentId,
+        requests[0].id,
+        options,
+        new Command(),
+      );
+      await client.waitForResponses(1);
+      client.fail(requests[0].id, new Error("Timeout waiting for message (15000ms)"));
+      const result = await command;
+      expect(result.exitCode).toBe(1);
+      expect(result.data).toHaveLength(1);
+      expect(result.data[0]).toMatchObject({
+        requestId: requests[0].id,
+        status: "unconfirmed",
+        result: "unconfirmed",
+      });
+    });
+
+    it("reports all uncertain responses without retrying", async () => {
       const client = new PermissionClient();
       const command = action.create(async () => client)(
         agentId,
@@ -256,38 +340,52 @@ for (const action of actions) {
         { ...options, all: true },
         new Command(),
       );
-      const failure = expect(command).rejects.toMatchObject({
-        code: "PERMISSION_RESPONSE_UNCONFIRMED",
-        message: expect.stringContaining(requests[1].id),
-      });
       await client.waitForResponses(2);
-      client.confirm(requests[0].id);
-      client.fail(requests[1].id, new Error("Acknowledgement lost"));
-      await failure;
-      expect(client.pending).toEqual([requests[1]]);
-      expect(client.sentRequestIds).toEqual(requests.map((request) => request.id));
-      expect(client.closed).toBe(true);
+      for (const request of requests) client.fail(request.id, new Error("Transport disconnected"));
+      const result = await command;
+      expect(result.exitCode).toBe(1);
+      expect(result.data.map((item) => item.status)).toEqual(["unconfirmed", "unconfirmed"]);
+      expect(client.sentRequestIds).toHaveLength(2);
     });
 
-    it("rejects an unconfirmed response without returning success", async () => {
-      const client = new PermissionClient();
-      const command = action.create(async () => client)(
-        agentId,
-        requests[0].id,
-        options,
-        new Command(),
-      );
-      const failure = expect(command).rejects.toMatchObject({
-        code: "PERMISSION_RESPONSE_UNCONFIRMED",
-        message: expect.stringContaining(requests[0].id),
-        details: 'Use "paseo permit ls" to check whether the request is still pending',
-      });
-      await client.waitForResponses(1);
-      client.fail(requests[0].id, new Error("Timeout waiting for message (15000ms)"));
-      await failure;
-      expect(client.closed).toBe(true);
-      expect(client.pending).toEqual(requests);
-    });
+    it.each([true, false])(
+      "renders complete mixed results and exits nonzero (json=%s)",
+      async (json) => {
+        const client = new PermissionClient();
+        let stdout = "";
+        const write = vi.spyOn(process.stdout, "write").mockImplementation((chunk) => {
+          stdout += String(chunk);
+          return true;
+        });
+        const cmd = new Command().option("--json").option("--all");
+        cmd.parse([...(json ? ["--json"] : []), "--all"], { from: "user" });
+        const command = withOutput(action.create(async () => client))(
+          agentId,
+          undefined,
+          options,
+          cmd,
+        );
+        await client.waitForResponses(2);
+        client.fail(requests[1].id, new Error("Timeout waiting for confirmation"));
+        await waitForCommandContinuations();
+        expect(client.closed).toBe(false);
+        client.confirm(requests[0].id);
+        await command;
+        expect(process.exitCode).toBe(1);
+        if (json) {
+          expect(JSON.parse(stdout).map((item: { status: string }) => item.status)).toEqual([
+            "confirmed",
+            "unconfirmed",
+          ]);
+          expect(JSON.parse(stdout)[0].result).toBe(action.result);
+        } else {
+          expect(stdout).toContain("confirmed");
+          expect(stdout).toContain("unconfirmed");
+          expect(stdout).toContain("Timeout waiting for confirmation");
+        }
+        write.mockRestore();
+      },
+    );
   });
 }
 

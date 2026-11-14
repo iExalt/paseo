@@ -420,7 +420,9 @@ paseo permit deny <id> --all   # Deny all pending
 
 `permit allow <agent-id>` without a request ID allows **every pending request** for that agent. Use `--all` to make the batch selection explicit. `permit deny` requires a request ID or `--all`.
 
-Batch responses can partially complete. `PERMISSION_RESPONSE_UNCONFIRMED` means the CLI could not confirm the response; the response may have applied, and other requests may already be complete. Run `paseo permit ls --json` before retrying, then retry only requests still pending using their explicit IDs.
+Once selection succeeds, permission responses return one row per selected request, including on failure. Connection, selection, and malformed command arguments still produce command errors. JSON remains an array; each row adds `status` (`confirmed`, `failed`, or `unconfirmed`) and an `error` when unsuccessful. Confirmed rows retain `result: "allowed"` or `"denied"`; unsuccessful rows use `result: "failed"` or `"unconfirmed"`. Human output shows the same status and error. The exit code is 1 if any row is unsuccessful.
+
+`failed` means local validation prevented dispatch; if any selected question is invalid, no responses are sent and every selected request is reported as failed. `unconfirmed` means the response may have applied: transport and opaque daemon errors cannot establish otherwise. The CLI waits for every selected response within the SDK's existing confirmation deadlines and never retries automatically. Run `paseo permit ls --json` before retrying, then retry only requests still pending using their explicit IDs.
 
 For a single request, pass its ID from `permit ls --json`:
 
