@@ -1919,6 +1919,7 @@ export class HostRuntimeStore {
   private version = 0;
   private hostListVersion = 0;
   private hostRegistryLoaded = false;
+  private initialDiscoverySettled = false;
   private hosts: HostProfile[] = [];
   private unreadableHosts: UnreadableHostEntries = { hosts: [], connectionsByServerId: new Map() };
   private hostAppearanceMutationTail: Promise<void> = Promise.resolve();
@@ -1957,6 +1958,10 @@ export class HostRuntimeStore {
     return this.hosts;
   }
 
+  isInitialDiscoverySettled(): boolean {
+    return this.initialDiscoverySettled;
+  }
+
   getHostRegistryStatus(): HostRegistryStatus {
     return this.hostRegistryStatus;
   }
@@ -1978,7 +1983,10 @@ export class HostRuntimeStore {
 
   boot(): Promise<void> {
     if (!this.bootPromise) {
-      this.bootPromise = this.runBoot();
+      this.bootPromise = this.runBoot().finally(() => {
+        this.initialDiscoverySettled = true;
+        this.emitHostList();
+      });
     }
     return this.bootPromise;
   }
@@ -3389,6 +3397,15 @@ export function useHosts(): HostProfile[] {
     (onStoreChange) => store.subscribeHostList(onStoreChange),
     () => store.getHosts(),
     () => store.getHosts(),
+  );
+}
+
+export function useInitialHostDiscoverySettled(): boolean {
+  const store = getHostRuntimeStore();
+  return useSyncExternalStore(
+    (onStoreChange) => store.subscribeHostList(onStoreChange),
+    () => store.isInitialDiscoverySettled(),
+    () => store.isInitialDiscoverySettled(),
   );
 }
 
