@@ -324,3 +324,34 @@ describe("foreground daemon output contract", () => {
     },
   );
 });
+
+describe("subagent command dispatch", () => {
+  it("routes parent listing and provider timeline independently", async () => {
+    const cli = createCli();
+    const agent = cli.commands.find((command) => command.name() === "agent")!;
+    const subagents = agent.commands.find((command) => command.name() === "subagents")!;
+    const timeline = subagents.commands.find((command) => command.name() === "timeline")!;
+    const seen: string[] = [];
+    subagents.action((parent) => {
+      seen.push(`list:${parent}`);
+    });
+    timeline.action((parent, sub) => {
+      seen.push(`timeline:${parent}:${sub}`);
+    });
+    await cli.parseAsync(["agent", "subagents", "parent", "--json"], { from: "user" });
+    await cli.parseAsync(["agent", "subagents", "timeline", "parent", "native", "--json"], {
+      from: "user",
+    });
+    expect(seen).toEqual(["list:parent", "timeline:parent:native"]);
+  });
+  it("requires both timeline identifiers", async () => {
+    const cli = createCli();
+    const agent = cli.commands.find((command) => command.name() === "agent")!;
+    const subagents = agent.commands.find((command) => command.name() === "subagents")!;
+    const timeline = subagents.commands.find((command) => command.name() === "timeline")!;
+    timeline.exitOverride().configureOutput({ writeErr: () => {} });
+    await expect(timeline.parseAsync(["parent"], { from: "user" })).rejects.toMatchObject({
+      code: "commander.missingArgument",
+    });
+  });
+});

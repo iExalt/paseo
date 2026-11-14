@@ -69,6 +69,10 @@ History actions: agent rewind <id> --to user-message-id --mode conversation --fo
 rewinds supported conversation/files/both modes. agent fork <id> <prompt> [--at assistant-message-id]
 accepts run flags, inherits source settings, and waits by default; use --no-wait to return.
 
+Subagents: agent subagents <parent> --json separates Paseo child snapshots from provider-native
+descriptors. agent subagents timeline <parent> <native-id> --json [--limit N --before epoch:seq]
+returns provider rows and cursor metadata; native IDs belong to their parent, not the Paseo directory.
+
 Questions: inspect request.input.questions in permit ls --json, then answer with
 permit allow <agent> <req_id> --input '{"answers":{"Question 1":"chosen label or free text"}}'.
 Use every question's header as the key, not its id; values are strings, not Codex
