@@ -40,3 +40,14 @@ export async function getLastNotificationResponseAsync() {
 }
 
 export function clearLastNotificationResponse(): void {}
+
+// Nothing is ever presented without a push token; these keep notification dismissal from throwing.
+export const getPresentedNotificationsAsync =
+  (async () => []) satisfies typeof import("expo-notifications").getPresentedNotificationsAsync;
+
+export const dismissNotificationAsync = (async () =>
+  undefined) satisfies typeof import("expo-notifications").dismissNotificationAsync;
+
+export const addNotificationReceivedListener = (() => ({
+  remove() {},
+})) satisfies typeof import("expo-notifications").addNotificationReceivedListener;

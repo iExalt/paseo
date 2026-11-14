@@ -12,6 +12,11 @@ import {
   type AppSettings,
   type SettingsDeps,
 } from "@/hooks/use-settings/storage";
+import {
+  prepareLifecycle,
+  removeLifecycleHost,
+  watchLifecycle,
+} from "../background-lifecycle.native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
@@ -137,23 +142,72 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
     ? async (id: string): Promise<ResolvedToken> => resolved(await testResolveToken(id))
     : resolveToken;
 
+  let registrationId: string | undefined;
+  let stopLifecycle: (() => void) | undefined;
+  let preparing: Promise<void> | null = null;
+  let registerAgain = false;
+  const sendRegistration = () => {
+    if (stopped || !token || !input.client.isConnected) return;
+    const features = input.client.getLastServerInfoMessage()?.features;
+    const lifecycleId = features?.androidNotificationLifecycle ? registrationId : undefined;
+    // COMPAT(pushNotificationPreferences): added in v0.18.0, remove gate after 2027-06-01.
+    if (features?.pushNotificationPreferences && !preferencesReady) return;
+    const supportedPreferences = features?.pushNotificationPreferences ? preferences : undefined;
+    const signature = JSON.stringify([token, lifecycleId, supportedPreferences]);
+    if (signature !== lastRegisteredSignature) {
+      lastRegisteredSignature = signature;
+      if (lifecycleId && supportedPreferences)
+        input.client.registerPushToken(token, lifecycleId, supportedPreferences);
+      else if (lifecycleId) input.client.registerPushToken(token, lifecycleId);
+      else if (supportedPreferences) input.client.registerPushToken(token, supportedPreferences);
+      else input.client.registerPushToken(token);
+    }
+    setPushRegistrationStatus(serverId, "sent");
+  };
   const register = () => {
     if (stopped || !token) return;
     if (!input.client.isConnected) {
       setPushRegistrationStatus(serverId, "not-connected");
       return;
     }
-    // COMPAT(pushNotificationPreferences): added in v0.18.0, remove gate after 2027-06-01.
-    const supportsPreferences =
-      input.client.getLastServerInfoMessage()?.features?.pushNotificationPreferences === true;
-    if (supportsPreferences && !preferencesReady) return;
-    const signature = supportsPreferences ? `${token}:${JSON.stringify(preferences)}` : `${token}:legacy`;
-    if (signature !== lastRegisteredSignature) {
-      lastRegisteredSignature = signature;
-      if (supportsPreferences) input.client.registerPushToken(token, preferences);
-      else input.client.registerPushToken(token);
+    if (preparing) {
+      registerAgain = true;
+      return;
     }
-    setPushRegistrationStatus(serverId, "sent");
+    if (input.client.getLastServerInfoMessage()?.features?.androidNotificationLifecycle !== true) {
+      stopLifecycle?.();
+      stopLifecycle = undefined;
+      registrationId = undefined;
+      sendRegistration();
+      return;
+    }
+    preparing = prepareLifecycle(input.client, serverId)
+      .then((id) => {
+        if (stopped) return undefined;
+        registrationId = id;
+        stopLifecycle?.();
+        stopLifecycle = id ? watchLifecycle(input.client, serverId, id) : undefined;
+        sendRegistration();
+        return undefined;
+      })
+      .catch((error) => {
+        if (stopped) return;
+        registrationId = undefined;
+        stopLifecycle?.();
+        stopLifecycle = undefined;
+        console.warn(
+          "[PushNotifications] Background task unavailable; retaining ordinary push delivery",
+          error,
+        );
+        sendRegistration();
+      })
+      .finally(() => {
+        preparing = null;
+        if (registerAgain) {
+          registerAgain = false;
+          register();
+        }
+      });
   };
 
   const resolve = ({ prompt }: { prompt: boolean }) => {
@@ -219,7 +273,6 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
     register();
   });
 
-
   // Notification access is usually granted in system settings, outside the app. Only
   // read it here: Android's prompt pauses the app, so prompting on resume would loop.
   const appState = AppState.addEventListener("change", (state) => {
@@ -230,6 +283,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
 
   return () => {
     stopped = true;
+    stopLifecycle?.();
     stopReregister();
     unsubscribe();
     unsubscribeStatus();
@@ -239,6 +293,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
 }
 
 export async function revokeSubscription(input: RevokePushNotificationsInput): Promise<void> {
+  await removeLifecycleHost(input.serverId);
   const key = storageKey(input.serverId);
   const token = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
   if (

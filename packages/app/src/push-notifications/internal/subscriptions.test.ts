@@ -14,6 +14,7 @@ import {
   type AppSettings,
   type SettingsDeps,
 } from "@/hooks/use-settings/storage";
+import { prepareLifecycle, watchLifecycle } from "../background-lifecycle.native";
 import { startSubscription } from "./subscriptions";
 import type { PushNotificationClient } from "./types";
 
@@ -48,12 +49,16 @@ function createFakePushClient(options?: {
     get isConnected() {
       return connected;
     },
-    registerPushToken(token: string, preferences?: NotificationPreferences) {
-      registrations.push({
-        token,
-        preferencesProvided: arguments.length >= 2 && preferences !== undefined,
-        preferences,
-      });
+    registerPushToken(
+      token: string,
+      registrationIdOrPreferences?: string | NotificationPreferences,
+      notificationPreferences?: NotificationPreferences,
+    ) {
+      const preferences =
+        typeof registrationIdOrPreferences === "string"
+          ? notificationPreferences
+          : (registrationIdOrPreferences ?? notificationPreferences);
+      registrations.push({ token, preferencesProvided: preferences !== undefined, preferences });
     },
     async unregisterPushToken() {},
     getLastServerInfoMessage() {
@@ -293,6 +298,8 @@ describe("startSubscription push notification preferences sync", () => {
     });
 
     stop();
+  });
+});
 
 const notifications = vi.hoisted(() => ({
   getPermissionsAsync: vi.fn(),
@@ -307,10 +314,18 @@ vi.mock("expo-notifications", () => ({
   PermissionStatus: { GRANTED: "granted", DENIED: "denied", UNDETERMINED: "undetermined" },
   AndroidImportance: { DEFAULT: 3 },
 }));
+vi.mock("../background-lifecycle.native", () => ({
+  prepareLifecycle: vi.fn(async () => undefined),
+  removeLifecycleHost: vi.fn(async () => undefined),
+  watchLifecycle: vi.fn(() => () => undefined),
+}));
 vi.mock("expo-constants", () => ({ default: { easConfig: { projectId: "project" } } }));
 const appStateListeners = vi.hoisted(() => new Set<(state: string) => void>());
 vi.mock("react-native", () => ({
-  Platform: { OS: "android", select: (values: Record<string, unknown>) => values.android ?? values.default },
+  Platform: {
+    OS: "android",
+    select: (values: Record<string, unknown>) => values.android ?? values.default,
+  },
   AppState: {
     addEventListener: (_event: string, listener: (state: string) => void) => {
       appStateListeners.add(listener);
@@ -332,6 +347,7 @@ function fakeClient(connected: boolean) {
   const listeners = new Set<(state: { status: string }) => void>();
   const client = {
     isConnected: connected,
+    getLastServerInfoMessage: () => ({ features: {} }),
     registerPushToken: vi.fn(),
     subscribeConnectionStatus: (listener: (state: { status: string }) => void) => {
       listeners.add(listener);
@@ -446,6 +462,26 @@ describe("push subscription registration status", () => {
     reregisterPushToken("host");
     await settle();
     expect(usePushRegistrationStore.getState().host).toBe("sent");
+  });
+
+  it("negotiates managed delivery when a cold disconnected subscription later connects", async () => {
+    const client = fakeClient(false);
+    vi.spyOn(client, "getLastServerInfoMessage").mockReturnValue({
+      features: { androidNotificationLifecycle: true },
+    });
+    vi.mocked(prepareLifecycle).mockResolvedValue("11111111-1111-4111-8111-111111111111");
+    const stop = startSubscription({ client: client as never, serverId: "reconnect" });
+    await settle();
+    expect(client.registerPushToken).not.toHaveBeenCalled();
+    client.setConnected(true);
+    await settle();
+    expect(client.registerPushToken).toHaveBeenCalledWith(
+      "ExponentPushToken[a]",
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(watchLifecycle).toHaveBeenCalled();
+    stop();
+    vi.mocked(prepareLifecycle).mockResolvedValue(undefined);
   });
 });
 
