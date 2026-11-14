@@ -1,12 +1,19 @@
 name: Release
 
+# Builds the macOS Nix desktop closure and the Android fork APK at a paseo-v*
 # tag, plus the Linux x64/arm64 Nix closures and the Windows x64 installer;
 # smoke-tests each, signs what clients verify and publishes the GitHub release
 # the in-app updaters read. Merging the release PR makes the tag and a
 #
+# Dispatch with a tag to publish that tag again after a failed run; it must be
+# uploads every asset to a draft tagged paseo-dryrun-<run_id> and never creates
+# a tag or marks a release latest. Delete the draft when done.
 on:
   workflow_dispatch:
     inputs:
+      tag:
+        type: string
+        default: ""
 
 permissions: {}
 
@@ -17,6 +24,7 @@ concurrency:
 jobs:
   resolve:
     name: Resolve release identity
+    if: >-
     runs-on: ubuntu-26.04
     timeout-minutes: 5
     permissions:
@@ -27,9 +35,11 @@ jobs:
       version_code: ${{ steps.identity.outputs.version_code }}
       upstream_base: ${{ steps.identity.outputs.upstream_base }}
       tag: ${{ steps.identity.outputs.tag }}
+      publish: ${{ steps.identity.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag && format('refs/tags/{0}', inputs.tag) || github.sha }}
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -41,26 +51,36 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          sha="$(git rev-parse HEAD)"
           version="$(jq -er .version package.json)"
           [[ "$(jq -er .version .github/fork-release.json)" == "$version" ]]
           upstream_base="$(jq -er .upstreamBase .github/fork-release.json)"
           [[ "$upstream_base" =~ ^[0-9a-f]{40}$ ]]
           version_code="$(node --input-type=module -e 'import { forkAndroidVersionCode } from "./scripts/fork-version.mjs"; console.log(forkAndroidVersionCode(process.argv[1]))' "$version")"
           node .github/scripts/release-manifest.mjs notes "$version" > /dev/null
+          if [[ -n "$TAG" ]]; then
+            publish=true
+            if [[ "$TAG" != "paseo-v$version" ]]; then
+              echo "::error::Tag $TAG does not name the version $version it points at."
               exit 1
             fi
             latest="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)"
             # shellcheck disable=SC2016 # JavaScript template literal
             node --input-type=module -e 'import { compareForkVersions, forkVersionFromTag } from "./scripts/fork-version.mjs"; if (compareForkVersions(process.argv[1], forkVersionFromTag(process.argv[2])) <= 0) throw new Error(`${process.argv[1]} does not exceed latest ${process.argv[2]}`)' "$version" "$latest"
+            tag="$TAG"
           else
+            publish=false
             tag="paseo-dryrun-$GITHUB_RUN_ID"
           fi
           {
+            echo "sha=$sha"
             echo "version=$version"
             echo "version_code=$version_code"
             echo "upstream_base=$upstream_base"
             echo "tag=$tag"
+            echo "publish=$publish"
           } >> "$GITHUB_OUTPUT"
+          echo "Release $version ($tag) from $sha; Android versionCode $version_code."
 
   macos-build:
     name: Build and sign macOS Nix closure
@@ -745,6 +765,7 @@ jobs:
           compression-level: 0
 
   publish:
+    name: ${{ needs.resolve.outputs.publish == 'true' && 'Publish release' || 'Upload dry-run draft' }}
     needs:
       [
         resolve,
@@ -769,6 +790,7 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      PUBLISH: ${{ needs.resolve.outputs.publish }}
       VERSION: ${{ needs.resolve.outputs.version }}
       SOURCE_SHA: ${{ needs.resolve.outputs.sha }}
       TAG: ${{ needs.resolve.outputs.tag }}
@@ -808,11 +830,13 @@ jobs:
           node .github/scripts/release-manifest.mjs build "$ASSETS"
           node .github/scripts/release-manifest.mjs notes "$VERSION" > "$RUNNER_TEMP/release-notes.md"
           ls -l "$ASSETS"
+      - name: Fill the release draft, or create one, and upload the assets
         id: draft
         env:
           ASSETS: ${{ runner.temp }}/release-assets
         run: bash .github/scripts/release-publish.sh draft
       - name: Publish as the latest release
+        if: needs.resolve.outputs.publish == 'true'
         env:
           RELEASE_ID: ${{ steps.draft.outputs.release_id }}
         run: bash .github/scripts/release-publish.sh publish

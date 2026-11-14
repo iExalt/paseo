@@ -13,9 +13,16 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  browser:
+    name: deep (${{ matrix.lane }})
+    # Release PR branches live in this repository, so only collaborators can push them.
     if: >-
       github.repository == 'iExalt/paseo' && !github.event.repository.private &&
+      ((github.event_name == 'pull_request' && github.event.pull_request.state == 'open' &&
+        github.event.pull_request.head.repo.full_name == 'iExalt/paseo' &&
+        startsWith(github.event.pull_request.head.ref, 'release-please--branches--')) ||
        (github.event_name == 'workflow_dispatch' && github.actor == 'iExalt' &&
+        github.ref == 'refs/heads/dev'))
     runs-on: ubuntu-26.04
     timeout-minutes: 15
     strategy:
@@ -30,6 +37,7 @@ jobs:
       LEFTHOOK: "0"
       npm_config_audit: "false"
       npm_config_fund: "false"
+      SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       DEEP_LANE: ${{ matrix.lane }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

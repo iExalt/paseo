@@ -1,4 +1,7 @@
+name: Release Please
 
+# Keeps one release PR open that bumps the version and writes CHANGELOG.fork.md
+# from the Conventional Commits on dev. Merging it makes the paseo-v* tag and a
 on:
   push:
     branches: [dev]
@@ -7,22 +10,73 @@ permissions:
   contents: read
 
 concurrency:
+  group: release-please
   cancel-in-progress: false
 
 jobs:
+  release-please:
+    if: github.repository == 'iExalt/paseo'
     runs-on: ubuntu-26.04
     timeout-minutes: 5
+    outputs:
+      pr: ${{ steps.release.outputs.pr }}
     steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
         with:
           client-id: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
           private-key: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
           permission-contents: write
           permission-pull-requests: write
           permission-issues: write
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        with:
+          token: ${{ steps.token.outputs.token }}
+          target-branch: dev
     runs-on: ubuntu-26.04
+
   # A version bump no longer changes the Nix dependency hash, so this pushes
   # nothing unless a dependency change landed without its hash. It stays as
   # that safety net, so a stale hash fails here instead of in the release.
+  nix-hash:
+    needs: release-please
+    if: needs.release-please.outputs.pr != ''
     runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    env:
+      BRANCH: ${{ fromJSON(needs.release-please.outputs.pr).headBranchName }}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
+        with:
+          client-id: ${{ vars.PASEO_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PASEO_RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.BRANCH }}
+          token: ${{ steps.token.outputs.token }}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
           node-version: "26.13.0"
+          package-manager-cache: false
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          install_url: https://releases.nixos.org/nix/nix-2.34.7/install
+          github_access_token: ${{ github.token }}
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - run: bash scripts/update-nix.sh
+      - name: Push the refreshed hash
         env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          APP_SLUG: ${{ steps.token.outputs.app-slug }}
+        run: |
+          git diff --quiet package-lock.json nix/npm-deps.hash && exit 0
+          git config user.name "$bot"
+          git config user.email "$(gh api "/users/$bot" --jq .id)+$bot@users.noreply.github.com"
+          git commit -m "chore(nix): refresh the npm dependency hash" -- package-lock.json nix/npm-deps.hash
+          git push origin "HEAD:refs/heads/$BRANCH"
