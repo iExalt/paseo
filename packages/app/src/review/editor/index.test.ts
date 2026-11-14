@@ -96,6 +96,50 @@ describe("review editor", () => {
     ]);
   });
 
+  it("keeps unsaved text open when another line or comment asks for the editor", () => {
+    const storage = memoryWriter();
+    const editor = createReviewEditor("first", storage.writer);
+    const otherTarget = { ...target, key: "src/example.ts:new:3", lineNumber: 3 };
+    editor.start(target);
+    editor.save("Saved");
+    const saved = storage.comments("first")[0]!;
+
+    editor.start(target);
+    editor.setBody("Unsaved new comment");
+    editor.start(otherTarget);
+    editor.edit(target, saved);
+    expect(editor.getState()).toEqual({ target, commentId: null, body: "Unsaved new comment" });
+
+    editor.cancel();
+    editor.edit(target, saved);
+    editor.setBody("Unsaved edit");
+    editor.start(otherTarget);
+    expect(editor.getState()).toEqual({ target, commentId: saved.id, body: "Unsaved edit" });
+
+    editor.save(editor.getState()!.body);
+    editor.start(otherTarget);
+    expect(editor.getState()).toEqual({ target: otherTarget, commentId: null, body: "" });
+  });
+
+  it("moves an editor without unsaved text", () => {
+    const storage = memoryWriter();
+    const editor = createReviewEditor("first", storage.writer);
+    const otherTarget = { ...target, key: "src/example.ts:new:3", lineNumber: 3 };
+    editor.start(target);
+    editor.save("Saved");
+    const saved = storage.comments("first")[0]!;
+
+    editor.start(target);
+    editor.setBody(" \n ");
+    editor.start(otherTarget);
+    expect(editor.getState()).toEqual({ target: otherTarget, commentId: null, body: "" });
+
+    editor.edit(target, saved);
+    editor.setBody(" Saved ");
+    editor.start(otherTarget);
+    expect(editor.getState()).toEqual({ target: otherTarget, commentId: null, body: "" });
+  });
+
   it("rejects empty saves and repeated saves after the editor closes", () => {
     const storage = memoryWriter();
     const editor = createReviewEditor("first", storage.writer);
