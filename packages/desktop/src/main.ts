@@ -17,7 +17,6 @@ import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import {
   app,
-  autoUpdater as electronAutoUpdater,
   BrowserWindow,
   ClipboardItem,
   clipboard,
@@ -112,7 +111,15 @@ import {
 import { runDesktopStartup } from "./desktop-startup.js";
 import { registerBrowserAutomationIpc } from "./features/browser-automation/ipc.js";
 import { BrowserKeyboard } from "./features/browser-keyboard/index.js";
-import { installAppUpdateOnQuit, startAppUpdatePacing } from "./features/auto-updater.js";
+import {
+  installAppUpdateOnQuit,
+  registerBeforeQuitForUpdate,
+  startAppUpdatePacing,
+} from "./features/auto-updater.js";
+import {
+  installationModeArgument,
+  resolveDesktopInstallation,
+} from "./features/nix-managed-install.js";
 import {
   buildAgentDeepLinkRoute,
   parseAgentDeepLink,
@@ -123,6 +130,7 @@ import { AgentNavigationInbox, parseAgentDeepLinkFromArgv } from "./agent-naviga
 const DEV_SERVER_URL = process.env.EXPO_DEV_URL ?? "http://localhost:8081";
 const APP_SCHEME = "paseo";
 const PASEO_DEBUG = process.env.PASEO_DEBUG === "1";
+const DESKTOP_INSTALLATION = resolveDesktopInstallation(process.resourcesPath);
 const DISABLE_SINGLE_INSTANCE_LOCK = process.env.PASEO_DISABLE_SINGLE_INSTANCE_LOCK === "1";
 const APP_NAME = process.env.PASEO_TEST_APP_NAME?.trim() || "Paseo";
 const DESKTOP_WINDOW_CHROME_MODE = resolveDesktopWindowChromeMode({
@@ -727,6 +735,7 @@ async function createWindow(
         windowChromeModeArgument(DESKTOP_WINDOW_CHROME_MODE),
         `--paseo-browser-host-label=${browserHostLabel}`,
         `--paseo-browser-host-instance-id=${randomUUID()}`,
+        installationModeArgument(DESKTOP_INSTALLATION.mode),
       ],
       contextIsolation: true,
       nodeIntegration: false,
@@ -1081,6 +1090,7 @@ const quitLifecycle = createQuitLifecycle({
       showShutdownFeedback: showDaemonShutdownDialog,
     }),
   installAppUpdateOnQuit: async (signal) => {
+    if (DESKTOP_INSTALLATION.mode !== "electron") return false;
     let releaseChannel: "stable" | "beta" = "stable";
     try {
       releaseChannel = (await getDesktopSettingsStore().get()).releaseChannel;
@@ -1105,11 +1115,14 @@ const quitLifecycle = createQuitLifecycle({
   },
 });
 
-// electron-updater forwards this event through Electron's built-in autoUpdater.
-electronAutoUpdater.on("before-quit-for-update", () => {
-  log.info("[auto-updater] before-quit-for-update", { currentVersion: app.getVersion() });
-  quitLifecycle.handleBeforeQuitForUpdate();
-});
+if (DESKTOP_INSTALLATION.mode === "electron") {
+  void registerBeforeQuitForUpdate(() => {
+    log.info("[auto-updater] before-quit-for-update", { currentVersion: app.getVersion() });
+    quitLifecycle.handleBeforeQuitForUpdate();
+  }).catch((error) => {
+    log.error("[auto-updater] could not register update quit handling", error);
+  });
+}
 app.on("before-quit", quitLifecycle.handleBeforeQuit);
 registerExternalQuitSignals({ signals: process, quit: () => app.quit() });
 

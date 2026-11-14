@@ -15,6 +15,7 @@ export type DesktopAppUpdateStatus =
   | "available"
   | "installing"
   | "installed"
+  | "waiting"
   | "error";
 
 export const PENDING_RECHECK_MS = 10_000;
@@ -258,11 +259,25 @@ export function formatStatusText(input: {
       formatLastCheckedAt,
     });
   }
-  if (status === "installed") {
+
+  if (status === "installed" || status === "waiting") {
     return installMessage ?? i18n.t("desktop.updates.status.installed");
   }
   if (status === "error") return i18n.t("desktop.updates.status.failed");
   return i18n.t("desktop.updates.status.idle");
+}
+
+function preservesWaitingReason(
+  state: InternalState,
+  result: DesktopAppUpdateCheckResult,
+  silent: boolean,
+): boolean {
+  return (
+    silent &&
+    state.status === "waiting" &&
+    result.hasUpdate &&
+    result.latestVersion === state.availableUpdate?.latestVersion
+  );
 }
 
 export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopAppUpdater {
@@ -337,13 +352,15 @@ export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopApp
 
       const outcome = resolveCheckOutcome(result);
 
+      const updateState = preservesWaitingReason(state, result, silent)
+        ? { status: "waiting" as const, installMessage: state.installMessage }
+        : { status: outcome.status, installMessage: null };
       commit({
         ...state,
-        status: outcome.status,
+        ...updateState,
         availableUpdate: outcome.availableUpdate,
         downloadProgress: outcome.status === "pending" ? state.downloadProgress : null,
         errorMessage: null,
-        installMessage: null,
         lastCheckedAt: nextLastCheckedAt,
       });
 
@@ -402,8 +419,8 @@ export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopApp
       }
       commit({
         ...state,
-        status: result.installed ? "installed" : "up-to-date",
-        availableUpdate: null,
+        status: result.installed ? "installed" : "waiting",
+        availableUpdate: result.installed ? null : state.availableUpdate,
         downloadProgress: null,
         installMessage: result.message,
         lastCheckedAt: nextLastCheckedAt,

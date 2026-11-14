@@ -90,6 +90,7 @@ export interface UseDesktopAppUpdaterReturn {
   availableUpdate: DesktopAppUpdateCheckResult | null;
   downloadProgress: DesktopAppUpdateDownloadProgress | null;
   errorMessage: string | null;
+  installMessage: string | null;
   lastCheckedAt: number | null;
   isChecking: boolean;
   isInstalling: boolean;
@@ -103,7 +104,7 @@ export interface UseDesktopAppUpdaterReturn {
 export function useDesktopAppUpdater(): UseDesktopAppUpdaterReturn {
   const isDesktopApp = shouldShowDesktopUpdateSection();
   const { settings: desktopSettings, isLoading: isLoadingSettings } = useDesktopSettings();
-  const releaseChannel = desktopSettings.releaseChannel;
+  const releaseChannel = "stable";
   const updateMode = desktopSettings.updates.mode;
   const reportError = useDesktopIpcErrorReporter();
   const updater = getSharedDesktopAppUpdater();
@@ -184,6 +185,7 @@ export function useDesktopAppUpdater(): UseDesktopAppUpdaterReturn {
     availableUpdate: snapshot.availableUpdate,
     downloadProgress: snapshot.downloadProgress,
     errorMessage: snapshot.errorMessage,
+    installMessage: snapshot.installMessage,
     lastCheckedAt: snapshot.lastCheckedAt,
     isChecking: snapshot.isChecking,
     isInstalling: snapshot.isInstalling,

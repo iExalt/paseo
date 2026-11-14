@@ -1,4 +1,4 @@
-import { isElectronRuntime } from "@/desktop/host";
+import { getDesktopHost, isElectronRuntime } from "@/desktop/host";
 import { listenToDesktopEvent, type DesktopEventUnlisten } from "@/desktop/electron/events";
 import { invokeDesktopCommand } from "@/desktop/electron/invoke";
 import { isWeb } from "@/constants/platform";
@@ -73,7 +73,19 @@ function toNumberOr(defaultValue: number, value: unknown): number {
 }
 
 export function shouldShowDesktopUpdateSection(): boolean {
-  return isWeb && isElectronRuntime();
+  const installationMode = getDesktopHost()?.installationMode;
+  return (
+    isWeb && isElectronRuntime() && installationMode !== "nix" && installationMode !== "nix-invalid"
+  );
+}
+
+export function isNixManagedDesktopInstallation(): boolean {
+  const installationMode = getDesktopHost()?.installationMode;
+  return (
+    isWeb &&
+    isElectronRuntime() &&
+    (installationMode === "nix" || installationMode === "nix-invalid")
+  );
 }
 
 export function parseLocalDaemonVersionResult(raw: unknown): LocalDaemonVersionResult {

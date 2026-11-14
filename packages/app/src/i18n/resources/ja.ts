@@ -1585,6 +1585,33 @@ export const ja: TranslationResources = {
       loadFailed: "デスクトップデーモンのステータスを読み込めません。",
     },
     updates: {
+      nix: {
+        checking: "アップデートを確認しています…",
+        downloading: "{{version}} をダウンロードしています…",
+        applying: "{{version}} をインストールしています…",
+        restarting: "再起動しています…",
+        failed: "アップデートに失敗しました: {{error}}",
+        ready: "{{version}} をダウンロードしました。インストールできます",
+        available: "{{version}} が利用可能です",
+        restartRequired: "{{version}} をインストールしました。再起動すると使用できます",
+        upToDate: "最新です（{{time}} に確認）",
+        notChecked: "まだ確認していません",
+        checkAction: "確認",
+        updateAction: "アップデート",
+        restartAction: "再起動",
+        updateTitle: "{{version}} にアップデートしますか？",
+        updateMessage: "Paseo はアップデートをインストールして再起動します。",
+        updateConfirm: "アップデート",
+        restartTitle: "再起動して {{version}} へのアップデートを完了しますか？",
+        restartMessage: "Paseo は再起動し、新しいバージョンを使用します。",
+        restartConfirm: "再起動",
+        lastAttemptFailed: "前回の試行は失敗しました: {{error}}",
+        updateTooltip: "{{version}} にアップデート",
+        restartTooltip: "再起動して {{version}} へのアップデートを完了",
+        failedTooltip: "アップデートに失敗しました",
+        failedTitle: "アップデートに失敗しました",
+        tryAgain: "再試行",
+      },
       status: {
         checking: "アプリの更新を確認中...",
         installing: "アプリの更新をインストール中...",
@@ -1634,8 +1661,7 @@ export const ja: TranslationResources = {
         newVersionAvailable: "新しいバージョンをダウンロードできます。",
         versionReady: "{{version}}のインストール準備ができました。",
         newVersionReady: "新しいバージョンのインストール準備ができました。",
-        restartWarning:
-          "アプリを更新すると、実行中のエージェントが停止しターミナルセッションが閉じられます。",
+        restartWarning: "更新は、実行中のエージェントとターミナルが終了するまで再起動を待ちます。",
       },
     },
     settings: {
@@ -2749,6 +2775,7 @@ export const ja: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "アプリ情報",
       appVersion: "アプリバージョン",
       whatsNewHint: "各バージョンのリリースノート",
@@ -2794,6 +2821,10 @@ export const ja: TranslationResources = {
         checking: "確認中...",
         alertTitle: "エラー",
         alertMessage: "更新確認ダイアログを開けません。",
+      },
+      nixUpdates: {
+        label: "Nix 管理の更新",
+        invalidMarker: "この Nix インストールを検証できませんでした。",
       },
     },
     appearance: {
@@ -3122,6 +3153,7 @@ export const ja: TranslationResources = {
           reset: "リセット",
           save: "保存",
           saving: "保存中...",
+        },
         replyRules: {
           title: "返信通知ルール",
           scope: "{{host}} のすべてのワークスペースに適用されます。",
