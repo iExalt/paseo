@@ -15,6 +15,12 @@ import { basename, delimiter, dirname, extname, join, resolve as resolvePath } f
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { createExternalProcessEnv } from "../server/paseo-env.js";
+import { classifyTerminalProgramProcess } from "./terminal-worker-ownership.js";
+import {
+  collectDescendants,
+  createTerminalWorkerProcessInspector,
+  type ProcessTableEntry,
+} from "./terminal-worker-processes.js";
 import {
   resolveExternalProcessPath,
   resolvePaseoCliBinDir,
@@ -931,6 +937,23 @@ export async function assertTerminalCommandCanStart(
   }
 }
 
+const DEFAULT_KILL_TIMEOUTS = { gracefulTimeoutMs: 2000, forceTimeoutMs: 1000 };
+
+function isPidAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+async function waitForPidsToExit(pids: number[], deadline: number): Promise<void> {
+  while (pids.some(isPidAlive) && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 export async function createTerminal(
   options: CreateTerminalOptions,
 ): Promise<LocalTerminalSession> {
@@ -960,6 +983,7 @@ export async function createTerminal(
   let disposed = false;
   let exitEmitted = false;
   let processExited = false;
+  let processTreeReap: Promise<void> | null = null;
   const processExitWaiters = new Set<() => void>();
   let exitInfo: TerminalExitInfo | null = null;
   // Recent output is retained as whole chunks plus a running char length so we
@@ -1511,7 +1535,7 @@ export async function createTerminal(
     if (!killed) {
       killed = true;
       if (!processExited) {
-        killPtyProcess();
+        void reapProcessTree(DEFAULT_KILL_TIMEOUTS);
       }
       emitExit(buildExitInfo());
     }
@@ -1519,7 +1543,68 @@ export async function createTerminal(
       disposeResources();
       return;
     }
-    void waitForProcessExit(1000).finally(disposeResources);
+    void reapProcessTree(DEFAULT_KILL_TIMEOUTS).finally(disposeResources);
+  }
+
+  /**
+   * SIGHUP the program, then SIGKILL it and every process that was below it once the grace
+   * period ends. The tree is read before the first signal: after the shell exits its jobs are
+   * reparented and can't be found from it, and a program that ignores HUP (or treats it as a
+   * reload, like gunicorn or nginx) keeps running. Survivors are matched by birth time, so a
+   * reused pid is never signalled. Every kill path shares one reap.
+   */
+  function reapProcessTree(timeouts: {
+    gracefulTimeoutMs: number;
+    forceTimeoutMs: number;
+  }): Promise<void> {
+    processTreeReap ??= runProcessTreeReap(timeouts).catch(() => undefined);
+    return processTreeReap;
+  }
+
+  async function runProcessTreeReap(timeouts: {
+    gracefulTimeoutMs: number;
+    forceTimeoutMs: number;
+  }): Promise<void> {
+    const deadline = Date.now() + timeouts.gracefulTimeoutMs;
+    const inspector = process.platform === "win32" ? null : createTerminalWorkerProcessInspector();
+    let descendants: ProcessTableEntry[] = [];
+    if (inspector && !processExited) {
+      try {
+        descendants = collectDescendants(await inspector.listProcesses(), ptyProcess.pid);
+      } catch {
+        // Without the table only the program itself can be signalled.
+      }
+    }
+    try {
+      killPtyProcess();
+    } catch {
+      // process may already be gone
+    }
+    const exitedGracefully = await waitForProcessExit(timeouts.gracefulTimeoutMs);
+    if (!exitedGracefully) {
+      try {
+        killPtyProcess("SIGKILL");
+      } catch {
+        // process may already be gone
+      }
+    }
+    await waitForPidsToExit(
+      descendants.map((entry) => entry.pid),
+      deadline,
+    );
+    for (const entry of descendants) {
+      if (!inspector) break;
+      const ownership = classifyTerminalProgramProcess(entry, await inspector.inspect(entry.pid));
+      if (ownership.status !== "owned") continue;
+      try {
+        process.kill(entry.pid, "SIGKILL");
+      } catch {
+        // exited meanwhile
+      }
+    }
+    if (!exitedGracefully) {
+      await waitForProcessExit(timeouts.forceTimeoutMs);
+    }
   }
 
   function killPtyProcess(signal?: NodeJS.Signals): void {
@@ -1558,28 +1643,12 @@ export async function createTerminal(
     gracefulTimeoutMs?: number;
     forceTimeoutMs?: number;
   }): Promise<void> {
-    const gracefulTimeoutMs = killOptions?.gracefulTimeoutMs ?? 2000;
-    const forceTimeoutMs = killOptions?.forceTimeoutMs ?? 1000;
-
-    if (processExited) {
-      kill();
-      return;
-    }
-
-    try {
-      killPtyProcess();
-    } catch {
-      // process may already be gone
-    }
-
-    const exitedGracefully = await waitForProcessExit(gracefulTimeoutMs);
-    if (!exitedGracefully) {
-      try {
-        killPtyProcess("SIGKILL");
-      } catch {
-        // process may already be gone
-      }
-      await waitForProcessExit(forceTimeoutMs);
+    if (!processExited || processTreeReap) {
+      await reapProcessTree({
+        gracefulTimeoutMs:
+          killOptions?.gracefulTimeoutMs ?? DEFAULT_KILL_TIMEOUTS.gracefulTimeoutMs,
+        forceTimeoutMs: killOptions?.forceTimeoutMs ?? DEFAULT_KILL_TIMEOUTS.forceTimeoutMs,
+      });
     }
 
     // Finalize bookkeeping (idempotent if ptyProcess.onExit already fired).
