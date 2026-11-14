@@ -61,6 +61,7 @@ export function renderWorkspaceRouteGate(input: {
         />
       );
     case "recoveryUnavailable":
+    case "recoveryUnsupported":
       return (
         <WorkspaceEmptyState
           titleKey="workspace.route.recovery.unavailableTitle"

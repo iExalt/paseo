@@ -13,6 +13,7 @@ import { rename } from "node:fs/promises";
 import type { Page } from "@playwright/test";
 import { buildHostWorkspaceRoute } from "@/utils/host-routes";
 import { expect, test } from "../support/fixtures";
+import { expectAppRoute } from "../support/helpers/route-assertions";
 import { gotoAppShell } from "../support/helpers/app";
 import {
   expectWorkspaceBranch,
@@ -466,9 +467,7 @@ test.describe("Worktree restore", () => {
     ).toBeVisible({ timeout: 30_000 });
   });
 
-  test("an unrecoverable missing workspace shows no misleading recovery action", async ({
-    page,
-  }) => {
+  test("an unrecoverable missing workspace returns to the main menu", async ({ page }) => {
     const project = await openProjectViaDaemon(worktreeClient, tempRepo.path);
     createdProjectIds.add(project.projectKey);
     const agent = await createIdleAgent(client, {
@@ -489,15 +488,8 @@ test.describe("Worktree restore", () => {
       await expectSessionRowNotArchived(page, agent.title);
       await page.getByTestId(`agent-row-${getServerId()}-${agent.id}`).click();
 
-      await expect(page.getByText("Workspace unavailable", { exact: true })).toBeVisible({
-        timeout: 30_000,
-      });
-      await expect(
-        page.getByText(
-          "The archived workspace directory no longer exists and cannot be recreated.",
-          { exact: true },
-        ),
-      ).toBeVisible();
+      await expectAppRoute(page, "/open-project", { timeout: 30_000 });
+      await expect(page.getByTestId("open-project-submit")).toBeVisible();
       await expect(page.getByTestId("workspace-recovery-action")).toHaveCount(0);
     } finally {
       await rename(displacedProjectPath, tempRepo.path);
