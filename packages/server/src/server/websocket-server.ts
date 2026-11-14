@@ -2209,6 +2209,8 @@ export class VoiceAssistantWebSocketServer {
         pushTokenRevocation: true,
         // COMPAT(pushNotificationPreferences): added in v0.18.0, remove gate after 2027-06-01.
         pushNotificationPreferences: true,
+        // COMPAT(pushTest): added in v0.5.1, remove gate after 2027-04-16.
+        pushTest: true,
         // COMPAT(plugins): added in v0.3.0, remove gate after 2027-08-07.
         plugins: true,
         pluginManagement: true,

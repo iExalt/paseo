@@ -698,6 +698,8 @@ function MobileSidebar({
           </SidebarToastRegion>
         </SidebarViewSlot>
 
+        <SidebarCalloutSlot />
+
         <SidebarFooter
           handleOpenProject={handleOpenProject}
           handleSettings={handleSettings}

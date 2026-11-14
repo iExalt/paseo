@@ -377,6 +377,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       [pendingMessageSubmissions],
     );
     const isMobile = useIsCompactFormFactor();
+    const outlineRail = useChatOutlineRail();
     const streamRenderStrategy = useMemo(
       () =>
         resolveStreamRenderStrategy({
@@ -419,7 +420,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const timelineGapFill = useTimelineGapFill({
       serverId: resolvedServerId,
       agentId,
-      enabled: supportsChatOutline && streamRenderStrategy.shouldFillTimelineGaps(),
+      enabled: outlineRail.enabled && streamRenderStrategy.shouldFillTimelineGaps(),
     });
 
     const workspaceRoot = context.cwd?.trim() || "";
@@ -624,7 +625,6 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
           mountedHistoryMessageIds.has(messageId) || liveHeadMessageIds.has(messageId),
       };
     }, [baseRenderModel.segments.liveHead, mountedHistoryMessageIds]);
-    const outlineRail = useChatOutlineRail();
     const outlineInset = outlineRail.inset;
     const chatOutline = useChatOutline({
       agentId,
@@ -632,7 +632,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       timelineEpoch,
       tail: effectiveStreamItems,
       head: effectiveStreamHead,
-      enabled: outlineRail.enabled,
+      enabled: outlineRail.enabled && !isMobile,
       viewportRef,
       onJumpError: handleTimelineHistoryLoadError,
       mountedHistoryMessageIds,
@@ -729,6 +729,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             serverId={resolvedServerId}
             agentId={agentId}
             messageId={item.messageId}
+            findItemId={item.id}
             message={item.text}
             sender={item.sender}
             images={item.images}
@@ -770,6 +771,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   client={client}
                   spacing={layoutItem.assistantSpacing}
                   phase={layoutItem.phase}
+                  findItemId={item.id}
                 />
               )}
             </ChatFindExpansion>
@@ -1174,6 +1176,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
 
+    const findRows = useMemo(
+      () => [...baseRenderModel.history, ...baseRenderModel.segments.liveHead],
+      [baseRenderModel.history, baseRenderModel.segments.liveHead],
+    );
     const findItems = useMemo(
       () => [...effectiveStreamItems, ...(effectiveStreamHead ?? [])],
       [effectiveStreamItems, effectiveStreamHead],
@@ -1184,6 +1190,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         serverId={resolvedServerId}
         epoch={timelineEpoch}
         items={findItems}
+        rows={findRows}
         viewportRef={viewportRef}
         revealLoadedMessage={revealLoadedMessage}
         visibleMessageIds={mountedMessageIds}
