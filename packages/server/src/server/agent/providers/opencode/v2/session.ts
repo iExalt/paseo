@@ -75,6 +75,7 @@ export class OpenCodeV2Session implements AgentSession {
     bindChild?: (id: string) => void,
     private readonly acquire?: () => Promise<V2Connection>,
     private readonly moved?: (connection: V2Connection) => void,
+    turnRecoveryIntervalMs?: number,
   ) {
     this.background = new OpenCodeBackgroundInventory({
       id: info.id,
@@ -109,6 +110,7 @@ export class OpenCodeV2Session implements AgentSession {
         await this.reconcile();
         return { info: this.info, history: this.history };
       },
+      recoveryIntervalMs: turnRecoveryIntervalMs,
       reportReconciliationError: (error) =>
         this.logger.warn(
           { error: toDiagnosticErrorMessage(error) },
