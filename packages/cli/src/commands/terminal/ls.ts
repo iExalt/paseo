@@ -44,6 +44,8 @@ export async function runLsCommand(
             name: terminal.name ?? "",
             cwd: terminal.cwd,
             workspaceId: terminal.workspaceId ?? "",
+            title: terminal.title,
+            activity: terminal.activity,
           };
         }),
         schema: terminalSchema,
