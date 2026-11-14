@@ -28,6 +28,7 @@ const requests: AgentPermissionRequest[] = [
 class PermissionClient implements PermitClient {
   readonly pending: AgentPermissionRequest[];
   readonly responses = new Map<string, AgentPermissionResponse>();
+  readonly sentRequestIds: string[] = [];
   closed = false;
   private notifyReceived = () => {};
   private readonly confirmations = new Map<
@@ -41,6 +42,7 @@ class PermissionClient implements PermitClient {
   constructor(initial = requests) {
     this.pending = [...initial];
   }
+
   async fetchAgent() {
     return { agent: { id: agentId, pendingPermissions: this.pending } };
   }
@@ -50,6 +52,7 @@ class PermissionClient implements PermitClient {
     requestId: string,
     response: AgentPermissionResponse,
   ) {
+    this.sentRequestIds.push(requestId);
     this.responses.set(requestId, response);
     this.notifyReceived();
   }
@@ -330,11 +333,21 @@ for (const action of actions) {
     });
 
     it("reports all uncertain responses without retrying", async () => {
+      const client = new PermissionClient();
+      const command = action.create(async () => client)(
+        agentId,
+        undefined,
+        { ...options, all: true },
+        new Command(),
+      );
+      await client.waitForResponses(2);
       for (const request of requests) client.fail(request.id, new Error("Transport disconnected"));
       const result = await command;
       expect(result.exitCode).toBe(1);
       expect(result.data.map((item) => item.status)).toEqual(["unconfirmed", "unconfirmed"]);
       expect(client.sentRequestIds).toHaveLength(2);
+    });
+
     it.each([true, false])(
       "renders complete mixed results and exits nonzero (json=%s)",
       async (json) => {
@@ -375,3 +388,32 @@ for (const action of actions) {
     );
   });
 }
+
+describe("permit request selection at command entry", () => {
+  it("allows every pending request when both request ID and --all are omitted", async () => {
+    const client = new PermissionClient();
+    const command = createAllowCommand(async () => client)(
+      agentId,
+      undefined,
+      options,
+      new Command(),
+    );
+    await client.waitForResponses(2);
+    for (const request of requests) client.confirm(request.id);
+    expect((await command).data.map((item) => item.requestId)).toEqual(
+      requests.map((request) => request.id),
+    );
+    expect(client.pending).toEqual([]);
+  });
+
+  it("requires a request ID or --all for denial before connecting", async () => {
+    let connected = false;
+    await expect(
+      createDenyCommand(async () => {
+        connected = true;
+        return new PermissionClient();
+      })(agentId, undefined, options, new Command()),
+    ).rejects.toMatchObject({ code: "MISSING_ARGUMENT" });
+    expect(connected).toBe(false);
+  });
+});
