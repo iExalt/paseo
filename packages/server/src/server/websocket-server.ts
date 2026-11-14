@@ -3002,11 +3002,13 @@ export class VoiceAssistantWebSocketServer {
     );
     const nowMs = Date.now();
     const assistantMessage = await this.agentManager.getLastAssistantMessage(params.agentId);
+    const storedAgent = await this.agentStorage.get(params.agentId);
     const notification = buildAgentAttentionNotificationPayload({
       reason: params.reason,
       serverId: this.serverId,
       workspaceId,
       agentId: params.agentId,
+      agentTitle: storedAgent?.title,
       assistantMessage,
       permissionRequest: findLatestPermissionRequest(agent.pendingPermissions),
     });
