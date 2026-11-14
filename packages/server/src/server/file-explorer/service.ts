@@ -109,8 +109,12 @@ const DEFAULT_TEXT_MIME_TYPE = "text/plain";
 const FILE_TYPE_SAMPLE_BYTES = 8192;
 export const FILE_EXPLORER_STREAM_CHUNK_BYTES = 256 * 1024;
 export const MAX_EDITABLE_FILE_BYTES = 1024 * 1024;
+// O_NONBLOCK lets a FIFO open return at once, so the isFile() check rejects it instead of
+// the open blocking a libuv thread until a writer appears.
 const READ_FILE_OPEN_FLAGS =
-  process.platform === "win32" ? constants.O_RDONLY : constants.O_RDONLY | constants.O_NOFOLLOW;
+  process.platform === "win32"
+    ? constants.O_RDONLY
+    : constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 const ACCESS_OUTSIDE_WORKSPACE_MESSAGE = "Access outside of workspace is not allowed";
 
 function fileRevision(stats: BigIntStats): string {
