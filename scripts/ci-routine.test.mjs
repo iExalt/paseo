@@ -423,6 +423,7 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
     assert.notEqual(workflow.jobs[job].permissions?.actions, "write");
   const keyStep = (job) => job.steps.find((step) => step.id === "modules").run;
   assert.equal(keyStep(refresh), keyStep(workflow.jobs.routine));
+  // Release PRs only bump workspace versions; they must reuse dev's tree.
   // A standalone assignment fails the step under bash -e; `echo "key=$(…)"` would not.
   assert.match(keyStep(refresh), /^\s*key="\$\(.*dependency-fingerprint\.mjs routine-key\)"$/m);
   // The cached tree must be the one a lane's own install would produce.
