@@ -201,9 +201,6 @@ class LinuxBackend implements ObservationBackend {
     for (const scope of scopes) {
       const snapshot = await this.scan(scope);
       if (!this.host.isActive()) return;
-      for (const directory of snapshot.directories) {
-        if (!this.watchSnapshotDirectory(directory)) snapshot.directories.delete(directory);
-      }
       for (const path of snapshot.filesDiscoveredBeforeCoverage) {
         this.host.queueEvent("create", path);
       }
@@ -249,19 +246,27 @@ class LinuxBackend implements ObservationBackend {
     while (pending.length > 0 && this.host.isActive()) {
       const directory = pending.pop();
       if (!directory) continue;
+      const wasCovered = this.watchers.has(directory);
+      // Cover concurrent writes before enumerating. Scanning first leaves a
+      // gap with neither a discovery record nor an OS notification.
+      if (this.host.isIgnored(directory) || !this.watchSnapshotDirectory(directory)) {
+        directories.delete(directory);
+        continue;
+      }
       let entries: Dirent[];
       try {
         entries = await readdir(directory, { withFileTypes: true });
       } catch (error) {
         if (!isMissingPathError(error)) throw error;
         if (directory === this.host.root && this.host.isActive()) throw error;
+        directories.delete(directory);
         continue;
       }
       for (const entry of entries) {
         const child = resolve(directory, entry.name);
         if (this.host.isIgnored(child)) continue;
         if (!entry.isDirectory()) {
-          if (!this.watchers.has(directory)) filesDiscoveredBeforeCoverage.add(child);
+          if (!wasCovered) filesDiscoveredBeforeCoverage.add(child);
           continue;
         }
         directories.add(child);
