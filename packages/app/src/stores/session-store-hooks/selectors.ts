@@ -1,4 +1,5 @@
 import equal from "fast-deep-equal";
+import { resolveProjectOrder } from "@/projects/project-order";
 import {
   buildWorkspaceStructureProjects,
   type WorkspaceSort,
@@ -262,7 +263,7 @@ export function composeWorkspaceStructure(input: {
 
   const orderedProjects = applyStoredOrdering({
     items: input.projects,
-    storedOrder: input.projectOrder,
+    storedOrder: resolveProjectOrder(input.projects, input.projectOrder),
     getKey: (project) => project.viewKey,
   });
 
