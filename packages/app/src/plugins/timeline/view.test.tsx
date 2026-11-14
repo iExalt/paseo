@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  */
-import appPackage from "../../../package.json";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { DaemonClient, type DaemonTransport } from "@getpaseo/client/internal/daemon-client";
 import React, { act, StrictMode } from "react";
 import { createRoot } from "react-dom/client";
@@ -121,7 +121,13 @@ describe("PluginTimelineItemView", () => {
   it("validates and renders the matching plugin component", async () => {
     pluginRegistry.installCatalog(
       "host-1",
-      [{ id: "reports", requirements: { paseo: `>=${appPackage.version}` }, clientBundle: bundle }],
+      [
+        {
+          id: "reports",
+          requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
+          clientBundle: bundle,
+        },
+      ],
       {
         client: daemonClient,
         audio,
@@ -148,7 +154,7 @@ describe("PluginTimelineItemView", () => {
       [
         {
           id: "reports",
-          requirements: { paseo: `>=${appPackage.version}` },
+          requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
           clientBundle: failingBundle,
         },
       ],
@@ -186,7 +192,7 @@ describe("PluginTimelineItemView", () => {
       [
         {
           id: "reports",
-          requirements: { paseo: `>=${appPackage.version}` },
+          requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
           clientBundle: recoveringBundle,
         },
       ],
@@ -311,7 +317,7 @@ it("a renderer releases its observation on the plugin's client when it crashes, 
     [
       {
         id: "reports",
-        requirements: { paseo: `>=${appPackage.version}` },
+        requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
         clientBundle: liveBundle,
       },
     ],
