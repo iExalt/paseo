@@ -457,10 +457,10 @@ paseo agent update <id> --features-json '{"choice":"a,b","count":2,"custom":{"le
 | ------------------------ | ------------------------------------------------------------------------ |
 | `paseo stop <id>`        | 取消当前运行，Agent 保持可用。                                           |
 | `paseo agent close <id>` | 关闭运行时并保存其已关闭的快照，保留历史。取代之前的 `kill_agent` 操作。 |
-| `paseo archive <id>`     | 从活跃使用中移除。运行中的 Agent 需要 `--force`；历史保留。              |
+| `paseo archive <id>`     | 从活跃使用中移除。中断运行中的 Agent；历史保留。                         |
 | `paseo delete <id>`      | 硬删除已存储的状态，必要时先中断。                                       |
 
-归档自身 Agent 或工作区可能会终止 Provider 进程和调用它的 shell，导致 CLI 来不及输出结果。响应丢失或 shell 被中断并不能证明归档失败。请先发送最终交接，再由父 Agent 或另一个外部会话执行清理，并通过 `agent status` 或 `workspace ls` 验证结果。工作区归档会关闭其 Agent 和终端；Agent 归档仍保留运行中 Agent 需要 `--force` 的保护。
+归档自身 Agent 或工作区可能会终止 Provider 进程和调用它的 shell，导致 CLI 来不及输出结果。响应丢失或 shell 被中断并不能证明归档失败。请先发送最终交接，再由父 Agent 或另一个外部会话执行清理，并通过 `agent status` 或 `workspace ls` 验证结果。工作区归档会关闭其 Agent 和终端；Agent 归档会中断运行中的 Agent；已归档的 Agent 再次归档会成功返回，不产生更改。
 
 ## 浏览器命令 {#browser-commands}
 
