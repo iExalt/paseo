@@ -96,3 +96,86 @@ export function checkParity(tree: ParityTree, manifest: ParityManifest): string[
   }
   return problems;
 }
+
+export interface SourceModuleFacts {
+  /** Runtime (non-type) export names. */
+  exports: readonly string[];
+  /** Named runtime imports, keyed by the imported module's path under src without extension. */
+  imports: readonly { module: string; names: readonly string[] }[];
+}
+
+type Runtime = "web" | "electron" | "ios" | "android";
+type Variant = Runtime | "native" | "base";
+
+/** Files each runtime tries, most specific first; the plain file is the fallback for all. */
+const RESOLUTION: Record<Runtime, readonly Variant[]> = {
+  web: ["web", "base"],
+  electron: ["electron", "web", "base"],
+  ios: ["ios", "native", "base"],
+  android: ["android", "native", "base"],
+};
+const RUNTIMES = Object.keys(RESOLUTION) as Runtime[];
+
+function variantOf(platform: string | undefined): Variant {
+  return (platform as Variant | undefined) ?? "base";
+}
+
+/** Each module's files by variant, keyed by path under src without extension. */
+function indexVariants(files: Iterable<string>): Map<string, Map<Variant, string>> {
+  const variants = new Map<string, Map<Variant, string>>();
+  for (const file of files) {
+    const match = IGNORED_FILE.test(file) ? null : SOURCE_FILE.exec(file);
+    if (!match) continue;
+    const [, base, platform] = match;
+    const entry = variants.get(base) ?? new Map<Variant, string>();
+    entry.set(variantOf(platform), file);
+    variants.set(base, entry);
+  }
+  return variants;
+}
+
+function resolveVariant(module: Map<Variant, string>, runtime: Runtime): Variant | undefined {
+  return RESOLUTION[runtime].find((variant) => module.has(variant));
+}
+
+/** Runtimes that load a file: those whose resolution of its own module picks it. */
+function loadingRuntimes(file: string, variants: Map<string, Map<Variant, string>>): Runtime[] {
+  const match = IGNORED_FILE.test(file) ? null : SOURCE_FILE.exec(file);
+  const own = match ? variants.get(match[1]) : undefined;
+  if (!match || !own) return [];
+  const variant = variantOf(match[2]);
+  return RUNTIMES.filter((runtime) => resolveVariant(own, runtime) === variant);
+}
+
+/**
+ * Imports that resolve to a platform variant without the imported name. Metro and Vitest
+ * resolve a module's `.electron`/`.web`/`.native` file ahead of its plain file, so a name
+ * the variant lacks is `undefined` at runtime there; TypeScript resolves the plain file and
+ * cannot see it. Each importer is checked on every runtime that loads it, re-exports
+ * included. Keys are POSIX paths relative to src.
+ */
+export function findMissingImports(facts: ReadonlyMap<string, SourceModuleFacts>): string[] {
+  const variants = indexVariants(facts.keys());
+  const problems = new Set<string>();
+  for (const [file, { imports }] of facts) {
+    const runtimes = loadingRuntimes(file, variants);
+    for (const { module, names } of imports) {
+      // `@/push-notifications` resolves to `push-notifications/index`.
+      const target = variants.get(module) ?? variants.get(`${module}/index`);
+      if (!target || target.size < 2) continue;
+      for (const runtime of runtimes) {
+        const variant = resolveVariant(target, runtime);
+        const resolved = variant && target.get(variant);
+        if (!resolved) continue;
+        const exported = new Set(facts.get(resolved)?.exports);
+        const missing = names.filter((name) => !exported.has(name));
+        if (missing.length > 0) {
+          problems.add(
+            `${file} imports ${missing.join(", ")} from ${resolved}, which does not export it`,
+          );
+        }
+      }
+    }
+  }
+  return [...problems].sort();
+}
