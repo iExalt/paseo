@@ -33,7 +33,7 @@ describe.each(["daemon", "app"] as const)("plugin requirements on %s", (runtime)
   ])("rejects %s on %s", (paseo, version) => {
     expect(() =>
       assertPluginCompatibility({ id: "test", requirements: { paseo }, version, runtime }),
-    ).toThrow(`Your ${runtime} is ${version}`);
+    ).toThrow(`Your ${runtime} plugin API is ${version}`);
   });
 
   it.each(["", "   ", "latest", ">=potato", "0.8.0 nonsense"])(
