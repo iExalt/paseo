@@ -8,6 +8,13 @@ const setWorkspaceNotifications = vi.fn(
     notifications,
   }),
 );
+const updateWorkspaceSettings = vi.fn(async (_id: string, patch: Record<string, unknown>) => ({
+  background: patch.background ?? false,
+  title: patch.title ?? null,
+  notifications: patch.notifications ?? "on",
+  pinnedAt: patch.pinned ? "2026-11-05T00:00:00.000Z" : null,
+  labels: patch.addLabels ?? [],
+}));
 const createWorkspace = vi.fn(async () => ({
   workspace: {
     id: "ws-created",
@@ -44,6 +51,7 @@ const runWorkspaceSetup = vi.fn();
 const close = vi.fn(async () => undefined);
 
 vi.mock("../../utils/client.js", () => ({
+  connectToDaemon: vi.fn(async () => ({
     getBranchSuggestions,
     searchForge,
     validateBranch,
@@ -60,6 +68,12 @@ vi.mock("../../utils/client.js", () => ({
     fetchWorkspaces,
     fetchWorkspaceSetupStatus,
     runWorkspaceSetup,
+    createWorkspace,
+    setWorkspaceNotifications,
+    updateWorkspaceSettings,
+    close,
+    fetchAgent: async () => null,
+  })),
   getDaemonHost: vi.fn(() => "ws://127.0.0.1:6767"),
 }));
 
@@ -69,6 +83,7 @@ import { createWorkspaceCommand } from "./index.js";
 describe("workspace notification update command", () => {
   beforeEach(() => {
     createWorkspace.mockClear();
+    updateWorkspaceSettings.mockClear();
     setWorkspaceNotifications.mockClear();
     close.mockClear();
   });
@@ -90,6 +105,76 @@ describe("workspace notification update command", () => {
     });
     expect(setWorkspaceNotifications).toHaveBeenCalledWith("ws-created", "off");
     expect(close).toHaveBeenCalledTimes(2);
+  });
+
+  it("sends all settings in one request through the registered CLI action", async () => {
+    await createWorkspaceCommand().parseAsync(
+      [
+        "update",
+        "ws-1",
+        "--no-background",
+        "--title",
+        "Review",
+        "--notifications",
+        "off",
+        "--pin",
+        "--add-label",
+        "Ready",
+        "--add-label",
+        "Review",
+        "--remove-label",
+        "Done",
+      ],
+      { from: "user" },
+    );
+    expect(updateWorkspaceSettings).toHaveBeenCalledExactlyOnceWith("ws-1", {
+      background: false,
+      title: "Review",
+      notifications: "off",
+      pinned: true,
+      addLabels: ["Ready", "Review"],
+      removeLabels: ["Done"],
+    });
+    expect(setWorkspaceNotifications).not.toHaveBeenCalled();
+  });
+
+  it("keeps omitted booleans absent and supports resets", async () => {
+    await createWorkspaceCommand().parseAsync(["update", "ws-1", "--reset-title", "--unpin"], {
+      from: "user",
+    });
+    expect(updateWorkspaceSettings).toHaveBeenCalledExactlyOnceWith("ws-1", {
+      title: null,
+      pinned: false,
+    });
+  });
+
+  it.each([
+    [],
+    ["--background", "--no-background"],
+    ["--pin", "--unpin"],
+    ["--title", "Review", "--reset-title"],
+    ["--title", "  "],
+    ["--add-label", " Review ", "--remove-label", "review"],
+    ["--add-label", "  "],
+  ])("rejects empty or conflicting patches before connecting: %j", async (...flags) => {
+    const workspace = createWorkspaceCommand()
+      .exitOverride()
+      .configureOutput({ writeErr: () => undefined });
+    const update = workspace.commands.find((command) => command.name() === "update")!;
+    update.exitOverride();
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("CLI exit");
+    });
+    try {
+      await expect(
+        workspace.parseAsync(["update", "ws-1", ...flags], { from: "user" }),
+      ).rejects.toThrow();
+      expect(updateWorkspaceSettings).not.toHaveBeenCalled();
+      expect(setWorkspaceNotifications).not.toHaveBeenCalled();
+      expect(close).not.toHaveBeenCalled();
+    } finally {
+      exit.mockRestore();
+    }
   });
 
   it("returns the policy acknowledged by the daemon in structured and human output", async () => {

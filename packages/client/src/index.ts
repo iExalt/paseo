@@ -194,6 +194,10 @@ export interface PaseoWorkspaceHandle {
   readonly terminals: PaseoWorkspaceTerminalActions;
   current(): PaseoWorkspace | null;
   refresh(options?: { requestId?: string }): Promise<PaseoWorkspace | null>;
+  update(
+    patch: import("@getpaseo/protocol/messages").WorkspaceSettingsPatch,
+    requestId?: string,
+  ): Promise<import("@getpaseo/protocol/messages").WorkspaceSettings>;
   setTitle(title: string | null, requestId?: string): Promise<{ title: string | null }>;
   /** Top-level keys replace; `null` removes the key. Needs a host with `entityMetadata`. */
   setMetadata(patch: Record<string, JsonValue>): Promise<void>;
@@ -963,6 +967,7 @@ function createWorkspaceHandleFactory(
       },
       current: () => current,
       refresh,
+      update: (patch, requestId) => daemonClient.updateWorkspaceSettings(id, patch, requestId),
       setTitle: (title, requestId) => daemonClient.setWorkspaceTitle(id, title, requestId),
       setMetadata: async (patch) => {
         const metadata = await daemonClient.setWorkspaceMetadata(id, patch);

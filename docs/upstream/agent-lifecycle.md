@@ -222,9 +222,11 @@ The provider still owns the underlying runtime. Paseo keeps an agent record so t
 
 An agent is effectively background when it or its workspace is background:
 `agent.background || workspace.background`. Background controls discovery only. Background agents
-and the agents in background workspaces are ordinary durable agents: provider history, plugin
-hooks, parentage, finish notifications to a caller, archive, and restart recovery keep their
-normal behavior. Both flags are fixed at creation.
+and agents in background workspaces retain normal provider history, plugin hooks, parentage, finish
+notifications to a caller, archive, and restart recovery. The agent flag is fixed at creation. Change
+workspace visibility explicitly through workspace settings updates; selecting an existing workspace
+does not change it. New workspaces default to false and inherit the caller’s effective background
+value when created without an override. Explicit true or false overrides inheritance.
 
 - **Agent.** `create_agent_request.background` marks the agent. Use it for helpers the user does
   not watch, such as a plugin's classifier in the user's open workspace. A background agent never
@@ -269,7 +271,6 @@ Archive is a **soft delete**: the agent record stays on disk with `archivedAt` s
 
 Archive sets `archivedAt`, invokes the provider's native archive hook, and cascades to managed
 children.
-
 
 Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/agent/agent-manager.ts`):
 
