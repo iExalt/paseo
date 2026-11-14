@@ -23,7 +23,7 @@ interface OnboardOptions extends CommandOptions {
   port?: string;
   listen?: string;
   relay?: boolean;
-  mcp?: boolean;
+  agentTools?: boolean;
   hostnames?: string;
   timeout?: string;
   voice?: "ask" | "enable" | "disable";
@@ -155,7 +155,7 @@ export function onboardCommand(): Command {
     .option("--port <port>", "Port to listen on (default: 6767)")
     .option("--relay", "Enable relay connection without prompting")
     .option("--no-relay", "Disable relay connection")
-    .option("--no-mcp", "Disable the Agent MCP HTTP endpoint")
+    .option("--no-agent-tools", "Disable native Paseo tools for agents")
     .option(
       "--hostnames <hosts>",
       'Daemon hostnames (comma-separated, e.g. "myhost,.example.com" or "true" for any)',
@@ -167,7 +167,8 @@ export function onboardCommand(): Command {
       withGlobalOptions(async (options: RawOnboardOptions, command: Command) => {
         await runOnboard({
           ...options,
-          mcp: command.getOptionValueSource("mcp") === "cli" ? options.mcp : undefined,
+          agentTools:
+            command.getOptionValueSource("agentTools") === "cli" ? options.agentTools : undefined,
           hostnames: options.hostnames ?? options.allowedHosts,
         });
       }),
@@ -217,10 +218,10 @@ function persistSetupChoices(paseoHome: string, options: OnboardOptions): void {
       ...persisted.daemon,
       relay: { ...persisted.daemon?.relay, enabled: options.relay },
     };
-  if (options.mcp !== undefined)
+  if (options.agentTools !== undefined)
     persisted.daemon = {
       ...persisted.daemon,
-      mcp: { ...persisted.daemon?.mcp, enabled: options.mcp },
+      agentTools: { ...persisted.daemon?.agentTools, enabled: options.agentTools },
     };
   if (options.hostnames)
     persisted.daemon = {

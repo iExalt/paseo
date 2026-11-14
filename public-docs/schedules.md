@@ -15,7 +15,7 @@ Paseo also has **heartbeats**. A heartbeat sends a recurring prompt back into on
 Both concepts use the same cron engine, but their product surfaces stay separate:
 
 - **Schedules** create a new agent each run. You can inspect, pause, resume, run once, update, or delete them.
-- **Heartbeats** target one existing agent. They are intentionally lightweight: create or delete them over MCP; from the CLI you can also update only their cron period.
+- **Heartbeats** target one existing agent. They are intentionally lightweight: create or delete them with the CLI, or update only their cron period and time zone.
 
 Cron is the canonical cadence. The CLI accepts simple presets such as `5m` or `1h`, but compiles them to cron rather than storing a separate interval type.
 
@@ -34,12 +34,12 @@ Both run on a cadence you set. To start an agent from an external event instead 
 - **In the app** — open the Schedules view and create one with agent settings, a cron cadence, a repo, and a prompt. This is the main way to create and manage schedules.
 - **[From chat](/docs/schedules-chat)** — ask the agent in a chat and it sets the schedule up for you.
 - **[From the CLI](/docs/schedules-cli)** — `paseo schedule create`, for headless boxes and scripts.
-- **[Over MCP](/docs/mcp)** — agents create and manage schedules programmatically.
+- **[Agent automation](/docs/cli#asynchronous-delegation)** — agents use the same CLI with caller context.
 
 ## Keep run workspaces
 
 Each new-agent schedule run creates a workspace. **Archive on finish** is on by default: when the run ends, Paseo archives that workspace and its agent. With worktree isolation, archiving also removes the worktree after its last active workspace is archived.
 
-To keep runs available, turn off **Archive on finish**: open the schedule in the app's Schedules view, turn off the switch, and save; from the CLI, pass `--no-archive-on-finish`; over MCP, pass `archiveOnFinish: false`. Paseo keeps each run's workspace and agent active until you archive them; runs that fail before creating an agent are still cleaned up. This option also applies to **Project directory** isolation; archiving that workspace leaves the project directory in place.
+To keep runs available, turn off **Archive on finish**: open the schedule in the app's Schedules view, turn off the switch, and save; from the CLI, pass `--no-archive-on-finish`. Paseo keeps each run's workspace and agent active until you archive them; runs that fail before creating an agent are still cleaned up. This option also applies to **Project directory** isolation; archiving that workspace leaves the project directory in place.
 
 The stored option is `target.config.archiveOnFinish`, a boolean that defaults to `true` when omitted. Heartbeats use an existing agent and do not have this option.

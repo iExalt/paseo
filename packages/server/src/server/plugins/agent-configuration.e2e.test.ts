@@ -21,7 +21,7 @@ test("the configuration example saves Codex options and injects launch-only MCP 
         },
       }),
     },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,

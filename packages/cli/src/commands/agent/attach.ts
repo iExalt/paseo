@@ -3,7 +3,7 @@ import type { Command } from "commander";
 export function addAttachOptions(cmd: Command): Command {
   return cmd
     .description("Attach to a running agent's output stream")
-    .argument("<id>", "Agent ID (or prefix)");
+    .argument("<id>", "Agent ID, prefix, or full session ID");
 }
 import { connectToDaemon } from "../../utils/client.js";
 import { waitForStop } from "../../utils/wait-for-stop.js";

@@ -62,7 +62,7 @@ import { ICON_SIZE } from "@/styles/theme";
 import type { Theme } from "@/styles/theme";
 import { useProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsRow } from "./browser-tools-card";
-import { HostPaseoToolsRow } from "./paseo-tools-card";
+import { AgentToolsCard } from "./agent-tools-card";
 import { RestartRecoveryRow } from "./restart-recovery-card";
 import { IdleRuntimeCleanupRow } from "./idle-runtime-cleanup-card";
 import { ReplyRulesSection } from "./reply-rules-section";
@@ -261,8 +261,8 @@ export function HostToolsPage({ serverId }: { serverId: string }) {
             </SettingsCard>
           </SettingsSection>
           <SettingsSection title={t("settings.host.tools.toolsTitle")}>
-            <SettingsCard testID="host-page-inject-mcp-card">
-              <HostPaseoToolsRow serverId={serverId} />
+            <AgentToolsCard serverId={serverId} />
+            <SettingsCard>
               <BrowserToolsRow serverId={serverId} />
             </SettingsCard>
           </SettingsSection>

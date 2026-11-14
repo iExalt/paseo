@@ -168,7 +168,6 @@ function createServer(
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
-    null,
     { allowedOrigins: new Set() },
     createWorkspaceAutoNameStub(),
     createWorkspaceRuntimeStore(),

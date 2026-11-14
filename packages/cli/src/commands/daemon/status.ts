@@ -1,5 +1,4 @@
 import { Command } from "commander";
-import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
 import {
   readDaemonInstance,
   daemonLogPath,
@@ -19,10 +18,15 @@ import { describeDaemonTarget, type DaemonTarget } from "../../utils/daemon-targ
 export function daemonStatusCommand(): Command {
   return addJsonAndDaemonHostOptions(
     new Command("status").description("Observe the selected daemon and its published endpoint"),
-  ).action(withOutput(runStatusCommand));
+  )
+    .option("--latency", "Measure connection round-trip latency")
+    .action(withOutput(runStatusCommand));
 }
 
-export async function runStatusCommand(options: CommandOptions, _command: Command) {
+export async function runStatusCommand(
+  options: CommandOptions & { latency?: boolean },
+  _command: Command,
+) {
   const target = options.daemonTarget;
   const instance = target.kind === "instance" ? await readDaemonInstance(target.home) : null;
   const local =
@@ -31,7 +35,7 @@ export async function runStatusCommand(options: CommandOptions, _command: Comman
       : { host: describeDaemonTarget(target) };
   const observed =
     target.kind === "endpoint" || instance?.listen
-      ? await probeDaemonStatus(target, instance, local)
+      ? await probeDaemonStatus(target, instance, local, options.latency === true)
       : { connectedDaemon: "not_probed" };
   const data: Record<string, unknown> = { ...local, ...observed };
   return {
@@ -56,7 +60,9 @@ async function probeDaemonStatus(
   target: DaemonTarget,
   instance: Awaited<ReturnType<typeof readDaemonInstance>>,
   local: Record<string, unknown>,
+  measureLatency: boolean,
 ) {
+  const { DaemonConnectionError } = await import("@getpaseo/client/internal/daemon-client");
   let connectedDaemon = "unreachable";
   let note: string | undefined;
   let live: Record<string, unknown> = {};
@@ -85,8 +91,7 @@ async function probeDaemonStatus(
         "DAEMON_REPLACED",
         "Supervisor exited or was replaced during status observation.",
       );
-    const info = client.getLastServerInfoMessage();
-    live = { serverId: info?.serverId, daemonVersion: info?.version };
+    live = await observeServerInfo(client, measureLatency);
     connectedDaemon = client.isConnected ? "reachable" : "unreachable";
     if (!status) {
       const failure = toCommandError(requestError);
@@ -138,4 +143,30 @@ function localStatus(home: string, instance: Awaited<ReturnType<typeof readDaemo
     desktopManaged: instance?.desktopManaged === true,
     logPath: daemonLogPath(home),
   };
+}
+
+export async function observeServerInfo(
+  client: Pick<
+    Awaited<ReturnType<typeof connectToDaemon>>,
+    "getLastServerInfoMessage" | "measureLatency"
+  >,
+  measureLatency: boolean,
+) {
+  const info = client.getLastServerInfoMessage();
+  const live: Record<string, unknown> = {
+    serverId: info?.serverId,
+    daemonVersion: info?.version,
+    capabilities: info?.capabilities,
+    features: info?.features,
+    desktopManaged: info?.desktopManaged,
+    sourceId: info?.sourceId,
+  };
+  if (measureLatency) {
+    try {
+      live.latencyMs = await client.measureLatency({ timeoutMs: 1_500 });
+    } catch (error) {
+      live.latencyError = toCommandError(error);
+    }
+  }
+  return live;
 }
