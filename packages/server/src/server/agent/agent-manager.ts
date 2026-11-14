@@ -1896,6 +1896,8 @@ export class AgentManager {
     const purpose = await resolveResumePurpose(record, resumeOptions?.purpose, mergedConfig.cwd);
     const currentResumeOptions = { purpose } satisfies AgentResumeSessionOptions;
 
+    const { labels = {} } = options ?? {};
+    const { title = mergedConfig.title ?? null, labels: recordLabels = labels } = record ?? {};
     const launchEnv = record?.launchEnv;
     const workspaceId = resolveResumeWorkspaceId({ options, record });
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
@@ -1921,9 +1923,10 @@ export class AgentManager {
         reason: "resume",
         purpose,
         workspaceId,
-        title: record?.title ?? mergedConfig.title ?? null,
+        title,
         background: options?.background,
         ...agentEntityData(record ?? options),
+        labels: recordLabels,
       },
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
@@ -6787,6 +6790,29 @@ export class AgentManager {
       : next;
   }
 
+  private createSessionOpenRequest(
+    agentId: string,
+    client: AgentClient,
+    cwd: string,
+    env: Record<string, string> | undefined,
+    opening: Parameters<AgentManager["buildLaunchContext"]>[5],
+  ) {
+    return {
+      agentId,
+      provider: client.provider,
+      cwd,
+      workspaceId: opening?.workspaceId ?? null,
+      reason: opening?.reason ?? "resume",
+      purpose: opening?.purpose ?? "interactive",
+      env: { ...env },
+      title: opening?.title ?? null,
+      background: opening?.background === true,
+      ...agentEntityData(opening),
+      tools: [],
+      mcpServers: {},
+    };
+  }
+
   private async buildLaunchContext(
     agentId: string,
     client: AgentClient,
@@ -6808,20 +6834,7 @@ export class AgentManager {
     let mcpServerOwners: Record<string, string> | undefined;
     let wrap: AgentLaunchContext["wrap"];
     if (this.pluginSessions) {
-      const request = {
-        agentId,
-        provider: client.provider,
-        cwd,
-        workspaceId: opening?.workspaceId ?? null,
-        reason: opening?.reason ?? "resume",
-        purpose: opening?.purpose ?? "interactive",
-        env: { ...env },
-        title: opening?.title ?? null,
-        background: opening?.background === true,
-        ...agentEntityData(opening),
-        tools: [],
-        mcpServers: {},
-      };
+      const request = this.createSessionOpenRequest(agentId, client, cwd, env, opening);
       const transformed = await this.pluginSessions.openSession(request);
       env = transformed.env;
       wrap = transformed.wrap;
