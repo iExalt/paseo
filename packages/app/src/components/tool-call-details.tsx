@@ -25,6 +25,7 @@ import { HighlightedLines } from "./highlighted-content";
 import { DiffViewer } from "./diff-viewer";
 import { getCodeInsets } from "./code-insets";
 import { isWeb } from "@/constants/platform";
+import { MarkdownRenderer } from "@/components/markdown/renderer";
 
 const ScrollView = isWeb ? RNScrollView : GHScrollView;
 
@@ -291,6 +292,21 @@ function ScrollablePlainTextSection({ text, ds }: { text: string; ds: DetailStyl
   );
 }
 
+function ScrollableMarkdownSection({ text, ds }: { text: string; ds: DetailStyles }) {
+  return (
+    <View style={styles.section}>
+      <ScrollView
+        style={ds.scrollAreaStyle}
+        contentContainerStyle={styles.scrollContent}
+        nestedScrollEnabled
+        showsVerticalScrollIndicator
+      >
+        <MarkdownRenderer text={text} />
+      </ScrollView>
+    </View>
+  );
+}
+
 interface SearchDetail {
   query?: string;
   content?: string;
@@ -496,6 +512,9 @@ function buildDetailSections(
   }
   if (detail.type === "plain_text") {
     if (!detail.text) return [];
+    if (detail.markdown) {
+      return [<ScrollableMarkdownSection key="markdown" text={detail.text} ds={ds} />];
+    }
     return [<ScrollablePlainTextSection key="plain-text" text={detail.text} ds={ds} />];
   }
   if (detail.type === "unknown") {
