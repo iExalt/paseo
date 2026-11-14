@@ -33,6 +33,16 @@ Push titles carry their reason as a prefix that the app reads back with
 `parseAgentAttentionTitle` in `@getpaseo/protocol`.
 _Avoid_: notification filter, suppression
 
+## App
+
+**Notification dismissal**:
+Removes an agent notification once nothing is left to see in it: its thread was
+read, answered, archived or removed, or, for an Android push that names no
+thread, every host is caught up. One driver runs both plans against the app's
+stores (`packages/app/src/notification-dismissal/dismissal.ts`); the native
+shade, desktop bridge and browser notifications are its callers.
+_Avoid_: notification clearing, auto-dismiss
+
 **Fork updater controller**:
 The one state machine behind the fork Android updater: what the About row
 says and offers, whether the sidebar icon shows, and what a press or the hourly

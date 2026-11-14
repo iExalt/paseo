@@ -60,6 +60,14 @@ export function asAgentStorage(stub: {
       );
     },
     lastUserMessageAtByWorkspace: async () => new Map<string, string>(),
+    notificationLifecycle: {
+      subscribe: () => () => {},
+      active: async () => [],
+      pending: async () => [],
+      delivered: async () => {},
+    },
+    flush: async () => {},
+    applySnapshot: async () => [],
     listByProviderSession: async () => [],
     listByWorkspace: async () => [],
     ...stub,
