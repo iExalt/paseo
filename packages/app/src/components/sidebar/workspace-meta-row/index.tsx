@@ -181,7 +181,7 @@ function LabelsItem({
  * saying where the click goes before you spend it.
  *
  * `onHoverIn`/`onHoverOut` with local state is safe here despite the usual rule in
- * docs/hover.md — the state never leaves this Pressable, and nothing pressable is nested
+ * docs/upstream/hover.md — the state never leaves this Pressable, and nothing pressable is nested
  * inside it, so there is no second hover state machine to fight. Both icons are the same
  * size, so the swap can't move the target out from under the cursor.
  */

@@ -27,6 +27,7 @@ Arguments marked `?` are optional.
 | `browser_close_tab` | `browserId`                | Close a tab and clean up its webview.                                     |
 | `browser_resize`    | `browserId, width, height` | Resize the tab's viewport — check a layout at phone or tablet dimensions. |
 
+| `click <browser-id> <ref>`                              | Click; accepts `--button left\|right\|middle`, `--double-click`, repeatable `--modifier`.      |
 ## Reading the page
 
 | Tool                 | Arguments                              | Purpose                                                                               |

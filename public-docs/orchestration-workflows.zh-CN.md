@@ -49,9 +49,9 @@ Agent 可以通过 **Agent ID** 相互发送提示词，Agent ID 是 Paseo 用�
 
 > 用 Paseo 把这段提示词发送给 Agent [在此粘贴 Agent ID]：“审查你工作区中解析器的改动，并报告缺失的测试用例。”
 
-接收方 Agent 会在它现有的对话中收到这段提示词。由 Agent 发起的发送默认会引导正在进行的一轮；无法引导时则退回为中断。把 MCP 的 `activeTurnBehavior` 或 CLI 的 `--behavior` 设置为 `steer` 或 `interrupt` 可以覆盖这个默认行为。如果希望它另外回发一条消息，请把发送方的 Agent ID 也告诉它。
+接收方 Agent 会在它现有的对话中收到这段提示词。由 Agent 发起的发送默认会引导正在进行的一轮；无法引导时则退回为中断。向 `paseo send` 传入 `--behavior steer` 或 `--behavior interrupt`（原生工具则使用 `activeTurnBehavior`）可以覆盖这个默认行为。如果希望它另外回发一条消息，请把发送方的 Agent ID 也告诉它。
 
-在底层，Agent 会用接收方的 `agentId` 和一段 `prompt` 调用 `send_agent_prompt`。Agent 也可以用 `list_agents` 发现 ID；CLI 使用 [`paseo send <id>`](/docs/cli#sending-messages)。对于另一台主机，请使用[远程 CLI 工作流](#work-on-another-machine)。
+在底层，Agent 会用接收方的 Agent ID 和一段提示词运行 [`paseo send <id>`](/docs/cli#sending-messages)。Agent 可以用 `paseo agent query` 发现 ID。支持原生 Paseo 工具的 Provider 也可以改为调用 `send_agent_prompt` 和 `list_agents`。对于另一台主机，请使用[远程 CLI 工作流](#work-on-another-machine)。
 
 ## 检查、调整或继续工作 {#check-redirect-or-continue-work}
 
@@ -98,4 +98,4 @@ Agent 会按这个节奏继续任务。如果希望每次运行都使用新的 A
 
 位于另一个工作区的 Paseo 子 Agent 仍然属于它父 Agent 的 track。它也会在自己的工作区中以标签页打开。要让它成为顶层 Agent，请在应用中或用 [`paseo agent detach`](/docs/cli#agent-modes) 解除父子关系。
 
-工作区和父子关系的规则见 [MCP 参考](/docs/mcp#mental-model)。
+工作区和父子关系的规则见[调用方与工作区规则](/docs/mcp#mental-model)。

@@ -26,20 +26,20 @@ Paseo 让你的编程 Agent 协调其他 Agent，把工作分配到不同的 Pro
 
 使用内置的 Paseo 工具或 CLI。两者都能让 Agent 启动和协调执行者。
 
-### 内置 Paseo 工具（MCP） {#built-in-paseo-tools-mcp}
+### 原生工具与 CLI 指引 {#native-tools-and-cli-guidance}
 
 启用 Paseo 工具后，在 Paseo 中运行的 Agent 可以直接管理其主机上的 Agent 和工作区。
 
 1. 打开 **设置 → 你的主机 → Agents**。
 2. 打开 **启用 Paseo tools**。工具注入默认关闭。
-3. 启动一个新的 Agent，或重新加载已有的 Agent，让它获得这些工具。
+3. 启动一个新的 Agent，或重新加载已有的 Agent，让它在支持的 Provider 中获得原生工具和 CLI 指引。
 4. 提出要求：
 
 > 用 Paseo 启动第二个 Agent 审查这个分支。让它在不修改文件的前提下报告潜在的 bug，然后总结它的发现。
 
 执行者会出现在 Composer 附近的 **Subagent** 面板中。打开它即可跟进对话。执行者完成时，主 Agent 会收到通知；在它工作期间，你可以继续对话。
 
-工具配置和完整目录见 [MCP 参考](/docs/mcp)。[编排技能](/docs/skills)是可选的可复用工作流。
+配置和调用方上下文见 [Paseo 工具策略](/docs/mcp)。[编排技能](/docs/skills)是可选的可复用工作流。
 
 ### CLI {#cli}
 
@@ -51,7 +51,7 @@ paseo run --provider codex --no-wait \
 paseo ls -a
 ```
 
-第一条命令启动一个执行者并立即返回；第二条命令还会列出已归档和后台的 Agent。当 Paseo Agent 运行这条命令时，执行者会成为它在同一工作区中的子 Agent。从你自己的终端运行时，它会在一个新的本地工作区中启动。
+第一条命令启动一个执行者并立即返回；第二条命令还包括已归档的 Agent；添加 `--background` 可包含后台工作区。当 Paseo Agent 运行这条命令时，执行者会成为它在同一工作区中的子 Agent。从你自己的终端运行时，它会在一个新的本地工作区中启动。
 
 后续提示词、输出、worktree 和远程主机的用法见 [CLI 参考](/docs/cli)。
 

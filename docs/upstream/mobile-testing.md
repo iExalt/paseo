@@ -33,7 +33,7 @@ Set `PASEO_MOBILE_E2E_METRO_PORT` when this worktree already has Metro on a non-
 PASEO_MOBILE_E2E_METRO_PORT=62093 npm run test:e2e:mobile
 ```
 
-[native-terminal-basic.ios.ad](../packages/app/e2e/mobile/agent-device/native-terminal-basic.ios.ad) and [native-terminal-basic.android.ad](../packages/app/e2e/mobile/agent-device/native-terminal-basic.android.ad) are the smallest examples. Each opens a fresh terminal, types a command at zero delay, submits it, and asserts its distinct output. The app must be connected to a daemon with an active workspace.
+[native-terminal-basic.ios.ad](../../packages/app/e2e/mobile/agent-device/native-terminal-basic.ios.ad) and [native-terminal-basic.android.ad](../../packages/app/e2e/mobile/agent-device/native-terminal-basic.android.ad) are the smallest examples. Each opens a fresh terminal, types a command at zero delay, submits it, and asserts its distinct output. The app must be connected to a daemon with an active workspace.
 
 For Android background fold recovery, install the release APK on a foldable AVD, open a
 connected workspace, close the keyboard, and run:

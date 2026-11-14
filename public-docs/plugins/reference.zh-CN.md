@@ -99,9 +99,9 @@ my-plugin/
 
 `>=0.12.0-beta.4` 这样的预发布最低版本也会通过稳定核心 `0.12.0` 接受 `0.12.0-beta.3`。若要排除同一核心的较早构建，请使用不同的稳定核心版本。
 
-`paseo plugin init` 会写入 `>=` 加当前 CLI 版本，并为类型检查固定匹配的 SDK。采用更新的 API 时，请提高最低版本。当某个之后的版本不兼容时，请添加上限；只有下限并不能保证免受将来破坏性变更的影响。
+`requirements.paseo` 与插件 API 版本匹配，而不是应用的发布版本。`paseo plugin init` 会写入 `>=` 加当前插件 API 版本，并为类型检查固定匹配的 SDK。采用更新的 API 时，请提高最低版本。当某个之后的版本不兼容时，请添加上限；只有下限并不能保证免受将来破坏性变更的影响。
 
-daemon 会在安装、运行准备命令或加载插件之前检查自己的版本，并在启动、启用和重新加载时再次检查。被拒绝的更新会保留已安装的修订。每个已连接的应用在执行客户端代码之前会检查自己的版本，并在 **设置 → 插件** 中显示不兼容。兼容的 daemon 并不能让较旧的应用变得兼容。没有客户端入口的插件不要求已连接的应用匹配。
+daemon 会在安装、运行准备命令或加载插件之前检查自己的插件 API 版本，并在启动、启用和重新加载时再次检查。被拒绝的更新会保留已安装的修订。每个已连接的应用在执行客户端代码之前会检查自己的版本，并在 **设置 → 插件** 中显示不兼容。兼容的 daemon 并不能让较旧的应用变得兼容。没有客户端入口的插件不要求已连接的应用匹配。
 
 例如：`Plugin "review" requires Paseo >=0.8.0. Your daemon is 0.7.2.` 请使用兼容的插件修订，或更新提示中的运行时。0.8 之前的版本不理解这个 manifest 字段，也无法显示这条新的诊断信息。
 
@@ -359,7 +359,7 @@ Paseo 为服务端代码提供 `@getpaseo/plugin`、`@getpaseo/plugin/server`、
 
 消息、结构化命令、引导和命令副作用都使用同一个 `session.prompt` 输入。在实时的用户时间线条目上重复 `clientMessageId`，并恰好发布一个与之匹配的 `session.prompt_result`。把 Provider 创建的子会话发布为带有 `parentSessionId` 的会话。
 
-Provider 设置是 Paseo 在 Composer 中渲染的开关/选择描述符。把 Provider 私有的选项保留在 `session.open` 的 `ProviderSessionConfig.providerOptions` 中。这个记录包含配置的默认值和针对单个 Agent 的覆盖值；请在你的 Provider 中校验并应用它。配置和合并语义见 [Provider 选项](/docs/sdk/provider-options)。宿主工具以 MCP 服务器的形式出现在完整的会话配置中。
+Provider 设置是 Paseo 在 Composer 中渲染的开关/选择描述符。把 Provider 私有的选项保留在 `session.open` 的 `ProviderSessionConfig.providerOptions` 中。这个记录包含配置的默认值和针对单个 Agent 的覆盖值；请在你的 Provider 中校验并应用它。配置和合并语义见 [Provider 选项](/docs/sdk/provider-options)。第三方 MCP 服务器仍然出现在完整的会话配置中。Paseo 操作使用 Provider 原生工具（在支持时）或 CLI；Paseo 不会注入自己的 MCP 服务器。
 
 Paseo 刷新 Agent 的方式是关闭它当前的 Provider 会话，再用当前的配置和持久化值打开它。Provider 在 `session.open` 期间重新读取外部状态。
 

@@ -69,6 +69,8 @@ nav: 发布
 }
 ```
 
+`requirements.paseo` 与插件 API 版本匹配，而不是应用的发布版本。`paseo plugin init` 会写入 `>=` 加当前插件 API 版本。
+
 创建所引用的文件；对于 npm，把 `assets/` 加入 `package.json` 的 `files` 列表。路径相对于 manifest，使用正斜杠，并且必须位于插件目录之内。这些元数据字段需要 Paseo 0.11.0 或更高版本。
 
 | 字段    | 展示行为                                                                                                                       |

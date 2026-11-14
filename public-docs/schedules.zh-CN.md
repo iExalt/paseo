@@ -13,7 +13,7 @@ Paseo 还有 **heartbeat**。heartbeat 会定期向一个已有的 Agent 发送�
 两者使用同一个 cron 引擎，但在产品中是分开的：
 
 - **定时任务**每次运行都会创建一个新的 Agent。你可以查看、暂停、恢复、运行一次、更新或删除它们。
-- **heartbeat** 针对一个已有的 Agent，刻意保持轻量：通过 MCP 创建或删除；在 CLI 中还可以只更新它们的 cron 周期。
+- **heartbeat** 针对一个已有的 Agent，刻意保持轻量：使用 CLI 创建或删除，或只更新它们的 cron 周期和时区。
 
 cron 是标准的节奏表示。CLI 接受 `5m` 或 `1h` 这样的简单预设，但会把它们编译成 cron，而不是另存一种间隔类型。
 
@@ -32,7 +32,7 @@ cron 是标准的节奏表示。CLI 接受 `5m` 或 `1h` 这样的简单预设�
 - **在应用中**：打开定时任务视图，设置 Agent、cron 节奏、仓库和提示词来创建。这是创建和管理定时任务的主要方式。
 - **[在聊天中](/docs/schedules-chat)**：在聊天中告诉 Agent，它会为你创建定时任务。
 - **[通过 CLI](/docs/schedules-cli)**：`paseo schedule create`，适用于无界面的机器和脚本。
-- **[通过 MCP](/docs/mcp)**：Agent 以编程方式创建和管理定时任务。
+- **[Agent 自动化](/docs/cli#asynchronous-delegation)**：Agent 带着调用方上下文使用同一个 CLI。
 
 ## 保留运行工作区 {#keep-run-workspaces}
 
@@ -40,4 +40,4 @@ cron 是标准的节奏表示。CLI 接受 `5m` 或 `1h` 这样的简单预设�
 
 要保留运行结果，在应用的定时任务视图中打开该定时任务，关闭 **Archive on finish** 并保存。Paseo 会让每次运行的工作区和 Agent 保持活跃，直到你手动归档；在创建 Agent 之前就失败的运行仍会被清理。该选项同样适用于本地隔离；归档本地工作区不会删除项目目录。
 
-存储的选项是 `target.config.archiveOnFinish`，一个布尔值，省略时默认为 `true`。CLI 和 MCP 的定时任务工具不提供这个选项；请在应用中修改。heartbeat 使用已有的 Agent，没有这个选项。
+存储的选项是 `target.config.archiveOnFinish`，一个布尔值，省略时默认为 `true`。CLI 的定时任务命令不提供这个选项；请在应用中修改。heartbeat 使用已有的 Agent，没有这个选项。

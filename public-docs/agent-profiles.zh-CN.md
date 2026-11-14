@@ -49,4 +49,4 @@ nav: Agent 配置
 
 内置的 [Paseo 技能](/docs/skills#paseo-paseo-reference)会指示 Agent 在委派前查看配置并阅读其说明。如果没有合适的配置，它会引导 Agent 发现已配置的 Provider 和模型，并告诉你采用了哪个备选方案。
 
-委派示例见[常用工作流](/docs/orchestration-workflows)，工具接口见 [MCP 参考](/docs/mcp#agent-profiles)。
+委派示例见[常用工作流](/docs/orchestration-workflows)，命令接口见 [CLI 配置参考](/docs/cli#profiles-and-provider-discovery)。

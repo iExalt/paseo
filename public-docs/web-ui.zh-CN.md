@@ -55,7 +55,7 @@ http://localhost:6767/
 
 页面与 daemon 的 API 和 WebSocket 来自同一个源。打开页面时，应用会自动连接回同一个源，因此你通常可以完全跳过“添加主机”步骤：打开 `http://localhost:6767/`，就能看到你的 Agent。
 
-同一个 HTTP 服务器继续提供 API（`/api/*`）、MCP（`/mcp/*`）、服务代理路由和 WebSocket 升级。新增的只有静态文件。要让提供的 UI 指向*另一个* daemon，请照常在 UI 中把那个 daemon 添加为主机。
+同一个 HTTP 服务器继续提供 API（`/api/*`）、服务代理路由和 WebSocket 升级。新增的只有静态文件。要让提供的 UI 指向*另一个* daemon，请照常在 UI 中把那个 daemon 添加为主机。
 
 ## 部署拓扑 {#topologies}
 

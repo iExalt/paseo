@@ -8,7 +8,7 @@ nav: CLI 参考
 
 Paseo CLI 让你在终端中管理 Agent。它与 daemon 的 API 提供的接口相同，因此能在应用中做的事，都可以在命令行中完成。
 
-> **Agent 编排**：你可以让编程 Agent 使用 Paseo CLI 启动和管理其他 Agent。Paseo 会识别发起调用的 Agent，因此通过 CLI 创建的执行者与通过 MCP 创建的执行者获得相同的工作区和父级默认值。
+> **Agent 编排**：你可以让编程 Agent 使用 Paseo CLI 启动和管理其他 Agent。Paseo 会识别发起调用的 Agent，因此通过 CLI 创建的执行者会继承调用方的工作区和父级默认值。参阅[调用方上下文与原生工具策略](/docs/mcp)。
 
 ## 速查 {#quick-reference}
 
@@ -203,6 +203,18 @@ paseo workspace archive <workspace-id>
 ```
 
 当 Paseo 无法从源检出推断代码托管平台时，为 PR 检出添加 `--forge <name>`。setup 钩子和服务见 [Git worktree](/docs/worktrees)。
+### 工作区通知策略 {#workspace-notification-policy}
+
+```bash
+paseo workspace create --isolation local --path /absolute/repo --notifications off
+paseo workspace update <workspace-id> --notifications on
+paseo workspace ls --json
+paseo daemon notifications rules get --json
+paseo daemon notifications rules set '<reply-rules-json-array>'
+paseo daemon notifications rules clear
+```
+
+请在 `run --workspace` 之前用所需的策略创建工作区；`run` 没有通知策略参数。列表会报告工作区的策略。读取和修改主机的回复规则分别需要 daemon 的读取和管理权限；调用方身份不会授予主机权限。
 
 ## 终端 {#terminals}
 
@@ -276,6 +288,16 @@ paseo ls -a -g --json       # All agents, including archived, as JSON
 paseo ls --background       # Also include agents in background workspaces
 ```
 
+使用 `agent query` 可按目录后代、状态集合、数量上限和已归档活动的时间范围查询，归档和后台的包含与否相互独立：
+
+```bash
+paseo agent query --cwd /absolute/repo --status running --status idle --limit 20 --json
+paseo agent query --include-archived --include-background --since-hours 48 --json
+paseo agent status <exact-agent-id> --json
+paseo agent activity <exact-agent-id> --limit 20 --json
+```
+
+
 ## 流式输出 {#streaming-output}
 
 使用 `paseo attach` 实时查看 Agent 的输出流：
@@ -285,6 +307,7 @@ paseo attach abc123   # Attach to agent (Ctrl+C to detach)
 ```
 
 Agent ID 可以缩写，只要 `abc` 没有歧义就可以使用。
+
 
 ## 发送消息 {#sending-messages}
 
@@ -337,9 +360,19 @@ Agent 在执行某些操作时可能会请求权限。在 CLI 中管理这些请
 
 ```bash
 paseo permit ls                # List pending requests
-paseo permit allow <id>        # Allow all pending for agent
+paseo permit allow <id> --all  # Allow all pending for agent
 paseo permit deny <id> --all   # Deny all pending
 ```
+
+对于单个请求，请传入 `permit ls --json` 中的请求 ID：
+
+```bash
+paseo permit allow <agent-id> <request-id> --selected-action-id <action-id>
+paseo permit allow <agent-id> <request-id> --updated-permissions '<permissions-json-array>'
+paseo permit deny <agent-id> <request-id> --selected-action-id <action-id> --message "Declined"
+```
+
+请使用 Provider 提供的操作 ID 和权限数据。选择操作以及更新权限数组不能与批量批准一起使用。
 
 ## Agent 模式 {#agent-modes}
 
@@ -352,6 +385,67 @@ paseo agent mode <id> plan     # Set plan mode
 paseo agent detach <id>        # Make a subagent top-level
 ```
 
+
+## 配置与 Provider 发现 {#profiles-and-provider-discovery}
+
+```bash
+paseo profile ls --json
+paseo provider ls --full --json
+paseo provider models <provider> --full --json
+paseo provider inspect <provider> --cwd /absolute/repo --json
+paseo provider inspect <provider> --model <model> --mode <mode> --thinking <thinking> --json
+```
+
+委派之前请先阅读配置的备注。没有 `run --profile` 参数：请把 `provider`、`model`、`modeId`、`thinkingOptionId` 和 `featureValues` 复制到 `--provider`、`--model`、`--mode`、`--thinking` 和 `--features-json` 中，缺失的值直接省略。`provider inspect` 接受草稿设置并报告能力和功能；`provider diagnostic` 检查安装情况。在 Provider 和模型发现中使用 `--full --json` 会保留规范记录，而不是展示用的投影。
+
+## Agent 运行时设置 {#agent-runtime-settings}
+
+```bash
+paseo run --provider codex --feature fast_mode=true --no-wait "Review this branch"
+paseo agent update <id> --model <model> --thinking <thinking> --name "Review"
+paseo agent update <id> --clear-model --clear-thinking
+paseo send <id> --mode <mode> --no-wait "Continue in this mode"
+```
+
+只使用 `provider inspect` 报告的功能 ID 和值。`run`、`agent update` 和 `provider inspect` 接受可重复的 `--feature` 赋值、逗号分隔的赋值以及 `--features-json`。以下示例使用示意性的功能 ID 展示语法：
+
+```bash
+paseo agent update <id> --feature enabled=true --feature choice=fast
+paseo agent update <id> --feature 'enabled=true,choice="a,b"'
+paseo agent update <id> --features-json '{"choice":"a,b","count":2,"custom":{"level":2},"empty":""}'
+```
+
+`'choice="a,b"'` 内部的双引号必须传到解析器；仅用 shell 引号包住 `'choice=a,b'` 并不能保护其中的逗号。裸的 `true`、`false` 和 `null` 会按类型解析；其他值（包括数字）都是字符串。JSON 接受任意值。重复的功能 ID（包括跨参数和 JSON 输入的重复）会失败。
+
+组合更新依次应用模式、模型、思考级别、每个功能，最后是元数据。这不是原子操作：出错时会报告已完成、失败和未尝试的步骤。较早的更改可能保留，响应丢失也可能让失败步骤的结果未知。重试之前请先检查。`send --mode` 在分发提示词之前设置模式；如果分发失败，模式更改可能保留。
+
+## 异步委派 {#asynchronous-delegation}
+
+`run` 和 `send` 默认会等待；`--no-wait` 在启动或分发被确认后返回。父子关系是独立的：在受管的调用方中，`run` 默认创建子 Agent，即使在不同的 `--workspace` 中也是如此。`--relationship detached` 创建独立的工作；`--relationship subagent` 需要调用方上下文。
+
+对于已解析的调用方，创建和发送默认会收到完成、错误和权限通知。对即发即弃的工作使用 `--no-notify-on-finish`，或用 `--notify-on-finish` 显式声明意图。人工操作的 shell 没有父级回调。没有回调可用时，请使用 `wait`、`agent status` 或 `agent activity`；启用通知时请避免反复轮询。
+
+
+## 关闭、停止、归档与删除 {#close-stop-archive-and-delete}
+
+| 命令                     | 效果                                                                     |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `paseo stop <id>`        | 取消当前运行，Agent 保持可用。                                           |
+| `paseo agent close <id>` | 关闭运行时并保存其已关闭的快照，保留历史。取代之前的 `kill_agent` 操作。 |
+| `paseo delete <id>`      | 硬删除已存储的状态，必要时先中断。                                       |
+
+## 浏览器命令 {#browser-commands}
+
+所有浏览器操作都在 `paseo browser` 下提供。标签页选择、过期引用、上传和截图路径见[22 条命令的浏览器参考](/docs/browser-tools)。
+
+## 语音 {#speech}
+
+```bash
+paseo speech speak "The review is complete"
+paseo speech speak --agent <agent-id> "The review is complete" --json
+```
+
+语音使用已解析调用方当前由 daemon 管理的语音会话，或显式指定的 `--agent`。文本必须包含 1–4000 个非空白字符。播放完成后才算成功；中断 CLI 会取消请求。缺少语音会话或播放失败会返回错误。这不是生成音频文件的命令。
 解除父子关系是一个显式的生命周期操作，而不是创建时的参数。Agent 会继续运行；只有它与父 Agent 的关系发生变化。
 
 ## 管理 daemon {#daemon-management}

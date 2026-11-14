@@ -116,6 +116,7 @@ EXPO_PUBLIC_LOCAL_DAEMON=localhost:6768 npm run ios                          # s
 The iOS simulator shares the Mac's loopback, so `localhost:<port>` reaches the host daemon directly.
 
 **Gotcha — `EXPO_PUBLIC_*` is inlined into the JS bundle at Metro bundle time, not read at runtime.** Set it in the same shell that starts Metro. If the app still connects to the old daemon, Metro served a cached bundle; re-bundle clean with `cd packages/app && EXPO_PUBLIC_LOCAL_DAEMON=… npx expo start -c` and reload the app.
+**Tracing native terminal input.** Bundle with `EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE=1` to log each native terminal key, text change, hardware key and echo-latency stage to logcat as `[paseo-terminal-trace]` JSON lines (`adb logcat -s ReactNativeJS`). Typed characters are logged as classes (`a`, `0`, `p`); `=full` logs the text itself, including passwords. For an APK with an embedded bundle, set it on the build command.
 
 ### Desktop renderer profiling
 
@@ -381,7 +382,6 @@ semantics, and environment-variable overrides.
 
 ### Agent Tool Catalog Measurement
 
-Measure the MCP `tools/list` payload that Paseo injects into agents with:
 
 ```bash
 npm run measure:agent-tools --workspace=@getpaseo/server
@@ -389,7 +389,6 @@ npm run measure:agent-tools --workspace=@getpaseo/server
 
 The command reports compact JSON bytes, estimated tokens, field totals, largest
 tools, and the browser-tools delta. It defaults to the agent-scoped catalog; use
-`-- --scope=top-level` for the unaffiliated `/mcp/agents` shape and `-- --json`
 for machine-readable output.
 
 ## Worktree starting refs
@@ -476,7 +475,7 @@ so the port may already be bound. `portScript` takes precedence when both values
 
 ## Bundled daemon web UI
 
-> The user-facing guide for this feature (enabling it, reverse proxy, TLS, tunnels, security) lives at [public-docs/web-ui.md](../public-docs/web-ui.md). This section is the contributor/build reference: how the artifact is produced, bundled, and excluded from desktop packaging.
+> The user-facing guide for this feature (enabling it, reverse proxy, TLS, tunnels, security) lives at [public-docs/web-ui.md](../../public-docs/web-ui.md). This section is the contributor/build reference: how the artifact is produced, bundled, and excluded from desktop packaging.
 
 The daemon can optionally serve the browser web client from the same HTTP server. This is disabled by default.
 
@@ -505,7 +504,6 @@ Or persist it in `config.json`:
 }
 ```
 
-When enabled, opening the daemon HTTP origin (for example `http://localhost:6767/`) serves the web app. The same HTTP server continues to serve `/api/*`, `/mcp/*`, `/public/*`, the WebSocket upgrade, and service-proxy routes. Static files load without daemon bearer auth; API and WebSocket calls still enforce auth.
 
 The served app auto-bootstraps a connection to the same origin, so opening `http://localhost:6767/` directly usually skips the Add Host step.
 
@@ -552,7 +550,11 @@ For tighter loops, you can rebuild a single workspace:
 
 ## Dependency patches
 
-`patches/*.patch` are applied by `scripts/postinstall-patches.mjs` on every install. A patch only
+`patches/*.patch` are applied by `scripts/postinstall-patches.mjs`, the root `postinstall` script.
+`npm ci` and a plain `npm install` run it, but `npm install <package>` skips the root lifecycle
+scripts, so adding or bumping a dependency in a fresh checkout leaves every package unpatched.
+Typecheck then fails inside patched libraries, such as `sourceType` missing from
+`react-native-enriched-markdown`'s `LinkPressEvent`. Run `npm ci` afterwards. A patch only
 runs when its package is actually present, so add the package to that script's `patchedPackages`
 list when you introduce a new patch — otherwise the file sits in `patches/` and never applies.
 patch-package cannot apply a patch that changed after an earlier version was applied, so the
@@ -616,7 +618,6 @@ install.
 
 Use `npm run cli` to run the in-repo CLI from source (`npx tsx packages/cli/src/index.ts`). The script wraps the CLI with `scripts/dev-home.sh`, so it automatically uses this checkout's `.dev/paseo-home` and dev daemon endpoint unless you pass an explicit override. The globally installed `paseo` binary on macOS is a symlink into the installed Paseo desktop app, not this checkout — use it to drive the desktop's built-in daemon, but use `npm run cli` when you want to talk to the CLI you are editing.
 
-Canonical automation uses `paseo project create/ls/rename/delete`, `paseo workspace create/ls/rename/archive`, `paseo heartbeat create/update/delete`, and the full `paseo schedule` group. MCP heartbeat automation is intentionally smaller: create and delete only. Detach remains an explicit user lifecycle action rather than an agent tool. `paseo run --new-workspace local|worktree` composes workspace creation with agent creation. The old `paseo worktree` and `paseo run --worktree` forms are hidden compatibility aliases.
 
 ```bash
 npm run cli -- ls -a -g              # List all agents globally
@@ -636,9 +637,9 @@ npm run cli -- --host ssh://user@host ls -a
 ```
 
 Set `PASEO_HOST` to use the same target across invocations. An explicit
-selector overrides both environment selectors. With both `PASEO_HOME` and `PASEO_HOST` set, pass an explicit selector. See [CLI target selection](../public-docs/cli.md#select-one-daemon).
+selector overrides both environment selectors. With both `PASEO_HOME` and `PASEO_HOST` set, pass an explicit selector. See [CLI target selection](../../public-docs/cli.md#select-one-daemon).
 
-In an SSH URI, the URL port is the SSH server port. The remote daemon defaults to `127.0.0.1:6767`; use `?daemonPort=7777` to override it. The transport runs non-interactively through the local OpenSSH client and never installs, starts, or configures the remote daemon. User-facing setup and troubleshooting live in [public-docs/connectivity.md](../public-docs/connectivity.md#ssh).
+In an SSH URI, the URL port is the SSH server port. The remote daemon defaults to `127.0.0.1:6767`; use `?daemonPort=7777` to override it. The transport runs non-interactively through the local OpenSSH client and never installs, starts, or configures the remote daemon. User-facing setup and troubleshooting live in [public-docs/connectivity.md](../../public-docs/connectivity.md#ssh).
 
 Desktop integrations can focus an existing agent without creating one or
 sending a message. Use `paseo://h/<server-id>/agent/<agent-id>`, or run

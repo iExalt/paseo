@@ -312,7 +312,7 @@ export function SheetBottomInset({ style, children, ...props }: ViewProps) {
  * Unistyles registers, so a themed inset handed to a third-party scroller such
  * as `BottomSheetScrollView` silently resolves to nothing on web — which is how
  * the compact sheet ended up rendering its cards flush to the screen edges. See
- * docs/unistyles.md "Main Gotcha: contentContainerStyle".
+ * docs/upstream/unistyles.md "Main Gotcha: contentContainerStyle".
  */
 function SheetContent({ style, children }: { style: StyleProp<ViewStyle>; children: ReactNode }) {
   return <View style={[styles.sheetContent, style]}>{children}</View>;
