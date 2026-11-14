@@ -1663,6 +1663,26 @@ async function resolveGitCommonDir(cwd: string, context?: CheckoutContext): Prom
   }
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  return access(path).then(
+    () => true,
+    () => false,
+  );
+}
+
+async function hasGitMergeOrRebaseInProgress(cwd: string): Promise<boolean> {
+  const gitDir = await resolveAbsoluteGitDir(cwd);
+  if (!gitDir) {
+    return false;
+  }
+  for (const marker of ["MERGE_HEAD", "rebase-merge", "rebase-apply"]) {
+    if (await pathExists(resolve(gitDir, marker))) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function abortGitPullConflictState(cwd: string): Promise<void> {
   const gitDir = await resolveAbsoluteGitDir(cwd);
   if (!gitDir) {
@@ -4209,7 +4229,8 @@ async function detectAndThrowMergeToBaseConflict(
       conflicts.length > 0 || /CONFLICT|Automatic merge failed/i.test(errorDetails);
     if (conflictDetected) {
       try {
-        await runGitCommand(["merge", "--abort"], { cwd: operationCwd, timeout: 120_000 });
+        // Not `merge --abort`: a squash conflict has no MERGE_HEAD, and the abort would fail.
+        await runGitCommand(["reset", "--merge"], { cwd: operationCwd, timeout: 120_000 });
       } catch {
         // ignore
       }
@@ -4418,6 +4439,11 @@ export async function pullCurrentBranch(cwd: string, forgeService?: ForgeService
   }
   // Git decides whether there is something to pull from. It does not need origin, and it can
   // pull some branches that have no upstream, as in a single-branch clone.
+  // The failure cleanup below aborts any merge or rebase it finds, so it must only ever see
+  // state this pull created.
+  if (await hasGitMergeOrRebaseInProgress(cwd)) {
+    throw new Error("A merge or rebase is already in progress. Finish or abort it before pulling.");
+  }
   try {
     await runGitCommand(["pull"], { cwd, timeout: 120_000 });
     forgeService?.invalidate({ cwd });
