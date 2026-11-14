@@ -826,6 +826,14 @@ describe("Claude Skill tool call detail", () => {
       skillToolResult("toolu_skill", "triage-bugfix"),
       {
         type: "user",
+        uuid: "wrong-call-body",
+        isSynthetic: true,
+        sourceToolUseID: "toolu_wrong",
+        parent_tool_use_id: null,
+        message: { role: "user", content: [{ type: "text", text: `${SKILL_BODY}\nWrong call.` }] },
+      },
+      {
+        type: "user",
         uuid: "skill-body",
         isSynthetic: true,
         parent_tool_use_id: null,
