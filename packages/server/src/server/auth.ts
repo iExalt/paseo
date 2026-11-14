@@ -28,8 +28,50 @@ export async function isBearerTokenValidAsync(input: BearerValidationInput): Pro
     return false;
   }
 
-  return compare(input.token, input.password);
+  return verifyDaemonPassword(input.token, input.password);
 }
+
+/** Thrown when too many password checks are already running or waiting. */
+export class DaemonPasswordCheckBusyError extends Error {
+  constructor() {
+    super("Too many password checks in progress");
+    this.name = "DaemonPasswordCheckBusyError";
+  }
+}
+
+export interface PasswordCheckLimits {
+  running: number;
+  waiting: number;
+}
+
+/**
+ * Bounds concurrent bcrypt compares. Each one costs about 250 ms of main-thread CPU at cost 12,
+ * so unbounded checks from unauthenticated callers can starve the daemon.
+ */
+export function createPasswordCheckLimiter(
+  limits: PasswordCheckLimits,
+): (password: string, hash: string) => Promise<boolean> {
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  return async (password, hash) => {
+    if (running >= limits.running) {
+      if (waiting.length >= limits.waiting) {
+        throw new DaemonPasswordCheckBusyError();
+      }
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    }
+    running += 1;
+    try {
+      return await compare(password, hash);
+    } finally {
+      running -= 1;
+      waiting.shift()?.();
+    }
+  };
+}
+
+/** The daemon's one password check: HTTP bearer, WebSocket header and hello all share it. */
+export const verifyDaemonPassword = createPasswordCheckLimiter({ running: 2, waiting: 16 });
 
 export function hashDaemonPassword(password: string): string {
   return hashSync(password, DAEMON_PASSWORD_BCRYPT_COST);
@@ -105,6 +147,10 @@ export function createRequireBearerMiddleware(
 
         next();
       } catch (error) {
+        if (error instanceof DaemonPasswordCheckBusyError) {
+          res.status(429).json({ error: "Too many password checks" });
+          return;
+        }
         next(error);
       }
     })();
