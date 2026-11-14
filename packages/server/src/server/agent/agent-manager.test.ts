@@ -21,6 +21,7 @@ import {
   type ManagedAgent,
 } from "./agent-manager.js";
 import { AgentStorage } from "./agent-storage.js";
+import { SpendLedger } from "./spend-ledger.js";
 import { InMemoryAgentTimelineStore } from "./agent-timeline-store.js";
 import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { toAgentPayload } from "./agent-projections.js";
@@ -7196,6 +7197,66 @@ test("applies live autonomous events and preserves usage omitted from completion
   });
   expect(lifecycleUpdates).toContain("running");
   expect(lifecycleUpdates).toContain("idle");
+});
+
+test("keeps the session cost through cost-less usage readings and a resume, and records it as spend", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-session-cost-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  // Started before the agent, as at daemon startup, so its spend is not carried in.
+  const spendLedger = new SpendLedger({ paseoHome: workdir, logger });
+  await spendLedger.initialize();
+  let capturedSession: TestAgentSession | null = null;
+  class CostClient extends TestAgentClient {
+    override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+      capturedSession = new TestAgentSession(config);
+      return capturedSession;
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new CostClient() },
+    registry: storage,
+    spendLedger,
+    logger,
+    idFactory: () => "00000000-0000-4000-8000-000000000139",
+  });
+  try {
+    const snapshot = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    capturedSession!.pushEvent({
+      type: "usage_updated",
+      provider: "codex",
+      usage: { contextWindowUsedTokens: 100, totalCostUsd: 1.5 },
+    });
+    capturedSession!.pushEvent({
+      type: "usage_updated",
+      provider: "codex",
+      usage: { contextWindowUsedTokens: 175 },
+    });
+    await vi.waitFor(() => {
+      expect(manager.getAgent(snapshot.id)?.lastUsage).toEqual({
+        contextWindowUsedTokens: 175,
+        totalCostUsd: 1.5,
+      });
+    });
+    await manager.flush();
+    await manager.closeAgent(snapshot.id);
+    const record = await storage.get(snapshot.id);
+    expect(record?.totalCostUsd).toBe(1.5);
+    expect((await manager.summarizeSpend()).providers).toMatchObject([
+      { provider: "codex", allTimeUsd: 1.5, carriedUsd: 0 },
+    ]);
+
+    const resumed = await manager.resumeAgentFromPersistence(
+      record!.persistence!,
+      { cwd: workdir },
+      snapshot.id,
+    );
+    expect(resumed.lastUsage).toEqual({ totalCostUsd: 1.5 });
+    await manager.closeAgent(resumed.id);
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
 });
 
 test("ignores stale autonomous terminals without lowering the active turn lifecycle", async () => {

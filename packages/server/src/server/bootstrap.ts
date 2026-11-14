@@ -146,6 +146,7 @@ import { createSpeechService } from "./speech/speech-runtime.js";
 import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { SpendLedger } from "./agent/spend-ledger.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import {
   createPaseoToolCatalog,
@@ -962,12 +963,30 @@ export async function createPaseoDaemon(
     if (git) configureGitProcessPolicy(git);
   });
   const initialAgentManagerState = providerSnapshotManager.getAgentManagerProviderState();
+  const spendLedger = new SpendLedger({
+    paseoHome: config.paseoHome,
+    logger,
+    seed: async () =>
+      (await agentStorage.list()).flatMap((record) =>
+        record.totalCostUsd
+          ? [
+              {
+                agentId: record.id,
+                provider: record.provider,
+                usd: record.totalCostUsd,
+                at: record.updatedAt,
+              },
+            ]
+          : [],
+      ),
+  });
   const agentManager = new AgentManager({
     pluginLifecycle: pluginRuntime,
     pluginAgentTools: pluginRuntime,
     clients: initialAgentManagerState.clients,
     providerDefinitions: initialAgentManagerState.providerDefinitions,
     registry: agentStorage,
+    spendLedger,
     paseoHome: config.paseoHome,
     appendSystemPrompt: config.appendSystemPrompt,
     onWorkspaceStateMayHaveChanged: ({ cwd }) => {
@@ -1008,6 +1027,9 @@ export async function createPaseoDaemon(
     report: (agentId, err) => logger.error({ agentId, err }, "Agent restart recovery failed"),
   });
   await restartRecovery.prepareStartup();
+  await spendLedger.initialize().catch((err: unknown) => {
+    logger.warn({ err }, "Failed to load spend ledger");
+  });
   logger.info({ elapsed: elapsed() }, "Agent storage initialized");
   await bootstrapWorkspaceRegistries({
     serverId,
