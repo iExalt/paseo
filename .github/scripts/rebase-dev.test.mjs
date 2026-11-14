@@ -21,6 +21,7 @@ import test from "node:test";
 import { spawnSync } from "node:child_process";
 import {
   assertGitVersion,
+  commitIdentity,
   exportResolutions,
   importResolutions,
   parseDeletionResolutions,
@@ -1268,5 +1269,189 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
     assert.equal(existsSync(invocation), false);
     assert.equal(existsSync(override), true);
     unlinkSync(override);
+  }
+});
+
+test("ledger drops exact stable identities and preserves retained signatures and release mapping", async () => {
+  const fixture = await makeFixture("ledger-drops", { initiallyEmpty: true });
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "dev");
+  const metadata = devMetadata(
+    "Ledger Author",
+    "ledger@example.invalid",
+    "1700000900 +0000",
+    "Clement Liaw",
+    "1700000901 +0000",
+  );
+  writeFileSync(join(seed, "redundant.bin"), Buffer.from([0, 1, 2, 255]));
+  git(seed, "add", "-A");
+  gitWithEnv(seed, metadata, "commit", "-m", "full superseded binary");
+  // User diff configuration must not hide binary data or gitlinks from the identity.
+  writeFileSync(join(seed, ".git/info/attributes"), "*.bin diff=hidebinary\n");
+  git(seed, "config", "diff.hidebinary.textconv", "true");
+  git(seed, "config", "diff.ignoreSubmodules", "all");
+  const originalFull = git(seed, "rev-parse", "HEAD");
+  const fullIdentity = await commitIdentity(seed, originalFull);
+  assert.ok(fullIdentity.patch_id, "binary changes must have an identity despite textconv");
+  git(seed, "config", "--unset", "diff.hidebinary.textconv");
+  assert.deepEqual(await commitIdentity(seed, originalFull), fullIdentity);
+  git(seed, "config", "diff.hidebinary.textconv", "true");
+  // Change parents, as a future rebase does, without changing this patch or its subject.
+  git(seed, "reset", "--hard", "HEAD^");
+  writeFileSync(join(seed, "unmatched.txt"), "new unmatched descendant\n");
+  git(seed, "add", "-A");
+  gitWithEnv(seed, metadata, "commit", "-m", "new unmatched descendant");
+  gitWithEnv(seed, metadata, "cherry-pick", originalFull);
+  const full = git(seed, "rev-parse", "HEAD");
+  assert.notEqual(full, originalFull);
+  assert.deepEqual(await commitIdentity(seed, full), fullIdentity);
+  gitWithEnv(seed, metadata, "commit", "--allow-empty", "-m", "obsolete empty marker");
+  const empty = git(seed, "rev-parse", "HEAD");
+  writeFileSync(join(seed, "kept.txt"), "retained boundary\n");
+  git(seed, "add", "-A");
+  gitWithEnv(seed, metadata, "commit", "-m", "keep boundary\n\nmessage bytes");
+  const kept = git(seed, "rev-parse", "HEAD");
+  git(fixture.remote, "tag", "paseo-v0.1.0", fixture.devSha);
+  git(seed, "tag", "paseo-v0.2.0", kept);
+  const rows = [
+    {
+      sha: originalFull,
+      ...fullIdentity,
+      category: "fully superseded",
+      reason: "Upstream owns this binary.",
+    },
+    {
+      sha: empty,
+      ...(await commitIdentity(seed, empty)),
+      category: "empty/history-only",
+      reason: "Obsolete nonrelease marker.",
+    },
+    {
+      sha: kept,
+      ...(await commitIdentity(seed, kept)),
+      category: "keep",
+      reason: "Release boundary remains.",
+    },
+  ];
+  mkdirSync(join(seed, "docs"), { recursive: true });
+  writeFileSync(
+    join(seed, "docs/upstream-rebase-inventory.json"),
+    JSON.stringify({ version: 2, refs: { target: fixture.upstreamSha }, fork: rows }),
+  );
+  writeFileSync(
+    join(seed, "release-please-config.json"),
+    JSON.stringify({ "last-release-sha": kept }),
+  );
+  git(seed, "add", "-A");
+  gitWithEnv(seed, metadata, "commit", "-m", "chore: capture ledger");
+  git(seed, "push", "origin", "dev", "--tags");
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  git(clone, "config", "rebase.autoSquash", "true");
+  git(clone, "config", "rebase.abbreviateCommands", "true");
+  git(clone, "config", "rebase.instructionFormat", "%h %s");
+  const diagnostics = join(fixture.directory, "diagnostics.txt");
+  const refs = git(clone, "ls-remote", "--refs", "origin");
+  const result = await rebaseDev({
+    repositoryPath: clone,
+    diagnosticsPath: diagnostics,
+    ...signingOptions,
+  });
+  assert.deepEqual(
+    result.drops.map(({ sha, category }) => ({ sha, category })),
+    [
+      { sha: full, category: "fully superseded" },
+      { sha: empty, category: "empty/history-only" },
+    ],
+  );
+  assert.equal(existsSync(join(clone, "redundant.bin")), false);
+  assert.equal(readFileSync(join(clone, "unmatched.txt"), "utf8"), "new unmatched descendant\n");
+  const subjects = git(clone, "log", "--format=%s", `${fixture.upstreamSha}..HEAD`);
+  assert.doesNotMatch(subjects, /full superseded binary|obsolete empty marker/);
+  assert.match(subjects, /originally empty dev commit/);
+  assert.match(subjects, /keep boundary/);
+  const rewritten = git(clone, "log", "--format=%H", "--grep=^keep boundary$", "HEAD");
+  assert.equal(
+    JSON.parse(readFileSync(join(clone, "release-please-config.json")))["last-release-sha"],
+    rewritten,
+  );
+  for (const format of ["%an%n%ae%n%aI", "%B"])
+    assert.equal(
+      git(clone, "show", "-s", `--format=${format}`, rewritten),
+      git(seed, "show", "-s", `--format=${format}`, kept),
+    );
+  assert.match(git(clone, "cat-file", "commit", rewritten), /gpgsig -----BEGIN SSH SIGNATURE-----/);
+  const report = readFileSync(diagnostics, "utf8");
+  assert.match(report, /Upstream owns this binary/);
+  assert.match(report, /Obsolete nonrelease marker/);
+  assert.ok(report.includes(full));
+  assert.equal(git(clone, "ls-remote", "--refs", "origin"), refs);
+});
+
+test("ledger fails closed before replay for partial, mismatched, ambiguous and stale decisions", async () => {
+  const fixture = await makeFixture("ledger-refusals");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "dev");
+  const metadata = devMetadata(
+    "Ledger Author",
+    "ledger@example.invalid",
+    "1700000900 +0000",
+    "Clement Liaw",
+    "1700000901 +0000",
+  );
+  const identity = await commitIdentity(seed, fixture.devSha);
+  const row = {
+    sha: fixture.devSha,
+    ...identity,
+    category: "fully superseded",
+    reason: "Inherited evidence requiring review.",
+  };
+  mkdirSync(join(seed, "docs"), { recursive: true });
+  const cases = [
+    [
+      "partial",
+      [{ ...row, category: "partially superseded" }],
+      fixture.upstreamSha,
+      /review required.*Inherited evidence/,
+    ],
+    ["patch mismatch", [{ ...row, patch_id: "1".repeat(40) }], fixture.upstreamSha, /key mismatch/],
+    [
+      "subject mismatch",
+      [{ ...row, subject: "changed subject" }],
+      fixture.upstreamSha,
+      /key mismatch/,
+    ],
+    ["invalid null patch", [{ ...row, patch_id: null }], fixture.upstreamSha, /key mismatch/],
+    ["duplicate", [row, row], fixture.upstreamSha, /Duplicate.*identity/],
+    ["stale target", [row], fixture.devSha, /target is not incorporated/],
+    ["release boundary", [row], fixture.upstreamSha, /Refusing to drop release boundary/],
+    [
+      "invalid category",
+      [{ ...row, category: "drop-anyway" }],
+      fixture.upstreamSha,
+      /Invalid.*row/,
+    ],
+    ["old schema", [row], fixture.upstreamSha, /Unsupported supersession ledger/],
+  ];
+  for (const [name, fork, target, expected] of cases) {
+    writeFileSync(
+      join(seed, "docs/upstream-rebase-inventory.json"),
+      JSON.stringify({ version: name === "old schema" ? 1 : 2, refs: { target }, fork }),
+    );
+    writeFileSync(
+      join(seed, "release-please-config.json"),
+      JSON.stringify({ "last-release-sha": fixture.devSha }),
+    );
+    git(seed, "add", "-A");
+    gitWithEnv(seed, metadata, "commit", "--allow-empty", "-m", `chore: ledger ${name}`);
+    git(seed, "push", "origin", "dev");
+    const clone = join(fixture.directory, name.replaceAll(" ", "-"));
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    const head = git(clone, "rev-parse", "HEAD");
+    const refs = git(clone, "ls-remote", "--refs", "origin");
+    await assert.rejects(rebaseDev({ repositoryPath: clone, ...signingOptions }), expected, name);
+    assert.equal(git(clone, "rev-parse", "HEAD"), head, name);
+    assert.equal(existsSync(join(clone, ".git/rebase-merge")), false, name);
+    assert.equal(git(clone, "ls-remote", "--refs", "origin"), refs, name);
   }
 });
