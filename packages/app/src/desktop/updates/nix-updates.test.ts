@@ -76,6 +76,10 @@ describe("Nix update phase", () => {
       "ready",
     ],
     [
+      "a release newer than the staged one was published",
+      "available",
+    ],
+    [
       "the app runs an older release than the active one",
       "restart",
     ],
