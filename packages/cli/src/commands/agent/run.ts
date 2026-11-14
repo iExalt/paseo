@@ -1,3 +1,9 @@
+import {
+  mergeAttachments,
+  collectAttachment,
+  prepareAttachments,
+  resolveAttachments,
+} from "../../utils/agent-attachments.js";
 import { prepareAgentFork, validateAgentForkBoundary } from "./fork.js";
 import type { CreateAgentRequestOptions } from "@getpaseo/client/internal/daemon-client";
 import { Command, Option } from "commander";
@@ -29,6 +35,12 @@ export function addRunOptions(cmd: Command): Command {
     cmd
       .description("Create and start an agent with a task")
       .argument("[prompt]", "The task/prompt for the agent")
+      .option(
+        "--attach <kind:value>",
+        "Attach text:<text>, file:<local-path>, github-issue:<url>, or github-pr:<url> (repeatable)",
+        collectAttachment,
+        [],
+      )
       .option("--prompt <text>", "Provide the task/prompt inline as a flag")
       .option("--prompt-file <path>", "Read the task/prompt from a UTF-8 text file (- for stdin)")
       .option("--no-wait", "Return immediately without waiting for completion")
@@ -167,6 +179,7 @@ export interface AgentRunOptions extends CommandOptions {
   forge?: string;
   workspace?: string;
   image?: string[];
+  attach?: string[];
   cwd?: string;
   env?: string[];
   label?: string[];
@@ -845,6 +858,7 @@ export async function runRunCommand(
     promptOption: options.prompt,
     promptFile: options.promptFile,
   });
+  const preparedAttachments = await prepareAttachments(options.attach);
   const outputSchema = options.outputSchema ? loadOutputSchema(options.outputSchema) : undefined;
 
   validateRunOptions(options, outputSchema);
@@ -854,7 +868,7 @@ export async function runRunCommand(
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
-    const attachments = await prepareAgentFork(client, options);
+    const forkAttachments = await prepareAgentFork(client, options);
     const resolvedProviderModel = resolveProviderAndModel(options);
     const resolvedTitle = options.title ?? options.name;
     // Resolve working directory
@@ -895,6 +909,8 @@ export async function runRunCommand(
     );
     const workspaceId = workspace.id;
     const runCwd = workspace.cwd;
+    const explicitAttachments = await resolveAttachments(client, preparedAttachments, runCwd);
+    const attachments = mergeAttachments(explicitAttachments, forkAttachments);
     const runtimeCwd = runtimeCwdRequested ? runCwd : undefined;
 
     if (outputSchema) {

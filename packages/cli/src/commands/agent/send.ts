@@ -1,3 +1,8 @@
+import {
+  collectAttachment,
+  prepareAttachments,
+  resolveAttachments,
+} from "../../utils/agent-attachments.js";
 import { randomUUID } from "node:crypto";
 import { type Command, Option } from "commander";
 import {
@@ -40,6 +45,7 @@ export interface AgentSendOptions extends CommandOptions {
   behavior?: ActiveTurnBehavior;
   wait?: boolean;
   image?: string[];
+  attach?: string[];
   prompt?: string;
   promptFile?: string;
   mode?: string;
@@ -52,6 +58,12 @@ export function addSendOptions(cmd: Command): Command {
     .description("Send a message/task to an existing agent")
     .argument("<id>", "Agent ID, prefix, or full session ID")
     .argument("[prompt]", "The message to send")
+    .option(
+      "--attach <kind:value>",
+      "Attach text:<text>, file:<local-path>, github-issue:<url>, or github-pr:<url> (repeatable)",
+      collectAttachment,
+      [],
+    )
     .option("--prompt <text>", "Provide the message inline as a flag")
     .option("--prompt-file <path>", "Read the message from a UTF-8 text file (- for stdin)")
     .option("--image <path>", "Attach image(s) to the message", collectMultiple, [])
@@ -164,9 +176,11 @@ export async function runSendCommand(
     promptFile: options.promptFile,
   });
 
+  const preparedAttachments = await prepareAttachments(options.attach);
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
+    const attachments = await resolveSendAttachments(client, preparedAttachments, agentIdArg);
     const callerAgentId = await resolveCallerAgentId(client);
     // Read image files if provided
     const images =
@@ -176,6 +190,7 @@ export async function runSendCommand(
     const messageId = randomUUID();
     const dispatch = await client.sendAgentMessage(agentIdArg, promptInput, {
       images,
+      attachments,
       sourceAgentId: callerAgentId,
       messageId,
       activeTurnBehavior: options.behavior ?? options.ifRunning ?? DEFAULT_AGENT_SEND_BEHAVIOR,
@@ -230,4 +245,17 @@ export async function runSendCommand(
     };
     throw error;
   }
+}
+
+async function resolveSendAttachments(
+  client: Awaited<ReturnType<typeof connectToDaemon>>,
+  prepared: Awaited<ReturnType<typeof prepareAttachments>>,
+  agentId: string,
+) {
+  if (!prepared.length) return undefined;
+  if (prepared.every((attachment) => attachment.kind === "text"))
+    return resolveAttachments(client, prepared, "");
+  const target = await client.fetchAgent({ agentId });
+  if (!target) throw new Error(`No agent found matching: ${agentId}`);
+  return resolveAttachments(client, prepared, target.agent.cwd);
 }
