@@ -16,6 +16,7 @@ import { Pressable, Text, View, type LayoutChangeEvent, type ScrollView } from "
 import { useFilePanelOpenWithMenu } from "@/file-panels";
 import {
   CopyX,
+  Search,
   ArrowLeftToLine,
   ArrowRightToLine,
   Copy,
@@ -134,6 +135,7 @@ const ThemedRotateCw = withUnistyles(RotateCw);
 const ThemedArrowLeftToLine = withUnistyles(ArrowLeftToLine);
 const ThemedArrowRightToLine = withUnistyles(ArrowRightToLine);
 const ThemedCopyX = withUnistyles(CopyX);
+const ThemedSearch = withUnistyles(Search);
 const ThemedPencil = withUnistyles(Pencil);
 const ThemedPlus = withUnistyles(Plus);
 const ThemedColumns2 = withUnistyles(Columns2);
@@ -441,6 +443,8 @@ function TabContextMenuItem({
         return <ThemedPencil size={16} uniProps={mutedColorMapping} />;
       case "x":
         return <ThemedX size={16} uniProps={mutedColorMapping} />;
+      case "search":
+        return <ThemedSearch size={16} uniProps={mutedColorMapping} />;
       default:
         return undefined;
     }
