@@ -10,7 +10,10 @@ const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
 const withAndroidHardwareKeyboard = require("./modules/paseo-hardware-keyboard/app.plugin");
 const { getNativeReleaseVersion } = require("./native-release-version");
+const { resolveAppVariant, resolvePreferencesMigrationBridge } = require("./app-variant");
+const { withForkBuild, assertForkBuildPlatform } = require("./plugins/with-fork-build");
 const appVariant = process.env.APP_VARIANT ?? "production";
+assertForkBuildPlatform(appVariant, process.env.EAS_BUILD_PLATFORM);
 const isFdroidBuild = process.env.PASEO_FDROID_BUILD === "1";
 const isWatchdogBuild = process.env.PASEO_WATCHDOG_BUILD === "1";
 const isProfileBuild = process.env.PASEO_PROFILE_BUILD === "1";
@@ -105,6 +108,7 @@ const variantIdentity = resolveAppVariant(
 );
 const variant =
   appVariant === "fork"
+    ? { googleServicesFile: process.env.GOOGLE_SERVICES_FILE_FORK?.trim() }
     : (firebaseVariants[appVariant] ?? firebaseVariants.production);
 
 export default {
@@ -117,6 +121,7 @@ export default {
     scheme: "paseo",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
+    ...(appVariant === "fork" ? { platforms: ["android"] } : {}),
     ios: {
       supportsTablet: true,
       infoPlist: {
@@ -158,6 +163,7 @@ export default {
       searchPaths: ["../../node_modules", "./node_modules"],
     },
     plugins: [
+      ...(appVariant === "fork" ? [withForkBuild] : []),
       withAndroidGradle,
       "expo-router",
       withPasteInput,
