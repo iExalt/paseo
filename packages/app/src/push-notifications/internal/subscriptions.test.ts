@@ -13,6 +13,11 @@ vi.mock("expo-notifications", () => ({
   PermissionStatus: { GRANTED: "granted", DENIED: "denied", UNDETERMINED: "undetermined" },
   AndroidImportance: { DEFAULT: 3 },
 }));
+vi.mock("../background-lifecycle.native", () => ({
+  prepareLifecycle: vi.fn(async () => undefined),
+  removeLifecycleHost: vi.fn(async () => undefined),
+  watchLifecycle: vi.fn(() => () => undefined),
+}));
 vi.mock("expo-constants", () => ({ default: { easConfig: { projectId: "project" } } }));
 const appStateListeners = vi.hoisted(() => new Set<(state: string) => void>());
 vi.mock("react-native", () => ({
@@ -33,12 +38,14 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 
 import { reregisterPushToken, usePushRegistrationStore } from "../registration";
+import { prepareLifecycle, watchLifecycle } from "../background-lifecycle.native";
 import { startSubscription } from "./subscriptions";
 
 function fakeClient(connected: boolean) {
   const listeners = new Set<(state: { status: string }) => void>();
   const client = {
     isConnected: connected,
+    getLastServerInfoMessage: () => ({ features: {} }),
     registerPushToken: vi.fn(),
     subscribeConnectionStatus: (listener: (state: { status: string }) => void) => {
       listeners.add(listener);
@@ -153,6 +160,26 @@ describe("push subscription registration status", () => {
     reregisterPushToken("host");
     await settle();
     expect(usePushRegistrationStore.getState().host).toBe("sent");
+  });
+
+  it("negotiates managed delivery when a cold disconnected subscription later connects", async () => {
+    const client = fakeClient(false);
+    vi.spyOn(client, "getLastServerInfoMessage").mockReturnValue({
+      features: { androidNotificationLifecycle: true },
+    });
+    vi.mocked(prepareLifecycle).mockResolvedValue("11111111-1111-4111-8111-111111111111");
+    const stop = startSubscription({ client: client as never, serverId: "reconnect" });
+    await settle();
+    expect(client.registerPushToken).not.toHaveBeenCalled();
+    client.setConnected(true);
+    await settle();
+    expect(client.registerPushToken).toHaveBeenCalledWith(
+      "ExponentPushToken[a]",
+      "11111111-1111-4111-8111-111111111111",
+    );
+    expect(watchLifecycle).toHaveBeenCalled();
+    stop();
+    vi.mocked(prepareLifecycle).mockResolvedValue(undefined);
   });
 });
 

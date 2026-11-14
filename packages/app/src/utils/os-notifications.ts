@@ -2,6 +2,7 @@ import { Asset } from "expo-asset";
 import { getDesktopHost } from "@/desktop/host";
 import { parseNotificationOpenTarget, WEB_NOTIFICATION_CLICK_EVENT } from "@/notification-open";
 import { isNative } from "@/constants/platform";
+import { getAppOsNotificationSends } from "@/notification-dismissal";
 
 interface OsNotificationPayload {
   title: string;
@@ -14,7 +15,8 @@ export interface WebNotificationClickDetail {
 }
 
 interface WebNotificationInstance {
-  addEventListener: (type: "click", listener: (event: Event) => void) => void;
+  addEventListener: (type: "click" | "close", listener: (event: Event) => void) => void;
+  close: () => void;
 }
 
 let permissionRequest: Promise<boolean> | null = null;
@@ -46,6 +48,8 @@ function getWebNotificationConstructor(): {
       body?: string;
       data?: Record<string, unknown>;
       icon?: string;
+      tag?: string;
+      renotify?: boolean;
     },
   ): unknown;
 } | null {
@@ -56,7 +60,13 @@ function getWebNotificationConstructor(): {
         requestPermission?: () => Promise<string>;
         new (
           title: string,
-          options?: { body?: string; data?: Record<string, unknown>; icon?: string },
+          options?: {
+            body?: string;
+            data?: Record<string, unknown>;
+            icon?: string;
+            tag?: string;
+            renotify?: boolean;
+          },
         ): unknown;
       };
     }
@@ -149,24 +159,42 @@ export async function sendOsNotification(payload: OsNotificationPayload): Promis
 
   const desktopNotificationSender = getDesktopNotificationSender();
   if (desktopNotificationSender) {
-    return await desktopNotificationSender(payload);
+    return await getAppOsNotificationSends().sendDesktop(desktopNotificationSender, payload);
   }
 
   const NotificationConstructor = getWebNotificationConstructor();
   if (NotificationConstructor) {
+    const send = getAppOsNotificationSends().beginWeb(payload.data);
     const granted = await ensureNotificationPermission();
-    if (granted) {
+    // A tracked send can lose its slot or its thread while the prompt is open.
+    const outcome = send
+      ? send.afterPermission(granted)
+      : ({ show: granted, result: false } as const);
+    if (outcome.show) {
       const notification = new NotificationConstructor(payload.title, {
         body: payload.body,
         data: payload.data,
         icon: getWebNotificationIconUrl(),
+        ...send?.options,
       }) as WebNotificationInstance;
+      send?.shown(notification);
       if (hasNotificationClickTarget(payload.data)) {
         attachWebClickHandler(notification, payload.data);
       }
       return true;
     }
+    return outcome.result;
   }
 
   return false;
+}
+
+/**
+ * Tracks desktop notifications this renderer did not send, so those resolved meanwhile go
+ * away. Call at startup.
+ */
+export async function adoptDeliveredOsNotifications(): Promise<void> {
+  const getDelivered = getDesktopHost()?.notification?.getDeliveredNotifications;
+  if (typeof getDelivered !== "function") return;
+  getAppOsNotificationSends().adoptDelivered(await getDelivered().catch(() => []));
 }
