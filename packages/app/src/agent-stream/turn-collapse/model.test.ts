@@ -209,6 +209,7 @@ describe("collapseTurns", () => {
       timestamp: at,
       expanded: false,
       tools: expect.objectContaining({ commandCount: 2 }),
+      messageCount: 1,
     });
     expect(result.summaryRowsByHostId.get("u1")).toBe(result.tail[1]);
     expect(result.hostIdByFoldedMessageId.get("early")).toBe("u1");
