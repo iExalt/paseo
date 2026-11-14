@@ -5488,13 +5488,18 @@ class ClaudeAgentSession implements AgentSession {
           })?.detail
         : undefined;
 
+    // Claude's safety checks still ask in bypassPermissions mode; decisionReason
+    // says which one fired, so the card can explain the unexpected prompt.
+    const summary = buildClaudeQuestionPermissionSummary(toolName, input);
+    const decisionReason = readNonEmptyString(stripAnsi(options.decisionReason ?? ""))?.trim();
+
     const request: AgentPermissionRequest = {
       id: requestId,
       provider: "claude",
       name: toolName,
       kind,
-      description: readNonEmptyString(stripAnsi(options.decisionReason ?? ""))?.trim(),
-      ...buildClaudeQuestionPermissionSummary(toolName, input),
+      ...summary,
+      ...(!summary.description && decisionReason ? { description: decisionReason } : {}),
       input: requestInput,
       detail: toolDetail,
       suggestions: options.suggestions?.map((suggestion) => ({
