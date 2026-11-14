@@ -276,6 +276,7 @@ describe("run feature values", () => {
           {
             provider: "codex/gpt-5.4",
             feature: ["fast_mode=true", "service_tier=flex"],
+            attach: ["text:standard,context"],
             wait: false,
             daemonTarget,
           },
@@ -285,6 +286,7 @@ describe("run feature values", () => {
       expect(createAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           featureValues: { fast_mode: true, service_tier: "flex" },
+          attachments: [{ type: "text", mimeType: "text/plain", text: "standard,context" }],
         }),
       );
     } finally {
@@ -306,7 +308,7 @@ describe("structured run output", () => {
     vi.unstubAllEnvs();
   });
 
-  function fixture(response: string, fork = false) {
+  function fixture(response: string, fork = false, attach: string[] = []) {
     const client = new DaemonClient({
       url: "ws://daemon.test",
       clientId: "cli-structured-run-test",
@@ -353,6 +355,7 @@ describe("structured run output", () => {
         "Answer the question",
         {
           provider: "codex",
+          attach,
           forkSource: fork ? { agentId: "parent-agent" } : undefined,
           daemonTarget,
           outputSchema: JSON.stringify({
@@ -379,12 +382,13 @@ describe("structured run output", () => {
   });
 
   it("forwards fork history through structured agent creation", async () => {
-    const context = fixture('{"answer":"ready"}', true);
+    const context = fixture('{"answer":"ready"}', true, ["text:extra,context"]);
     await context.run();
     expect(context.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         attachments: [
           expect.objectContaining({ contextKind: "chat_history", text: "prior history" }),
+          { type: "text", mimeType: "text/plain", text: "extra,context" },
         ],
       }),
     );
@@ -610,3 +614,24 @@ it.each(["", "  "])(
     ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
   },
 );
+
+it("rejects missing and oversized local attachments before connecting or creating a workspace", async () => {
+  const { mkdtemp, truncate, writeFile, rm } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const directory = await mkdtemp(join(tmpdir(), "cli-run-attachment-"));
+  try {
+    const oversized = join(directory, "large.txt");
+    await writeFile(oversized, "");
+    await truncate(oversized, 50 * 1024 * 1024 + 1);
+    vi.mocked(connectToDaemon).mockClear();
+    for (const file of [join(directory, "missing.txt"), oversized]) {
+      await expect(
+        runRunCommand("read", { provider: "codex", attach: [`file:${file}`] }, new Command()),
+      ).rejects.toThrow();
+      expect(connectToDaemon).not.toHaveBeenCalled();
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
