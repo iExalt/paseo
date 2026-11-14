@@ -1,5 +1,6 @@
 import { createServer, type Server } from "node:http";
 import { expect, test, type Page, type TestInfo } from "@playwright/test";
+import { getE2EWebBaseURL } from "../support/web-url";
 
 let server: Server;
 let appUrl: string;
@@ -9,7 +10,10 @@ test.beforeAll(async () => {
   test.setTimeout(120_000);
   const metroPort = process.env.E2E_METRO_PORT;
   if (!metroPort) throw new Error("E2E_METRO_PORT is required");
-  const bundle = `http://localhost:${metroPort}/packages/app/e2e/support/recovery-app.bundle?platform=web&dev=true&minify=false&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=src%2Fapp`;
+  const bundle = new URL(
+    "/packages/app/e2e/support/recovery-app.bundle?platform=web&dev=true&minify=false&hot=false&lazy=true&transform.engine=hermes&transform.routerRoot=src%2Fapp",
+    getE2EWebBaseURL(Number(metroPort)),
+  ).toString();
   const compiled = await fetch(bundle, { signal: AbortSignal.timeout(120_000) });
   if (!compiled.ok) throw new Error(`Recovery fixture compilation failed: HTTP ${compiled.status}`);
   await compiled.arrayBuffer();
