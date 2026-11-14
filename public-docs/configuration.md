@@ -253,6 +253,23 @@ Set the persisted value in `config.json`:
 
 `PASEO_RELAY_ENABLED=true|false` overrides the file for a foreground deployment. Managed `start` uses the file. End and relaunch a deployment to remove its override before changing relay from the app or `paseo daemon pair --relay`.
 
+### Keep a Mac awake for the relay
+
+A sleeping Mac pauses the daemon, so relay clients can't reach it. Even with the lid closed on AC power, macOS keeps waking briefly and napping again. Set `daemon.relay.keepAwake` to `true` to have the daemon hold a sleep assertion (`caffeinate -s`) while the relay is enabled:
+
+```json
+{
+  "daemon": {
+    "relay": {
+      "enabled": true,
+      "keepAwake": true
+    }
+  }
+}
+```
+
+It defaults to `false`. With it on, a lid-closed Mac on AC stays in dark wake instead of napping, so the relay stays connected. The assertion only applies on AC power and ends when the daemon exits or you turn off the relay or the setting. `daemon.log` records `power_assertion_acquired` and `power_assertion_released`. Other platforms ignore the setting.
+
 ## Common env vars
 
 - `PASEO_HOME`, set Paseo home directory
