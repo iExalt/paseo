@@ -71,6 +71,7 @@ export function ensureAgentIsInitialized(input: EnsureAgentIsInitializedInput): 
   }
 
   input.runtime.fetchAgentTimeline(serverId, agentId, timelineRequest).catch((error) => {
+    if (getInitDeferred(key) !== deferred) return;
     setAgentInitializing(agentId, false);
     rejectInitDeferred(key, error instanceof Error ? error : new Error(String(error)));
   });
@@ -93,12 +94,14 @@ export async function refreshAgent(input: RefreshAgentInput): Promise<void> {
     throw new Error(input.hostDisconnectedMessage ?? i18n.t("workspace.terminal.hostDisconnected"));
   }
   setAgentInitializing(agentId, true);
+  const key = getInitKey(serverId, agentId);
+  const deferred = getInitDeferred(key);
 
   try {
     await client.refreshAgent(agentId);
     await runtime.fetchAgentTimeline(serverId, agentId, planTimelineTailFetch());
   } catch (error) {
-    setAgentInitializing(agentId, false);
+    if (getInitDeferred(key) === deferred) setAgentInitializing(agentId, false);
     throw error;
   }
 }
