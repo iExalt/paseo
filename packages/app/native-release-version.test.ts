@@ -62,6 +62,7 @@ describe("native release version", () => {
     expect(() => getForkAndroidVersionCode("0.1.0", "200008")).toThrow("semver encoding");
   });
 
+  it("resolves fork Android identity without inheriting the production iOS identity", () => {
     expect(resolveAppVariant("fork", 1000, "0.1.0", "201000")).toEqual({
       name: "Paseo iExalt",
       androidPackage: "sh.paseo.iexalt",

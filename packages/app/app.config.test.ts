@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Load the copies the Expo CLI uses for prebuild, not older hoisted ones.
 const requireFromExpo = createRequire(require.resolve("expo/package.json"));
@@ -166,4 +166,176 @@ describe("withAndroidGradle", () => {
   it("rejects a template without a distribution URL", () => {
     expect(() => configureGradleWrapper("networkTimeout=10000\n")).toThrow("distribution URL");
   });
+});
+
+const { getConfig } = requireFromExpoCli("@expo/config");
+const { AndroidConfig } = requireFromExpo("expo/config-plugins");
+const { withForkBuild } = require("./plugins/with-fork-build");
+
+const forkFirebaseConfig = {
+  project_info: { project_id: "fork-fixture" },
+  client: [{ client_info: { android_client_info: { package_name: "sh.paseo.iexalt" } } }],
+};
+
+describe("fork build platform boundary", () => {
+  beforeEach(() => {
+    // Expo caches static app.config exports; re-evaluate for each environment fixture.
+    delete require.cache[require.resolve("./app.config.js")];
+    vi.stubEnv("APP_VARIANT", "fork");
+    vi.stubEnv("EAS_BUILD_PLATFORM", undefined);
+    vi.stubEnv("GOOGLE_SERVICES_FILE_FORK", undefined);
+    vi.stubEnv("FIREBASE_PROJECT_ID_FORK", undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    delete require.cache[require.resolve("./app.config.js")];
+  });
+
+  it.each([undefined, "/missing/android-firebase.json"])(
+    "rejects an EAS iOS fork build before reading Android credentials (%s)",
+    (androidFile) => {
+      vi.stubEnv("EAS_BUILD_PLATFORM", "ios");
+      vi.stubEnv("GOOGLE_SERVICES_FILE_FORK", androidFile);
+      expect(() => getConfig(__dirname)).toThrow("Fork iOS builds are not supported");
+    },
+  );
+
+  it.each([undefined, "/missing/android-firebase.json"])(
+    "rejects local iOS mods without demanding Android credentials (%s)",
+    async (androidFile) => {
+      vi.stubEnv("GOOGLE_SERVICES_FILE_FORK", androidFile);
+      const { exp } = await getPrebuildConfigAsync(__dirname, { platforms: ["ios"] });
+      await expect(
+        compileModsAsync(exp, {
+          projectRoot: __dirname,
+          introspect: true,
+          platforms: ["ios"],
+          assertMissingModProviders: false,
+        }),
+      ).rejects.toThrow("Fork iOS builds are not supported");
+    },
+    30_000,
+  );
+
+  it("rejects the maintained iOS release command before building dependencies or opening Expo", async () => {
+    const { spawnSync } = await import("node:child_process");
+    const npmCli = process.env.npm_execpath;
+    if (!npmCli) {
+      throw new Error("Run the config tests through npm or npx to provide npm_execpath.");
+    }
+    const result = spawnSync(process.execPath, [npmCli, "run", "ios:release", "--silent"], {
+      cwd: __dirname,
+      env: { ...process.env, APP_VARIANT: "fork" },
+      encoding: "utf8",
+      timeout: 10_000,
+    });
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    const output = result.stdout + result.stderr;
+    expect(output).toContain("Fork iOS builds are not supported");
+    expect(output).not.toContain("build:client");
+    expect(output).not.toContain("expo run:ios");
+  });
+
+  it("does not advertise an iOS identity or require credentials for generic fork config", () => {
+    const { exp } = getConfig(__dirname);
+    expect(exp.platforms).toEqual(["android"]);
+    expect(exp.ios?.bundleIdentifier).toBeUndefined();
+    expect(exp.android.package).toBe("sh.paseo.iexalt");
+    expect(exp.extra.forkUpdatesEnabled).toBe(true);
+  });
+
+  it.each([
+    ["production", "sh.paseo", "GOOGLE_SERVICE_INFO_PLIST_PROD"],
+    ["development", "sh.paseo.debug", "GOOGLE_SERVICE_INFO_PLIST_DEBUG"],
+  ])("preserves %s iOS identity and plist configuration", (variant, identifier, plistEnv) => {
+    vi.stubEnv("APP_VARIANT", variant);
+    vi.stubEnv("EAS_BUILD_PLATFORM", "ios");
+    vi.stubEnv(plistEnv, "/fixture/GoogleService-Info.plist");
+    const { exp } = getConfig(__dirname);
+    expect(exp.ios.bundleIdentifier).toBe(identifier);
+    expect(exp.ios.googleServicesFile).toBe("/fixture/GoogleService-Info.plist");
+  });
+
+  it.each([
+    [undefined, undefined, undefined, "absolute decrypted JSON path"],
+    ["relative.json", "fork-fixture", undefined, "absolute decrypted JSON path"],
+    ["/missing/fork-firebase.json", "fork-fixture", undefined, "readable Firebase Android JSON"],
+    ["fixture", undefined, "{}", "FIREBASE_PROJECT_ID_FORK"],
+    ["fixture", "fork-fixture", "not-json", "readable Firebase Android JSON"],
+    ["fixture", "wrong-project", JSON.stringify(forkFirebaseConfig), "expected project"],
+    [
+      "fixture",
+      "fork-fixture",
+      JSON.stringify({ ...forkFirebaseConfig, client: [] }),
+      "sh.paseo.iexalt",
+    ],
+  ])(
+    "rejects invalid fork Android credentials at Android generation (%s, %s)",
+    async (androidFile, projectId, contents, message) => {
+      const { mkdtemp, rm, writeFile } = await import("node:fs/promises");
+      const { tmpdir } = await import("node:os");
+      const { join } = await import("node:path");
+      const root = await mkdtemp(join(tmpdir(), "paseo-fork-config-"));
+      try {
+        const file = join(root, "google-services.json");
+        if (contents !== undefined) await writeFile(file, contents);
+        vi.stubEnv("GOOGLE_SERVICES_FILE_FORK", androidFile === "fixture" ? file : androidFile);
+        vi.stubEnv("FIREBASE_PROJECT_ID_FORK", projectId);
+        await expect(resolveAndroidManifest()).rejects.toThrow(message);
+      } finally {
+        await rm(root, { recursive: true, force: true });
+      }
+    },
+    30_000,
+  );
+
+  it("validates the exact configured Android file that Expo copies during ordinary mods", async () => {
+    const { mkdir, mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const root = await mkdtemp(join(tmpdir(), "paseo-fork-android-mods-"));
+    try {
+      const file = join(root, "fork-firebase.json");
+      const manifestDir = join(root, "android/app/src/main");
+      const manifestFile = join(manifestDir, "AndroidManifest.xml");
+      await mkdir(manifestDir, { recursive: true });
+      await writeFile(file, JSON.stringify(forkFirebaseConfig));
+      await writeFile(
+        manifestFile,
+        '<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="sh.paseo.iexalt"><application /></manifest>',
+      );
+      vi.stubEnv("GOOGLE_SERVICES_FILE_FORK", file);
+      vi.stubEnv("FIREBASE_PROJECT_ID_FORK", "fork-fixture");
+      const { exp } = getConfig(__dirname, { skipPlugins: true });
+      vi.stubEnv("GOOGLE_SERVICES_FILE_FORK", "/missing/unused-environment-file.json");
+      // Isolate the shipped fork guard and Expo's real file-copy mod from unrelated native plugins.
+      const config = AndroidConfig.GoogleServices.withGoogleServicesFile(withForkBuild(exp));
+      await compileModsAsync(config, {
+        projectRoot: root,
+        platforms: ["android"],
+      });
+      expect(
+        JSON.parse(await readFile(join(root, "android/app/google-services.json"), "utf8")),
+      ).toEqual(forkFirebaseConfig);
+      expect(await readFile(manifestFile, "utf8")).toContain("sh.paseo.iexalt");
+
+      const invalidFile = join(root, "invalid-firebase.json");
+      await writeFile(invalidFile, JSON.stringify({ ...forkFirebaseConfig, client: [] }));
+      vi.stubEnv("GOOGLE_SERVICES_FILE_FORK", file);
+      const next = AndroidConfig.GoogleServices.withGoogleServicesFile(
+        withForkBuild({
+          ...exp,
+          android: { ...exp.android, googleServicesFile: invalidFile },
+          mods: {},
+        }),
+      );
+      await expect(
+        compileModsAsync(next, { projectRoot: root, platforms: ["android"] }),
+      ).rejects.toThrow("sh.paseo.iexalt");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
