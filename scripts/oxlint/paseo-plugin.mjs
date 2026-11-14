@@ -154,9 +154,32 @@ const noSyncIo = {
   },
 };
 
+// React Compiler treats a ref as non-reactive, so it memoizes a literal that calls
+// useRef inline and skips the hook on later renders. The next hook then reads the
+// wrong slot and React throws "Should have a queue" (the web Markdown preview did).
+const noInlineUseRef = {
+  meta: { type: "problem", schema: [] },
+  create(context) {
+    return {
+      CallExpression(node) {
+        if (node.callee.type !== "Identifier" || node.callee.name !== "useRef") return;
+        let owner = node.parent;
+        if (owner?.type === "MemberExpression" && owner.object === node) owner = owner.parent;
+        if (owner?.type === "VariableDeclarator" && owner.init !== null) return;
+        context.report({
+          node,
+          message:
+            "Assign useRef to a variable first. React Compiler memoizes a literal that calls it inline and skips the hook on later renders.",
+        });
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "paseo" },
   rules: {
+    "no-inline-use-ref": noInlineUseRef,
     "no-raw-pressable": noRawPressable,
     "no-sync-io": noSyncIo,
   },
