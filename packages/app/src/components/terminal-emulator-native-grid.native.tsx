@@ -29,6 +29,7 @@ import {
   createNativeTerminalOutputDrain,
   type NativeTerminalOutputDrain,
 } from "../terminal/native-renderer/headless-terminal-output-drain";
+import { traceTerminalLatency } from "../terminal/native-renderer/terminal-input-trace";
 import { TerminalGridView } from "../terminal/native-renderer/terminal-grid-view.native";
 import type { TerminalGridCellMetrics } from "../terminal/native-renderer/terminal-grid-metrics";
 import {
@@ -58,7 +59,7 @@ import {
 import { resolveNativeTerminalMountAction } from "../terminal/native-renderer/terminal-mount-policy";
 import {
   forwardNativeTerminalKey,
-  type NativeTerminalKey,
+  type NativeTerminalKeyEvent,
 } from "../terminal/native-renderer/terminal-key-events";
 import {
   TerminalInput,
@@ -394,7 +395,11 @@ function NativeTerminalEmulator({
           syncSelectionWithTerminal(terminal);
           return screen.viewport;
         },
+        onParse: (sample) => {
+          traceTerminalLatency("parsed", sample.parsedChars);
+        },
         onPaint: () => {
+          traceTerminalLatency("paint", 0);
           const screen = latestResolvedScreenRef.current;
           if (screen) {
             commitTerminalScreen(screen);
@@ -509,6 +514,7 @@ function NativeTerminalEmulator({
       if (text.length === 0) {
         return;
       }
+      traceTerminalLatency("recv", text.length);
       const inputModeUpdate = inputModeTrackerRef.current.feed(text);
       if (inputModeUpdate.changed) {
         emitInputModeChange();
@@ -516,6 +522,8 @@ function NativeTerminalEmulator({
       outputDrainRef.current?.enqueueText(text);
     },
     [emitInputModeChange],
+  );
+
   // Shows a find result: centres the current match in the rows above the find bar and
   // reports the position the bar displays.
   const showFindState = useCallback(
@@ -716,15 +724,17 @@ function NativeTerminalEmulator({
   const handleTerminalInput = useCallback(
     (data: string) => {
       claimActiveTerminalSizeForAction("text");
+      traceTerminalLatency("send", data.length);
       callbacksRef.current.onInput?.(data);
     },
     [claimActiveTerminalSizeForAction],
   );
 
   const handleNativeTerminalKey = useCallback(
-    (key: NativeTerminalKey) => {
+    (event: NativeTerminalKeyEvent) => {
       claimActiveTerminalSizeForAction("key");
-      forwardNativeTerminalKey({ key, onTerminalKey: callbacksRef.current.onTerminalKey });
+      traceTerminalLatency("send", 0);
+      forwardNativeTerminalKey({ event, onTerminalKey: callbacksRef.current.onTerminalKey });
     },
     [claimActiveTerminalSizeForAction],
   );
