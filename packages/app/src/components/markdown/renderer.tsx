@@ -1,5 +1,5 @@
+import { memo, useMemo } from "react";
 import { View } from "react-native";
-import { memo, useMemo, useState } from "react";
 import { EnrichedMarkdownText, type LinkPressEvent } from "react-native-enriched-markdown";
 import { withUnistyles } from "react-native-unistyles";
 import {
@@ -8,7 +8,7 @@ import {
 } from "@/assistant-file-links";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useChatFindAnchorView } from "@/agent-stream/chat-find/anchor";
-import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
+import { useAttachmentLightbox } from "@/components/attachment-lightbox-context";
 import type { Theme } from "@/styles/theme";
 import { isWeb } from "@/constants/platform";
 import { density, resolveDensity } from "@/styles/density";
@@ -118,22 +118,26 @@ const MarkdownPart = memo(function MarkdownPart({
     (environment.client?.readFile
       ? { readFile: environment.client.readFile.bind(environment.client) }
       : undefined);
-  const { markdown, imageSources, linkRecognition, linkSource } = useMarkdownSource(text, {
-    workspaceRoot: environment.workspaceRoot,
-    serverId: environment.serverId,
-    ...imageContext,
-    client,
-  });
-  const [image, setImage] = useState<ImageLightboxSource | null>(null);
+  const { markdown, imageSources, imageAttachments, linkRecognition, linkSource } =
+    useMarkdownSource(text, {
+      workspaceRoot: environment.workspaceRoot,
+      serverId: environment.serverId,
+      ...imageContext,
+      client,
+    });
+  const { open: openLightbox, localLightbox } = useAttachmentLightbox();
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
     const source = linkSource(url, sourceType);
     if (onLinkPress && !actions.canResolveFile(source)) onLinkPress(url);
     else actions.open(source, "preferred");
   });
   const pressImage = useStableEvent(({ url }: { url: string }) => {
-    if (url !== PENDING_MARKDOWN_IMAGE) setImage({ type: "uri", uri: url });
+    if (url === PENDING_MARKDOWN_IMAGE) return;
+    const attachment = imageAttachments[url];
+    openLightbox(
+      attachment ? { type: "attachment", metadata: attachment } : { type: "uri", uri: url },
+    );
   });
-  const closeImage = useStableEvent(() => setImage(null));
   const segments = useMemo(
     () =>
       isWeb ? [{ kind: "markdown", id: "0", source: markdown }] : splitMermaidFences(markdown),
@@ -166,7 +170,7 @@ const MarkdownPart = memo(function MarkdownPart({
           ),
         )}
       </MarkdownBlockStack>
-      {image ? <AttachmentLightbox source={image} onClose={closeImage} /> : null}
+      {localLightbox}
     </MermaidStreamingContext.Provider>
   );
 });

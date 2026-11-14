@@ -7,6 +7,7 @@ import {
   isPointInsideTransformedContent,
   panContent,
   zoomContentAtPoint,
+  wheelPanDelta,
 } from "./geometry";
 
 const viewport = { width: 800, height: 600 };
@@ -34,6 +35,39 @@ describe("zoomable viewport geometry", () => {
         maxHeight: 500,
       }),
     ).toEqual({ width: 600, height: 300 });
+  });
+
+  it("keeps images at original size when they fit while preserving diagram upscaling", () => {
+    const image = { width: 320, height: 200 };
+    expect(fitContentSize(image, viewport, { allowUpscale: false })).toEqual(image);
+    expect(fitContentSize(image, viewport)).toEqual({ width: 800, height: 500 });
+  });
+
+  it.each([
+    [
+      { width: 1200, height: 800 },
+      { width: 1440, height: 1000 },
+      { width: 1200, height: 800 },
+    ],
+    [
+      { width: 2400, height: 1200 },
+      { width: 1440, height: 900 },
+      { width: 1408, height: 704 },
+    ],
+    [
+      { width: 1200, height: 2400 },
+      { width: 375, height: 812 },
+      { width: 343, height: 686 },
+    ],
+    [
+      { width: 1200, height: 2400 },
+      { width: 1440, height: 900 },
+      { width: 434, height: 868 },
+    ],
+  ])("fits image %j to screen %j without fixed presentation caps", (image, screen, expected) => {
+    const fitted = fitContentSize(image, screen, { padding: 16, allowUpscale: false });
+    expect(fitted.width).toBeCloseTo(expected.width);
+    expect(fitted.height).toBeCloseTo(expected.height);
   });
 
   it("distinguishes backdrop taps from taps on transformed content", () => {
@@ -95,6 +129,14 @@ describe("zoomable viewport geometry", () => {
         limits: { minScale: 1, maxScale: 8 },
       }),
     ).toEqual({ scale: 2, x: 400, y: -100 });
+  });
+
+  it.each([
+    [0, { x: -2, y: 3 }],
+    [1, { x: -32, y: 48 }],
+    [2, { x: -1600, y: 1800 }],
+  ])("converts wheel delta mode %i to viewport panning pixels", (deltaMode, expected) => {
+    expect(wheelPanDelta({ deltaX: 2, deltaY: -3, deltaMode }, viewport)).toEqual(expected);
   });
 
   it("allows Mermaid consumers to zoom below fit without inventing translation", () => {
