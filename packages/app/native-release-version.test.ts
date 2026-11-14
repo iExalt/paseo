@@ -5,7 +5,9 @@ const {
   getForkAndroidVersionCode,
   getFdroidVersionCodes,
   getNativeReleaseVersion,
+  getRequiredAndroidVersionCode,
 } = require("./native-release-version");
+const { resolveAppVariant, validateForkGoogleServicesConfig } = require("./app-variant");
 
 describe("native release version", () => {
   it("reserves the final iOS build slot for a stable release", () => {
@@ -44,10 +46,60 @@ describe("native release version", () => {
       { abi: "x86_64", versionCode: 50004 },
     ]);
   });
+
+  it("requires a canonical positive Android version code within the platform limit", () => {
+    expect(getRequiredAndroidVersionCode("1")).toBe(1);
+    expect(getRequiredAndroidVersionCode("2100000000")).toBe(2_100_000_000);
+    expect(() => getRequiredAndroidVersionCode(undefined)).toThrow("PASEO_ANDROID_VERSION_CODE");
+    expect(() => getRequiredAndroidVersionCode("0")).toThrow("PASEO_ANDROID_VERSION_CODE");
+    expect(() => getRequiredAndroidVersionCode("1.5")).toThrow("PASEO_ANDROID_VERSION_CODE");
+    expect(() => getRequiredAndroidVersionCode("2100000001")).toThrow("PASEO_ANDROID_VERSION_CODE");
+  });
+
   it("derives fork encoding from semver and rejects a disagreeing environment override", () => {
     expect(getForkAndroidVersionCode("0.1.0")).toBe(201000);
     expect(getForkAndroidVersionCode("0.1.0", "201000")).toBe(201000);
     expect(() => getForkAndroidVersionCode("0.1.0", "200008")).toThrow("semver encoding");
+  });
+
     expect(resolveAppVariant("fork", 1000, "0.1.0", "201000")).toEqual({
+      name: "Paseo iExalt",
+      androidPackage: "sh.paseo.iexalt",
       androidVersionCode: 201000,
+    });
+    expect(resolveAppVariant("production", 11000, "invalid")).toEqual({
+      name: "Paseo",
+      iosBundleIdentifier: "sh.paseo",
+      androidPackage: "sh.paseo",
+      androidVersionCode: 11000,
+    });
+    expect(resolveAppVariant("development", 11000, "invalid")).toEqual({
+      name: "Paseo Debug",
+      iosBundleIdentifier: "sh.paseo.debug",
+      androidPackage: "sh.paseo.debug",
+      androidVersionCode: 11000,
+    });
+  });
+
+  it("requires the fork Google services config to match the expected project and Android package", () => {
+    const config = {
+      project_info: { project_id: "verified-project" },
+      client: [{ client_info: { android_client_info: { package_name: "sh.paseo.iexalt" } } }],
+    };
+
+    expect(validateForkGoogleServicesConfig(config, "verified-project")).toBe(true);
+    expect(() => validateForkGoogleServicesConfig(config, "different-project")).toThrow(
+      "sh.paseo.iexalt",
+    );
+    expect(() =>
+      validateForkGoogleServicesConfig(
+        {
+          ...config,
+          client: [{ client_info: { android_client_info: { package_name: "sh.paseo.debug" } } }],
+        },
+        "verified-project",
+      ),
+    ).toThrow("sh.paseo.iexalt");
+    expect(() => validateForkGoogleServicesConfig(config, " ")).toThrow("sh.paseo.iexalt");
+  });
 });

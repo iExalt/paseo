@@ -2,6 +2,7 @@
 # Realize the fixed-output derivations (npm-deps and other downloads) that the
 # real build would have to build, retrying transient network failures. Their
 # outputs are pinned by hash, so a retry cannot change bytes; without it one
+# dropped connection fails a whole release build. Anything the configured
 # substituters already serve is left to the build, which never fetches it.
 # Usage: nix-fetch-fixed-outputs.sh [nix options...] -- <installable arguments...>
 # Options apply to every nix command, matching the build that follows.
@@ -25,6 +26,9 @@ awk '/will be built:$/ { section = 1; next } !/^  / { section = 0 }
   section && $1 ~ /^\/nix\/store\/.*\.drv$/ { print $1 }' "$work/plan" | sort -u > "$work/built"
 fixed=()
 while IFS= read -r derivation; do fixed+=("$derivation^*"); done < <(comm -12 "$work/fixed" "$work/built")
+if ! grep -qE 'will be (built|fetched)' "$work/plan" && [[ -s "$work/fixed" ]]; then
+  echo '::warning::nix build --dry-run printed no recognizable plan; prefetch skipped' >&2
+fi
 echo "Fixed-output derivations to fetch: ${#fixed[@]} of $(wc -l < "$work/fixed" | tr -d ' ')"
 (( ${#fixed[@]} > 0 )) || exit 0
 for attempt in 1 2 3; do
