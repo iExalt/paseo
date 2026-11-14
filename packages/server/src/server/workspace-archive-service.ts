@@ -1,6 +1,7 @@
 import { commandRunHook } from "./command-run-hook.js";
 import type { PluginLifecycle } from "./plugins/lifecycle/index.js";
 import { resolve } from "node:path";
+import { withWorkspaceLifecycleLock } from "./workspace-lifecycle-lock.js";
 
 import type { Logger } from "pino";
 
@@ -102,6 +103,8 @@ export interface ArchiveByScopeRequest {
   // Aborting cancels the archive at its next checkpoint. Removing the worktree directory is the
   // point of no return: once it starts the archive completes.
   signal?: AbortSignal;
+  // Internal lifecycle cascade, never a user-selectable archive mode.
+  onlyIfEmpty?: boolean;
 }
 
 // Cancellation carries the operation stamp even before the workspace record is archived.
@@ -183,12 +186,36 @@ export async function archiveByScope(
   dependencies: ArchiveDependencies,
   request: ArchiveByScopeRequest,
 ): Promise<ArchiveResult> {
-  return runWithGitCommandPriority("high", () => archiveByScopeWithPriority(dependencies, request));
+  const run = async () => {
+    let target = await resolveArchiveTarget(dependencies, request.scope);
+    for (;;) {
+      const workspaceIds =
+        request.scope.kind === "workspace" ? [request.scope.workspaceId] : target.workspaceIds;
+      let result: ArchiveResult | undefined;
+      await withWorkspaceLifecycleLock(workspaceIds, async () => {
+        target = await resolveArchiveTarget(dependencies, request.scope);
+        // A worktree-scope request can discover another workspace while queued.
+        // Acquire the complete sorted set before touching any of their agents.
+        if (target.workspaceIds.some((id) => !workspaceIds.includes(id))) return;
+        result = await runWithGitCommandPriority("high", () =>
+          archiveByScopeWithPriority(dependencies, request, target),
+        );
+      });
+      if (result) return result;
+    }
+  };
+  const checkoutPath = dependencies.workspaceArchiveOperations
+    ? await resolveArchiveCheckoutPath(dependencies, request.scope)
+    : null;
+  return dependencies.workspaceArchiveOperations && checkoutPath
+    ? dependencies.workspaceArchiveOperations.withCheckout(checkoutPath, run)
+    : run();
 }
 
 async function archiveByScopeWithPriority(
   dependencies: ArchiveDependencies,
   request: ArchiveByScopeRequest,
+  target: ArchiveTarget,
 ): Promise<ArchiveResult> {
   const archivedAt = new Date().toISOString();
   const checkpoint = () => {
@@ -198,80 +225,86 @@ async function archiveByScopeWithPriority(
   };
 
   checkpoint();
-  const runArchive = async (): Promise<ArchiveResult> => {
-    checkpoint();
-    const target = await resolveArchiveTarget(dependencies, request.scope);
-    const targetWorkspaceIds = target.workspaceIds;
-
-    await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
-    checkpoint();
-
-    if (targetWorkspaceIds.length > 0) {
-      dependencies.markWorkspaceArchiving(targetWorkspaceIds, archivedAt);
+  const targetWorkspaceIds = target.workspaceIds;
+  if (request.onlyIfEmpty) {
+    if (targetWorkspaceIds.length === 0) {
+      return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
     }
-
-    let removedDirectory = false;
-    let directoryLeftBehind: ArchiveResult["directoryLeftBehind"];
-
-    try {
-      if (targetWorkspaceIds.length > 0) {
-        await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
-      }
-      checkpoint();
-
-      const { archivedAgents, archivedWorkspaceIds } = await archiveTargetRecords(
-        dependencies,
-        targetWorkspaceIds,
-        { requestId: request.requestId, checkpoint, archivedAt },
+    for (const workspaceId of targetWorkspaceIds) {
+      const records = await dependencies.agentStorage.listByWorkspace(workspaceId);
+      const archivedIds = new Set(
+        records.filter((record) => record.archivedAt).map((record) => record.id),
       );
-      checkpoint();
+      const hasChat =
+        records.some((record) => !record.archivedAt) ||
+        dependencies.agentManager
+          .listAgents({ includeInternal: true })
+          .some((agent) => agent.workspaceId === workspaceId && !archivedIds.has(agent.id));
+      if (hasChat)
+        return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
+    }
+  }
 
-      if (target.backing?.mainRepoRoot) {
-        try {
-          await dependencies.workspaceGitService.getSnapshot(target.backing.mainRepoRoot, {
-            force: true,
-            reason: "archive-worktree",
-          });
-        } catch (error) {
-          dependencies.sessionLogger?.warn(
-            { err: error, cwd: target.backing.mainRepoRoot, requestId: request.requestId },
-            "Failed to force-refresh workspace git snapshot after archiving",
-          );
-        }
-      }
+  await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
+  checkpoint();
 
-      if (target.backing !== null) {
-        const removal = await maybeRemoveDirectory(
-          dependencies,
-          { requestId: request.requestId, checkpoint },
-          target,
-          archivedWorkspaceIds,
+  if (targetWorkspaceIds.length > 0) {
+    dependencies.markWorkspaceArchiving(targetWorkspaceIds, archivedAt);
+  }
+
+  let removedDirectory = false;
+  let directoryLeftBehind: ArchiveResult["directoryLeftBehind"];
+
+  try {
+    if (targetWorkspaceIds.length > 0) {
+      await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
+    }
+    checkpoint();
+
+    const { archivedAgents, archivedWorkspaceIds } = await archiveTargetRecords(
+      dependencies,
+      targetWorkspaceIds,
+      { requestId: request.requestId, checkpoint, archivedAt },
+    );
+    checkpoint();
+
+    if (target.backing?.mainRepoRoot) {
+      try {
+        await dependencies.workspaceGitService.getSnapshot(target.backing.mainRepoRoot, {
+          force: true,
+          reason: "archive-worktree",
+        });
+      } catch (error) {
+        dependencies.sessionLogger?.warn(
+          { err: error, cwd: target.backing.mainRepoRoot, requestId: request.requestId },
+          "Failed to force-refresh workspace git snapshot after archiving",
         );
-        removedDirectory = removal.removedDirectory;
-        directoryLeftBehind = removal.directoryLeftBehind;
-      }
-
-      return {
-        archivedAgentIds: Array.from(archivedAgents),
-        archivedWorkspaceIds,
-        removedDirectory,
-        ...(directoryLeftBehind ? { directoryLeftBehind } : {}),
-      };
-    } finally {
-      if (targetWorkspaceIds.length > 0) {
-        dependencies.clearWorkspaceArchiving(targetWorkspaceIds);
-        await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
       }
     }
-  };
 
-  const checkoutPath = dependencies.workspaceArchiveOperations
-    ? await resolveArchiveCheckoutPath(dependencies, request.scope)
-    : null;
-  if (dependencies.workspaceArchiveOperations && checkoutPath) {
-    return dependencies.workspaceArchiveOperations.withCheckout(checkoutPath, runArchive);
+    if (target.backing !== null) {
+      const removal = await maybeRemoveDirectory(
+        dependencies,
+        { requestId: request.requestId, checkpoint, onlyIfEmpty: request.onlyIfEmpty },
+        target,
+        archivedWorkspaceIds,
+      );
+      removedDirectory = removal.removedDirectory;
+      directoryLeftBehind = removal.directoryLeftBehind;
+    }
+
+    return {
+      archivedAgentIds: Array.from(archivedAgents),
+      archivedWorkspaceIds,
+      removedDirectory,
+      ...(directoryLeftBehind ? { directoryLeftBehind } : {}),
+    };
+  } finally {
+    if (targetWorkspaceIds.length > 0) {
+      dependencies.clearWorkspaceArchiving(targetWorkspaceIds);
+      await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
+    }
   }
-  return runArchive();
 }
 
 async function resolveArchiveCheckoutPath(
@@ -551,7 +584,7 @@ async function archiveTargetRecords(
 
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
-  request: { requestId: string; checkpoint: () => void },
+  request: { requestId: string; checkpoint: () => void; onlyIfEmpty?: boolean },
   target: ArchiveTarget,
   archivedWorkspaceIds: string[],
 ): Promise<{
@@ -576,6 +609,24 @@ async function maybeRemoveDirectory(
       };
     }
     return { removedDirectory: false };
+  }
+
+  if (request.onlyIfEmpty) {
+    let reason: string | undefined;
+    if (
+      dependencies.agentManager
+        .listAgents({ includeInternal: true })
+        .some((agent) => target.workspaceIds.includes(agent.workspaceId ?? ""))
+    ) {
+      reason = "agent runtime failed to close";
+    }
+    if (reason) {
+      dependencies.sessionLogger?.warn(
+        { targetPath: backing.path, reason, requestId: request.requestId },
+        "Worktree directory left in place during automatic workspace archive",
+      );
+      return { removedDirectory: false, directoryLeftBehind: { path: backing.path, reason } };
+    }
   }
 
   const archivedWorkspaceIdSet = new Set(archivedWorkspaceIds);
