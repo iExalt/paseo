@@ -1,3 +1,4 @@
+import { runProjectConfig } from "./config.js";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveProjectPath, runCreateCommand } from "./create.js";
@@ -19,12 +20,36 @@ const renameProject = vi.fn(async (_projectId: string, name: string | null) => (
   customName: name,
 }));
 const removeProject = vi.fn(async () => ({ removedWorkspaceIds: ["workspace-1"] }));
+const createProjectDirectory = vi.fn(async () => ({
+  project,
+  error: null,
+  directoryPath: "/srv/new",
+}));
+const getLastServerInfoMessage = vi.fn(() => ({ features: { projectCreateDirectory: true } }));
+const readProjectConfig = vi.fn(async () => ({
+  ok: true,
+  requestId: "r",
+  repoRoot: "/canonical/repo",
+  config: null,
+  revision: null,
+}));
+const writeProjectConfig = vi.fn(async () => ({
+  ok: true,
+  requestId: "w",
+  repoRoot: "/canonical/repo",
+  config: {},
+  revision: { mtimeMs: 2, size: 2 },
+}));
 const close = vi.fn(async () => undefined);
 
 vi.mock("../../utils/client.js", () => ({
   buildDaemonConnectionCommandError: vi.fn(({ error }: { error: unknown }) => error),
   connectToDaemon: vi.fn(async () => ({
     addProject,
+    createProjectDirectory,
+    getLastServerInfoMessage,
+    readProjectConfig,
+    writeProjectConfig,
     listProjects,
     renameProject,
     removeProject,
@@ -43,6 +68,7 @@ describe("project commands", () => {
       "ls",
       "rename",
       "delete",
+      "config",
     ]);
   });
 
@@ -121,5 +147,84 @@ describe("project commands", () => {
       projectId: "project-1",
       removedWorkspaceIds: ["workspace-1"],
     });
+  });
+});
+
+describe("project configuration and setup", () => {
+  const options = { daemonTarget: { kind: "endpoint" as const, host: "remote:123" } };
+  it("creates and registers a directory through the host without adding it twice", async () => {
+    const result = await runCreateCommand(
+      "new",
+      { ...options, mkdir: true, parent: "C:\\work" },
+      {} as never,
+    );
+    expect(createProjectDirectory).toHaveBeenCalledWith({ parentPath: "C:\\work", name: "new" });
+    expect(addProject).not.toHaveBeenCalled();
+    expect(result.data.projectId).toBe("project-1");
+  });
+  it("rejects directory creation before mutation on an older host", async () => {
+    getLastServerInfoMessage.mockReturnValueOnce({ features: { projectCreateDirectory: false } });
+    await expect(
+      runCreateCommand("new", { ...options, mkdir: true, parent: "/srv" }, {} as never),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_FEATURE" });
+    expect(createProjectDirectory).not.toHaveBeenCalled();
+  });
+  it("returns the missing config and revision without inventing defaults", async () => {
+    const result = await runProjectConfig("get", undefined, { ...options, project: "project-1" });
+    expect(readProjectConfig).toHaveBeenCalledWith("/tmp/paseo");
+    expect(result.data).toMatchObject({ config: null, revision: null });
+  });
+  it("uses the read's canonical root and revision for an intentional replacement", async () => {
+    await runProjectConfig("set", '{"worktree":{"setup":"echo setup"}}', {
+      ...options,
+      path: "/alias",
+    });
+    expect(writeProjectConfig).toHaveBeenCalledWith({
+      repoRoot: "/canonical/repo",
+      expectedRevision: null,
+      config: { worktree: { setup: "echo setup" } },
+    });
+  });
+  it("forwards explicit revisions and preserves stale-write errors", async () => {
+    writeProjectConfig.mockResolvedValueOnce({
+      ok: false,
+      requestId: "w",
+      repoRoot: "/canonical/repo",
+      error: { code: "stale_project_config", currentRevision: { mtimeMs: 3, size: 3 } },
+    } as never);
+    await expect(
+      runProjectConfig("set", "{}", {
+        ...options,
+        path: "/repo",
+        revision: '{"mtimeMs":1,"size":1}',
+      }),
+    ).rejects.toMatchObject({
+      code: "stale_project_config",
+      currentRevision: { mtimeMs: 3, size: 3 },
+    });
+    expect(writeProjectConfig).toHaveBeenCalledWith({
+      repoRoot: "/canonical/repo",
+      config: {},
+      expectedRevision: { mtimeMs: 1, size: 1 },
+    });
+  });
+  it("rejects failed reads and unknown or ambiguous project selectors without writing", async () => {
+    await expect(runProjectConfig("get", undefined, options)).rejects.toThrow();
+    await expect(
+      runProjectConfig("get", undefined, { ...options, path: "/repo", project: "project-1" }),
+    ).rejects.toThrow();
+    await expect(
+      runProjectConfig("set", "{}", { ...options, project: "missing" }),
+    ).rejects.toMatchObject({ code: "PROJECT_NOT_FOUND" });
+    readProjectConfig.mockResolvedValueOnce({
+      ok: false,
+      requestId: "r",
+      repoRoot: "/repo",
+      error: { code: "invalid_project_config" },
+    } as never);
+    await expect(
+      runProjectConfig("set", "{}", { ...options, path: "/repo" }),
+    ).rejects.toMatchObject({ code: "invalid_project_config" });
+    expect(writeProjectConfig).not.toHaveBeenCalled();
   });
 });

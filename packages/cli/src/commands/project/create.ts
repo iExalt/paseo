@@ -28,19 +28,43 @@ export async function runCreateCommand(
   options: CommandOptions,
   _command: Command,
 ): Promise<SingleResult<ProjectRow>> {
-  const projectPath = resolveProjectPath({
-    pathArg,
-    cwd: process.cwd(),
-    daemonTarget: options.daemonTarget.kind === "endpoint" ? options.daemonTarget.host : undefined,
-  });
+  validateDirectoryOptions(pathArg, options);
+  const projectPath = options.mkdir
+    ? pathArg!
+    : resolveProjectPath({
+        pathArg,
+        cwd: process.cwd(),
+        daemonTarget:
+          options.daemonTarget.kind === "endpoint" ? options.daemonTarget.host : undefined,
+      });
   const client = await connectToDaemon({ target: options.daemonTarget }).catch((error: unknown) => {
     throw buildDaemonConnectionCommandError({ target: options.daemonTarget, error });
   });
 
   try {
-    const payload = await client.addProject(projectPath);
+    if (
+      options.mkdir &&
+      client.getLastServerInfoMessage()?.features?.projectCreateDirectory !== true
+    )
+      throw {
+        code: "UNSUPPORTED_FEATURE",
+        message: "Update the host to create project directories",
+      };
+    const payload = options.mkdir
+      ? await client.createProjectDirectory({
+          parentPath: options.parent as string,
+          name: projectPath,
+        })
+      : await client.addProject(projectPath);
     if (!payload.project) {
-      throw new Error(payload.error ?? "Project creation failed");
+      throw {
+        code:
+          "errorCode" in payload
+            ? (payload.errorCode ?? "PROJECT_CREATE_FAILED")
+            : "PROJECT_CREATE_FAILED",
+        message: payload.error ?? "Project creation failed",
+        details: JSON.stringify(payload),
+      };
     }
     return { type: "single", data: toProjectRow(payload.project), schema: projectSchema };
   } catch (error) {
@@ -50,4 +74,17 @@ export async function runCreateCommand(
   } finally {
     await client.close().catch(() => undefined);
   }
+}
+
+function validateDirectoryOptions(pathArg: string | undefined, options: CommandOptions): void {
+  if (options.parent !== undefined && !options.mkdir) throw new Error("--parent requires --mkdir");
+  if (
+    options.mkdir &&
+    (!pathArg?.trim() ||
+      /[\\/]/.test(pathArg) ||
+      [".", ".."].includes(pathArg) ||
+      typeof options.parent !== "string" ||
+      !options.parent.trim())
+  )
+    throw new Error("Use project create <name> --mkdir --parent <daemon-path>");
 }

@@ -13,7 +13,7 @@
  * - agent archive --help shows options
  * - agent archive requires ID argument
  * - agent archive handles daemon not running
- * - agent archive --force flag is accepted
+ * - agent archive rejects removed --force flag
  */
 
 import assert from "node:assert";
@@ -98,7 +98,7 @@ try {
     console.log("Test 1: agent archive --help shows options");
     const result = await $`npx paseo agent archive --help`.nothrow();
     assert.strictEqual(result.exitCode, 0, "agent archive --help should exit 0");
-    assert(result.stdout.includes("--force"), "help should mention --force flag");
+    assert(!result.stdout.includes("--force"), "help should omit confirmation flags");
     assert(result.stdout.includes("--host"), "help should mention --host option");
     assert(result.stdout.includes("<id>"), "help should mention required id argument");
     console.log("✓ agent archive --help shows options\n");
@@ -135,15 +135,14 @@ try {
     console.log("✓ agent archive handles daemon not running\n");
   }
 
-  // Test 4: agent archive --force flag is accepted
+  // Test 4: agent archive rejects removed --force flag
   {
-    console.log("Test 4: agent archive --force flag is accepted");
+    console.log("Test 4: agent archive rejects removed --force flag");
     const result =
       await $`PASEO_HOME=${paseoHome} npx paseo --host localhost:${port} agent archive abc123 --force`.nothrow();
     const output = result.stdout + result.stderr;
-    assert(!output.includes("unknown option"), "should accept --force flag");
-    assert(!output.includes("error: option"), "should not have option parsing error");
-    console.log("✓ agent archive --force flag is accepted\n");
+    assert(output.includes("unknown option"), "should reject --force flag");
+    console.log("✓ agent archive rejects removed --force flag\n");
   }
 
   // Test 5: agent archive with ID and --host flag is accepted
@@ -234,11 +233,8 @@ try {
         "--host",
         host,
       ]);
-      assert.strictEqual(repeated.exitCode, 1);
-      assert.strictEqual(
-        (parseJsonError(repeated.stderr) as { error: { code: string } }).error.code,
-        "AGENT_ALREADY_ARCHIVED",
-      );
+      assert.strictEqual(repeated.exitCode, 0, repeated.stderr);
+      assert.deepStrictEqual(JSON.parse(repeated.stdout), JSON.parse(archived.stdout));
 
       const missing = await runPaseoCli(daemon, [
         "agent",

@@ -24,7 +24,7 @@ const daemon = await createTestPaseoDaemon({
       }
     : {}),
   pluginsEnabled: true,
-  mcpEnabled: false,
+  agentToolsEnabled: false,
   corsAllowedOrigins: ["*"],
 });
 const response = await fetch(`http://127.0.0.1:${daemon.port}/api/status`);

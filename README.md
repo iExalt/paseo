@@ -214,7 +214,7 @@ Then use them in any agent conversation:
 
 Quick monorepo package map:
 
-- `packages/server`: Paseo daemon (agent process orchestration, WebSocket API, MCP server)
+- `packages/server`: Paseo daemon (agent process orchestration, WebSocket API, provider-native tools)
 - `packages/app`: Expo client (iOS, Android, web)
 - `packages/cli`: `paseo` CLI for daemon and agent workflows
 - `packages/desktop`: Electron desktop app
@@ -233,7 +233,8 @@ npm run dev:app
 npm run dev:desktop
 npm run dev:website
 
-# build the server stack
+# build the server stack (run after pulling and before the first typecheck or
+# commit: other packages typecheck against the built server declarations)
 npm run build:server
 
 # repo-wide checks

@@ -73,6 +73,11 @@ export function configurationEnvironment(env: NodeJS.ProcessEnv): NodeJS.Process
   );
 }
 
+// Settings a managed launch strips, so `paseo daemon start` can name the overrides it ignores.
+export function droppedManagedEnvOverrides(env: NodeJS.ProcessEnv): string[] {
+  return DAEMON_SETTING_ENV_KEYS.filter((key) => Boolean(env[key]));
+}
+
 export function daemonLaunchEnvironment(input: {
   env: NodeJS.ProcessEnv;
   home: string;
