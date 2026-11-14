@@ -1,3 +1,5 @@
+import { prepareAgentFork } from "./fork.js";
+import { runRewindCommand } from "./rewind.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { DaemonClient, DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
@@ -304,7 +306,7 @@ describe("structured run output", () => {
     vi.unstubAllEnvs();
   });
 
-  function fixture(response: string) {
+  function fixture(response: string, fork = false) {
     const client = new DaemonClient({
       url: "ws://daemon.test",
       clientId: "cli-structured-run-test",
@@ -313,11 +315,26 @@ describe("structured run output", () => {
     vi.spyOn(client, "getLastServerInfoMessage").mockReturnValue({
       status: "server_info",
       serverId: "cli-structured-run-test",
-      features: { agentOrchestrationParity: true },
+      features: { agentOrchestrationParity: true, agentForkContext: true },
     });
     vi.spyOn(client, "fetchAgent").mockResolvedValue({
       agent: createAgentSnapshot("parent-agent"),
       project: null,
+    });
+    vi.spyOn(client, "buildAgentForkContext").mockResolvedValue({
+      agentId: "parent-agent",
+      requestId: "test",
+      boundaryMessageId: null,
+      boundaryCursor: null,
+      itemCount: 1,
+      attachment: {
+        type: "text",
+        mimeType: "text/plain",
+        contextKind: "chat_history",
+        title: "History",
+        text: "prior history",
+      },
+      error: null,
     });
     const createAgent = vi
       .spyOn(client, "createAgent")
@@ -336,6 +353,7 @@ describe("structured run output", () => {
         "Answer the question",
         {
           provider: "codex",
+          forkSource: fork ? { agentId: "parent-agent" } : undefined,
           daemonTarget,
           outputSchema: JSON.stringify({
             type: "object",
@@ -358,6 +376,18 @@ describe("structured run output", () => {
     expect(context.waitForFinish).toHaveBeenCalledTimes(1);
     expect(context.sendMessage).not.toHaveBeenCalled();
     expect(context.close).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards fork history through structured agent creation", async () => {
+    const context = fixture('{"answer":"ready"}', true);
+    await context.run();
+    expect(context.createAgent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachments: [
+          expect.objectContaining({ contextKind: "chat_history", text: "prior history" }),
+        ],
+      }),
+    );
   });
 
   it("exhausts schema retries and renders the lazy validator's failure", async () => {
@@ -477,3 +507,106 @@ describe("mode check before workspace creation", () => {
     expect(caller.getProvidersSnapshot).not.toHaveBeenCalled();
   });
 });
+
+describe("agent history commands", () => {
+  afterEach(() => vi.restoreAllMocks());
+  it.each([{}, { provider: "claude" }, { provider: "codex/explicit" }, { workspace: "selected" }])(
+    "inherits fork settings without overriding explicit choices %j",
+    async (overrides) => {
+      const client = new DaemonClient({
+        url: "ws://daemon.test",
+        clientId: "fork-test",
+        reconnect: { enabled: false },
+      });
+      const agent = createAgentSnapshot("source");
+      agent.features = [{ type: "toggle", id: "fast", label: "Fast", value: true }];
+      vi.spyOn(client, "getLastServerInfoMessage").mockReturnValue({
+        status: "server_info",
+        serverId: "test",
+        features: { agentForkContext: true },
+      });
+      vi.spyOn(client, "fetchAgent").mockResolvedValue({ agent, project: null });
+      const attachment = {
+        type: "text" as const,
+        mimeType: "text/plain",
+        text: "history",
+        contextKind: "chat_history" as const,
+        title: "Chat history",
+      };
+      const context = vi.spyOn(client, "buildAgentForkContext").mockResolvedValue({
+        agentId: "source",
+        requestId: "test",
+        boundaryMessageId: "message",
+        boundaryCursor: null,
+        itemCount: 1,
+        attachment,
+        error: null,
+      });
+      const options: AgentRunOptions = {
+        daemonTarget,
+        feature: [],
+        forkSource: { agentId: "source", boundaryMessageId: "message" },
+        ...overrides,
+      };
+      expect(await prepareAgentFork(client, options)).toEqual([attachment]);
+      expect(context).toHaveBeenCalledWith("source", { boundaryMessageId: "message" });
+      expect(options.provider).toBe(overrides.provider === "claude" ? "claude" : "codex");
+      let expectedModel: string | undefined = "gpt-5.4";
+      if (overrides.provider === "claude") expectedModel = undefined;
+      if (overrides.provider === "codex/explicit") expectedModel = "explicit";
+      expect(options.model).toBe(expectedModel);
+      if (options.provider === "codex")
+        expect(JSON.parse(options.featuresJson!)).toEqual({ fast: true });
+      expect(options.cwd).toBe(overrides.workspace ? undefined : "/workspace");
+    },
+  );
+  it("requires rewind confirmation before connecting", async () => {
+    await expect(runRewindCommand("id", { daemonTarget, to: "message" })).rejects.toMatchObject({
+      code: "CONFIRMATION_REQUIRED",
+    });
+  });
+  it("checks the selected rewind mode and reports the mutation", async () => {
+    const client = new DaemonClient({
+      url: "ws://daemon.test",
+      clientId: "rewind-test",
+      reconnect: { enabled: false },
+    });
+    const agent = createAgentSnapshot("source");
+    agent.capabilities.supportsRewindConversation = true;
+    vi.spyOn(client, "fetchAgent").mockResolvedValue({ agent, project: null });
+    const rewind = vi
+      .spyOn(client, "rewindAgent")
+      .mockResolvedValue({ ok: true, agentId: "source", requestId: "test" });
+    const close = vi.spyOn(client, "close").mockResolvedValue();
+    vi.mocked(connectToDaemon).mockResolvedValue(client);
+    await expect(
+      runRewindCommand("source", {
+        daemonTarget,
+        to: "message",
+        force: true,
+        mode: "conversation",
+      }),
+    ).resolves.toMatchObject({
+      data: { agentId: "source", messageId: "message", mode: "conversation", changed: true },
+    });
+    expect(rewind).toHaveBeenCalledWith("source", "message", "conversation");
+    await expect(
+      runRewindCommand("source", { daemonTarget, to: "message", force: true, mode: "files" }),
+    ).rejects.toMatchObject({ code: "UNSUPPORTED_FEATURE" });
+    expect(rewind).toHaveBeenCalledTimes(1);
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+});
+
+it.each(["", "  "])(
+  "rejects blank fork boundary %j before connection",
+  async (boundaryMessageId) => {
+    await expect(
+      runRunCommand(
+        "continue",
+        { daemonTarget, forkSource: { agentId: "source", boundaryMessageId } },
+        new Command("fork"),
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_ARGUMENT" });
+  },
+);

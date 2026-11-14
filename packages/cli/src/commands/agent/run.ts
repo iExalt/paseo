@@ -1,3 +1,5 @@
+import { prepareAgentFork, validateAgentForkBoundary } from "./fork.js";
+import type { CreateAgentRequestOptions } from "@getpaseo/client/internal/daemon-client";
 import { Command, Option } from "commander";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { resolveCallerAgentId } from "../../utils/caller-agent.js";
@@ -137,6 +139,7 @@ export const agentRunSchema: OutputSchema<AgentRunResult> = {
 };
 
 export interface AgentRunOptions extends CommandOptions {
+  forkSource?: { agentId: string; boundaryMessageId?: string };
   prompt?: string;
   promptFile?: string;
   wait?: boolean;
@@ -678,6 +681,7 @@ async function resolveRunWorkspace(
 
 interface StructuredRunRequest {
   client: ConnectedDaemonClient;
+  attachments?: CreateAgentRequestOptions["attachments"];
   prompt: string;
   outputSchema: ReturnType<typeof loadOutputSchema>;
   provider: AgentRunOptions["provider"];
@@ -724,6 +728,7 @@ async function runStructuredAgent(
         initialPrompt: structuredPrompt,
         outputSchema: request.outputSchema,
         images: request.images,
+        attachments: request.attachments,
         env: request.env,
         labels: Object.keys(request.labels).length > 0 ? request.labels : undefined,
       });
@@ -803,6 +808,7 @@ async function runStandardAgent(
     ...(request.hasFeatureValues ? { featureValues: request.featureValues } : {}),
     initialPrompt: request.prompt,
     images: request.images,
+    attachments: request.attachments,
     env: request.env,
     labels: Object.keys(request.labels).length > 0 ? request.labels : undefined,
   });
@@ -833,6 +839,7 @@ export async function runRunCommand(
   options: AgentRunOptions,
   _command: Command,
 ): Promise<SingleResult<AgentRunResult>> {
+  validateAgentForkBoundary(options);
   const prompt = await resolvePromptInput({
     promptArgument,
     promptOption: options.prompt,
@@ -843,12 +850,13 @@ export async function runRunCommand(
   validateRunOptions(options, outputSchema);
   const waitTimeoutMs = parseWaitTimeoutOption(options.waitTimeout);
 
-  const resolvedProviderModel = resolveProviderAndModel(options);
-  const resolvedTitle = options.title ?? options.name;
-
+  if (!options.forkSource) resolveProviderAndModel(options);
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
+    const attachments = await prepareAgentFork(client, options);
+    const resolvedProviderModel = resolveProviderAndModel(options);
+    const resolvedTitle = options.title ?? options.name;
     // Resolve working directory
     const cwd = options.cwd ?? process.cwd();
     const thinkingOptionId = options.thinking?.trim();
@@ -892,6 +900,7 @@ export async function runRunCommand(
     if (outputSchema) {
       return await runStructuredAgent({
         client,
+        attachments,
         prompt,
         outputSchema,
         provider: resolvedProviderModel.provider,
@@ -917,6 +926,7 @@ export async function runRunCommand(
 
     return await runStandardAgent({
       client,
+      attachments,
       prompt,
       provider: resolvedProviderModel.provider,
       model: resolvedProviderModel.model,
