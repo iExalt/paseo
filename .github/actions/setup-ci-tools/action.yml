@@ -1,0 +1,5 @@
+        node-version: "26.13.0"
+        test "$(node --version)" = v26.13.0
+        mise link node@26.13.0 "$NODE_ROOT"
+        test "$(mise exec node@26.13.0 -- node --version)" = v26.13.0
+        test "$(mise exec node@26.13.0 -- npm --version)" = 11.20.0

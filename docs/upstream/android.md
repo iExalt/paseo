@@ -26,21 +26,35 @@ The formula reserves three digits each for minor and patch. If either reaches `1
 
 
 ```bash
+mise install        # Temurin Java 25 + Android command-line tools 23.0
 ```
 
 
 `mise install` only lays down the command-line tools. Install the rest and create an emulator. On Apple Silicon:
 
 ```bash
+android sdk install "platform-tools"
+android sdk install "emulator"
+android sdk install "platforms;android-36"
+android sdk install "build-tools;36.0.0"
+android sdk install "system-images;android-36;google_apis;arm64-v8a"
+avdmanager create avd -n paseo -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_7
 emulator @paseo     # start it; leave running
 ```
 
 On an Intel Mac, use the `x86_64` system image:
 
 ```bash
+android sdk install "platform-tools"
+android sdk install "emulator"
+android sdk install "platforms;android-36"
+android sdk install "build-tools;36.0.0"
+android sdk install "system-images;android-36;google_apis;x86_64"
+avdmanager create avd -n paseo -k "system-images;android-36;google_apis;x86_64" -d pixel_7
 emulator @paseo     # start it; leave running
 ```
 
+Gradle auto-fetches the platform/build-tools it needs once licenses are accepted, so adjust `android-36` only if it asks for a different level.
 
 ## Local build + install
 
@@ -119,6 +133,37 @@ PASEO_PROFILE_BUILD=1 npm run android:production
 
 Those markers emit only while a system trace records `sh.paseo` (`perfetto -a sh.paseo ...`);
 they do not produce Downloads files.
+
+### Standalone local APK
+
+Build a release APK with the `development` identity to install alongside the
+Play Store app. It is named **Paseo Debug** (`sh.paseo.debug`), uses the generated
+project's local debug signing key, and bundles JavaScript for standalone use.
+For a 64-bit ARM phone, select the `arm64-v8a` ABI:
+
+```bash
+mise exec -- npm run build:app-deps
+cd packages/app
+mise exec -- env APP_VARIANT=development CI=1 npx expo prebuild --platform android --no-install
+cd android
+mise exec -- env APP_VARIANT=development JAVA_TOOL_OPTIONS=--enable-native-access=ALL-UNNAMED \
+  ./gradlew :app:assembleRelease --no-daemon --max-workers=1 \
+  -Dorg.gradle.parallel=false -PreactNativeArchitectures=arm64-v8a
+```
+
+The APK is `packages/app/android/app/build/outputs/apk/release/app-release.apk`.
+The command produces an artifact without installing or launching it. The scoped
+Java 25 native-access flag lets Prefab's JNA library load without a warning that
+the current Android Gradle plugin misclassifies as a build error. It does not
+change the machine's Java configuration.
+
+The normal camera and notification modules remain included. Push requires a
+Firebase Android client for `sh.paseo.debug`, the matching
+`GOOGLE_SERVICES_FILE_DEBUG` configuration, and FCM credentials in the configured
+Expo project. Without these, push-token registration fails and the APK is suitable
+for UI testing. The variants share the `paseo://` scheme; select Paseo Debug when
+opening a pairing link, or paste it inside that app. Its app data and pairings are
+separate from the Play Store installation.
 
 This fork uses the Expo project `@iexalt/paseo`. For local push-enabled builds,
 place the Firebase Android configuration for `sh.paseo.debug` at
@@ -230,6 +275,11 @@ Beta releases are an explicit no-op: they do not create or rewrite F-Droid chang
 
 ### React version lockstep
 
+Keep `react` and `react-dom` pinned to the React version embedded by the current
+`react-native` release. The accepted Expo 57 cohort uses React Native `0.86.3`
+and React `19.2.3`. A renderer mismatch can build successfully but crash at JS
+startup on Android with `Incompatible React versions`, leaving the app on the
+native splash screen.
 
 ## Screenshots
 

@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, it } from "vitest";
+import { z } from "zod";
 import type { ProviderSnapshotEntry } from "@getpaseo/protocol/agent-types";
 import type { HubCredentialStore, StoredHubCredential } from "./credentials.js";
 import type { HubDaemonClient, HubStatus } from "./daemon-client.js";
@@ -10,11 +11,20 @@ import type { HubHttpClient } from "./hub-client/index.js";
 import {
   continueHubGuidedSetup,
   runHubGuidedSetup,
+  validateRequiredText,
   type HubGuidedSetupEnvironment,
 } from "./init.js";
 import { runHubLogin } from "./login.js";
 
 const directories: string[] = [];
+
+it("runs Standard Schema validators before enforcing non-empty required text", async () => {
+  const validator = z.string().min(3, "Use at least three characters");
+
+  assert.equal(await validateRequiredText("ok", validator), "Use at least three characters");
+  assert.equal(await validateRequiredText("valid", validator), undefined);
+  assert.equal(await validateRequiredText("   "), "A value is required");
+});
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map((directory) => rm(directory, { recursive: true })));

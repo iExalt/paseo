@@ -1,0 +1,11 @@
+          node-version: "26.13.0"
+          node-version: "26.13.0"
+          node-version: "26.13.0"
+          node-version: "26.13.0"
+          node-version: "26.13.0"
+          node-version: "26.13.0"
+          java-version: "27.0.1"
+          grep -qF 'gradle-9.8.2-bin.zip' packages/app/android/gradle/wrapper/gradle-wrapper.properties
+          java-version: "27.0.1"
+          node-version: "26.13.0"
+          node-version: "26.13.0"

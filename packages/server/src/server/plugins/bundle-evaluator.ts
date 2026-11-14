@@ -26,6 +26,8 @@ function runtimeRequire(name: string): unknown {
 }
 
 export function evaluateBundle(bundle: string): PluginServerContribution {
+  // Server plugin bundles are executable code; evaluation is part of the plugin contract.
+  // oxlint-disable-next-line no-eval -- Plugin bundles are executable code by contract.
   const evaluate: (source: string) => unknown = globalThis.eval;
   const factory = evaluate(bundle);
   if (typeof factory !== "function") throw new Error("Plugin server bundle is not executable");

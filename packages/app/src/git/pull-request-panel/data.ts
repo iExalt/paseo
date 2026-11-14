@@ -106,7 +106,7 @@ export interface PrPaneData {
 }
 
 type CheckoutPrStatus = CheckoutPrStatusResponse["payload"]["status"];
-type PullRequestTimeline = PullRequestTimelineResponse["payload"];
+type PullRequestTimeline = NonNullable<PullRequestTimelineResponse["payload"]>;
 type PullRequestTimelineItem = PullRequestTimeline["items"][number];
 
 export function mapPrPaneData(

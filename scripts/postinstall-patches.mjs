@@ -1,15 +1,33 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, relative } from "node:path";
+import { resolveOpenCodePatchTarget } from "./postinstall-patches-target.mjs";
 
 // In CI we often install a single workspace (e.g. server/relay/website). Only apply patches
 // when the patched dependency is actually present.
 // `cwd` is where patch-package must run from. Packages that npm does not hoist to the
 // workspace root live in their workspace's own node_modules, and patch-package resolves
 // the patch's node_modules/... paths relative to its working directory.
+const openCodePatchTarget = resolveOpenCodePatchTarget(existsSync);
 const patchedPackages = [
+  // Gradle 9.8 needs newer Kotlin metadata support; Expo's Pika compiler caps
+  // the version at 2.3.20. Keep these plugin compilers consistent until Expo and
+  // React Native ship compatible pins.
+  {
+    nodeModulesPath: "node_modules/@react-native/gradle-plugin",
+    patchPrefix: "@react-native+gradle-plugin+",
+  },
+  {
+    nodeModulesPath: "node_modules/expo-modules-autolinking",
+    patchPrefix: "expo-modules-autolinking+",
+  },
+  {
+    nodeModulesPath: "node_modules/expo-dev-launcher",
+    patchPrefix: "expo-dev-launcher+",
+  },
   // Backport for expo-modules-core 57.0.23: https://github.com/expo/expo/pull/49634.
-  // Remove when the installed Expo SDK includes the Activity recreation fix.
+  // Remove the Activity hunks when Expo includes that fix; retain the Gradle plugin
+  // compiler alignment until Expo ships a compatible pin.
   {
     nodeModulesPath: "node_modules/expo-modules-core",
     patchPrefix: "expo-modules-core+",
@@ -68,11 +86,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
   },
-  {
-    nodeModulesPath: "packages/server/node_modules/@opencode-ai/sdk",
-    patchPrefix: "@opencode-ai+sdk+",
-    cwd: "packages/server",
-  },
+  ...(openCodePatchTarget ? [openCodePatchTarget] : []),
 ];
 
 const installedPackages = patchedPackages.filter(({ nodeModulesPath }) =>

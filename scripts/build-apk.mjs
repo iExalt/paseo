@@ -18,6 +18,7 @@ const env = {
   ...process.env,
   APP_VARIANT: "production",
   PASEO_WATCHDOG_BUILD: "1",
+  // AGP runs Prefab on Gradle's JDK. On the pinned Java 27, Prefab's JNA prints a native-access
   PASEO_DIAGNOSTIC_BUILD_TIME: new Date().toISOString(),
   PASEO_DIAGNOSTIC_REVISION:
     execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim() +
