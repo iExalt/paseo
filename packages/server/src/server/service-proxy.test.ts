@@ -344,6 +344,10 @@ interface ProxiedServiceFixture {
   close(): Promise<void>;
 }
 
+interface ForwardedFixture extends ProxiedServiceFixture {
+  streamClosed: Promise<void>;
+}
+
 /**
  * Runs a real workspace service behind a real daemon listener that serves the
  * service proxy for both HTTP and upgrades.
@@ -406,8 +410,18 @@ async function startProxiedService(
  * The upstream echoes the headers it received so tests can assert what
  * actually crossed the proxy, not what a helper returned.
  */
-function startForwardedHeadersFixture(upstreamHost = "127.0.0.1"): Promise<ProxiedServiceFixture> {
+async function startForwardedHeadersFixture(upstreamHost = "127.0.0.1"): Promise<ForwardedFixture> {
+  let markStreamClosed!: () => void;
+  const streamClosed = new Promise<void>((resolve) => {
+    markStreamClosed = resolve;
+  });
   const upstream = http.createServer((req, res) => {
+    if (req.url === "/stream") {
+      res.on("close", markStreamClosed);
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write("data: open\n\n");
+      return;
+    }
     let body = "";
     req.on("data", (chunk: Buffer) => {
       body += chunk.toString();
@@ -427,7 +441,7 @@ function startForwardedHeadersFixture(upstreamHost = "127.0.0.1"): Promise<Proxi
       `HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nX-Echo-Length: ${payload.length}\r\n\r\n${payload}`,
     );
   });
-  return startProxiedService(upstream, { upstreamHost });
+  return { ...(await startProxiedService(upstream, { upstreamHost })), streamClosed };
 }
 
 function upgradeThroughProxy(
@@ -578,6 +592,29 @@ describe("service proxy loopback services", () => {
       const headers = await upgradeThroughProxy(fixture.daemonPort, fixture.hostname);
       expect(headers.host).toBe(fixture.hostname);
       expect(headers.upgrade).toBe("websocket");
+    } finally {
+      await fixture.close();
+    }
+  });
+});
+
+describe("service proxy streaming", () => {
+  it("closes the upstream connection when the client leaves mid-stream", async () => {
+    const fixture = await startForwardedHeadersFixture();
+    try {
+      const request = http.get({
+        hostname: "127.0.0.1",
+        port: fixture.daemonPort,
+        path: "/stream",
+        headers: { host: fixture.hostname },
+      });
+      // Destroying the request mid-response raises an abort error we caused on purpose.
+      request.on("error", () => undefined);
+      const [response] = (await once(request, "response")) as [http.IncomingMessage];
+      await once(response, "data");
+      request.destroy();
+
+      await fixture.streamClosed;
     } finally {
       await fixture.close();
     }
