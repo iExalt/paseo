@@ -1,4 +1,5 @@
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import { NotificationPreviewFallback } from "@/notification-open/preview-view";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -494,13 +495,15 @@ function AgentPanelContent({
 
   if (target.kind === "agent" && (!resolvedServerId || (!runtimeClient && !hasCachedAgent))) {
     return (
-      <AgentSessionUnavailableState
-        serverLabel={serverLabel}
-        connectionStatus={connectionStatus}
-        lastError={lastConnectionError}
-        isUnknownDaemon={isUnknownDaemon}
-        t={t}
-      />
+      <NotificationPreviewFallback serverId={resolvedServerId ?? ""} agentId={resolvedAgentId}>
+        <AgentSessionUnavailableState
+          serverLabel={serverLabel}
+          connectionStatus={connectionStatus}
+          lastError={lastConnectionError}
+          isUnknownDaemon={isUnknownDaemon}
+          t={t}
+        />
+      </NotificationPreviewFallback>
     );
   }
 
@@ -653,11 +656,13 @@ function AgentPanelBody({
 
   if (target.kind === "agent" && !agent) {
     return (
-      <View style={styles.container} testID="agent-loading">
-        <View style={styles.errorContainer}>
-          <ThemedLoadingSpinner size="large" uniProps={foregroundMutedColorMapping} />
+      <NotificationPreviewFallback serverId={serverId} agentId={agentId}>
+        <View style={styles.container} testID="agent-loading">
+          <View style={styles.errorContainer}>
+            <ThemedLoadingSpinner size="large" uniProps={foregroundMutedColorMapping} />
+          </View>
         </View>
-      </View>
+      </NotificationPreviewFallback>
     );
   }
 
@@ -1016,7 +1021,14 @@ function ChatAgentContent({
     t,
     onRetryLoad: retryAgentLoad,
   });
-  if (nonReadyView) return nonReadyView;
+  if (nonReadyView)
+    return viewState.tag === "boot" ? (
+      <NotificationPreviewFallback serverId={serverId} agentId={agentId}>
+        {nonReadyView}
+      </NotificationPreviewFallback>
+    ) : (
+      nonReadyView
+    );
   const showHistorySyncOverlay =
     viewState.tag === "ready" &&
     viewState.sync.status === "catching_up" &&

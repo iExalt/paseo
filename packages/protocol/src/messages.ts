@@ -778,6 +778,7 @@ export const AgentStreamEventPayloadSchema = z.discriminatedUnion("type", [
           workspaceId: z.string().optional(),
           agentId: z.string(),
           reason: z.enum(["finished", "error", "permission"]),
+          preview: z.unknown().optional(),
         }),
       })
       .optional(),
@@ -5792,6 +5793,7 @@ export const AgentAttentionRequiredMessageSchema = z.object({
           workspaceId: z.string().optional(),
           agentId: z.string(),
           reason: z.enum(["finished", "error", "permission"]),
+          preview: z.unknown().optional(),
         }),
       })
       .optional(),
