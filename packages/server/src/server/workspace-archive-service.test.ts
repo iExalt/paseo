@@ -1841,43 +1841,45 @@ describe("last-agent workspace archive", () => {
     { name: "no-upstream", git: { isDirty: false, upstreamRef: null, aheadOfOrigin: null } },
     { name: "unknown", git: { isDirty: null, upstreamRef: "origin/main", aheadOfOrigin: 0 } },
     { name: "failed", git: null },
-  ])(
-    "retains $name worktrees without teardown during last-agent archive",
-    async ({ name, git }) => {
-      const { tempDir, repoDir } = createGitRepo();
-      const marker = path.join(tempDir, "teardown-ran");
-      writeFileSync(
-        path.join(repoDir, "paseo.json"),
-        JSON.stringify({
-          worktree: { teardown: [`node -e "require('fs').writeFileSync('${marker}', 'ran')"`] },
-        }),
-      );
-      execFileSync("git", ["add", "paseo.json"], { cwd: repoDir });
-      execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "teardown fixture"], {
-        cwd: repoDir,
-        stdio: "pipe",
-      });
-      const worktree = await createPaseoOwnedWorktree(repoDir, tempDir, `retained-${name}`);
-      const workspaceId = `ws-${name}`;
-      const deps = createArchiveDeps({
-        paseoHome: tempDir,
-        activeWorkspaces: [{ workspaceId, cwd: worktree.worktreePath, kind: "worktree" }],
-      });
-      deps.workspaceGitService.getSnapshot = vi.fn(async () => {
-        if (!git) throw new Error("git unavailable");
-        return { git } as Awaited<ReturnType<WorkspaceGitService["getSnapshot"]>>;
-      });
-      const result = await archiveByScope(deps, {
-        scope: { kind: "workspace", workspaceId },
-        requestId: name,
-        onlyIfEmpty: true,
-      });
-      expect(result.archivedWorkspaceIds).toEqual([workspaceId]);
-      expect(result.removedDirectory).toBe(false);
-      expect(existsSync(worktree.worktreePath)).toBe(true);
-      expect(existsSync(marker)).toBe(false);
-    },
-  );
+  ])("removes $name work and runs teardown", async ({ name, git }) => {
+    const { tempDir, repoDir } = createGitRepo();
+    const marker = path.join(tempDir, "teardown-ran");
+    writeFileSync(
+      path.join(repoDir, "paseo.json"),
+      JSON.stringify({
+        worktree: { teardown: [`node -e "require('fs').writeFileSync('${marker}', 'ran')"`] },
+      }),
+    );
+    execFileSync("git", ["add", "paseo.json"], { cwd: repoDir });
+    execFileSync("git", ["-c", "commit.gpgsign=false", "commit", "-m", "teardown fixture"], {
+      cwd: repoDir,
+      stdio: "pipe",
+    });
+    const worktree = await createPaseoOwnedWorktree(repoDir, tempDir, `retained-${name}`);
+    writeFileSync(path.join(worktree.worktreePath, "untracked.txt"), "unpublished");
+    writeFileSync(path.join(worktree.worktreePath, ".gitignore"), "ignored.txt\n");
+    writeFileSync(path.join(worktree.worktreePath, "ignored.txt"), "ignored");
+    writeFileSync(path.join(worktree.worktreePath, ".gitignore"), "ignored.txt\n# dirty\n");
+    const workspaceId = `ws-${name}`;
+    const deps = createArchiveDeps({
+      paseoHome: tempDir,
+      activeWorkspaces: [{ workspaceId, cwd: worktree.worktreePath, kind: "worktree" }],
+    });
+    deps.workspaceGitService.getSnapshot = vi.fn(async () => {
+      if (!git) throw new Error("git unavailable");
+      return { git } as Awaited<ReturnType<WorkspaceGitService["getSnapshot"]>>;
+    });
+    const result = await archiveByScope(deps, {
+      scope: { kind: "workspace", workspaceId },
+      requestId: name,
+      onlyIfEmpty: true,
+    });
+    expect(result.archivedWorkspaceIds).toEqual([workspaceId]);
+    expect(result.directoryLeftBehind).toBeUndefined();
+    expect(result.removedDirectory).toBe(true);
+    expect(existsSync(worktree.worktreePath)).toBe(false);
+    expect(existsSync(marker)).toBe(true);
+  });
 
   test.each([false, true])(
     "removes clean published work only without a sibling reference (sibling=%s)",

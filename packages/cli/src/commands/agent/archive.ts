@@ -31,6 +31,7 @@ export function addArchiveOptions(cmd: Command): Command {
     .argument("<id>", "Agent ID, full session ID, prefix, or name")
     .addHelpText(
       "after",
+      "\nThe last unarchived agent also archives its workspace. Local checkouts are kept; Paseo-owned worktrees are removed, including uncommitted, untracked, ignored, and unpushed work, when no active workspace still references them.\n\nSelf-archive can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
     );
 }
 
