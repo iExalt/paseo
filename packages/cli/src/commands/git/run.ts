@@ -6,7 +6,6 @@ import { connectToDaemon } from "../../utils/client.js";
 export interface GitOptions extends CommandOptions {
   workspace?: string;
   cwd?: string;
-  force?: boolean;
   mode?: "uncommitted" | "base" | "all";
   base?: string;
   ignoreWhitespace?: boolean;
@@ -73,8 +72,6 @@ export async function runGitCommand(
   options: GitOptions,
   connect: typeof connectToDaemon = connectToDaemon,
 ): Promise<SingleResult<CheckoutOutput>> {
-  if (["discard", "merge", "stash-pop"].includes(operation) && !options.force)
-    throw { code: "CONFIRMATION_REQUIRED", message: "Pass --force to confirm " + operation };
   if (operation === "diff" && Boolean(options.sha) !== Boolean(options.path))
     throw { code: "INVALID_OPTIONS", message: "--sha and --path must be used together" };
   const index = operation === "stash-pop" ? Number(args[0]) : 0;

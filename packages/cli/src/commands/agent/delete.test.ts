@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
 
+import { runArchiveCommand } from "./archive.js";
 import { runDeleteCommand } from "./delete.js";
 import { render } from "../../output/index.js";
 
@@ -40,6 +41,7 @@ const cancelAgent = vi.fn(async () => {
 const fetchAgentHistory = vi.fn(async (options: { page: { cursor?: string } }) =>
   historyPage(options.page.cursor),
 );
+const archiveAgent = vi.fn(async () => ({ archivedAt: "2026-11-14T00:00:00.000Z" }));
 const deleteAgent = vi.fn(async (_id: string) => undefined);
 const close = vi.fn(async () => undefined);
 
@@ -50,6 +52,7 @@ vi.mock("../../utils/client.js", () => ({
     fetchAgent: vi.fn(async () => ({ agent })),
     cancelAgent,
     deleteAgent,
+    archiveAgent,
     close,
   })),
   getDaemonHost: vi.fn(() => "ws://127.0.0.1:6767"),
@@ -176,4 +179,19 @@ describe("runDeleteCommand", () => {
     await expect(runDeleteCommand(agent.id, { daemonTarget }, {} as never)).rejects.toBe(error);
     expect(close).toHaveBeenCalledOnce();
   });
+});
+
+it("archives a running agent directly and treats an archived agent as a no-op", async () => {
+  const result = await runArchiveCommand(agent.id, { daemonTarget }, {} as never);
+  expect(archiveAgent).toHaveBeenCalledExactlyOnceWith(agent.id);
+  const timestamp = result.data.archivedAt;
+  agent.archivedAt = timestamp;
+  try {
+    expect((await runArchiveCommand(agent.id, { daemonTarget }, {} as never)).data.archivedAt).toBe(
+      timestamp,
+    );
+    expect(archiveAgent).toHaveBeenCalledTimes(1);
+  } finally {
+    agent.archivedAt = null;
+  }
 });

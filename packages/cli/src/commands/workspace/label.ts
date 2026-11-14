@@ -19,7 +19,6 @@ interface LabelOptions {
   workspace?: string;
   color?: string;
   name?: string;
-  force?: boolean;
   inspect?: boolean;
 }
 const labelSchema: OutputSchema<WorkspaceLabelDefinition> = {
@@ -148,13 +147,6 @@ async function remove(
   _command: Command,
 ): Promise<SingleResult<DeleteResult>> {
   const name = requireName(nameArg);
-  if (!options.inspect && !options.force)
-    throw {
-      code: "CONFIRMATION_REQUIRED",
-      message: "Label deletion requires --force; use --inspect to read its impact",
-    };
-  if (options.inspect && options.force)
-    throw { code: "INVALID_OPTIONS", message: "--inspect cannot be combined with --force" };
   const client = await connectLabels(options);
   try {
     const payload = options.inspect
@@ -203,12 +195,7 @@ export function createWorkspaceLabelCommand(): Command {
       .command("delete")
       .description("Delete a label from the catalog and all workspaces")
       .argument("<name>")
-      .addOption(new Option("--force", "Confirm deletion").conflicts("inspect"))
-      .addOption(
-        new Option("--inspect", "Read affected workspace count without deleting").conflicts(
-          "force",
-        ),
-      ),
+      .option("--inspect", "Read affected workspace count without deleting"),
   ).action(withOutput(remove));
   for (const command of labels.commands) command.allowExcessArguments(false);
   return labels;

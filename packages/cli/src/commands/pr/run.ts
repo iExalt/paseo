@@ -23,8 +23,6 @@ export async function runPrCommand(
   options: PrOptions,
   connect: typeof connectToDaemon = connectToDaemon,
 ) {
-  if (["merge", "auto-merge"].includes(operation) && !options.force)
-    throw { code: "CONFIRMATION_REQUIRED", message: "Pass --force to confirm " + operation };
   const checkRunId = positiveInteger(options.checkRunId);
   const workflowRunId = positiveInteger(options.workflowRunId);
   const number = positiveInteger(options.number);

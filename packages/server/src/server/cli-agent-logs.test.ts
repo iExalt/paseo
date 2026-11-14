@@ -192,7 +192,6 @@ test("logs --since filters history and live output through the CLI and daemon", 
         "message-1",
         "--mode",
         "conversation",
-        "--force",
         "--json",
       ]);
       assert.strictEqual(rewindResult.exitCode, 0, rewindResult.stderr);
@@ -200,23 +199,12 @@ test("logs --since filters history and live output through the CLI and daemon", 
         { mode: "conversation", messageId: "message-1" },
       ]);
       assert.strictEqual(JSON.parse(rewindResult.stdout).changed, true);
-      const refusedRewind = await logs([
-        "agent",
-        "rewind",
-        structuredAgent.id,
-        "--to",
-        "missing",
-        "--json",
-      ]);
-      assert.strictEqual(refusedRewind.exitCode, 1, refusedRewind.stderr);
-      assert.strictEqual(JSON.parse(refusedRewind.stderr).error.code, "CONFIRMATION_REQUIRED");
       const unsupportedRewind = await logs([
         "agent",
         "rewind",
         structuredAgent.id,
         "--to",
         "missing",
-        "--force",
         "--mode",
         "files",
         "--json",

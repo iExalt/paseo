@@ -6,7 +6,6 @@ import type { CommandOptions, SingleResult, OutputSchema } from "../../output/in
 interface RewindOptions extends CommandOptions {
   to?: string;
   mode?: string;
-  force?: boolean;
 }
 interface RewindResult {
   agentId: string;
@@ -28,16 +27,13 @@ export function addRewindOptions(command: Command): Command {
     .description("Rewind an agent conversation, files, or both")
     .argument("<id>", "Agent ID, prefix, or full session ID")
     .requiredOption("--to <message-id>", "User message ID from the timeline")
-    .option("--mode <mode>", "conversation, files, or both", "conversation")
-    .option("--force", "Confirm destructive rewind");
+    .option("--mode <mode>", "conversation, files, or both", "conversation");
 }
 export async function runRewindCommand(
   id: string,
   options: RewindOptions,
   _command: Command,
 ): Promise<SingleResult<RewindResult>> {
-  if (!options.force)
-    throw { code: "CONFIRMATION_REQUIRED", message: "Rewind is destructive; pass --force." };
   const mode = options.mode ?? "conversation";
   if (mode !== "conversation" && mode !== "files" && mode !== "both")
     throw { code: "INVALID_ARGUMENT", message: "--mode must be conversation, files, or both." };

@@ -437,18 +437,17 @@ describe("workspace label catalog and recovery", () => {
       color: "red",
     });
   });
-  it("inspects deletion separately from confirmed deletion", async () => {
+  it("inspects deletion separately from direct deletion", async () => {
     inspectWorkspaceLabelDelete.mockResolvedValueOnce({ affectedWorkspaceCount: 2 });
     deleteWorkspaceLabel.mockResolvedValueOnce({ affectedWorkspaceCount: 2 });
     await parse(["label", "delete", "Ready", "--inspect"]);
     expect(deleteWorkspaceLabel).not.toHaveBeenCalled();
-    await parse(["label", "delete", "Ready", "--force"]);
+    await parse(["label", "delete", "Ready"]);
     expect(inspectWorkspaceLabelDelete).toHaveBeenCalledExactlyOnceWith({ name: "Ready" });
     expect(deleteWorkspaceLabel).toHaveBeenCalledExactlyOnceWith({ name: "Ready" });
   });
   it.each([
     ["label", "delete", "Needs", "Review", "--force"],
-    ["label", "delete", "Ready"],
     ["label", "delete", "Ready", "--force", "--inspect"],
     ["label", "create", "Ready", "--color", "sky"],
     ["label", "create", "Ready", "--workspace", "ws-1", "--color", "invalid"],
