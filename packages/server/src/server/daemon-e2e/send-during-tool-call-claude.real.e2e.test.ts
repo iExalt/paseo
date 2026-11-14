@@ -664,6 +664,122 @@ describe("daemon E2E (real claude) - send message during tool call", () => {
     }
   }, 210_000);
 
+  test("steers a Claude turn parked on a permission without interrupting it", async () => {
+    const logger = pino({ level: "silent" });
+    const resources: SteeringResources = {
+      cwd: tmpCwd(),
+      daemon: null,
+      client: null,
+      collector: null,
+    };
+    try {
+      resources.daemon = await createTestPaseoDaemon({
+        agentClients: { claude: new ClaudeAgentClient({ logger }) },
+        logger,
+      });
+      resources.client = new DaemonClient({ url: `ws://127.0.0.1:${resources.daemon.port}/ws` });
+      const { client, cwd } = resources;
+      if (!client) throw new Error("Claude permission steering test client was not created");
+      await within("connect permission steering client", 15_000, client.connect());
+      await within(
+        "subscribe permission steering client",
+        15_000,
+        client.fetchAgents({ subscribe: {} }),
+      );
+      const agent = await within(
+        "create permission steering agent",
+        30_000,
+        client.createAgent({
+          cwd: cwd ?? process.cwd(),
+          title: "claude-permission-steer",
+          ...getRealProviderConfig("claude"),
+          // The steer must arrive while canUseTool is blocking on the user.
+          modeId: "default",
+        }),
+      );
+      const collector = createMessageCollector(client);
+      resources.collector = collector;
+      await within(
+        "submit permission-gated turn",
+        30_000,
+        client.sendAgentMessage(
+          agent.id,
+          "Use the Bash tool to run exactly: curl -sS -o /dev/null https://example.com. Then follow any later user message.",
+          { messageId: generateClientMessageId() },
+        ),
+      );
+      await within(
+        "wait for the Bash permission request",
+        90_000,
+        client.waitForAgentUpsert(
+          agent.id,
+          (snapshot) => snapshot.pendingPermissions.length > 0,
+          80_000,
+        ),
+      );
+      const initialTurnId = (await client.fetchAgentTimeline(agent.id, { limit: 20 })).entries.find(
+        (entry) => entry.item.type === "user_message",
+      )?.turnId;
+      expect(initialTurnId).toEqual(expect.any(String));
+
+      const steerText = "Do not run any command. Reply exactly STEERED_AT_PERMISSION and stop.";
+      const steerId = generateClientMessageId();
+      const messagesBeforeSteer = collector.messages.length;
+      await within(
+        "submit steer at the open permission",
+        30_000,
+        client.sendAgentMessage(agent.id, steerText, {
+          messageId: steerId,
+          activeTurnBehavior: "steer",
+        }),
+      );
+      const finish = await within(
+        "wait for the steered turn to finish",
+        150_000,
+        client.waitForFinish(agent.id, 140_000),
+      );
+      expect(finish.status).toBe("idle");
+
+      const postSteer = collector.messages.slice(messagesBeforeSteer);
+      const streamEventTypes = postSteer.flatMap((message) =>
+        message.type === "agent_stream" && message.payload.agentId === agent.id
+          ? [message.payload.event.type]
+          : [],
+      );
+      expect(streamEventTypes, "a steer must not cancel or restart the parked turn").not.toContain(
+        "turn_canceled",
+      );
+      expect(streamEventTypes).not.toContain("turn_started");
+
+      const timeline = await client.fetchAgentTimeline(agent.id, { limit: 100 });
+      const steerRows = timeline.entries.filter(
+        (entry) => entry.item.type === "user_message" && entry.item.text === steerText,
+      );
+      expect(steerRows).toHaveLength(1);
+      expect(steerRows[0]?.turnId).toBe(initialTurnId);
+      // The steer answers the open prompt, so the gated call is denied rather than left open.
+      expect(
+        timeline.entries.filter(
+          (entry) => entry.item.type === "tool_call" && entry.item.status === "failed",
+        ),
+      ).toHaveLength(1);
+      expect((await fetchAssistantTexts(client, agent.id)).join("\n")).toContain(
+        "STEERED_AT_PERMISSION",
+      );
+    } finally {
+      const cleanup = await Promise.allSettled([
+        Promise.resolve(resources.collector?.unsubscribe()),
+        resources.client?.close() ?? Promise.resolve(),
+        resources.daemon?.close() ?? Promise.resolve(),
+      ]);
+      if (resources.cwd) rmSync(resources.cwd, { recursive: true, force: true });
+      const failures = cleanup.flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
+      expect(failures, "Claude permission steering E2E cleanup failures").toEqual([]);
+    }
+  }, 210_000);
+
   test("a background subagent keeps running after a message is sent while it works", async () => {
     // The scenario the rest of this file explicitly rules out: every other test here tells Claude
     // "Do not use a background task", so steering during a backgrounded subagent was never
