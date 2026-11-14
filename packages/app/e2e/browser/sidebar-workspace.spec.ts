@@ -668,6 +668,22 @@ test.describe("Half-screen desktop layout", () => {
       await page.keyboard.press("ControlOrMeta+B");
       await expect(page.getByTestId("sidebar-global-new-workspace")).toBeVisible();
       await expect(page.getByTestId("workspace-explorer-sidebar")).not.toBeVisible();
+
+      // So does the command center's toggle action.
+      await explorerToggle.click();
+      await expect(page.getByTestId("sidebar-global-new-workspace")).not.toBeVisible();
+      await page.keyboard.press("ControlOrMeta+K");
+      const commandCenter = page.getByTestId("command-center-panel");
+      await commandCenter.getByTestId("command-center-input").fill("Toggle left sidebar");
+      await commandCenter.getByRole("button", { name: /^Toggle left sidebar/ }).click();
+      await expect(page.getByTestId("sidebar-global-new-workspace")).toBeVisible();
+      await expect(page.getByTestId("workspace-explorer-sidebar")).not.toBeVisible();
+
+      // The menu button advertises the shortcut that toggles it on this platform.
+      await page.getByTestId("menu-button").first().hover();
+      await expect(page.getByTestId("menu-button-tooltip")).toContainText(
+        process.platform === "darwin" ? "⌘B" : "Ctrl+B",
+      );
     } finally {
       await workspace.cleanup();
     }

@@ -8,17 +8,17 @@ import {
   iconButtonChromeGlyphSize,
   mutedIconColorMapping,
 } from "@/components/ui/icon-button-chrome";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 
 const ThemedPanelRight = withUnistyles(PanelRight);
 
-export const EXPLORER_TOGGLE_KEYS: ShortcutKey[] = ["mod", "E"];
+const NO_SHORTCUT: ShortcutKey[] = [];
 
 interface WorkspaceExplorerToggleProps {
   onPress: () => void;
   label: string;
   tooltipLabel: string;
-  tooltipKeys: ShortcutKey[];
   accessibilityState: { expanded: boolean };
   mobile: boolean;
   style?: StyleProp<ViewStyle>;
@@ -41,17 +41,18 @@ export function WorkspaceExplorerToggle({
   onPress,
   label,
   tooltipLabel,
-  tooltipKeys,
   accessibilityState,
   mobile,
   style,
 }: WorkspaceExplorerToggleProps) {
+  const tooltipChord = useShortcutKeys("toggle-right-sidebar");
   return (
     <HeaderToggleButton
       testID="workspace-explorer-toggle"
       onPress={onPress}
       tooltipLabel={tooltipLabel}
-      tooltipKeys={tooltipKeys}
+      tooltipKeys={NO_SHORTCUT}
+      tooltipChord={tooltipChord}
       tooltipSide="left"
       style={style}
       accessible
