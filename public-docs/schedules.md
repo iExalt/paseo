@@ -36,6 +36,12 @@ Both run on a cadence you set. To start an agent from an external event instead 
 - **[From the CLI](/docs/schedules-cli)** — `paseo schedule create`, for headless boxes and scripts.
 - **[Agent automation](/docs/cli#asynchronous-delegation)** — agents use the same CLI with caller context.
 
+## Inspect and trigger a heartbeat
+
+Open a schedule or heartbeat in the app's Schedules view to see its full details, including creation, last-run, and next-run times. Heartbeat details also show the full name and prompt.
+
+Use **Trigger heartbeat now** in the heartbeat editor or its actions menu to send its saved prompt to the existing agent immediately. Cadence edits still need **Save changes**.
+
 ## Keep run workspaces
 
 Each new-agent schedule run creates a workspace. **Archive on finish** is on by default: when the run ends, Paseo archives that workspace and its agent. With worktree isolation, archiving also removes the worktree after its last active workspace is archived.
