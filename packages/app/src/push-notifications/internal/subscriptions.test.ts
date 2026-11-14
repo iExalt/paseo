@@ -66,6 +66,39 @@ describe("push subscription registration status", () => {
     notifications.getExpoPushTokenAsync.mockResolvedValue({ data: "ExponentPushToken[a]" });
   });
 
+  it("reports a build without Firebase once per session instead of warning on every connect", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    notifications.getExpoPushTokenAsync.mockRejectedValue(
+      new Error(
+        "Unable to get Firebase Messaging instance. Did you configure `googleServicesFile`?",
+      ),
+    );
+
+    const stops = [
+      startSubscription({ client: fakeClient(true) as never, serverId: "a" }),
+      startSubscription({ client: fakeClient(true) as never, serverId: "b" }),
+    ];
+    await settle();
+
+    expect(usePushRegistrationStore.getState()).toMatchObject({ a: "failed", b: "failed" });
+    expect(info.mock.calls).toEqual([
+      ["[paseo-agent] push register status=unavailable reason=firebase-not-configured"],
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+    for (const stop of stops) stop();
+
+    notifications.getExpoPushTokenAsync.mockRejectedValue(
+      new Error("Firebase Installations Service is unavailable"),
+    );
+    const stop = startSubscription({ client: fakeClient(true) as never, serverId: "c" });
+    await settle();
+    expect(warn).toHaveBeenCalledTimes(1);
+    stop();
+    info.mockRestore();
+    warn.mockRestore();
+  });
+
   it("follows the connection once the token resolves", async () => {
     const client = fakeClient(false);
     const stop = startSubscription({ client: client as never, serverId: "host" });
@@ -120,5 +153,30 @@ describe("push subscription registration status", () => {
     reregisterPushToken("host");
     await settle();
     expect(usePushRegistrationStore.getState().host).toBe("sent");
+  });
+});
+
+describe("the notifications=skip agent switch", () => {
+  it("leaves the permission unasked in a build with agent switches", async () => {
+    vi.resetModules();
+    vi.stubEnv("EXPO_PUBLIC_PASEO_AGENT_SWITCHES", "1");
+    vi.doMock("@/diagnostics/agent-switches-source", () => ({
+      takeLaunchSwitches: () => ({ notifications: "skip" }),
+      addSwitchesListener: () => {},
+    }));
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    notifications.getPermissionsAsync.mockResolvedValue({ status: "denied", canAskAgain: true });
+    const fresh = await import("./subscriptions");
+
+    fresh.startSubscription({ client: fakeClient(true) as never, serverId: "host" });
+    await settle();
+
+    expect(notifications.requestPermissionsAsync).not.toHaveBeenCalled();
+    expect(info.mock.calls.map(([line]) => line)).toContain(
+      "[paseo-agent] push prompt status=skipped reason=debug-switch",
+    );
+    vi.unstubAllEnvs();
+    vi.doUnmock("@/diagnostics/agent-switches-source");
+    info.mockRestore();
   });
 });
