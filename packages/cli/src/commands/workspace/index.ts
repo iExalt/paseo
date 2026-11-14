@@ -3,6 +3,7 @@ import { withOutput } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { runArchiveCommand } from "./archive.js";
 import { runCreateCommand } from "./create.js";
+import { runInspectCommand } from "./inspect.js";
 import { runLsCommand } from "./ls.js";
 import { runRenameCommand } from "./rename.js";
 import { runSetupCommand } from "./setup.js";
@@ -15,7 +16,8 @@ export function createWorkspaceCommand(): Command {
     workspace
       .command("setup")
       .description("Allow and run setup for a workspace")
-      .argument("<workspace-id>", "Workspace id"),
+      .argument("<workspace-id>", "Workspace id")
+      .option("--status", "Read setup status without running setup"),
   ).action(withOutput(runSetupCommand));
 
   addJsonAndDaemonHostOptions(
@@ -49,6 +51,13 @@ export function createWorkspaceCommand(): Command {
       .option("--background", "Create a background workspace")
       .option("--no-background", "Create a visible workspace instead of inheriting background"),
   ).action(withOutput(runCreateCommand));
+
+  addJsonAndDaemonHostOptions(
+    workspace
+      .command("inspect")
+      .description("Inspect a workspace descriptor")
+      .argument("<workspace-id>", "Exact workspace id"),
+  ).action(withOutput(runInspectCommand));
 
   addJsonAndDaemonHostOptions(
     workspace

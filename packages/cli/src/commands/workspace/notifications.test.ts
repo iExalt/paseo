@@ -25,10 +25,16 @@ const createWorkspace = vi.fn(async () => ({
     notifications: "off" as const,
   },
 }));
+const fetchWorkspaces = vi.fn();
+const fetchWorkspaceSetupStatus = vi.fn();
+const runWorkspaceSetup = vi.fn();
 const close = vi.fn(async () => undefined);
 
 vi.mock("../../utils/client.js", () => ({
   connectToDaemon: vi.fn(async () => ({
+    fetchWorkspaces,
+    fetchWorkspaceSetupStatus,
+    runWorkspaceSetup,
     createWorkspace,
     setWorkspaceNotifications,
     updateWorkspaceSettings,
@@ -249,5 +255,115 @@ describe("workspace notification list output", () => {
     expect(
       render(result, { format: "table", quiet: false, noHeaders: false, noColor: true }),
     ).toContain("off");
+  });
+});
+
+import { runInspectCommand } from "./inspect.js";
+import { runSetupCommand } from "./setup.js";
+
+describe("workspace descriptor inspection", () => {
+  const options = {
+    daemonTarget: { kind: "instance" as const, home: "/tmp/workspace-inspect-test" },
+  };
+  const descriptor = WorkspaceDescriptorPayloadSchema.parse({
+    id: "ws-rich",
+    projectId: "project-1",
+    projectDisplayName: "Paseo",
+    projectRootPath: "/repo",
+    projectKind: "git",
+    workspaceKind: "worktree",
+    name: "Review",
+    status: "running",
+    activityAt: "2026-11-01T00:00:00Z",
+    project: {
+      projectKey: "paseo",
+      projectName: "Paseo",
+      checkout: {
+        cwd: "/repo",
+        isGit: false,
+        currentBranch: null,
+        remoteUrl: null,
+        isPaseoOwnedWorktree: false,
+        mainRepoRoot: null,
+      },
+    },
+    labels: ["Ready"],
+    pinnedAt: "2026-11-01T00:00:00Z",
+    setupStatus: "failed",
+    diffStat: { additions: 7, deletions: 2 },
+    background: true,
+  });
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  it("preserves every descriptor field alongside the established aliases in JSON", () => {
+    const row = toWorkspaceRow(descriptor);
+    const json = JSON.parse(
+      render(
+        { type: "list", data: [row], schema: workspaceSchema },
+        { format: "json", quiet: false, noHeaders: false, noColor: true },
+      ),
+    );
+    expect(json[0].descriptor).toEqual(descriptor);
+    expect(json[0].project).toBe("Paseo");
+    expect(json[0].workspaceId).toBe("ws-rich");
+  });
+  it("finds exact background IDs on later pages", async () => {
+    fetchWorkspaces
+      .mockResolvedValueOnce({ entries: [], pageInfo: { nextCursor: "next" } })
+      .mockResolvedValueOnce({ entries: [descriptor], pageInfo: { nextCursor: null } });
+    const result = await runInspectCommand("ws-rich", options, {} as never);
+    expect(result.data.descriptor).toEqual(descriptor);
+    expect(fetchWorkspaces).toHaveBeenNthCalledWith(2, {
+      filter: { includeBackground: true },
+      page: { limit: 200, cursor: "next" },
+    });
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("rejects prefixes and closes the connection", async () => {
+    fetchWorkspaces.mockResolvedValueOnce({
+      entries: [descriptor],
+      pageInfo: { nextCursor: null },
+    });
+    await expect(runInspectCommand("ws", options, {} as never)).rejects.toMatchObject({
+      code: "WORKSPACE_NOT_FOUND",
+    });
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("registers a setup status read without running setup", async () => {
+    fetchWorkspaceSetupStatus.mockResolvedValueOnce({ workspaceId: "ws-rich", snapshot: null });
+    await createWorkspaceCommand().parseAsync(["setup", "ws-rich", "--status"], { from: "user" });
+    expect(fetchWorkspaceSetupStatus).toHaveBeenCalledExactlyOnceWith("ws-rich");
+    expect(runWorkspaceSetup).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("preserves the complete setup snapshot", async () => {
+    const snapshot = {
+      status: "blocked",
+      detail: {
+        type: "worktree_setup",
+        worktreePath: "/repo",
+        branchName: "review",
+        log: "",
+        commands: [],
+      },
+      error: "Review required",
+      blockedSource: {
+        kind: "change_request",
+        forge: "github",
+        number: 42,
+        headRepository: "owner/repo",
+      },
+    };
+    fetchWorkspaceSetupStatus.mockResolvedValueOnce({ snapshot });
+    const result = await runSetupCommand("ws-rich", { ...options, status: true }, {} as never);
+    expect(result.data).toEqual({ workspaceId: "ws-rich", status: "blocked", snapshot });
+  });
+  it("closes when a setup status read fails", async () => {
+    fetchWorkspaceSetupStatus.mockRejectedValueOnce(new Error("missing workspace"));
+    await expect(
+      runSetupCommand("missing", { ...options, status: true }, {} as never),
+    ).rejects.toMatchObject({ code: "WORKSPACE_SETUP_FAILED" });
+    expect(close).toHaveBeenCalledOnce();
   });
 });
