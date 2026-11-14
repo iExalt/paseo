@@ -1,3 +1,4 @@
+import { projectConfigCommand } from "./config.js";
 import { Command } from "commander";
 import { withOutput } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
@@ -13,7 +14,9 @@ export function createProjectCommand(): Command {
     project
       .command("create")
       .description("Register a project directory")
-      .argument("[path]", "Project directory (default: current directory)"),
+      .argument("[path]", "Project directory (or new directory name with --mkdir)")
+      .option("--mkdir", "Create one directory and register it")
+      .option("--parent <daemon-path>", "Existing daemon-side parent directory for --mkdir"),
   ).action(withOutput(runCreateCommand));
 
   addJsonAndDaemonHostOptions(project.command("ls").description("List projects")).action(
@@ -37,5 +40,6 @@ export function createProjectCommand(): Command {
       .argument("<project-id>", "Project id"),
   ).action(withOutput(runDeleteCommand));
 
+  project.addCommand(projectConfigCommand());
   return project;
 }
