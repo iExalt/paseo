@@ -45,6 +45,8 @@ warm means the app is already open.
 | `paseo://h/<serverId>/workspace/<workspaceId>?open=terminal:<id>`, `agent:<id>` or `file:<base64url path>` | yes         | yes  | Selects the tab, also after another intent on the same workspace                                                                                                                                                                                                                                                 |
 | `paseo:///#offer=…` or `paseo://pair#offer=…`                                                              | yes         | yes  | Attempts the import and logs `link import` (checked with invalid offers: `status=failed`), then shows the startup route. `pair#` needs a build from 2026-10-30 or later; older builds show "Unmatched Route". Real pairing was not checked on the tablet (no relay); earlier phone sessions paired through `///` |
 
+`?open=` is upstream compatibility code marked `COMPAT(workspace-open-url)` for removal after
+2027-01-22; no fork test guards it.
 
 ### Android helper
 
