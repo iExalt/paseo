@@ -7,6 +7,7 @@ import {
   selectAllSource,
   selectCellSource,
   selectedSourceText,
+  selectionRectangles,
 } from "./hit-testing";
 import { buildDiffDocumentModel } from "./model";
 import type { BuildDiffDocumentModelInput, DiffCell, DiffSelection } from "./types";
@@ -119,7 +120,7 @@ describe("diff hit testing", () => {
   it("selects all diff source in document order", () => {
     const model = buildModel("first", { wrapLines: false });
 
-    expect(selectedSourceText(model, selectAllSource(model)!)).toBe("@@ -1,0 +1,2 @@\nfirst\ntail");
+    expect(selectedSourceText(model, selectAllSource(model)!)).toBe("first\ntail");
   });
 
   it("selects all source from one split side without interleaving panes", () => {
@@ -132,14 +133,14 @@ describe("diff hit testing", () => {
     const left = changedRow!.kind === "line" ? changedRow!.cells[0]! : null;
     const right = changedRow!.kind === "line" ? changedRow!.cells[1]! : null;
     expect(selectedSourceText(model, selectAllSource(model, position(model, left!, 0))!)).toBe(
-      "@@ -1,2 +1,2 @@\nold-one\nold-two",
+      "old-one\nold-two",
     );
     expect(selectedSourceText(model, selectAllSource(model, position(model, right!, 0))!)).toBe(
       "new-one\nnew-two",
     );
   });
 
-  it("defaults split hunk-header select-all to the new pane", () => {
+  it("skips the hunk header when select-all starts from it in split", () => {
     const model = buildModel("unused", { files: [splitFile()], layout: "split" });
     const header = model.rows
       .filter((row) => row.kind === "line")
@@ -161,7 +162,34 @@ describe("diff hit testing", () => {
     expect(header).toBeDefined();
 
     expect(selectedSourceText(model, selectAllSource(model, position(model, header!, 0))!)).toBe(
-      "@@ -1,2 +1,0 @@\nold-one\nold-two",
+      "old-one\nold-two",
+    );
+  });
+
+  it("omits hunk headers from a drag selection across them", () => {
+    const model = buildModel("first", { wrapLines: false });
+    const cells = model.rows.filter((row) => row.kind === "line").flatMap((row) => row.cells);
+    const header = cells.find((cell) => cell?.type === "header")!;
+    const tail = cells.find((cell) => cell?.content === "tail")!;
+    const selection: DiffSelection = {
+      anchor: position(model, header, 0),
+      focus: position(model, tail, tail.content.length),
+    };
+    expect(selectedSourceText(model, selection)).toBe("first\ntail");
+    const headerRowIndex = position(model, header, 0).rowIndex;
+    const rectangles = selectionRectangles({ model, selection });
+    expect(rectangles.length).toBeGreaterThan(0);
+    expect(rectangles.some((rect) => rect.rowIndex === headerRowIndex)).toBe(false);
+  });
+
+  it("still copies a hunk header when it is the explicit single-line target", () => {
+    const model = buildModel("first", { wrapLines: false });
+    const header = model.rows
+      .filter((row) => row.kind === "line")
+      .flatMap((row) => row.cells)
+      .find((cell) => cell?.type === "header")!;
+    expect(selectedSourceText(model, selectCellSource(model, position(model, header, 0)))).toBe(
+      "@@ -1,0 +1,2 @@",
     );
   });
 });
