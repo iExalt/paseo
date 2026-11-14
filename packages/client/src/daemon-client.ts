@@ -127,6 +127,7 @@ import type {
   RefreshProvidersSnapshotResponseMessage,
   ProviderDiagnosticResponseMessage,
   ProfileListPayload,
+  UsageSpendSummaryPayload,
   PermissionListPayload,
   ProviderInspectPayload,
   ProviderInspectRequest,
@@ -1450,6 +1451,11 @@ interface PongWaiter {
 // "foreground" probe belongs to the verification cycle that ensureConnected({ verify })
 // runs after the app resumes: short window, immediate second check, reconnect at once.
 type PingProbeRole = "latency" | "heartbeat" | "foreground";
+
+// COMPAT(usageSpendSummary): added in v0.9.0, remove gate after 2027-04-18.
+export function supportsSpendSummary(features: ServerInfoStatusPayload["features"]): boolean {
+  return features?.usageSpendSummary === true;
+}
 
 // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
 export function supportsUsageReports(features: ServerInfoStatusPayload["features"]): boolean {
@@ -6455,6 +6461,17 @@ export class DaemonClient {
     return this.sendCorrelatedSessionRequest({
       message: { type: "daemon.tailscale.set.request", enabled, confirmed },
       responseType: "daemon.tailscale.set.response",
+    });
+  }
+
+  /** What agents spent through the host, by provider; `timeZone` decides where days start. */
+  async getSpendSummary(options?: {
+    timeZone?: string;
+    requestId?: string;
+  }): Promise<UsageSpendSummaryPayload> {
+    return this.sendNamespacedCorrelatedSessionRequest<"usage.spend.summary.response">({
+      requestId: options?.requestId,
+      message: { type: "usage.spend.summary.request", timeZone: options?.timeZone },
     });
   }
 

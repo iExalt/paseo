@@ -49,7 +49,7 @@ import {
 } from "@/runtime/host-runtime";
 import { ProviderList } from "@/provider-settings";
 import { openProviderSettings } from "@/navigation/settings-navigation";
-import { HostUsageSection } from "@/usage";
+import { HostSpendSection, HostUsageSection } from "@/usage";
 import { MetadataGenerationPage } from "@/screens/settings/metadata-generation-page";
 import { useSessionStore } from "@/stores/session-store";
 import { settingsStyles } from "@/styles/settings";
@@ -367,6 +367,7 @@ export function HostUsagePage({ serverId }: { serverId: string }) {
   return (
     <View>
       <HostUsageSection serverId={serverId} />
+      <HostSpendSection serverId={serverId} />
     </View>
   );
 }

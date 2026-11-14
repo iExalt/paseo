@@ -105,6 +105,7 @@ export function toStoredAgentRecord(
     persistence,
     ...projectSessionMetrics(agent.sessionMetrics),
     lastError: agent.lastError ?? undefined,
+    totalCostUsd: readTotalCostUsd(agent.lastUsage),
     requiresAttention: agent.attention.requiresAttention,
     attentionReason: agent.attention.requiresAttention ? agent.attention.attentionReason : null,
     attentionTimestamp: agent.attention.requiresAttention
@@ -332,6 +333,7 @@ export function buildStoredAgentPayload(
     metadata: record.metadata,
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
     ...projectSessionMetrics(record.sessionMetrics),
+    ...storedUsage(record),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
   };
 }
@@ -610,6 +612,16 @@ function assignFiniteNumber(
     return true;
   }
   return raw === undefined || raw === null;
+}
+
+export function storedUsage(record: StoredAgentRecord | null): { lastUsage?: AgentUsage } {
+  const cost = record?.totalCostUsd;
+  return cost === undefined ? {} : { lastUsage: { totalCostUsd: cost } };
+}
+
+function readTotalCostUsd(usage: AgentUsage | undefined): number | undefined {
+  const cost = usage?.totalCostUsd;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
 }
 
 function sanitizeUsage(value: unknown): AgentUsage | undefined {

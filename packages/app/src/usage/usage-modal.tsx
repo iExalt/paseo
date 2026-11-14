@@ -2,11 +2,13 @@ import { useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
 import { AdaptiveModalSheet, SheetHeaderSubtitle } from "@/components/adaptive-modal-sheet";
+import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { builtinSidebarNavLabelKey } from "@/sidebar-nav/model";
 import { useHostUsageWithControls } from "./controls";
 import { getHostPickerLabel } from "@/components/hosts/host-picker";
 import { hasHostChoice, useUsageHostSelection } from "./hosts";
 import type { UsageHost } from "./model";
+import { HostSpendSection } from "./spend-section";
 import { UsageBody, UsageMessage } from "./usage-section";
 
 interface UsageModalProps {
@@ -17,8 +19,8 @@ interface UsageModalProps {
 
 /**
  * Usage over the current screen: a dialog on wide layouts, a bottom sheet on compact ones. It
- * shows the usage host's reports with pins, and Refresh all and Settings in its title row. With more
- * than one host, the host shown is the title's subtitle, and Settings is where it is picked.
+ * shows plan usage and API spend, with Refresh all and Settings in its title row. With more
+ * than one host, the host shown is the title subtitle and Settings is where it is picked.
  */
 export function UsageModal(props: UsageModalProps) {
   const { t } = useTranslation();
@@ -60,13 +62,16 @@ function HostUsageModal({
         host's cards. The frame is not keyed: remounting it would dismiss a compact sheet, and Usage
         with it. */}
       <View key={serverId} testID={`usage-host-${serverId}`}>
-        <UsageBody
-          serverId={serverId}
-          view={view}
-          display={display}
-          onRefresh={refresh}
-          onOpenSources={openOptions}
-        />
+        <SettingsSection title={t("providerUsage.title")}>
+          <UsageBody
+            serverId={serverId}
+            view={view}
+            display={display}
+            onRefresh={refresh}
+            onOpenSources={openOptions}
+          />
+        </SettingsSection>
+        <HostSpendSection serverId={serverId} flush />
       </View>
     </UsageModalFrame>
   );
