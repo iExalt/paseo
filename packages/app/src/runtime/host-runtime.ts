@@ -2580,7 +2580,6 @@ export class HostRuntimeStore {
           useSessionStore.getState().sessions[serverId]?.queuedMessages.get(queuedAgentId) ?? [],
         write: (update) => useSessionStore.getState().setQueuedMessages(serverId, update),
       },
-      submitMessage: async ({ text, attachments }) => {
         const supportsForgeAttachments =
           useSessionStore.getState().sessions[serverId]?.serverInfo?.features?.forgeSearch === true;
         await dispatchComposerAgentMessage({
@@ -2597,7 +2596,7 @@ export class HostRuntimeStore {
           // in that same moment (a wake-up after background work). Steering folds the message
           // into that turn instead of interrupting it; with no turn running, the daemon starts
           // a normal one.
-          activeTurnBehavior: "steer",
+          activeTurnBehavior,
         });
       },
     })
