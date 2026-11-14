@@ -23,6 +23,7 @@ import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import type { ManagedAgent } from "./agent-manager.js";
 import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import type { JsonValue } from "../json-utils.js";
+import { persistedAsyncQuestions } from "./providers/codex/async-questions.js";
 import {
   isStoredAgentProviderAvailable,
   resolveStoredAgentUpdatedAt,
@@ -162,7 +163,10 @@ export function toAgentPayload(
       ? { options: sanitizeEffectiveOptions(agent.effectiveOptions) }
       : {}),
     controls: normalizeControls(agent.controls),
-    pendingPermissions: sanitizePendingPermissions(agent.pendingPermissions),
+    pendingPermissions:
+      agent.lifecycle === "closed"
+        ? persistedAsyncQuestions(agent.persistence)
+        : sanitizePendingPermissions(agent.pendingPermissions),
     persistence: projectPersistenceHandleForWire(agent.persistence),
     title: options?.title ?? null,
     labels: agent.labels,
@@ -321,7 +325,7 @@ export function buildStoredAgentPayload(
     currentModeId: record.lastModeId ?? null,
     availableModes: [],
     ...optionControls,
-    pendingPermissions: [],
+    pendingPermissions: persistedAsyncQuestions(persistence),
     persistence,
     title: record.title ?? null,
     requiresAttention: record.requiresAttention ?? false,
