@@ -50,6 +50,7 @@ interface V2AgentOptions {
   bridge?: OpenCodeBridge;
   runtime?: Pick<V2Runtime, "acquire" | "shutdown">;
   selection?: OpenCodeServiceSelection;
+  turnRecoveryIntervalMs?: number;
 }
 
 export class OpenCodeV2AgentClient implements AgentClient {
@@ -209,6 +210,7 @@ export class OpenCodeV2AgentClient implements AgentClient {
       bindChild,
       acquire,
       moved,
+      this.options.turnRecoveryIntervalMs,
     );
     try {
       await session.initialize(
