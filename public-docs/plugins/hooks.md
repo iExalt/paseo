@@ -148,7 +148,7 @@ server.addHook("workspace.archive.after", async ({ workspace }) => {
 
 ## worktree.create.before {#worktreecreatebefore}
 
-Choose the location and creation options for a new worktree. Paseo awaits this hook before `git worktree add`, on creation from the app, CLI, MCP, and agent creation. Receives `{ request }`; return a complete replacement request or `undefined` to keep it. Throwing, invalid returned data, or a 30-second timeout aborts creation with the plugin and hook named in the error.
+Choose the location and creation options for a new worktree. Paseo awaits this hook before `git worktree add`, on creation from the app, CLI, and agent creation. Receives `{ request }`; return a complete replacement request or `undefined` to keep it. Throwing, invalid returned data, or a 30-second timeout aborts creation with the plugin and hook named in the error.
 
 ```ts
 import { basename, dirname, join } from "node:path";
@@ -434,8 +434,7 @@ from the 30 second hook timeout. Closing or reopening an agent session drops its
 Return model-visible text in `text`. `structuredContent` must be JSON-serializable; when `text` is
 omitted, Paseo formats that value as text for the model. Set `isError: true` to report a tool error.
 
-Paseo delivers attached tools through its agent tool transport, using MCP or native registration
-as the provider supports. The same definition and callback work with either. Attached tools obey
+Attached tools reach only providers with native Paseo tools, and only when `daemon.agentTools.enabled` is `true` (the default for a new configuration is `false`). Other providers do not see them. Attached tools obey
 the [same gates as Paseo tools](/docs/mcp#limit-paseo-tools-by-provider). Only that agent sees them.
 
 Names must match `/^[a-z][a-z0-9_]*$/` and be at most 64 characters. A name colliding with a Paseo

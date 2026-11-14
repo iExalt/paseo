@@ -111,7 +111,7 @@ in the catalog and choose **Add**. Paseo launches `hoplite acp` through the gene
 Hoplite runs the agent in a cloud workspace. Open a repository linked to a Hoplite project,
 or set `agents.providers.hoplite.env.HOPLITE_PROJECT_ID` to use one project everywhere.
 Without a linked repository or pinned project, discovery reports `No Hoplite project`.
-Your local files and Paseo's loopback MCP tools are not available in that cloud workspace.
+Your local files and Paseo's local CLI are not available in that cloud workspace.
 
 See [Hoplite's ACP guide](https://hoplite.sh/docs/cli/acp) for authentication and project setup.
 Use a [command override](/docs/custom-providers) if `hoplite` is outside your daemon's PATH;

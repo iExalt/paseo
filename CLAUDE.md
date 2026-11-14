@@ -116,7 +116,7 @@ npm run format:check                 # Check formatting without writing
 
 Repo dev commands use checkout-local state by default. In this checkout, `PASEO_HOME` resolves to `.dev/paseo-home`, and `npm run cli -- ...` targets that same dev home automatically. The packaged desktop app and production-style daemon keep using `~/.paseo` on port `6767`.
 
-When Mo requests an APK, use `npm run build:apk:arm64` for an ARM64 build: writes `artifacts/paseo-dogfood-arm64.apk` with diagnostics without starting a device; `npm run build:apk` builds all four Android architectures.
+To build an APK locally, use `npm run build:apk:arm64` for an ARM64 build: writes `artifacts/paseo-dogfood-arm64.apk` with diagnostics without starting a device; `npm run build:apk` builds all four Android architectures.
 
 See [docs/upstream/development.md](docs/upstream/development.md) for full setup, build sync requirements, and debugging.
 
@@ -125,6 +125,8 @@ See [docs/upstream/development.md](docs/upstream/development.md) for full setup,
 Open PRs against `dev` and merge them there; it is the fork's default branch. Never target
 `upstream/main`: it mirrors upstream, and `rebase-dev` rebases `dev` onto it. Releases cut from `dev` through release-please;
 see the `release-stable` skill.
+[docs/upstream/release.md](docs/upstream/release.md) and the root `release:*` npm scripts are
+upstream's npm, EAS and store process; never follow or run them in the fork.
 
 ## Critical rules
 
@@ -198,7 +200,7 @@ The app runs on iOS, Android, web (browser), and web (Electron desktop). Code is
   ```
   Import as `@/desktop/browser/pane` — Electron desktop gets the `.electron.tsx` file, browser web gets `.web.tsx`, and native gets the native/base implementation.
 - **NEVER use raw DOM APIs without `isWeb` guard.** DOM APIs crash native. Casting a RN ref to `HTMLElement` is a red flag — ensure the block is web-only.
-- **NEVER use `onPointerEnter`/`onPointerLeave`.** They don't fire on native iOS.
+- **Use `onPointerEnter`/`onPointerLeave` on a plain `View` for hover,** as [docs/upstream/hover.md](docs/upstream/hover.md) describes. They don't fire on native iOS, so hover-revealed UI must also show on native.
 - **Hover only works on web.** React Native's `onHoverIn`/`onHoverOut` on `Pressable` does NOT fire on native iOS/iPad — the underlying W3C pointer events are behind disabled experimental flags. For hover-to-show UI (kebab menus, action buttons), use `isHovered || isNative || isCompact` so the controls are always visible on native and hover-to-show on web.
 - **Don't use Platform.OS as a proxy for layout capabilities.** Use breakpoints for layout decisions, not platform checks.
 - **Import `isWeb`/`isNative` from `@/constants/platform`.** Never write `const isWeb = Platform.OS === "web"` locally.
