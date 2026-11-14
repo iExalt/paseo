@@ -152,6 +152,18 @@ function assertChildWithPipes(
   }
 }
 
+// Matches the stderr tail other providers keep (jsonl-rpc-process.ts).
+const ACP_STDERR_TAIL_LIMIT = 8192;
+
+/** Appends a stderr chunk, keeping only the newest ACP_STDERR_TAIL_LIMIT characters. */
+export function appendACPStderrTail(stderrChunks: string[], chunk: string): void {
+  stderrChunks.push(chunk);
+  const joined = stderrChunks.join("");
+  if (joined.length > ACP_STDERR_TAIL_LIMIT) {
+    stderrChunks.splice(0, stderrChunks.length, joined.slice(-ACP_STDERR_TAIL_LIMIT));
+  }
+}
+
 // Watch process failures as well as spawn errors: the SDK leaves initialize
 // pending when the child exits without replying. `close` waits for stderr to
 // drain, so the failure includes the launcher's diagnostic.
@@ -1743,7 +1755,7 @@ export class ACPAgentClient implements AgentClient {
 
     const stderrChunks: string[] = [];
     child.stderr.on("data", (chunk: Buffer | string) => {
-      stderrChunks.push(chunk.toString());
+      appendACPStderrTail(stderrChunks, chunk.toString());
     });
 
     const processErrorPromise = rejectOnProcessFailure(child, stderrChunks);
@@ -3333,7 +3345,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
 
     const stderrChunks: string[] = [];
     child.stderr.on("data", (chunk: Buffer | string) => {
-      stderrChunks.push(chunk.toString());
+      appendACPStderrTail(stderrChunks, chunk.toString());
     });
     const processError = rejectOnProcessFailure(child, stderrChunks);
     child.once("exit", (code, signal) => {
