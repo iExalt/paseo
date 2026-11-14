@@ -158,7 +158,7 @@ At the limit, Paseo tries to stop the command and its child processes and stops 
 
 `scripts` are named commands you can run inside a worktree on demand. Mark one as a _service_ and Paseo supervises it as a long-running process, assigns it a port, and routes HTTP traffic to it through the daemon's reverse proxy.
 
-Run them from the app, or manage them from automation with [`paseo script`](/docs/cli#workspace-scripts) and the [workspace-script MCP tools](/docs/mcp#workspace-scripts).
+Run them from the app, or manage them from automation with [`paseo script`](/docs/cli#workspace-scripts).
 
 ### Plain scripts
 

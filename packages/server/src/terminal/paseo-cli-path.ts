@@ -17,8 +17,10 @@ export function resolvePaseoCliBinDir(): string | null {
   return cliExecutable ? dirname(cliExecutable) : null;
 }
 
-export function resolvePaseoCliExecutablePath(): string | null {
-  const configuredCli = process.env.PASEO_CLI?.trim();
+export function resolvePaseoCliExecutablePath(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): string | null {
+  const configuredCli = env.PASEO_CLI?.trim();
   if (configuredCli) {
     return resolvePath(configuredCli);
   }

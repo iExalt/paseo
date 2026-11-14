@@ -30,6 +30,7 @@ export interface BrowserToolsExecuteInput {
   requestId?: string;
   timeoutMs?: number;
   browserHostId?: string;
+  signal?: AbortSignal;
 }
 
 interface PendingBrowserToolsRequest {
@@ -37,6 +38,9 @@ interface PendingBrowserToolsRequest {
   rememberAffinity: boolean;
   timeout: ReturnType<typeof setTimeout>;
   resolve: (payload: BrowserToolsResponsePayload) => void;
+  reject: (error: Error) => void;
+  signal?: AbortSignal;
+  abort?: () => void;
 }
 
 interface RegisteredBrowserHost {
@@ -103,7 +107,7 @@ export class BrowserToolsBroker {
     for (const [requestId, pending] of this.pending) {
       if (pending.host !== current) continue;
       this.pending.delete(requestId);
-      clearTimeout(pending.timeout);
+      clearPendingBrowserRequest(pending);
       pending.resolve(
         browserToolsFailure({
           requestId,
@@ -128,6 +132,7 @@ export class BrowserToolsBroker {
   }
 
   public async execute(input: BrowserToolsExecuteInput): Promise<BrowserToolsResponsePayload> {
+    if (input.signal?.aborted) throw createBrowserToolsAbortError(input.signal);
     const requestId = input.requestId ?? this.createRequestId();
 
     const request = BrowserAutomationExecuteRequestSchema.safeParse({
@@ -151,6 +156,7 @@ export class BrowserToolsBroker {
       return this.executeListTabs({
         request: request.data,
         timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
+        signal: input.signal,
       });
     }
 
@@ -176,6 +182,7 @@ export class BrowserToolsBroker {
       host: host.value,
       request: request.data,
       timeoutMs: input.timeoutMs ?? this.defaultTimeoutMs,
+      signal: input.signal,
     });
   }
 
@@ -196,7 +203,7 @@ export class BrowserToolsBroker {
       }
 
       this.pending.delete(requestId);
-      clearTimeout(pending.timeout);
+      clearPendingBrowserRequest(pending);
       pending.resolve(
         browserToolsFailure({
           requestId,
@@ -213,7 +220,7 @@ export class BrowserToolsBroker {
     }
 
     this.pending.delete(parsed.data.payload.requestId);
-    clearTimeout(pending.timeout);
+    clearPendingBrowserRequest(pending);
     if (pending.rememberAffinity && parsed.data.payload.ok) {
       this.rememberBrowserHostForPayload(pending.host.target.browserHostId, parsed.data.payload);
     }
@@ -224,6 +231,7 @@ export class BrowserToolsBroker {
   private async executeListTabs(params: {
     request: BrowserAutomationExecuteRequest;
     timeoutMs: number;
+    signal?: AbortSignal;
   }): Promise<BrowserToolsResponsePayload> {
     const hosts = Array.from(this.clients.values());
     if (hosts.length === 0) {
@@ -246,6 +254,7 @@ export class BrowserToolsBroker {
         host: hosts[0],
         request: params.request,
         timeoutMs: params.timeoutMs,
+        signal: params.signal,
       });
     }
 
@@ -260,6 +269,7 @@ export class BrowserToolsBroker {
           },
           rememberAffinity: false,
           timeoutMs: params.timeoutMs,
+          signal: params.signal,
         }),
       })),
     );
@@ -414,39 +424,55 @@ export class BrowserToolsBroker {
     request: BrowserAutomationExecuteRequest;
     rememberAffinity?: boolean;
     timeoutMs: number;
+    signal?: AbortSignal;
   }): Promise<BrowserToolsResponsePayload> {
     const { host, request, timeoutMs } = params;
+    const signal = params.signal;
     const client = host.client;
+    if (signal?.aborted) throw createBrowserToolsAbortError(signal);
 
-    return new Promise<BrowserToolsResponsePayload>((resolve) => {
-      const timeout = setTimeout(() => {
-        if (!this.pending.delete(request.requestId)) {
-          return;
-        }
-        resolve(
-          browserToolsFailure({
-            requestId: request.requestId,
-            code: "browser_timeout",
-            message: `The browser host did not respond within ${timeoutMs}ms. Try again or check the browser host.`,
-            retryable: true,
-          }),
-        );
-      }, timeoutMs);
-
-      this.pending.set(request.requestId, {
+    return new Promise<BrowserToolsResponsePayload>((resolve, reject) => {
+      const pending: PendingBrowserToolsRequest = {
         host,
         rememberAffinity: params.rememberAffinity ?? true,
-        timeout,
+        timeout: setTimeout(() => {
+          if (this.pending.get(request.requestId) !== pending) return;
+          this.pending.delete(request.requestId);
+          clearPendingBrowserRequest(pending);
+          resolve(
+            browserToolsFailure({
+              requestId: request.requestId,
+              code: "browser_timeout",
+              message: `The browser host did not respond within ${timeoutMs}ms. Try again or check the browser host.`,
+              retryable: true,
+            }),
+          );
+        }, timeoutMs),
         resolve,
-      });
+        reject,
+        ...(signal ? { signal } : {}),
+      };
+      if (signal) {
+        pending.abort = () => {
+          if (this.pending.get(request.requestId) !== pending) return;
+          this.pending.delete(request.requestId);
+          clearPendingBrowserRequest(pending);
+          reject(createBrowserToolsAbortError(signal));
+        };
+      }
+      this.pending.set(request.requestId, pending);
+      if (signal?.aborted) {
+        pending.abort?.();
+        return;
+      }
+      if (pending.abort) signal?.addEventListener("abort", pending.abort, { once: true });
 
       try {
         Promise.resolve(client.sendBrowserAutomationRequest(request)).catch((error: unknown) => {
           resolveSendFailure({
             requestId: request.requestId,
             pending: this.pending,
-            timeout,
-            resolve,
+            entry: pending,
             error,
           });
         });
@@ -454,8 +480,7 @@ export class BrowserToolsBroker {
         resolveSendFailure({
           requestId: request.requestId,
           pending: this.pending,
-          timeout,
-          resolve,
+          entry: pending,
           error,
         });
       }
@@ -494,21 +519,30 @@ function withBrowserToolsRequestId(
 function resolveSendFailure(params: {
   requestId: string;
   pending: Map<string, PendingBrowserToolsRequest>;
-  timeout: ReturnType<typeof setTimeout>;
-  resolve: (payload: BrowserToolsResponsePayload) => void;
+  entry: PendingBrowserToolsRequest;
   error: unknown;
 }): void {
-  if (!params.pending.delete(params.requestId)) {
+  if (params.pending.get(params.requestId) !== params.entry) {
     return;
   }
-  clearTimeout(params.timeout);
-  params.resolve(
+  params.pending.delete(params.requestId);
+  clearPendingBrowserRequest(params.entry);
+  params.entry.resolve(
     browserToolsFailure({
       requestId: params.requestId,
       code: "browser_unknown_error",
       message: formatBrowserAutomationSendError(params.error),
     }),
   );
+}
+
+function clearPendingBrowserRequest(pending: PendingBrowserToolsRequest): void {
+  clearTimeout(pending.timeout);
+  if (pending.abort) pending.signal?.removeEventListener("abort", pending.abort);
+}
+
+function createBrowserToolsAbortError(signal: AbortSignal): Error {
+  return signal.reason instanceof Error ? signal.reason : new DOMException("Aborted", "AbortError");
 }
 
 function formatBrowserAutomationValidationError(message: string | undefined): string {

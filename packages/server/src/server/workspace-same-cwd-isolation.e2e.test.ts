@@ -105,7 +105,7 @@ function createSnapshotStormClients(): SnapshotStormProviderClient[] {
 
 async function createSnapshotStormDaemon(clients: SnapshotStormProviderClient[]) {
   return createTestPaseoDaemon({
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     isDev: true,
     agentClients: {
       mock: new MetadataMockLoadTestAgentClient(),

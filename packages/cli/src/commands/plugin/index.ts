@@ -1,3 +1,4 @@
+import { runPluginCatalogCommand } from "./catalog.js";
 import path from "node:path";
 import { expandUserPath } from "../../classify.js";
 import { createInterface } from "node:readline/promises";
@@ -263,5 +264,12 @@ export function createPluginCommand(): Command {
   addJsonAndDaemonHostOptions(
     plugin.command("remove").description("Remove plugin configuration").argument("<id>"),
   ).action(withOutput(remove));
+  addJsonAndDaemonHostOptions(
+    plugin.command("catalog").description("List the host plugin catalog (read-only)"),
+  ).action(
+    withOutput((options: CommandOptions, command: Command) =>
+      runPluginCatalogCommand(options, command),
+    ),
+  );
   return plugin;
 }

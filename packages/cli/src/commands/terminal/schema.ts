@@ -13,6 +13,8 @@ export const terminalSchema: OutputSchema<TerminalRow> = {
   columns: [
     { header: "ID", field: (row) => row.id.slice(0, 8), width: 8 },
     { header: "NAME", field: "name", width: 24 },
+    { header: "TITLE", field: "title", width: 24 },
+    { header: "ACTIVITY", field: (row) => row.activity?.state ?? "", width: 12 },
     { header: "CWD", field: "cwd", width: 48 },
     { header: "WORKSPACE", field: "workspaceId", width: 24 },
   ],

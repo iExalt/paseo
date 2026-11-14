@@ -29,6 +29,11 @@ export function daemonRestartCommand(): Command {
 
 type DaemonStatus = DaemonGetStatusResponse["payload"];
 
+  if (options.replaceSupervisor === true) {
+    const { replaceSupervisor } = await import("./replace-supervisor.js");
+    return replaceSupervisor(options, _command);
+  }
+  return restartWorker(options);
 export async function runRestartCommand(options: CommandOptions, _command: Command) {
   const target = options.daemonTarget;
   const deadline = Date.now() + parseTimeoutMs(options.timeout);

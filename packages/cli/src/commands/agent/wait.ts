@@ -146,7 +146,7 @@ export function buildWaitResult(args: {
 export function addWaitOptions(cmd: Command): Command {
   return cmd
     .description("Wait for an agent to become idle")
-    .argument("<id>", "Agent ID (or prefix)")
+    .argument("<id>", "Agent ID, prefix, or full session ID")
     .option("--timeout <seconds>", "Maximum wait time (default: no limit)");
 }
 

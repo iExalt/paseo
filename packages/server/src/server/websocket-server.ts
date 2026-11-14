@@ -645,7 +645,6 @@ export class VoiceAssistantWebSocketServer {
   private readonly pushNotificationSender: PushNotificationSender;
   // Per agent, the unread finish (by its attention timestamp) that a notification was delivered for.
   private readonly notifiedUnreadFinishAt = new Map<string, number>();
-  private readonly mcpBaseUrl: string | null;
   private speech!: SpeechService | null;
   private terminalManager!: TerminalManager | null;
   private serviceProxy!: ServiceProxySubsystem | null;
@@ -716,7 +715,6 @@ export class VoiceAssistantWebSocketServer {
     downloadTokenStore: DownloadTokenStore,
     paseoHome: string,
     daemonConfigStore: DaemonConfigStore,
-    mcpBaseUrl: string | null,
     wsConfig: WebSocketServerConfig,
     workspaceAutoName: WorkspaceAutoName,
     private readonly workspaceRuntimeStore: WorkspaceRuntimeStore,
@@ -854,7 +852,6 @@ export class VoiceAssistantWebSocketServer {
     this.connectedHosts = new ConnectedHosts(paseoHome, { serverId, label: getHostName() });
     this.passwordHash = auth?.password;
     this.daemonConfigStore = daemonConfigStore;
-    this.mcpBaseUrl = mcpBaseUrl;
     this.assignOptionalServices({
       speech,
       terminalManager,
@@ -1794,7 +1791,6 @@ export class VoiceAssistantWebSocketServer {
       daemonConfigStore: this.daemonConfigStore,
       pluginRuntime: this.pluginRuntime,
       orchestrationSkills: this.orchestrationSkills,
-      mcpBaseUrl: this.mcpBaseUrl,
       stt: () => this.speech?.resolveStt() ?? null,
       sttLanguage: this.speech?.resolveSttLanguage() ?? "en",
       tts: () => this.speech?.resolveTts() ?? null,
@@ -1832,6 +1828,8 @@ export class VoiceAssistantWebSocketServer {
           this.voiceCallerContexts.delete(agentId);
         },
       },
+      resolveVoiceCallerContext: (agentId) => this.resolveVoiceCallerContext(agentId),
+      resolveVoiceSpeakHandler: (agentId) => this.resolveVoiceSpeakHandler(agentId),
       dictation:
         this.dictation || this.speech
           ? {
@@ -2163,6 +2161,14 @@ export class VoiceAssistantWebSocketServer {
         workspaceSortTimes: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,
+        scheduleCliParity: true,
+        scheduleCallerArchiveOnFinish: true,
+        // COMPAT(agentOrchestrationParity): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        agentOrchestrationParity: true,
+        // COMPAT(browserCommandCli): added in v0.11.2; remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        browserCommandCli: true,
+        // COMPAT(voiceSpeakCli): added in v0.11.2; remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        voiceSpeakCli: true,
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
         providersSnapshotCwd: true,
         // COMPAT(checkoutForgeSetAutoMerge): added in v0.2.0-beta.1. Remove the
@@ -2193,6 +2199,8 @@ export class VoiceAssistantWebSocketServer {
         ...(this.advertiseDaemonStatusRpc && this.daemonRuntimeConfig?.setTailscaleEnabled
           ? { tailscale: true }
           : {}),
+        daemonConfigEdit: true,
+        daemonConfigCompare: true,
         // COMPAT(speechSettings): added in v0.12.0, remove gate after 2027-04-18.
         speechSettings: true,
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
@@ -2232,6 +2240,16 @@ export class VoiceAssistantWebSocketServer {
         // COMPAT(terminalGraphemeWidths): added in v0.15.0, remove gate after 2027-05-01.
         "terminal-grapheme-widths": true,
         workspaceTerminals: true,
+        // COMPAT(terminalInputAck): added in v0.11.2, remove gate after 2027-10-10.
+        terminalInputAck: true,
+        // COMPAT(terminalKeys): added in v0.12.1, remove gate after 2027-04-26.
+        terminalKeys: true,
+        // COMPAT(agentCancelOutcome): added in v0.11.2; remove gate after 2027-04-10.
+        agentCancelOutcome: true,
+        // COMPAT(agentSendQueue): added in v0.9.1; remove gate after 2027-04-18.
+        agentSendQueue: true,
+        // COMPAT(workspaceCallerContext): added in v0.11.2, remove gate after 2027-04-10.
+        workspaceCallerContext: true,
         // COMPAT(rewind): added in v0.1.X, drop the gate when floor >= v0.1.X.
         rewind: true,
         // COMPAT(agentTimelinePromptIndex): added in v0.2.X, drop the gate when floor >= v0.2.X.
@@ -2349,6 +2367,20 @@ export class VoiceAssistantWebSocketServer {
         agentConfigApply: true,
         // COMPAT(networkTunnel): added in v0.17.6, remove gate after 2027-05-26.
         networkTunnel: true,
+        // COMPAT(agentClose): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        agentClose: true,
+        // COMPAT(profileList): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        profileList: true,
+        // COMPAT(permissionList): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        permissionList: true,
+        // COMPAT(providerInspect): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        providerInspect: true,
+        // COMPAT(agentDirectoryQuery): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        agentDirectoryQuery: true,
+        // COMPAT(agentStatus): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        agentStatus: true,
+        // COMPAT(agentActivity): added in v0.11.2, remove gate after 2027-04-10 once daemon floor >= v0.11.2.
+        agentActivity: true,
       },
     };
   }

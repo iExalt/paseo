@@ -37,7 +37,7 @@ async function executeSendKeysCommand(
   keys: string[],
   options: TerminalSendKeysOptions,
 ): Promise<{ terminalId: string; keysSent: number }> {
-  const { client, close } = await connectTerminalClient(options.daemonTarget);
+  const { client, daemonClient, close } = await connectTerminalClient(options.daemonTarget);
 
   try {
     const resolvedId = await resolveTerminalId(client, terminalId);
@@ -49,12 +49,13 @@ async function executeSendKeysCommand(
       };
     }
 
-    const terminal = client.terminals.ref(resolvedId);
-    const keysSent = options.literal ? terminal.write(keys.join("")) : terminal.sendKeys(keys);
+    const { written } = await daemonClient.sendTerminalKeysAndWait(resolvedId, keys, {
+      literal: options.literal,
+    });
 
     return {
       terminalId: resolvedId,
-      keysSent,
+      keysSent: written,
     };
   } catch (err) {
     throw toTerminalCommandError("TERMINAL_SEND_KEYS_FAILED", "send terminal keys", err);

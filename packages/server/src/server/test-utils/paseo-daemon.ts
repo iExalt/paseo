@@ -26,8 +26,8 @@ interface TestPaseoDaemonOptions {
   listenPort?: number;
   getTailscaleNetwork?: () => TailscaleNetwork;
   logger?: Parameters<typeof createPaseoDaemon>[1];
-  mcpEnabled?: boolean;
-  mcpDebug?: boolean;
+  agentToolsEnabled?: boolean;
+  browserToolsEnabled?: boolean;
   isDev?: boolean;
   relayEnabled?: boolean;
   relayEndpoint?: string;
@@ -202,9 +202,9 @@ async function prepareTestDaemonConfig(
     desktopManaged: options.desktopManaged,
     corsAllowedOrigins: options.corsAllowedOrigins ?? [],
     hostnames: options.hostnames ?? true,
-    mcpEnabled: options.mcpEnabled ?? true,
+    agentToolsEnabled: options.agentToolsEnabled ?? true,
+    browserToolsEnabled: options.browserToolsEnabled,
     staticDir,
-    mcpDebug: options.mcpDebug ?? false,
     isDev: options.isDev,
     agentClients: options.agentClients ?? createTestAgentClients(),
     providerOverrides: options.providerOverrides,

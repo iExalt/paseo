@@ -39,6 +39,7 @@ export interface ScheduleLogRow {
   agentId: string | null;
   output: string | null;
   error: string | null;
+  run: ScheduleRunRecord;
 }
 
 export const scheduleLogSchema: OutputSchema<ScheduleLogRow> = {
@@ -61,6 +62,7 @@ export function toScheduleLogRow(run: ScheduleRunRecord): ScheduleLogRow {
     agentId: run.agentId ? run.agentId.slice(0, 7) : null,
     output: run.output,
     error: run.error,
+    run,
   };
 }
 
