@@ -1,0 +1,14 @@
+diff --git a/node_modules/@expo/cli/build/src/export/exportApp.js b/node_modules/@expo/cli/build/src/export/exportApp.js
+--- a/node_modules/@expo/cli/build/src/export/exportApp.js
++++ b/node_modules/@expo/cli/build/src/export/exportApp.js
+@@ -224,6 +224,10 @@
+                         hosted: hostedNative
+                     }, files);
+                 } catch (error) {
++                    // Metro queues logger output; process.exit below can discard it.
++                    // Persist the fatal diagnostic before retaining Expo's exit behavior.
++                    const detail = error instanceof Error ? error.stack || error.message : String(error);
++                    require('node:fs').writeSync(2, 'Expo export failed: ' + detail.slice(0, 16000) + '\n');
+                     _log.log('');
+                     if (error instanceof Error) {
+                         _log.exception(error);
