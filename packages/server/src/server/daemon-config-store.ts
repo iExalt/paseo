@@ -442,11 +442,19 @@ export class DaemonConfigStore {
 
   public editRemote(
     field: string,
-    edit: { value?: unknown; unset?: boolean },
+    edit: { value?: unknown; unset?: boolean; expectedValue?: unknown },
   ): Promise<MutableDaemonConfig> {
     return this.enqueue(async () => {
       if (!this.reloadSource)
         throw new Error("Configuration editing is unavailable for this daemon instance");
+      if (Object.hasOwn(edit, "expectedValue")) {
+        const currentValue =
+          field === "agentProfiles"
+            ? (this.current.agentProfiles ?? [])
+            : this.current[field as keyof MutableDaemonConfig];
+        if (JSON.stringify(currentValue) !== JSON.stringify(edit.expectedValue))
+          throw new Error("Configuration changed since it was read; read it again before editing");
+      }
       const previous = await loadPersistedConfigAsync(this.paseoHome, this.logger);
       const { persisted, root } = editRemoteConfig(previous, field, edit);
       const resolved = this.reloadSource.resolve(persisted);

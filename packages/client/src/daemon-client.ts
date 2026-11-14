@@ -6096,7 +6096,7 @@ export class DaemonClient {
 
   async editDaemonConfig(
     path: string,
-    edit: { value?: unknown; unset?: boolean },
+    edit: { value?: unknown; unset?: boolean; expectedValue?: unknown },
   ): Promise<{ requestId: string; config: MutableDaemonConfig }> {
     return this.sendNamespacedCorrelatedSessionRequest<"daemon.config.edit.response">({
       message: { type: "daemon.config.edit.request", path, ...edit },

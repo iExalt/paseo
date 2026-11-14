@@ -1,3 +1,4 @@
+import { withProfileDefaults } from "../../utils/agent-profile.js";
 import { prepareAgentFork } from "./fork.js";
 import { runRewindCommand } from "./rewind.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -628,4 +629,38 @@ it("rejects missing and oversized local attachments before connecting or creatin
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+describe("run profile defaults", () => {
+  const profile = {
+    id: "a",
+    name: "A",
+    provider: "codex",
+    model: "saved",
+    modeId: "plan",
+    thinkingOptionId: "high",
+    featureValues: { fast: true, reset: true },
+  };
+  it("lets explicit provider/model and feature null override defaults", () => {
+    expect(
+      withProfileDefaults({ provider: "codex/new", feature: ["reset=null"] }, profile),
+    ).toMatchObject({
+      provider: "codex",
+      model: "new",
+      mode: "plan",
+      thinking: "high",
+      featuresJson: '{"fast":true,"reset":null}',
+    });
+  });
+  it("loads the provider when omitted and refuses different providers", () => {
+    expect(withProfileDefaults({}, profile)).toMatchObject({ provider: "codex", model: "saved" });
+    expect(() => withProfileDefaults({ provider: "claude" }, profile)).toThrow("must match");
+  });
+  it("rejects profile-plus-fork before connecting", async () => {
+    vi.clearAllMocks();
+    await expect(
+      runRunCommand("task", { daemonTarget, profile: "a", forkSource: "source" }, new Command()),
+    ).rejects.toThrow("cannot be combined");
+    expect(connectToDaemon).not.toHaveBeenCalled();
+  });
 });

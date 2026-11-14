@@ -177,6 +177,7 @@ export function createAgentCommand(): Command {
       .option("--model <id>", "Update the agent's model ID")
       .option("--clear-model", "Clear the agent's model override")
       .option("--thinking <id>", "Update the agent's thinking option ID")
+      .option("--profile <id>", "Apply a saved profile; explicit runtime settings override it")
       .option("--clear-thinking", "Clear the agent's thinking option override")
       .option(
         "--feature <id=value>",

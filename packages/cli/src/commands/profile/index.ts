@@ -1,3 +1,4 @@
+import { mutateProfile } from "./mutate.js";
 import { Command } from "commander";
 import type { AgentProfile } from "@getpaseo/protocol/agent-profile";
 import type { CommandError, CommandOptions, ListResult, OutputSchema } from "../../output/index.js";
@@ -48,9 +49,34 @@ export async function runProfileLsCommand(
 }
 
 export function createProfileCommand(): Command {
-  const profile = new Command("profile").description("Discover saved agent launch profiles");
+  const profile = new Command("profile").description("Manage saved agent launch profiles");
   addJsonAndDaemonHostOptions(
     profile.command("ls").description("List saved agent profiles"),
   ).action(withOutput(runProfileLsCommand));
+  addJsonAndDaemonHostOptions(
+    profile
+      .command("add <config-json>")
+      .description("Create a saved profile (id optional; name/provider required)"),
+  ).action(
+    withOutput((raw: string, options: CommandOptions, _command: Command) =>
+      mutateProfile("add", undefined, raw, options),
+    ),
+  );
+  addJsonAndDaemonHostOptions(
+    profile
+      .command("update <id> <config-json>")
+      .description("Edit profile fields; featureValues replaces that field"),
+  ).action(
+    withOutput((id: string, raw: string, options: CommandOptions, _command: Command) =>
+      mutateProfile("update", id, raw, options),
+    ),
+  );
+  addJsonAndDaemonHostOptions(
+    profile.command("rm <id>").description("Remove a saved profile"),
+  ).action(
+    withOutput((id: string, options: CommandOptions, _command: Command) =>
+      mutateProfile("rm", id, undefined, options),
+    ),
+  );
   return profile;
 }

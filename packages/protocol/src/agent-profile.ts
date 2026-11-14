@@ -34,3 +34,17 @@ export const AgentSkillSelectionSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("custom"), skills: z.array(z.string()) }).strict(),
 ]);
 export type AgentSkillSelection = z.infer<typeof AgentSkillSelectionSchema>;
+
+/** Remote config/profile writes share this boundary; local settings remain unrestricted. */
+export function assertRemoteProfileFeatures(value: unknown): void {
+  if (!value || typeof value !== "object") return;
+  for (const [key, child] of Object.entries(value)) {
+    if (
+      ["agentTools", "envOverrides", "hostnames", "cors", "trustedProxies", "relay", "mcp"].some(
+        (blocked) => key.split(".").includes(blocked),
+      )
+    )
+      throw new Error(`Profile feature is local/UI only: ${key}`);
+    assertRemoteProfileFeatures(child);
+  }
+}

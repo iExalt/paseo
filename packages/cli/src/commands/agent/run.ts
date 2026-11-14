@@ -1,3 +1,4 @@
+import { readAgentProfile, withProfileDefaults } from "../../utils/agent-profile.js";
 import {
   mergeAttachments,
   collectAttachment,
@@ -54,8 +55,9 @@ export function addRunOptions(cmd: Command): Command {
       .addOption(new Option("--name <name>", "Hidden alias for --title").hideHelp())
       .option(
         "--provider <provider>",
-        "Required agent provider, or provider/model (discover with paseo provider ls/models)",
+        "Agent provider or provider/model; required without --profile (discover with paseo provider ls/models)",
       )
+      .option("--profile <id>", "Saved profile ID; explicit settings override its defaults")
       .option(
         "--model <model>",
         "Model to use (e.g., claude-sonnet-4-20250514, claude-3-5-haiku-20241022)",
@@ -185,6 +187,7 @@ export interface AgentRunOptions extends CommandOptions {
   label?: string[];
   waitTimeout?: string;
   outputSchema?: string;
+  profile?: string;
 }
 
 function resolveNewWorkspaceKind(options: AgentRunOptions): string | undefined {
@@ -852,6 +855,7 @@ export async function runRunCommand(
   options: AgentRunOptions,
   _command: Command,
 ): Promise<SingleResult<AgentRunResult>> {
+  validateRunProfileOptions(options);
   validateAgentForkBoundary(options);
   const prompt = await resolvePromptInput({
     promptArgument,
@@ -863,11 +867,13 @@ export async function runRunCommand(
 
   validateRunOptions(options, outputSchema);
   const waitTimeoutMs = parseWaitTimeoutOption(options.waitTimeout);
+  validateRunProviderOptions(options);
 
-  if (!options.forkSource) resolveProviderAndModel(options);
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
+    if (options.profile)
+      options = withProfileDefaults(options, await readAgentProfile(client, options.profile));
     const forkAttachments = await prepareAgentFork(client, options);
     const resolvedProviderModel = resolveProviderAndModel(options);
     const resolvedTitle = options.title ?? options.name;
@@ -977,4 +983,13 @@ export async function runRunCommand(
     };
     throw error;
   }
+}
+
+function validateRunProfileOptions(options: AgentRunOptions): void {
+  if (options.profile && options.forkSource)
+    throw new Error("--profile cannot be combined with fork");
+}
+
+function validateRunProviderOptions(options: AgentRunOptions): void {
+  if (!options.forkSource && !options.profile) resolveProviderAndModel(options);
 }
