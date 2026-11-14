@@ -2,6 +2,7 @@ import { DiffSession } from "./diff/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageBehavior, AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory, type BackgroundVisibility } from "./agent/directory.js";
+import { acceptOnDispatch, type FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
 import { ConnectedHostSession } from "./connected-hosts/index.js";
 import type { ConnectedHosts } from "./connected-hosts/index.js";
 import {
@@ -93,7 +94,6 @@ import {
   type PromptDispatchDisposition,
 } from "./agent/agent-prompt.js";
 import { waitForHeldMessage } from "./agent/held-messages.js";
-import type { FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
 import {
   resolveCreateAgentTitles,
   resolveFirstAgentPromptTitle,
@@ -10032,9 +10032,15 @@ export class Session {
               activeTurnBehavior: this.agentSenderBehavior(requested),
               sessionMode: msg.sessionMode,
               clearPendingPermissions: false,
-              onDispatch: (nextDisposition) => {
-                notification?.accept();
+              onDispatch: (nextDisposition, held) => {
                 disposition = nextDisposition;
+                if (!notification) return;
+                acceptOnDispatch(notification, held).catch((error) =>
+                  this.sessionLogger.error(
+                    { err: error, agentId },
+                    "Failed to settle finish subscription",
+                  ),
+                );
               },
             });
           } catch (error) {

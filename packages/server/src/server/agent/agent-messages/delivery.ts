@@ -3,6 +3,7 @@ import {
   AgentTurnChangedError,
   type PromptDispatchDisposition,
   type PromptDispatchResult,
+  type PromptDispatchListener,
 } from "../agent-prompt.js";
 import { randomUUID } from "node:crypto";
 import type { AgentPromptInput, AgentPromptContentBlock } from "../agent-sdk-types.js";
@@ -25,7 +26,7 @@ interface Message {
   /** Absent: queue. */
   activeTurnBehavior?: AgentMessageBehavior;
   beforeDispatch?: () => void;
-  onDispatch?: (disposition: PromptDispatchDisposition) => void;
+  onDispatch?: PromptDispatchListener;
 }
 interface Receipt {
   status: "queued";
@@ -90,6 +91,7 @@ interface DirectPrompt {
   prompt: AgentPromptInput;
   source?: AgentPromptSource;
   messageId?: string;
+  activeTurnBehavior?: AgentMessageBehavior;
   sessionMode?: string;
   unarchive?: boolean;
 }
@@ -208,6 +210,11 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
     });
   const inboxes = new Map<string, Inbox>();
   const releasing = new Map<string, Promise<void>>();
+  const heldDirectAdmissions = new Set<{
+    recipientId: string;
+    deferred: boolean;
+    withdraw(): Promise<unknown>;
+  }>();
   let closed = false;
   let closing: Promise<void> | undefined;
 
@@ -330,7 +337,11 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
           if (!(error instanceof AgentTurnBusyError) || !closed || messages.some(isWithdrawn))
             throw error;
           // Shutdown drains admitted messages before closing the recipients.
-          disposition = await dependencies.dispatch({ ...request, idleOnly: false });
+          disposition = await dependencies.dispatch({
+            ...request,
+            idleOnly: false,
+            activeTurnBehavior: "interrupt",
+          });
         }
         for (const message of messages) claim(message, disposition, request);
         return;
@@ -351,8 +362,11 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
           handBack(messages);
           continue;
         }
-        if (error instanceof AgentTurnBusyError && request.idleOnly) {
+        if (error instanceof AgentTurnBusyError) {
           handBack(messages);
+          // A provider that declines a steer leaves the entire prefix waiting. A later
+          // explicit interrupt can still carry it, in order.
+          for (const message of messages) message.urgency = null;
           return;
         }
         for (const message of messages) fail(message, error);
@@ -408,7 +422,10 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
       const last = ahead.findLastIndex(isUrgent);
       if (last >= 0) {
         // A steer or an interrupt does not jump the queue: everything admitted before it goes first.
-        await deliver(recipientId, ahead.slice(0, last + 1), false, stopped);
+        const prefix = ahead.slice(0, last + 1);
+        if (prefix.some((message) => isUrgent(message) && message.urgency === "interrupt"))
+          await withdrawDirectSteers(recipientId);
+        await deliver(recipientId, prefix, false, stopped);
         return;
       }
     }
@@ -514,6 +531,39 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
   async function ride(riders: Admitted[], result: PromptDispatchResult): Promise<void> {
     if (!riders.length) return;
     const { recipientId } = riders[0]!;
+    if ("held" in result) {
+      let returned = false;
+      const returnRiders = (): void => {
+        if (returned) return;
+        returned = true;
+        // Only the direct prompt was discarded. The recipient's earlier reports still
+        // belong to its queue and go with the next prompt.
+        handBack(riders);
+        if (closed) run(recipientId, () => drain(recipientId, riders));
+        else rest(recipientId);
+      };
+      const admission = {
+        recipientId,
+        deferred: result.disposition === "deferred",
+        async withdraw() {
+          if (result.withdrawHeld()) returnRiders();
+          await result.held;
+        },
+      };
+      heldDirectAdmissions.add(admission);
+      if (closed) void admission.withdraw();
+      void result.held.then((outcome) => {
+        heldDirectAdmissions.delete(admission);
+        if (outcome === "dispatched") {
+          const request = requestFor(recipientId, riders, false, () => false);
+          for (const message of riders) claim(message, "turn_started", request);
+        } else {
+          returnRiders();
+        }
+        return undefined;
+      });
+      return;
+    }
     if (result.disposition === "turn_started") {
       try {
         await (dependencies.awaitStart?.(recipientId, result.started) ?? result.started);
@@ -525,6 +575,20 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
     }
     const request = requestFor(recipientId, riders, false, () => false);
     for (const message of riders) claim(message, result.disposition, request);
+  }
+
+  async function withdrawDirectSteers(recipientId: string): Promise<void> {
+    const matching = [...heldDirectAdmissions].filter(
+      (admission) => admission.recipientId === recipientId && admission.deferred,
+    );
+    // A held body already dispatched to the provider still owns the selected prefix
+    // until the provider answers. Let that dispatch settle before we send around it.
+    if (matching.length) await Promise.all(matching.map((admission) => admission.withdraw()));
+  }
+
+  async function drain(recipientId: string, messages: Admitted[]): Promise<void> {
+    for (const group of modeGroups(messages.filter(isQueued)))
+      await deliver(recipientId, group, false, () => false).catch(() => undefined);
   }
 
   /**
@@ -613,6 +677,8 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
           : [...(inboxes.get(direct.recipientId)?.messages ?? [])];
       return new Promise<Result>((resolve, reject) => {
         run(direct.recipientId, async () => {
+          if (direct.activeTurnBehavior === "interrupt" && !isCommand(direct.prompt))
+            await withdrawDirectSteers(direct.recipientId);
           const riders = ahead.filter(isQueued);
           for (const message of riders) message.state = "claimed";
           let result: Result;
@@ -668,6 +734,7 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
       closed = true;
       unsubscribe?.();
       unsubscribeStop?.();
+      for (const admission of heldDirectAdmissions) void admission.withdraw();
       const receipts: Promise<unknown>[] = [];
       for (const [recipientId, inbox] of inboxes) {
         inbox.cancelTimer();
@@ -677,10 +744,7 @@ export function createAgentMessageDelivery(dependencies: Dependencies): AgentMes
         receipts.push(...inbox.messages.map((message) => message.receipt.dispatched));
         // The drain reads the queue when its turn comes, so it sees what the operation in
         // flight returns to it.
-        run(recipientId, async () => {
-          for (const group of modeGroups(inbox.messages.filter(isQueued)))
-            await deliver(recipientId, group, false, () => false).catch(() => undefined);
-        });
+        run(recipientId, () => drain(recipientId, inbox.messages));
       }
       // Each failure is reported and rejects its receipts; shutdown still drains other recipients.
       closing = Promise.allSettled(receipts).then(() => undefined);

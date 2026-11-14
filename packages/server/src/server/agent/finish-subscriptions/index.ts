@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import type { WaitForFinishResult } from "@getpaseo/client/internal/daemon-client";
 import type { FinishObservationResult } from "./internal/observation-buffer.js";
 import type { AgentMessageDelivery } from "../agent-messages/index.js";
+import type { HeldMessageOutcome } from "../held-messages.js";
 import { getParentAddressFromLabels } from "@getpaseo/protocol/agent-labels";
 import {
   endsSubscription,
@@ -472,6 +473,20 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
       // Dispatch may still be pending. The delivery owner drains it after observers stop.
     },
   };
+}
+
+/**
+ * Accepts a registration once its prompt is sent. A held prompt is sent only when released: until
+ * then the registration stays pending, so the end of the turn it waits behind is not reported as
+ * its own, and a discarded prompt rejects it.
+ */
+export async function acceptOnDispatch(
+  registration: FinishRegistration,
+  held?: Promise<HeldMessageOutcome>,
+): Promise<void> {
+  if (!held) return registration.accept();
+  if ((await held) === "dispatched") registration.accept();
+  else await registration.reject();
 }
 
 export { createFinishObservation } from "./internal/observation.js";
