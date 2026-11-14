@@ -7144,6 +7144,20 @@ export class DaemonClient {
   }
 
   async scheduleCreate(options: CreateScheduleOptions): Promise<ScheduleCreatePayload> {
+    const hasCallerArchiveOverride =
+      options.callerContext !== undefined &&
+      options.target.type === "new-agent" &&
+      options.target.config.archiveOnFinish !== undefined;
+    // COMPAT(scheduleCallerArchiveOnFinish): added in v0.27.0, remove after 2027-11-14.
+    if (
+      hasCallerArchiveOverride &&
+      this.lastServerInfoMessage?.features?.scheduleCallerArchiveOnFinish !== true
+    ) {
+      throw new DaemonConnectionError(
+        "Update the host to set archive-on-finish for a caller-scoped schedule.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
     if (
       options.callerContext !== undefined ||
       options.callerAgentId !== undefined ||

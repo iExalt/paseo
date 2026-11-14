@@ -99,7 +99,12 @@ export class ScheduleSession {
       if (request.callerContext) {
         target = resolveNewAgentScheduleTarget({
           callerAgent: this.requireCallerAgent(request.callerContext.agentId),
-          overrides: request.callerContext,
+          overrides: {
+            ...request.callerContext,
+            ...(request.target.type === "new-agent"
+              ? { archiveOnFinish: request.target.config.archiveOnFinish }
+              : {}),
+          },
         });
       } else if (request.target.type === "self") {
         target = { type: "agent", agentId: request.target.agentId };

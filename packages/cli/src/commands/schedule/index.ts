@@ -40,15 +40,25 @@ export function createScheduleCommand(): Command {
         ]),
       )
       .option("--cwd <path>", "Working directory (default: current; required with --host)")
+      .option("--archive-on-finish", "Archive each finished agent")
+      .option("--no-archive-on-finish", "Keep finished agents")
       .option("--run-now", "Fire one immediate run on creation")
       .option("--replace", "Replace an existing named schedule with the same target")
       .option("--max-runs <n>", "Maximum number of runs")
       .option("--expires-in <duration>", "Time to live for the schedule"),
   ).action(withOutput(runCreateCommand));
 
-  addJsonAndDaemonHostOptions(schedule.command("ls").description("List schedules")).action(
-    withOutput(runLsCommand),
-  );
+  addJsonAndDaemonHostOptions(
+    schedule
+      .command("ls")
+      .description("List schedules")
+      .addOption(
+        new Option(
+          "--status <status>",
+          "Active includes paused schedules; ended includes expired schedules",
+        ).choices(["active", "ended", "all"]),
+      ),
+  ).action(withOutput(runLsCommand));
 
   addJsonAndDaemonHostOptions(
     schedule.command("inspect").description("Inspect a schedule").argument("<id>", "Schedule ID"),
@@ -101,6 +111,18 @@ export function createScheduleCommand(): Command {
       .option("--clear-model", "Clear the new agent model")
       .option("--mode <mode>", "New agent provider mode (only for new-agent target)")
       .option("--clear-mode", "Clear the new agent provider mode")
+      .addOption(
+        new Option("--thinking <id>", "New agent thinking option").conflicts("clearThinking"),
+      )
+      .addOption(new Option("--clear-thinking", "Clear thinking option").conflicts("thinking"))
+      .addOption(
+        new Option("--isolation <mode>", "Run locally or in a worktree").choices([
+          "local",
+          "worktree",
+        ]),
+      )
+      .option("--archive-on-finish", "Archive each finished agent")
+      .option("--no-archive-on-finish", "Keep finished agents")
       .option("--cwd <path>", "New working directory (only for new-agent target)")
       .option("--max-runs <n>", "Set or change maximum number of runs")
       .option("--no-max-runs", "Clear the max-runs limit")

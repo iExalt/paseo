@@ -24,6 +24,10 @@ export interface ScheduleUpdateOptions extends ScheduleCommandOptions {
   mode?: string;
   clearModel?: boolean;
   clearMode?: boolean;
+  thinking?: string;
+  clearThinking?: boolean;
+  isolation?: "local" | "worktree";
+  archiveOnFinish?: boolean;
   cwd?: string;
   maxRuns?: string | false;
   expiresIn?: string | false;
@@ -32,7 +36,7 @@ export interface ScheduleUpdateOptions extends ScheduleCommandOptions {
 export async function runUpdateCommand(
   id: string,
   options: ScheduleUpdateOptions,
-  _command: Command,
+  command: Command,
 ): Promise<ListResult<ScheduleInspectRow>> {
   const input = parseScheduleUpdateInput({
     id,
@@ -46,6 +50,13 @@ export async function runUpdateCommand(
     mode: options.mode,
     clearModel: options.clearModel,
     clearMode: options.clearMode,
+    thinking: options.thinking,
+    clearThinking: options.clearThinking,
+    isolation: options.isolation,
+    archiveOnFinish:
+      command.getOptionValueSource("archiveOnFinish") === "cli"
+        ? options.archiveOnFinish
+        : undefined,
     cwd: options.cwd,
     maxRuns: options.maxRuns === false ? undefined : options.maxRuns,
     expiresIn: options.expiresIn === false ? undefined : options.expiresIn,

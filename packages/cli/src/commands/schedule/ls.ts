@@ -3,6 +3,7 @@ import type { ListResult } from "../../output/index.js";
 import { scheduleSchema } from "./schema.js";
 import {
   connectScheduleClient,
+  matchesScheduleStatus,
   toScheduleCommandError,
   toScheduleRow,
   type ScheduleCommandOptions,
@@ -10,7 +11,7 @@ import {
 } from "./shared.js";
 
 export async function runLsCommand(
-  options: ScheduleCommandOptions,
+  options: ScheduleCommandOptions & { status?: "active" | "ended" | "all" },
   _command: Command,
 ): Promise<ListResult<ScheduleRow>> {
   const { client } = await connectScheduleClient(options.daemonTarget);
@@ -19,10 +20,15 @@ export async function runLsCommand(
     if (payload.error) {
       throw new Error(payload.error);
     }
+    const now = Date.now();
     return {
       type: "list",
       data: payload.schedules
-        .filter((schedule) => schedule.target.type === "new-agent")
+        .filter(
+          (schedule) =>
+            schedule.target.type === "new-agent" &&
+            matchesScheduleStatus(schedule, options.status, now),
+        )
         .map(toScheduleRow),
       schema: scheduleSchema,
     };

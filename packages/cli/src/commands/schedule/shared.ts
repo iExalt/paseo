@@ -151,6 +151,7 @@ interface ScheduleCreateParseOptions {
   mode?: string;
   thinking?: string;
   isolation?: "local" | "worktree";
+  archiveOnFinish?: boolean;
   cwd?: string;
   host?: string;
   callerAgent?: ScheduleCallerAgentFallback;
@@ -254,6 +255,9 @@ function createInheritedNewAgentTarget(
       ...(modeId ? { modeId } : {}),
       ...(thinkingOptionId ? { thinkingOptionId } : {}),
       ...(options.isolation ? { isolation: options.isolation } : {}),
+      ...(options.archiveOnFinish !== undefined
+        ? { archiveOnFinish: options.archiveOnFinish }
+        : {}),
     },
   };
 }
@@ -272,6 +276,9 @@ function createUnscopedNewAgentTarget(
       ...(normalized.modeId ? { modeId: normalized.modeId } : {}),
       ...(normalized.thinkingOptionId ? { thinkingOptionId: normalized.thinkingOptionId } : {}),
       ...(options.isolation ? { isolation: options.isolation } : {}),
+      ...(options.archiveOnFinish !== undefined
+        ? { archiveOnFinish: options.archiveOnFinish }
+        : {}),
     },
   };
 }
@@ -284,7 +291,8 @@ function getScheduleCreateTarget(
     options.provider !== undefined ||
     options.mode !== undefined ||
     options.thinking !== undefined ||
-    options.isolation !== undefined;
+    options.isolation !== undefined ||
+    options.archiveOnFinish !== undefined;
   const target = resolveScheduleTarget({
     targetValue: options.target?.trim(),
     hasExplicitNewAgentOption,
@@ -348,6 +356,10 @@ export interface ScheduleUpdateOptionsInput {
   mode?: string;
   clearModel?: boolean;
   clearMode?: boolean;
+  thinking?: string;
+  clearThinking?: boolean;
+  isolation?: "local" | "worktree";
+  archiveOnFinish?: boolean;
   cwd?: string;
   maxRuns?: string;
   expiresIn?: string;
@@ -555,6 +567,7 @@ function buildNewAgentConfigPatch(
     }
     patch.model = model;
   }
+  applyExecutionOptions(patch, options);
   if (options.clearModel) patch.model = null;
   if (options.clearMode) patch.modeId = null;
   if (options.mode !== undefined) {
@@ -607,4 +620,39 @@ export function toScheduleRow(schedule: ScheduleListItem | ScheduleRecord): Sche
     lastRunAt: schedule.lastRunAt,
     schedule,
   };
+}
+
+export function matchesScheduleStatus(
+  schedule: Pick<ScheduleListItem, "status" | "expiresAt">,
+  status: "active" | "ended" | "all" | undefined,
+  now: number,
+): boolean {
+  if (status === undefined || status === "all") return true;
+  const expired = schedule.expiresAt !== null && Date.parse(schedule.expiresAt) <= now;
+  const ended = schedule.status === "completed" || expired;
+  return status === "ended" ? ended : !ended;
+}
+
+function applyExecutionOptions(
+  patch: UpdateScheduleNewAgentConfig,
+  options: ScheduleUpdateOptionsInput,
+): void {
+  if (options.clearThinking && options.thinking !== undefined) {
+    throw {
+      code: "CONFLICTING_THINKING",
+      message: "Use --thinking or --clear-thinking",
+    } satisfies CommandError;
+  }
+  if (options.clearThinking) patch.thinkingOptionId = null;
+  if (options.thinking !== undefined) {
+    const thinking = options.thinking.trim();
+    if (!thinking)
+      throw {
+        code: "INVALID_THINKING",
+        message: "--thinking cannot be empty",
+      } satisfies CommandError;
+    patch.thinkingOptionId = thinking;
+  }
+  if (options.isolation !== undefined) patch.isolation = options.isolation;
+  if (options.archiveOnFinish !== undefined) patch.archiveOnFinish = options.archiveOnFinish;
 }

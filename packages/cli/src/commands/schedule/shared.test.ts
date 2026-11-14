@@ -6,6 +6,7 @@ import { deleteNewAgentSchedule } from "./delete.js";
 import type { ScheduleDaemonClient } from "./types.js";
 import {
   compileEveryPresetToCron,
+  matchesScheduleStatus,
   parseScheduleCreateInput,
   parseScheduleUpdateInput,
 } from "./shared.js";
@@ -457,4 +458,36 @@ describe("deleteNewAgentSchedule", () => {
 
     expect(deleted).toEqual(["corrupt-1"]);
   });
+});
+
+test("schedule field parity preserves explicit false and leaves omitted values unset", () => {
+  const created = parseScheduleCreateInput({ ...baseOptions, archiveOnFinish: false });
+  expect(created.target).toMatchObject({ type: "new-agent", config: { archiveOnFinish: false } });
+  const updated = parseScheduleUpdateInput({
+    id: "schedule",
+    thinking: "high",
+    isolation: "worktree",
+    archiveOnFinish: false,
+  });
+  expect(updated.newAgentConfig).toEqual({
+    thinkingOptionId: "high",
+    isolation: "worktree",
+    archiveOnFinish: false,
+  });
+  expect(parseScheduleUpdateInput({ id: "schedule", clearThinking: true }).newAgentConfig).toEqual({
+    thinkingOptionId: null,
+  });
+  expect(
+    parseScheduleUpdateInput({ id: "schedule", name: "rename" }).newAgentConfig,
+  ).toBeUndefined();
+});
+
+test("schedule filters match the app's active and ended buckets", () => {
+  const now = Date.parse("2026-11-14T00:00:00Z");
+  expect(matchesScheduleStatus({ status: "paused", expiresAt: null }, "active", now)).toBe(true);
+  expect(
+    matchesScheduleStatus({ status: "active", expiresAt: "2026-11-13T00:00:00Z" }, "ended", now),
+  ).toBe(true);
+  expect(matchesScheduleStatus({ status: "completed", expiresAt: null }, "ended", now)).toBe(true);
+  expect(matchesScheduleStatus({ status: "active", expiresAt: null }, "ended", now)).toBe(false);
 });
