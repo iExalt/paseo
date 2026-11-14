@@ -79,7 +79,11 @@ function PlanCardContent({
       </Pressable>
       {expanded ? (
         <View style={styles.body}>
-          {description ? <Text style={styles.description}>{description}</Text> : null}
+          {description ? (
+            <Text selectable style={styles.description}>
+              {description}
+            </Text>
+          ) : null}
           <MarkdownRenderer text={text} />
         </View>
       ) : null}
