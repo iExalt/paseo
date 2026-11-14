@@ -1,3 +1,4 @@
+import { getE2EWebOrigin } from "../web-url";
 import { spawn, execFileSync, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import net from "node:net";
@@ -161,7 +162,7 @@ export async function startIsolatedHostDaemon(
         PASEO_HOME: paseoHome,
         PASEO_SERVER_ID: serverId,
         PASEO_LISTEN: `127.0.0.1:${port}`,
-        PASEO_CORS_ORIGINS: `http://localhost:${metroPort}`,
+        PASEO_CORS_ORIGINS: getE2EWebOrigin(Number(metroPort)),
         PASEO_RELAY_ENABLED: options.mutableRelay ? undefined : "0",
         PASEO_NODE_ENV: "development",
         NODE_ENV: "development",
