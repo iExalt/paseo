@@ -36,13 +36,11 @@ export function createPrCommand(): Command {
         .option("--repo-owner <owner>", "Override repository owner")
         .option("--repo-name <name>", "Override repository name");
     if (verb === "merge" || verb === "auto-merge") {
-      command
-        .option("--force", "Confirm merge or auto-merge change")
-        .addOption(
-          new Option("--method <method>", "Merge method")
-            .choices(["merge", "squash", "rebase"])
-            .default("squash"),
-        );
+      command.addOption(
+        new Option("--method <method>", "Merge method")
+          .choices(["merge", "squash", "rebase"])
+          .default("squash"),
+      );
     }
     if (verb === "auto-merge")
       command.option("--disable", "Disable auto-merge instead of enabling");

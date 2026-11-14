@@ -564,11 +564,6 @@ describe("agent history commands", () => {
       expect(options.cwd).toBe(overrides.workspace ? undefined : "/workspace");
     },
   );
-  it("requires rewind confirmation before connecting", async () => {
-    await expect(runRewindCommand("id", { daemonTarget, to: "message" })).rejects.toMatchObject({
-      code: "CONFIRMATION_REQUIRED",
-    });
-  });
   it("checks the selected rewind mode and reports the mutation", async () => {
     const client = new DaemonClient({
       url: "ws://daemon.test",
@@ -587,7 +582,6 @@ describe("agent history commands", () => {
       runRewindCommand("source", {
         daemonTarget,
         to: "message",
-        force: true,
         mode: "conversation",
       }),
     ).resolves.toMatchObject({
@@ -595,7 +589,7 @@ describe("agent history commands", () => {
     });
     expect(rewind).toHaveBeenCalledWith("source", "message", "conversation");
     await expect(
-      runRewindCommand("source", { daemonTarget, to: "message", force: true, mode: "files" }),
+      runRewindCommand("source", { daemonTarget, to: "message", mode: "files" }),
     ).rejects.toMatchObject({ code: "UNSUPPORTED_FEATURE" });
     expect(rewind).toHaveBeenCalledTimes(1);
     expect(close).toHaveBeenCalledTimes(2);

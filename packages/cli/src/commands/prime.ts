@@ -69,7 +69,7 @@ under descriptor. workspace inspect requires an exact ID and includes background
 workspaces. workspace setup <id> --status reads setup without running it.
 workspace label ls/update/delete manage the host catalog. label create requires
 --workspace and --color: it creates and assigns, retaining existing catalog colors.
-label delete needs --force; --inspect reads the affected count without deleting.
+label delete acts directly; --inspect reads the affected count without deleting.
 workspace recover <id> --inspect reads recovery state; omit --inspect to restore.
 workspace refs --query <q> [--kind pr|branch] searches the checkout's refs;
 --path selects its host directory and the forge is inferred from the checkout.
@@ -88,7 +88,7 @@ attentionReason, attentionTimestamp, labels, lastError and updatedAt. Inspect us
 RequiresAttention, AttentionReason and AttentionTimestamp. agent ack <id...> clears
 attention after resolving all targets; JSON reports agentIds and acknowledgedCount.
 
-History actions: agent rewind <id> --to user-message-id --mode conversation --force
+History actions: agent rewind <id> --to user-message-id --mode conversation
 rewinds supported conversation/files/both modes. agent fork <id> <prompt> [--at assistant-message-id]
 accepts run flags, inherits source settings, and waits by default; use --no-wait to return.
 
@@ -132,11 +132,11 @@ Checkout: git and pr commands use the selected host's daemon, with --workspace
 or --cwd pointing to a directory on that host. Remote hosts require an explicit
 target. --cwd overrides an ambient workspace; --cwd and --workspace conflict.
 git merge merges this checkout into base; --from-base reverses the direction.
-Destructive operations require --force. git commit generates a message when
+Destructive operations act directly. git commit generates a message when
 --message is omitted and stages all changes unless --no-add-all is passed.
 pr check accepts --check-run-id or --workflow-run-id.
 
-Cleanup: archive closes runtimes; running agents still require --force.
+Cleanup: archive closes runtimes; archive interrupts running agents; already archived agents are a no-op.
 Self-archive or archiving your workspace can terminate the invoking shell before
 it prints a result. Send the handoff first; have an external session perform
 cleanup and verify agent status or workspace ls before retrying.

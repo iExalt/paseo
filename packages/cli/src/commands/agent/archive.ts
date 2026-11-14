@@ -29,15 +29,13 @@ export function addArchiveOptions(cmd: Command): Command {
   return cmd
     .description("Archive an agent and its workspace when it is the last unarchived agent")
     .argument("<id>", "Agent ID, full session ID, prefix, or name")
-    .option("--force", "Force archive a running agent or acknowledge an already archived agent")
     .addHelpText(
       "after",
-      "\nThe last unarchived agent also archives its workspace. Local checkouts are kept; managed worktrees with uncommitted, unpushed, or unverifiable work are kept and their paths logged by the daemon.\n\nSelf-archive with --force can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
+      "\nThe last unarchived agent also archives its workspace. Local checkouts are kept; managed worktrees with uncommitted, unpushed, or unverifiable work are kept and their paths logged by the daemon.\n\nSelf-archive can terminate the invoking shell before a result is printed. Send the handoff first; use an external session for cleanup and verification.",
     );
 }
 
 export interface AgentArchiveOptions extends CommandOptions {
-  force?: boolean;
   host?: string;
 }
 
@@ -79,29 +77,9 @@ export async function runArchiveCommand(
     }
     const agentId = agent.id;
 
-    // Check if agent is already archived
-    if (agent.archivedAt && !options.force) {
-      const error: CommandError = {
-        code: "AGENT_ALREADY_ARCHIVED",
-        message: `Agent ${agentId.slice(0, 7)} is already archived`,
-        details: `Archived at: ${agent.archivedAt}`,
-      };
-      throw error;
-    }
-
-    // Check if agent is running and reject unless --force is set
-    if (agent.status === "running" && !options.force) {
-      const error: CommandError = {
-        code: "AGENT_RUNNING",
-        message: `Agent ${agentId.slice(0, 7)} is currently running`,
-        details:
-          "Use --force to archive a running agent (it will interrupt the active run), or stop it first with: paseo agent stop. Use paseo agent delete to hard-delete it.",
-      };
-      throw error;
-    }
-
-    // Archive the agent
-    const result = await client.archiveAgent(agentId);
+    const result = agent.archivedAt
+      ? { archivedAt: agent.archivedAt }
+      : await client.archiveAgent(agentId);
 
     await client.close();
 
