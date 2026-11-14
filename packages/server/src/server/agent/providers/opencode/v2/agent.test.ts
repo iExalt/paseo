@@ -56,6 +56,7 @@ describe("OpenCode v2 session lifecycle", () => {
       const client = new OpenCodeV2AgentClient({
         logger: createTestLogger(),
         runtime: harness.runtime,
+        turnRecoveryIntervalMs: 200,
       });
       const session = await client.createSession({ provider: "opencode", cwd: "/tmp/project" });
       const events: AgentStreamEvent[] = [];
@@ -67,14 +68,14 @@ describe("OpenCode v2 session lifecycle", () => {
         harness.finishExecution("succeeded", false);
         if (recovery === "reconnect")
           harness.push({ id: "reconnect", created: 3, type: "server.connected", data: {} });
-        await expect.poll(() => terminalEvents(events), { timeout: 7_000 }).toHaveLength(1);
+        await expect.poll(() => terminalEvents(events), { timeout: 3_000 }).toHaveLength(1);
         expect(terminalEvents(events)[0]).toMatchObject({ type: "turn_completed" });
         expect(subscriptions).toBe(1);
       } finally {
         await session.close();
       }
     },
-    10_000,
+    5_000,
   );
 
   test("does not finish from a previous outcome before prompt admission", async () => {
