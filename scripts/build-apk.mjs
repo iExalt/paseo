@@ -22,6 +22,10 @@ const env = {
   APP_VARIANT: fork ? "fork" : "production",
   PASEO_WATCHDOG_BUILD: "1",
   // AGP runs Prefab on Gradle's JDK. On the pinned Java 27, Prefab's JNA prints a native-access
+  // warning that AGP misreads as a configure error; release.yml sets the same flag.
+  JAVA_TOOL_OPTIONS: [process.env.JAVA_TOOL_OPTIONS, "--enable-native-access=ALL-UNNAMED"]
+    .filter(Boolean)
+    .join(" "),
   PASEO_DIAGNOSTIC_BUILD_TIME: new Date().toISOString(),
   PASEO_DIAGNOSTIC_REVISION:
     execFileSync("git", ["rev-parse", "--short", "HEAD"], { cwd: root, encoding: "utf8" }).trim() +
