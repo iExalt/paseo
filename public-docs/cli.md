@@ -494,10 +494,10 @@ Use the daemon-provided `"$PASEO_CLI"` inside managed sessions, even when `paseo
 | ------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 | `paseo stop <id>`        | Cancel the current run, keeping the agent available.                                                               |
 | `paseo agent close <id>` | Close the runtime and persist its closed snapshot, preserving history. Replaces the former `kill_agent` operation. |
-| `paseo archive <id>`     | Remove from active use. A running agent requires `--force`; history remains.                                       |
+| `paseo archive <id>`     | Remove from active use. Interrupts a running agent; history remains.                                               |
 | `paseo delete <id>`      | Hard-delete stored state, interrupting if needed.                                                                  |
 
-Archiving your own agent or workspace can terminate the provider process and invoking shell before the CLI prints its result. A lost response or interrupted shell does not prove archive failed. Send the final handoff first, then have a parent or another external session perform cleanup and verify it with `agent status` or `workspace ls`. Workspace archive closes its agents and terminals; agent archive keeps the running-agent `--force` guard.
+Archiving your own agent or workspace can terminate the provider process and invoking shell before the CLI prints its result. A lost response or interrupted shell does not prove archive failed. Send the final handoff first, then have a parent or another external session perform cleanup and verify it with `agent status` or `workspace ls`. Workspace archive closes its agents and terminals; agent archive interrupts a running agent and succeeds without changes if already archived.
 
 ## Browser commands
 

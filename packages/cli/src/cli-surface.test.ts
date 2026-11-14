@@ -35,7 +35,7 @@ describe("canonical CLI surface", () => {
       expect(text).toContain("details under snapshot");
       expect(text).toContain("Reconcile existing agents");
       expect(text).toContain('Request --cwd "$PWD"');
-      expect(text).toContain("running agents still require --force");
+      expect(text).toContain("archive interrupts running agents");
       expect(text).toContain("Send the handoff first");
       expect(text).toContain("prime always prints text, even with --json");
     },
@@ -111,7 +111,7 @@ describe("canonical CLI surface", () => {
       return output.join("");
     });
     expect(archiveHelp[0]).toContain("terminate the invoking shell");
-    expect(archiveHelp[1]).toContain("Self-archive with --force");
+    expect(archiveHelp[1]).toContain("Self-archive");
     expect(archiveHelp[1]).toContain("Send the handoff first");
   });
 
@@ -358,7 +358,7 @@ describe("subagent command dispatch", () => {
 });
 
 describe("Git checkout commands", () => {
-  it("registers targeting and explicit destructive confirmation", () => {
+  it("registers targeting without confirmation flags", () => {
     const git = createCli().commands.find((c) => c.name() === "git")!;
     expect(git.commands.map((c) => c.name())).toEqual([
       "status",
@@ -374,26 +374,36 @@ describe("Git checkout commands", () => {
       "rename",
       "stash",
     ]);
-    expect(git.commands.find((c) => c.name() === "discard")!.helpInformation()).toContain(
+    expect(git.commands.find((c) => c.name() === "discard")!.helpInformation()).not.toContain(
       "--force",
     );
     expect(git.commands.find((c) => c.name() === "diff")!.helpInformation()).toContain(
       "--workspace",
     );
   });
-  it("refuses destructive requests before connecting", async () => {
-    const { runGitCommand } = await import("./commands/git/run.js");
-    const connect = vi.fn();
-    await expect(
-      runGitCommand(
-        "discard",
-        [["file"]],
-        { daemonTarget: { kind: "endpoint", host: "remote" } },
-        connect,
-      ),
-    ).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
-    expect(connect).not.toHaveBeenCalled();
-  });
+  it.each(["discard", "merge", "stash-pop"])(
+    "dispatches %s without confirmation",
+    async (operation) => {
+      const { runGitCommand } = await import("./commands/git/run.js");
+      const mutate = vi.fn(async () => ({ success: true }));
+      const close = vi.fn(async () => {});
+      const client = {
+        getLastServerInfoMessage: () => ({ features: { checkoutDiscardChanges: true } }),
+        checkoutDiscardChanges: mutate,
+        checkoutMerge: mutate,
+        stashPop: mutate,
+        close,
+      };
+      await runGitCommand(
+        operation,
+        operation === "stash-pop" ? [2] : [["file"]],
+        { cwd: "/repo", hash: "hash", daemonTarget: { kind: "endpoint", host: "remote" } },
+        async () => client as never,
+      );
+      expect(mutate).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+    },
+  );
   it("uses the selected host path and preserves payloads, then closes", async () => {
     const { runGitCommand } = await import("./commands/git/run.js");
     const calls: unknown[] = [];
@@ -463,22 +473,34 @@ describe("Forge checkout commands", () => {
       "merge",
       "auto-merge",
     ]);
-    expect(pr.commands.find((c) => c.name() === "merge")!.helpInformation()).toContain("--force");
+    expect(pr.commands.find((c) => c.name() === "merge")!.helpInformation()).not.toContain(
+      "--force",
+    );
     expect(pr.commands.find((c) => c.name() === "check")!.helpInformation()).toContain(
       "--workflow-run-id",
     );
   });
-  it.each(["merge", "auto-merge"])(
-    "requires confirmation for %s before connecting",
-    async (operation) => {
-      const { runPrCommand } = await import("./commands/pr/run.js");
-      const connect = vi.fn();
-      await expect(
-        runPrCommand(operation, { daemonTarget: { kind: "endpoint", host: "remote" } }, connect),
-      ).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
-      expect(connect).not.toHaveBeenCalled();
-    },
-  );
+  it.each(["merge", "auto-merge"])("dispatches %s without confirmation", async (operation) => {
+    const { runPrCommand } = await import("./commands/pr/run.js");
+    const mutate = vi.fn(async () => ({ success: true }));
+    const close = vi.fn(async () => {});
+    const client = {
+      getLastServerInfoMessage: () => ({ features: { checkoutForgeSetAutoMerge: true } }),
+      checkoutPrMerge: mutate,
+      checkoutForgeSetAutoMerge: mutate,
+      close,
+    };
+    await runPrCommand(
+      operation,
+      { cwd: "/repo", daemonTarget: { kind: "endpoint", host: "remote" } },
+      async () => client as never,
+    );
+    expect(mutate).toHaveBeenCalledWith(
+      "/repo",
+      operation === "merge" ? { method: "squash" } : { enabled: true, method: "squash" },
+    );
+    expect(close).toHaveBeenCalledTimes(1);
+  });
   it.each([
     { forge: "github", override: false },
     { forge: "gitea", override: true },
@@ -544,7 +566,7 @@ describe("Forge checkout commands", () => {
     await expect(
       runPrCommand(
         "auto-merge",
-        { cwd: "/repo", force: true, daemonTarget: { kind: "endpoint", host: "remote" } },
+        { cwd: "/repo", daemonTarget: { kind: "endpoint", host: "remote" } },
         connect as never,
       ),
     ).rejects.toMatchObject({ code: "DAEMON_UPDATE_REQUIRED" });
@@ -603,7 +625,6 @@ describe("checkout argument safety", () => {
         "merge",
         [],
         {
-          force: true,
           fromBase: true,
           strategy: "squash",
           daemonTarget: { kind: "endpoint", host: "remote" },
