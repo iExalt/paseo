@@ -187,6 +187,10 @@ export interface PaseoWorkspaceHandle {
   readonly terminals: PaseoWorkspaceTerminalActions;
   current(): PaseoWorkspace | null;
   refresh(options?: { requestId?: string }): Promise<PaseoWorkspace | null>;
+  update(
+    patch: import("@getpaseo/protocol/messages").WorkspaceSettingsPatch,
+    requestId?: string,
+  ): Promise<import("@getpaseo/protocol/messages").WorkspaceSettings>;
   setTitle(title: string | null, requestId?: string): Promise<{ title: string | null }>;
   archive(requestId?: string): Promise<PaseoWorkspaceArchiveResult>;
   /**
@@ -872,6 +876,7 @@ function createWorkspaceHandleFactory(
       },
       current: () => current,
       refresh,
+      update: (patch, requestId) => daemonClient.updateWorkspaceSettings(id, patch, requestId),
       setTitle: (title, requestId) => daemonClient.setWorkspaceTitle(id, title, requestId),
       archive: async (requestId) => {
         const result = await daemonClient.archiveWorkspace(id, requestId);

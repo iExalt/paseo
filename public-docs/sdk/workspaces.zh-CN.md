@@ -54,9 +54,26 @@ const workspace = await client.workspaces.create({
 
 传入 `background: true` 可以让工作区不出现在默认的发现结果中。它的 Agent 和终端仍然是持久的，有正常的历史记录、生命周期钩子、归档和精确 ID 访问。应用侧边栏提供 **显示后台工作区**，不会丢弃已同步的状态。
 
-`background` 只能在创建时设置。省略时默认为 false；当 `callerAgentId` 指明是某个 Agent 在创建新工作区时，省略则继承该 Agent 所在工作区的值。显式的 false 或 true 会覆盖继承。带 `workspaceId` 创建 Agent 时会拒绝显式的后台创建意图；请在创建工作区时配置可见性。SDK/RPC 的隐式 Agent 创建也接受 `background`，但它表示工作区的创建意图，而不是 Agent 的属性。
+创建时省略 `background` 默认为 false；当 `callerAgentId` 指明是某个 Agent 在创建新工作区时，省略则继承该 Agent 所在工作区的值。显式的 false 或 true 会覆盖继承。带 `workspaceId` 创建 Agent 时会拒绝显式的后台创建意图；请通过工作区配置可见性。SDK/RPC 的隐式 Agent 创建也接受 `background`，但它表示工作区的创建意图，而不是 Agent 的属性。
 
 创建和包含后台工作区的发现都需要 `features.backgroundWorkspaces`；对于不支持的主机，客户端会拒绝并提示更新主机。
+
+## 更新工作区设置 {#update-workspace-settings}
+
+```ts
+const applied = await workspace.update({
+  background: false,
+  title: "Review",
+  notifications: "off",
+  pinned: true,
+  addLabels: ["Review"],
+  removeLabels: ["Done"],
+});
+```
+
+主机以原子方式应用补丁，返回持久化后的设置。省略的字段保持不变；`title: null` 恢复派生名称，`pinned: false` 取消固定。添加标签必须使用目录中已有的名称，不能同时添加和移除同一个规范化后的标签；移除未分配的标签可以重复执行。
+
+需要 `features.workspaceSettingsUpdate`；不支持的主机会提示更新。工作区标识和运行中的 Agent 保持不变。调用 `refresh()` 获取当前描述符。
 
 ## 在工作区中启动 Agent {#start-an-agent-in-a-workspace}
 

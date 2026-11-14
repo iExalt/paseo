@@ -924,6 +924,32 @@ export const WorkspaceCallerContextSchema = z.object({
   requestedCwd: z.string().optional(),
 });
 
+export const WorkspaceSettingsPatchSchema = z.object({
+  background: z.boolean().optional(),
+  title: z.string().nullable().optional(),
+  notifications: WorkspaceNotificationsSchema.optional(),
+  pinned: z.boolean().optional(),
+  addLabels: z.array(z.string()).optional(),
+  removeLabels: z.array(z.string()).optional(),
+});
+export type WorkspaceSettingsPatch = z.infer<typeof WorkspaceSettingsPatchSchema>;
+
+export const WorkspaceSettingsSchema = z.object({
+  background: z.boolean(),
+  title: z.string().nullable(),
+  notifications: WorkspaceNotificationsSchema,
+  pinnedAt: z.string().nullable(),
+  labels: z.array(z.string()),
+});
+export type WorkspaceSettings = z.infer<typeof WorkspaceSettingsSchema>;
+
+export const WorkspaceSettingsUpdateRequestSchema = z.object({
+  type: z.literal("workspace.settings.update.request"),
+  workspaceId: z.string(),
+  patch: WorkspaceSettingsPatchSchema,
+  requestId: z.string(),
+});
+
 export const WorkspaceNotificationsSetRequestSchema = z.object({
   type: z.literal("workspace.notifications.set.request"),
   workspaceId: z.string(),
@@ -2315,6 +2341,17 @@ export const WorkspaceTitleSetResponseSchema = z.object({
   payload: WorkspaceTitleSetResponsePayloadSchema,
 });
 
+export const WorkspaceSettingsUpdateResponseSchema = z.object({
+  type: z.literal("workspace.settings.update.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspaceId: z.string(),
+    accepted: z.boolean(),
+    settings: WorkspaceSettingsSchema.nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
 export const WorkspaceNotificationsSetResponseSchema = z.object({
   type: z.literal("workspace.notifications.set.response"),
   payload: z.object({
@@ -3537,6 +3574,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   ProjectIconSetRequestSchema,
   ProjectRemoveRequestSchema,
   WorkspaceTitleSetRequestSchema,
+  WorkspaceSettingsUpdateRequestSchema,
   WorkspaceNotificationsSetRequestSchema,
   WorkspacePinSetRequestSchema,
   WorkspaceLabelListRequestSchema,
@@ -3940,6 +3978,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(workspaceNotifications): added before delivery support; advertise only once
         // workspace notification suppression is implemented.
         workspaceNotifications: z.boolean().optional(),
+        workspaceSettingsUpdate: z.boolean().optional(),
         replyRuleFiltering: z.boolean().optional(),
         // COMPAT(workspaceSetupRun): added in v0.8.0, remove gate after 2027-09-02.
         workspaceSetupRun: z.boolean().optional(),
@@ -7529,6 +7568,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   ProjectIconSetResponseSchema,
   ProjectRemoveResponseSchema,
   WorkspaceTitleSetResponseSchema,
+  WorkspaceSettingsUpdateResponseSchema,
   WorkspaceNotificationsSetResponseSchema,
   WorkspacePinSetResponseSchema,
   WorkspaceRecoveryInspectResponseSchema,
