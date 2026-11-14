@@ -152,9 +152,33 @@ console: `[paseo-agent] <area> <event> key=value …`. Values with spaces, `=` o
 
 Link bodies after `#`, `relay://` URIs and Expo push tokens are redacted. A `reason` can still
 quote a fragment of a malformed offer's decoded JSON (server ID and public key only).
+
+## Waiting for the app
+
+On web, the open chat carries one marker for its readiness: `agent-timeline-loading`, `-running`,
+`-settled` or `-error`, with `data-agent-id` and `data-turns` attributes. On Android the marker is
+not in `uiautomator dump` output, so use the log line. `turns` counts the
+chat's closed turns (completed, failed or cancelled) since the app started, so a turn that ends
+between two checks still shows up. Before the chat is ready, `agent-loading` means loading, and
+`agent-load-error` and `agent-not-found` mean error.
+
+To wait for a prompt to finish, read `turns` first, send, then wait for `settled` with a larger
+`turns`. Waiting for `settled` alone passes before the turn starts; waiting for `running` first
+misses short turns. Keep the chat open while you wait: turns that end while no pane shows the
+agent are not counted.
+
+- **Web:** read `data-turns` from `[data-testid^="agent-timeline-"][data-agent-id="<id>"]`, then
+  `page.waitForFunction` until that element's `data-testid` is `agent-timeline-settled` and its
+  `data-turns` is larger, or wait for the console line below. Always include `data-agent-id`: with
+  two chats open, a bare `getByTestId('agent-timeline-settled')` matches both and fails Playwright's
+  strict mode.
 - **Android:** `agent-adb.py turns` and `wait-turn` (above) do this. By hand, follow
   `adb logcat -s ReactNativeJS` for
+  `[paseo-agent] timeline state agentId=<id> state=settled turns=<n+1>`, where `n` is the last
+  `turns` logged for that agent. Once it appears, the chat's elapsed clock has stopped and
   `uiautomator dump` works again, unless another running agent's status ring is on screen.
+
+Host readiness is the `connection status … status=online` line.
 
 ## Debug switches
 
