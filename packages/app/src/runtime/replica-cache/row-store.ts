@@ -23,9 +23,14 @@ export interface ReplicaRowApplyOptions {
   directoryBaselines?: ReadonlySet<string>;
 }
 
-export interface ReplicaHostRows {
+export interface ReplicaStoredRowIndex extends ReplicaRowKey {
+  /** UTF-8 size of the stored payload. */
+  bytes: number;
+}
+
+export interface ReplicaHostIndex {
   serverId: string;
-  rows: ReplicaRow[];
+  rows: ReplicaStoredRowIndex[];
 }
 
 export interface ReplicaRowStore {
@@ -35,7 +40,11 @@ export interface ReplicaRowStore {
     kinds: readonly ReplicaRowKind[],
     ids?: readonly string[],
   ): Promise<ReplicaRow[]>;
-  readAll(): Promise<ReplicaHostRows[]>;
+  /**
+   * Every stored row's identity and size, without payloads. Budget accounting is the only reader
+   * of the whole store, and the cache can hold tens of megabytes it has no reason to load.
+   */
+  readIndex(): Promise<ReplicaHostIndex[]>;
   // Shared stores can reject directory deltas that no longer match their baseline.
   // Return the accepted changes when they differ from the requested changes.
   apply(
