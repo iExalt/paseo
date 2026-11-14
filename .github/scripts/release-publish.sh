@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # GitHub release steps for release.yml.
+#   draft:   find TAG's draft (release-please makes one) or create it, upload the
 #            expected assets, re-download and re-hash them
+#   publish: publish the verified draft as latest; TAG must point at SOURCE_SHA
 # Reads GH_TOKEN, GITHUB_REPOSITORY, VERSION, SOURCE_SHA, TAG, ASSETS, PUBLISH, RELEASE_ID.
 set -euo pipefail
 repo="${GITHUB_REPOSITORY:?}"
@@ -44,6 +46,21 @@ draft() {
     [[ "$TAG" == paseo-dryrun-* ]] || fail "Dry runs must use a paseo-dryrun- tag."
     name="Dry run: Paseo $VERSION ($SOURCE_SHA)"
   fi
+  # The releases/tags endpoint omits drafts, so search the listing. A rerun after a
+  # failed upload reuses the draft and replaces its assets.
+  id="$(request "$api/releases?per_page=100" | jq -r --arg tag "$TAG" '[.[] | select(.tag_name == $tag)] | first | if . == null then "" elif .draft then .id else "published" end')"
+  [[ "$id" != published ]] || fail "$TAG is already published."
+  if [[ -n "$id" ]]; then
+    request "$api/releases/$id/assets?per_page=100" | jq -r '.[].id' | while IFS= read -r asset_id; do
+      request --request DELETE "$api/releases/assets/$asset_id" > /dev/null
+    done
+  else
+    local payload="$RUNNER_TEMP/release-create.json"
+    jq -n --arg tag "$TAG" --arg sha "$SOURCE_SHA" --arg name "$name" \
+      --rawfile body "$RUNNER_TEMP/release-notes.md" \
+      '{tag_name: $tag, target_commitish: $sha, name: $name, body: $body,
+        draft: true, prerelease: false, make_latest: "false"}' > "$payload"
+  fi
   echo "release_id=$id" >> "$GITHUB_OUTPUT"
   echo "Draft release $id ($TAG)"
 
@@ -64,6 +81,7 @@ draft() {
 
 publish() {
   [[ "$PUBLISH" == true && "$TAG" == "paseo-v$VERSION" ]] || fail "Refusing to publish $TAG."
+  jq -n --arg tag "$TAG" --arg sha "$SOURCE_SHA" --arg name "Paseo $VERSION" \
   [[ "$(request "$api/commits/$TAG" | jq -er .sha)" == "$SOURCE_SHA" ]] || fail "$TAG does not point at $SOURCE_SHA."
   [[ "$(request "$api/releases/latest" | jq -er .tag_name)" == "$TAG" ]] || fail "$TAG is not the latest release."
   echo "Published $TAG at $SOURCE_SHA as the latest release."
