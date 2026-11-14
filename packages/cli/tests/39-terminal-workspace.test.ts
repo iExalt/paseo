@@ -4,6 +4,15 @@ import { createE2ETestContext } from "./helpers/test-daemon.ts";
 import { waitForTerminalOutput } from "./helpers/terminal.ts";
 
 const ctx = await createE2ETestContext({ timeout: 30_000 });
+function identity(terminal: { id: string; workspaceId: string; cwd: string; name: string }) {
+  return {
+    id: terminal.id,
+    workspaceId: terminal.workspaceId,
+    cwd: terminal.cwd,
+    name: terminal.name,
+  };
+}
+
 const sdk = createPaseoClient({ url: `${ctx.wsUrl}/ws`, reconnect: { enabled: false } });
 
 async function cli(args: string[]) {
@@ -25,15 +34,27 @@ try {
   const main = await cli(["terminal", "create", "--cwd", ctx.workDir, "--name", "Main"]);
   assert.equal(main.workspaceId, first.id);
   const feature = await cli(["terminal", "create", "--workspace", second.id, "--name", "Feature"]);
-  assert.deepEqual(feature, {
-    id: feature.id,
-    name: "Feature",
-    cwd: ctx.workDir,
-    workspaceId: second.id,
-  });
-  assert.deepEqual(await cli(["terminal", "ls", "--workspace", second.id]), [feature]);
-  assert.deepEqual(await cli(["terminal", "ls", "--cwd", ctx.workDir]), [main, feature]);
-  assert.deepEqual(await cli(["terminal", "ls", "--all"]), [main, feature]);
+  assert.deepEqual(
+    { id: feature.id, name: feature.name, cwd: feature.cwd, workspaceId: feature.workspaceId },
+    {
+      id: feature.id,
+      name: "Feature",
+      cwd: ctx.workDir,
+      workspaceId: second.id,
+    },
+  );
+  assert.deepEqual(
+    (await cli(["terminal", "ls", "--workspace", second.id])).map(identity),
+    [feature].map(identity),
+  );
+  assert.deepEqual(
+    (await cli(["terminal", "ls", "--cwd", ctx.workDir])).map(identity),
+    [main, feature].map(identity),
+  );
+  assert.deepEqual(
+    (await cli(["terminal", "ls", "--all"])).map(identity),
+    [main, feature].map(identity),
+  );
   const invalid = await ctx.paseo([
     "terminal",
     "create",
@@ -48,6 +69,98 @@ try {
   const conflict = await ctx.paseo(["terminal", "ls", "--all", "--workspace", second.id]);
   assert.notEqual(conflict.exitCode, 0);
 
+  const renamed = await cli(["terminal", "rename", feature.id.slice(0, 8), "Renamed feature"]);
+  assert.equal(renamed.title, "Renamed feature");
+  feature.title = "Renamed feature";
+  const launched = await cli([
+    "terminal",
+    "create",
+    "--workspace",
+    second.id,
+    "--command",
+    process.execPath,
+    "--arg=-e",
+    "--arg",
+    "console.log('CLI_ARG:' + process.argv[1] + ':' + process.stdout.rows + ':' + process.stdout.columns); setInterval(() => {}, 1000)",
+    "--arg",
+    "space value",
+    "--rows",
+    "33",
+    "--cols",
+    "101",
+  ]);
+  await waitForTerminalOutput(ctx.paseo, launched.id, "CLI_ARG:space value:33:101");
+  await cli(["terminal", "kill", launched.id]);
+  const invalidSize = await ctx.paseo(["terminal", "create", "--rows", "0"]);
+  assert.notEqual(invalidSize.exitCode, 0);
+  const conflictProfile = await ctx.paseo([
+    "terminal",
+    "create",
+    "--profile",
+    "codex",
+    "--command",
+    "echo",
+  ]);
+  assert.notEqual(conflictProfile.exitCode, 0);
+  await sdk.config.patch({
+    terminalProfiles: [
+      {
+        id: "test-profile",
+        name: "Profile",
+        command: process.execPath,
+        args: [
+          "-e",
+          "console.log('PROFILE_ARGC:' + process.argv.length); setInterval(() => {}, 1000)",
+          "{{{prompt}}}",
+        ],
+      },
+    ],
+  });
+  const profiled = await cli([
+    "terminal",
+    "create",
+    "--workspace",
+    second.id,
+    "--profile",
+    "test-profile",
+  ]);
+  assert.equal(profiled.name, "Profile");
+  await waitForTerminalOutput(ctx.paseo, profiled.id, "PROFILE_ARGC:1");
+  await cli(["terminal", "kill", profiled.id]);
+  const caller = await second.agents.create({ config: { provider: "claude/haiku" } });
+  const scopedResult = await ctx.paseo(
+    [
+      "terminal",
+      "create",
+      "--command",
+      process.execPath,
+      "--arg=-e",
+      "--arg",
+      "console.log('CALLER_SIZE:' + process.stdout.rows + ':' + process.stdout.columns); setInterval(() => {}, 1000)",
+      "--rows",
+      "35",
+      "--cols",
+      "103",
+      "--json",
+    ],
+    { env: { PASEO_AGENT_ID: caller.id } },
+  );
+  assert.equal(scopedResult.exitCode, 0, scopedResult.stderr);
+  const scoped = JSON.parse(scopedResult.stdout);
+  assert.equal(scoped.workspaceId, second.id);
+  assert.equal(scoped.activity, null);
+  await waitForTerminalOutput(ctx.paseo, scoped.id, "CALLER_SIZE:35:103");
+  await cli(["terminal", "rename", scoped.id, "Caller title"]);
+  const callerList = await ctx.paseo(["terminal", "ls", "--json"], {
+    env: { PASEO_AGENT_ID: caller.id },
+  });
+  assert.equal(callerList.exitCode, 0, callerList.stderr);
+  const callerTerminal = JSON.parse(callerList.stdout).find(
+    (entry: { id: string }) => entry.id === scoped.id,
+  );
+  assert.equal(callerTerminal.title, "Caller title");
+  assert.ok("activity" in callerTerminal);
+  await cli(["terminal", "kill", scoped.id]);
   const terminal = await second.terminals.create({
     command: process.execPath,
     args: [
@@ -72,7 +185,10 @@ try {
   });
   await cli(["terminal", "kill", feature.id]);
   assert.deepEqual(await cli(["terminal", "ls", "--workspace", second.id]), []);
-  assert.deepEqual(await cli(["terminal", "ls", "--workspace", first.id]), [main]);
+  assert.deepEqual(
+    (await cli(["terminal", "ls", "--workspace", first.id])).map(identity),
+    [main].map(identity),
+  );
   console.log("Terminal workspace CLI: ownership, lists, input, capture, kill, and errors passed");
 } finally {
   await sdk.close();

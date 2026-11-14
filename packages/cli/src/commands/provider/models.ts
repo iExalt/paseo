@@ -1,6 +1,7 @@
 import type { Command } from "commander";
 import { connectToDaemon } from "../../utils/client.js";
-import type { CommandOptions, ListResult, OutputSchema } from "../../output/index.js";
+import type { CommandOptions, ListResult, OutputSchema, SingleResult } from "../../output/index.js";
+import type { AgentModelDefinition } from "@getpaseo/protocol/agent-types";
 
 /** Model list item for display */
 export interface ModelListItem {
@@ -10,18 +11,6 @@ export interface ModelListItem {
   thinkingOptionIds: string[];
   defaultThinkingOptionId: string | null;
   thinkingOptions: string;
-}
-
-interface ProviderModelOption {
-  id: string;
-}
-
-interface ProviderModel {
-  id: string;
-  label: string;
-  description?: string;
-  thinkingOptions?: ProviderModelOption[];
-  defaultThinkingOptionId?: string | null;
 }
 
 /** Schema for provider models output */
@@ -53,13 +42,25 @@ export type ProviderModelsResult = ListResult<ModelListItem>;
 export interface ProviderModelsOptions extends CommandOptions {
   host?: string;
   thinking?: boolean;
+  full?: boolean;
 }
+
+export interface ProviderModelsFullResult {
+  provider: string;
+  models: AgentModelDefinition[];
+}
+
+const providerModelsFullSchema: OutputSchema<ProviderModelsFullResult> = {
+  idField: "provider",
+  columns: [],
+  renderHuman: (result) => JSON.stringify(result.data, null, 2),
+};
 
 export async function runModelsCommand(
   provider: string,
   options: ProviderModelsOptions,
   _command: Command,
-): Promise<ProviderModelsResult> {
+): Promise<ProviderModelsResult | SingleResult<ProviderModelsFullResult>> {
   const normalizedProvider = provider.toLowerCase();
 
   const client = await connectToDaemon({ target: options.daemonTarget });
@@ -73,7 +74,15 @@ export async function runModelsCommand(
       };
     }
 
-    const models: ModelListItem[] = (result.models ?? []).map((m: ProviderModel) => ({
+    if (options.full) {
+      return {
+        type: "single",
+        data: { provider, models: result.models ?? [] },
+        schema: providerModelsFullSchema,
+      };
+    }
+
+    const models: ModelListItem[] = (result.models ?? []).map((m: AgentModelDefinition) => ({
       model: m.label,
       id: m.id,
       description: m.description ?? "",

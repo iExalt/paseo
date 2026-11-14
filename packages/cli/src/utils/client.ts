@@ -1,4 +1,4 @@
-import { createHostClient, parseHostTarget } from "@getpaseo/client/node";
+import { parseHostTarget } from "@getpaseo/protocol/host-target";
 import {
   waitForDaemonReady,
   resolvePaseoHome,
@@ -12,9 +12,16 @@ import {
   normalizeHostPort,
   parseConnectionUri,
 } from "@getpaseo/protocol/daemon-endpoints";
-import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import {
+  findAgentsByProviderSessionId,
+  formatAmbiguousProviderSessionIdError,
+  type ProviderSessionIdSource,
+} from "@getpaseo/protocol/agent-provider-session-id";
+import type { CommandError } from "../output/index.js";
 import { getOrCreateCliClientId } from "./client-id.js";
 import { resolveCliVersion } from "../version.js";
+import { getErrorMessage } from "./errors.js";
 
 export interface ConnectOptions {
   target: DaemonTarget;
@@ -38,20 +45,33 @@ export function getDaemonHost(options: ConnectOptions): string {
 
 export function buildDaemonConnectionCommandError(options: ConnectOptions & { error: unknown }) {
   const error = options.error;
-  let message = error instanceof Error ? error.message : String(error);
-  if (error && typeof error === "object" && "message" in error) message = String(error.message);
+  let message = getErrorMessage(error);
   if (options.target.kind === "endpoint")
     message = message.replaceAll(options.target.host, describeDaemonTarget(options.target));
   let code = "DAEMON_UNREACHABLE";
   if (typeof error === "object" && error !== null && "code" in error) code = String(error.code);
   else if (message === "Password required") code = "AUTH_REQUIRED";
   else if (message === "Incorrect password") code = "AUTH_FAILED";
+  const systemInfo = error && typeof error === "object" && "info" in error ? error.info : null;
+  const systemCode =
+    systemInfo && typeof systemInfo === "object" && "code" in systemInfo
+      ? systemInfo.code
+      : undefined;
+  const permissionDenied = [code, systemCode].some(
+    (value) => value === "EPERM" || value === "EACCES",
+  );
+  let details: unknown = permissionDenied
+    ? "Permission denied while accessing the selected daemon or probing this system. Check this command's filesystem, process and network access."
+    : describeConnectionRemedy(code, options.target);
+  if (error && typeof error === "object" && "details" in error && error.details !== undefined) {
+    details = error.details;
+  }
   return {
     code,
     message: message.startsWith("Cannot connect to daemon at ")
       ? message
       : `Cannot connect to daemon at ${describeDaemonTarget(options.target)}: ${message}`,
-    details: describeConnectionRemedy(code, options.target),
+    details,
   };
 }
 
@@ -60,8 +80,10 @@ function describeConnectionRemedy(code: string, target: DaemonTarget): string {
     return "The daemon requires a password. Set PASEO_PASSWORD and retry.";
   if (code === "AUTH_FAILED")
     return "The daemon rejected the password. Check PASEO_PASSWORD and retry.";
-  if (target.kind === "instance")
+  if (target.kind === "instance" && code === "DAEMON_NOT_RUNNING")
     return `Start with: paseo daemon start --home ${JSON.stringify(target.home)}`;
+  if (target.kind === "instance")
+    return "Check the selected daemon and this command's local filesystem, process and network access.";
   return "Check the selected endpoint and credentials. SSH transport does not install or start the daemon.";
 }
 
@@ -179,6 +201,7 @@ export function resolveDaemonCredential(
 }
 
 async function connectSelectedDaemon(options: ConnectOptions): Promise<DaemonClient> {
+  const { createHostClient } = await import("@getpaseo/client/node");
   const timeout = options.timeout ?? DEFAULT_TIMEOUT;
   const host =
     options.target.kind === "endpoint"
@@ -231,15 +254,17 @@ export async function tryConnectToDaemon(options: ConnectOptions): Promise<Daemo
 }
 
 /** Minimal agent type for ID resolution */
-interface AgentLike {
+interface AgentLike extends ProviderSessionIdSource {
   id: string;
   title?: string | null;
 }
 
 /**
  * Resolve an agent ID from a partial ID or name.
- * Supports:
+ * Supports, in order:
  * - Full ID match
+ * - Full provider session ID match (the ID the app's "Copy session ID" copies); throws
+ *   AMBIGUOUS_AGENT_ID when several agents hold it
  * - Prefix match (first N characters)
  * - Title/name match (case-insensitive)
  *
@@ -258,10 +283,35 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
     return exactMatch.id;
   }
 
+  const sessionId = idOrName.trim();
+  const sessionMatches = findAgentsByProviderSessionId(agents, sessionId);
+  if (sessionMatches.length === 1 && sessionMatches[0]) {
+    return sessionMatches[0].id;
+  }
+  if (sessionMatches.length > 1) {
+    throw {
+      code: "AMBIGUOUS_AGENT_ID",
+      message: formatAmbiguousProviderSessionIdError(sessionId, sessionMatches),
+    } satisfies CommandError;
+  }
+
   // Try ID prefix match
   const prefixMatches = agents.filter((a) => a.id.toLowerCase().startsWith(query));
   if (prefixMatches.length === 1 && prefixMatches[0]) {
     return prefixMatches[0].id;
+  }
+
+  // A title must not select an agent when its ID prefix is ambiguous.
+  if (prefixMatches.length > 1) {
+    throw {
+      code: "AMBIGUOUS_AGENT_ID",
+      message: [
+        `Agent ID prefix "${idOrName}" matches ${prefixMatches.length} agents. Use a longer prefix or the full agent ID:`,
+        ...prefixMatches.map((agent) =>
+          agent.title ? `  ${agent.id}  ${agent.title}` : `  ${agent.id}`,
+        ),
+      ].join("\n"),
+    } satisfies CommandError;
   }
 
   // Try title/name match (case-insensitive)
@@ -274,12 +324,6 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
   const partialTitleMatches = agents.filter((a) => a.title?.toLowerCase().includes(query));
   if (partialTitleMatches.length === 1 && partialTitleMatches[0]) {
     return partialTitleMatches[0].id;
-  }
-
-  // If we have multiple prefix matches and no unique title match, return first prefix match
-  const firstPrefixMatch = prefixMatches[0];
-  if (firstPrefixMatch) {
-    return firstPrefixMatch.id;
   }
 
   return null;

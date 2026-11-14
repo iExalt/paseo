@@ -117,7 +117,7 @@ test.skipIf(process.platform !== "linux")(
         claude: new ClaudeAgentClient({ logger }),
         codex: new CodexAppServerAgentClient(logger),
       },
-      mcpEnabled: false,
+      agentToolsEnabled: false,
     });
     const client = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,

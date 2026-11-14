@@ -63,7 +63,9 @@ Claude first-party model metadata lives in `packages/server/src/server/agent/pro
 
 Keep the curated Claude catalog: `supportedModels()` has historically omitted older versions and carries less metadata. Discovery is only an opt-in visibility gate, not a replacement catalog or an entitlement guarantee. Claude Code v2.1.197 added `resolvedModel` to disambiguate alias rows; a bare family alias does not establish access to a particular version. Explicit user-configured models must remain selectable when discovery fails or omits them.
 
+Paseo's provider-native tools live in a shared catalog under `packages/server/src/server/agent/tools/`. CLI commands use the same underlying services; there is no Paseo MCP transport or fallback. The daemon resolves `agents.providers.<provider>.paseoTools` by the exact provider ID. The catalog policy belongs to the caller: it filters the tools exposed to the current agent. When that agent calls `create_agent`, the child receives the policy for the child provider ID; the caller's policy is not inherited.
 
+A provider that can register runtime tools directly should set `supportsNativePaseoTools: true` and consume the already-filtered `launchContext.paseoTools` in `createSession`/`resumeSession`. Providers without native tools use the CLI through shell access. `supportsMcpServers` describes third-party MCP support only. Legacy persisted internal Paseo MCP entries are stripped at launch. See [native tool policy and CLI context](../../public-docs/mcp.md). Browser tools remain subject to the daemon browser-tools setting and browser-host availability.
 
 Pi is a process-backed provider. Paseo requires the user to have the `pi` binary installed and talks to it through `pi --mode rpc`; the server package does not embed Pi's SDK/runtime packages.
 
@@ -75,6 +77,7 @@ Pi model records expose input capabilities through `model.input`. Only send raw 
 
 Probe Pi MCP support with Pi RPC `get_commands` for the agent cwd. Pi 0.99 and later ship MCP as a built-in extension, which registers an extension command named `mcp` with `sourceInfo.path` `builtin:mcp`. Register injected servers through `pi.registerMcpServer` in Paseo's generated extension; the built-in extension rejects SSE servers and names with characters other than letters, digits, `_`, and `-`, and a server of the same name in Pi's `mcp.json` takes precedence.
 
+The open-source `pi-mcp-adapter` extension replaces the built-in one and registers its own `mcp` command (often with `sourceInfo.source` containing `pi-mcp-adapter`). When it is loaded, write a per-agent MCP config and pass it with `--mcp-config` instead of modifying user or project MCP files. Because that flag replaces the Pi global config layer, preserve the existing `<Pi agent dir>/mcp.json` in the generated file before overlaying injected servers. For third-party local HTTP servers that do not use OAuth, explicitly disable adapter OAuth (`auth: false`, `oauth: false`) in the generated config.
 
 Pi control-plane RPCs wait 60 seconds by default. Override `params.rpcTimeoutMs` when extension or MCP startup on a slow host needs more time. Timeout errors name the pending RPC phase and report both elapsed time and the configured deadline. This setting does not govern long-running Pi compaction or Pi extension UI results. See [OMP profiles and Pi-compatible forks](custom-providers.md#omp-profiles-and-pi-compatible-forks) for OMP startup and RPC deadlines.
 
@@ -82,6 +85,7 @@ Pi import discovery reads Pi's persisted JSONL session files because Pi RPC does
 
 OMP is a first-class built-in provider, disabled by default. Its launch contract, typed runtime, agent/session behavior, history, permissions, imports, and test fake live under `providers/omp/`; only the provider-neutral JSONL child-process transport is shared with Pi. It launches `omp --mode rpc-ui`, uses OMP's `get_available_commands` RPC for slash-command discovery, bridges OMP `rpc-ui` approval dialogs into Paseo permissions, and imports terminal-started sessions from `~/.omp/agent/sessions` when enabled.
 
+OMP supports native Paseo host tools. The adapter registers the full caller-scoped Paseo tool catalog directly with OMP, subject to global and provider-native tool policy. Serialize every OMP host definition with `loadMode: "essential"` so `create_agent`, `send_agent_prompt`, and related tools remain direct calls; omitting the field makes OMP mount non-built-in names under `xd://` instead. OMP's provider-managed task subagents are surfaced as Paseo subagents through `child_session` imports; the parent keeps the subagents track while the child runtime stays owned by OMP. Custom OMP profiles should extend `omp`; other Pi-compatible forks can still extend `pi`, override `command`, and set `params.sessionDir` to their JSONL session directory.
 
 Pi RPC extension UI dialog requests (`select`, `input`, `editor`, `confirm`) are bridged into Paseo question permissions and answered with `extension_ui_response`. Pi extensions such as `ask_user` may chain dialogs: for example, a `select` can be followed by an optional-comment `input`. When an `ask_user` tool call declares `allowComment: true`, Paseo presents the selection and optional comment as one question permission, answers Pi's initial `select` immediately, then auto-answers the follow-up optional `input` with the comment the user already supplied (or an empty string). Preserve placeholders and optional/skip semantics for standalone optional inputs so the app can still distinguish "skip this optional input" from "cancel the whole dialog." Fire-and-forget extension UI requests such as notifications are intentionally ignored by the provider adapter unless Paseo grows first-class UI for them.
 
@@ -532,6 +536,7 @@ paseo run --provider my-provider --model some-model --mode default
 paseo ls -a -g
 
 # Check if the provider reports models
+paseo provider models my-provider
 ```
 
 ### E2E test patterns

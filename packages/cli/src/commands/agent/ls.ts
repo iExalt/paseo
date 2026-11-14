@@ -1,9 +1,12 @@
+import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
+import { resolveAgentTarget, type AgentTargetClient } from "../../utils/agent-target.js";
 import type { Command } from "commander";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
 import { fetchAllAgents } from "../../utils/agent-directory.js";
 import type { CommandOptions, ListResult, OutputSchema, CommandError } from "../../output/index.js";
 import { collectMultiple } from "../../utils/command-options.js";
+import { contextWindowPercent } from "../../utils/agent-usage.js";
 import { isSameOrDescendantPath } from "../../utils/paths.js";
 
 type FetchAgentsOptions = NonNullable<
@@ -22,7 +25,9 @@ export function addLsOptions(cmd: Command): Command {
       collectMultiple,
       [],
     )
-    .option("--thinking <id>", "Filter by thinking option ID");
+    .option("--thinking <id>", "Filter by thinking option ID")
+    .option("--attention", "Only agents requiring attention")
+    .option("--parent <id>", "Only Paseo children of this agent (ID, prefix, or full session ID)");
 }
 
 /** Agent list item for display */
@@ -35,6 +40,14 @@ export interface AgentListItem {
   status: string;
   cwd: string;
   created: string;
+  lastUsage: AgentSnapshotPayload["lastUsage"] | null;
+  contextWindowPercent: number | null;
+  requiresAttention: boolean;
+  attentionReason: AgentSnapshotPayload["attentionReason"] | null;
+  attentionTimestamp: string | null;
+  labels: AgentSnapshotPayload["labels"];
+  lastError: string | null;
+  updatedAt: string;
 }
 
 /** Helper to get relative time string */
@@ -84,6 +97,11 @@ export const agentLsSchema: OutputSchema<AgentListItem> = {
         return undefined;
       },
     },
+    {
+      header: "ATTENTION",
+      field: (agent) => (agent.requiresAttention ? (agent.attentionReason ?? "yes") : "-"),
+      width: 16,
+    },
     { header: "CWD", field: "cwd", width: 30 },
     { header: "CREATED", field: "created", width: 15 },
   ],
@@ -101,6 +119,14 @@ function toListItem(agent: AgentSnapshotPayload): AgentListItem {
     status: agent.status,
     cwd: shortenPath(agent.cwd),
     created: relativeTime(agent.createdAt),
+    lastUsage: agent.lastUsage ?? null,
+    contextWindowPercent: contextWindowPercent(agent.lastUsage),
+    requiresAttention: agent.requiresAttention ?? false,
+    attentionReason: agent.attentionReason ?? null,
+    attentionTimestamp: agent.attentionTimestamp ?? null,
+    labels: agent.labels,
+    lastError: agent.lastError ?? null,
+    updatedAt: agent.updatedAt,
   };
 }
 
@@ -121,6 +147,8 @@ export interface AgentLsOptions extends CommandOptions {
   label?: string[];
   /** Filter by thinking option ID */
   thinking?: string;
+  attention?: boolean;
+  parent?: string;
 }
 
 function parseLabelFilters(labels: string[] | undefined): Record<string, string> {
@@ -137,12 +165,16 @@ function parseLabelFilters(labels: string[] | undefined): Record<string, string>
 }
 
 export function buildAgentLsFetchOptions(
-  options: Pick<AgentLsOptions, "all" | "global" | "background" | "label" | "thinking">,
+  options: Pick<
+    AgentLsOptions,
+    "all" | "global" | "background" | "label" | "thinking" | "attention"
+  >,
 ): FetchAgentsOptions {
   const labelFilters = parseLabelFilters(options.label);
   const normalizedThinkingOptionId = options.thinking?.trim();
   const daemonFilter: NonNullable<FetchAgentsOptions["filter"]> = {};
 
+  if (options.attention) daemonFilter.requiresAttention = true;
   if (options.all) {
     daemonFilter.includeArchived = true;
   }
@@ -166,7 +198,7 @@ export function buildAgentLsFetchOptions(
   return fetchOptions;
 }
 
-interface AgentLsClient {
+interface AgentLsClient extends AgentTargetClient {
   fetchAgents(options?: FetchAgentsOptions): Promise<{
     entries: { agent: AgentSnapshotPayload }[];
     pageInfo: { nextCursor: string | null };
@@ -206,9 +238,15 @@ export async function listAgents(
       throw error;
     }
 
+    const parentId =
+      options.parent !== undefined ? await resolveAgentTarget(client, options.parent) : null;
     const labelFilters = parseLabelFilters(options.label);
     const fetchOptions = buildAgentLsFetchOptions(options);
     let agents = await fetchAllAgents(client, fetchOptions);
+
+    if (options.attention) agents = agents.filter((agent) => agent.requiresAttention === true);
+    if (parentId)
+      agents = agents.filter((agent) => agent.labels[PARENT_AGENT_ID_LABEL] === parentId);
 
     // By default, exclude archived agents. `-a` includes them.
     if (!options.all) {
@@ -263,6 +301,7 @@ export async function listAgents(
     };
   } catch (err) {
     await client.close().catch(() => {});
+    if (err && typeof err === "object" && "code" in err) throw err;
     const message = err instanceof Error ? err.message : String(err);
     const error: CommandError = {
       code: "LIST_AGENTS_FAILED",

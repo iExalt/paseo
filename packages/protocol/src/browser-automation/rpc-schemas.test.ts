@@ -1,6 +1,11 @@
 import { describe, expect, test } from "vitest";
+import { validateWSOutboundMessage } from "../validation/ws-outbound.js";
 
 import {
+  BrowserCommandCancelRequestSchema,
+  BrowserCommandCancelResponseSchema,
+  BrowserCommandExecuteRequestSchema,
+  BrowserCommandExecuteResponseSchema,
   BrowserAutomationExecuteRequestSchema,
   BrowserAutomationExecuteResponseSchema,
 } from "./rpc-schemas.js";
@@ -10,6 +15,86 @@ const FALLBACK_BROWSER_ID = "1777777777777-abcdef";
 const BROWSER_ID_MESSAGE =
   "browserId must be a real id returned by browser_new_tab or browser_list_tabs";
 const WAIT_CONDITION_MESSAGE = "browser_wait requires exactly one of text or url";
+
+describe("browser CLI command RPC schemas", () => {
+  test("validates a typed command request and response with server-resolved context", () => {
+    expect(
+      BrowserCommandExecuteRequestSchema.parse({
+        type: "browser.command.execute.request",
+        requestId: "req-cli-browser",
+        agentId: "agent-1",
+        command: { command: "snapshot", args: { browserId: BROWSER_ID } },
+      }),
+    ).toMatchObject({ command: { command: "snapshot", args: { browserId: BROWSER_ID } } });
+    expect(
+      BrowserCommandExecuteResponseSchema.parse({
+        type: "browser.command.execute.response",
+        payload: {
+          requestId: "req-cli-browser",
+          result: {
+            requestId: "req-cli-browser",
+            ok: true,
+            result: {
+              command: "snapshot",
+              browserId: BROWSER_ID,
+              url: "https://example.test/",
+              title: "Example",
+              format: "aria-yaml",
+              snapshot: "- document Example",
+              truncated: false,
+              stats: { nodeCount: 1, refCount: 0, textLength: 1 },
+            },
+          },
+          context: { agentId: "agent-1", cwd: "/repo", browserId: BROWSER_ID },
+        },
+      }),
+    ).toMatchObject({ payload: { context: { agentId: "agent-1", browserId: BROWSER_ID } } });
+  });
+
+  test("correlates cancellation to a target request", () => {
+    expect(
+      BrowserCommandCancelRequestSchema.parse({
+        type: "browser.command.cancel.request",
+        requestId: "req-cancel",
+        targetRequestId: "req-cli-browser",
+      }),
+    ).toMatchObject({ targetRequestId: "req-cli-browser" });
+    expect(
+      BrowserCommandCancelResponseSchema.parse({
+        type: "browser.command.cancel.response",
+        payload: { requestId: "req-cancel", cancelled: true },
+      }),
+    ).toEqual({
+      type: "browser.command.cancel.response",
+      payload: { requestId: "req-cancel", cancelled: true },
+    });
+  });
+
+  test.each([
+    {
+      ok: true,
+      result: { command: "list_tabs", tabs: [] },
+    },
+    {
+      ok: false,
+      error: { code: "browser_disabled", message: "Disabled", retryable: false },
+    },
+  ])("validates the boolean result discriminator on the WebSocket wire ($ok)", (result) => {
+    expect(
+      validateWSOutboundMessage({
+        type: "session",
+        message: {
+          type: "browser.command.execute.response",
+          payload: {
+            requestId: "req-cli-browser",
+            result: { requestId: "req-cli-browser", ...result },
+            context: {},
+          },
+        },
+      }).success,
+    ).toBe(true);
+  });
+});
 
 const commandParseCases = [
   {

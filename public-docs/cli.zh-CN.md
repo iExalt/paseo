@@ -10,10 +10,12 @@ Paseo CLI 让你在终端中管理 Agent。它与 daemon 的 API 提供的接口
 
 > **Agent 编排**：你可以让编程 Agent 使用 Paseo CLI 启动和管理其他 Agent。Paseo 会识别发起调用的 Agent，因此通过 CLI 创建的执行者会继承调用方的工作区和父级默认值。参阅[调用方上下文与原生工具策略](/docs/mcp)。
 
+运行 `paseo prime` 可查看与已安装 CLI 版本匹配的简明约定。它可离线使用，始终输出纯文本，即使传入 `--json` 也是如此。在受管会话中，请使用 `"$PASEO_CLI" prime`。
+
 ## 速查 {#quick-reference}
 
 ```bash
-paseo run "fix the tests"            # Start an agent
+paseo run --provider codex "fix the tests"  # Start an agent
 paseo ls                             # List running agents
 paseo attach <id>                    # Stream agent output
 paseo send <id> "also fix linting"   # Send follow-up task
@@ -38,7 +40,7 @@ paseo usage inspect <report-id> --refresh
 
 把列表中的完整报告 ID 复制到 `inspect` 中，可以查看重置时间、余额和单位、套餐详情、提供的预测，以及附带恢复说明的登录失败信息。报告 ID 需要完全匹配。
 
-`--agent` 选择与某个 Agent 关联的账号配额。它不会统计该 Agent 的 token 消耗或费用。请使用完整的 Agent ID，并且不要把 `--agent` 与 `inspect` 一起使用。
+`--agent` 选择与某个 Agent 关联的账号配额。它不会统计该 Agent 的 token 消耗或费用。请使用完整的 Agent ID 或该 Agent 的完整会话 ID，并且不要把 `--agent` 与 `inspect` 一起使用。
 
 查询会在可用时使用主机的五分钟缓存。添加 `--refresh` 可以绕过缓存。使用 `--host` 或 `--home` [选择一个 daemon](#select-one-daemon)。不支持用量来源的主机会返回一条更新提示。
 
@@ -100,26 +102,28 @@ paseo --host devbox:6767 provider diagnostic opencode
 
 ## 运行 Agent {#running-agents}
 
-使用 `paseo run` 启动一个带任务的新 Agent：
+使用 `paseo run` 启动一个带任务的新 Agent。`--provider` 是必需的；可通过 `provider ls` 和 `provider models` 查找 Provider 和模型：
 
 ```bash
-paseo run "implement user authentication"
+paseo run --provider codex "implement user authentication"
 paseo run --provider codex "refactor the API layer"
-paseo run --no-wait "run the focused test suite"
-paseo run --output-schema schema.json "name this branch"
-paseo run --new-workspace worktree --worktree-mode branch-off --new-branch feature/x --base origin/main "implement feature X"
-paseo run --workspace <workspace-id> "review the current diff"
-paseo run --output-schema schema.json "extract release notes"
-paseo run --output-schema '{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]}' "summarize release notes"
+paseo run --provider codex --no-wait "run the focused test suite"
+paseo run --provider codex --output-schema schema.json "name this branch"
+paseo run --provider codex --new-workspace worktree --worktree-mode branch-off --new-branch feature/x --base origin/main "implement feature X"
+paseo run --provider codex --workspace <workspace-id> "review the current diff"
+paseo run --provider codex --output-schema schema.json "extract release notes"
+paseo run --provider codex --output-schema '{"type":"object","properties":{"summary":{"type":"string"}},"required":["summary"]}' "summarize release notes"
 ```
 
-在人工操作的 shell 中，不带参数的 `paseo run` 会为当前目录创建一个新的本地工作区。使用 `--workspace <id>` 把 Agent 加入一个已有的工作区，或者使用 `--new-workspace local|worktree` 为这次运行显式创建一个单独的工作区。
+在人工操作的 shell 中，未显式指定工作区位置的运行会为当前目录创建一个新的本地工作区。使用 `--workspace <id>` 把 Agent 加入一个已有的工作区，或者使用 `--new-workspace local|worktree` 为这次运行显式创建一个单独的工作区。
 
 创建 worktree 时接受 `--worktree-mode branch-off|checkout-branch|checkout-pr`，以及相应的 `--new-branch`/`--base`、`--branch` 或 `--pr-number`/`--forge` 选项。使用 `--worktree-slug` 选择托管目录的 slug。
 
 当一个已有的 Paseo Agent 运行同样的命令时，Paseo 会通过 `PASEO_AGENT_ID` 识别它。如果没有显式指定位置，新的 Agent 会成为它在同一工作区中的子 Agent。`--workspace` 可以把这个子 Agent 放到其他地方，而不改变它的父 Agent。
 
 使用 `--output-schema` 只返回符合 schema 的 JSON 输出。你可以传入 schema 文件路径，或内联的 JSON schema 对象。此模式不能与 `--no-wait` 一起使用。
+
+`run` 和 `send` 都接受一个提示词来源：位置参数文本、`--prompt <text>` 或 `--prompt-file <path>`。使用 `--prompt-file -` 显式读取 UTF-8 stdin；不会自动读取 stdin。例如：`paseo run --provider codex --prompt-file task.md --no-wait --json`。
 
 `paseo run` 默认等待完成。使用 `--no-wait` 可以立即返回，同时让 Agent 继续运行，`paseo send` 也使用同一个参数。
 
@@ -186,7 +190,7 @@ paseo workspace create \
 
 ```bash
 paseo workspace create --isolation local --background --path /path/to/repo
-paseo run --workspace <workspace-id> --no-wait "review the checkout flow"
+paseo run --provider codex --workspace <workspace-id> --no-wait "review the checkout flow"
 ```
 
 无论在列表中是否可见，都可以通过确切的工作区 ID 和 Agent ID 访问它们。
@@ -196,13 +200,14 @@ paseo run --workspace <workspace-id> --no-wait "review the checkout flow"
 ```bash
 paseo workspace ls
 paseo workspace ls --background               # Also include background workspaces
-paseo run --workspace <workspace-id> "implement authentication"
+paseo run --provider codex --workspace <workspace-id> "implement authentication"
 paseo workspace rename <workspace-id> "Auth rework"
 paseo workspace rename <workspace-id> --reset   # back to the branch or directory name
 paseo workspace archive <workspace-id>
 ```
 
 当 Paseo 无法从源检出推断代码托管平台时，为 PR 检出添加 `--forge <name>`。setup 钩子和服务见 [Git worktree](/docs/worktrees)。
+
 ### 工作区通知策略 {#workspace-notification-policy}
 
 ```bash
@@ -231,7 +236,9 @@ paseo terminal kill <terminal-id>
 
 创建时默认使用工作区目录。添加 `--cwd <absolute-path>` 可以修改进程目录，同时仍由该工作区拥有。未知或已归档的工作区 ID 会失败。
 
-不带 `--workspace` 时，创建会打开 `--cwd` 或当前目录对应的项目，并复用其中最早的活动工作区。不带 `--workspace` 的列表会按 `--cwd` 或当前目录过滤，可能包含多个工作区。`ls --all` 列出主机上的所有终端，不能与目录或工作区过滤条件一起使用。
+在受管的 Agent 会话中，即使 shell 已切换目录，创建仍默认使用调用方的作用域目录和工作区。要请求 shell 的当前目录，请显式使用 `"$PASEO_CLI" terminal create --cwd "$PWD" --json`；调用方的目录限制仍然适用。
+
+在受管会话之外，不带 `--workspace` 时，创建会打开 `--cwd` 或当前目录对应的项目，并复用其中最早的活动工作区。不带 `--workspace` 的列表会按 `--cwd` 或当前目录过滤，可能包含多个工作区。`ls --all` 列出主机上的所有终端，不能与目录或工作区过滤条件一起使用。
 
 创建和列表的结果包含 `id`、`name`、`cwd` 和 `workspaceId`。使用 `--json` 获得结构化输出，使用全局的 `--host` 选项指定另一个 daemon。这些命令需要一个支持[工作区终端 API](/docs/sdk/reference#clientterminals) 的主机；较旧的主机会返回一条更新提示。
 
@@ -297,6 +304,7 @@ paseo agent status <exact-agent-id> --json
 paseo agent activity <exact-agent-id> --limit 20 --json
 ```
 
+查询默认返回 50 条结果，已归档活动的时间窗口为 48 小时；可用时它会使用调用方所在的目录。`agent status` 返回完整快照，包括对已存储 Agent 的回退，而 `inspect` 是面向展示的投影。`agent activity` 返回整理过的活动；`logs` 提供时间线过滤和跟随。请不要把它们的 JSON 结构当作可互换的。参阅[各命令的 JSON 字段与解析示例](#output-formats)。
 
 ## 流式输出 {#streaming-output}
 
@@ -308,6 +316,7 @@ paseo attach abc123   # Attach to agent (Ctrl+C to detach)
 
 Agent ID 可以缩写，只要 `abc` 没有歧义就可以使用。
 
+凡是命令接受 Agent 的地方，也可以传入该 Agent 的完整会话 ID，即应用中 **Copy session ID** 复制的 Claude Code 会话 ID、Codex 线程 ID 或其他提供方 ID。完全匹配的 Agent ID 优先于会话 ID。会话 ID 必须完整，不会按前缀匹配。如果多个 Agent 持有同一个会话 ID，命令会失败并列出它们的 Agent ID 供你选择。未知的会话 ID 不会导入或恢复会话；需要时请使用 `paseo import`。较旧的 daemon 可能无法为 `send`、`wait` 等由 daemon 解析的命令识别会话 ID。
 
 ## 发送消息 {#sending-messages}
 
@@ -385,6 +394,7 @@ paseo agent mode <id> plan     # Set plan mode
 paseo agent detach <id>        # Make a subagent top-level
 ```
 
+解除已有 Agent 的父子关系是一个显式的生命周期操作。Agent 会继续运行；只有它与父 Agent 的关系发生变化。要新建独立的 Agent，请使用 `run --relationship detached`。
 
 ## 配置与 Provider 发现 {#profiles-and-provider-discovery}
 
@@ -395,6 +405,8 @@ paseo provider models <provider> --full --json
 paseo provider inspect <provider> --cwd /absolute/repo --json
 paseo provider inspect <provider> --model <model> --mode <mode> --thinking <thinking> --json
 ```
+
+`provider modes <provider>` 是 `provider inspect <provider>` 的别名，返回相同的模式和能力。
 
 委派之前请先阅读配置的备注。没有 `run --profile` 参数：请把 `provider`、`model`、`modeId`、`thinkingOptionId` 和 `featureValues` 复制到 `--provider`、`--model`、`--mode`、`--thinking` 和 `--features-json` 中，缺失的值直接省略。`provider inspect` 接受草稿设置并报告能力和功能；`provider diagnostic` 检查安装情况。在 Provider 和模型发现中使用 `--full --json` 会保留规范记录，而不是展示用的投影。
 
@@ -425,6 +437,7 @@ paseo agent update <id> --features-json '{"choice":"a,b","count":2,"custom":{"le
 
 对于已解析的调用方，创建和发送默认会收到完成、错误和权限通知。对即发即弃的工作使用 `--no-notify-on-finish`，或用 `--notify-on-finish` 显式声明意图。人工操作的 shell 没有父级回调。没有回调可用时，请使用 `wait`、`agent status` 或 `agent activity`；启用通知时请避免反复轮询。
 
+在受管会话中，即使 `paseo` 不在 `PATH` 中，也应使用 daemon 提供的 `"$PASEO_CLI"`，并保留调用方和主目录的环境变量值。保留可执行文件路径两侧的引号。Detached 启动已经具有独立的父子关系；不要在启动后清除父级标签。参阅[调用方上下文与策略](/docs/mcp#caller-context-and-daemon-selection)。
 
 ## 关闭、停止、归档与删除 {#close-stop-archive-and-delete}
 
@@ -432,7 +445,10 @@ paseo agent update <id> --features-json '{"choice":"a,b","count":2,"custom":{"le
 | ------------------------ | ------------------------------------------------------------------------ |
 | `paseo stop <id>`        | 取消当前运行，Agent 保持可用。                                           |
 | `paseo agent close <id>` | 关闭运行时并保存其已关闭的快照，保留历史。取代之前的 `kill_agent` 操作。 |
+| `paseo archive <id>`     | 从活跃使用中移除。中断运行中的 Agent；历史保留。                         |
 | `paseo delete <id>`      | 硬删除已存储的状态，必要时先中断。                                       |
+
+归档自身 Agent 或工作区可能会终止 Provider 进程和调用它的 shell，导致 CLI 来不及输出结果。响应丢失或 shell 被中断并不能证明归档失败。请先发送最终交接，再由父 Agent 或另一个外部会话执行清理，并通过 `agent status` 或 `workspace ls` 验证结果。工作区归档会关闭其 Agent 和终端；Agent 归档会中断运行中的 Agent；已归档的 Agent 再次归档会成功返回，不产生更改。
 
 ## 浏览器命令 {#browser-commands}
 
@@ -446,7 +462,6 @@ paseo speech speak --agent <agent-id> "The review is complete" --json
 ```
 
 语音使用已解析调用方当前由 daemon 管理的语音会话，或显式指定的 `--agent`。文本必须包含 1–4000 个非空白字符。播放完成后才算成功；中断 CLI 会取消请求。缺少语音会话或播放失败会返回错误。这不是生成音频文件的命令。
-解除父子关系是一个显式的生命周期操作，而不是创建时的参数。Agent 会继续运行；只有它与父 Agent 的关系发生变化。
 
 ## 管理 daemon {#daemon-management}
 
@@ -554,7 +569,7 @@ paseo daemon pair --json   # structured output; never prompts
 
 ```bash
 paseo --host 'https://app.paseo.sh/#offer=eyJ2IjoyLC...' ls
-paseo --host "$OFFER_URL" run "fix the failing tests"
+paseo --host "$OFFER_URL" run --provider codex "fix the failing tests"
 ```
 
 你也可以通过 `PASEO_HOST` 设置一次，而不必在每条命令中传入 `--host`。显式的参数会覆盖环境变量。
@@ -565,21 +580,21 @@ CLI 的设计初衷之一就是供 Agent 自己使用。你可以让一个 Agent
 
 ```bash
 # Agent A spawns Agent B and waits for it
-agent_id=$(paseo run --no-wait --quiet --title api-agent "implement the API")
-paseo wait "$agent_id"
-paseo logs "$agent_id" --tail 5
+agent_id=$("$PASEO_CLI" run --provider codex --no-wait --quiet --title api-agent "implement the API")
+"$PASEO_CLI" wait "$agent_id"
+"$PASEO_CLI" logs "$agent_id" --tail 5
 ```
 
-由于 Agent A 的 ID 存在于环境变量中，除非指定了 `--workspace`，Agent B 会作为它的子 Agent 创建在同一个工作区中。
+Agent B 默认使用 Agent A 的工作区。另一个 `--workspace` 只改变放置位置；使用 `--relationship detached` 才会改变父子关系。参阅[异步委派](#asynchronous-delegation)。
 
 简单的实现加验证循环：
 
 ```bash
 # Requires jq
 while true; do
-  paseo run --provider codex "make the tests pass" >/dev/null
+  "$PASEO_CLI" run --provider codex "make the tests pass" >/dev/null
 
-  verdict=$(paseo run --provider claude --output-schema '{"type":"object","properties":{"criteria_met":{"type":"boolean"}},"required":["criteria_met"],"additionalProperties":false}' "ensure tests all pass")
+  verdict=$("$PASEO_CLI" run --provider claude --output-schema '{"type":"object","properties":{"criteria_met":{"type":"boolean"}},"required":["criteria_met"],"additionalProperties":false}' "ensure tests all pass")
   if echo "$verdict" | jq -e '.criteria_met == true' >/dev/null; then
     echo "criteria met"
     break
@@ -598,6 +613,37 @@ paseo ls --json                # JSON output
 paseo ls --format yaml         # YAML output
 paseo ls -q                    # IDs only (quiet)
 ```
+
+JSON 结构由命令决定，而不是由输出格式决定。以下现有字段属于不同的契约；脚本应选择能提供所需数据的命令：
+
+| 命令                                            | JSON 结构与字段                                                                                                                                                                                |
+| ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent run --no-wait --json`                    | 对象：`agentId`、`title`（可为 null）、`provider`、`cwd`、`status`。                                                                                                                           |
+| `agent ls --json`                               | 展示摘要数组：`id`、`shortId`、`name`、`provider`、`thinking`、`status`、`cwd`、`created`。`provider` 可能包含模型，`cwd` 可能以 `~` 开头，`created` 是相对时间文本。                          |
+| `agent query --json`                            | 详细目录条目数组：`id`、`title`（可为 null）、独立的 `provider` 和 `model`、绝对路径 `cwd`、`createdAt`、`updatedAt`、`labels`，以及 `requiresAttention` 和 `attentionReason` 等可选关注字段。 |
+| `agent status <id> --json`                      | 对象：`status` 和 `snapshot`。从 `snapshot.id`、`snapshot.title`、`snapshot.provider`、`snapshot.model` 和 `snapshot.cwd` 读取身份及运行时设置。                                               |
+| `agent inspect <id> --json`                     | 展示投影，使用 `Id`、`Name`、`Provider`、`Model` 和 `Cwd` 等首字母大写字段。需要完整快照时优先使用 `status`。                                                                                  |
+| `workspace ls --json`                           | 数组，包含 `workspaceId`、`name`、`project`、`cwd` 和嵌套的 `workspace`；ID 字段不是 `id`。                                                                                                    |
+| `terminal create --json` / `terminal ls --json` | 单个对象 / 数组，包含 `id`、`name`、`cwd` 和 `workspaceId`。                                                                                                                                   |
+
+检查模型、绝对路径、时间戳或关注状态时，请使用 `agent query`，不要解析展示字符串。可选字段可能不存在；允许 null 的字段可能为 `null`。例如：
+
+```bash
+paseo agent query --cwd "$PWD" --include-background --json \
+  | jq '.[] | {id, title, provider, model, cwd, createdAt, requiresAttention}'
+paseo agent status "$agent_id" --json | jq '.snapshot | {id, title, model, cwd}'
+paseo workspace ls --json | jq '.[] | {workspaceId, name, cwd}'
+```
+
+启动脚本应只解析 stdout。工作区提示和诊断信息输出到 stderr；用 `2>&1` 合并后会导致 JSON 无法解析。在受管会话中：
+
+```bash
+"$PASEO_CLI" agent run --provider codex --no-wait --title api-agent \
+  --label task=api-agent --json "implement the API" >agent-run.json 2>agent-run.stderr
+agent_id=$(jq -er '.agentId' agent-run.json)
+```
+
+使用 ID 前，请检查启动命令和解析器的退出状态。即使解析或后续命令失败，启动操作也可能已经创建了 Agent。为每次逻辑启动选择唯一的任务标签，并在重试创建前用 `agent ls -a -g --label task=api-agent --json` 和 `agent status <id> --json` 核对已有状态。在启动加 heartbeat 的复合脚本中，若 heartbeat 失败，应先确认 Agent 已存在，再仅重试 heartbeat。
 
 ## 全局选项 {#global-options}
 

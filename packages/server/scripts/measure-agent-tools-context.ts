@@ -1,10 +1,9 @@
 import { Buffer } from "node:buffer";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import pino from "pino";
+import { z } from "zod";
 
-import { createAgentMcpServer } from "../src/server/agent/mcp-server.js";
+import { createPaseoToolCatalog } from "../src/server/agent/tools/paseo-tools.js";
+import type { PaseoToolDefinition } from "../src/server/agent/tools/types.js";
 import type { AgentManager, ManagedAgent } from "../src/server/agent/agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "../src/server/agent/agent-storage.js";
 import type { AgentProvider, ProviderSnapshotEntry } from "../src/server/agent/agent-sdk-types.js";
@@ -53,16 +52,7 @@ const DEFAULT_TOP_COUNT = 15;
 const MEASUREMENT_AGENT_ID = "agent-tools-measurement";
 const MEASUREMENT_CWD = "/tmp/paseo-agent-tools-measurement";
 const MEASUREMENT_WORKSPACE_ID = "workspace_agent_tools_measurement";
-const FIELD_NAMES = [
-  "name",
-  "title",
-  "description",
-  "inputSchema",
-  "outputSchema",
-  "annotations",
-  "execution",
-  "_meta",
-] as const;
+const FIELD_NAMES = ["name", "title", "description", "inputSchema", "outputSchema"] as const;
 
 function parseCliOptions(args: string[]): CliOptions {
   let format: CliOptions["format"] = "markdown";
@@ -107,7 +97,7 @@ function parseCliOptions(args: string[]): CliOptions {
 function printHelp(): void {
   process.stdout.write(`Usage: npm run measure:agent-tools -- [options]
 
-Measures the MCP tools/list payload for Paseo agent tools.
+Measures the native Paseo tool catalog metadata and schema size.
 
 Options:
   --scope=agent|top-level  Catalog shape to measure. Defaults to agent.
@@ -136,14 +126,45 @@ function measureField(field: string, value: unknown): FieldSize {
   };
 }
 
-function stripOutputSchemas(tools: Tool[]): Tool[] {
+function stripOutputSchemas(tools: SerializedTool[]): SerializedTool[] {
   return tools.map((tool) => {
     const { outputSchema: _outputSchema, ...rest } = tool;
     return rest;
   });
 }
 
-function measureTool(tool: Tool): ToolSize {
+interface SerializedTool {
+  name: string;
+  title?: string;
+  description: string;
+  inputSchema?: unknown;
+  outputSchema?: unknown;
+}
+
+function serializeToolSchema(
+  schema: PaseoToolDefinition["inputSchema"],
+  io: "input" | "output",
+): unknown {
+  if (!schema) return undefined;
+  return z.toJSONSchema(schema instanceof z.ZodType ? schema : z.object(schema), {
+    io,
+    unrepresentable: "any",
+  });
+}
+
+function serializeCatalogTool(tool: PaseoToolDefinition): SerializedTool {
+  return {
+    name: tool.name,
+    ...(tool.title ? { title: tool.title } : {}),
+    description: tool.description,
+    ...(tool.inputSchema ? { inputSchema: serializeToolSchema(tool.inputSchema, "input") } : {}),
+    ...(tool.outputSchema
+      ? { outputSchema: serializeToolSchema(tool.outputSchema, "output") }
+      : {}),
+  };
+}
+
+function measureTool(tool: SerializedTool): ToolSize {
   const fields = FIELD_NAMES.flatMap((field) =>
     Object.hasOwn(tool, field) ? [measureField(field, tool[field])] : [],
   );
@@ -179,7 +200,7 @@ async function measureCatalog(params: {
   browserToolsEnabled: boolean;
   scope: CatalogScope;
 }): Promise<CatalogMeasurement> {
-  const server = await createAgentMcpServer({
+  const catalog = createPaseoToolCatalog({
     agentManager: new MeasurementAgentManager() as unknown as AgentManager,
     agentStorage: new MeasurementAgentStorage() as unknown as AgentStorage,
     providerSnapshotManager:
@@ -189,33 +210,23 @@ async function measureCatalog(params: {
     callerAgentId: params.scope === "agent" ? MEASUREMENT_AGENT_ID : undefined,
     logger: pino({ level: "silent" }),
   });
-  const client = new Client({ name: "paseo-agent-tools-measurement", version: "0.0.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-
-  await server.connect(serverTransport);
-  await client.connect(clientTransport);
-  try {
-    const result = await client.listTools();
-    const size = measureJson(result.tools);
-    const strippedSize = measureJson(stripOutputSchemas(result.tools));
-    const tools = result.tools.map(measureTool).sort((a, b) => b.bytes - a.bytes);
-    return {
-      label: params.label,
-      browserToolsEnabled: params.browserToolsEnabled,
-      toolCount: result.tools.length,
-      ...size,
-      withoutOutputSchemas: {
-        ...strippedSize,
-        savedBytes: size.bytes - strippedSize.bytes,
-        savedEstimatedTokens: size.estimatedTokens - strippedSize.estimatedTokens,
-      },
-      fields: sumFieldSizes(tools),
-      tools,
-    };
-  } finally {
-    await client.close();
-    await server.close();
-  }
+  const serializedTools = [...catalog.tools.values()].map(serializeCatalogTool);
+  const size = measureJson(serializedTools);
+  const strippedSize = measureJson(stripOutputSchemas(serializedTools));
+  const tools = serializedTools.map(measureTool).sort((a, b) => b.bytes - a.bytes);
+  return {
+    label: params.label,
+    browserToolsEnabled: params.browserToolsEnabled,
+    toolCount: serializedTools.length,
+    ...size,
+    withoutOutputSchemas: {
+      ...strippedSize,
+      savedBytes: size.bytes - strippedSize.bytes,
+      savedEstimatedTokens: size.estimatedTokens - strippedSize.estimatedTokens,
+    },
+    fields: sumFieldSizes(tools),
+    tools,
+  };
 }
 
 function formatInteger(value: number): string {

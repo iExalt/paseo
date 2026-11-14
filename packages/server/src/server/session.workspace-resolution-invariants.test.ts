@@ -191,7 +191,6 @@ function createHarness(input: {
       get: () => ({ mcp: { injectIntoAgents: false }, providers: {} }),
       onChange: () => () => {},
     }),
-    mcpBaseUrl: null,
     stt: null,
     tts: null,
     providerSnapshotManager: createProviderSnapshotManagerStub().manager,

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { AgentTimelineItem } from "@getpaseo/protocol/agent-types";
-import { createFollowTranscriptWriter, formatAgentActivityTranscript } from "./logs.js";
+import {
+  createFollowTranscriptWriter,
+  formatAgentActivityTranscript,
+  parseTimelineOptions,
+} from "./logs.js";
 
 function collect(items: readonly AgentTimelineItem[], turnId?: string): string {
   let output = "";
@@ -147,5 +151,48 @@ describe("createFollowTranscriptWriter", () => {
     ]);
 
     expect(output).toBe("# Title\n\nBody\n");
+  });
+});
+
+describe("structured timeline options", () => {
+  it("keeps an epoch cursor and exact limit", () => {
+    expect(parseTimelineOptions({ before: "epoch:12", limit: "3", json: true })).toEqual({
+      limit: 3,
+      cursor: { epoch: "epoch", seq: 12 },
+      searchCursor: undefined,
+      tail: undefined,
+      json: true,
+    });
+    expect(parseTimelineOptions({ before: "epoch:12" }).limit).toBe(200);
+    expect(parseTimelineOptions({ limit: "0" }).limit).toBe(0);
+  });
+  it.each([
+    { limit: "2x" },
+    { limit: "-1" },
+    { before: "12" },
+    { before: "epoch:" },
+    { cursor: "2" },
+    { search: " " },
+    { search: "x", limit: "2" },
+    { follow: true, json: true },
+    { follow: true, format: "json" as const },
+    { follow: true, full: true },
+  ])("refuses invalid options %j", (options) => {
+    expect(() => parseTimelineOptions(options)).toThrow();
+  });
+  it("renders notifications and nested plugin data during follow", () => {
+    expect(
+      collect([
+        { type: "notification", level: "warning", message: "attention" },
+        {
+          type: "plugin",
+          id: "p1",
+          pluginId: "example",
+          kind: "result",
+          version: 1,
+          data: { nested: [1, "two"] },
+        },
+      ]),
+    ).toBe('[warning] attention\n[Plugin example/result] {"nested":[1,"two"]}\n');
   });
 });

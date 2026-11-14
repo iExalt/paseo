@@ -25,7 +25,7 @@ export const reloadSchema: OutputSchema<AgentReloadResult> = {
 export function addReloadOptions(cmd: Command): Command {
   return cmd
     .description("Reload an agent (restarts the underlying process)")
-    .argument("<id>", "Agent ID, prefix, or name");
+    .argument("<id>", "Agent ID, full session ID, prefix, or name");
 }
 
 export interface AgentReloadOptions extends CommandOptions {

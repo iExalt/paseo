@@ -4232,25 +4232,31 @@ describe("ForgeService", () => {
   });
 
   it("treats a GitHub issue or PR URL as a search for that number", async () => {
-    const runner = createRunner([issueJson("Issue title"), searchPullRequestJson("PR title")]);
+    const runner = createRunner([
+      issueJson("Closed issue").replaceAll("OPEN", "CLOSED"),
+      searchPullRequestJson("Merged PR").replaceAll("OPEN", "MERGED"),
+    ]);
     const service = createGitHubService({
       runner: runner.runner,
       resolveGhPath: async () => "/usr/bin/gh",
       now: () => 100,
     });
 
-    await service.searchIssuesAndPrs({
+    const result = await service.searchIssuesAndPrs({
       cwd: "/repo",
       query: "https://github.com/getpaseo/paseo/pull/793",
       limit: 5,
     });
 
+    expect(result.items.map((item) => item.state)).toEqual(["MERGED", "CLOSED"]);
     expect(runner.calls.map((call) => call.args)).toEqual([
       [
         "issue",
         "list",
         "--search",
         "793",
+        "--state",
+        "all",
         "--json",
         "number,title,url,state,body,labels,updatedAt",
         "--limit",
@@ -4261,6 +4267,8 @@ describe("ForgeService", () => {
         "list",
         "--search",
         "793",
+        "--state",
+        "all",
         "--json",
         "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
         "--limit",
@@ -4329,6 +4337,8 @@ describe("ForgeService", () => {
         "list",
         "--search",
         "793",
+        "--state",
+        "all",
         "--json",
         "number,title,url,state,body,labels,updatedAt",
         "--limit",
@@ -4339,6 +4349,8 @@ describe("ForgeService", () => {
         "list",
         "--search",
         "793",
+        "--state",
+        "all",
         "--json",
         "number,title,url,state,body,labels,baseRefName,headRefName,updatedAt",
         "--limit",

@@ -1,3 +1,4 @@
+import { isDelegatedAgent } from "@getpaseo/protocol/agent-labels";
 import type { FinishSubscriptions } from "../finish-subscriptions/index.js";
 import type { AgentPromptSource } from "../agent-messages/index.js";
 import type { Logger } from "pino";
@@ -46,6 +47,8 @@ export type EnsureWorkspaceForCreate = (
 export interface CreateAgentFromSessionInput {
   kind: "session";
   onAgentReady?: (agent: ManagedAgent) => Promise<void>;
+  callerAgentId?: string;
+  notifyOnFinish?: boolean;
   agentId?: string;
   config: AgentSessionConfig;
   workspaceId: string;
@@ -179,14 +182,12 @@ export async function createAgentCommand(
     input.onCreated?.({ agentId: snapshot.id, createdWorktree: resolved.createdWorktree ?? null });
   }
   const notification =
-    input.kind === "mcp" &&
-    input.notifyOnFinish &&
-    input.callerAgentId &&
-    resolved.prompt !== undefined
+    input.notifyOnFinish && input.callerAgentId && resolved.prompt !== undefined
       ? await requireFinishSubscriptions(dependencies).register(
           {
             childAgentId: snapshot.id,
             callerAgentId: input.callerAgentId,
+            requireParentOwnership: isDelegatedAgent(snapshot),
           },
           true,
         )

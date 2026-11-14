@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { BrowserAutomationBrowserIdSchema } from "@getpaseo/protocol/browser-automation/rpc-schemas";
+import { normalizeBrowserHttpUrlInput } from "@getpaseo/protocol/browser-automation/url";
 import type { BrowserToolsBroker } from "./broker.js";
 import type { BrowserToolsResponsePayload } from "./errors.js";
 import type {
@@ -7,6 +8,7 @@ import type {
   PaseoToolExecutionContext,
   PaseoToolResult,
 } from "../agent/tools/types.js";
+import { executeBrowserCommand } from "./command-service.js";
 
 interface CallerAgentContext {
   id: string;
@@ -32,14 +34,12 @@ export interface RegisterBrowserToolsOptions {
 const HTTP_URL_ONLY_MESSAGE = "URL must use http/https only";
 const WORKSPACE_CONTEXT_MESSAGE =
   "This browser tool needs a workspace. Start the agent from a Paseo workspace before calling browser_new_tab or browser_list_tabs.";
-const URL_WHITESPACE_PATTERN = /\s/;
-const NON_HTTP_EXPLICIT_SCHEME_PATTERN = /^(?!https?:\/\/)[a-z][a-z0-9+.-]*:\/\//i;
 
 const BrowserHttpUrlInputSchema = z
   .string()
   .trim()
   .transform((value, context) => {
-    const normalized = normalizeHttpUrlInput(value);
+    const normalized = normalizeBrowserHttpUrlInput(value);
     if (!normalized) {
       context.addIssue({
         code: "custom",
@@ -72,13 +72,15 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         "List open Paseo browser tabs for this agent's workspace across connected browser automation hosts. Use returned browserId values with tab-scoped tools.",
       inputSchema: {},
     },
-    async () => {
+    async (_input, execution) => {
       const context = resolveBrowserToolContext(options);
       const missingWorkspace = requireWorkspaceContext(context);
       if (missingWorkspace) {
         return missingWorkspace;
       }
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -101,13 +103,15 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         url: BrowserHttpUrlInputSchema.optional(),
       },
     },
-    async ({ url }) => {
+    async ({ url }, execution) => {
       const context = resolveBrowserToolContext(options);
       const missingWorkspace = requireWorkspaceContext(context);
       if (missingWorkspace) {
         return missingWorkspace;
       }
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -130,9 +134,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ browserId }) => {
+    async ({ browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -162,9 +168,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         modifiers: z.array(BrowserClickModifierInputSchema).optional(),
       },
     },
-    async ({ ref, browserId, button, doubleClick, modifiers }) => {
+    async ({ ref, browserId, button, doubleClick, modifiers }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -196,9 +204,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ ref, value, browserId }) => {
+    async ({ ref, value, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -224,9 +234,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         "Wait until a Paseo browser tab contains text or reaches a URL fragment. Use browserId from browser_new_tab or browser_list_tabs; waits up to 5s by default on the browser host.",
       inputSchema: BrowserWaitInputSchema,
     },
-    async ({ text, url, timeoutMs, browserId }) => {
+    async ({ text, url, timeoutMs, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -258,9 +270,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ text, ref, browserId }) => {
+    async ({ text, ref, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -290,9 +304,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ key, ref, browserId }) => {
+    async ({ key, ref, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -318,9 +334,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         "Navigate a Paseo browser tab to a URL. Use browserId from browser_new_tab or browser_list_tabs; pass an http(s) URL or a scheme-less host URL, which is treated as http.",
       inputSchema: { url: BrowserHttpUrlInputSchema, browserId: BrowserAutomationBrowserIdSchema },
     },
-    async ({ url, browserId }) => {
+    async ({ url, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -367,9 +385,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         description: toolConfig.description,
         inputSchema: { browserId: BrowserAutomationBrowserIdSchema },
       },
-      async ({ browserId }) => {
+      async ({ browserId }, execution) => {
         const context = resolveBrowserToolContext(options);
-        const payload = await options.broker.execute({
+        const payload = await executeBrowserCommand({
+          broker: options.broker,
+          signal: execution.signal,
           agentId: context.agentId,
           cwd: context.cwd,
           ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -397,9 +417,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         fullPage: z.boolean().default(false),
       },
     },
-    async ({ browserId, fullPage }) => {
+    async ({ browserId, fullPage }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -428,9 +450,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ ref, filePaths, browserId }) => {
+    async ({ ref, filePaths, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -464,9 +488,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         description: toolConfig.description,
         inputSchema: { ref: BrowserRefInputSchema, browserId: BrowserAutomationBrowserIdSchema },
       },
-      async ({ ref, browserId }) => {
+      async ({ ref, browserId }, execution) => {
         const context = resolveBrowserToolContext(options);
-        const payload = await options.broker.execute({
+        const payload = await executeBrowserCommand({
+          broker: options.broker,
+          signal: execution.signal,
           agentId: context.agentId,
           cwd: context.cwd,
           ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -496,9 +522,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ ref, value, browserId }) => {
+    async ({ ref, value, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -528,9 +556,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ sourceRef, targetRef, browserId }) => {
+    async ({ sourceRef, targetRef, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -559,9 +589,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ maxEntries, browserId }) => {
+    async ({ maxEntries, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -590,9 +622,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ function: functionSource, ref, browserId }) => {
+    async ({ function: functionSource, ref, browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -623,9 +657,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         deltaY: z.number(),
       },
     },
-    async ({ browserId, ref, deltaX, deltaY }) => {
+    async ({ browserId, ref, deltaX, deltaY }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -656,9 +692,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         height: z.number().int().positive(),
       },
     },
-    async ({ browserId, width, height }) => {
+    async ({ browserId, width, height }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -686,9 +724,11 @@ export function registerBrowserTools(options: RegisterBrowserToolsOptions): void
         browserId: BrowserAutomationBrowserIdSchema,
       },
     },
-    async ({ browserId }) => {
+    async ({ browserId }, execution) => {
       const context = resolveBrowserToolContext(options);
-      const payload = await options.broker.execute({
+      const payload = await executeBrowserCommand({
+        broker: options.broker,
+        signal: execution.signal,
         agentId: context.agentId,
         cwd: context.cwd,
         ...(context.workspaceId ? { workspaceId: context.workspaceId } : {}),
@@ -716,33 +756,6 @@ function resolveBrowserToolContext(options: RegisterBrowserToolsOptions): {
     ...(callerAgent?.cwd ? { cwd: callerAgent.cwd } : {}),
     ...(callerAgent?.workspaceId ? { workspaceId: callerAgent.workspaceId } : {}),
   };
-}
-
-function normalizeHttpUrlInput(value: string): string | null {
-  if (value.length === 0) {
-    return null;
-  }
-
-  const explicitHttpUrl = /^https?:\/\//i.test(value);
-  if (explicitHttpUrl) {
-    return isValidHttpUrl(value) ? value : null;
-  }
-
-  if (URL_WHITESPACE_PATTERN.test(value) || NON_HTTP_EXPLICIT_SCHEME_PATTERN.test(value)) {
-    return null;
-  }
-
-  const normalized = `http://${value}`;
-  return isValidHttpUrl(normalized) ? normalized : null;
-}
-
-function isValidHttpUrl(value: string): boolean {
-  try {
-    const url = new URL(value);
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
 }
 
 function requireWorkspaceContext(context: {
