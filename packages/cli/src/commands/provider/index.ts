@@ -1,3 +1,4 @@
+import { runProviderCommandsCommand } from "../agent/commands.js";
 import { runProviderFeaturesCommand } from "./features.js";
 import { runRefreshCommand } from "./refresh.js";
 import { Command } from "commander";
@@ -68,6 +69,21 @@ export function createProviderCommand(): Command {
   ).action(
     withOutput((providerId: string, options: CommandOptions, command: Command) =>
       runProviderFeaturesCommand(providerId, options, command),
+    ),
+  );
+  addJsonAndDaemonHostOptions(
+    provider
+      .command("commands")
+      .description("List slash commands and skills for a draft provider configuration")
+      .argument("<provider>", "Provider ID or provider/model")
+      .requiredOption("--cwd <path>", "Working directory on the selected host")
+      .option("--mode <id>", "Draft provider mode")
+      .option("--model <id>", "Draft model")
+      .option("--thinking <id>", "Draft thinking option"),
+  ).action(
+    withOutput(
+      (id: string, options: Parameters<typeof runProviderCommandsCommand>[1], command: Command) =>
+        runProviderCommandsCommand(id, options, command),
     ),
   );
   return provider;

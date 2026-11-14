@@ -279,3 +279,87 @@ it("provider feature discovery forwards draft settings and preserves host errors
     }),
   ).rejects.toMatchObject({ code: "INVALID_OPTIONS" });
 });
+
+import { runAgentCommandsCommand, runProviderCommandsCommand } from "../agent/commands.js";
+
+it("lists canonical session and draft commands, preserves errors, and closes its connection", async () => {
+  const requests: unknown[] = [];
+  let closes = 0;
+  let error: string | null = null;
+  const commands = [
+    {
+      name: "review",
+      description: "Review changes",
+      argumentHint: "[base]",
+      kind: "skill" as const,
+    },
+  ];
+  const connect = async () => ({
+    fetchAgent: async (input: unknown) => {
+      requests.push(input);
+      return { agent: { id: "resolved-agent" } } as Awaited<ReturnType<DaemonClient["fetchAgent"]>>;
+    },
+    listCommands: async (...args: unknown[]) => {
+      requests.push(args);
+      return { agentId: "resolved-agent", commands, error, requestId: "commands" };
+    },
+    close: async () => {
+      closes++;
+    },
+  });
+  const session = await runAgentCommandsCommand("prefix", { daemonTarget }, new Command(), connect);
+  expect(session.data).toEqual(commands);
+  expect(requests).toEqual([{ agentId: "prefix" }, [{ agentId: "resolved-agent" }]]);
+  requests.length = 0;
+  const draft = await runProviderCommandsCommand(
+    "codex/model",
+    { daemonTarget, cwd: "/host/repo", mode: "plan", thinking: "high" },
+    new Command(),
+    connect,
+  );
+  expect(draft.data).toEqual(commands);
+  expect(requests).toEqual([
+    [
+      {
+        agentId: "__new_agent__",
+        draftConfig: {
+          provider: "codex",
+          cwd: "/host/repo",
+          model: "model",
+          modeId: "plan",
+          thinkingOptionId: "high",
+        },
+      },
+    ],
+  ]);
+  error = "provider unavailable";
+  await expect(
+    runProviderCommandsCommand(
+      "codex",
+      { daemonTarget, cwd: "/host/repo" },
+      new Command(),
+      connect,
+    ),
+  ).rejects.toThrow("provider unavailable");
+  expect(closes).toBe(3);
+  await expect(
+    runProviderCommandsCommand("codex", { daemonTarget }, new Command(), connect),
+  ).rejects.toMatchObject({ code: "MISSING_CWD" });
+  expect(closes).toBe(3);
+});
+
+it("registers provider command discovery with explicit host cwd and draft settings", () => {
+  const root = createProviderCommand().exitOverride();
+  const command = root.commands.find((child) => child.name() === "commands")!;
+  let parsed: unknown;
+  command.action((provider, options) => {
+    parsed = { provider, options };
+  });
+  root.parse(["commands", "codex/model", "--cwd", "/host/repo", "--mode", "plan", "--json"], {
+    from: "user",
+  });
+  expect(parsed).toEqual({
+    provider: "codex/model",
+    options: { cwd: "/host/repo", mode: "plan", json: true },
+  });
+});
