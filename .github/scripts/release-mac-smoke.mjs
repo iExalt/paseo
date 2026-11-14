@@ -404,6 +404,8 @@ async function main() {
   );
   const require = createRequire(import.meta.url);
   const { smokePackagedDesktopApp } = require("../../packages/desktop/e2e/packaged-app-smoke.js");
+  // Writes its artifacts to PASEO_DESKTOP_SMOKE_ARTIFACT_DIR as well.
+  await smokePackagedDesktopApp({ appPath: app });
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
