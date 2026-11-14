@@ -13,7 +13,11 @@ fail() {
 }
 
 require_github_linux_context() {
+  local trusted_ref=false
+    trusted_ref=true
+  fi
   if [[ "${GITHUB_ACTIONS:-}" != true || "${RUNNER_OS:-}" != Linux || \
+    "${GITHUB_REPOSITORY:-}" != iExalt/paseo || "$trusted_ref" != true ]]; then
     fail "Runner swap is restricted to the trusted Paseo GitHub Linux build."
   fi
 }
