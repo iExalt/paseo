@@ -544,6 +544,7 @@ const ToolCallDetailPayloadSchema: z.ZodType<ToolCallDetail, unknown> = z.discri
       label: z.string().optional(),
       text: z.string().optional(),
       icon: z.enum(TOOL_CALL_ICON_NAMES).optional(),
+      markdown: z.boolean().optional(),
     }),
     z.object({
       type: z.literal("plan"),

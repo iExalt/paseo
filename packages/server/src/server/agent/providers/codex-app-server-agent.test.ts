@@ -3810,7 +3810,10 @@ describe("Codex app-server provider", () => {
     const childUserMessage = {
       type: "userMessage",
       id: "child-user-message",
-      content: [{ type: "text", text: "Inspect this path." }],
+      content: [
+        { type: "text", text: "Inspect this path." },
+        { type: "skill", name: "gone", path: "/nonexistent/gone/SKILL.md" },
+      ],
     };
 
     await asInternals(session).handleNotification("item/started", {
@@ -3831,6 +3834,26 @@ describe("Codex app-server provider", () => {
           event.event.item.type === "user_message",
       ),
     ).toHaveLength(1);
+    // The child's skill card lands in the child's timeline, as history replays it, and an
+    // unreadable SKILL.md fails the card instead of passing for skill text.
+    const childSkillCards = events.flatMap((event) =>
+      event.type === "provider_subagent" &&
+      event.event.type === "timeline" &&
+      event.event.id === "user-child-thread" &&
+      event.event.item.type === "tool_call"
+        ? [event.event.item]
+        : [],
+    );
+    expect(childSkillCards).toEqual([
+      expect.objectContaining({
+        callId: "codex-skill:child-user-message:0",
+        name: "Skill",
+        status: "failed",
+        error: {
+          message: expect.stringContaining("Paseo could not read /nonexistent/gone/SKILL.md"),
+        },
+      }),
+    ]);
   });
 
   test("keeps the parent running when a MultiAgentV2 sub-agent finishes", async () => {
@@ -5694,6 +5717,104 @@ describe("Codex app-server provider", () => {
         },
       },
     ]);
+  });
+
+  test("shows a skill picked for a Codex turn as a Skill card, live and in history", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "codex-skill-card-"));
+    try {
+      const skillDir = path.join(root, "probe-skill");
+      mkdirSync(skillDir);
+      writeFileSync(
+        path.join(skillDir, "SKILL.md"),
+        "---\nname: probe-skill\ndescription: Probe.\n---\n\n# Probe Skill\n\nReply **PROBE OK**.\n",
+      );
+      const userMessageItem = {
+        type: "userMessage",
+        id: "codex-user-skill",
+        content: [
+          { type: "skill", name: "probe-skill", path: path.join(skillDir, "SKILL.md") },
+          { type: "text", text: "$probe-skill go" },
+        ],
+      };
+      const skillCard = {
+        type: "tool_call",
+        callId: "codex-skill:codex-user-skill:0",
+        name: "Skill",
+        status: "completed",
+        error: null,
+        detail: {
+          type: "plain_text",
+          label: "probe-skill",
+          icon: "sparkles",
+          markdown: true,
+          text: `Base directory for this skill: ${skillDir}\n\n# Probe Skill\n\nReply **PROBE OK**.`,
+        },
+      };
+
+      const live = createSession();
+      const events: AgentStreamEvent[] = [];
+      live.subscribe((event) => events.push(event));
+      for (const method of ["item/started", "item/completed"]) {
+        await asInternals(live).handleNotification(method, {
+          threadId: "test-thread",
+          item: userMessageItem,
+        });
+      }
+      expect(events.map((event) => (event.type === "timeline" ? event.item : event))).toEqual([
+        { type: "user_message", text: "$probe-skill go", messageId: "codex-user-skill" },
+        skillCard,
+      ]);
+
+      // History shows the text Codex gave this turn, kept in the rollout, even after the file
+      // on disk changes. An earlier turn's injection without a card (a `$probe-skill` typed in
+      // the text) must not shift onto it, and a partial last line must not lose the rest.
+      writeFileSync(path.join(skillDir, "SKILL.md"), "# Edited later\n");
+      const rollout = path.join(root, "rollout.jsonl");
+      const injected = `<skill>\n<name>probe-skill</name>\n<path>${path.join(skillDir, "SKILL.md")}</path>\n---\nname: probe-skill\n---\n\n# Probe Skill\n\nReply **PROBE OK**.\n</skill>`;
+      writeFileSync(
+        rollout,
+        [
+          { type: "session_meta", payload: {} },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-typed" } },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: injected.replace("Reply", "Old text.") }],
+            },
+          },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-picked" } },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: injected }],
+            },
+          },
+        ]
+          .map((line) => JSON.stringify(line))
+          .join("\n") + '\n{"type":"response_item","payload":{"text":"<skill>\\n<name>',
+      );
+      const replayed = createSession();
+      replayed.client = {
+        request: vi.fn(async (method: string) =>
+          method === "thread/read"
+            ? {
+                thread: { path: rollout, turns: [{ id: "turn-picked", items: [userMessageItem] }] },
+              }
+            : {},
+        ),
+      };
+      const history = await Array.fromAsync(replayed.streamHistory());
+      expect(history.map((event) => (event.type === "timeline" ? event.item : event))).toEqual([
+        { type: "user_message", text: "$probe-skill go", messageId: "codex-user-skill" },
+        skillCard,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("emits Codex context compaction markers from live thread items", async () => {
