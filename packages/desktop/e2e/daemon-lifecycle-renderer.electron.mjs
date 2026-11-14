@@ -91,15 +91,17 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
       .toBe(true);
     // /status means Metro is listening; the app bundle may still need a cold compile.
     await warmMetro(metroPort);
-    desktop = await electron.launch({
-      args: [path.join(repo, "packages/desktop/dist/main.js"), "--no-sandbox"],
-      env: {
-        ...env,
-        EXPO_DEV_URL: `http://127.0.0.1:${metroPort}`,
-        PASEO_DISABLE_SINGLE_INSTANCE_LOCK: "1",
-        PASEO_ELECTRON_USER_DATA_DIR: path.join(root, "renderer-user-data"),
-      },
-    });
+    const launchDesktop = () =>
+      electron.launch({
+        args: [path.join(repo, "packages/desktop/dist/main.js"), "--no-sandbox"],
+        env: {
+          ...env,
+          EXPO_DEV_URL: `http://127.0.0.1:${metroPort}`,
+          PASEO_DISABLE_SINGLE_INSTANCE_LOCK: "1",
+          PASEO_ELECTRON_USER_DATA_DIR: path.join(root, "renderer-user-data"),
+        },
+      });
+    desktop = await launchDesktop();
     page = await desktop.firstWindow();
     page.on("pageerror", (error) => console.log("Renderer error:", error.message));
     await page.route(/:(6767|6768)\b/, (route) => route.abort());
@@ -182,6 +184,8 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
     await page.screenshot({ path: path.join(root, "attached-daemon-stopped.png") });
     console.log(
       "PASS: real Desktop renderer pauses management without stopping an attached daemon, then confirms and stops that instance.",
+    );
+
     const notificationCases = [
       { id: "paseo-qa-receipt:show", mode: "scripted-show", outcome: "show", expected: true },
       {
@@ -231,6 +235,110 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
       await verifyNativeNotificationReceipt(desktop, page);
     }
 
+    const appearance = () =>
+      page
+        .locator('[data-testid="settings-sidebar"]:visible')
+        .getByRole("button", { name: "Appearance", exact: true });
+    await appearance().click();
+    await page.getByLabel("Theme: System", { exact: true }).click();
+    await page.getByText("Light", { exact: true }).click();
+    await expect(page.getByLabel("Theme: Light", { exact: true })).toBeVisible();
+    const fontSize = page.getByLabel("Interface font size");
+    await fontSize.fill("17");
+    await fontSize.press("Tab");
+    const savedSettings = () =>
+      page.evaluate(() => JSON.parse(localStorage.getItem("@paseo:app-settings") ?? "{}"));
+    await expect
+      .poll(async () => {
+        const saved = await savedSettings();
+        return { theme: saved.theme, uiBaseFontSize: saved.uiBaseFontSize };
+      })
+      .toEqual({ theme: "light", uiBaseFontSize: 17 });
+    await expect(page.locator('[data-testid="settings-sidebar"]:visible')).toHaveCSS(
+      "background-color",
+      "rgb(244, 244, 245)",
+    );
+    await page.screenshot({ path: path.join(root, "settings-before-quit.png") });
+    console.log(
+      "Settings before quit:",
+      JSON.stringify(await savedSettings()),
+      "pid",
+      desktop.process().pid,
+    );
+
+    const exited = once(desktop.process(), "exit", { signal: AbortSignal.timeout(20_000) });
+    await desktop.evaluate(({ app }) => {
+      setImmediate(() => app.quit());
+    });
+    expect(await exited).toEqual([0, null]);
+    desktop = null;
+    page = null;
+
+    desktop = await launchDesktop();
+    page = await desktop.firstWindow();
+    await page.route(/:(6767|6768)\b/, (route) => route.abort());
+    await page.getByRole("button", { name: "Settings", exact: true }).click({ timeout: 90_000 });
+    await appearance().click();
+    await expect(page.getByLabel("Theme: Light", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Interface font size")).toHaveValue("17");
+    await expect(page.locator('[data-testid="settings-sidebar"]:visible')).toHaveCSS(
+      "background-color",
+      "rgb(244, 244, 245)",
+    );
+    await expect
+      .poll(async () => {
+        const saved = await savedSettings();
+        return { theme: saved.theme, uiBaseFontSize: saved.uiBaseFontSize };
+      })
+      .toEqual({ theme: "light", uiBaseFontSize: 17 });
+    await page.screenshot({ path: path.join(root, "settings-after-quit.png") });
+    console.log(
+      "Settings after relaunch:",
+      JSON.stringify(await savedSettings()),
+      "pid",
+      desktop.process().pid,
+    );
+    console.log(
+      "PASS: isolated Electron retains appearance settings across app.quit and relaunch.",
+    );
+
+    const fontSizeBeforeSignal = page.getByLabel("Interface font size");
+    await fontSizeBeforeSignal.fill("19");
+    await fontSizeBeforeSignal.press("Tab");
+    await expect(page.getByLabel("Interface font size")).toHaveValue("19");
+    await expect(page.getByText("Theme", { exact: true }).first()).toHaveCSS("font-size", "16px");
+    const signalExit = once(desktop.process(), "exit", { signal: AbortSignal.timeout(20_000) });
+    const signalPid = desktop.process().pid;
+    if (!desktop.process().kill("SIGTERM"))
+      throw new Error("Could not signal test Electron process");
+    expect(await signalExit).toEqual([0, null]);
+    desktop = null;
+    page = null;
+
+    desktop = await launchDesktop();
+    page = await desktop.firstWindow();
+    await page.route(/:(6767|6768)\b/, (route) => route.abort());
+    await page.getByRole("button", { name: "Settings", exact: true }).click({ timeout: 90_000 });
+    await appearance().click();
+    await expect(page.getByLabel("Theme: Light", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Interface font size")).toHaveValue("19");
+    await expect
+      .poll(async () => {
+        const saved = await savedSettings();
+        return { theme: saved.theme, uiBaseFontSize: saved.uiBaseFontSize };
+      })
+      .toEqual({ theme: "light", uiBaseFontSize: 19 });
+    await page.screenshot({ path: path.join(root, "settings-after-sigterm.png") });
+    console.log(
+      "Settings after SIGTERM:",
+      JSON.stringify(await savedSettings()),
+      "signalled pid",
+      signalPid,
+      "new pid",
+      desktop.process().pid,
+    );
+    console.log(
+      "PASS: isolated Electron retains the UI-confirmed setting across SIGTERM and relaunch.",
     );
   } catch (error) {
     if (page) {

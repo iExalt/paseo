@@ -5107,14 +5107,17 @@ export class CodexAppServerAgentSession implements AgentSession {
       }
       followUpPrompt = undefined;
     }
-    this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item: prepared.complete() });
-    this.emitEvent({
-      type: "permission_resolved",
-      provider: CODEX_PROVIDER,
-      requestId,
-      resolution: response,
-    });
-    return followUpPrompt ? { followUpPrompt } : undefined;
+    const complete = () => {
+      this.emitEvent({ type: "timeline", provider: CODEX_PROVIDER, item: prepared.complete() });
+      this.emitEvent({
+        type: "permission_resolved",
+        provider: CODEX_PROVIDER,
+        requestId,
+        resolution: response,
+      });
+    };
+    if (followUpPrompt) return { followUpPrompt, complete };
+    complete();
   }
 
   private handlePlanPermissionResponse(params: {
@@ -5377,7 +5380,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       this.currentTurnId ||
       this.pendingForegroundStart ||
       this.pendingPermissionHandlers.size ||
-      this.getPendingPermissions().length ||
+      this.pendingPermissions.size ||
       this.pendingSubAgentNotificationsByThreadId.size
     )
       return false;
