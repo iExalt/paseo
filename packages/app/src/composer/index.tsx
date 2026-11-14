@@ -1604,6 +1604,7 @@ function ComposerContentImpl({
         text: string,
         attachments: ComposerAttachment[],
         activeTurnBehavior: "interrupt" | "steer",
+        clientMessageId?: string,
       ) => Promise<void>)
     | null
   >(null);
@@ -1661,6 +1662,7 @@ function ComposerContentImpl({
       text: string,
       submitAttachments: ComposerAttachment[],
       activeTurnBehavior = resolveImmediateTurnBehavior(appSettings.sendBehavior),
+      clientMessageId?: string,
     ) => {
       onMessageSent?.();
       if (onSubmitMessageRef.current) {
@@ -1675,6 +1677,7 @@ function ComposerContentImpl({
         text,
         submitAttachments,
         activeTurnBehavior,
+        clientMessageId,
       );
     },
     [appSettings.sendBehavior, cwd, onMessageSent, t],
@@ -1690,6 +1693,7 @@ function ComposerContentImpl({
       text: string,
       sendAttachments: ComposerAttachment[],
       activeTurnBehavior: "interrupt" | "steer",
+      clientMessageId?: string,
     ) => {
       if (!client) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
@@ -1705,6 +1709,7 @@ function ComposerContentImpl({
         encodeImages,
         submission: createMessageSubmissionWriter(serverId),
         activeTurnBehavior,
+        clientMessageId,
         activeTurnId:
           activeTurnBehavior === "steer"
             ? (selectAgentTurnPresentation(
@@ -2077,6 +2082,12 @@ function ComposerContentImpl({
         agentId,
         messageId: id,
         queue: queueWriter,
+        submitMessage: ({
+          text,
+          attachments: queuedAttachments,
+          activeTurnBehavior,
+          clientMessageId,
+        }) => submitMessage(text, queuedAttachments, activeTurnBehavior, clientMessageId),
         failedToSendMessage: t("composer.errors.failedToSend"),
       });
       if (result.status === "failed") {
