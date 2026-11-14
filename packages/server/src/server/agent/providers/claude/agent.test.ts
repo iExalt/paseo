@@ -771,6 +771,33 @@ describe("ClaudeAgentSession features", () => {
         resolution: { behavior: "deny", message: "Permission request canceled" },
       });
       expect(session.getPendingPermissions()).toEqual([]);
+      await session.close();
+    }
+  });
+
+  test("shows Claude's decision reason on bypass-immune permission prompts", async () => {
+    const { queryFactory } = createQueryMock();
+    const session = await new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "bypassPermissions" });
+
+    try {
+      await session.startTurn("run the tool");
+      const canUseTool = queryFactory.mock.calls[0]?.[0].options.canUseTool;
+      if (!canUseTool) throw new Error("Expected canUseTool callback");
+      const reason = "Dangerous rm operation on statically-unresolvable target: /repo/batches/*";
+      void canUseTool(
+        "Bash",
+        { command: "cd /tmp/x && rm batches/*" },
+        { signal: new AbortController().signal, toolUseID: "tool-safety", decisionReason: reason },
+      ).catch(() => {});
+
+      expect(session.getPendingPermissions()).toEqual([
+        expect.objectContaining({ name: "Bash", description: reason }),
+      ]);
+    } finally {
     } finally {
       unsubscribe();
       await session.close();
