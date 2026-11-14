@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFetchQuery } from "@/data/query";
 import { useTranslation } from "react-i18next";
@@ -10,6 +10,7 @@ import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-
 import {
   agentCommandsQueryKey,
   agentCommandQueryPolicy,
+  normalizeAgentCommandsCwd,
   type AgentCommandsDraftConfig,
 } from "./cache";
 
@@ -64,6 +65,7 @@ export function useAgentCommandsQuery({
   draftConfig,
 }: UseAgentCommandsQueryOptions) {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
   const retainedPanelActive = useRetainedPanelActive();
   const queryEnabled = enabled && retainedPanelActive;
   const client = useHostRuntimeClient(serverId);
@@ -76,8 +78,8 @@ export function useAgentCommandsQuery({
       return { provider: agent?.provider, cwd: agent?.cwd };
     }),
   );
+  const previouslyConnected = useRef(isConnected);
 
-  const queryClient = useQueryClient();
   const query = useFetchQuery({
     queryKey: agentCommandsQueryKey({ serverId, agentId, draftConfig }),
     queryFn: async () => {
@@ -98,6 +100,29 @@ export function useAgentCommandsQuery({
     retry: 3,
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
   });
+
+  useEffect(() => {
+    if (!client) {
+      previouslyConnected.current = false;
+      return;
+    }
+    const queryKey = agentCommandsQueryKey({ serverId, agentId, draftConfig });
+    const refresh = async () => {
+      // Cancel even a first load: invalidating alone can reuse its stale in-flight result.
+      await queryClient.cancelQueries({ queryKey });
+      await queryClient.invalidateQueries({ queryKey });
+    };
+    const unsubscribe = client.on("agent.commands.changed", ({ payload }) => {
+      const matches = draftConfig
+        ? payload.provider === draftConfig.provider &&
+          normalizeAgentCommandsCwd(payload.cwd) === normalizeAgentCommandsCwd(draftConfig.cwd)
+        : payload.agentId === agentId;
+      if (matches) void refresh();
+    });
+    if (isConnected && !previouslyConnected.current) void refresh();
+    previouslyConnected.current = isConnected;
+    return unsubscribe;
+  }, [client, queryClient, serverId, agentId, draftConfig, isConnected]);
 
   // isPending is true when the query has never run yet (no cached data and not fetching)
   // isLoading is true when fetching and no data yet
