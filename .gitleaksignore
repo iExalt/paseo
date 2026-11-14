@@ -1,0 +1,3 @@
+# Git blob SHA for Expo's public debug-key template, not an API credential.
+# Limit the exception to this exact historical finding; retain all other checks.
+260220b558ac702e5a6253ec73866c0476db9c95:docs/PASEO_FORK_AUTO_UPDATE_PLAN.md:generic-api-key:70

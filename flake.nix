@@ -32,14 +32,11 @@
         let
           pkgs = pkgsFor system;
           paseo = pkgs.callPackage ./nix/package.nix { };
-          versionParts = pkgs.lib.splitString "." paseo.version;
-          sourceRevision = if self ? revCount && self.revCount != null then self.revCount else 0;
-          buildRevision = sourceRevision - (sourceRevision / 10000) * 10000;
-          desktopBuildVersion = pkgs.lib.concatStringsSep "." [
-            (builtins.elemAt versionParts 0)
-            (builtins.elemAt versionParts 1)
-            (toString buildRevision)
-          ];
+          # Keep Electron's numeric build version independent of flake source
+          # transport. The authenticated closure manifest records the immutable
+          # source revision separately; revCount is unavailable for GitHub
+          # archive inputs and made the same commit evaluate to different paths.
+          desktopBuildVersion = builtins.head (builtins.match "^([0-9]+\\.[0-9]+\\.[0-9]+)([-+].*)?$" paseo.version);
         in
         {
           default = paseo;
