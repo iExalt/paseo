@@ -17,8 +17,9 @@ export type AgentRunController = Pick<
   | "hasInFlightRun"
   | "reloadStalePluginSession"
   | "replaceAgentRun"
-  | "steerOrReplaceActiveTurn"
+  | "steerOrDeferBehindActiveTurn"
   | "streamAgent"
+  | "subscribe"
   | "waitForAgentRunStart"
 > & {
   reloadAgentSession(agentId: string): Promise<unknown>;
@@ -34,43 +35,44 @@ export interface StartAgentRunOptions {
   clearPendingPermissions?: boolean;
 }
 
+/**
+ * "deferred" is server-internal: the steer waits for the active turn to end and then starts its
  * own turn. Responses omit it, since the wire enum predates it. "queued" waits for the agent to go
  * idle; only queue requests produce it.
+ */
 export type PromptDispatchDisposition =
   | "out_of_band"
   | "steered"
   | "turn_started"
   | "deferred"
   | "queued";
-export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started";
 
-async function steerOrReplaceActiveRun(
+type SteerDispatch =
+  | { kind: "steered" }
+  /** No turn to steer into, so start one. Background work alone is not a turn to interrupt. */
+  | { kind: "start" }
+  | { kind: "defer"; turnId: string };
+
+async function steerActiveRun(
   agentManager: AgentRunController,
   agentId: string,
   prompt: AgentPromptInput,
   options: StartAgentRunOptions | undefined,
-): Promise<
-  | { disposition: "steered" }
-  | {
-      disposition: "turn_started";
-      iterator: AsyncGenerator<import("./agent-sdk-types.js").AgentStreamEvent>;
-    }
-  | null
-> {
+): Promise<SteerDispatch | null> {
   if (options?.activeTurnBehavior !== "steer") {
     return null;
   }
   const steerOptions = options.clearPendingPermissions
     ? { ...options.runOptions, clearPendingPermissions: true }
     : options.runOptions;
-  const result = await agentManager.steerOrReplaceActiveTurn(agentId, prompt, steerOptions);
+  const result = await agentManager.steerOrDeferBehindActiveTurn(agentId, prompt, steerOptions);
   if (result.status === "steered") {
-    return { disposition: "steered" };
+    return { kind: "steered" };
   }
-  if (result.status === "replaced") {
-    return { disposition: "turn_started", iterator: result.iterator };
+  if (result.status === "busy") {
+    return { kind: "defer", turnId: result.turnId };
   }
-  return null;
+  return { kind: "start" };
 }
 
 async function startOrReplaceRun(
@@ -154,10 +156,14 @@ async function startAgentRunInner(
   });
   if (dispatch.disposition !== "busy") return { disposition: dispatch.disposition };
   return holdBehindActiveTurn(
+    agentManager,
+    agentId,
+    prompt,
     logger,
     options ?? {},
     "deferred",
     dispatch.turnId,
+  );
 }
 
 /**
@@ -271,14 +277,8 @@ async function dispatchRun(
         error instanceof Error && error.message.endsWith("already has an active run");
       if (!steer || attempt > 0 || !lostStartRace) throw error;
     }
-  const steered = await steerOrReplaceActiveRun(agentManager, agentId, prompt, options);
-  if (steered?.disposition === "steered") {
-    return steered;
   }
   const { iterator, replaced } = started;
-  const { iterator, replaced } = steered
-    ? { iterator: steered.iterator, replaced: true }
-    : await startOrReplaceRun(agentManager, agentId, prompt, options);
   logger.trace(
     {
       agentId,
