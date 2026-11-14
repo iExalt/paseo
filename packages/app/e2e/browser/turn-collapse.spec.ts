@@ -161,6 +161,61 @@ test.describe("Turn collapse", () => {
   });
 });
 
+test("a tool call group opened at the bottom keeps its header and reveals its calls", async ({
+  page,
+}, testInfo) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await useChatDisplay(page, "collapseToolCalls");
+  const agent = await seedAnsweredAgent("Tool group anchor");
+  try {
+    await openAgentRoute(page, agent);
+    await expectComposerVisible(page);
+    await expect(page.getByTestId("assistant-message").last()).toHaveText(
+      /\(end of synthetic stream\)$/,
+    );
+    const toggle = page.getByTestId("tool-call-group").last().getByRole("button").first();
+    const row = toggle.locator("xpath=ancestor::*[@data-history-row-id][1]");
+    const scroller = page.getByTestId("agent-chat-scroll");
+    const geometry = async () => {
+      const view = (await scroller.boundingBox())!;
+      const header = (await toggle.boundingBox())!;
+      const opened = (await row.boundingBox())!;
+      return {
+        view,
+        headerTop: header.y,
+        rowHeight: opened.height,
+        rowBottom: opened.y + opened.height,
+      };
+    };
+    // The latest group is on screen while the chat follows output.
+    await expect(toggle).toBeInViewport();
+    await expect(page.getByTestId("scroll-to-bottom-button")).toHaveCount(0);
+    const before = await geometry();
+    await page.screenshot({ path: testInfo.outputPath("tool-group-closed.png") });
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect.poll(async () => (await geometry()).rowHeight).toBeGreaterThan(before.rowHeight);
+    const after = await geometry();
+    await page.screenshot({ path: testInfo.outputPath("tool-group-opened.png") });
+    const viewBottom = after.view.y + after.view.height;
+    const headerAtTop = Math.abs(after.headerTop - 16 - after.view.y) < 2;
+    // The header stays on screen, and the opened calls are shown unless that would push it off.
+    expect(after.headerTop).toBeGreaterThanOrEqual(after.view.y);
+    expect(after.headerTop).toBeLessThanOrEqual(before.headerTop + 1);
+    expect(headerAtTop || after.rowBottom + 16 <= viewBottom + 2).toBe(true);
+    // Any upward move only reveals the calls: following output would have pinned the bottom instead.
+    if (after.headerTop < before.headerTop - 1 && !headerAtTop) {
+      expect(Math.abs(after.rowBottom + 16 - viewBottom)).toBeLessThan(2);
+    }
+    // Opening a disclosure stops following output until the reader returns to the bottom.
+    await expect(page.getByTestId("scroll-to-bottom-button")).toBeVisible();
+  } finally {
+    await agent.cleanup();
+  }
+});
+
 test("received messages collapse separately from user prompts and open their sender", async ({
   page,
 }, testInfo) => {

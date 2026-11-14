@@ -24,7 +24,7 @@ import type { Theme } from "@/styles/theme";
 import { WEB_SCROLLBAR_SIZE_PX } from "@/styles/web-scrollbar";
 import { DomOverlayScrollbar } from "@/components/ui/overlay-scrollbar/dom-overlay-scrollbar";
 import { estimateStreamItemHeight } from "./web-virtualization";
-import { createReadingAnchor } from "./reading-anchor";
+import { createReadingAnchor, getDisclosureRevealDelta } from "./reading-anchor";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { createStreamStrategy } from "./strategy";
@@ -60,6 +60,8 @@ const HISTORY_START_SETTLE_FRAMES = 2;
 const HISTORY_START_SLOT_HEIGHT_PX = 32;
 const CONTENT_PADDING_TOP_PX = 16;
 const UPWARD_INPUT_EVIDENCE_TIMEOUT_MS = 100;
+// Details can load after the toggle; keep revealing the opened row while they settle.
+const DISCLOSURE_REVEAL_WINDOW_MS = 1000;
 const VIRTUALIZER_SCROLL_MARGIN_PX = HISTORY_START_SLOT_HEIGHT_PX + CONTENT_PADDING_TOP_PX;
 
 const ThemedLoadingSpinner = withUnistyles(LoadingSpinner);
@@ -355,6 +357,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
   );
   const historyStartPaginationStateRef = useRef(historyStartPaginationState);
   const readingAnchor = useMemo(createReadingAnchor, []);
+  // The element under the last pointer or key press: the toggle a hold came from.
+  const lastInteractionTargetRef = useRef<Element | null>(null);
+  const pendingRevealRef = useRef<{ row: HTMLElement; height: number; until: number } | null>(null);
   const measuredRowHeights = useRef(new Map<string, { width: number; height: number }>());
   const historyStartSettleSchedulerRef = useRef<HistoryStartSettleScheduler | null>(null);
   const lastActiveFollowOutputLayoutRef = useRef<ActiveFollowOutputLayout | null>(null);
@@ -763,7 +768,34 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       // this layout so the reader does not get a frame containing only the pin.
       virtualOffsetListener.current?.(container.scrollTop, false);
     }
+    revealOpenedRow(container);
   });
+
+  const revealOpenedRow = (container: HTMLElement) => {
+    const pending = pendingRevealRef.current;
+    if (!pending) return;
+    if (!pending.row.isConnected || window.performance.now() > pending.until) {
+      pendingRevealRef.current = null;
+      return;
+    }
+    const bounds = pending.row.getBoundingClientRect();
+    if (bounds.height <= pending.height + 0.5) return;
+    const viewport = container.getBoundingClientRect();
+    const delta = getDisclosureRevealDelta({
+      top: bounds.top,
+      bottom: bounds.bottom,
+      viewportTop: viewport.top,
+      viewportBottom: viewport.bottom,
+    });
+    pending.height = bounds.height;
+    if (delta < 1) return;
+    // Recorded before the scroll event, so the reveal never reads as the user returning to the
+    // bottom and resuming follow-output.
+    container.scrollTop += delta;
+    lastKnownScrollTopRef.current = container.scrollTop;
+    readingAnchor.scroll(container.scrollTop);
+    virtualOffsetListener.current?.(container.scrollTop, false);
+  };
 
   // Apply row positions and their scroll correction in the same paint, including
   // the ordinary-to-virtualized handoff and measurements of newly mounted rows.
@@ -814,6 +846,8 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
 
     lastKnownScrollTopRef.current = currentScrollTop;
     if (!followOutputRef.current && !isJumpSettling() && (scrolledUp || scrolledDown)) {
+      // The reader moved on; a late-loading disclosure no longer pulls the viewport.
+      pendingRevealRef.current = null;
       readingAnchor.scroll(currentScrollTop);
     }
     updateScrollMetrics();
@@ -1129,12 +1163,18 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       lastTouchClientYRef.current = null;
     };
 
+    const recordInteractionTarget = (event: Event) => {
+      lastInteractionTargetRef.current = event.target instanceof Element ? event.target : null;
+    };
+
     // Read user movement before the virtualizer's bubbling listener flushes a
     // layout correction. Scroll events reuse the last committed row geometry.
     scrollContainer.addEventListener("scroll", handleDomScroll, { passive: true, capture: true });
     scrollContainer.addEventListener("wheel", handleWheel, { passive: true });
     scrollContainer.addEventListener("keydown", handleKeyDown, { passive: true });
     scrollContainer.addEventListener("pointerdown", handlePointerDown, { passive: true });
+    scrollContainer.addEventListener("pointerdown", recordInteractionTarget, { capture: true });
+    scrollContainer.addEventListener("keydown", recordInteractionTarget, { capture: true });
     window.addEventListener("pointermove", handlePointerMove, { passive: true });
     window.addEventListener("pointerup", handlePointerEnd, { passive: true });
     window.addEventListener("pointercancel", handlePointerCancel, { passive: true });
@@ -1149,6 +1189,9 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       scrollContainer.removeEventListener("wheel", handleWheel);
       scrollContainer.removeEventListener("keydown", handleKeyDown);
       scrollContainer.removeEventListener("pointerdown", handlePointerDown);
+      scrollContainer.removeEventListener("pointerdown", recordInteractionTarget, true);
+      scrollContainer.removeEventListener("keydown", recordInteractionTarget, true);
+      lastInteractionTargetRef.current = null;
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerEnd);
       window.removeEventListener("pointercancel", handlePointerCancel);
@@ -1185,7 +1228,26 @@ function WebStreamViewport(props: StreamRenderInput & { isMobileBreakpoint: bool
       holdReadingPosition: () => {
         cancelPendingStickToBottom();
         setFollowOutput(false);
-        readingAnchor.scroll(scrollContainerRef.current?.scrollTop ?? 0);
+        const scrollContainer = scrollContainerRef.current;
+        readingAnchor.scroll(scrollContainer?.scrollTop ?? 0);
+        // Remember the row the toggle sits in, so its opened content can be revealed. Pressing a
+        // toggle focuses it; a hold from elsewhere, such as chat find or the outline opening a
+        // turn, has moved focus away from any earlier press and reveals nothing.
+        const target = lastInteractionTargetRef.current;
+        lastInteractionTargetRef.current = null;
+        const focused = document.activeElement;
+        const row =
+          target && focused?.contains(target)
+            ? target.closest<HTMLElement>("[data-history-row-id]")
+            : null;
+        pendingRevealRef.current =
+          row && scrollContainer?.contains(row)
+            ? {
+                row,
+                height: row.getBoundingClientRect().height,
+                until: window.performance.now() + DISCLOSURE_REVEAL_WINDOW_MS,
+              }
+            : null;
       },
       scrollToMessage,
     };

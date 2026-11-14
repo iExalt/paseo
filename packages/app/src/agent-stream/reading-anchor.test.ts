@@ -8,6 +8,7 @@ import {
   createReadingAnchor,
   createNativeRowGeometry,
   createReadingSeqDedupe,
+  getDisclosureRevealDelta,
   getReadingRowIdFromGeometry,
   getTopmostViewableRowId,
   MAX_SCROLL_TO_INDEX_RETRIES,
@@ -390,5 +391,22 @@ describe("scrollToIndex retry", () => {
     expect(retry(rows, "prompt-99")).toBeNull();
     expect(retry(rows, null)).toBeNull();
     expect(retry(rows, "prompt-12", MAX_SCROLL_TO_INDEX_RETRIES)).toBeNull();
+  });
+});
+
+describe("disclosure reveal", () => {
+  const viewport = { viewportTop: 0, viewportBottom: 600 };
+
+  it("scrolls just far enough to show an opened row below the fold", () => {
+    expect(getDisclosureRevealDelta({ ...viewport, top: 400, bottom: 700 })).toBe(116);
+  });
+
+  it("stops once the row's header reaches the top of the viewport", () => {
+    expect(getDisclosureRevealDelta({ ...viewport, top: 300, bottom: 1500 })).toBe(284);
+  });
+
+  it("leaves a row that already fits, or whose header is above the viewport, in place", () => {
+    expect(getDisclosureRevealDelta({ ...viewport, top: 100, bottom: 500 })).toBe(0);
+    expect(getDisclosureRevealDelta({ ...viewport, top: -20, bottom: 900 })).toBe(0);
   });
 });

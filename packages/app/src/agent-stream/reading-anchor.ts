@@ -89,6 +89,22 @@ export function getReadingRowIdFromGeometry(input: {
   return reading?.id ?? newestRowId ?? null;
 }
 
+// Room left between a revealed disclosure and the viewport edges.
+const DISCLOSURE_REVEAL_MARGIN_PX = 16;
+
+// After a disclosure opens below the fold, scroll down just enough to show it, but never so far
+// that its header leaves the top of the viewport. Coordinates share one origin.
+export function getDisclosureRevealDelta(input: {
+  top: number;
+  bottom: number;
+  viewportTop: number;
+  viewportBottom: number;
+}): number {
+  const overflow = input.bottom + DISCLOSURE_REVEAL_MARGIN_PX - input.viewportBottom;
+  const headroom = input.top - DISCLOSURE_REVEAL_MARGIN_PX - input.viewportTop;
+  return Math.max(0, Math.min(overflow, headroom));
+}
+
 // Content coordinates survive user scrolling. Layout commits replace the geometry;
 // scroll events reuse it, without another DOM measurement pass.
 export function createReadingAnchor() {
