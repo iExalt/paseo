@@ -4232,6 +4232,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       const response = toObjectRecord(
         await this.client.request("skills/list", {
           cwds: [this.config.cwd],
+          forceReload: true,
         }),
       );
       const entries = Array.isArray(response?.data) ? response.data : [];
@@ -5878,6 +5879,10 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.client = null;
   }
 
+  async refreshSkills(): Promise<void> {
+    await this.loadSkills();
+  }
+
   async listCommands(): Promise<AgentSlashCommand[]> {
     const prompts = await listCodexCustomPrompts(this.codexHome);
     if (this.connectionState === "disconnected") {
@@ -6190,7 +6195,10 @@ export class CodexAppServerAgentSession implements AgentSession {
   }
 
   private notifySubscribers(event: AgentStreamEvent): void {
-    const turnId = getAgentStreamEventTurnId(event) ?? this.activeForegroundTurnId;
+    const turnId =
+      event.type === "commands_changed"
+        ? null
+        : (getAgentStreamEventTurnId(event) ?? this.activeForegroundTurnId);
     const tagged = turnId ? { ...event, turnId } : event;
     if (this.startupEvents) {
       this.startupEvents.push(tagged);
@@ -6236,6 +6244,11 @@ export class CodexAppServerAgentSession implements AgentSession {
   private async processNotification(method: string, params: unknown): Promise<void> {
     if (method === CODEX_MCP_STARTUP_STATUS_METHOD) {
       this.logMcpStartupStatus(params);
+      return;
+    }
+    if (method === "skills/changed") {
+      this.cachedSkills = null;
+      this.emitEvent({ type: "commands_changed", provider: CODEX_PROVIDER });
       return;
     }
     const notificationParams = toObjectRecord(params);

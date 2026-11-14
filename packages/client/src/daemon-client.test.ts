@@ -1286,6 +1286,7 @@ test("advertises client capabilities in hello", async () => {
       explicit_event_subscriptions: true,
       owned_subscriptions: true,
       binary_chunking_v1: true,
+      agent_command_updates: true,
       compact_provider_snapshots: true,
       custom_mode_icons: true,
       project_updates: true,

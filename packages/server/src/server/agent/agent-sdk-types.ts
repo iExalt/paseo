@@ -427,6 +427,7 @@ export type AgentTimelineItem =
   | PluginTimelineItem;
 
 export type AgentStreamEvent =
+  | { type: "commands_changed"; provider: AgentProvider }
   | { type: "thread_started"; sessionId: string; provider: AgentProvider }
   | { type: "turn_started"; provider: AgentProvider; turnId?: string }
   | {
@@ -787,6 +788,12 @@ export interface AgentSession {
   /** Release live runtime resources without archiving or deleting the durable native session. */
   close(): Promise<void>;
   listCommands?(): Promise<AgentSlashCommand[]>;
+  /** Re-read provider-owned skills without starting or interrupting a turn. */
+  refreshSkills?(): Promise<void>;
+  /** Sessions sharing a helper must release all its leases before a skill-cache refresh. */
+  readonly skillRefreshGroup?: string | object;
+  /** Provider-negotiated resume support can be narrower than static capabilities. */
+  canResumeRuntime?(): boolean;
   /** A returned model is the effective selection committed by this mutation.
    * Returning void means the requested selection was accepted. No status read is required. */
   setModel?(modelId: string | null): Promise<void | { model: string | null }>;
