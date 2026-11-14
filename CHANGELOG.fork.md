@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.28.0](https://github.com/iExalt/paseo/compare/paseo-v0.27.0...paseo-v0.28.0) (2026-11-14)
+
+
+### Features
+
+* **cli:** add agent rewind and conversation forks ([#458](https://github.com/iExalt/paseo/issues/458)) ([04bf394](https://github.com/iExalt/paseo/commit/04bf3947ce39cf2c036a2eac38c5d3d205580715))
+* **cli:** add schedule fields and heartbeat lifecycle commands ([#471](https://github.com/iExalt/paseo/issues/471)) ([c75dbee](https://github.com/iExalt/paseo/commit/c75dbeec6870628c337c42b9a89f8ac740fab07b))
+* **cli:** add terminal metadata and launch parity ([#463](https://github.com/iExalt/paseo/issues/463)) ([3d3c875](https://github.com/iExalt/paseo/commit/3d3c8757983159a960f5b5406228d35e516b9a0a))
+* **cli:** attach structured context to agent prompts ([#464](https://github.com/iExalt/paseo/issues/464)) ([ede6546](https://github.com/iExalt/paseo/commit/ede6546f50eb18a8c7a77ae8a4a7476418bf860e))
+* **cli:** configure and create remote projects ([#473](https://github.com/iExalt/paseo/issues/473)) ([990a67a](https://github.com/iExalt/paseo/commit/990a67a618fc6d8a09030e6fb3d6cccb98855780))
+* **cli:** create and apply saved agent profiles ([#474](https://github.com/iExalt/paseo/issues/474)) ([99127a8](https://github.com/iExalt/paseo/commit/99127a862571ce42880413fc13ae5f69afcd0190))
+* **cli:** edit remote config and provider settings ([#466](https://github.com/iExalt/paseo/issues/466)) ([aa03010](https://github.com/iExalt/paseo/commit/aa0301078738a301930bd8cf4883985667e5b2de))
+* **cli:** expose agent context and nullable usage ([#450](https://github.com/iExalt/paseo/issues/450)) ([007de3d](https://github.com/iExalt/paseo/commit/007de3d07160bed14c24816a52a0f0d90bc42372))
+* **cli:** expose checkout git and forge operations ([#461](https://github.com/iExalt/paseo/issues/461)) ([142adea](https://github.com/iExalt/paseo/commit/142adeae70c8540357169e1e3db173584ba6155c))
+* **cli:** expose daemon information and provider refresh ([#457](https://github.com/iExalt/paseo/issues/457)) ([a00d18b](https://github.com/iExalt/paseo/commit/a00d18bb566ac7c6d3f5faef4c878693d72a2dd0))
+* **cli:** expose host skills, models and session discovery ([#462](https://github.com/iExalt/paseo/issues/462)) ([33d4efa](https://github.com/iExalt/paseo/commit/33d4efa511970bb6009e171e98b07cb0fe77ed06))
+* **cli:** expose structured agent timelines and prompt positions ([#453](https://github.com/iExalt/paseo/issues/453)) ([296d172](https://github.com/iExalt/paseo/commit/296d17282284a6222eea7bc3b450dddfd8fc24af))
+* **cli:** expose workspace descriptors and setup status ([#451](https://github.com/iExalt/paseo/issues/451)) ([ab04f9a](https://github.com/iExalt/paseo/commit/ab04f9aa6c7b5185c6b87c1030bf91eb53ecd74c))
+* **cli:** list and acknowledge agent attention ([#454](https://github.com/iExalt/paseo/issues/454)) ([fe2b1dd](https://github.com/iExalt/paseo/commit/fe2b1dd5f07193a24d6eccae1665ae01571f5b42))
+* **cli:** list provider slash commands and skills ([#467](https://github.com/iExalt/paseo/issues/467)) ([5fa0eca](https://github.com/iExalt/paseo/commit/5fa0ecaf201e8f5c4adc2e305aee743cf5d0b072))
+* **cli:** list provider subagents and read their timelines ([#460](https://github.com/iExalt/paseo/issues/460)) ([6c08e40](https://github.com/iExalt/paseo/commit/6c08e40227ca33d832b0828c619546e896d55baf))
+* **cli:** manage remote host files ([#469](https://github.com/iExalt/paseo/issues/469)) ([738b186](https://github.com/iExalt/paseo/commit/738b186121f6cc0187edf7acb76d0f169e0e4ac9))
+* **cli:** manage workspace labels and recovery ([#455](https://github.com/iExalt/paseo/issues/455)) ([d0b5ae5](https://github.com/iExalt/paseo/commit/d0b5ae5c290bab52cfad7091b0c59e027e463d4f))
+* **cli:** search workspace refs and clone repositories ([#456](https://github.com/iExalt/paseo/issues/456)) ([45f5ac5](https://github.com/iExalt/paseo/commit/45f5ac5251d814ab78576fda38099bc692527675))
+* **cli:** show host API spend summaries ([#459](https://github.com/iExalt/paseo/issues/459)) ([436f78a](https://github.com/iExalt/paseo/commit/436f78aa52713b65df475fb203141f0abf6efa3f))
+
+
+### Bug Fixes
+
+* **agents:** remove unpublished worktrees on automatic archive ([#472](https://github.com/iExalt/paseo/issues/472)) ([75b6d94](https://github.com/iExalt/paseo/commit/75b6d946aa83bb31fe7fccf6578fb917e7bbedf3))
+* **android:** capture binary screenshots with bounded receipts ([#477](https://github.com/iExalt/paseo/issues/477)) ([2ec8c1b](https://github.com/iExalt/paseo/commit/2ec8c1bbffb8205a64f373ec467ef1154d655818))
+* **cli:** preserve automation output and exit contracts ([#449](https://github.com/iExalt/paseo/issues/449)) ([c2b83e4](https://github.com/iExalt/paseo/commit/c2b83e4656b848f49a3bacfc90867900026c206e))
+* **cli:** preserve complete permission batch outcomes ([#476](https://github.com/iExalt/paseo/issues/476)) ([38ef9c6](https://github.com/iExalt/paseo/commit/38ef9c6647ab2f3fedddc6c25e53cd849aba1426))
+* **cli:** remove pure confirmation flags ([#468](https://github.com/iExalt/paseo/issues/468)) ([a55bc08](https://github.com/iExalt/paseo/commit/a55bc0886647fc98509d6ffdca6109576d6f412e))
+* **e2e:** align Metro loopback origins ([#475](https://github.com/iExalt/paseo/issues/475)) ([86d673e](https://github.com/iExalt/paseo/commit/86d673e7fa4267bef4e062e4138d052785dfd986))
+* fence stale timelines and recover workspace navigation ([#465](https://github.com/iExalt/paseo/issues/465)) ([abefe5e](https://github.com/iExalt/paseo/commit/abefe5e7e8e25d2e1143a516658be4e5f3f238ac))
+
 ## [0.27.0](https://github.com/iExalt/paseo/compare/paseo-v0.26.2...paseo-v0.27.0) (2026-11-13)
 
 
