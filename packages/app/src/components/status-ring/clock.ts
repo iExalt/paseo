@@ -56,7 +56,6 @@ function unregisterStatusRing(registered: SharedValue<boolean>, listenerId: numb
 }
 
 export function useStatusRingRotation(): SharedValue<number> {
-  const active = useRetainedPanelActive();
   // Hidden retained views must not subscribe their animated styles to the shared clock.
   const rotation = useSharedValue(getStatusRingRotation(Date.now()));
   const registered = useSharedValue(false);
