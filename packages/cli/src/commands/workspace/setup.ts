@@ -1,10 +1,12 @@
+import type { WorkspaceSetupSnapshot } from "@getpaseo/protocol/messages";
 import type { Command } from "commander";
 import { connectToDaemon } from "../../utils/client.js";
 import type { CommandError, OutputSchema, SingleResult } from "../../output/index.js";
 
 interface WorkspaceSetupResult {
   workspaceId: string;
-  status: "started" | "already_allowed";
+  status: "started" | "already_allowed" | WorkspaceSetupSnapshot["status"] | "none";
+  snapshot?: WorkspaceSetupSnapshot | null;
 }
 
 const workspaceSetupSchema: OutputSchema<WorkspaceSetupResult> = {
@@ -17,11 +19,23 @@ const workspaceSetupSchema: OutputSchema<WorkspaceSetupResult> = {
 
 export async function runSetupCommand(
   workspaceId: string,
-  options: { host?: string; daemonTarget: import("../../utils/daemon-target.js").DaemonTarget },
+  options: {
+    status?: boolean;
+    host?: string;
+    daemonTarget: import("../../utils/daemon-target.js").DaemonTarget;
+  },
   _command: Command,
 ): Promise<SingleResult<WorkspaceSetupResult>> {
   const client = await connectToDaemon({ target: options.daemonTarget });
   try {
+    if (options.status) {
+      const { snapshot } = await client.fetchWorkspaceSetupStatus(workspaceId);
+      return {
+        type: "single",
+        data: { workspaceId, status: snapshot?.status ?? "none", snapshot },
+        schema: workspaceSetupSchema,
+      };
+    }
     // COMPAT(workspaceSetupRun): added in v0.7.3, remove gate after 2027-09-02.
     if (!client.getLastServerInfoMessage()?.features?.workspaceSetupRun) {
       throw { code: "DAEMON_UPDATE_REQUIRED", message: "Update the host to run workspace setup." };

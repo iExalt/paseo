@@ -36,7 +36,10 @@ agent status --json exposes raw lastUsage under snapshot.
 agent inspect --json uses capitalized Id/Name/Cwd. For rich metadata, use
 agent query --json: id/title, separate provider/model, absolute cwd, createdAt,
 and optional attention fields. agent status --json nests details under snapshot.
-workspace ls --json uses workspaceId. prime always prints text, even with --json.
+workspace ls/inspect --json retain workspaceId and expose the full host payload
+under descriptor. workspace inspect requires an exact ID and includes background
+workspaces. workspace setup <id> --status reads setup without running it.
+prime always prints text, even with --json.
 
 Questions: inspect request.input.questions in permit ls --json, then answer with
 permit allow <agent> <req_id> --input '{"answers":{"Question 1":"chosen label or free text"}}'.

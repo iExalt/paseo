@@ -2,6 +2,7 @@ import type { WorkspaceDescriptorPayload } from "@getpaseo/protocol/messages";
 import type { OutputSchema } from "../../output/index.js";
 
 export interface WorkspaceRow {
+  descriptor: WorkspaceDescriptorPayload;
   workspaceId: string;
   project: string;
   name: string;
@@ -48,6 +49,7 @@ export function toWorkspaceRow(workspace: WorkspaceDescriptorPayload): Workspace
   if (workspace.workspaceKind === "worktree") kind = "worktree";
   else if (workspace.workspaceKind === "local_checkout") kind = "local_checkout";
   return {
+    descriptor: workspace,
     workspaceId: workspace.id,
     project: workspace.projectDisplayName,
     name: workspace.name,
