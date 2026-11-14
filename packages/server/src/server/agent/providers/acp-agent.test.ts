@@ -2693,7 +2693,7 @@ describe("ACPAgentSession slash commands", () => {
 
     const listCommandsPromise = session.listCommands();
 
-    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+    const changes = asInternals<ACPSessionInternals>(session).translateSessionUpdate({
       sessionUpdate: "available_commands_update",
       availableCommands: [
         {
@@ -2707,6 +2707,7 @@ describe("ACPAgentSession slash commands", () => {
       ],
     });
 
+    expect(changes).toContainEqual({ type: "commands_changed", provider: "claude-acp" });
     expect(await listCommandsPromise).toEqual([
       {
         name: "research_codebase",
