@@ -101,10 +101,17 @@ test("projects and pinned chats reorder while ordinary workspaces stay newest fi
 
     const firstProjectTestId = `sidebar-project-row-${projectEquivalenceViewKey(firstProject.projectKey)}`;
     const secondProjectTestId = `sidebar-project-row-${projectEquivalenceViewKey(secondProject.projectKey)}`;
-    await quickDragFirstRowAfterSecond(
-      page.locator(`[data-testid="${firstProjectTestId}"], [data-testid="${secondProjectTestId}"]`),
-      pressProjectRow,
+    const projectRows = page.locator(
+      `[data-testid="${firstProjectTestId}"], [data-testid="${secondProjectTestId}"]`,
     );
+    const alphabeticalProjects = await rowTestIds(projectRows);
+    await quickDragFirstRowAfterSecond(projectRows, pressProjectRow);
+    await selectProjectGrouping(page);
+    await expect.poll(() => rowTestIds(projectRows)).toEqual(alphabeticalProjects);
+    await quickDragFirstRowAfterSecond(projectRows, pressProjectRow);
+    await selectSidebarStatusGrouping(page);
+    await selectProjectGrouping(page);
+    await expect.poll(() => rowTestIds(projectRows)).toEqual(alphabeticalProjects);
     const firstWorkspaceTestId = `sidebar-workspace-row-${getServerId()}:${firstProject.workspaceId}`;
     const secondWorkspaceTestId = `sidebar-workspace-row-${getServerId()}:${secondWorkspace.workspace.id}`;
     const ordinaryRows = page.locator(
