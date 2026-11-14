@@ -143,7 +143,7 @@ the logic registry only — importing the view registry (or a `.view.tsx` module
 from a logic path pulls react-native and breaks the Node-based e2e harness.
 
 Per-forge brand colors live on the module, not in `styles/theme.ts`. Use the
-Unistyles-safe pattern from `docs/unistyles.md`: no `useUnistyles()`. Brand icon
+Unistyles-safe pattern from `docs/upstream/unistyles.md`: no `useUnistyles()`. Brand icon
 call sites use `withUnistyles` and a `uniProps` mapping such as:
 
 ```ts

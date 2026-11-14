@@ -1,10 +1,10 @@
 # AGENTS.md — Paseo Server Development Guide
 
-For AI coding agents working in `packages/server`. Supplements [CLAUDE.md](../CLAUDE.md) at the repo root.
+For AI coding agents working in `packages/server`. Supplements [CLAUDE.md](../../CLAUDE.md) at the repo root.
 
 ## Project Overview
 
-Paseo is a mobile + CLI app for monitoring and controlling local AI coding agents (Claude Code, Codex, GitHub Copilot, OpenCode, Pi). The daemon runs on your machine, manages agent processes, and streams their output over WebSocket to clients.
+Paseo is a mobile + CLI app for monitoring and controlling local AI coding agents ([supported agents](../../CLAUDE.md)). The daemon runs on your machine, manages agent processes, and streams their output over WebSocket to clients.
 
 ---
 
@@ -156,17 +156,20 @@ Tests prove behavior, not structure. Every test should answer: "what user-visibl
 ## Architecture Quick Reference
 
 ```
-packages/server/src/
-├── server/
-│   ├── index.ts              # Entry point
-│   ├── bootstrap.ts           # Daemon initialization
-│   ├── websocket-server.ts   # WS connection management
-│   ├── session.ts             # Per-client session state
-│   └── agent/
-│       ├── agent-manager.ts  # Agent lifecycle state machine
-│       └── agent-storage.ts  # File-backed JSON persistence
-├── providers/                 # Claude, Codex, Copilot, OpenCode, Pi adapters
-├── relay-transport.ts        # Outbound relay connection
+packages/server/
+├── scripts/
+│   └── supervisor-entrypoint.ts  # Production entry; supervises the daemon worker
+└── src/server/
+    ├── daemon-worker.ts          # Daemon process entry
+    ├── bootstrap.ts              # Daemon initialization
+    ├── websocket-server.ts       # WS connection management
+    ├── session.ts                # Per-client session state
+    ├── relay-transport.ts        # Outbound relay connection
+    └── agent/
+        ├── agent-manager.ts      # Agent lifecycle state machine
+        ├── agent-storage.ts      # File-backed JSON persistence
+        ├── provider-registry.ts  # Built-in provider factories
+        └── providers/            # Provider adapters, including ACP agents
 ```
 
 Agent state persists to `$PASEO_HOME/agents/{cwd-with-dashes}/{agent-id}.json`  
@@ -187,10 +190,10 @@ npm run db:query -- "SELECT * FROM agent_timeline_rows..."
 
 ## Relevant Docs
 
-| File                                                       | What it covers                                   |
-| ---------------------------------------------------------- | ------------------------------------------------ |
-| [../CLAUDE.md](../CLAUDE.md)                               | Repository overview, critical rules, quick start |
-| [../docs/architecture.md](../docs/architecture.md)         | System design, WebSocket protocol, data flow     |
-| [../docs/coding-standards.md](../docs/coding-standards.md) | Type hygiene, error handling, React patterns     |
-| [../docs/testing.md](../docs/testing.md)                   | TDD workflow, determinism, real deps over mocks  |
-| [../SECURITY.md](../SECURITY.md)                           | Relay threat model, E2E encryption               |
+| File                                                                               | What it covers                                   |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [../../CLAUDE.md](../../CLAUDE.md)                                                 | Repository overview, critical rules, quick start |
+| [../../docs/upstream/architecture.md](../../docs/upstream/architecture.md)         | System design, WebSocket protocol, data flow     |
+| [../../docs/upstream/coding-standards.md](../../docs/upstream/coding-standards.md) | Type hygiene, error handling, React patterns     |
+| [../../docs/upstream/testing.md](../../docs/upstream/testing.md)                   | TDD workflow, determinism, real deps over mocks  |
+| [../../SECURITY.md](../../SECURITY.md)                                             | Relay threat model, E2E encryption               |

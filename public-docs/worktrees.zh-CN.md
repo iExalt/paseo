@@ -133,7 +133,7 @@ config/*.local.json
 
 `scripts` 是可以在 worktree 中按需运行的具名命令。把其中一个标记为 _service_，Paseo 就会把它作为长时间运行的进程进行监管，为它分配端口，并通过 daemon 的反向代理把 HTTP 流量路由给它。
 
-可以在应用中运行它们，也可以在自动化中用 [`paseo script`](/docs/cli#workspace-scripts) 和[工作区脚本 MCP 工具](/docs/mcp#workspace-scripts)管理它们。
+可以在应用中运行它们，也可以在自动化中用 [`paseo script`](/docs/cli#workspace-scripts) 管理它们。
 
 ### 普通脚本 {#plain-scripts}
 

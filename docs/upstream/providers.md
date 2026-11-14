@@ -8,26 +8,26 @@ server integrations.
 Keep a bundled provider in `plugins/<id>/` and register it through
 `@getpaseo/plugin/server/provider`. Antigravity and Muse Code follow this pattern. Built-in loading and SDK
 import rules belong to [plugins.md](plugins.md#built-in-plugins); the
-[public provider guide](../public-docs/plugins/providers.md) covers the provider contract.
+[public provider guide](../../public-docs/plugins/providers.md) covers the provider contract.
 
 The plugin owns the CLI transport, session state, catalog, and capabilities. Launch CLI transports
-and probes through the [SDK process helpers](../public-docs/plugins/providers.md#launch-the-provider-cli),
+and probes through the [SDK process helpers](../../public-docs/plugins/providers.md#launch-the-provider-cli),
 which share Windows launcher handling with core providers. The daemon owns
 executable resolution and applies `agents.providers.<provider-id>.command` and `env` before
 connecting. Register the provider's icon with the plugin rather than adding it to the app's
 provider icon map. You do not need a core manifest entry or provider factory.
 
-| Provider    | Transport                                  | Setup and limitations                                            |
-| ----------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| Antigravity | Installed `agy` CLI                        | [Antigravity](../public-docs/supported-providers.md#antigravity) |
-| Muse Code   | MSP over one `muse serve` host per session | [Muse Code](../public-docs/muse-code.md)                         |
+| Provider    | Transport                                  | Setup and limitations                                               |
+| ----------- | ------------------------------------------ | ------------------------------------------------------------------- |
+| Antigravity | Installed `agy` CLI                        | [Antigravity](../../public-docs/supported-providers.md#antigravity) |
+| Muse Code   | MSP over one `muse serve` host per session | [Muse Code](../../public-docs/muse-code.md)                         |
 
 ## Provider-native session options
 
 The provider owns validation and application of the opaque record in
 `AgentSessionConfig.providerOptions`. The registry supplies the effective options
 at session startup. See [provider configuration](custom-providers.md#provider-options)
-for defaults and merge rules, and the [SDK guide](../public-docs/sdk/provider-options.md)
+for defaults and merge rules, and the [SDK guide](../../public-docs/sdk/provider-options.md)
 for native keys and examples.
 
 Exact MCP preapproval is a separate daemon-owned contract. A new provider must fail
@@ -40,7 +40,7 @@ server and tool identity without approving native tools.
 
 Extend `ACPAgentClient` from `packages/server/src/server/agent/providers/acp-agent.ts`. The base class handles process spawning, stdio transport, session lifecycle, streaming, permissions, and model discovery. You provide configuration (command, modes, capabilities) and optionally override `isAvailable()` for auth checks.
 
-The only built-in ACP provider today is `copilot` (`copilot-acp-agent.ts`). `GenericACPAgentClient` (`generic-acp-agent.ts`) is also ACP-based but is used for user-defined custom providers configured via `extends: "acp"` overrides — see [docs/custom-providers.md](custom-providers.md).
+The only built-in ACP provider today is `copilot` (`copilot-acp-agent.ts`). `GenericACPAgentClient` (`generic-acp-agent.ts`) is also ACP-based but is used for user-defined custom providers configured via `extends: "acp"` overrides — see [docs/upstream/custom-providers.md](custom-providers.md).
 
 Copilot custom agents are exposed through ACP session config, not the slash-command list. When custom agents are available, Copilot returns a select config option with `id: "agent"` and `category: "_agent"`; Paseo maps that to the `agent` provider feature. Copilot uses the agent display name as the option value, and the blank value means the default Copilot agent.
 
@@ -63,13 +63,11 @@ Claude first-party model metadata lives in `packages/server/src/server/agent/pro
 
 Keep the curated Claude catalog: `supportedModels()` has historically omitted older versions and carries less metadata. Discovery is only an opt-in visibility gate, not a replacement catalog or an entitlement guarantee. Claude Code v2.1.197 added `resolvedModel` to disambiguate alias rows; a bare family alias does not establish access to a particular version. Explicit user-configured models must remain selectable when discovery fails or omits them.
 
-Paseo tools are not implemented as MCP tools internally. They live in a shared tool catalog under `packages/server/src/server/agent/tools/`; MCP is only the fallback adapter. The daemon resolves `agents.providers.<provider>.paseoTools` by the exact provider ID. The catalog policy belongs to the caller: it filters the tools exposed to the current agent. When that agent calls `create_agent`, the child receives the policy for the child provider ID; the caller's policy is not inherited.
 
-A provider that can register runtime tools directly should set `supportsNativePaseoTools: true` and consume the already-filtered `launchContext.paseoTools` in `createSession`/`resumeSession`. When native tools are present, `AgentManager` strips the internal Paseo MCP server from the provider launch config so the provider does not receive the same tools twice. Providers that only know MCP should keep `supportsMcpServers: true` and let the daemon inject `/mcp/agents`; the MCP server builds the same policy-filtered catalog for that caller. Filtering is enforced at catalog registration in both paths. Browser tools remain subject to the daemon browser-tools setting and browser-host availability.
 
 Pi is a process-backed provider. Paseo requires the user to have the `pi` binary installed and talks to it through `pi --mode rpc`; the server package does not embed Pi's SDK/runtime packages.
 
-Pi extension adapters live under `packages/server/src/server/agent/providers/pi/extensions/<extension>/`. Each adapter turns Pi RPC facts into Paseo tool, timeline, subagent, or question mappings through the [extension contract](../packages/server/src/server/agent/providers/pi/extensions/contract.ts). To add one, create its directory, add one entry to `extensions/registry.ts`, and test it with fixtures captured from the real extension in Pi that record package, version, source commit, Pi version, and capture date. `agent.ts`, `history-mapper.ts`, and `tool-call-mapper.ts` never name an extension.
+Pi extension adapters live under `packages/server/src/server/agent/providers/pi/extensions/<extension>/`. Each adapter turns Pi RPC facts into Paseo tool, timeline, subagent, or question mappings through the [extension contract](../../packages/server/src/server/agent/providers/pi/extensions/contract.ts). To add one, create its directory, add one entry to `extensions/registry.ts`, and test it with fixtures captured from the real extension in Pi that record package, version, source commit, Pi version, and capture date. `agent.ts`, `history-mapper.ts`, and `tool-call-mapper.ts` never name an extension.
 
 Paseo's per-agent and daemon-wide system prompts are appended by its generated Pi integration extension. Paseo deliberately does not pass `--append-system-prompt`, because that flag replaces Pi's automatic `APPEND_SYSTEM.md` discovery instead of composing with it.
 
@@ -77,7 +75,6 @@ Pi model records expose input capabilities through `model.input`. Only send raw 
 
 Probe Pi MCP support with Pi RPC `get_commands` for the agent cwd. Pi 0.99 and later ship MCP as a built-in extension, which registers an extension command named `mcp` with `sourceInfo.path` `builtin:mcp`. Register injected servers through `pi.registerMcpServer` in Paseo's generated extension; the built-in extension rejects SSE servers and names with characters other than letters, digits, `_`, and `-`, and a server of the same name in Pi's `mcp.json` takes precedence.
 
-The open-source `pi-mcp-adapter` extension replaces the built-in one and registers its own `mcp` command (often with `sourceInfo.source` containing `pi-mcp-adapter`). When it is loaded, write a per-agent MCP config and pass it with `--mcp-config` instead of modifying user or project MCP files. Because that flag replaces the Pi global config layer, preserve the existing `<Pi agent dir>/mcp.json` in the generated file before overlaying injected servers. For local HTTP servers such as Paseo's own `/mcp/agents` endpoint, explicitly disable adapter OAuth (`auth: false`, `oauth: false`) in the generated config.
 
 Pi control-plane RPCs wait 60 seconds by default. Override `params.rpcTimeoutMs` when extension or MCP startup on a slow host needs more time. Timeout errors name the pending RPC phase and report both elapsed time and the configured deadline. This setting does not govern long-running Pi compaction or Pi extension UI results. See [OMP profiles and Pi-compatible forks](custom-providers.md#omp-profiles-and-pi-compatible-forks) for OMP startup and RPC deadlines.
 
@@ -85,7 +82,6 @@ Pi import discovery reads Pi's persisted JSONL session files because Pi RPC does
 
 OMP is a first-class built-in provider, disabled by default. Its launch contract, typed runtime, agent/session behavior, history, permissions, imports, and test fake live under `providers/omp/`; only the provider-neutral JSONL child-process transport is shared with Pi. It launches `omp --mode rpc-ui`, uses OMP's `get_available_commands` RPC for slash-command discovery, bridges OMP `rpc-ui` approval dialogs into Paseo permissions, and imports terminal-started sessions from `~/.omp/agent/sessions` when enabled.
 
-OMP supports native Paseo host tools. The adapter registers the full caller-scoped Paseo tool catalog directly with OMP, matching providers such as Claude that expose the full catalog through MCP. Serialize every OMP host definition with `loadMode: "essential"` so `create_agent`, `send_agent_prompt`, `wait_for_agent`, and related tools remain direct calls; omitting the field makes OMP mount non-built-in names under `xd://` instead. OMP's provider-managed task subagents are surfaced as Paseo subagents through `child_session` imports; the parent keeps the subagents track while the child runtime stays owned by OMP. Custom OMP profiles should extend `omp`; other Pi-compatible forks can still extend `pi`, override `command`, and set `params.sessionDir` to their JSONL session directory.
 
 Pi RPC extension UI dialog requests (`select`, `input`, `editor`, `confirm`) are bridged into Paseo question permissions and answered with `extension_ui_response`. Pi extensions such as `ask_user` may chain dialogs: for example, a `select` can be followed by an optional-comment `input`. When an `ask_user` tool call declares `allowComment: true`, Paseo presents the selection and optional comment as one question permission, answers Pi's initial `select` immediately, then auto-answers the follow-up optional `input` with the comment the user already supplied (or an empty string). Preserve placeholders and optional/skip semantics for standalone optional inputs so the app can still distinguish "skip this optional input" from "cancel the whole dialog." Fire-and-forget extension UI requests such as notifications are intentionally ignored by the provider adapter unless Paseo grows first-class UI for them.
 
@@ -103,7 +99,6 @@ OpenCode owns user message IDs. Do not pass Paseo-generated IDs to OpenCode prom
 
 `AgentManager` owns the one canonical timeline row for a foreground prompt carrying a Paseo `clientMessageId`. It records that row when `startTurn` accepts, with the wire `messageId` set to the same value. Provider adapters still emit their native user-message echo with the same `clientMessageId` when available; the manager records its provider identity on the internal row without changing or redispatching the wire item. If an adapter emits the echo before `startTurn` resolves, the manager records the provider identity with the row at acceptance. Provider adapters continue to own externally initiated user rows that have no Paseo client identity. Do not perform global transcript text dedupe.
 
-Active-turn steering is an optional `AgentSession.steerActiveTurn` operation. The manager owns admission against its exact foreground turn, canonical user-message creation, echo reconciliation, and falls back to the normal interrupt-and-replace path only when the adapter reports `unavailable`. An adapter error leaves the steer's fate ambiguous and must surface without an interrupt or retry. Codex calls `turn/steer` with the native expected turn and Paseo client user-message ID. Claude pushes an admitted steer into the exact active SDK query input; isolated control commands remain unavailable. OpenCode calls `session/prompt_async` with an OpenCode-generated message ID; the server queues the prompt while busy and the next LLM call in the same Paseo turn includes it. Pi sends its native `steer` RPC, which queues the message for delivery after the in-flight assistant turn's tool calls. Slash-command inputs report `unavailable` because pi rejects extension commands on the steer path, and echo identity is correlated by message text because pi's steer RPC takes no message ID. A missing session reports `unavailable` and uses the normal interrupt fallback.
 
 A steering adapter also owes its interrupt: stopping a turn must discard the steers the provider has not read yet, or one of them resumes the turn the user just stopped. Codex clears pending input when it aborts a turn; Claude does not, so its adapter cancels the SDK messages it queued before calling `query.interrupt()`. It calls `query.interrupt()` only while a main-session turn is in flight (between `system/init` and that turn's `result`): with the main session idle, an interrupt reaches only background subagents and no result follows it, so the adapter withdraws its unstarted messages and stops there. The adapter also declares `perTaskStopAffordance`, because without it the CLI kills every background subagent on interrupt. Pi requires `clear_queue` before `abort`; older binaries without that RPC retain their native queue behavior until the pi compatibility floor reaches 0.84.4.
 
@@ -191,7 +186,7 @@ promise for completion: equal results, including equal discovery timestamps, emi
 
 ## Usage sources
 
-See the [public usage source reference](../public-docs/plugins/reference.md#usage-sources) for the
+See the [public usage source reference](../../public-docs/plugins/reference.md#usage-sources) for the
 contract, account and window identity, provider-derived period names, login fallback, and
 read-only credential rules. Usage adapters own the interpretation of provider fields; the app
 renders their names and resolves pins without provider-specific duration guesses.
@@ -537,7 +532,6 @@ paseo run --provider my-provider --model some-model --mode default
 paseo ls -a -g
 
 # Check if the provider reports models
-paseo models --provider my-provider
 ```
 
 ### E2E test patterns

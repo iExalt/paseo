@@ -56,7 +56,7 @@ Paseo 启动 Muse 时会禁用沙箱（`--disable-sandbox`）并开启工作区�
 
 ## Muse 1.4.1 中的限制 {#limitations-in-muse-141}
 
-- **Paseo MCP 工具不可用。** Muse 在匹配 MCP 调用之前丢弃了返回的工具命名空间。这是上游问题，必须先在 Muse 中修复，它的 Agent 才能使用 Paseo 工具。
+- **Paseo 操作使用 CLI。** 在支持 shell 的会话中使用 daemon 提供的 `PASEO_CLI`；Paseo 不再注入自己的 MCP 服务器。
 - **上下文压缩需要模型的上下文上限。** 如果你的端点不报告上限，请在 Muse 中为所选模型配置 `context_compaction.provider_context_limit_tokens`。
 - **只有 Muse 报告用量窗口时才会显示。** `usage/read` 返回空响应时，订阅用量将不可用。
 - **原生子 Agent 可能需要 Muse 的实验性 SDK 开关。** 如果缺少原生子 Agent 工具，请在 Provider 环境中设置 `MUSE_EXPERIMENTAL_SDK_ENABLED=on`。只有当 Muse 提供 `childSessionId` 时，关联的子会话才会出现。

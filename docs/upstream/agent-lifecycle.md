@@ -92,7 +92,6 @@ Provider checks follow the signals their runtimes expose:
   prevent collection. This does not inspect processes launched internally by the provider.
 
 These checks do not discover arbitrary detached processes or work hidden by third-party
-extensions. A provider plugin adds its own veto through the [runtime safety contract](../public-docs/plugins/providers.md#permit-idle-runtime-cleanup).
 
 A provider runtime can still die on its own — crash, OOM kill, host suspend. Work the agent parked
 inside that process dies with it: Claude Code's background Bash shells, `Monitor` watches, and
@@ -118,7 +117,6 @@ Accepting new work after an ambiguous interruption would create a split-brain se
 
 ## Relationships
 
-Agents can launch other agents via the agent-scoped `create_agent` MCP tool. Agent-scoped creation is always asynchronous and always stamps `paseo.parent-agent-id`, pointing back at the caller. Omit `workspaceId` to use the caller's workspace, or pass an existing workspace ID returned by `create_workspace`. Placement never changes parentage.
 
 - **Subagents** — exist as part of the creating agent's work, appear in that agent's subagent track, and are archived with it.
 - **Detached agents** — stand on their own after an explicit detach transition, do not appear in the former parent's subagent track, and are not archived with it.
@@ -139,7 +137,6 @@ Runtime ownership is resolved from explicit workspace ID and caller context, nev
 
 Setup belongs to the workspace, including combined workspace-plus-agent creation and the supported agent `worktree` request. Run setup through the workspace workflow before launching configured terminals or scripts. Setup output is read in the Setup panel from per-command snapshots; never produce setup chat timeline rows or concatenate command logs. Legacy agent `git`/`worktreeName` inputs and hidden MCP worktree placement are rejected with workspace-creation guidance. Existing wire schemas retain an empty combined-log string for parsing compatibility.
 
-Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an agent-facing MCP tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
 
 `notifyOnFinish` defaults to `true` for agent-scoped creation and prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` for explicit reporting or no completion callback.
 
@@ -186,8 +183,6 @@ The provider still owns the underlying runtime. Paseo keeps an agent record so t
 
 `workspace.background` controls discovery only. Background workspaces contain ordinary durable
 agents and terminals: provider history, plugin hooks, parentage, archive, and restart recovery
-keep their normal behavior. Visibility is creation-only; selecting an existing workspace cannot
-change it. New workspaces default to false, inherit the caller workspace's value when an agent
 creates one without an override, and accept explicit true or false.
 
 The daemon derives agent discovery from workspace ownership. Default workspace and agent lists,
@@ -215,7 +210,6 @@ Archive is a **soft delete**: the agent record stays on disk with `archivedAt` s
 Archive sets `archivedAt`, invokes the provider's native archive hook, and cascades to managed
 children.
 
-`create_agent_request` can opt an agent into `autoArchive`. In that mode the daemon archives the agent after the first terminal turn event (`turn_completed`, `turn_failed`, or `turn_canceled`). When the agent owns an isolated workspace, auto-archive archives that workspace too; the managed worktree is removed when its final workspace reference is gone.
 
 Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/agent/agent-manager.ts`):
 
@@ -227,11 +221,6 @@ Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/
 
 Cascade is what keeps subagent fleets from outliving their orchestrator.
 
-Workspace archive is a separate lifecycle. Archiving or removing a worktree can close a surviving
-agent record without setting the agent's `archivedAt`, while its `workspaceId` still points at the
-archived workspace. History navigation must not infer workspace lifecycle from `agent.archivedAt`
-or mutate either lifecycle. The workspace route asks the daemon for authoritative recovery state;
-only the route's explicit Unarchive or Restore action changes the archived workspace.
 
 History navigation opens the selected agent without changing either archive state. Workspace
 **Restore** recovers only the workspace; the selected archived agent stays open with its callout.
@@ -377,4 +366,4 @@ Each agent is a single JSON file. Fields relevant to this doc:
 | `labels["paseo.open-agent-tab.<client-id>"]` | `string?`     | `"true"` protects an open tab on that client; detach clears every matching label   |
 | `lastStatus`                                 | `AgentStatus` | `initializing` / `idle` / `running` / `error` / `closed`                           |
 
-See [`docs/data-model.md`](./data-model.md) for the full agent record.
+See [`docs/upstream/data-model.md`](data-model.md) for the full agent record.
