@@ -144,7 +144,11 @@ const temporaryDirs: string[] = [];
 
 // A real detached worker in a throwaway home; afterEach closes its terminals and the worker.
 async function startRealWorkerManager(
-  options: { getTerminalActivityUrl?: () => string | null; paseoHome?: string } = {},
+  options: {
+    getTerminalActivityUrl?: () => string | null;
+    paseoHome?: string;
+    deferWorkerLaunch?: boolean;
+  } = {},
 ): Promise<DaemonTerminalManager> {
   const { paseoHome = createTemporaryHome(), ...rest } = options;
   return startWorkerTerminalManager({
@@ -874,6 +878,25 @@ it.skipIf(isPlatform("win32"))(
     await expectCompletedShortCommand(manager, "sleep 0.1; echo short; exit 0");
   },
 );
+
+it("defers the worker to the first terminal and then opens it there", async () => {
+  const paseoHome = createTemporaryHome();
+  manager = await startRealWorkerManager({ paseoHome, deferWorkerLaunch: true });
+  expect(await listTerminalWorkerRecords(paseoHome)).toEqual([]);
+
+  const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-deferred-"));
+  temporaryDirs.push(cwd);
+  const session = trackTerminal(
+    await manager.createTerminal({
+      workspaceId: "ws-test",
+      cwd,
+      ...nodeTerminalCommand(`process.stdout.write("deferred-ok"); setInterval(() => {}, 1000);`),
+    }),
+  );
+
+  await expect.poll(() => getVisibleText(session), { timeout: 10000 }).toContain("deferred-ok");
+  expect(await listTerminalWorkerRecords(paseoHome)).toHaveLength(1);
+});
 
 it("starts the default shell through the worker and accepts quoted commands", async () => {
   manager = await startRealWorkerManager();
