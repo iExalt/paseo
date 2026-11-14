@@ -24,6 +24,10 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import type { Logger } from "pino";
 import { z } from "zod";
 import { createBranchChangeRouteHandler } from "./script-route-branch-handler.js";
+import {
+  setWorkspaceNotifications,
+  WORKSPACE_NOTIFICATIONS_ENABLED,
+} from "./notification-policy.js";
 
 import {
   createDaemonListeners,
@@ -185,6 +189,7 @@ import {
 import { terminateWithTreeKill } from "../utils/tree-kill.js";
 import { withTimeout } from "../utils/promise-timeout.js";
 import { isHostnameAllowed, type HostnamesConfig } from "./hostnames.js";
+import { SessionAuthorization } from "./authorization/index.js";
 import {
   createRequireBearerMiddleware,
   isAgentMcpRequestAuthorized,
@@ -1132,7 +1137,7 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
-    context?: { background?: boolean; callerWorkspaceId?: string },
+    context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
   ): Promise<string> => {
     const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
       cwd,
@@ -1174,7 +1179,7 @@ export async function createPaseoDaemon(
   const ensureWorkspaceForCreateAndBroadcastExternal = async (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
-    context?: { background?: boolean; callerWorkspaceId?: string },
+    context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
   ): Promise<string> => {
     const workspaceId = await ensureWorkspaceForCreateExternal(cwd, firstAgentContext, context);
     await emitWorkspaceUpdatesExternal([workspaceId]);
@@ -1569,6 +1574,7 @@ export async function createPaseoDaemon(
 
   const createAgentToolHostDependencies = (
     runtime: PaseoToolRuntimeContext,
+    hostAuthorization?: SessionAuthorization,
   ): PaseoToolHostDependencies => ({
     changeRequestWatches,
     finishSubscriptions: () => finishSubscriptions,
@@ -1588,6 +1594,8 @@ export async function createPaseoDaemon(
     scheduleService,
     providerSnapshotManager,
     daemonConfigStore,
+    ...(hostAuthorization ? { hostAuthorization } : {}),
+    replyRuleFilteringEnabled: hostAuthorization !== undefined,
     github,
     workspaceGitService,
     worktreeManagers: pluginRuntime,
@@ -1602,6 +1610,24 @@ export async function createPaseoDaemon(
     lifecycle: pluginRuntime,
     emitWorkspaceUpdatesForWorkspaceIds: emitWorkspaceUpdatesExternal,
     workspaceRegistry,
+    updateWorkspaceNotifications: async (workspaceId, notifications) => {
+      const workspace = await setWorkspaceNotifications(
+        workspaceRegistry,
+        workspaceId,
+        notifications,
+      );
+      if (workspace) {
+        try {
+          await emitWorkspaceUpdatesExternal([workspaceId]);
+        } catch (error) {
+          logger.warn(
+            { err: error, workspaceId },
+            "Failed to publish workspace descriptor after notification policy update",
+          );
+        }
+      }
+      return workspace;
+    },
     projectRegistry,
     createDirectoryWorkspace: async (cwd, title, projectId, context) => {
       const workspace = await workspaceProvisioning.createWorkspaceForDirectory(
@@ -1636,6 +1662,7 @@ export async function createPaseoDaemon(
     clearWorkspaceArchiving,
     ensureWorkspaceForCreate: createAgentCommandDependencies.ensureWorkspaceForCreate,
     createPaseoWorktree: createAgentCommandDependencies.createPaseoWorktree,
+    workspaceNotificationsEnabled: WORKSPACE_NOTIFICATIONS_ENABLED,
     browserToolsEnabled: browserToolsPolicy.isEnabled(),
     browserToolsBroker,
     paseoToolPolicy:

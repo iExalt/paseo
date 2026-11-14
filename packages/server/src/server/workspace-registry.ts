@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 
 import type { Logger } from "pino";
 import { z } from "zod";
+import { WorkspaceNotificationsSchema } from "@getpaseo/protocol/messages";
 
 import { writeJsonFileAtomic } from "./atomic-file.js";
 import { areEquivalentPaths } from "../utils/path.js";
@@ -110,6 +111,7 @@ const PersistedWorkspaceRecordSchema = z.object({
   untrustedSource: UntrustedWorkspaceSourceSchema.optional(),
   // Public discovery visibility. Contents retain their ordinary lifecycle.
   background: z.boolean().optional().default(false),
+  notifications: WorkspaceNotificationsSchema.optional().default("on"),
 });
 
 export type PersistedProjectRecord = z.infer<typeof PersistedProjectRecordSchema>;
@@ -952,6 +954,7 @@ export function createPersistedWorkspaceRecord(input: {
   metadata?: Record<string, JsonValue>;
   untrustedSource?: UntrustedWorkspaceSource;
   background?: boolean;
+  notifications?: "on" | "off";
 }): PersistedWorkspaceRecord {
   const { background, worktreeManagerPluginId, ...rest } = input;
   return PersistedWorkspaceRecordSchema.parse({
@@ -967,6 +970,7 @@ export function createPersistedWorkspaceRecord(input: {
     archivedAt: input.archivedAt ?? null,
     autoArchivedChangeRequestUrl: input.autoArchivedChangeRequestUrl ?? null,
     pinnedAt: input.pinnedAt ?? null,
+    notifications: input.notifications ?? "on",
   });
 }
 

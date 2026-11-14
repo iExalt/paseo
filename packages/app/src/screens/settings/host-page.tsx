@@ -65,6 +65,7 @@ import { BrowserToolsRow } from "./browser-tools-card";
 import { HostPaseoToolsRow } from "./paseo-tools-card";
 import { RestartRecoveryRow } from "./restart-recovery-card";
 import { IdleRuntimeCleanupRow } from "./idle-runtime-cleanup-card";
+import { ReplyRulesSection } from "./reply-rules-section";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
 
 const ThemedRestart = withUnistyles(RotateCw);
@@ -265,6 +266,7 @@ export function HostToolsPage({ serverId }: { serverId: string }) {
               <BrowserToolsRow serverId={serverId} />
             </SettingsCard>
           </SettingsSection>
+          <ReplyRulesSection key={serverId} serverId={serverId} hostLabel={host.label} />
         </>
       ) : (
         <View style={[settingsStyles.card, styles.emptyCard]}>
