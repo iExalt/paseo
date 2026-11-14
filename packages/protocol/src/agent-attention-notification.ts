@@ -21,6 +21,7 @@ interface BuildAgentAttentionNotificationPayloadInput {
   serverId: string;
   workspaceId: string;
   agentId: string;
+  agentTitle?: string | null;
   assistantMessage?: string | null;
   permissionRequest?: NotificationPermissionRequest | null;
 }
@@ -169,15 +170,29 @@ export function findLatestPermissionRequest(
   return latest;
 }
 
+// Mirrors the app's resolveAgentLabel: placeholder titles don't identify a thread.
+const resolveAgentTitle = (title: string | null | undefined): string | null => {
+  const normalized = title ? normalizeNotificationText(title) : "";
+  if (!normalized || normalized.toLowerCase() === "new agent") {
+    return null;
+  }
+  return normalized;
+};
+
 // Push titles carry their reason as a prefix, because an Android push posted while the app
 // isn't running reaches the app with only its title and text.
 const ATTENTION_TITLE_PREFIX = { permission: "❓️ ", error: "❗️ " } as const;
 
+  reason: AgentAttentionReason,
+  agentTitle: string | null | undefined,
+): string {
+  const title = resolveAgentTitle(agentTitle);
   if (reason === "permission") {
     return `${ATTENTION_TITLE_PREFIX.permission}${title ?? "Agent needs permission"}`;
   }
   if (reason === "error")
     return `${ATTENTION_TITLE_PREFIX.error}${title ?? "Agent needs attention"}`;
+  return title ?? "Agent finished";
 }
 
 /** The reason a resolveAgentAttentionTitle title was written for. */
@@ -185,10 +200,6 @@ export function parseAgentAttentionTitle(title: string): AgentAttentionReason {
   if (title.startsWith(ATTENTION_TITLE_PREFIX.permission)) return "permission";
   if (title.startsWith(ATTENTION_TITLE_PREFIX.error)) return "error";
   return "finished";
-function resolveAgentAttentionTitle(reason: AgentAttentionReason): string {
-  if (reason === "permission") return "Agent needs permission";
-  if (reason === "error") return "Agent needs attention";
-  return "Agent finished";
 }
 
 function resolveAgentAttentionPreview(
@@ -212,7 +223,7 @@ function resolveAgentAttentionFallbackBody(reason: AgentAttentionReason): string
 export function buildAgentAttentionNotificationPayload(
   input: BuildAgentAttentionNotificationPayloadInput,
 ): AgentAttentionNotificationPayload {
-  const title = resolveAgentAttentionTitle(input.reason);
+  const title = resolveAgentAttentionTitle(input.reason, input.agentTitle);
   const preview = resolveAgentAttentionPreview(input);
   const body = preview ?? resolveAgentAttentionFallbackBody(input.reason);
 
