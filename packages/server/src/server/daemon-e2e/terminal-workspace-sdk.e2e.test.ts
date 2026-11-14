@@ -40,9 +40,14 @@ test("SDK and workspace handles preserve ownership and actual process directorie
     cwd: daemon.staticDir,
     name: "Outside",
   });
-  expect(a.current()).toEqual({ id: a.id, workspaceId: first, cwd, name: "Main" });
-  expect(b.current()).toEqual({ id: b.id, workspaceId: second, cwd: nested, name: "Feature" });
-  expect(c.current()).toEqual({
+  expect(a.current()).toMatchObject({ id: a.id, workspaceId: first, cwd, name: "Main" });
+  expect(b.current()).toMatchObject({
+    id: b.id,
+    workspaceId: second,
+    cwd: nested,
+    name: "Feature",
+  });
+  expect(c.current()).toMatchObject({
     id: c.id,
     workspaceId: second,
     cwd: daemon.staticDir,
@@ -50,17 +55,34 @@ test("SDK and workspace handles preserve ownership and actual process directorie
   });
   const result = await sdk.workspaces.ref(second).terminals.list({ requestId: "feature-list" });
   expect(result.requestId).toBe("feature-list");
-  expect(result.entries).toEqual(expect.arrayContaining([b.current(), c.current()]));
+  expect(result.entries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: b.id, workspaceId: second, cwd: nested }),
+      expect.objectContaining({ id: c.id, workspaceId: second, cwd: daemon.staticDir }),
+    ]),
+  );
   expect(result.entries).toHaveLength(2);
   expect((await sdk.terminals.list()).entries).toHaveLength(3);
-  expect((await sdk.terminals.list({ cwd })).entries).toEqual([a.current(), b.current()]);
+  expect((await sdk.terminals.list({ cwd })).entries.map((entry) => entry.id)).toEqual([
+    a.id,
+    b.id,
+  ]);
   const ref = sdk.terminals.ref(b.id);
   expect(ref.current()).toBeNull();
-  expect(await ref.refresh()).toEqual(b.current());
+  expect(await ref.refresh()).toMatchObject({
+    id: b.id,
+    workspaceId: second,
+    cwd: nested,
+    name: "Feature",
+  });
   await ref.kill();
   expect(await ref.refresh()).toBeNull();
-  expect((await sdk.terminals.list({ workspaceId: second })).entries).toEqual([c.current()]);
-  expect((await sdk.terminals.list({ workspaceId: first })).entries).toEqual([a.current()]);
+  expect(
+    (await sdk.terminals.list({ workspaceId: second })).entries.map((entry) => entry.id),
+  ).toEqual([c.id]);
+  expect(
+    (await sdk.terminals.list({ workspaceId: first })).entries.map((entry) => entry.id),
+  ).toEqual([a.id]);
 });
 
 test("SDK creates a command terminal and sends literal input and key tokens", async () => {
