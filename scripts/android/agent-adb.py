@@ -10,13 +10,19 @@ Exit codes: 0 ok, 1 usage or adb error, 2 refused (focus or package), 3 not foun
 """
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import shlex
+import signal
+import struct
 import subprocess
 import sys
+import threading
 import time
 import xml.etree.ElementTree as ElementTree
+import zlib
 
 # The fork package is the user's own app on their phone. Commands that drive, restart or
 # reconfigure the app refuse it unless --allow-user-app is passed or AGENT_ADB_ALLOW_PACKAGES
@@ -25,6 +31,12 @@ USER_APP_PACKAGES = {"sh.paseo.iexalt"}
 # Relative to the package: sh.paseo.MainActivity, sh.paseo.iexalt.MainActivity, ...
 MAIN_ACTIVITY = ".MainActivity"
 DUMP_PATH = "/sdcard/agent-adb.xml"
+MAX_CAPTURE_BYTES = 32 * 1024 * 1024
+MAX_CAPTURE_STDERR_BYTES = 8192
+MAX_PNG_CHUNKS = 4096
+CAPTURE_TIMEOUT_SECONDS = 20
+MAX_CAPTURE_TIMEOUT_SECONDS = 120
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 FLAGS = ("selected", "focused", "checked")
 FOCUS_RE = re.compile(r"mCurrentFocus=(?:Window\{\S+ \S+ ([^}\s]+)\}|(null))")
 TIMELINE_RE = re.compile(
@@ -119,6 +131,261 @@ def adb(*args, check=True):
     if check and result.returncode != 0:
         raise Failure(f"{' '.join(command)} failed: {(result.stderr or result.stdout).strip()}")
     return result.stdout
+
+
+def _read_stdout(pipe, output_file, state, exceeded_limit, reader_failed):
+    try:
+        while chunk := pipe.read(65536):
+            state["hash"].update(chunk)
+            state["bytes"] += len(chunk)
+            remaining = max(0, MAX_CAPTURE_BYTES - state["written"])
+            if remaining:
+                output_file.write(chunk[:remaining])
+                state["written"] += min(remaining, len(chunk))
+            if state["written"] < state["bytes"]:
+                exceeded_limit.set()
+    except Exception as error:
+        state["error"] = str(error)
+        reader_failed.set()
+
+
+def _read_stderr(pipe, state):
+    try:
+        while chunk := pipe.read(4096):
+            state["bytes"] += len(chunk)
+            remaining = MAX_CAPTURE_STDERR_BYTES - len(state["text"])
+            if remaining > 0:
+                state["text"].extend(chunk[:remaining])
+    except Exception as error:
+        state["error"] = str(error)
+
+
+def _stop_process(process):
+    try:
+        if os.name == "posix":
+            os.killpg(process.pid, signal.SIGTERM)
+        else:
+            process.terminate()
+    except ProcessLookupError:
+        pass
+    try:
+        process.wait(timeout=1)
+    except subprocess.TimeoutExpired:
+        if os.name == "posix":
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            process.kill()
+        process.wait()
+    if os.name == "posix":
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+def validate_png(path):
+    """Validate bounded PNG chunk structure and return its dimensions."""
+    size = os.path.getsize(path)
+    if size > MAX_CAPTURE_BYTES:
+        raise Failure("PNG exceeds the capture size limit")
+    with open(path, "rb") as png:
+        if png.read(len(PNG_SIGNATURE)) != PNG_SIGNATURE:
+            raise Failure("Invalid PNG signature")
+        dimensions = None
+        saw_image_data = False
+        for chunk_number in range(MAX_PNG_CHUNKS):
+            header = png.read(8)
+            if len(header) != 8:
+                raise Failure("Truncated PNG before IEND")
+            length, chunk_type = struct.unpack(">I4s", header)
+            if length > size - png.tell() - 4:
+                raise Failure("Truncated PNG chunk")
+            if chunk_number == 0 and (chunk_type != b"IHDR" or length != 13):
+                raise Failure("PNG must start with a 13-byte IHDR")
+            if chunk_number > 0 and chunk_type == b"IHDR":
+                raise Failure("PNG contains a second IHDR")
+            if chunk_type == b"IEND" and length != 0:
+                raise Failure("PNG IEND must be empty")
+
+            crc = zlib.crc32(chunk_type)
+            chunk_data = bytearray() if chunk_type == b"IHDR" else None
+            remaining = length
+            while remaining:
+                part = png.read(min(65536, remaining))
+                if not part:
+                    raise Failure("Truncated PNG chunk data")
+                crc = zlib.crc32(part, crc)
+                if chunk_data is not None:
+                    chunk_data.extend(part)
+                remaining -= len(part)
+            crc_bytes = png.read(4)
+            if len(crc_bytes) != 4:
+                raise Failure("Truncated PNG CRC")
+            if int.from_bytes(crc_bytes, "big") != crc:
+                raise Failure(f"Invalid PNG CRC for {chunk_type.decode('ascii', 'replace')}")
+
+            if chunk_type == b"IHDR":
+                width, height = struct.unpack(">II", chunk_data[:8])
+                if width == 0 or height == 0:
+                    raise Failure("PNG dimensions must be nonzero")
+                dimensions = (width, height)
+            elif chunk_type == b"IDAT" and length:
+                saw_image_data = True
+            elif chunk_type == b"IEND":
+                if not saw_image_data:
+                    raise Failure("PNG has no image data")
+                if png.read(1):
+                    raise Failure("PNG has data after IEND")
+                return dimensions
+        raise Failure(f"PNG exceeds the {MAX_PNG_CHUNKS}-chunk limit")
+
+
+def _private_file(path):
+    return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "wb")
+
+
+def capture_png(output_path, receipt_path, timeout):
+    if not 0 < timeout <= MAX_CAPTURE_TIMEOUT_SECONDS:
+        raise Failure(f"Capture timeout must be between 0 and {MAX_CAPTURE_TIMEOUT_SECONDS:g}s")
+    output_path = os.path.abspath(output_path)
+    receipt_path = os.path.abspath(receipt_path)
+    if output_path == receipt_path:
+        raise Failure("Output and receipt paths must differ")
+    output_file = None
+    receipt_file = None
+    try:
+        output_file = _private_file(output_path)
+        receipt_file = _private_file(receipt_path)
+    except OSError as error:
+        if output_file:
+            output_file.close()
+            os.remove(output_path)
+        raise Failure(f"Capture paths must be fresh writable files: {error}") from error
+
+    command = shlex.split(os.environ.get("AGENT_ADB", "adb")) + ["exec-out", "screencap", "-p"]
+    stdout_state = {"hash": hashlib.sha256(), "bytes": 0, "written": 0, "error": None}
+    stderr_state = {"text": bytearray(), "bytes": 0, "error": None}
+    exceeded_limit = threading.Event()
+    reader_failed = threading.Event()
+    started = time.monotonic()
+    process = None
+    timed_out = False
+    output_limit = False
+    launch_error = None
+    png_dimensions = None
+    status = "launch_error"
+
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            start_new_session=(os.name == "posix"),
+        )
+        stdout_reader = threading.Thread(
+            target=_read_stdout,
+            args=(process.stdout, output_file, stdout_state, exceeded_limit, reader_failed),
+            daemon=True,
+        )
+        stderr_reader = threading.Thread(
+            target=_read_stderr,
+            args=(process.stderr, stderr_state),
+            daemon=True,
+        )
+        stdout_reader.start()
+        stderr_reader.start()
+        deadline = started + timeout
+        while process.poll() is None:
+            if exceeded_limit.is_set():
+                output_limit = True
+                _stop_process(process)
+                break
+            if reader_failed.is_set():
+                _stop_process(process)
+                break
+            if time.monotonic() >= deadline:
+                timed_out = True
+                _stop_process(process)
+                break
+            exceeded_limit.wait(0.02)
+        if process.poll() is None:
+            process.wait()
+        stdout_reader.join(timeout=2)
+        stderr_reader.join(timeout=2)
+        output_file.flush()
+        output_limit = output_limit or exceeded_limit.is_set()
+        if stdout_reader.is_alive() or stderr_reader.is_alive():
+            status = "reader_timeout"
+            _stop_process(process)
+            stdout_reader.join(timeout=1)
+            stderr_reader.join(timeout=1)
+        if status != "reader_timeout":
+            if stdout_state["error"] or stderr_state["error"]:
+                status = "reader_error"
+            elif output_limit:
+                status = "output_limit"
+            elif timed_out:
+                status = "timeout"
+            elif process.returncode != 0:
+                status = "nonzero_exit"
+            else:
+                try:
+                    png_dimensions = validate_png(output_path)
+                    status = "success"
+                except Failure as error:
+                    status = "invalid_png"
+                    launch_error = str(error)
+    except OSError as error:
+        launch_error = str(error)
+
+    output_file.flush()
+    os.fsync(output_file.fileno())
+    output_file.close()
+    stderr_text = bytes(stderr_state["text"]).decode("utf-8", errors="replace")
+    receipt = {
+        "status": status,
+        "argv": command,
+        "process": os.path.basename(command[0]) if command else None,
+        "pid": process.pid if process else None,
+        "process_status": process.returncode if process else None,
+        "timed_out": timed_out,
+        "elapsed_ms": round((time.monotonic() - started) * 1000),
+        "stdout_bytes": stdout_state["bytes"],
+        "stdout_sha256": stdout_state["hash"].hexdigest(),
+        "stdout_file_bytes": stdout_state["written"],
+        "stdout_truncated": stdout_state["written"] != stdout_state["bytes"],
+        "stderr_bytes": stderr_state["bytes"],
+        "stderr_truncated": stderr_state["bytes"] > len(stderr_state["text"]),
+        "stderr": stderr_text,
+        "png_dimensions": list(png_dimensions) if png_dimensions else None,
+    }
+    if launch_error:
+        receipt["error"] = launch_error
+    receipt_file.write(json.dumps(receipt, indent=2).encode("utf-8") + b"\n")
+    receipt_file.flush()
+    os.fsync(receipt_file.fileno())
+    receipt_file.close()
+    if status != "success":
+        reason = launch_error or f"{receipt['process']} exited {receipt['process_status']}"
+        if timed_out:
+            reason = f"{receipt['process']} timed out after {timeout:g}s"
+        if status == "output_limit":
+            reason = f"Capture exceeded {MAX_CAPTURE_BYTES} bytes"
+        reader_error = stdout_state["error"] or stderr_state["error"]
+        if reader_error:
+            reason += f": stream reader failed: {reader_error}"
+        if stderr_text:
+            reason += f": {stderr_text}"
+        raise Failure(f"Capture failed ({status}); raw output and receipt retained: {reason}")
+    return receipt
+
+
+def cmd_capture(args):
+    capture_png(args.output, args.receipt, args.timeout)
 
 
 def shell(command):
@@ -310,6 +577,10 @@ def build_parser():
         sub.set_defaults(handler=handler)
         return sub
 
+    capture = add("capture", cmd_capture, "capture a binary-safe PNG and private receipt")
+    capture.add_argument("--output", required=True, help="new private file for raw PNG bytes")
+    capture.add_argument("--receipt", required=True, help="new private file for command receipt JSON")
+    capture.add_argument("--timeout", type=float, default=CAPTURE_TIMEOUT_SECONDS)
     add("dump", cmd_dump, "print id | text | desc | centre | flags").add_argument("--all", action="store_true")
     add("focus", cmd_focus, "print the focused window; exit 2 unless the package has it")
     tap = add("tap", cmd_tap, "tap a resource ID, only while the package has focus")
