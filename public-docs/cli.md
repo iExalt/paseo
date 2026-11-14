@@ -418,6 +418,10 @@ paseo permit allow <id> --all  # Allow all pending for agent
 paseo permit deny <id> --all   # Deny all pending
 ```
 
+`permit allow <agent-id>` without a request ID allows **every pending request** for that agent. Use `--all` to make the batch selection explicit. `permit deny` requires a request ID or `--all`.
+
+Batch responses can partially complete. `PERMISSION_RESPONSE_UNCONFIRMED` means the CLI could not confirm the response; the response may have applied, and other requests may already be complete. Run `paseo permit ls --json` before retrying, then retry only requests still pending using their explicit IDs.
+
 For a single request, pass its ID from `permit ls --json`:
 
 ```bash
