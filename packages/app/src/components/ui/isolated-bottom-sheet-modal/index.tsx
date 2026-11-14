@@ -15,6 +15,7 @@ import {
 } from "react";
 import { useDismissibleOverlay } from "@/components/ui/overlay-dismissal";
 import type { ElementRef, ReactNode } from "react";
+import { View } from "react-native";
 import { systemBackPress } from "./back-press";
 import {
   type BottomSheetController,
@@ -106,6 +107,7 @@ export const IsolatedBottomSheetModal = forwardRef<
     backdropOpacity,
     enableDismissOnClose = true,
     waitFor,
+    onChange,
     simultaneousHandlers,
     ...bottomSheetProps
   } = props;
@@ -130,6 +132,14 @@ export const IsolatedBottomSheetModal = forwardRef<
       ],
     };
   }, [contentDragGesture, waitFor, simultaneousHandlers]);
+  const [settleRevision, setSettleRevision] = useState(0);
+  const handleChange = useCallback<NonNullable<BottomSheetModalProps["onChange"]>>(
+    (...args) => {
+      setSettleRevision((revision) => revision + 1);
+      onChange?.(...args);
+    },
+    [onChange],
+  );
   const renderBackdrop = useCallback(
     (backdropProps: BottomSheetBackdropProps) => (
       <SheetBackdrop
@@ -144,6 +154,7 @@ export const IsolatedBottomSheetModal = forwardRef<
     <GorhomBottomSheetModal
       {...bottomSheetProps}
       ref={modalRef}
+      onChange={handleChange}
       enableDismissOnClose={enableDismissOnClose}
       stackBehavior={presentation}
       backdropComponent={backdropOpacity === undefined ? undefined : renderBackdrop}
@@ -152,12 +163,33 @@ export const IsolatedBottomSheetModal = forwardRef<
     >
       <BottomSheetScope attachContentDrag={attachContentDrag}>
         {contextBridge ? contextBridge(children) : children}
+        <SettleCommit revision={settleRevision} />
       </BottomSheetScope>
     </GorhomBottomSheetModal>
   );
 
   return modal;
 });
+
+/**
+ * Commits the sheet's settled position to the shadow tree.
+ *
+ * The app turns off Reanimated's `FORCE_REACT_RENDER_FOR_SETTLED_ANIMATIONS` and turns on
+ * `ANDROID_SYNCHRONOUSLY_UPDATE_UI_PROPS` (see `package.json`), so the slide-in transform reaches
+ * the native view but the shadow tree keeps whatever position the last React commit carried,
+ * usually mid-slide. Pressable measures its press region from the shadow tree, so a settled
+ * sheet's rows measured hundreds of pixels below where they were drawn, a tap's release landed
+ * "outside" its row, and the first tap after opening did nothing. Reanimated copies the latest
+ * animated props into the shadow tree on every React commit; changing a host prop here forces
+ * one each time the sheet settles.
+ */
+function SettleCommit({ revision }: { revision: number }) {
+  return (
+    <View pointerEvents="none" style={SETTLE_COMMIT_STYLE} nativeID={`sheet-settle-${revision}`} />
+  );
+}
+
+const SETTLE_COMMIT_STYLE = { position: "absolute", width: 0, height: 0 } as const;
 
 export function useIsolatedBottomSheetVisibility({
   visible,
