@@ -221,6 +221,7 @@ settings: on the shared tablet, hold the lock, re-add `127.0.0.1:6790` and note 
 
 Launching Electron directly (Playwright `_electron.launch`) skips `dev.sh`. Without
 `PASEO_ELECTRON_USER_DATA_DIR`, an unpackaged launch uses `Paseo-<worktree>` userData when its cwd
+is a linked git worktree, and `Paseo-dev` otherwise, never the installed app's `Paseo`. Its log
 
 Playwright's `reducedMotion: 'reduce'` context option stops the web app's animations: the status
 ring, the turn loader and switch thumbs. Only the running turn's elapsed time keeps changing, once
@@ -254,6 +255,9 @@ npm run -s desktop:sandbox -- --seed heavy
 npm run desktop:sandbox -- --stop <home>
 ```
 
+- To launch Electron yourself from a directory outside the repo, call
+  `node_modules/electron/dist/electron` directly: `node_modules/.bin/electron` goes through the
+  mise `node` shim, which has no version outside the repo.
 - It runs on Linux under `xvfb-run`, so no window opens; run it on a Linux host. On macOS it
   refuses unless `--allow-window`. Without a setuid-root `chrome-sandbox` it adds `--no-sandbox`.
 - The renderer is the daemon-served web UI (`EXPO_DEV_URL=<url>`); `--metro <url>` uses a Metro
