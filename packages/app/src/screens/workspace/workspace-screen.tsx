@@ -160,7 +160,6 @@ import { useDesktopBrowserNewTabRequests } from "@/desktop/browser/new-tab-reque
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
 import {
   resolveWorkspaceExplorerToggleOwner,
-  EXPLORER_TOGGLE_KEYS,
   WorkspaceExplorerSidebarToggle,
   WorkspaceHeaderExplorerToggle,
 } from "@/screens/workspace/workspace-explorer-toggle";
@@ -3285,7 +3284,6 @@ function WorkspaceScreenContent({
                 onPress={handleToggleExplorerSidebar}
                 label={explorerSidebarToggleLabel}
                 tooltipLabel={t("workspace.tabs.explorerSidebar.toggle")}
-                tooltipKeys={EXPLORER_TOGGLE_KEYS}
                 style={styles.compactHeaderActionButton}
                 accessibilityState={explorerSidebarToggleAccessibilityState}
               />
@@ -3324,7 +3322,6 @@ function WorkspaceScreenContent({
         onPress={handleToggleExplorerSidebar}
         label={explorerSidebarToggleLabel}
         tooltipLabel={t("workspace.tabs.explorerSidebar.toggle")}
-        tooltipKeys={EXPLORER_TOGGLE_KEYS}
         accessibilityState={explorerSidebarToggleAccessibilityState}
       />
     ),
