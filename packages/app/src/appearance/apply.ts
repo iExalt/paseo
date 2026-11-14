@@ -8,6 +8,7 @@ import {
   type Theme,
 } from "@/styles/theme";
 import { applyRootUiFont } from "./apply-root-font";
+import { registerBundledMonoFont } from "@/terminal/runtime/terminal-bundled-font";
 
 const ALL_THEME_KEYS = Object.keys(REGISTERED_THEMES) as (keyof typeof REGISTERED_THEMES)[];
 
@@ -105,4 +106,6 @@ export function applyAppearance(input: AppearanceInput): void {
   // Web: apply the UI font app-wide (RN-web stamps a default font on every text
   // element, so it can't be done through the theme alone). No-op on native.
   applyRootUiFont(ui);
+  // Web: declare the bundled mono font so the default mono stack can use it. No-op on native.
+  registerBundledMonoFont();
 }
