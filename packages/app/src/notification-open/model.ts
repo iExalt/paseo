@@ -86,6 +86,7 @@ export function parseNotificationOpenTarget(data: unknown): NotificationOpenTarg
 
 interface NotificationOpenRouterDeps {
   source: NotificationOpenSource;
+  prepareAgent: (target: { serverId: string; agentId: string }, tap: NotificationTap) => () => void;
   openAgent: (target: { serverId: string; agentId: string }) => void;
   openRoute: (route: string) => void;
   openTerminal: (target: Extract<NotificationOpenTarget, { kind: "terminal" }>) => void;
@@ -98,11 +99,30 @@ interface NotificationOpenRouterDeps {
 export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
   const handledIds = new Set<string>();
   let launchTaken = false;
+  let liveTapReceived = false;
+  let pendingTap = 0;
+  let cancelPreparation: (() => void) | undefined;
   async function receive(tap: NotificationTap) {
     if (handledIds.has(tap.id)) return;
     handledIds.add(tap.id);
-    await deps.whenReadyToNavigate();
     const target = parseNotificationOpenTarget(tap.data);
+    const generation = target ? ++pendingTap : pendingTap;
+    if (target) {
+      cancelPreparation?.();
+      cancelPreparation = undefined;
+    }
+    if (target?.kind === "agent") {
+      try {
+        cancelPreparation = deps.prepareAgent(target, tap);
+      } catch (error) {
+        console.warn("[NotificationOpen] preparation failed", error);
+      }
+    }
+    await deps.whenReadyToNavigate();
+    if (target && generation !== pendingTap) {
+      deps.source.acknowledge(tap);
+      return;
+    }
     if (target?.kind === "agent") {
       deps.openAgent({ serverId: target.serverId, agentId: target.agentId });
     } else if (target?.kind === "terminal") {
@@ -121,11 +141,17 @@ export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
   return {
     start() {
       const unsubscribe = deps.source.subscribe((tap) => {
+        liveTapReceived = true;
         void receive(tap);
       });
       if (!launchTaken) {
         launchTaken = true;
         void deps.source.takeLaunchTap().then((tap) => {
+          if (tap && liveTapReceived && !handledIds.has(tap.id)) {
+            handledIds.add(tap.id);
+            deps.source.acknowledge(tap);
+            return;
+          }
           return tap ? receive(tap) : undefined;
         });
       }

@@ -173,6 +173,7 @@ import {
   usePostRestoreWorkspaceRouteState,
 } from "@/screens/workspace/use-post-restore-handoff";
 import { renderWorkspaceRouteGate } from "@/screens/workspace/workspace-route-state-views";
+import { NotificationWorkspaceFallback } from "@/notification-open/preview-view";
 import { useWorkspaceRecovery } from "@/workspace-recovery/use-workspace-recovery";
 import type { WorkspaceRecoveryModel } from "@/workspace-recovery/model";
 import {
@@ -3885,10 +3886,23 @@ function WorkspaceScreenContent({
     </RenderProfile>
   );
 
+  const notificationAwareGate = useMemo(
+    () =>
+      gatedWorkspaceScreen ? (
+        <NotificationWorkspaceFallback
+          serverId={normalizedServerId}
+          workspaceId={normalizedWorkspaceId}
+        >
+          {gatedWorkspaceScreen}
+        </NotificationWorkspaceFallback>
+      ) : null,
+    [gatedWorkspaceScreen, normalizedServerId, normalizedWorkspaceId],
+  );
+
   return (
     <PostRestoreOverlayShell
       isHoldingHandoff={isHoldingHandoff}
-      overlay={gatedWorkspaceScreen}
+      overlay={notificationAwareGate}
       workspaceKey={persistenceKey}
       sheetPaneHost={sheetPaneHost}
       active={isRouteFocused}
@@ -3914,12 +3928,14 @@ function PostRestoreOverlayShell({
   overlay,
   workspaceKey,
   sheetPaneHost,
+  active,
   children,
 }: {
   isHoldingHandoff: boolean;
   overlay: ReactNode;
   workspaceKey: string | null;
   sheetPaneHost: Parameters<typeof WorkspaceContentProviders>[0]["sheetPaneHost"];
+  active: boolean;
   children: ReactNode;
 }) {
   const showContent = !overlay || isHoldingHandoff;
@@ -3938,6 +3954,7 @@ function PostRestoreOverlayShell({
             key={workspaceKey}
             workspaceKey={workspaceKey}
             sheetPaneHost={sheetPaneHost}
+            active={active}
           >
             {children}
           </WorkspaceContentProviders>

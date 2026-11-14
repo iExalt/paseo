@@ -2,7 +2,7 @@ import type { BottomAnchorRouteRequest } from "@/agent-stream/bottom-anchor-cont
 
 export interface RouteBottomAnchorIntent {
   routeKey: string;
-  reason: BottomAnchorRouteRequest["reason"];
+  reason: "initial-entry" | "resume";
 }
 
 export function deriveRouteBottomAnchorIntent(input: {
