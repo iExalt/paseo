@@ -1517,6 +1517,7 @@ export const ptBR: TranslationResources = {
       },
       advancedSettings: "Configurações avançadas",
       openAdvancedSettings: "Abrir configurações avançadas do daemon",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "As versões do app e do daemon não coincidem. Atualize ambos para a mesma versão para a melhor experiência.",
       loadFailed: "Não foi possível carregar o status do daemon desktop.",
@@ -1542,6 +1543,8 @@ export const ptBR: TranslationResources = {
         restartTitle: "Reiniciar para concluir a atualização para {{version}}?",
         restartMessage: "O Paseo vai reiniciar e usar a nova versão.",
         restartConfirm: "Reiniciar",
+        agentsKeepRunning:
+          "Os agentes em execução ({{count}}) continuam trabalhando; o serviço em segundo plano é atualizado quando terminarem.",
         lastAttemptFailed: "A última tentativa falhou: {{error}}",
         updateTooltip: "Atualizar para {{version}}",
         restartTooltip: "Reiniciar para concluir a atualização para {{version}}",

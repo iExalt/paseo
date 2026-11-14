@@ -2107,6 +2107,8 @@ export const UsageSpendSummaryRequestMessageSchema = z.object({
   requestId: z.string(),
   /** IANA time zone that decides where "today" and "this month" start. Defaults to UTC. */
   timeZone: z.string().optional(),
+});
+
 export const ResumeAgentRequestMessageSchema = z.object({
   type: z.literal("resume_agent_request"),
   handle: AgentPersistenceHandleSchema,
@@ -2153,6 +2155,9 @@ export const ShutdownServerRequestMessageSchema = z.object({
   // Shutdown closes terminals unless this is true. Gate on
   // `features.terminalsSurviveRestart`: older daemons drop the field.
   keepTerminals: z.boolean().optional(),
+  // Stop only when every agent is idle; otherwise reply `shutdown_declined`. Gate on
+  // `features.shutdownIfIdle`: older daemons drop the field and stop unconditionally.
+  onlyIfIdle: z.boolean().optional(),
 });
 
 export const DaemonUpdateRequestMessageSchema = z.object({
@@ -4323,6 +4328,8 @@ export const ServerInfoStatusPayloadSchema = z
         daemonSelfUpdate: z.boolean().optional(),
         // COMPAT(terminalsSurviveRestart): added in v0.12.0, remove gate after 2027-04-21.
         terminalsSurviveRestart: z.boolean().optional(),
+        // COMPAT(shutdownIfIdle): added in v0.21.0, remove gate after 2027-05-04.
+        shutdownIfIdle: z.boolean().optional(),
         // COMPAT(agentForkContext): added in v0.1.102, remove gate after 2026-12-28.
         agentForkContext: z.boolean().optional(),
         // COMPAT(agentForkContextCursor): added in v0.1.108, remove gate after 2027-01-14.
@@ -4502,6 +4509,14 @@ export const ShutdownRequestedStatusPayloadSchema = z.object({
   requestId: z.string(),
 });
 
+// Reply to an `onlyIfIdle` shutdown while an agent still has work; the daemon keeps running.
+export const ShutdownDeclinedStatusPayloadSchema = z.object({
+  status: z.literal("shutdown_declined"),
+  clientId: z.string(),
+  requestId: z.string(),
+  reason: z.literal("busy"),
+});
+
 export const DaemonConfigChangedStatusPayloadSchema = z
   .object({
     status: z.literal("daemon_config_changed"),
@@ -4526,6 +4541,7 @@ export const KnownStatusPayloadSchema = z.discriminatedUnion("status", [
   AgentResumedStatusPayloadSchema,
   AgentRefreshedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
+  ShutdownDeclinedStatusPayloadSchema,
   RestartRequestedStatusPayloadSchema,
   DaemonConfigChangedStatusPayloadSchema,
   PluginCatalogChangedStatusPayloadSchema,
