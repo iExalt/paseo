@@ -1,3 +1,4 @@
+const { forkAndroidVersionCode } = require("../protocol/src/fork-version.ts");
 const versionPattern = /^(\d+)\.(\d+)\.(\d+)(?:-beta\.(\d+))?$/;
 const stableIosBuildSlot = 999;
 const FDROID_ABI_VERSION_CODE_SUFFIXES = {
@@ -48,6 +49,11 @@ function getNativeReleaseVersion(version) {
   };
 }
 
+function getForkAndroidVersionCode(version, override) {
+  const code = forkAndroidVersionCode(version);
+  if (override !== undefined && getRequiredAndroidVersionCode(override) !== code) {
+    throw new Error("PASEO_ANDROID_VERSION_CODE must equal the fork semver encoding.");
+  return code;
 function getFdroidVersionCodes(version) {
   const { androidVersionCode } = getNativeReleaseVersion(version);
   return Object.entries(FDROID_ABI_VERSION_CODE_SUFFIXES).map(([abi, suffix]) => ({
@@ -59,5 +65,6 @@ function getFdroidVersionCodes(version) {
 module.exports = {
   FDROID_ABI_VERSION_CODE_SUFFIXES,
   getFdroidVersionCodes,
+  getForkAndroidVersionCode,
   getNativeReleaseVersion,
 };

@@ -13,6 +13,10 @@ const appVariant = process.env.APP_VARIANT ?? "production";
 const isFdroidBuild = process.env.PASEO_FDROID_BUILD === "1";
 const isWatchdogBuild = process.env.PASEO_WATCHDOG_BUILD === "1";
 const isProfileBuild = process.env.PASEO_PROFILE_BUILD === "1";
+const isPreferencesMigrationBridge = resolvePreferencesMigrationBridge(
+  appVariant,
+  process.env.PASEO_PREFS_MIGRATION_BRIDGE === "1",
+);
 
 const buildProfile = isFdroidBuild
   ? {
@@ -97,6 +101,7 @@ const variants = {
 
 const variant = variants[appVariant] ?? variants.production;
 const nativeReleaseVersion = getNativeReleaseVersion(pkg.version);
+  pkg.version,
 
 export default {
   expo: {
@@ -130,7 +135,14 @@ export default {
       softwareKeyboardLayoutMode: "resize",
       // Allow HTTP connections for local network hosts (required for release builds)
       usesCleartextTraffic: true,
-      permissions: buildProfile.androidPermissions,
+      permissions: [
+        ...buildProfile.androidPermissions,
+        // The second lets the fork updater replace itself without Android's confirmation.
+        ...(appVariant === "fork"
+          ? ["REQUEST_INSTALL_PACKAGES", "UPDATE_PACKAGES_WITHOUT_USER_ACTION"]
+          : []),
+      ],
+      versionCode: isPreferencesMigrationBridge ? 11001 : variantIdentity.androidVersionCode,
       package: variant.packageId,
       versionCode: nativeReleaseVersion.androidVersionCode,
       ...(variant.googleServicesFile ? { googleServicesFile: variant.googleServicesFile } : {}),
@@ -183,8 +195,16 @@ export default {
             kotlinVersion: "2.3.20",
             // Allow HTTP connections for local network hosts in release builds
             usesCleartextTraffic: true,
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            // R8 keeps names so each release changes few dex bytes and APK deltas stay
+            // small. zstd-jni ships no consumer rules and its JNI reads Java fields.
+            extraProguardRules: [
+              "-dontobfuscate",
               // Preserve the old default file's optimization policy under AGP 9.
               "-dontoptimize",
+              "-keep class com.github.luben.zstd.** { *; }",
+            ].join("\n"),
           },
         },
       ],
@@ -202,6 +222,9 @@ export default {
       watchdogBuild: isWatchdogBuild,
       diagnosticRevision: process.env.PASEO_DIAGNOSTIC_REVISION,
       diagnosticBuildTime: process.env.PASEO_DIAGNOSTIC_BUILD_TIME,
+      forkUpdatesEnabled: appVariant === "fork",
+      preferencesMigrationBridge: isPreferencesMigrationBridge,
+      preferencesMigrationReceiver: appVariant === "fork",
       router: {},
       eas: {
         projectId: "3a777534-569c-47e5-81ad-1a4e47d5127c",

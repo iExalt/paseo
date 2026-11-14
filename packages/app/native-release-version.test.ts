@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 const {
   FDROID_ABI_VERSION_CODE_SUFFIXES,
+  getForkAndroidVersionCode,
   getFdroidVersionCodes,
   getNativeReleaseVersion,
 } = require("./native-release-version");
@@ -43,4 +44,10 @@ describe("native release version", () => {
       { abi: "x86_64", versionCode: 50004 },
     ]);
   });
+  it("derives fork encoding from semver and rejects a disagreeing environment override", () => {
+    expect(getForkAndroidVersionCode("0.1.0")).toBe(201000);
+    expect(getForkAndroidVersionCode("0.1.0", "201000")).toBe(201000);
+    expect(() => getForkAndroidVersionCode("0.1.0", "200008")).toThrow("semver encoding");
+    expect(resolveAppVariant("fork", 1000, "0.1.0", "201000")).toEqual({
+      androidVersionCode: 201000,
 });

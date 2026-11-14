@@ -1,14 +1,16 @@
 import { router } from "expo-router";
-import {
-  CircleGauge,
-  FolderPlus,
-  GitBranch,
-  Server,
-  Settings,
-  type LucideIcon,
-} from "lucide-react-native";
+import { CircleGauge, FolderPlus, GitBranch, Server, Settings } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ComponentType,
+  type RefObject,
+} from "react";
 import {
   Pressable,
   StyleSheet as RNStyleSheet,
@@ -34,6 +36,7 @@ import { SidebarSeparator } from "@/components/sidebar/sidebar-separator";
 import { SidebarNavRows } from "@/components/sidebar/sidebar-nav-rows";
 import { SidebarFooterIconHighlight } from "@/components/sidebar/sidebar-footer-icon-highlight";
 import { SidebarHelpMenu } from "@/components/sidebar/sidebar-help-menu";
+import { SidebarUpdateButton, SidebarForkUpdateButton } from "@/components/sidebar/fork-updates";
 import { SidebarResizeHandle } from "@/components/sidebar-resize-handle";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { SidebarSectionHeader } from "@/components/sidebar/sidebar-section-header";
@@ -287,11 +290,14 @@ function FooterIconButton({
   icon,
   iconSizeAdjustment = 0,
   shortcutKeys,
+  iconColor,
 }: {
   onPress: () => void;
   testID: string;
   label: string;
-  icon: LucideIcon;
+  icon: ComponentType<{ size: number; color: string }>;
+  /** Overrides the muted/hover colors for a glyph that signals state. */
+  iconColor?: "accent" | "destructive";
   /** Only for a glyph that reads larger than the others at the same size. */
   iconSizeAdjustment?: number;
   shortcutKeys?: ReturnType<typeof useShortcutKeys>;
@@ -318,7 +324,7 @@ function FooterIconButton({
                 icon={icon}
                 size="md"
                 sizeAdjustment={iconSizeAdjustment}
-                color={hovered ? "foreground" : "foregroundMuted"}
+                color={iconColor ?? (hovered ? "foreground" : "foregroundMuted")}
               />
             </>
           )}
@@ -443,6 +449,8 @@ function SidebarFooter({
             onOpenHostSettings={handleOpenHostSettings}
           />
           <View style={styles.footerSpacer} />
+          <SidebarUpdateButton Button={FooterIconButton} />
+          <SidebarForkUpdateButton Button={FooterIconButton} />
           <SidebarHelpMenu />
           <FooterIconButton
             onPress={handleSettings}

@@ -1488,6 +1488,33 @@ export const es: TranslationResources = {
       loadFailed: "No se puede cargar el estado del demonio del escritorio.",
     },
     updates: {
+      nix: {
+        checking: "Buscando actualizaciones…",
+        downloading: "Descargando {{version}}…",
+        applying: "Instalando {{version}}…",
+        restarting: "Reiniciando…",
+        failed: "La actualización falló: {{error}}",
+        ready: "{{version}} está descargada y lista para instalar",
+        available: "{{version}} está disponible",
+        restartRequired: "{{version}} está instalada; reinicia para usarla",
+        upToDate: "Actualizado (comprobado a las {{time}})",
+        notChecked: "Aún no se ha comprobado",
+        checkAction: "Comprobar",
+        updateAction: "Actualizar",
+        restartAction: "Reiniciar",
+        updateTitle: "¿Actualizar a {{version}}?",
+        updateMessage: "Paseo instalará la actualización y se reiniciará.",
+        updateConfirm: "Actualizar",
+        restartTitle: "¿Reiniciar para terminar de actualizar a {{version}}?",
+        restartMessage: "Paseo se reiniciará y usará la nueva versión.",
+        restartConfirm: "Reiniciar",
+        lastAttemptFailed: "El último intento falló: {{error}}",
+        updateTooltip: "Actualizar a {{version}}",
+        restartTooltip: "Reiniciar para terminar de actualizar a {{version}}",
+        failedTooltip: "La actualización falló",
+        failedTitle: "La actualización falló",
+        tryAgain: "Reintentar",
+      },
       status: {
         checking: "Buscando actualizaciones de la aplicación...",
         installing: "Instalando actualización de la aplicación...",
@@ -1522,7 +1549,7 @@ export const es: TranslationResources = {
         versionReady: "{{version}}está listo para instalar.",
         newVersionReady: "Una nueva versión está lista para instalar.",
         restartWarning:
-          "La actualización de la aplicación dejará de ejecutar agentes y cerrará sesiones de terminal.",
+          "La actualización espera a que terminen los agentes y terminales activos antes de reiniciar.",
       },
     },
     settings: {
@@ -2484,6 +2511,7 @@ export const es: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "Acerca de",
       appVersion: "Versión de la aplicación",
       whatsNewHint: "Notas de versión de cada release",
@@ -2510,6 +2538,10 @@ export const es: TranslationResources = {
         checking: "De cheques...",
         alertTitle: "Error",
         alertMessage: "No se puede abrir el cuadro de diálogo de confirmación de actualización.",
+      },
+      nixUpdates: {
+        label: "Actualizaciones administradas por Nix",
+        invalidMarker: "No se pudo verificar esta instalación de Nix.",
       },
     },
     appearance: {
@@ -2807,6 +2839,7 @@ export const es: TranslationResources = {
           reset: "Restablecer",
           save: "Guardar",
           saving: "Guardando...",
+        },
         replyRules: {
           title: "Reglas de notificación de respuestas",
           scope: "Se aplica a todos los espacios de trabajo de {{host}}.",

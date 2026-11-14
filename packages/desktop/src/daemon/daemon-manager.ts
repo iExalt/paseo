@@ -1,3 +1,8 @@
+import { createWindowsUpdateAdmission } from "../features/windows-update-admission.js";
+import { terminalUpdateBlockers } from "@getpaseo/server/terminal-update-blockers";
+import { prepareWindowsAppUpdate } from "../features/windows-update-safety.js";
+import { setTimeout as delay } from "node:timers/promises";
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { app, ipcMain, powerMonitor } from "electron";
@@ -27,6 +32,17 @@ import {
   type AppReleaseChannel,
 } from "../features/auto-updater.js";
 import {
+  createNixUpdaterCommandRunner,
+  NIX_UPDATE_COMMANDS,
+  parseConfirmedDaemonInstance,
+  restartIntoActiveNixRelease,
+  type NixUpdateCommand,
+  type NixUpdateResult,
+} from "../features/nix-managed-updater.js";
+import {
+  resolveDesktopInstallation,
+  type DesktopInstallation,
+} from "../features/nix-managed-install.js";
   getBundledCliShimPath,
   getCliInstallStatus,
   installCli,
@@ -59,6 +75,7 @@ import {
 import { tailFile } from "../diagnostics/tail-file.js";
 
 const DAEMON_LOG_FILENAME = "daemon.log";
+const windowsUpdateAdmission = createWindowsUpdateAdmission();
 let ownedLaunch: { home: string; instance: DaemonInstance } | null = null;
 
 type DesktopDaemonState = "starting" | "running" | "stopped" | "errored";
@@ -280,8 +297,70 @@ function assertBuiltInDaemonManagementEnabled(settings: DesktopSettings): void {
   }
 }
 
+async function prepareWindowsUpdate(): Promise<() => Promise<void>> {
+  const releaseAdmission = await windowsUpdateAdmission.acquire();
+  try {
+    daemonUpgrader.cancel();
+    const home = getPaseoHome();
+    await prepareWindowsAppUpdate({
+      readStatus: resolveDesktopDaemonStatus,
+      async assertNoWorkers(allowEmptyWorkers) {
+        const deadline = Date.now() + (allowEmptyWorkers ? 0 : 10_000);
+        while (await terminalUpdateBlockers(home, { allowEmptyWorkers })) {
+          if (Date.now() >= deadline)
+            throw new Error(
+              "Fork update is waiting for terminals and their workers to exit. Close terminals, then retry.",
+            );
+          await delay(100);
+        }
+      },
+      async stopOwnedIfIdle() {
+        const instance = await readDaemonInstance(home);
+        if (!instance) return "stopped";
+        if (
+          !ownedLaunch ||
+          ownedLaunch.home !== home ||
+          !isSameDaemonInstance(instance, ownedLaunch.instance)
+        )
+          throw new Error("The daemon changed; fork update is waiting for it to exit.");
+        const result = await stopDaemonInstance(home, {
+          instance,
+          keepTerminals: true,
+          timeoutMs: 15_000,
+          requestShutdown: async (ready) => {
+            const reply = (await runExternalCliJsonCommand([
+              "daemon",
+              "stop",
+              "--host",
+              ready.listen,
+              "--if-idle",
+              "--json",
+            ])) as { action?: unknown };
+            return reply.action === "declined" ? "declined" : undefined;
+          },
+        });
+        if (result.action === "declined") return "declined";
+        ownedLaunch = null;
+        return "stopped";
+      },
+      restoreDaemon: async () => {
+        releaseAdmission();
+        await startDaemon();
+      },
+    });
+    return async () => {
+      releaseAdmission();
+      await startDaemon();
+    };
+  } catch (error) {
+    releaseAdmission();
+    throw error;
+  }
+}
+
 async function startDaemon(): Promise<DesktopDaemonStatus> {
   assertBuiltInDaemonManagementEnabled(await getDesktopSettingsStore().get());
+  return windowsUpdateAdmission.run(() => daemonUpgrader.ensure());
 
   const current = await resolveDesktopDaemonStatus();
   logDesktopDaemonLifecycle("initial status check before start", {
@@ -304,6 +383,7 @@ async function startDaemon(): Promise<DesktopDaemonStatus> {
     }
   }
 
+  windowsUpdateAdmission.assertOpen();
   const home = getPaseoHome();
   const invocation = createNodeEntrypointInvocation({
     entrypoint: resolveDaemonRunnerEntrypoint(),
@@ -431,8 +511,10 @@ export function keepsTerminalsOnStop(
 }
 
 async function restartDaemon(): Promise<DesktopDaemonStatus> {
-  await runExternalCliJsonCommand(["daemon", "restart", "--home", getPaseoHome(), "--json"]);
-  return resolveDesktopDaemonStatus();
+  return windowsUpdateAdmission.run(async () => {
+    await runExternalCliJsonCommand(["daemon", "restart", "--home", getPaseoHome(), "--json"]);
+    return resolveDesktopDaemonStatus();
+  });
 }
 
 function getDaemonLogs(): DesktopDaemonLogs {
@@ -468,8 +550,17 @@ async function resolveRequestedReleaseChannel(
 // IPC registration
 // ---------------------------------------------------------------------------
 
-export function createDaemonCommandHandlers(): Record<string, DesktopCommandHandler> {
-  return {
+export function createDaemonCommandHandlers(
+  input: {
+    installation?: DesktopInstallation;
+    runNixUpdate?: (command: NixUpdateCommand) => Promise<NixUpdateResult>;
+  } = {},
+): Record<string, DesktopCommandHandler> {
+  const installation = input.installation ?? resolveDesktopInstallation(process.resourcesPath);
+  const runNixUpdate =
+    input.runNixUpdate ??
+    createNixUpdaterCommandRunner({ installation, runningVersion: app.getVersion() });
+  const handlers: Record<string, DesktopCommandHandler> = {
     ...createDesktopSettingsCommandHandlers({ settingsStore: getDesktopSettingsStore() }),
     desktop_get_runtime_info: () => ({
       appVersion: resolveDesktopAppVersion(),
@@ -485,9 +576,7 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     stop_desktop_daemon: (args) =>
       stopDesktopDaemon(
         parseDesktopDaemonStopReason(args),
-        typeof args?.pid === "number" && typeof args.startedAt === "string"
-          ? { pid: args.pid, startedAt: args.startedAt }
-          : undefined,
+        parseConfirmedDaemonInstance(args) ?? undefined,
       ),
     restart_desktop_daemon: () => restartDaemon(),
     desktop_daemon_logs: () => getDaemonLogs(),
@@ -520,6 +609,9 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
       if (sessionId) closeLocalTransportSession(sessionId);
     },
     check_app_update: async (args) => {
+      if (installation.mode !== "electron") {
+        throw new Error("Electron updates are disabled for Nix-managed desktop installations.");
+      }
       const currentVersion = resolveDesktopAppVersion();
       return checkForAppUpdate({
         currentVersion,
@@ -528,11 +620,16 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
       });
     },
     install_app_update: async (args) => {
+      if (installation.mode !== "electron") {
+        throw new Error("Electron updates are disabled for Nix-managed desktop installations.");
+      }
       const currentVersion = resolveDesktopAppVersion();
       return downloadAndInstallUpdate(
         { currentVersion, releaseChannel: await resolveRequestedReleaseChannel(args) },
         async () => {
+          if (process.platform === "win32") return prepareWindowsUpdate();
           await stopDesktopDaemon("app_update");
+          return undefined;
         },
       );
     },
@@ -542,10 +639,24 @@ export function createDaemonCommandHandlers(): Record<string, DesktopCommandHand
     read_legacy_skill_selection: () => readLegacySkillSelection(),
     delete_legacy_skill_selection: () => deleteLegacySkillSelection(),
   };
+  if (installation.mode !== "electron") {
+    for (const command of NIX_UPDATE_COMMANDS) {
+      handlers[`nix_update_${command}`] = () => runNixUpdate(command);
+    }
+      restartIntoActiveNixRelease({
+        runNixUpdate,
+        relaunch: (target) => {
+          if (target.kind === "exec") app.relaunch({ execPath: target.execPath });
+          else spawn(target.command, target.args, { detached: true, stdio: "ignore" }).unref();
+        },
+        cliPath: installation.mode === "nix" ? installation.cliPath : "",
+        pid: process.pid,
+        platform: process.platform,
+      });
+  }
+  return handlers;
 }
 
-export function registerDaemonManager(): void {
-  const handlers = createDaemonCommandHandlers();
 
   ipcMain.handle(
     "paseo:invoke",

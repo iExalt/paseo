@@ -1,5 +1,7 @@
 { final, prev }:
 let
+  # Node comes from the pinned nixpkgs so the binary cache serves it; only
+  # Electron is pinned to the project runtime.
   electronVersion = "44.6.0";
   electronArchives = {
     aarch64-darwin = {

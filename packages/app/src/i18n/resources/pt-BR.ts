@@ -1478,6 +1478,33 @@ export const ptBR: TranslationResources = {
       loadFailed: "Não foi possível carregar o status do daemon desktop.",
     },
     updates: {
+      nix: {
+        checking: "Procurando atualizações…",
+        downloading: "Baixando {{version}}…",
+        applying: "Instalando {{version}}…",
+        restarting: "Reiniciando…",
+        failed: "Falha na atualização: {{error}}",
+        ready: "{{version}} foi baixada e está pronta para instalar",
+        available: "{{version}} está disponível",
+        restartRequired: "{{version}} está instalada; reinicie para usá-la",
+        upToDate: "Atualizado (verificado às {{time}})",
+        notChecked: "Ainda não verificado",
+        checkAction: "Verificar",
+        updateAction: "Atualizar",
+        restartAction: "Reiniciar",
+        updateTitle: "Atualizar para {{version}}?",
+        updateMessage: "O Paseo vai instalar a atualização e reiniciar.",
+        updateConfirm: "Atualizar",
+        restartTitle: "Reiniciar para concluir a atualização para {{version}}?",
+        restartMessage: "O Paseo vai reiniciar e usar a nova versão.",
+        restartConfirm: "Reiniciar",
+        lastAttemptFailed: "A última tentativa falhou: {{error}}",
+        updateTooltip: "Atualizar para {{version}}",
+        restartTooltip: "Reiniciar para concluir a atualização para {{version}}",
+        failedTooltip: "Falha na atualização",
+        failedTitle: "Falha na atualização",
+        tryAgain: "Tentar novamente",
+      },
       status: {
         checking: "Verificando atualizações do app...",
         installing: "Instalando atualização do app...",
@@ -1512,7 +1539,7 @@ export const ptBR: TranslationResources = {
         versionReady: "{{version}} está pronta para instalar.",
         newVersionReady: "Uma nova versão está pronta para instalar.",
         restartWarning:
-          "Atualizar o app vai interromper agentes em execução e fechar sessões de terminal.",
+          "A atualização aguarda o término dos agentes e terminais ativos antes de reiniciar.",
       },
     },
     settings: {
@@ -2467,6 +2494,7 @@ export const ptBR: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "Sobre",
       appVersion: "Versão do app",
       whatsNewHint: "Notas de versão de cada release",
@@ -2493,6 +2521,10 @@ export const ptBR: TranslationResources = {
         checking: "Verificando...",
         alertTitle: "Erro",
         alertMessage: "Não foi possível abrir o diálogo de confirmação da atualização.",
+      },
+      nixUpdates: {
+        label: "Atualizações gerenciadas pelo Nix",
+        invalidMarker: "Não foi possível verificar esta instalação do Nix.",
       },
     },
     appearance: {
@@ -2789,6 +2821,7 @@ export const ptBR: TranslationResources = {
           reset: "Redefinir",
           save: "Salvar",
           saving: "Salvando...",
+        },
         replyRules: {
           title: "Regras de notificação de respostas",
           scope: "Aplica-se a todos os espaços de trabalho em {{host}}.",

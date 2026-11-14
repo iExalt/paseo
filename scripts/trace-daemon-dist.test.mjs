@@ -25,7 +25,7 @@ async function installTracedDaemon(outRoot) {
   }
 }
 
-test("traced daemon closure ships the OpenCode bridge plugin for every OpenCode version", async () => {
+test("traced daemon closure loads its bridge plugins and RE2 runtime asset", async () => {
   const outRoot = await mkdtemp(path.join(os.tmpdir(), "trace-daemon-dist-"));
   try {
     await installTracedDaemon(outRoot);
@@ -40,6 +40,14 @@ test("traced daemon closure ships the OpenCode bridge plugin for every OpenCode 
       );
       assert.ok(artifact.byteLength > 0, `OpenCode v${version} bridge plugin is empty`);
     }
+    const { ReplyRuleMatcher } = await import(
+      pathToFileURL(
+        path.join(outRoot, "packages/server/dist/server/server/agent/reply-rule-matcher.js"),
+      ).href
+    );
+    const matcher = ReplyRuleMatcher.compile([{ source: "^ready$", flags: "" }]);
+    assert.equal(matcher.matches({ completeness: "complete", text: "ready" }), true);
+    assert.equal(matcher.matches({ completeness: "complete", text: "waiting" }), false);
   } finally {
     await rm(outRoot, { recursive: true, force: true });
   }

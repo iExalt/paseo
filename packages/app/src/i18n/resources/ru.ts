@@ -1471,6 +1471,33 @@ export const ru: TranslationResources = {
       loadFailed: "Не удалось загрузить статус встроенного демона.",
     },
     updates: {
+      nix: {
+        checking: "Проверка обновлений…",
+        downloading: "Загрузка {{version}}…",
+        applying: "Установка {{version}}…",
+        restarting: "Перезапуск…",
+        failed: "Не удалось обновить: {{error}}",
+        ready: "Версия {{version}} загружена и готова к установке",
+        available: "Доступна версия {{version}}",
+        restartRequired: "Версия {{version}} установлена; перезапустите, чтобы использовать её",
+        upToDate: "Обновлено (проверено в {{time}})",
+        notChecked: "Ещё не проверялось",
+        checkAction: "Проверить",
+        updateAction: "Обновить",
+        restartAction: "Перезапустить",
+        updateTitle: "Обновить до {{version}}?",
+        updateMessage: "Paseo установит обновление и перезапустится.",
+        updateConfirm: "Обновить",
+        restartTitle: "Перезапустить, чтобы завершить обновление до {{version}}?",
+        restartMessage: "Paseo перезапустится и будет использовать новую версию.",
+        restartConfirm: "Перезапустить",
+        lastAttemptFailed: "Последняя попытка не удалась: {{error}}",
+        updateTooltip: "Обновить до {{version}}",
+        restartTooltip: "Перезапустить, чтобы завершить обновление до {{version}}",
+        failedTooltip: "Не удалось обновить",
+        failedTitle: "Не удалось обновить",
+        tryAgain: "Повторить",
+      },
       status: {
         checking: "Проверка обновлений приложения...",
         installing: "Установка обновления приложения...",
@@ -1506,7 +1533,7 @@ export const ru: TranslationResources = {
         versionReady: "Версия {{version}} готова к установке.",
         newVersionReady: "Новая версия готова к установке.",
         restartWarning:
-          "При обновлении приложения работающие агенты будут остановлены, а сеансы терминала закрыты.",
+          "Обновление дождётся завершения работы активных агентов и терминалов перед перезапуском.",
       },
     },
     settings: {
@@ -2471,6 +2498,7 @@ export const ru: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "О приложении",
       appVersion: "Версия приложения",
       whatsNewHint: "Заметки о выпуске для каждой версии",
@@ -2498,6 +2526,10 @@ export const ru: TranslationResources = {
         checking: "Проверка...",
         alertTitle: "Ошибка",
         alertMessage: "Не удалось открыть диалог подтверждения обновления.",
+      },
+      nixUpdates: {
+        label: "Обновления под управлением Nix",
+        invalidMarker: "Не удалось проверить эту установку Nix.",
       },
     },
     appearance: {
@@ -2799,6 +2831,7 @@ export const ru: TranslationResources = {
           reset: "Сбросить",
           save: "Сохранить",
           saving: "Сохранение...",
+        },
         replyRules: {
           title: "Правила уведомлений об ответах",
           scope: "Действует для всех рабочих пространств на {{host}}.",
