@@ -1,69 +1,79 @@
 import assert from "node:assert/strict";
-import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, existsSync, readFileSync, readdirSync, mkdtempSync, mkdirSync, statSync, writeFileSync, rmSync } from "node:fs";
+import { execFileSync, spawn, spawnSync } from "node:child_process";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { relative as relativePath } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { runInNewContext } from "node:vm";
-
-import { PUBLISH_WORKSPACES } from "./publish-release-packages.mjs";
+import { load } from "js-yaml";
 
 const repoRoot = new URL("../", import.meta.url);
+
+test("only fork-owned workflows are installed", () => {
+  const workflows = readdirSync(new URL(".github/workflows/", repoRoot))
+    .filter((name) => /\.ya?ml$/.test(name))
+    .sort();
+  assert.deepEqual(workflows, [
+    "rebase-dev.yml",
+    "release-please.yml",
+    "release.yml",
+    "upstream-sync.yml",
+  ]);
+});
+
+  const workflow = load(readFileSync(new URL(".github/workflows/release.yml", repoRoot), "utf8"));
+  const secrets = Object.fromEntries(
+    Object.entries(workflow.jobs).map(([name, job]) => [
+      name,
+      [...JSON.stringify(job).matchAll(/secrets\.(\w+)/g)].map((match) => match[1]).sort(),
+    ]),
+  );
+  assert.deepEqual(secrets, {
+    resolve: [],
+    "macos-build": ["PASEO_NIX_RELEASE_SIGNING_KEY"],
+    "macos-smoke": [],
+    "linux-build": ["PASEO_NIX_RELEASE_SIGNING_KEY"],
+    "linux-smoke": [],
+    "windows-build": [],
+    "android-build": ["PASEO_FORK_GOOGLE_SERVICES_JSON"],
+    "android-sign": ["PASEO_FORK_SIGNING_CERT_PEM", "PASEO_FORK_SIGNING_KEY_PKCS8_PEM"],
+    "android-delta": [],
+    publish: ["PASEO_RELEASE_MANIFEST_PRIVATE_KEY"],
+  });
+  // Publish waits for the optional APK deltas but requires every other job to succeed.
+  const { needs, if: publishIf } = workflow.jobs.publish;
+  assert.ok(needs.includes("android-delta"));
+  for (const job of needs.filter((name) => name !== "android-delta"))
+    assert.match(publishIf, new RegExp(`needs\\.${job}\\.result == 'success'`), job);
+  assert.doesNotMatch(publishIf, /android-delta/);
+  assert.deepEqual(workflow.permissions, {});
+  for (const [name, job] of Object.entries(workflow.jobs))
+    assert.equal(job.permissions.contents, name === "publish" ? "write" : "read", name);
+  const publishing = workflow.jobs.publish.steps.filter((step) =>
+    step.run?.includes("release-publish.sh publish"),
+  );
+  assert.deepEqual(
+    publishing.map((step) => step.if),
+  );
+  assert.match(
+    workflow.jobs.resolve.steps.at(-1).run,
+  );
+const gradleResourceWatchPath = fileURLToPath(
+  new URL("scripts/gradle-resource-watch.sh", repoRoot),
+);
 const runnerSwapPath = fileURLToPath(new URL("scripts/runner-swap.sh", repoRoot));
-const ciWorkflowPath = new URL(".github/workflows/ci.yml", repoRoot);
-const dockerWorkflowPath = new URL(".github/workflows/docker.yml", repoRoot);
-const nixWorkflowPath = new URL(".github/workflows/nix.yml", repoRoot);
 const filtersPath = new URL(".github/ci-paths.yml", repoRoot);
 const serverTsconfigPath = new URL("packages/server/tsconfig.server.json", repoRoot);
 const desktopPackagePath = new URL("packages/desktop/package.json", repoRoot);
-
-const gatedCiJobs = new Map([
-  ["quality", { name: "quality", contracts: ["format", "quality", "relay", "sdk"] }],
-  ["sdk-tests-windows", { name: "sdk-tests (windows-latest)", contract: "sdk" }],
-  ["typecheck", { name: "typecheck", contract: "quality" }],
-  ["server-tests-ubuntu", { name: "server-tests (ubuntu-latest)", contracts: ["server", "hub"] }],
-  ["server-tests-windows", { name: "server-tests (windows-latest)", contracts: ["server", "hub"] }],
-  [
-    "server-integration-windows",
-    { name: "server-integration (windows-latest)", contract: "server" },
-  ],
-  [
-    "server-tests-macos",
-    { name: "server-tests (macos-latest, file observation)", contract: "server" },
-  ],
-  ["desktop-tests-ubuntu", { name: "desktop-tests (ubuntu-latest)", contract: "desktop" }],
-  ["desktop-tests-windows", { name: "desktop-tests (windows-latest)", contract: "desktop" }],
-  ["app-tests", { name: "app-tests", contract: "app" }],
-  ["playwright-1", { name: "playwright (shard 1/8)", contract: "browser" }],
-  ["playwright-2", { name: "playwright (shard 2/8)", contract: "browser" }],
-  ["playwright-3", { name: "playwright (shard 3/8)", contract: "browser" }],
-  ["playwright-4", { name: "playwright (shard 4/8)", contract: "browser" }],
-  ["playwright-5", { name: "playwright (shard 5/8)", contract: "browser" }],
-  ["playwright-6", { name: "playwright (shard 6/8)", contract: "browser" }],
-  ["playwright-7", { name: "playwright (shard 7/8)", contract: "browser" }],
-  ["playwright-8", { name: "playwright (shard 8/8)", contract: "browser" }],
-  ["cli-tests-1", { name: "cli-tests (shard 1/3)", contract: "cli" }],
-  ["cli-tests-2", { name: "cli-tests (shard 2/3)", contract: "cli" }],
-  ["cli-tests-3", { name: "cli-tests (shard 3/3)", contract: "cli" }],
-]);
-
-function jobBlocks(source) {
-  const jobs = new Map();
-  let currentJob;
-
-  for (const line of (source.split("\njobs:\n")[1] ?? source).split("\n")) {
-    const jobMatch = /^  ([a-z0-9_-]+):\s*$/.exec(line);
-    if (jobMatch) {
-      currentJob = jobMatch[1];
-      jobs.set(currentJob, []);
-      continue;
-    }
-    if (currentJob) jobs.get(currentJob).push(line);
-  }
-  return jobs;
-}
 
 function loadFilters(path) {
   const filters = {};
@@ -96,59 +106,10 @@ function filesUnder(relativeDirectory, predicate) {
     .sort();
 }
 
-test("gated checks are statically named jobs with real job-level gating", () => {
-  const workflowSource = readFileSync(ciWorkflowPath, "utf8");
-  const jobs = jobBlocks(workflowSource);
-  const trigger = workflowSource.split("jobs:", 1)[0];
-
-  assert.match(trigger, /^\s+merge_group:\s*$/m);
-  assert.doesNotMatch(workflowSource, /strategy:\s*\n\s+matrix:/);
-  assert.doesNotMatch(workflowSource, /RUN_TESTS|Skip unaffected|No .* changes detected/);
-
-  for (const [jobId, expected] of gatedCiJobs) {
-    const job = jobs.get(jobId)?.join("\n");
-    assert.ok(job, `missing static job ${jobId}`);
-    assert.match(job, new RegExp(`^    name: ${expected.name.replace(/[()]/g, "\\$&")}$`, "m"));
-    assert.match(job, /needs\.changes\.outputs\.full != 'false'/);
-    for (const contract of expected.contracts ?? [expected.contract]) {
-      assert.match(job, new RegExp(`needs\\.changes\\.outputs\\.${contract} != 'false'`));
-    }
-  }
-});
-
-test("pull-request checks run for every base branch, including stacked PRs", () => {
-  for (const workflowPath of [
-    ciWorkflowPath,
-    new URL(".github/workflows/desktop-packages.yml", repoRoot),
-  ]) {
-    const trigger = readFileSync(workflowPath, "utf8").split("jobs:", 1)[0];
-    const pullRequest = trigger.match(/^  pull_request:\n((?:    .*\n)*)/m);
-    assert.ok(pullRequest, `${workflowPath.pathname} runs on pull requests`);
-    assert.doesNotMatch(pullRequest[1], /branches/);
-  }
-});
-
-test("change gating allows superseded workflow runs to cancel", () => {
-  const ci = readFileSync(ciWorkflowPath, "utf8");
-  assert.match(
-    ci,
-    /^concurrency:\n  group: ci-\$\{\{ github\.workflow \}\}-\$\{\{ github\.ref \}\}\n  cancel-in-progress: true$/m,
-    "a newer push to any ref, main included, cancels the superseded run",
-  );
-  for (const workflowPath of [ciWorkflowPath, dockerWorkflowPath, nixWorkflowPath]) {
-    const source = readFileSync(workflowPath, "utf8");
-    assert.doesNotMatch(
-      source,
-      /\$\{\{\s*always\(\)/,
-      "always() keeps jobs alive after concurrency cancellation; use !cancelled() for fail-open gating",
-    );
-  }
-});
-
 test("published npm packages declare and ship the repository license", () => {
   const rootManifest = JSON.parse(readFileSync(new URL("package.json", repoRoot), "utf8"));
-  assert.match(rootManifest.scripts["release:publish"], /scripts\/publish-release-packages\.mjs/);
-  const workspaceArgs = PUBLISH_WORKSPACES.map((workspace) => `--workspace=${workspace}`);
+  const workspaceArgs = rootManifest.scripts["release:publish"].match(/--workspace=\S+/g);
+  assert.notEqual(workspaceArgs, null, "release:publish must select public packages");
   const packed = JSON.parse(
     execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json", ...workspaceArgs], {
       cwd: repoRoot,
@@ -169,8 +130,8 @@ test("published npm packages declare and ship the repository license", () => {
   }));
   assert.deepEqual(
     licenses,
-    PUBLISH_WORKSPACES.map((workspace) => ({
-      name: workspace,
+    workspaceArgs.map((workspace) => ({
+      name: workspace.slice("--workspace=".length),
       license: "Apache-2.0",
       files: ["LICENSE"],
     })),
@@ -180,34 +141,6 @@ test("published npm packages declare and ship the repository license", () => {
     const { directory } = manifests.get(name);
     assert.equal(readFileSync(new URL("LICENSE", directory), "utf8"), repositoryLicense, name);
   }
-});
-
-test("focused contracts stay inside existing required checks", () => {
-  const jobs = jobBlocks(readFileSync(ciWorkflowPath, "utf8"));
-  const changes = jobs.get("changes")?.join("\n") ?? "";
-  const server = jobs.get("server-tests-ubuntu")?.join("\n") ?? "";
-  const desktop = jobs.get("desktop-tests-ubuntu")?.join("\n") ?? "";
-
-  assert.match(changes, /scripts\/daemon-launch-contract\.test\.mjs/);
-  assert.doesNotMatch(changes, /Install dependencies|npm run build/);
-
-  assert.match(server, /test:hub-cli-contract/);
-  assert.match(server, /npm run test --workspace=@getpaseo\/server/);
-  assert.ok(!jobs.has("hub-cli-contract"));
-
-  assert.match(desktop, /test:e2e:renderer/);
-  assert.match(desktop, /test:e2e:browser-tabs/);
-  assert.match(desktop, /npm run test --workspace=@getpaseo\/desktop/);
-  assert.ok(!jobs.has("desktop-browser-bridge"));
-  assert.ok(!jobs.has("playwright-desktop"));
-});
-
-test("ordinary CI keeps app tests without prebuilding Android modules", () => {
-  const source = readFileSync(ciWorkflowPath, "utf8");
-  const app = jobBlocks(source).get("app-tests").join("\n");
-  assert.match(app, /npm run build:app-deps/);
-  assert.match(app, /npm run test --workspace=@getpaseo\/app/);
-  assert.doesNotMatch(source, /test:android|expo prebuild|gradlew|actions\/setup-java/);
 });
 
 test("server builds exclude test utilities at every domain depth", () => {
@@ -244,22 +177,16 @@ test("PR routing declares stable behavior ownership", () => {
     desktop: [
       "packages/desktop/**",
       "packages/app/src/desktop/**",
-      "packages/app/src/**/*.electron.{ts,tsx}",
       "packages/server/src/server/browser-tools/**",
       "packages/app/e2e/support/**",
       "packages/app/*config.{cjs,js,ts}",
       "packages/app/package.json",
     ],
-    app: [
-      "packages/app/**",
-      "packages/expo-two-way-audio/**",
-      "packages/react-native-enriched-markdown/**",
-    ],
+    app: ["packages/app/**", "packages/expo-two-way-audio/**"],
     sdk: [
       "packages/plugin/**",
       "plugin-examples/**",
       "public-docs/plugins/**",
-      "skills/paseo-plugin/**",
       "packages/client/**",
       "packages/highlight/**",
       "packages/protocol/**",
@@ -285,7 +212,6 @@ test("PR routing declares stable behavior ownership", () => {
       "packages/app/index.ts",
       "packages/app/*config.{cjs,js,ts}",
       "packages/app/package.json",
-      "packages/react-native-enriched-markdown/**",
     ],
     relay: ["packages/relay/**"],
     cli: ["packages/cli/**"],
@@ -314,6 +240,7 @@ test("browser and desktop tests have exclusive, directory-owned suites", () => {
   const filters = loadFilters(filtersPath);
   const browserSpecs = filesUnder("packages/app/e2e", (path) => path.endsWith(".spec.ts"));
   const desktopSpecs = filesUnder("packages/desktop/e2e", (path) => path.endsWith(".spec.ts"));
+  const electronModules = filesUnder("packages/app/src", (path) => /\.electron\.tsx?$/.test(path));
 
   assert.ok(browserSpecs.length > 0);
   assert.ok(desktopSpecs.length > 0);
@@ -338,7 +265,6 @@ test("browser and desktop tests have exclusive, directory-owned suites", () => {
   assert.deepEqual(filters.desktop, [
     "packages/desktop/**",
     "packages/app/src/desktop/**",
-    "packages/app/src/**/*.electron.{ts,tsx}",
     "packages/server/src/server/browser-tools/**",
     "packages/app/e2e/support/**",
     "packages/app/*config.{cjs,js,ts}",
@@ -365,31 +291,123 @@ test("browser and desktop tests have exclusive, directory-owned suites", () => {
     "packages/app/index.ts",
     "packages/app/*config.{cjs,js,ts}",
     "packages/app/package.json",
-    "packages/react-native-enriched-markdown/**",
   ]);
 });
 
-test("packaging runs on main without allocating pull-request runners", () => {
-  for (const workflowPath of [dockerWorkflowPath, nixWorkflowPath]) {
-    const source = readFileSync(workflowPath, "utf8");
-    const trigger = source.split("jobs:", 1)[0];
-    assert.match(trigger, /push:\s*\n\s+branches: \[main\]/);
-    assert.doesNotMatch(trigger, /pull_request/);
-    assert.doesNotMatch(source, /dorny\/paths-filter/);
+test("fork Android resource watcher is paired and preserves child exit and signal status", async () => {
+  const source = readFileSync(gradleResourceWatchPath, "utf8");
+  assert.match(source, /interval_seconds=60/);
+  assert.match(source, /free -b/);
+  assert.match(source, /swap_total_bytes=%s swap_used_bytes=%s swap_free_bytes=%s/);
+  assert.match(source, /df -Pk/);
+  assert.match(source, /\/sys\/fs\/cgroup\/memory\.events/);
+  assert.match(source, /oom_group_kill/);
+  assert.match(source, /ps -Ao rss=,%cpu=,comm=/);
+  assert.doesNotMatch(source, /ps[^\n]*(?:args|command=|cmdline)/);
+
+  for (const [exitCode, expectedStatus] of [
+    [0, 0],
+    [23, 23],
+  ]) {
+    const result = spawnSync(
+      "bash",
+      [gradleResourceWatchPath, "--", "bash", "-c", `exit ${exitCode}`],
+      { encoding: "utf8", timeout: 5000 },
+    );
+    assert.equal(result.status, expectedStatus);
+    assert.match(result.stdout, /gradle_heartbeat_utc=/);
+    assert.match(result.stdout, new RegExp(`gradle_child_exit_code=${expectedStatus}`));
+    assert.match(result.stdout, new RegExp(`gradle_wrapper_exit_code=${expectedStatus}`));
+    assert.match(result.stdout, /gradle_heartbeat_sampler_exit_code=0/);
   }
-  const docker = readFileSync(dockerWorkflowPath, "utf8");
-  assert.match(
-    docker,
-    /group: docker-\$\{\{ github\.workflow \}\}-\$\{\{ github\.event_name == 'workflow_dispatch' && inputs\.publish == 'true' && format\('publish-\{0\}', inputs\.paseo_version \|\| github\.run_id\) \|\| github\.ref \}\}/,
-    "manual Docker release retries use their own concurrency group so main pushes never cancel them",
-  );
-  assert.match(
-    docker,
-    /cancel-in-progress: \$\{\{ !startsWith\(github\.ref, 'refs\/tags\/'\) && !\(github\.event_name == 'workflow_dispatch' && inputs\.publish == 'true'\) \}\}/,
-    "Docker cancels superseded non-tag main checks while preserving tag and manual publish runs",
-  );
-  const nix = readFileSync(nixWorkflowPath, "utf8");
-  assert.match(nix.split("jobs:", 1)[0], /^\s+workflow_dispatch:/m);
+
+  const signalCases = [
+    {
+      signal: "SIGTERM",
+      name: "TERM",
+      nodeSignal: "SIGTERM",
+      childHandler: true,
+      childStatus: 37,
+      wrapperStatus: 37,
+    },
+    {
+      signal: "SIGINT",
+      name: "INT",
+      nodeSignal: "SIGINT",
+      childHandler: true,
+      childStatus: 38,
+      wrapperStatus: 38,
+    },
+    {
+      signal: "SIGTERM",
+      name: "TERM",
+      nodeSignal: "SIGTERM",
+      childHandler: false,
+      wrapperStatus: 143,
+    },
+  ];
+  for (const signalCase of signalCases) {
+    const childCode = [
+      signalCase.childHandler
+        ? `process.on("${signalCase.nodeSignal}", () => process.exit(${signalCase.childStatus}));`
+        : "",
+      'process.stdout.write("fake_child_ready\\n");',
+      "setInterval(() => {}, 1000);",
+    ].join(" ");
+    const child = spawn(
+      "bash",
+      [gradleResourceWatchPath, "--interval-seconds", "1", "--", "node", "-e", childCode],
+      {
+        detached: true,
+        env: { ...process.env },
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    let output = "";
+    let signalSent = false;
+    child.stdout.setEncoding("utf8");
+    const result = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        try {
+          process.kill(-child.pid, "SIGKILL");
+        } catch {}
+        reject(new Error(`resource watcher did not exit after ${signalCase.name}`));
+      }, 5000);
+      child.stdout.on("data", (chunk) => {
+        output += chunk;
+        if (!signalSent && output.includes("fake_child_ready")) {
+          signalSent = true;
+          child.kill(signalCase.signal);
+        }
+      });
+      child.once("error", (error) => {
+        clearTimeout(timeout);
+        reject(error);
+      });
+      child.once("exit", (code, signal) => {
+        clearTimeout(timeout);
+        resolve({ code, signal });
+      });
+    });
+    assert.deepEqual(result, { code: signalCase.wrapperStatus, signal: null });
+    assert.match(output, new RegExp(`gradle_wrapper_signal=${signalCase.name}`));
+    assert.match(output, new RegExp(`gradle_child_exit_code=${signalCase.wrapperStatus}`));
+    assert.match(output, /gradle_heartbeat_sampler_exit_code=0/);
+    assert.match(output, new RegExp(`gradle_wrapper_exit_code=${signalCase.wrapperStatus}`));
+  }
+});
+
+test("release Android swap is provisioned after SDK setup and always cleaned before identity checks", () => {
+  const steps = load(readFileSync(new URL(".github/workflows/release.yml", repoRoot), "utf8")).jobs[
+    "android-build"
+  ].steps;
+  const index = (pattern) => steps.findIndex((step) => pattern.test(step.run ?? ""));
+  const enable = index(/sdkmanager[\s\S]*runner-swap\.sh enable/);
+  const assemble = index(/gradlew :app:assembleRelease/);
+  const cleanup = index(/runner-swap\.sh cleanup/);
+  const identity = index(/release-apk-identity\.sh/);
+  assert.ok(enable >= 0 && enable < assemble && assemble < cleanup && cleanup < identity);
+  assert.equal(steps[cleanup].if, "always()");
 });
 
 test("fork Android swap lifecycle is bounded and never unlinks active swap", () => {
@@ -545,540 +563,6 @@ if [ -f "$ACTIVE_SWAP_FILE" ]; then cat "$ACTIVE_SWAP_FILE"; fi
   }
 });
 
-test("CI and desktop packaging verify release branches isolated from main traffic", () => {
-  const ciTrigger = readFileSync(ciWorkflowPath, "utf8").split("jobs:", 1)[0];
-  assert.match(ciTrigger, /push:\s*\n\s+branches: \[main, "release\/\*\*"\]/);
-
-  const source = readFileSync(new URL(".github/workflows/desktop-packages.yml", repoRoot), "utf8");
-  const trigger = source.split("jobs:", 1)[0];
-  assert.match(trigger, /push:\s*\n\s+branches: \[main, "release\/\*\*"\]/);
-  assert.match(trigger, /^\s+workflow_dispatch:/m);
-  assert.match(trigger, /pull_request:\s*\n\s+paths:/);
-  assert.match(trigger, /- "packages\/desktop\/\*\*"/);
-  assert.match(trigger, /^\s+cancel-in-progress: true$/m);
-  assert.doesNotMatch(source, /dorny\/paths-filter/);
-  for (const action of ["actions/checkout", "actions/setup-node", "actions/upload-artifact"]) {
-    assert.match(source, new RegExp(`${action}@[0-9a-f]{40} # v\\d+\\.\\d+\\.\\d+`));
-  }
-});
-
-test("stable iOS releases upload once and distribute to external testers before App Store review", () => {
-  const source = readFileSync(
-    new URL("packages/app/.eas/workflows/release-mobile.yml", repoRoot),
-    "utf8",
-  );
-  const jobs = jobBlocks(source);
-  const uploads = [...jobs.entries()].filter(
-    ([, lines]) =>
-      lines.some((line) => /^    type: (submit|testflight)$/.test(line)) &&
-      lines.some((line) => line.includes("needs.build_ios.outputs.build_id")),
-  );
-  assert.equal(uploads.length, 1, "the iOS binary must be uploaded exactly once");
-  const [distributionId, distributionLines] = uploads[0];
-  const distribution = distributionLines.join("\n");
-  assert.match(distribution, /^    type: testflight$/m);
-  assert.match(distribution, /external_groups:\s*\n\s+- Paseo Beta/);
-  assert.match(distribution, /^      submit_beta_review: true$/m);
-
-  const review = jobs.get("submit_ios_for_review").join("\n");
-  assert.match(review, new RegExp(`needs: \\[build_ios, ${distributionId}\\]`));
-  assert.match(review, /APP_VERSION="\$\{\{ needs\.build_ios\.outputs\.app_version \}\}"/);
-  assert.match(
-    review,
-    /APP_BUILD_VERSION="\$\{\{ needs\.build_ios\.outputs\.app_build_version \}\}"/,
-  );
-  assert.match(review, /bundle exec fastlane ios submit_review/);
-});
-
-test("eight Playwright shards share two-worker coverage", () => {
-  const source = readFileSync(ciWorkflowPath, "utf8");
-  const jobs = jobBlocks(source);
-  assert.equal(jobs.size, 22);
-  for (let shard = 1; shard <= 8; shard++) {
-    const job = jobs.get(`playwright-${shard}`).join("\n");
-    assert.match(job, new RegExp(`PLAYWRIGHT_SHARD: "${shard}/8"`));
-    assert.match(job, new RegExp(`PLAYWRIGHT_ARTIFACT: "${shard}"`));
-    assert.match(
-      job,
-      shard === 1 ? /steps: &playwright_test_steps/ : /steps: \*playwright_test_steps/,
-    );
-  }
-  const shared = jobs.get("playwright-1").join("\n");
-  assert.match(shared, /E2E_WORKERS: "2"/);
-  const weights = /PWTEST_SHARD_WEIGHTS: "([\d:]+)"/.exec(shared)[1].split(":").map(Number);
-  assert.equal(weights.length, 8);
-  assert.ok(weights.every((weight) => weight > 0));
-  assert.match(shared, /npm run test:e2e --workspace=@getpaseo\/app -- --shard=/);
-
-  // No fan-in result job: a gate needs its own runner and under contention it
-  // queued 8m08s behind the last shard. Required checks name the shards directly.
-  assert.equal(jobs.has("playwright"), false);
-});
-
-test("quality preserves commands and routes each domain independently after failures", () => {
-  const jobs = jobBlocks(readFileSync(ciWorkflowPath, "utf8"));
-  const quality = jobs.get("quality").join("\n");
-  assert.doesNotMatch(quality, /^\s+continue-on-error:/m);
-  const commands = {
-    format: ["npm run format:check"],
-    quality: [
-      "npx --yes lockfile-lint --path package-lock.json --type npm --allowed-hosts npm --validate-https --validate-integrity",
-      "npm run lint",
-      "node --test scripts/oxlint/paseo-plugin.test.mjs",
-    ],
-    relay: ["npm run build:relay", "npm run test --workspace=@getpaseo/relay"],
-    sdk: [
-      "npm run build:relay && npm run build:client",
-      "npm run build:plugin",
-      "npm run test --workspace=@getpaseo/plugin",
-      "npm run test --workspace=@getpaseo/protocol",
-      "npm run test --workspace=@getpaseo/client",
-      "npm run test --workspace=@getpaseo/highlight",
-      "npm run typecheck:examples --workspace=@getpaseo/client",
-    ],
-  };
-  const checks = [...quality.matchAll(/        if: \$\{\{ (.+) \}\}\n        run: (.+)/g)];
-  assert.deepEqual(
-    checks.map(([, , command]) => command),
-    Object.values(commands).flat(),
-  );
-  const domains = Object.keys(commands);
-  function accepts(expression, outputs, { cancelled = false, installed = true } = {}) {
-    // Prior checks have failed: success() is false. Explicit !cancelled() must
-    // override Actions' default success condition so later domains still run.
-    assert.match(expression, /!cancelled\(\)/);
-    return runInNewContext(expression, {
-      needs: { changes: { outputs } },
-      steps: { install: { outcome: installed ? "success" : "failure" } },
-      cancelled: () => cancelled,
-      success: () => false,
-    });
-  }
-  const disabled = { full: "false", ...Object.fromEntries(domains.map((key) => [key, "false"])) };
-  const jobCondition = /    if: \$\{\{ (.+) \}\}/.exec(quality)[1];
-  assert.equal(accepts(jobCondition, disabled), false);
-  for (const selected of domains) {
-    const outputs = { ...disabled, [selected]: "true" };
-    assert.equal(accepts(jobCondition, outputs), true);
-    for (const [, expression, command] of checks) {
-      assert.equal(accepts(expression, outputs), commands[selected].includes(command), command);
-    }
-  }
-  for (const [, expression] of checks) {
-    assert.equal(accepts(expression, { ...disabled, full: "true" }), true);
-    assert.equal(accepts(expression, {}), true, "missing routing outputs fail open");
-    assert.equal(accepts(expression, {}, { cancelled: true }), false);
-    assert.equal(accepts(expression, {}, { installed: false }), false);
-  }
-  assert.equal(accepts(jobCondition, {}, { cancelled: true }), false);
-});
-
-test("plugin SDK tests run on real Windows", () => {
-  const sdk = jobBlocks(readFileSync(ciWorkflowPath, "utf8")).get("sdk-tests-windows").join("\n");
-  assert.match(sdk, /^    runs-on: windows-latest$/m);
-  assert.match(sdk, /run: npm run test --workspace=@getpaseo\/plugin$/m);
-  assert.doesNotMatch(sdk, /continue-on-error/);
-});
-
-test("Windows units and integration run independently with complete routed coverage", () => {
-  const source = readFileSync(ciWorkflowPath, "utf8");
-  const jobs = jobBlocks(source);
-  const ubuntu = jobs.get("server-tests-ubuntu").join("\n");
-  const windows = jobs.get("server-tests-windows").join("\n");
-  const integration = jobs.get("server-integration-windows").join("\n");
-  assert.match(ubuntu, /run: npm run test --workspace=@getpaseo\/server/);
-  assert.match(windows, /run: npm run test:unit --workspace=@getpaseo\/server/);
-  assert.doesNotMatch(windows, /run: npm run test(?: |:integration)/);
-  assert.match(integration, /run: npm run test:integration --workspace=@getpaseo\/server/);
-  assert.doesNotMatch(integration, /test:unit|server_plugin_tests|server_hub_contract/);
-  for (const job of [windows, integration]) {
-    assert.match(job, /^    needs: changes$/m, "both phases become eligible independently");
-    assert.match(job, /^    runs-on: windows-latest$/m);
-    assert.doesNotMatch(job, /continue-on-error|maxWorkers|--exclude/);
-    for (const step of [
-      "server_capacity",
-      "server_checkout",
-      "server_node",
-      "server_fetch",
-      "server_install",
-      "server_agent_clis",
-      "server_build",
-    ]) {
-      assert.match(ubuntu, new RegExp(`&${step}\\b`));
-      assert.match(job, new RegExp(`- \\*${step}\\b`));
-    }
-    assert.match(job, /env: \*server_test_env/);
-  }
-  assert.match(windows, /- \*server_plugin_tests/);
-  assert.match(windows, /- \*server_hub_contract/);
-  assert.match(ubuntu, /run: npm run test --workspace=@getpaseo\/builtin-plugins/);
-  assert.match(ubuntu, /run: npm run test:hub-cli-contract --workspace=@getpaseo\/server/);
-
-  const scripts = JSON.parse(
-    readFileSync(new URL("packages/server/package.json", repoRoot), "utf8"),
-  ).scripts;
-  assert.equal(scripts.test, "npm run test:unit && npm run test:integration");
-  assert.equal(scripts["test:unit"], 'vitest run --fileParallelism --exclude "**/*.e2e.test.ts"');
-  const invocations = scripts["test:integration"].split(" && ");
-  // Each vitest start costs about half a minute on Windows, so the
-  // name-filtered files share one invocation and one combined filter.
-  assert.equal(invocations.length, 2);
-  assert.ok(
-    invocations.every((command) =>
-      command.startsWith("vitest run --fileParallelism --maxWorkers=3 "),
-    ),
-  );
-  assert.doesNotMatch(invocations[0], / -t /);
-  assert.equal(
-    invocations[1],
-    'vitest run --fileParallelism --maxWorkers=3 src/server/agent/providers/omp/history.e2e.test.ts src/server/daemon-e2e/git-operations.e2e.test.ts src/server/session.create-agent-worktree-autoarchive.e2e.test.ts src/server/agent/providers/opencode-bridge.local.e2e.test.ts src/server/daemon-e2e/relay-transport.e2e.test.ts src/server/agent/agent-mcp.e2e.test.ts src/server/plugins/agent-tools.e2e.test.ts -t "agent MCP protocol negotiation|merges into|creates a worktree and auto-archives both|versioned runtime|oversized attachments|connected hosts|password-protected daemon refuses|replays selected OMP history|changes the launch wrap"',
-  );
-  const serverConfig = readFileSync(new URL("packages/server/vitest.config.ts", repoRoot), "utf8");
-  assert.doesNotMatch(serverConfig, /maxWorkers:\s*1\b/);
-
-  function condition(job) {
-    return /    if: \$\{\{ (.+) \}\}/.exec(job)[1];
-  }
-  function selected(expression, outputs, cancelled = false) {
-    return runInNewContext(expression, {
-      needs: { changes: { outputs } },
-      cancelled: () => cancelled,
-    });
-  }
-  const unitCondition = condition(windows);
-  const integrationCondition = condition(integration);
-  const unitStep = /      - name: Run server unit tests\n        if: \$\{\{ (.+) \}\}/.exec(
-    windows,
-  )[1];
-  const hubStep =
-    /      - &server_hub_contract\n        name: Run Hub CLI\/daemon contract\n        if: \$\{\{ (.+) \}\}/.exec(
-      ubuntu,
-    )[1];
-  const pluginStep =
-    /      - &server_plugin_tests\n        name: Run built-in plugin tests\n        if: \$\{\{ (.+) \}\}/.exec(
-      ubuntu,
-    )[1];
-  for (const [outputs, units, integrations, hub] of [
-    [{ full: "true", server: "false", hub: "false" }, true, true, false],
-    [{ full: "false", server: "true", hub: "false" }, true, true, false],
-    [{ full: "false", server: "false", hub: "true" }, true, false, true],
-    [{ full: "false", server: "false", hub: "false" }, false, false, false],
-    [{}, true, true, false],
-  ]) {
-    assert.equal(selected(unitCondition, outputs), units);
-    assert.equal(selected(integrationCondition, outputs), integrations);
-    assert.equal(selected(unitStep, outputs), integrations);
-    assert.equal(selected(pluginStep, outputs), integrations);
-    assert.equal(selected(hubStep, outputs), hub);
-    assert.equal(selected(unitCondition, outputs, true), false);
-    assert.equal(selected(integrationCondition, outputs, true), false);
-  }
-});
-
-test("desktop release creates release-manifests before entering it and uses the xcrun retry script", () => {
-  const workflow = readFileSync(new URL(".github/workflows/desktop-release.yml", repoRoot), "utf8");
-  assert.match(workflow, /scripts\/macos-xcrun-retry\.sh/);
-  assert.match(workflow, /mkdir -p release-manifests\s*\n\s+cd release-manifests/);
-});
-
-test("desktop release stamps an 18-hour rollout on a tag push and by default on a manual run", () => {
-  const workflow = readFileSync(new URL(".github/workflows/desktop-release.yml", repoRoot), "utf8");
-  const manualRunDefault = /\n {6}rollout_hours:\n(?: {8}.*\n)*? {8}default: "(\d+)"/.exec(
-    workflow,
-  );
-  const tagPushDefault =
-    /\n {2}ROLLOUT_HOURS: \$\{\{.*inputs\.rollout_hours \|\| '(\d+)' \}\}/.exec(workflow);
-
-  assert.equal(manualRunDefault?.[1], "18");
-  assert.equal(tagPushDefault?.[1], "18");
-});
-
-test("macOS release xcrun wrapper retries transient stapling and notarization failures without rebuilding", async (t) => {
-  const wrapperSource = readFileSync(new URL("scripts/macos-xcrun-retry.sh", repoRoot), "utf8");
-  const networkLostError =
-    'Error Domain=NSURLErrorDomain Code=-1005 "The network connection was lost."';
-  const notaryTimeoutWithId =
-    'Error: HTTPError(statusCode: nil, error: Error Domain=NSURLErrorDomain Code=-1001 "The request timed out." UserInfo={NSErrorFailingURLStringKey=https://appstoreconnect.apple.com/notary/v2/submissions/ee2872f3-65d9-49f7-b2b5-adcdfe2db6ba?})';
-  const notaryOfflineWithId =
-    'Error: HTTPError(statusCode: nil, error: Error Domain=NSURLErrorDomain Code=-1009 "The Internet connection appears to be offline." UserInfo={NSErrorFailingURLStringKey=https://appstoreconnect.apple.com/notary/v2/submissions/ee2872f3-65d9-49f7-b2b5-adcdfe2db6ba?})';
-  const notaryUploadTimeout =
-    'Error: HTTPError(statusCode: nil, error: Error Domain=NSURLErrorDomain Code=-1001 "The request timed out.")';
-  const acceptedJson = JSON.stringify({
-    id: "ee2872f3-65d9-49f7-b2b5-adcdfe2db6ba",
-    message: "Successfully received submission info",
-    status: "Accepted",
-  });
-  const invalidJson = JSON.stringify({
-    id: "ee2872f3-65d9-49f7-b2b5-adcdfe2db6ba",
-    message: "Submission invalid",
-    status: "Invalid",
-  });
-
-  const cases = [
-    {
-      name: "stapler success",
-      steps: [{ code: 0, output: "stapled" }],
-      args: ["stapler", "staple", "-v", "Paseo signed.app"],
-      expected: 0,
-      expectedCalls: [["stapler", "staple", "-v", "Paseo signed.app"]],
-      expectPattern: /stapled/,
-    },
-    {
-      name: "stapler transient then success",
-      steps: [
-        { code: 68, output: networkLostError },
-        { code: 0, output: "stapled" },
-      ],
-      args: ["stapler", "staple", "-v", "Paseo signed.app"],
-      expected: 0,
-      expectedCalls: [
-        ["stapler", "staple", "-v", "Paseo signed.app"],
-        ["stapler", "staple", "-v", "Paseo signed.app"],
-      ],
-      expectPattern: /stapled/,
-    },
-    {
-      name: "stapler exhausted network retries",
-      steps: [
-        { code: 68, output: networkLostError },
-        { code: 68, output: networkLostError },
-        { code: 68, output: networkLostError },
-        { code: 68, output: networkLostError },
-      ],
-      args: ["stapler", "staple", "-v", "Paseo signed.app"],
-      expected: 68,
-      expectedCalls: Array.from({ length: 4 }, () => [
-        "stapler",
-        "staple",
-        "-v",
-        "Paseo signed.app",
-      ]),
-      expectPattern: /network connection was lost/,
-    },
-    {
-      name: "stapler non-network error is not retried",
-      steps: [{ code: 68, output: "ticket not found" }],
-      args: ["stapler", "staple", "-v", "Paseo signed.app"],
-      expected: 68,
-      expectedCalls: [["stapler", "staple", "-v", "Paseo signed.app"]],
-      expectPattern: /ticket not found/,
-    },
-    {
-      name: "notarytool switches to wait when polling fails after upload and emits clean JSON",
-      steps: [
-        { code: 1, output: notaryTimeoutWithId },
-        { code: 1, output: notaryOfflineWithId },
-        { code: 0, output: acceptedJson },
-      ],
-      args: [
-        "notarytool",
-        "submit",
-        "/tmp/Paseo.zip",
-        "--apple-id",
-        "id",
-        "--password",
-        "pw",
-        "--team-id",
-        "team",
-        "--wait",
-        "--output-format",
-        "json",
-      ],
-      expected: 0,
-      expectedCalls: [
-        [
-          "notarytool",
-          "submit",
-          "/tmp/Paseo.zip",
-          "--apple-id",
-          "id",
-          "--password",
-          "pw",
-          "--team-id",
-          "team",
-          "--wait",
-          "--output-format",
-          "json",
-        ],
-        [
-          "notarytool",
-          "wait",
-          "ee2872f3-65d9-49f7-b2b5-adcdfe2db6ba",
-          "--apple-id",
-          "id",
-          "--password",
-          "pw",
-          "--team-id",
-          "team",
-          "--output-format",
-          "json",
-        ],
-        [
-          "notarytool",
-          "wait",
-          "ee2872f3-65d9-49f7-b2b5-adcdfe2db6ba",
-          "--apple-id",
-          "id",
-          "--password",
-          "pw",
-          "--team-id",
-          "team",
-          "--output-format",
-          "json",
-        ],
-      ],
-      expectCleanJson: true,
-    },
-    {
-      name: "notarytool retries submit when upload fails before submission ID exists",
-      steps: [
-        { code: 1, output: notaryUploadTimeout },
-        { code: 0, output: acceptedJson },
-      ],
-      args: [
-        "notarytool",
-        "submit",
-        "/tmp/Paseo.zip",
-        "--apple-id",
-        "id",
-        "--wait",
-        "--output-format",
-        "json",
-      ],
-      expected: 0,
-      expectedCalls: [
-        [
-          "notarytool",
-          "submit",
-          "/tmp/Paseo.zip",
-          "--apple-id",
-          "id",
-          "--wait",
-          "--output-format",
-          "json",
-        ],
-        [
-          "notarytool",
-          "submit",
-          "/tmp/Paseo.zip",
-          "--apple-id",
-          "id",
-          "--wait",
-          "--output-format",
-          "json",
-        ],
-      ],
-      expectCleanJson: true,
-    },
-    {
-      name: "notarytool deterministic Invalid rejection is never retried",
-      steps: [{ code: 0, output: invalidJson }],
-      args: [
-        "notarytool",
-        "submit",
-        "/tmp/Paseo.zip",
-        "--apple-id",
-        "id",
-        "--wait",
-        "--output-format",
-        "json",
-      ],
-      expected: 0,
-      expectedCalls: [
-        [
-          "notarytool",
-          "submit",
-          "/tmp/Paseo.zip",
-          "--apple-id",
-          "id",
-          "--wait",
-          "--output-format",
-          "json",
-        ],
-      ],
-      expectCleanJson: true,
-    },
-    {
-      name: "notarytool bad credentials error is never retried",
-      steps: [{ code: 1, output: "Error: HTTP status code: 401. Invalid credentials." }],
-      args: [
-        "notarytool",
-        "submit",
-        "/tmp/Paseo.zip",
-        "--apple-id",
-        "id",
-        "--wait",
-        "--output-format",
-        "json",
-      ],
-      expected: 1,
-      expectedCalls: [
-        [
-          "notarytool",
-          "submit",
-          "/tmp/Paseo.zip",
-          "--apple-id",
-          "id",
-          "--wait",
-          "--output-format",
-          "json",
-        ],
-      ],
-      expectPattern: /Invalid credentials/,
-    },
-  ];
-  for (const scenario of cases) {
-    await t.test(scenario.name, () => {
-      const directory = mkdtempSync(join(tmpdir(), "xcrun-retry-"));
-      try {
-        const statePath = join(directory, "state.json");
-        const realXcrun = join(directory, "real-xcrun");
-        const wrapperPath = join(directory, "xcrun");
-        writeFileSync(wrapperPath, wrapperSource, { mode: 0o755 });
-        writeFileSync(join(directory, "sleep"), "#!/bin/sh\nexit 0\n", { mode: 0o755 });
-        writeFileSync(statePath, JSON.stringify({ steps: scenario.steps, calls: [] }));
-        writeFileSync(
-          realXcrun,
-          `#!/usr/bin/env node
-const fs = require("node:fs");
-const state = JSON.parse(fs.readFileSync(process.env.XCRUN_STATE, "utf8"));
-state.calls.push(process.argv.slice(2));
-const next = state.steps.shift();
-fs.writeFileSync(process.env.XCRUN_STATE, JSON.stringify(state));
-if (!next) process.exit(99);
-process.stdout.write(next.output + "\\n");
-process.exit(next.code);
-`,
-          { mode: 0o755 },
-        );
-        const result = spawnSync("bash", [wrapperPath, ...scenario.args], {
-          encoding: "utf8",
-          env: {
-            ...process.env,
-            PASEO_REAL_XCRUN: realXcrun,
-            XCRUN_STATE: statePath,
-            PATH: `${directory}:${process.env.PATH}`,
-          },
-          timeout: 5000,
-        });
-        assert.equal(result.status, scenario.expected, result.stdout + result.stderr);
-        const state = JSON.parse(readFileSync(statePath, "utf8"));
-        assert.deepEqual(state.calls, scenario.expectedCalls);
-        if (scenario.expectCleanJson) {
-          // @electron/notarize merges stdout and stderr before calling JSON.parse.
-          const parsed = JSON.parse((result.stdout + result.stderr).trim());
-          assert.equal(parsed.id, "ee2872f3-65d9-49f7-b2b5-adcdfe2db6ba");
-        }
-        if (scenario.expectPattern) {
-          assert.match(result.stdout + result.stderr, scenario.expectPattern);
-        }
-      } finally {
-        rmSync(directory, { recursive: true, force: true });
-      }
-    });
-  }
-});
-
 // GitHub retires macOS 14 on 2026-11-02; brownouts already reject these jobs.
 test("workflows avoid retired macOS 14 runners", () => {
   for (const path of filesUnder(".github/workflows", (candidate) => /\.ya?ml$/.test(candidate))) {
@@ -1088,22 +572,6 @@ test("workflows avoid retired macOS 14 runners", () => {
       path,
     );
   }
-});
-
-test("macOS jobs use latest runners while preserving release architectures", () => {
-  for (const [workflow, jobId] of [
-    [ciWorkflowPath, "server-tests-macos"],
-    [nixWorkflowPath, "build-desktop-darwin"],
-  ]) {
-    assert.match(
-      jobBlocks(readFileSync(workflow, "utf8")).get(jobId).join("\n"),
-      /^    runs-on: macos-latest$/m,
-    );
-  }
-  const release = readFileSync(new URL(".github/workflows/desktop-release.yml", repoRoot), "utf8");
-  assert.match(release, /runner: macos-latest\n\s+electron_arch: arm64/);
-  // GitHub has no standard macos-latest-intel alias; use the newest Intel image.
-  assert.match(release, /runner: macos-26-intel\n\s+electron_arch: x64/);
 });
 
 test("Nix desktop packaging resolves the workspace-local builder", () => {
