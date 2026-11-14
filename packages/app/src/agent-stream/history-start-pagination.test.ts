@@ -308,3 +308,25 @@ it.each([null, { ...initial, isReady: false }])(
     }
   },
 );
+
+it("uses the native prefetch distance while retaining the default threshold", () => {
+  const h = harness(true);
+  h.set({ isUnderfilled: false, distanceFromHistoryStart: 1500 });
+  h.pagination.rearm();
+  expect(h.requests).toHaveLength(0);
+  h.set({ historyStartThresholdPx: 1600 });
+  expect(h.requests).toHaveLength(1);
+  h.pagination.dispose();
+});
+
+it.each([1500, 1700])("settles against the configured threshold at %s", async (distance) => {
+  const h = harness(true);
+  h.set({ isUnderfilled: false, historyStartThresholdPx: 1600 });
+  h.pagination.rearm();
+  h.set({ progressKey: "10", distanceFromHistoryStart: distance });
+  h.requests[0](true);
+  await Promise.resolve();
+  h.pagination.settle();
+  expect(h.requests).toHaveLength(distance <= 1600 ? 2 : 1);
+  h.pagination.dispose();
+});
