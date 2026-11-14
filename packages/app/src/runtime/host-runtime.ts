@@ -97,6 +97,8 @@ import { createPerformanceTrace } from "@/performance/native-trace";
 import { revokePushNotifications } from "@/push-notifications";
 import { createAppWebSocketFactory } from "./websocket-factory";
 import { agentLog, describeError } from "@/utils/agent-log";
+import { recordNotificationOpenStage } from "@/notification-open/trace";
+import { confirmNotificationReceipt, useNotificationReceipt } from "@/notification-open/preview";
 
 export type HostRuntimeConnectionStatus = "idle" | "connecting" | "online" | "offline" | "error";
 export type PairingNavigationTarget = "openProject" | "hostRoot" | "hostSettings";
@@ -2819,6 +2821,61 @@ export class HostRuntimeStore {
     await replica.prepare(agentId);
   }
 
+  prepareAgentOpen(serverId: string, agentId: string): () => void {
+    let cancelled = false;
+    let stopObserving: (() => void) | undefined;
+    let releaseDemand: (() => void) | undefined;
+    let owner: ViewedTimelineOwner | null = null;
+    const release = () => {
+      if (cancelled) return;
+      cancelled = true;
+      clearTimeout(deadline);
+      stopObserving?.();
+      releaseDemand?.();
+    };
+    const deadline = setTimeout(release, 15_000);
+    void this.boot().catch((error) => {
+      console.warn("[NotificationOpen] startup failed", { serverId, error });
+    });
+    // Registry readiness does not depend on the optional localhost bootstrap probe.
+    void this.loadRegistry()
+      .then(() => {
+        if (cancelled || !this.getSnapshot(serverId)) return;
+        recordNotificationOpenStage(serverId, agentId, "runtime");
+        this.getSnapshot(serverId)?.client?.ensureConnected({ verify: true });
+        void this.prepareAgentTimeline(serverId, agentId)
+          .then(() => {
+            if (!cancelled) recordNotificationOpenStage(serverId, agentId, "cache");
+            return undefined;
+          })
+          .catch((error) => {
+            console.warn("[NotificationOpen] cache preparation failed", {
+              serverId,
+              agentId,
+              error,
+            });
+          });
+        const attach = (nextOwner: ViewedTimelineOwner | null) => {
+          if (cancelled || nextOwner === owner) return;
+          releaseDemand?.();
+          owner = nextOwner;
+          releaseDemand = owner?.prepareAgentOpen(agentId);
+          if (owner) recordNotificationOpenStage(serverId, agentId, "observation-requested");
+        };
+        stopObserving = useSessionStore.subscribe(
+          (state) => state.sessions[serverId]?.viewedTimelineSync ?? null,
+          attach,
+        );
+        attach(useSessionStore.getState().sessions[serverId]?.viewedTimelineSync ?? null);
+        return undefined;
+      })
+      .catch((error) => {
+        release();
+        console.warn("[NotificationOpen] preparation failed", { serverId, agentId, error });
+      });
+    return release;
+  }
+
   async fetchAgentTimeline(
     serverId: string,
     agentId: string,
@@ -2827,10 +2884,20 @@ export class HostRuntimeStore {
     const directory = this.directorySyncByServer.get(serverId);
     if (!directory) throw new Error(`Unknown host runtime for serverId ${serverId}`);
     const owner = useSessionStore.getState().sessions[serverId]?.viewedTimelineSync;
+    const receipt = useNotificationReceipt.getState().receipt;
     const page = await directory.fetchTimeline(agentId, request);
     if (owner && useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner) {
       owner.flushStreamAgent(agentId);
       owner.applyTimelineResponse(page);
+      if (
+        receipt?.serverId === serverId &&
+        receipt.agentId === agentId &&
+        !page.error &&
+        !page.hasNewer &&
+        page.direction !== "before"
+      ) {
+        confirmNotificationReceipt(receipt);
+      }
     }
     return page;
   }

@@ -347,6 +347,8 @@ export interface ViewedTimelineUiBridge {
 }
 
 export interface ViewedTimelineSync extends ViewedTimelineUiBridge {
+  /** A user selected this chat before its route can mount. Visibility adopts the demand. */
+  prepareAgentOpen(agentId: string): () => void;
   /**
    * The agent tabs that currently exist in workspace layout. This only ever *releases*
    * subscriptions: closing a tab drops its chat. It never adds one, because layout is
@@ -476,6 +478,7 @@ function sameAgentIds(left: string[], right: string[]): boolean {
 
 export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): ViewedTimelineSync {
   const sources = new Map<string, string[]>();
+  const opening = new Map<object, string>();
   const catchUps = new Map<string, CatchUpState>();
   const catchUpGenerations = new Map<string, number>();
   // Authoritative fetch owed but not runnable yet: disconnected, unacknowledged, or parked.
@@ -506,6 +509,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   let openedAgentIds: string[] = [];
 
   const visibleAgentIds = () => normalizeAgentIds([...sources.values()].flat());
+  const priorityAgentIds = () => normalizeAgentIds([...opening.values(), ...visibleAgentIds()]);
 
   const rememberOpenedAgentIds = (agentIds: string[]) => {
     if (agentIds.length === 0) return;
@@ -618,7 +622,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   // Existing streams and retries continue; only initial hidden catch-ups wait.
   const shouldWaitForVisibleCatchUp = (agentId: string) => {
     if (!active || catchUps.has(agentId)) return false;
-    const visible = visibleAgentIds();
+    const visible = priorityAgentIds();
     return (
       !visible.includes(agentId) &&
       visible.some((id) => {
@@ -672,7 +676,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   };
 
   const startAcknowledgedCatchUps = () => {
-    const visible = visibleAgentIds();
+    const visible = priorityAgentIds();
     const ordered = [
       ...visible.filter(isAcknowledged),
       ...acknowledged.filter((id) => !visible.includes(id)),
@@ -780,10 +784,22 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
   };
 
   const publishVisibleMembership = () => {
-    commitDesiredMembership(normalizeAgentIds([...openedAgentIds, ...visibleAgentIds()]));
+    commitDesiredMembership(
+      normalizeAgentIds([...openedAgentIds, ...opening.values(), ...visibleAgentIds()]),
+    );
   };
 
   return {
+    prepareAgentOpen(agentId) {
+      const source = {};
+      opening.set(source, agentId);
+      publishVisibleMembership();
+      startAcknowledgedCatchUps();
+      return () => {
+        if (!opening.delete(source)) return;
+        publishVisibleMembership();
+      };
+    },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
@@ -809,6 +825,9 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       if (normalized.length === 0) sources.delete(sourceId);
       else sources.set(sourceId, normalized);
       rememberOpenedAgentIds(normalized);
+      for (const [source, agentId] of opening) {
+        if (normalized.includes(agentId)) opening.delete(source);
+      }
       publishVisibleMembership();
       startAcknowledgedCatchUps();
     },
@@ -856,6 +875,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       observation = null;
       membershipNeedsRetry = false;
       sources.clear();
+      opening.clear();
       membershipGeneration += 1;
       for (const agentId of desired) cancelCatchUp(agentId);
       desired = [];

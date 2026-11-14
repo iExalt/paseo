@@ -1818,6 +1818,143 @@ describe("HostRuntimeController", () => {
 });
 
 describe("HostRuntimeStore", () => {
+  it("cancels notification preparation before registry readiness without late work", async () => {
+    const store = new HostRuntimeStore({ storage: createMemoryHostRuntimeStorage() });
+    const boot = createDeferred<void>();
+    const bootSpy = vi.spyOn(store, "boot").mockReturnValue(boot.promise);
+    const snapshot = vi.spyOn(store, "getSnapshot");
+    const prepare = vi.spyOn(store, "prepareAgentTimeline");
+    const release = store.prepareAgentOpen("host", "agent");
+    release();
+    boot.resolve();
+    await boot.promise;
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(prepare).not.toHaveBeenCalled();
+    bootSpy.mockRestore();
+    snapshot.mockRestore();
+    prepare.mockRestore();
+  });
+
+  it("adopts a late timeline owner and bounds pending notification demand", async () => {
+    useHostRuntimeClock();
+    const host = makeHost({ serverId: "notification-prepare" });
+    const client = new FakeDaemonClient();
+    client.setConnectionState({ status: "connected" });
+    const store = new HostRuntimeStore({
+      storage: createMemoryHostRuntimeStorage({
+        "@paseo:daemon-registry": JSON.stringify([host]),
+        "@paseo:e2e": "1",
+      }),
+      deps: makeDeps({}, []),
+    });
+    const bootSpy = vi.spyOn(store, "boot").mockResolvedValue();
+    store.syncHosts([host], {
+      initialConnectionByServerId: new Map([
+        [
+          host.serverId,
+          {
+            connectionId: host.connections[0]!.id,
+            existingClient: client as unknown as DaemonClient,
+          },
+        ],
+      ]),
+    });
+    await waitForHostOnline(store, host.serverId);
+    const prepare = vi.spyOn(store, "prepareAgentTimeline").mockResolvedValue();
+    const release = store.prepareAgentOpen(host.serverId, "target");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(prepare).toHaveBeenCalledExactlyOnceWith(host.serverId, "target");
+    expect(client.ensureConnectedCalls).toBe(1);
+    const owner = store.createViewedTimelineOwner(host.serverId, {
+      observe: () => ({ ready: Promise.resolve(), release: async () => {} }),
+      readCursor: () => undefined,
+      fetchPage: async () => ({ hasNewer: false, endCursor: null }),
+      fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+      reportError: () => {},
+    });
+    const register = vi.spyOn(owner, "prepareAgentOpen");
+    useSessionStore.getState().setViewedTimelineSync(host.serverId, owner);
+    expect(register).toHaveBeenCalledExactlyOnceWith("target");
+    expect(owner.getAgentTimelineStatus("target")).toBe("pending");
+    await vi.advanceTimersByTimeAsync(15_000);
+    release();
+    useSessionStore.getState().setViewedTimelineSync(host.serverId, null);
+    useSessionStore.getState().setViewedTimelineSync(host.serverId, owner);
+    expect(register).toHaveBeenCalledTimes(1);
+    owner.dispose();
+    store.syncHosts([]);
+    bootSpy.mockRestore();
+    prepare.mockRestore();
+  });
+
+  it("prepares a registered notification target while the unrelated localhost bootstrap is held", async () => {
+    const host = makeHost({
+      serverId: "notification-registry",
+      connections: [
+        {
+          id: "remote",
+          type: "directTcp",
+          endpoint: "remote:6767",
+        },
+      ],
+    });
+    const probe =
+      createDeferred<Awaited<ReturnType<HostRuntimeControllerDeps["connectToDaemon"]>>>();
+    const probing = createDeferred<void>();
+    const client = new FakeDaemonClient();
+    client.setConnectionState({ status: "connected" });
+    const store = new HostRuntimeStore({
+      storage: createMemoryHostRuntimeStorage({ "@paseo:daemon-registry": JSON.stringify([host]) }),
+      deps: {
+        createClient: () => client as unknown as DaemonClient,
+        connectToDaemon: (input) => {
+          if (
+            input.connection.type === "directTcp" &&
+            input.connection.endpoint === "localhost:6767"
+          ) {
+            probing.resolve();
+            return probe.promise;
+          }
+          return Promise.resolve({
+            client: client as unknown as DaemonClient,
+            serverId: host.serverId,
+            hostname: null,
+          });
+        },
+        getClientId: async () => "notification-registry-test",
+      },
+    });
+    const prepared = createDeferred<void>();
+    const preparation = vi.spyOn(store, "prepareAgentTimeline").mockImplementation(async () => {
+      prepared.resolve();
+    });
+    let bootFinished = false;
+    const boot = store.boot().then(() => {
+      bootFinished = true;
+      return undefined;
+    });
+    await probing.promise;
+    const owner = store.createViewedTimelineOwner(host.serverId, {
+      observe: () => ({ ready: Promise.resolve(), release: async () => {} }),
+      readCursor: () => undefined,
+      fetchPage: async () => ({ hasNewer: false, endCursor: null }),
+      fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+      reportError: () => {},
+    });
+    useSessionStore.getState().setViewedTimelineSync(host.serverId, owner);
+    const observe = vi.spyOn(owner, "prepareAgentOpen");
+    const release = store.prepareAgentOpen(host.serverId, "target");
+    await prepared.promise;
+    expect(bootFinished).toBe(false);
+    expect(observe).toHaveBeenCalledExactlyOnceWith("target");
+    release();
+    probe.reject(new Error("no local daemon"));
+    await boot;
+    preparation.mockRestore();
+    owner.dispose();
+    store.syncHosts([]);
+  });
+
   it.each([false, true])(
     "keeps B and C distinct with routed and direct candidates (B direct first: %s)",
     async (directFirst) => {

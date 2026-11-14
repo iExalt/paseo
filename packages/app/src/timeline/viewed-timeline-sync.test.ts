@@ -44,6 +44,43 @@ interface TimelineFetch {
   fail(message: string): void;
 }
 
+test("a notification prepares before visibility and transfers its in-flight fetch without a gap", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  const release = world.sync.prepareAgentOpen("target");
+  expect(world.cacheRequests).toEqual(["target"]);
+  world.expectNoPendingFetch();
+  const membership = await world.nextMembership();
+  expect(membership.agentIds).toEqual(["target"]);
+  membership.succeed();
+  const fetch = await world.nextFetch("target");
+  world.sync.replaceVisibleAgentIds("pane", ["target"]);
+  release();
+  release();
+  world.expectNoPendingFetch();
+  expect(world.releasedMemberships).toEqual([]);
+  fetch.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("ready"));
+  world.sync.dispose();
+});
+
+test("cancelling one pending open does not cancel another caller's demand", async () => {
+  const world = new TimelineWorld();
+  const first = world.sync.prepareAgentOpen("target");
+  const second = world.sync.prepareAgentOpen("target");
+  first();
+  world.sync.setConnected(true);
+  const membership = await world.nextMembership();
+  expect(membership.agentIds).toEqual(["target"]);
+  membership.succeed();
+  const fetch = await world.nextFetch("target");
+  second();
+  expect((await world.nextMembership()).agentIds).toEqual([]);
+  fetch.respond({ hasNewer: false });
+  expect(world.sync.getAgentTimelineStatus("target")).toBe("pending");
+  world.sync.dispose();
+});
+
 test("split panes catch up together before hidden open chats start fetching", async () => {
   const world = new TimelineWorld();
   world.openedEarlier(["a-hidden"]);

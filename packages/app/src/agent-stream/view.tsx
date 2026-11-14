@@ -113,6 +113,9 @@ import { isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 import { recordRenderProfileReasons } from "@/utils/render-profiler";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { useNotificationPresentation } from "@/notification-open/preview-react";
+import { preserveNotificationPreviewTransform } from "@/notification-open/preview";
+import { NotificationMessagePreview } from "@/notification-open/preview-view";
 import { useStreamHistoryWindow } from "./use-stream-history-window";
 import { PluginTimelineItemView, useInstalledTimelineTransform } from "@/plugins/timeline";
 
@@ -330,8 +333,6 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
   "supportsRewindBoth",
 ];
 
-const EMPTY_STREAM_HEAD: StreamItem[] = [];
-
 function useRetainedValue<T>(value: T, active: boolean): T {
   const retainedRef = useRef(value);
   if (active) {
@@ -363,7 +364,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       bottomOverlayControlClearance,
       toast,
       onOpenWorkspaceFile,
-      readOnly = false,
+      readOnly: providedReadOnly = false,
       historyPagination,
     },
     ref,
@@ -405,7 +406,22 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       (state) => state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
     );
     const streamHead = providedStreamHead ?? sessionStreamHead;
-    const forkAgent = useForkAgent({ serverId: resolvedServerId, toast, readOnly });
+    const previewPresentation = useNotificationPresentation({
+      serverId: resolvedServerId,
+      agentId,
+      tail: streamItems,
+      head: streamHead,
+      authoritative: isAuthoritativeHistoryReady,
+      pendingPermissions,
+      readOnly: providedReadOnly,
+      routeRequest: routeBottomAnchorRequest,
+    });
+    const { receipt, readOnly } = previewPresentation;
+    const forkAgent = useForkAgent({
+      serverId: resolvedServerId,
+      toast,
+      readOnly,
+    });
     const supportsAgentForkContextCursor = useSessionStore(
       (state) =>
         state.sessions[resolvedServerId]?.serverInfo?.features?.agentForkContextCursor === true,
@@ -549,15 +565,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // the component reads the current (fresh) streamItems/streamHead from props.
     const effectiveStreamItems = useRetainedValue(streamItems, isActive);
     const effectiveStreamHead = useRetainedValue(streamHead, isActive);
+    const effectivePreviewPresentation = useRetainedValue(previewPresentation, isActive);
+    const presentationTransform = useMemo(
+      () =>
+        preserveNotificationPreviewTransform(
+          transformTimelineItem,
+          effectivePreviewPresentation.previewId,
+        ),
+      [transformTimelineItem, effectivePreviewPresentation.previewId],
+    );
     const effectiveTurnPresentation = useRetainedValue(turnPresentation, isActive);
     const isTurnActive = effectiveTurnPresentation.isActive;
     const presentStream = useMemo(() => createStreamPresentation(), []);
     const presentation = useMemo(
       () =>
         presentStream({
-          tail: effectiveStreamItems,
-          head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
-          transform: transformTimelineItem,
+          tail: effectivePreviewPresentation.tail,
+          head: effectivePreviewPresentation.head,
+          transform: presentationTransform,
           display: chatDisplay,
           autoExpandReasoning,
           expandedTurnHostIds,
@@ -566,9 +591,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }),
       [
         presentStream,
-        effectiveStreamItems,
-        effectiveStreamHead,
-        transformTimelineItem,
+        effectivePreviewPresentation.tail,
+        effectivePreviewPresentation.head,
+        presentationTransform,
         chatDisplay,
         autoExpandReasoning,
         expandedTurnHostIds,
@@ -811,7 +836,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               {(renderFullContent) => (
                 <AssistantMessage
                   renderFullContent={renderFullContent}
-                  occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
+                  occurrenceKey={createAssistantImageOccurrenceKey({
+                    agentId,
+                    itemId: item.id,
+                  })}
                   message={item.text}
                   timestamp={item.timestamp.getTime()}
                   workspaceRoot={workspaceRoot}
@@ -970,6 +998,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
         const item = layoutItem.item;
+        if (receipt && item.id === previewPresentation.previewId) {
+          return <NotificationMessagePreview receipt={receipt} />;
+        }
         switch (item.kind) {
           case "user_message":
             return renderUserMessageItem(layoutItem, item);
@@ -1025,6 +1056,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         getCollapsedTurn,
         setTurnExpanded,
         resolvedServerId,
+        receipt,
+        previewPresentation.previewId,
       ],
     );
 
@@ -1115,7 +1148,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const scrollToBottomContainerStyle = useMemo(
       () => [
         stylesheet.scrollToBottomContainer,
-        { bottom: resolveBottomOverlayControlOffset(bottomOverlayControlClearance) },
+        {
+          bottom: resolveBottomOverlayControlOffset(bottomOverlayControlClearance),
+        },
       ],
       [bottomOverlayControlClearance],
     );
@@ -1280,8 +1315,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   renderers,
                   listEmptyComponent,
                   viewportRef,
-                  routeBottomAnchorRequest,
-                  isAuthoritativeHistoryReady,
+                  routeBottomAnchorRequest: previewPresentation.anchorRequest,
+                  isAuthoritativeHistoryReady: previewPresentation.isContentReady,
                   onNearBottomChange: setIsNearBottom,
                   onReadingPositionChange: handleReadingPositionChange,
                   onNearHistoryStart: loadOlder,
@@ -1963,7 +1998,9 @@ function StreamItemWrapper({ gapBelow, turnIndent, children }: StreamItemWrapper
   const wrapperStyle = useMemo(
     () => [
       stylesheet.streamItemWrapper,
-      { marginBottom: turnIndent === "nested" || turnIndent === "openedHost" ? 0 : gapBelow },
+      {
+        marginBottom: turnIndent === "nested" || turnIndent === "openedHost" ? 0 : gapBelow,
+      },
     ],
     [gapBelow, turnIndent],
   );
