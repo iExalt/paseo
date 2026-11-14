@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { addAckOptions, runAckCommand } from "./ack.js";
 import { runModeCommand } from "./mode.js";
 import { addArchiveOptions, runArchiveCommand } from "./archive.js";
 import { addDeleteOptions, runDeleteCommand } from "./delete.js";
@@ -29,6 +30,10 @@ import {
 
 export function createAgentCommand(): Command {
   const agent = new Command("agent").description("Manage agents (advanced operations)");
+
+  addJsonAndDaemonHostOptions(addAckOptions(agent.command("ack"))).action(
+    withOutput(runAckCommand),
+  );
 
   // Primary agent commands (same as top-level)
   addJsonAndDaemonHostOptions(addLsOptions(agent.command("ls"))).action(withOutput(runLsCommand));

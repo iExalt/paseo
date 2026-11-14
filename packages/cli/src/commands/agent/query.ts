@@ -18,6 +18,11 @@ export const agentQuerySchema: OutputSchema<AgentListItemPayload> = {
     { header: "PROVIDER", field: "provider", width: 14 },
     { header: "MODEL", field: (agent) => agent.model ?? "-", width: 22 },
     { header: "STATUS", field: "status", width: 12 },
+    {
+      header: "ATTENTION",
+      field: (agent) => (agent.requiresAttention ? (agent.attentionReason ?? "yes") : "-"),
+      width: 16,
+    },
     { header: "CWD", field: "cwd", width: 32 },
   ],
 };

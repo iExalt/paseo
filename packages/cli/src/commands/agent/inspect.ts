@@ -19,6 +19,9 @@ interface AgentInspect {
   Model: string;
   Thinking: string;
   Status: string;
+  RequiresAttention: boolean;
+  AttentionReason: AgentSnapshotPayload["attentionReason"] | null;
+  AttentionTimestamp: string | null;
   Archived: boolean;
   ArchivedAt: string | null;
   Mode: string;
@@ -142,6 +145,9 @@ function toInspectData(snapshot: AgentSnapshotPayload): AgentInspect {
     Model: resolveModel(snapshot) ?? "-",
     Thinking: snapshot.effectiveThinkingOptionId ?? "auto",
     Status: snapshot.status,
+    RequiresAttention: snapshot.requiresAttention ?? false,
+    AttentionReason: snapshot.attentionReason ?? null,
+    AttentionTimestamp: snapshot.attentionTimestamp ?? null,
     Archived: snapshot.archivedAt != null,
     ArchivedAt: snapshot.archivedAt ?? null,
     Mode: snapshot.currentModeId ?? "default",
@@ -171,6 +177,9 @@ function toInspectRows(agent: AgentInspect): InspectRow[] {
     { key: "Model", value: agent.Model },
     { key: "Thinking", value: agent.Thinking },
     { key: "Status", value: agent.Status },
+    { key: "RequiresAttention", value: String(agent.RequiresAttention) },
+    { key: "AttentionReason", value: agent.AttentionReason ?? "null" },
+    { key: "AttentionTimestamp", value: agent.AttentionTimestamp ?? "null" },
     { key: "Archived", value: String(agent.Archived) },
     { key: "ArchivedAt", value: agent.ArchivedAt ?? "null" },
     { key: "Mode", value: agent.Mode },
