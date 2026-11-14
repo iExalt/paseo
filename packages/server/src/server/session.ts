@@ -2,6 +2,7 @@ import { DiffSession } from "./diff/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory, type BackgroundVisibility } from "./agent/directory.js";
+import { acceptOnDispatch, type FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
 import { ConnectedHostSession } from "./connected-hosts/index.js";
 import type { ConnectedHosts } from "./connected-hosts/index.js";
 import {
@@ -2567,7 +2568,9 @@ export class Session {
   private getDaemonConfigForCurrentClient(
     config: MutableDaemonConfig = this.daemonConfigStore.get(),
   ): MutableDaemonConfig {
-    return toWireDaemonConfig(daemonConfigForClient(config, this.supports(CLIENT_CAPS.replyRuleNotifications)));
+    return toWireDaemonConfig(
+      daemonConfigForClient(config, this.supports(CLIENT_CAPS.replyRuleNotifications)),
+    );
   }
 
   public allowsInbound(message: SessionInboundMessage): boolean {
@@ -9692,7 +9695,15 @@ export class Session {
               activeTurnBehavior: msg.activeTurnBehavior ?? "steer",
               sessionMode: msg.sessionMode,
               clearPendingPermissions: false,
+              onDispatch: (nextDisposition, held) => {
                 disposition = nextDisposition;
+                if (!notification) return;
+                acceptOnDispatch(notification, held).catch((error) =>
+                  this.sessionLogger.error(
+                    { err: error, agentId },
+                    "Failed to settle finish subscription",
+                  ),
+                );
               },
             });
           } catch (error) {
