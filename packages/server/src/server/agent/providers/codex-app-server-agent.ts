@@ -54,6 +54,7 @@ import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 import { CodexAsyncQuestions, codexAsyncQuestionToTimeline } from "./codex/async-questions.js";
+import { CodexThreadCost } from "./codex/thread-cost.js";
 import {
   mapCodexToolCallEnvelope,
   mapCodexToolCallFromThreadItem,
@@ -1058,6 +1059,12 @@ function filterCodexThreadsByCwd(
   );
 }
 
+/** A thread's cumulative token total, which Codex's cost accounting reaches once caught up. */
+function readCodexTotalTokens(tokenUsage: unknown): number | undefined {
+  const total = toObjectRecord(toObjectRecord(tokenUsage)?.total);
+  return firstPositiveFiniteNumber(total?.totalTokens, total?.total_tokens);
+}
+
 export function toAgentUsage(tokenUsage: unknown): AgentUsage | undefined {
   const usage = toObjectRecord(tokenUsage);
   if (!usage) return undefined;
@@ -1897,7 +1904,8 @@ function updateHistoricalSubAgentActivity(
   };
 }
 
-function readCodexHistoricalSubAgentThreadIds(item: unknown): string[] {
+/** Threads an item says its own thread spawned; messaging or waiting on a thread is not a spawn. */
+function readCodexSpawnedThreadIds(item: unknown): string[] {
   const activity = readCodexSubAgentActivity(item);
   if (activity) {
     return activity.kind === "started" ? [activity.agentThreadId] : [];
@@ -2129,7 +2137,7 @@ async function projectCodexThreadHistory(
           ? { providerTurnId: row.turnId }
           : {}),
       });
-      for (const childThreadId of readCodexHistoricalSubAgentThreadIds(item)) {
+      for (const childThreadId of readCodexSpawnedThreadIds(item)) {
         subAgentTimelineIndexByThreadId.set(childThreadId, timeline.length - 1);
       }
     }
@@ -3425,6 +3433,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private warnedInvalidNotificationPayloads = new Set<string>();
   private warnedIncompleteEditToolCallIds = new Set<string>();
   private latestUsage: AgentUsage | undefined;
+  private readonly threadCost: CodexThreadCost;
   private latestPlanResult: { callId: string; text: string; turnId: string | null } | null = null;
   private readonly userMessageTurnIndexes = new Map<string, number>();
   private readonly userMessageTurnIds: string[] = [];
@@ -3486,6 +3495,21 @@ export class CodexAppServerAgentSession implements AgentSession {
       module: "agent",
       provider: CODEX_PROVIDER,
       agentId: this.agentId,
+    });
+    this.threadCost = new CodexThreadCost({
+      logger: this.logger,
+      readUsage: (threadId) => {
+        if (!this.client) throw new Error("Codex app-server is not connected");
+        return this.client.request("account/usage/read", { threadId });
+      },
+      publish: (totalCostUsd) => {
+        this.latestUsage = { ...this.latestUsage, totalCostUsd };
+        this.notifySubscribers({
+          type: "usage_updated",
+          provider: CODEX_PROVIDER,
+          usage: this.latestUsage,
+        });
+      },
     });
     if (config.modeId !== undefined) {
       validateCodexMode(config.modeId);
@@ -3588,6 +3612,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       if (this.currentThreadId) {
         await this.ensureThreadLoaded();
         await this.applyDefaultModelAndThinking();
+        this.refreshThreadCost("all");
       }
 
       if (this.closed) {
@@ -3931,6 +3956,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.pendingSubAgentNotificationsByThreadId.clear();
     const providerSubagentEvents: AgentStreamEvent[] = [];
     this.historySubagentEvents = providerSubagentEvents;
+    this.syncThreadCostRoot();
     try {
       await this.loadPersistedSubAgentHistories(client, subAgentRoutes);
     } finally {
@@ -3972,6 +3998,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         continue;
       }
       visitedThreadIds.add(next.route.childThreadId);
+      this.threadCost.addSpawnedThreads(next.parentSubagentId, [next.route.childThreadId]);
       this.registerSubAgentToolCall({
         timelineItem: next.route.toolCall,
         rawItem: { agentThreadId: next.route.childThreadId },
@@ -3995,11 +4022,21 @@ export class CodexAppServerAgentSession implements AgentSession {
           });
         }
       } catch (error) {
+        this.threadCost.markDiscoveryIncomplete();
         this.logger.trace(
           { err: error, childThreadId: next.route.childThreadId },
           "Failed to load persisted Codex child history",
         );
       }
+    }
+    // The cap bounds history replay. Spawns found so far still count toward cost, but their own
+    // descendants stay unknown, so the resumed total is incomplete.
+    for (const unvisited of queue) {
+      if (visitedThreadIds.has(unvisited.route.childThreadId)) continue;
+      this.threadCost.addSpawnedThreads(unvisited.parentSubagentId, [
+        unvisited.route.childThreadId,
+      ]);
+      this.threadCost.markDiscoveryIncomplete();
     }
   }
 
@@ -5007,6 +5044,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.subscribers.clear();
     this.startupEvents = null;
+    this.threadCost.dispose();
     this.activeForegroundTurnId = null;
     this.activeClientMessageId = null;
     this.pendingForegroundTurnIdentification?.resolve(null);
@@ -5421,6 +5459,13 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     const parsed = CodexNotificationSchema.parse({ method, params });
     this.traceParsedNotification(method, params, parsed);
+    if (parsed.kind === "token_usage_updated") {
+      // Subagent token telemetry is dropped below, but cost accounting needs every thread's total.
+      const totalTokens = readCodexTotalTokens(parsed.tokenUsage);
+      if (totalTokens !== undefined) {
+        this.syncThreadCostRoot().reportTokens(parsed.threadId, totalTokens);
+      }
+    }
     const route = this.resolveCodexThreadRoute(getCodexNotificationThreadId(parsed));
     if (route.kind === "pending_sub_agent") {
       this.bufferPendingSubAgentNotification(route.threadId, parsed);
@@ -6110,6 +6155,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         status = "canceled";
       }
       this.emitSubAgentActivityUpdate(subAgentCallId, status);
+      if (parsed.threadId) this.refreshThreadCost([parsed.threadId]);
       return;
     }
     this.completePendingRootCompactions();
@@ -6139,6 +6185,31 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.pendingForegroundTurnIdentification = null;
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.resetTurnTrackingState();
+    this.refreshThreadCost("all");
+  }
+
+  /**
+   * Codex prices each thread itself (`account/usage/read`), so Paseo carries no price table.
+   * A thread's estimate covers its whole life, including turns from before a resume; the chat
+   * total adds the native subagent threads it spawned.
+   */
+  private refreshThreadCost(threadIds: readonly string[] | "all"): void {
+    if (this.closed) return;
+    this.syncThreadCostRoot().refresh(threadIds);
+  }
+
+  private syncThreadCostRoot(): CodexThreadCost {
+    const threadId = this.currentThreadId;
+    this.threadCost.reset(threadId, {
+      resumed: threadId !== null && threadId === this.resumeHandle?.sessionId,
+    });
+    return this.threadCost;
+  }
+
+  /** Counts the threads a spawn item created toward this chat's cost. */
+  private recordSpawnedThreads(threadId: string | null | undefined, item: unknown): void {
+    const spawned = readCodexSpawnedThreadIds(item);
+    if (spawned.length > 0) this.syncThreadCostRoot().addSpawnedThreads(threadId, spawned);
   }
 
   private resetTurnTrackingState(): void {
@@ -6191,7 +6262,10 @@ export class CodexAppServerAgentSession implements AgentSession {
   private handleTokenUsageUpdatedNotification(
     parsed: Extract<ParsedCodexNotification, { kind: "token_usage_updated" }>,
   ): void {
-    this.latestUsage = toAgentUsage(parsed.tokenUsage);
+    const usage = toAgentUsage(parsed.tokenUsage);
+    // Token readings carry no cost; keep the thread's last estimate alongside them.
+    const totalCostUsd = this.latestUsage?.totalCostUsd;
+    this.latestUsage = usage && totalCostUsd !== undefined ? { ...usage, totalCostUsd } : usage;
     if (this.latestUsage) {
       this.notifySubscribers({
         type: "usage_updated",
@@ -6524,6 +6598,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (shouldIgnoreMirroredLifecycleItem(parsed.source, parsed.item)) {
       return;
     }
+    this.recordSpawnedThreads(parsed.threadId, parsed.item);
     this.receiveAsyncQuestion(parsed.threadId, parsed.item);
     if (this.isUserMessageItem(parsed.item)) {
       await this.handleUserMessageItem(parsed);
@@ -6682,6 +6757,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     if (shouldIgnoreMirroredLifecycleItem(parsed.source, parsed.item)) {
       return;
     }
+    this.recordSpawnedThreads(parsed.threadId, parsed.item);
     if (this.isUserMessageItem(parsed.item)) {
       await this.handleUserMessageItem(parsed);
       return;
