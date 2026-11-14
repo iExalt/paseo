@@ -1064,7 +1064,8 @@ type CorrelatedResponseMessage =
   | Extract<SessionOutboundMessage, { payload: { requestId: string } }>
   | Extract<SessionOutboundMessage, { type: "terminals_changed" }>
   | GetDaemonConfigResponse
-  | SetDaemonConfigResponse;
+  | SetDaemonConfigResponse
+  | PullRequestTimelineResponse;
 type CorrelatedResponseType = CorrelatedResponseMessage["type"];
 type CorrelatedResponsePayloads = {
   [Message in CorrelatedResponseMessage as Message["type"]]: Message["payload"];
@@ -2407,7 +2408,7 @@ export class DaemonClient {
           return null;
         }
         const payload = correlated.payload as unknown as CorrelatedResponsePayload<TResponseType>;
-        if (payload.requestId !== params.requestId) {
+        if (!payload || !("requestId" in payload) || payload.requestId !== params.requestId) {
           return null;
         }
         if (!params.selectPayload) {
@@ -2817,6 +2818,7 @@ export class DaemonClient {
             timeout: options?.timeout,
             options: { skipQueue: true },
             selectPayload: (payload): CorrelatedResponsePayload<T> | null => {
+              if (!payload) return null;
               if ("error" in payload && typeof payload.error === "string")
                 throw new DaemonRpcError({
                   requestId: payload.requestId,
@@ -6358,6 +6360,7 @@ export class DaemonClient {
       if (
         !active ||
         !("payload" in message) ||
+        !message.payload ||
         !("requestId" in message.payload) ||
         message.payload.requestId !== requestId
       )

@@ -70,6 +70,18 @@ test("a caller consuming the snapshot later receives its buffered updates in ord
   await b.release();
 });
 
+test("malformed subscription messages without payloads are ignored", () => {
+  const c = connection();
+  const malformed = {
+    type: "agent_update",
+    payload: undefined,
+  } as unknown as SessionOutboundMessage;
+
+  expect(c.subscriptions.owns(malformed)).toBe(false);
+  expect(() => c.subscriptions.receive(malformed)).not.toThrow();
+  expect(c.failures).toEqual([]);
+});
+
 test("cancellation before the ID waits for bootstrap and releases exactly that ID", async () => {
   const c = connection();
   const abort = new AbortController();

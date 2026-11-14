@@ -38,6 +38,7 @@ import {
   type NewSessionResponse,
   type PermissionOption,
   type Plan,
+  type PromptRequest,
   type PromptResponse,
   type ReadTextFileRequest,
   type RequestPermissionRequest,
@@ -46,7 +47,6 @@ import {
   type SessionConfigOption,
   type SessionInfoUpdate,
   type SessionMode,
-  type SessionModelState,
   type SessionNotification,
   type SessionUpdate,
   type TerminalOutputRequest,
@@ -370,8 +370,7 @@ function normalizeACPIncomingMessage(message: AnyMessage): AnyMessage {
     if (Number.isSafeInteger(numericId)) {
       return {
         ...message,
-        // COMPAT(deepseek-tui-acp-id): added v0.1.78, remove after 2026-11-19
-        // once the ACP SDK accepts stringified numeric response IDs.
+        // COMPAT(deepseek-tui-acp-id): remove when DeepSeek TUI and the ACP SDK preserve string response IDs.
         id: numericId,
       } as AnyMessage;
     }
@@ -669,7 +668,25 @@ interface PendingUserMessage {
   messageId?: string;
 }
 
-export type SessionStateResponse = NewSessionResponse | LoadSessionResponse | ResumeSessionResponse;
+interface LegacyACPModelState {
+  availableModels: Array<{
+    modelId: string;
+    name: string;
+    description?: string | null;
+    _meta?: Record<string, unknown> | null;
+  }>;
+  currentModelId: string;
+  _meta?: Record<string, unknown> | null;
+}
+
+export type SessionStateResponse = (
+  | NewSessionResponse
+  | LoadSessionResponse
+  | ResumeSessionResponse
+) & {
+  /** COMPAT(acp-legacy-models): remove when supported ACP providers expose models through configOptions. */
+  models?: LegacyACPModelState | null;
+};
 
 interface TerminalExit {
   exitCode?: number | null;
@@ -715,7 +732,7 @@ interface SelectConfigChoice {
   description?: string | null;
   group?: string;
 }
-type AvailableACPModel = NonNullable<SessionModelState["availableModels"]>[number];
+type AvailableACPModel = LegacyACPModelState["availableModels"][number];
 
 interface ACPModeSelection {
   availableMode: AgentMode | null;
@@ -836,7 +853,7 @@ export function deriveModesFromACP(
 
 export function deriveModelDefinitionsFromACP(
   provider: string,
-  models: SessionModelState | null | undefined,
+  models: LegacyACPModelState | null | undefined,
   configOptions?: SessionConfigOption[] | null,
 ): AgentModelDefinition[] {
   const sessionThinking = deriveSessionThinking(configOptions);
@@ -1481,7 +1498,7 @@ export class ACPAgentClient implements AgentClient {
     const closeTimeoutMs = Math.min(ACP_PROBE_CLOSE_TIMEOUT_MS, remainingMs);
     try {
       await withTimeout(
-        probe.connection.unstable_closeSession({ sessionId }),
+        probe.connection.closeSession({ sessionId }),
         closeTimeoutMs,
         `ACP loaded session/close timed out after ${closeTimeoutMs}ms`,
       );
@@ -1654,7 +1671,7 @@ export class ACPAgentClient implements AgentClient {
     try {
       if (sessionId && probe.initialize?.agentCapabilities?.sessionCapabilities?.close) {
         await withTimeout(
-          probe.connection.unstable_closeSession({ sessionId }),
+          probe.connection.closeSession({ sessionId }),
           ACP_PROBE_CLOSE_TIMEOUT_MS,
           `ACP probe session/close timed out after ${ACP_PROBE_CLOSE_TIMEOUT_MS}ms`,
         );
@@ -1993,7 +2010,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
   /**
    * IMPORTANT: Some ACP providers (e.g., Devin CLI) require all three params
    * (sessionId, cwd, mcpServers) to be present in session/load or
-   * unstable_resumeSession — even when mcpServers is an empty array — and
+   * resumeSession — even when mcpServers is an empty array — and
    * return "Invalid params" if any are omitted. Never drop cwd or mcpServers
    * from these calls regardless of capabilities.
    */
@@ -2027,7 +2044,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
         this.applySessionState(response);
       } else if (sessionCapabilities?.resume) {
         const response = await this.runACPRequest(() =>
-          this.connection!.unstable_resumeSession({
+          this.connection!.resumeSession({
             sessionId: handle.sessionId,
             cwd: this.config.cwd,
             mcpServers: this.acpMcpServers(),
@@ -2127,16 +2144,19 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
     this.emitSubmittedUserMessage(prompt, messageId, turnId, options?.clientMessageId);
 
+    // COMPAT(acp-prompt-message-id): remove when supported ACP agents no longer rely on the legacy correlation field.
+    const promptRequest: PromptRequest & { messageId: string } = {
+      sessionId: this.sessionId,
+      messageId,
+      prompt: toACPContentBlocks(prompt),
+    };
+
     const connection = this.connection;
     const child = this.child;
     const failOnDisconnect = () => void this.failDisconnectedTurn(turnId, child);
     connection.signal.addEventListener("abort", failOnDisconnect, { once: true });
     void connection
-      .prompt({
-        sessionId: this.sessionId,
-        messageId,
-        prompt: toACPContentBlocks(prompt),
-      })
+      .prompt(promptRequest)
       .then((response) => {
         this.handlePromptResponse(response, turnId);
         return;
@@ -2448,12 +2468,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return;
     }
 
-    if (
-      selection.availableModel &&
-      typeof this.connection.unstable_setSessionModel === "function"
-    ) {
+    if (selection.availableModel) {
       try {
-        await this.connection.unstable_setSessionModel({
+        await this.connection.request("session/set_model", {
           sessionId: this.sessionId,
           modelId,
         });
@@ -2823,7 +2840,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       try {
         if (this.agentCapabilities?.sessionCapabilities?.close) {
           await withTimeout(
-            this.connection.unstable_closeSession({ sessionId: this.sessionId }),
+            this.connection.closeSession({ sessionId: this.sessionId }),
             ACP_CLOSE_REQUEST_TIMEOUT_MS,
             `ACP closeSession timed out after ${ACP_CLOSE_REQUEST_TIMEOUT_MS}ms`,
           );

@@ -1,0 +1,2 @@
+          install_args: node@26.13.0 actionlint@1.7.12
+          test "$(node --version)" = v26.13.0
