@@ -35,6 +35,29 @@ function outboundMessage(type: SessionOutboundMessage["type"]): SessionOutboundM
 }
 
 describe("SessionAuthorization", () => {
+  test("daemon-wide notification rules require daemon authority", () => {
+    const workspaceManager = new SessionAuthorization(["workspace.manage"]);
+    expect(
+      workspaceManager.allowsInbound(inboundMessage("daemon.notifications.rules.get.request")),
+    ).toBe(false);
+    expect(
+      workspaceManager.allowsInbound(inboundMessage("daemon.notifications.rules.set.request")),
+    ).toBe(false);
+
+    const daemonReader = new SessionAuthorization(["daemon.read"]);
+    expect(
+      daemonReader.allowsInbound(inboundMessage("daemon.notifications.rules.get.request")),
+    ).toBe(true);
+    expect(
+      daemonReader.allowsInbound(inboundMessage("daemon.notifications.rules.set.request")),
+    ).toBe(false);
+
+    const daemonManager = new SessionAuthorization(["daemon.manage"]);
+    expect(
+      daemonManager.allowsInbound(inboundMessage("daemon.notifications.rules.set.request")),
+    ).toBe(true);
+  });
+
   test("owner authority covers every session operation", () => {
     const authorization = new SessionAuthorization(OWNER_PERMISSIONS);
 

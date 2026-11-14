@@ -12,11 +12,17 @@ import { AgentDirectory } from "../directory.js";
 import { stat } from "node:fs/promises";
 import { z } from "zod";
 import { ensureValidJson } from "../../json-utils.js";
+import { readReplyRules, writeReplyRules } from "../../notification-policy.js";
 import type { Logger } from "pino";
 
 import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-types.js";
 import type { AgentManager } from "../agent-manager.js";
-import { ActiveTurnBehaviorSchema, AgentProfileSchema } from "@getpaseo/protocol/messages";
+import {
+  ActiveTurnBehaviorSchema,
+  AgentProfileSchema,
+  ReplyRuleSchema,
+  WorkspaceNotificationsSchema,
+} from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
 import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import {
@@ -117,6 +123,7 @@ import {
 } from "./types.js";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { isPaseoToolEnabled } from "../paseo-tool-policy.js";
+import { SessionAuthorization } from "../../authorization/index.js";
 
 export interface PaseoToolHostDependencies {
   agentMessages?: () => AgentMessageDelivery;
@@ -129,7 +136,11 @@ export interface PaseoToolHostDependencies {
   getDaemonTcpPort?: () => number | null;
   scheduleService?: ScheduleService | null;
   providerSnapshotManager: ProviderSnapshotManager;
-  daemonConfigStore?: Pick<DaemonConfigStore, "get">;
+  daemonConfigStore?: Pick<DaemonConfigStore, "get" | "getReplyRules" | "patch">;
+  /** Host permissions are supplied only by an authenticated daemon HTTP MCP request. */
+  hostAuthorization?: SessionAuthorization;
+  /** Whether this host implements daemon-wide reply-rule filtering. */
+  replyRuleFilteringEnabled?: boolean;
   github?: ForgeService;
   workspaceGitService?: Pick<
     WorkspaceGitService,
@@ -140,22 +151,28 @@ export interface PaseoToolHostDependencies {
   archiveWorkspaceRecord?: ArchiveDependencies["archiveWorkspaceRecord"];
   emitWorkspaceUpdatesForWorkspaceIds?: ArchiveDependencies["emitWorkspaceUpdatesForWorkspaceIds"];
   workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "listActive" | "upsert">;
+  updateWorkspaceNotifications?: (
+    workspaceId: string,
+    notifications: "on" | "off",
+  ) => Promise<PersistedWorkspaceRecord | null>;
   projectRegistry?: Pick<ProjectRegistry, "get" | "list">;
   createDirectoryWorkspace?: (
     cwd: string,
     title?: string | null,
     projectId?: string,
-    context?: { background?: boolean; callerWorkspaceId?: string },
+    context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
   ) => Promise<PersistedWorkspaceRecord>;
   workspaceScripts?: Pick<WorkspaceScriptsService, "list" | "launch" | "stop">;
   markWorkspaceArchiving?: ArchiveDependencies["markWorkspaceArchiving"];
   clearWorkspaceArchiving?: ArchiveDependencies["clearWorkspaceArchiving"];
   createPaseoWorktree?: CreatePaseoWorktreeWorkflowFn;
+  /** Whether workspace notification policy can be requested before creation. */
+  workspaceNotificationsEnabled?: boolean;
   // Mints a fresh directory workspace for a cwd and returns its id.
   ensureWorkspaceForCreate?: (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
-    context?: { background?: boolean; callerWorkspaceId?: string },
+    context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
   ) => Promise<string>;
   browserToolsEnabled?: boolean;
   browserToolsBroker?: BrowserToolsBroker | null;
@@ -197,6 +214,7 @@ const WorkspaceAutomationSummarySchema = z.object({
   kind: z.enum(["directory", "local_checkout", "worktree"]),
   title: z.string().nullable(),
   background: z.boolean().optional(),
+  notifications: WorkspaceNotificationsSchema,
 });
 
 function toWorkspaceAutomationSummary(workspace: PersistedWorkspaceRecord) {
@@ -209,6 +227,7 @@ function toWorkspaceAutomationSummary(workspace: PersistedWorkspaceRecord) {
     title: workspace.title,
     background: workspace.background,
     parentWorkspaceId: workspace.parentWorkspaceId,
+    notifications: workspace.notifications,
   };
 }
 
@@ -639,6 +658,20 @@ function createToolCatalog(
     resolveCallerContext,
     logger,
   } = options;
+  const hostAuthorization = options.hostAuthorization ?? new SessionAuthorization([]);
+  const replyRuleFilteringEnabled = options.replyRuleFilteringEnabled === true;
+  const requireHostPermission = (permission: "daemon.read" | "daemon.manage") => {
+    if (!hostAuthorization.allowsPermission(permission)) {
+      throw new Error(`This operation requires ${permission} host permission.`);
+    }
+  };
+  const requireReplyRuleFilteringSupport = () => {
+    if (!replyRuleFilteringEnabled || !daemonConfigStore) {
+      throw new Error("Update the host to manage daemon-wide notification rules.");
+    }
+    return daemonConfigStore;
+  };
+  const workspaceNotificationsEnabled = options.workspaceNotificationsEnabled === true;
   const childLogger = logger.child({ module: "agent", component: "paseo-tool-catalog" });
   const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
 
@@ -828,6 +861,13 @@ function createToolCatalog(
       if (!tool) {
         throw new PaseoToolInputError(`Paseo tool not found: ${name}`);
       }
+      if (
+        !workspaceNotificationsEnabled &&
+        ((name === "create_workspace" && hasOwnFieldInValue(input, "notifications")) ||
+          (name === "set_workspace_notifications" && hasOwnFieldInValue(input, "notifications")) ||
+          (name === "create_agent" && hasWorkspaceNotificationPolicy(input)))
+      ) {
+        throw new Error("Workspace notification policies are not supported by this server.");
       return tool.handler(await parseToolInput(tool, input), context);
     },
   });
@@ -1167,6 +1207,9 @@ function createToolCatalog(
     z
       .object({
         kind: z.literal("create"),
+        notifications: WorkspaceNotificationsSchema.optional().describe(
+          "Policy for the new workspace. Omit to use the default.",
+        ),
         source: z.discriminatedUnion("kind", [
           z
             .object({
@@ -1225,6 +1268,9 @@ function createToolCatalog(
       .describe(
         "Existing workspace id. Agent-scoped calls default to the caller workspace; top-level calls create a new local workspace when omitted.",
       ),
+    notifications: WorkspaceNotificationsSchema.optional().describe(
+      "Policy for a newly created workspace. Omit to use the default.",
+    ),
   };
   const agentToAgentInputSchema = {
     ...canonicalCreateAgentFields,
@@ -1415,6 +1461,7 @@ function createToolCatalog(
           .describe(
             "True hides the workspace from default lists and the sidebar while its contents remain durable and accessible; omit background to inherit your own visibility (true when you or your current workspace are background, false without a caller), and override it only when the user explicitly asks.",
           ),
+        notifications: WorkspaceNotificationsSchema.optional(),
         mode: z
           .enum(["branch-off", "checkout-branch", "checkout-pr"])
           .optional()
@@ -1448,20 +1495,25 @@ function createToolCatalog(
       },
       outputSchema: WorkspaceAutomationSummarySchema.shape,
     },
-    async ({
-      isolation,
-      path,
-      projectId,
-      title,
-      background,
-      mode,
-      worktreeSlug,
-      branchName,
-      baseBranch,
-      branch,
-      prNumber,
-      forge,
-    }) => {
+    async (input) => {
+      const {
+        isolation,
+        path,
+        projectId,
+        title,
+        background,
+        mode,
+        worktreeSlug,
+        branchName,
+        baseBranch,
+        branch,
+        prNumber,
+        forge,
+        notifications,
+      } = input;
+      if (!workspaceNotificationsEnabled && hasOwnField(input, "notifications")) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
       let workspace: PersistedWorkspaceRecord;
       if (isolation === "local") {
         const cwd = resolveScopedCwd(path, { required: true });
@@ -1487,7 +1539,7 @@ function createToolCatalog(
           cwd,
           title,
           projectId,
-          workspaceBackgroundIntent(background),
+          { ...workspaceBackgroundIntent(background), notifications },
         );
       } else {
         let cwd =
@@ -1520,6 +1572,7 @@ function createToolCatalog(
             ...worktreeTarget,
             ...(title ? { title } : {}),
             ...workspaceBackgroundIntent(background),
+            ...(notifications ? { notifications } : {}),
           },
         );
         if (!result.ok) {
@@ -1555,6 +1608,97 @@ function createToolCatalog(
       return {
         content: [],
         structuredContent: ensureValidJson({ workspaces }),
+      };
+    },
+  );
+
+  registerTool(
+    "get_daemon_notification_rules",
+    {
+      title: "Get daemon notification rules",
+      description: "Read the daemon-wide reply filtering rules.",
+      inputSchema: {},
+      outputSchema: { replyRules: z.array(ReplyRuleSchema) },
+    },
+    async () => {
+      requireHostPermission("daemon.read");
+      const store = requireReplyRuleFilteringSupport();
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ replyRules: readReplyRules(store) }),
+      };
+    },
+  );
+
+  registerTool(
+    "set_daemon_notification_rules",
+    {
+      title: "Set daemon notification rules",
+      description: "Replace the daemon-wide reply filtering rules.",
+      inputSchema: { replyRules: z.array(ReplyRuleSchema) },
+      outputSchema: { replyRules: z.array(ReplyRuleSchema) },
+    },
+    async ({ replyRules }) => {
+      requireHostPermission("daemon.manage");
+      const store = requireReplyRuleFilteringSupport();
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          replyRules: await writeReplyRules(store, replyRules),
+        }),
+      };
+    },
+  );
+
+  registerTool(
+    "clear_daemon_notification_rules",
+    {
+      title: "Clear daemon notification rules",
+      description: "Remove every daemon-wide reply filtering rule.",
+      inputSchema: {},
+      outputSchema: { replyRules: z.array(ReplyRuleSchema) },
+    },
+    async () => {
+      requireHostPermission("daemon.manage");
+      const store = requireReplyRuleFilteringSupport();
+      return {
+        content: [],
+        structuredContent: ensureValidJson({ replyRules: await writeReplyRules(store, []) }),
+      };
+    },
+  );
+
+  registerTool(
+    "set_workspace_notifications",
+    {
+      title: "Set workspace notifications",
+      description: "Set the persisted notification policy for a workspace.",
+      inputSchema: {
+        workspaceId: z.string().min(1),
+        notifications: WorkspaceNotificationsSchema,
+      },
+      outputSchema: {
+        workspaceId: z.string(),
+        notifications: WorkspaceNotificationsSchema,
+      },
+    },
+    async ({ workspaceId, notifications }) => {
+      if (!workspaceNotificationsEnabled) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
+      if (!options.updateWorkspaceNotifications) {
+        throw new Error("Workspace notification updates are not configured");
+      }
+      const workspace = await options.updateWorkspaceNotifications(workspaceId, notifications);
+      if (!workspace) {
+        throw new Error(`Workspace not found: ${workspaceId}`);
+      }
+      return {
+        content: [],
+        structuredContent: ensureValidJson({
+          workspaceId,
+          notifications: workspace.notifications ?? "on",
+        }),
       };
     },
   );
@@ -1621,6 +1765,9 @@ function createToolCatalog(
       },
     },
     async (args: unknown) => {
+      if (!workspaceNotificationsEnabled && hasWorkspaceNotificationPolicy(args)) {
+        throw new Error("Workspace notification policies are not supported by this server.");
+      }
       const resolvedArgs = await resolveCreateAgentToolArgs(args);
       const { parsedArgs } = resolvedArgs;
       let notifyOnFinish: boolean;
@@ -1667,6 +1814,7 @@ function createToolCatalog(
           notifyOnFinish,
           background: parsedArgs.background,
           detached: resolvedArgs.detached,
+          notifications: resolvedArgs.notifications,
           callerAgentId,
           callerContext,
         },
@@ -1702,6 +1850,7 @@ function createToolCatalog(
         detached: boolean;
         cwd: string | undefined;
         workspaceId: string | undefined;
+        notifications?: "on" | "off";
       }
     | {
         kind: "top-level";
@@ -1709,6 +1858,7 @@ function createToolCatalog(
         detached: boolean;
         cwd: string | undefined;
         workspaceId: string | undefined;
+        notifications?: "on" | "off";
       };
 
   async function resolveCreateAgentToolArgs(args: unknown): Promise<ResolvedCreateAgentToolArgs> {
@@ -1752,6 +1902,11 @@ function createToolCatalog(
         };
       }
       const parsed = parseToolArguments(agentToAgentCreateAgentArgsSchema, args);
+      if (parsed.notifications !== undefined) {
+        throw new PaseoToolInputError(
+          "Workspace notifications can only be set when creating a workspace.",
+        );
+      }
       const { cwd, workspaceId } = await resolveCanonicalCreateAgentWorkspace(parsed.workspaceId, {
         prompt: parsed.initialPrompt,
       });
@@ -1791,6 +1946,7 @@ function createToolCatalog(
     const { cwd, workspaceId } = await resolveCanonicalCreateAgentWorkspace(
       parsedArgs.workspaceId,
       { prompt: parsedArgs.initialPrompt },
+      parsedArgs.notifications,
     );
     return {
       kind: "top-level",
@@ -1798,6 +1954,7 @@ function createToolCatalog(
       detached: false,
       cwd,
       workspaceId,
+      notifications: parsedArgs.notifications,
     };
   }
 
@@ -1818,13 +1975,43 @@ function createToolCatalog(
     ].some((key) => input[key] !== undefined);
   }
 
+  function hasWorkspaceNotificationPolicy(args: unknown): boolean {
+    if (!args || typeof args !== "object") {
+      return false;
+    }
+    const input = args as Record<string, unknown>;
+    if (hasOwnField(input, "notifications")) {
+      return true;
+    }
+    return (
+      input.workspace !== null &&
+      typeof input.workspace === "object" &&
+      hasOwnFieldInValue(input.workspace, "notifications")
+    );
+  }
+
+  function hasOwnFieldInValue(input: unknown, field: string): boolean {
+    if (input === null || typeof input !== "object") {
+      return false;
+    }
+    return Object.prototype.hasOwnProperty.call(input, field);
+  }
+
+  function hasOwnField(input: object, field: string): boolean {
+    return hasOwnFieldInValue(input, field);
+  }
+
   async function resolveCanonicalCreateAgentWorkspace(
     workspaceId?: string,
     firstAgentContext?: FirstAgentContext,
+    notifications?: "on" | "off",
   ): Promise<{
     cwd: string | undefined;
     workspaceId: string;
   }> {
+    if (notifications !== undefined && (workspaceId || callerAgentId)) {
+      throw new Error("Workspace notifications can only be set when creating a workspace.");
+    }
     if (workspaceId) {
       const resolved = await resolveCreateAgentWorkspace(
         { kind: "existing", workspaceId },
@@ -1842,7 +2029,7 @@ function createToolCatalog(
         workspaceId: await options.ensureWorkspaceForCreate(
           cwd,
           firstAgentContext,
-          workspaceBackgroundIntent(undefined),
+          { ...workspaceBackgroundIntent(undefined), notifications },
         ),
       };
     }
@@ -1950,7 +2137,7 @@ function createToolCatalog(
         workspaceId: await options.ensureWorkspaceForCreate(
           cwd,
           firstAgentContext,
-          workspaceBackgroundIntent(undefined),
+          { ...workspaceBackgroundIntent(undefined), notifications: workspace.notifications },
         ),
       };
     }
