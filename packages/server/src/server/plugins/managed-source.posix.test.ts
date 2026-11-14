@@ -1,4 +1,4 @@
-import { mkdir, rename, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -102,6 +102,21 @@ describe("managed Git plugin sources", () => {
       }
     }),
   );
+
+  it("clears staging left by an interrupted install before staging a new one", async () => {
+    const repository = await createRepository();
+    const home = await mkdtemp(path.join(tmpdir(), "paseo-plugin-staging-home-"));
+    roots.push(home);
+    const leftover = path.join(home, "plugins", ".staging", "interrupted");
+    await mkdir(leftover, { recursive: true });
+    await writeFile(path.join(leftover, "partial"), "x");
+
+    await withGitHubFixture(repository, async () => {
+      await new ManagedPluginSources(home).prepareInstall({ source: "github:fixture/repository" });
+    });
+
+    expect(await readdir(path.join(home, "plugins", ".staging"))).not.toContain("interrupted");
+  });
 
   it("normalizes explicit GitHub and Git identifiers to the same Git source", async () => {
     const repository = await createRepository();
