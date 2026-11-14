@@ -32,7 +32,16 @@ import {
 } from "../local-links/terminal-local-link-provider";
 import { isFindShortcut, type FindShortcutPlatform } from "@/pane-find/find-shortcut";
 import { isMacUserAgent } from "@/utils/mac-user-agent";
-import { resolveTerminalFontFamily, resolveTerminalFontSize } from "./terminal-font";
+import {
+  isBundledTerminalFontLoaded,
+  loadBundledTerminalFont,
+  withoutBundledTerminalFont,
+} from "./terminal-bundled-font";
+import {
+  namesTerminalNerdFont,
+  resolveTerminalFontFamily,
+  resolveTerminalFontSize,
+} from "./terminal-font";
 import { imageExtension, readTerminalFile, type TerminalFile } from "../file-paste";
 
 export type TerminalOutputData = Uint8Array;
@@ -282,6 +291,7 @@ export class TerminalEmulatorRuntime {
   };
 
   private fitAndEmitResize: ((input?: TerminalResizeRequest) => void) | null = null;
+  private requestedFontFamily = "";
   private lastSize: { rows: number; cols: number } | null = null;
   private cleanup: (() => void) | null = null;
   private outputOperations: TerminalOutputOperation[] = [];
@@ -517,7 +527,7 @@ export class TerminalEmulatorRuntime {
       convertEol: false,
       cursorBlink: true,
       cursorStyle: "bar",
-      fontFamily: resolveTerminalFontFamily(input.fontFamily),
+      fontFamily: this.resolveRenderableFontFamily(input.fontFamily),
       fontSize: resolveTerminalFontSize(input.fontSize),
       // OSC 8 hyperlinks; without a handler xterm prompts and calls window.open().
       linkHandler: { activate: openExternalLink },
@@ -973,6 +983,34 @@ export class TerminalEmulatorRuntime {
     this.refreshVisibleRows();
   }
 
+  // Leaves the bundled font out until it has loaded, then switches to it. xterm
+  // treats the switch as a font change, so it remeasures cells and rebuilds the
+  // WebGL glyph atlas instead of keeping a fallback font's metrics.
+  private resolveRenderableFontFamily(fontFamily: string | undefined): string {
+    const stack = resolveTerminalFontFamily(fontFamily);
+    this.requestedFontFamily = stack;
+    if (isBundledTerminalFontLoaded() || !namesTerminalNerdFont(stack)) {
+      return stack;
+    }
+    void loadBundledTerminalFont().then((loaded) => {
+      if (loaded) this.switchToLoadedBundledFont();
+      return;
+    });
+    return withoutBundledTerminalFont(stack);
+  }
+
+  // Reads the latest requested family, so a setFont during the download or a
+  // remount wins, and an unmounted terminal is left alone.
+  private switchToLoadedBundledFont(): void {
+    const terminal = this.terminal;
+    if (!terminal || terminal.options.fontFamily === this.requestedFontFamily) {
+      return;
+    }
+    terminal.options.fontFamily = this.requestedFontFamily;
+    this.fitAndEmitResize?.({ forceRefresh: true, shouldClaim: false });
+    this.refreshVisibleRows();
+  }
+
   setFont(input: { fontFamily?: string; fontSize?: number }): void {
     const terminal = this.terminal;
     if (!terminal) {
@@ -980,7 +1018,7 @@ export class TerminalEmulatorRuntime {
     }
 
     try {
-      terminal.options.fontFamily = resolveTerminalFontFamily(input.fontFamily);
+      terminal.options.fontFamily = this.resolveRenderableFontFamily(input.fontFamily);
       terminal.options.fontSize = resolveTerminalFontSize(input.fontSize);
     } catch {
       // ignore
