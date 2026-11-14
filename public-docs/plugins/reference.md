@@ -112,11 +112,11 @@ Prerelease Paseo versions also satisfy a range their stable core (`major.minor.p
 
 A prerelease minimum such as `>=0.12.0-beta.4` therefore also admits `0.12.0-beta.3` through its stable core `0.12.0`. Use a different stable core when you need to exclude earlier builds of that core.
 
-`paseo plugin init` writes `>=` followed by the current CLI version and pins the matching SDK
+`requirements.paseo` is matched against the plugin API version, not the app release version. `paseo plugin init` writes `>=` followed by the current plugin API version and pins the matching SDK
 for typechecking. Raise the minimum when adopting a newer API. Add an upper bound when a later
 release is incompatible; a minimum alone does not promise protection from future breaking changes.
 
-The daemon checks its version before installing, running preparation commands, or loading a plugin,
+The daemon checks its plugin API version before installing, running preparation commands, or loading a plugin,
 and checks again on startup, enable, and reload. A rejected update keeps the installed revision.
 Each connected app checks its own version before evaluating client code and shows incompatibility
 in Settings → Plugins. A compatible daemon does not make an older app compatible. A plugin with no

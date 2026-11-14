@@ -12,9 +12,9 @@ Use the user's request and current conversation as input, including any argument
 
 ## Prerequisites
 
-Read the **paseo** skill. Call `list_profiles` before choosing committee members. Do not create committee agents until you have read the configured profiles and their `notes`.
+Read the **paseo** skill. Run `paseo profile ls --json` (or `list_profiles` when your provider has native Paseo tools) before choosing committee members. Do not create committee agents until you have read the configured profiles and their `notes`.
 
-Contrast is the point of a committee, so pick profiles from different provider families when possible. Materialize each profile into `create_agent`.
+Contrast is the point of a committee, so pick profiles from different provider families when possible. Materialize each profile as described by the **paseo** skill: `paseo run --provider … --model … --mode … --thinking … --features-json … --title … --no-wait "<prompt>"` (substitute `"$PASEO_CLI"` in managed sessions), or the native `create_agent` tool when available.
 
 ## Composition
 

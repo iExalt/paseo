@@ -1,5 +1,9 @@
 # Running Paseo in Docker
 
+> **Fork note:** the fork publishes no container image and has no Docker workflow.
+> `ghcr.io/getpaseo/paseo` is upstream's image and does not contain fork changes. Build your own
+> from `docker/base/Dockerfile` (see [Building locally](#building-locally)).
+
 Paseo publishes a container image for running the daemon on a server, VM, NAS,
 or homelab box. The image also serves the bundled browser web UI, so one
 container gives you both the daemon API and a self-hosted UI.
