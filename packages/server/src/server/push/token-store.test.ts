@@ -102,3 +102,20 @@ describe("PushTokenStore persistence", () => {
     expect(JSON.parse(persisted)).toEqual({ subscriptions: [] });
   });
 });
+
+test("Android lifecycle capability survives heartbeat/restart and explicit legacy registration downgrades", () => {
+  const home = mkdtempSync(path.join(tmpdir(), "paseo-registration-"));
+  try {
+    const file = path.join(home, "tokens.json");
+    const id = "11111111-1111-4111-8111-111111111111";
+    const store = new PushTokenStore(createLogger(), file, () => 1000, 100000);
+    store.renewToken("token", id);
+    store.renewToken("token");
+    const recovered = new PushTokenStore(createLogger(), file, () => 1000, 100000);
+    expect(recovered.getActiveSubscriptions()).toEqual([{ token: "token", registrationId: id }]);
+    recovered.renewToken("token", null);
+    expect(recovered.getActiveSubscriptions()).toEqual([{ token: "token" }]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});

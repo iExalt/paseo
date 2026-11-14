@@ -3389,6 +3389,16 @@ export const ListCommandsRequestSchema = z.object({
 export const RegisterPushTokenMessageSchema = z.object({
   type: z.literal("register_push_token"),
   token: z.string(),
+  androidLifecycleRegistrationId: z.uuid().optional(),
+});
+
+export const PushLifecycleSyncRequestSchema = z.object({
+  type: z.literal("push.lifecycle.sync.request"),
+  requestId: z.string(),
+});
+export const PushLifecycleSyncResponseSchema = z.object({
+  type: z.literal("push.lifecycle.sync.response"),
+  payload: z.object({ requestId: z.string(), activeEpisodeIds: z.array(z.uuid()) }),
 });
 
 export const PushUnregisterRequestSchema = z.object({
@@ -3929,6 +3939,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   PingMessageSchema,
   ListCommandsRequestSchema,
   RegisterPushTokenMessageSchema,
+  PushLifecycleSyncRequestSchema,
   PushUnregisterRequestSchema,
   PushSendTestRequestSchema,
   ListTerminalsRequestSchema,
@@ -4227,6 +4238,8 @@ export const ServerInfoStatusPayloadSchema = z
         relayKeepAwake: z.boolean().optional(),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: z.boolean().optional(),
+        // COMPAT(androidNotificationLifecycle): added in v0.26.0; remove gate after 2027-05-11.
+        androidNotificationLifecycle: z.boolean().optional(),
         // COMPAT(pushTest): added in v0.5.1, remove gate after 2027-04-16.
         pushTest: z.boolean().optional(),
         // COMPAT(plugins): added in v0.3.0, remove gate after 2027-08-07.
@@ -7821,6 +7834,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   StatusMessageSchema,
   PongMessageSchema,
   PushUnregisterResponseSchema,
+  PushLifecycleSyncResponseSchema,
   PushSendTestResponseSchema,
   RpcErrorMessageSchema,
   ArtifactMessageSchema,
