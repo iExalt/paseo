@@ -2593,6 +2593,9 @@ test("createAgent injects daemon append system prompt at runtime only", async ()
   expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toMatch(
     /^Daemon instructions\.\n\nUse the Paseo CLI /,
   );
+  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toContain(
+    "question dialogs show Markdown images",
+  );
   expect(snapshot.config).not.toHaveProperty("daemonAppendSystemPrompt");
   expect(record?.config?.systemPrompt).toBe("Agent instructions.");
   expect(record?.config).not.toHaveProperty("daemonAppendSystemPrompt");

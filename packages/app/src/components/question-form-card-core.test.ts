@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest";
 import {
   areQuestionsAnswered,
   buildQuestionFormAnswers,
+  parseImageOnlyPreview,
   parseQuestionFormQuestions,
   questionShowsTextInput,
   resolveDismissLabel,
@@ -171,5 +172,19 @@ describe("question form card core", () => {
       { label: "Tabs", description: "One tab per section", preview: "<Tabs>\n  <Tab />\n</Tabs>" },
       { label: "Single page", description: undefined, preview: undefined },
     ]);
+  });
+
+  test("draws a preview as an image only when it is one Markdown image", () => {
+    expect(parseImageOnlyPreview("![Blue](mockups/blue.png)")).toBe("![Blue](mockups/blue.png)");
+    expect(parseImageOnlyPreview("\n  ![](https://example.com/a.png)  \n")).toBe(
+      "![](https://example.com/a.png)",
+    );
+    expect(parseImageOnlyPreview('![Blue](<my mockups/blue.png> "Blue")')).toBe(
+      '![Blue](<my mockups/blue.png> "Blue")',
+    );
+    expect(parseImageOnlyPreview("Blue theme ![Blue](blue.png)")).toBeNull();
+    expect(parseImageOnlyPreview("![A](a.png)\n![B](b.png)")).toBeNull();
+    expect(parseImageOnlyPreview("+---------+\n| ![x] () |\n+---------+")).toBeNull();
+    expect(parseImageOnlyPreview("[![CI](badge.svg)](https://ci)")).toBeNull();
   });
 });
