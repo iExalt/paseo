@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { withWorkspaceLifecycleLock } from "./workspace-lifecycle-lock.js";
 
 import type { Logger } from "pino";
 
@@ -79,6 +80,8 @@ export interface ArchiveResult {
 export interface ArchiveByScopeRequest {
   scope: ArchiveScope;
   requestId: string;
+  // Internal lifecycle cascade, never a user-selectable archive mode.
+  onlyIfEmpty?: boolean;
 }
 
 export async function requireActiveWorkspaceForArchive(
@@ -138,15 +141,48 @@ export async function archiveByScope(
   dependencies: ArchiveDependencies,
   request: ArchiveByScopeRequest,
 ): Promise<ArchiveResult> {
-  return runWithGitCommandPriority("high", () => archiveByScopeWithPriority(dependencies, request));
+  let target = await resolveArchiveTarget(dependencies, request.scope);
+  for (;;) {
+    const workspaceIds =
+      request.scope.kind === "workspace" ? [request.scope.workspaceId] : target.workspaceIds;
+    let result: ArchiveResult | undefined;
+    await withWorkspaceLifecycleLock(workspaceIds, async () => {
+      target = await resolveArchiveTarget(dependencies, request.scope);
+      // A worktree-scope request can discover another workspace while queued.
+      // Acquire the complete sorted set before touching any of their agents.
+      if (target.workspaceIds.some((id) => !workspaceIds.includes(id))) return;
+      result = await runWithGitCommandPriority("high", () =>
+        archiveByScopeWithPriority(dependencies, request, target),
+      );
+    });
+    if (result) return result;
+  }
 }
 
 async function archiveByScopeWithPriority(
   dependencies: ArchiveDependencies,
   request: ArchiveByScopeRequest,
+  target: ArchiveTarget,
 ): Promise<ArchiveResult> {
-  const target = await resolveArchiveTarget(dependencies, request.scope);
   const targetWorkspaceIds = target.workspaceIds;
+  if (request.onlyIfEmpty) {
+    if (targetWorkspaceIds.length === 0) {
+      return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
+    }
+    for (const workspaceId of targetWorkspaceIds) {
+      const records = await dependencies.agentStorage.listByWorkspace(workspaceId);
+      const archivedIds = new Set(
+        records.filter((record) => record.archivedAt).map((record) => record.id),
+      );
+      const hasChat =
+        records.some((record) => !record.archivedAt) ||
+        dependencies.agentManager
+          .listAgents({ includeInternal: true })
+          .some((agent) => agent.workspaceId === workspaceId && !archivedIds.has(agent.id));
+      if (hasChat)
+        return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
+    }
+  }
 
   await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
 
@@ -385,7 +421,7 @@ async function archiveTargetRecords(
 
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
-  request: Pick<ArchiveByScopeRequest, "requestId">,
+  request: Pick<ArchiveByScopeRequest, "requestId" | "onlyIfEmpty">,
   target: ArchiveTarget,
   archivedWorkspaceIds: string[],
 ): Promise<{
@@ -412,7 +448,26 @@ async function maybeRemoveDirectory(
     return { removedDirectory: false };
   }
 
+  if (request.onlyIfEmpty) {
+    let reason: string | undefined;
+    if (
+      dependencies.agentManager
+        .listAgents({ includeInternal: true })
+        .some((agent) => target.workspaceIds.includes(agent.workspaceId ?? ""))
+    ) {
+      reason = "agent runtime failed to close";
+    }
+    if (reason) {
+      dependencies.sessionLogger?.warn(
+        { targetPath: backing.path, reason, requestId: request.requestId },
+        "Worktree directory left in place during automatic workspace archive",
+      );
+      return { removedDirectory: false, directoryLeftBehind: { path: backing.path, reason } };
+    }
+  }
+
   const archivedWorkspaceIdSet = new Set(archivedWorkspaceIds);
+
   const teardownTargets = target.teardownTargets.filter(
     (teardownTarget) =>
       teardownTarget.workspaceId === null || archivedWorkspaceIdSet.has(teardownTarget.workspaceId),

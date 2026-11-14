@@ -2,6 +2,7 @@ import { skillRoots, watchSkillChanges } from "./skill-catalog-watch.js";
 import type { AttachedAgentTool, PluginAgentToolsRuntime } from "../plugins/agent-tools.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
 import type { RuntimeCleanupCandidate } from "./idle-runtime-cleanup/index.js";
+import { withWorkspaceLifecycleLock } from "../workspace-lifecycle-lock.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
 import { persistedAsyncQuestions } from "./providers/codex/async-questions.js";
 import { projectTimelineRows } from "./timeline-projection.js";
@@ -820,6 +821,49 @@ export class AgentManager {
   private appendSystemPrompt: string;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
+  private workspaceLifecycle?: {
+    assertActive(workspaceId: string): Promise<void>;
+    onAgentRemoved(workspaceId: string): Promise<void>;
+  };
+
+  setWorkspaceLifecycle(callbacks: NonNullable<AgentManager["workspaceLifecycle"]>): void {
+    this.workspaceLifecycle = callbacks;
+  }
+
+  private deferEmptyWorkspaceCheck(agent: Pick<StoredAgentRecord, "id" | "workspaceId">): void {
+    const workspaceId = agent.workspaceId;
+    if (!workspaceId || !this.workspaceLifecycle) return;
+    const settled = this.lifecycleMutationTails.get(agent.id) ?? Promise.resolve();
+    // Do not await from an archive: workspace teardown itself archives agents.
+    setImmediate(() => {
+      void settled
+        .then(() => this.workspaceLifecycle?.onAgentRemoved(workspaceId))
+        .catch((error) => {
+          this.logger.warn({ err: error, workspaceId }, "Failed to archive empty workspace");
+        });
+    });
+  }
+
+  private async assertWorkspaceResumeAllowed(
+    record: StoredAgentRecord | null,
+    options: { workspaceId?: string } | undefined,
+    purpose: string,
+  ): Promise<void> {
+    const workspaceId = options?.workspaceId ?? record?.workspaceId;
+    if (purpose !== "history" && workspaceId)
+      await this.workspaceLifecycle?.assertActive(workspaceId);
+  }
+
+  private async withWorkspaceAdmission<T>(
+    workspaceId: string | undefined,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    if (!workspaceId) return work();
+    return withWorkspaceLifecycleLock([workspaceId], async () => {
+      await this.workspaceLifecycle?.assertActive(workspaceId);
+      return work();
+    });
+  }
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
@@ -1447,6 +1491,9 @@ export class AgentManager {
   ): Promise<ManagedAgent> {
     const create = async () => {
       await this.skillRefreshBarrier;
+      return this.withWorkspaceAdmission(options.workspaceId, () =>
+        this.createAgentInternal(config, agentId, options),
+      );
     };
     return this.trackAgentRegistrationOperation(create());
   }
@@ -1541,12 +1588,17 @@ export class AgentManager {
     );
     const resume = async () => {
       await this.skillRefreshBarrier;
-        this.resumeAgentFromPersistenceInternal(
-          handle,
-          overrides,
-          resolvedAgentId,
-          options,
-          resumeOptions,
+      const record = await this.registry?.get(resolvedAgentId);
+      const workspaceId = options?.workspaceId ?? record?.workspaceId;
+      return withWorkspaceLifecycleLock(workspaceId ? [workspaceId] : [], () =>
+        this.runLifecycleMutation(resolvedAgentId, () =>
+          this.resumeAgentFromPersistenceInternal(
+            handle,
+            overrides,
+            resolvedAgentId,
+            options,
+            resumeOptions,
+          ),
         ),
       );
     };
@@ -1588,6 +1640,7 @@ export class AgentManager {
       ? { purpose: record.archivedAt ? ("history" as const) : ("interactive" as const) }
       : resumeOptions;
     const purpose = currentResumeOptions?.purpose ?? "interactive";
+    await this.assertWorkspaceResumeAllowed(record, options, purpose);
 
     const { workspaceId = null, labels = {} } = options ?? {};
     const { title = mergedConfig.title ?? null, labels: recordLabels = labels } = record ?? {};
@@ -2115,6 +2168,7 @@ export class AgentManager {
       await this.deleteAgentState(agentId);
       this.retireInternalAgent({ record, lastMessage });
       await this.cascadeArchiveChildren(record);
+      this.deferEmptyWorkspaceCheck(record);
       return { archivedAt };
     }
     if (!this.registry) {
@@ -2136,6 +2190,7 @@ export class AgentManager {
     this.discardRetainedAgentState(agentId);
 
     await this.cascadeArchiveChildren(stored);
+    this.deferEmptyWorkspaceCheck(stored);
 
     return { archivedAt };
   }
@@ -2506,6 +2561,8 @@ export class AgentManager {
     } finally {
       this.archivingAgentIds.delete(agentId);
     }
+  }
+
   async clearAgentAttention(agentId: string): Promise<void> {
     const agent = this.requireAgent(agentId);
     if (agent.attention.requiresAttention) {
@@ -2589,6 +2646,7 @@ export class AgentManager {
 
     await this.fireAgentArchived(agentId);
     await this.cascadeArchiveChildren(record);
+    this.deferEmptyWorkspaceCheck(record);
 
     return nextRecord;
   }
@@ -2597,8 +2655,9 @@ export class AgentManager {
     agentId: string,
     updates?: { workspaceId?: string; labels?: AgentLabelPatch },
   ): Promise<boolean> {
-    return this.runLifecycleMutation(agentId, () =>
-      this.unarchiveSnapshotUnlocked(agentId, updates),
+    const record = await this.requireRegistry().get(agentId);
+    return this.withWorkspaceAdmission(updates?.workspaceId ?? record?.workspaceId, () =>
+      this.runLifecycleMutation(agentId, () => this.unarchiveSnapshotUnlocked(agentId, updates)),
     );
   }
 
@@ -3724,6 +3783,7 @@ export class AgentManager {
   }
 
   notifyAgentRemoved(agent: Pick<StoredAgentRecord, "id" | "workspaceId" | "internal">): void {
+    this.deferEmptyWorkspaceCheck(agent);
     this.dispatch({
       type: "agent_removed",
       agentId: agent.id,

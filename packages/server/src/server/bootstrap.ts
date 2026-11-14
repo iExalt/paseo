@@ -1286,7 +1286,11 @@ export async function createPaseoDaemon(
   };
   const createAgent = (input: Parameters<typeof createAgentCommand>[1]) =>
     createAgentCommand(createAgentCommandDependencies, input);
-  const archiveWorkspaceByIdExternal = (workspaceId: string, requestId: string) =>
+  const archiveWorkspaceByIdExternal = (
+    workspaceId: string,
+    requestId: string,
+    onlyIfEmpty = false,
+  ) =>
     archiveByScope(
       {
         paseoHome: config.paseoHome,
@@ -1309,8 +1313,21 @@ export async function createPaseoDaemon(
           assertWorkspaceAutomationAllowedForWorkspace(workspaceRegistry, guardedWorkspaceId),
         sessionLogger: logger,
       },
-      { scope: { kind: "workspace", workspaceId }, requestId },
+      { scope: { kind: "workspace", workspaceId }, requestId, onlyIfEmpty },
     );
+  agentManager.setWorkspaceLifecycle({
+    assertActive: async (workspaceId) => {
+      const workspace = await workspaceRegistry.get(workspaceId);
+      if (!workspace || workspace.archivedAt) {
+        throw new Error(
+          `Workspace is archived or missing: ${workspaceId}. Restore the workspace before creating or unarchiving agents.`,
+        );
+      }
+    },
+    onAgentRemoved: async (workspaceId) => {
+      await archiveWorkspaceByIdExternal(workspaceId, "last-agent-archived", true);
+    },
+  });
   const hubAgentLifecycle = new CreateAgentLifecycleDispatch({
     paseoHome: config.paseoHome,
     worktreesRoot: config.worktreesRoot,

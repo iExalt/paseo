@@ -215,6 +215,7 @@ Archive is a **soft delete**: the agent record stays on disk with `archivedAt` s
 Archive sets `archivedAt`, invokes the provider's native archive hook, and cascades to managed
 children.
 
+`create_agent_request` can opt an agent into `autoArchive`. In that mode the daemon archives the agent after the first terminal turn event (`turn_completed`, `turn_failed`, or `turn_canceled`). The same last-agent workspace cascade applies to auto-archive. Other unarchived chats in that workspace stay active.
 
 Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/agent/agent-manager.ts`):
 
@@ -226,6 +227,25 @@ Archiving runs through `AgentManager.archiveAgent` (`packages/server/src/server/
 
 Cascade is what keeps subagent fleets from outliving their orchestrator.
 
+Archiving or deleting the last unarchived agent also archives its workspace. Closed, unarchived
+chats count as remaining agents; `agent close` only releases the runtime. Fresh workspaces waiting
+for their first agent stay active. Creation and restore serialize with the final empty check:
+a creation admitted first keeps the workspace active; one arriving after archive must restore the
+workspace first.
+
+The automatic cascade uses workspace archive ownership and reference checks. Local checkouts stay
+
+Workspace cleanup runs after the agent lifecycle settles, without waiting inside the agent's
+archive lock. Self-archive can still terminate the caller: send the handoff first and let an
+external session archive and verify it.
+
+Workspace and agent archive are separate lifecycle facts. Historical persisted data can contain
+a closed, unarchived agent whose `workspaceId` points at an archived workspace. History must read
+workspace recovery from the daemon and must not infer workspace lifecycle from `agent.archivedAt`
+or mutate either record. The current worktree archive operation archives the workspace and every
+in-scope agent together; a surviving unarchived agent is a historical state, not the result of that
+operation. The explicit **Restore** action changes the workspace lifecycle; **Unarchive** changes
+the agent lifecycle.
 
 History navigation opens the selected agent without changing either archive state. Workspace
 **Restore** recovers only the workspace; the selected archived agent stays open with its callout.

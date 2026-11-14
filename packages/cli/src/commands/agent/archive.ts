@@ -27,11 +27,11 @@ export const archiveSchema: OutputSchema<AgentArchiveResult> = {
 
 export function addArchiveOptions(cmd: Command): Command {
   return cmd
+    .description("Archive an agent and its workspace when it is the last unarchived agent")
     .argument("<id>", "Agent ID, full session ID, prefix, or name")
     .addHelpText(
       "after",
     );
-    .description("Archive an agent (soft-delete)")
 }
 
 export interface AgentArchiveOptions extends CommandOptions {
