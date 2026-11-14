@@ -313,6 +313,8 @@ export interface CreateWorktreeOptions {
   paseoHome?: string;
   worktreesRoot?: string;
   worktreePath?: string;
+  /** Overrides how long a branch-off waits on the remote before using the cached base ref. */
+  remoteBaseRefreshTimeoutMs?: number;
 }
 
 export class BranchAlreadyCheckedOutError extends Error {
@@ -1891,6 +1893,7 @@ async function createWorktreeAtRepositoryRoot({
   paseoHome,
   worktreesRoot,
   worktreePath: explicitWorktreePath,
+  remoteBaseRefreshTimeoutMs,
 }: CreateWorktreeOptions): Promise<
   Omit<CreatedWorktree, "branchName"> & { branchName: string | null }
 > {
@@ -1905,6 +1908,7 @@ async function createWorktreeAtRepositoryRoot({
     source,
     desiredSlug: worktreeSlug,
     preparedBranchOff,
+    remoteBaseRefreshTimeoutMs,
   });
   const fetchedBranch = planCreatedLocalBranch(source, sourcePlan);
   const fetchedTip =
@@ -2480,6 +2484,7 @@ interface ResolveWorktreeSourcePlanOptions {
   source: WorktreeSource;
   desiredSlug: string;
   preparedBranchOff?: PreparedWorktreeBranchOff;
+  remoteBaseRefreshTimeoutMs?: number;
 }
 
 interface WorktreeSourcePlan {
@@ -2556,9 +2561,10 @@ export function prepareWorktreeBranchOff(
   cwd: string,
   source: Extract<WorktreeSource, { kind: "branch-off" }>,
   previous?: PreparedWorktreeBranchOff,
+  remoteBaseRefreshTimeoutMs?: number,
 ): Promise<PreparedWorktreeBranchOff> {
   return runWithRepositoryRoot(cwd, () =>
-    prepareWorktreeBranchOffAtRepositoryRoot(cwd, source, previous),
+    prepareWorktreeBranchOffAtRepositoryRoot(cwd, source, previous, remoteBaseRefreshTimeoutMs),
   );
 }
 
@@ -2566,12 +2572,13 @@ async function prepareWorktreeBranchOffAtRepositoryRoot(
   cwd: string,
   source: Extract<WorktreeSource, { kind: "branch-off" }>,
   previous?: PreparedWorktreeBranchOff,
+  remoteBaseRefreshTimeoutMs?: number,
 ): Promise<PreparedWorktreeBranchOff> {
   const baseRef = previous?.baseRef ?? (await resolveBaseBranchForWorktree(cwd, source.baseBranch));
   const branchExists = await localBranchExists(cwd, source.branchName);
   const checkoutRef = branchExists ? source.branchName : (source.startPoint ?? baseRef);
   if (checkoutRef !== previous?.checkoutRef) {
-    await refreshRemoteTrackingBaseRef(cwd, checkoutRef);
+    await refreshRemoteTrackingBaseRef(cwd, checkoutRef, remoteBaseRefreshTimeoutMs);
   }
   return { baseRef, branchExists, checkoutRef };
 }
@@ -2581,6 +2588,7 @@ async function resolveBranchOffWorktreeSourcePlan(
   source: Extract<WorktreeSource, { kind: "branch-off" }>,
   desiredSlug: string,
   preparedBranchOff?: PreparedWorktreeBranchOff,
+  remoteBaseRefreshTimeoutMs?: number,
 ): Promise<WorktreeSourcePlan> {
   const branchName = source.branchName;
   await validateGitBranchName(cwd, branchName);
@@ -2588,6 +2596,7 @@ async function resolveBranchOffWorktreeSourcePlan(
     cwd,
     source,
     preparedBranchOff,
+    remoteBaseRefreshTimeoutMs,
   );
   const candidateBranch = branchExists ? desiredSlug : branchName;
   const newBranchName = await resolveUniqueLocalBranchName(cwd, candidateBranch);
@@ -2610,10 +2619,17 @@ async function resolveWorktreeSourcePlan({
   source,
   desiredSlug,
   preparedBranchOff,
+  remoteBaseRefreshTimeoutMs,
 }: ResolveWorktreeSourcePlanOptions): Promise<WorktreeSourcePlan> {
   switch (source.kind) {
     case "branch-off":
-      return resolveBranchOffWorktreeSourcePlan(cwd, source, desiredSlug, preparedBranchOff);
+      return resolveBranchOffWorktreeSourcePlan(
+        cwd,
+        source,
+        desiredSlug,
+        preparedBranchOff,
+        remoteBaseRefreshTimeoutMs,
+      );
     case "restore":
       return resolveRestoredWorktreeSourcePlan(cwd, source);
     case "restore-commit":
@@ -2989,7 +3005,11 @@ const REMOTE_BASE_REFRESH_TIMEOUT_MS = 15_000;
 // A remote-tracking base is only as fresh as the last fetch, and the background fetch only runs
 // while a workspace of the repository is observed. Refresh the one base branch so the new branch
 // starts at the remote tip; when the fetch fails (offline, auth) the cached ref is still usable.
-async function refreshRemoteTrackingBaseRef(cwd: string, baseRef: string): Promise<void> {
+async function refreshRemoteTrackingBaseRef(
+  cwd: string,
+  baseRef: string,
+  timeoutMs = REMOTE_BASE_REFRESH_TIMEOUT_MS,
+): Promise<void> {
   if (!baseRef.startsWith("refs/remotes/")) {
     return;
   }
@@ -3009,7 +3029,7 @@ async function refreshRemoteTrackingBaseRef(cwd: string, baseRef: string): Promi
     await runGitCommand(["fetch", remoteName, `+refs/heads/${remoteBranch}:${baseRef}`], {
       cwd,
       envOverlay: { GIT_TERMINAL_PROMPT: "0" },
-      timeout: REMOTE_BASE_REFRESH_TIMEOUT_MS,
+      timeout: timeoutMs,
       acceptExitCodes: [0, 1, 128],
     });
   } catch {

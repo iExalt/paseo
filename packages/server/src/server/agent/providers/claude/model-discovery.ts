@@ -15,6 +15,7 @@ interface ClaudeModelDiscoveryOptions {
   runtimeSettings?: ProviderRuntimeSettings;
   env: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 type OpenDiscoveryQuery = (
@@ -39,7 +40,7 @@ export async function discoverClaudeModels(
     : waitController.signal;
   const timer = setTimeout(
     () => waitController.abort(new Error("Claude model discovery timed out")),
-    DISCOVERY_WAIT_MS,
+    options.timeoutMs ?? DISCOVERY_WAIT_MS,
   );
   let endInput!: () => void;
   const ended = new Promise<void>((resolve) => {

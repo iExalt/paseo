@@ -9,7 +9,10 @@ import { describe, expect, test } from "vitest";
 // events file; `cleanupTerminals` logs "cleanup". The order of events is the contract: a kill
 // intent cleans up before the next worker starts, a keep intent or a crash never cleans up.
 
-async function runSupervisorWith(workerScript: string, timeoutMs = 8_000) {
+async function runSupervisorWith(
+  workerScript: string,
+  { timeoutMs = 8_000, workerTerminationGraceMs = undefined as number | undefined } = {},
+) {
   const home = await mkdtemp(path.join(tmpdir(), "paseo-terminal-cleanup-"));
   const workerPath = path.join(home, "worker.mjs");
   const runnerPath = path.join(home, "runner.mjs");
@@ -36,6 +39,7 @@ async function runSupervisorWith(workerScript: string, timeoutMs = 8_000) {
     runSupervisor({
       name: "TerminalCleanupTest", startupMessage: "starting", restartOnCrash: true,
       resolveWorkerEntry: () => ${JSON.stringify(workerPath)}, workerArgs: [], workerExecArgv: [],
+      workerTerminationGraceMs: ${JSON.stringify(workerTerminationGraceMs)},
       cleanupTerminals: async () => {
         appendFileSync(${JSON.stringify(eventsPath)}, JSON.stringify("cleanup") + "\\n");
       },
@@ -142,7 +146,7 @@ describe("supervisor terminal cleanup", () => {
         ${stopKeeping}
       }
     `,
-      20_000,
+      { timeoutMs: 8_000, workerTerminationGraceMs: 500 },
     );
     expect(result.code, result.output).toBe(0);
     expect(result.events).toEqual([
@@ -152,7 +156,7 @@ describe("supervisor terminal cleanup", () => {
       { started: 2 },
       { graceful: 2, keepTerminals: true },
     ]);
-  }, 30_000);
+  }, 15_000);
 
   test("a crash restart keeps terminals", async () => {
     const result = await runSupervisorWith(scriptedWorker(`process.exit(1);`, stopKeeping));
