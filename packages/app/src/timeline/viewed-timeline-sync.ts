@@ -30,6 +30,8 @@ import {
   processTimelineResponse,
 } from "./session-stream-reducers";
 import { isTimelineResumeSnapshotAuthoritative } from "./timeline-sync-plan";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { TimelineRequestSupersededError, type TimelineResponseGuard } from "./timeline-request";
 import { replaceWithCanonicalStream } from "@/types/stream";
 import type { TurnLivenessTransition } from "./turn-liveness";
 
@@ -308,6 +310,7 @@ function applyAuthoritativeTimelineResponse(input: {
   cachedCursor?: AgentTimelineCursorState;
   recoverGap: (agentId: string, cursor: { epoch: string; endSeq: number }) => void;
   drainQueuedAgentMessage: (agentId: string) => void;
+  onReplacement: (agentId: string) => void;
 }): boolean {
   const { serverId, payload } = input;
   const agentId = payload.agentId;
@@ -334,6 +337,7 @@ function applyAuthoritativeTimelineResponse(input: {
     return false;
   }
 
+  if (result.replaced) input.onReplacement(agentId);
   const synchronized = isTimelineResumeSnapshotAuthoritative({
     direction: payload.direction,
     hasNewer: payload.hasNewer,
@@ -411,8 +415,9 @@ export interface ViewedTimelineSyncPorts {
   fetchPage(
     agentId: string,
     request: ProjectedTimelineForwardFetchPlan,
+    isCurrent: () => boolean,
   ): Promise<TimelinePageResult>;
-  fetchLatestTail(agentId: string): Promise<TimelinePageResult>;
+  fetchLatestTail(agentId: string, isCurrent: () => boolean): Promise<TimelinePageResult>;
   /**
    * The sync no longer owes this chat a catch-up: it reached current, or it left the
    * demanded set. Disconnect and backgrounding keep the obligation and do not report here.
@@ -485,6 +490,10 @@ export type ViewedTimelineOwnerPorts = Omit<
 >;
 
 export interface ViewedTimelineOwner extends ViewedTimelineSync {
+  captureTimelineRequest(
+    agentId: string,
+    request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+  ): TimelineResponseGuard;
   applyTimelineResponse(payload: TimelineResponsePayload): void;
   /**
    * Accepts one live stream event. Content is coalesced to the next frame; a turn boundary
@@ -509,13 +518,15 @@ export function createViewedTimelineOwner(input: {
   // Active chats stay resident while hidden so switching back needs no fetch. An archived
   // chat is resident only while it is shown, as when it is open from History.
   const isResident = (agentId: string) => sync.isVisible(agentId) || !isArchived(agentId);
+  const incarnations = new Map<string, number>();
+  let disposed = false;
   const sync = createViewedTimelineSync({
     ...input.ports,
     isArchived,
-    fetchLatestTail: async (agentId) => {
+    fetchLatestTail: async (agentId, isCurrent) => {
       forcedTailReplacements.add(agentId);
       try {
-        return await input.ports.fetchLatestTail(agentId);
+        return await input.ports.fetchLatestTail(agentId, isCurrent);
       } finally {
         forcedTailReplacements.delete(agentId);
       }
@@ -534,6 +545,7 @@ export function createViewedTimelineOwner(input: {
         serverId: input.serverId,
         payload: buildCurrentTimelinePage(agentId, cursor),
         cachedCursor: input.replica.readRange(agentId),
+        onReplacement: (id) => incarnations.set(id, (incarnations.get(id) ?? 0) + 1),
         recoverGap: (id, gapCursor) => sync.recoverGap(id, gapCursor),
         drainQueuedAgentMessage: input.drainQueuedAgentMessage,
       });
@@ -581,6 +593,34 @@ export function createViewedTimelineOwner(input: {
       sync.replaceVisibleAgentIds(sourceId, agentIds);
       releaseHiddenArchivedTimelines();
     },
+    captureTimelineRequest(agentId, request) {
+      const incarnation = incarnations.get(agentId);
+      const readRange = () =>
+        useSessionStore.getState().sessions[input.serverId]?.agentTimelineCursor.get(agentId);
+      const requestedRange = readRange();
+      const epoch = requestedRange?.epoch;
+      const initKey = getInitKey(input.serverId, agentId);
+      const deferred = getInitDeferred(initKey);
+      return (page) => {
+        const currentRange = readRange();
+        // A tail that covered the request cursor cannot rewind live rows received while it waited.
+        const overtakenTail =
+          page?.direction === "tail" &&
+          requestedRange &&
+          currentRange &&
+          page.epoch === epoch &&
+          page.window.maxSeq >= requestedRange.endSeq &&
+          page.window.maxSeq < currentRange.endSeq;
+        return (
+          !disposed &&
+          incarnations.get(agentId) === incarnation &&
+          currentRange?.epoch === epoch &&
+          getInitDeferred(initKey) === deferred &&
+          (!epoch || !request?.cursor || request.cursor.epoch === epoch) &&
+          !overtakenTail
+        );
+      };
+    },
     applyTimelineResponse(receivedPayload) {
       // A read that answers after its archived chat was released must not bring it back.
       if (!isResident(receivedPayload.agentId)) return;
@@ -589,6 +629,7 @@ export function createViewedTimelineOwner(input: {
         serverId: input.serverId,
         payload,
         cachedCursor: input.replica.readRange(payload.agentId),
+        onReplacement: (agentId) => incarnations.set(agentId, (incarnations.get(agentId) ?? 0) + 1),
         recoverGap: (agentId, cursor) => sync.recoverGap(agentId, cursor),
         drainQueuedAgentMessage: input.drainQueuedAgentMessage,
       });
@@ -608,6 +649,7 @@ export function createViewedTimelineOwner(input: {
     },
     dispose() {
       stopObservingArchive();
+      disposed = true;
       streamQueue.dispose({ flush: true });
       sync.dispose();
     },
@@ -838,15 +880,18 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     generation: number,
     request: CatchUpRequest,
     fallbackToLatestTailOnOverflow: boolean,
+    replanSuperseded = true,
   ): Promise<void> => {
     if (!ownsCatchUp(agentId, generation)) return;
 
     try {
-      const page = await ports.fetchPage(agentId, request.page);
+      const page = await ports.fetchPage(agentId, request.page, () =>
+        ownsCatchUp(agentId, generation),
+      );
       if (!ownsCatchUp(agentId, generation)) return;
       if (page.hasNewer && page.endCursor) {
         if (request.page.direction === "after" && fallbackToLatestTailOnOverflow) {
-          await ports.fetchLatestTail(agentId);
+          await ports.fetchLatestTail(agentId, () => ownsCatchUp(agentId, generation));
           if (!ownsCatchUp(agentId, generation)) return;
           catchUps.set(agentId, { generation, status: "complete" });
           setVisibilityCatchUpReady(agentId);
@@ -872,6 +917,21 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       catchUps.set(agentId, { generation, status: "complete" });
       if (!pendingCatchUps.has(agentId)) setVisibilityCatchUpReady(agentId);
     } catch (error) {
+      if (
+        error instanceof TimelineRequestSupersededError &&
+        ownsCatchUp(agentId, generation) &&
+        replanSuperseded
+      ) {
+        await fetchUntilCurrent(
+          agentId,
+          generation,
+          planCatchUpRequest(undefined, ports.readCursor(agentId)),
+          false,
+          false,
+        );
+        return;
+      }
+
       if (catchUps.get(agentId)?.generation === generation) {
         // The parked follow-up belongs to the failed attempt. A retry owns the next request.
         pendingCatchUps.delete(agentId);
@@ -1208,7 +1268,7 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       // A new tap needs post-tap authority even when this chat is already subscribed.
       const current = catchUps.get(agentId);
       if (current) {
-        pendingCatchUps.set(agentId, planTimelineResumeFetch(ports.readCursor(agentId)));
+        pendingCatchUps.set(agentId, planCatchUpRequest(undefined, ports.readCursor(agentId)));
       }
       publishVisibleMembership();
       if (current && current.status !== "running") {

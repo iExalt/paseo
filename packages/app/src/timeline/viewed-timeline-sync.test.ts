@@ -1,3 +1,4 @@
+import { TimelineRequestSupersededError } from "./timeline-request";
 import { expect, test, vi } from "vitest";
 import { DaemonClient, type DaemonTransport } from "@getpaseo/client/internal/daemon-client";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
@@ -1887,4 +1888,38 @@ test("without the daemon capability nothing changes: no cursors, no checking, fe
   expect((await world.nextFetch("agent-a")).request.direction).toBe("after");
   world.expectNoPendingMembership();
   world.sync.dispose();
+});
+
+test("replans one superseded catch-up from the current cursor and preserves retry on repeated supersession", async () => {
+  const requests: ProjectedTimelineForwardFetchPlan[] = [];
+  const errors: unknown[] = [];
+  let current = { epoch: "old", endSeq: 10 };
+  let succeed = false;
+  const sync = createViewedTimelineSync({
+    prepare: async () => {},
+    replaceDemandedAgentIds: () => {},
+    observe: () => ({ ready: Promise.resolve(), release: async () => {} }),
+    readCursor: () => current,
+    fetchPage: async (_id, request, ownsRequest) => {
+      expect(ownsRequest()).toBe(true);
+      requests.push(request);
+      if (succeed) return { hasNewer: false, endCursor: { epoch: "new", seq: 20 } };
+      current = { epoch: "new", endSeq: 20 };
+      throw new TimelineRequestSupersededError();
+    },
+    fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+    onCatchUpEnded: () => {},
+    reportError: (error) => errors.push(error),
+  });
+  sync.replaceVisibleAgentIds("pane", ["agent"]);
+  sync.setConnected(true);
+  await vi.waitFor(() => expect(sync.getAgentTimelineStatus("agent")).toBe("error"));
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toMatchObject({ direction: "after", cursor: { epoch: "new", seq: 20 } });
+  expect(errors).toHaveLength(1);
+  succeed = true;
+  sync.retryVisibleAgentTimeline("agent");
+  await vi.waitFor(() => expect(sync.getAgentTimelineStatus("agent")).toBe("ready"));
+  expect(requests).toHaveLength(3);
+  sync.dispose();
 });
