@@ -282,12 +282,8 @@ describe("daemon E2E (real claude) - rewind", () => {
         assertTimeline(afterTimeline, expectedKeptConversation);
         await assertFiles(session, expectedKeptFiles);
 
-        if (scenario.mode === "files") {
-          expect(sessionIdAfter).toBe(sessionIdBefore);
-        } else {
-          expectSessionId(sessionIdAfter);
-          expect(sessionIdAfter).not.toBe(sessionIdBefore);
-        }
+        // Conversation rewinds happen in place, like Esc Esc in Claude Code, so no mode forks.
+        expect(sessionIdAfter).toBe(sessionIdBefore);
 
         const snapshot = await harness.client.fetchAgent({ agentId: session.agentId });
         expect(snapshot?.agent.status).toBe("idle");
@@ -299,8 +295,9 @@ describe("daemon E2E (real claude) - rewind", () => {
     420_000,
   );
 
-  test("emits only the deliberate fork session switch after conversation rewind and continue", async () => {
-    const session = await launchClaudeRewindSession(harness, "claude-rewind-no-session-roundtrip");
+  test("rewinds in place: no session switch, and background work outlives the rewind", async () => {
+    const session = await launchClaudeRewindSession(harness, "claude-rewind-in-place");
+    const marker = path.join(session.cwd, "background-done.txt");
     const sessionSwitches: string[] = [];
     const unsubscribe = harness.client.on((event) => {
       if (event.type !== "agent_stream" || event.agentId !== session.agentId) {
@@ -319,35 +316,40 @@ describe("daemon E2E (real claude) - rewind", () => {
       await sendClaudeReplyTurn(
         harness,
         session,
-        "PASEO_RW_NO_ROUNDTRIP_T1. Reply exactly: PASEO_RW_NO_ROUNDTRIP_T1_DONE",
+        [
+          "PASEO_RW_IN_PLACE_T1.",
+          `Run this Bash command in the background (run_in_background: true): sleep 30 && echo done > ${marker}`,
+          "Then reply exactly: PASEO_RW_IN_PLACE_T1_DONE",
+        ].join("\n"),
       );
       await sendClaudeReplyTurn(
         harness,
         session,
-        "PASEO_RW_NO_ROUNDTRIP_T2. Reply exactly: PASEO_RW_NO_ROUNDTRIP_T2_DONE",
+        "PASEO_RW_IN_PLACE_T2. Reply exactly: PASEO_RW_IN_PLACE_T2_DONE",
       );
 
       const beforeTimeline = await fetchTimelineItems(harness.client, session.agentId);
-      const targetMessageId = userMessageIdForToken(beforeTimeline, "PASEO_RW_NO_ROUNDTRIP_T2");
+      const targetMessageId = userMessageIdForToken(beforeTimeline, "PASEO_RW_IN_PLACE_T2");
       const sessionIdBeforeRewind = await runtimeSessionId(harness, session);
       expectSessionId(sessionIdBeforeRewind);
 
       await harness.client.rewindAgent(session.agentId, targetMessageId, "conversation");
-      const forkedSessionId = await runtimeSessionId(harness, session);
-      expectSessionId(forkedSessionId);
-      expect(forkedSessionId).not.toBe(sessionIdBeforeRewind);
+      const afterTimeline = await fetchTimelineItems(harness.client, session.agentId);
+      expect(roleItems(afterTimeline, "user_message").map((item) => item.text)).toEqual([
+        expect.stringContaining("PASEO_RW_IN_PLACE_T1."),
+      ]);
+      await expect(fileExists(marker)).resolves.toBe(false);
+
+      // The background job lives in the Claude process; a restart would kill it.
+      await expect.poll(() => fileExists(marker), { timeout: 90_000, interval: 1_000 }).toBe(true);
 
       await sendClaudeReplyTurn(
         harness,
         session,
-        "PASEO_RW_NO_ROUNDTRIP_T3. Reply exactly: PASEO_RW_NO_ROUNDTRIP_T3_DONE",
+        "PASEO_RW_IN_PLACE_T3. Reply exactly: PASEO_RW_IN_PLACE_T3_DONE",
       );
-
-      const finalSessionId = await runtimeSessionId(harness, session);
-      expect(finalSessionId).toBe(forkedSessionId);
-      expect(sessionSwitches).toEqual([
-        `Claude switched to a new session: ${sessionIdBeforeRewind} -> ${forkedSessionId}`,
-      ]);
+      expect(await runtimeSessionId(harness, session)).toBe(sessionIdBeforeRewind);
+      expect(sessionSwitches).toEqual([]);
     } finally {
       unsubscribe();
       await closeClaudeRewindSession(session);
