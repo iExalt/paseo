@@ -1487,6 +1487,7 @@ export const es: TranslationResources = {
       },
       advancedSettings: "Configuraciones avanzadas",
       openAdvancedSettings: "Abrir configuración avanzada del demonio",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Las versiones de la aplicación y del demonio no coinciden. Actualice ambos a la misma versión para obtener la mejor experiencia.",
       loadFailed: "No se puede cargar el estado del demonio del escritorio.",
@@ -1512,6 +1513,8 @@ export const es: TranslationResources = {
         restartTitle: "¿Reiniciar para terminar de actualizar a {{version}}?",
         restartMessage: "Paseo se reiniciará y usará la nueva versión.",
         restartConfirm: "Reiniciar",
+        agentsKeepRunning:
+          "Los agentes en ejecución ({{count}}) siguen trabajando; el servicio en segundo plano se actualiza cuando terminen.",
         lastAttemptFailed: "El último intento falló: {{error}}",
         updateTooltip: "Actualizar a {{version}}",
         restartTooltip: "Reiniciar para terminar de actualizar a {{version}}",

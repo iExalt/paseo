@@ -738,6 +738,38 @@ test("Claude runtime safety protects silent shells, monitors and pending complet
   expect(safety.canStopRuntime()).toBe(true);
 });
 
+test.each(["create", "resume"] as const)(
+  "an unlaunched Claude %s session does not block an idle daemon upgrade",
+  async (operation) => {
+    const launch = vi.fn(() => buildQueryMock([]) as unknown as Query);
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      queryFactory: launch,
+      resolveBinary: async () => "/test/claude/bin",
+    });
+    const config = { provider: "claude" as const, cwd: process.cwd() };
+    const session =
+      operation === "create"
+        ? await client.createSession(config)
+        : await client.resumeSession({
+            provider: "claude",
+            sessionId: "unlaunched-session",
+            metadata: config,
+          });
+    try {
+      expect(await session.canStopRuntime!()).toBe(true);
+      expect(launch).not.toHaveBeenCalled();
+      // A launched query without a roster must still fail closed, even when
+      // no foreground turn was started (for example, fetching slash commands).
+      await session.listCommands!();
+      expect(launch).toHaveBeenCalledOnce();
+      expect(await session.canStopRuntime!()).toBe(false);
+    } finally {
+      await session.close();
+    }
+  },
+);
+
 test("Claude session runtime safety observes pumped background work and autonomous replies", async () => {
   let wake: (() => void) | undefined;
   const channel = { closed: false };

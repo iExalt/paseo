@@ -1,3 +1,4 @@
+import { LocalDaemonUpgradeCard } from "./local-daemon-upgrade-card";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import React, { type ReactElement, useCallback, useMemo, useState } from "react";
 import { Alert, Text, View } from "react-native";
@@ -11,16 +12,15 @@ import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-moda
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { openExternalUrl } from "@/utils/open-external-url";
-import { isVersionMismatch } from "@/desktop/updates/desktop-updates";
 import {
   getCliDaemonStatus,
+  startDesktopDaemon,
   shouldUseDesktopDaemon,
   confirmAndStopDesktopDaemon,
 } from "@/desktop/daemon/desktop-daemon";
 import { useBuiltInDaemonManagement } from "@/desktop/hooks/use-built-in-daemon-management";
 import { useDaemonStatus } from "@/desktop/hooks/use-daemon-status";
 import { useDesktopSettings, type DesktopSettings } from "@/desktop/settings/desktop-settings";
-import { resolveAppVersion } from "@/utils/app-version";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 
 type DesktopDaemonSettings = DesktopSettings["daemon"];
@@ -318,11 +318,10 @@ function DaemonInfoCard(props: DaemonInfoCardProps) {
   );
 }
 
-export function LocalDaemonSection() {
+export function LocalDaemonSection({ serverId }: { serverId: string }) {
   const { t } = useTranslation();
   const { theme } = useUnistyles();
   const showSection = shouldUseDesktopDaemon();
-  const appVersion = resolveAppVersion();
   const { settings, updateSettings, isLoading: isLoadingSettings } = useDesktopSettings();
   const daemonSettings = settings.daemon;
   const updateDaemonSettings = useCallback(
@@ -332,8 +331,11 @@ export function LocalDaemonSection() {
   const { data, isLoading, error: statusError, setStatus, refetch } = useDaemonStatus();
 
   const daemonStatus = data?.status ?? null;
+  const handleRetryUpgrade = useCallback(async () => {
+    await startDesktopDaemon();
+    refetch();
+  }, [refetch]);
   const daemonLogs = data?.logs ?? null;
-  const daemonVersion = daemonStatus?.version ?? null;
   const [isStopping, setIsStopping] = useState(false);
   const handleStop = useCallback(() => {
     setIsStopping(true);
@@ -346,7 +348,6 @@ export function LocalDaemonSection() {
       .finally(() => setIsStopping(false));
   }, [setStatus, t]);
 
-  const daemonVersionMismatch = isVersionMismatch(appVersion, daemonVersion);
   const daemonStatusStateText =
     statusError ??
     (daemonStatus?.status === "running"
@@ -460,6 +461,12 @@ export function LocalDaemonSection() {
             isLoadingCliStatus={isLoadingCliStatus}
           />
 
+          <LocalDaemonUpgradeCard
+            serverId={serverId}
+            status={daemonStatus}
+            managementEnabled={daemonSettings.manageBuiltInDaemon}
+            onRetry={handleRetryUpgrade}
+          />
           {daemonStatus?.pid ? (
             <View style={settingsStyles.card}>
               <View style={settingsStyles.row}>
@@ -477,12 +484,6 @@ export function LocalDaemonSection() {
                     : t("desktop.daemon.lifecycle.stop")}
                 </Button>
               </View>
-            </View>
-          ) : null}
-
-          {daemonVersionMismatch ? (
-            <View style={styles.warningCard}>
-              <Text style={styles.warningText}>{t("desktop.daemon.versionMismatch")}</Text>
             </View>
           ) : null}
         </>

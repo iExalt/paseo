@@ -27,7 +27,7 @@ import { limitAgentTimelineItemContent } from "./agent-timeline-content.js";
 import { toAgentPayload } from "./agent-projections.js";
 import { projectTimelineRows } from "./timeline-projection.js";
 import { getOpenAgentTabLabel, PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
-import { startAgentRun } from "./agent-prompt.js";
+import { sendPromptToAgent, startAgentRun } from "./agent-prompt.js";
 import { StaleProviderSessionError } from "./stale-provider-session-error.js";
 import { ensureAgentLoaded, ensureUnarchivedAgentLoaded } from "./agent-loading.js";
 import type { StoredAgentRecord } from "./agent-storage.js";
@@ -12798,5 +12798,141 @@ describe("attention after unread finishes, stops and archives", () => {
       await manager.closeAgent(agentId).catch(() => undefined);
       rmSync(workdir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("stopAdmittingIfIdle", () => {
+  function idleShutdownHarness() {
+    const workdir = mkdtempSync(join(tmpdir(), "agent-manager-idle-shutdown-"));
+    const storage = new AgentStorage(join(workdir, "agents"), logger);
+    const sessions: TestAgentSession[] = [];
+    let probe: () => Promise<boolean> = async () => true;
+    const client = new (class extends TestAgentClient {
+      override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+        const session = new TestAgentSession(config);
+        session.canStopRuntime = () => probe();
+        sessions.push(session);
+        return session;
+      }
+    })();
+    const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+    onTestFinished(async () => {
+      await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
+      await storage.flush();
+      rmSync(workdir, { recursive: true, force: true });
+    });
+    const create = async (internal = false) => {
+      const agent = await manager.createAgent(
+        { provider: "codex", cwd: workdir, internal },
+        undefined,
+        { workspaceId: undefined },
+      );
+      // The registration task settles a tick after createAgent resolves.
+      await new Promise((resolve) => setImmediate(resolve));
+      return agent;
+    };
+    return {
+      manager,
+      storage,
+      sessions,
+      create,
+      setProbe: (next: () => Promise<boolean>) => {
+        probe = next;
+      },
+    };
+  }
+
+  test("commits when every agent is idle, then refuses new turns and agents", async () => {
+    const { manager, storage, create } = idleShutdownHarness();
+    const agent = await create();
+    await create(true);
+
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(true);
+
+    expect(() => manager.streamAgent(agent.id, "late prompt")).toThrow(
+      AgentManagerShuttingDownError,
+    );
+    // The session send path reports the refusal to the sender instead of dropping the prompt.
+    await expect(
+      sendPromptToAgent({
+        agentManager: manager,
+        agentStorage: storage,
+        agentId: agent.id,
+        prompt: "late",
+        logger,
+      }),
+    ).rejects.toBeInstanceOf(AgentManagerShuttingDownError);
+    await expect(manager.rewind(agent.id, "message", "conversation")).rejects.toBeInstanceOf(
+      AgentManagerShuttingDownError,
+    );
+    await expect(create()).rejects.toBeInstanceOf(AgentManagerShuttingDownError);
+  });
+
+  test("declines while a turn runs and keeps admitting work", async () => {
+    const { manager, sessions, create } = idleShutdownHarness();
+    const agent = await create();
+    const running = waitForAgentLifecycle(manager, agent.id, "running");
+    sessions[0]!.pushEvent({ type: "turn_started", provider: "codex", turnId: "busy-1" });
+    await running;
+
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(false);
+
+    sessions[0]!.pushEvent({
+      type: "turn_canceled",
+      provider: "codex",
+      turnId: "busy-1",
+      reason: "interrupted",
+    });
+    await vi.waitFor(() => expect(manager.getAgent(agent.id)?.lifecycle).toBe("idle"));
+    await manager.runAgent(agent.id, "still admitted");
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(true);
+  });
+
+  test("declines on a provider veto or a failed probe", async () => {
+    const { manager, create, setProbe } = idleShutdownHarness();
+    await create();
+    setProbe(async () => false);
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(false);
+    setProbe(async () => {
+      throw new Error("probe failed");
+    });
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(false);
+    setProbe(async () => true);
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(true);
+  });
+
+  test("declines within one deadline when several probes hang", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const { manager, create, setProbe } = idleShutdownHarness();
+    await create();
+    await create();
+    setProbe(() => new Promise<boolean>(() => {}));
+
+    const decision = manager.stopAdmittingIfIdle();
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await expect(decision).resolves.toBe(false);
+  });
+
+  test("declines when a turn is admitted while the provider probe is pending", async () => {
+    const { manager, create, setProbe } = idleShutdownHarness();
+    const agent = await create();
+    const probe = deferred<boolean>();
+    const probed = deferred<void>();
+    setProbe(() => {
+      probed.resolve();
+      return probe.promise;
+    });
+
+    const decision = manager.stopAdmittingIfIdle();
+    await probed.promise;
+    const run = manager.runAgent(agent.id, "arrived during the probe");
+    probe.resolve(true);
+
+    await expect(decision).resolves.toBe(false);
+    await run;
   });
 });

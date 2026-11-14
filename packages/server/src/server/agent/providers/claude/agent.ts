@@ -3035,7 +3035,10 @@ class ClaudeAgentSession implements AgentSession {
       this.unstartedMessageUuids.size === 0 &&
       this.pendingPermissions.size === 0 &&
       this.processingSdkMessages === 0 &&
-      this.runtimeSafety.canStopRuntime()
+      // A lazy session has no process-local work to lose. Require a roster only
+      // after a query or child exists; opening an old chat need not launch Claude.
+      ((!this.query && !this.queryPumpPromise && !this.childProcess) ||
+        this.runtimeSafety.canStopRuntime())
     );
   }
 

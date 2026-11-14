@@ -131,6 +131,8 @@ function submittedPromptText(prompt: AgentPromptInput): string {
     .trim();
 }
 
+const IDLE_SHUTDOWN_PROBE_DEADLINE_MS = 5_000;
+
 export class AgentManagerShuttingDownError extends Error {
   constructor() {
     super("Agent manager is shutting down");
@@ -819,6 +821,8 @@ export class AgentManager {
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
   private readonly beforeSteerUnavailableFallback?: AgentManagerOptions["beforeSteerUnavailableFallback"];
   private acceptingAgentRegistrations = true;
+  // Cleared once an idle-only shutdown commits, so no turn starts in the daemon's last moments.
+  private admittingTurns = true;
 
   constructor(options: AgentManagerOptions) {
     this.pluginLifecycle = options.pluginLifecycle;
@@ -914,6 +918,50 @@ export class AgentManager {
 
   prepareForShutdown(): void {
     this.acceptingAgentRegistrations = false;
+  }
+
+  /**
+   * Commits to an idle-only shutdown when no agent has work a stop would lose: resolves true
+   * and stops admitting agents and turns, or resolves false and changes nothing. The provider
+   * probes are async, so the synchronous checks run again after them; the caller must begin
+   * shutdown in the same tick as a true result.
+   */
+  async stopAdmittingIfIdle(): Promise<boolean> {
+    const snapshot = [...this.agents.values()].map((agent) => ({
+      agent,
+      updatedAt: agent.updatedAt,
+    }));
+    const unchangedAndIdle = () =>
+      this.acceptingAgentRegistrations &&
+      this.agentRegistrationTasks.size === 0 &&
+      this.agents.size === snapshot.length &&
+      snapshot.every(
+        ({ agent, updatedAt }) =>
+          this.agents.get(agent.id) === agent &&
+          agent.updatedAt === updatedAt &&
+          this.agentHasNoPendingWork(agent),
+      );
+    if (!unchangedAndIdle()) return false;
+    // Probe concurrently under one short deadline: the caller's stop deadline also covers the
+    // connection and the exit, and a late commit would stop a daemon the caller gave up on.
+    try {
+      const probes = snapshot.map(({ agent }) =>
+        agent.session?.canStopRuntime ? agent.session.canStopRuntime() : Promise.resolve(true),
+      );
+      const allowed = await withTimeout(
+        Promise.all(probes),
+        IDLE_SHUTDOWN_PROBE_DEADLINE_MS,
+        "Idle shutdown probes timed out",
+      );
+      if (!allowed.every((value) => value === true)) return false;
+    } catch (error) {
+      this.logger.warn({ err: error }, "Idle shutdown probe failed");
+      return false;
+    }
+    if (!unchangedAndIdle()) return false;
+    this.prepareForShutdown();
+    this.admittingTurns = false;
+    return true;
   }
 
   setAgentToolsEnabled(enabled: boolean): void {
@@ -1919,9 +1967,13 @@ export class AgentManager {
   }
 
   private runtimeHasNoPendingWork(agent: LiveManagedAgent): boolean {
+    return agent.lifecycle === "idle" && !agent.internal && this.agentHasNoPendingWork(agent);
+  }
+
+  /** No turn, permission, mutation or running subagent a daemon stop would cut off. */
+  private agentHasNoPendingWork(agent: ManagedAgent): boolean {
     return (
-      agent.lifecycle === "idle" &&
-      !agent.internal &&
+      (agent.lifecycle === "idle" || agent.lifecycle === "error" || agent.lifecycle === "closed") &&
       agent.activeForegroundTurnId === null &&
       !this.runs.hasRun(agent.id) &&
       !agent.pendingReplacement &&
@@ -2414,6 +2466,7 @@ export class AgentManager {
   }
 
   private assertNotArchiving(agentId: string): void {
+    this.assertAdmittingTurns();
     if (this.archivingAgentIds.has(agentId)) {
       throw new Error(`Agent ${agentId} is being archived`);
     }
@@ -2669,6 +2722,7 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
   ): Promise<boolean> {
+    this.assertAdmittingTurns();
     if (this.collectingRuntimes.has(agentId) || !this.agents.has(agentId)) {
       await this.waitForAgentClose(agentId);
       await ensureAgentLoaded(agentId, {
@@ -3547,7 +3601,12 @@ export class AgentManager {
     await this.hydrateTimelineFromLegacyProviderHistory(agent, options);
   }
 
+  private assertAdmittingTurns(): void {
+    if (!this.admittingTurns) throw new AgentManagerShuttingDownError();
+  }
+
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
+    this.assertAdmittingTurns();
     const agent = this.requireSessionAgent(agentId);
     const submittedRow = this.timelineStore
       .getRows(agentId)

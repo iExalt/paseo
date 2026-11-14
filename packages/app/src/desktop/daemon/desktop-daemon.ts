@@ -14,7 +14,17 @@ export type DesktopDaemonStopReason =
   | "version_mismatch"
   | "restart";
 
+export interface DesktopDaemonUpgrade {
+  phase: "checking" | "waiting" | "upgrading" | "failed" | "unsupported";
+  serverId: string;
+  pid: number | null;
+  startedAt: string | null;
+  targetVersion: string | null;
+  error: string | null;
+}
+
 export interface DesktopDaemonStatus {
+  upgrade?: DesktopDaemonUpgrade | null;
   serverId: string;
   status: DesktopDaemonState;
   listen: string | null;
@@ -119,6 +129,23 @@ function parseDesktopDaemonState(value: unknown): DesktopDaemonState {
   }
 }
 
+function parseDaemonUpgrade(raw: unknown): DesktopDaemonUpgrade | null {
+  if (
+    !isRecord(raw) ||
+    !["checking", "waiting", "upgrading", "failed", "unsupported"].includes(String(raw.phase))
+  )
+    return null;
+  if (typeof raw.serverId !== "string") return null;
+  return {
+    phase: raw.phase as DesktopDaemonUpgrade["phase"],
+    serverId: raw.serverId,
+    pid: toNumberOrNull(raw.pid),
+    startedAt: toStringOrNull(raw.startedAt),
+    targetVersion: toStringOrNull(raw.targetVersion),
+    error: toStringOrNull(raw.error),
+  };
+}
+
 function parseDesktopDaemonStatus(raw: unknown): DesktopDaemonStatus {
   if (!isRecord(raw)) {
     throw new Error("Unexpected desktop daemon status response.");
@@ -126,6 +153,7 @@ function parseDesktopDaemonStatus(raw: unknown): DesktopDaemonStatus {
   return {
     serverId: toStringOrNull(raw.serverId) ?? "",
     status: parseDesktopDaemonState(raw.status),
+    upgrade: parseDaemonUpgrade(raw.upgrade),
     listen: toStringOrNull(raw.listen),
     hostname: toStringOrNull(raw.hostname),
     pid: toNumberOrNull(raw.pid),

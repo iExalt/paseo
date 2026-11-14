@@ -1450,6 +1450,7 @@ export const ar: TranslationResources = {
       },
       advancedSettings: "الإعدادات المتقدمة",
       openAdvancedSettings: "افتح إعدادات البرنامج الخفي المتقدمة",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "إصدارا التطبيق والبرنامج الخفي غير متطابقين. قم بتحديث كلاهما إلى نفس الإصدار للحصول على أفضل تجربة.",
       loadFailed: "غير قادر على تحميل حالة البرنامج الخفي لسطح المكتب.",
@@ -1475,6 +1476,8 @@ export const ar: TranslationResources = {
         restartTitle: "إعادة التشغيل لإكمال التحديث إلى {{version}}؟",
         restartMessage: "سيعيد Paseo التشغيل ويستخدم الإصدار الجديد.",
         restartConfirm: "إعادة التشغيل",
+        agentsKeepRunning:
+          "يواصل الوكلاء قيد التشغيل ({{count}}) العمل، وتُحدَّث خدمة الخلفية بعد انتهائهم.",
         lastAttemptFailed: "فشلت المحاولة الأخيرة: {{error}}",
         updateTooltip: "التحديث إلى {{version}}",
         restartTooltip: "إعادة التشغيل لإكمال التحديث إلى {{version}}",

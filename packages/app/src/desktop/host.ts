@@ -185,6 +185,8 @@ export interface DesktopNixUpdateBridge {
   stage?: () => Promise<DesktopNixUpdateResult>;
   activate?: () => Promise<DesktopNixUpdateResult>;
   rollback?: () => Promise<DesktopNixUpdateResult>;
+  /** Quits and relaunches the active release; the daemon and its agents keep running. */
+  restart?: () => Promise<void>;
 }
 
 export interface DesktopNixReleaseSummary {
