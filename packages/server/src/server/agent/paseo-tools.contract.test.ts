@@ -822,6 +822,7 @@ function createPaseoWorktreeForMcpTest(options: {
   });
   const workspaceAutoName = new WorkspaceAutoName({
     agentManager: buildAgentManagerSpies() as unknown as AgentManager,
+    agentStorage: { listByWorkspace: async () => [] },
     workspaceRegistry,
     workspaceGitService,
     providerSnapshotManager: createOpenCodeManager().manager,
@@ -2231,6 +2232,7 @@ describe("create_agent native tool", () => {
     });
     const workspaceAutoName = new WorkspaceAutoName({
       agentManager,
+      agentStorage: { listByWorkspace: async () => [] },
       workspaceRegistry: {
         update: async (workspaceId, updater) => {
           const current = workspaceRecords.get(workspaceId);
