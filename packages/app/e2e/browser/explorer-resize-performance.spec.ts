@@ -5,6 +5,8 @@ import { runWorkspaceActionFromCommandCenter } from "../support/helpers/command-
 interface DragMeasurement {
   observer: MutationObserver;
   stylesheetMutations: number;
+  cssomMutations: number;
+  restore: () => void;
 }
 
 declare global {
@@ -27,18 +29,79 @@ async function beginResizeMeasurement(page: Page): Promise<void> {
     const stylesheet = document.getElementById("unistyles-web");
     if (!stylesheet) throw new Error("Shared stylesheet is missing");
     globalThis.__PASEO_RESET_RENDER_PROFILE__!();
+    const sheet = (stylesheet as HTMLStyleElement).sheet;
+    if (!sheet) throw new Error("Shared CSSStyleSheet is missing");
+    const insertRule = CSSStyleSheet.prototype.insertRule;
+    const deleteRule = CSSStyleSheet.prototype.deleteRule;
+    const groupInsertRule = CSSGroupingRule.prototype.insertRule;
+    const groupDeleteRule = CSSGroupingRule.prototype.deleteRule;
+    const cssText = Object.getOwnPropertyDescriptor(CSSStyleDeclaration.prototype, "cssText");
+    if (!cssText?.set) throw new Error("CSSStyleDeclaration.cssText setter is missing");
+    const restore = () => {
+      CSSStyleSheet.prototype.insertRule = insertRule;
+      CSSStyleSheet.prototype.deleteRule = deleteRule;
+      CSSGroupingRule.prototype.insertRule = groupInsertRule;
+      CSSGroupingRule.prototype.deleteRule = groupDeleteRule;
+      Object.defineProperty(CSSStyleDeclaration.prototype, "cssText", cssText);
+    };
     const measurement: DragMeasurement = {
       stylesheetMutations: 0,
+      cssomMutations: 0,
+      restore,
       observer: new MutationObserver((records) => {
         measurement.stylesheetMutations += records.length;
       }),
     };
-    measurement.observer.observe(stylesheet, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-    });
-    window.__PASEO_EXPLORER_DRAG_MEASUREMENT__ = measurement;
+    let fixtureIndex: number | undefined;
+    try {
+      CSSStyleSheet.prototype.insertRule = function (...args) {
+        if (this === sheet) measurement.cssomMutations++;
+        return insertRule.apply(this, args);
+      };
+      CSSStyleSheet.prototype.deleteRule = function (...args) {
+        if (this === sheet) measurement.cssomMutations++;
+        return deleteRule.apply(this, args);
+      };
+      CSSGroupingRule.prototype.insertRule = function (...args) {
+        if (this.parentStyleSheet === sheet) measurement.cssomMutations++;
+        return groupInsertRule.apply(this, args);
+      };
+      CSSGroupingRule.prototype.deleteRule = function (...args) {
+        if (this.parentStyleSheet === sheet) measurement.cssomMutations++;
+        return groupDeleteRule.apply(this, args);
+      };
+      Object.defineProperty(CSSStyleDeclaration.prototype, "cssText", {
+        ...cssText,
+        set(value: string) {
+          if (this.parentRule?.parentStyleSheet === sheet) measurement.cssomMutations++;
+          cssText.set!.call(this, value);
+        },
+      });
+      measurement.observer.observe(stylesheet, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      fixtureIndex = sheet.insertRule("@media all {}", sheet.cssRules.length);
+      const group = sheet.cssRules[fixtureIndex] as CSSGroupingRule;
+      const ruleIndex = group.insertRule(":not(*) { color: red; }", group.cssRules.length);
+      (group.cssRules[ruleIndex] as CSSStyleRule).style.cssText = "color: blue;";
+      group.deleteRule(ruleIndex);
+      sheet.deleteRule(fixtureIndex);
+      fixtureIndex = undefined;
+      if (measurement.cssomMutations !== 5) throw new Error("CSSOM measurement is incomplete");
+      measurement.cssomMutations = 0;
+      measurement.observer.takeRecords();
+      window.__PASEO_EXPLORER_DRAG_MEASUREMENT__ = measurement;
+    } catch (error) {
+      try {
+        if (fixtureIndex !== undefined) sheet.deleteRule(fixtureIndex);
+      } finally {
+        measurement.observer.disconnect();
+        restore();
+      }
+      throw error;
+    }
   });
 }
 
@@ -54,24 +117,39 @@ async function previewExplorerResize(page: Page, distance: number) {
   const y = bounds.y + 100;
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await waitForResizePaint(page);
-  await beginResizeMeasurement(page);
-  for (let move = 1; move <= 20; move++) {
-    await page.mouse.move(x + (distance * move) / 20, y);
+  let during: number;
+  let measurement: { stylesheetMutations: number; cssomMutations: number; paneRenders: number };
+  try {
     await waitForResizePaint(page);
+    await beginResizeMeasurement(page);
+    for (let move = 1; move <= 20; move++) {
+      await page.mouse.move(x + (distance * move) / 20, y);
+      await waitForResizePaint(page);
+    }
+    during = (await explorer.boundingBox())!.width;
+    measurement = await page.evaluate(() => {
+      const state = window.__PASEO_EXPLORER_DRAG_MEASUREMENT__!;
+      state.stylesheetMutations += state.observer.takeRecords().length;
+      return {
+        stylesheetMutations: state.stylesheetMutations,
+        cssomMutations: state.cssomMutations,
+        paneRenders: Object.entries(globalThis.__PASEO_RENDER_PROFILE_REASONS__ ?? {})
+          .filter(([id]) => id.startsWith("SplitPaneView:"))
+          .reduce((sum, [, reasons]) => sum + (reasons.render ?? 0), 0),
+      };
+    });
+  } finally {
+    try {
+      await page.evaluate(() => {
+        const state = window.__PASEO_EXPLORER_DRAG_MEASUREMENT__;
+        state?.observer.disconnect();
+        state?.restore();
+        delete window.__PASEO_EXPLORER_DRAG_MEASUREMENT__;
+      });
+    } finally {
+      await page.mouse.up();
+    }
   }
-  const during = (await explorer.boundingBox())!.width;
-  const measurement = await page.evaluate(() => {
-    const state = window.__PASEO_EXPLORER_DRAG_MEASUREMENT__!;
-    state.observer.disconnect();
-    return {
-      stylesheetMutations: state.stylesheetMutations,
-      paneRenders: Object.entries(globalThis.__PASEO_RENDER_PROFILE_REASONS__ ?? {})
-        .filter(([id]) => id.startsWith("SplitPaneView:"))
-        .reduce((sum, [, reasons]) => sum + (reasons.render ?? 0), 0),
-    };
-  });
-  await page.mouse.up();
   await waitForResizePaint(page);
   const after = (await explorer.boundingBox())!.width;
   expect(during).toBeCloseTo(before - distance, 0);
@@ -111,8 +189,10 @@ test("Explorer drag previews without rerendering panes or rewriting the shared s
   const grown = await previewExplorerResize(page, -100);
   const shrunk = await previewExplorerResize(page, 50);
   expect(grown.stylesheetMutations).toBe(0);
+  expect(grown.cssomMutations).toBe(0);
   expect(grown.paneRenders).toBe(0);
   expect(shrunk.stylesheetMutations).toBe(0);
+  expect(shrunk.cssomMutations).toBe(0);
   expect(shrunk.paneRenders).toBe(0);
   await expectExplorerWidthSurvivesReload(page, shrunk.width);
 });
