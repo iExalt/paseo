@@ -31,6 +31,16 @@ vi.mock("@/attachments/service", () => ({
   garbageCollectAttachments: async () => undefined,
 }));
 
+vi.mock("@/hooks/use-draft-agent-features", () => ({
+  useDraftAgentFeatures: () => ({
+    features: [],
+    featureValues: undefined,
+    isLoading: false,
+    setFeatureValue: () => undefined,
+    applyProfileFeatureValues: () => undefined,
+  }),
+}));
+
 vi.mock("@/hooks/use-agent-form-state", () => ({
   useAgentFormState: () => ({
     selectedServerId: "host-1",

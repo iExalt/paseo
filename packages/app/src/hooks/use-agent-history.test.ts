@@ -1,20 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   DaemonClient,
   FetchAgentHistoryEntry,
   FetchAgentHistoryOptions,
 } from "@getpaseo/client/internal/daemon-client";
-import type { AgentHistoryClient, AgentHistoryHost } from "./use-agent-history";
+import {
+  collectAgentHistoryHostErrors,
+  fetchAgentHistoryBatch,
+  fetchAgentHistoryPage,
+  type AgentHistoryClient,
+  type AgentHistoryHost,
+} from "./agent-history-fetch";
 import { allAgentHistoryQueryKey } from "./agent-history-query-key";
+
+// Guard: the fetch module must stay runtime-free, or this suite pays the whole
+// app runtime import again.
+vi.mock("@/runtime/host-runtime", () => {
+  throw new Error("agent-history-fetch must not import host-runtime");
+});
 
 (
   globalThis as unknown as {
     __DEV__: boolean;
   }
 ).__DEV__ = false;
-
-const { fetchAgentHistoryBatch, fetchAgentHistoryPage, collectAgentHistoryHostErrors } =
-  await import("./use-agent-history");
 
 type FetchAgentHistory = DaemonClient["fetchAgentHistory"];
 type FetchAgentHistoryResult = Awaited<ReturnType<FetchAgentHistory>>;
