@@ -1,6 +1,7 @@
 import { mkdir, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { PluginIdSchema } from "@getpaseo/protocol/messages";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { resolveCliVersion } from "../../version.js";
 
 const OVERVIEW = `<!--
@@ -216,7 +217,8 @@ export async function scaffoldPluginDirectory(
           $comment:
             'Add "name": "My plugin" to set a display name. Add "icon": "assets/icon.png" for a PNG inside the package. Add image or video paths (relative to this manifest) or HTTPS URLs to media. Include local assets in package.json files.',
           media: [],
-          requirements: { paseo: `>=${version}` },
+          // The daemon checks this against its plugin API version, not the fork's release version.
+          requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
         },
         null,
         2,

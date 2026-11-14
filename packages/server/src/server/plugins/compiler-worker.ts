@@ -2,7 +2,8 @@ import { parentPort } from "node:worker_threads";
 import type { ZodIssue } from "zod";
 import { compilePlugin, compileDirectoryPlugin } from "./compiler-build.js";
 import { runPluginBuild } from "./preparation-build.js";
-import type { CompilerTask } from "./compiler.js";
+import { loadEsbuild } from "./compiler-esbuild.js";
+import type { CompilerShutdown, CompilerTask } from "./compiler.js";
 
 export type CompilerReply =
   | { kind: "log"; data: Record<string, unknown>; message: string }
@@ -19,9 +20,27 @@ export type CompilerReply =
 const port = parentPort!;
 // The compiler owner serializes requests; the port queues the first request
 // until this entrypoint has loaded, including in source/tsx development.
-port.on("message", (task: CompilerTask) => {
+port.on("message", (task: CompilerTask | CompilerShutdown) => {
+  if (task.kind === "shutdown") {
+    void shutDown();
+    return;
+  }
   void run(task);
 });
+
+// Only this thread's event loop can reap esbuild's service child, and stop() resolves before
+// the child exits. Exiting at once leaves a zombie, so give the child a moment to go first;
+// esbuild exposes no handle to wait on. Closing the port then lets the worker exit.
+const ESBUILD_EXIT_GRACE_MS = 500;
+
+async function shutDown(): Promise<void> {
+  try {
+    await loadEsbuild().stop();
+    await new Promise((resolve) => setTimeout(resolve, ESBUILD_EXIT_GRACE_MS));
+  } finally {
+    port.close();
+  }
+}
 
 async function run(task: CompilerTask): Promise<void> {
   try {

@@ -59,6 +59,7 @@ export class ManagedPluginSources {
   private readonly root: string;
   private readonly metadataPath: string;
   private readonly records: Record<string, ManagedPluginRecord>;
+  private staleStagingRemoval: Promise<void> | null = null;
   constructor(
     paseoHome: string,
     private readonly registryOptions: RegistryOptions = {},
@@ -253,6 +254,7 @@ export class ManagedPluginSources {
     } else {
       const record = this.records[pluginId];
       if (record?.kind !== "git") throw new Error("Git source is no longer configured");
+      await this.removeStaleStaging();
       target = {
         kind: "git",
         commit: await resolveRemoteCommit(
@@ -396,7 +398,17 @@ export class ManagedPluginSources {
     delete this.records[pluginId];
     this.writeRecords();
   }
+  // An install interrupted by a crash or restart leaves its staging directory behind. Nothing
+  // resumes one, so the first staging use in a daemon run clears them before creating its own.
+  private removeStaleStaging(): Promise<void> {
+    this.staleStagingRemoval ??= rm(path.join(this.root, ".staging"), {
+      recursive: true,
+      force: true,
+    });
+    return this.staleStagingRemoval;
+  }
   private async createStagingRoot(): Promise<string> {
+    await this.removeStaleStaging();
     const stagingRoot = path.join(this.root, ".staging", randomUUID());
     await mkdir(stagingRoot, { recursive: true, mode: 0o700 });
     await assertRealContainment(this.root, stagingRoot);
