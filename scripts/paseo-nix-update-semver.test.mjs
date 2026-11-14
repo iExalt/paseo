@@ -311,6 +311,8 @@ test("installed app plan replaces only updater-owned apps, and only while none r
         "  101 /Applications/Paseo.app/Contents/MacOS/Paseo",
         "  102 /Applications/Paseo.app/Contents/Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper --type=gpu",
         "  103 /Applications/Paseo.app.staging/Contents/MacOS/Paseo",
+        "  105 /Applications/Paseo.app/Contents/Frameworks/Paseo Helper.app/Contents/MacOS/Paseo Helper /Users/me/.paseo/terminal-worker/0.21.0-abc/terminal-worker.mjs --paseo-terminal-worker 2b30",
+        "  106 /usr/bin/grep --paseo-terminal-worker",
         "  104 /nix/store/x/Applications/Paseo.app/Contents/MacOS/Paseo",
       ].join("\n"),
       INSTALLED_APP,

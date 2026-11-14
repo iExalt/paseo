@@ -7,7 +7,7 @@ import log from "electron-log/main";
 log.transports.console.level = "info";
 log.initialize({ spyRendererConsole: true });
 
-import { inheritLoginShellEnv } from "./login-shell-env.js";
+import { inheritLoginShellEnv } from "@getpaseo/server/login-shell-env";
 
 import path from "node:path";
 import { randomBytes, randomUUID } from "node:crypto";
@@ -1020,7 +1020,9 @@ async function bootstrap(): Promise<void> {
     },
   });
   ensureNotificationCenterRegistration();
-  registerDaemonManager();
+  registerDaemonManager(DESKTOP_INSTALLATION, {
+    quitForRelaunch: () => quitLifecycle.quitForRelaunch(),
+  });
   registerWindowManager({ mode: DESKTOP_WINDOW_CHROME_MODE });
   registerDialogHandlers();
   registerNotificationHandlers();
@@ -1072,7 +1074,7 @@ async function bootstrap(): Promise<void> {
 void runDesktopStartup({
   hasPendingGuiLaunchRequest: Boolean(pendingOpenProjectPath || pendingAgentNavigation),
   runCliPassthroughIfRequested,
-  inheritLoginShellEnv,
+  inheritLoginShellEnv: () => inheritLoginShellEnv({ logger: log }),
   bootstrapGui: bootstrap,
 }).catch((error) => {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -1088,6 +1090,7 @@ function showDaemonShutdownDialog(): void {
 
 const quitLifecycle = createQuitLifecycle({
   app,
+  quit: () => app.quit(),
   closeTransportSessions: () => {
     closeAllTransportSessions();
     void browserProxy.dispose().catch((error) => {

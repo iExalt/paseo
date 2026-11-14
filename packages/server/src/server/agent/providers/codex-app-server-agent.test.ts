@@ -2458,6 +2458,7 @@ describe("Codex app-server provider", () => {
     });
 
     expect(threadRequests).toEqual(["thread/read", "thread/read"]);
+    expect(await session.canStopRuntime?.()).toBe(true);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -8978,6 +8979,9 @@ test("Codex runtime safety queries live terminals and retains unsupported app se
     async () => appServer.child,
   );
   try {
+    await session.connect();
+    expect(session.id).toBeNull();
+    expect(await session.canStopRuntime()).toBe(true);
     await session.startTurn("hello");
     await appServer.waitForTurnStart();
     expect(await session.canStopRuntime()).toBe(false);
@@ -8995,6 +8999,9 @@ test("Codex runtime safety queries live terminals and retains unsupported app se
         .requests()
         .findLast((request) => request.method === "thread/backgroundTerminals/list"),
     ).toMatchObject({ params: { threadId: "thread-1" } });
+    appServer.child.exitCode = 0;
+    appServer.child.emit("exit", 0, null);
+    expect(await session.canStopRuntime()).toBe(true);
     appServer.assertNoErrors();
   } finally {
     await session.close();

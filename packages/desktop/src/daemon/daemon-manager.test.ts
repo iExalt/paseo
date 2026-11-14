@@ -7,6 +7,7 @@ import { DEFAULT_DESKTOP_SETTINGS } from "../settings/desktop-settings";
 import { ExternalCliCommandError } from "./cli/external";
 import {
   createDaemonCommandHandlers,
+  registerDaemonManager,
   keepsTerminalsOnStop,
   stopCapturedDaemon,
   type DesktopDaemonStopReason,
@@ -15,6 +16,7 @@ import {
 const mocks = vi.hoisted(() => ({
   paseoHome: "",
   settingsError: null as Error | null,
+  runNixUpdate: vi.fn(),
   settings: {
     releaseChannel: "stable" as "stable" | "beta",
     updates: {
@@ -39,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   })),
   spawnProcess: vi.fn(),
   logInfo: vi.fn(),
+  sendEvent: vi.fn(),
   logError: vi.fn(),
   appLogPath: "",
   getElectronLogFile: vi.fn(),
@@ -46,12 +49,12 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
   app: {
+    on: vi.fn(),
     getPath: vi.fn(() => mocks.paseoHome),
     getVersion: vi.fn(() => "1.2.3"),
     isPackaged: true,
   },
-  autoUpdater: undefined,
-  BrowserWindow: { getAllWindows: vi.fn(() => []) },
+  BrowserWindow: { getAllWindows: () => [{ webContents: { send: mocks.sendEvent } }] },
   ipcMain: { handle: vi.fn() },
   powerMonitor: { getSystemIdleTime: vi.fn(() => 0) },
 }));
@@ -107,6 +110,15 @@ vi.mock("./cli/external.js", async (importOriginal) => ({
   runExternalCliTextCommand: mocks.runExternalCliTextCommand,
 }));
 
+vi.mock("../features/nix-managed-updater.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  createNixUpdaterCommandRunner: () => mocks.runNixUpdate,
+}));
+vi.mock("./store-bundle.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  shouldSyncInstalledCopy: () => false,
+}));
+
 describe("daemon-manager commands", () => {
   let fixtureRoot: string;
 
@@ -123,6 +135,7 @@ describe("daemon-manager commands", () => {
     mocks.createNodeEntrypointInvocation.mockReturnValue({ command: "node", args: [], env: {} });
     mocks.spawnProcess.mockReset();
     mocks.logInfo.mockReset();
+    mocks.sendEvent.mockReset();
     mocks.logError.mockReset();
     mocks.getElectronLogFile.mockReset();
     mocks.getElectronLogFile.mockReturnValue({ path: mocks.appLogPath });
@@ -184,6 +197,81 @@ describe("daemon-manager commands", () => {
 
     expect(status).toMatchObject({ serverId: "", status: "errored", pid: null });
     expect(status.error).toBeTruthy();
+  });
+
+  it("publishes the real idle-upgrader decision through status and the renderer event bridge", async () => {
+    mkdirSync(mocks.paseoHome);
+    const startedAt = new Date().toISOString();
+    writeFileSync(
+      path.join(mocks.paseoHome, "paseo.pid"),
+      JSON.stringify({
+        pid: process.pid,
+        startedAt,
+        hostname: hostname(),
+        uid: process.getuid?.() ?? 0,
+        listen: "127.0.0.1:6799",
+        desktopManaged: true,
+      }),
+    );
+    mocks.settings = {
+      ...DEFAULT_DESKTOP_SETTINGS,
+      daemon: { manageBuiltInDaemon: true, keepRunningAfterQuit: true },
+    };
+    mocks.runExternalCliJsonCommand.mockImplementation(async (args: string[]) =>
+      args.includes("stop")
+        ? { action: "declined" }
+        : {
+            localDaemon: "running",
+            serverId: "srv_local",
+            pid: process.pid,
+            startedAt,
+            daemonVersion: "1.2.2",
+            desktopManaged: true,
+          },
+    );
+    const installation = {
+      mode: "nix" as const,
+      outputPath: "/nix/store/current",
+      cliPath: "/nix/store/current/bin/paseo-nix-update",
+      marker: {
+        schemaVersion: 1 as const,
+        managedBy: "nix" as const,
+        packageVersion: "1.2.3",
+        buildVersion: "1.2.3",
+      },
+    };
+    mocks.runNixUpdate.mockResolvedValue({ active: { outputPath: installation.outputPath } });
+    registerDaemonManager(installation);
+    const handlers = createDaemonCommandHandlers({ installation });
+    try {
+      await handlers.start_desktop_daemon();
+      expect(await handlers.desktop_daemon_status()).toMatchObject({
+        upgrade: {
+          phase: "waiting",
+          serverId: "srv_local",
+          targetVersion: "1.2.3",
+          pid: process.pid,
+        },
+      });
+      expect(mocks.sendEvent).toHaveBeenCalledWith(
+        "paseo:event:desktop-daemon-upgrade-changed",
+        {},
+      );
+      expect(mocks.runExternalCliJsonCommand).toHaveBeenCalledWith(
+        expect.arrayContaining(["stop", "--if-idle"]),
+      );
+      mocks.runNixUpdate.mockResolvedValue({ active: { outputPath: "/nix/store/newer" } });
+      await handlers.start_desktop_daemon();
+      expect(mocks.runNixUpdate).toHaveBeenCalledTimes(2);
+      expect(
+        mocks.runExternalCliJsonCommand.mock.calls.filter(([args]) => args.includes("stop")),
+      ).toHaveLength(1);
+      expect((await handlers.desktop_daemon_status()).upgrade).toBeNull();
+    } finally {
+      // This fixture is attached, never owned: no confirmed instance means cancel only.
+      await handlers.stop_desktop_daemon();
+    }
+    expect((await handlers.desktop_daemon_status()).upgrade).toBeNull();
   });
 
   it("returns a local credential only for its live managed daemon listen", async () => {
@@ -263,15 +351,13 @@ describe("desktop stops and terminals", () => {
     "host_remove",
     "quit",
     "app_update",
-    "version_mismatch",
     "restart",
   ];
 
-  it("keeps terminals only for an app update or version-mismatch restart, never on Windows", () => {
+  it("keeps terminals only for an app update, never on Windows", () => {
     for (const platform of ["darwin", "linux"] as const) {
       expect(reasons.filter((reason) => keepsTerminalsOnStop(reason, platform))).toEqual([
         "app_update",
-        "version_mismatch",
       ]);
     }
     expect(reasons.filter((reason) => keepsTerminalsOnStop(reason, "win32"))).toEqual([]);

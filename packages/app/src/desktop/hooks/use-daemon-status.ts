@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import {
@@ -10,7 +10,7 @@ import {
 } from "@/desktop/daemon/desktop-daemon";
 import { useDesktopIpcQueryErrorToast } from "@/desktop/hooks/desktop-ipc-error";
 
-const DAEMON_STATUS_QUERY_KEY = ["desktopDaemonStatus"] as const;
+import { DAEMON_STATUS_QUERY_KEY, retainDaemonStatusEvents } from "./daemon-status-events";
 
 interface DaemonStatusData {
   status: DesktopDaemonStatus;
@@ -21,6 +21,9 @@ export function useDaemonStatus() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const enabled = shouldUseDesktopDaemon();
+  useEffect(() => {
+    if (enabled) return retainDaemonStatusEvents(queryClient);
+  }, [enabled, queryClient]);
 
   const query = useQuery<DaemonStatusData, Error>({
     queryKey: DAEMON_STATUS_QUERY_KEY,
