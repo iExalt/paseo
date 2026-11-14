@@ -72,6 +72,7 @@ interface ScheduleRowProps extends ScheduleRowActions {
   /** True when only one host exists and the host name would be redundant. */
   singleHost?: boolean;
   pending?: ScheduleRowPending;
+  runError?: string | null;
   isFirst: boolean;
 }
 
@@ -136,11 +137,7 @@ function ScheduleMeta({
   const createdAgo = useTimeAgo(new Date(schedule.createdAt));
   const lastRunAgo = useTimeAgo(schedule.lastRunAt ? new Date(schedule.lastRunAt) : null);
   const meta = buildMeta({ schedule, state, createdAgo, lastRunAgo, serverName, singleHost });
-  return (
-    <Text style={settingsStyles.rowHint} numberOfLines={1}>
-      {meta}
-    </Text>
-  );
+  return <Text style={settingsStyles.rowHint}>{meta}</Text>;
 }
 
 /** Small provider glyph. Reads the icon color off a StyleSheet object so the
@@ -164,7 +161,7 @@ function ProviderGlyph({
  * a muted secondary line (model · cadence · next run), a StatusBadge, and the
  * kebab menu that owns every row action. Tapping the row opens the editor.
  *
- * Hover lives on the outer plain View (docs/hover.md): the inner Pressable owns
+ * Hover lives on the outer plain View (docs/upstream/hover.md): the inner Pressable owns
  * press, the nested kebab Pressable never fights it, and the row background
  * highlights without reflow.
  */
@@ -177,6 +174,7 @@ export function ScheduleRow({
   serverName,
   singleHost,
   pending,
+  runError,
   isFirst,
   onEdit,
   onPause,
@@ -192,7 +190,7 @@ export function ScheduleRow({
   const title = resolveScheduleTitle(schedule);
   const productName = scheduleProductName(schedule);
   const badge = stateBadge(state);
-  const canRun = schedule.target.type === "new-agent" && (state === "active" || state === "paused");
+  const canRun = state === "active" || state === "paused";
 
   const rowStyle = useCallback(
     ({ pressed }: PressableStateCallbackType) => [
@@ -226,15 +224,18 @@ export function ScheduleRow({
             <Text style={settingsStyles.rowTitle} numberOfLines={1}>
               {title}
             </Text>
-            <Text style={styles.target} numberOfLines={1}>
-              {targetLabel}
-            </Text>
+            <Text style={styles.target}>{targetLabel}</Text>
             <ScheduleMeta
               schedule={schedule}
               state={state}
               serverName={serverName}
               singleHost={singleHost ?? false}
             />
+            {runError ? (
+              <Text accessibilityRole="alert" style={styles.runError}>
+                {runError}
+              </Text>
+            ) : null}
           </View>
         </View>
 
@@ -273,7 +274,18 @@ function ScheduleExecutionMenuItems({
   canRun: boolean;
 }): ReactElement | null {
   if (schedule.target.type === "agent") {
-    return null;
+    return (
+      <DropdownMenuItem
+        leading={runLeading}
+        disabled={!canRun}
+        status={pending?.runNow ? "pending" : "idle"}
+        pendingLabel="Triggering..."
+        onSelect={onRunNow}
+        testID={`schedule-menu-run-${schedule.id}`}
+      >
+        Trigger heartbeat now
+      </DropdownMenuItem>
+    );
   }
 
   let cadenceAction: ReactElement;
@@ -435,6 +447,11 @@ const styles = StyleSheet.create((theme) => ({
     marginTop: theme.spacing[1],
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
+  },
+  runError: {
+    marginTop: theme.spacing[1],
+    color: theme.colors.destructive,
+    fontSize: theme.fontSize.sm,
   },
   trailing: {
     flexDirection: "row",

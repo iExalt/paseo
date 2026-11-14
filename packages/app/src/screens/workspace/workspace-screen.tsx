@@ -1,3 +1,4 @@
+import { WorkspaceLightboxProvider } from "@/components/attachment-lightbox-context";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 import { useHostFeature } from "@/runtime/host-features";
 import {
@@ -31,11 +32,11 @@ import {
   type ReactNode,
 } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
-import { useIsFocused } from "expo-router/react-navigation";
 import { BackHandler, Text, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter, type Href } from "expo-router";
+import { useIsFocused, useRouter, type Href } from "expo-router";
 import * as Clipboard from "expo-clipboard";
+import { getProviderSessionId } from "@/workspace/copy-provider-session-id/resolve";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -152,7 +153,6 @@ import { useDesktopBrowserNewTabRequests } from "@/desktop/browser/new-tab-reque
 import type { WorkspaceTabDescriptor } from "@/screens/workspace/workspace-tabs-types";
 import {
   resolveWorkspaceExplorerToggleOwner,
-  EXPLORER_TOGGLE_KEYS,
   WorkspaceExplorerSidebarToggle,
   WorkspaceHeaderExplorerToggle,
 } from "@/screens/workspace/workspace-explorer-toggle";
@@ -163,9 +163,11 @@ import {
 } from "@/screens/workspace/workspace-header-source";
 import {
   resolveWorkspaceRouteState,
+  shouldDismissUnavailableWorkspace,
   type WorkspaceRouteState,
 } from "@/screens/workspace/workspace-route-state";
 import { renderWorkspaceRouteGate } from "@/screens/workspace/workspace-route-state-views";
+import { NotificationWorkspaceFallback } from "@/notification-open/preview-view";
 import { useWorkspaceRecovery } from "@/workspace-recovery/use-workspace-recovery";
 import type { WorkspaceRecoveryModel } from "@/workspace-recovery/model";
 import {
@@ -247,6 +249,10 @@ interface WorkspaceFileLocationFields {
   path: string | null;
   lineStart?: number;
   lineEnd?: number;
+}
+
+function getTabAgentId(tab: WorkspaceTabDescriptor | null): string | null {
+  return tab?.target.kind === "agent" ? tab.target.agentId : null;
 }
 
 function getWorkspaceFileLocationFields(
@@ -476,7 +482,9 @@ interface WorkspaceHeaderTitleBarProps {
   subtitle: string;
   isSubtitleDistinct: boolean;
   currentBranchName: string | null;
+  activeAgentId: string | null;
   normalizedServerId: string;
+  normalizedWorkspaceId: string;
   showWorkspaceSetup: boolean;
   importAgentDisabled: boolean;
   copyPathDisabled: boolean;
@@ -492,7 +500,9 @@ function WorkspaceHeaderTitleBar({
   subtitle,
   isSubtitleDistinct,
   currentBranchName,
+  activeAgentId,
   normalizedServerId,
+  normalizedWorkspaceId,
   showWorkspaceSetup,
   importAgentDisabled,
   copyPathDisabled,
@@ -519,7 +529,10 @@ function WorkspaceHeaderTitleBar({
       )}
       <View style={styles.compactHeaderMenuCluster}>
         <WorkspaceHeaderMenuDesktop
+          serverId={normalizedServerId}
+          workspaceId={normalizedWorkspaceId}
           currentBranchName={currentBranchName}
+          activeAgentId={activeAgentId}
           showWorkspaceSetup={showWorkspaceSetup}
           importAgentDisabled={importAgentDisabled}
           copyPathDisabled={copyPathDisabled}
@@ -771,15 +784,19 @@ function WorkspaceContentProviders({
   children,
   workspaceKey,
   sheetPaneHost,
+  active,
 }: {
   children: ReactNode;
   workspaceKey: string | null;
   sheetPaneHost: SheetPaneHost | null;
+  active: boolean;
 }) {
   return (
     <WorkspaceFocusProvider workspaceKey={workspaceKey}>
       <DiffDocumentWorkspaceCacheProvider>
-        <SheetPaneHostProvider value={sheetPaneHost}>{children}</SheetPaneHostProvider>
+        <SheetPaneHostProvider value={sheetPaneHost}>
+          <WorkspaceLightboxProvider active={active}>{children}</WorkspaceLightboxProvider>
+        </SheetPaneHostProvider>
       </DiffDocumentWorkspaceCacheProvider>
     </WorkspaceFocusProvider>
   );
@@ -1246,6 +1263,16 @@ function WorkspaceScreenContent({
     hasHydratedWorkspaces,
     recovery: workspaceRecovery.state,
   });
+  const router = useRouter();
+  const dismissUnavailableWorkspace = shouldDismissUnavailableWorkspace(
+    workspaceRouteState,
+    isRouteFocused,
+  );
+  useEffect(() => {
+    if (dismissUnavailableWorkspace) {
+      router.replace("/open-project");
+    }
+  }, [dismissUnavailableWorkspace, router]);
   const workspaceHeaderCheckoutState = buildWorkspaceHeaderCheckoutState({
     isCheckoutStatusLoading,
     isError: checkoutQuery.isError,
@@ -2142,8 +2169,7 @@ function WorkspaceScreenContent({
       if (!agentId) return;
       const agent =
         useSessionStore.getState().sessions[normalizedServerId]?.agents?.get(agentId) ?? null;
-      const providerSessionId =
-        agent?.runtimeInfo?.sessionId ?? agent?.persistence?.sessionId ?? null;
+      const providerSessionId = agent ? getProviderSessionId(agent) : null;
       if (!agent || !providerSessionId) {
         toast.error(t("workspace.tabs.toasts.resumeIdUnavailable"));
         return;
@@ -2336,11 +2362,15 @@ function WorkspaceScreenContent({
       }
       await handleBulkCloseTabs({
         tabsToClose: paneTabs.slice(0, index),
-        title: t("workspace.tabs.confirmations.closeTabsLeftTitle"),
+        title: t(
+          isMobile
+            ? "workspace.tabs.confirmations.closeTabsAboveTitle"
+            : "workspace.tabs.confirmations.closeTabsLeftTitle",
+        ),
         logLabel: "to the left",
       });
     },
-    [handleBulkCloseTabs, t],
+    [handleBulkCloseTabs, isMobile, t],
   );
 
   const handleCloseTabsToLeft = useCallback(
@@ -2358,11 +2388,15 @@ function WorkspaceScreenContent({
       }
       await handleBulkCloseTabs({
         tabsToClose: paneTabs.slice(index + 1),
-        title: t("workspace.tabs.confirmations.closeTabsRightTitle"),
+        title: t(
+          isMobile
+            ? "workspace.tabs.confirmations.closeTabsBelowTitle"
+            : "workspace.tabs.confirmations.closeTabsRightTitle",
+        ),
         logLabel: "to the right",
       });
     },
-    [handleBulkCloseTabs, t],
+    [handleBulkCloseTabs, isMobile, t],
   );
 
   const handleCloseTabsToRight = useCallback(
@@ -2892,6 +2926,7 @@ function WorkspaceScreenContent({
   });
 
   const activeTabDescriptor = useMemo(() => activeTab?.descriptor ?? null, [activeTab]);
+  const activeAgentId = getTabAgentId(activeTabDescriptor);
   const activeFileFields = getWorkspaceFileLocationFields(activeTabDescriptor);
   const activeFilePath = activeFileFields.path;
   const activeFileLineStart = activeFileFields.lineStart;
@@ -3230,7 +3265,6 @@ function WorkspaceScreenContent({
               onPress={handleToggleExplorerSidebar}
               label={explorerSidebarToggleLabel}
               tooltipLabel={t("workspace.tabs.explorerSidebar.toggle")}
-              tooltipKeys={EXPLORER_TOGGLE_KEYS}
               style={styles.compactHeaderActionButton}
               accessibilityState={explorerSidebarToggleAccessibilityState}
             />
@@ -3267,7 +3301,6 @@ function WorkspaceScreenContent({
         onPress={handleToggleExplorerSidebar}
         label={explorerSidebarToggleLabel}
         tooltipLabel={t("workspace.tabs.explorerSidebar.toggle")}
-        tooltipKeys={EXPLORER_TOGGLE_KEYS}
         accessibilityState={explorerSidebarToggleAccessibilityState}
       />
     ),
@@ -3323,7 +3356,9 @@ function WorkspaceScreenContent({
                 subtitle={workspaceHeaderSubtitle}
                 isSubtitleDistinct={isWorkspaceHeaderSubtitleDistinct}
                 currentBranchName={currentBranchName}
+                activeAgentId={activeAgentId}
                 normalizedServerId={normalizedServerId}
+                normalizedWorkspaceId={normalizedWorkspaceId}
                 showWorkspaceSetup={showWorkspaceSetup}
                 importAgentDisabled={!canOpenImportSheet}
                 copyPathDisabled={!workspaceDirectory}
@@ -3338,6 +3373,7 @@ function WorkspaceScreenContent({
         />
       ) : null,
     [
+      activeAgentId,
       canOpenImportSheet,
       currentBranchName,
       handleCopyBranchName,
@@ -3346,6 +3382,7 @@ function WorkspaceScreenContent({
       headerRight,
       isWorkspaceHeaderLoading,
       normalizedServerId,
+      normalizedWorkspaceId,
       openImportSheet,
       showScreenHeader,
       showWorkspaceSetup,
@@ -3409,10 +3446,13 @@ function WorkspaceScreenContent({
             onCloseOtherTabs={handleCloseOtherTabs}
           />
           <WorkspaceHeaderMenuMobile
+            serverId={normalizedServerId}
+            workspaceId={normalizedWorkspaceId}
             normalizedServerId={normalizedServerId}
             normalizedWorkspaceId={normalizedWorkspaceId}
             scripts={compactHeaderScripts}
             currentBranchName={currentBranchName}
+            activeAgentId={activeAgentId}
             showWorkspaceSetup={showWorkspaceSetup}
             showCreateBrowserTab={showCreateBrowserTab}
             createTerminalDisabled={createTerminalDisabled}
@@ -3428,6 +3468,7 @@ function WorkspaceScreenContent({
         </CompactWorkspaceHeader>
       ) : null,
     [
+      activeAgentId,
       activeTabKey,
       canOpenImportSheet,
       compactHeaderScripts,
@@ -3786,13 +3827,21 @@ function WorkspaceScreenContent({
   );
 
   if (gatedWorkspaceScreen) {
-    return gatedWorkspaceScreen;
+    return (
+      <NotificationWorkspaceFallback
+        serverId={normalizedServerId}
+        workspaceId={normalizedWorkspaceId}
+      >
+        {gatedWorkspaceScreen}
+      </NotificationWorkspaceFallback>
+    );
   }
   return (
     <WorkspaceContentProviders
       key={persistenceKey}
       workspaceKey={persistenceKey}
       sheetPaneHost={sheetPaneHost}
+      active={isRouteFocused}
     >
       <AssistantFileLinkResolverProvider
         client={client}

@@ -966,6 +966,37 @@ process.stdin.on("data", (chunk) => {
 }
 
 describe("Codex app-server provider", () => {
+  test("refreshes changed skills without interrupting the active turn", async () => {
+    const session = createSession();
+    let skills = [
+      { name: "before", description: "original", path: "/skills/before/SKILL.md", enabled: true },
+    ];
+    const request = vi.fn(async () => ({ data: [{ skills }] }));
+    session.client = { request };
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    expect(await session.listCommands()).toContainEqual(
+      expect.objectContaining({ name: "before" }),
+    );
+    skills = [
+      { name: "after", description: "changed", path: "/skills/after/SKILL.md", enabled: true },
+    ];
+    await asInternals(session).handleNotification("skills/changed", {});
+    expect(events).toEqual([{ type: "commands_changed", provider: "codex" }]);
+    await session.refreshSkills();
+    const commands = await session.listCommands();
+    expect(commands).toContainEqual(
+      expect.objectContaining({ name: "after", description: "changed" }),
+    );
+    expect(commands.some((command) => command.name === "before")).toBe(false);
+    expect(request.mock.calls.every((call) => call[0] === "skills/list")).toBe(true);
+    expect(request).toHaveBeenCalledWith(
+      "skills/list",
+      expect.objectContaining({ forceReload: true }),
+    );
+    expect(session.activeForegroundTurnId).toBe("test-turn");
+  });
+
   test("getAvailableModes includes auto-review when the Codex version supports it", async () => {
     const session = createSession({}, { autoReviewEnabled: true });
 
@@ -1993,6 +2024,7 @@ describe("Codex app-server provider", () => {
     });
 
     expect(threadRequests).toEqual(["thread/read", "thread/read"]);
+    expect(await session.canStopRuntime?.()).toBe(true);
     await session.close();
     appServer.assertNoErrors();
   });
@@ -3809,7 +3841,10 @@ describe("Codex app-server provider", () => {
     const childUserMessage = {
       type: "userMessage",
       id: "child-user-message",
-      content: [{ type: "text", text: "Inspect this path." }],
+      content: [
+        { type: "text", text: "Inspect this path." },
+        { type: "skill", name: "gone", path: "/nonexistent/gone/SKILL.md" },
+      ],
     };
 
     await asInternals(session).handleNotification("item/started", {
@@ -3830,6 +3865,26 @@ describe("Codex app-server provider", () => {
           event.event.item.type === "user_message",
       ),
     ).toHaveLength(1);
+    // The child's skill card lands in the child's timeline, as history replays it, and an
+    // unreadable SKILL.md fails the card instead of passing for skill text.
+    const childSkillCards = events.flatMap((event) =>
+      event.type === "provider_subagent" &&
+      event.event.type === "timeline" &&
+      event.event.id === "user-child-thread" &&
+      event.event.item.type === "tool_call"
+        ? [event.event.item]
+        : [],
+    );
+    expect(childSkillCards).toEqual([
+      expect.objectContaining({
+        callId: "codex-skill:child-user-message:0",
+        name: "Skill",
+        status: "failed",
+        error: {
+          message: expect.stringContaining("Paseo could not read /nonexistent/gone/SKILL.md"),
+        },
+      }),
+    ]);
   });
 
   test("keeps the parent running when a MultiAgentV2 sub-agent finishes", async () => {
@@ -5270,14 +5325,24 @@ describe("Codex app-server provider", () => {
     });
   });
 
-  test("restores nested MultiAgentV2 ownership from persisted child threads", async () => {
+  test("restores nested MultiAgentV2 ownership and cost from persisted child threads", async () => {
     const session = createSession();
+    const usdMicros: Record<string, number> = {
+      "test-thread": 1_000,
+      "persisted-child": 2_000,
+      "persisted-grandchild": 3_000,
+    };
     session.client = {
       request: vi.fn(async (method: string, params: unknown) => {
+        const threadId = (params as { threadId?: string }).threadId;
+        if (method === "account/usage/read" && threadId) {
+          return {
+            threadUsage: { estimatedUsageUsdMicros: usdMicros[threadId], groups: [] },
+          };
+        }
         if (method !== "thread/read") {
           return {};
         }
-        const threadId = (params as { threadId?: string }).threadId;
         const itemsByThreadId = {
           "test-thread": [
             {
@@ -5329,6 +5394,18 @@ describe("Codex app-server provider", () => {
         parentSubagentId: "persisted-child",
       }),
     ]);
+
+    const costs: number[] = [];
+    session.subscribe((event) => {
+      if (event.type === "usage_updated" && event.usage.totalCostUsd !== undefined) {
+        costs.push(event.usage.totalCostUsd);
+      }
+    });
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "test-thread",
+      turn: { status: "completed", error: null },
+    });
+    await vi.waitFor(() => expect(costs).toEqual([0.006]));
   });
 
   test("coalesces persisted MultiAgentV2 activity for one child into one terminal card", async () => {
@@ -5671,6 +5748,104 @@ describe("Codex app-server provider", () => {
         },
       },
     ]);
+  });
+
+  test("shows a skill picked for a Codex turn as a Skill card, live and in history", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "codex-skill-card-"));
+    try {
+      const skillDir = path.join(root, "probe-skill");
+      mkdirSync(skillDir);
+      writeFileSync(
+        path.join(skillDir, "SKILL.md"),
+        "---\nname: probe-skill\ndescription: Probe.\n---\n\n# Probe Skill\n\nReply **PROBE OK**.\n",
+      );
+      const userMessageItem = {
+        type: "userMessage",
+        id: "codex-user-skill",
+        content: [
+          { type: "skill", name: "probe-skill", path: path.join(skillDir, "SKILL.md") },
+          { type: "text", text: "$probe-skill go" },
+        ],
+      };
+      const skillCard = {
+        type: "tool_call",
+        callId: "codex-skill:codex-user-skill:0",
+        name: "Skill",
+        status: "completed",
+        error: null,
+        detail: {
+          type: "plain_text",
+          label: "probe-skill",
+          icon: "sparkles",
+          markdown: true,
+          text: `Base directory for this skill: ${skillDir}\n\n# Probe Skill\n\nReply **PROBE OK**.`,
+        },
+      };
+
+      const live = createSession();
+      const events: AgentStreamEvent[] = [];
+      live.subscribe((event) => events.push(event));
+      for (const method of ["item/started", "item/completed"]) {
+        await asInternals(live).handleNotification(method, {
+          threadId: "test-thread",
+          item: userMessageItem,
+        });
+      }
+      expect(events.map((event) => (event.type === "timeline" ? event.item : event))).toEqual([
+        { type: "user_message", text: "$probe-skill go", messageId: "codex-user-skill" },
+        skillCard,
+      ]);
+
+      // History shows the text Codex gave this turn, kept in the rollout, even after the file
+      // on disk changes. An earlier turn's injection without a card (a `$probe-skill` typed in
+      // the text) must not shift onto it, and a partial last line must not lose the rest.
+      writeFileSync(path.join(skillDir, "SKILL.md"), "# Edited later\n");
+      const rollout = path.join(root, "rollout.jsonl");
+      const injected = `<skill>\n<name>probe-skill</name>\n<path>${path.join(skillDir, "SKILL.md")}</path>\n---\nname: probe-skill\n---\n\n# Probe Skill\n\nReply **PROBE OK**.\n</skill>`;
+      writeFileSync(
+        rollout,
+        [
+          { type: "session_meta", payload: {} },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-typed" } },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: injected.replace("Reply", "Old text.") }],
+            },
+          },
+          { type: "event_msg", payload: { type: "task_started", turn_id: "turn-picked" } },
+          {
+            type: "response_item",
+            payload: {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: injected }],
+            },
+          },
+        ]
+          .map((line) => JSON.stringify(line))
+          .join("\n") + '\n{"type":"response_item","payload":{"text":"<skill>\\n<name>',
+      );
+      const replayed = createSession();
+      replayed.client = {
+        request: vi.fn(async (method: string) =>
+          method === "thread/read"
+            ? {
+                thread: { path: rollout, turns: [{ id: "turn-picked", items: [userMessageItem] }] },
+              }
+            : {},
+        ),
+      };
+      const history = await Array.fromAsync(replayed.streamHistory());
+      expect(history.map((event) => (event.type === "timeline" ? event.item : event))).toEqual([
+        { type: "user_message", text: "$probe-skill go", messageId: "codex-user-skill" },
+        skillCard,
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("emits Codex context compaction markers from live thread items", async () => {
@@ -6822,6 +6997,100 @@ describe("Codex app-server provider", () => {
     });
   });
 
+  test("reads the thread cost after a turn and keeps it through later token readings", async () => {
+    const session = createSession();
+    const request = vi.fn(async (method: string, params: unknown) => {
+      expect(method).toBe("account/usage/read");
+      expect(params).toEqual({ threadId: "test-thread" });
+      return { threadUsage: { threadId: "test-thread", estimatedUsageUsdMicros: 2_845_750 } };
+    });
+    session.client = { request };
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const tokenUsage = {
+      model_context_window: 200000,
+      last: { total_tokens: 50000, inputTokens: 30000, cachedInputTokens: 5000, outputTokens: 50 },
+    };
+
+    asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
+    asInternals(session).handleNotification("turn/completed", {
+      turn: { status: "completed", error: null },
+    });
+    await vi.waitFor(() => {
+      expect(events.at(-1)).toMatchObject({
+        type: "usage_updated",
+        usage: { contextWindowUsedTokens: 50000, totalCostUsd: 2.84575 },
+      });
+    });
+    asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
+
+    expect(events.at(-1)).toMatchObject({
+      type: "usage_updated",
+      usage: { contextWindowUsedTokens: 50000, totalCostUsd: 2.84575 },
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
+  test("adds spawned subagent threads to the chat cost, including one finishing after the parent", async () => {
+    const session = createSession();
+    const usdMicros: Record<string, number> = { "test-thread": 1_602, "child-thread": 900 };
+    const request = vi.fn(async (method: string, params: unknown) => {
+      expect(method).toBe("account/usage/read");
+      const { threadId } = params as { threadId: string };
+      return {
+        threadUsage: {
+          threadId,
+          estimatedUsageUsdMicros: usdMicros[threadId] ?? 0,
+          groups: [{ totalTokens: 1 }],
+        },
+      };
+    });
+    session.client = { request };
+    const costs: number[] = [];
+    session.subscribe((event) => {
+      if (event.type === "usage_updated" && event.usage.totalCostUsd !== undefined) {
+        costs.push(event.usage.totalCostUsd);
+      }
+    });
+    const collabCall = (id: string, tool: string, receiverThreadIds: string[]) => ({
+      threadId: "test-thread",
+      item: {
+        type: "collabAgentToolCall",
+        id,
+        tool,
+        status: "completed",
+        prompt: "Count to 200.",
+        receiverThreadIds,
+        agentsStates: {},
+      },
+    });
+
+    asInternals(session).handleNotification(
+      "item/completed",
+      collabCall("spawn-1", "spawnAgent", ["child-thread"]),
+    );
+    // Waiting on a thread does not make it part of this chat.
+    asInternals(session).handleNotification(
+      "item/completed",
+      collabCall("wait-1", "wait", ["other-chat-thread"]),
+    );
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "test-thread",
+      turn: { status: "completed", error: null },
+    });
+    await vi.waitFor(() => expect(costs.at(-1)).toBeCloseTo(0.002502, 9));
+
+    usdMicros["child-thread"] = 1_760;
+    asInternals(session).handleNotification("turn/completed", {
+      threadId: "child-thread",
+      turn: { status: "completed" },
+    });
+    await vi.waitFor(() => expect(costs.at(-1)).toBeCloseTo(0.003362, 9));
+    expect(request).not.toHaveBeenCalledWith("account/usage/read", {
+      threadId: "other-chat-thread",
+    });
+  });
+
   test("streams Codex assistant message deltas and does not replay completed text", async () => {
     const session = createSession();
     const events: AgentStreamEvent[] = [];
@@ -7631,6 +7900,9 @@ test("Codex runtime safety queries live terminals and retains unsupported app se
     async () => appServer.child,
   );
   try {
+    await session.connect();
+    expect(session.id).toBeNull();
+    expect(await session.canStopRuntime()).toBe(true);
     await session.startTurn("hello");
     await appServer.waitForTurnStart();
     expect(await session.canStopRuntime()).toBe(false);
@@ -7648,6 +7920,9 @@ test("Codex runtime safety queries live terminals and retains unsupported app se
         .requests()
         .findLast((request) => request.method === "thread/backgroundTerminals/list"),
     ).toMatchObject({ params: { threadId: "thread-1" } });
+    appServer.child.exitCode = 0;
+    appServer.child.emit("exit", 0, null);
+    expect(await session.canStopRuntime()).toBe(true);
     appServer.assertNoErrors();
   } finally {
     await session.close();

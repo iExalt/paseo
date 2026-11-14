@@ -994,7 +994,8 @@ describe("OMP agent client and session", () => {
   test.each(["result after ack", "result before ack"] as const)(
     "fails a prompt OMP rejects before its agent runs (%s)",
     async (order) => {
-      const omp = new OmpHarness();
+      const scheduler = new ManualNoTurnScheduler();
+      const omp = new OmpHarness({ noTurnScheduler: scheduler });
       await omp.start();
 
       await expect(
@@ -1002,6 +1003,7 @@ describe("OMP agent client and session", () => {
           "Reply with ok.",
           "No API key found for anthropic.",
           order,
+          () => scheduler.settle(),
         ),
       ).rejects.toThrow("No API key found for anthropic.");
       expect(omp.turnFailures()).toEqual(["No API key found for anthropic."]);
@@ -1728,4 +1730,29 @@ test("closing OMP during image conversion rejects its pending start", async () =
   expect(runtime.latestSession().prompts).toHaveLength(0);
   await session.close();
   await rejected;
+});
+
+test("native command updates replace an open catalog, including removal of the last skill", async () => {
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+  const session = await client.createSession({ provider: "omp", cwd: process.cwd() });
+  onTestFinished(() => session.close());
+  const events: AgentStreamEvent[] = [];
+  session.subscribe((event) => events.push(event));
+  const native = runtime.latestSession();
+  native.emit({
+    type: "available_commands_update",
+    commands: [{ name: "fresh_skill", description: "updated", source: "skill" }],
+  });
+  await expect(session.listCommands?.()).resolves.toContainEqual(
+    expect.objectContaining({ name: "fresh_skill", kind: "skill" }),
+  );
+  native.emit({ type: "available_commands_update", commands: [] });
+  expect((await session.listCommands?.())?.some((command) => command.name === "fresh_skill")).toBe(
+    false,
+  );
+  expect(events).toEqual([
+    { type: "commands_changed", provider: "omp" },
+    { type: "commands_changed", provider: "omp" },
+  ]);
 });

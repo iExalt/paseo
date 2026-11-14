@@ -50,15 +50,13 @@ import {
   useHosts,
 } from "@/runtime/host-runtime";
 import { ProvidersSection } from "@/screens/settings/providers-section";
-import { HostUsageSection } from "@/usage";
+import { HostSpendSection, HostUsageSection } from "@/usage";
 import { HostAppearanceSection } from "@/screens/settings/host-appearance-section";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { useSessionStore } from "@/stores/session-store";
 import { settingsStyles } from "@/styles/settings";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
 import { confirmDialog } from "@/utils/confirm-dialog";
-import { isVersionMismatch } from "@/desktop/updates/desktop-updates";
-import { resolveAppVersion } from "@/utils/app-version";
 import { formatConnectionStatus, getConnectionStatusTone } from "@/utils/daemons";
 import { formatLatency } from "@/utils/latency";
 import { ICON_SIZE } from "@/styles/theme";
@@ -67,7 +65,10 @@ import { useProviderIcon } from "@/components/provider-icons";
 import { BrowserToolsOptInCard } from "./browser-tools-card";
 import { RestartRecoveryCard } from "./restart-recovery-card";
 import { IdleRuntimeCleanupCard } from "./idle-runtime-cleanup-card";
+import { AgentToolsCard } from "./agent-tools-card";
+import { ReplyRulesSection } from "./reply-rules-section";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
+import { RelayKeepAwakeCard } from "./relay-keep-awake-card";
 
 const ThemedRestart = withUnistyles(RotateCw);
 const ThemedUpdate = withUnistyles(ArrowUpToLine);
@@ -273,6 +274,7 @@ export function HostPairDevicePage({ serverId }: { serverId: string }) {
   return (
     <SettingsSection title={t("settings.host.pairDevices.title")}>
       <PairDeviceRow serverId={serverId} />
+      <RelayKeepAwakeCard serverId={serverId} />
     </SettingsSection>
   );
 }
@@ -290,11 +292,12 @@ export function HostAgentsPage({ serverId }: { serverId: string }) {
     <View>
       {isConnected ? (
         <SettingsSection title={t("settings.hostSections.agents")}>
-          <InjectPaseoToolsCard serverId={serverId} />
+          <AgentToolsCard serverId={serverId} />
           <BrowserToolsOptInCard serverId={serverId} />
           <AppendSystemPromptCard serverId={serverId} />
           <RestartRecoveryCard serverId={serverId} />
           <IdleRuntimeCleanupCard serverId={serverId} />
+          <ReplyRulesSection key={serverId} serverId={serverId} hostLabel={host.label} />
         </SettingsSection>
       ) : (
         <View style={[settingsStyles.card, styles.emptyCard]}>
@@ -355,6 +358,7 @@ export function HostUsagePage({ serverId }: { serverId: string }) {
   return (
     <View>
       <HostUsageSection serverId={serverId} />
+      <HostSpendSection serverId={serverId} />
     </View>
   );
 }
@@ -380,7 +384,7 @@ export function HostSettingsPage({
 
       <HostAppearanceSection host={host} />
 
-      {isLocalDaemon ? <LocalDaemonSection /> : null}
+      {isLocalDaemon ? <LocalDaemonSection serverId={host.serverId} /> : null}
 
       {!isLocalDaemon ? <UpdateDaemonCard key={host.serverId} host={host} /> : null}
 
@@ -731,18 +735,12 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
   const isMountedRef = useRef(true);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  const daemonVersion = useSessionStore(
-    (state) => state.sessions[host.serverId]?.serverInfo?.version ?? null,
-  );
   const supportsSelfUpdate = useSessionStore(
     (state) => state.sessions[host.serverId]?.serverInfo?.features?.daemonSelfUpdate === true,
   );
   const desktopManaged = useSessionStore(
     (state) => state.sessions[host.serverId]?.serverInfo?.desktopManaged === true,
   );
-
-  const appVersion = resolveAppVersion();
-  const hasVersionMismatch = isVersionMismatch(appVersion, daemonVersion);
 
   useEffect(() => {
     return () => {
@@ -855,7 +853,7 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
       });
   }, [daemonClient, host.label, host.serverId, isHostConnected, t]);
 
-  const shouldShowUpdate = hasVersionMismatch && (supportsSelfUpdate || desktopManaged);
+  const shouldShowUpdate = supportsSelfUpdate || desktopManaged;
   if (!shouldShowUpdate && updateState.status !== "complete") {
     return null;
   }
@@ -874,16 +872,18 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
               : t("settings.host.daemon.update.hint")}
           </Text>
         </View>
-        <Button
-          variant="outline"
-          size="sm"
-          leftIcon={updateIcon}
-          onPress={handleUpdate}
-          disabled={desktopManaged || isUpdating || !daemonClient || !isConnected}
-          testID="host-page-update-button"
-        >
-          {buttonLabel}
-        </Button>
+        {!desktopManaged ? (
+          <Button
+            variant="outline"
+            size="sm"
+            leftIcon={updateIcon}
+            onPress={handleUpdate}
+            disabled={isUpdating || !daemonClient || !isConnected}
+            testID="host-page-update-button"
+          >
+            {buttonLabel}
+          </Button>
+        ) : null}
       </View>
       {updateState.status === "complete" ? (
         <InlineAlert
@@ -906,45 +906,6 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
           />
         </View>
       ) : null}
-    </View>
-  );
-}
-
-function InjectPaseoToolsCard({ serverId }: { serverId: string }) {
-  const { t } = useTranslation();
-  const isConnected = useHostRuntimeIsConnected(serverId);
-  const { config, patchConfig } = useDaemonConfig(serverId);
-
-  const handleValueChange = useCallback(
-    (next: boolean) => {
-      void patchConfig({
-        mcp: {
-          injectIntoAgents: next,
-        },
-      });
-    },
-    [patchConfig],
-  );
-
-  if (!isConnected) return null;
-
-  return (
-    <View style={settingsStyles.card} testID="host-page-inject-mcp-card">
-      <View style={settingsStyles.row}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>
-            {t("settings.host.orchestration.enableTools.title")}
-          </Text>
-          <Text style={settingsStyles.rowHint}>
-            {t("settings.host.orchestration.enableTools.hint")}
-          </Text>
-        </View>
-        <Switch
-          value={config?.mcp.injectIntoAgents !== false}
-          onValueChange={handleValueChange}
-          accessibilityLabel={t("settings.host.orchestration.enableTools.accessibilityLabel")}
-        />
-      </View>
     </View>
   );
 }

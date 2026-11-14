@@ -6,6 +6,7 @@ import { describeToolCall, type GroupableItem, type ToolCallRun } from "../group
 const DIRECT_SEARCH_TOOL_SUFFIX_PATTERN = /(?:^|[_.:/])(?:web_search|llm_context)$/;
 
 export interface OverviewSummary {
+  sentMessageCount: number;
   thoughtCount: number;
   editedFileCount: number;
   commandCount: number;
@@ -30,6 +31,7 @@ function isSearchCall(name: string): boolean {
 export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSummary {
   const editedFiles = new Set<string>();
   const readFiles = new Set<string>();
+  let sentMessageCount = 0;
   let thoughtCount = 0;
   let commandCount = 0;
   let searchCount = 0;
@@ -45,7 +47,9 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
     const descriptor = describeToolCall(call);
     const normalizedName = descriptor.name.trim().toLowerCase();
     const action = getPaseoToolActionLabel(descriptor.name);
-    if (action) {
+    if (action === "Sent message") {
+      sentMessageCount += 1;
+    } else if (action) {
       paseoActions[action] = (paseoActions[action] ?? 0) + 1;
     } else if (descriptor.detail.type === "edit" || descriptor.detail.type === "write") {
       editedFiles.add(descriptor.detail.filePath);
@@ -61,6 +65,7 @@ export function summarizeToolCalls(calls: readonly GroupableItem[]): OverviewSum
   }
 
   return {
+    sentMessageCount,
     thoughtCount,
     editedFileCount: editedFiles.size,
     commandCount,

@@ -1,13 +1,14 @@
 import { createPluginHosts } from "./hosts";
 import { afterEach, expect, it } from "vitest";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { PluginRegistry } from "./registry";
 
 const audio = { play: async () => 0 };
 
 const client = new DaemonClient({ url: "ws://unused.test", clientId: "plugin-requirements-test" });
 const registries: PluginRegistry[] = [];
-function registry(version: string) {
+function registry(version?: string) {
   let starts = 0;
   let cleanups = 0;
   const result = new PluginRegistry({
@@ -51,6 +52,34 @@ afterEach(() => {
   for (const value of registries.splice(0)) value.removeHost("host");
 });
 
+it("production fork registry retains upstream plugin API requirements", () => {
+  const { result: pluginRegistry } = registry();
+  const host = "fork-api-contract";
+  try {
+    pluginRegistry.installCatalog(
+      host,
+      [
+        {
+          id: "supported",
+          requirements: { paseo: `^${PASEO_PLUGIN_API_VERSION}` },
+          clientBundle,
+        },
+        { id: "future", requirements: { paseo: `>${PASEO_PLUGIN_API_VERSION}` }, clientBundle },
+        { id: "legacy", clientBundle },
+      ],
+      { client, audio },
+    );
+    expect(pluginRegistry.getEvaluationError(host, "supported")).toBeUndefined();
+    expect(pluginRegistry.getSnapshot().map(({ id }) => id)).toEqual(["supported"]);
+    expect(pluginRegistry.getEvaluationError(host, "future")).toContain(
+      `requires Paseo >${PASEO_PLUGIN_API_VERSION}`,
+    );
+    expect(pluginRegistry.getEvaluationError(host, "legacy")).toContain("targets Paseo before 0.8");
+  } finally {
+    pluginRegistry.removeHost(host);
+  }
+});
+
 it("checks the app version before creating a runtime or evaluating plugin code", () => {
   const { result, starts } = registry("0.8.0");
   result.installCatalog(
@@ -67,7 +96,7 @@ it("checks the app version before creating a runtime or evaluating plugin code",
   expect(starts()).toBe(0);
   expect(result.getSnapshot()).toEqual([]);
   expect(result.getEvaluationError("host", "example")).toBe(
-    'Plugin "example" requires Paseo >=0.9.0. Your app is 0.8.0. Use a compatible plugin version or update the app.',
+    'Plugin "example" requires Paseo >=0.9.0. Your app plugin API is 0.8.0. Use a compatible plugin version or update the app.',
   );
 });
 
@@ -118,7 +147,7 @@ it("rejects the unreleased translation API on 0.12.0 before evaluating its impor
   expect(starts()).toBe(0);
   expect(result.getSnapshot()).toEqual([]);
   expect(result.getEvaluationError("host", "translated")).toBe(
-    'Plugin "translated" requires Paseo >=0.12.1. Your app is 0.12.0. Use a compatible plugin version or update the app.',
+    'Plugin "translated" requires Paseo >=0.12.1. Your app plugin API is 0.12.0. Use a compatible plugin version or update the app.',
   );
 });
 

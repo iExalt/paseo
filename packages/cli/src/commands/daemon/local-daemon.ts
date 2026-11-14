@@ -1,8 +1,9 @@
 import { Command, Option } from "commander";
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { startDaemonInstance, resolvePaseoHome } from "@getpaseo/server/daemon-control";
+import { appImageSupervisorLaunch } from "./appimage-supervisor.js";
 const require = createRequire(import.meta.url);
 function resolveServerRunnerFromDir(currentDir: string): string | null {
   const packageJsonPath = path.join(currentDir, "package.json");
@@ -40,10 +41,60 @@ function resolveDaemonRunnerEntry(): string {
   throw new Error("Unable to resolve @getpaseo/server package root for daemon runner");
 }
 
+/** Capture and validate this installation before a replacement stops the old supervisor. */
+export function prepareLocalDaemonLaunch() {
+  let entry = resolveDaemonRunnerEntry();
+  let command = process.execPath;
+  const packageRoot = path.resolve(path.dirname(entry), entry.endsWith(".ts") ? ".." : "../..");
+  const { version } = JSON.parse(readFileSync(path.join(packageRoot, "package.json"), "utf8"));
+  if (typeof version !== "string" || !version.trim())
+    throw new Error("Missing installed daemon version");
+  if (process.platform === "darwin") {
+    const bundleEnd = entry.indexOf(".app/Contents/Resources/app.asar/");
+    if (bundleEnd !== -1) {
+      const bundle = entry.slice(0, bundleEnd + 4);
+      const marker = path.join(bundle, "Contents/Resources/paseo-nix-managed.json");
+      if (existsSync(marker)) {
+        const managed = JSON.parse(readFileSync(marker, "utf8"));
+        if (
+          managed.managedBy !== "nix" ||
+          managed.schemaVersion !== 1 ||
+          managed.packageVersion !== version ||
+          typeof managed.outputPath !== "string" ||
+          !/^\/nix\/store\/[^/]+$/.test(managed.outputPath)
+        ) {
+          throw new Error("Invalid Nix-managed daemon installation");
+        }
+        const storeBundle = path.join(managed.outputPath, "Applications/Paseo.app");
+        const rebase = (file: string) =>
+          file.startsWith(`${bundle}/`) ? storeBundle + file.slice(bundle.length) : file;
+        command = rebase(command);
+        entry = rebase(entry);
+      }
+    }
+  }
+  accessSync(entry, constants.R_OK);
+  accessSync(command, constants.X_OK);
+  const launch = appImageSupervisorLaunch({
+    platform: process.platform,
+    electron: process.versions.electron,
+    execPath: command,
+    entry,
+    env: process.env,
+  });
+  return {
+    version,
+    command: launch?.command ?? command,
+    args: launch?.args ?? [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry],
+    env: launch?.env ?? { ...process.env },
+  };
+}
+
 export async function launchLocalDaemon(options: {
   home: string;
   timeoutMs?: number;
   foreground?: boolean;
+  agentToolsEnabled?: boolean;
 }) {
   const abort = new AbortController();
   const cancel = () => abort.abort();
@@ -51,11 +102,21 @@ export async function launchLocalDaemon(options: {
   process.once("SIGTERM", cancel);
   try {
     const entry = resolveDaemonRunnerEntry();
+    const launch = appImageSupervisorLaunch({
+      platform: process.platform,
+      electron: process.versions.electron,
+      execPath: process.execPath,
+      entry,
+      env: process.env,
+    });
     return await startDaemonInstance({
       home: resolvePaseoHome({ PASEO_HOME: options.home }),
-      command: process.execPath,
-      args: [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry],
-      env: process.env,
+      command: launch?.command ?? process.execPath,
+      args: [
+        ...(launch?.args ?? [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry]),
+        ...(options.agentToolsEnabled === false ? ["--no-agent-tools"] : []),
+      ],
+      env: launch?.env ?? process.env,
       mode: options.foreground ? "deployment" : "managed",
       foreground: options.foreground,
       timeoutMs: options.timeoutMs,
@@ -85,8 +146,8 @@ const REMOVED_LAUNCH_FLAGS: Record<string, string> = {
   "--relay": "daemon.relay.enabled",
   "--no-relay": "daemon.relay.enabled",
   "--relay-use-tls": "daemon.relay.useTls",
-  "--no-mcp": "daemon.mcp.enabled",
-  "--no-inject-mcp": "daemon.mcp.injectIntoAgents",
+  "--no-mcp": "daemon.agentTools.enabled",
+  "--no-inject-mcp": "daemon.agentTools.enabled",
   "--web-ui": "features.webUi.enabled",
   "--no-web-ui": "features.webUi.enabled",
   "--hostnames <hosts>": "daemon.hostnames",

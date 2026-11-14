@@ -1,7 +1,52 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, it, vi } from "vitest";
 import { buildWorkspaceSource } from "./create.js";
 
+const createWorkspace = vi.fn(async () => ({
+  workspace: {
+    id: "ws-created",
+    projectDisplayName: "Paseo",
+    name: "feature",
+    workspaceDirectory: "/repo/worktree",
+    workspaceKind: "worktree",
+    notifications: "off" as const,
+  },
+}));
+const close = vi.fn(async () => undefined);
+const listProjects = vi.fn(async () => ({ projects: [] }));
+
+vi.mock("../../utils/client.js", () => ({
+  connectToDaemon: vi.fn(async () => ({ createWorkspace, close, listProjects })),
+  getDaemonHost: vi.fn(() => "ws://127.0.0.1:6767"),
+}));
+
+import { runCreateCommand } from "./create.js";
+
 describe("workspace create source", () => {
+  it("passes the notification policy in the workspace creation request and result", async () => {
+    const result = await runCreateCommand(
+      {
+        daemonTarget: { kind: "instance", home: "/tmp/workspace-create-test" },
+        isolation: "worktree",
+        path: "/repo",
+        notifications: "off",
+      },
+      {} as never,
+    );
+
+    expect(createWorkspace).toHaveBeenCalledWith({
+      source: { kind: "worktree", cwd: "/repo", action: "branch-off" },
+      notifications: "off",
+    });
+    expect(result.data).toMatchObject({ workspaceId: "ws-created", notifications: "off" });
+    expect(close).toHaveBeenCalledOnce();
+    expect(listProjects).toHaveBeenCalledOnce();
+    createWorkspace.mockClear();
+    close.mockClear();
+  });
+
   it("maps local isolation to a directory workspace", () => {
     expect(
       buildWorkspaceSource({ isolation: "local", path: "/tmp/project", project: "project-1" }),
@@ -121,5 +166,63 @@ describe("workspace create source", () => {
     expect(() => buildWorkspaceSource({ isolation: "container" })).toThrow(
       "Unsupported workspace isolation",
     );
+  });
+
+  it("warns about a duplicate project only when --project did not choose it", async () => {
+    const root = mkdtempSync(path.join(tmpdir(), "paseo-create-alias-"));
+    try {
+      const real = path.join(root, "real");
+      const alias = path.join(root, "alias");
+      mkdirSync(real);
+      symlinkSync(real, alias, process.platform === "win32" ? "junction" : "dir");
+      const projects = [
+        {
+          projectId: "prj_alias",
+          projectDisplayName: "alias",
+          projectRootPath: alias,
+          projectKind: "git" as const,
+        },
+        {
+          projectId: "prj_real",
+          projectDisplayName: "real",
+          projectRootPath: real,
+          projectKind: "git" as const,
+        },
+      ];
+      listProjects.mockResolvedValue({ projects } as never);
+      createWorkspace.mockResolvedValue({
+        workspace: {
+          id: "ws-twin",
+          projectId: "prj_real",
+          projectDisplayName: "real",
+          name: "twin",
+          workspaceDirectory: real,
+          workspaceKind: "local_checkout",
+          notifications: "on" as const,
+        },
+      } as never);
+      const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined);
+      const stdout = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      const target = { kind: "instance", home: "/tmp/workspace-create-test" } as const;
+
+      await runCreateCommand({ daemonTarget: target, isolation: "local", path: real }, {} as never);
+      expect(stderr).toHaveBeenCalledOnce();
+      expect(String(stderr.mock.calls[0]![0])).toContain("was created in project prj_real");
+
+      stderr.mockClear();
+      await runCreateCommand(
+        { daemonTarget: target, isolation: "local", path: real, project: "prj_real" },
+        {} as never,
+      );
+      expect(stderr).not.toHaveBeenCalled();
+      expect(stdout).not.toHaveBeenCalled();
+      stderr.mockRestore();
+      stdout.mockRestore();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      listProjects.mockReset();
+      listProjects.mockResolvedValue({ projects: [] });
+      createWorkspace.mockReset();
+    }
   });
 });

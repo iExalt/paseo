@@ -83,8 +83,9 @@ export async function typeIntoFocusedComposer(page: Page, text: string): Promise
   await page.keyboard.type(text);
 }
 
+/** Queue is the default send setting, so Enter queues while the agent runs. */
 export async function sendDraftToQueue(page: Page): Promise<void> {
-  await composerInput(page).press("Control+Enter");
+  await composerInput(page).press("Enter");
 }
 
 /** Long-press the Send button: the composer takes the draft while the pointer is still down. */

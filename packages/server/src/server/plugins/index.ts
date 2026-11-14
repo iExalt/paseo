@@ -67,6 +67,7 @@ interface PluginRuntimePort {
 }
 
 interface PluginServiceDependencies {
+  compatibilityVersion?: string;
   usageAgents?: AgentUsageLookup;
   settingsDirectory?: string;
   runtime?: PluginRuntimePort;
@@ -121,6 +122,7 @@ export class PluginService {
     this.runtime =
       dependencies.runtime ??
       new PluginRuntime(logger, daemonVersion, {
+        compatibilityVersion: dependencies.compatibilityVersion,
         settingsDirectory: dependencies.settingsDirectory,
         onSettingsChanged: (pluginId, settingsId) => {
           for (const listener of this.settingsListeners) listener(pluginId, settingsId);
@@ -297,7 +299,11 @@ export class PluginService {
     return this.enqueue(async () => {
       const directory = path.resolve(input.path);
       const manifest = await readPluginManifest(directory);
-      assertPluginCompatibility({ ...manifest, version: this.daemonVersion, runtime: "daemon" });
+      assertPluginCompatibility({
+        ...manifest,
+        version: this.dependencies.compatibilityVersion ?? this.daemonVersion,
+        runtime: "daemon",
+      });
       const pluginId = PluginIdSchema.parse(input.id ?? manifest.id);
       if (this.builtinPluginIds.has(pluginId)) {
         throw new Error(`Plugin ID "${pluginId}" is reserved for a built-in plugin`);
@@ -679,33 +685,31 @@ export class PluginService {
       }
     }
     const registrations = await Promise.all(
-      metadata.map(
-        async (provider): Promise<ProviderRegistration> => ({
-          id: provider.id,
-          label: provider.label,
-          description: provider.description,
-          command: provider.command,
-          requiresConfiguration: provider.requiresConfiguration,
-          status: provider.hasStatus
-            ? (request) => {
-                if (!this.runtime.getProviderStatus)
-                  throw new Error("Plugin runtime cannot resolve provider status");
-                return this.runtime.getProviderStatus(pluginId, provider.id, request);
-              }
-            : undefined,
-          getCatalogCacheKey: provider.hasCatalogCacheKey
-            ? (options) => {
-                if (!this.runtime.getProviderCatalogCacheKey)
-                  throw new Error("Plugin runtime cannot resolve catalogue keys");
-                return this.runtime.getProviderCatalogCacheKey(pluginId, provider.id, options);
-              }
-            : undefined,
-          icon: provider.iconPath
-            ? await readPluginProviderIcon(pluginDirectory, provider.iconPath)
-            : undefined,
-          connect: (request) => this.runtime.connectProvider(pluginId, provider.id, request),
-        }),
-      ),
+      metadata.map(async (provider): Promise<ProviderRegistration> => ({
+        id: provider.id,
+        label: provider.label,
+        description: provider.description,
+        command: provider.command,
+        requiresConfiguration: provider.requiresConfiguration,
+        status: provider.hasStatus
+          ? (request) => {
+              if (!this.runtime.getProviderStatus)
+                throw new Error("Plugin runtime cannot resolve provider status");
+              return this.runtime.getProviderStatus(pluginId, provider.id, request);
+            }
+          : undefined,
+        getCatalogCacheKey: provider.hasCatalogCacheKey
+          ? (options) => {
+              if (!this.runtime.getProviderCatalogCacheKey)
+                throw new Error("Plugin runtime cannot resolve catalogue keys");
+              return this.runtime.getProviderCatalogCacheKey(pluginId, provider.id, options);
+            }
+          : undefined,
+        icon: provider.iconPath
+          ? await readPluginProviderIcon(pluginDirectory, provider.iconPath)
+          : undefined,
+        connect: (request) => this.runtime.connectProvider(pluginId, provider.id, request),
+      })),
     );
     const ids = registrations.map((provider) => provider.id);
     for (const provider of registrations) {
@@ -746,7 +750,11 @@ export class PluginService {
 
   private async checkRequirements(directory: string): Promise<void> {
     const manifest = await readPluginManifest(directory);
-    assertPluginCompatibility({ ...manifest, version: this.daemonVersion, runtime: "daemon" });
+    assertPluginCompatibility({
+      ...manifest,
+      version: this.dependencies.compatibilityVersion ?? this.daemonVersion,
+      runtime: "daemon",
+    });
   }
 
   private async updateSource(proposal: PluginUpdateProposal): Promise<PluginUpdateResult> {

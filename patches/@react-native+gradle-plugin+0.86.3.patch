@@ -1,0 +1,136 @@
+diff --git a/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml b/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml
+--- a/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml
++++ b/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml
+@@ -1,10 +1,10 @@
+ [versions]
+-agp = "8.12.0"
++agp = "9.2.1"
+ gson = "2.8.9"
+ guava = "31.0.1-jre"
+ javapoet = "1.13.0"
+ junit = "4.13.2"
+-kotlin = "2.1.20"
++kotlin = "2.3.20"
+ assertj = "3.25.1"
+ ktfmt = "0.22.0"
+ 
+diff --git a/node_modules/@react-native/gradle-plugin/shared/build.gradle.kts b/node_modules/@react-native/gradle-plugin/shared/build.gradle.kts
+index 315984875..9395aab53 100644
+--- a/node_modules/@react-native/gradle-plugin/shared/build.gradle.kts
++++ b/node_modules/@react-native/gradle-plugin/shared/build.gradle.kts
+@@ -33,7 +33,7 @@ kotlin { jvmToolchain(17) }
+ 
+ tasks.withType<KotlinCompile>().configureEach {
+   compilerOptions {
+-    apiVersion.set(KotlinVersion.KOTLIN_1_8)
++    apiVersion.set(KotlinVersion.KOTLIN_2_0)
+     // See comment above on JDK 11 support
+     jvmTarget.set(JvmTarget.JVM_11)
+     allWarningsAsErrors.set(
+diff --git a/node_modules/@react-native/gradle-plugin/shared-testutil/build.gradle.kts b/node_modules/@react-native/gradle-plugin/shared-testutil/build.gradle.kts
+index 26173fb55..307d8a974 100644
+--- a/node_modules/@react-native/gradle-plugin/shared-testutil/build.gradle.kts
++++ b/node_modules/@react-native/gradle-plugin/shared-testutil/build.gradle.kts
+@@ -27,7 +27,7 @@ kotlin { jvmToolchain(17) }
+ 
+ tasks.withType<KotlinCompile>().configureEach {
+   compilerOptions {
+-    apiVersion.set(KotlinVersion.KOTLIN_1_8)
++    apiVersion.set(KotlinVersion.KOTLIN_2_0)
+     // See comment above on JDK 11 support
+     jvmTarget.set(JvmTarget.JVM_11)
+     allWarningsAsErrors.set(
+diff --git a/node_modules/@react-native/gradle-plugin/settings-plugin/build.gradle.kts b/node_modules/@react-native/gradle-plugin/settings-plugin/build.gradle.kts
+index 2fbeafd50..870844cb2 100644
+--- a/node_modules/@react-native/gradle-plugin/settings-plugin/build.gradle.kts
++++ b/node_modules/@react-native/gradle-plugin/settings-plugin/build.gradle.kts
+@@ -54,7 +54,7 @@ kotlin { jvmToolchain(17) }
+ 
+ tasks.withType<KotlinCompile>().configureEach {
+   compilerOptions {
+-    apiVersion.set(KotlinVersion.KOTLIN_1_8)
++    apiVersion.set(KotlinVersion.KOTLIN_2_0)
+     // See comment above on JDK 11 support
+     jvmTarget.set(JvmTarget.JVM_11)
+     allWarningsAsErrors.set(
+diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
+index 85dadeba0..c4f92db2e 100644
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
+@@ -64,7 +64,7 @@ kotlin { jvmToolchain(17) }
+ 
+ tasks.withType<KotlinCompile>().configureEach {
+   compilerOptions {
+-    apiVersion.set(KotlinVersion.KOTLIN_1_8)
++    apiVersion.set(KotlinVersion.KOTLIN_2_0)
+     // See comment above on JDK 11 support
+     jvmTarget.set(JvmTarget.JVM_11)
+     allWarningsAsErrors.set(
+diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
+index e7859ff6a..55ea56069 100644
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
+@@ -9,6 +9,7 @@ package com.facebook.react
+ 
+ import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+ import com.android.build.api.variant.LibraryAndroidComponentsExtension
++import com.android.build.gradle.BaseExtension
+ import com.android.build.gradle.internal.tasks.factory.dependsOn
+ import com.facebook.react.internal.PrivateReactExtension
+ import com.facebook.react.tasks.GenerateAutolinkingNewArchitecturesFileTask
+@@ -61,6 +62,9 @@ class ReactPlugin : Plugin<Project> {
+ 
+     // App Only Configuration
+     project.pluginManager.withPlugin("com.android.application") {
++      // Register cross-project DSL hooks once, before libraries are finalized.
++      configureBuildConfigFieldsForLibraries(project)
++      configureNamespaceForLibraries(project)
+       // We wire the root extension with the values coming from the app (either user populated or
+       // defaults).
+       rootExtension.root.set(extension.root)
+@@ -98,8 +102,6 @@ class ReactPlugin : Plugin<Project> {
+     }
+ 
+     // Library Only Configuration
+-    configureBuildConfigFieldsForLibraries(project)
+-    configureNamespaceForLibraries(project)
+     project.pluginManager.withPlugin("com.android.library") {
+       configureCodegen(project, extension, rootExtension, isLibrary = true)
+     }
+@@ -234,12 +236,12 @@ class ReactPlugin : Plugin<Project> {
+     if (isLibrary) {
+       project.extensions.getByType(LibraryAndroidComponentsExtension::class.java).finalizeDsl { ext
+         ->
+-        ext.sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
++        project.extensions.getByType(BaseExtension::class.java).sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
+       }
+     } else {
+       project.extensions.getByType(ApplicationAndroidComponentsExtension::class.java).finalizeDsl {
+           ext ->
+-        ext.sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
++        project.extensions.getByType(BaseExtension::class.java).sourceSets.getByName("main").java.srcDir(generatedSrcDir.get().dir("java").asFile)
+       }
+     }
+ 
+diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt
+index c4a7b359d..a7f509bdb 100644
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/AgpConfiguratorUtils.kt
+@@ -9,7 +9,7 @@ package com.facebook.react.utils
+ 
+ import com.android.build.api.variant.ApplicationAndroidComponentsExtension
+ import com.android.build.api.variant.LibraryAndroidComponentsExtension
+-import com.android.build.gradle.LibraryExtension
++import com.android.build.gradle.BaseExtension
+ import com.facebook.react.ReactExtension
+ import com.facebook.react.utils.ProjectUtils.isEdgeToEdgeEnabled
+ import com.facebook.react.utils.ProjectUtils.isHermesEnabled
+@@ -118,7 +118,7 @@ internal object AgpConfiguratorUtils {
+             .getByType(LibraryAndroidComponentsExtension::class.java)
+             .finalizeDsl { ext ->
+               if (ext.namespace == null) {
+-                val android = subproject.extensions.getByType(LibraryExtension::class.java)
++                val android = subproject.extensions.getByType(BaseExtension::class.java)
+                 val manifestFile = android.sourceSets.getByName("main").manifest.srcFile
+ 
+                 manifestFile

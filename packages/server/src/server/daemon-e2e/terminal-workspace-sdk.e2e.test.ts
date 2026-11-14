@@ -1,4 +1,4 @@
-import { resolveDaemonVersion } from "../daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -40,9 +40,14 @@ test("SDK and workspace handles preserve ownership and actual process directorie
     cwd: daemon.staticDir,
     name: "Outside",
   });
-  expect(a.current()).toEqual({ id: a.id, workspaceId: first, cwd, name: "Main" });
-  expect(b.current()).toEqual({ id: b.id, workspaceId: second, cwd: nested, name: "Feature" });
-  expect(c.current()).toEqual({
+  expect(a.current()).toMatchObject({ id: a.id, workspaceId: first, cwd, name: "Main" });
+  expect(b.current()).toMatchObject({
+    id: b.id,
+    workspaceId: second,
+    cwd: nested,
+    name: "Feature",
+  });
+  expect(c.current()).toMatchObject({
     id: c.id,
     workspaceId: second,
     cwd: daemon.staticDir,
@@ -50,17 +55,34 @@ test("SDK and workspace handles preserve ownership and actual process directorie
   });
   const result = await sdk.workspaces.ref(second).terminals.list({ requestId: "feature-list" });
   expect(result.requestId).toBe("feature-list");
-  expect(result.entries).toEqual(expect.arrayContaining([b.current(), c.current()]));
+  expect(result.entries).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ id: b.id, workspaceId: second, cwd: nested }),
+      expect.objectContaining({ id: c.id, workspaceId: second, cwd: daemon.staticDir }),
+    ]),
+  );
   expect(result.entries).toHaveLength(2);
   expect((await sdk.terminals.list()).entries).toHaveLength(3);
-  expect((await sdk.terminals.list({ cwd })).entries).toEqual([a.current(), b.current()]);
+  expect((await sdk.terminals.list({ cwd })).entries.map((entry) => entry.id)).toEqual([
+    a.id,
+    b.id,
+  ]);
   const ref = sdk.terminals.ref(b.id);
   expect(ref.current()).toBeNull();
-  expect(await ref.refresh()).toEqual(b.current());
+  expect(await ref.refresh()).toMatchObject({
+    id: b.id,
+    workspaceId: second,
+    cwd: nested,
+    name: "Feature",
+  });
   await ref.kill();
   expect(await ref.refresh()).toBeNull();
-  expect((await sdk.terminals.list({ workspaceId: second })).entries).toEqual([c.current()]);
-  expect((await sdk.terminals.list({ workspaceId: first })).entries).toEqual([a.current()]);
+  expect(
+    (await sdk.terminals.list({ workspaceId: second })).entries.map((entry) => entry.id),
+  ).toEqual([c.id]);
+  expect(
+    (await sdk.terminals.list({ workspaceId: first })).entries.map((entry) => entry.id),
+  ).toEqual([a.id]);
 });
 
 test("SDK creates a command terminal and sends literal input and key tokens", async () => {
@@ -93,6 +115,32 @@ test("SDK creates a command terminal and sends literal input and key tokens", as
   expect((await sdk.terminals.list({ workspaceId })).entries).toEqual([]);
 });
 
+test("key tokens sent for the CLI follow the terminal's current input mode", async () => {
+  const workspaceId = await createWorkspace("Keys");
+  const terminal = await sdk.terminals.create({
+    workspaceId,
+    command: process.execPath,
+    args: [
+      "-e",
+      "process.stdin.setRawMode(true); process.stdin.resume(); console.log('READY'); process.stdin.on('data', data => { if (data.toString() === 'app') { process.stdout.write('\\x1b[?1h'); console.log('APP'); return; } console.log('HEX:' + data.toString('hex')); });",
+    ],
+    size: { rows: 35, cols: 120 },
+  });
+  const screen = async () => (await terminal.capture({ stripAnsi: true })).lines.join("\n");
+  await expect.poll(screen).toContain("READY");
+
+  expect(await client.sendTerminalKeysAndWait(terminal.id, ["Down"])).toMatchObject({
+    success: true,
+    written: 3,
+  });
+  await expect.poll(screen).toContain("HEX:1b5b42");
+  await client.sendTerminalKeysAndWait(terminal.id, ["app"], { literal: true });
+  await expect.poll(screen).toContain("APP");
+  await client.sendTerminalKeysAndWait(terminal.id, ["Down"]);
+  await expect.poll(screen).toContain("HEX:1b4f42");
+  await terminal.kill();
+});
+
 test("terminal creation rejects unknown and archived owners, including explicit cwd overrides", async () => {
   const workspaceId = await createWorkspace("Archived");
   await sdk.workspaces.ref(workspaceId).archive();
@@ -117,7 +165,7 @@ test("plugin handlers operate terminals through their host-owned Paseo API", asy
     path.join(pluginDirectory, "paseo-plugin.json"),
     JSON.stringify({
       id: "terminal-sdk",
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { Pressable, Text, View } from "react-native";
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useFocusEffect } from "expo-router";
 import { StyleSheet } from "react-native-unistyles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, MoreVertical, Pencil, Plus } from "lucide-react-native";
@@ -508,7 +508,7 @@ function ProjectConfigForm({
     },
     onSuccess: (result) => {
       if (result.ok) {
-        queryClient.setQueryData<ReadProjectConfigData>(queryKey, {
+        const nextData: ReadProjectConfigData = {
           ok: true,
           config: result.config,
           revision: result.revision,
@@ -519,7 +519,8 @@ function ProjectConfigForm({
             : {
                 hasUncommittedWorktreeSetupChanges: result.hasUncommittedWorktreeSetupChanges,
               }),
-        });
+        };
+        queryClient.setQueryData(queryKey, nextData);
         setWriteError(null);
         queryClient.invalidateQueries({ queryKey: ["projects"] });
         toast.show(t("settings.project.actions.saved"), { variant: "success" });

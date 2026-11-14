@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { resolveReviewOverlayFrame } from "./review-overlay-geometry";
 import { useTranslation } from "react-i18next";
 import type { ViewStyle } from "react-native";
 import { DomOverlayScrollbar } from "@/components/ui/overlay-scrollbar/dom-overlay-scrollbar";
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useToast } from "@/contexts/toast-context";
 import { useStableEvent } from "@/hooks/use-stable-event";
-import { InlineReviewAddButton, InlineReviewThread } from "@/review";
+import { getInlineReviewThreadState, InlineReviewAddButton, InlineReviewThread } from "@/review";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
 import type { ReviewableDiffTarget } from "@/utils/diff-layout";
 import { DocumentFileHeader } from "./document-file-header";
@@ -52,8 +53,8 @@ import type {
   TextMeasurer,
 } from "./types";
 import { useDiffDocumentWorkspaceCache } from "./workspace-cache";
+import { DEFAULT_MONO_FONT_STACK } from "@/styles/theme";
 
-const DEFAULT_MONO_STACK = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
 const RESIZE_SETTLE_DELAY_MS = 120;
 
 interface StickyHeaderCanvasSlot {
@@ -126,7 +127,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     top: number;
   } | null>(null);
   const hasHoveredAffordanceRef = useRef(false);
-  const family = props.displayPreferences.monoFontFamily.trim() || DEFAULT_MONO_STACK;
+  const family = props.displayPreferences.monoFontFamily.trim() || DEFAULT_MONO_FONT_STACK;
   useLayoutEffect(() => {
     const stats = (window as typeof window & { __PASEO_DIFF_REACT_STATS__?: { commits: number } })
       .__PASEO_DIFF_REACT_STATS__;
@@ -145,7 +146,9 @@ export function DiffSurface(props: DiffSurfaceProps) {
       workspaceCache.typography({
         typography: desiredTypography,
         load: async () => {
-          await Promise.all([
+          // A face that fails to download (offline, flaky relay) leaves its family to
+          // the fallback fonts; measure with those rather than never drawing the diff.
+          await Promise.allSettled([
             document.fonts.load(`400 ${desiredTypography.size}px ${desiredTypography.family}`),
             document.fonts.load(`600 ${desiredTypography.size}px ${desiredTypography.family}`),
             document.fonts.load(
@@ -736,7 +739,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const writeSourceText = useCallback(
     (text: string) => {
       void copyToClipboard(text)
-        .then(() => toast.copied(t("common.states.copied")))
+        .then(() => toast.copied())
         .catch(() => toast.error(t("common.errors.unableToCopy")));
     },
     [t, toast],
@@ -861,7 +864,11 @@ export function DiffSurface(props: DiffSurfaceProps) {
           {props.mode.kind === "working" && reviewActions
             ? model.rows.map((row) => {
                 if (row.kind !== "line" || row.reviewHeight === 0) return null;
-                const columnWidth = model.viewportWidth / row.cells.length;
+                const leftHeight =
+                  getInlineReviewThreadState({
+                    reviewTarget: row.cells[0]?.reviewTarget,
+                    reviewActions,
+                  })?.height ?? 0;
                 return row.cells.map((cell, index) => {
                   if (!cell?.reviewTarget) return null;
                   const comments = reviewActions.commentsByTarget.get(cell.reviewTarget.key) ?? [];
@@ -870,15 +877,22 @@ export function DiffSurface(props: DiffSurfaceProps) {
                     reviewActions.editor.target.side === cell.reviewTarget.side &&
                     reviewActions.editor.target.lineNumber === cell.reviewTarget.lineNumber;
                   if (comments.length === 0 && !hasEditor) return null;
+                  const frame = resolveReviewOverlayFrame({
+                    viewportWidth: model.viewportWidth,
+                    columnCount: row.cells.length,
+                    columnIndex: index,
+                    rowHeight: row.reviewHeight,
+                    leftHeight,
+                  });
                   return (
                     <WebReviewThread
                       key={cell.reviewTarget.key}
                       target={cell.reviewTarget}
                       actions={reviewActions}
-                      top={row.top + row.height - row.reviewHeight}
-                      left={index * columnWidth}
-                      width={columnWidth}
-                      height={row.reviewHeight}
+                      top={row.top + row.height - row.reviewHeight + frame.top}
+                      left={frame.left}
+                      width={frame.width}
+                      height={frame.height}
                       pinToViewport={!model.wrapLines}
                     />
                   );

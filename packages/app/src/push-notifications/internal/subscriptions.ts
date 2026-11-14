@@ -1,9 +1,22 @@
+import {
+  prepareLifecycle,
+  removeLifecycleHost,
+  watchLifecycle,
+} from "../background-lifecycle.native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
 import * as Notifications from "expo-notifications";
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
+import { readAgentSwitch } from "@/diagnostics/agent-switches";
+import { agentLog, describeError } from "@/utils/agent-log";
+import {
+  PUSH_CHANNEL_ID,
+  provideReregister,
+  setPushRegistrationStatus,
+  usePushRegistrationStore,
+} from "../registration";
 import type { RevokePushNotificationsInput, StartPushNotificationsInput } from "./types";
 
 const STORAGE_PREFIX = "@paseo:expo-push-token:";
@@ -20,24 +33,53 @@ function getExpoProjectId(): string | null {
   return fromExtra.success ? fromExtra.data : null;
 }
 
-async function ensurePushPermission(): Promise<boolean> {
+// Repeated here, not imported, so bundles without the flag still fold it away.
+const SWITCHES_ENABLED = process.env.EXPO_PUBLIC_PASEO_AGENT_SWITCHES === "1";
+
+async function ensurePushPermission(prompt: boolean): Promise<boolean> {
   const existing = await Notifications.getPermissionsAsync();
   if (existing.status === Notifications.PermissionStatus.GRANTED) return true;
-  if (!existing.canAskAgain) return false;
+  if (!prompt || !existing.canAskAgain) return false;
+  if (SWITCHES_ENABLED && readAgentSwitch("notifications") === "skip") {
+    agentLog("push", "prompt", { status: "skipped", reason: "debug-switch" });
+    return false;
+  }
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status === Notifications.PermissionStatus.GRANTED;
 }
 
-async function resolveToken(serverId: string): Promise<string | null> {
+let loggedFirebaseMissing = false;
+// Messages from builds with no google-services file. Other Firebase errors are real failures.
+const FIREBASE_NOT_CONFIGURED = /googleServicesFile|Default FirebaseApp is not initialized/;
+
+// Builds without a google-services file (local APKs, the tablet harness) fail on every connect.
+// Say so once per session instead of a warning with a stack each time.
+function logRegistrationFailure(error: unknown): void {
+  if (FIREBASE_NOT_CONFIGURED.test(describeError(error))) {
+    if (loggedFirebaseMissing) return;
+    loggedFirebaseMissing = true;
+    agentLog("push", "register", { status: "unavailable", reason: "firebase-not-configured" });
+    return;
+  }
+  console.warn("[PushNotifications] Failed to register push token", error);
+}
+
+type ResolvedToken = { token: string } | { token: null; reason: "no-permission" | "no-token" };
+
+function resolved(token: string | null): ResolvedToken {
+  return token ? { token } : { token: null, reason: "no-token" };
+}
+
+async function resolveToken(serverId: string, prompt: boolean): Promise<ResolvedToken> {
   const key = storageKey(serverId);
   const cached = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
-  if (!(await ensurePushPermission())) {
+  if (!(await ensurePushPermission(prompt))) {
     await AsyncStorage.removeItem(key);
-    return null;
+    return { token: null, reason: "no-permission" };
   }
 
   if (Platform.OS === "android") {
-    await Notifications.setNotificationChannelAsync("default", {
+    await Notifications.setNotificationChannelAsync(PUSH_CHANNEL_ID, {
       name: "default",
       importance: Notifications.AndroidImportance.DEFAULT,
     });
@@ -46,45 +88,115 @@ async function resolveToken(serverId: string): Promise<string | null> {
   const projectId = getExpoProjectId();
   if (!projectId) {
     console.warn("[PushNotifications] Missing EAS projectId; cannot fetch Expo push token");
-    return cached;
+    return resolved(cached);
   }
 
   const result = await Notifications.getExpoPushTokenAsync({ projectId });
   const token = result.data.trim();
-  if (!token) return cached;
+  if (!token) return resolved(cached);
   await AsyncStorage.setItem(key, token);
-  return token;
+  return { token };
 }
 
 export function startSubscription(input: StartPushNotificationsInput): () => void {
+  const { serverId } = input;
   let stopped = false;
   let token: string | null = null;
+  let registrationId: string | undefined;
+  let stopLifecycle: (() => void) | undefined;
+  let preparing: Promise<void> | null = null;
+  let registerAgain = false;
+  const sendRegistration = () => {
+    if (stopped || !token || !input.client.isConnected) return;
+    const supported =
+      input.client.getLastServerInfoMessage()?.features?.androidNotificationLifecycle === true;
+    if (supported && registrationId) input.client.registerPushToken(token, registrationId);
+    else input.client.registerPushToken(token);
+    setPushRegistrationStatus(serverId, "sent");
+  };
   const register = () => {
-    if (!stopped && token && input.client.isConnected) {
-      input.client.registerPushToken(token);
+    if (stopped || !token) return;
+    if (!input.client.isConnected) {
+      setPushRegistrationStatus(serverId, "not-connected");
+      return;
     }
+    if (preparing) {
+      registerAgain = true;
+      return;
+    }
+    if (input.client.getLastServerInfoMessage()?.features?.androidNotificationLifecycle !== true) {
+      stopLifecycle?.();
+      stopLifecycle = undefined;
+      registrationId = undefined;
+      sendRegistration();
+      return;
+    }
+    preparing = prepareLifecycle(input.client, serverId)
+      .then((id) => {
+        if (stopped) return undefined;
+        registrationId = id;
+        stopLifecycle?.();
+        stopLifecycle = id ? watchLifecycle(input.client, serverId, id) : undefined;
+        sendRegistration();
+        return undefined;
+      })
+      .catch((error) => {
+        if (stopped) return;
+        registrationId = undefined;
+        stopLifecycle?.();
+        stopLifecycle = undefined;
+        console.warn(
+          "[PushNotifications] Background task unavailable; retaining ordinary push delivery",
+          error,
+        );
+        sendRegistration();
+      })
+      .finally(() => {
+        preparing = null;
+        if (registerAgain) {
+          registerAgain = false;
+          register();
+        }
+      });
+  };
+  const resolve = ({ prompt }: { prompt: boolean }) => {
+    setPushRegistrationStatus(serverId, "pending");
+    void resolveToken(serverId, prompt)
+      .then(async (result) => {
+        if (stopped) return undefined;
+        token = result.token;
+        if (result.token === null) setPushRegistrationStatus(serverId, result.reason);
+        register();
+        return undefined;
+      })
+      .catch((error) => {
+        if (!stopped) setPushRegistrationStatus(serverId, "failed");
+        logRegistrationFailure(error);
+      });
   };
 
-  void resolveToken(input.serverId)
-    .then((resolved) => {
-      if (stopped) return undefined;
-      token = resolved;
-      register();
-      return undefined;
-    })
-    .catch((error) => console.warn("[PushNotifications] Failed to register push token", error));
-
-  const unsubscribe = input.client.subscribeConnectionStatus((state) => {
-    if (state.status === "connected") register();
+  resolve({ prompt: true });
+  const stopReregister = provideReregister(serverId, () => resolve({ prompt: true }));
+  const unsubscribe = input.client.subscribeConnectionStatus(() => register());
+  // Notification access is usually granted in system settings, outside the app. Only
+  // read it here: Android's prompt pauses the app, so prompting on resume would loop.
+  const appState = AppState.addEventListener("change", (state) => {
+    if (state === "active" && usePushRegistrationStore.getState()[serverId] === "no-permission") {
+      resolve({ prompt: false });
+    }
   });
 
   return () => {
     stopped = true;
+    stopLifecycle?.();
+    stopReregister();
     unsubscribe();
+    appState.remove();
   };
 }
 
 export async function revokeSubscription(input: RevokePushNotificationsInput): Promise<void> {
+  await removeLifecycleHost(input.serverId);
   const key = storageKey(input.serverId);
   const token = await readValidatedString(AsyncStorage, key, ExpoPushTokenSchema);
   if (

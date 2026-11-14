@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const zhCN: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "无法搜索此聊天。请检查主机连接后重试。",
     historyChangedFailure: "搜索期间聊天已更改。请重新搜索。",
@@ -332,6 +335,8 @@ export const zhCN: TranslationResources = {
     actions: {
       copyCode: "复制代码",
       copyTurn: "复制回合",
+      selectText: "选择文本",
+      selectTextTruncated: "显示前 50,000 个字符。复制回合会复制全部内容。",
       copyMessage: "复制消息",
       forkMenu: "分叉消息",
       forkInNewTab: "分叉到新标签页",
@@ -702,6 +707,8 @@ export const zhCN: TranslationResources = {
         failedToCloseAgent: "关闭 Agent 失败",
       },
       confirmations: {
+        closeTabsAboveTitle: "关闭上方标签？",
+        closeTabsBelowTitle: "关闭下方标签？",
         unsavedTitle: "未保存的更改",
         unsavedMessage: "此标签页有尚未保存的更改。关闭将丢弃草稿。",
         closeWithoutSaving: "不保存并关闭",
@@ -741,6 +748,7 @@ export const zhCN: TranslationResources = {
         importSession: "导入会话",
         copyPath: "复制 workspace 路径",
         copyBranchName: "复制分支名称",
+        copyProviderSessionId: "复制会话 ID",
         showSetup: "显示 setup",
       },
       toasts: {
@@ -749,6 +757,7 @@ export const zhCN: TranslationResources = {
         terminalQueued: "正在准备 workspace，Terminal 准备好后会打开...",
         workspacePathCopiedLabel: "Workspace 路径",
         branchNameCopiedLabel: "分支名称",
+        providerSessionIdCopiedLabel: "会话 ID",
       },
     },
     scripts: {
@@ -1244,11 +1253,6 @@ export const zhCN: TranslationResources = {
       search: "搜索",
       schedules: "计划",
     },
-    worktreeSetup: {
-      title: "设置 worktree scripts",
-      description: "添加 setup 命令，让新的 worktree 自动安装依赖并完成准备。",
-      openProjectSettings: "打开 project 设置",
-    },
     project: {
       actions: {
         menu: "Project 操作",
@@ -1306,6 +1310,10 @@ export const zhCN: TranslationResources = {
         hideFromSidebar: "从侧边栏隐藏",
         archiving: "正在归档...",
         hiding: "正在隐藏...",
+        muteNotifications: "静音通知",
+        unmuteNotifications: "取消通知静音",
+        updatingNotifications: "正在更新通知...",
+        updateHostForNotifications: "更新此主机以管理通知。",
       },
       confirmations: {
         hideTitle: "隐藏 workspace？",
@@ -1431,10 +1439,39 @@ export const zhCN: TranslationResources = {
       },
       advancedSettings: "高级设置",
       openAdvancedSettings: "打开 daemon 高级设置",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch: "App 和 daemon 版本不匹配。请将两者更新到相同版本，以获得最佳体验。",
       loadFailed: "无法加载桌面 daemon 状态。",
     },
     updates: {
+      nix: {
+        checking: "正在检查更新…",
+        downloading: "正在下载 {{version}}…",
+        applying: "正在安装 {{version}}…",
+        restarting: "正在重启…",
+        failed: "更新失败：{{error}}",
+        ready: "{{version}} 已下载，可以安装",
+        available: "{{version}} 可用",
+        restartRequired: "{{version}} 已安装，重启后即可使用",
+        upToDate: "已是最新（{{time}} 检查）",
+        notChecked: "尚未检查",
+        checkAction: "检查",
+        updateAction: "更新",
+        restartAction: "重启",
+        updateTitle: "更新到 {{version}}？",
+        updateMessage: "Paseo 将安装更新并重启。",
+        updateConfirm: "更新",
+        restartTitle: "重启以完成更新到 {{version}}？",
+        restartMessage: "Paseo 将重启并使用新版本。",
+        restartConfirm: "重启",
+        agentsKeepRunning: "运行中的代理（{{count}}）会继续工作；后台服务将在它们完成后更新。",
+        lastAttemptFailed: "上次尝试失败：{{error}}",
+        updateTooltip: "更新到 {{version}}",
+        restartTooltip: "重启以完成更新到 {{version}}",
+        failedTooltip: "更新失败",
+        failedTitle: "更新失败",
+        tryAgain: "重试",
+      },
       status: {
         checking: "正在检查 app 更新...",
         installing: "正在安装 app 更新...",
@@ -1465,7 +1502,7 @@ export const zhCN: TranslationResources = {
         installingDescription: "正在安装并重启...",
         versionReady: "{{version}} 已准备好安装。",
         newVersionReady: "新版本已准备好安装。",
-        restartWarning: "升级 app 会停止正在运行的 agents，并关闭 terminal 会话。",
+        restartWarning: "更新会等待运行中的代理和终端结束后再重启。",
       },
     },
     settings: {
@@ -1909,6 +1946,8 @@ export const zhCN: TranslationResources = {
     archiveTooltip: "归档 subagent",
     archiveFinishedAction: "归档已完成的 subagent",
     archiveFinishedRetry: "重试 ({{failed}}/{{total}})",
+    showFinished: "显示 {{count}} 个已完成",
+    hideFinished: "隐藏已完成",
   },
   panels: {
     draft: {
@@ -1995,6 +2034,8 @@ export const zhCN: TranslationResources = {
     output: "输出",
   },
   turnSummary: {
+    messages: { one: "写了 {{count}} 条消息", other: "写了 {{count}} 条消息" },
+    agentMessage: "智能体消息",
     details: "查看轮次详情",
     sentBy: "由 {{name}} 发送",
     showMore: "展开",
@@ -2018,6 +2059,7 @@ export const zhCN: TranslationResources = {
       one: "搜索了 {{count}} 次",
       other: "搜索了 {{count}} 次",
     },
+    sentMessages: { one: "发送了 {{count}} 条消息", other: "发送了 {{count}} 条消息" },
     otherTools: {
       one: "使用了 {{count}} 个其他工具",
       other: "使用了 {{count}} 个其他工具",
@@ -2180,7 +2222,7 @@ export const zhCN: TranslationResources = {
     editor: {
       title: "编辑器",
       vimKeybindings: "Vim 键位",
-      vimHint: "适用于网页和桌面端的源文件。",
+      vimHint: "适用于编辑器中的源文件。",
     },
     files: {
       title: "文件",
@@ -2314,7 +2356,7 @@ export const zhCN: TranslationResources = {
         descriptions: {
           interrupt: "Agent 运行时，Enter 会中断。Command/Ctrl+Enter 会排队。",
           steer: "Agent 运行时，Enter 会引导当前回合。Command/Ctrl+Enter 会排队。",
-          queue: "Agent 运行时，Enter 会排队。Command/Ctrl+Enter 会提交。",
+          queue: "Agent 运行时，Enter 会排队。Command/Ctrl+Enter 会引导当前回合。",
         },
         commandEnterDescriptions: {
           interrupt: "Agent 运行时，{{modifier}}+Enter 会中断。Enter 会插入换行。",
@@ -2400,6 +2442,7 @@ export const zhCN: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "关于",
       appVersion: "应用版本",
       whatsNewHint: "每个版本的发布说明",
@@ -2426,6 +2469,10 @@ export const zhCN: TranslationResources = {
         checking: "正在检查...",
         alertTitle: "错误",
         alertMessage: "无法打开更新确认对话框。",
+      },
+      nixUpdates: {
+        label: "Nix 管理的更新",
+        invalidMarker: "无法验证此 Nix 安装。",
       },
     },
     appearance: {
@@ -2501,7 +2548,6 @@ export const zhCN: TranslationResources = {
     shortcuts: {
       dialogTitle: "快捷键",
       searchPlaceholder: "搜索快捷键",
-      unavailableOnMobile: "键盘快捷键仅在桌面端可用",
       capturePrompt: "按下快捷键...",
       captureIndexPrompt: "请以 1 到 9 的数字结尾。",
       unassigned: "未设置",
@@ -2656,6 +2702,13 @@ export const zhCN: TranslationResources = {
         title: "配对设备",
         rowTitle: "配对设备",
         rowHint: "扫描二维码或复制链接，将手机连接到这个 Host",
+        keepAwake: {
+          title: "为中继保持此 Mac 唤醒",
+          hint: "中继开启时，在接通电源的情况下阻止睡眠，让远程设备可以访问此 Mac。接通电源时会消耗更多电量并更易发热。",
+          activeHint: "中继开启时，接通电源会保持此 Mac 唤醒",
+          waitingHint: "中继开启后生效",
+          updateFailed: "无法更新保持唤醒设置",
+        },
       },
       skills: {
         ...en.settings.host.skills,
@@ -2716,6 +2769,30 @@ export const zhCN: TranslationResources = {
           reset: "重置",
           save: "保存",
           saving: "保存中...",
+        },
+        replyRules: {
+          title: "回复通知规则",
+          scope: "适用于 {{host}} 上的所有工作区。",
+          help: "使用 RE2 搜索匹配，不会规范化文本。使用锚点可匹配整条回复。最多 8 条规则，每个模式最多 256 个 UTF-16 代码单元，匹配内容最多 16,384 个。i、m、u 标志不能重复；省略时默认启用 Unicode。",
+          source: "模式",
+          flags: "标志",
+          add: "添加规则",
+          remove: "移除规则",
+          save: "保存规则",
+          saving: "保存中...",
+          clear: "清除所有规则",
+          loading: "正在加载已保存的规则...",
+          empty: "没有已保存的回复规则。",
+          unsupported: "请更新此主机以管理回复通知规则。",
+          disconnected: "连接到此主机以管理回复通知规则。",
+          readError: "无法读取已保存的规则：{{error}}。如果是访问错误，请检查 daemon.read 权限。",
+          writeError: "无法保存规则：{{error}}。如果是访问错误，请检查 daemon.manage 权限。",
+          conflict:
+            "编辑期间此主机上的规则已更改。重新加载已保存规则会丢弃草稿；保留草稿可在下次保存时有意覆盖最新规则。",
+          awaitingAuthority: "已保存。正在等待此主机确认更新后的规则...",
+          reload: "重新加载已保存规则",
+          keep: "保留草稿",
+          retry: "重试",
         },
       },
       agents: {

@@ -118,6 +118,60 @@ test("lists each model's thinking options without changing Cursor preferences", 
   ]);
 });
 
+test("accepts published grouped config options while skipping invalid entries", async () => {
+  const connection = new CursorCatalogConnection();
+  connection.catalog = {
+    models: [
+      {
+        value: "claude-haiku-4-5",
+        name: "Haiku 4.5",
+        configOptions: [
+          {
+            id: "reasoning",
+            name: "Reasoning",
+            category: "thought_level",
+            type: "select",
+            currentValue: "high",
+            extraTopLevel: "ignored by the ACP object schema",
+            options: [
+              {
+                group: "Depth",
+                name: "Depth",
+                options: [
+                  { value: "high", name: "High", extraOption: "ignored" },
+                  { value: 42, name: "Malformed and skipped" },
+                ],
+              },
+            ],
+          },
+          { id: "invalid", name: "Invalid", type: "select", currentValue: 42, options: [] },
+        ],
+      },
+    ],
+  };
+
+  await expect(resolveCursorCatalogModels(createCatalogContext(connection))).resolves.toStrictEqual(
+    [
+      {
+        provider: "acp",
+        id: "claude-haiku-4-5",
+        label: "Haiku 4.5",
+        isDefault: true,
+        thinkingOptions: [
+          {
+            id: "high",
+            label: "High",
+            description: undefined,
+            isDefault: true,
+            metadata: { group: "Depth" },
+          },
+        ],
+        defaultThinkingOptionId: "high",
+      },
+    ],
+  );
+});
+
 test("reports that Cursor must be updated when the model extension is unavailable", async () => {
   const connection = new CursorCatalogConnection();
   connection.error = { code: -32601, message: "Method not found" };
@@ -181,10 +235,9 @@ test("keeps an empty extension catalog empty", async () => {
   await expect(resolveCursorCatalogModels(createCatalogContext(connection))).resolves.toEqual([]);
 });
 
-test.each([
-  {},
-  { models: [{ value: "grok-4.6", name: "Grok 4.6" }] },
-  {
+test("retains a model when its only thinking option is malformed", async () => {
+  const connection = new CursorCatalogConnection();
+  connection.catalog = {
     models: [
       {
         value: "grok-4.6",
@@ -192,16 +245,32 @@ test.each([
         configOptions: [{ ...effortThinking, currentValue: 1 }],
       },
     ],
-  },
-])("rejects malformed extension responses: %j", async (catalog) => {
-  const connection = new CursorCatalogConnection();
-  connection.catalog = catalog;
-
-  await expect(resolveCursorCatalogModels(createCatalogContext(connection))).rejects.toBeInstanceOf(
-    ZodError,
-  );
+  };
+  await expect(resolveCursorCatalogModels(createCatalogContext(connection))).resolves.toEqual([
+    {
+      provider: "acp",
+      id: "grok-4.6",
+      label: "Grok 4.6",
+      isDefault: false,
+      thinkingOptions: undefined,
+      defaultThinkingOptionId: undefined,
+    },
+  ]);
   expect(connection.selectionHistory).toEqual(["claude-haiku-4-5"]);
 });
+
+test.each([{}, { models: [{ value: "grok-4.6", name: "Grok 4.6" }] }])(
+  "rejects malformed extension responses: %j",
+  async (catalog) => {
+    const connection = new CursorCatalogConnection();
+    connection.catalog = catalog;
+
+    await expect(
+      resolveCursorCatalogModels(createCatalogContext(connection)),
+    ).rejects.toBeInstanceOf(ZodError);
+    expect(connection.selectionHistory).toEqual(["claude-haiku-4-5"]);
+  },
+);
 
 test("propagates extension failures without changing preferences or returning stale options", async () => {
   const connection = new CursorCatalogConnection();

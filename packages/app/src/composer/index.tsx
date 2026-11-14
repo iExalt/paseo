@@ -117,7 +117,7 @@ import {
 } from "@/attachments/service";
 import { resolveAgentControlsMode } from "@/composer/agent-controls/mode";
 import { resolveComposerInputMode, type ComposerInputMode } from "@/composer/input-mode";
-import { resolveActiveSendBehavior } from "./input/state";
+import { resolveActiveSendBehavior, resolveImmediateTurnBehavior } from "./input/state";
 import { useKeyboardActionHandler } from "@/hooks/use-keyboard-action-handler";
 import type { KeyboardActionDefinition } from "@/keyboard/keyboard-action-dispatcher";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
@@ -150,7 +150,7 @@ import {
   AttachmentPill,
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
-import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
+import { useAttachmentLightbox } from "@/components/attachment-lightbox-context";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useIsDictationReady } from "@/hooks/use-is-dictation-ready";
 import { useForgeSearchQuery } from "@/git/use-forge-search-query";
@@ -1387,7 +1387,11 @@ function ComposerContentImpl({
   const [isMessageInputFocused, setIsMessageInputFocused] = useState(false);
   const [isGithubPickerOpen, setIsGithubPickerOpen] = useState(false);
   const [githubSearchQuery, setGithubSearchQuery] = useState("");
-  const [lightboxMetadata, setLightboxMetadata] = useState<AttachmentMetadata | null>(null);
+  const { open: openLightbox, localLightbox } = useAttachmentLightbox();
+  const setLightboxMetadata = useCallback(
+    (metadata: AttachmentMetadata) => openLightbox({ type: "attachment", metadata }),
+    [openLightbox],
+  );
   const attachButtonRef = useRef<View | null>(null);
   const messageInputRef = useRef<MessageInputRef>(null);
   const pluginAttachments = usePluginAttachmentPicker({
@@ -1484,6 +1488,7 @@ function ComposerContentImpl({
         text: string,
         attachments: ComposerAttachment[],
         activeTurnBehavior: "interrupt" | "steer",
+        clientMessageId?: string,
       ) => Promise<void>)
     | null
   >(null);
@@ -1537,7 +1542,12 @@ function ComposerContentImpl({
   }, [focusInput, onFocusInput]);
 
   const submitMessage = useCallback(
-    async (text: string, submitAttachments: ComposerAttachment[]) => {
+    async (
+      text: string,
+      submitAttachments: ComposerAttachment[],
+      activeTurnBehavior = resolveImmediateTurnBehavior(appSettings.sendBehavior),
+      clientMessageId?: string,
+    ) => {
       onMessageSent?.();
       if (onSubmitMessageRef.current) {
         await onSubmitMessageRef.current({ text, attachments: submitAttachments, cwd });
@@ -1550,7 +1560,8 @@ function ComposerContentImpl({
         agentIdRef.current,
         text,
         submitAttachments,
-        appSettings.sendBehavior === "steer" ? "steer" : "interrupt",
+        activeTurnBehavior,
+        clientMessageId,
       );
     },
     [appSettings.sendBehavior, cwd, onMessageSent, t],
@@ -1566,6 +1577,7 @@ function ComposerContentImpl({
       text: string,
       sendAttachments: ComposerAttachment[],
       activeTurnBehavior: "interrupt" | "steer",
+      clientMessageId?: string,
     ) => {
       if (!client) {
         throw new Error(t("workspace.terminal.hostDisconnected"));
@@ -1581,6 +1593,7 @@ function ComposerContentImpl({
         encodeImages,
         submission: createMessageSubmissionWriter(serverId),
         activeTurnBehavior,
+        clientMessageId,
         activeTurnId:
           activeTurnBehavior === "steer"
             ? (selectAgentTurnPresentation(
@@ -1888,7 +1901,7 @@ function ComposerContentImpl({
         },
       });
     },
-    [openAttachment],
+    [openAttachment, setLightboxMetadata],
   );
 
   const handleCancelAgent = useCallback(() => {
@@ -1949,13 +1962,16 @@ function ComposerContentImpl({
   const handleSendQueuedNow = useCallback(
     async (id: string) => {
       if (!sendAgentMessageRef.current && !onSubmitMessageRef.current) return;
-      // Reuse the regular send path; server-side send atomically interrupts any active run.
       const result = await sendQueuedComposerMessageNow({
         agentId,
         messageId: id,
         queue: queueWriter,
-        submitMessage: ({ text, attachments: queuedAttachments }) =>
-          submitMessage(text, queuedAttachments),
+        submitMessage: ({
+          text,
+          attachments: queuedAttachments,
+          activeTurnBehavior,
+          clientMessageId,
+        }) => submitMessage(text, queuedAttachments, activeTurnBehavior, clientMessageId),
         failedToSendMessage: t("composer.errors.failedToSend"),
       });
       if (result.status === "failed") {
@@ -2261,14 +2277,6 @@ function ComposerContentImpl({
     [onAttentionInputFocus],
   );
 
-  const handleLightboxClose = useCallback(() => {
-    setLightboxMetadata(null);
-  }, []);
-  const lightboxSource = useMemo<ImageLightboxSource | null>(
-    () => (lightboxMetadata ? { type: "attachment", metadata: lightboxMetadata } : null),
-    [lightboxMetadata],
-  );
-
   const handleGithubPickerOpenChange = useCallback(
     (open: boolean) => {
       setIsGithubPickerOpen(open);
@@ -2434,7 +2442,7 @@ function ComposerContentImpl({
           isFullscreen ? animatedStaticStyles.fullscreenContainer : animatedStaticStyles.container
         }
       >
-        <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
+        {localLightbox}
         {/* Input area */}
         <View style={inputAreaContainerStyle}>
           <View style={inputAreaContentStyle}>
@@ -2611,8 +2619,9 @@ const styles = StyleSheet.create((theme: Theme) => ({
     alignItems: "center",
     gap: theme.spacing[1],
   },
+  // Grows to fit the session cost label beside the ring.
   contextWindowMeterSlot: {
-    width: 28,
+    minWidth: 28,
     height: 28,
     flexShrink: 0,
     alignItems: "center",

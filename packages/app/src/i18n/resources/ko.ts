@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const ko: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "이 채팅을 검색할 수 없습니다. 호스트 연결을 확인하고 다시 시도하세요.",
     historyChangedFailure: "검색 중에 채팅이 변경되었습니다. 다시 검색하세요.",
@@ -333,6 +336,8 @@ export const ko: TranslationResources = {
     actions: {
       copyCode: "코드 복사",
       copyTurn: "턴 복사",
+      selectText: "텍스트 선택",
+      selectTextTruncated: "처음 50,000자를 표시합니다. 턴 복사는 전체를 복사합니다.",
       copyMessage: "메시지 복사",
       forkMenu: "여기에서 채팅 분기",
       forkInNewTab: "새 탭으로 분기",
@@ -704,6 +709,8 @@ export const ko: TranslationResources = {
         failedToCloseAgent: "에이전트를 닫지 못했습니다",
       },
       confirmations: {
+        closeTabsAboveTitle: "위쪽 탭을 닫을까요?",
+        closeTabsBelowTitle: "아래쪽 탭을 닫을까요?",
         close: "닫기",
         cancel: "취소",
         archive: "보관",
@@ -745,6 +752,7 @@ export const ko: TranslationResources = {
         importSession: "세션 가져오기",
         copyPath: "워크스페이스 경로 복사",
         copyBranchName: "브랜치 이름 복사",
+        copyProviderSessionId: "세션 ID 복사",
         showSetup: "설정 표시",
       },
       toasts: {
@@ -753,6 +761,7 @@ export const ko: TranslationResources = {
         terminalQueued: "워크스페이스 준비 중, 준비되면 터미널을 엽니다...",
         workspacePathCopiedLabel: "워크스페이스 경로",
         branchNameCopiedLabel: "브랜치 이름",
+        providerSessionIdCopiedLabel: "세션 ID",
       },
     },
     scripts: {
@@ -1259,12 +1268,6 @@ export const ko: TranslationResources = {
       search: "검색",
       schedules: "일정",
     },
-    worktreeSetup: {
-      title: "워크트리 스크립트 설정",
-      description:
-        "새 워크트리가 의존성을 설치하고 자동으로 준비될 수 있도록 설정 명령을 추가하세요.",
-      openProjectSettings: "프로젝트 설정 열기",
-    },
     project: {
       actions: {
         menu: "프로젝트 작업",
@@ -1323,6 +1326,10 @@ export const ko: TranslationResources = {
         hideFromSidebar: "사이드바에서 숨기기",
         archiving: "보관하는 중...",
         hiding: "숨기는 중...",
+        muteNotifications: "알림 끄기",
+        unmuteNotifications: "알림 켜기",
+        updatingNotifications: "알림 업데이트 중...",
+        updateHostForNotifications: "알림을 관리하려면 호스트를 업데이트하세요.",
       },
       confirmations: {
         hideTitle: "워크스페이스를 숨길까요?",
@@ -1449,11 +1456,41 @@ export const ko: TranslationResources = {
       },
       advancedSettings: "고급 설정",
       openAdvancedSettings: "고급 데몬 설정 열기",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "앱과 데몬의 버전이 일치하지 않습니다. 최상의 경험을 위해 둘 다 동일한 버전으로 업데이트하세요.",
       loadFailed: "데스크톱 데몬 상태를 불러올 수 없습니다.",
     },
     updates: {
+      nix: {
+        checking: "업데이트 확인 중…",
+        downloading: "{{version}} 다운로드 중…",
+        applying: "{{version}} 설치 중…",
+        restarting: "다시 시작하는 중…",
+        failed: "업데이트 실패: {{error}}",
+        ready: "{{version}}을(를) 다운로드했으며 설치할 준비가 되었습니다",
+        available: "{{version}}을(를) 사용할 수 있습니다",
+        restartRequired: "{{version}}이(가) 설치되었습니다. 다시 시작하면 사용할 수 있습니다",
+        upToDate: "최신 상태 ({{time}}에 확인)",
+        notChecked: "아직 확인하지 않음",
+        checkAction: "확인",
+        updateAction: "업데이트",
+        restartAction: "다시 시작",
+        updateTitle: "{{version}}(으)로 업데이트할까요?",
+        updateMessage: "Paseo가 업데이트를 설치하고 다시 시작합니다.",
+        updateConfirm: "업데이트",
+        restartTitle: "다시 시작하여 {{version}} 업데이트를 완료할까요?",
+        restartMessage: "Paseo가 다시 시작되고 새 버전을 사용합니다.",
+        restartConfirm: "다시 시작",
+        agentsKeepRunning:
+          "실행 중인 에이전트({{count}})는 계속 작동합니다. 백그라운드 서비스는 작업이 끝난 뒤 업데이트됩니다.",
+        lastAttemptFailed: "마지막 시도가 실패했습니다: {{error}}",
+        updateTooltip: "{{version}}(으)로 업데이트",
+        restartTooltip: "다시 시작하여 {{version}} 업데이트 완료",
+        failedTooltip: "업데이트 실패",
+        failedTitle: "업데이트 실패",
+        tryAgain: "다시 시도",
+      },
       status: {
         checking: "앱 업데이트 확인 중...",
         installing: "앱 업데이트 설치 중...",
@@ -1487,7 +1524,7 @@ export const ko: TranslationResources = {
         installingDescription: "설치 후 재시작 중...",
         versionReady: "{{version}} 설치가 준비되었습니다.",
         newVersionReady: "새 버전 설치가 준비되었습니다.",
-        restartWarning: "앱을 업그레이드하면 실행 중인 에이전트가 중지되고 터미널 세션이 닫힙니다.",
+        restartWarning: "업데이트는 실행 중인 에이전트와 터미널이 종료된 후 다시 시작합니다.",
       },
     },
     settings: {
@@ -1941,6 +1978,8 @@ export const ko: TranslationResources = {
     archiveTooltip: "서브에이전트 보관",
     archiveFinishedAction: "완료된 하위 에이전트 보관",
     archiveFinishedRetry: "다시 시도 ({{failed}}/{{total}})",
+    showFinished: "완료된 {{count}}개 보기",
+    hideFinished: "완료된 항목 숨기기",
   },
   panels: {
     draft: {
@@ -2027,6 +2066,8 @@ export const ko: TranslationResources = {
     output: "출력",
   },
   turnSummary: {
+    messages: { one: "메시지 {{count}}개 작성", other: "메시지 {{count}}개 작성" },
+    agentMessage: "에이전트 메시지",
     details: "턴 세부 정보 보기",
     sentBy: "{{name}}이(가) 보냄",
     showMore: "더 보기",
@@ -2050,6 +2091,7 @@ export const ko: TranslationResources = {
       one: "{{count}}회 검색함",
       other: "{{count}}회 검색함",
     },
+    sentMessages: { one: "메시지 {{count}}개 전송", other: "메시지 {{count}}개 전송" },
     otherTools: {
       one: "기타 도구 {{count}}개 사용함",
       other: "기타 도구 {{count}}개 사용함",
@@ -2212,7 +2254,7 @@ export const ko: TranslationResources = {
     editor: {
       title: "편집기",
       vimKeybindings: "Vim 키 바인딩",
-      vimHint: "웹 및 데스크톱의 소스 파일에 적용됩니다.",
+      vimHint: "편집기의 소스 파일에 적용됩니다.",
     },
     files: {
       title: "파일",
@@ -2350,7 +2392,7 @@ export const ko: TranslationResources = {
           steer:
             "에이전트가 실행 중일 때 Enter는 현재 턴에 지시합니다. Command/Ctrl+Enter는 대기열에 추가합니다.",
           queue:
-            "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다. Command/Ctrl+Enter는 제출합니다.",
+            "에이전트가 실행 중일 때 Enter는 대기열에 추가합니다. Command/Ctrl+Enter는 현재 턴에 지시합니다.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2439,6 +2481,7 @@ export const ko: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "정보",
       appVersion: "앱 버전",
       whatsNewHint: "모든 버전의 릴리스 노트",
@@ -2465,6 +2508,10 @@ export const ko: TranslationResources = {
         checking: "확인 중...",
         alertTitle: "오류",
         alertMessage: "업데이트 확인 대화 상자를 열 수 없습니다.",
+      },
+      nixUpdates: {
+        label: "Nix 관리 업데이트",
+        invalidMarker: "이 Nix 설치를 확인할 수 없습니다.",
       },
     },
     appearance: {
@@ -2542,7 +2589,6 @@ export const ko: TranslationResources = {
     shortcuts: {
       dialogTitle: "단축키",
       searchPlaceholder: "검색 단축키",
-      unavailableOnMobile: "키보드 단축키는 데스크톱에서만 사용할 수 있습니다",
       capturePrompt: "단축키를 누르세요...",
       captureIndexPrompt: "마지막에 1부터 9까지의 숫자를 입력하세요.",
       unassigned: "설정되지 않음",
@@ -2697,6 +2743,13 @@ export const ko: TranslationResources = {
         title: "기기 페어링",
         rowTitle: "기기 페어링",
         rowHint: "QR 코드를 스캔하거나 링크를 복사하여 휴대폰을 이 호스트에 연결하세요",
+        keepAwake: {
+          title: "릴레이를 위해 이 Mac 깨어 있게 하기",
+          hint: "릴레이가 켜져 있는 동안 전원 연결 시 잠자기를 막아 원격 기기가 이 Mac에 연결할 수 있게 합니다. 전원 연결 중에는 전력 사용과 발열이 늘어납니다.",
+          activeHint: "릴레이가 켜져 있는 동안 전원에 연결되면 이 Mac을 깨어 있게 합니다",
+          waitingHint: "릴레이가 켜져 있을 때 적용됩니다",
+          updateFailed: "깨어 있기 설정을 업데이트할 수 없습니다",
+        },
       },
       skills: {
         ...en.settings.host.skills,
@@ -2758,6 +2811,32 @@ export const ko: TranslationResources = {
           reset: "재설정",
           save: "저장",
           saving: "저장하는 중...",
+        },
+        replyRules: {
+          title: "답변 알림 규칙",
+          scope: "{{host}}의 모든 작업 공간에 적용됩니다.",
+          help: "텍스트를 정규화하지 않고 RE2 검색 방식으로 일치시킵니다. 답변 전체를 검사하려면 앵커를 사용하세요. 최대 8개 규칙, 패턴당 256 UTF-16 코드 단위, 대상당 16,384입니다. i, m, u 플래그는 중복될 수 없으며 생략하면 Unicode가 활성화됩니다.",
+          source: "패턴",
+          flags: "플래그",
+          add: "규칙 추가",
+          remove: "규칙 삭제",
+          save: "규칙 저장",
+          saving: "저장하는 중...",
+          clear: "모든 규칙 지우기",
+          loading: "저장된 규칙을 불러오는 중...",
+          empty: "저장된 답변 규칙이 없습니다.",
+          unsupported: "답변 알림 규칙을 관리하려면 이 호스트를 업데이트하세요.",
+          disconnected: "답변 알림 규칙을 관리하려면 이 호스트에 연결하세요.",
+          readError:
+            "저장된 규칙을 읽을 수 없습니다: {{error}}. 접근 오류라면 daemon.read 권한을 확인하세요.",
+          writeError:
+            "규칙을 저장할 수 없습니다: {{error}}. 접근 오류라면 daemon.manage 권한을 확인하세요.",
+          conflict:
+            "편집하는 동안 이 호스트의 규칙이 변경되었습니다. 저장된 규칙을 다시 불러오면 초안이 사라집니다. 초안을 유지하면 다음 저장 시 최신 규칙을 의도적으로 덮어쓸 수 있습니다.",
+          awaitingAuthority: "저장했습니다. 이 호스트가 규칙 변경을 확인하는 중입니다...",
+          reload: "저장된 규칙 다시 불러오기",
+          keep: "초안 유지",
+          retry: "다시 시도",
         },
       },
       agents: {

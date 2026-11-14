@@ -1,4 +1,4 @@
-import { findMountedWindowStart } from "@/agent-stream/history-window";
+import { continuesTurn } from "@/agent-stream/turn-membership";
 import { z } from "zod";
 import {
   AgentStatusSchema,
@@ -29,7 +29,9 @@ import {
   type ReplicaRowKey,
   type ReplicaRowKind,
   type ReplicaRowStore,
+  type ReplicaStoredRowIndex,
 } from "./row-store";
+import { utf8ByteLength } from "./utf8-byte-length";
 
 export type DirectoryReplicaMutation =
   | { kind: "agent"; type: "upsert"; id: string; value: Agent }
@@ -69,9 +71,19 @@ export interface CachedTimeline {
   hasOlder: boolean;
 }
 
+// A commit carries the store's tail and live head by reference. Commits land once per frame per
+// streaming agent, while a persist serializes only the newest items once a second, so joining
+// them is left to serialization.
+export interface CommittedTimeline extends CachedTimeline {
+  head?: readonly StreamItem[];
+}
+
 const PERSIST_DELAY_MS = 1_000;
 const MAX_TIMELINE_ITEMS = 50;
 const MAX_CACHE_BYTES = 32 * 1024 * 1024;
+// A read that keeps losing to writes of the rows it asked for reports a miss instead; the caller
+// falls back to the network, which is always correct.
+const MAX_READ_ATTEMPTS = 3;
 const IsoDateSchema = z.iso.datetime();
 const TimelinePositionSchema = z.strictObject({
   epoch: z.string(),
@@ -370,7 +382,7 @@ type StructuredReplicaUpsert =
   | { serverId: string; kind: "agent"; id: string; value: Agent }
   | { serverId: string; kind: "workspace"; id: string; value: WorkspaceDescriptor }
   | { serverId: string; kind: "project"; id: string; value: ProjectDescriptor }
-  | { serverId: string; kind: "timeline"; id: string; value: CachedTimeline }
+  | { serverId: string; kind: "timeline"; id: string; value: CommittedTimeline }
   | { serverId: string; kind: "checkpoint"; id: string; value: DirectoryCheckpoint };
 
 const DirectoryCursorSchema = z.strictObject({
@@ -763,35 +775,47 @@ function isTimelineItemStoredLosslessly(item: StreamItem): boolean {
   }
 }
 
-function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
-  const canonicalItems = timeline.items.filter(
-    (item) => item.kind !== "user_message" || !isUnreconciledLocalUserMessage(item),
-  );
-  const start = findMountedWindowStart({
-    items: canonicalItems,
-    minMountedCount: MAX_TIMELINE_ITEMS,
-  });
-  const items = canonicalItems
-    .slice(start)
-    .map(serializeTimelineItem)
-    .filter((item) => item !== null);
+// Coverage is only ever claimed for a window within the item limit, so only the newest items are
+// visited, from the end, extending to the start of the oldest retained turn. Filtering or copying the whole history first cost a pass over the
+// session per streaming agent on every persist.
+function serializeTimeline(timeline: CommittedTimeline): StoredTimeline | null {
+  const items: StoredTimelineItem[] = [];
+  const visited: StreamItem[] = [];
+  let visitedAll = true;
+  visit: for (const segment of [timeline.head ?? [], timeline.items]) {
+    for (let index = segment.length - 1; index >= 0; index -= 1) {
+      const item = segment[index]!;
+      if (item.kind === "user_message" && isUnreconciledLocalUserMessage(item)) continue;
+      if (
+        items.length >= MAX_TIMELINE_ITEMS &&
+        !continuesTurn(item, visited[visited.length - 1]!)
+      ) {
+        visitedAll = false;
+        break visit;
+      }
+      visited.push(item);
+      const stored = serializeTimelineItem(item);
+      if (stored !== null) items.push(stored);
+    }
+  }
   const range = timeline.range;
   const canPersistCoverage =
     range !== null &&
     range.retainedRanges === undefined &&
-    canonicalItems.length <= MAX_TIMELINE_ITEMS &&
-    items.length === canonicalItems.length &&
-    canonicalItems.every(
+    visitedAll &&
+    visited.length <= MAX_TIMELINE_ITEMS &&
+    items.length === visited.length &&
+    visited.every(
       (item) =>
         isTimelineItemStoredLosslessly(item) &&
         item.timelineCursor?.epoch === range.epoch &&
         item.timelineCursor.seq >= range.startSeq &&
         item.timelineCursor.seq <= range.endSeq,
     ) &&
-    canonicalItems.some((item) => item.timelineCursor?.seq === range.endSeq);
+    visited.some((item) => item.timelineCursor?.seq === range.endSeq);
   return {
     agentId: timeline.agentId,
-    items,
+    items: items.toReversed(),
     range: canPersistCoverage
       ? { epoch: range.epoch, startSeq: range.startSeq, endSeq: range.endSeq }
       : null,
@@ -807,22 +831,16 @@ function pendingRowKey(key: ReplicaRowKey): string {
   return `${key.serverId}\u0000${rowKey(key)}`;
 }
 
-// Budget accounting runs over every stored row of a touched host on each persist. Rows are
-// immutable once stored, so their size is computed once. The count itself avoids the JS Buffer
-// polyfill, which materialises the whole byte array just to measure it.
+// A streaming agent writes a new timeline row of up to 50 items, megabytes with tool output, on
+// every persist; its size is counted once per row object.
 const rowBytesCache = new WeakMap<ReplicaRow, number>();
+function indexRow(row: ReplicaRow): ReplicaStoredRowIndex {
+  return { serverId: row.serverId, kind: row.kind, id: row.id, bytes: rowBytes(row) };
+}
 
-function utf8ByteLength(text: string): number {
+function sumBytes(rows: Iterable<ReplicaStoredRowIndex>): number {
   let bytes = 0;
-  for (let index = 0; index < text.length; index += 1) {
-    const code = text.charCodeAt(index);
-    if (code < 0x80) bytes += 1;
-    else if (code < 0x800) bytes += 2;
-    else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      index += 1;
-    } else bytes += 3;
-  }
+  for (const row of rows) bytes += row.bytes;
   return bytes;
 }
 
@@ -918,7 +936,8 @@ function matchesReplicaRead(read: ReplicaRead, row: ReplicaRowKey): boolean {
 export class ReplicaCache {
   private readonly activeServerIds = new Set<string>();
   private readonly activeReads = new Set<ReplicaRead>();
-  private readonly storedRows = new Map<string, Map<string, ReplicaRow>>();
+  // Identity and size of every stored row; payloads stay in the row store.
+  private readonly storedRows = new Map<string, Map<string, ReplicaStoredRowIndex>>();
   private readonly hostBytes = new Map<string, number>();
   private readonly hostWriteOrder = new Map<string, true>();
   private pendingUpserts = new Map<string, StructuredReplicaUpsert>();
@@ -984,8 +1003,15 @@ export class ReplicaCache {
     return { workspace, ...(project ? { project } : {}) };
   }
 
-  async readDirectory(serverId: string): Promise<CachedDirectory> {
-    const rows = await this.readRows(serverId, ["agent", "workspace", "project", "checkpoint"]);
+  /** Resolves undefined when the read kept losing to commits: not cached, rather than empty. */
+  async readDirectory(serverId: string): Promise<CachedDirectory | undefined> {
+    const rows = await this.readRowsOrMiss(serverId, [
+      "agent",
+      "workspace",
+      "project",
+      "checkpoint",
+    ]);
+    if (!rows) return undefined;
     const result: DirectoryReadAccumulator = {
       agents: new Map(),
       workspaces: new Map(),
@@ -1031,35 +1057,65 @@ export class ReplicaCache {
     kinds: readonly ReplicaRowKind[],
     ids?: readonly string[],
   ): Promise<ReplicaRow[]> {
+    return (await this.readRowsOrMiss(serverId, kinds, ids)) ?? [];
+  }
+
+  /**
+   * Resolves null — a miss — when the store cannot answer for the requested rows: every attempt
+   * lost a race with a commit to them, their accepted commits cannot be persisted, or the store
+   * failed. A miss is not an empty result. Directory sync accepts an empty directory as hydrated
+   * (an empty sidebar, dropped cursors) but waits for the network on a miss. With a broken store
+   * and no connection at startup that wait has no end; "loading" is the accurate state there, so
+   * keep these paths a miss. Only an inactive host answers empty, because it has no rows.
+   */
+  private async readRowsOrMiss(
+    serverId: string,
+    kinds: readonly ReplicaRowKind[],
+    ids?: readonly string[],
+  ): Promise<ReplicaRow[] | null> {
     if (!this.activeServerIds.has(serverId)) return [];
     try {
       await this.prepareStore();
-      while (this.activeServerIds.has(serverId)) {
-        // A read may only answer from rows the store already holds, so it waits for this host's
-        // accepted commits to land. A store that rejects them will keep rejecting them: fail closed
-        // rather than re-attempt the write on every pass. A write rejected for another host leaves
-        // this host's stored rows readable.
+      for (
+        let attempt = 0;
+        attempt < MAX_READ_ATTEMPTS && this.activeServerIds.has(serverId);
+        attempt += 1
+      ) {
         const read: ReplicaRead = { serverId, kinds, ids, invalidated: false };
         this.activeReads.add(read);
         try {
-          if (!(await this.syncPending()) && this.hasPendingHostChanges(serverId)) return [];
-          if (read.invalidated || this.hasPendingReadChanges(read)) continue;
-          const rows = await this.rowStore.read(serverId, kinds, ids);
-          if (
-            this.activeServerIds.has(serverId) &&
-            !read.invalidated &&
-            !this.hasPendingReadChanges(read)
-          ) {
-            return rows;
-          }
+          const rows = await this.attemptRead(read);
+          if (rows !== "retry") return rows;
         } finally {
           this.activeReads.delete(read);
         }
       }
-      return [];
+      return this.activeServerIds.has(serverId) ? null : [];
     } catch {
-      return [];
+      return null;
     }
+  }
+
+  /** One read of the store, or "retry" when a commit to the requested rows raced it. */
+  private async attemptRead(read: ReplicaRead): Promise<ReplicaRow[] | null | "retry"> {
+    if (this.hasPendingReadChanges(read)) {
+      // A read may only answer from rows the store already holds, so it waits for accepted
+      // commits of these rows to land. A store that rejects them will keep rejecting them: fail
+      // closed rather than re-attempt the write on every pass. A write rejected for other rows
+      // leaves these stored rows readable.
+      if (!(await this.syncPending()) && this.hasPendingReadChanges(read)) return null;
+    } else {
+      // Other rows' pending commits stay on their debounce, so a streaming agent does not force
+      // a persist of its timeline per read; only in-flight writes must land.
+      await this.writeQueue;
+    }
+    if (read.invalidated || this.hasPendingReadChanges(read)) return "retry";
+    const rows = await this.rowStore.read(read.serverId, read.kinds, read.ids);
+    const current =
+      this.activeServerIds.has(read.serverId) &&
+      !read.invalidated &&
+      !this.hasPendingReadChanges(read);
+    return current ? rows : "retry";
   }
 
   private async deleteInvalidRow(row: ReplicaRow): Promise<void> {
@@ -1193,7 +1249,7 @@ export class ReplicaCache {
     this.schedulePersist();
   }
 
-  commitTimeline(serverId: string, agentId: string, timeline: CachedTimeline): void {
+  commitTimeline(serverId: string, agentId: string, timeline: CommittedTimeline): void {
     if (!this.activeServerIds.has(serverId)) return;
     if (timeline.agentId !== agentId) throw new Error("Timeline cache key does not match payload");
     this.queueUpsert({ serverId, kind: "timeline", id: agentId, value: timeline });
@@ -1220,13 +1276,13 @@ export class ReplicaCache {
     this.invalidateHostReads(newServerId);
     const rows = this.storedRows.get(oldServerId);
     if (rows) {
-      const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaRow>();
+      const newRows = this.storedRows.get(newServerId) ?? new Map<string, ReplicaStoredRowIndex>();
       this.totalBytes -=
         (this.hostBytes.get(oldServerId) ?? 0) + (this.hostBytes.get(newServerId) ?? 0);
       this.storedRows.delete(oldServerId);
       for (const [key, row] of rows) newRows.set(key, { ...row, serverId: newServerId });
       this.storedRows.set(newServerId, newRows);
-      const bytes = [...newRows.values()].reduce((sum, row) => sum + rowBytes(row), 0);
+      const bytes = sumBytes(newRows.values());
       this.hostBytes.delete(oldServerId);
       this.hostBytes.set(newServerId, bytes);
       this.totalBytes += bytes;
@@ -1315,6 +1371,7 @@ export class ReplicaCache {
   }
 
   private hasPendingReadChanges(read: ReplicaRead): boolean {
+    // A pending baseline replaces every directory row of the host.
     if (
       this.pendingBaselines.has(read.serverId) &&
       read.kinds.some((kind) => kind !== "timeline")
@@ -1342,17 +1399,6 @@ export class ReplicaCache {
         read.invalidated = true;
       }
     }
-  }
-
-  private hasPendingHostChanges(serverId: string): boolean {
-    if (this.pendingBaselines.has(serverId)) return true;
-    for (const row of this.pendingUpserts.values()) {
-      if (row.serverId === serverId) return true;
-    }
-    for (const row of this.pendingDeletes.values()) {
-      if (row.serverId === serverId) return true;
-    }
-    return false;
   }
 
   private drainPendingChanges(): PendingReplicaChanges {
@@ -1449,17 +1495,19 @@ export class ReplicaCache {
       const previous = rows?.get(rowKey(key));
       if (previous) {
         rows?.delete(rowKey(key));
-        this.adjustHostBytes(key.serverId, -rowBytes(previous));
+        this.adjustHostBytes(key.serverId, -previous.bytes);
       }
       touchedServerIds.add(key.serverId);
     }
     for (const row of changes.upserts) {
-      const rows = this.storedRows.get(row.serverId) ?? new Map<string, ReplicaRow>();
+      const rows = this.storedRows.get(row.serverId) ?? new Map<string, ReplicaStoredRowIndex>();
       const previous = rows.get(rowKey(row));
-      const previousBytes = previous ? rowBytes(previous) : 0;
-      rows.set(rowKey(row), row);
+      // Subtract the size that was added, so the store's count and a JS recount can never drift.
+      const previousBytes = previous ? previous.bytes : 0;
+      const stored = indexRow(row);
+      rows.set(rowKey(row), stored);
       this.storedRows.set(row.serverId, rows);
-      this.adjustHostBytes(row.serverId, rowBytes(row) - previousBytes);
+      this.adjustHostBytes(row.serverId, stored.bytes - previousBytes);
       touchedServerIds.add(row.serverId);
     }
     for (const serverId of touchedServerIds) {
@@ -1488,7 +1536,7 @@ export class ReplicaCache {
     for (const key of changes.deletes) touchedServerIds.add(key.serverId);
     for (const row of changes.upserts) touchedServerIds.add(row.serverId);
 
-    const projectedRows = new Map<string, Map<string, ReplicaRow>>();
+    const projectedRows = new Map<string, Map<string, ReplicaStoredRowIndex>>();
     const projectedBytes = new Map(this.hostBytes);
     for (const serverId of touchedServerIds) {
       projectedRows.set(serverId, new Map(this.storedRows.get(serverId)));
@@ -1497,13 +1545,10 @@ export class ReplicaCache {
       projectedRows.get(key.serverId)?.delete(rowKey(key));
     }
     for (const row of changes.upserts) {
-      projectedRows.get(row.serverId)?.set(rowKey(row), row);
+      projectedRows.get(row.serverId)?.set(rowKey(row), indexRow(row));
     }
     for (const [serverId, rows] of projectedRows) {
-      projectedBytes.set(
-        serverId,
-        [...rows.values()].reduce((sum, row) => sum + rowBytes(row), 0),
-      );
+      projectedBytes.set(serverId, sumBytes(rows.values()));
     }
 
     const writeOrder = [...this.hostWriteOrder.keys()].filter(
@@ -1574,7 +1619,8 @@ export class ReplicaCache {
   }
 
   private ensureStoredIndex(): Promise<void> {
-    this.storedIndexPromise ??= this.rowStore.readAll().then(async (hosts) => {
+    if (this.storedIndexPromise) return this.storedIndexPromise;
+    const load = this.rowStore.readIndex().then(async (hosts) => {
       this.storedRows.clear();
       this.hostBytes.clear();
       this.hostWriteOrder.clear();
@@ -1585,7 +1631,7 @@ export class ReplicaCache {
           continue;
         }
         const rows = new Map(host.rows.map((row) => [rowKey(row), row]));
-        const bytes = host.rows.reduce((sum, row) => sum + rowBytes(row), 0);
+        const bytes = sumBytes(host.rows);
         this.storedRows.set(host.serverId, rows);
         this.hostBytes.set(host.serverId, bytes);
         this.totalBytes += bytes;
@@ -1593,7 +1639,12 @@ export class ReplicaCache {
       }
       return undefined;
     });
-    return this.storedIndexPromise;
+    // A failed load must not fail every later persist of the session; the next one retries it.
+    load.catch(() => {
+      if (this.storedIndexPromise === load) this.storedIndexPromise = null;
+    });
+    this.storedIndexPromise = load;
+    return load;
   }
 
   private queueOperation(operation: () => Promise<void>): Promise<void> {

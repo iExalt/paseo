@@ -227,6 +227,8 @@ type CycleEvent =
 interface LargeAgentStreamPayloadRequest {
   bytes: number;
   kind: "diff" | "file" | "image";
+  /** Session cost the turn reports, from an optional "costing $1.25" clause. */
+  totalCostUsd?: number;
 }
 
 interface AgentStreamStressRequest {
@@ -255,6 +257,8 @@ interface MockQuestionPromptQuestion {
 }
 
 interface MockQuestionPromptRequest {
+  /** The permission title, which notifications show; defaults to "Questions". */
+  title?: string;
   questions: MockQuestionPromptQuestion[];
 }
 
@@ -294,6 +298,44 @@ function parseMockQuestionPrompt(prompt: AgentPromptInput): MockQuestionPromptRe
   const text = promptToText(prompt);
   if (!/emit\s+(?:a\s+)?synthetic\s+questions?/i.test(text)) {
     return null;
+  }
+
+  if (/with\s+images/i.test(text)) {
+    // Relative paths resolve against the agent cwd; the spec writes the files.
+    const outsidePath = /outside image:\s*(\S+)/i.exec(text)?.[1] ?? "/nonexistent.png";
+    return {
+      title: "Which hero? ![Hero banner](question-images/hero.png)",
+      questions: [
+        {
+          question:
+            "Which hero image should the landing page use?\n\n![Hero banner](question-images/hero.png)",
+          header: "hero",
+          options: [
+            {
+              label: "Blue",
+              description: "Blue theme ![Blue swatch](question-images/blue.png)",
+            },
+            {
+              label: "Green",
+              description: "Green theme\n\n![Green swatch](question-images/green.png)",
+            },
+            {
+              label: "Remote",
+              description: "![Remote swatch](https://example.com/remote.png)",
+              preview: "+--------+\n| remote |\n+--------+",
+            },
+            {
+              label: "Preview",
+              preview: "![Blue preview](question-images/blue.png)",
+            },
+            { label: "No alt", description: "![](question-images/no-alt.png)" },
+            { label: "Outside", description: `![Outside swatch](${outsidePath})` },
+            { label: "Missing", description: "![Missing swatch](question-images/missing.png)" },
+          ],
+          multiSelect: false,
+        },
+      ],
+    };
   }
 
   if (/with\s+links/i.test(text)) {
@@ -454,9 +496,11 @@ function parseLargeAgentStreamPayloadPrompt(
   if (kindValue !== "diff" && kindValue !== "file" && kindValue !== "image") {
     return null;
   }
+  const cost = Number(/costing\s+\$(\d+(?:\.\d+)?)/i.exec(text)?.[1]);
   return {
     bytes: Math.min(bytes, 1_000_000),
     kind: kindValue,
+    ...(Number.isFinite(cost) ? { totalCostUsd: cost } : {}),
   };
 }
 
@@ -1427,7 +1471,7 @@ export class MockLoadTestAgentSession implements AgentSession {
       provider: this.provider,
       name: "MockQuestions",
       kind: "question",
-      title: "Questions",
+      title: questionPrompt.title ?? "Questions",
       input: {
         questions: questionPrompt.questions,
       },
@@ -1566,6 +1610,9 @@ export class MockLoadTestAgentSession implements AgentSession {
       outputTokens: largePayload.bytes,
       contextWindowUsedTokens: largePayload.bytes,
       contextWindowMaxTokens: 128_000,
+      ...(largePayload.totalCostUsd === undefined
+        ? {}
+        : { totalCostUsd: largePayload.totalCostUsd }),
     };
     this.emit({
       type: "turn_completed",

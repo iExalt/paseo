@@ -20,6 +20,8 @@ import { AgentProfileSchema, AgentSkillSelectionSchema } from "@getpaseo/protoco
 import { PluginIdSchema, PluginSourceSchema } from "@getpaseo/protocol/plugin-config";
 import { TerminalProfileSchema } from "@getpaseo/protocol/terminal-profile";
 import { PaseoServicePortAllocationSchema } from "@getpaseo/protocol/paseo-config-schema";
+import { ReplyRuleSchema } from "@getpaseo/protocol/reply-rule";
+import { ReplyRuleMatcher } from "./agent/reply-rule-matcher.js";
 
 export const LogLevelSchema = z.enum(["trace", "debug", "info", "warn", "error", "fatal"]);
 export const LogFormatSchema = z.enum(["pretty", "json"]);
@@ -260,6 +262,7 @@ export const PersistedConfigSchema = z
           .passthrough()
           .optional(),
         usage: z.object({ enabled: z.boolean().optional() }).optional(),
+        agentTools: z.object({ enabled: z.boolean().optional() }).passthrough().optional(),
         browserTools: z
           .object({
             enabled: z.boolean().optional(),
@@ -292,6 +295,12 @@ export const PersistedConfigSchema = z
               .optional()
               .describe(
                 "Admit only relay clients that negotiate protected endpoint security (replay protection). Defaults to false; older clients still connect while it is off.",
+              ),
+            keepAwake: z
+              .boolean()
+              .optional()
+              .describe(
+                "On macOS, keep the Mac awake on AC power while the relay is enabled, so remote clients can reach it with the lid closed. Defaults to false.",
               ),
             endpoint: z.string().optional(),
             publicEndpoint: z.string().optional(),
@@ -344,6 +353,7 @@ export const PersistedConfigSchema = z
     pluginRegistries: PluginRegistriesSchema.optional(),
     pluginsEnabled: z.boolean().optional(),
     plugins: z.record(PluginIdSchema, PluginSourceSchema).optional(),
+    replyRules: z.array(ReplyRuleSchema).optional(),
     worktrees: WorktreesConfigSchema.optional(),
     agents: z
       .object({
@@ -707,6 +717,12 @@ function serializePersistedConfig(config: PersistedConfig): string {
     throw new Error(`[Config] Invalid config to save:\n${issues}`);
   }
 
+  try {
+    ReplyRuleMatcher.compile(result.data.replyRules ?? []);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`[Config] Invalid reply rules: ${message}`, { cause: error });
+  }
   return JSON.stringify(result.data, null, 2) + "\n";
 }
 

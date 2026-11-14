@@ -33,12 +33,17 @@ import {
 } from "../workspace-registry.js";
 import { archiveByScope, type ActiveWorkspaceRef } from "../workspace-archive-service.js";
 import {
+  appendScheduleRun,
   ScheduleService,
   ScheduleTargetGoneError,
   type ScheduleServiceOptions,
 } from "./service.js";
 import { ScheduleStore } from "./store.js";
-import type { ScheduleExecutionResult, StoredSchedule } from "@getpaseo/protocol/schedule/types";
+import type {
+  ScheduleExecutionResult,
+  ScheduleRun,
+  StoredSchedule,
+} from "@getpaseo/protocol/schedule/types";
 
 interface ScheduleServiceInternals {
   executeSchedule(schedule: StoredSchedule, runId: string): Promise<ScheduleExecutionResult>;
@@ -647,6 +652,45 @@ describe("ScheduleService", () => {
     expect(resumed.nextRunAt).toBe("2026-01-01T00:04:00.000Z");
   });
 
+  test("completes a cron schedule with no next run instead of wedging every later schedule", async () => {
+    let ran = 0;
+    const service = createScheduleService({
+      paseoHome: tempDir,
+      logger: createTestLogger(),
+      agentManager: new AgentManager({ logger: createTestLogger() }),
+      agentStorage,
+      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+      now: () => now,
+      runner: async () => {
+        ran += 1;
+        return { agentId: null, output: "done" };
+      },
+    });
+    const target = {
+      type: "new-agent" as const,
+      config: { provider: "claude", cwd: tempDir },
+    };
+    now = new Date("2044-02-28T00:00:00.000Z");
+    // Feb 29 on a Monday: 2044, then 2072, outside the search window.
+    const rare = await service.create({
+      prompt: "Leap Monday",
+      cadence: { type: "cron", expression: "0 0 29 2 1" },
+      target,
+    });
+    const later = await service.create({
+      prompt: "Every minute",
+      cadence: { type: "every", everyMs: 60_000 },
+      target,
+    });
+
+    now = new Date("2044-02-29T00:00:00.000Z");
+    await service.tick();
+
+    expect(await service.inspect(rare.id)).toMatchObject({ status: "completed", nextRunAt: null });
+    expect((await service.inspect(later.id)).runs).toHaveLength(1);
+    expect(ran).toBe(2);
+  });
+
   test("completes schedules when max runs is reached", async () => {
     const service = createScheduleService({
       paseoHome: tempDir,
@@ -722,7 +766,7 @@ describe("ScheduleService", () => {
     );
   });
 
-  test("delivers agent-target schedules through the steer-or-interrupt path", async () => {
+  test("delivers agent-target schedules through the steer path", async () => {
     const manager = new AgentManager({
       logger: createTestLogger(),
       clients: createTestAgentClients(),
@@ -731,7 +775,7 @@ describe("ScheduleService", () => {
     const agent = await manager.createAgent({ provider: "claude", cwd: tempDir }, undefined, {
       workspaceId: undefined,
     });
-    const steerOrReplace = vi.spyOn(manager, "steerOrReplaceActiveTurn");
+    const steer = vi.spyOn(manager, "steerOrDeferBehindActiveTurn");
     const service = createScheduleService({
       paseoHome: tempDir,
       logger: createTestLogger(),
@@ -748,8 +792,8 @@ describe("ScheduleService", () => {
 
     await service.runOnce(schedule.id);
 
-    expect(steerOrReplace).toHaveBeenCalledTimes(1);
-    expect(steerOrReplace.mock.calls[0]).toEqual([
+    expect(steer).toHaveBeenCalledTimes(1);
+    expect(steer.mock.calls[0]).toEqual([
       agent.id,
       expect.stringContaining(`Schedule fired (id=${schedule.id}, run=`),
       undefined,
@@ -3614,5 +3658,40 @@ describe("ScheduleService", () => {
     now = new Date("2026-01-01T00:01:00.000Z");
     expect(await service.completeForAgent(agentId)).toBe(1);
     expect(await service.completeForAgent(agentId)).toBe(0);
+  });
+});
+
+describe("appendScheduleRun", () => {
+  function run(id: string, status: ScheduleRun["status"] = "succeeded"): ScheduleRun {
+    return {
+      id,
+      scheduledFor: "2026-01-01T00:00:00.000Z",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: null,
+      status,
+      agentId: null,
+      output: null,
+      error: null,
+    };
+  }
+  function scheduleWith(runs: ScheduleRun[], maxRuns: number | null): StoredSchedule {
+    return { runs, maxRuns } as StoredSchedule;
+  }
+
+  test("keeps the newest 100 runs of an unlimited schedule, never a running one", () => {
+    const runs = [
+      run("running-0", "running"),
+      ...Array.from({ length: 99 }, (_, i) => run(`r${i}`)),
+    ];
+    const appended = appendScheduleRun(scheduleWith(runs, null), run("new"));
+    expect(appended).toHaveLength(100);
+    expect(appended[0]?.id).toBe("running-0");
+    expect(appended.map((entry) => entry.id)).not.toContain("r0");
+    expect(appended.at(-1)?.id).toBe("new");
+  });
+
+  test("keeps every run of a schedule with a run limit", () => {
+    const runs = Array.from({ length: 120 }, (_, i) => run(`r${i}`));
+    expect(appendScheduleRun(scheduleWith(runs, 150), run("new"))).toHaveLength(121);
   });
 });

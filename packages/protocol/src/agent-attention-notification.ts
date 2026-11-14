@@ -1,3 +1,5 @@
+import { boundNotificationPreview, type NotificationPreview } from "./notification-preview.js";
+
 const NOTIFICATION_PREVIEW_LIMIT = 220;
 
 export type AgentAttentionReason = "finished" | "error" | "permission";
@@ -8,6 +10,7 @@ export interface AgentAttentionNotificationData {
   workspaceId?: string;
   agentId: string;
   reason: AgentAttentionReason;
+  preview?: unknown;
 }
 
 export interface AgentAttentionNotificationPayload {
@@ -21,8 +24,10 @@ interface BuildAgentAttentionNotificationPayloadInput {
   serverId: string;
   workspaceId: string;
   agentId: string;
+  agentTitle?: string | null;
   assistantMessage?: string | null;
   permissionRequest?: NotificationPermissionRequest | null;
+  preview?: NotificationPreview;
 }
 
 export interface NotificationPermissionRequest {
@@ -50,6 +55,15 @@ const truncateNotificationText = (text: string, limit: number): string => {
   return trimmed.length > 0 ? `${trimmed}...` : text.slice(0, limit);
 };
 
+const MARKDOWN_DESTINATION = String.raw`\((?:[^()\\]|\\.)*\)`;
+const LINKED_IMAGE = new RegExp(
+  String.raw`\[!\[([^\]]*)\]${MARKDOWN_DESTINATION}\]${MARKDOWN_DESTINATION}`,
+  "g",
+);
+const IMAGE = new RegExp(String.raw`!\[([^\]]*)\]${MARKDOWN_DESTINATION}`, "g");
+// Private-use delimiters keep image placeholders away from the link and emphasis rules below.
+const PLACEHOLDER_TOKEN = /\uE000(\d+)\uE001/g;
+
 const stripMarkdownToText = (markdown: string): string => {
   let text = markdown.replace(/\r\n/g, "\n");
 
@@ -57,8 +71,15 @@ const stripMarkdownToText = (markdown: string): string => {
   text = text.replace(/^\s*```[^\n]*$/gm, "");
   text = text.replace(/^\s*~~~[^\n]*$/gm, "");
 
-  // Markdown links/images.
-  text = text.replace(/!\[([^\]]*)\]\((?:[^()\\]|\\.)*\)/g, "$1");
+  // Images, linked or not, become "[image: alt]" or "[image]"; links become their text.
+  const placeholders: string[] = [];
+  const toPlaceholder = (_match: string, alt: string) => {
+    const label = alt.trim();
+    placeholders.push(label ? `[image: ${label}]` : "[image]");
+    return `\uE000${placeholders.length - 1}\uE001`;
+  };
+  text = text.replace(LINKED_IMAGE, toPlaceholder);
+  text = text.replace(IMAGE, toPlaceholder);
   text = text.replace(/\[([^\]]+)\]\((?:[^()\\]|\\.)*\)/g, "$1");
 
   // Structural prefixes.
@@ -78,7 +99,7 @@ const stripMarkdownToText = (markdown: string): string => {
   // Angle-bracketed URL autolinks.
   text = text.replace(/<([^>\n]+)>/g, "$1");
 
-  return text;
+  return text.replace(PLACEHOLDER_TOKEN, (_match, index: string) => placeholders[Number(index)]);
 };
 
 const buildNotificationPreview = (text: string | null | undefined): string | null => {
@@ -169,10 +190,37 @@ export function findLatestPermissionRequest(
   return latest;
 }
 
-function resolveAgentAttentionTitle(reason: AgentAttentionReason): string {
-  if (reason === "permission") return "Agent needs permission";
-  if (reason === "error") return "Agent needs attention";
-  return "Agent finished";
+// Mirrors the app's resolveAgentLabel: placeholder titles don't identify a thread.
+const resolveAgentTitle = (title: string | null | undefined): string | null => {
+  const normalized = title ? normalizeNotificationText(title) : "";
+  if (!normalized || normalized.toLowerCase() === "new agent") {
+    return null;
+  }
+  return normalized;
+};
+
+// Push titles carry their reason as a prefix, because an Android push posted while the app
+// isn't running reaches the app with only its title and text.
+const ATTENTION_TITLE_PREFIX = { permission: "❓️ ", error: "❗️ " } as const;
+
+export function resolveAgentAttentionTitle(
+  reason: AgentAttentionReason,
+  agentTitle: string | null | undefined,
+): string {
+  const title = resolveAgentTitle(agentTitle);
+  if (reason === "permission") {
+    return `${ATTENTION_TITLE_PREFIX.permission}${title ?? "Agent needs permission"}`;
+  }
+  if (reason === "error")
+    return `${ATTENTION_TITLE_PREFIX.error}${title ?? "Agent needs attention"}`;
+  return title ?? "Agent finished";
+}
+
+/** The reason a resolveAgentAttentionTitle title was written for. */
+export function parseAgentAttentionTitle(title: string): AgentAttentionReason {
+  if (title.startsWith(ATTENTION_TITLE_PREFIX.permission)) return "permission";
+  if (title.startsWith(ATTENTION_TITLE_PREFIX.error)) return "error";
+  return "finished";
 }
 
 function resolveAgentAttentionPreview(
@@ -196,18 +244,33 @@ function resolveAgentAttentionFallbackBody(reason: AgentAttentionReason): string
 export function buildAgentAttentionNotificationPayload(
   input: BuildAgentAttentionNotificationPayloadInput,
 ): AgentAttentionNotificationPayload {
-  const title = resolveAgentAttentionTitle(input.reason);
+  const title = resolveAgentAttentionTitle(input.reason, input.agentTitle);
   const preview = resolveAgentAttentionPreview(input);
   const body = preview ?? resolveAgentAttentionFallbackBody(input.reason);
+  const snapshot: NotificationPreview | undefined =
+    input.preview ??
+    (input.reason === "permission" && input.permissionRequest
+      ? {
+          v: 1,
+          kind: "permission",
+          requestId: input.permissionRequest.id,
+          text: body,
+          truncated: true,
+        }
+      : undefined);
 
-  return {
-    title,
-    body,
-    data: {
-      serverId: input.serverId,
-      workspaceId: input.workspaceId,
-      agentId: input.agentId,
-      reason: input.reason,
+  return boundNotificationPreview(
+    {
+      title,
+      body,
+      data: {
+        serverId: input.serverId,
+        workspaceId: input.workspaceId,
+        agentId: input.agentId,
+        reason: input.reason,
+        ...(snapshot ? { preview: snapshot } : {}),
+      },
     },
-  };
+    3_000,
+  );
 }

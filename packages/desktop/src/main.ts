@@ -7,7 +7,7 @@ import log from "electron-log/main";
 log.transports.console.level = "info";
 log.initialize({ spyRendererConsole: true });
 
-import { inheritLoginShellEnv } from "./login-shell-env.js";
+import { inheritLoginShellEnv } from "@getpaseo/server/login-shell-env";
 
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -15,7 +15,6 @@ import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import {
   app,
-  autoUpdater as electronAutoUpdater,
   BrowserWindow,
   ClipboardItem,
   clipboard,
@@ -103,7 +102,11 @@ import {
 import { runDesktopStartup } from "./desktop-startup.js";
 import { registerBrowserAutomationIpc } from "./features/browser-automation/ipc.js";
 import { BrowserKeyboard } from "./features/browser-keyboard/index.js";
-import { installAppUpdateOnQuit } from "./features/auto-updater.js";
+import { installAppUpdateOnQuit, registerBeforeQuitForUpdate } from "./features/auto-updater.js";
+import {
+  installationModeArgument,
+  resolveDesktopInstallation,
+} from "./features/nix-managed-install.js";
 import {
   buildAgentDeepLinkRoute,
   parseAgentDeepLink,
@@ -114,6 +117,7 @@ import { AgentNavigationInbox, parseAgentDeepLinkFromArgv } from "./agent-naviga
 const DEV_SERVER_URL = process.env.EXPO_DEV_URL ?? "http://localhost:8081";
 const APP_SCHEME = "paseo";
 const PASEO_DEBUG = process.env.PASEO_DEBUG === "1";
+const DESKTOP_INSTALLATION = resolveDesktopInstallation(process.resourcesPath);
 const DISABLE_SINGLE_INSTANCE_LOCK = process.env.PASEO_DISABLE_SINGLE_INSTANCE_LOCK === "1";
 const APP_NAME = process.env.PASEO_TEST_APP_NAME?.trim() || "Paseo";
 const DESKTOP_WINDOW_CHROME_MODE = resolveDesktopWindowChromeMode({
@@ -135,12 +139,6 @@ const bootstrapComplete = new Promise<void>((resolve) => {
 let bootstrapIsComplete = false;
 
 app.setName(APP_NAME);
-log.info("[desktop] app startup", {
-  version: app.getVersion(),
-  platform: process.platform,
-  arch: process.arch,
-  isPackaged: app.isPackaged,
-});
 
 interface AttachedBrowserInput {
   browserId: string;
@@ -301,6 +299,13 @@ function installBrowserWindowOpenHandler(input: {
 // Electron windows can run side-by-side (separate userData = separate lock).
 let devWorktreeName: string | null = null;
 const forcedUserDataDir = process.env.PASEO_ELECTRON_USER_DATA_DIR?.trim();
+// electron-log picks its directory from the app name, so an overridden userData would still log
+// into the installed app's log directory. Keep the log with the profile; nothing is logged before
+// this block sets userData, so the first line already lands there.
+if (forcedUserDataDir || !app.isPackaged) {
+  log.transports.file.resolvePathFn = (variables) =>
+    path.join(app.getPath("userData"), "logs", variables.fileName ?? "main.log");
+}
 if (forcedUserDataDir) {
   app.setPath("userData", forcedUserDataDir);
   log.info("[dev-user-data] forced userData dir:", forcedUserDataDir);
@@ -312,7 +317,6 @@ if (forcedUserDataDir) {
       windowsHide: true,
     }).trim();
     devWorktreeName = path.basename(topLevel);
-    // Main checkout (e.g. "paseo") gets default userData — only worktrees diverge.
     const commonDir = path.resolve(
       topLevel,
       execFileSync("git", ["rev-parse", "--git-common-dir"], {
@@ -332,7 +336,19 @@ if (forcedUserDataDir) {
   } catch {
     devWorktreeName = null;
   }
+  // app.setName("Paseo") above makes the default userData the installed app's directory,
+  // so the main checkout and launches outside git get their own instead of sharing it.
+  if (devWorktreeName === null) {
+    app.setPath("userData", path.join(app.getPath("appData"), "Paseo-dev"));
+    log.info("[dev-user-data] unpackaged userData outside a worktree: Paseo-dev");
+  }
 }
+log.info("[desktop] app startup", {
+  version: app.getVersion(),
+  platform: process.platform,
+  arch: process.arch,
+  isPackaged: app.isPackaged,
+});
 
 // Allow users to pass Chromium flags via PASEO_ELECTRON_FLAGS for debugging
 // rendering issues (e.g. "--disable-gpu --ozone-platform=x11").
@@ -703,7 +719,10 @@ async function createWindow(
     }),
     webPreferences: {
       preload: getPreloadPath(),
-      additionalArguments: [windowChromeModeArgument(DESKTOP_WINDOW_CHROME_MODE)],
+      additionalArguments: [
+        windowChromeModeArgument(DESKTOP_WINDOW_CHROME_MODE),
+        installationModeArgument(DESKTOP_INSTALLATION.mode),
+      ],
       contextIsolation: true,
       nodeIntegration: false,
       webviewTag: true,
@@ -965,7 +984,9 @@ async function bootstrap(): Promise<void> {
     },
   });
   ensureNotificationCenterRegistration();
-  registerDaemonManager();
+  registerDaemonManager(DESKTOP_INSTALLATION, {
+    quitForRelaunch: () => quitLifecycle.quitForRelaunch(),
+  });
   registerWindowManager({ mode: DESKTOP_WINDOW_CHROME_MODE });
   registerDialogHandlers();
   registerNotificationHandlers();
@@ -1016,7 +1037,7 @@ async function bootstrap(): Promise<void> {
 void runDesktopStartup({
   hasPendingGuiLaunchRequest: Boolean(pendingOpenProjectPath || pendingAgentNavigation),
   runCliPassthroughIfRequested,
-  inheritLoginShellEnv,
+  inheritLoginShellEnv: () => inheritLoginShellEnv({ logger: log }),
   bootstrapGui: bootstrap,
 }).catch((error) => {
   const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
@@ -1032,6 +1053,7 @@ function showDaemonShutdownDialog(): void {
 
 const quitLifecycle = createQuitLifecycle({
   app,
+  quit: () => app.quit(),
   closeTransportSessions: closeAllTransportSessions,
   stopDesktopManagedDaemonIfNeeded: () =>
     stopDesktopManagedDaemonOnQuitIfNeeded({
@@ -1041,6 +1063,7 @@ const quitLifecycle = createQuitLifecycle({
       showShutdownFeedback: showDaemonShutdownDialog,
     }),
   installAppUpdateOnQuit: async (signal) => {
+    if (DESKTOP_INSTALLATION.mode !== "electron") return false;
     const settings = await getDesktopSettingsStore().get();
     return installAppUpdateOnQuit({
       currentVersion: app.getVersion(),
@@ -1057,11 +1080,14 @@ const quitLifecycle = createQuitLifecycle({
   },
 });
 
-// electron-updater forwards this event through Electron's built-in autoUpdater.
-electronAutoUpdater.on("before-quit-for-update", () => {
-  log.info("[auto-updater] before-quit-for-update", { currentVersion: app.getVersion() });
-  quitLifecycle.handleBeforeQuitForUpdate();
-});
+if (DESKTOP_INSTALLATION.mode === "electron") {
+  void registerBeforeQuitForUpdate(() => {
+    log.info("[auto-updater] before-quit-for-update", { currentVersion: app.getVersion() });
+    quitLifecycle.handleBeforeQuitForUpdate();
+  }).catch((error) => {
+    log.error("[auto-updater] could not register update quit handling", error);
+  });
+}
 app.on("before-quit", quitLifecycle.handleBeforeQuit);
 registerExternalQuitSignals({ signals: process, quit: () => app.quit() });
 

@@ -51,9 +51,9 @@ Agents can prompt each other by **agent ID**, the identifier Paseo uses to addre
 
 > Use Paseo to send this prompt to agent [paste agent ID here]: “Review the parser changes in your workspace and report any missing test cases.”
 
-The receiving agent gets the prompt in its existing conversation. Agent-originated sends default to steering a running turn, with interruption fallback when steering is unavailable. Set MCP `activeTurnBehavior` or CLI `--behavior` to `steer` or `interrupt` to override that default. To have it send a separate message back, give it the sender's agent ID too.
+The receiving agent gets the prompt in its existing conversation. Agent-originated sends default to steering a running turn, with interruption fallback when steering is unavailable. Pass `--behavior steer` or `--behavior interrupt` to `paseo send` (or `activeTurnBehavior` on the native tool) to override that default. To have it send a separate message back, give it the sender's agent ID too.
 
-Underneath, the agent calls `send_agent_prompt` with the recipient's `agentId` and a `prompt`. Agents can also discover IDs with `list_agents`; the CLI uses [`paseo send <id>`](/docs/cli#sending-messages). For another host, use the [remote CLI workflow](#work-on-another-machine).
+Underneath, the agent runs [`paseo send <id>`](/docs/cli#sending-messages) with the recipient's agent ID and a prompt. Agents can discover IDs with `paseo agent query`. Providers with native Paseo tools can call `send_agent_prompt` and `list_agents` instead. For another host, use the [remote CLI workflow](#work-on-another-machine).
 
 ## Check, redirect, or continue work
 
@@ -100,4 +100,4 @@ Open the **Subagents track** near the composer to inspect delegated work.
 
 A Paseo subagent in another workspace still belongs to its parent's track. It also opens as a tab in its own workspace. To make it a top-level agent, detach it in the app or with [`paseo agent detach`](/docs/cli#agent-modes).
 
-See the [MCP reference](/docs/mcp#mental-model) for workspace and parentage rules.
+See the [caller and workspace rules](/docs/mcp#mental-model) for workspace and parentage rules.

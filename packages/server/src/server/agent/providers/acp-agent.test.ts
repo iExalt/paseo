@@ -4,6 +4,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { TransformStream } from "node:stream/web";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
@@ -15,13 +16,16 @@ import {
   type Agent,
   type CreateTerminalRequest,
   PermissionOption,
+  type PromptRequest,
   PromptResponse,
   RequestPermissionRequest,
   SessionConfigOption,
   SessionUpdate,
+  type Client,
 } from "@agentclientprotocol/sdk";
 
 import {
+  appendACPStderrTail,
   ACPAgentClient,
   ACPAgentSession,
   type SpawnedACPProcess,
@@ -64,6 +68,18 @@ import { buildStringCommandShellInvocation } from "../../../utils/string-command
 import { asInternals } from "../../test-utils/class-mocks.js";
 import * as spawnUtils from "../../../utils/spawn.js";
 
+describe("appendACPStderrTail", () => {
+  test("keeps only the newest 8 KiB of a chatty agent's stderr", () => {
+    const chunks: string[] = [];
+    for (let i = 0; i < 100; i += 1)
+      appendACPStderrTail(chunks, `${String(i).padStart(3, "0")}`.repeat(100));
+
+    const kept = chunks.join("");
+    expect(kept).toHaveLength(8192);
+    expect(kept.endsWith("099099")).toBe(true);
+  });
+});
+
 describe("buildACPClientCapabilities", () => {
   test("enables terminal execution on the host while keeping filesystem operations with the agent by default", () => {
     expect(buildACPClientCapabilities()).toEqual({
@@ -97,6 +113,91 @@ describe("buildACPClientCapabilities", () => {
   });
 });
 
+test("ACP 1.7 preserves legacy model extensions and forwards the old model method over the SDK", async () => {
+  const clientToAgent = new TransformStream<Uint8Array, Uint8Array>();
+  const agentToClient = new TransformStream<Uint8Array, Uint8Array>();
+  let receivedPrompt: PromptRequest | undefined;
+  let receivedExtension: { method: string; params: unknown } | undefined;
+  const legacySessionResponse = {
+    sessionId: "legacy-session",
+    models: {
+      currentModelId: "model-a",
+      availableModels: [{ modelId: "model-a", name: "Model A" }],
+    },
+  };
+  const client: Client = {
+    async sessionUpdate() {},
+    async requestPermission() {
+      return { outcome: { outcome: "cancelled" } };
+    },
+  };
+  const agent: Agent = {
+    async initialize() {
+      return { protocolVersion: PROTOCOL_VERSION, agentCapabilities: {}, authMethods: [] };
+    },
+    async newSession() {
+      return legacySessionResponse;
+    },
+    async authenticate() {},
+    async prompt(params) {
+      receivedPrompt = params;
+      return { stopReason: "end_turn" };
+    },
+    async cancel() {},
+    async extMethod(method, params) {
+      receivedExtension = { method, params };
+      return {};
+    },
+  };
+
+  const clientConnection = new ClientSideConnection(
+    () => client,
+    ndJsonStream(clientToAgent.writable, agentToClient.readable),
+  );
+  const agentConnection = new AgentSideConnection(
+    () => agent,
+    ndJsonStream(agentToClient.writable, clientToAgent.readable),
+  );
+
+  await expect(
+    agentConnection.requestPermission({
+      sessionId: "legacy-session",
+      toolCall: { toolCallId: "tool-call" },
+      options: [],
+    }),
+  ).resolves.toEqual({ outcome: { outcome: "cancelled" } });
+
+  await clientConnection.initialize({
+    protocolVersion: PROTOCOL_VERSION,
+    clientInfo: { name: "Paseo test", version: "1" },
+    clientCapabilities: {},
+  });
+  const session = (await clientConnection.newSession({
+    cwd: "/tmp",
+    mcpServers: [],
+  })) as SessionStateResponse & { sessionId: string };
+  expect(session.models).toEqual({
+    currentModelId: "model-a",
+    availableModels: [{ modelId: "model-a", name: "Model A" }],
+  });
+
+  await clientConnection.prompt({
+    sessionId: session.sessionId,
+    prompt: [{ type: "text", text: "hello" }],
+    messageId: "11111111-1111-4111-8111-111111111111",
+  } as PromptRequest & { messageId: string });
+  expect(receivedPrompt).not.toHaveProperty("messageId");
+
+  await clientConnection.request("session/set_model", {
+    sessionId: "legacy-session",
+    modelId: "model-a",
+  });
+  expect(receivedExtension).toEqual({
+    method: "session/set_model",
+    params: { sessionId: "legacy-session", modelId: "model-a" },
+  });
+});
+
 interface ACPSessionInternals {
   sessionId: string | null;
   connection: { prompt: (...args: unknown[]) => Promise<PromptResponse> };
@@ -122,12 +223,12 @@ interface ACPConfiguredOverrideInternals {
   sessionId: string | null;
   connection: {
     setSessionMode: (input: { sessionId: string; modeId: string }) => Promise<void>;
+    request: (method: string, params: { sessionId: string; modelId: string }) => Promise<unknown>;
     setSessionConfigOption: (input: {
       sessionId: string;
       configId: string;
       value: string;
     }) => Promise<unknown>;
-    unstable_setSessionModel?: (input: { sessionId: string; modelId: string }) => Promise<void>;
   };
   configOptions: SessionConfigOption[];
   availableModes: Array<{ id: string; label: string; description?: string }>;
@@ -414,11 +515,11 @@ function prepareConfiguredOverrideSession(
 ): {
   internals: ACPConfiguredOverrideInternals;
   setSessionMode: ReturnType<typeof vi.fn>;
-  unstableSetSessionModel: ReturnType<typeof vi.fn>;
+  setModelRequest: ReturnType<typeof vi.fn>;
   setSessionConfigOption: ReturnType<typeof vi.fn>;
 } {
   const setSessionMode = vi.fn(async () => undefined);
-  const unstableSetSessionModel = vi.fn(async () => undefined);
+  const setModelRequest = vi.fn(async () => undefined);
   const setSessionConfigOption = vi.fn(async () => ({
     configOptions: options.configOptions ?? [],
   }));
@@ -427,7 +528,7 @@ function prepareConfiguredOverrideSession(
   internals.connection = {
     setSessionMode,
     setSessionConfigOption,
-    unstable_setSessionModel: unstableSetSessionModel,
+    request: setModelRequest,
     ...options.connection,
   };
   internals.availableModes = options.availableModes ?? [];
@@ -436,7 +537,7 @@ function prepareConfiguredOverrideSession(
   internals.currentMode = options.currentMode ?? null;
   internals.currentModel = options.currentModel ?? null;
 
-  return { internals, setSessionMode, unstableSetSessionModel, setSessionConfigOption };
+  return { internals, setSessionMode, setModelRequest, setSessionConfigOption };
 }
 
 test("ACP setModel only uses config-option fallback when the matching select choice contains the model", async () => {
@@ -1061,7 +1162,7 @@ describe("ACPAgentSession Zed parity", () => {
 
     await valid.internals.applyConfiguredOverrides();
     expect(valid.setSessionMode).toHaveBeenCalledWith({ sessionId: "session-1", modeId: "plan" });
-    expect(valid.unstableSetSessionModel).toHaveBeenCalledWith({
+    expect(valid.setModelRequest).toHaveBeenCalledWith("session/set_model", {
       sessionId: "session-1",
       modelId: "sonnet",
     });
@@ -1102,7 +1203,7 @@ describe("ACPAgentSession Zed parity", () => {
 
     await expect(invalid.internals.applyConfiguredOverrides()).resolves.toBeUndefined();
     expect(invalid.setSessionMode).not.toHaveBeenCalled();
-    expect(invalid.unstableSetSessionModel).not.toHaveBeenCalled();
+    expect(invalid.setModelRequest).not.toHaveBeenCalled();
     expect(childLogger.warn).toHaveBeenCalledWith(
       { value: expect.stringContaining("acceptEdits") },
       expect.stringContaining("not valid"),
@@ -1122,7 +1223,7 @@ describe("ACPAgentSession Zed parity", () => {
         { id: "plan", label: "Plan" },
       ],
       configOptions: [selectConfigOption("mode", ["default", "acceptEdits"], "default")],
-      connection: { unstable_setSessionModel: undefined },
+      connection: { request: vi.fn() },
     });
 
     await expect(internals.applyConfiguredOverrides()).resolves.toBeUndefined();
@@ -1137,16 +1238,18 @@ describe("ACPAgentSession Zed parity", () => {
       { provider: "deepseek-tui", model: "deepseek/v4" },
       logger,
     );
-    const { internals, setSessionConfigOption, unstableSetSessionModel } =
-      prepareConfiguredOverrideSession(session, {
+    const { internals, setSessionConfigOption, setModelRequest } = prepareConfiguredOverrideSession(
+      session,
+      {
         currentModel: null,
         availableModels: null,
         configOptions: [],
-        connection: { unstable_setSessionModel: undefined },
-      });
+        connection: { request: vi.fn() },
+      },
+    );
 
     await expect(internals.applyConfiguredOverrides()).resolves.toBeUndefined();
-    expect(unstableSetSessionModel).not.toHaveBeenCalled();
+    expect(setModelRequest).not.toHaveBeenCalled();
     expect(setSessionConfigOption).not.toHaveBeenCalled();
     expect(childLogger.warn).toHaveBeenCalledWith(
       { value: "deepseek/v4" },
@@ -2590,7 +2693,7 @@ describe("ACPAgentSession slash commands", () => {
 
     const listCommandsPromise = session.listCommands();
 
-    asInternals<ACPSessionInternals>(session).translateSessionUpdate({
+    const changes = asInternals<ACPSessionInternals>(session).translateSessionUpdate({
       sessionUpdate: "available_commands_update",
       availableCommands: [
         {
@@ -2604,6 +2707,7 @@ describe("ACPAgentSession slash commands", () => {
       ],
     });
 
+    expect(changes).toContainEqual({ type: "commands_changed", provider: "claude-acp" });
     expect(await listCommandsPromise).toEqual([
       {
         name: "research_codebase",
@@ -3572,7 +3676,7 @@ describe("ACPAgentSession close() tree-kill", () => {
       internals.sessionId = "session-1";
       internals.activeForegroundTurnId = "turn-1";
       internals.agentCapabilities = { sessionCapabilities: { close: {} } };
-      internals.connection = { cancel, unstable_closeSession: unstableCloseSession };
+      internals.connection = { cancel, closeSession: unstableCloseSession };
 
       let settled = false;
       const closing = (async () => {
@@ -3815,7 +3919,7 @@ describe("ACPAgentClient probe cleanup", () => {
               models: null,
               configOptions: [],
             }),
-            unstable_closeSession: closeSession,
+            closeSession,
           },
           initialize: { agentCapabilities: { sessionCapabilities: { close: {} } } },
         } as unknown as SpawnedACPProcess;
@@ -3863,7 +3967,7 @@ describe("ACPAgentClient probe cleanup", () => {
       protected override async spawnProcess(): Promise<SpawnedACPProcess> {
         return {
           child,
-          connection: { newSession, unstable_closeSession: closeSession },
+          connection: { newSession, closeSession },
           initialize: { agentCapabilities: { sessionCapabilities: { close: {} } } },
         } as unknown as SpawnedACPProcess;
       }
@@ -3915,7 +4019,7 @@ describe("ACPAgentClient probe cleanup", () => {
               models: null,
               configOptions: [copilotAgentConfigOption("Probe Agent")],
             }),
-            unstable_closeSession: closeSession,
+            closeSession,
           },
           initialize: { agentCapabilities: { sessionCapabilities: { close: {} } } },
         } as unknown as SpawnedACPProcess;
@@ -3952,7 +4056,7 @@ describe("ACPAgentClient probe cleanup", () => {
               models: null,
               configOptions: [],
             }),
-            unstable_closeSession: vi.fn().mockRejectedValue(new Error("close failed")),
+            closeSession: vi.fn().mockRejectedValue(new Error("close failed")),
           },
           initialize: { agentCapabilities: { sessionCapabilities: { close: {} } } },
         } as unknown as SpawnedACPProcess;
@@ -3996,7 +4100,7 @@ describe("ACPAgentClient probe cleanup", () => {
                 nextCursor: null,
               }),
               loadSession,
-              unstable_closeSession: vi.fn().mockResolvedValue({}),
+              closeSession: vi.fn().mockResolvedValue({}),
             },
             initialize: {
               agentCapabilities: {
@@ -4047,7 +4151,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
     capabilities?: AgentCapabilityFlags;
     handle: AgentPersistenceHandle;
     loadSession?: ReturnType<typeof vi.fn>;
-    unstableResumeSession?: ReturnType<typeof vi.fn>;
+    resumeSession?: ReturnType<typeof vi.fn>;
   }) {
     const loadSession =
       args.loadSession ??
@@ -4057,8 +4161,8 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
         models: null,
         configOptions: [],
       });
-    const unstableResumeSession =
-      args.unstableResumeSession ??
+    const resumeSession =
+      args.resumeSession ??
       vi.fn().mockResolvedValue({
         sessionId: "session-1",
         modes: null,
@@ -4073,7 +4177,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
           connection: {
             prompt: vi.fn(),
             loadSession,
-            unstable_resumeSession: unstableResumeSession,
+            resumeSession,
           } as unknown as ClientSideConnection,
           initialize: { agentCapabilities: args.capabilities ?? {} },
         } as SpawnedACPProcess;
@@ -4101,7 +4205,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
       },
     );
 
-    return { session, loadSession, unstableResumeSession };
+    return { session, loadSession, resumeSession };
   }
 
   test("loadSession is always called with sessionId, cwd, and mcpServers even when mcpServers is empty", async () => {
@@ -4294,15 +4398,15 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
     });
   });
 
-  test("unstable_resumeSession is always called with sessionId, cwd, and mcpServers", async () => {
-    const { session, unstableResumeSession } = makeTestSession({
+  test("resumeSession is always called with sessionId, cwd, and mcpServers", async () => {
+    const { session, resumeSession } = makeTestSession({
       capabilities: { sessionCapabilities: { resume: {} } },
       handle: { sessionId: "session-1", provider: "claude-acp" },
     });
 
     await session.initializeResumedSession();
 
-    expect(unstableResumeSession).toHaveBeenCalledWith({
+    expect(resumeSession).toHaveBeenCalledWith({
       sessionId: "session-1",
       cwd: "/tmp/paseo-acp-test",
       mcpServers: [],
@@ -4328,7 +4432,7 @@ new AgentSideConnection(
     },
     async authenticate() {},
     async cancel() {},
-    unstable_closeSession() {
+    closeSession() {
       return new Promise(() => {});
     },
   }),
@@ -4451,8 +4555,9 @@ new AgentSideConnection(
     async loadSession() {
       return { models: modelState() };
     },
-    async unstable_setSessionModel({ modelId }) {
-      currentModelId = modelId;
+    async extMethod(method, params) {
+      if (method !== "session/set_model") throw new Error("unexpected extension: " + method);
+      currentModelId = params.modelId;
       return {};
     },
     async authenticate() {},

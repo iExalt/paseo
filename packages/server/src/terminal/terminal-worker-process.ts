@@ -201,6 +201,7 @@ function runWorker(argv: string[]): void {
   // The conpty failure signal is process-scoped, not request-scoped. Serializing
   // creates keeps an async spawn failure attributable to exactly one request.
   let createTerminalQueue: Promise<void> = Promise.resolve();
+  let pendingCreateCount = 0;
 
   // node-pty completes its Windows conpty spawn asynchronously on a separate
   // conout worker thread. When that spawn fails (bad cwd, missing command, etc.)
@@ -217,11 +218,17 @@ function runWorker(argv: string[]): void {
     controller?.send(message);
   }
 
+  // Closed terminals whose programs are still being reaped. Their record entries stay until the
+  // reap ends, so a worker that dies meanwhile leaves them for the reaper.
+  const closingTerminalIds = new Set<string>();
+
   function persistRecord(): void {
     if (!record || exiting) return;
     record = {
       ...record,
-      terminals: record.terminals.filter((entry) => sessionsById.has(entry.id)),
+      terminals: record.terminals.filter(
+        (entry) => sessionsById.has(entry.id) || closingTerminalIds.has(entry.id),
+      ),
     };
     writeTerminalWorkerRecord(args.paseoHome, record);
   }
@@ -254,7 +261,13 @@ function runWorker(argv: string[]): void {
   }
 
   function exitIfIdle(): void {
-    if (!controller && everControlled && sessionsById.size === 0) {
+    if (
+      !controller &&
+      everControlled &&
+      sessionsById.size === 0 &&
+      pendingCreateCount === 0 &&
+      closingTerminalIds.size === 0
+    ) {
       exitWorker(0);
     }
   }
@@ -443,7 +456,13 @@ function runWorker(argv: string[]): void {
   }
 
   function enqueueCreateTerminalRequest(message: TerminalCreateRequest): Promise<void> {
-    const nextRequest = createTerminalQueue.then(() => handleCreateTerminalRequest(message));
+    pendingCreateCount += 1;
+    const nextRequest = createTerminalQueue
+      .then(() => handleCreateTerminalRequest(message))
+      .finally(() => {
+        pendingCreateCount -= 1;
+        exitIfIdle();
+      });
     createTerminalQueue = nextRequest.catch(() => {});
     return nextRequest;
   }
@@ -546,7 +565,21 @@ function runWorker(argv: string[]): void {
       }
 
       case "killTerminal": {
+        const closing = sessionsById.get(message.terminalId);
+        if (closing) {
+          closingTerminalIds.add(closing.id);
+        }
         manager.killTerminal(message.terminalId);
+        if (closing) {
+          void closing
+            .killAndWait()
+            .catch(() => undefined)
+            .finally(() => {
+              closingTerminalIds.delete(closing.id);
+              persistRecord();
+              exitIfIdle();
+            });
+        }
         // Removal is owned by session.onExit -> terminalExit; the parent mirror
         // clears contribution and emits terminalsChanged from that single path.
         sendToController({ type: "response", requestId: message.requestId, ok: true });

@@ -94,10 +94,22 @@ interface Conversation {
   queryFactory: ReturnType<typeof vi.fn>;
   /** The uuid Paseo minted for each prompt, in the order the turns ran. */
   userMessageIds: string[];
+  /** Every `rewind_conversation` control request the live query received. */
+  inPlaceRewinds: Array<Record<string, unknown>>;
 }
 
-function createConversation(outcomes: TurnOutcome[]): Conversation {
+/**
+ * How the CLI answers `rewind_conversation`. Omitted, the query has no generic control request at
+ * all, like an SDK too old to carry one.
+ */
+type InPlaceRewind = "accept" | "reject";
+
+function createConversation(
+  outcomes: TurnOutcome[],
+  options: { inPlaceRewind?: InPlaceRewind } = {},
+): Conversation {
   const userMessageIds: string[] = [];
+  const inPlaceRewinds: Array<Record<string, unknown>> = [];
   const queryFactory = vi.fn(({ prompt }: { prompt: AsyncIterable<unknown> }) => {
     const queued: Array<Record<string, unknown>> = [];
     const waiters: Array<() => void> = [];
@@ -161,12 +173,29 @@ function createConversation(outcomes: TurnOutcome[]): Conversation {
       supportedModels: vi.fn(async () => []),
       supportedCommands: vi.fn(async () => []),
       rewindFiles: vi.fn(async () => ({ canRewind: true })),
+      ...(options.inPlaceRewind
+        ? {
+            request: vi.fn(async (request: Record<string, unknown>) => {
+              if (request.subtype !== "rewind_conversation") {
+                throw new Error(`Unexpected control request ${String(request.subtype)}`);
+              }
+              inPlaceRewinds.push(request);
+              if (options.inPlaceRewind === "reject") {
+                throw new Error("Unsupported control request subtype: rewind_conversation");
+              }
+              return {
+                subtype: "success",
+                response: { rewound: true, targetMessageUuid: request.target_message_uuid },
+              };
+            }),
+          }
+        : {}),
       [Symbol.asyncIterator]() {
         return this;
       },
     };
   });
-  return { queryFactory, userMessageIds };
+  return { queryFactory, userMessageIds, inPlaceRewinds };
 }
 
 async function createSession(
@@ -193,6 +222,55 @@ async function runTurns(session: AgentSession, count: number): Promise<void> {
     }
   }
 }
+
+describe("Claude rewind on a live session", () => {
+  test("rewinds in place without forking or restarting Claude", async () => {
+    const conversation = createConversation(
+      [
+        { assistantMessageId: "assistant-1" },
+        { assistantMessageId: "assistant-2" },
+        { assistantMessageId: "assistant-3" },
+      ],
+      { inPlaceRewind: "accept" },
+    );
+    const rewindSdk = new FakeClaudeSdk();
+    const session = await createSession(conversation, rewindSdk);
+
+    try {
+      await runTurns(session, 2);
+      await session.revertConversation?.({ messageId: conversation.userMessageIds[1] });
+      // Background subagents and shells live in the Claude process, so the next turn must reuse it.
+      await runTurns(session, 1);
+    } finally {
+      await session.close();
+    }
+
+    expect(conversation.inPlaceRewinds).toEqual([
+      { subtype: "rewind_conversation", target_message_uuid: conversation.userMessageIds[1] },
+    ]);
+    expect(rewindSdk.recordedForks).toEqual([]);
+    expect(conversation.queryFactory).toHaveBeenCalledTimes(1);
+  });
+
+  test("forks as before when the CLI refuses the in-place rewind", async () => {
+    const conversation = createConversation(
+      [{ assistantMessageId: "assistant-1" }, { assistantMessageId: "assistant-2" }],
+      { inPlaceRewind: "reject" },
+    );
+    const rewindSdk = new FakeClaudeSdk();
+    const session = await createSession(conversation, rewindSdk);
+
+    try {
+      await runTurns(session, 2);
+      await session.revertConversation?.({ messageId: conversation.userMessageIds[1] });
+    } finally {
+      await session.close();
+    }
+
+    expect(conversation.inPlaceRewinds).toHaveLength(1);
+    expect(rewindSdk.recordedForks).toEqual([{ upToMessageId: "assistant-1" }]);
+  });
+});
 
 describe("Claude rewind across a turn that produced no response", () => {
   test("forks at the most recent turn that did produce a response", async () => {

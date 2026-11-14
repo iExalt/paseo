@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterEach } from "vitest";
+import { describe, expect, test, beforeEach, afterEach, vi } from "vitest";
 import os from "node:os";
 import path from "node:path";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
@@ -575,4 +575,145 @@ describe("AgentStorage", () => {
     const after = await afterReload.list();
     expect(after.some((r) => r.id === agentId)).toBe(false);
   });
+});
+
+describe("notification lifecycle commit boundaries", () => {
+  test("queued new finish repairs a failed lifecycle close before allocating a new episode", async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), "paseo-episode-commit-"));
+    try {
+      const storage = new AgentStorage(path.join(home, "agents"), createTestLogger());
+      await storage.initialize();
+      const record = {
+        id: "agent",
+        provider: "codex",
+        cwd: home,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        labels: {},
+        lastStatus: "idle" as const,
+        requiresAttention: true,
+      };
+      await storage.upsert(record);
+      const a = (await storage.notificationLifecycle.active())[0]!;
+      const observe = storage.notificationLifecycle.observe.bind(storage.notificationLifecycle);
+      let failClose = true;
+      const spy = vi
+        .spyOn(storage.notificationLifecycle, "observe")
+        .mockImplementation(async (id, input) => {
+          if (!input.attention && failClose) {
+            failClose = false;
+            throw new Error("lifecycle disk failure");
+          }
+          return observe(id, input);
+        });
+      const failed = storage.upsert({ ...record, requiresAttention: false });
+      const queued = storage.upsert(record);
+      const results = await Promise.allSettled([failed, queued]);
+      expect(results.map((result) => result.status)).toEqual(["rejected", "fulfilled"]);
+      spy.mockRestore();
+      const b = (await storage.notificationLifecycle.active())[0]!;
+      expect(b.episodeId).not.toBe(a.episodeId);
+      expect(await storage.notificationLifecycle.pending()).toEqual([a]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test("failed source deletion never publishes a lifecycle resolution", async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), "paseo-episode-delete-"));
+    try {
+      const storage = new AgentStorage(path.join(home, "agents"), createTestLogger());
+      await storage.initialize();
+      await storage.upsert({
+        id: "agent",
+        provider: "codex",
+        cwd: home,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        labels: {},
+        lastStatus: "idle",
+        requiresAttention: true,
+      });
+      const original = fs.unlink;
+      const spy = vi.spyOn(fs, "unlink").mockImplementation(async () => {
+        throw Object.assign(new Error("denied"), { code: "EACCES" });
+      });
+      await expect(storage.remove("agent")).rejects.toThrow("denied");
+      spy.mockRestore();
+      expect(fs.unlink).toBe(original);
+      expect(await storage.notificationLifecycle.active()).toHaveLength(1);
+      expect(await storage.notificationLifecycle.pending()).toEqual([]);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+test("a committed deletion with failed lifecycle write is repaired on flush without restart", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "paseo-delete-retry-"));
+  try {
+    const storage = new AgentStorage(path.join(home, "agents"), createTestLogger());
+    await storage.initialize();
+    await storage.upsert({
+      id: "agent",
+      provider: "codex",
+      cwd: home,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      labels: {},
+      lastStatus: "idle",
+      requiresAttention: true,
+    });
+    const a = (await storage.notificationLifecycle.active())[0]!;
+    const observe = storage.notificationLifecycle.observe.bind(storage.notificationLifecycle);
+    const spy = vi
+      .spyOn(storage.notificationLifecycle, "observe")
+      .mockImplementation(async (id, input) => {
+        if (input.removed) throw new Error("lifecycle disk failure");
+        return observe(id, input);
+      });
+    await expect(storage.remove("agent")).rejects.toThrow("lifecycle disk failure");
+    expect(await storage.get("agent")).toBeNull();
+    spy.mockRestore();
+    await storage.flush();
+    expect(await storage.notificationLifecycle.active()).toEqual([]);
+    expect(await storage.notificationLifecycle.pending()).toEqual([a]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test("partial permission resolution and unknown snapshots retain the question episode", async () => {
+  const home = mkdtempSync(path.join(os.tmpdir(), "paseo-question-batch-"));
+  try {
+    const storage = new AgentStorage(path.join(home, "agents"), createTestLogger());
+    await storage.initialize();
+    const request = (id: string): AgentPermissionRequest => ({
+      id,
+      provider: "claude",
+      name: "shell",
+      kind: "tool",
+    });
+    const agent = createManagedAgent({
+      pendingPermissions: new Map([
+        ["one", request("one")],
+        ["two", request("two")],
+      ]),
+    });
+    await storage.applySnapshot(agent);
+    const a = (await storage.notificationLifecycle.active())[0]!;
+    agent.pendingPermissions.delete("one");
+    await storage.applySnapshot(agent);
+    expect(await storage.notificationLifecycle.active()).toEqual([a]);
+    agent.permissionStateKnown = false;
+    agent.pendingPermissions.clear();
+    await storage.applySnapshot(agent);
+    expect(await storage.notificationLifecycle.active()).toEqual([a]);
+    agent.permissionStateKnown = true;
+    await storage.applySnapshot(agent);
+    expect(await storage.notificationLifecycle.active()).toEqual([]);
+    expect(await storage.notificationLifecycle.pending()).toEqual([a]);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
 });

@@ -19,6 +19,7 @@ import { createUserMessage, generateMessageId, type UserMessageItem } from "@/ty
 import type { MessageSubmissionRejectionOutcome } from "@/composer/submission/model";
 import type { PickedImageAttachmentInput } from "@/hooks/image-attachment-picker";
 import { i18n } from "@/i18n/i18next";
+import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
 
 export interface QueuedComposerMessage {
   id: string;
@@ -71,7 +72,7 @@ export interface ComposerSendClient {
 }
 
 export interface ComposerCancelClient {
-  cancelAgent: (agentId: string) => Promise<void> | void;
+  cancelAgent: (agentId: string) => Promise<unknown> | void;
 }
 
 export interface MessageSubmissionWriter {
@@ -179,7 +180,7 @@ export function cancelComposerAgent(input: CancelComposerAgentInput): Promise<vo
   if (!input.isAgentRunning || input.isCancellingAgent) return null;
   if (!input.isConnected || !input.client) return null;
   try {
-    return Promise.resolve(input.client.cancelAgent(input.agentId));
+    return Promise.resolve(input.client.cancelAgent(input.agentId)).then(() => undefined);
   } catch (error) {
     return Promise.reject(error);
   }
@@ -197,6 +198,8 @@ export interface DispatchComposerAgentMessageInput {
   submission: MessageSubmissionWriter;
   activeTurnBehavior?: ActiveTurnBehavior;
   activeTurnId?: string;
+  /** Reuse an ID across retries so the daemon delivers the message once; new by default. */
+  clientMessageId?: string;
 }
 
 export async function dispatchComposerAgentMessage(
@@ -205,7 +208,7 @@ export async function dispatchComposerAgentMessage(
   const wirePayload = splitComposerAttachmentsForSubmit(input.attachments, {
     format: input.attachmentSubmitFormat,
   });
-  const clientMessageId = generateMessageId();
+  const clientMessageId = input.clientMessageId ?? generateMessageId();
   const userMessage = createUserMessage({
     clientMessageId,
     text: input.text,
@@ -216,7 +219,14 @@ export async function dispatchComposerAgentMessage(
       ? { turnId: input.activeTurnId }
       : {}),
   });
-  input.submission.begin(input.agentId, userMessage);
+  try {
+    input.submission.begin(input.agentId, userMessage);
+  } catch (error) {
+    // A retry whose earlier attempt the daemon already echoed back is in the timeline under
+    // this ID: it was delivered, so sending again would duplicate it.
+    if (input.clientMessageId) return;
+    throw error;
+  }
   try {
     const imagesData = await input.encodeImages(wirePayload.images);
     await input.client.sendAgentMessage(input.agentId, input.text, {
@@ -295,7 +305,12 @@ export interface SendQueuedComposerMessageNowInput {
   agentId: string;
   messageId: string;
   queue: QueueWriter;
-  submitMessage: (input: { text: string; attachments: ComposerAttachment[] }) => Promise<void>;
+  submitMessage: (input: {
+    text: string;
+    attachments: ComposerAttachment[];
+    activeTurnBehavior: "steer";
+    clientMessageId: string;
+  }) => Promise<void>;
   failedToSendMessage?: string;
 }
 
@@ -303,6 +318,15 @@ export type SendQueuedComposerMessageNowResult =
   | { status: "missing" }
   | { status: "submitted" }
   | { status: "failed"; errorMessage: string };
+
+/**
+ * Sends a queued message without waiting for the turn to end. It always steers, whatever the
+ * default send setting: a queued message only asked to go sooner, never to stop the agent.
+ */
+const UNRETRYABLE_SEND_ERRORS = new Set([
+  "agent_request_outcome_unknown",
+  "agent_request_key_conflict",
+]);
 
 export async function sendQueuedComposerMessageNow(
   input: SendQueuedComposerMessageNowInput,
@@ -318,12 +342,26 @@ export async function sendQueuedComposerMessageNow(
     return next;
   });
   try {
-    await input.submitMessage({ text: item.text, attachments: item.attachments });
+    await input.submitMessage({
+      text: item.text,
+      attachments: item.attachments,
+      activeTurnBehavior: "steer",
+      // The queue item's ID is the message ID, so a retry after a lost reply is delivered once.
+      clientMessageId: item.id,
+    });
     return { status: "submitted" };
   } catch (error) {
+    // The daemon already holds a receipt for this ID that a retry can never settle. Re-queuing
+    // would put the item back at the head and block every later queued message.
+    const settledByDaemon = error instanceof Error && UNRETRYABLE_SEND_ERRORS.has(error.message);
+    // Only a lost connection leaves the outcome unknown, so only then does the retry reuse the ID.
+    // Any other failed send leaves a pending receipt that would refuse the same ID forever.
+    const requeued =
+      error instanceof DaemonConnectionError ? item : { ...item, id: generateMessageId() };
     input.queue.write((prev) => {
+      if (settledByDaemon) return prev;
       const next = new Map(prev);
-      next.set(input.agentId, [item, ...(prev.get(input.agentId) ?? [])]);
+      next.set(input.agentId, [requeued, ...(prev.get(input.agentId) ?? [])]);
       return next;
     });
     return {

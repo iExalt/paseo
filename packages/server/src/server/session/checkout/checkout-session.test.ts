@@ -1112,6 +1112,30 @@ describe("CheckoutSession", () => {
   });
 
   describe("timeline routing", () => {
+    it.each(["/group", "group/", "group//sub", "group/../sub", "group/./sub", "group/space here"])(
+      "rejects invalid namespace %s before forge access",
+      async (repoOwner) => {
+        const { checkout, emitted } = makeCheckoutSession({
+          git: {
+            resolveForge: async () => {
+              throw new Error("Invalid identity reached forge");
+            },
+          },
+        });
+        await checkout.handlePullRequestTimelineRequest({
+          type: "pull_request_timeline_request",
+          cwd: "/repo",
+          prNumber: 14,
+          repoOwner,
+          repoName: "repo",
+          requestId: "invalid-owner",
+        });
+        expect(emitted.find(isTimelineResponse)).toMatchObject({
+          payload: { error: { message: "Pull request timeline request has invalid PR identity" } },
+        });
+      },
+    );
+
     it("routes the timeline request through the resolved GitLab adapter", async () => {
       const gitlabCalls: Array<{ cwd: string; prNumber: number }> = [];
       const gitlabService: Partial<ForgeService> = {
@@ -1163,7 +1187,7 @@ describe("CheckoutSession", () => {
         type: "pull_request_timeline_request",
         cwd: "/repo",
         prNumber: 14,
-        repoOwner: "g",
+        repoOwner: "group/subgroup",
         repoName: "r",
         requestId: "tl1",
       });

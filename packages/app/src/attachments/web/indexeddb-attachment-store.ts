@@ -189,6 +189,8 @@ export function createIndexedDbAttachmentStore(): AttachmentStore {
     },
 
     async garbageCollect({ referencedIds }): Promise<void> {
+      // Without IndexedDB nothing was ever stored, so there is nothing to collect.
+      if (!globalThis.indexedDB) return;
       const db = await openAttachmentDb();
       try {
         await new Promise<void>((resolve, reject) => {

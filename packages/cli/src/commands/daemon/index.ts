@@ -1,3 +1,5 @@
+import { daemonLogsCommand } from "./logs.js";
+import { daemonDiagnosticsCommand } from "./diagnostics.js";
 import { Command } from "commander";
 import { startCommand, daemonRunCommand } from "./start.js";
 import { daemonStatusCommand } from "./status.js";
@@ -7,6 +9,7 @@ import { runSetPasswordCommand } from "./set-password.js";
 import { pairCommand } from "./pair.js";
 import { daemonReloadCommand } from "./reload.js";
 import { daemonConfigCommand } from "./config.js";
+import { daemonNotificationRulesCommand } from "./notifications-rules.js";
 import { withOutput } from "../../output/index.js";
 import { addJsonOption, addLocalDaemonOptions } from "../../utils/command-options.js";
 
@@ -16,11 +19,14 @@ export function createDaemonCommand(): Command {
     startCommand(),
     daemonRunCommand(),
     daemonStatusCommand(),
+    daemonDiagnosticsCommand(),
+    daemonLogsCommand(),
     daemonStopCommand(),
     daemonRestartCommand(),
     daemonReloadCommand(),
     pairCommand(),
     daemonConfigCommand(),
+    daemonNotificationRulesCommand(),
   ])
     daemon.addCommand(command);
   addJsonOption(

@@ -576,8 +576,20 @@ describe("ClaudeAgentClient.fetchCatalog", () => {
 describe("ClaudeAgentClient binary resolution", () => {
   const logger = createTestLogger();
 
-  test("resolves the installed Claude Code version", async () => {
-    await expect(resolveClaudeCodeVersion()).resolves.toMatch(/^\d+\.\d+\.\d+$/);
+  test("resolves the Claude Code version from the configured command", async () => {
+    await expect(
+      resolveClaudeCodeVersion({
+        command: {
+          mode: "replace",
+          argv: [
+            process.execPath,
+            "-e",
+            'if (process.argv[1] !== "--version") process.exit(1); console.log("2.1.0 (Claude Code)")',
+            "--",
+          ],
+        },
+      }),
+    ).resolves.toBe("2.1.0");
   });
 
   test("rejects a wrapper command's own version output instead of reading it as Claude Code's", async () => {
@@ -759,6 +771,75 @@ describe("ClaudeAgentSession features", () => {
         resolution: { behavior: "deny", message: "Permission request canceled" },
       });
       expect(session.getPendingPermissions()).toEqual([]);
+    } finally {
+      unsubscribe();
+      await session.close();
+    }
+  });
+
+  test("shows Claude's decision reason on bypass-immune permission prompts", async () => {
+    const { queryFactory } = createQueryMock();
+    const session = await new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "bypassPermissions" });
+
+    try {
+      await session.startTurn("run the tool");
+      const canUseTool = queryFactory.mock.calls[0]?.[0].options.canUseTool;
+      if (!canUseTool) throw new Error("Expected canUseTool callback");
+      const reason = "Dangerous rm operation on statically-unresolvable target: /repo/batches/*";
+      void canUseTool(
+        "Bash",
+        { command: "cd /tmp/x && rm batches/*" },
+        { signal: new AbortController().signal, toolUseID: "tool-safety", decisionReason: reason },
+      ).catch(() => {});
+
+      expect(session.getPendingPermissions()).toEqual([
+        expect.objectContaining({ name: "Bash", description: reason }),
+      ]);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("tells Claude the prompt's warning when the user denies it", async () => {
+    const { queryFactory } = createQueryMock();
+    const session = await new ClaudeAgentClient({
+      logger,
+      queryFactory,
+      resolveBinary: async () => "/test/claude/bin",
+    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "bypassPermissions" });
+    const events: AgentStreamEvent[] = [];
+    const unsubscribe = session.subscribe((event) => events.push(event));
+
+    try {
+      await session.startTurn("run the tool");
+      const canUseTool = queryFactory.mock.calls[0]?.[0].options.canUseTool;
+      if (!canUseTool) throw new Error("Expected canUseTool callback");
+      const reason = "Dangerous rm operation not ruled out";
+      const permission = canUseTool(
+        "Bash",
+        { command: "rm -rf build/*" },
+        { signal: new AbortController().signal, toolUseID: "tool-warned", decisionReason: reason },
+      );
+      const [pending] = session.getPendingPermissions();
+      if (!pending) throw new Error("Expected a pending permission");
+
+      await session.respondToPermission(pending.id, {
+        behavior: "deny",
+        message: "Denied by user",
+      });
+
+      const message = `Denied by user. The permission prompt warned: ${reason}`;
+      await expect(permission).resolves.toMatchObject({ behavior: "deny", message });
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "permission_resolved",
+          resolution: expect.objectContaining({ behavior: "deny", message }),
+        }),
+      );
     } finally {
       unsubscribe();
       await session.close();

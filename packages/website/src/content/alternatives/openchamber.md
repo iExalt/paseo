@@ -45,7 +45,7 @@ OpenChamber adds multi-run comparisons, Fusion, and guided changes walkthroughs.
 
 ## Automation
 
-Paseo exposes workspace and agent operations through its CLI, TypeScript SDK, and MCP server. These interfaces can create workspaces, launch agents, follow progress, send messages, and manage schedules.
+Paseo exposes workspace and agent operations through its CLI and TypeScript SDK. These interfaces can create workspaces, launch agents, follow progress, send messages, and manage schedules.
 
 OpenChamber's CLI runs and manages its server, remote access, and updates. Its Agent Control Tool lets an OpenCode agent create and continue sessions, create worktrees, and manage schedules.
 

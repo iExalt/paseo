@@ -53,6 +53,17 @@ export function MessagePreview({ children }: { children: ReactNode }) {
   );
 }
 
+export function useMessageSender(sender: AgentMessage["sender"] | undefined, serverId?: string) {
+  const host = sender?.serverId ?? serverId;
+  const agent = useSessionStore((state) => {
+    const session = host ? state.sessions[host] : undefined;
+    return sender
+      ? (session?.agents.get(sender.id) ?? session?.agentDetails.get(sender.id))
+      : undefined;
+  });
+  return { host, agent, name: agent?.title ?? sender?.title ?? sender?.id };
+}
+
 export function MessageSender({
   sender,
   serverId,
@@ -61,11 +72,7 @@ export function MessageSender({
   serverId?: string;
 }) {
   const { t } = useTranslation();
-  const host = sender.serverId ?? serverId;
-  const agent = useSessionStore((state) => {
-    const session = host ? state.sessions[host] : undefined;
-    return session?.agents.get(sender.id) ?? session?.agentDetails.get(sender.id);
-  });
+  const { host, agent, name } = useMessageSender(sender, serverId);
   const ProviderIcon = useProviderIcon(agent?.provider ?? "", host);
   const renderProviderIcon = useCallback(
     (color: string) => <ProviderIcon size={16} color={color} />,
@@ -81,19 +88,28 @@ export function MessageSender({
       leftIcon={renderProviderIcon}
       style={styles.sender}
       textStyle={styles.senderText}
+      accessibilityLabel={t("turnSummary.sentBy", { name })}
       numberOfLines={1}
       disabled={!host}
       onPress={openSender}
     >
-      {t("turnSummary.sentBy", { name: agent?.title ?? sender.title ?? sender.id })}
+      {name}
     </Button>
   );
 }
 
 const styles = StyleSheet.create((theme) => ({
   body: { flexShrink: 0 },
-  sender: { paddingRight: 0, borderRightWidth: 0, maxWidth: "100%" },
-  senderText: { flexShrink: 1 },
+  sender: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    borderWidth: 0,
+    minHeight: 0,
+    height: 24,
+    minWidth: 0,
+    flexShrink: 1,
+  },
+  senderText: { flexShrink: 1, fontSize: 13 },
   toggle: { alignSelf: "flex-start", paddingHorizontal: 0, minHeight: 0, borderWidth: 0 },
   expandedToggle: { marginTop: theme.spacing[2] },
   fade: { position: "absolute", bottom: 0, left: 0, right: 0, height: theme.spacing[12] },

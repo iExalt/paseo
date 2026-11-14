@@ -64,6 +64,23 @@ paseo schedule create \
   "Review overnight CI failures and summarize anything urgent."
 ```
 
+### Caller inheritance and isolation
+
+Inside a managed agent, omitted schedule settings inherit the caller's runtime. Provider and cwd default to the caller; model inherits only when provider is not explicitly supplied. Mode and provider options inherit only for the same provider. Thinking, feature values, system prompt, and third-party MCP configuration are copied from the caller unless an exposed override changes the setting. This is a creation-time snapshot, not a link to future caller changes.
+
+Use `--provider <provider/model>`, `--mode`, `--thinking`, and `--cwd` for explicit overrides. `--isolation worktree` gives each run an isolated worktree; `local` uses the configured directory. Outside an agent, supply a provider; explicit endpoint targets also need `--cwd`.
+
+### Explicit replacement
+
+Creation always creates a new record unless you pass `--replace`. For named schedules, replacement matches the name and the entire new-agent target configuration. Changing that configuration creates another schedule; use `schedule update <id>` to change an existing target. Heartbeat replacement matches name and current agent ID. Without a matching name/target it creates a record. Unnamed creation never replaces another record.
+
+Replacement keeps the matching record's ID and history, replaces its prompt and cadence, reactivates it, and recomputes its next run. Omitted limits and expiration are cleared. Use `schedule update <id>` to patch a schedule without resetting omitted fields. To clear overrides explicitly:
+
+```bash
+paseo schedule update <id> --clear-model --clear-mode --no-max-runs --no-expires-in
+paseo schedule create --replace --name build-watch --provider codex --cwd /absolute/repo --every 5m "Check the build"
+```
+
 ## Heartbeats
 
 Inside a running Paseo agent, create a heartbeat for that same conversation:
@@ -83,6 +100,14 @@ paseo heartbeat delete <id>
 ```
 
 Updating a heartbeat changes only its cron cadence and optional time zone. Its target and prompt stay fixed. Heartbeat commands require `PASEO_AGENT_ID`, which Paseo sets inside agent sessions.
+
+To replace the prompt or limits of a named heartbeat, explicitly recreate it with `--replace`:
+
+```bash
+paseo heartbeat create --replace --name heartbeat --cron "*/10 * * * *" --max-runs 12 "Check this task and report actionable changes"
+```
+
+Heartbeat update accepts only cadence and time zone; schedule commands do not manage heartbeat records.
 
 Heartbeats require a raw `--cron` expression. The `--every` presets below are available only for new-agent schedules.
 

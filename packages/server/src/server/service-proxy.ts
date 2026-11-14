@@ -352,6 +352,10 @@ function proxyHttpRequest({
       res.end("502 Bad Gateway");
     }
   });
+  // A client that leaves mid-response (an SSE page reload) must not strand the upstream socket.
+  res.on("close", () => {
+    if (!res.writableFinished) proxyReq.destroy();
+  });
   req.pipe(proxyReq, { end: true });
 }
 
@@ -787,6 +791,13 @@ export function createScriptProxyUpgradeHandler({
 }): (req: IncomingMessage, socket: net.Socket, head: Buffer) => void {
   return (req, socket, head) => {
     const classification = routeStore.classifyHost(req.headers.host);
+    if (classification.type === "known-service-miss") {
+      // A stale service tab must not fall through to the daemon's /ws: its Origin equals its Host.
+      // end() flushes the 404 and leaves the socket unwritable, so the ws upgrade listener skips it.
+      socket.on("error", () => socket.destroy());
+      socket.end("HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n");
+      return;
+    }
     if (classification.type !== "registered-service") {
       if (!passthroughUnknown) {
         socket.destroy();

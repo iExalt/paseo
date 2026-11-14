@@ -9,6 +9,14 @@ import type { DesktopWindowChromeMode } from "./window/chrome.js";
 // with PASEO_BROWSER_PROFILE_PARTITION in features/browser-profile.ts; preload-sandbox.test.ts
 // guards both the no-local-import rule and this drift. Type-only imports are fine (erased at emit).
 const PASEO_BROWSER_PROFILE_PARTITION = "persist:paseo-browser";
+// Keep this prefix and accepted values in sync with nix-managed-install.ts.
+const PASEO_INSTALLATION_MODE_ARGUMENT = "--paseo-installation-mode=";
+
+function readInstallationMode(): "electron" | "nix" | "nix-invalid" {
+  const argument = process.argv.find((value) => value.startsWith(PASEO_INSTALLATION_MODE_ARGUMENT));
+  const mode = argument?.slice(PASEO_INSTALLATION_MODE_ARGUMENT.length);
+  return mode === "nix" || mode === "nix-invalid" ? mode : "electron";
+}
 
 type EventHandler = (payload: unknown) => void;
 
@@ -32,6 +40,7 @@ interface AttachedBrowserRegistration {
 contextBridge.exposeInMainWorld("paseoDesktop", {
   platform: process.platform,
   windowChromeMode: readWindowChromeMode(),
+  installationMode: readInstallationMode(),
   invoke: (command: string, args?: Record<string, unknown>) =>
     ipcRenderer.invoke("paseo:invoke", command, args),
   getPendingOpenProject: () =>
@@ -88,8 +97,15 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
   },
   notification: {
     isSupported: () => ipcRenderer.invoke("paseo:notification:isSupported"),
-    sendNotification: (payload: { title: string; body?: string; data?: Record<string, unknown> }) =>
-      ipcRenderer.invoke("paseo:notification:send", payload),
+    sendNotification: (payload: {
+      title: string;
+      body?: string;
+      data?: Record<string, unknown>;
+      id?: string;
+      groupId?: string;
+    }) => ipcRenderer.invoke("paseo:notification:send", payload),
+    dismissNotifications: (ids: string[]) => ipcRenderer.invoke("paseo:notification:dismiss", ids),
+    getDeliveredNotifications: () => ipcRenderer.invoke("paseo:notification:delivered"),
   },
   opener: {
     openUrl: (url: string) => ipcRenderer.invoke("paseo:opener:openUrl", url),
@@ -137,5 +153,13 @@ contextBridge.exposeInMainWorld("paseoDesktop", {
     ) => ipcRenderer.invoke("paseo:browser:capture-element", browserId, rect),
     copyElement: (payload: { text?: string; imageDataUrl?: string }) =>
       ipcRenderer.invoke("paseo:browser:copy-element", payload),
+  },
+  nixUpdates: {
+    check: () => ipcRenderer.invoke("paseo:invoke", "nix_update_check"),
+    status: () => ipcRenderer.invoke("paseo:invoke", "nix_update_status"),
+    stage: () => ipcRenderer.invoke("paseo:invoke", "nix_update_stage"),
+    activate: () => ipcRenderer.invoke("paseo:invoke", "nix_update_activate"),
+    rollback: () => ipcRenderer.invoke("paseo:invoke", "nix_update_rollback"),
+    restart: () => ipcRenderer.invoke("paseo:invoke", "nix_update_restart"),
   },
 });

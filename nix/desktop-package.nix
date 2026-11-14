@@ -2,9 +2,11 @@
   lib,
   stdenv,
   buildNpmPackage,
-  nodejs_22,
+  nodejs_26,
   python3,
   makeWrapper,
+  zstd,
+  nix,
   autoPatchelfHook,
   copyDesktopItems,
   makeDesktopItem,
@@ -48,8 +50,7 @@ buildNpmPackage {
       # installPhase copies into the output.
       && builtins.match "/[^/]+\\.md" relPath == null
       # Test fixtures and build artifacts
-      && !(lib.hasSuffix ".test.ts" baseName)
-      && !(lib.hasSuffix ".e2e.test.ts" baseName)
+      && !((import ./is-test-file.nix) baseName)
       && baseName != "node_modules"
       && baseName != ".git"
       && baseName != ".paseo"
@@ -57,7 +58,7 @@ buildNpmPackage {
       && baseName != "release";
   };
 
-  nodejs = nodejs_22;
+  nodejs = nodejs_26;
   inherit (paseo) npmDeps;
 
   # Prevent onnxruntime-node's install script from running during automatic
@@ -72,7 +73,8 @@ buildNpmPackage {
       autoPatchelfHook
       makeWrapper
       copyDesktopItems
-    ];
+    ]
+    ++ lib.optionals stdenv.hostPlatform.isDarwin [makeWrapper];
 
   buildInputs = lib.optionals stdenv.hostPlatform.isLinux [
     libuv
@@ -97,6 +99,14 @@ buildNpmPackage {
   buildPhase = ''
     runHook preBuild
 
+    ${lib.optionalString stdenv.hostPlatform.isDarwin ''
+      # Bind stalled-build diagnostics to this exact output and active build root.
+      node -e 'console.error("PASEO_DESKTOP_BUILD_IDENTITY=" + JSON.stringify({root: process.env.NIX_BUILD_TOP, output: process.env.out}))'
+    ''}
+
+    # Apply repository patches without enabling unrelated install scripts.
+    PATH="$PWD/node_modules/.bin:$PATH" node scripts/postinstall-patches.mjs
+
     # Native deps (terminal emulation; libuv-linked on Linux)
     npm rebuild node-pty
 
@@ -107,7 +117,16 @@ buildNpmPackage {
     npm run build --workspace=@getpaseo/expo-two-way-audio
 
     # Expo web export for the Electron renderer
-    ( cd packages/app && PASEO_WEB_PLATFORM=electron npx expo export --platform web )
+    # Hosted macOS has 7 GiB RAM and three cores. Two Metro workers bundle in
+    # 120-138 s against 186-227 s for one, peak at about 4 GiB of node RSS with
+    # no swap, and emit the same files; three are slower than two, and the
+    # runner's default count ran out of memory (42627fc1a). The 4 GiB
+    # old-space limit is per process, not a total RSS limit.
+    (
+      cd packages/app
+      ${lib.optionalString stdenv.hostPlatform.isDarwin "NODE_OPTIONS=--max-old-space-size=4096"} \
+        PASEO_WEB_PLATFORM=electron npx expo export --platform web ${lib.optionalString stdenv.hostPlatform.isDarwin "--max-workers 2"}
+    )
 
     # Desktop main process
     npm run build:main --workspace=@getpaseo/desktop
@@ -124,8 +143,8 @@ buildNpmPackage {
       chmod -R u+w "$electron_dist/Electron.app"
       (
         cd packages/desktop
-        # The Nix output is not a distributable DMG, so leave it unsigned and
-        # disable the hardened runtime that requires a matching signature.
+        # The Nix output is not a distributable DMG: skip Developer ID signing
+        # and the hardened runtime that requires it. postFixup signs ad hoc.
         CSC_IDENTITY_AUTO_DISCOVERY=false \
           ../../node_modules/.bin/electron-builder \
             --config electron-builder.yml \
@@ -200,11 +219,16 @@ buildNpmPackage {
       printf '%s\n' 'require("../packages/desktop/dist/main.js");' \
         > $out/share/paseo-desktop/electron-app/index.js
 
+      printf '{"schemaVersion":1,"managedBy":"nix","packageVersion":"%s","buildVersion":"%s","outputPath":"%s"}\n' \
+        "$version" ${lib.escapeShellArg buildVersion} "$out" \
+        > "$out/share/paseo-desktop/electron-app/paseo-nix-managed.json"
+
       # Chromium's setuid sandbox cannot live in the immutable Nix store.
       makeWrapper ${electron}/bin/electron $out/bin/paseo-desktop \
         --add-flags "$out/share/paseo-desktop/electron-app" \
         --add-flags "--no-sandbox" \
         --add-flags "--class=paseo-desktop" \
+        --set PASEO_NIX_APP_ROOT "$out/share/paseo-desktop/electron-app" \
         --set EXPO_DEV_URL "paseo://app/" \
         --set CHROME_DESKTOP "paseo-desktop.desktop"
 
@@ -219,10 +243,56 @@ buildNpmPackage {
       fi
       mkdir -p "$out/Applications"
       cp -R "$app" "$out/Applications/Paseo.app"
+      # outputPath lets the updater's /Applications/Paseo.app copy, which runs
+      # outside the store, find its updater and recognise when it is current.
+      printf '{"schemaVersion":1,"managedBy":"nix","packageVersion":"%s","buildVersion":"%s","outputPath":"%s"}\n' \
+        "$version" ${lib.escapeShellArg buildVersion} "$out" \
+        > "$out/Applications/Paseo.app/Contents/Resources/paseo-nix-managed.json"
       ln -s ../Applications/Paseo.app/Contents/MacOS/Paseo "$out/bin/paseo-desktop"
+
+
     ''}
 
+      # Keep the signed updater and its portable release contract beside the
+      # desktop output. The wrapper pins the Node runtime from this closure, so
+      # the active and previous profile generations both retain a usable CLI.
+      updater_root="$out/libexec/paseo-nix-update"
+      mkdir -p "$updater_root/scripts" "$updater_root/packages/protocol/src"
+      cp scripts/paseo-nix-update.mjs scripts/paseo-nix-update-legacy.mjs \
+        scripts/paseo-nix-update-state.mjs scripts/paseo-nix-update-macos.mjs \
+        scripts/paseo-nix-update-delta.mjs scripts/paseo-nix-update-linux.mjs \
+        scripts/desktop-release.mjs "$updater_root/scripts/"
+      cp packages/protocol/src/release-manifest.ts packages/protocol/src/release-manifest-v2.ts \
+        packages/protocol/src/fork-version.ts packages/protocol/src/desktop-release-manifest.ts \
+        packages/protocol/src/desktop-release-verifier.ts packages/protocol/src/fork-release-discovery.ts \
+        "$updater_root/packages/protocol/src/"
+      printf '%s\n' '{ "type": "module" }' > "$updater_root/package.json"
+      # zstd applies the update deltas (scripts/paseo-nix-update-delta.mjs). Node's
+      # zlib zstd takes a dictionary only as an in-memory buffer, and the base is a 0.5 GB NAR.
+      makeWrapper ${nodejs_26}/bin/node "$out/bin/paseo-nix-update" \
+        --prefix PATH : ${lib.makeBinPath ([zstd] ++ lib.optionals stdenv.hostPlatform.isLinux [nix])} \
+        --set PASEO_NIX_OUTPUT_PATH "$out" \
+        --add-flags "$updater_root/scripts/paseo-nix-update.mjs"
+
     runHook postInstall
+  '';
+
+  # Repackaging leaves Electron's executable signature (identifier "Electron",
+  # Info.plist unbound), and macOS then refuses every notification request
+  # (UNErrorDomain error 1). Sign the finished bundle ad hoc as Paseo, after
+  # fixup has rewritten its last file. Ad hoc signatures carry no timestamp, so
+  # the output is deterministic for a given codesign. This uses the host
+  # codesign, as nixpkgs' sigtool cannot seal bundle resources; the candidate
+  # runtime re-verifies the signature on the imported store path.
+  postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
+    app="$out/Applications/Paseo.app"
+    /usr/bin/codesign --force --deep --sign - --timestamp=none "$app"
+    /usr/bin/codesign --verify --deep --strict "$app"
+    signature="$(/usr/bin/codesign --display --verbose=2 "$app" 2>&1)"
+    case "$signature" in
+      *$'\n'Identifier=sh.paseo.desktop$'\n'*) ;;
+      *) echo "Paseo.app is not signed as sh.paseo.desktop" >&2; exit 1 ;;
+    esac
   '';
 
   desktopItems = lib.optionals stdenv.hostPlatform.isLinux [

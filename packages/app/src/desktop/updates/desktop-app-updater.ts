@@ -14,6 +14,7 @@ export type DesktopAppUpdateStatus =
   | "available"
   | "installing"
   | "installed"
+  | "waiting"
   | "error";
 
 export const PENDING_RECHECK_MS = 10_000;
@@ -178,7 +179,7 @@ export function formatStatusText(input: {
     return i18n.t("desktop.updates.status.available");
   }
 
-  if (status === "installed") {
+  if (["installed", "waiting"].includes(status)) {
     return installMessage ?? i18n.t("desktop.updates.status.installed");
   }
 
@@ -187,6 +188,19 @@ export function formatStatusText(input: {
   }
 
   return i18n.t("desktop.updates.status.idle");
+}
+
+function preservesWaitingReason(
+  state: InternalState,
+  result: DesktopAppUpdateCheckResult,
+  silent: boolean,
+): boolean {
+  return (
+    silent &&
+    state.status === "waiting" &&
+    result.hasUpdate &&
+    result.latestVersion === state.availableUpdate?.latestVersion
+  );
 }
 
 export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopAppUpdater {
@@ -262,12 +276,14 @@ export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopApp
         nextAvailable = null;
       }
 
+      const updateState = preservesWaitingReason(state, result, silent)
+        ? { status: "waiting" as const, installMessage: state.installMessage }
+        : { status: nextStatus, installMessage: null };
       commit({
         ...state,
-        status: nextStatus,
+        ...updateState,
         availableUpdate: nextAvailable,
         errorMessage: null,
-        installMessage: null,
         lastCheckedAt: nextLastCheckedAt,
       });
 
@@ -309,8 +325,8 @@ export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopApp
       const nextLastCheckedAt = deps.now();
       commit({
         ...state,
-        status: result.installed ? "installed" : "up-to-date",
-        availableUpdate: null,
+        status: result.installed ? "installed" : "waiting",
+        availableUpdate: result.installed ? null : state.availableUpdate,
         installMessage: result.message,
         lastCheckedAt: nextLastCheckedAt,
         isInstalling: false,

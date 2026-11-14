@@ -1,3 +1,4 @@
+import { REMOTE_CONFIG_PATHS, editRemoteConfig } from "./remote-config-edit.js";
 import {
   loadPersistedConfig,
   savePersistedConfigAsync,
@@ -8,10 +9,11 @@ import { ProviderOverrideSchema } from "./agent/provider-launch-config.js";
 import {
   MutableDaemonConfigSchema,
   MutableDaemonConfigPatchSchema,
-} from "@getpaseo/protocol/messages";
+} from "@getpaseo/protocol/mutable-daemon-config";
 import type { AgentSkillSelection } from "@getpaseo/protocol/messages";
 import type { SpeechSettingsPatch } from "@getpaseo/protocol/speech/rpc-schemas";
 import { mergeSpeechSettingsPatch, type SpeechSettingsOwner } from "./speech/speech-settings.js";
+import { ReplyRuleMatcher, type ReplyRule } from "./agent/reply-rule-matcher.js";
 
 export type { MutableDaemonConfig, MutableDaemonConfigPatch } from "@getpaseo/protocol/messages";
 
@@ -20,8 +22,8 @@ type MutableDaemonConfigPatch = import("@getpaseo/protocol/messages").MutableDae
 type ProviderOverride = import("./agent/provider-launch-config.js").ProviderOverride;
 
 interface SupportedMutableConfigPatch {
-  relay?: { enabled?: boolean; requireProtectedSecurity?: boolean };
-  mcp?: { injectIntoAgents?: boolean };
+  relay?: { enabled?: boolean; requireProtectedSecurity?: boolean; keepAwake?: boolean };
+  agentTools?: { enabled?: boolean };
   usage?: { enabled: boolean };
   browserTools?: { enabled?: boolean };
   providers?: MutableDaemonConfig["providers"];
@@ -39,6 +41,7 @@ interface SupportedMutableConfigPatch {
   pluginsEnabled?: boolean;
   plugins?: MutableDaemonConfig["plugins"];
   features?: SpeechSettingsPatch;
+  replyRules?: ReplyRule[];
 }
 
 const SPEECH_PERSISTED_PATHS = ["features.dictation", "features.voiceMode"];
@@ -181,8 +184,8 @@ function isEqualValue(a: unknown, b: unknown): boolean {
 const RELOADABLE_PATHS = [
   "daemon.relay.enabled",
   "daemon.relay.requireProtectedSecurity",
-  "daemon.mcp.enabled",
-  "daemon.mcp.injectIntoAgents",
+  "daemon.relay.keepAwake",
+  "daemon.agentTools.enabled",
   "daemon.usage.enabled",
   "daemon.browserTools.enabled",
   "daemon.hostnames",
@@ -204,13 +207,14 @@ const RELOADABLE_PATHS = [
   "agents.metadataGeneration",
   "agents.skills.selection",
   "pluginsEnabled",
+  "replyRules",
 ] as const;
 
 const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["daemon.relay.enabled", "relay.enabled"],
   ["daemon.relay.requireProtectedSecurity", "relay.requireProtectedSecurity"],
-  ["daemon.mcp.enabled", "mcp.enabled"],
-  ["daemon.mcp.injectIntoAgents", "mcp.injectIntoAgents"],
+  ["daemon.relay.keepAwake", "relay.keepAwake"],
+  ["daemon.agentTools.enabled", "agentTools.enabled"],
   ["daemon.usage.enabled", "usage.enabled"],
   ["daemon.browserTools.enabled", "browserTools.enabled"],
   ["daemon.hostnames", "hostnames"],
@@ -232,6 +236,7 @@ const PERSISTED_TO_MUTABLE_PATH = new Map<string, string>([
   ["agents.metadataGeneration", "metadataGeneration"],
   ["agents.skills.selection", "skills.selection"],
   ["pluginsEnabled", "pluginsEnabled"],
+  ["replyRules", "replyRules"],
 ]);
 
 function pathBelongsTo(path: string, owner: string): boolean {
@@ -277,20 +282,27 @@ function pickRelayPatch(
     ...(relay?.requireProtectedSecurity !== undefined
       ? { requireProtectedSecurity: relay.requireProtectedSecurity }
       : {}),
+    ...(relay?.keepAwake !== undefined ? { keepAwake: relay.keepAwake } : {}),
   };
   return Object.keys(picked).length > 0 ? { relay: picked } : {};
+}
+
+function pickToolPatch(patch: MutableDaemonConfigPatch) {
+  return {
+    ...(patch.agentTools?.enabled !== undefined
+      ? { agentTools: { enabled: patch.agentTools.enabled } }
+      : {}),
+    ...(patch.browserTools?.enabled !== undefined
+      ? { browserTools: { enabled: patch.browserTools.enabled } }
+      : {}),
+  };
 }
 
 function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMutableConfigPatch {
   return {
     ...pickRelayPatch(patch.relay),
     usage: patch.usage,
-    ...(patch.mcp?.injectIntoAgents !== undefined
-      ? { mcp: { injectIntoAgents: patch.mcp.injectIntoAgents } }
-      : {}),
-    ...(patch.browserTools?.enabled !== undefined
-      ? { browserTools: { enabled: patch.browserTools.enabled } }
-      : {}),
+    ...pickToolPatch(patch),
     ...(patch.providers !== undefined ? { providers: patch.providers } : {}),
     ...(patch.removeProviders !== undefined ? { removeProviders: patch.removeProviders } : {}),
     ...(patch.metadataGeneration?.providers !== undefined
@@ -315,7 +327,12 @@ function pickSupportedPatchFields(patch: MutableDaemonConfigPatch): SupportedMut
     ...(patch.pluginsEnabled !== undefined ? { pluginsEnabled: patch.pluginsEnabled } : {}),
     ...(patch.plugins !== undefined ? { plugins: patch.plugins } : {}),
     ...(patch.features !== undefined ? { features: patch.features } : {}),
+    ...(patch.replyRules !== undefined ? { replyRules: patch.replyRules } : {}),
   };
+}
+
+function freezeReplyRules(rules: readonly ReplyRule[]): ReplyRule[] {
+  return Object.freeze(rules.map((rule) => Object.freeze({ ...rule }))) as unknown as ReplyRule[];
 }
 
 export function applyMutableProviderConfigToOverrides(
@@ -360,6 +377,7 @@ export class DaemonConfigStore {
   private readonly startupPersisted: PersistedConfig;
   private readonly speechOwner: SpeechSettingsOwner | undefined;
   private lastKnownPersisted: PersistedConfig;
+  private replyRuleMatcher: ReplyRuleMatcher;
 
   constructor(
     paseoHome: string,
@@ -379,15 +397,31 @@ export class DaemonConfigStore {
     this.speechOwner = options.speech;
     this.startupPersisted = options.startupPersisted ?? loadPersistedConfig(paseoHome, this.logger);
     this.lastKnownPersisted = this.startupPersisted;
+    const replyRules = freezeReplyRules(
+      this.startupPersisted.replyRules ?? initial.replyRules ?? [],
+    );
+    this.replyRuleMatcher = ReplyRuleMatcher.compile(replyRules);
     this.current = MutableDaemonConfigSchema.parse({
       ...initial,
       relay: initial.relay ?? { enabled: true },
       ...this.readSpeech(this.startupPersisted),
+      replyRules,
     });
+    this.current.replyRules = replyRules;
   }
 
   public get(): MutableDaemonConfig {
     return this.current;
+  }
+
+  public getReplyRules(): readonly ReplyRule[] {
+    return this.current.replyRules ?? [];
+  }
+
+  public matchesReplyRules(
+    subject: import("./agent/completion-subject-collector.js").CompletionSubject | undefined,
+  ): boolean {
+    return this.replyRuleMatcher.matches(subject);
   }
 
   public patch(
@@ -404,6 +438,82 @@ export class DaemonConfigStore {
         ),
       ),
     );
+  }
+
+  public editRemote(
+    field: string,
+    edit: { value?: unknown; unset?: boolean; expectedValue?: unknown },
+  ): Promise<MutableDaemonConfig> {
+    return this.enqueue(async () => {
+      if (!this.reloadSource)
+        throw new Error("Configuration editing is unavailable for this daemon instance");
+      if (Object.hasOwn(edit, "expectedValue")) {
+        const currentValue =
+          field === "agentProfiles"
+            ? (this.current.agentProfiles ?? [])
+            : this.current[field as keyof MutableDaemonConfig];
+        if (JSON.stringify(currentValue) !== JSON.stringify(edit.expectedValue))
+          throw new Error("Configuration changed since it was read; read it again before editing");
+      }
+      const previous = await loadPersistedConfigAsync(this.paseoHome, this.logger);
+      const { persisted, root } = editRemoteConfig(previous, field, edit);
+      const resolved = this.reloadSource.resolve(persisted);
+      const desired = MutableDaemonConfigSchema.parse({
+        ...resolved.mutable,
+        ...this.readSpeech(persisted),
+        replyRules: persisted.replyRules ?? [],
+      });
+      const next = { ...this.current, [root]: desired[root as keyof MutableDaemonConfig] };
+      if (root === "features") next.envOverrides = desired.envOverrides;
+      const removedProviders =
+        root === "providers"
+          ? Object.keys(this.current.providers).filter(
+              (id) => !Object.hasOwn(desired.providers, id),
+            )
+          : [];
+      if (root === "providers" && removedProviders.length) {
+        next.metadataGeneration = {
+          ...next.metadataGeneration,
+          providers: next.metadataGeneration.providers.filter(
+            (entry) => !removedProviders.includes(entry.provider),
+          ),
+        };
+        if (persisted.agents?.metadataGeneration)
+          persisted.agents.metadataGeneration.providers = (
+            persisted.agents.metadataGeneration.providers ?? []
+          ).filter((entry) => !removedProviders.includes(entry.provider));
+      }
+      const matcher =
+        root === "replyRules"
+          ? ReplyRuleMatcher.compile(freezeReplyRules(next.replyRules ?? []))
+          : undefined;
+      await savePersistedConfigAsync(this.paseoHome, persisted, this.logger);
+      try {
+        this.applyReplacement(next, { removedProviders }, matcher);
+      } catch (error) {
+        await savePersistedConfigAsync(this.paseoHome, previous, this.logger);
+        throw error;
+      }
+      const known = structuredClone(this.lastKnownPersisted) as Record<string, unknown>;
+      const persistedPath = REMOTE_CONFIG_PATHS[root]!.split(".");
+      const copyPath = (parts: string[]) => {
+        let target = known;
+        let source = persisted as Record<string, unknown> | undefined;
+        for (const part of parts.slice(0, -1)) {
+          target[part] ??= {};
+          target = target[part] as Record<string, unknown>;
+          source = source?.[part] as Record<string, unknown> | undefined;
+        }
+        const key = parts.at(-1)!;
+        if (source && Object.hasOwn(source, key)) target[key] = source[key];
+        else delete target[key];
+      };
+      copyPath(persistedPath);
+      if (removedProviders.length) copyPath(["agents", "metadataGeneration"]);
+      this.lastKnownPersisted = known as PersistedConfig;
+      if (root === "features") this.speechOwner?.apply(this.lastKnownPersisted);
+      return this.current;
+    });
   }
 
   public setAgentSkillSelection(selection: AgentSkillSelection): Promise<MutableDaemonConfig> {
@@ -433,6 +543,10 @@ export class DaemonConfigStore {
         removedProviders,
       ),
     );
+    const nextReplyRules = freezeReplyRules(parsedPatch.replyRules ?? next.replyRules ?? []);
+    next.replyRules = nextReplyRules;
+    const nextReplyRuleMatcher =
+      parsedPatch.replyRules !== undefined ? ReplyRuleMatcher.compile(nextReplyRules) : undefined;
 
     const configChanged = !isEqualValue(this.current, next);
 
@@ -448,7 +562,7 @@ export class DaemonConfigStore {
     const speechChanged = this.speechPersistedChanged(this.lastKnownPersisted, knownNext);
     if (configChanged) {
       try {
-        this.applyReplacement(next, { removedProviders });
+        this.applyReplacement(next, { removedProviders }, nextReplyRuleMatcher);
       } catch (error) {
         await savePersistedConfigAsync(this.paseoHome, persistedBeforePatch, this.logger);
         throw error;
@@ -498,7 +612,11 @@ export class DaemonConfigStore {
       ...resolved.mutable,
       plugins: this.current.plugins,
       ...this.readSpeech(persisted),
+      replyRules: persisted.replyRules ?? [],
     });
+    const desiredReplyRules = freezeReplyRules(desired.replyRules ?? []);
+    desired.replyRules = desiredReplyRules;
+    const desiredReplyRuleMatcher = ReplyRuleMatcher.compile(desiredReplyRules);
     const changedSinceLastApply = diffPaths(this.lastKnownPersisted, persisted);
     const overrideControlledPaths = compactOwnedPaths(
       changedSinceLastApply.filter((path) =>
@@ -534,7 +652,7 @@ export class DaemonConfigStore {
       (provider) => !(provider in desired.providers),
     );
     const speechChanged = this.speechPersistedChanged(this.lastKnownPersisted, persisted);
-    this.applyReplacement(desired, { removedProviders });
+    this.applyReplacement(desired, { removedProviders }, desiredReplyRuleMatcher);
     this.lastKnownPersisted = persisted;
     if (speechChanged && this.speechOwner) {
       this.speechOwner.apply(persisted);
@@ -555,6 +673,7 @@ export class DaemonConfigStore {
   private applyReplacement(
     next: MutableDaemonConfig,
     changeDetails: DaemonConfigChangeDetails,
+    nextReplyRuleMatcher?: ReplyRuleMatcher,
   ): void {
     const changedFieldPaths = Array.from(this.fieldChangeHandlers.keys()).filter((path) => {
       return !isEqualValue(getValueAtPath(this.current, path), getValueAtPath(next, path));
@@ -562,9 +681,17 @@ export class DaemonConfigStore {
     if (isEqualValue(this.current, next) && changeDetails.removedProviders.length === 0) return;
 
     const previous = this.current;
+    const previousReplyRuleMatcher = this.replyRuleMatcher;
     const appliedFieldChanges: AppliedFieldChange[] = [];
     const applyRollbacks: ConfigApplyRollback[] = [];
     this.current = next;
+    if (!isEqualValue(previous.replyRules, next.replyRules)) {
+      if (!nextReplyRuleMatcher) {
+        this.current = previous;
+        throw new Error("Reply rules must be compiled before applying daemon config");
+      }
+      this.replyRuleMatcher = nextReplyRuleMatcher;
+    }
     try {
       for (const path of changedFieldPaths) {
         const handlers = this.fieldChangeHandlers.get(path);
@@ -583,6 +710,7 @@ export class DaemonConfigStore {
       }
     } catch (error) {
       this.current = previous;
+      this.replyRuleMatcher = previousReplyRuleMatcher;
       const rollbackErrors: unknown[] = [];
       for (const rollback of applyRollbacks.toReversed()) {
         try {
@@ -700,6 +828,7 @@ function mergeMutablePatchIntoPersistedConfig(params: {
     ...withSpeech,
     ...(patch.pluginsEnabled !== undefined ? { pluginsEnabled: patch.pluginsEnabled } : {}),
     ...(patch.plugins !== undefined ? { plugins: patch.plugins } : {}),
+    ...(patch.replyRules !== undefined ? { replyRules: patch.replyRules } : {}),
     ...(daemon ? { daemon } : { daemon: undefined }),
     ...(agents ? { agents } : { agents: undefined }),
   } as PersistedConfig;
@@ -768,8 +897,11 @@ function mergeMutableDaemonPatch(
   if (patch.relay?.requireProtectedSecurity !== undefined) {
     next.relay = { ...next.relay, requireProtectedSecurity: patch.relay.requireProtectedSecurity };
   }
-  if (patch.mcp?.injectIntoAgents !== undefined) {
-    next.mcp = { ...next.mcp, injectIntoAgents: patch.mcp.injectIntoAgents };
+  if (patch.relay?.keepAwake !== undefined) {
+    next.relay = { ...next.relay, keepAwake: patch.relay.keepAwake };
+  }
+  if (patch.agentTools?.enabled !== undefined) {
+    next.agentTools = { ...next.agentTools, enabled: patch.agentTools.enabled };
   }
   if (patch.usage) next.usage = patch.usage;
   if (patch.browserTools?.enabled !== undefined) {

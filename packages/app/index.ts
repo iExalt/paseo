@@ -2,6 +2,8 @@
 // oxlint-disable-next-line import/no-unassigned-import -- Polyfills install on import.
 import "./src/polyfills/install-early";
 
+import { initializeBackgroundLifecycle } from "./src/push-notifications/background-lifecycle";
+
 // Configure Unistyles before Expo Router pulls in any components using StyleSheet.
 import "./src/styles/unistyles";
 // oxlint-disable-next-line import/no-unassigned-import -- Preserve Expo's entry side effects.
@@ -9,8 +11,18 @@ import "@expo/metro-runtime";
 // oxlint-disable-next-line import/no-unassigned-import -- Preserve Expo's entry side effects.
 import "expo-router/build/fast-refresh";
 import { renderRootComponent } from "expo-router/build/renderRootComponent";
-import { startWatchdog } from "./src/watchdog";
-import { RootApp } from "./src/root-app";
+import { preferencesMigrationMode } from "./src/android/preferences-migration/mode";
 
-startWatchdog();
-renderRootComponent(RootApp);
+initializeBackgroundLifecycle();
+
+if (preferencesMigrationMode()) {
+  const { PreferencesMigrationStartup } =
+    require("./src/android/preferences-migration/startup") as typeof import("./src/android/preferences-migration/startup");
+  renderRootComponent(PreferencesMigrationStartup);
+} else {
+  // Keep the normal application path synchronous and unchanged.
+  const { startWatchdog } = require("./src/watchdog") as typeof import("./src/watchdog");
+  const { RootApp } = require("./src/root-app") as typeof import("./src/root-app");
+  startWatchdog();
+  renderRootComponent(RootApp);
+}

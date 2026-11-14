@@ -1,16 +1,27 @@
 import { exec, execFile } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { scaffoldPluginDirectory } from "./scaffold.js";
 
 const directories: string[] = [];
 const execFileAsync = promisify(execFile);
 const execAsync = promisify(exec);
-const tscPath = createRequire(import.meta.url).resolve("typescript/bin/tsc");
+const nativeCompilerPackagePath = createRequire(import.meta.url).resolve(
+  "@typescript/native/package.json",
+);
+const nativeCompilerPackage = JSON.parse(readFileSync(nativeCompilerPackagePath, "utf8")) as {
+  bin: { tsc: string };
+};
+const tscPath = path.resolve(
+  path.dirname(nativeCompilerPackagePath),
+  nativeCompilerPackage.bin.tsc,
+);
 
 async function typecheckPlugin(directory: string): Promise<void> {
   const configPath = path.join(directory, "tsconfig.json");
@@ -96,7 +107,7 @@ describe("plugin scaffold", () => {
           id: "hello-plugin",
           $comment: expect.stringContaining('"icon": "assets/icon.png"'),
           media: [],
-          requirements: { paseo: `>=${cliPackageJson.version}` },
+          requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
         },
       );
       expect(JSON.parse(await readFile(path.join(directory, "package.json"), "utf8"))).toEqual({

@@ -1,3 +1,4 @@
+import { isDelegatedAgent } from "@getpaseo/protocol/agent-labels";
 import type { FinishSubscriptions } from "../finish-subscriptions/index.js";
 import type { AgentPromptSource } from "../agent-messages/index.js";
 import type { Logger } from "pino";
@@ -40,12 +41,14 @@ export interface CreateAgentCommandDependencies {
 export type EnsureWorkspaceForCreate = (
   cwd: string,
   firstAgentContext?: FirstAgentContext,
-  context?: { callerWorkspaceId?: string },
+  context?: { callerWorkspaceId?: string; notifications?: "on" | "off" },
 ) => Promise<string>;
 
 export interface CreateAgentFromSessionInput {
   kind: "session";
   onAgentReady?: (agent: ManagedAgent) => Promise<void>;
+  callerAgentId?: string;
+  notifyOnFinish?: boolean;
   agentId?: string;
   config: AgentSessionConfig;
   workspaceId: string;
@@ -69,6 +72,7 @@ export interface CreateAgentFromMcpInput {
   config?: Partial<AgentSessionConfig>;
   cwd?: string;
   workspaceId?: string;
+  notifications?: "on" | "off";
   thinking?: string;
   features?: Record<string, unknown>;
   labels?: Record<string, string>;
@@ -99,6 +103,7 @@ export interface CreateAgentFromMcpInput {
     refName?: string;
     action?: "branch-off" | "checkout";
     githubPrNumber?: number;
+    notifications?: "on" | "off";
   };
 }
 
@@ -177,15 +182,12 @@ export async function createAgentCommand(
     input.onCreated?.({ agentId: snapshot.id, createdWorktree: resolved.createdWorktree ?? null });
   }
   const notification =
-    input.kind === "mcp" &&
-    input.notifyOnFinish &&
-    input.callerAgentId &&
-    resolved.prompt !== undefined
+    input.notifyOnFinish && input.callerAgentId && resolved.prompt !== undefined
       ? await requireFinishSubscriptions(dependencies).register(
           {
             childAgentId: snapshot.id,
             callerAgentId: input.callerAgentId,
-            requireParentOwnership: !(input.detached ?? false),
+            requireParentOwnership: isDelegatedAgent(snapshot),
           },
           true,
         )
@@ -301,6 +303,7 @@ async function resolveMcpCreateAgent(
           resolvedCwd,
           input.initialPrompt ?? "",
           parentAgent?.workspaceId,
+          input.notifications,
         ),
       ),
       cwd: resolvedCwd,
@@ -411,6 +414,7 @@ async function ensureWorkspaceForMcpCreate(
   cwd: string,
   initialPrompt: string,
   callerWorkspaceId?: string,
+  notifications?: "on" | "off",
 ): Promise<string | undefined> {
   if (!dependencies.ensureWorkspaceForCreate) {
     return undefined;
@@ -418,7 +422,7 @@ async function ensureWorkspaceForMcpCreate(
   return dependencies.ensureWorkspaceForCreate(
     cwd,
     { prompt: initialPrompt },
-    { callerWorkspaceId },
+    { callerWorkspaceId, notifications },
   );
 }
 
@@ -548,6 +552,7 @@ async function resolveMcpCwd(params: {
       refName: worktree.refName,
       action: worktree.action,
       githubPrNumber: worktree.githubPrNumber,
+      notifications: worktree.notifications,
       firstAgentContext: { prompt: params.initialPrompt },
 
       paseoHome: dependencies.paseoHome,

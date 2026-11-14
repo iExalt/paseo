@@ -1,5 +1,4 @@
 import { compare, hashSync } from "bcryptjs";
-import { timingSafeEqual } from "node:crypto";
 import type { RequestHandler } from "express";
 import { matchesLocalCredential } from "./local-credential.js";
 
@@ -29,8 +28,50 @@ export async function isBearerTokenValidAsync(input: BearerValidationInput): Pro
     return false;
   }
 
-  return compare(input.token, input.password);
+  return verifyDaemonPassword(input.token, input.password);
 }
+
+/** Thrown when too many password checks are already running or waiting. */
+export class DaemonPasswordCheckBusyError extends Error {
+  constructor() {
+    super("Too many password checks in progress");
+    this.name = "DaemonPasswordCheckBusyError";
+  }
+}
+
+export interface PasswordCheckLimits {
+  running: number;
+  waiting: number;
+}
+
+/**
+ * Bounds concurrent bcrypt compares. Each one costs about 250 ms of main-thread CPU at cost 12,
+ * so unbounded checks from unauthenticated callers can starve the daemon.
+ */
+export function createPasswordCheckLimiter(
+  limits: PasswordCheckLimits,
+): (password: string, hash: string) => Promise<boolean> {
+  let running = 0;
+  const waiting: Array<() => void> = [];
+  return async (password, hash) => {
+    if (running >= limits.running) {
+      if (waiting.length >= limits.waiting) {
+        throw new DaemonPasswordCheckBusyError();
+      }
+      await new Promise<void>((resolve) => waiting.push(resolve));
+    }
+    running += 1;
+    try {
+      return await compare(password, hash);
+    } finally {
+      running -= 1;
+      waiting.shift()?.();
+    }
+  };
+}
+
+/** The daemon's one password check: HTTP bearer, WebSocket header and hello all share it. */
+export const verifyDaemonPassword = createPasswordCheckLimiter({ running: 2, waiting: 16 });
 
 export function hashDaemonPassword(password: string): string {
   return hashSync(password, DAEMON_PASSWORD_BCRYPT_COST);
@@ -106,13 +147,17 @@ export function createRequireBearerMiddleware(
 
         next();
       } catch (error) {
+        if (error instanceof DaemonPasswordCheckBusyError) {
+          res.status(429).json({ error: "Too many password checks" });
+          return;
+        }
         next(error);
       }
     })();
   };
 }
 
-const SELF_AUTHENTICATING_ROUTES = new Set(["/api/files/download", "/mcp/agents"]);
+const SELF_AUTHENTICATING_ROUTES = new Set(["/api/files/download"]);
 
 function isBearerFreeRoute(path: string): boolean {
   return path === "/api/health" || SELF_AUTHENTICATING_ROUTES.has(path);
@@ -123,33 +168,4 @@ export function shouldBypassBearerAuth(method: string, path: string): boolean {
     return true;
   }
   return isBearerFreeRoute(path);
-}
-
-/**
- * Authorizes a request to the Agent MCP endpoint (/mcp/agents), which is exempt
- * from the global daemon-password middleware. Accepts either the per-daemon-run
- * capability token the daemon injects into its own agents' configs and MCP
- * client, or a valid daemon-password bearer (so existing password-authenticated
- * callers keep working). When no daemon password is configured the endpoint is
- * open, matching the global middleware's behavior.
- */
-export async function isAgentMcpRequestAuthorized(input: {
-  password: string | undefined;
-  capabilityToken: string | null;
-  authorizationHeader: string | undefined;
-}): Promise<boolean> {
-  if (!input.password) {
-    return true;
-  }
-  const token = extractHttpBearerToken(input.authorizationHeader);
-  if (input.capabilityToken !== null && token !== null) {
-    // Constant-time compare; length-guard first because timingSafeEqual throws
-    // on differing buffer lengths.
-    const provided = Buffer.from(token);
-    const expected = Buffer.from(input.capabilityToken);
-    if (provided.length === expected.length && timingSafeEqual(provided, expected)) {
-      return true;
-    }
-  }
-  return isBearerTokenValidAsync({ password: input.password, token });
 }

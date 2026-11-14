@@ -1,14 +1,20 @@
 import type { Command } from "commander";
+import { renderTable } from "../../output/index.js";
+import { getErrorMessage } from "../../utils/errors.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { isSameOrDescendantPath } from "../../utils/paths.js";
 import type { DaemonClient, FetchAgentHistoryEntry } from "@getpaseo/client/internal/daemon-client";
 
 export function addDeleteOptions(cmd: Command): Command {
   return cmd
-    .description("Delete an agent (interrupt if running, then hard-delete)")
-    .argument("[id]", "Agent ID (or prefix) - optional if --all or --cwd specified")
+    .description("Delete an agent; archive its workspace when no unarchived agents remain")
+    .argument("[id]", "Agent ID, prefix, or full session ID - optional if --all or --cwd specified")
     .option("--all", "Delete all agents")
-    .option("--cwd <path>", "Delete all agents in directory");
+    .option("--cwd <path>", "Delete all agents in directory")
+    .addHelpText(
+      "after",
+      "\nDeleting the last unarchived agent also archives its workspace. Paseo-owned worktrees are removed, including uncommitted, untracked, ignored, and unpushed work, when no active workspace still references them. Local checkouts are kept.",
+    );
 }
 import type {
   CommandOptions,
@@ -20,11 +26,22 @@ import type {
 export interface DeleteResult {
   deletedCount: number;
   agentIds: string[];
+  results?: { agentId: string; deleted?: boolean; error?: string }[];
 }
 
 export const deleteSchema: OutputSchema<DeleteResult> = {
   idField: (item) => item.agentIds.join("\n"),
   columns: [{ header: "DELETED", field: "deletedCount" }],
+  renderHuman: (result, options) => {
+    const errors =
+      result.type === "single"
+        ? (result.data.results ?? []).filter((target) => target.error !== undefined)
+        : [];
+    return [
+      renderTable(result, options),
+      ...errors.map((target) => `Failed to delete agent ${target.agentId}: ${target.error}`),
+    ].join("\n");
+  },
 };
 
 export interface AgentDeleteOptions extends CommandOptions {
@@ -86,6 +103,7 @@ export async function runDeleteCommand(
       agents = [fetchResult.agent];
     }
 
+    const singleTarget = Boolean(id && !options.all && !options.cwd);
     const deleteResults = await Promise.all(
       agents.map(async (agent) => {
         try {
@@ -95,8 +113,8 @@ export async function runDeleteCommand(
           await client.deleteAgent(agent.id);
           return { ok: true as const, id: agent.id };
         } catch (err) {
-          if (err && typeof err === "object" && "code" in err) throw err;
-          const message = err instanceof Error ? err.message : String(err);
+          if (singleTarget) throw err;
+          const message = getErrorMessage(err);
           return { ok: false as const, id: agent.id, message };
         }
       }),
@@ -105,9 +123,7 @@ export async function runDeleteCommand(
       if (result.ok) {
         deletedIds.push(result.id);
       } else {
-        console.error(
-          `Warning: Failed to delete agent ${result.id.slice(0, 7)}: ${result.message}`,
-        );
+        process.exitCode = 1;
       }
     }
 
@@ -118,6 +134,15 @@ export async function runDeleteCommand(
       data: {
         deletedCount: deletedIds.length,
         agentIds: deletedIds,
+        ...(singleTarget
+          ? {}
+          : {
+              results: deleteResults.map((result) =>
+                result.ok
+                  ? { agentId: result.id, deleted: true }
+                  : { agentId: result.id, error: result.message },
+              ),
+            }),
       },
       schema: deleteSchema,
     };

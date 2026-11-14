@@ -328,6 +328,8 @@ export type ToolCallDetail =
       label?: string;
       text?: string;
       icon?: ToolCallIconName;
+      /** Render `text` as Markdown instead of preformatted text. */
+      markdown?: boolean;
     }
   | {
       type: "plan";
@@ -409,6 +411,7 @@ export type AgentTimelineItem =
   | PluginTimelineItem;
 
 export type AgentStreamEvent =
+  | { type: "commands_changed"; provider: AgentProvider }
   | { type: "thread_started"; sessionId: string; provider: AgentProvider }
   | { type: "turn_started"; provider: AgentProvider; turnId?: string }
   | { type: "turn_completed"; provider: AgentProvider; usage?: AgentUsage; turnId?: string }
@@ -661,6 +664,8 @@ export interface AgentResumeSessionOptions {
  */
 export interface AgentPermissionResult {
   followUpPrompt?: AgentPromptInput;
+  /** Commit a durable answer only after its follow-up turn was accepted. */
+  complete?: () => void;
 }
 
 export interface AgentUsageSession {
@@ -707,6 +712,12 @@ export interface AgentSession {
   /** Release live runtime resources without archiving or deleting the durable native session. */
   close(): Promise<void>;
   listCommands?(): Promise<AgentSlashCommand[]>;
+  /** Re-read provider-owned skills without starting or interrupting a turn. */
+  refreshSkills?(): Promise<void>;
+  /** Sessions sharing a helper must release all its leases before a skill-cache refresh. */
+  readonly skillRefreshGroup?: string | object;
+  /** Provider-negotiated resume support can be narrower than static capabilities. */
+  canResumeRuntime?(): boolean;
   setModel?(modelId: string | null): Promise<void>;
   setThinkingOption?(thinkingOptionId: string | null): Promise<void | AgentProviderNotice>;
   setFeature?(featureId: string, value: unknown): Promise<void>;

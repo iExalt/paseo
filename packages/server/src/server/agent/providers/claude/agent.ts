@@ -1,3 +1,4 @@
+import { ClaudeSkillContent } from "./skill-tool-call.js";
 import { setImmediate } from "node:timers/promises";
 import { ClaudeRuntimeSafety } from "./runtime-safety.js";
 import { validateProviderOptions } from "../../provider-options.js";
@@ -800,6 +801,32 @@ function toBase64ImageOutput(block: unknown): ProviderImageOutput | null {
 // reach coerceToolResultContentToString, which JSON.stringifies the whole array — dumping base64
 // into the tool output. We pull those blocks out to render them as image markdown and leave a
 // "[image]" placeholder so image-only results still produce non-empty output.
+// Claude Code downscales the image a Read returns (long edge 2000 px, sometimes JPEG), so point
+// materialization at the file it read.
+async function renderClaudeToolResultImages({
+  images,
+  toolName,
+  input,
+  observedAt,
+}: {
+  images: ProviderImageOutput[];
+  toolName: string;
+  input: AgentMetadata | null | undefined;
+  observedAt: Date | undefined;
+}): Promise<AgentTimelineItem[]> {
+  const readPath = toolName === "Read" ? input?.file_path : undefined;
+  const originalPath = images.length === 1 && typeof readPath === "string" ? readPath : null;
+  const items: AgentTimelineItem[] = [];
+  for (const image of images) {
+    const item = await renderProviderImageOutputAsAssistantMarkdown(
+      { ...image, originalPath, observedAt },
+      { materialize: materializeProviderImage },
+    );
+    if (item) items.push(item);
+  }
+  return items;
+}
+
 function splitClaudeToolResultImages(content: unknown): {
   images: ProviderImageOutput[];
   text: unknown;
@@ -934,8 +961,22 @@ export function extractUserMessageText(content: unknown): string | null {
   return combined.length > 0 ? combined : null;
 }
 
+function withPromptWarning(
+  response: Extract<AgentPermissionResponse, { behavior: "deny" }>,
+  decisionReason: string | undefined,
+): Extract<AgentPermissionResponse, { behavior: "deny" }> {
+  if (!decisionReason) {
+    return response;
+  }
+  const base = (response.message ?? "Permission request denied").replace(/\.$/, "");
+  return { ...response, message: `${base}. The permission prompt warned: ${decisionReason}` };
+}
+
 interface PendingPermission {
   request: AgentPermissionRequest;
+  // Why Claude's safety check asked; added to a user's deny so the agent
+  // learns the reason without the user typing it.
+  decisionReason?: string;
   resolve: (result: PermissionResult) => void;
   reject: (error: Error) => void;
   cleanup?: () => void;
@@ -1225,13 +1266,56 @@ interface TimelineFragment {
   text: string;
 }
 
+// Claude Code streams deltas for a whole API message and also sends one assistant snapshot per
+// finished content block, all under the same message id. Text is tracked per content block so a
+// snapshot of a block that was already streamed is recognised instead of emitted again.
+interface TimelineTextBlocks {
+  blocks: string[];
+  streamIndex: number | null;
+  text: string;
+  emittedLength: number;
+}
+
 interface TimelineMessageState {
   id: string;
-  assistantText: string;
-  reasoningText: string;
-  emittedAssistantLength: number;
-  emittedReasoningLength: number;
+  assistant: TimelineTextBlocks;
+  reasoning: TimelineTextBlocks;
   stopped: boolean;
+}
+
+function createTimelineTextBlocks(): TimelineTextBlocks {
+  return { blocks: [], streamIndex: null, text: "", emittedLength: 0 };
+}
+
+function appendStreamedBlockText(
+  target: TimelineTextBlocks,
+  text: string,
+  streamIndex: number | null,
+): void {
+  const lastIndex = target.blocks.length - 1;
+  if (lastIndex < 0 || (streamIndex !== null && streamIndex !== target.streamIndex)) {
+    target.blocks.push(text);
+  } else {
+    target.blocks[lastIndex] += text;
+  }
+  target.streamIndex = streamIndex;
+  target.text += text;
+}
+
+function applySnapshotBlockText(target: TimelineTextBlocks, text: string): void {
+  if (target.blocks.includes(text)) {
+    return;
+  }
+  const lastIndex = target.blocks.length - 1;
+  const last = target.blocks[lastIndex];
+  if (last !== undefined && text.startsWith(last)) {
+    target.blocks[lastIndex] = text;
+    target.text += text.slice(last.length);
+    return;
+  }
+  target.blocks.push(text);
+  target.streamIndex = null;
+  target.text += text;
 }
 
 class TimelineAssembler {
@@ -1271,7 +1355,7 @@ class TimelineAssembler {
     }
     const state = this.ensureMessageState(messageId, runId);
     const fragments = this.extractFragments(message.message?.content);
-    return this.applyAbsoluteFragments(state, fragments);
+    return this.applySnapshotFragments(state, fragments);
   }
 
   private consumeStreamEvent(
@@ -1308,12 +1392,18 @@ class TimelineAssembler {
       return this.finalizeMessage(messageId, runId);
     }
 
+    const streamIndex = typeof event.index === "number" ? event.index : null;
     if (eventType === "content_block_start") {
-      return this.consumeDeltaContent(event.content_block, runId, streamEventMessageId);
+      return this.consumeDeltaContent(
+        event.content_block,
+        streamIndex,
+        runId,
+        streamEventMessageId,
+      );
     }
 
     if (eventType === "content_block_delta") {
-      return this.consumeDeltaContent(event.delta, runId, streamEventMessageId);
+      return this.consumeDeltaContent(event.delta, streamIndex, runId, streamEventMessageId);
     }
 
     return [];
@@ -1321,6 +1411,7 @@ class TimelineAssembler {
 
   private consumeDeltaContent(
     content: unknown,
+    streamIndex: number | null,
     runId: string | null,
     messageIdHint: string | null,
   ): AgentTimelineItem[] {
@@ -1337,47 +1428,18 @@ class TimelineAssembler {
       return [];
     }
     const state = this.ensureMessageState(messageId, runId);
-    return this.appendFragments(state, fragments);
-  }
-
-  private appendFragments(
-    state: TimelineMessageState,
-    fragments: TimelineFragment[],
-  ): AgentTimelineItem[] {
     for (const fragment of fragments) {
-      if (fragment.kind === "assistant") {
-        state.assistantText += fragment.text;
-      } else {
-        state.reasoningText += fragment.text;
-      }
+      appendStreamedBlockText(state[fragment.kind], fragment.text, streamIndex);
     }
     return this.emitNewContent(state);
   }
 
-  private applyAbsoluteFragments(
+  private applySnapshotFragments(
     state: TimelineMessageState,
     fragments: TimelineFragment[],
   ): AgentTimelineItem[] {
-    const assistantText = fragments
-      .filter((fragment) => fragment.kind === "assistant")
-      .map((fragment) => fragment.text)
-      .join("");
-    const reasoningText = fragments
-      .filter((fragment) => fragment.kind === "reasoning")
-      .map((fragment) => fragment.text)
-      .join("");
-
-    if (assistantText.length > 0) {
-      if (!assistantText.startsWith(state.assistantText)) {
-        state.emittedAssistantLength = 0;
-      }
-      state.assistantText = assistantText;
-    }
-    if (reasoningText.length > 0) {
-      if (!reasoningText.startsWith(state.reasoningText)) {
-        state.emittedReasoningLength = 0;
-      }
-      state.reasoningText = reasoningText;
+    for (const fragment of fragments) {
+      applySnapshotBlockText(state[fragment.kind], fragment.text);
     }
     return this.emitNewContent(state);
   }
@@ -1399,19 +1461,20 @@ class TimelineAssembler {
 
   private emitNewContent(state: TimelineMessageState): AgentTimelineItem[] {
     const items: AgentTimelineItem[] = [];
-    const nextAssistantText = state.assistantText.slice(state.emittedAssistantLength);
+    const { assistant, reasoning } = state;
+    const nextAssistantText = assistant.text.slice(assistant.emittedLength);
     if (
       nextAssistantText.length > 0 &&
       nextAssistantText !== INTERRUPT_TOOL_USE_PLACEHOLDER &&
       !isClaudeTranscriptNoiseText(nextAssistantText)
     ) {
-      state.emittedAssistantLength = state.assistantText.length;
+      assistant.emittedLength = assistant.text.length;
       items.push({ type: "assistant_message", text: nextAssistantText, messageId: state.id });
     }
 
-    const nextReasoningText = state.reasoningText.slice(state.emittedReasoningLength);
+    const nextReasoningText = reasoning.text.slice(reasoning.emittedLength);
     if (nextReasoningText.length > 0) {
-      state.emittedReasoningLength = state.reasoningText.length;
+      reasoning.emittedLength = reasoning.text.length;
       items.push({ type: "reasoning", text: nextReasoningText });
     }
     return items;
@@ -1428,10 +1491,8 @@ class TimelineAssembler {
     }
     const created: TimelineMessageState = {
       id: messageId,
-      assistantText: "",
-      reasoningText: "",
-      emittedAssistantLength: 0,
-      emittedReasoningLength: 0,
+      assistant: createTimelineTextBlocks(),
+      reasoning: createTimelineTextBlocks(),
       stopped: false,
     };
     this.messages.set(messageId, created);
@@ -2316,6 +2377,9 @@ class ClaudeAgentSession implements AgentSession {
   private planResumeMode: PermissionMode | null = null;
   private availableModes: AgentMode[] = DEFAULT_MODES;
   private toolUseCache = new Map<string, ToolUseCacheEntry>();
+  // Claude Code sends a skill's SKILL.md as a synthetic user message right after the Skill
+  // tool's "Launching skill: <name>" result. Keep the settled call so that body can replace it.
+  private readonly skillContent = new ClaudeSkillContent();
   private toolUseIndexToId = new Map<number, string>();
   private toolUseInputBuffers = new Map<string, string>();
   private subagentHandbackIds = new Set<string>();
@@ -2952,7 +3016,12 @@ class ClaudeAgentSession implements AgentSession {
       };
       pending.resolve(result);
     } else {
-      pending.resolve(this.resolveDeniedPermission(pending.request, response));
+      pending.resolve(
+        this.resolveDeniedPermission(
+          pending.request,
+          withPromptWarning(response, pending.decisionReason),
+        ),
+      );
       return;
     }
 
@@ -2989,7 +3058,10 @@ class ClaudeAgentSession implements AgentSession {
       this.unstartedMessageUuids.size === 0 &&
       this.pendingPermissions.size === 0 &&
       this.processingSdkMessages === 0 &&
-      this.runtimeSafety.canStopRuntime()
+      // A lazy session has no process-local work to lose. Require a roster only
+      // after a query or child exists; opening an old chat need not launch Claude.
+      ((!this.query && !this.queryPumpPromise && !this.childProcess) ||
+        this.runtimeSafety.canStopRuntime())
     );
   }
 
@@ -3072,6 +3144,11 @@ class ClaudeAgentSession implements AgentSession {
     );
   }
 
+  async refreshSkills(): Promise<void> {
+    // An unstarted query reads the current files when it starts.
+    if (this.query) await this.query.reloadSkills();
+  }
+
   async listCommands(): Promise<AgentSlashCommand[]> {
     const q = await this.ensureQuery();
     const commands = await q.supportedCommands();
@@ -3094,6 +3171,9 @@ class ClaudeAgentSession implements AgentSession {
 
   async revertConversation(input: { messageId: string }): Promise<void> {
     await this.ensureHistoryReady();
+    if (await this.rewindConversationInPlace(input.messageId)) {
+      return;
+    }
     const target = this.resolveConversationRewindTarget(input.messageId);
     if (target.kind === "fresh-session") {
       this.startFreshConversationSession();
@@ -3284,6 +3364,89 @@ class ClaudeAgentSession implements AgentSession {
     }
 
     return candidates;
+  }
+
+  /**
+   * Rewinds the live session the way Esc Esc does in Claude Code: the CLI drops the target message
+   * and everything after it, in the same process and under the same session id. Background
+   * subagents and shells live in that process, so they keep running, and a stopped subagent stays
+   * resumable because its transcript stays under this session. Forking instead restarts Claude,
+   * which kills them, and moves the conversation to a session that cannot find their transcripts.
+   *
+   * `rewind_conversation` is a control request the CLI serves but the SDK does not type yet.
+   * Returns false when there is no session yet or the CLI refuses, so the caller can fork.
+   */
+  private async rewindConversationInPlace(messageId: string): Promise<boolean> {
+    const sessionId = this.claudeSessionId;
+    if (!sessionId) return false;
+    const targetMessageUuid = this.resolveClaudeMessageId(messageId);
+    let leafUuid: unknown;
+    try {
+      // Starts Claude on the same session when it is not running, rather than forking a new one.
+      const query = await this.ensureQuery();
+      const request = (
+        query as Query & {
+          request?: (request: Record<string, unknown>) => Promise<{ response?: unknown }>;
+        }
+      ).request;
+      if (typeof request !== "function") return false;
+      const result = await withTimeout(
+        request.call(query, {
+          subtype: "rewind_conversation",
+          target_message_uuid: targetMessageUuid,
+        }),
+        10_000,
+        "rewind_conversation timed out",
+      );
+      const response = toObjectRecord(result?.response);
+      if (response?.rewound !== true) {
+        this.logger.info(
+          { agentId: this.agentId, sessionId, targetMessageUuid, response },
+          "provider.claude.rewind.in_place_refused",
+        );
+        return false;
+      }
+      leafUuid = response.precedingAssistantUuid;
+    } catch (error) {
+      this.logger.info(
+        { err: error, agentId: this.agentId, sessionId, targetMessageUuid },
+        "provider.claude.rewind.in_place_unavailable",
+      );
+      return false;
+    }
+    await this.reloadConversationHistory(sessionId, {
+      leafUuid: typeof leafUuid === "string" ? leafUuid : this.trackedRewindLeaf(messageId),
+    });
+    return true;
+  }
+
+  /** The kept turn's reply as Paseo tracked it, for a CLI that does not report the rewind's leaf. */
+  private trackedRewindLeaf(messageId: string): string | null {
+    try {
+      const target = this.resolveConversationRewindTarget(messageId);
+      return target.kind === "fresh-session" ? null : target.messageId;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Re-reads the session's transcript after the conversation behind it changed. `pendingRewind`
+   * is an in-place rewind whose marker Claude may not have written yet.
+   */
+  private async reloadConversationHistory(
+    sessionId: string,
+    pendingRewind?: { leafUuid: string | null },
+  ): Promise<void> {
+    this.persistedHistory = [];
+    this.persistedProviderSubagentEvents = [];
+    this.historyPending = false;
+    this.userMessageIds = [];
+    this.emittedUserMessageIds.clear();
+    this.rewindTurnAnchors.length = 0;
+    this.historySessionId = sessionId;
+    this.historyReady = this.loadPersistedHistory(sessionId, pendingRewind);
+    await this.historyReady;
   }
 
   private rebindConversationSession(sessionId: string): Promise<void> {
@@ -3632,7 +3795,7 @@ class ClaudeAgentSession implements AgentSession {
       overlays: [
         this.launchEnv,
         // Makes the CLI announce session_state_changed, whose "idle" is the safety net that closes
-        // an autonomous turn (see consumeSessionStateChange).
+        // an autonomous turn (see consumeSessionMetadata).
         { CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
       ],
     });
@@ -4259,10 +4422,14 @@ class ClaudeAgentSession implements AgentSession {
    * It never closes a foreground turn: an idle can trail the previous turn and land just after a
    * new send, and it must not end that send.
    *
-   * Returns true when the frame was a state change, which is bookkeeping and never reaches the
+   * Returns true for session metadata, which is bookkeeping and never reaches the
    * timeline.
    */
-  private consumeSessionStateChange(message: SDKMessage): boolean {
+  private consumeSessionMetadata(message: SDKMessage): boolean {
+    if (message.type === "system" && message.subtype === "commands_changed") {
+      this.notifySubscribers({ type: "commands_changed", provider: "claude" });
+      return true;
+    }
     if (message.type !== "system" || message.subtype !== "session_state_changed") {
       return false;
     }
@@ -4305,7 +4472,7 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private async routeSdkMessageFromPump(message: SDKMessage): Promise<void> {
-    if (this.consumeSessionStateChange(message)) {
+    if (this.consumeSessionMetadata(message)) {
       return;
     }
     this.observeMainTurnBracket(message);
@@ -4591,6 +4758,8 @@ class ClaudeAgentSession implements AgentSession {
         this.appendSidechainResultEvents(message, events);
         break;
       case "assistant": {
+        // A SKILL.md body follows its tool result directly, never after model output.
+        this.skillContent.reset();
         const timelineItems = await this.mapBlocksToTimeline(message.message.content, {
           suppressAssistantText: options?.suppressAssistantText ?? false,
           suppressReasoning: options?.suppressReasoning ?? false,
@@ -4846,6 +5015,10 @@ class ClaudeAgentSession implements AgentSession {
     events: AgentStreamEvent[],
   ): Promise<void> {
     if (isSyntheticUserEntry(message)) {
+      const skillCall = this.skillContent.consume(message);
+      if (skillCall) {
+        events.push({ type: "timeline", item: skillCall, provider: "claude" });
+      }
       return;
     }
     if (this.compacting) {
@@ -5163,12 +5336,18 @@ class ClaudeAgentSession implements AgentSession {
           })?.detail
         : undefined;
 
+    // Claude's safety checks still ask in bypassPermissions mode; decisionReason
+    // says which one fired, so the card can explain the unexpected prompt.
+    const summary = buildClaudeQuestionPermissionSummary(toolName, input);
+    const decisionReason = options.decisionReason?.trim();
+
     const request: AgentPermissionRequest = {
       id: requestId,
       provider: "claude",
       name: toolName,
       kind,
-      ...buildClaudeQuestionPermissionSummary(toolName, input),
+      ...summary,
+      ...(!summary.description && decisionReason ? { description: decisionReason } : {}),
       input: requestInput,
       detail: toolDetail,
       suggestions: options.suggestions?.map((suggestion) => ({
@@ -5227,6 +5406,7 @@ class ClaudeAgentSession implements AgentSession {
 
       this.pendingPermissions.set(requestId, {
         request,
+        ...(decisionReason ? { decisionReason } : {}),
         resolve,
         reject,
         cleanup,
@@ -5318,7 +5498,11 @@ class ClaudeAgentSession implements AgentSession {
 
   private notifySubscribers(event: AgentStreamEvent): void {
     const turnId =
-      getAgentStreamEventTurnId(event) ?? this.activeForegroundTurnId ?? this.autonomousTurn?.id;
+      event.type === "commands_changed"
+        ? null
+        : (getAgentStreamEventTurnId(event) ??
+          this.activeForegroundTurnId ??
+          this.autonomousTurn?.id);
     const tagged = turnId ? { ...event, turnId } : event;
     this.logger.trace(
       {
@@ -5372,7 +5556,10 @@ class ClaudeAgentSession implements AgentSession {
     return this.historyReady;
   }
 
-  private async loadPersistedHistory(sessionId: string): Promise<void> {
+  private async loadPersistedHistory(
+    sessionId: string,
+    pendingRewind?: { leafUuid: string | null },
+  ): Promise<void> {
     let historyPath: string | null = null;
     this.replayingHistory = true;
     try {
@@ -5385,10 +5572,14 @@ class ClaudeAgentSession implements AgentSession {
         );
         return;
       }
-      await withClaudeReplayHistory(historyPath, async (history) => {
-        const replay = await this.ingestPersistedSidechains(history);
-        await this.ingestPersistedHistory(history.parentEntries, replay);
-      });
+      await withClaudeReplayHistory(
+        historyPath,
+        async (history) => {
+          const replay = await this.ingestPersistedSidechains(history);
+          await this.ingestPersistedHistory(history.parentEntries, replay);
+        },
+        { pendingRewind },
+      );
     } catch (error) {
       this.logger.warn(
         { err: error, sessionId, historyPath },
@@ -5497,6 +5688,9 @@ class ClaudeAgentSession implements AgentSession {
       }
       return;
     }
+    if (this.foldSkillContentIntoHistory({ entry, timeline, historyTimestamp })) {
+      return;
+    }
     const taskSnapshot = this.taskState.observe(entry);
     const items = [
       ...(taskSnapshot ? [taskSnapshot] : []),
@@ -5538,8 +5732,12 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private async convertHistoryEntry(entry: ClaudeHistoryEntry): Promise<AgentTimelineItem[]> {
+    const timestamp = normalizeProviderReplayTimestamp(entry.timestamp);
+    const observedAt = timestamp ? new Date(timestamp) : undefined;
     return (
-      await convertClaudeHistoryEntry(entry, (content) => this.mapBlocksToTimeline(content))
+      await convertClaudeHistoryEntry(entry, (content) =>
+        this.mapBlocksToTimeline(content, { observedAt }),
+      )
     ).map(limitAgentTimelineItemContent);
   }
 
@@ -5553,6 +5751,8 @@ class ClaudeAgentSession implements AgentSession {
   // suppressAssistantText only applies when textMessageType is "assistant_message" — user text
   // must never be suppressed since the TimelineAssembler only handles assistant text.
   //
+  // observedAt is the history entry's timestamp; tool-result images skip originals modified later.
+  //
   // NOTE: convertClaudeHistoryEntry uses extractUserMessageText directly instead of this function
   // for user entries. Both paths must produce equivalent user_message items.
   private async mapBlocksToTimeline(
@@ -5561,6 +5761,7 @@ class ClaudeAgentSession implements AgentSession {
       textMessageType?: "assistant_message" | "user_message";
       suppressAssistantText?: boolean;
       suppressReasoning?: boolean;
+      observedAt?: Date;
     },
   ): Promise<AgentTimelineItem[]> {
     const textMessageType = options?.textMessageType ?? "assistant_message";
@@ -5595,6 +5796,7 @@ class ClaudeAgentSession implements AgentSession {
         textMessageType,
         suppressText,
         suppressReasoning,
+        observedAt: options?.observedAt,
       });
     }
 
@@ -5642,6 +5844,7 @@ class ClaudeAgentSession implements AgentSession {
       textMessageType: "assistant_message" | "user_message";
       suppressText: boolean;
       suppressReasoning: boolean;
+      observedAt?: Date;
     },
   ): Promise<void> {
     switch (block.type) {
@@ -5667,7 +5870,7 @@ class ClaudeAgentSession implements AgentSession {
       case "code_execution_tool_result":
       case "bash_code_execution_tool_result":
       case "text_editor_code_execution_tool_result":
-        await this.handleToolResult(block, context.items);
+        await this.handleToolResult(block, context.items, context.observedAt);
         break;
       default:
         break;
@@ -5716,6 +5919,7 @@ class ClaudeAgentSession implements AgentSession {
   private async handleToolResult(
     block: ClaudeContentChunk,
     items: AgentTimelineItem[],
+    observedAt: Date | undefined,
   ): Promise<void> {
     const entry =
       typeof block.tool_use_id === "string" ? this.toolUseCache.get(block.tool_use_id) : undefined;
@@ -5747,19 +5951,47 @@ class ClaudeAgentSession implements AgentSession {
         });
     this.pushToolCall(settledToolCall, items);
     this.rememberSettledSubagentToolCall(settledToolCall, entry);
+    this.skillContent.remember(settledToolCall, entry?.input);
 
-    for (const image of images) {
-      const imageItem = await renderProviderImageOutputAsAssistantMarkdown(image, {
-        materialize: materializeProviderImage,
-      });
-      if (imageItem) {
-        items.push(imageItem);
-      }
-    }
+    items.push(
+      ...(await renderClaudeToolResultImages({
+        images,
+        toolName,
+        input: entry?.input,
+        observedAt,
+      })),
+    );
 
     if (typeof block.tool_use_id === "string") {
       this.toolUseCache.delete(block.tool_use_id);
     }
+  }
+
+  /** Replaces the replayed Skill call with one whose output is the SKILL.md entry that follows. */
+  private foldSkillContentIntoHistory(input: {
+    entry: ClaudeHistoryEntry;
+    timeline: PersistedTimelineEntry[];
+    historyTimestamp: string | null;
+  }): boolean {
+    const { entry, timeline, historyTimestamp } = input;
+    if (entry.type === "assistant") {
+      // A SKILL.md body follows its tool result directly, never after model output.
+      this.skillContent.reset();
+      return false;
+    }
+    const skillCall = entry.type === "user" ? this.skillContent.consume(entry) : null;
+    if (!skillCall) return false;
+    const item = limitAgentTimelineItemContent(skillCall);
+    const settled = timeline.findLastIndex(
+      (row) => row.item.type === "tool_call" && row.item.callId === skillCall.callId,
+    );
+    const previous = settled >= 0 ? timeline[settled] : undefined;
+    if (previous) {
+      timeline[settled] = { ...previous, item };
+    } else {
+      timeline.push({ item, timestamp: historyTimestamp ?? undefined });
+    }
+    return true;
   }
 
   private rememberSettledSubagentToolCall(

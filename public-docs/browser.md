@@ -38,7 +38,7 @@ Browser tools are off by default. Turn them on per host:
 }
 ```
 
-The tools are part of the [Paseo MCP toolset](/docs/mcp), so **Enable Paseo tools** on the same page must also be on for agents to receive them. Existing agents may need a reload to pick up new tools.
+Use [`paseo browser`](/docs/browser-tools) to control tabs. **Enable Paseo tools** also supplies native browser tools where supported and generated CLI guidance; it is not required to invoke the CLI from a shell. Existing agents need a reload to receive changed guidance or native catalogs. See [tool policy](/docs/mcp).
 
 > Browser tools let agents access and control Paseo browser tabs, including logged-in browser state. Only enable this for agents you trust.
 
@@ -48,7 +48,7 @@ Browser tabs are hosted by the Paseo desktop app. The daemon itself doesn't run 
 
 ## How an agent sees a page
 
-The primary tool is `browser_snapshot`, which returns the page as an accessibility tree — headings, text, form state, and hierarchy — instead of raw HTML:
+The primary command is `paseo browser snapshot <browser-id>`, which returns the page as an accessibility tree — headings, text, form state, and hierarchy — instead of raw HTML:
 
 ```yaml
 - document "Settings"
@@ -58,18 +58,18 @@ The primary tool is `browser_snapshot`, which returns the page as an accessibili
   - button "Save changes" [ref=@e3]
 ```
 
-Interactive elements carry refs like `@e3`. The agent passes a ref to `browser_click`, `browser_fill`, and the other action tools. Refs come from the latest snapshot of that tab and expire when the page changes — a stale ref returns an error instead of acting on the wrong element.
+Interactive elements carry refs like `@e3`. The agent passes a ref to `paseo browser click`, `paseo browser fill`, and the other action commands. Refs come from the latest snapshot of that tab and expire when the page changes — a stale ref returns an error instead of acting on the wrong element.
 
-For anything the tree can't capture, agents fall back to `browser_screenshot`, and `browser_logs` exposes console messages and network timing.
+For anything the tree can't capture, agents use `paseo browser screenshot <browser-id> --output <path>`, and `paseo browser logs` exposes console messages and network timing.
 
 ## Architecture
 
 ```
-agent ──MCP──▶ daemon (broker) ──▶ browser host (desktop app) ──▶ webview
+agent ──CLI/native tools──▶ daemon (broker) ──▶ browser host (desktop app) ──▶ webview
 ```
 
 - **Workspace-scoped tabs.** An agent only sees and controls tabs in its own workspace. New tabs open in the background without stealing your focus.
-- **Tab-to-host routing.** The daemon remembers which host owns each tab and routes tab commands there. `browser_list_tabs` aggregates all connected hosts.
+- **Tab-to-host routing.** The daemon remembers which host owns each tab and routes tab commands there. `paseo browser list-tabs` aggregates all connected hosts.
 - **Trusted input.** Clicks, keys, hovers, and drags are dispatched as real browser input events — CSS `:hover` triggers, and pages can't tell an agent's click from a user's. Every action first waits for its target to be visible, enabled, and stable.
 - **Dialogs never block.** `alert` is accepted; `confirm`, `prompt`, and `beforeunload` are dismissed. Every handled dialog is reported in the tool result so the agent knows the page flow changed.
 
@@ -79,4 +79,4 @@ agent ──MCP──▶ daemon (broker) ──▶ browser host (desktop app) �
 - File uploads can only reference files inside the agent's workspace.
 - Tabs share the browser profile you use in Paseo, including cookies and logins — that's what makes logged-in testing work, and why the feature is opt-in per host.
 
-See the [tools reference](/docs/browser-tools) for the full tool list.
+See the [tools reference](/docs/browser-tools) for all 22 commands.

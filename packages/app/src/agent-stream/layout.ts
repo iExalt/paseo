@@ -1,6 +1,10 @@
 import type { TurnTiming } from "@/timeline/turn-time";
 import type { StreamItem } from "@/types/stream";
-import { getAssistantMessageSpacing, getGapBetweenStreamItems } from "./spacing";
+import {
+  getAssistantMessageSpacing,
+  getGapBetweenStreamItems,
+  isReceivedMessageItem,
+} from "./spacing";
 import type { StreamFrameChildOrder, StreamStrategy } from "./strategy";
 import { continuesResponse, continuesTurn, isResponseBoundary } from "./turn-membership";
 
@@ -12,6 +16,10 @@ export interface TurnFooterHost {
   timing?: TurnTiming;
   startIndex: number;
 }
+
+// Your own messages group into bubbles; a received message is a closed row with its own gaps.
+const isBubble = (item: StreamItem | null) =>
+  item?.kind === "user_message" && !isReceivedMessageItem(item);
 
 export interface StreamLayoutItem {
   item: StreamItem;
@@ -327,8 +335,8 @@ function layoutSegmentItem(
     assistantSpacing,
     completedFooter,
     toolSequence: getToolSequence({ item, aboveItem, belowItem }),
-    isFirstInUserGroup: item.kind === "user_message" && aboveItem?.kind !== "user_message",
-    isLastInUserGroup: item.kind === "user_message" && belowItem?.kind !== "user_message",
+    isFirstInUserGroup: isBubble(item) && !isBubble(aboveItem),
+    isLastInUserGroup: isBubble(item) && !isBubble(belowItem),
     isLastInToolSequence:
       isToolSequenceItem(item) &&
       !(isToolSequenceItem(belowItem) && continuesTurn(item, belowItem)),

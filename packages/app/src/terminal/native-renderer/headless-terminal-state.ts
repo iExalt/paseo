@@ -5,8 +5,14 @@ import {
   type Terminal as HeadlessTerminalInstance,
 } from "@xterm/headless";
 import type { TerminalCell, TerminalState } from "@getpaseo/protocol/messages";
+import { searchTerminalBuffer, type TerminalFindMatch } from "./terminal-buffer-search";
 
 export type NativeTerminalWriteData = Uint8Array | string;
+
+export interface TerminalBufferSearchResult {
+  matches: TerminalFindMatch[];
+  limited: boolean;
+}
 export interface NativeTerminalCell extends TerminalCell {
   width?: number;
 }
@@ -26,6 +32,8 @@ export interface NativeHeadlessTerminal {
   getInputModeState(): NativeHeadlessTerminalInputModeState;
   getBufferBounds(): TerminalBufferBounds;
   getBufferWindow(input: TerminalBufferWindowInput): TerminalBufferWindow;
+  /** Find matches in absolute rows; see `searchTerminalBuffer`. */
+  search(query: string, limit?: number): TerminalBufferSearchResult;
   resize(input: { rows: number; cols: number }): void;
   reset(): void;
   dispose(): void;
@@ -331,6 +339,18 @@ function extractViewportState(
   };
 }
 
+interface XtermWriteBufferAccess {
+  _core?: { _writeBuffer?: { handleUserInput?: () => void } };
+}
+
+// xterm starts the first write after an idle period from setTimeout, which on
+// React Native costs one or more frames of echo latency. The user-input path
+// parses at once; xterm still time-slices a long write. If the private API
+// goes away, writes fall back to the timer.
+function startNextWriteNow(terminal: HeadlessTerminalInstance): void {
+  (terminal as unknown as XtermWriteBufferAccess)._core?._writeBuffer?.handleUserInput?.();
+}
+
 export function createNativeHeadlessTerminal(
   options: NativeHeadlessTerminalOptions,
 ): NativeHeadlessTerminal {
@@ -374,6 +394,7 @@ export function createNativeHeadlessTerminal(
       if (text.length === 0) {
         return;
       }
+      startNextWriteNow(terminal);
       await new Promise<void>((resolve) => {
         terminal.write(text, () => {
           resolve();
@@ -399,6 +420,13 @@ export function createNativeHeadlessTerminal(
     },
     getBufferWindow(input: TerminalBufferWindowInput): TerminalBufferWindow {
       return extractBufferWindow(terminal, getActiveCoordinateStorage().oldestRow, input);
+    },
+    search(query: string, limit?: number): TerminalBufferSearchResult {
+      return searchTerminalBuffer(terminal.buffer.active, query, {
+        oldestRow: getActiveCoordinateStorage().oldestRow,
+        cell: terminal.buffer.active.getNullCell(),
+        limit,
+      });
     },
     resize(input: { rows: number; cols: number }): void {
       coordinateEpoch += 1;

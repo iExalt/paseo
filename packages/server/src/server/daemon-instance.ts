@@ -28,7 +28,7 @@ const killTree = (pid: number, signal: string): Promise<void> =>
 // Keep daemon bootstrap and WebSocket schemas out of its dependency tree.
 export { resolvePaseoHome } from "./paseo-home.js";
 export { ensurePrivateDirectory } from "./private-files.js";
-export { daemonLaunchEnvironment } from "./config-environment.js";
+export { daemonLaunchEnvironment, droppedManagedEnvOverrides } from "./config-environment.js";
 export { readLocalCredentialForTarget } from "./local-credential.js";
 export {
   TerminalCleanupNotConfirmedError,
@@ -103,9 +103,9 @@ async function requestInstanceStop(
   options: {
     force?: boolean;
     keepTerminals?: boolean;
-    requestShutdown?: (instance: PidLockInfo & { listen: string }) => Promise<void>;
+    requestShutdown?: (instance: PidLockInfo & { listen: string }) => Promise<void | "declined">;
   },
-) {
+): Promise<{ forced: boolean; usedLifecycleRpc: boolean } | "declined"> {
   let forced = false;
   let usedLifecycleRpc = false;
   if (options.keepTerminals) {
@@ -116,7 +116,8 @@ async function requestInstanceStop(
         `PID ${instance.pid} for ${home} has no listen address, so it cannot be asked to keep its terminals.`,
       );
     }
-    await options.requestShutdown({ ...instance, listen: instance.listen });
+    if ((await options.requestShutdown({ ...instance, listen: instance.listen })) === "declined")
+      return "declined";
     return { forced, usedLifecycleRpc: true };
   }
   if (process.platform === "win32") {
@@ -163,10 +164,11 @@ export async function stopDaemonInstance(
     keepTerminals?: boolean;
     timeoutMs?: number;
     killTimeoutMs?: number;
-    requestShutdown?: (instance: PidLockInfo & { listen: string }) => Promise<void>;
+    // Resolves "declined" when an idle-only stop found an agent at work; the daemon keeps running.
+    requestShutdown?: (instance: PidLockInfo & { listen: string }) => Promise<void | "declined">;
   } = {},
 ): Promise<{
-  action: "stopped" | "not_running";
+  action: "stopped" | "not_running" | "declined";
   pid: number | null;
   forced: boolean;
   usedLifecycleRpc: boolean;
@@ -181,22 +183,14 @@ export async function stopDaemonInstance(
       `Supervisor changed for ${home}; refusing to stop PID ${instance.pid}.`,
     );
   }
-  if (!instance || !isPidLockOwnerRunning(instance)) {
-    if (instance)
-      await releasePidLock(home, { ownerPid: instance.pid, startedAt: instance.startedAt });
-    // Terminals a `stop --keep-terminals` left behind belong to no daemon now; a plain stop
-    // closes them.
-    await closeLeftoverTerminals(home, { keepTerminals: options.keepTerminals, forced: false });
-    return {
-      action: "not_running",
-      pid: instance?.pid ?? null,
-      forced: false,
-      usedLifecycleRpc: false,
-    };
-  }
+  if (!instance || !isPidLockOwnerRunning(instance))
+    return stopNotRunning(home, instance, options.keepTerminals);
   if (instance.pid <= 1 || instance.pid === process.pid)
     throw new Error("Refusing to stop invalid supervisor PID");
-  let { forced, usedLifecycleRpc } = await requestInstanceStop(home, instance, options);
+  const requested = await requestInstanceStop(home, instance, options);
+  if (requested === "declined")
+    return { action: "declined", pid: instance.pid, forced: false, usedLifecycleRpc: true };
+  let { forced, usedLifecycleRpc } = requested;
   const waitForExit = async (waitMs: number) => {
     const exitDeadline = Date.now() + waitMs;
     while (isPidLockOwnerRunning(instance)) {
@@ -227,6 +221,24 @@ export async function stopDaemonInstance(
   // after --force (no graceful shutdown happened) does it at once.
   await closeLeftoverTerminals(home, { keepTerminals: options.keepTerminals, forced });
   return { action: "stopped", pid: instance.pid, forced, usedLifecycleRpc };
+}
+
+async function stopNotRunning(
+  home: string,
+  instance: PidLockInfo | null,
+  keepTerminals: boolean | undefined,
+) {
+  if (instance)
+    await releasePidLock(home, { ownerPid: instance.pid, startedAt: instance.startedAt });
+  // Terminals a `stop --keep-terminals` left behind belong to no daemon now; a plain stop
+  // closes them.
+  await closeLeftoverTerminals(home, { keepTerminals, forced: false });
+  return {
+    action: "not_running" as const,
+    pid: instance?.pid ?? null,
+    forced: false,
+    usedLifecycleRpc: false,
+  };
 }
 
 function assertStopOptions(options: { force?: boolean; keepTerminals?: boolean }): void {

@@ -507,22 +507,66 @@ export const BrowserAutomationExecuteRequestSchema = z
   })
   .strict();
 
+// zod-aot 0.2.0 miscompiles boolean discriminators as string options
+// ("true"/"false"), so keep this sequential until upstream fixes it.
+export const BrowserAutomationExecutePayloadSchema = z.union([
+  z.object({
+    requestId: z.string().min(1),
+    ok: z.literal(true),
+    result: BrowserAutomationResultSchema,
+    dialogs: z.array(BrowserAutomationDialogEventSchema).optional(),
+  }),
+  z.object({
+    requestId: z.string().min(1),
+    ok: z.literal(false),
+    error: BrowserAutomationErrorSchema,
+    dialogs: z.array(BrowserAutomationDialogEventSchema).optional(),
+  }),
+]);
+
 export const BrowserAutomationExecuteResponseSchema = z.object({
   type: z.literal("browser.automation.execute.response"),
-  payload: z.discriminatedUnion("ok", [
-    z.object({
-      requestId: z.string().min(1),
-      ok: z.literal(true),
-      result: BrowserAutomationResultSchema,
-      dialogs: z.array(BrowserAutomationDialogEventSchema).optional(),
+  payload: BrowserAutomationExecutePayloadSchema,
+});
+
+export const BrowserCommandExecuteRequestSchema = z
+  .object({
+    type: z.literal("browser.command.execute.request"),
+    requestId: z.string().min(1),
+    agentId: z.string().min(1).optional(),
+    workspaceId: z.string().min(1).optional(),
+    command: BrowserAutomationCommandSchema,
+  })
+  .strict();
+
+export const BrowserCommandExecuteResponseSchema = z.object({
+  type: z.literal("browser.command.execute.response"),
+  payload: z.object({
+    requestId: z.string().min(1),
+    result: BrowserAutomationExecutePayloadSchema,
+    context: z.object({
+      agentId: z.string().min(1).optional(),
+      cwd: z.string().min(1).optional(),
+      workspaceId: z.string().min(1).optional(),
+      browserId: BrowserAutomationBrowserIdSchema.optional(),
     }),
-    z.object({
-      requestId: z.string().min(1),
-      ok: z.literal(false),
-      error: BrowserAutomationErrorSchema,
-      dialogs: z.array(BrowserAutomationDialogEventSchema).optional(),
-    }),
-  ]),
+  }),
+});
+
+export const BrowserCommandCancelRequestSchema = z
+  .object({
+    type: z.literal("browser.command.cancel.request"),
+    requestId: z.string().min(1),
+    targetRequestId: z.string().min(1),
+  })
+  .strict();
+
+export const BrowserCommandCancelResponseSchema = z.object({
+  type: z.literal("browser.command.cancel.response"),
+  payload: z.object({
+    requestId: z.string().min(1),
+    cancelled: z.boolean(),
+  }),
 });
 
 export type BrowserAutomationErrorCode = z.infer<typeof BrowserAutomationErrorCodeSchema>;
@@ -540,3 +584,8 @@ export type BrowserAutomationExecuteRequest = z.infer<typeof BrowserAutomationEx
 export type BrowserAutomationExecuteResponse = z.infer<
   typeof BrowserAutomationExecuteResponseSchema
 >;
+export type BrowserAutomationExecutePayload = z.infer<typeof BrowserAutomationExecutePayloadSchema>;
+export type BrowserCommandExecuteRequest = z.infer<typeof BrowserCommandExecuteRequestSchema>;
+export type BrowserCommandExecuteResponse = z.infer<typeof BrowserCommandExecuteResponseSchema>;
+export type BrowserCommandCancelRequest = z.infer<typeof BrowserCommandCancelRequestSchema>;
+export type BrowserCommandCancelResponse = z.infer<typeof BrowserCommandCancelResponseSchema>;

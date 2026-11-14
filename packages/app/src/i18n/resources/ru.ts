@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const ru: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "Не удалось выполнить поиск в чате. Проверьте подключение к хосту и повторите попытку.",
@@ -336,6 +339,8 @@ export const ru: TranslationResources = {
     actions: {
       copyCode: "Скопировать код",
       copyTurn: "Скопировать ответ",
+      selectText: "Выделить текст",
+      selectTextTruncated: "Показаны первые 50 000 символов. «Скопировать ответ» копирует всё.",
       copyMessage: "Копировать сообщение",
       forkMenu: "Форкнуть чат отсюда",
       forkInNewTab: "Создать форк в новой вкладке",
@@ -709,6 +714,8 @@ export const ru: TranslationResources = {
         failedToCloseAgent: "Не удалось закрыть агента",
       },
       confirmations: {
+        closeTabsAboveTitle: "Закрыть вкладки выше?",
+        closeTabsBelowTitle: "Закрыть вкладки ниже?",
         unsavedTitle: "Несохранённые изменения",
         unsavedMessage:
           "В этой вкладке есть несохранённые изменения. При закрытии черновик будет удалён.",
@@ -752,6 +759,7 @@ export const ru: TranslationResources = {
         importSession: "Импортировать сессию",
         copyPath: "Скопировать путь к рабочему пространству",
         copyBranchName: "Скопировать название ветки",
+        copyProviderSessionId: "Копировать ID сессии",
         showSetup: "Показать настройку рабочего пространства",
       },
       toasts: {
@@ -761,6 +769,7 @@ export const ru: TranslationResources = {
           "Рабочее пространство подготавливается. Терминал откроется, когда оно будет готово...",
         workspacePathCopiedLabel: "Путь к рабочему пространству",
         branchNameCopiedLabel: "Имя ветки",
+        providerSessionIdCopiedLabel: "ID сессии",
       },
     },
     scripts: {
@@ -1270,12 +1279,6 @@ export const ru: TranslationResources = {
       search: "Поиск",
       schedules: "Расписания",
     },
-    worktreeSetup: {
-      title: "Настроить скрипты worktree",
-      description:
-        "Добавьте команды настройки для автоматической установки зависимостей и подготовки новых worktree.",
-      openProjectSettings: "Открыть настройки проекта",
-    },
     project: {
       actions: {
         menu: "Действия проекта",
@@ -1334,6 +1337,10 @@ export const ru: TranslationResources = {
         hideFromSidebar: "Скрыть на боковой панели",
         archiving: "Архивирование...",
         hiding: "Скрытие...",
+        muteNotifications: "Отключить уведомления",
+        unmuteNotifications: "Включить уведомления",
+        updatingNotifications: "Обновление уведомлений...",
+        updateHostForNotifications: "Обновите этот хост, чтобы управлять уведомлениями.",
       },
       confirmations: {
         hideTitle: "Скрыть рабочее пространство?",
@@ -1462,11 +1469,41 @@ export const ru: TranslationResources = {
       },
       advancedSettings: "Расширенные настройки",
       openAdvancedSettings: "Открыть дополнительные настройки демона",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Версии приложения и демона не совпадают. Обновите приложение и демон до одной версии, чтобы избежать проблем.",
       loadFailed: "Не удалось загрузить статус встроенного демона.",
     },
     updates: {
+      nix: {
+        checking: "Проверка обновлений…",
+        downloading: "Загрузка {{version}}…",
+        applying: "Установка {{version}}…",
+        restarting: "Перезапуск…",
+        failed: "Не удалось обновить: {{error}}",
+        ready: "Версия {{version}} загружена и готова к установке",
+        available: "Доступна версия {{version}}",
+        restartRequired: "Версия {{version}} установлена; перезапустите, чтобы использовать её",
+        upToDate: "Обновлено (проверено в {{time}})",
+        notChecked: "Ещё не проверялось",
+        checkAction: "Проверить",
+        updateAction: "Обновить",
+        restartAction: "Перезапустить",
+        updateTitle: "Обновить до {{version}}?",
+        updateMessage: "Paseo установит обновление и перезапустится.",
+        updateConfirm: "Обновить",
+        restartTitle: "Перезапустить, чтобы завершить обновление до {{version}}?",
+        restartMessage: "Paseo перезапустится и будет использовать новую версию.",
+        restartConfirm: "Перезапустить",
+        agentsKeepRunning:
+          "Работающие агенты ({{count}}) продолжат работу; фоновая служба обновится после их завершения.",
+        lastAttemptFailed: "Последняя попытка не удалась: {{error}}",
+        updateTooltip: "Обновить до {{version}}",
+        restartTooltip: "Перезапустить, чтобы завершить обновление до {{version}}",
+        failedTooltip: "Не удалось обновить",
+        failedTitle: "Не удалось обновить",
+        tryAgain: "Повторить",
+      },
       status: {
         checking: "Проверка обновлений приложения...",
         installing: "Установка обновления приложения...",
@@ -1502,7 +1539,7 @@ export const ru: TranslationResources = {
         versionReady: "Версия {{version}} готова к установке.",
         newVersionReady: "Новая версия готова к установке.",
         restartWarning:
-          "При обновлении приложения работающие агенты будут остановлены, а сеансы терминала закрыты.",
+          "Обновление дождётся завершения работы активных агентов и терминалов перед перезапуском.",
       },
     },
     settings: {
@@ -1963,6 +2000,8 @@ export const ru: TranslationResources = {
     archiveTooltip: "Архивировать субагента",
     archiveFinishedAction: "Архивировать завершенные субагенты",
     archiveFinishedRetry: "Повторить ({{failed}}/{{total}})",
+    showFinished: "Показать завершенные ({{count}})",
+    hideFinished: "Скрыть завершенные",
   },
   panels: {
     draft: {
@@ -2050,6 +2089,8 @@ export const ru: TranslationResources = {
     output: "Выходные данные",
   },
   turnSummary: {
+    messages: { one: "написано {{count}} сообщение", other: "написано сообщений: {{count}}" },
+    agentMessage: "Сообщение агента",
     details: "Показать подробности хода",
     sentBy: "Отправлено агентом {{name}}",
     showMore: "Показать больше",
@@ -2072,6 +2113,10 @@ export const ru: TranslationResources = {
     searches: {
       one: "выполнен {{count}} поиск",
       other: "выполнены поисковые запросы ({{count}})",
+    },
+    sentMessages: {
+      one: "отправлено {{count}} сообщение",
+      other: "отправлено {{count}} сообщений",
     },
     otherTools: {
       one: "использован {{count}} другой инструмент",
@@ -2235,7 +2280,7 @@ export const ru: TranslationResources = {
     editor: {
       title: "Редактор",
       vimKeybindings: "Сочетания клавиш Vim",
-      vimHint: "Применяется к исходным файлам в веб- и настольной версии.",
+      vimHint: "Применяется к исходным файлам в редакторе.",
     },
     files: {
       title: "Файлы",
@@ -2376,7 +2421,7 @@ export const ru: TranslationResources = {
           steer:
             "Когда агент работает, Enter дополняет текущий ответ новым указанием, а Command/Ctrl+Enter ставит сообщение в очередь.",
           queue:
-            "Когда агент работает, Enter ставит сообщение в очередь, а Command/Ctrl+Enter отправляет его.",
+            "Когда агент работает, Enter ставит сообщение в очередь, а Command/Ctrl+Enter дополняет текущий ответ новым указанием.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2467,6 +2512,7 @@ export const ru: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "О приложении",
       appVersion: "Версия приложения",
       whatsNewHint: "Заметки о выпуске для каждой версии",
@@ -2494,6 +2540,10 @@ export const ru: TranslationResources = {
         checking: "Проверка...",
         alertTitle: "Ошибка",
         alertMessage: "Не удалось открыть диалог подтверждения обновления.",
+      },
+      nixUpdates: {
+        label: "Обновления под управлением Nix",
+        invalidMarker: "Не удалось проверить эту установку Nix.",
       },
     },
     appearance: {
@@ -2574,7 +2624,6 @@ export const ru: TranslationResources = {
     shortcuts: {
       dialogTitle: "Сочетания клавиш",
       searchPlaceholder: "Поиск сочетаний клавиш",
-      unavailableOnMobile: "Сочетания клавиш доступны только на рабочем столе.",
       capturePrompt: "Нажмите сочетание клавиш...",
       captureIndexPrompt: "Завершите цифрой от 1 до 9.",
       unassigned: "Не задано",
@@ -2731,6 +2780,13 @@ export const ru: TranslationResources = {
         rowTitle: "Подключить устройство",
         rowHint:
           "Отсканируйте QR-код или скопируйте ссылку, чтобы подключить телефон к этому хосту.",
+        keepAwake: {
+          title: "Не давать этому Mac засыпать ради ретранслятора",
+          hint: "Не даёт Mac засыпать при питании от сети, пока ретранслятор включён, чтобы удалённые устройства могли к нему подключиться. При подключении к сети расходует больше энергии и сильнее греется.",
+          activeHint: "Не даёт этому Mac засыпать при питании от сети, пока ретранслятор включён",
+          waitingHint: "Действует, когда ретранслятор включён",
+          updateFailed: "Не удалось обновить настройку предотвращения сна",
+        },
       },
       skills: {
         sectionTitle: "Навыки оркестрации",
@@ -2795,6 +2851,33 @@ export const ru: TranslationResources = {
           reset: "Сбросить",
           save: "Сохранить",
           saving: "Сохранение...",
+        },
+        replyRules: {
+          title: "Правила уведомлений об ответах",
+          scope: "Действует для всех рабочих пространств на {{host}}.",
+          help: "Поиск RE2 без нормализации текста. Используйте якоря, чтобы проверять ответ целиком. До 8 правил, 256 кодовых единиц UTF-16 на шаблон и 16 384 на текст ответа. Флаги i, m и u не повторяются; если флаг не указан, Unicode включён.",
+          source: "Шаблон",
+          flags: "Флаги",
+          add: "Добавить правило",
+          remove: "Удалить правило",
+          save: "Сохранить правила",
+          saving: "Сохранение...",
+          clear: "Очистить все правила",
+          loading: "Загрузка сохранённых правил...",
+          empty: "Правила ответов не сохранены.",
+          unsupported: "Обновите этот хост, чтобы управлять правилами уведомлений об ответах.",
+          disconnected:
+            "Подключитесь к этому хосту, чтобы управлять правилами уведомлений об ответах.",
+          readError:
+            "Не удалось прочитать правила: {{error}}. Если это ошибка доступа, проверьте разрешение daemon.read.",
+          writeError:
+            "Не удалось сохранить правила: {{error}}. Если это ошибка доступа, проверьте разрешение daemon.manage.",
+          conflict:
+            "Правила на этом хосте изменились во время редактирования. Перезагрузка сохранённых правил удалит черновик; сохранив его, вы сможете намеренно заменить последние правила при следующем сохранении.",
+          awaitingAuthority: "Сохранено. Ожидаем подтверждения обновлённых правил от хоста...",
+          reload: "Перезагрузить сохранённые правила",
+          keep: "Оставить черновик",
+          retry: "Повторить",
         },
       },
       agents: {

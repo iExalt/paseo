@@ -21,6 +21,7 @@ import type {
   SessionOutboundMessage,
 } from "../../messages.js";
 import { createPaseoDaemon, type PaseoDaemon, type PaseoDaemonConfig } from "../../bootstrap.js";
+import { BuiltinPluginLoader } from "../../plugins/builtin/index.js";
 import type { WebSocketLike } from "../../websocket-server.js";
 import type {
   AgentClient,
@@ -895,11 +896,12 @@ export class HubRelationshipHarness {
   }
 
   async createForeignExecution(executionId: string): Promise<string> {
+    const workspaceId = await this.createSiblingWorkspace(this.root);
     const agent = await this.daemon!.agentManager.createAgent(
       { provider: "codex", cwd: this.root },
       undefined,
       {
-        workspaceId: "foreign-workspace",
+        workspaceId,
         owner: { kind: "daemon", daemonId: "another-daemon", executionId },
       },
     );
@@ -1152,10 +1154,11 @@ export class HubRelationshipHarness {
   }
 
   async createUnrelatedLocalAgent(): Promise<string> {
+    const workspaceId = await this.createSiblingWorkspace(this.root);
     const agent = await this.daemon!.agentManager.createAgent(
       { provider: "codex", cwd: this.root },
       undefined,
-      { workspaceId: "local-workspace" },
+      { workspaceId },
     );
     return agent.id;
   }
@@ -1394,6 +1397,7 @@ export class HubRelationshipHarness {
     execFileSync("git", ["init", "-b", "main", this.root], { stdio: "ignore" });
     execFileSync("git", ["-C", this.root, "config", "user.email", "hub@test.invalid"]);
     execFileSync("git", ["-C", this.root, "config", "user.name", "Hub Test"]);
+    execFileSync("git", ["-C", this.root, "config", "commit.gpgsign", "false"]);
     execFileSync("git", ["-C", this.root, "commit", "--allow-empty", "-m", "initial"], {
       stdio: "ignore",
     });
@@ -1402,9 +1406,8 @@ export class HubRelationshipHarness {
       paseoHome: this.paseoHome,
       corsAllowedOrigins: [],
       hostnames: true,
-      mcpEnabled: this.mcpEnabled,
+      agentToolsEnabled: this.mcpEnabled,
       staticDir,
-      mcpDebug: false,
       agentClients: this.agentClients ?? {
         ...createTestAgentClients(),
         codex: this.codex,
@@ -1423,7 +1426,11 @@ export class HubRelationshipHarness {
         done();
       },
     });
+    // Built-in plugins (about 800 ms) and an eager terminal worker (about 500 ms) slow every
+    // start; Hub tests use neither, and a terminal request still launches the worker.
     this.daemon = await createPaseoDaemon(this.config, pino({ level: "trace" }, destination), {
+      builtinPlugins: new BuiltinPluginLoader(undefined, []),
+      deferTerminalWorkerLaunch: true,
       hubRelationshipRemote: this.remote,
       hubRelationshipClock: this.clock,
       hubRelationshipRetryPolicy: this.clock,

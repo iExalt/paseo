@@ -77,7 +77,11 @@ import { dispatchComposerAgentMessage, sendQueuedComposerMessageNow } from "@/co
 import { createMessageSubmissionWriter } from "@/composer/submission/writer";
 import { resolveComposerAttachmentSubmitFormat } from "@/composer/attachments/submit";
 import { encodeImages } from "@/utils/encode-images";
-import { DirectorySync, type RefreshAgentDirectoryResult } from "@/runtime/directory-sync";
+import {
+  DirectorySync,
+  type AgentDirectoryRefresh,
+  type RefreshAgentDirectoryResult,
+} from "@/runtime/directory-sync";
 import { ReplicaCache } from "@/runtime/replica-cache";
 import type { ReplicaRowStore } from "@/runtime/replica-cache/row-store";
 import { createReplicaRowStore } from "@/runtime/replica-cache/row-store-factory";
@@ -92,6 +96,13 @@ import { projectIconCache } from "@/projects/icon-cache";
 import { createPerformanceTrace } from "@/performance/native-trace";
 import { revokePushNotifications } from "@/push-notifications";
 import { createAppWebSocketFactory } from "./websocket-factory";
+import { agentLog, describeError } from "@/utils/agent-log";
+import { recordNotificationOpenStage } from "@/notification-open/trace";
+import {
+  TimelineRequestSupersededError,
+  type TimelineResponseGuard,
+} from "@/timeline/timeline-request";
+import { confirmNotificationReceipt, useNotificationReceipt } from "@/notification-open/preview";
 
 export type HostRuntimeConnectionStatus = "idle" | "connecting" | "online" | "offline" | "error";
 export type PairingNavigationTarget = "openProject" | "hostRoot" | "hostSettings";
@@ -146,6 +157,8 @@ export interface HostRuntimeSnapshot {
   agentDirectoryStatus: HostRuntimeAgentDirectoryStatus;
   agentDirectoryError: string | null;
   hasEverLoadedAgentDirectory: boolean;
+  /** Last whole-directory agent refresh; current only while its source matches this snapshot. */
+  agentDirectoryRefresh: AgentDirectoryRefresh | null;
   probeByConnectionId: Map<string, ConnectionProbeState>;
   clientGeneration: number;
   connectionEpoch: number;
@@ -756,6 +769,7 @@ export class HostRuntimeController {
       agentDirectoryStatus: "idle",
       agentDirectoryError: null,
       hasEverLoadedAgentDirectory: false,
+      agentDirectoryRefresh: null,
       probeByConnectionId: new Map(),
       clientGeneration: 0,
     };
@@ -874,11 +888,12 @@ export class HostRuntimeController {
     });
   }
 
-  markAgentDirectorySyncReady(): void {
+  markAgentDirectorySyncReady(refresh?: AgentDirectoryRefresh): void {
     this.updateSnapshot({
       agentDirectoryStatus: "ready",
       agentDirectoryError: null,
       hasEverLoadedAgentDirectory: true,
+      ...(refresh ? { agentDirectoryRefresh: refresh } : {}),
     });
   }
 
@@ -1625,6 +1640,7 @@ export class HostRuntimeStore {
   private version = 0;
   private hostListVersion = 0;
   private hostRegistryLoaded = false;
+  private initialDiscoverySettled = false;
   private hosts: HostProfile[] = [];
   private hostAppearanceMutationTail: Promise<void> = Promise.resolve();
   private hostRegistryStatus: HostRegistryStatus = "loading";
@@ -1661,6 +1677,10 @@ export class HostRuntimeStore {
     return this.hosts;
   }
 
+  isInitialDiscoverySettled(): boolean {
+    return this.initialDiscoverySettled;
+  }
+
   getHostRegistryStatus(): HostRegistryStatus {
     return this.hostRegistryStatus;
   }
@@ -1682,7 +1702,10 @@ export class HostRuntimeStore {
 
   boot(): Promise<void> {
     if (!this.bootPromise) {
-      this.bootPromise = this.runBoot();
+      this.bootPromise = this.runBoot().finally(() => {
+        this.initialDiscoverySettled = true;
+        this.emitHostList();
+      });
     }
     return this.bootPromise;
   }
@@ -1806,9 +1829,11 @@ export class HostRuntimeStore {
         timeoutMs: DEFAULT_LOCALHOST_BOOTSTRAP_TIMEOUT_MS,
       });
     } catch (error) {
-      console.warn("[HostRuntime] bootstrap probe failed", {
+      // Expected whenever no daemon listens on this device's localhost, as on every phone.
+      agentLog("connection", "bootstrap-probe", {
         endpoint: LOCALHOST_FALLBACK_ENDPOINT,
-        error,
+        status: "failed",
+        reason: describeError(error),
       });
     }
   }
@@ -1915,7 +1940,7 @@ export class HostRuntimeStore {
       {
         onAgentStoppedRunning: (agentId) => this.drainQueuedAgentMessage(newServerId, agentId),
         markAgentLoading: () => controller.markAgentDirectorySyncLoading(),
-        markAgentReady: () => controller.markAgentDirectorySyncReady(),
+        markAgentReady: (refresh) => controller.markAgentDirectorySyncReady(refresh),
         markAgentError: (error) => controller.markAgentDirectorySyncError(error),
       },
       this.replicaCache,
@@ -2409,7 +2434,7 @@ export class HostRuntimeStore {
         {
           onAgentStoppedRunning: (agentId) => this.drainQueuedAgentMessage(host.serverId, agentId),
           markAgentLoading: () => controller.markAgentDirectorySyncLoading(),
-          markAgentReady: () => controller.markAgentDirectorySyncReady(),
+          markAgentReady: (refresh) => controller.markAgentDirectorySyncReady(refresh),
           markAgentError: (error) => controller.markAgentDirectorySyncError(error),
         },
         this.replicaCache,
@@ -2546,6 +2571,14 @@ export class HostRuntimeStore {
     if (statusChanged && (!wasUnavailable || !isUnavailable)) {
       this.connectionStatusStartedAtByServer.set(serverId, Date.now());
     }
+    if (statusChanged) {
+      agentLog("connection", "status", {
+        serverId,
+        status: snapshot.connectionStatus,
+        transport: snapshot.activeConnection?.type ?? null,
+        error: snapshot.lastError,
+      });
+    }
     this.lastConnectionStatusByServer.set(serverId, snapshot.connectionStatus);
     const didTransitionOnline =
       snapshot.connectionStatus === "online" && previousStatus !== "online";
@@ -2580,7 +2613,7 @@ export class HostRuntimeStore {
           useSessionStore.getState().sessions[serverId]?.queuedMessages.get(queuedAgentId) ?? [],
         write: (update) => useSessionStore.getState().setQueuedMessages(serverId, update),
       },
-      submitMessage: async ({ text, attachments }) => {
+      submitMessage: async ({ text, attachments, activeTurnBehavior, clientMessageId }) => {
         const supportsForgeAttachments =
           useSessionStore.getState().sessions[serverId]?.serverInfo?.features?.forgeSearch === true;
         await dispatchComposerAgentMessage({
@@ -2597,7 +2630,8 @@ export class HostRuntimeStore {
           // in that same moment (a wake-up after background work). Steering folds the message
           // into that turn instead of interrupting it; with no turn running, the daemon starts
           // a normal one.
-          activeTurnBehavior: "steer",
+          activeTurnBehavior,
+          clientMessageId,
         });
       },
     })
@@ -2799,18 +2833,98 @@ export class HostRuntimeStore {
     await replica.prepare(agentId);
   }
 
+  prepareAgentOpen(serverId: string, agentId: string): () => void {
+    let cancelled = false;
+    let stopObserving: (() => void) | undefined;
+    let releaseDemand: (() => void) | undefined;
+    let owner: ViewedTimelineOwner | null = null;
+    const release = () => {
+      if (cancelled) return;
+      cancelled = true;
+      clearTimeout(deadline);
+      stopObserving?.();
+      releaseDemand?.();
+    };
+    const deadline = setTimeout(release, 15_000);
+    void this.boot().catch((error) => {
+      console.warn("[NotificationOpen] startup failed", { serverId, error });
+    });
+    // Registry readiness does not depend on the optional localhost bootstrap probe.
+    void this.loadRegistry()
+      .then(() => {
+        if (cancelled || !this.getSnapshot(serverId)) return;
+        recordNotificationOpenStage(serverId, agentId, "runtime");
+        this.getSnapshot(serverId)?.client?.ensureConnected({ verify: true });
+        void this.prepareAgentTimeline(serverId, agentId)
+          .then(() => {
+            if (!cancelled) recordNotificationOpenStage(serverId, agentId, "cache");
+            return undefined;
+          })
+          .catch((error) => {
+            console.warn("[NotificationOpen] cache preparation failed", {
+              serverId,
+              agentId,
+              error,
+            });
+          });
+        const attach = (nextOwner: ViewedTimelineOwner | null) => {
+          if (cancelled || nextOwner === owner) return;
+          releaseDemand?.();
+          owner = nextOwner;
+          releaseDemand = owner?.prepareAgentOpen(agentId);
+          if (owner) recordNotificationOpenStage(serverId, agentId, "observation-requested");
+        };
+        stopObserving = useSessionStore.subscribe(
+          (state) => state.sessions[serverId]?.viewedTimelineSync ?? null,
+          attach,
+        );
+        attach(useSessionStore.getState().sessions[serverId]?.viewedTimelineSync ?? null);
+        return undefined;
+      })
+      .catch((error) => {
+        release();
+        console.warn("[NotificationOpen] preparation failed", { serverId, agentId, error });
+      });
+    return release;
+  }
+
   async fetchAgentTimeline(
     serverId: string,
     agentId: string,
     request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+    isRequestCurrent: () => boolean = () => true,
   ): Promise<Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>> {
     const directory = this.directorySyncByServer.get(serverId);
     if (!directory) throw new Error(`Unknown host runtime for serverId ${serverId}`);
     const owner = useSessionStore.getState().sessions[serverId]?.viewedTimelineSync;
-    const page = await directory.fetchTimeline(agentId, request);
+    const receipt = useNotificationReceipt.getState().receipt;
+    owner?.flushStreamAgent(agentId);
+    const ownsTimeline = owner?.captureTimelineRequest(agentId, request) ?? (() => true);
+    const isCurrent: TimelineResponseGuard = (page) => {
+      if (useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner) {
+        owner?.flushStreamAgent(agentId);
+      }
+      return (
+        this.directorySyncByServer.get(serverId) === directory &&
+        useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner &&
+        isRequestCurrent() &&
+        ownsTimeline(page)
+      );
+    };
+    const page = await directory.fetchTimeline(agentId, request, isCurrent);
+    if (!isCurrent(page)) throw new TimelineRequestSupersededError();
     if (owner && useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner) {
       owner.flushStreamAgent(agentId);
       owner.applyTimelineResponse(page);
+      if (
+        receipt?.serverId === serverId &&
+        receipt.agentId === agentId &&
+        !page.error &&
+        !page.hasNewer &&
+        page.direction !== "before"
+      ) {
+        confirmNotificationReceipt(receipt);
+      }
     }
     return page;
   }
@@ -2966,6 +3080,15 @@ export function useHosts(): HostProfile[] {
     (onStoreChange) => store.subscribeHostList(onStoreChange),
     () => store.getHosts(),
     () => store.getHosts(),
+  );
+}
+
+export function useInitialHostDiscoverySettled(): boolean {
+  const store = getHostRuntimeStore();
+  return useSyncExternalStore(
+    (onStoreChange) => store.subscribeHostList(onStoreChange),
+    () => store.isInitialDiscoverySettled(),
+    () => store.isInitialDiscoverySettled(),
   );
 }
 

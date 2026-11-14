@@ -1,3 +1,5 @@
+import { Command } from "commander";
+import { runPluginCatalogCommand } from "./catalog.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
@@ -384,4 +386,43 @@ describe("reviewed plugin update workflow", () => {
       expect(f.applied).toEqual([]);
     },
   );
+});
+
+it("catalog preserves the host result and gates older hosts", async () => {
+  const calls: string[] = [];
+  const result = await runPluginCatalogCommand(
+    { daemonTarget },
+    new Command(),
+    async (connectionOptions) => {
+      expect(connectionOptions.target).toEqual(daemonTarget);
+      return {
+        getLastServerInfoMessage: () => ({
+          status: "server_info",
+          serverId: "host",
+          features: { plugins: true },
+        }),
+        getPluginCatalog: async () => {
+          calls.push("catalog");
+          return [];
+        },
+        close: async () => {
+          calls.push("close");
+        },
+      };
+    },
+  );
+  expect(result.data).toEqual({ plugins: [] });
+  expect(calls).toEqual(["catalog", "close"]);
+  await expect(
+    runPluginCatalogCommand({ daemonTarget }, new Command(), async () => ({
+      getLastServerInfoMessage: () => null,
+      getPluginCatalog: async () => {
+        throw new Error("must not request");
+      },
+      close: async () => {
+        calls.push("closed unsupported");
+      },
+    })),
+  ).rejects.toMatchObject({ code: "UNSUPPORTED_HOST" });
+  expect(calls.at(-1)).toBe("closed unsupported");
 });

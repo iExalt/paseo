@@ -108,7 +108,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, values?: Record<string, string | number>) =>
       (
-        ({
+        {
           "settings.providers.providerDetails": "{{name}} provider details",
           "settings.providers.enableProvider": "Enable {{name}}",
           "settings.providers.statuses.disabled": "Disabled",
@@ -128,7 +128,7 @@ vi.mock("react-i18next", () => ({
             "This deletes the provider entry from config.json. It cannot be undone.",
           "settings.providers.remove.confirm": "Remove",
           "settings.providers.remove.errorTitle": "Unable to remove provider",
-        })[key] ?? key
+        }[key] ?? key
       )
         .replaceAll("{{name}}", String(values?.name ?? ""))
         .replaceAll("{{count}}", String(values?.count ?? "")),
@@ -316,6 +316,7 @@ const disabledCodexEntry: ProviderSnapshotEntry = {
 function makeConfig(providers: MutableDaemonConfig["providers"] = {}): MutableDaemonConfig {
   return {
     relay: { enabled: false },
+    agentTools: { enabled: false },
     mcp: { injectIntoAgents: false },
     browserTools: { enabled: false },
     providers,

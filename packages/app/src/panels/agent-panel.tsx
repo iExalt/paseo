@@ -1,4 +1,5 @@
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import { NotificationPreviewFallback } from "@/notification-open/preview-view";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -21,7 +22,12 @@ import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useAgentStreamTail } from "@/agent-stream/use-agent-stream-tail";
+import { useRetainedSessionSelector } from "@/stores/session-store-hooks/use-retained-session-selector";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
+import {
+  TimelineReadinessMarker,
+  useCountClosedTurns,
+} from "@/agent-stream/timeline-readiness-marker";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { ComposerDock } from "@/composer/dock";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
@@ -487,13 +493,15 @@ function AgentPanelContent({
 
   if (!resolvedServerId || (!runtimeClient && !hasCachedAgent)) {
     return (
-      <AgentSessionUnavailableState
-        serverLabel={serverLabel}
-        connectionStatus={connectionStatus}
-        lastError={lastConnectionError}
-        isUnknownDaemon={isUnknownDaemon}
-        t={t}
-      />
+      <NotificationPreviewFallback serverId={resolvedServerId ?? ""} agentId={resolvedAgentId}>
+        <AgentSessionUnavailableState
+          serverLabel={serverLabel}
+          connectionStatus={connectionStatus}
+          lastError={lastConnectionError}
+          isUnknownDaemon={isUnknownDaemon}
+          t={t}
+        />
+      </NotificationPreviewFallback>
     );
   }
 
@@ -644,11 +652,13 @@ function AgentPanelBody({
 
   if (!agent) {
     return (
-      <View style={styles.container} testID="agent-loading">
-        <View style={styles.errorContainer}>
-          <ThemedLoadingSpinner size="large" uniProps={foregroundMutedColorMapping} />
+      <NotificationPreviewFallback serverId={serverId} agentId={agentId}>
+        <View style={styles.container} testID="agent-loading">
+          <View style={styles.errorContainer}>
+            <ThemedLoadingSpinner size="large" uniProps={foregroundMutedColorMapping} />
+          </View>
         </View>
-      </View>
+      </NotificationPreviewFallback>
     );
   }
 
@@ -995,7 +1005,14 @@ function ChatAgentContent({
     t,
     onRetryLoad: retryAgentLoad,
   });
-  if (nonReadyView) return nonReadyView;
+  if (nonReadyView)
+    return viewState.tag === "boot" ? (
+      <NotificationPreviewFallback serverId={serverId} agentId={agentId}>
+        {nonReadyView}
+      </NotificationPreviewFallback>
+    ) : (
+      nonReadyView
+    );
   invariant(agentId, "agent id is defined when agent content is ready");
   invariant(effectiveAgent, "effectiveAgent is defined when the non-ready view is absent");
   const agentCwd = agentState.cwd;
@@ -1100,6 +1117,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   // The dock lays out fullscreen for the same session the composer edits in.
   const composerEditingSession = useComposerEditingSession("chat");
   const isComposerFullscreen = useComposerFullscreen(composerEditingSession);
+  useCountClosedTurns(serverId, agentId);
   const subagentRows = useSubagentsForParent({ serverId, parentAgentId: agentId });
   const tasks = useSessionStore((state): TodoEntry[] | undefined =>
     state.sessions[serverId]?.agentTasks.get(agentId),
@@ -1244,6 +1262,9 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       ) : null}
 
       <TimelineSyncStatus sync={timelineSync} toast={toast} onDismiss={dismiss} />
+      {timelineSync ? (
+        <TimelineReadinessMarker serverId={serverId} agentId={agentId} sync={timelineSync} />
+      ) : null}
     </>
   );
 
@@ -1366,20 +1387,24 @@ const AgentStreamSection = memo(function AgentStreamSection({
   const bottomOverlayControlClearance = hasVisibleComposerTracks
     ? resolveComposerTrackControlClearance(isCompactFormFactor)
     : 0;
+  // A hidden chat keeps these frozen until it is shown again; see useRetainedSessionSelector.
+  const retainedKey = `${serverId}\u0000${agentId ?? ""}`;
   const streamItemsRaw = useAgentStreamTail(serverId, agentId);
-  const pendingMessageSubmissions = useSessionStore(
-    useShallow((state) =>
+  const pendingMessageSubmissions = useRetainedSessionSelector(
+    retainedKey,
+    (state) =>
       agentId
         ? getActiveMessageSubmissions(state.sessions[serverId]?.messageSubmissions.get(agentId))
         : EMPTY_MESSAGE_SUBMISSIONS,
-    ),
+    shallow,
   );
-  const turnPresentation = useSessionStore(
-    useShallow((state) =>
+  const turnPresentation = useRetainedSessionSelector(
+    retainedKey,
+    (state) =>
       agentId
         ? selectAgentTurnPresentation(state.sessions[serverId], agentId)
         : { isActive: false, isCancelling: false, startedAt: null, turnId: null },
-    ),
+    shallow,
   );
   const streamItems = streamItemsRaw ?? EMPTY_STREAM_ITEMS;
   const pendingPermissionList = useStoreWithEqualityFn(

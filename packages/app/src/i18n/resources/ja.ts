@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const ja: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "このチャットを検索できませんでした。ホストへの接続を確認して再試行してください。",
@@ -337,6 +340,9 @@ export const ja: TranslationResources = {
     actions: {
       copyCode: "コードをコピー",
       copyTurn: "ターンをコピー",
+      selectText: "テキストを選択",
+      selectTextTruncated:
+        "最初の50,000文字を表示しています。ターンをコピーですべてコピーされます。",
       copyMessage: "メッセージをコピー",
       forkMenu: "メッセージをフォーク",
       forkInNewTab: "新しいタブにフォーク",
@@ -709,6 +715,8 @@ export const ja: TranslationResources = {
         failedToCloseAgent: "エージェントを閉じられませんでした",
       },
       confirmations: {
+        closeTabsAboveTitle: "上のタブを閉じますか？",
+        closeTabsBelowTitle: "下のタブを閉じますか？",
         unsavedTitle: "未保存の変更",
         unsavedMessage: "このタブには未保存の変更があります。閉じると下書きが破棄されます。",
         closeWithoutSaving: "保存せずに閉じる",
@@ -749,6 +757,7 @@ export const ja: TranslationResources = {
         importSession: "セッションをインポート",
         copyPath: "ワークスペースパスをコピー",
         copyBranchName: "ブランチ名をコピー",
+        copyProviderSessionId: "セッション ID をコピー",
         showSetup: "セットアップを表示",
       },
       toasts: {
@@ -757,6 +766,7 @@ export const ja: TranslationResources = {
         terminalQueued: "ワークスペースを準備中、準備ができたらターミナルを開きます...",
         workspacePathCopiedLabel: "ワークスペースパス",
         branchNameCopiedLabel: "ブランチ名",
+        providerSessionIdCopiedLabel: "セッション ID",
       },
     },
     scripts: {
@@ -1266,12 +1276,6 @@ export const ja: TranslationResources = {
       search: "検索",
       schedules: "スケジュール",
     },
-    worktreeSetup: {
-      title: "ワークツリースクリプトを設定",
-      description:
-        "新しいワークツリーが依存関係をインストールして自動的に準備できるようにセットアップコマンドを追加してください。",
-      openProjectSettings: "プロジェクト設定を開く",
-    },
     project: {
       actions: {
         menu: "プロジェクトアクション",
@@ -1330,6 +1334,10 @@ export const ja: TranslationResources = {
         hideFromSidebar: "サイドバーから非表示",
         archiving: "アーカイブ中...",
         hiding: "非表示にしています...",
+        muteNotifications: "通知をミュート",
+        unmuteNotifications: "通知のミュートを解除",
+        updatingNotifications: "通知を更新中...",
+        updateHostForNotifications: "通知を管理するにはホストを更新してください。",
       },
       confirmations: {
         hideTitle: "ワークスペースを非表示にしますか？",
@@ -1457,11 +1465,41 @@ export const ja: TranslationResources = {
       },
       advancedSettings: "詳細設定",
       openAdvancedSettings: "高度なデーモン設定を開く",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "アプリとデーモンのバージョンが一致しません。最良の体験のために両方を同じバージョンに更新してください。",
       loadFailed: "デスクトップデーモンのステータスを読み込めません。",
     },
     updates: {
+      nix: {
+        checking: "アップデートを確認しています…",
+        downloading: "{{version}} をダウンロードしています…",
+        applying: "{{version}} をインストールしています…",
+        restarting: "再起動しています…",
+        failed: "アップデートに失敗しました: {{error}}",
+        ready: "{{version}} をダウンロードしました。インストールできます",
+        available: "{{version}} が利用可能です",
+        restartRequired: "{{version}} をインストールしました。再起動すると使用できます",
+        upToDate: "最新です（{{time}} に確認）",
+        notChecked: "まだ確認していません",
+        checkAction: "確認",
+        updateAction: "アップデート",
+        restartAction: "再起動",
+        updateTitle: "{{version}} にアップデートしますか？",
+        updateMessage: "Paseo はアップデートをインストールして再起動します。",
+        updateConfirm: "アップデート",
+        restartTitle: "再起動して {{version}} へのアップデートを完了しますか？",
+        restartMessage: "Paseo は再起動し、新しいバージョンを使用します。",
+        restartConfirm: "再起動",
+        agentsKeepRunning:
+          "実行中のエージェント（{{count}}）は動作を続けます。バックグラウンドサービスは完了後に更新されます。",
+        lastAttemptFailed: "前回の試行は失敗しました: {{error}}",
+        updateTooltip: "{{version}} にアップデート",
+        restartTooltip: "再起動して {{version}} へのアップデートを完了",
+        failedTooltip: "アップデートに失敗しました",
+        failedTitle: "アップデートに失敗しました",
+        tryAgain: "再試行",
+      },
       status: {
         checking: "アプリの更新を確認中...",
         installing: "アプリの更新をインストール中...",
@@ -1493,8 +1531,7 @@ export const ja: TranslationResources = {
         installingDescription: "インストールして再起動中...",
         versionReady: "{{version}}のインストール準備ができました。",
         newVersionReady: "新しいバージョンのインストール準備ができました。",
-        restartWarning:
-          "アプリを更新すると、実行中のエージェントが停止しターミナルセッションが閉じられます。",
+        restartWarning: "更新は、実行中のエージェントとターミナルが終了するまで再起動を待ちます。",
       },
     },
     settings: {
@@ -1950,6 +1987,8 @@ export const ja: TranslationResources = {
     archiveTooltip: "サブエージェントをアーカイブ",
     archiveFinishedAction: "完了したサブエージェントをアーカイブ",
     archiveFinishedRetry: "再試行 ({{failed}}/{{total}})",
+    showFinished: "完了した{{count}}件を表示",
+    hideFinished: "完了したものを隠す",
   },
   panels: {
     draft: {
@@ -2037,6 +2076,8 @@ export const ja: TranslationResources = {
     output: "出力",
   },
   turnSummary: {
+    messages: { one: "{{count}}件のメッセージを作成", other: "{{count}}件のメッセージを作成" },
+    agentMessage: "エージェントメッセージ",
     details: "ターンの詳細を表示",
     sentBy: "{{name}} から送信",
     showMore: "もっと見る",
@@ -2060,6 +2101,7 @@ export const ja: TranslationResources = {
       one: "{{count}}回検索",
       other: "{{count}}回検索",
     },
+    sentMessages: { one: "{{count}}件のメッセージを送信", other: "{{count}}件のメッセージを送信" },
     otherTools: {
       one: "その他のツールを{{count}}回使用",
       other: "その他のツールを{{count}}回使用",
@@ -2223,7 +2265,7 @@ export const ja: TranslationResources = {
     editor: {
       title: "エディター",
       vimKeybindings: "Vim キーバインド",
-      vimHint: "Web とデスクトップのソースファイルに適用されます。",
+      vimHint: "エディターのソースファイルに適用されます。",
     },
     files: {
       title: "ファイル",
@@ -2359,7 +2401,8 @@ export const ja: TranslationResources = {
           interrupt: "エージェント実行中、Enterで中断します。Command/Ctrl+Enterでキューに追加。",
           steer:
             "エージェント実行中、Enterで現在のターンに指示を送ります。Command/Ctrl+Enterでキューに追加。",
-          queue: "エージェント実行中、Enterでキューに追加します。Command/Ctrl+Enterで送信。",
+          queue:
+            "エージェント実行中、Enterでキューに追加します。Command/Ctrl+Enterで現在のターンに指示を送ります。",
         },
         commandEnterDescriptions: {
           interrupt: "エージェント実行中、{{modifier}}+Enterで中断します。Enterで改行します。",
@@ -2446,6 +2489,7 @@ export const ja: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "アプリ情報",
       appVersion: "アプリバージョン",
       whatsNewHint: "各バージョンのリリースノート",
@@ -2472,6 +2516,10 @@ export const ja: TranslationResources = {
         checking: "確認中...",
         alertTitle: "エラー",
         alertMessage: "更新確認ダイアログを開けません。",
+      },
+      nixUpdates: {
+        label: "Nix 管理の更新",
+        invalidMarker: "この Nix インストールを検証できませんでした。",
       },
     },
     appearance: {
@@ -2551,7 +2599,6 @@ export const ja: TranslationResources = {
     shortcuts: {
       dialogTitle: "ショートカット",
       searchPlaceholder: "ショートカットを検索",
-      unavailableOnMobile: "キーボードショートカットはデスクトップでのみ利用できます",
       capturePrompt: "ショートカットを押してください...",
       captureIndexPrompt: "最後に1〜9の数字を入力してください。",
       unassigned: "未設定",
@@ -2708,6 +2755,13 @@ export const ja: TranslationResources = {
         title: "デバイスをペアリング",
         rowTitle: "デバイスをペアリング",
         rowHint: "QRコードをスキャンするかリンクをコピーしてスマートフォンをこのホストに接続",
+        keepAwake: {
+          title: "リレーのためにこの Mac をスリープさせない",
+          hint: "リレーが有効な間、電源接続中のスリープを防ぎ、リモートデバイスからこの Mac に接続できるようにします。電源接続中は消費電力と発熱が増えます。",
+          activeHint: "リレーが有効な間、電源接続中はこの Mac をスリープさせません",
+          waitingHint: "リレーが有効なときに適用されます",
+          updateFailed: "スリープ防止の設定を更新できません",
+        },
       },
       skills: {
         ...en.settings.host.skills,
@@ -2770,6 +2824,32 @@ export const ja: TranslationResources = {
           reset: "リセット",
           save: "保存",
           saving: "保存中...",
+        },
+        replyRules: {
+          title: "返信通知ルール",
+          scope: "{{host}} のすべてのワークスペースに適用されます。",
+          help: "テキストを正規化せず RE2 検索で照合します。返信全体を対象にするにはアンカーを使います。最大 8 ルール、パターンは各 256 UTF-16 コード単位、対象は 16,384 です。i、m、u フラグは重複不可で、省略時は Unicode が有効です。",
+          source: "パターン",
+          flags: "フラグ",
+          add: "ルールを追加",
+          remove: "ルールを削除",
+          save: "ルールを保存",
+          saving: "保存中...",
+          clear: "すべてのルールを消去",
+          loading: "保存済みルールを読み込み中...",
+          empty: "保存済みの返信ルールはありません。",
+          unsupported: "返信通知ルールを管理するには、このホストを更新してください。",
+          disconnected: "返信通知ルールを管理するには、このホストに接続してください。",
+          readError:
+            "保存済みルールを読み取れません: {{error}}。アクセスエラーの場合は daemon.read 権限を確認してください。",
+          writeError:
+            "ルールを保存できません: {{error}}。アクセスエラーの場合は daemon.manage 権限を確認してください。",
+          conflict:
+            "編集中にこのホストのルールが変更されました。保存済みルールを再読み込みすると下書きは破棄されます。下書きを保持すると、次回の保存時に最新ルールを意図的に上書きできます。",
+          awaitingAuthority: "保存しました。このホストによるルール更新の確認を待っています...",
+          reload: "保存済みルールを再読み込み",
+          keep: "下書きを保持",
+          retry: "再試行",
         },
       },
       agents: {

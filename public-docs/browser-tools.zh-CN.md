@@ -1,76 +1,76 @@
 ---
-title: 浏览器工具
-description: Agent 用来操作 Paseo 浏览器标签页的 browser_* MCP 工具。
-nav: 工具参考
+title: 浏览器命令
+description: 操作 Paseo 浏览器标签页的全部 22 条 CLI 命令。
+nav: 命令参考
 ---
 
-# 浏览器工具 {#browser-tools}
+# 浏览器命令 {#browser-commands}
 
-启用[浏览器自动化](/docs/browser)后，`browser_*` 工具会和其他 [Paseo MCP 工具](/docs/mcp)一起注入到 Agent 中。
+启用[浏览器自动化](/docs/browser)且已连接桌面浏览器宿主时，使用 `paseo browser`。支持原生工具的 Provider 在其原生目录中保留对应的 `browser_*` 工具；Paseo 不再提供 MCP 端点。
 
-通用概念：
+## 上下文与结果 {#context-and-results}
 
-- **`browserId`** 标识一个标签页。它来自 `browser_new_tab` 或 `browser_list_tabs`，所有针对标签页的工具都需要它。
-- **`ref`** 标识一个元素，例如 `@e3`。引用来自同一标签页最新的 `browser_snapshot`，页面变化后会失效；过期的引用会返回错误，而不是作用到错误的元素上。
-- 每个结果都会报告命令执行期间页面打开的**对话框**（alert 会被接受；confirm/prompt/beforeunload 会被取消）。
+`--workspace <id>` 选择工作区；`--agent <id>` 提供 Agent 运行时上下文。没有显式上下文时，CLI 会从 `PASEO_AGENT_ID` 解析调用方。外部调用方在创建和列出标签页时应选择一个工作区。浏览器 ID 来自 `new-tab` 或 `list-tabs`，所有针对标签页的操作都需要它。标签页操作使用显式 ID，并仍然受宿主上下文检查的约束。同时选择 Agent 和工作区时，该工作区必须属于该 Agent。
 
-标记为 `?` 的参数是可选的。
+添加 `--json` 可获得结构化的结果和上下文。结果会报告命令执行期间页面打开的对话框（alert 会被接受；confirm/prompt/beforeunload 会被取消）。全局的 `--home` 或 `--host` 用于选择 daemon；它不会把浏览器从已连接的桌面宿主上移走。
 
-## 标签页 {#tabs}
+## 命令 {#commands}
 
-| 工具                | 参数                       | 用途                                              |
-| ------------------- | -------------------------- | ------------------------------------------------- |
-| `browser_list_tabs` | —                          | 列出 Agent 工作区在所有已连接宿主上打开的标签页。 |
-| `browser_new_tab`   | `url?`                     | 在后台打开一个标签页并返回它的 `browserId`。      |
-| `browser_close_tab` | `browserId`                | 关闭标签页并清理它的 webview。                    |
-| `browser_resize`    | `browserId, width, height` | 调整标签页视口大小，用手机或平板的尺寸检查布局。  |
+每一行都以 `paseo browser` 开头。方括号表示可选参数。
 
-## 读取页面 {#reading-the-page}
+| 命令和参数                                              | 用途                                                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `list-tabs`                                             | 列出所选上下文中的标签页。                                                            |
+| `new-tab [url]`                                         | 在后台打开一个标签页并返回它的浏览器 ID。                                             |
+| `close-tab <browser-id>`                                | 关闭标签页及其 webview。                                                              |
+| `resize <browser-id> <width> <height>`                  | 以像素为单位调整视口大小。                                                            |
+| `snapshot <browser-id>`                                 | 读取无障碍树和最新的元素引用。                                                        |
+| `screenshot <browser-id> --output <path> [--full-page]` | 在 CLI 所在的机器上写入一个 PNG。                                                     |
+| `logs <browser-id> [--max-entries <n>]`                 | 控制台和网络条目；默认 50，最多 200。                                                 |
+| `wait <browser-id> --text <text>`                       | 等待可见文本出现。                                                                    |
+| `click <browser-id> <ref>`                              | 点击；支持 `--button left\|right\|middle`、`--double-click` 和可重复的 `--modifier`。 |
+| `fill <browser-id> <ref> <value>`                       | 替换输入框内容。                                                                      |
+| `type <browser-id> <text> [--ref <ref>]`                | 输入到引用的控件或当前聚焦的控件。                                                    |
+| `keypress <browser-id> <key> [--ref <ref>]`             | 按下 Enter、Escape、Tab 或其他按键。                                                  |
+| `hover <browser-id> <ref>`                              | 悬停，包括 CSS 悬停行为。                                                             |
+| `select <browser-id> <ref> <value>`                     | 选择一个选项。                                                                        |
+| `drag <browser-id> <source-ref> <target-ref>`           | 在元素之间拖动。                                                                      |
+| `upload <browser-id> <ref> --file <path>`               | 设置文件输入框的内容；多个文件时重复 `--file`。                                       |
+| `scroll <browser-id> <delta-x> <delta-y> [--ref <ref>]` | 以 CSS 像素为单位滚动。                                                               |
+| `navigate <browser-id> <url>`                           | 打开一个 HTTP(S) URL。                                                                |
+| `back <browser-id>`                                     | 后退；没有历史记录时报错。                                                            |
+| `forward <browser-id>`                                  | 前进；没有前进条目时报错。                                                            |
+| `reload <browser-id>`                                   | 重新加载页面。                                                                        |
+| `evaluate <browser-id> <function> [--ref <ref>]`        | 运行 JavaScript；传入 ref 时，该元素作为第一个参数传入。返回有大小限制的 JSON。       |
 
-| 工具                 | 参数                                   | 用途                                                                |
-| -------------------- | -------------------------------------- | ------------------------------------------------------------------- |
-| `browser_snapshot`   | `browserId`                            | 以带元素引用的无障碍树形式返回页面。                                |
-| `browser_screenshot` | `browserId, fullPage?`                 | 截取视口的 PNG；传入 `fullPage` 时截取整个页面。                    |
-| `browser_logs`       | `browserId, maxEntries?`               | 读取最近的控制台消息和网络耗时条目。                                |
-| `browser_wait`       | `browserId, text? \| url?, timeoutMs?` | 等待页面包含某段文本或到达某个 URL 片段（两者必须且只能提供一个）。 |
+`wait` 也接受 `--url <url>` 来代替 `--text`。请恰好提供一个条件。`--timeout-ms <ms>` 接受 1–30000 毫秒。
 
-## 交互 {#interacting}
+## 快照、操作、验证 {#snapshot-act-verify}
 
-| 工具               | 参数                                                | 用途                                                                 |
-| ------------------ | --------------------------------------------------- | -------------------------------------------------------------------- |
-| `browser_click`    | `browserId, ref, button?, doubleClick?, modifiers?` | 点击元素：左键/右键/中键、双击、键盘修饰键。                         |
-| `browser_fill`     | `browserId, ref, value`                             | 设置输入类元素的值。                                                 |
-| `browser_type`     | `browserId, text, ref?`                             | 向元素输入文本；省略 `ref` 时输入到当前获得焦点的元素。              |
-| `browser_keypress` | `browserId, key, ref?`                              | 在元素或当前焦点元素上按键（`Enter`、`Escape`、`Tab`、`Space` 等）。 |
-| `browser_hover`    | `browserId, ref`                                    | 悬停在元素上，会触发真实的 CSS `:hover`。                            |
-| `browser_select`   | `browserId, ref, value`                             | 在 `<select>` 中选择一个选项。                                       |
-| `browser_drag`     | `browserId, sourceRef, targetRef`                   | 把一个元素拖到另一个元素上。                                         |
-| `browser_upload`   | `browserId, ref, filePaths`                         | 为文件输入框设置文件。路径必须位于 Agent 的工作区内。                |
-| `browser_scroll`   | `browserId, deltaX, deltaY, ref?`                   | 滚动页面；传入 `ref` 时把滚轮输入定位到该元素中心。                  |
+```bash
+paseo browser list-tabs --workspace <workspace-id> --json
+paseo browser snapshot <browser-id> --json
+paseo browser click <browser-id> @e3
+paseo browser wait <browser-id> --text "Saved" --timeout-ms 10000
+paseo browser screenshot <browser-id> --output ./saved.png
+```
 
-## 导航 {#navigation}
+类似 `@e3` 的元素引用属于该标签页的最新快照，页面变化后会失效。遇到 `browser_stale_ref` 时，请先重新获取快照再重试。
 
-| 工具               | 参数             | 用途                               |
-| ------------------ | ---------------- | ---------------------------------- |
-| `browser_navigate` | `browserId, url` | 跳转到一个 `http(s)` URL。         |
-| `browser_back`     | `browserId`      | 后退；没有可后退的历史记录时报错。 |
-| `browser_forward`  | `browserId`      | 前进；没有可前进的条目时报错。     |
-| `browser_reload`   | `browserId`      | 重新加载页面。                     |
+## 文件与截图 {#files-and-screenshots}
 
-## 脚本 {#scripting}
+截图需要 `--output <path>`，相对于 CLI 的当前目录解析。父目录必须已经存在。CLI 会写入或覆盖 PNG，并返回绝对路径 `outputPath` 和图像元数据，而不是内联的 base64。即使使用 `--host`，产物也在 CLI 所在的机器上。
 
-| 工具               | 参数                        | 用途                                                                                                            |
-| ------------------ | --------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `browser_evaluate` | `browserId, function, ref?` | 在页面中运行一个 JavaScript 函数。传入 `ref` 时，解析出的元素作为第一个参数传入。结果以有大小限制的 JSON 返回。 |
+上传使用在允许的工作区内、浏览器宿主可访问的路径。它们不会从远程 CLI 机器传输任意文件。参阅[浏览器文件访问](/docs/browser)。
 
 ## 错误 {#errors}
 
-工具会返回结构化的错误，而不是静默失败。Agent 最常遇到的错误：
+| 错误码              | 恢复方式                               |
+| ------------------- | -------------------------------------- |
+| `browser_disabled`  | 在所选 daemon 上启用浏览器工具。       |
+| `browser_no_host`   | 连接一个桌面浏览器宿主，然后重试。     |
+| `browser_stale_ref` | 读取最新的快照。                       |
+| `browser_timeout`   | 检查页面状态和等待条件。               |
+| `browser_denied`    | 检查 URL、文件路径、导航历史和上下文。 |
 
-| 错误码              | 含义                                                            |
-| ------------------- | --------------------------------------------------------------- |
-| `browser_disabled`  | 该主机上的浏览器工具已关闭。                                    |
-| `browser_no_host`   | 没有已连接的浏览器宿主（桌面应用）。可以重试。                  |
-| `browser_stale_ref` | 引用与页面不再匹配，请重新获取快照。                            |
-| `browser_timeout`   | 元素始终无法操作，或等待条件始终未满足。                        |
-| `browser_denied`    | 不允许该操作，例如非 `http(s)` 的 URL，或没有可导航的历史记录。 |
+不支持 CLI 浏览器功能的旧版 daemon 会返回需要更新的错误。中断 CLI 会取消浏览器请求。

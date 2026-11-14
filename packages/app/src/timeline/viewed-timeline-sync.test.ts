@@ -1,3 +1,4 @@
+import { TimelineRequestSupersededError } from "./timeline-request";
 import { expect, test, vi } from "vitest";
 import { DaemonClient, type DaemonTransport } from "@getpaseo/client/internal/daemon-client";
 import type { SessionInboundMessage, SessionOutboundMessage } from "@getpaseo/protocol/messages";
@@ -43,6 +44,77 @@ interface TimelineFetch {
   respond(input: { hasNewer: boolean; seq?: number }): void;
   fail(message: string): void;
 }
+
+test("a notification prepares before visibility and transfers its in-flight fetch without a gap", async () => {
+  const world = new TimelineWorld();
+  world.sync.setConnected(true);
+  const release = world.sync.prepareAgentOpen("target");
+  expect(world.cacheRequests).toEqual(["target"]);
+  world.expectNoPendingFetch();
+  const membership = await world.nextMembership();
+  expect(membership.agentIds).toEqual(["target"]);
+  membership.succeed();
+  const fetch = await world.nextFetch("target");
+  world.sync.replaceVisibleAgentIds("pane", ["target"]);
+  release();
+  release();
+  world.expectNoPendingFetch();
+  expect(world.releasedMemberships).toEqual([]);
+  fetch.respond({ hasNewer: false });
+  await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("ready"));
+  world.sync.dispose();
+});
+
+test.each(["complete", "running", "overflow", "error"] as const)(
+  "a notification refreshes an already demanded chat whose catch-up is %s",
+  async (status) => {
+    const world = new TimelineWorld();
+    if (status === "overflow") world.cursors.set("target", { epoch: "epoch-target", endSeq: 1 });
+    world.sync.replaceVisibleAgentIds("pane", ["target"]);
+    world.sync.setConnected(true);
+    (await world.nextMembership()).succeed();
+    const previous = await world.nextFetch("target");
+    if (status === "complete") {
+      previous.respond({ hasNewer: false });
+      await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("ready"));
+    } else if (status === "error") {
+      previous.fail("Disconnected");
+      await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("error"));
+    }
+    const release = world.sync.prepareAgentOpen("target");
+    if (status === "running" || status === "overflow") {
+      world.expectNoPendingFetch();
+      previous.respond({ hasNewer: status === "overflow" });
+      if (status === "overflow") {
+        (await world.nextFetch("target")).respond({ hasNewer: false });
+      }
+    }
+    await vi.waitFor(() => expect(world.pendingFetchCount).toBe(1));
+    (await world.nextFetch("target")).respond({ hasNewer: false });
+    await vi.waitFor(() => expect(world.sync.getAgentTimelineStatus("target")).toBe("ready"));
+    world.expectNoPendingFetch();
+    world.expectNoPendingMembership();
+    release();
+    world.sync.dispose();
+  },
+);
+
+test("cancelling one pending open does not cancel another caller's demand", async () => {
+  const world = new TimelineWorld();
+  const first = world.sync.prepareAgentOpen("target");
+  const second = world.sync.prepareAgentOpen("target");
+  first();
+  world.sync.setConnected(true);
+  const membership = await world.nextMembership();
+  expect(membership.agentIds).toEqual(["target"]);
+  membership.succeed();
+  const fetch = await world.nextFetch("target");
+  second();
+  expect((await world.nextMembership()).agentIds).toEqual([]);
+  fetch.respond({ hasNewer: false });
+  expect(world.sync.getAgentTimelineStatus("target")).toBe("pending");
+  world.sync.dispose();
+});
 
 test("split panes catch up together before hidden open chats start fetching", async () => {
   const world = new TimelineWorld();
@@ -1197,4 +1269,38 @@ test("disposing a view releases its pending observation before bootstrap complet
   request.succeed();
   await Promise.resolve();
   world.expectNoPendingFetch();
+});
+
+test("replans one superseded catch-up from the current cursor and preserves retry on repeated supersession", async () => {
+  const requests: ProjectedTimelineForwardFetchPlan[] = [];
+  const errors: unknown[] = [];
+  let current = { epoch: "old", endSeq: 10 };
+  let succeed = false;
+  const sync = createViewedTimelineSync({
+    prepare: async () => {},
+    replaceDemandedAgentIds: () => {},
+    observe: () => ({ ready: Promise.resolve(), release: async () => {} }),
+    readCursor: () => current,
+    fetchPage: async (_id, request, ownsRequest) => {
+      expect(ownsRequest()).toBe(true);
+      requests.push(request);
+      if (succeed) return { hasNewer: false, endCursor: { epoch: "new", seq: 20 } };
+      current = { epoch: "new", endSeq: 20 };
+      throw new TimelineRequestSupersededError();
+    },
+    fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+    onCatchUpEnded: () => {},
+    reportError: (error) => errors.push(error),
+  });
+  sync.replaceVisibleAgentIds("pane", ["agent"]);
+  sync.setConnected(true);
+  await vi.waitFor(() => expect(sync.getAgentTimelineStatus("agent")).toBe("error"));
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toMatchObject({ direction: "after", cursor: { epoch: "new", seq: 20 } });
+  expect(errors).toHaveLength(1);
+  succeed = true;
+  sync.retryVisibleAgentTimeline("agent");
+  await vi.waitFor(() => expect(sync.getAgentTimelineStatus("agent")).toBe("ready"));
+  expect(requests).toHaveLength(3);
+  sync.dispose();
 });

@@ -59,6 +59,10 @@ import {
   type TurnLiveness,
   type TurnPresentation,
 } from "@/timeline/turn-liveness";
+import {
+  readQueuedMessageSnapshot,
+  useQueuedMessageSnapshot,
+} from "@/stores/queued-message-snapshot";
 
 export interface AgentRuntimeInfo {
   provider: AgentProvider;
@@ -119,6 +123,7 @@ export interface WorkspaceDescriptor {
   background?: boolean;
   name: string;
   title?: string | null;
+  notifications?: NonNullable<WorkspaceDescriptorPayload["notifications"]>;
   pinnedAt?: string | null;
   labels?: string[];
   status: WorkspaceDescriptorPayload["status"];
@@ -162,6 +167,7 @@ export function normalizeWorkspaceDescriptor(
     background: payload.background ?? false,
     name: payload.name,
     title: payload.title ?? null,
+    notifications: payload.notifications ?? "on",
     pinnedAt: payload.pinnedAt ?? null,
     // COMPAT(workspaceLabels): old daemons omit assignments.
     labels: payload.labels ?? [],
@@ -364,10 +370,15 @@ export function selectAgentTurnPresentation(
   );
 }
 
-function latestTasksFromStream(items: readonly StreamItem[]): TodoEntry[] {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    const item = items[index];
-    if (item?.kind === "todo_list") return item.items;
+function latestTasksFromStream(
+  tail: readonly StreamItem[],
+  head: readonly StreamItem[],
+): TodoEntry[] {
+  for (const items of [head, tail]) {
+    for (let index = items.length - 1; index >= 0; index -= 1) {
+      const item = items[index];
+      if (item?.kind === "todo_list") return item.items;
+    }
   }
   return [];
 }
@@ -500,6 +511,7 @@ interface SessionStoreActions {
       head?: StreamItem[];
       acknowledgedClientMessageIds?: readonly string[];
       taskSnapshot?: TodoEntry[];
+      timelineCursor?: AgentTimelineCursorState;
     },
   ) => void;
   beginAgentMessageSubmission: (
@@ -679,7 +691,7 @@ function createInitialSessionState(
     restoringWorkspaces: new Map(),
     pendingPermissions: new Map(),
     fileExplorer: new Map(),
-    queuedMessages: new Map(),
+    queuedMessages: readQueuedMessageSnapshot(serverId),
   };
 }
 
@@ -1044,7 +1056,23 @@ export const useSessionStore = create<SessionStore>()(
           const agentTasks = updateAgentTasks(session.agentTasks, agentId, state.taskSnapshot);
           const changedTasks = agentTasks !== session.agentTasks;
 
-          if (!changedTail && !changedHead && !changedSubmissions && !changedTasks) {
+          let agentTimelineCursor = session.agentTimelineCursor;
+          if (
+            state.timelineCursor !== undefined &&
+            session.agentTimelineCursor.get(agentId) !== state.timelineCursor
+          ) {
+            agentTimelineCursor = new Map(session.agentTimelineCursor);
+            agentTimelineCursor.set(agentId, state.timelineCursor);
+          }
+          const changedCursor = agentTimelineCursor !== session.agentTimelineCursor;
+
+          if (
+            !changedTail &&
+            !changedHead &&
+            !changedSubmissions &&
+            !changedTasks &&
+            !changedCursor
+          ) {
             return prev;
           }
 
@@ -1068,6 +1096,7 @@ export const useSessionStore = create<SessionStore>()(
                 agentStreamHead: nextHead,
                 agentTasks,
                 messageSubmissions,
+                agentTimelineCursor,
               },
             },
           };
@@ -1445,10 +1474,11 @@ export const useSessionStore = create<SessionStore>()(
             nextAuthoritative.set(agentId, true);
             nextSyncGeneration.set(agentId, session.historySyncGeneration);
           }
-          const tasks = latestTasksFromStream([...state.items, ...state.head]);
-          const agentTasks = new Map(session.agentTasks);
-          if (tasks.length > 0) agentTasks.set(agentId, tasks);
-          else agentTasks.delete(agentId);
+          const agentTasks = updateAgentTasks(
+            session.agentTasks,
+            agentId,
+            latestTasksFromStream(state.items, state.head),
+          );
 
           return {
             ...prev,
@@ -1823,6 +1853,8 @@ export const useSessionStore = create<SessionStore>()(
             },
           };
         });
+        const queues = get().sessions[serverId]?.queuedMessages;
+        if (queues) useQueuedMessageSnapshot.getState().save(serverId, queues);
       },
 
       // Hydration
@@ -1906,6 +1938,23 @@ export const useSessionStore = create<SessionStore>()(
     };
   }),
 );
+
+// A session can start before the snapshot finishes loading from storage. Restore the queues it
+// holds for agents that have queued nothing since.
+useQueuedMessageSnapshot.persist.onFinishHydration(() => {
+  const { sessions, setQueuedMessages } = useSessionStore.getState();
+  for (const serverId of Object.keys(sessions)) {
+    const restored = readQueuedMessageSnapshot(serverId);
+    if (restored.size === 0) continue;
+    setQueuedMessages(serverId, (current) => {
+      const next = new Map(current);
+      for (const [agentId, queue] of restored) {
+        if (!next.has(agentId)) next.set(agentId, queue);
+      }
+      return next;
+    });
+  }
+});
 
 export function useWorkspaceRestoreStatus(
   serverId: string | null,

@@ -76,7 +76,7 @@ paseo --host <host:port> provider diagnostic <provider> --json
 
 当你从 Dock 或 Finder 打开**桌面应用**时，操作系统给它的是一个精简过的环境，而不是你终端里的 `PATH`。为了弥补这一点，Paseo 会在启动时运行一次你的登录 shell（`$SHELL -i -l -c`），捕获它的环境，并把它交给 daemon 及其启动的所有进程。经验法则：**如果一个全新的终端能运行该命令，Paseo 也应该能。** 这也是检验方法：打开一个新终端，在那里试一试。
 
-当你自己在终端中启动 daemon（`paseo`）时，没有登录 shell 这一步，它直接继承该终端的环境。
+来自桌面应用的 daemon 在启动时也会执行这一步（除非应用已经执行过），因此无论它如何启动，都能拿到你登录 shell 的 `PATH`：由应用启动，或由应用自带的 `paseo` CLI 从脚本、`launchd` 或 `zsh -f` 启动。这时以启动它的环境为准：登录 shell 只补充其中缺少的变量，启动环境额外加入的 `PATH` 条目仍排在登录 shell 的条目之前。通过 npm 安装或在 Docker 中运行的 daemon 会跳过这一步，直接继承启动它时的环境。
 
 无论哪种方式，缺少工具的修复都在你的 shell 配置（`.zshrc`、`.zprofile` 等）中，而不在 Paseo 中。通过版本管理器（asdf、mise、nvm 等）安装的工具最常出问题，请确保它们在干净的登录 shell 中也会初始化，而不仅仅是在你已经打开的 shell 中。
 
@@ -85,7 +85,7 @@ paseo --host <host:port> provider diagnostic <provider> --json
 ## 查看日志 {#reading-the-logs}
 
 - **桌面应用**：登录 shell 的解析过程记录在这里。查找 `[login-shell-env]`：`applied` 表示成功（会记录前后的 `PATH`）；`failed; keeping inherited env` 表示它退回到了精简环境，并附带 `reason`（超时、shell 配置以非零状态退出、没有输出等）。最常见的原因是 `.zshrc`/`.zprofile` 运行缓慢或出错。
-- **daemon**：`~/.paseo/daemon.log`（如果你设置了自定义 home，则是 `$PASEO_HOME/daemon.log`）。
+- **daemon**：`~/.paseo/daemon.log`（如果你设置了自定义 home，则是 `$PASEO_HOME/daemon.log`）。如果应用没有先解析环境，来自桌面应用的 daemon 会在这里记录它自己的 `[login-shell-env]` 日志。
 
 桌面应用日志位置：
 
@@ -111,5 +111,5 @@ Paseo 会应用可以在运行时安全生效的设置，并列出需要重启�
 
 - [自定义 Provider](/docs/custom-providers)：端点、多个配置、二进制文件、ACP Agent。
 - [配置](/docs/configuration)：`config.json`、环境变量、日志。
-- [Paseo 如何解析你的登录 shell](https://github.com/getpaseo/paseo/blob/main/packages/desktop/src/login-shell-env.ts)：加载你的 shell 环境的具体代码。
+- [Paseo 如何解析你的登录 shell](https://github.com/iExalt/paseo/blob/dev/packages/server/src/server/login-shell-env.ts)：加载你的 shell 环境的具体代码。
 - [报告问题](https://github.com/getpaseo/paseo/issues)。

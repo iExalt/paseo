@@ -189,6 +189,39 @@ describe("paseo worktree manager", () => {
     });
   });
 
+  it("rejects a hand-made directory under a custom worktrees root", async () => {
+    const customRoot = join(tempDir, "custom-worktrees");
+    const handMade = join(customRoot, "notes", "drafts");
+    mkdirSync(handMade, { recursive: true });
+
+    const ownership = await isPaseoOwnedWorktreeCwd(handMade, {
+      paseoHome,
+      worktreesRoot: customRoot,
+    });
+
+    expect(ownership.allowed).toBe(false);
+  });
+
+  it("still owns this repository's worktree under a custom root by path shape", async () => {
+    const customRoot = join(tempDir, "custom-worktrees");
+    const created = await createLegacyWorktreeForTest({
+      cwd: repoDir,
+      worktreeSlug: "custom-root",
+      source: { kind: "branch-off", baseBranch: "main", branchName: "custom-root-branch" },
+      paseoHome,
+      worktreesRoot: customRoot,
+    });
+    // Drop the marker so only the path-shape rule can prove ownership.
+    rmSync(join(repoDir, ".git", "worktrees", "custom-root", "paseo"), {
+      recursive: true,
+      force: true,
+    });
+
+    await expect(
+      isPaseoOwnedWorktreeCwd(created.worktreePath, { paseoHome, worktreesRoot: customRoot }),
+    ).resolves.toMatchObject({ allowed: true });
+  });
+
   it("rejects paths that are not under the paseo worktrees root", async () => {
     const outsidePath = join(tempDir, "outside-paseo-home");
     mkdirSync(outsidePath, { recursive: true });
@@ -444,22 +477,29 @@ describe("paseo worktree manager", () => {
       git(["remote", "set-url", "origin", silentRemote.url], repoDir);
 
       try {
+        const refreshTimeoutMs = 1_000;
         const startedAt = Date.now();
         const created = await createLegacyWorktreeForTest({
-          branchName: "from-silent-remote",
           cwd: repoDir,
-          baseBranch: "origin/main",
           worktreeSlug: "from-silent-remote",
+          source: {
+            kind: "branch-off",
+            baseBranch: "origin/main",
+            branchName: "from-silent-remote",
+          },
           paseoHome,
+          remoteBaseRefreshTimeoutMs: refreshTimeoutMs,
         });
+        const elapsedMs = Date.now() - startedAt;
 
-        // Clients give up on a create request after 60s, so the fallback has to land well before.
-        expect(Date.now() - startedAt).toBeLessThan(30_000);
+        // The fetch is abandoned at the refresh timeout (not skipped, not waited out in full).
+        expect(elapsedMs).toBeGreaterThanOrEqual(refreshTimeoutMs - 100);
+        expect(elapsedMs).toBeLessThan(refreshTimeoutMs + 10_000);
         expect(git(["rev-parse", "HEAD"], created.worktreePath)).toBe(cachedTip);
       } finally {
         await silentRemote.close();
       }
-    }, 45_000);
+    }, 20_000);
   });
 });
 

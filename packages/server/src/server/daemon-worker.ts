@@ -7,6 +7,8 @@ import { resolvePaseoHome } from "./paseo-home.js";
 import { createRootLogger } from "./logger.js";
 import type { DaemonLifecycleIntent } from "./bootstrap.js";
 import { getProcessDiagnostics } from "./process-diagnostics.js";
+import { createInstalledDesktopRestarter } from "./installed-desktop-restart.js";
+import { resolveDaemonVersion } from "./daemon-version.js";
 
 process.title = "Paseo Daemon";
 
@@ -109,15 +111,10 @@ function applyCliFlagOverrides(config: ReturnType<typeof loadConfig>): void {
     cli.relayUseTls = true;
     override("daemon.relay.useTls");
   }
-  if (process.argv.includes("--no-mcp")) {
-    config.mcpEnabled = false;
-    cli.mcpEnabled = false;
-    override("daemon.mcp.enabled");
-  }
-  if (process.argv.includes("--no-inject-mcp")) {
-    config.mcpInjectIntoAgents = false;
-    cli.mcpInjectIntoAgents = false;
-    override("daemon.mcp.injectIntoAgents");
+  if (process.argv.includes("--no-agent-tools")) {
+    config.agentToolsEnabled = false;
+    cli.agentToolsEnabled = false;
+    override("daemon.agentTools.enabled");
   }
   if (process.argv.includes("--web-ui")) {
     config.webUi = { ...(config.webUi ?? { distDir: null }), enabled: true };
@@ -219,7 +216,16 @@ async function main() {
     }
   };
 
-  const handleLifecycleIntent = (intent: DaemonLifecycleIntent) => {
+  const restartInstalledDesktop = createInstalledDesktopRestarter({
+    desktopManaged: config.desktopManaged === true,
+    platform: process.platform,
+    version: resolveDaemonVersion(),
+    workerPid: process.pid,
+    home: paseoHome,
+    env: process.env,
+    log: (message, fields) => logger.warn(fields ?? {}, message),
+  });
+  const handleLifecycleIntent = async (intent: DaemonLifecycleIntent) => {
     const fields = {
       clientId: intent.clientId,
       requestId: intent.requestId,
@@ -244,6 +250,15 @@ async function main() {
       return;
     }
 
+    try {
+      if (await restartInstalledDesktop(intent)) {
+        recordLifecycleIntentDispatched(intent.type, fields);
+        return;
+      }
+    } catch (error) {
+      logger.error({ err: error }, "Installed desktop restart refused; current worker retained");
+      return;
+    }
     logger.warn(fields, "Restart requested via websocket");
     const sent = sendSupervisorLifecycleMessage({
       type: "paseo:restart",
@@ -264,7 +279,10 @@ async function main() {
   // Written straight to daemon.log: the pino stream goes through the supervisor's pipe, which
   // a paused or busy supervisor does not drain. Tests synchronize on this line.
   const recordLifecycleIntentDispatched = (type: string, fields: Record<string, unknown>) => {
-    writeWorkerLifecycleLog(paseoHome, "Lifecycle intent dispatched", { type, ...fields });
+    writeWorkerLifecycleLog(paseoHome, "Lifecycle intent dispatched", {
+      type,
+      ...fields,
+    });
   };
 
   const installSupervisorLivenessGuard = () => {
@@ -306,7 +324,10 @@ async function main() {
         return;
       }
       if (type === "paseo:graceful-shutdown") {
-        const { reason, keepTerminals } = message as { reason?: unknown; keepTerminals?: unknown };
+        const { reason, keepTerminals } = message as {
+          reason?: unknown;
+          keepTerminals?: unknown;
+        };
         beginShutdown("Supervisor shutdown request", {
           reason: typeof reason === "string" ? reason : "supervisor_requested_shutdown",
           keepTerminals: keepTerminals === true,

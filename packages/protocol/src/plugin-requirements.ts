@@ -3,6 +3,11 @@ import parse from "semver/functions/parse.js";
 import validRange from "semver/ranges/valid.js";
 import satisfies from "semver/functions/satisfies.js";
 
+// Plugin requirements describe the retained upstream API, not fork release
+// ordering. Baseline: upstream a4f696620b5d248598a882b1a78d82ec5038c74b (0.14.0).
+// Change deliberately when the supported API changes, never on a release bump.
+export const PASEO_PLUGIN_API_VERSION = "0.14.0";
+
 export function validatePluginRequirements(requirements: PluginRequirements | undefined): void {
   const range = requirements?.paseo;
   if (range !== undefined && (!range.trim() || validRange(range) === null)) {
@@ -36,6 +41,6 @@ export function assertPluginCompatibility(input: PluginCompatibilityInput): void
       ? "This plugin has no requirements.paseo and targets Paseo before 0.8. Ask its author to migrate it: https://paseo.sh/docs/plugins/migration"
       : `Use a compatible plugin version or update the ${input.runtime}.`;
   throw new Error(
-    `Plugin "${input.id}" requires Paseo ${range}. Your ${input.runtime} is ${input.version}. ${action}`,
+    `Plugin "${input.id}" requires Paseo ${range}. Your ${input.runtime} plugin API is ${input.version}. ${action}`,
   );
 }

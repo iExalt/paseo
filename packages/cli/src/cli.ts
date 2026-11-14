@@ -1,11 +1,17 @@
+import { createFileCommand } from "./commands/file/index.js";
+import { createPrCommand } from "./commands/pr/index.js";
+import { createGitCommand } from "./commands/git/index.js";
+import { createSkillsCommand } from "./commands/skills/index.js";
 import { createHostCommand } from "./commands/host/index.js";
 import { pairCommand } from "./commands/daemon/pair.js";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import { createAgentCommand } from "./commands/agent/index.js";
 import { createDaemonCommand } from "./commands/daemon/index.js";
 import { createPermitCommand } from "./commands/permit/index.js";
 import { createUsageCommand } from "./commands/usage/index.js";
 import { createProviderCommand } from "./commands/provider/index.js";
+import { createPrimeCommand } from "./commands/prime.js";
+import { createProfileCommand } from "./commands/profile/index.js";
 import { createPluginCommand } from "./commands/plugin/index.js";
 import { createProjectCommand } from "./commands/project/index.js";
 import { createScheduleCommand } from "./commands/schedule/index.js";
@@ -15,6 +21,7 @@ import { createTerminalCommand } from "./commands/terminal/index.js";
 import { createWorktreeCommand } from "./commands/worktree/index.js";
 import { createWorkspaceCommand } from "./commands/workspace/index.js";
 import { createHeartbeatCommand } from "./commands/heartbeat/index.js";
+import { createBrowserCommand } from "./commands/browser/index.js";
 import { createHubCommand } from "./commands/hub/index.js";
 import { createHooksCommand } from "./commands/hooks.js";
 import { startCommand as daemonStartCommand } from "./commands/daemon/start.js";
@@ -31,9 +38,13 @@ import { addInspectOptions, runInspectCommand } from "./commands/agent/inspect.j
 import { addWaitOptions, runWaitCommand } from "./commands/agent/wait.js";
 import { addArchiveOptions, runArchiveCommand } from "./commands/agent/archive.js";
 import { addAttachOptions, runAttachCommand } from "./commands/agent/attach.js";
-import { addImportOptions, runImportCommand } from "./commands/agent/import.js";
+import {
+  addImportOptions,
+  runImportCommand,
+  type AgentImportData,
+} from "./commands/agent/import.js";
 import { withOutput } from "./output/index.js";
-import { runCloneCommand } from "./commands/clone.js";
+import { createCloneCommand } from "./commands/clone.js";
 import { onboardCommand } from "./commands/onboard.js";
 import {
   addDaemonHostOption,
@@ -59,7 +70,11 @@ export function createCli(): Command {
     .option("--no-color", "disable colored output");
   addDaemonHostOption(program);
 
+  program.addCommand(createPrCommand());
+  program.addCommand(createGitCommand());
+  program.addCommand(createFileCommand());
   program.addCommand(createHostCommand());
+  program.addCommand(createPrimeCommand());
 
   // Primary agent commands (top-level)
   addJsonAndDaemonHostOptions(addLsOptions(program.command("ls"))).action(withOutput(runLsCommand));
@@ -69,22 +84,10 @@ export function createCli(): Command {
   );
 
   addJsonAndDaemonHostOptions(addImportOptions(program.command("import"))).action(
-    withOutput(runImportCommand),
+    withOutput<AgentImportData, [string | undefined]>(runImportCommand),
   );
 
-  addJsonAndDaemonHostOptions(
-    program
-      .command("clone")
-      .description("Clone a GitHub repo and register it as a Paseo workspace")
-      .argument("<repo>", "GitHub repo in owner/repo format or a full git remote URL")
-      .requiredOption("--dir <path>", "Parent directory to clone into (for example: ~/workspace)"),
-  )
-    .addOption(
-      new Option("--protocol <protocol>", "Protocol for owner/repo shorthand repositories").choices(
-        ["https", "ssh"],
-      ),
-    )
-    .action(withOutput(runCloneCommand));
+  program.addCommand(createCloneCommand());
 
   addDaemonHostOption(addAttachOptions(program.command("attach"))).action(
     withGlobalOptions(runAttachCommand),
@@ -146,17 +149,20 @@ export function createCli(): Command {
   // Schedule commands
   program.addCommand(createScheduleCommand());
   program.addCommand(createHeartbeatCommand());
+  program.addCommand(createBrowserCommand());
 
   // Permission commands
   program.addCommand(createPermitCommand());
 
   // Provider commands
   program.addCommand(createProviderCommand());
+  program.addCommand(createProfileCommand());
   program.addCommand(createUsageCommand());
   program.addCommand(createPluginCommand());
 
   // Speech model commands
   program.addCommand(createSpeechCommand());
+  program.addCommand(createSkillsCommand());
 
   // Workspace commands
   program.addCommand(createProjectCommand());

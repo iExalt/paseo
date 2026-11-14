@@ -6,7 +6,13 @@ import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
-import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
+import {
+  hasHeldMessages,
+  holdMessage,
+  type HeldDispatchResult,
+  type HeldMessageOutcome,
+} from "./held-messages.js";
+import type { AgentSendBehavior } from "@getpaseo/protocol/messages";
 
 export type AgentUnarchiveController = Pick<AgentManager, "notifyAgentState" | "unarchiveSnapshot">;
 
@@ -17,51 +23,70 @@ export type AgentRunController = Pick<
   | "hasInFlightRun"
   | "reloadStalePluginSession"
   | "replaceAgentRun"
-  | "steerOrReplaceActiveTurn"
+  | "steerOrDeferBehindActiveTurn"
   | "streamAgent"
+  | "subscribe"
+  | "waitForAgentRunStart"
 > & {
   reloadAgentSession(agentId: string): Promise<unknown>;
 };
 
+/**
+ * Called after selecting the run, before consuming its events. A held prompt also passes its
+ * outcome, which settles once the prompt is sent on or discarded.
+ */
+export type PromptDispatchListener = (
+  disposition: PromptDispatchDisposition,
+  held?: Promise<HeldMessageOutcome>,
+) => void;
+
 export interface StartAgentRunOptions {
-  /** Called after selecting the run, before consuming its events. */
-  onDispatch?: (disposition: PromptDispatchDisposition) => void;
+  onDispatch?: PromptDispatchListener;
   replaceRunning?: boolean;
-  activeTurnBehavior?: ActiveTurnBehavior;
+  activeTurnBehavior?: AgentSendBehavior;
   runOptions?: AgentRunOptions;
   /** Ask the provider to deny permissions blocking this steer. */
   clearPendingPermissions?: boolean;
 }
 
-export type PromptDispatchDisposition = "out_of_band" | "steered" | "turn_started";
+/**
+ * "deferred" is server-internal: the steer waits for the active turn to end and then starts its
+ * own turn. Responses omit it, since the wire enum predates it. "queued" waits for the agent to go
+ * idle; only queue requests produce it.
+ */
+export type PromptDispatchDisposition =
+  | "out_of_band"
+  | "steered"
+  | "turn_started"
+  | "deferred"
+  | "queued";
 
-async function steerOrReplaceActiveRun(
+type SteerDispatch =
+  | { kind: "steered" }
+  /** No turn to steer into, so start one. Background work alone is not a turn to interrupt. */
+  | { kind: "start" }
+  | { kind: "defer"; turnId: string };
+
+async function steerActiveRun(
   agentManager: AgentRunController,
   agentId: string,
   prompt: AgentPromptInput,
   options: StartAgentRunOptions | undefined,
-): Promise<
-  | { disposition: "steered" }
-  | {
-      disposition: "turn_started";
-      iterator: AsyncGenerator<import("./agent-sdk-types.js").AgentStreamEvent>;
-    }
-  | null
-> {
+): Promise<SteerDispatch | null> {
   if (options?.activeTurnBehavior !== "steer") {
     return null;
   }
   const steerOptions = options.clearPendingPermissions
     ? { ...options.runOptions, clearPendingPermissions: true }
     : options.runOptions;
-  const result = await agentManager.steerOrReplaceActiveTurn(agentId, prompt, steerOptions);
+  const result = await agentManager.steerOrDeferBehindActiveTurn(agentId, prompt, steerOptions);
   if (result.status === "steered") {
-    return { disposition: "steered" };
+    return { kind: "steered" };
   }
-  if (result.status === "replaced") {
-    return { disposition: "turn_started", iterator: result.iterator };
+  if (result.status === "busy") {
+    return { kind: "defer", turnId: result.turnId };
   }
-  return null;
+  return { kind: "start" };
 }
 
 async function startOrReplaceRun(
@@ -135,15 +160,141 @@ async function startAgentRunInner(
   logger: Logger,
   options?: StartAgentRunOptions,
 ): Promise<{ disposition: PromptDispatchDisposition }> {
-  const snapshot = agentManager.getAgent(agentId);
-  const steered = await steerOrReplaceActiveRun(agentManager, agentId, prompt, options);
-  if (steered?.disposition === "steered") {
-    options?.onDispatch?.("steered");
-    return steered;
+  if (options?.activeTurnBehavior === "queue" && shouldQueue(agentManager, agentId)) {
+    return holdBehindActiveTurn(agentManager, agentId, prompt, logger, options, "queued");
   }
-  const { iterator, replaced } = steered
-    ? { iterator: steered.iterator, replaced: true }
-    : await startOrReplaceRun(agentManager, agentId, prompt, options);
+  const dispatch = await dispatchRun(agentManager, agentId, prompt, logger, {
+    ...options,
+    // An idle agent takes a queued prompt as its next turn.
+    ...(options?.activeTurnBehavior === "queue" ? { activeTurnBehavior: "steer" as const } : {}),
+  });
+  if (dispatch.disposition !== "busy") return { disposition: dispatch.disposition };
+  return holdBehindActiveTurn(
+    agentManager,
+    agentId,
+    prompt,
+    logger,
+    options ?? {},
+    "deferred",
+    dispatch.turnId,
+  );
+}
+
+/**
+ * A queued prompt waits while the agent has any turn or run, an unanswered permission (which can
+ * outlive its turn), or other held prompts.
+ */
+function shouldQueue(agentManager: AgentRunController, agentId: string): boolean {
+  const agent = agentManager.getAgent(agentId);
+  return (
+    agentManager.hasInFlightRun(agentId) ||
+    Boolean(agent?.activeTurnId) ||
+    (agent?.pendingPermissions.size ?? 0) > 0 ||
+    hasHeldMessages(agentManager, agentId)
+  );
+}
+
+function holdBehindActiveTurn(
+  agentManager: AgentRunController,
+  agentId: string,
+  prompt: AgentPromptInput,
+  logger: Logger,
+  options: StartAgentRunOptions,
+  kind: "deferred" | "queued",
+  busyTurnId?: string,
+): { disposition: "deferred" | "queued" } {
+  const agent = agentManager.getAgent(agentId);
+  const turnId = busyTurnId ?? agent?.activeForegroundTurnId ?? agent?.activeTurnId ?? null;
+  const { onDispatch: _, ...redispatch } = options;
+  const held = holdMessage(
+    agentManager,
+    agentId,
+    {
+      kind,
+      turnId,
+      messageId: options.runOptions?.clientMessageId,
+      dispatch: () => dispatchHeldRun(agentManager, agentId, prompt, logger, redispatch),
+    },
+    logger,
+  );
+  options.onDispatch?.(kind, held);
+  return { disposition: kind };
+}
+
+/** Sends a held message again; the turn it starts reports itself through the stream. */
+async function dispatchHeldRun(
+  agentManager: AgentRunController,
+  agentId: string,
+  prompt: AgentPromptInput,
+  logger: Logger,
+  options: StartAgentRunOptions,
+): Promise<HeldDispatchResult> {
+  const dispatch = await dispatchRun(agentManager, agentId, prompt, logger, {
+    ...options,
+    activeTurnBehavior: "steer",
+  });
+  return dispatch.disposition === "busy"
+    ? { kind: "busy", turnId: dispatch.turnId }
+    : { kind: "settled" };
+}
+
+const ACTIVE_TURN_CHANGED = "Active turn changed before steering could be delivered";
+
+/**
+ * A run can be starting with no turn to steer into yet, for example a held message released as
+ * this steer arrived. Wait for that run once and steer into its turn instead of failing.
+ */
+async function steerAroundStartingRun(
+  agentManager: AgentRunController,
+  agentId: string,
+  prompt: AgentPromptInput,
+  options: StartAgentRunOptions | undefined,
+): Promise<SteerDispatch | null> {
+  try {
+    const steer = await steerActiveRun(agentManager, agentId, prompt, options);
+    if (steer?.kind !== "start" || !agentManager.hasInFlightRun(agentId)) return steer;
+  } catch (error) {
+    // The admission lost its turn before the provider took the steer, so nothing was delivered.
+    if (!(error instanceof Error) || error.message !== ACTIVE_TURN_CHANGED) throw error;
+  }
+  await agentManager.waitForAgentRunStart(agentId).catch(() => undefined);
+  return await steerActiveRun(agentManager, agentId, prompt, options);
+}
+
+/** Steers into or starts a turn; "busy" means a turn is running that will not take the steer. */
+async function dispatchRun(
+  agentManager: AgentRunController,
+  agentId: string,
+  prompt: AgentPromptInput,
+  logger: Logger,
+  options?: StartAgentRunOptions,
+): Promise<{ disposition: "steered" | "turn_started" } | { disposition: "busy"; turnId: string }> {
+  const snapshot = agentManager.getAgent(agentId);
+  let started: Awaited<ReturnType<typeof startOrReplaceRun>> | null = null;
+  for (let attempt = 0; !started; attempt += 1) {
+    const steer = await steerAroundStartingRun(agentManager, agentId, prompt, options);
+    if (steer?.kind === "steered") {
+      options?.onDispatch?.("steered");
+      return { disposition: "steered" };
+    }
+    if (steer?.kind === "defer") {
+      return { disposition: "busy", turnId: steer.turnId };
+    }
+    try {
+      started = await startOrReplaceRun(
+        agentManager,
+        agentId,
+        prompt,
+        steer ? { ...options, replaceRunning: false } : options,
+      );
+    } catch (error) {
+      // Another dispatch started a run after this steer found none; steer into that run instead.
+      const lostStartRace =
+        error instanceof Error && error.message.endsWith("already has an active run");
+      if (!steer || attempt > 0 || !lostStartRace) throw error;
+    }
+  }
+  const { iterator, replaced } = started;
   logger.trace(
     {
       agentId,
@@ -218,7 +369,7 @@ export interface SendPromptToAgentParams {
   prompt: AgentPromptInput;
   source?: AgentPromptSource;
   messageId?: string;
-  activeTurnBehavior?: ActiveTurnBehavior;
+  activeTurnBehavior?: AgentSendBehavior;
   runOptions?: AgentRunOptions;
   /** Optional mode to set on the agent before the run starts. */
   sessionMode?: string;

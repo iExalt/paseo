@@ -20,6 +20,7 @@ import type {
 } from "./agent-sdk-types.js";
 import type { ManagedAgent } from "./agent-manager.js";
 import type { JsonValue } from "../json-utils.js";
+import { persistedAsyncQuestions } from "./providers/codex/async-questions.js";
 import {
   isStoredAgentProviderAvailable,
   resolveStoredAgentUpdatedAt,
@@ -100,6 +101,7 @@ export function toStoredAgentRecord(
     features: normalizeFeatures(agent.features),
     persistence,
     lastError: agent.lastError ?? undefined,
+    totalCostUsd: readTotalCostUsd(agent.lastUsage),
     requiresAttention: agent.attention.requiresAttention,
     attentionReason: agent.attention.requiresAttention ? agent.attention.attentionReason : null,
     attentionTimestamp: agent.attention.requiresAttention
@@ -144,7 +146,10 @@ export function toAgentPayload(
     currentModeId: agent.currentModeId,
     availableModes: cloneAvailableModes(agent.availableModes),
     features: normalizeFeatures(agent.features),
-    pendingPermissions: sanitizePendingPermissions(agent.pendingPermissions),
+    pendingPermissions:
+      agent.lifecycle === "closed"
+        ? persistedAsyncQuestions(agent.persistence)
+        : sanitizePendingPermissions(agent.pendingPermissions),
     persistence: projectPersistenceHandleForWire(agent.persistence),
     title: options?.title ?? null,
     labels: agent.labels,
@@ -251,7 +256,7 @@ export function buildStoredAgentPayload(
     capabilities: defaultCapabilities,
     currentModeId: record.lastModeId ?? null,
     availableModes: [],
-    pendingPermissions: [],
+    pendingPermissions: persistedAsyncQuestions(persistence),
     persistence,
     title: record.title ?? null,
     requiresAttention: record.requiresAttention ?? false,
@@ -261,6 +266,7 @@ export function buildStoredAgentPayload(
     ...(record.internal ? { internal: true } : {}),
     labels: normalizeLabels(record.labels),
     ...(typeof record.lastError === "string" ? { lastError: record.lastError } : {}),
+    ...storedUsage(record),
     ...(providerAvailable ? {} : { providerUnavailable: true }),
   };
 }
@@ -527,6 +533,17 @@ function assignFiniteNumber(
     return true;
   }
   return raw === undefined || raw === null;
+}
+
+function storedUsage(record: StoredAgentRecord): { lastUsage?: AgentUsage } {
+  return record.totalCostUsd === undefined
+    ? {}
+    : { lastUsage: { totalCostUsd: record.totalCostUsd } };
+}
+
+function readTotalCostUsd(usage: AgentUsage | undefined): number | undefined {
+  const cost = usage?.totalCostUsd;
+  return typeof cost === "number" && Number.isFinite(cost) && cost >= 0 ? cost : undefined;
 }
 
 function sanitizeUsage(value: unknown): AgentUsage | undefined {

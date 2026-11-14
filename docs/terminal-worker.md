@@ -57,7 +57,11 @@ Each create carries the controlling daemon's environment and Paseo CLI path (`ba
 
 ## Desktop
 
-Desktop app updates and version-mismatch restarts stop the daemon with "keep terminals" on macOS and Linux, through `daemon stop --keep-terminals` (the shutdown RPC; SIGTERM always means "stop and close"). A daemon that predates the feature cannot keep terminals: the CLI refuses before sending anything, and desktop logs that and stops it with its terminals closed.
+An Electron app update stops the daemon with "keep terminals" on macOS and Linux, through `daemon stop --keep-terminals` (the shutdown RPC; SIGTERM always means "stop and close"). A daemon that predates the feature cannot keep terminals: the CLI refuses before sending anything, and desktop logs that and stops it with its terminals closed.
+
+A Nix-managed update leaves the daemon running. The new app replaces a desktop-managed daemon of another version through `daemon stop --if-idle`, which keeps terminals and stops only when no agent has work (`src/daemon/daemon-upgrade.ts` in the desktop package). A daemon without that capability keeps running until someone restarts it.
+
+On Nix-managed macOS, an explicit host-settings restart also picks up a different installed desktop version. The worker hands the request to that installation's CLI to replace the supervisor, preserving the selected terminal policy and verifying the replacement version. The handoff is bound to the requesting worker PID; a delayed helper cannot stop a replacement worker. Failures are logged in `$PASEO_HOME/daemon-restart.log` and `daemon.log`. Ordinary CLI worker restarts retain their supervisor launch. Daemons predating this handoff need one explicit `daemon restart --replace-supervisor` from the updated installation to load it.
 
 On Windows every desktop stop closes terminals. In the desktop app the worker runs as `Paseo.exe` with `ELECTRON_RUN_AS_NODE`, and a surviving one would lock the install folder the NSIS update replaces. Restarts, crashes and npm self-updates keep terminals on Windows too.
 

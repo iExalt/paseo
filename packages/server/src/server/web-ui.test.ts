@@ -84,7 +84,7 @@ function createApp(options: {
     }),
   );
   app.get("/api/health", (_req, res) => res.json({ ok: true }));
-  app.get("/mcp/agents", (_req, res) => res.json({ mcp: true }));
+  app.get("/api/files/download", (_req, res) => res.json({ download: true }));
   if (options.publicDir) {
     app.use("/public", express.static(options.publicDir));
   }
@@ -241,13 +241,13 @@ describe("daemon web UI route module", () => {
     expect(res.body).toBe('{"ok":true}');
   });
 
-  test("does not catch /mcp/* paths", async () => {
+  test("does not catch single-use download paths", async () => {
     const app = createApp({ enabled: true, distDir, publicDir });
 
-    const res = await request(app, "GET", "/mcp/agents");
+    const res = await request(app, "GET", "/api/files/download");
 
     expect(res.status).toBe(200);
-    expect(res.body).toBe('{"mcp":true}');
+    expect(res.body).toBe('{"download":true}');
   });
 
   test("does not catch /public/* paths", async () => {

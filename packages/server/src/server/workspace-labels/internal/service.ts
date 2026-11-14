@@ -3,6 +3,7 @@ import {
   workspaceLabelKey,
   type WorkspaceLabelDefinition,
 } from "@getpaseo/protocol/workspace-labels";
+import type { WorkspaceSettingsPatch } from "@getpaseo/protocol/messages";
 import { WorkspaceLabelCatalogStore } from "./catalog-store.js";
 import {
   WorkspaceLabelSequence,
@@ -79,6 +80,54 @@ export class WorkspaceLabelService {
         unsubscribe();
         throw error;
       }
+    });
+  }
+
+  async updateWorkspaceSettings(
+    workspaceId: string,
+    patch: WorkspaceSettingsPatch,
+  ): Promise<PersistedWorkspaceRecord> {
+    return this.exclusive(async () => {
+      const additions = (patch.addLabels ?? []).map(requireName);
+      const removals = new Set(
+        (patch.removeLabels ?? []).map((name) => workspaceLabelKey(requireName(name))),
+      );
+      if (additions.some((name) => removals.has(workspaceLabelKey(name)))) {
+        throw new Error("Cannot add and remove the same label");
+      }
+      if (Object.values(patch).every((value) => value === undefined)) {
+        throw new Error("At least one workspace setting is required");
+      }
+      return this.catalog.updateWorkspace(workspaceId, (catalog, workspace) => {
+        if (!workspace || workspace.archivedAt) {
+          throw new WorkspaceLabelError("workspace_not_found", "Workspace not found or archived");
+        }
+        let labels = (workspace.labels ?? []).filter(
+          (name) => !removals.has(workspaceLabelKey(name)),
+        );
+        for (const name of additions) {
+          const definition = catalog.find(
+            (label) => workspaceLabelKey(label.name) === workspaceLabelKey(name),
+          );
+          if (!definition)
+            throw new WorkspaceLabelError("label_not_found", `Label not found: ${name}`);
+          labels = updateAssignmentLabels(labels, workspaceLabelKey(name), definition.name, true);
+        }
+        const now = new Date().toISOString();
+        return {
+          ...workspace,
+          ...(patch.background === undefined ? {} : { background: patch.background }),
+          ...(patch.title === undefined ? {} : { title: patch.title?.trim() || null }),
+          ...(patch.notifications === undefined ? {} : { notifications: patch.notifications }),
+          ...(patch.pinned === undefined
+            ? {}
+            : { pinnedAt: patch.pinned ? (workspace.pinnedAt ?? now) : null }),
+          ...(patch.addLabels === undefined && patch.removeLabels === undefined
+            ? {}
+            : { labels: labels.length ? labels : undefined }),
+          updatedAt: now,
+        };
+      });
     });
   }
 

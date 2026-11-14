@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { boundNotificationPreview, NotificationPreviewSchema } from "./notification-preview.js";
 import {
   buildAgentAttentionNotificationPayload,
   findLatestAssistantMessageFromTimeline,
   findLatestPermissionRequest,
+  parseAgentAttentionTitle,
+  resolveAgentAttentionTitle,
 } from "./agent-attention-notification.js";
 
 describe("buildAgentAttentionNotificationPayload", () => {
@@ -43,6 +46,28 @@ describe("buildAgentAttentionNotificationPayload", () => {
     });
   });
 
+  it("shows images as placeholders in notification text", () => {
+    const body = (assistantMessage: string) =>
+      buildAgentAttentionNotificationPayload({
+        reason: "finished",
+        serverId: "srv-1",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        assistantMessage,
+      }).body;
+
+    expect(body("Pick one:\n\n![Blue theme](mockups/blue.png)\n\n![](mockups/green.png)")).toBe(
+      "Pick one: [image: Blue theme] [image]",
+    );
+    expect(body("[![CI](https://x/badge.svg)](https://x/actions) is green")).toBe(
+      "[image: CI] is green",
+    );
+    expect(body("![chart](c.png)(see note)")).toBe("[image: chart](see note)");
+    expect(body("![a b](<my img.png>) and ![snake_case](s.png)")).toBe(
+      "[image: a b] and [image: snake_case]",
+    );
+  });
+
   it("builds permission notifications from request details", () => {
     const payload = buildAgentAttentionNotificationPayload({
       reason: "permission",
@@ -60,13 +85,20 @@ describe("buildAgentAttentionNotificationPayload", () => {
     });
 
     expect(payload).toEqual({
-      title: "Agent needs permission",
+      title: "❓️ Agent needs permission",
       body: "Approve command - Run git push",
       data: {
         serverId: "srv-2",
         workspaceId: "workspace-2",
         agentId: "agent-2",
         reason: "permission",
+        preview: {
+          v: 1,
+          kind: "permission",
+          requestId: "perm-1",
+          text: "Approve command - Run git push",
+          truncated: true,
+        },
       },
     });
   });
@@ -80,7 +112,7 @@ describe("buildAgentAttentionNotificationPayload", () => {
     });
 
     expect(payload).toEqual({
-      title: "Agent needs attention",
+      title: "❗️ Agent needs attention",
       body: "Encountered an error.",
       data: {
         serverId: "srv-3",
@@ -89,6 +121,72 @@ describe("buildAgentAttentionNotificationPayload", () => {
         reason: "error",
       },
     });
+  });
+
+  it.each([
+    ["finished", "Fix login redirect"],
+    ["permission", "❓️ Fix login redirect"],
+    ["error", "❗️ Fix login redirect"],
+  ] as const)("titles %s notifications with the thread title", (reason, title) => {
+    const payload = buildAgentAttentionNotificationPayload({
+      reason,
+      serverId: "srv-4",
+      workspaceId: "workspace-4",
+      agentId: "agent-4",
+      agentTitle: "  Fix login\nredirect ",
+    });
+
+    expect(payload.title).toBe(title);
+  });
+
+  it("ignores the placeholder thread title", () => {
+    const payload = buildAgentAttentionNotificationPayload({
+      reason: "finished",
+      serverId: "srv-5",
+      workspaceId: "workspace-5",
+      agentId: "agent-5",
+      agentTitle: "New agent",
+    });
+
+    expect(payload.title).toBe("Agent finished");
+  });
+});
+
+describe("notification preview wire budget", () => {
+  const preview = {
+    v: 1 as const,
+    kind: "assistant" as const,
+    epoch: "epoch",
+    seqStart: 2,
+    seqEnd: 10,
+    timestamp: "2026-11-06T00:00:00.000Z",
+    text: '🙂漢字"\\\n'.repeat(1000),
+    truncated: false,
+  };
+
+  it("bounds serialized UTF-8 including escapes without splitting an emoji", () => {
+    const payload = { title: "Done", data: { preview } };
+    const bounded = boundNotificationPreview(payload, 1000);
+    expect(new TextEncoder().encode(JSON.stringify(bounded)).byteLength).toBeLessThanOrEqual(1000);
+    expect(bounded.data.preview.text.length).toBeGreaterThan(0);
+    expect(bounded.data.preview.truncated).toBe(true);
+    expect(bounded.data.preview.text).not.toMatch(/[\uD800-\uDBFF]$/);
+    expect(preview.text.startsWith(bounded.data.preview.text)).toBe(true);
+    expect(payload.data.preview.truncated).toBe(false);
+  });
+
+  it("removes the optional snapshot when even its metadata cannot fit", () => {
+    const bounded = boundNotificationPreview(
+      { title: "Done", data: { agentId: "a", preview } },
+      70,
+    );
+    expect(bounded.data).toEqual({ agentId: "a" });
+  });
+
+  it("accepts supported snapshots and rejects unknown or malformed versions at the feature boundary", () => {
+    expect(NotificationPreviewSchema.safeParse({ ...preview, text: "Done" }).success).toBe(true);
+    expect(NotificationPreviewSchema.safeParse({ ...preview, v: 2 }).success).toBe(false);
+    expect(NotificationPreviewSchema.safeParse({ ...preview, seqEnd: -1 }).success).toBe(false);
   });
 });
 
@@ -115,5 +213,26 @@ describe("findLatestPermissionRequest", () => {
     ]);
 
     expect(findLatestPermissionRequest(pending)?.id).toBe("second");
+  });
+});
+
+describe("agent attention titles", () => {
+  it("writes each reason's title byte for byte and reads the reason back", () => {
+    const cases = (["finished", "error", "permission"] as const).flatMap((reason) => [
+      { reason, agentTitle: null },
+      { reason, agentTitle: "Fix the build" },
+    ]);
+    const titles = cases.map(({ reason, agentTitle }) => {
+      const title = resolveAgentAttentionTitle(reason, agentTitle);
+      return { reason, title, parsed: parseAgentAttentionTitle(title) };
+    });
+    expect(titles).toEqual([
+      { reason: "finished", title: "Agent finished", parsed: "finished" },
+      { reason: "finished", title: "Fix the build", parsed: "finished" },
+      { reason: "error", title: "\u2757\ufe0f Agent needs attention", parsed: "error" },
+      { reason: "error", title: "\u2757\ufe0f Fix the build", parsed: "error" },
+      { reason: "permission", title: "\u2753\ufe0f Agent needs permission", parsed: "permission" },
+      { reason: "permission", title: "\u2753\ufe0f Fix the build", parsed: "permission" },
+    ]);
   });
 });

@@ -22,7 +22,7 @@ horizontal tab selection. The model journey checks body dismissal and the nested
 its parent without selecting a model or submitting a prompt. It does not assert catalog contents.
 
 These scripts live outside the default mobile suite because they require the installed example and
-an explicit connected host. See [mobile testing](../../../../../docs/mobile-testing.md) for device setup.
+an explicit connected host. See [mobile testing](../../../../../docs/upstream/mobile-testing.md) for device setup.
 
 ### Recorded verification
 

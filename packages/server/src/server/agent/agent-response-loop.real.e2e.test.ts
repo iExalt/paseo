@@ -1,17 +1,10 @@
-import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from "vitest";
-import { createServer } from "http";
+import { describe, test, expect, beforeEach, afterEach, beforeAll } from "vitest";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
-import { randomUUID } from "crypto";
 import { z } from "zod";
-import express from "express";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import { generateStructuredAgentResponse } from "./agent-response-loop.js";
 import { AgentManager } from "./agent-manager.js";
-import { AgentStorage } from "./agent-storage.js";
-import { createAgentMcpServer } from "./mcp-server.js";
 import { shutdownProviders } from "./provider-registry.js";
 import {
   canRunRealProvider,
@@ -24,134 +17,9 @@ const CODEX_TEST_MODEL = getRealProviderConfig("codex").model;
 const CODEX_TEST_THINKING_OPTION_ID = getRealProviderConfig("codex").thinkingOptionId;
 const CLAUDE_TEST_MODEL = getRealProviderConfig("claude").model;
 
-interface AgentMcpServerHandle {
-  url: string;
-  close: () => Promise<void>;
-}
-
-async function startAgentMcpServer(logger: pino.Logger): Promise<AgentMcpServerHandle> {
-  const app = express();
-  app.use(express.json());
-  const httpServer = createServer(app);
-
-  const registryDir = mkdtempSync(path.join(tmpdir(), "agent-mcp-registry-"));
-  const storagePath = path.join(registryDir, "agents");
-  const agentStorage = new AgentStorage(storagePath, logger);
-  const agentManager = new AgentManager({
-    clients: {},
-    registry: agentStorage,
-    logger,
-  });
-
-  let mcpAllowedHosts: string[] | undefined;
-  const agentMcpTransports = new Map<string, StreamableHTTPServerTransport>();
-
-  const createAgentMcpTransport = async (callerAgentId?: string) => {
-    const mcpServer = await createAgentMcpServer({
-      agentManager,
-      agentStorage,
-      callerAgentId,
-      logger,
-    });
-
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (sessionId) => {
-        agentMcpTransports.set(sessionId, transport);
-      },
-      onsessionclosed: (sessionId) => {
-        agentMcpTransports.delete(sessionId);
-      },
-      enableDnsRebindingProtection: true,
-      ...(mcpAllowedHosts ? { allowedHosts: mcpAllowedHosts } : {}),
-    });
-
-    Object.assign(transport, {
-      onclose: () => {
-        if (transport.sessionId) {
-          agentMcpTransports.delete(transport.sessionId);
-        }
-      },
-      onerror: () => {
-        // Ignore errors in test
-      },
-    });
-
-    await mcpServer.connect(transport);
-    return transport;
-  };
-
-  const runAgentMcpRequest = async (req: express.Request, res: express.Response): Promise<void> => {
-    try {
-      const sessionId = req.header("mcp-session-id");
-      let transport = sessionId ? agentMcpTransports.get(sessionId) : undefined;
-
-      if (!transport) {
-        if (req.method !== "POST") {
-          res.status(400).json({
-            jsonrpc: "2.0",
-            error: { code: -32000, message: "Missing or invalid MCP session" },
-            id: null,
-          });
-          return;
-        }
-
-        const body = req.body;
-        if (!isInitializeRequest(body)) {
-          res.status(400).json({
-            jsonrpc: "2.0",
-            error: { code: -32600, message: "First request must be initialize" },
-            id: null,
-          });
-          return;
-        }
-
-        transport = await createAgentMcpTransport();
-      }
-
-      await transport.handleRequest(req, res, req.body);
-    } catch {
-      if (!res.headersSent) {
-        res.status(500).json({
-          jsonrpc: "2.0",
-          error: { code: -32603, message: "Internal MCP server error" },
-          id: null,
-        });
-      }
-    }
-  };
-
-  const handleAgentMcpRequest: express.RequestHandler = (req, res) => {
-    void runAgentMcpRequest(req, res);
-  };
-
-  app.post("/mcp/agents", handleAgentMcpRequest);
-  app.get("/mcp/agents", handleAgentMcpRequest);
-  app.delete("/mcp/agents", handleAgentMcpRequest);
-
-  const port = await new Promise<number>((resolve) => {
-    httpServer.listen(0, () => {
-      const address = httpServer.address();
-      resolve(typeof address === "object" && address ? address.port : 0);
-    });
-  });
-
-  mcpAllowedHosts = [`127.0.0.1:${port}`, `localhost:${port}`];
-  const url = `http://127.0.0.1:${port}/mcp/agents`;
-
-  return {
-    url,
-    close: async () => {
-      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
-      rmSync(registryDir, { recursive: true, force: true });
-    },
-  };
-}
-
 describe("getStructuredAgentResponse (e2e)", () => {
   let manager: AgentManager;
   let cwd: string;
-  let agentMcpServer: AgentMcpServerHandle;
   let canRunCodex = false;
   let canRunClaude = false;
   const logger = pino({ level: "silent" });
@@ -159,14 +27,6 @@ describe("getStructuredAgentResponse (e2e)", () => {
   beforeAll(async () => {
     canRunCodex = await canRunRealProvider("codex");
     canRunClaude = await canRunRealProvider("claude");
-    if (!canRunCodex && !canRunClaude) {
-      return;
-    }
-    agentMcpServer = await startAgentMcpServer(logger);
-  });
-
-  afterAll(async () => {
-    await agentMcpServer?.close();
   });
 
   beforeEach(async () => {

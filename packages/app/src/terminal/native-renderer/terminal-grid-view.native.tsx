@@ -1,3 +1,4 @@
+import { traceTerminalLatency } from "./terminal-input-trace";
 import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   PixelRatio,
@@ -28,12 +29,13 @@ import {
   type TerminalGridCellMetrics,
 } from "./terminal-grid-metrics";
 import {
-  buildRows,
+  createTerminalRowBuilder,
   type TerminalCustomGlyphCell,
   type TerminalCustomGlyphRun,
   type TerminalRowModel,
   type TerminalRun,
 } from "./terminal-row-model";
+import type { TerminalFindMatch } from "./terminal-buffer-search";
 import type { TerminalSelectionRange } from "./terminal-selection";
 
 const MEASURE_TEXT = "mmmmmmmmmm";
@@ -74,6 +76,8 @@ export interface TerminalGridViewProps {
   fontSize?: number;
   style?: StyleProp<ViewStyle>;
   selection?: TerminalSelectionRange | null;
+  /** Find matches in absolute rows; only those on screen need passing. */
+  find?: { matches: readonly TerminalFindMatch[]; current: TerminalFindMatch | null } | null;
   onCellMetricsChange?: (metrics: TerminalGridCellMetrics) => void;
 }
 
@@ -299,6 +303,7 @@ export function TerminalGridView({
   fontSize = DEFAULT_FONT_SIZE,
   style,
   selection = null,
+  find = null,
   onCellMetricsChange,
 }: TerminalGridViewProps) {
   const [metrics, setMetrics] = useState<CellMetrics>(() => estimateCellMetrics(fontSize));
@@ -321,22 +326,39 @@ export function TerminalGridView({
     () => state.grid.map((row) => row.slice(0, visibleCols)),
     [state.grid, visibleCols],
   );
-  const rows = useMemo(
-    () =>
-      buildRows({
-        grid: projectedGrid,
-        resolver,
-        selection: selection
-          ? {
-              range: selection,
-              firstRow: state.firstRow,
-              backgroundColor: NATIVE_TERMINAL_SELECTION_COLORS.background,
-              foregroundColor: NATIVE_TERMINAL_SELECTION_COLORS.foreground,
-            }
-          : undefined,
-      }),
-    [projectedGrid, resolver, selection, state.firstRow],
-  );
+  const [buildRowModels] = useState(createTerminalRowBuilder);
+  const rows = useMemo(() => {
+    const built = buildRowModels({
+      grid: projectedGrid,
+      resolver,
+      selection: selection
+        ? {
+            range: selection,
+            firstRow: state.firstRow,
+            backgroundColor: NATIVE_TERMINAL_SELECTION_COLORS.background,
+            foregroundColor: NATIVE_TERMINAL_SELECTION_COLORS.foreground,
+          }
+        : undefined,
+      // The match and active-match colours web terminal find draws its borders in.
+      find: find
+        ? {
+            matches: find.matches,
+            current: find.current,
+            firstRow: state.firstRow,
+            match: {
+              backgroundColor: xtermTheme.yellow ?? "#b58900",
+              foregroundColor: resolver.backgroundColor,
+            },
+            currentMatch: {
+              backgroundColor: xtermTheme.blue ?? "#268bd2",
+              foregroundColor: resolver.backgroundColor,
+            },
+          }
+        : undefined,
+    });
+    traceTerminalLatency("rows", built.length);
+    return built;
+  }, [buildRowModels, find, projectedGrid, resolver, selection, state.firstRow, xtermTheme]);
 
   const containerStyle = useMemo<StyleProp<ViewStyle>>(
     () => [styles.root, { backgroundColor: resolver.backgroundColor }, style],

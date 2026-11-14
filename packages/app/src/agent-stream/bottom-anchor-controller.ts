@@ -4,7 +4,7 @@ import type { BottomAnchorTransportBehavior } from "./strategy";
 export type BottomAnchorMode = "sticky-bottom" | "detached";
 
 export interface BottomAnchorRouteRequest {
-  reason: "initial-entry" | "resume";
+  reason: "initial-entry" | "resume" | "notification-entry";
   agentId: string;
   requestKey: string;
 }
@@ -83,12 +83,17 @@ interface BottomAnchorControllerDriver {
   }) => void;
   prepareForStickyViewportChange: () => void;
   prepareForStickyContentChange: () => void;
-  handleScrollNearBottomChange: (params: {
-    nextIsNearBottom: boolean;
-    scrollDelta: number;
-  }) => void;
+  handleScrollNearBottomChange: (params: ScrollNearBottomChange) => void;
   notifyAuthoritativeHistoryMaybeChanged: () => void;
   reevaluate: (animated?: boolean) => void;
+}
+
+interface ScrollNearBottomChange {
+  nextIsNearBottom: boolean;
+  scrollDelta: number;
+  // The reader moved the viewport toward the bottom without a drag, e.g. with a mouse wheel.
+  // Drags settle in endUserScroll instead.
+  scrolledTowardBottomByUser?: boolean;
 }
 
 interface CreateBottomAnchorControllerDriverInput {
@@ -223,7 +228,11 @@ function shouldRequireRouteRequestConfirmation(input: {
   if (!input.request) {
     return false;
   }
-  if (input.request.reason !== "initial-entry" && input.request.reason !== "resume") {
+  if (
+    input.request.reason !== "initial-entry" &&
+    input.request.reason !== "resume" &&
+    input.request.reason !== "notification-entry"
+  ) {
     return false;
   }
   if (input.measurementState.containerKey !== "web-partial-virtualized") {
@@ -623,6 +632,12 @@ function createBottomAnchorControllerDriver(
       if (isUserScrollActive) {
         return;
       }
+      if (mode === "detached" && nextIsNearBottom && params.scrolledTowardBottomByUser) {
+        setModeInternal("sticky-bottom");
+        pendingVerification = { requestId: null, retries: 0 };
+        evaluate(false, "scroll_near_bottom_change");
+        return;
+      }
       if (
         nextIsNearBottom &&
         mode === "sticky-bottom" &&
@@ -816,7 +831,7 @@ export function useBottomAnchorController(input: {
     prepareForStickyContentChange() {
       driverRef.current?.prepareForStickyContentChange();
     },
-    handleScrollNearBottomChange(params: { nextIsNearBottom: boolean; scrollDelta: number }) {
+    handleScrollNearBottomChange(params: ScrollNearBottomChange) {
       driverRef.current?.handleScrollNearBottomChange(params);
     },
     reevaluate(animated = false) {

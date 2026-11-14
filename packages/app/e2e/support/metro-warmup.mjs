@@ -1,6 +1,6 @@
 /** @param {number} port */
-export async function warmMetro(port) {
-  const origin = `http://127.0.0.1:${port}`;
+export async function warmMetro(port, baseURL = `http://127.0.0.1:${port}`) {
+  const origin = new URL(baseURL).origin;
   const documentResponse = await fetch(origin, { signal: AbortSignal.timeout(120_000) });
   if (!documentResponse.ok) {
     throw new Error(`Metro document warmup failed with HTTP ${documentResponse.status}`);

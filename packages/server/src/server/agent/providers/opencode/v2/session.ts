@@ -69,6 +69,7 @@ export class OpenCodeV2Session implements AgentSession {
     bindChild?: (id: string) => void,
     private readonly acquire?: () => Promise<V2Connection>,
     private readonly moved?: (connection: V2Connection) => void,
+    turnRecoveryIntervalMs?: number,
   ) {
     this.permissions = new SessionPermissions(
       () => this.client,
@@ -93,6 +94,7 @@ export class OpenCodeV2Session implements AgentSession {
         await this.reconcile();
         return { info: this.info, history: this.history };
       },
+      recoveryIntervalMs: turnRecoveryIntervalMs,
       reportReconciliationError: (error) =>
         this.logger.warn(
           { error: toDiagnosticErrorMessage(error) },
@@ -520,6 +522,10 @@ export class OpenCodeV2Session implements AgentSession {
       await delay(100, undefined, { signal }).catch(() => undefined);
     }
   }
+  get skillRefreshGroup() {
+    return this.client;
+  }
+
   async canStopRuntime(): Promise<boolean> {
     if (this.closed || this.exited || this.reconnecting || this.turns.id || this.dirty)
       return false;

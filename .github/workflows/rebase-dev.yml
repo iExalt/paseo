@@ -1,0 +1,90 @@
+name: Rebase dev onto upstream mirror
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: rebase-dev
+  cancel-in-progress: false
+
+jobs:
+  rebase:
+    if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.13.0 actionlint@1.7.12
+          cache: false
+
+      - name: Rebase captured dev on captured upstream and import known resolutions
+        id: rebase
+        run: node .github/scripts/rebase-dev.mjs
+        env:
+          REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+          PASEO_REBASE_SSH_SIGNING_KEY: ${{ secrets.PASEO_REBASE_SSH_SIGNING_KEY }}
+
+      - name: Configure pinned npm installation
+        run: |
+          test "$(node --version)" = v26.13.0
+          test "$(npm --version)" = 11.20.0
+          echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+      - name: Install locked dependencies once
+        run: time npm ci --prefer-offline
+      - name: Validate the exact rebased tree with routine CI
+        id: validate
+        run: node .github/scripts/rebase-dev.mjs validate
+
+      # GITHUB_TOKEN cannot push commits that change workflow files. Mint the
+      # one-hour App token only once validation has passed.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
+        with:
+          client-id: ${{ vars.PASEO_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PASEO_SYNC_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-workflows: write
+      - name: Publish backup and rebased dev atomically
+        run: |
+          rebase_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          echo "::add-mask::$rebase_auth"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $rebase_auth" \
+          node .github/scripts/rebase-dev.mjs publish
+        env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
+          TESTED_SHA: ${{ steps.validate.outputs.tested-sha }}
+          DEV_SHA: ${{ steps.rebase.outputs.dev-sha }}
+          UPSTREAM_SHA: ${{ steps.rebase.outputs.upstream-sha }}
+          RESOLUTIONS_SHA: ${{ steps.rebase.outputs.resolutions-sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+
+      - name: Summarize bounded rebase diagnostics
+        if: failure()
+        env:
+          REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+        run: |
+          if [[ -f "$REBASE_DEV_DIAGNOSTICS" ]]; then
+            head -c 16000 "$REBASE_DEV_DIAGNOSTICS" >> "$GITHUB_STEP_SUMMARY"
+          fi

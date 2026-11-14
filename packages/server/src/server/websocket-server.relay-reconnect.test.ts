@@ -4,14 +4,13 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
 import type { AgentManager } from "./agent/agent-manager.js";
-import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import type { WorkspaceAutoName } from "./workspace-auto-name.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import { createProviderSnapshotManagerStub, asAgentStorage } from "./test-utils/session-stubs.js";
 import {
   asUint8Array,
   decodeTerminalStreamFrame,
@@ -255,6 +254,7 @@ function createServer(options?: {
   speechReadiness?: SpeechReadinessSnapshot | null;
   logger?: ReturnType<typeof createLogger>;
   startPaused?: boolean;
+  relayKeepAwake?: boolean;
   auth?: { password: string; localCredential: () => string | null };
 }) {
   const speechReadiness = options?.speechReadiness ?? null;
@@ -279,12 +279,15 @@ function createServer(options?: {
         erroredAgents: 0,
       })),
     }),
-    createStub<AgentStorage>({}),
+    asAgentStorage({}),
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
-    null,
-    { allowedOrigins: new Set(), startPaused: options?.startPaused },
+    {
+      allowedOrigins: new Set(),
+      startPaused: options?.startPaused,
+      relayKeepAwake: options?.relayKeepAwake,
+    },
     createWorkspaceAutoNameStub(),
     createWorkspaceRuntimeStore(),
     options?.auth,
@@ -1155,10 +1158,32 @@ describe("relay external socket reconnect behavior", () => {
     expect(serverInfo.features?.hopliteProvider).toBe(false);
     expect(serverInfo.features?.pluginLogs).toBe(true);
     expect(serverInfo.features?.workspaceMarkUnread).toBe(true);
+    expect(serverInfo.features?.workspaceNotifications).toBe(true);
+    expect(serverInfo.features?.agentClose).toBe(true);
+    expect(serverInfo.features?.agentCancelOutcome).toBe(true);
+    expect(serverInfo.features?.profileList).toBe(true);
+    expect(serverInfo.features?.providerInspect).toBe(true);
+    expect(serverInfo.features?.agentDirectoryQuery).toBe(true);
+    expect(serverInfo.features?.agentStatus).toBe(true);
+    expect(serverInfo.features?.agentActivity).toBe(true);
     expect(serverInfo.features?.["terminal-input-mode-replay"]).toBe(true);
     expect(serverInfo.features?.["terminal-size-ownership"]).toBe(true);
     expect(serverInfo.features?.agentTurnIdentity).toBeUndefined();
+    expect(serverInfo.features?.relayKeepAwake).toBeUndefined();
     expect(serverInfo.permissions).toEqual(DAEMON_PERMISSIONS);
+    await server.close();
+  });
+
+  test("advertises relay keep-awake only when the daemon can hold the assertion", async () => {
+    const server = createServer({ relayKeepAwake: true });
+
+    const serverInfo = await attachRelayAndHello({
+      server,
+      socket: new MockSocket(),
+      clientId: "cid-relay-keep-awake",
+    });
+
+    expect(serverInfo.features?.relayKeepAwake).toBe(true);
     await server.close();
   });
 

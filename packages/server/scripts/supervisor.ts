@@ -49,6 +49,8 @@ export type SupervisorLifecycleLog = (message: string, fields?: Record<string, u
 interface SupervisorOptions {
   name: string;
   startupMessage: string;
+  // Entries recorded before the durable log opened, written right after the startup message.
+  startupLog?: ReadonlyArray<{ message: string; fields: Record<string, unknown> }>;
   resolveWorkerEntry: () => string;
   workerArgs?: string[];
   workerEnv?: NodeJS.ProcessEnv;
@@ -67,6 +69,8 @@ interface SupervisorOptions {
   // exit except a keep-terminals stop. A crash restart keeps terminals and skips it.
   cleanupTerminals?: (log: SupervisorLifecycleLog) => Promise<void>;
   logFile?: SupervisorLogFileOptions;
+  // How long a worker may ignore a graceful shutdown request before its process tree is killed.
+  workerTerminationGraceMs?: number;
 }
 
 export interface SupervisorController {
@@ -192,6 +196,7 @@ export function runSupervisor(options: SupervisorOptions): SupervisorController 
   const workerEnv = options.workerEnv ?? process.env;
   const workerExecArgv = options.workerExecArgv ?? ["--import", "tsx"];
   const resolveWorkerSpawnSpec = options.resolveWorkerSpawnSpec;
+  const workerTerminationGraceMs = options.workerTerminationGraceMs ?? WORKER_TERMINATION_GRACE_MS;
 
   let child: ChildProcess | null = null;
   let restarting = false;
@@ -299,7 +304,7 @@ export function runSupervisor(options: SupervisorOptions): SupervisorController 
           workerPid: currentChild.pid ?? null,
         });
       });
-    }, WORKER_TERMINATION_GRACE_MS);
+    }, workerTerminationGraceMs);
     forceKillTimer.unref();
   };
 
@@ -554,6 +559,9 @@ export function runSupervisor(options: SupervisorOptions): SupervisorController 
 
   process.stdout.write(`[${options.name}] ${options.startupMessage}\n`);
   writeLifecycleLog(options.startupMessage);
+  for (const entry of options.startupLog ?? []) {
+    writeLifecycleLog(entry.message, entry.fields);
+  }
   spawnWorker();
 
   return { requestShutdown };

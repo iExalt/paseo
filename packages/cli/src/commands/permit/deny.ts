@@ -1,10 +1,10 @@
 import type { Command } from "commander";
-import type { AgentPermissionRequest } from "@getpaseo/protocol/agent-types";
+import { AgentPermissionResponseSchema } from "@getpaseo/protocol/messages";
+import { settlePermissionResponses } from "./response.js";
 import { connectToDaemon } from "../../utils/client.js";
 import type { CommandOptions, ListResult, CommandError } from "../../output/index.js";
 import {
-  permitResponseSchema,
-  toPermissionResponseItem,
+  selectPermissionRequests,
   type PermissionResponseItem,
   type PermitClientConnector,
 } from "./allow.js";
@@ -15,6 +15,7 @@ export interface PermitDenyOptions extends CommandOptions {
   all?: boolean;
   message?: string;
   interrupt?: boolean;
+  selectedActionId?: string;
   host?: string;
 }
 
@@ -25,6 +26,15 @@ export function createDenyCommand(connect: PermitClientConnector = connectToDaem
     options: PermitDenyOptions,
     _command: Command,
   ): Promise<PermitDenyResult> {
+    const hasSingleRequestFields = options.selectedActionId !== undefined;
+    if (hasSingleRequestFields && (!reqId || options.all)) {
+      throw {
+        code: "SINGLE_PERMISSION_REQUIRED",
+        message: "Permission response fields require one request ID and cannot be used with --all.",
+        details: "Specify <req_id> and omit --all.",
+      } satisfies CommandError;
+    }
+
     // Validate arguments
     if (!options.all && !reqId) {
       const error: CommandError = {
@@ -34,6 +44,15 @@ export function createDenyCommand(connect: PermitClientConnector = connectToDaem
       };
       throw error;
     }
+
+    const response = AgentPermissionResponseSchema.parse({
+      behavior: "deny",
+      ...(options.selectedActionId !== undefined
+        ? { selectedActionId: options.selectedActionId }
+        : {}),
+      ...(options.message !== undefined ? { message: options.message } : {}),
+      ...(options.interrupt ? { interrupt: true } : {}),
+    });
 
     const client = await connect({ target: options.daemonTarget });
 
@@ -63,57 +82,19 @@ export function createDenyCommand(connect: PermitClientConnector = connectToDaem
       }
 
       // Determine which permissions to deny
-      let permissionsToDeny: AgentPermissionRequest[];
-      if (options.all) {
-        permissionsToDeny = pendingPermissions;
-      } else {
-        // Find permission by ID prefix
-        const permission = pendingPermissions.find(
-          (p) => p.id === reqId || p.id.startsWith(reqId!),
-        );
-        if (!permission) {
-          await client.close();
-          const error: CommandError = {
-            code: "PERMISSION_NOT_FOUND",
-            message: `Permission request not found: ${reqId}`,
-            details: `Available requests: ${pendingPermissions.map((p) => p.id.slice(0, 8)).join(", ")}`,
-          };
-          throw error;
-        }
-        permissionsToDeny = [permission];
-      }
+      const permissionsToDeny = selectPermissionRequests({
+        pendingPermissions,
+        requestId: reqId,
+        all: options.all,
+      });
 
-      // Deny permissions
-      const results: PermissionResponseItem[] = await Promise.all(
-        permissionsToDeny.map(async (permission) => {
-          try {
-            await client.respondToPermissionAndWait(resolvedAgentId, permission.id, {
-              behavior: "deny",
-              ...(options.message ? { message: options.message } : {}),
-              ...(options.interrupt ? { interrupt: true } : {}),
-            });
-          } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            const error: CommandError = {
-              code: "PERMISSION_RESPONSE_UNCONFIRMED",
-              message: `Permission response unconfirmed for request ${permission.id}: ${message}`,
-              details: 'Use "paseo permit ls" to check whether the request is still pending',
-            };
-            throw error;
-          }
-          return toPermissionResponseItem(resolvedAgentId, permission, "denied");
-        }),
-      );
-
-      await client.close();
-
-      return {
-        type: "list",
-        data: results,
-        schema: permitResponseSchema,
-      };
+      return await settlePermissionResponses({
+        client,
+        agentId: resolvedAgentId,
+        permissions: permissionsToDeny,
+        response,
+      });
     } catch (err) {
-      await client.close().catch(() => {});
       // Re-throw CommandErrors
       if (err && typeof err === "object" && "code" in err) {
         throw err;
@@ -124,6 +105,8 @@ export function createDenyCommand(connect: PermitClientConnector = connectToDaem
         message: `Failed to deny permission: ${message}`,
       };
       throw error;
+    } finally {
+      await client.close().catch(() => {});
     }
   };
 }

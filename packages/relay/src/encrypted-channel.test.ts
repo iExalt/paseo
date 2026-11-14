@@ -532,3 +532,72 @@ describe("EncryptedChannel", () => {
     );
   });
 });
+
+describe("EncryptedChannel ordered receive", () => {
+  const LARGE = "x".repeat(200_000);
+
+  function openChannel(onEvent: (event: string) => void) {
+    const daemonKeyPair = generateKeyPair();
+    const clientKeyPair = generateKeyPair();
+    const sharedKey = deriveSharedKey(daemonKeyPair.secretKey, clientKeyPair.publicKey);
+    const transport: Transport = {
+      send: vi.fn(() => onEvent("sent")),
+      close: vi.fn(),
+      onmessage: null,
+      onclose: null,
+      onerror: null,
+    };
+    const channel = new EncryptedChannel(
+      transport,
+      sharedKey,
+      {
+        onmessage: (data) =>
+          onEvent(typeof data === "string" ? `message:${data.length}` : "binary"),
+      },
+      { daemonKeyPair },
+    );
+    channel.setState("open");
+    const deliver = (data: string) => transport.onmessage?.({ data, isBinary: false });
+    const deliverEncrypted = (text: string) =>
+      deliver(arrayBufferToBase64(encrypt(sharedKey, text)));
+    const hello = JSON.stringify({
+      type: "e2ee_hello",
+      key: exportPublicKey(clientKeyPair.publicKey),
+    });
+    return { channel, deliver, deliverEncrypted, hello };
+  }
+
+  // Every budget check reports the budget spent, so a large frame yields between slices.
+  function spendBudgetOnEveryCheck() {
+    let now = 0;
+    vi.spyOn(performance, "now").mockImplementation(() => (now += 10));
+  }
+
+  it("delivers frames and handshake traffic in arrival order behind a sliced decrypt", async () => {
+    spendBudgetOnEveryCheck();
+    const events: string[] = [];
+    const { deliver, deliverEncrypted, hello } = openChannel((event) => events.push(event));
+
+    deliverEncrypted(LARGE);
+    deliver(hello);
+    deliverEncrypted("small");
+    await vi.waitFor(() => expect(events).toHaveLength(3));
+    vi.restoreAllMocks();
+
+    expect(events).toEqual([`message:${LARGE.length}`, "sent", "message:5"]);
+  });
+
+  it("drops a frame whose sliced decrypt finishes after the channel closed", async () => {
+    spendBudgetOnEveryCheck();
+    const events: string[] = [];
+    const { channel, deliverEncrypted } = openChannel((event) => events.push(event));
+
+    deliverEncrypted(LARGE);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    channel.close();
+    await waitForAsyncDelivery();
+    vi.restoreAllMocks();
+
+    expect(events).toEqual([]);
+  });
+});

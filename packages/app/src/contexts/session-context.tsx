@@ -141,6 +141,7 @@ interface AgentAttentionNotificationInput {
   serverId: string;
   workspaceId: string | undefined;
   agentId: string;
+  agentTitle: string | null;
   assistantMessage: string | null;
   permissionRequest: NotificationPermissionRequest | null;
 }
@@ -159,6 +160,7 @@ function resolveAgentAttentionNotification(
     serverId: input.serverId,
     workspaceId: input.workspaceId,
     agentId: input.agentId,
+    agentTitle: input.agentTitle,
     assistantMessage: input.reason === "finished" ? input.assistantMessage : null,
     permissionRequest: input.reason === "permission" ? input.permissionRequest : null,
   });
@@ -285,14 +287,15 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       const assistantMessage =
         findLatestAssistantMessageText(head) ?? findLatestAssistantMessageText(tail);
       const permissionRequest = getLatestPermissionRequest(session, params.agentId);
-      const workspaceId = session?.agents?.get(params.agentId)?.workspaceId;
+      const agent = session?.agents?.get(params.agentId);
 
       const notification = resolveAgentAttentionNotification({
         notification: params.notification,
         reason: params.reason,
         serverId,
-        workspaceId,
+        workspaceId: agent?.workspaceId,
         agentId: params.agentId,
+        agentTitle: agent?.title ?? null,
         assistantMessage,
         permissionRequest,
       });
@@ -420,7 +423,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           ? { epoch: timeline.range.epoch, endSeq: timeline.range.endSeq }
           : undefined;
       },
-      fetchPage: async (agentId, request) => {
+      fetchPage: async (agentId, request, isCurrent) => {
         const session = useSessionStore.getState().sessions[serverId];
         const initKey = getInitKey(serverId, agentId);
         const shouldInitialize = selectAgentTimelineState(session, agentId).status !== "synced";
@@ -436,22 +439,33 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           });
           setAgentInitializing(agentId, true);
         }
+        const deferred = getInitDeferred(initKey);
         try {
-          const page = await getHostRuntimeStore().fetchAgentTimeline(serverId, agentId, request);
-          if (shouldInitialize && getInitDeferred(initKey)) {
+          const page = await getHostRuntimeStore().fetchAgentTimeline(
+            serverId,
+            agentId,
+            request,
+            isCurrent,
+          );
+          if (shouldInitialize && deferred && getInitDeferred(initKey) === deferred) {
             refreshAgentInitializationTimeout({ key: initKey, agentId, setAgentInitializing });
           }
           return page;
         } catch (error) {
-          if (shouldInitialize) {
+          if (shouldInitialize && deferred && getInitDeferred(initKey) === deferred) {
             setAgentInitializing(agentId, false);
             rejectInitDeferred(initKey, error instanceof Error ? error : new Error(String(error)));
           }
           throw error;
         }
       },
-      fetchLatestTail: (agentId) =>
-        getHostRuntimeStore().fetchAgentTimeline(serverId, agentId, planTimelineTailFetch()),
+      fetchLatestTail: (agentId, isCurrent) =>
+        getHostRuntimeStore().fetchAgentTimeline(
+          serverId,
+          agentId,
+          planTimelineTailFetch(),
+          isCurrent,
+        ),
       reportError: (error) => {
         console.warn("[Session] viewed timeline synchronization failed", { serverId, error });
       },

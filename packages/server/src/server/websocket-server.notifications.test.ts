@@ -1,18 +1,24 @@
+import type { NotificationDelivery } from "./push/notification-delivery.js";
 import { createWorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import { SessionDelivery } from "./session/owned-subscriptions/index.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Server as HTTPServer } from "http";
 import type pino from "pino";
 import type { AgentManager } from "./agent/agent-manager.js";
-import type { AgentStorage } from "./agent/agent-storage.js";
 import type { DownloadTokenStore } from "./file-download/token-store.js";
 import type { DaemonConfigStore } from "./daemon-config-store.js";
 import type { ScheduleService } from "./schedule/service.js";
 import type { CheckoutDiffManager } from "./checkout-diff-manager.js";
 import { asInternals, createStub } from "./test-utils/class-mocks.js";
-import { createProviderSnapshotManagerStub } from "./test-utils/session-stubs.js";
+import { createProviderSnapshotManagerStub, asAgentStorage } from "./test-utils/session-stubs.js";
 import type { PushNotificationSender, PushPayload } from "./push/index.js";
 import type { WorkspaceAutoName } from "./workspace-auto-name.js";
+import { ReplyRuleMatcher } from "./agent/reply-rule-matcher.js";
+import {
+  createPersistedWorkspaceRecord,
+  type PersistedWorkspaceRecord,
+  type WorkspaceRegistry,
+} from "./workspace-registry.js";
 
 const WORKSPACE_ID = "workspace-1";
 
@@ -50,10 +56,18 @@ interface WebSocketServerInternals {
   broadcastAgentAttention(params: {
     agentId: string;
     reason: string;
+    completionSubject?: {
+      turnId: string;
+      text: string;
+      completeness: "complete" | "incomplete";
+    };
     preview?: string;
     providerId?: string;
     timestamp?: string;
   }): Promise<void>;
+  broadcastDaemonConfigChanged(config: {
+    replyRules?: Array<{ source: string; flags: string }>;
+  }): void;
 }
 
 function createLogger() {
@@ -78,18 +92,26 @@ function createWorkspaceAutoNameStub(): WorkspaceAutoName {
 class RecordingPushNotificationSender implements PushNotificationSender {
   readonly sent: PushPayload[] = [];
 
-  async send(payload: PushPayload): Promise<void> {
+  async send(payload: PushPayload, _signal?: AbortSignal): Promise<void> {
     this.sent.push(payload);
   }
 }
 
-function createServer(agentManagerOverrides?: Record<string, unknown>) {
+function createServer(
+  agentManagerOverrides?: Record<string, unknown>,
+  workspaceRegistry?: WorkspaceRegistry,
+  daemonConfigStoreOverrides?: Record<string, unknown>,
+  agentStorageRecord: { title: string } | null = null,
+  agentStorageOverrides: Record<string, unknown> = {},
+) {
   const pushNotifications = new RecordingPushNotificationSender();
+  const logger = createLogger();
   const agentManager = {
     subscribe: vi.fn(() => () => {}),
     setAgentAttentionCallback: vi.fn(),
     getAgent: vi.fn(() => ({ workspaceId: WORKSPACE_ID, pendingPermissions: new Map() })),
     getLastAssistantMessage: vi.fn(async () => null),
+    getNotificationPreview: vi.fn(() => undefined),
     getMetricsSnapshot: vi.fn(() => ({
       total: 0,
       byLifecycle: {},
@@ -104,18 +126,20 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
   const daemonConfigStore = {
     onApply: vi.fn(() => () => {}),
     onChange: vi.fn(() => () => {}),
+    getReplyRules: vi.fn(() => []),
+    matchesReplyRules: vi.fn(() => false),
+    ...daemonConfigStoreOverrides,
   };
 
   const server = new VoiceAssistantWebSocketServer(
     createStub<HTTPServer>({}),
-    createStub<pino.Logger>(createLogger()),
+    createStub<pino.Logger>(logger),
     "srv-test",
     createStub<AgentManager>(agentManager),
-    createStub<AgentStorage>({}),
+    asAgentStorage({ get: vi.fn(async () => agentStorageRecord), ...agentStorageOverrides }),
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
-    null,
     { allowedOrigins: new Set() },
     createWorkspaceAutoNameStub(),
     createWorkspaceRuntimeStore(),
@@ -126,7 +150,7 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
     "1.2.3-test",
     undefined,
     undefined,
-    undefined,
+    workspaceRegistry,
     createStub<ScheduleService>({}),
     createStub<CheckoutDiffManager>({
       subscribe: vi.fn(),
@@ -151,7 +175,7 @@ function createServer(agentManagerOverrides?: Record<string, unknown>) {
     createProviderSnapshotManagerStub().manager,
   );
 
-  return { server, agentManager, pushNotifications };
+  return { server, agentManager, pushNotifications, daemonConfigStore, logger };
 }
 
 function createOpenSocket() {
@@ -172,13 +196,24 @@ function createSessionWithActivity(
     appVisible: boolean;
     appVisibilityChangedAt?: Date;
   } | null,
-  subscribed = true,
+  options: {
+    subscribed?: boolean;
+    modern?: boolean;
+    replyRuleNotifications?: boolean;
+    subscribe?: (agent: { workspaceId?: string }) => Promise<boolean>;
+  } = {},
 ) {
   return {
     getClientActivity: vi.fn(() => activity),
     supports: () => false,
-    supportsForSource: () => false,
-    subscribesToAgent: vi.fn(async () => subscribed),
+    supportsForSource: (capability: string) =>
+      capability === "reply_rule_notifications" && options.replyRuleNotifications === true,
+    subscribesToAgent: vi.fn(
+      (agent: { workspaceId?: string }) =>
+        options.subscribe?.(agent) ?? Promise.resolve(options.subscribed ?? true),
+    ),
+    wantsSourceEvent: vi.fn(() => true),
+    publishToSource: vi.fn(),
   };
 }
 
@@ -191,15 +226,15 @@ function connectClient(
     appVisible: boolean;
     appVisibilityChangedAt?: Date;
   } | null,
-  options: { subscribed?: boolean } = {},
+  options: { subscribed?: boolean; modern?: boolean; replyRuleNotifications?: boolean } = {},
 ) {
   const ws = createOpenSocket();
   const delivery = new SessionDelivery(() => {});
-  delivery.attach(ws, false);
+  delivery.attach(ws, options.modern === true);
   asInternals<WebSocketServerInternals>(server).sessions.set(ws, {
     kind: "trusted",
     session: {
-      ...createSessionWithActivity(activity, options.subscribed ?? true),
+      ...createSessionWithActivity(activity, options),
       delivery,
       wantsSourceNotification: () => true,
     },
@@ -210,6 +245,20 @@ function connectClient(
     externalDisconnectCleanupTimeout: null,
   });
   return ws;
+}
+
+function readModernAttentionPayload(server: VoiceAssistantWebSocketServer, ws: object) {
+  const connection = asInternals<{ sessions: Map<unknown, unknown> }>(server).sessions.get(ws) as
+    | { session: { publishToSource: ReturnType<typeof vi.fn> } }
+    | undefined;
+  const message = connection?.session.publishToSource.mock.calls[0]?.[1] as
+    | {
+        type: string;
+        payload: { shouldNotify: boolean; notification: { data: { workspaceId: string } } };
+      }
+    | undefined;
+  expect(message?.type).toBe("agent_attention_required");
+  return message?.payload;
 }
 
 function readAttentionRequiredMessage(ws: ReturnType<typeof createOpenSocket>) {
@@ -252,19 +301,24 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(pushNotifications.sent).toHaveLength(1);
   });
 
-  it("uses assistant preview text for push notifications with markdown removed", async () => {
+  it("titles push notifications by thread with markdown-free assistant previews", async () => {
     const getLastAssistantMessage = vi.fn(
       async () => "**Done**. Updated `README.md` and [link](https://example.com).",
     );
-    const { server, pushNotifications } = createServer({
-      getAgent: vi.fn(() => ({
-        config: { title: null },
-        cwd: "/tmp/worktree",
-        workspaceId: WORKSPACE_ID,
-        pendingPermissions: new Map(),
-      })),
-      getLastAssistantMessage,
-    });
+    const { server, pushNotifications } = createServer(
+      {
+        getAgent: vi.fn(() => ({
+          config: { title: null },
+          cwd: "/tmp/worktree",
+          workspaceId: WORKSPACE_ID,
+          pendingPermissions: new Map(),
+        })),
+        getLastAssistantMessage,
+      },
+      undefined,
+      undefined,
+      { title: "Fix login redirect" },
+    );
 
     await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention({
       agentId: "agent-1",
@@ -274,7 +328,7 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
 
     expect(pushNotifications.sent).toEqual([
       {
-        title: "Agent finished",
+        title: "Fix login redirect",
         body: "Done. Updated README.md and link.",
         data: {
           serverId: "srv-test",
@@ -285,6 +339,176 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
       },
     ]);
     expect(getLastAssistantMessage).toHaveBeenCalledWith("agent-1");
+  });
+
+  it("publishes committed rules only to subscribed clients that opted into the field", () => {
+    const { server } = createServer();
+    const legacy = connectClient(server, null);
+    const capable = connectClient(server, null, { replyRuleNotifications: true });
+    const config = {
+      replyRules: [{ source: "^No news\\.$", flags: "i" }],
+    };
+
+    asInternals<WebSocketServerInternals>(server).broadcastDaemonConfigChanged.call(server, config);
+
+    const connections = asInternals<{
+      sessions: Map<object, { session: { publishToSource: ReturnType<typeof vi.fn> } }>;
+    }>(server).sessions;
+    const legacyMessage = connections.get(legacy)?.session.publishToSource.mock.calls[0]?.[1];
+    const capableMessage = connections.get(capable)?.session.publishToSource.mock.calls[0]?.[1];
+
+    expect(legacyMessage).toMatchObject({
+      type: "status",
+      payload: { status: "daemon_config_changed" },
+    });
+    expect(legacyMessage.payload.config).not.toHaveProperty("replyRules");
+    expect(capableMessage).toMatchObject({
+      type: "status",
+      payload: { status: "daemon_config_changed", config: { replyRules: config.replyRules } },
+    });
+  });
+
+  it("suppresses a matching complete subject for local attention", async () => {
+    const matcher = ReplyRuleMatcher.compile([{ source: "^No news\\.$", flags: "i" }]);
+    const rules = [{ source: "^No news\\.$", flags: "i" }];
+    const workspaceIds = ["workspace-1", "workspace-2"];
+    const workspaces = new Map(
+      workspaceIds.map((workspaceId) => [
+        workspaceId,
+        createPersistedWorkspaceRecord({
+          workspaceId,
+          projectId: "project-1",
+          cwd: "/tmp/shared-workspace",
+          kind: "directory",
+          displayName: "Project",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        }),
+      ]),
+    );
+    const workspaceRegistry = createStub<WorkspaceRegistry>({
+      get: vi.fn(async (workspaceId) => workspaces.get(workspaceId) ?? null),
+    });
+    const { server, pushNotifications } = createServer(
+      {
+        getAgent: vi.fn((agentId: string) => ({
+          config: { title: null },
+          cwd: "/tmp/shared-workspace",
+          workspaceId: agentId === "agent-2" ? "workspace-2" : "workspace-1",
+          pendingPermissions: new Map(),
+        })),
+      },
+      workspaceRegistry,
+      {
+        getReplyRules: () => rules,
+        matchesReplyRules: (subject: Parameters<typeof matcher.matches>[0]) =>
+          matcher.matches(subject),
+      },
+    );
+    const ws = connectClient(server, {
+      deviceType: "web",
+      appVisible: false,
+      focusedAgentId: null,
+      lastActivityAt: new Date(),
+    });
+
+    for (const agentId of ["agent-1", "agent-2"]) {
+      await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention({
+        agentId,
+        provider: "claude",
+        reason: "finished",
+        completionSubject: {
+          turnId: `turn-${agentId}`,
+          text: "No news.",
+          completeness: "complete",
+        },
+      });
+    }
+
+    const events = ws.send.mock.calls.map(([raw]) => {
+      expect(typeof raw).toBe("string");
+      if (typeof raw !== "string") throw new Error("Expected string WebSocket frame");
+      return JSON.parse(raw).message.payload.event;
+    });
+    expect(
+      events.map((event) => [
+        event.shouldNotify,
+        event.notification.data.workspaceId,
+        event.notification.data.agentId,
+      ]),
+    ).toEqual([
+      [false, "workspace-1", "agent-1"],
+      [false, "workspace-2", "agent-2"],
+    ]);
+    expect(workspaceRegistry.get).toHaveBeenCalledWith("workspace-1");
+    expect(workspaceRegistry.get).toHaveBeenCalledWith("workspace-2");
+    expect(pushNotifications.sent).toEqual([]);
+  });
+
+  it("reads the current rule matcher after asynchronous notification lookups", async () => {
+    let resolveWorkspace: (workspace: null) => void = () => undefined;
+    const workspaceRegistry = createStub<WorkspaceRegistry>({
+      get: vi.fn(
+        () =>
+          new Promise<null>((resolve) => {
+            resolveWorkspace = resolve;
+          }),
+      ),
+    });
+    let rules: Array<{ source: string; flags: string }> = [];
+    let matcher = ReplyRuleMatcher.compile(rules);
+    const store = {
+      getReplyRules: () => rules,
+      matchesReplyRules: (subject: Parameters<typeof matcher.matches>[0]) =>
+        matcher.matches(subject),
+    };
+    const { server, pushNotifications } = createServer(undefined, workspaceRegistry, store);
+    const decision = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention({
+      agentId: "agent-1",
+      provider: "claude",
+      reason: "finished",
+      completionSubject: {
+        turnId: "turn-1",
+        text: "No news.",
+        completeness: "complete",
+      },
+    });
+    await vi.waitFor(() => expect(workspaceRegistry.get).toHaveBeenCalledWith(WORKSPACE_ID));
+
+    rules = [{ source: "^No news\\.$", flags: "i" }];
+    matcher = ReplyRuleMatcher.compile(rules);
+    resolveWorkspace(null);
+    await decision;
+
+    expect(pushNotifications.sent).toEqual([]);
+  });
+
+  it("does not fall back to latest assistant text when the completion subject is missing", async () => {
+    const matcher = ReplyRuleMatcher.compile([{ source: "^No news\\.$", flags: "i" }]);
+    const { server, pushNotifications, logger } = createServer(
+      { getLastAssistantMessage: vi.fn(async () => "No news.") },
+      undefined,
+      {
+        getReplyRules: () => [{ source: "^No news\\.$", flags: "i" }],
+        matchesReplyRules: (subject: Parameters<typeof matcher.matches>[0]) =>
+          matcher.matches(subject),
+      },
+    );
+
+    await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention({
+      agentId: "agent-1",
+      provider: "claude",
+      reason: "finished",
+    });
+
+    expect(pushNotifications.sent).toHaveLength(1);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "reply_rule_match_fail_open", reason: "missing_subject" }),
+      "Reply-rule evaluation failed open",
+    );
+    const serializedLogs = JSON.stringify(logger.info.mock.calls);
+    expect(serializedLogs).not.toContain("No news.");
+    expect(serializedLogs).not.toContain("^No news");
   });
 
   it("sends push notifications regardless of UI label presence", async () => {
@@ -364,4 +588,330 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(readAttentionRequiredMessage(ws).shouldNotify).toBe(false);
     expect(pushNotifications.sent).toEqual([]);
   });
+
+  it.each(["finished", "permission"] as const)(
+    "reads current workspace mute after assistant lookup for %s attention and preserves source events",
+    async (reason) => {
+      let resolveAssistantMessage: (message: string | null) => void = () => undefined;
+      const assistantMessage = new Promise<string | null>((resolve) => {
+        resolveAssistantMessage = resolve;
+      });
+      const agent = { workspaceId: WORKSPACE_ID, pendingPermissions: new Map() };
+      const workspace = createPersistedWorkspaceRecord({
+        workspaceId: WORKSPACE_ID,
+        projectId: "project-1",
+        cwd: "/tmp/shared-workspace",
+        kind: "directory",
+        displayName: "Project",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        notifications: "on",
+      });
+      const workspaces = new Map<string, PersistedWorkspaceRecord>([[WORKSPACE_ID, workspace]]);
+      const workspaceRegistry = createStub<WorkspaceRegistry>({
+        get: vi.fn(async (workspaceId) => workspaces.get(workspaceId) ?? null),
+      });
+      const getLastAssistantMessage = vi.fn(() => assistantMessage);
+      const { server, pushNotifications } = createServer(
+        {
+          getAgent: vi.fn(() => agent),
+          getLastAssistantMessage,
+        },
+        workspaceRegistry,
+      );
+      const activity = {
+        deviceType: "web" as const,
+        focusedAgentId: null,
+        lastActivityAt: new Date(),
+        appVisible: false,
+      };
+      let resolveSubscription: (subscribed: boolean) => void = () => undefined;
+      const subscription = new Promise<boolean>((resolve) => {
+        resolveSubscription = resolve;
+      });
+      const routedWorkspaceIds: Array<string | undefined> = [];
+      const legacyWs = connectClient(server, activity, {
+        subscribe: async (routedAgent) => {
+          routedWorkspaceIds.push(routedAgent.workspaceId);
+          return subscription;
+        },
+      });
+      const secondLegacyWs = connectClient(server, activity, {
+        subscribe: async (routedAgent) => {
+          routedWorkspaceIds.push(routedAgent.workspaceId);
+          return true;
+        },
+      });
+      const modernWs = connectClient(server, activity, { modern: true });
+      const broadcast = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention;
+      const pendingBroadcast = broadcast.call(server, {
+        agentId: "agent-1",
+        provider: "claude",
+        reason,
+      });
+
+      await vi.waitFor(() => expect(routedWorkspaceIds).toHaveLength(1));
+      agent.workspaceId = "workspace-on";
+      resolveSubscription(true);
+      await vi.waitFor(() => expect(getLastAssistantMessage).toHaveBeenCalledWith("agent-1"));
+      // Recipient routing and the payload use the captured identity; policy is read at decision time.
+      workspaces.set(WORKSPACE_ID, { ...workspace, notifications: "off" });
+      resolveAssistantMessage("Done.");
+      await pendingBroadcast;
+
+      expect(workspaceRegistry.get).toHaveBeenCalledWith(WORKSPACE_ID);
+      expect(pushNotifications.sent).toEqual([]);
+      const legacyPayload = readAttentionRequiredMessage(legacyWs);
+      const secondLegacyPayload = readAttentionRequiredMessage(secondLegacyWs);
+      const modernPayload = readModernAttentionPayload(server, modernWs);
+      expect(routedWorkspaceIds).toEqual([WORKSPACE_ID, WORKSPACE_ID]);
+      expect(legacyPayload.shouldNotify).toBe(false);
+      expect(legacyPayload.notification.data.workspaceId).toBe(WORKSPACE_ID);
+      expect(secondLegacyPayload.notification.data.workspaceId).toBe(WORKSPACE_ID);
+      expect(modernPayload?.shouldNotify).toBe(false);
+      expect(modernPayload?.notification.data.workspaceId).toBe(WORKSPACE_ID);
+    },
+  );
+});
+
+it("an old broadcast keeps its exact committed episode across a read and newer finish", async () => {
+  const issuedAt = Date.now();
+  const a = {
+    agentId: "agent-1",
+    lane: "attention" as const,
+    episodeId: "11111111-1111-4111-8111-111111111111",
+    issuedAt,
+    expiresAt: issuedAt + 60000,
+  };
+  const b = { ...a, episodeId: "22222222-2222-4222-8222-222222222222" };
+  let release: (episodes: (typeof a)[]) => void = () => undefined;
+  const sourceCommit = new Promise<(typeof a)[]>((resolve) => {
+    release = resolve;
+  });
+  const applySnapshot = vi.fn(() => sourceCommit);
+  const active = vi.fn(async () => [a]);
+  const { server, pushNotifications } = createServer(undefined, undefined, undefined, null, {
+    applySnapshot,
+    notificationLifecycle: {
+      subscribe: () => () => {},
+      pending: async () => [],
+      active,
+      delivered: async () => {},
+    },
+  });
+  const broadcast = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention;
+  const pending = broadcast.call(server, { agentId: "agent-1", reason: "finished" });
+  expect(applySnapshot).toHaveBeenCalledOnce();
+  // A was cleared and a new unread B now exists before A's continuation is resumed.
+  active.mockResolvedValue([b]);
+  release([a]);
+  await pending;
+  expect(pushNotifications.sent).toHaveLength(1);
+  expect(pushNotifications.sent[0]!.lifecycle?.episodeId).toBe(a.episodeId);
+  expect(active).not.toHaveBeenCalled();
+});
+
+it("shutdown drains an admitted attention snapshot and refuses late publication", async () => {
+  let release!: () => void;
+  const snapshot = new Promise<[]>((resolve) => {
+    release = () => resolve([]);
+  });
+  const applySnapshot = vi.fn(() => snapshot);
+  const { server, pushNotifications } = createServer(undefined, undefined, undefined, null, {
+    applySnapshot,
+  });
+  const broadcast = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention;
+  const publication = broadcast.call(server, { agentId: "agent-1", reason: "finished" });
+  expect(applySnapshot).toHaveBeenCalledOnce();
+  let closed = false;
+  const closing = server.close().then(() => {
+    closed = true;
+    return undefined;
+  });
+  try {
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(closed).toBe(false);
+  } finally {
+    release();
+    await Promise.all([publication, closing]);
+  }
+  expect(pushNotifications.sent).toEqual([]);
+  await broadcast.call(server, { agentId: "agent-1", reason: "finished" });
+  expect(applySnapshot).toHaveBeenCalledOnce();
+});
+
+it("shutdown prevents an attention send paused after snapshot persistence", async () => {
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const assistant = new Promise<null>((resolve) => {
+    release = () => resolve(null);
+  });
+  const { server, pushNotifications } = createServer({
+    getLastAssistantMessage: () => {
+      entered();
+      return assistant;
+    },
+  });
+  const publication = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention.call(
+    server,
+    { agentId: "agent-1", reason: "finished" },
+  );
+  await started;
+  try {
+    await server.close();
+  } finally {
+    release();
+    await publication;
+  }
+  expect(pushNotifications.sent).toEqual([]);
+});
+
+it("shutdown aborts and drains a resolution without acknowledging its durable outbox entry", async () => {
+  const episode = {
+    agentId: "agent-1",
+    lane: "attention" as const,
+    episodeId: "11111111-1111-4111-8111-111111111111",
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 60000,
+  };
+  const pending = vi.fn(async () => [] as (typeof episode)[]);
+  const delivered = vi.fn(async () => {});
+  const { server } = createServer(undefined, undefined, undefined, null, {
+    notificationLifecycle: {
+      subscribe: () => () => {},
+      pending,
+      active: async () => [],
+      delivered,
+    },
+  });
+  const internals = asInternals<{
+    notificationDelivery: NotificationDelivery;
+    pushNotifications: {
+      resolveLifecycle(server: string, episode: unknown, signal?: AbortSignal): Promise<boolean>;
+    };
+  }>(server);
+  await internals.notificationDelivery.flushResolutions();
+  let release!: (accepted: boolean) => void;
+  let entered!: () => void;
+  let signal: AbortSignal | undefined;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  internals.pushNotifications.resolveLifecycle = async (_server, _episode, abort) => {
+    signal = abort;
+    entered();
+    return new Promise<boolean>((resolve) => {
+      release = resolve;
+      abort?.addEventListener("abort", () => resolve(false), { once: true });
+    });
+  };
+  pending.mockResolvedValue([episode]);
+  const drain = internals.notificationDelivery.flushResolutions();
+  await started;
+  const closing = server.close();
+  try {
+    expect(signal?.aborted).toBe(true);
+  } finally {
+    release(false);
+    await Promise.all([closing, drain]);
+  }
+  expect(delivered).not.toHaveBeenCalled();
+  expect(await pending()).toEqual([episode]);
+});
+
+it("shutdown waits for an already launched attention send to acknowledge cancellation", async () => {
+  const { server, pushNotifications } = createServer();
+  let release!: () => void;
+  let entered!: () => void;
+  let signal: AbortSignal | undefined;
+  const started = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  vi.spyOn(pushNotifications, "send").mockImplementation((_payload, abort) => {
+    signal = abort;
+    entered();
+    return new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  });
+  const publication = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention.call(
+    server,
+    { agentId: "agent-1", reason: "finished" },
+  );
+  await started;
+  let closed = false;
+  const closing = server.close().then(() => {
+    closed = true;
+    return undefined;
+  });
+  try {
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(signal?.aborted).toBe(true);
+    expect(closed).toBe(false);
+  } finally {
+    release();
+    await Promise.all([publication, closing]);
+  }
+});
+
+it("retries a failed lifecycle drain and shares an in-flight retry", async () => {
+  const episode = {
+    agentId: "agent-1",
+    lane: "attention" as const,
+    episodeId: "11111111-1111-4111-8111-111111111111",
+    issuedAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  };
+  const pending = vi.fn(async () => [] as (typeof episode)[]);
+  const delivered = vi.fn(async () => {});
+  const { server } = createServer(undefined, undefined, undefined, null, {
+    notificationLifecycle: {
+      subscribe: () => () => {},
+      pending,
+      active: async () => [],
+      delivered,
+    },
+  });
+  const internals = asInternals<{
+    notificationDelivery: NotificationDelivery;
+    pushNotifications: {
+      resolveLifecycle(serverId: string, episode: unknown, signal?: AbortSignal): Promise<boolean>;
+    };
+  }>(server);
+  const delivery = internals.notificationDelivery;
+  await delivery.flushResolutions();
+  const failure = new Error("delivery unavailable");
+  const resolveLifecycle = vi.fn(async () => true).mockRejectedValueOnce(failure);
+  internals.pushNotifications.resolveLifecycle = resolveLifecycle;
+  pending.mockResolvedValue([episode]);
+  try {
+    await expect(delivery.flushResolutions()).rejects.toBe(failure);
+    expect(delivered).not.toHaveBeenCalled();
+    let entered!: () => void;
+    let release!: (accepted: boolean) => void;
+    const started = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const response = new Promise<boolean>((resolve) => {
+      release = resolve;
+    });
+    resolveLifecycle.mockImplementationOnce(() => {
+      entered();
+      return response;
+    });
+    const retry = delivery.flushResolutions();
+    expect(delivery.flushResolutions()).toBe(retry);
+    await started;
+    release(true);
+    await retry;
+    expect(resolveLifecycle).toHaveBeenCalledTimes(2);
+    expect(delivered).toHaveBeenCalledExactlyOnceWith(episode.episodeId);
+  } finally {
+    await server.close();
+  }
 });

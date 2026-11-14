@@ -277,6 +277,45 @@ describe("Pi tool-result image replay", () => {
   });
 });
 
+test.each([
+  ["the read file", 4_102_444_800_000, "original"],
+  ["Pi's copy without a result timestamp", undefined, "hello"],
+  ["Pi's copy once the file changed after the result", 0, "hello"],
+])("replays an absolute read as %s", async (_label, timestamp, expected) => {
+  const { mkdtemp, readFile, rm, writeFile } = await import("node:fs/promises");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = await mkdtemp(join(tmpdir(), "paseo-pi-read-"));
+  const imagePath = join(dir, "shot.png");
+  await writeFile(imagePath, "original");
+  try {
+    const events = await collectHistory([
+      {
+        role: "assistant",
+        content: [
+          { type: "toolCall", id: "abs-read", name: "read", arguments: { path: imagePath } },
+        ],
+      },
+      {
+        role: "toolResult",
+        toolCallId: "abs-read",
+        toolName: "read",
+        content: [{ type: "image", data: "aGVsbG8=", mimeType: "image/png" }],
+        timestamp,
+      },
+    ]);
+    const image = events.find(
+      (event) => event.type === "timeline" && event.item.type === "assistant_message",
+    );
+    if (image?.type !== "timeline" || image.item.type !== "assistant_message")
+      throw new Error("Missing image");
+    const url = image.item.text.match(/\((file:[^)]+)\)/)![1];
+    expect((await readFile(new URL(url))).toString()).toBe(expected);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("replayed Pi images keep their position before the following reply", async () => {
   const events = await collectHistory([
     {

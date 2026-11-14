@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const fr: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "Impossible de rechercher dans cette conversation. Vérifiez la connexion à l’hôte et réessayez.",
@@ -337,6 +340,8 @@ export const fr: TranslationResources = {
     actions: {
       copyCode: "Copier le code",
       copyTurn: "Copier l’échange",
+      selectText: "Sélectionner le texte",
+      selectTextTruncated: "Affichage des 50 000 premiers caractères. Copier l’échange copie tout.",
       copyMessage: "Copier le message",
       forkMenu: "Forker la conversation à partir d’ici",
       forkInNewTab: "Forker dans un nouvel onglet",
@@ -709,6 +714,8 @@ export const fr: TranslationResources = {
         failedToCloseAgent: "Impossible de fermer l’agent",
       },
       confirmations: {
+        closeTabsAboveTitle: "Fermer les onglets au-dessus ?",
+        closeTabsBelowTitle: "Fermer les onglets en dessous ?",
         unsavedTitle: "Modifications non enregistrées",
         unsavedMessage:
           "Cet onglet contient des modifications non enregistrées. Le fermer supprimera le brouillon.",
@@ -753,6 +760,7 @@ export const fr: TranslationResources = {
         importSession: "Importer une session",
         copyPath: "Copier le chemin de l’espace de travail",
         copyBranchName: "Copier le nom de la branche",
+        copyProviderSessionId: "Copier l'ID de session",
         showSetup: "Afficher la configuration",
       },
       toasts: {
@@ -762,6 +770,7 @@ export const fr: TranslationResources = {
           "Préparation de l’espace de travail, le terminal s’ouvrira dès qu’il sera prêt…",
         workspacePathCopiedLabel: "Chemin de l’espace de travail",
         branchNameCopiedLabel: "Nom de la branche",
+        providerSessionIdCopiedLabel: "ID de session",
       },
     },
     scripts: {
@@ -1282,12 +1291,6 @@ export const fr: TranslationResources = {
       search: "Recherche",
       schedules: "Planifications",
     },
-    worktreeSetup: {
-      title: "Configurer les scripts de worktree",
-      description:
-        "Ajoutez des commandes de configuration pour que les nouveaux worktrees installent leurs dépendances et se préparent automatiquement.",
-      openProjectSettings: "Ouvrir les paramètres du projet",
-    },
     project: {
       actions: {
         menu: "Actions du projet",
@@ -1346,6 +1349,10 @@ export const fr: TranslationResources = {
         hideFromSidebar: "Masquer de la barre latérale",
         archiving: "Archivage…",
         hiding: "Masquage…",
+        muteNotifications: "Désactiver les notifications",
+        unmuteNotifications: "Activer les notifications",
+        updatingNotifications: "Mise à jour des notifications…",
+        updateHostForNotifications: "Mettez à jour cet hôte pour gérer les notifications.",
       },
       confirmations: {
         hideTitle: "Masquer l’espace de travail ?",
@@ -1473,11 +1480,41 @@ export const fr: TranslationResources = {
       },
       advancedSettings: "Paramètres avancés",
       openAdvancedSettings: "Ouvrir les paramètres avancés du daemon",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Les versions de l’application et du daemon ne correspondent pas. Mettez-les à jour vers la même version pour une meilleure expérience.",
       loadFailed: "Impossible de charger le statut du daemon de l’application de bureau.",
     },
     updates: {
+      nix: {
+        checking: "Recherche de mises à jour…",
+        downloading: "Téléchargement de {{version}}…",
+        applying: "Installation de {{version}}…",
+        restarting: "Redémarrage…",
+        failed: "Échec de la mise à jour : {{error}}",
+        ready: "{{version}} est téléchargée et prête à être installée",
+        available: "{{version}} est disponible",
+        restartRequired: "{{version}} est installée ; redémarrez pour l’utiliser",
+        upToDate: "À jour (vérifié à {{time}})",
+        notChecked: "Pas encore vérifié",
+        checkAction: "Vérifier",
+        updateAction: "Mettre à jour",
+        restartAction: "Redémarrer",
+        updateTitle: "Mettre à jour vers {{version}} ?",
+        updateMessage: "Paseo va installer la mise à jour et redémarrer.",
+        updateConfirm: "Mettre à jour",
+        restartTitle: "Redémarrer pour terminer la mise à jour vers {{version}} ?",
+        restartMessage: "Paseo va redémarrer et utiliser la nouvelle version.",
+        restartConfirm: "Redémarrer",
+        agentsKeepRunning:
+          "Les agents en cours ({{count}}) continuent de travailler ; le service d'arrière-plan se met à jour quand ils ont terminé.",
+        lastAttemptFailed: "La dernière tentative a échoué : {{error}}",
+        updateTooltip: "Mettre à jour vers {{version}}",
+        restartTooltip: "Redémarrer pour terminer la mise à jour vers {{version}}",
+        failedTooltip: "Échec de la mise à jour",
+        failedTitle: "Échec de la mise à jour",
+        tryAgain: "Réessayer",
+      },
       status: {
         checking: "Recherche de mises à jour de l’application…",
         installing: "Installation de la mise à jour de l’application…",
@@ -1512,7 +1549,7 @@ export const fr: TranslationResources = {
         versionReady: "La version {{version}} est prête à être installée.",
         newVersionReady: "Une nouvelle version est prête à être installée.",
         restartWarning:
-          "La mise à jour de l’application arrêtera les agents en cours et fermera les sessions de terminal.",
+          "La mise à jour attend la fin des agents et des terminaux actifs avant de redémarrer.",
       },
     },
     settings: {
@@ -1977,6 +2014,8 @@ export const fr: TranslationResources = {
     archiveTooltip: "Archiver le sous-agent",
     archiveFinishedAction: "Archiver les sous-agents terminés",
     archiveFinishedRetry: "Réessayer ({{failed}}/{{total}})",
+    showFinished: "Afficher les terminés ({{count}})",
+    hideFinished: "Masquer les terminés",
   },
   panels: {
     draft: {
@@ -2064,6 +2103,8 @@ export const fr: TranslationResources = {
     output: "Sortie",
   },
   turnSummary: {
+    messages: { one: "a écrit {{count}} message", other: "a écrit {{count}} messages" },
+    agentMessage: "Message d’agent",
     details: "Voir les détails du tour",
     sentBy: "Envoyé par {{name}}",
     showMore: "Afficher plus",
@@ -2087,6 +2128,7 @@ export const fr: TranslationResources = {
       one: "{{count}} recherche effectuée",
       other: "{{count}} recherches effectuées",
     },
+    sentMessages: { one: "a envoyé {{count}} message", other: "a envoyé {{count}} messages" },
     otherTools: {
       one: "{{count}} autre outil utilisé",
       other: "{{count}} autres outils utilisés",
@@ -2250,7 +2292,7 @@ export const fr: TranslationResources = {
     editor: {
       title: "Éditeur",
       vimKeybindings: "Raccourcis Vim",
-      vimHint: "S’applique aux fichiers source dans l’app web et l’app de bureau.",
+      vimHint: "S’applique aux fichiers source dans l’éditeur.",
     },
     files: {
       title: "Fichiers",
@@ -2389,7 +2431,7 @@ export const fr: TranslationResources = {
           steer:
             "Quand l’agent est en cours d’exécution, Entrée réoriente le tour en cours. Cmd/Ctrl+Entrée met en file d’attente.",
           queue:
-            "Quand l’agent est en cours d’exécution, Entrée met en file d’attente. Cmd/Ctrl+Entrée envoie.",
+            "Quand l’agent est en cours d’exécution, Entrée met en file d’attente. Cmd/Ctrl+Entrée réoriente le tour en cours.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2479,6 +2521,7 @@ export const fr: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "À propos",
       appVersion: "Version de l’application",
       whatsNewHint: "Les nouveautés de chaque version",
@@ -2506,6 +2549,10 @@ export const fr: TranslationResources = {
         checking: "Vérification…",
         alertTitle: "Erreur",
         alertMessage: "Impossible d’ouvrir la boîte de dialogue de confirmation de mise à jour.",
+      },
+      nixUpdates: {
+        label: "Mises à jour gérées par Nix",
+        invalidMarker: "Cette installation Nix n’a pas pu être vérifiée.",
       },
     },
     appearance: {
@@ -2587,7 +2634,6 @@ export const fr: TranslationResources = {
     shortcuts: {
       dialogTitle: "Raccourcis",
       searchPlaceholder: "Rechercher des raccourcis",
-      unavailableOnMobile: "Les raccourcis clavier ne sont disponibles que sur l’app de bureau",
       capturePrompt: "Appuyez sur le raccourci…",
       captureIndexPrompt: "Terminez par un chiffre de 1 à 9.",
       unassigned: "Non attribué",
@@ -2744,6 +2790,13 @@ export const fr: TranslationResources = {
         title: "Associer des appareils",
         rowTitle: "Associer un appareil",
         rowHint: "Scannez un QR code ou copiez un lien pour connecter votre téléphone à cet hôte",
+        keepAwake: {
+          title: "Garder ce Mac éveillé pour le relais",
+          hint: "Empêche la mise en veille sur secteur tant que le relais est activé, pour que les appareils distants puissent joindre ce Mac. Consomme plus d'énergie et chauffe davantage sur secteur.",
+          activeHint: "Garde ce Mac éveillé sur secteur tant que le relais est activé",
+          waitingHint: "S'applique quand le relais est activé",
+          updateFailed: "Impossible de mettre à jour le maintien en éveil",
+        },
       },
       skills: {
         ...en.settings.host.skills,
@@ -2806,6 +2859,33 @@ export const fr: TranslationResources = {
           reset: "Réinitialiser",
           save: "Enregistrer",
           saving: "Enregistrement…",
+        },
+        replyRules: {
+          title: "Règles de notification des réponses",
+          scope: "S’applique à tous les espaces de travail de {{host}}.",
+          help: "Recherche RE2 sans normalisation du texte. Utilisez des ancres pour cibler toute la réponse. Jusqu’à 8 règles, 256 unités UTF-16 par motif et 16 384 par sujet. Les indicateurs i, m et u sont uniques ; Unicode est activé s’ils sont omis.",
+          source: "Motif",
+          flags: "Indicateurs",
+          add: "Ajouter une règle",
+          remove: "Supprimer la règle",
+          save: "Enregistrer les règles",
+          saving: "Enregistrement…",
+          clear: "Effacer toutes les règles",
+          loading: "Chargement des règles enregistrées…",
+          empty: "Aucune règle de réponse enregistrée.",
+          unsupported: "Mettez cet hôte à jour pour gérer les règles de notification des réponses.",
+          disconnected:
+            "Connectez-vous à cet hôte pour gérer les règles de notification des réponses.",
+          readError:
+            "Impossible de lire les règles enregistrées : {{error}}. En cas d’erreur d’accès, vérifiez l’autorisation daemon.read.",
+          writeError:
+            "Impossible d’enregistrer les règles : {{error}}. En cas d’erreur d’accès, vérifiez l’autorisation daemon.manage.",
+          conflict:
+            "Les règles de cet hôte ont changé pendant votre modification. Recharger les règles enregistrées supprimera votre brouillon ; le conserver vous permettra de remplacer volontairement les règles les plus récentes lors du prochain enregistrement.",
+          awaitingAuthority: "Enregistré. En attente de la confirmation des règles par cet hôte...",
+          reload: "Recharger les règles enregistrées",
+          keep: "Conserver le brouillon",
+          retry: "Réessayer",
         },
       },
       agents: {

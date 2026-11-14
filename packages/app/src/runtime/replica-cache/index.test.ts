@@ -9,7 +9,14 @@ import type { StreamItem } from "@/types/stream";
 import { normalizeAgentSnapshot } from "@/utils/agent-snapshots";
 import { ReplicaCache } from ".";
 import type { DirectoryCheckpoint } from "@/runtime/replica-cache";
-import type { ReplicaHostRows, ReplicaRow, ReplicaRowChanges, ReplicaRowStore } from "./row-store";
+import type {
+  ReplicaHostIndex,
+  ReplicaRow,
+  ReplicaRowChanges,
+  ReplicaRowStore,
+  ReplicaStoredRowIndex,
+} from "./row-store";
+import { utf8ByteLength } from "./utf8-byte-length";
 
 const SERVER_ID = "cached-host";
 
@@ -33,10 +40,13 @@ class MemoryStorage implements ReplicaRowStore {
   cleanups = 0;
   nextWriteFailure: Error | null = null;
   persistentWriteFailure: Error | null = null;
+  nextIndexFailure: Error | null = null;
   readGate: Promise<void> | null = null;
   onRead: (() => void) | null = null;
   /** Throws once a read goes past this count, so a non-terminating read loop fails the test. */
   readLimit: number | null = null;
+  /** Answer from the rows held when the read started, like a store read already in flight. */
+  snapshotReads = false;
 
   private key(row: Pick<ReplicaRow, "serverId" | "kind" | "id">): string {
     return `${row.serverId}:${row.kind}:${row.id}`;
@@ -55,23 +65,36 @@ class MemoryStorage implements ReplicaRowStore {
         `replica cache read ${this.reads.length} passed the limit of ${this.readLimit}`,
       );
     }
-    this.onRead?.();
-    await this.readGate;
     const acceptedKinds = new Set(kinds);
     const acceptedIds = ids ? new Set(ids) : null;
-    return [...this.rows.values()].filter(
-      (row) =>
-        row.serverId === serverId &&
-        acceptedKinds.has(row.kind) &&
-        (!acceptedIds || acceptedIds.has(row.id)),
-    );
+    const select = () =>
+      [...this.rows.values()].filter(
+        (row) =>
+          row.serverId === serverId &&
+          acceptedKinds.has(row.kind) &&
+          (!acceptedIds || acceptedIds.has(row.id)),
+      );
+    const snapshot = this.snapshotReads ? select() : null;
+    this.onRead?.();
+    await this.readGate;
+    return snapshot ?? select();
   }
 
-  async readAll(): Promise<ReplicaHostRows[]> {
-    const hosts = new Map<string, ReplicaRow[]>();
+  async readIndex(): Promise<ReplicaHostIndex[]> {
+    if (this.nextIndexFailure) {
+      const error = this.nextIndexFailure;
+      this.nextIndexFailure = null;
+      throw error;
+    }
+    const hosts = new Map<string, ReplicaStoredRowIndex[]>();
     for (const row of this.rows.values()) {
       const rows = hosts.get(row.serverId) ?? [];
-      rows.push(row);
+      rows.push({
+        serverId: row.serverId,
+        kind: row.kind,
+        id: row.id,
+        bytes: utf8ByteLength(row.payload),
+      });
       hosts.set(row.serverId, rows);
     }
     return [...hosts].map(([serverId, rows]) => ({ serverId, rows }));
@@ -117,6 +140,12 @@ function createCache(storage: MemoryStorage, maxBytes?: number): ReplicaCache {
   });
   cache.setHosts([SERVER_ID]);
   return cache;
+}
+
+async function readCachedDirectory(cache: ReplicaCache) {
+  const restored = await cache.readDirectory(SERVER_ID);
+  if (!restored) throw new Error("directory read missed");
+  return restored;
 }
 
 function requireTimelineRow(storage: MemoryStorage): ReplicaRow {
@@ -281,7 +310,7 @@ async function expectLegacyWorkspaceRefresh({
   baseline,
   reader,
 }: Awaited<ReturnType<typeof cacheWithoutBackgroundVisibility>>): Promise<void> {
-  const restored = await reader.readDirectory(SERVER_ID);
+  const restored = await readCachedDirectory(reader);
   expect(restored.workspaces.size).toBe(0);
   expect(restored.checkpoint).toEqual({
     agents: baseline.checkpoint.agents,
@@ -290,9 +319,7 @@ async function expectLegacyWorkspaceRefresh({
   expect(restored.agents).toEqual(baseline.agents);
   expect(restored.projects).toEqual(baseline.projects);
   expect(await reader.readTimeline(SERVER_ID, "agent-1")).toEqual(timeline());
-  expect((await createCache(storage).readDirectory(SERVER_ID)).checkpoint).toEqual(
-    restored.checkpoint,
-  );
+  expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(restored.checkpoint);
 
   baseline.workspaces.set(
     "workspace-1",
@@ -300,7 +327,7 @@ async function expectLegacyWorkspaceRefresh({
   );
   reader.replaceDirectoryBaseline(SERVER_ID, baseline);
   await reader.flush();
-  const refreshed = await createCache(storage).readDirectory(SERVER_ID);
+  const refreshed = await readCachedDirectory(createCache(storage));
   expect(refreshed.workspaces.get("workspace-1")?.background).toBe(true);
   expect(refreshed.checkpoint).toEqual(baseline.checkpoint);
 }
@@ -334,7 +361,7 @@ describe("ReplicaCache", () => {
     commitDirectory(writer, SERVER_ID, baseline);
     await writer.flush();
     const reader = createCache(storage);
-    expect((await reader.readDirectory(SERVER_ID)).workspaces.get(workspace.id)).toEqual(workspace);
+    expect((await readCachedDirectory(reader)).workspaces.get(workspace.id)).toEqual(workspace);
     expect((await reader.readWorkspace(SERVER_ID, workspace.id))?.workspace).toEqual(workspace);
   });
 
@@ -366,9 +393,9 @@ describe("ReplicaCache", () => {
       await writer.flush();
 
       const reader = createCache(storage);
-      expect(
-        (await reader.readDirectory(SERVER_ID)).workspaces.get("workspace-1")?.background,
-      ).toBe(background ?? false);
+      expect((await readCachedDirectory(reader)).workspaces.get("workspace-1")?.background).toBe(
+        background ?? false,
+      );
       expect((await reader.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.background).toBe(
         background ?? false,
       );
@@ -408,7 +435,7 @@ describe("ReplicaCache", () => {
     });
 
     const reader = createCache(storage);
-    const restored = await reader.readDirectory(SERVER_ID);
+    const restored = await readCachedDirectory(reader);
     expect(restored.checkpoint).toBeUndefined();
     expect([...restored.workspaces.keys()]).toEqual([...baseline.workspaces.keys()]);
     expect([...restored.projects.keys()]).toEqual([...baseline.projects.keys()]);
@@ -418,7 +445,7 @@ describe("ReplicaCache", () => {
 
     reader.replaceDirectoryBaseline(SERVER_ID, baseline);
     await reader.flush();
-    expect((await createCache(storage).readDirectory(SERVER_ID)).checkpoint).toEqual(
+    expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(
       baseline.checkpoint,
     );
   });
@@ -441,7 +468,7 @@ describe("ReplicaCache", () => {
     await writer.flush();
 
     const reader = createCache(storage);
-    const restoredDirectory = await reader.readDirectory(SERVER_ID);
+    const restoredDirectory = await readCachedDirectory(reader);
     const restoredTimeline = await reader.readTimeline(SERVER_ID, "agent-1");
 
     expect(restoredDirectory.agents.get("agent-1")?.title).toBe("Cached agent");
@@ -536,7 +563,7 @@ describe("ReplicaCache", () => {
     ]);
     await writer.flush();
 
-    const restored = await createCache(storage).readDirectory(SERVER_ID);
+    const restored = await readCachedDirectory(createCache(storage));
 
     expect(restored.agents.get("identified")).toMatchObject({
       status: "idle",
@@ -593,7 +620,7 @@ describe("ReplicaCache", () => {
 
     expect(await cache.readAgent(SERVER_ID, "agent-1")).toBeUndefined();
     expect(await cache.readWorkspace(SERVER_ID, "workspace-1")).toBeUndefined();
-    expect((await cache.readDirectory(SERVER_ID)).projects.size).toBe(0);
+    expect((await readCachedDirectory(cache)).projects.size).toBe(0);
   });
 
   it("does not return an accepted agent that storage rejected", async () => {
@@ -714,6 +741,72 @@ describe("ReplicaCache", () => {
 
     expect(await cache.readAgent(SERVER_ID, "agent-1")).toBeUndefined();
     expect(storage.reads).toHaveLength(2);
+  });
+
+  it("stores the newest serializable items of a timeline past the item limit", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    const items: StreamItem[] = Array.from({ length: 120 }, (_, index) => ({
+      ...timelineItem(`Message ${index}`),
+      id: `message-${index}`,
+      turnId: `turn-${index}`,
+    }));
+    // Orchestrator tool calls are not stored, so the stored tail reaches past them.
+    items.splice(110, 0, {
+      kind: "tool_call",
+      id: "orchestrator-tool",
+      timestamp: new Date("2026-07-18T08:02:00.000Z"),
+      payload: {
+        source: "orchestrator",
+        data: {
+          toolCallId: "orchestrator-tool",
+          toolName: "Shell",
+          arguments: "echo hi",
+          result: null,
+          status: "completed",
+        },
+      },
+    });
+
+    cache.commitTimeline(SERVER_ID, "agent-1", { ...timeline(), items });
+    const stored = await cache.readTimeline(SERVER_ID, "agent-1");
+
+    expect(stored?.items.map((item) => item.id)).toEqual(
+      items.slice(-51).flatMap((item) => (item.kind === "tool_call" ? [] : [item.id])),
+    );
+    expect(stored?.range).toBeNull();
+  });
+
+  it.each([
+    { label: "within the item limit", tailLength: 30, coverage: true },
+    { label: "past the item limit", tailLength: 60, coverage: false },
+  ])("stores a committed live head after its tail $label", async ({ tailLength, coverage }) => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    const item = (seq: number): StreamItem => ({
+      ...timelineItem(`Message ${seq}`),
+      id: `message-${seq}`,
+      turnId: `turn-${seq}`,
+      timelineCursor: { epoch: "epoch-1", seq },
+    });
+    const tail = Array.from({ length: tailLength }, (_, index) => item(index + 1));
+    const head = [item(tailLength + 1), item(tailLength + 2)];
+
+    cache.commitTimeline(SERVER_ID, "agent-1", {
+      agentId: "agent-1",
+      items: tail,
+      head,
+      range: { epoch: "epoch-1", startSeq: 1, endSeq: tailLength + 2 },
+      hasOlder: false,
+    });
+    const stored = await cache.readTimeline(SERVER_ID, "agent-1");
+
+    expect(stored?.items.map((storedItem) => storedItem.id)).toEqual(
+      [...tail, ...head].slice(-50).map((expected) => expected.id),
+    );
+    expect(stored?.range).toEqual(
+      coverage ? { epoch: "epoch-1", startSeq: 1, endSeq: tailLength + 2 } : null,
+    );
   });
 
   it("never reads a timeline older than an accepted deferred replacement", async () => {
@@ -856,7 +949,7 @@ describe("ReplicaCache", () => {
     });
     const cache = createCache(storage);
 
-    const restored = await cache.readDirectory(SERVER_ID);
+    const restored = await readCachedDirectory(cache);
 
     expect(restored.agents.size).toBe(0);
     expect(restored.projects.get("project-1")?.projectDisplayName).toBe("Paseo");
@@ -920,7 +1013,7 @@ describe("ReplicaCache", () => {
       deletes: [{ serverId: SERVER_ID, kind: "agent", id: "agent-1" }],
       upserts: [{ serverId: SERVER_ID, kind: "checkpoint", id: "singleton" }],
     });
-    expect((await createCache(storage).readDirectory(SERVER_ID)).checkpoint).toEqual({
+    expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual({
       projects: { generation: "g", afterSeq: 4 },
     });
   });
@@ -944,7 +1037,7 @@ describe("ReplicaCache", () => {
       payload: "{bad",
     });
 
-    const restored = await createCache(storage).readDirectory(SERVER_ID);
+    const restored = await readCachedDirectory(createCache(storage));
 
     expect(restored.checkpoint).toEqual({
       projects: { generation: "g", afterSeq: 4 },
@@ -953,7 +1046,7 @@ describe("ReplicaCache", () => {
       deletes: [{ serverId: SERVER_ID, kind: "agent", id: "agent-1" }],
       upserts: [{ serverId: SERVER_ID, kind: "checkpoint", id: "singleton" }],
     });
-    const reopened = await createCache(storage).readDirectory(SERVER_ID);
+    const reopened = await readCachedDirectory(createCache(storage));
     expect(reopened.checkpoint).toEqual({
       projects: { generation: "g", afterSeq: 4 },
     });
@@ -975,6 +1068,21 @@ describe("ReplicaCache", () => {
     ]);
   });
 
+  it("retries loading the stored index after it fails once", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    storage.nextIndexFailure = new Error("disk busy");
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("First"));
+    await cache.flush();
+    expect(storage.writes).toBe(0);
+
+    await cache.flush();
+
+    expect((await cache.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([
+      timelineItem("First"),
+    ]);
+  });
+
   it("retries an explicit commit after a storage failure", async () => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
@@ -990,7 +1098,112 @@ describe("ReplicaCache", () => {
     ]);
   });
 
-  it("reads a persisted timeline across a concurrent directory commit", async () => {
+  it("answers a timeline read while other agents keep committing their timelines", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
+    await cache.flush();
+    storage.writes = 0;
+    storage.reads.length = 0;
+    storage.readLimit = 1;
+    // A streaming agent commits on every reducer frame, so every read races one.
+    let frame = 0;
+    storage.onRead = () => {
+      frame += 1;
+      cache.commitTimeline(SERVER_ID, "agent-2", {
+        ...timeline(`Streaming ${frame}`),
+        agentId: "agent-2",
+      });
+    };
+    cache.commitTimeline(SERVER_ID, "agent-2", { ...timeline("Streaming 0"), agentId: "agent-2" });
+
+    expect((await cache.readTimeline(SERVER_ID, "agent-1"))?.items).toEqual([
+      timelineItem("Persisted timeline"),
+    ]);
+    // Another agent's pending timeline stays on its debounce instead of being forced to disk.
+    expect(storage.writes).toBe(0);
+  });
+
+  it.each([
+    {
+      label: "keeps changing during its read",
+      arrange: (storage: MemoryStorage, cache: ReplicaCache) => {
+        storage.readLimit = 3;
+        storage.onRead = () => commitDirectory(cache, SERVER_ID, directory());
+      },
+      maxReads: 3,
+    },
+    {
+      label: "has an accepted change the store keeps rejecting",
+      arrange: (storage: MemoryStorage, cache: ReplicaCache) => {
+        storage.persistentWriteFailure = new Error("QuotaExceededError");
+        deleteDirectory(cache, SERVER_ID);
+      },
+      maxReads: 1,
+    },
+    {
+      label: "cannot be read from the store",
+      arrange: (storage: MemoryStorage) => {
+        storage.readLimit = 0;
+      },
+      maxReads: 1,
+    },
+  ])("reports a directory that $label as a miss, not as empty", async ({ arrange, maxReads }) => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    commitDirectory(cache, SERVER_ID, directory());
+    await cache.flush();
+    storage.reads.length = 0;
+    arrange(storage, cache);
+
+    expect(await cache.readDirectory(SERVER_ID)).toBeUndefined();
+    expect(storage.reads.length).toBeLessThanOrEqual(maxReads);
+  });
+
+  it("rereads a timeline whose commit a persist landed during the read", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
+    await cache.flush();
+    storage.reads.length = 0;
+    storage.snapshotReads = true;
+    let releaseRead = () => {};
+    storage.readGate = new Promise((resolve) => {
+      releaseRead = resolve;
+    });
+    let landed: Promise<void> = Promise.resolve();
+    storage.onRead = () => {
+      storage.onRead = null;
+      // The commit is no longer pending once this persist lands, so only the read's own
+      // invalidation shows that the rows it is reading went stale.
+      cache.commitTimeline(SERVER_ID, "agent-1", timeline("Newer"));
+      landed = cache.flush();
+    };
+
+    const read = cache.readTimeline(SERVER_ID, "agent-1");
+    await expect.poll(() => storage.reads.length).toBe(1);
+    await landed;
+    storage.readGate = null;
+    releaseRead();
+
+    expect((await read)?.items).toEqual([timelineItem("Newer")]);
+    expect(storage.reads.length).toBe(2);
+  });
+
+  it("reports a miss when the requested timeline keeps changing during its read", async () => {
+    const storage = new MemoryStorage();
+    const cache = createCache(storage);
+    cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
+    await cache.flush();
+    storage.reads.length = 0;
+    storage.readLimit = 3;
+    storage.onRead = () => cache.commitTimeline(SERVER_ID, "agent-1", timeline("Newer"));
+
+    expect(await cache.readTimeline(SERVER_ID, "agent-1")).toBeUndefined();
+    expect(storage.reads.length).toBe(3);
+  });
+
+  it("reads a timeline while a concurrent directory commit lands", async () => {
     const storage = new MemoryStorage();
     const cache = createCache(storage);
     cache.commitTimeline(SERVER_ID, "agent-1", timeline("Persisted timeline"));
@@ -1024,7 +1237,7 @@ describe("ReplicaCache", () => {
     await cache.flush();
 
     expect([...storage.rows.values()].some((row) => row.serverId === SERVER_ID)).toBe(false);
-    expect((await cache.readDirectory(SERVER_ID)).checkpoint).toBeUndefined();
+    expect((await readCachedDirectory(cache)).checkpoint).toBeUndefined();
 
     cache.replaceDirectoryBaseline(SERVER_ID, cachedDirectory);
     await cache.flush();
@@ -1103,7 +1316,8 @@ describe("ReplicaCache", () => {
         const { cache, expectReads } = await streamingCache();
 
         expect((await cache.readWorkspace(SERVER_ID, "workspace-1"))?.workspace.name).toBe("main");
-        expectReads(2, 1);
+        // The streamed rows are not the ones read, so their commits stay on the persist debounce.
+        expectReads(2);
         await cache.flush();
       });
 
@@ -1128,7 +1342,7 @@ describe("ReplicaCache", () => {
     replacement.agents.set("agent-2", agent("agent-2"));
     cache.replaceDirectoryBaseline(SERVER_ID, replacement);
 
-    const read = await cache.readDirectory(SERVER_ID);
+    const read = await readCachedDirectory(cache);
 
     expect([...read.agents.keys()].sort()).toEqual(["agent-1", "agent-2"]);
     expect(read.projects.size).toBe(0);

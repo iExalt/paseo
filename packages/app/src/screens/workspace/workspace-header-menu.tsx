@@ -26,6 +26,8 @@ import {
   resolveTerminalProfiles,
 } from "@getpaseo/protocol/terminal-profiles";
 import { buildSettingsHostSectionRoute } from "@/utils/host-routes";
+import { WorkspaceNotificationsMenuItem } from "@/workspace-notifications/menu-item";
+import { CopyProviderSessionIdMenuItem } from "@/workspace/copy-provider-session-id/menu-item";
 import type { Theme } from "@/styles/theme";
 import {
   useWorkspaceScriptsMenuPages,
@@ -76,7 +78,11 @@ const COMPACT_HEADER_BUTTON_HIT_SLOP = { top: 8, bottom: 8 } as const;
  * from the same callbacks, so the two surfaces can't drift.
  */
 export interface WorkspaceHeaderWorkspaceActions {
+  serverId: string;
+  workspaceId: string;
   currentBranchName: string | null;
+  /** The focused tab's agent, whose session "Copy session ID" prefers over the workspace's. */
+  activeAgentId: string | null;
   showWorkspaceSetup: boolean;
   importAgentDisabled: boolean;
   copyPathDisabled: boolean;
@@ -87,7 +93,10 @@ export interface WorkspaceHeaderWorkspaceActions {
 }
 
 function WorkspaceHeaderWorkspaceActionItems({
+  serverId,
+  workspaceId,
   currentBranchName,
+  activeAgentId,
   showWorkspaceSetup,
   importAgentDisabled,
   copyPathDisabled,
@@ -99,6 +108,11 @@ function WorkspaceHeaderWorkspaceActionItems({
   const { t } = useTranslation();
   return (
     <>
+      <WorkspaceNotificationsMenuItem
+        serverId={serverId}
+        workspaceId={workspaceId}
+        testID="workspace-header-notifications"
+      />
       <DropdownMenuItem
         testID="workspace-header-copy-path"
         leading={MENU_COPY_ICON}
@@ -116,6 +130,13 @@ function WorkspaceHeaderWorkspaceActionItems({
           {t("workspace.header.actions.copyBranchName")}
         </DropdownMenuItem>
       ) : null}
+      <CopyProviderSessionIdMenuItem
+        serverId={serverId}
+        workspaceId={workspaceId}
+        preferredAgentId={activeAgentId}
+        testID="workspace-header-copy-provider-session-id"
+        leading={MENU_COPY_ICON}
+      />
       <DropdownMenuItem
         testID="workspace-header-import-agent"
         leading={MENU_IMPORT_ICON}

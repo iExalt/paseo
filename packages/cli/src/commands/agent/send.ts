@@ -1,7 +1,18 @@
+import {
+  collectAttachment,
+  prepareAttachments,
+  resolveAttachments,
+} from "../../utils/agent-attachments.js";
+import { randomUUID } from "node:crypto";
 import { type Command, Option } from "commander";
-import type { ActiveTurnBehavior } from "@getpaseo/protocol/messages";
+import {
+  DEFAULT_AGENT_SEND_BEHAVIOR,
+  type ActiveTurnBehavior,
+  type AgentSendBehavior,
+} from "@getpaseo/protocol/messages";
 import { collectMultiple } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
+import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import type {
   CommandOptions,
   SingleResult,
@@ -9,13 +20,15 @@ import type {
   CommandError,
 } from "../../output/index.js";
 import { readFile } from "node:fs/promises";
-import { extname, resolve } from "node:path";
+import { extname } from "node:path";
+import { resolvePromptInput } from "../../utils/prompt-input.js";
 
 /** Result type for agent send command */
 export interface AgentSendResult {
   agentId: string;
   status: "queued" | "sent" | "completed" | "timeout" | "permission" | "error";
   message: string;
+  disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
 }
 
 /** Schema for agent send output */
@@ -32,17 +45,27 @@ export interface AgentSendOptions extends CommandOptions {
   behavior?: ActiveTurnBehavior;
   wait?: boolean;
   image?: string[];
+  attach?: string[];
   prompt?: string;
   promptFile?: string;
+  mode?: string;
+  ifRunning?: AgentSendBehavior;
+  notifyOnFinish?: boolean;
 }
 
 export function addSendOptions(cmd: Command): Command {
   return cmd
     .description("Send a message/task to an existing agent")
-    .argument("<id>", "Agent ID (or prefix)")
+    .argument("<id>", "Agent ID, prefix, or full session ID")
     .argument("[prompt]", "The message to send")
+    .option(
+      "--attach <kind:value>",
+      "Attach text:<text>, file:<local-path>, github-issue:<url>, or github-pr:<url> (repeatable)",
+      collectAttachment,
+      [],
+    )
     .option("--prompt <text>", "Provide the message inline as a flag")
-    .option("--prompt-file <path>", "Read the message from a UTF-8 text file")
+    .option("--prompt-file <path>", "Read the message from a UTF-8 text file (- for stdin)")
     .option("--image <path>", "Attach image(s) to the message", collectMultiple, [])
     .addOption(
       new Option(
@@ -50,6 +73,17 @@ export function addSendOptions(cmd: Command): Command {
         "Active-turn behavior (agent default: steer; otherwise: interrupt)",
       ).choices(["interrupt", "steer"]),
     )
+    .option("--mode <id>", "Set the provider mode before sending the message")
+    .addOption(
+      new Option(
+        "--if-running <behavior>",
+        "When the agent is mid-turn: steer adds the message to the turn, queue runs it once the agent is idle, interrupt cancels the turn",
+      )
+        .choices(["queue", "steer", "interrupt"])
+        .default(DEFAULT_AGENT_SEND_BEHAVIOR),
+    )
+    .option("--notify-on-finish", "Notify the calling agent when this agent finishes")
+    .option("--no-notify-on-finish", "Do not notify the calling agent when this agent finishes")
     .option("--no-wait", "Return immediately without waiting for completion");
 }
 
@@ -98,56 +132,6 @@ async function readImageFiles(
   );
 }
 
-async function resolvePromptInput(options: {
-  promptArgument: string | undefined;
-  promptOption: string | undefined;
-  promptFile: string | undefined;
-}): Promise<string> {
-  const promptText = options.promptArgument?.trim();
-  const promptOptionText = options.promptOption?.trim();
-  const promptFilePath = options.promptFile?.trim();
-  const providedSourceCount = [promptText, promptOptionText, promptFilePath].filter(Boolean).length;
-
-  if (providedSourceCount > 1) {
-    const error: CommandError = {
-      code: "CONFLICTING_PROMPT_INPUT",
-      message: "Provide exactly one of prompt argument, --prompt, or --prompt-file",
-    };
-    throw error;
-  }
-
-  if (promptText) {
-    return options.promptArgument as string;
-  }
-
-  if (promptOptionText) {
-    return options.promptOption as string;
-  }
-
-  if (!promptFilePath) {
-    const error: CommandError = {
-      code: "MISSING_PROMPT",
-      message: "A prompt is required",
-      details:
-        "Usage: paseo agent send [options] <id> [prompt] | --prompt <text> | --prompt-file <path>",
-    };
-    throw error;
-  }
-
-  try {
-    return await readFile(resolve(promptFilePath), "utf8");
-  } catch (err) {
-    if (err && typeof err === "object" && "code" in err) throw err;
-    const message = err instanceof Error ? err.message : String(err);
-    const error: CommandError = {
-      code: "PROMPT_FILE_READ_ERROR",
-      message: `Failed to read prompt file: ${promptFilePath}`,
-      details: message,
-    };
-    throw error;
-  }
-}
-
 type SendWaitState = Awaited<
   ReturnType<Awaited<ReturnType<typeof connectToDaemon>>["waitForFinish"]>
 >;
@@ -192,20 +176,32 @@ export async function runSendCommand(
     promptFile: options.promptFile,
   });
 
+  const preparedAttachments = await prepareAttachments(options.attach);
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
+    const attachments = await resolveSendAttachments(client, preparedAttachments, agentIdArg);
+    const callerAgentId = await resolveCallerAgentId(client);
     // Read image files if provided
     const images =
       options.image && options.image.length > 0 ? await readImageFiles(options.image) : undefined;
 
-    const sourceAgentId = process.env.PASEO_AGENT_ID?.trim() || undefined;
-    // Send the message
-    const receipt = await client.sendAgentMessage(agentIdArg, promptInput, {
+    // A fresh ID per invocation lets the wait follow this message if the daemon holds it.
+    const messageId = randomUUID();
+    const dispatch = await client.sendAgentMessage(agentIdArg, promptInput, {
       images,
-      sourceAgentId,
-      activeTurnBehavior: options.behavior ?? (sourceAgentId ? "steer" : "interrupt"),
+      attachments,
+      sourceAgentId: callerAgentId,
+      messageId,
+      activeTurnBehavior: options.behavior ?? options.ifRunning ?? DEFAULT_AGENT_SEND_BEHAVIOR,
+      sessionMode: options.mode,
+      ...(options.notifyOnFinish !== undefined || callerAgentId
+        ? { notifyOnFinish: options.notifyOnFinish ?? true }
+        : {}),
     });
+
+    // Wait on and report the Paseo ID the daemon resolved, not the prefix or session ID typed.
+    const agentId = dispatch.agentId;
 
     // If --no-wait, return immediately
     if (options.wait === false) {
@@ -214,10 +210,11 @@ export async function runSendCommand(
       return {
         type: "single",
         data: {
-          agentId: agentIdArg,
-          status: receipt.deliveryStatus ?? "sent",
+          ...dispatch,
+          agentId,
+          status: dispatch.deliveryStatus ?? "sent",
           message:
-            receipt.deliveryStatus === "queued"
+            dispatch.deliveryStatus === "queued"
               ? "Message queued for delivery after two quiet seconds"
               : "Message sent, not waiting for completion",
         },
@@ -225,12 +222,12 @@ export async function runSendCommand(
       };
     }
 
-    const state = await client.waitForFinish(agentIdArg, 600000); // 10 minute timeout
+    const state = await client.waitForFinish(agentId, 600000, { messageId }); // 10 minute timeout
     await client.close();
 
     return {
       type: "single",
-      data: buildSendResult(agentIdArg, state),
+      data: { ...dispatch, ...buildSendResult(agentId, state) },
       schema: agentSendSchema,
     };
   } catch (err) {
@@ -248,4 +245,17 @@ export async function runSendCommand(
     };
     throw error;
   }
+}
+
+async function resolveSendAttachments(
+  client: Awaited<ReturnType<typeof connectToDaemon>>,
+  prepared: Awaited<ReturnType<typeof prepareAttachments>>,
+  agentId: string,
+) {
+  if (!prepared.length) return undefined;
+  if (prepared.every((attachment) => attachment.kind === "text"))
+    return resolveAttachments(client, prepared, "");
+  const target = await client.fetchAgent({ agentId });
+  if (!target) throw new Error(`No agent found matching: ${agentId}`);
+  return resolveAttachments(client, prepared, target.agent.cwd);
 }

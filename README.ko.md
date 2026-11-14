@@ -108,7 +108,7 @@ docker run -d --name paseo \
   ghcr.io/getpaseo/paseo:latest
 ```
 
-컨테이너가 시작되면 `http://localhost:6767`을 여세요. 사용하는 에이전트 CLI를 기본 이미지에 추가한 뒤, 환경 변수나 영구 `/home/paseo` 볼륨으로 인증 정보를 설정하세요. 자세한 내용은 [Docker 문서](docs/docker.md)를 참고하세요.
+컨테이너가 시작되면 `http://localhost:6767`을 여세요. 사용하는 에이전트 CLI를 기본 이미지에 추가한 뒤, 환경 변수나 영구 `/home/paseo` 볼륨으로 인증 정보를 설정하세요. 자세한 내용은 [Docker 문서](docs/upstream/docker.md)를 참고하세요.
 
 ## CLI
 
@@ -146,7 +146,7 @@ npx skills add getpaseo/paseo
 
 모노레포 패키지 구성은 다음과 같습니다.
 
-- `packages/server`: Paseo 데몬(에이전트 프로세스 오케스트레이션, WebSocket API, MCP 서버 제공)
+- `packages/server`: Paseo 데몬(에이전트 프로세스 오케스트레이션, WebSocket API, 공급자 네이티브 도구 제공)
 - `packages/app`: Expo 클라이언트(iOS, Android, 웹)
 - `packages/cli`: `paseo` CLI(데몬과 에이전트 워크플로)
 - `packages/desktop`: Electron 데스크톱 앱

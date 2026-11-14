@@ -255,4 +255,15 @@ describe("native terminal screen model", () => {
       rows: ["restored one", "restored two"],
     });
   });
+
+  test("scrollToRow centres a row above a covered bottom and follows at the bottom", async () => {
+    const terminal = await createScrolledTerminal(40);
+    const model = createNativeTerminalScreenModel({ terminal });
+    // Five rows with two covered leave three: row 20 sits in the middle one.
+    const centred = model.scrollToRow({ visibleRows: ROWS, row: 20, coveredRows: 2 });
+    expect(centred.scroll).toMatchObject({ mode: "scrolled", firstRow: 19 });
+    const newest = centred.scroll.newestRow;
+    const bottom = model.scrollToRow({ visibleRows: ROWS, row: newest, coveredRows: 2 });
+    expect(bottom.scroll.mode).toBe("following");
+  });
 });

@@ -3,7 +3,7 @@ import { playwright } from "@vitest/browser-playwright";
 import path from "path";
 import fs from "fs";
 import { transformSync } from "@babel/core";
-import { build } from "esbuild";
+import { build, transformSync as transformTypeScript } from "esbuild";
 
 // Set this before Vite resolves dependencies and Vitest starts its workers.
 Object.assign(process.env, { NODE_ENV: "test" });
@@ -85,6 +85,7 @@ export default defineConfig({
             "native-release-version.test.ts",
             "app.config.test.ts",
             "vitest-environment.test.ts",
+            "modules/*/app.plugin.test.ts",
           ],
           setupFiles: [path.resolve(__dirname, "vitest.setup.ts")],
           exclude: [...configDefaults.exclude, "e2e/**", "src/**/*.browser.{test,spec}.{ts,tsx}"],
@@ -140,6 +141,21 @@ export default defineConfig({
   // so it scans the native files and dies on imports react-native-web has no answer for.
   // Unbundled, the same imports go through the resolver below and land on the web files.
   optimizeDeps: {
+    rolldownOptions: {
+      plugins: [
+        {
+          name: "expo-global-types",
+          transform(source, id) {
+            if (
+              !id.replaceAll("\\", "/").endsWith("/expo-modules-core/src/ts-declarations/global.ts")
+            )
+              return;
+            // Oxc preserves imports used only by Expo's ambient namespace; esbuild erases them.
+            return { code: transformTypeScript(source, { loader: "ts" }).code, map: null };
+          },
+        },
+      ],
+    },
     // Expo's public navigation barrel also loads screens. Match Metro's web-first resolution
     // while optimizing its CJS dependencies, including DebugContainer.web.js.
     esbuildOptions: {

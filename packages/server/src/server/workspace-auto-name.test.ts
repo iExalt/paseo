@@ -1,6 +1,7 @@
 import pino from "pino";
 import { expect, test } from "vitest";
 import type { AgentManager } from "./agent/agent-manager.js";
+import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import { WorkspaceAutoName } from "./workspace-auto-name.js";
 import { createPersistedWorkspaceRecord, type WorkspaceRegistry } from "./workspace-registry.js";
@@ -37,6 +38,7 @@ test("auto-name preserves workspace archival that lands during its metadata writ
   } satisfies Pick<WorkspaceRegistry, "update">;
   const autoName = new WorkspaceAutoName({
     agentManager: {} as AgentManager,
+    agentStorage: { listByWorkspace: async () => [] },
     workspaceRegistry,
     workspaceGitService: {} as WorkspaceGitService,
     providerSnapshotManager: {} as ProviderSnapshotManager,
@@ -63,4 +65,50 @@ test("auto-name preserves workspace archival that lands during its metadata writ
     title: "generated",
     archivedAt,
   });
+});
+
+test("auto-name retitles agents that still carry the prompt's first line", async () => {
+  const workspace = createPersistedWorkspaceRecord({
+    workspaceId: "workspace-agent-title",
+    projectId: "project-agent-title",
+    cwd: "/workspace",
+    kind: "directory",
+    displayName: "workspace",
+    createdAt: "2026-08-08T00:00:00.000Z",
+    updatedAt: "2026-08-08T00:00:00.000Z",
+  });
+  const records = [
+    { id: "first", title: "```", archivedAt: null },
+    { id: "renamed", title: "Chosen by the user", archivedAt: null },
+    { id: "archived", title: "```", archivedAt: "2026-08-08T00:01:00.000Z" },
+  ] as StoredAgentRecord[];
+  const setTitles: Array<[string, string]> = [];
+  const updateEmitted = deferred();
+  const autoName = new WorkspaceAutoName({
+    agentManager: {
+      getAgent: (id: string) => ({ id }),
+      setTitle: async (id: string, title: string) => {
+        setTitles.push([id, title]);
+      },
+    } as unknown as AgentManager,
+    agentStorage: { listByWorkspace: async () => records },
+    workspaceRegistry: { update: async (_workspaceId, updater) => updater(workspace) },
+    workspaceGitService: {} as WorkspaceGitService,
+    providerSnapshotManager: {} as ProviderSnapshotManager,
+    readDaemonConfig: () => ({}),
+    gitMutation: { notifyGitMutation: async () => {} },
+    emitWorkspaceUpdateForCwd: async () => {},
+    emitWorkspaceUpdateForWorkspaceId: async () => updateEmitted.resolve(),
+    logger: pino({ level: "silent" }),
+    generateWorkspaceName: async () => ({ title: "Keep the daemon awake", branch: null }),
+  });
+
+  autoName.scheduleForDirectory({
+    workspaceId: workspace.workspaceId,
+    cwd: workspace.cwd,
+    firstAgentContext: { prompt: "```\nsome pasted log\n```\nWhy is this failing?" },
+  });
+  await updateEmitted.promise;
+
+  expect(setTitles).toEqual([["first", "Keep the daemon awake"]]);
 });

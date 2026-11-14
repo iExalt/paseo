@@ -3,11 +3,11 @@ import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/contexts/toast-context";
-import { getDesktopHost } from "@/desktop/host";
 import { SettingsSection } from "@/components/settings/headings/settings-section";
 import { useBrowserStore } from "@/desktop/browser/store";
 import { settingsStyles } from "@/styles/settings";
 import { confirmDialog } from "@/utils/confirm-dialog";
+import { BROWSER_DATA_DESCRIPTION_KEY, clearBrowserData } from "./clear-browser-data";
 
 export function BrowserDataSection() {
   const { t } = useTranslation();
@@ -34,12 +34,7 @@ export function BrowserDataSection() {
         return;
       }
 
-      const clearProfile = getDesktopHost()?.browser?.clearProfile;
-      if (!clearProfile) {
-        throw new Error("Electron browser profile bridge is unavailable");
-      }
-
-      await clearProfile(Object.keys(useBrowserStore.getState().browsersById));
+      await clearBrowserData(Object.keys(useBrowserStore.getState().browsersById));
       toast.show(t("settings.general.browserData.success"), { variant: "success" });
     } catch {
       toast.error(t("settings.general.browserData.error"));
@@ -60,9 +55,7 @@ export function BrowserDataSection() {
             <Text style={settingsStyles.rowTitle}>
               {t("settings.general.browserData.siteData")}
             </Text>
-            <Text style={settingsStyles.rowHint}>
-              {t("settings.general.browserData.description")}
-            </Text>
+            <Text style={settingsStyles.rowHint}>{t(BROWSER_DATA_DESCRIPTION_KEY)}</Text>
           </View>
           <Button
             variant="outline"

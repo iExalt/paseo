@@ -24,9 +24,11 @@ Paseo 默认使用 `~/.paseo` 作为主目录。配置文件是：
 
 前台的 `paseo daemon run`、Docker 和直接由进程管理器启动的方式会在文件之后应用环境变量。已有的旧版进程管理器参数在 worker 重启后保持其优先级。修改部署覆盖项需要停止并重新启动该部署。列表类设置会在各个来源之间追加，包括主机名和 CORS 来源。
 
+默认值和旧版配置的优先级见 [Paseo 工具策略与迁移](/docs/mcp#configuration)。
+
 ## 示例 {#example}
 
-配置监听地址、主机名和 MCP 的最小示例：
+配置监听地址、主机名和原生 Agent 工具的最小示例：
 
 ```json
 {
@@ -35,7 +37,7 @@ Paseo 默认使用 `~/.paseo` 作为主目录。配置文件是：
   "daemon": {
     "listen": "127.0.0.1:6767",
     "hostnames": ["localhost", ".localhost"],
-    "mcp": { "enabled": true }
+    "agentTools": { "enabled": true }
   }
 }
 ```
@@ -68,7 +70,7 @@ daemon 会在应用任何内容之前校验整个文件。它会应用运行时�
 paseo daemon restart
 ```
 
-运行时安全的设置包括：中继启用、MCP 设置、浏览器工具、主机名、CORS 来源、受信任的代理、Git 进程限制、Agent 和终端配置、Provider 定义、元数据生成、应用基础 URL、Provider 目录超时，以及全局插件开关。删除其中某个设置会应用该字段缺省时的行为；删除某个 Provider 会把它从之后的启动中移除。
+运行时安全的设置包括：中继启用、原生 Agent 工具设置、浏览器工具、主机名、CORS 来源、受信任的代理、Git 进程限制、Agent 和终端配置、Provider 定义、元数据生成、应用基础 URL、Provider 目录超时，以及全局插件开关。删除其中某个设置会应用该字段缺省时的行为；删除某个 Provider 会把它从之后的启动中移除。
 
 当你删除 `daemon.relay.enabled` 时，新的主目录会保持中继关闭。如果 daemon 启动时其配置就已经省略了这个字段，它会为了兼容而保持旧版的中继开启行为。编辑较旧的配置时，请显式设置 `daemon.relay.enabled`。
 
@@ -242,6 +244,23 @@ URI 中的 `password=` 总是优先于环境变量，因此你可以全局设置
 ```
 
 `PASEO_RELAY_ENABLED=true|false` 会为前台部署覆盖文件中的值。托管的 `start` 使用文件中的值。在通过应用或 `paseo daemon pair --relay` 修改中继之前，请结束并重新启动部署以移除它的覆盖项。
+
+### 为中继保持 Mac 唤醒 {#keep-a-mac-awake-for-the-relay}
+
+Mac 睡眠时 daemon 会暂停，中继客户端无法连接到它。即使合盖并接通电源，macOS 也会反复短暂唤醒后再次小睡。将 `daemon.relay.keepAwake` 设为 `true`，daemon 会在中继启用期间持有一个防睡眠断言（`caffeinate -s`）：
+
+```json
+{
+  "daemon": {
+    "relay": {
+      "enabled": true,
+      "keepAwake": true
+    }
+  }
+}
+```
+
+默认值为 `false`。开启后，合盖并接通电源的 Mac 会停留在暗唤醒（dark wake）状态而不再小睡，中继保持连接。该断言只在接通电源时生效，并在 daemon 退出、关闭中继或关闭该设置时结束。`daemon.log` 会记录 `power_assertion_acquired` 和 `power_assertion_released`。其他平台会忽略该设置。
 
 ## 常用环境变量 {#common-env-vars}
 

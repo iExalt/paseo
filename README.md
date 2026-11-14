@@ -29,6 +29,28 @@
   </a>
 </p>
 
+> [!NOTE]
+> **This is the `iExalt/paseo` fork.** Its releases are published at
+> [iExalt/paseo releases](https://github.com/iExalt/paseo/releases), not on paseo.sh.
+>
+> **macOS (Apple silicon):** the desktop app ships as a signed Nix closure, installed and
+> updated by the fork updater from an up-to-date `dev` checkout:
+>
+> ```bash
+> mise exec -- node scripts/paseo-nix-update.mjs check     # show the latest verified release
+> mise exec -- node scripts/paseo-nix-update.mjs stage     # download and verify it
+> mise exec -- node scripts/paseo-nix-update.mjs activate  # switch to it (quit Paseo first)
+> open /Applications/Paseo.app
+> ```
+>
+> Activation keeps `/Applications/Paseo.app` a copy of the active release, so Dock pins and
+> notifications always open the current app; do not replace it with a link into the Nix
+> store. `rollback` returns to the previous release. An older checkout may not recognise
+> newer release manifests, so pull `dev` before `check`. Agents follow the
+> [`update-nix-paseo`](.agents/skills/update-nix-paseo/SKILL.md) skill.
+>
+> **Android:** install the `paseo-<version>-android-arm64.apk` attached to the release.
+
 <p align="center">One interface for Claude Code, Codex, Copilot, OpenCode, Pi, Antigravity, and Muse Code agents.</p>
 
 <p align="center">
@@ -130,7 +152,7 @@ docker run -d --name paseo \
   ghcr.io/getpaseo/paseo:latest
 ```
 
-Open `http://localhost:6767` after it starts. Extend the base image with the agent CLIs you use, then provide credentials through environment variables or the persistent `/home/paseo` volume. See the [Docker documentation](docs/docker.md) for full setup details.
+Open `http://localhost:6767` after it starts. Extend the base image with the agent CLIs you use, then provide credentials through environment variables or the persistent `/home/paseo` volume. See the [Docker documentation](docs/upstream/docker.md) for full setup details.
 
 ## CLI
 
@@ -192,7 +214,7 @@ Then use them in any agent conversation:
 
 Quick monorepo package map:
 
-- `packages/server`: Paseo daemon (agent process orchestration, WebSocket API, MCP server)
+- `packages/server`: Paseo daemon (agent process orchestration, WebSocket API, provider-native tools)
 - `packages/app`: Expo client (iOS, Android, web)
 - `packages/cli`: `paseo` CLI for daemon and agent workflows
 - `packages/desktop`: Electron desktop app
@@ -211,7 +233,8 @@ npm run dev:app
 npm run dev:desktop
 npm run dev:website
 
-# build the server stack
+# build the server stack (run after pulling and before the first typecheck or
+# commit: other packages typecheck against the built server declarations)
 npm run build:server
 
 # repo-wide checks

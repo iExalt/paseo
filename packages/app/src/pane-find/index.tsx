@@ -15,6 +15,7 @@ import {
   type NativeSyntheticEvent,
   type TextInputKeyPressEventData,
   type TextInputProps,
+  type ViewStyle,
 } from "react-native";
 import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -64,6 +65,8 @@ export interface PaneFindProps {
   onNext(): void;
   onPrevious(): void;
   onClose(): void;
+  /** Span the container instead of the fixed desktop width, as a phone's bottom bar does. */
+  fill?: boolean;
   replace?: {
     value: string;
     onChange(value: string): void;
@@ -88,9 +91,20 @@ const FindField = forwardRef<
     onKeyPress(event: NativeSyntheticEvent<TextInputKeyPressEventData>): void;
     autoFocus?: boolean;
     returnKeyType?: TextInputProps["returnKeyType"];
+    testID?: string;
   }
 >(function FindField(
-  { label, initialValue, height, trailing, onChangeText, onKeyPress, autoFocus, returnKeyType },
+  {
+    label,
+    initialValue,
+    height,
+    trailing,
+    onChangeText,
+    onKeyPress,
+    autoFocus,
+    returnKeyType,
+    testID,
+  },
   ref,
 ) {
   const [focused, setFocused] = useState(false);
@@ -115,6 +129,7 @@ const FindField = forwardRef<
     <View style={fieldStyle}>
       <TextInput
         ref={ref}
+        testID={testID}
         autoFocus={autoFocus}
         selectTextOnFocus
         initialValue={initialValue}
@@ -137,7 +152,7 @@ const FindField = forwardRef<
 
 /** Pane-local chrome. The content owner supplies search state and commands. */
 export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneFind(
-  { query, status, canNavigate, onQueryChange, onNext, onPrevious, onClose, replace },
+  { query, status, canNavigate, onQueryChange, onNext, onPrevious, onClose, fill, replace },
   ref,
 ) {
   const { t } = useTranslation();
@@ -198,6 +213,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
     [focus, onClose, onNext, onPrevious],
   );
   const toggleReplace = useCallback(() => setReplaceExpanded((expanded) => !expanded), []);
+  const widgetStyle = useMemo(() => (fill ? [styles.widget, WIDGET_FILL] : styles.widget), [fill]);
   const gutterStyle = useMemo(
     () => [styles.gutter, { width: controlSize, height: rowHeight }],
     [controlSize, rowHeight],
@@ -205,6 +221,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
   const matchCount = useMemo(
     () => (
       <Text
+        testID="pane-find-status"
         style={styles.status}
         role="status"
         accessibilityLabel={t("paneFind.matches")}
@@ -218,7 +235,8 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
 
   return (
     <View
-      style={styles.widget}
+      testID="pane-find"
+      style={widgetStyle}
       accessibilityLabel={t("paneFind.title")}
       {...(isWeb
         ? {
@@ -252,6 +270,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
         <View style={styles.row}>
           <FindField
             ref={input}
+            testID="pane-find-input"
             autoFocus
             label={t("paneFind.placeholder")}
             initialValue={query}
@@ -262,6 +281,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
             onKeyPress={onKeyPress}
           />
           <ToolbarButton
+            testID="pane-find-previous"
             label={t("paneFind.previous")}
             compact={isCompact}
             disabled={!canNavigate}
@@ -270,6 +290,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
             <ArrowUpIcon size={glyphSize} />
           </ToolbarButton>
           <ToolbarButton
+            testID="pane-find-next"
             label={t("paneFind.next")}
             compact={isCompact}
             disabled={!canNavigate}
@@ -277,7 +298,12 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
           >
             <ArrowDownIcon size={glyphSize} />
           </ToolbarButton>
-          <ToolbarButton label={t("paneFind.close")} compact={isCompact} onPress={onClose}>
+          <ToolbarButton
+            testID="pane-find-close"
+            label={t("paneFind.close")}
+            compact={isCompact}
+            onPress={onClose}
+          >
             <CloseIcon size={glyphSize} />
           </ToolbarButton>
         </View>
@@ -319,6 +345,7 @@ export const PaneFind = forwardRef<PaneFindHandle, PaneFindProps>(function PaneF
 /** Desktop find rows run one step tighter than a form field — this is pane chrome. */
 const COLLAPSED_FIELD_HEIGHT = 28;
 const FIND_WIDGET_WIDTH = 340;
+const WIDGET_FILL: ViewStyle = { width: "100%" };
 
 const styles = StyleSheet.create((theme) => {
   const geometry = createControlGeometry(theme);

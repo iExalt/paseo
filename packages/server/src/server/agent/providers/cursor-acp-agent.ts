@@ -1,4 +1,4 @@
-import { zSessionConfigOption } from "@agentclientprotocol/sdk/dist/schema/zod.gen.js";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk";
 import type { Logger } from "pino";
 import { z } from "zod";
 
@@ -23,6 +23,50 @@ const CURSOR_CLIENT_CAPABILITY_META = {
   parameterizedModelPicker: true,
 };
 
+const skippedItem = Symbol("skippedACPConfigOptionItem");
+
+function vectorSkippingInvalid<T>(itemSchema: z.ZodType<T>) {
+  return z
+    .array(itemSchema.catch(skippedItem as T))
+    .transform((items) => items.filter((item): item is T => item !== skippedItem));
+}
+
+const SessionConfigSelectOptionSchema = z.object({
+  value: z.string(),
+  name: z.string(),
+  description: z.string().nullish().catch(undefined),
+  _meta: z.record(z.string(), z.unknown()).nullish().catch(undefined),
+});
+
+const SessionConfigSelectGroupSchema = z.object({
+  group: z.string(),
+  name: z.string(),
+  options: vectorSkippingInvalid(SessionConfigSelectOptionSchema),
+  _meta: z.record(z.string(), z.unknown()).nullish().catch(undefined),
+});
+
+const SessionConfigOptionSchema = z
+  .union([
+    z.object({
+      type: z.literal("select"),
+      currentValue: z.string(),
+      options: z.union([
+        z.array(SessionConfigSelectOptionSchema),
+        z.array(SessionConfigSelectGroupSchema),
+      ]),
+    }),
+    z.object({ type: z.literal("boolean"), currentValue: z.boolean() }),
+  ])
+  .and(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      description: z.string().nullish().catch(undefined),
+      category: z.string().nullish().catch(undefined),
+      _meta: z.record(z.string(), z.unknown()).nullish().catch(undefined),
+    }),
+  ) satisfies z.ZodType<SessionConfigOption>;
+
 export const CURSOR_FAST_FEATURE_OPTION: ACPConfigFeatureOption = {
   id: "fast",
   configId: "fast",
@@ -37,7 +81,7 @@ const CursorModelCatalogSchema = z.object({
     z.object({
       value: z.string().min(1),
       name: z.string(),
-      configOptions: z.array(zSessionConfigOption),
+      configOptions: vectorSkippingInvalid(SessionConfigOptionSchema),
     }),
   ),
 });

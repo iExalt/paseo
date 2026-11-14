@@ -418,6 +418,19 @@ describe("toAgentPayload", () => {
     );
   });
 
+  it("carries a stored session cost, without other usage, onto the payload", () => {
+    const record = toStoredAgentRecord(
+      createManagedAgent({
+        provider: "codex",
+        config: { provider: "codex" },
+        lastUsage: { contextWindowUsedTokens: 42, totalCostUsd: 2.5 },
+      }),
+    );
+
+    expect(record.totalCostUsd).toBe(2.5);
+    expect(buildStoredAgentPayload(record, ["codex"]).lastUsage).toEqual({ totalCostUsd: 2.5 });
+  });
+
   it("omits lastUsage when not available", () => {
     const agent = createManagedAgent({ lastUsage: undefined });
     const payload = toAgentPayload(agent);

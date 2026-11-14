@@ -1,3 +1,7 @@
+import {
+  collectQueuedMessageSnapshotImageIds,
+  whenQueuedMessageSnapshotLoaded,
+} from "@/stores/queued-message-snapshot";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -130,6 +134,8 @@ const migrateLegacyImages: MigrateLegacyImages = async (images) => {
 
 async function runAttachmentGc(): Promise<void> {
   gcScheduled = false;
+  // Restored queued prompts reference images that no live state holds yet.
+  await whenQueuedMessageSnapshotLoaded();
   const nowMs = Date.now();
 
   useDraftStore.setState((state) => {
@@ -161,6 +167,7 @@ async function runAttachmentGc(): Promise<void> {
     }
   }
 
+  collectQueuedMessageSnapshotImageIds(referencedIds);
   const sessions = useSessionStore.getState().sessions;
   for (const session of Object.values(sessions)) {
     collectQueuedMessageAttachmentIds(session, referencedIds);

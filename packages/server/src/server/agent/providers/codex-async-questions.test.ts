@@ -1,4 +1,6 @@
 import { tmpdir } from "node:os";
+import { mkdtempSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "vitest";
 import { CodexAppServerAgentSession } from "./codex-app-server-agent.js";
 import {
@@ -9,6 +11,11 @@ import {
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
 import { AgentManager } from "../agent-manager.js";
+import { AgentStorage } from "../agent-storage.js";
+import { startAgentRun } from "../agent-prompt.js";
+import { respondToAgentPermission } from "../permission-response.js";
+import { waitForHeldMessage } from "../held-messages.js";
+import { buildStoredAgentPayload, toAgentPayload } from "../agent-projections.js";
 
 const questionItem = {
   type: "agentMessage",
@@ -27,6 +34,7 @@ async function setup(metadata?: Record<string, unknown>, rejectSteer = false) {
       return { turnId: "native-turn" };
     },
     "thread/read": () => ({ thread: { id: "thread-1", turns: [] } }),
+    "thread/backgroundTerminals/list": () => ({ data: [], nextCursor: null }),
   });
   const session = new CodexAppServerAgentSession(
     { provider: "codex", cwd: tmpdir(), model: "gpt-5.4", modeId: "full-access" },
@@ -184,8 +192,9 @@ test("failed rewind preserves question state", async () => {
   }
 });
 
-async function manage(session: CodexAppServerAgentSession) {
+async function manage(session: CodexAppServerAgentSession, registry?: AgentStorage) {
   const manager = new AgentManager({
+    registry,
     clients: {
       codex: {
         provider: "codex",
@@ -216,6 +225,193 @@ test("manager publishes and saves the provider state after rewind", async () => 
     expect(snapshot.persistence).toEqual(session.describePersistence());
     expect(snapshot.persistence?.sessionId).toBe("forked-thread");
   } finally {
+    await manager.closeAgent(agent.id);
+  }
+});
+
+test("cold startup exposes saved questions without a runtime; failed and concurrent answers remain safe", async () => {
+  const root = mkdtempSync(join(tmpdir(), "paseo-saved-question-"));
+  const storage = new AgentStorage(join(root, "agents"), createTestLogger());
+  const first = await setup();
+  await first.ask();
+  await first.finish();
+  const { manager, agent } = await manage(first.session, storage);
+  let replacement: AgentManager | undefined;
+  let resumed: CodexAppServerAgentSession | undefined;
+  let rejectStart = true;
+  const server = createFakeCodexAppServer({
+    "thread/read": () => ({ thread: { id: "thread-1", turns: [] } }),
+    "turn/start": () =>
+      rejectStart ? { __jsonRpcError: { code: -32000, message: "Follow-up rejected" } } : {},
+  });
+  try {
+    await new Promise((resolve) => setImmediate(resolve));
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(true);
+    await manager.closeAgent(agent.id);
+    await storage.flush();
+    // No startup-resume intent: this idle agent must not receive "Resume working".
+    const record = (await storage.get(agent.id))!;
+    expect(record.resumeOnStartup).not.toBe(true);
+    expect(buildStoredAgentPayload(record, ["codex"]).pendingPermissions).toMatchObject([
+      { id: "permission-async-question-1", kind: "question" },
+    ]);
+    replacement = new AgentManager({
+      registry: storage,
+      logger: createTestLogger(),
+      clients: {
+        codex: {
+          provider: "codex",
+          capabilities: first.session.capabilities,
+          createSession: async () => {
+            throw new Error("Must resume the original thread");
+          },
+          resumeSession: async (handle, config) => {
+            resumed = new CodexAppServerAgentSession(
+              config,
+              handle,
+              createTestLogger(),
+              async () => server.child,
+            );
+            return resumed;
+          },
+          isAvailable: async () => true,
+          fetchCatalog: async () => ({ models: [], modes: [] }),
+        },
+      },
+    });
+    expect(replacement.listAgents()).toEqual([]);
+    const resolutions: unknown[] = [];
+    replacement.subscribe((event) => {
+      if (event.type === "agent_stream" && event.event.type === "permission_resolved")
+        resolutions.push(event.event);
+    });
+    const respond = () =>
+      replacement!.respondToPermission(agent.id, "permission-async-question-1", answer);
+    await expect(respond()).rejects.toThrow("Follow-up rejected");
+    expect(replacement.getPendingPermissions(agent.id)).toHaveLength(1);
+    expect(toAgentPayload(replacement.getAgent(agent.id)!).pendingPermissions).toHaveLength(1);
+    expect(resolutions).toEqual([]);
+    expect(resumed!.getPendingPermissions()).toHaveLength(1);
+    expect(
+      buildStoredAgentPayload((await storage.get(agent.id))!, ["codex"]).pendingPermissions,
+    ).toHaveLength(1);
+    rejectStart = false;
+    const results = await Promise.allSettled([respond(), respond()]);
+    expect(results.map((r) => r.status)).toEqual(["fulfilled", "rejected"]);
+    expect(resumed!.getPendingPermissions()).toEqual([]);
+    const starts = server.requests().filter((r) => r.method === "turn/start");
+    expect(starts).toHaveLength(2); // One rejected attempt, one accepted answer.
+    expect(starts[1]).toMatchObject({
+      params: {
+        threadId: "thread-1",
+        input: [{ type: "text", text: expect.stringContaining("Which color?\nGreen") }],
+      },
+    });
+    await replacement.closeAgent(agent.id);
+    await storage.flush();
+    expect(
+      buildStoredAgentPayload((await storage.get(agent.id))!, ["codex"]).pendingPermissions,
+    ).toEqual([]);
+  } finally {
+    if (replacement?.getAgent(agent.id)) await replacement.closeAgent(agent.id);
+    if (manager.getAgent(agent.id)) await manager.closeAgent(agent.id);
+    await first.session.close();
+    await storage.flush();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("a saved question never bypasses or dismisses a live input approval", async () => {
+  const { session, appServer, ask, finish } = await setup();
+  await ask();
+  await finish();
+  const { manager, agent } = await manage(session);
+  try {
+    const requested = waitForNextEvent(session, "permission_requested");
+    appServer.requestUserInput({
+      itemId: "live-question",
+      threadId: "thread-1",
+      turnId: "native-turn",
+      questions: [
+        {
+          id: "live",
+          header: "Live",
+          question: "Approve?",
+          options: [{ label: "Yes", description: "Yes" }],
+        },
+      ],
+    });
+    await requested;
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(false);
+    await expect(
+      manager.respondToPermission(agent.id, "permission-async-question-1", answer),
+    ).rejects.toThrow("Resolve the live permission request");
+    expect(session.getPendingPermissions()).toHaveLength(2);
+    expect(appServer.requests().filter((r) => r.method === "turn/start")).toHaveLength(1);
+  } finally {
+    await manager.closeAgent(agent.id);
+  }
+});
+
+test("an idle question answer starts before queued messages without canceling either turn", async () => {
+  const { session, appServer, ask, finish } = await setup();
+  await ask();
+  await finish();
+  const { manager, agent } = await manage(session);
+  const events: AgentStreamEvent[] = [];
+  const unsubscribe = manager.subscribe(
+    (event) => {
+      if (event.type === "agent_stream") events.push(event.event);
+    },
+    { agentId: agent.id, replayState: false },
+  );
+  const logger = createTestLogger();
+  const starts = () => appServer.requests().filter((r) => r.method === "turn/start");
+  try {
+    await expect(
+      startAgentRun(manager, agent.id, "Queued work", logger, {
+        activeTurnBehavior: "queue",
+        runOptions: { clientMessageId: "queued-work" },
+      }),
+    ).resolves.toEqual({ disposition: "queued" });
+    const queued = waitForHeldMessage(manager, agent.id, "queued-work");
+    expect(queued).not.toBeNull();
+
+    await respondToAgentPermission({
+      agentManager: manager,
+      agentId: agent.id,
+      requestId: "permission-async-question-1",
+      response: answer,
+      logger,
+    });
+    expect(events.filter((event) => event.type === "turn_failed")).toEqual([]);
+    expect(starts()).toHaveLength(2);
+    expect(starts()[1]).toMatchObject({
+      params: {
+        input: [{ type: "text", text: "Answers to your questions:\n\nWhich color?\nGreen" }],
+      },
+    });
+    expect(manager.getPendingPermissions(agent.id)).toEqual([]);
+    expect(waitForHeldMessage(manager, agent.id, "queued-work")).toBe(queued);
+
+    appServer.startsTurn({ threadId: "thread-1", turnId: "answer-turn" });
+    appServer.completeTurn();
+    await expect(queued).resolves.toBe("dispatched");
+    await expect.poll(() => starts().length).toBe(3);
+    expect(starts()[2]).toMatchObject({
+      params: {
+        input: [{ type: "text", text: "Queued work" }],
+      },
+    });
+    appServer.startsTurn({ threadId: "thread-1", turnId: "queued-turn" });
+    appServer.completeTurn();
+    await expect.poll(() => manager.hasInFlightRun(agent.id)).toBe(false);
+    expect(
+      events.filter((event) => event.type === "turn_failed" || event.type === "turn_canceled"),
+    ).toEqual([]);
+    expect(appServer.requests().filter((r) => r.method === "turn/interrupt")).toEqual([]);
+  } finally {
+    unsubscribe();
     await manager.closeAgent(agent.id);
   }
 });
@@ -286,6 +482,36 @@ test("a failed submission releases the request so the user can retry", async () 
     allowAnswers();
     await manager.respondToPermission(agent.id, permission.id, answer);
     expect(session.getPendingPermissions()).toEqual([]);
+  } finally {
+    await manager.closeAgent(agent.id);
+  }
+});
+
+test("malformed answers leave the async question pending until a corrected retry", async () => {
+  const { session, appServer, events, ask } = await setup();
+  const { manager, agent } = await manage(session);
+  try {
+    await ask();
+    const [permission] = session.getPendingPermissions();
+    for (const updatedInput of [
+      { answers: { "0": { answers: ["Green"] } } },
+      { "0": "Green" },
+      { answers: { "0": "Green" } },
+      { answers: { "Question 1": " " } },
+    ]) {
+      await expect(
+        manager.respondToPermission(agent.id, permission.id, { behavior: "allow", updatedInput }),
+      ).rejects.toThrow();
+      expect(session.getPendingPermissions()).toEqual([permission]);
+      expect(toAgentPayload(manager.getAgent(agent.id)!).pendingPermissions).toEqual([permission]);
+      expect(appServer.requests().filter((request) => request.method === "turn/steer")).toEqual([]);
+      expect(events.filter((event) => event.type === "permission_resolved")).toEqual([]);
+    }
+    await manager.respondToPermission(agent.id, permission.id, answer);
+    expect(session.getPendingPermissions()).toEqual([]);
+    expect(appServer.requests().filter((request) => request.method === "turn/steer")).toHaveLength(
+      1,
+    );
   } finally {
     await manager.closeAgent(agent.id);
   }
@@ -401,9 +627,13 @@ test("late answers use the existing follow-up prompt and dismissal does not inte
     expect(permission).toBeDefined();
     await finish();
     expect(session.getPendingPermissions()).toHaveLength(1);
-    expect(await session.respondToPermission(permission.id, answer)).toEqual({
+    const result = await session.respondToPermission(permission.id, answer);
+    expect(result).toEqual({
       followUpPrompt: "Answers to your questions:\n\nWhich color?\nGreen",
+      complete: expect.any(Function),
     });
+    expect(session.getPendingPermissions()).toHaveLength(1);
+    result?.complete?.();
     expect(appServer.requests().some((request) => request.method === "turn/interrupt")).toBe(false);
   } finally {
     await session.close();

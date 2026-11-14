@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import {
   Keyboard,
   type LayoutChangeEvent,
@@ -29,6 +38,7 @@ import {
   createNativeTerminalOutputDrain,
   type NativeTerminalOutputDrain,
 } from "../terminal/native-renderer/headless-terminal-output-drain";
+import { traceTerminalLatency } from "../terminal/native-renderer/terminal-input-trace";
 import { TerminalGridView } from "../terminal/native-renderer/terminal-grid-view.native";
 import type { TerminalGridCellMetrics } from "../terminal/native-renderer/terminal-grid-metrics";
 import {
@@ -58,7 +68,7 @@ import {
 import { resolveNativeTerminalMountAction } from "../terminal/native-renderer/terminal-mount-policy";
 import {
   forwardNativeTerminalKey,
-  type NativeTerminalKey,
+  type NativeTerminalKeyEvent,
 } from "../terminal/native-renderer/terminal-key-events";
 import {
   TerminalInput,
@@ -69,7 +79,14 @@ import {
   type NativeTerminalSizeClaimAction,
 } from "../terminal/native-renderer/terminal-input-resize-policy";
 import { encodeTerminalPaste } from "../terminal/runtime/terminal-paste";
-import type { TerminalOutputData } from "../terminal/runtime/terminal-emulator-runtime";
+import type {
+  TerminalFindHandle,
+  TerminalOutputData,
+} from "../terminal/runtime/terminal-emulator-runtime";
+import {
+  createTerminalFindController,
+  type TerminalFindState,
+} from "../terminal/native-renderer/terminal-find-controller";
 import {
   createTerminalResizePolicy,
   updateTerminalResizePolicy,
@@ -147,6 +164,37 @@ function screenStateFromViewport(viewport: TerminalViewportState): TerminalScree
   };
 }
 
+// Each keystroke rescans the whole buffer, so typing waits for a pause.
+const FIND_DEBOUNCE_MS = 150;
+
+interface TerminalScreenStore {
+  get: () => TerminalScreenState | null;
+  set: (screen: TerminalScreenState) => void;
+  subscribe: (listener: () => void) => () => void;
+}
+
+// React renders an external store's change at sync priority in a microtask,
+// while a state update from a socket or timer callback waits for its
+// scheduler, which cost about 10 ms per echo on Android.
+function createTerminalScreenStore(initial: TerminalScreenState | null): TerminalScreenStore {
+  let screen = initial;
+  const listeners = new Set<() => void>();
+  return {
+    get: () => screen,
+    set: (next) => {
+      if (next === screen) return;
+      screen = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+}
+
 function viewportStateFromSnapshot(state: TerminalState): TerminalViewportState {
   return {
     rows: state.grid.length,
@@ -177,6 +225,7 @@ function NativeTerminalEmulator({
   onSelectionChange,
   onRendererReadyChange,
   onFocus,
+  onFindResult,
   focusRequestToken = 0,
   resizeRequestToken = 0,
 }: TerminalEmulatorProps) {
@@ -220,15 +269,24 @@ function NativeTerminalEmulator({
     ...inputModeTrackerRef.current.getState(),
     applicationCursorKeys: false,
   });
-  const [terminalScreen, setTerminalScreen] = useState<TerminalScreenState | null>(() => {
-    return initialSnapshot
-      ? screenStateFromViewport(viewportStateFromSnapshot(initialSnapshot))
-      : null;
-  });
+  const [screenStore] = useState(() =>
+    createTerminalScreenStore(
+      initialSnapshot ? screenStateFromViewport(viewportStateFromSnapshot(initialSnapshot)) : null,
+    ),
+  );
+  const terminalScreen = useSyncExternalStore(screenStore.subscribe, screenStore.get);
+  const renderedScreenRef = useRef<TerminalScreenState | null>(null);
+  if (renderedScreenRef.current !== terminalScreen) {
+    renderedScreenRef.current = terminalScreen;
+    traceTerminalLatency("render", 0);
+  }
   const [selectionRange, setSelectionRange] = useState<TerminalSelectionRange | null>(null);
   const selectionRangeRef = useRef<TerminalSelectionRange | null>(null);
   const hasNotifiedSelectionRef = useRef(false);
   const terminalScreenRef = useRef<TerminalScreenState | null>(terminalScreen);
+  useLayoutEffect(() => {
+    traceTerminalLatency("commit", 0);
+  }, [terminalScreen]);
   const callbacksRef = useRef({
     onFocus,
     onInput,
@@ -237,6 +295,7 @@ function NativeTerminalEmulator({
     onSelectionChange,
     onRendererReadyChange,
     onResize,
+    onFindResult,
   });
   callbacksRef.current = {
     onFocus,
@@ -246,7 +305,14 @@ function NativeTerminalEmulator({
     onSelectionChange,
     onRendererReadyChange,
     onResize,
+    onFindResult,
   };
+  // Bumped on every write so find rescans only after output changed the buffer.
+  const writeRevisionRef = useRef(0);
+  const findControllerRef = useRef<ReturnType<typeof createTerminalFindController> | null>(null);
+  const findBarHeightRef = useRef(0);
+  const findDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [findState, setFindState] = useState<TerminalFindState | null>(null);
 
   const getInputModeState = useCallback((): TerminalInputModeState => {
     return inputModeTrackerRef.current.getState();
@@ -266,11 +332,14 @@ function NativeTerminalEmulator({
     emitInputModeChange();
   }, [emitInputModeChange]);
 
-  const commitTerminalScreen = useCallback((screen: TerminalScreenState) => {
-    latestResolvedScreenRef.current = screen;
-    terminalScreenRef.current = screen;
-    setTerminalScreen(screen);
-  }, []);
+  const commitTerminalScreen = useCallback(
+    (screen: TerminalScreenState) => {
+      latestResolvedScreenRef.current = screen;
+      terminalScreenRef.current = screen;
+      screenStore.set(screen);
+    },
+    [screenStore],
+  );
 
   const commitSelectionRange = useCallback((range: TerminalSelectionRange | null) => {
     selectionRangeRef.current = range;
@@ -362,10 +431,13 @@ function NativeTerminalEmulator({
       createNativeTerminalOutputDrain({
         write: async (chunk) => {
           await terminal.write(chunk);
+          traceTerminalLatency("written", chunk.length);
+          writeRevisionRef.current += 1;
           emitInputModeChange();
         },
         reset: () => {
           terminal.reset();
+          writeRevisionRef.current += 1;
           emitInputModeChange();
         },
         getViewportState: () => {
@@ -373,7 +445,11 @@ function NativeTerminalEmulator({
           syncSelectionWithTerminal(terminal);
           return screen.viewport;
         },
+        onParse: (sample) => {
+          traceTerminalLatency("parsed", sample.parsedChars);
+        },
         onPaint: () => {
+          traceTerminalLatency("paint", 0);
           const screen = latestResolvedScreenRef.current;
           if (screen) {
             commitTerminalScreen(screen);
@@ -381,6 +457,9 @@ function NativeTerminalEmulator({
         },
         scheduleFrame: requestAnimationFrame,
         cancelFrame: cancelAnimationFrame,
+        // A lone echo paints without waiting for a frame callback, which costs
+        // two or three frames on Android; bursts still paint once per frame.
+        idlePaintMs: 16,
       }),
     [commitTerminalScreen, emitInputModeChange, resolveTerminalScreen, syncSelectionWithTerminal],
   );
@@ -456,6 +535,12 @@ function NativeTerminalEmulator({
       });
       terminalRef.current = terminal;
       screenModelRef.current = createNativeTerminalScreenModel({ terminal });
+      findControllerRef.current = createTerminalFindController({
+        search: (query) => terminal.search(query),
+        revision: () => writeRevisionRef.current,
+        coordinateEpoch: () => terminal.getBufferBounds().coordinateEpoch,
+      });
+      setFindState(null);
       const outputDrain = createOutputDrain(terminal);
       outputDrainRef.current = outputDrain;
       const screen = snapshot
@@ -482,6 +567,7 @@ function NativeTerminalEmulator({
       if (text.length === 0) {
         return;
       }
+      traceTerminalLatency("recv", text.length);
       const inputModeUpdate = inputModeTrackerRef.current.feed(text);
       if (inputModeUpdate.changed) {
         emitInputModeChange();
@@ -489,6 +575,76 @@ function NativeTerminalEmulator({
       outputDrainRef.current?.enqueueText(text);
     },
     [emitInputModeChange],
+  );
+
+  // Shows a find result: centres the current match in the rows above the find bar and
+  // reports the position the bar displays.
+  const showFindState = useCallback(
+    (state: TerminalFindState) => {
+      setFindState(state);
+      const terminal = terminalRef.current;
+      const model = screenModelRef.current;
+      const match = state.matches[state.current];
+      if (terminal && model && match) {
+        const cellHeight = metricsRef.current?.cellHeight ?? 0;
+        const coveredRows = cellHeight > 0 ? Math.ceil(findBarHeightRef.current / cellHeight) : 0;
+        commitTerminalScreen(
+          model.scrollToRow({
+            visibleRows: resolveVisibleRows(terminal),
+            row: match.startRow,
+            coveredRows,
+          }),
+        );
+      }
+      callbacksRef.current.onFindResult?.({
+        resultIndex: state.current,
+        resultCount: state.matches.length,
+        limited: state.limited,
+        placement: "bottom",
+      });
+    },
+    [commitTerminalScreen, resolveVisibleRows],
+  );
+
+  const find = useMemo<TerminalFindHandle>(
+    () => ({
+      setWidgetSize: (size) => {
+        findBarHeightRef.current = size.height;
+      },
+      search: (query, direction) => {
+        const controller = findControllerRef.current;
+        if (!controller) return;
+        if (findDebounceRef.current) clearTimeout(findDebounceRef.current);
+        if (direction) {
+          showFindState(controller.step(direction === "next" ? 1 : -1));
+          return;
+        }
+        findDebounceRef.current = setTimeout(() => {
+          findDebounceRef.current = null;
+          const firstRow = terminalScreenRef.current?.viewport.firstRow ?? 0;
+          showFindState(controller.search(query, firstRow));
+        }, FIND_DEBOUNCE_MS);
+      },
+      clear: () => {
+        if (findDebounceRef.current) clearTimeout(findDebounceRef.current);
+        findDebounceRef.current = null;
+        findControllerRef.current?.clear();
+        setFindState(null);
+        callbacksRef.current.onFindResult?.({
+          resultIndex: -1,
+          resultCount: 0,
+          limited: false,
+          placement: "bottom",
+        });
+      },
+    }),
+    [showFindState],
+  );
+  useEffect(
+    () => () => {
+      if (findDebounceRef.current) clearTimeout(findDebounceRef.current);
+    },
+    [],
   );
 
   const claimActiveTerminalSize = useCallback(() => {
@@ -508,6 +664,7 @@ function NativeTerminalEmulator({
   useImperativeHandle(
     ref,
     (): TerminalEmulatorHandle => ({
+      find,
       writeOutput: (data: TerminalOutputData) => {
         const text = outputDecoderRef.current.decode(data, { stream: true });
         enqueueOutputText(text);
@@ -577,6 +734,7 @@ function NativeTerminalEmulator({
       },
     }),
     [
+      find,
       enqueueOutputText,
       claimActiveTerminalSize,
       claimActiveTerminalSizeForAction,
@@ -619,15 +777,17 @@ function NativeTerminalEmulator({
   const handleTerminalInput = useCallback(
     (data: string) => {
       claimActiveTerminalSizeForAction("text");
+      traceTerminalLatency("send", data.length);
       callbacksRef.current.onInput?.(data);
     },
     [claimActiveTerminalSizeForAction],
   );
 
   const handleNativeTerminalKey = useCallback(
-    (key: NativeTerminalKey) => {
+    (event: NativeTerminalKeyEvent) => {
       claimActiveTerminalSizeForAction("key");
-      forwardNativeTerminalKey({ key, onTerminalKey: callbacksRef.current.onTerminalKey });
+      traceTerminalLatency("send", 0);
+      forwardNativeTerminalKey({ event, onTerminalKey: callbacksRef.current.onTerminalKey });
     },
     [claimActiveTerminalSizeForAction],
   );
@@ -980,6 +1140,17 @@ function NativeTerminalEmulator({
   );
 
   const terminalState = terminalScreen?.viewport ?? null;
+  const visibleFind = useMemo(() => {
+    if (!findState || !terminalState || findState.matches.length === 0) return null;
+    const firstRow = terminalState.firstRow;
+    const lastRow = firstRow + terminalState.grid.length - 1;
+    return {
+      matches: findState.matches.filter(
+        (match) => match.endRow >= firstRow && match.startRow <= lastRow,
+      ),
+      current: findState.matches[findState.current] ?? null,
+    };
+  }, [findState, terminalState]);
   const isScrolled = terminalScreen?.scroll.mode === "scrolled";
   const terminalGrid = terminalState ? (
     <TerminalGridView
@@ -989,6 +1160,7 @@ function NativeTerminalEmulator({
       fontSize={fontSize}
       style={styles.nativeGrid}
       selection={selectionRange}
+      find={visibleFind}
       onCellMetricsChange={handleCellMetricsChange}
     />
   ) : null;

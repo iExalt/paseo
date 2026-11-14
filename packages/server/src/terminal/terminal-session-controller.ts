@@ -13,6 +13,8 @@ import type {
   SessionOutboundMessage,
   SubscribeTerminalRequest,
   SubscribeTerminalsRequest,
+  TerminalInputRequest,
+  TerminalKeysSendRequest,
   TerminalInput,
   UnsubscribeTerminalRequest,
   UnsubscribeTerminalsRequest,
@@ -37,6 +39,8 @@ import {
 } from "./terminal-restore.js";
 import type { TerminalSession } from "./terminal.js";
 import type { TerminalManager, TerminalsChangedEvent } from "./terminal-manager.js";
+import { sendTerminalInput } from "./terminal-input.js";
+import { resolveTerminalKeyToken } from "./terminal-key-tokens.js";
 import { applyTerminalSize } from "./terminal-size-ownership.js";
 import { TerminalWorkerIncompatibleError } from "./terminal-worker-pool.js";
 import type { TerminalActivity } from "@getpaseo/protocol/terminal-activity";
@@ -88,6 +92,10 @@ export interface TerminalSessionControllerOptions {
   sessionLogger: pino.Logger;
   listTerminalWorkspaceRefs?: () => Promise<readonly TerminalWorkspaceRef[]>;
   listTerminalWorkspaceRoots?: () => Promise<readonly string[]>;
+  resolveCallerContext?: (input: {
+    callerContext: NonNullable<CreateTerminalRequest["callerContext"]>;
+    createWorkspace: boolean;
+  }) => Promise<{ cwd: string; workspaceId?: string }>;
   // Whether the connected client can reflow restored snapshots. When true the
   // daemon attaches per-row soft-wrap flags to snapshots; otherwise it omits them
   // so old (strict-schema) clients still parse the snapshot.
@@ -120,6 +128,8 @@ type TerminalDispatchableMessage =
   | SubscribeTerminalRequest
   | UnsubscribeTerminalRequest
   | TerminalInput
+  | TerminalInputRequest
+  | TerminalKeysSendRequest
   | KillTerminalRequest
   | CaptureTerminalRequest
   | RenameTerminalRequest;
@@ -132,6 +142,8 @@ const TERMINAL_MESSAGE_TYPES: ReadonlySet<TerminalDispatchableMessage["type"]> =
   "subscribe_terminal_request",
   "unsubscribe_terminal_request",
   "terminal_input",
+  "terminal.input.request",
+  "terminal.keys.send.request",
   "kill_terminal_request",
   "capture_terminal_request",
   "terminal.rename.request",
@@ -145,6 +157,9 @@ export class TerminalSessionController {
   private readonly sessionLogger: pino.Logger;
   private readonly listTerminalWorkspaceRefs: () => Promise<readonly TerminalWorkspaceRef[]>;
   private readonly listTerminalWorkspaceRoots: () => Promise<readonly string[]>;
+  private readonly resolveCallerContext:
+    | NonNullable<TerminalSessionControllerOptions["resolveCallerContext"]>
+    | undefined;
   private readonly clientSupportsWrapReflow: (source: object) => boolean;
   private readonly getClientBufferedAmount: (source: object) => number | null;
 
@@ -163,6 +178,7 @@ export class TerminalSessionController {
     this.listTerminalWorkspaceRoots =
       options.listTerminalWorkspaceRoots ??
       (async () => (await this.listTerminalWorkspaceRefs()).map((workspace) => workspace.cwd));
+    this.resolveCallerContext = options.resolveCallerContext;
     this.clientSupportsWrapReflow = options.clientSupportsWrapReflow ?? (() => false);
     this.getClientBufferedAmount = options.getClientBufferedAmount ?? (() => 0);
   }
@@ -224,6 +240,10 @@ export class TerminalSessionController {
         if (!ownership.currentSource) throw new Error("Terminal input requires a source");
         this.handleTerminalInput(msg, ownership.currentSource);
         return undefined;
+      case "terminal.input.request":
+        return this.handleTerminalInputRequest(msg);
+      case "terminal.keys.send.request":
+        return this.handleTerminalKeysSendRequest(msg);
       case "kill_terminal_request":
         return this.handleKillTerminalRequest(msg);
       case "capture_terminal_request":
@@ -414,6 +434,11 @@ export class TerminalSessionController {
     return refresh;
   }
 
+  private assertTerminalManagerAvailable(): void {
+    const unavailable = this.terminalManager?.getUnavailableError?.();
+    if (unavailable) throw unavailable;
+  }
+
   private async handleListTerminalsRequest(msg: ListTerminalsRequest): Promise<void> {
     if (!this.terminalManager) {
       this.emit({
@@ -422,28 +447,40 @@ export class TerminalSessionController {
           ...(msg.cwd ? { cwd: msg.cwd } : {}),
           terminals: [],
           requestId: msg.requestId,
+          ...(msg.callerContext ? { error: "Terminal manager not available" } : {}),
         },
       });
       return;
     }
 
     try {
-      const unavailable = this.terminalManager.getUnavailableError?.();
-      if (unavailable) throw unavailable;
+      this.assertTerminalManagerAvailable();
+      const callerScope = msg.callerContext
+        ? await this.resolveCallerContext?.({
+            callerContext: msg.callerContext,
+            createWorkspace: false,
+          })
+        : undefined;
+      if (msg.callerContext && !callerScope) {
+        throw new Error("Agent-scoped terminal context is not available");
+      }
+      const cwd = callerScope?.cwd ?? msg.cwd;
       let terminals: TerminalSession[];
       if (msg.workspaceId !== undefined) {
         terminals = (await this.getAllTerminalSessions()).filter(
           (terminal) => terminal.workspaceId === msg.workspaceId,
         );
-      } else if (typeof msg.cwd === "string") {
-        terminals = await this.getTerminalsForWorkspaceRoot(msg.cwd);
+      } else if (callerScope) {
+        terminals = await this.terminalManager.getTerminals(callerScope.cwd);
+      } else if (typeof cwd === "string") {
+        terminals = await this.getTerminalsForWorkspaceRoot(cwd);
       } else {
         terminals = await this.getAllTerminalSessions();
       }
       this.emit({
         type: "list_terminals_response",
         payload: {
-          ...(msg.cwd ? { cwd: msg.cwd } : {}),
+          ...(cwd ? { cwd } : {}),
           terminals: terminals.map((terminal) =>
             Object.assign(this.toTerminalInfo(terminal), { cwd: terminal.cwd }),
           ),
@@ -462,6 +499,9 @@ export class TerminalSessionController {
           ...(msg.cwd ? { cwd: msg.cwd } : {}),
           terminals: [],
           requestId: msg.requestId,
+          ...(msg.callerContext
+            ? { error: error instanceof Error ? error.message : String(error) }
+            : {}),
         },
       });
     }
@@ -577,7 +617,20 @@ export class TerminalSessionController {
         return;
       }
 
-      const workspaceId = msg.workspaceId ?? (await this.resolveLegacyTerminalWorkspaceId(msg.cwd));
+      const callerScope = msg.callerContext
+        ? await this.resolveCallerContext?.({
+            callerContext: msg.callerContext,
+            createWorkspace: true,
+          })
+        : undefined;
+      if (msg.callerContext && !callerScope) {
+        throw new Error("Agent-scoped terminal context is not available");
+      }
+      const cwd = callerScope?.cwd ?? msg.cwd;
+      const workspaceId =
+        msg.workspaceId ??
+        callerScope?.workspaceId ??
+        (await this.resolveLegacyTerminalWorkspaceId(cwd));
       if (!workspaceId) {
         this.emit({
           type: "create_terminal_response",
@@ -596,7 +649,7 @@ export class TerminalSessionController {
       }
 
       const session = await this.terminalManager.createTerminal({
-        cwd: msg.cwd,
+        cwd,
         workspaceId,
         name: msg.name,
         command: msg.command,
@@ -790,6 +843,61 @@ export class TerminalSessionController {
     }
 
     session.send(msg.message);
+  }
+
+  private async handleTerminalInputRequest(msg: TerminalInputRequest): Promise<void> {
+    let error: string | null = null;
+    if (!this.terminalManager) {
+      error = "Terminal manager is not configured";
+    } else {
+      try {
+        sendTerminalInput(this.terminalManager, msg.terminalId, msg.data);
+      } catch (caught) {
+        error = caught instanceof Error ? caught.message : String(caught);
+      }
+    }
+
+    this.emit({
+      type: "terminal.input.response",
+      payload: {
+        terminalId: msg.terminalId,
+        success: error === null,
+        error,
+        requestId: msg.requestId,
+      },
+    });
+  }
+
+  private async handleTerminalKeysSendRequest(msg: TerminalKeysSendRequest): Promise<void> {
+    let error: string | null = null;
+    let written = 0;
+    if (!this.terminalManager) {
+      error = "Terminal manager is not configured";
+    } else {
+      try {
+        // Read the input mode at write time, so a mode the program just switched applies.
+        const preamble =
+          this.terminalManager.getTerminal(msg.terminalId)?.getReplayPreamble() ?? "";
+        const data = msg.keys
+          .map((key) => resolveTerminalKeyToken({ key, literal: msg.literal ?? false, preamble }))
+          .join("");
+        sendTerminalInput(this.terminalManager, msg.terminalId, data);
+        written = data.length;
+      } catch (caught) {
+        error = caught instanceof Error ? caught.message : String(caught);
+      }
+    }
+
+    this.emit({
+      type: "terminal.keys.send.response",
+      payload: {
+        terminalId: msg.terminalId,
+        success: error === null,
+        error,
+        written,
+        requestId: msg.requestId,
+      },
+    });
   }
 
   private killTracked(terminalId: string, options?: { emitExit: boolean }): void {

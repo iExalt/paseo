@@ -1,5 +1,6 @@
 import { resolveChangesPresentation } from "./changes/presentation";
 import { useCallback, useMemo, type ReactNode } from "react";
+import { canUseSplitDiffLayout } from "@/git/split-diff-layout";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
 import { FileDiff, GitCommitHorizontal } from "lucide-react-native";
@@ -8,7 +9,7 @@ import invariant from "tiny-invariant";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { PaneContentToolbar } from "@/components/ui/pane-content-toolbar";
-import { isWeb, isNative } from "@/constants/platform";
+import { isNative } from "@/constants/platform";
 import { DiffDocument } from "@/git/diff-document";
 import { ChangesSurface, DiffLayoutToggle, resolveDiffLayout } from "@/git/diff-pane";
 import { useCommitDiffFiles } from "@/git/use-diff-files";
@@ -30,7 +31,7 @@ function useDiffPanelPreferences() {
   const { settings } = useAppSettings();
   const { preferences, updatePreferences } = useChangesPreferences();
   const isCompact = useIsCompactFormFactor();
-  const canUseSplitLayout = isWeb && !isCompact;
+  const canUseSplitLayout = canUseSplitDiffLayout({ isCompact: isCompact });
   const effectiveLayout = resolveDiffLayout(preferences.layout, canUseSplitLayout);
   const displayPreferences = useMemo(
     () => ({

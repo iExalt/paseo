@@ -1,10 +1,10 @@
 # AGENTS.md — Paseo Server Development Guide
 
-For AI coding agents working in `packages/server`. Supplements [CLAUDE.md](../CLAUDE.md) at the repo root.
+For AI coding agents working in `packages/server`. Supplements [CLAUDE.md](../../CLAUDE.md) at the repo root.
 
 ## Project Overview
 
-Paseo is a mobile + CLI app for monitoring and controlling local AI coding agents (Claude Code, Codex, GitHub Copilot, OpenCode, Pi). The daemon runs on your machine, manages agent processes, and streams their output over WebSocket to clients.
+Paseo is a mobile + CLI app for monitoring and controlling local AI coding agents ([supported agents](../../CLAUDE.md)). The daemon runs on your machine, manages agent processes, and streams their output over WebSocket to clients.
 
 ---
 
@@ -13,11 +13,11 @@ Paseo is a mobile + CLI app for monitoring and controlling local AI coding agent
 ### Root (monorepo)
 
 ```bash
-npm run dev                          # Start daemon + Expo in Tmux
+npm run dev                          # Start the dev daemon only (Expo: npm run dev:app)
 npm run build:server                 # Build: highlight + relay + protocol + client + server + cli
 npm run typecheck                    # Typecheck all packages
 npm run test                         # Test all packages
-npm run format                       # Format with Biome (in-place)
+npm run format                       # Format with oxfmt (in-place)
 ```
 
 ### Server package (`packages/server`)
@@ -50,7 +50,6 @@ npm run test:ui                     # Vitest UI at localhost:51204
 
 ```bash
 npm run build:server                         # Rebuild server stack
-npm run db:query -- "SELECT ..."             # Run arbitrary SQL
 npm run cli -- ls -a -g                      # List agents
 npm run cli -- daemon status                 # Check daemon status
 ```
@@ -59,18 +58,9 @@ npm run cli -- daemon status                 # Check daemon status
 
 ## Code Style
 
-### Biome (formatting only, no linting)
+### Formatting
 
-```json
-{
-  "indentStyle": "space",
-  "indentWidth": 2,
-  "lineWidth": 100,
-  "quoteStyle": "double",
-  "trailingCommas": "all",
-  "semicolons": "always"
-}
-```
+oxfmt formats the repo with the root `.oxfmtrc.json`; oxlint lints it with `.oxlintrc.json`.
 
 ### TypeScript
 
@@ -95,7 +85,7 @@ npm run cli -- daemon status                 # Check daemon status
 
 ### Error Handling
 
-- **Fail explicitly** — throw instead of silently returning defaults
+- **Fail explicitly** — throw instead of silently returning defaults. Exception: provider image output. Materializing an image falls back to the provider's copy, or to an "omitted" note, so one unreadable image never fails the whole tool result or history replay (`provider-image-output.ts`)
 - **Typed domain errors** — extend `Error` with structured metadata
 
 ```typescript
@@ -156,17 +146,20 @@ Tests prove behavior, not structure. Every test should answer: "what user-visibl
 ## Architecture Quick Reference
 
 ```
-packages/server/src/
-├── server/
-│   ├── index.ts              # Entry point
-│   ├── bootstrap.ts           # Daemon initialization
-│   ├── websocket-server.ts   # WS connection management
-│   ├── session.ts             # Per-client session state
-│   └── agent/
-│       ├── agent-manager.ts  # Agent lifecycle state machine
-│       └── agent-storage.ts  # File-backed JSON persistence
-├── providers/                 # Claude, Codex, Copilot, OpenCode, Pi adapters
-├── relay-transport.ts        # Outbound relay connection
+packages/server/
+├── scripts/
+│   └── supervisor-entrypoint.ts  # Production entry; supervises the daemon worker
+└── src/server/
+    ├── daemon-worker.ts          # Daemon process entry
+    ├── bootstrap.ts              # Daemon initialization
+    ├── websocket-server.ts       # WS connection management
+    ├── session.ts                # Per-client session state
+    ├── relay-transport.ts        # Outbound relay connection
+    └── agent/
+        ├── agent-manager.ts      # Agent lifecycle state machine
+        ├── agent-storage.ts      # File-backed JSON persistence
+        ├── provider-registry.ts  # Built-in provider factories
+        └── providers/            # Provider adapters, including ACP agents
 ```
 
 Agent state persists to `$PASEO_HOME/agents/{cwd-with-dashes}/{agent-id}.json`  
@@ -180,17 +173,16 @@ Daemon logs: `$PASEO_HOME/daemon.log`
 tail -f $PASEO_HOME/daemon.log      # Daemon logs
 npm run test:ui                     # Vitest browser UI at localhost:51204
 npm run cli -- inspect <agent-id>   # Detailed agent info
-npm run db:query -- "SELECT * FROM agent_timeline_rows..."
 ```
 
 ---
 
 ## Relevant Docs
 
-| File                                                       | What it covers                                   |
-| ---------------------------------------------------------- | ------------------------------------------------ |
-| [../CLAUDE.md](../CLAUDE.md)                               | Repository overview, critical rules, quick start |
-| [../docs/architecture.md](../docs/architecture.md)         | System design, WebSocket protocol, data flow     |
-| [../docs/coding-standards.md](../docs/coding-standards.md) | Type hygiene, error handling, React patterns     |
-| [../docs/testing.md](../docs/testing.md)                   | TDD workflow, determinism, real deps over mocks  |
-| [../SECURITY.md](../SECURITY.md)                           | Relay threat model, E2E encryption               |
+| File                                                                               | What it covers                                   |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [../../CLAUDE.md](../../CLAUDE.md)                                                 | Repository overview, critical rules, quick start |
+| [../../docs/upstream/architecture.md](../../docs/upstream/architecture.md)         | System design, WebSocket protocol, data flow     |
+| [../../docs/upstream/coding-standards.md](../../docs/upstream/coding-standards.md) | Type hygiene, error handling, React patterns     |
+| [../../docs/upstream/testing.md](../../docs/upstream/testing.md)                   | TDD workflow, determinism, real deps over mocks  |
+| [../../SECURITY.md](../../SECURITY.md)                                             | Relay threat model, E2E encryption               |

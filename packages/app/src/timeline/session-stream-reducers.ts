@@ -161,6 +161,7 @@ export interface ProcessTimelineResponseInput {
 }
 
 export interface ProcessTimelineResponseOutput {
+  replaced: boolean;
   commit: "apply" | "discard";
   tail: StreamItem[];
   head: StreamItem[];
@@ -1248,6 +1249,7 @@ export function processTimelineResponse(
   // ------------------------------------------------------------------
   if (payload.error) {
     return {
+      replaced: false,
       commit: "apply",
       tail: currentTail,
       head: currentHead,
@@ -1318,6 +1320,7 @@ export function processTimelineResponse(
   });
   const discard = resumeTailPolicy.kind === "discard";
   let timelineResult: TimelinePathResult;
+  let replaced = false;
   if (discard) {
     timelineResult = {
       tail: currentTail,
@@ -1343,6 +1346,7 @@ export function processTimelineResponse(
       toHydratedEvents,
     });
   } else if (replace || resumeTailPolicy.kind === "replace") {
+    replaced = true;
     const isResumeReplacement = resumeTailPolicy.kind === "replace";
     timelineResult = applyTimelineReplacePath({
       timelineUnits,
@@ -1407,6 +1411,7 @@ export function processTimelineResponse(
   const commit = discard ? "discard" : "apply";
 
   return {
+    replaced,
     commit,
     tail: nextTail,
     head: nextHead,
@@ -1803,6 +1808,7 @@ interface StreamStatePatch {
   head?: StreamItem[];
   acknowledgedClientMessageIds?: readonly string[];
   taskSnapshot?: TodoEntry[];
+  timelineCursor?: TimelineCursor;
 }
 
 export function deriveAgentStreamTurnLiveness(
@@ -1829,10 +1835,6 @@ export function deriveAgentStreamTurnLiveness(
 export interface CreateSessionAgentStreamReducerQueueInput {
   serverId: string;
   setAgentStreamState: (serverId: string, agentId: string, state: StreamStatePatch) => void;
-  setAgentTimelineCursor: (
-    serverId: string,
-    state: (prev: Map<string, TimelineCursor>) => Map<string, TimelineCursor>,
-  ) => void;
   recoverTimelineGap: (agentId: string, cursor: { epoch: string; endSeq: number }) => void;
   onCommitted?: (agentId: string) => void;
 }
@@ -1885,11 +1887,38 @@ function cancelAgentStreamReducerFlush(id: number) {
   clearScheduledReducerFlush(handle);
 }
 
+function resolveCommittedTimelineCursor(
+  current: TimelineCursor | undefined,
+  next: TimelineCursor | null | undefined,
+  lastEvent: AgentStreamReducerEvent | undefined,
+): TimelineCursor | undefined {
+  if (!next) return undefined;
+  if (
+    current &&
+    lastEvent &&
+    typeof lastEvent.seq === "number" &&
+    typeof lastEvent.epoch === "string" &&
+    current.epoch === lastEvent.epoch &&
+    lastEvent.seq >= current.startSeq &&
+    lastEvent.seq <= current.endSeq
+  ) {
+    return undefined;
+  }
+  if (
+    current &&
+    current.epoch === next.epoch &&
+    current.startSeq === next.startSeq &&
+    current.endSeq === next.endSeq
+  ) {
+    return undefined;
+  }
+  return next;
+}
+
 export function createSessionAgentStreamReducerQueue(
   input: CreateSessionAgentStreamReducerQueueInput,
 ): AgentStreamReducerQueue {
-  const { serverId, setAgentStreamState, setAgentTimelineCursor, recoverTimelineGap, onCommitted } =
-    input;
+  const { serverId, setAgentStreamState, recoverTimelineGap, onCommitted } = input;
 
   return createAgentStreamReducerQueue({
     getSnapshot: (agentId) => {
@@ -1904,11 +1933,21 @@ export function createSessionAgentStreamReducerQueue(
       };
     },
     commit: (agentId, result, events) => {
+      const timelineCursor = result.cursorChanged
+        ? resolveCommittedTimelineCursor(
+            useSessionStore.getState().sessions[serverId]?.agentTimelineCursor.get(agentId),
+            result.cursor,
+            events.at(-1),
+          )
+        : undefined;
+      // One store write per commit: every write reruns every mounted store selector, and a
+      // separate cursor write would also expose the new tail with the old cursor in between.
       if (
         result.changedTail ||
         result.changedHead ||
         result.acknowledgedClientMessageIds.length > 0 ||
-        result.taskSnapshot !== undefined
+        result.taskSnapshot !== undefined ||
+        timelineCursor !== undefined
       ) {
         setAgentStreamState(serverId, agentId, {
           ...(result.changedTail ? { tail: result.tail } : {}),
@@ -1917,35 +1956,7 @@ export function createSessionAgentStreamReducerQueue(
             ? { acknowledgedClientMessageIds: result.acknowledgedClientMessageIds }
             : {}),
           ...(result.taskSnapshot !== undefined ? { taskSnapshot: result.taskSnapshot } : {}),
-        });
-      }
-      if (result.cursorChanged && result.cursor) {
-        const nextCursor = result.cursor;
-        const lastEvent = events.at(-1);
-        setAgentTimelineCursor(serverId, (prev) => {
-          const current = prev.get(agentId);
-          if (
-            current &&
-            lastEvent &&
-            typeof lastEvent.seq === "number" &&
-            typeof lastEvent.epoch === "string" &&
-            current.epoch === lastEvent.epoch &&
-            lastEvent.seq >= current.startSeq &&
-            lastEvent.seq <= current.endSeq
-          ) {
-            return prev;
-          }
-          if (
-            current &&
-            current.epoch === nextCursor.epoch &&
-            current.startSeq === nextCursor.startSeq &&
-            current.endSeq === nextCursor.endSeq
-          ) {
-            return prev;
-          }
-          const next = new Map(prev);
-          next.set(agentId, nextCursor);
-          return next;
+          ...(timelineCursor !== undefined ? { timelineCursor } : {}),
         });
       }
       onCommitted?.(agentId);

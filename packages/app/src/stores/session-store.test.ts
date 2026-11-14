@@ -12,6 +12,7 @@ import {
   type Agent,
   type WorkspaceDescriptor,
 } from "./session-store";
+import { useQueuedMessageSnapshot } from "./queued-message-snapshot";
 import type { StreamItem } from "../types/stream";
 import { reduceTurnLiveness, type TurnLivenessTransition } from "@/timeline/turn-liveness";
 
@@ -86,6 +87,7 @@ function createWorkspace(
 
 afterEach(() => {
   useSessionStore.getState().clearSession("test-server");
+  useQueuedMessageSnapshot.setState({ byServer: {} });
 });
 
 function initializeTestSession(): void {
@@ -183,6 +185,36 @@ describe("agent task state", () => {
     expect(useSessionStore.getState().sessions["test-server"]?.agentTasks.get("agent-1")).toEqual(
       todo.items,
     );
+  });
+
+  it("prefers live head tasks and keeps the task map when a response leaves them unchanged", () => {
+    initializeTestSession();
+    const todo = (id: string, text: string): StreamItem => ({
+      kind: "todo_list",
+      id,
+      provider: "codex",
+      timestamp: new Date("2026-08-11T10:00:00.000Z"),
+      activity: { type: "started", task: text },
+      items: [{ text, status: "in_progress", completed: false }],
+    });
+    const apply = (head: StreamItem[]) =>
+      useSessionStore.getState().applyAgentTimelineResponseState("test-server", "agent-1", {
+        items: [todo("tail", "Tail")],
+        head,
+        range: null,
+        older: "none",
+        newer: false,
+        synchronized: true,
+        acknowledgedClientMessageIds: [],
+      });
+    const agentTasks = () => useSessionStore.getState().sessions["test-server"]?.agentTasks;
+
+    apply([todo("head", "Head")]);
+    const afterFirst = agentTasks();
+    apply([todo("head", "Head")]);
+
+    expect(taskTexts(afterFirst?.get("agent-1") ?? [])).toEqual(["Head"]);
+    expect(agentTasks()).toBe(afterFirst);
   });
 });
 
@@ -472,6 +504,30 @@ describe("message submission ordering", () => {
 });
 
 describe("normalizeWorkspaceDescriptor", () => {
+  it("defaults omitted notification policy to on and preserves explicit off", () => {
+    const base = {
+      id: "notifications-workspace",
+      projectId: "project",
+      projectDisplayName: "Project",
+      projectRootPath: "/repo",
+      workspaceDirectory: "/repo",
+      projectKind: "git" as const,
+      workspaceKind: "checkout" as const,
+      name: "main",
+      status: "done" as const,
+      activityAt: null,
+      statusEnteredAt: null,
+      archivingAt: null,
+      diffStat: null,
+      scripts: [],
+    };
+
+    expect(normalizeWorkspaceDescriptor(base).notifications).toBe("on");
+    expect(normalizeWorkspaceDescriptor({ ...base, notifications: "off" }).notifications).toBe(
+      "off",
+    );
+  });
+
   it("normalizes workspace scripts and invalid activity timestamps", () => {
     const scripts = [
       {
@@ -820,5 +876,20 @@ describe("removeWorkspace", () => {
     expect(after.sessions).toBe(before.sessions);
     expect(after.session).toBe(before.session);
     expect(after.workspaces).toBe(before.workspaces);
+  });
+});
+
+describe("queued messages", () => {
+  it("restores an agent's queued prompts when its session starts again, as after a reload", () => {
+    const queued = { id: "queued-1", text: "run the tests next", attachments: [] };
+    initializeTestSession();
+    useSessionStore.getState().setQueuedMessages("test-server", new Map([["agent-1", [queued]]]));
+
+    useSessionStore.getState().clearSession("test-server");
+    initializeTestSession();
+
+    expect(
+      useSessionStore.getState().sessions["test-server"]?.queuedMessages.get("agent-1"),
+    ).toEqual([queued]);
   });
 });

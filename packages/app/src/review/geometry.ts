@@ -22,6 +22,8 @@ export interface InlineReviewActions {
   onChangeEditorBody: (body: string) => void;
   onSaveEditor: (body: string) => void;
   onDeleteComment: (id: string) => void;
+  /** The open editor right now, for an editor deciding what to do as it unmounts. */
+  getEditor?: () => InlineReviewEditorState | null;
 }
 
 export function isInlineReviewEditorForTarget(
@@ -72,6 +74,8 @@ export function getSplitInlineReviewThreadState(input: {
   left: ReviewableDiffTarget | null | undefined;
   right: ReviewableDiffTarget | null | undefined;
   reviewActions?: InlineReviewActions;
+  // Narrow split stacks the right thread under the left one instead of side by side.
+  stacked?: boolean;
 }): {
   left: ReturnType<typeof getInlineReviewThreadState>;
   right: ReturnType<typeof getInlineReviewThreadState>;
@@ -85,6 +89,8 @@ export function getSplitInlineReviewThreadState(input: {
     reviewTarget: input.right,
     reviewActions: input.reviewActions,
   });
-  const height = Math.max(left?.height ?? 0, right?.height ?? 0);
+  const height = input.stacked
+    ? (left?.height ?? 0) + (right?.height ?? 0)
+    : Math.max(left?.height ?? 0, right?.height ?? 0);
   return height === 0 ? null : { left, right, height };
 }

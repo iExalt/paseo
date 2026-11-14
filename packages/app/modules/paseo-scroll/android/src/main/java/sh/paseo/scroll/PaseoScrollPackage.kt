@@ -2,6 +2,7 @@ package sh.paseo.scroll
 
 import android.graphics.Matrix
 import android.graphics.Rect
+import android.view.MotionEvent
 import com.facebook.react.ReactPackage
 import com.facebook.react.ViewManagerOnDemandReactPackage
 import com.facebook.react.bridge.NativeModule
@@ -34,9 +35,57 @@ private class PaseoScrollView(context: ThemedReactContext) : ReactScrollView(con
   // Its coordinates ignore inversion. Keep focus/selection bookkeeping, but leave timeline
   // movement to user gestures and explicit scroll commands.
   override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect): Int {
-    // RN's Android scale: -1 becomes a 180-degree rotation with positive scaleY.
-    matrix.getValues(transformValues)
-    if (transformValues[Matrix.MSCALE_Y] < 0) return 0
+    if (isVerticallyInverted()) return 0
     return super.computeScrollDeltaToGetChildRectOnScreen(rect)
   }
+
+  // Android applies wheel and rotary scrolls in content coordinates, which an inverted list
+  // draws upside down. Flip the axes so wheeling up still moves the timeline up on screen.
+  override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+    if (event.actionMasked != MotionEvent.ACTION_SCROLL || !isVerticallyInverted()) {
+      return super.onGenericMotionEvent(event)
+    }
+    val flipped = withVerticalScrollFlipped(event)
+    try {
+      return super.onGenericMotionEvent(flipped)
+    } finally {
+      flipped.recycle()
+    }
+  }
+
+  private fun isVerticallyInverted(): Boolean {
+    // RN's Android scale: -1 becomes a 180-degree rotation with positive scaleY.
+    matrix.getValues(transformValues)
+    return transformValues[Matrix.MSCALE_Y] < 0
+  }
+}
+
+private fun withVerticalScrollFlipped(event: MotionEvent): MotionEvent {
+  val count = event.pointerCount
+  val properties = Array(count) {
+    MotionEvent.PointerProperties().also { p -> event.getPointerProperties(it, p) }
+  }
+  val coords = Array(count) {
+    MotionEvent.PointerCoords().also { c ->
+      event.getPointerCoords(it, c)
+      c.setAxisValue(MotionEvent.AXIS_VSCROLL, -c.getAxisValue(MotionEvent.AXIS_VSCROLL))
+      c.setAxisValue(MotionEvent.AXIS_SCROLL, -c.getAxisValue(MotionEvent.AXIS_SCROLL))
+    }
+  }
+  return MotionEvent.obtain(
+    event.downTime,
+    event.eventTime,
+    event.action,
+    count,
+    properties,
+    coords,
+    event.metaState,
+    event.buttonState,
+    event.xPrecision,
+    event.yPrecision,
+    event.deviceId,
+    event.edgeFlags,
+    event.source,
+    event.flags,
+  )
 }

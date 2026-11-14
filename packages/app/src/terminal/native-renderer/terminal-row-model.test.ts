@@ -2,7 +2,7 @@ import type { TerminalCell } from "@getpaseo/protocol/messages";
 import { describe, expect, test } from "vitest";
 
 import { createTerminalCellStyleResolver, DEFAULT_TERMINAL_THEME } from "./colors";
-import { buildRows } from "./terminal-row-model";
+import { buildRows, createTerminalRowBuilder } from "./terminal-row-model";
 
 function cell(
   char: string,
@@ -116,5 +116,63 @@ describe("terminal row model", () => {
       ["   Claude Code", "text"],
     ]);
     expect(row.runs.map((run) => run.text).join("")).toBe(mascot);
+  });
+
+  test("paints find matches and the current one apart, across a wrapped row", () => {
+    const resolver = createTerminalCellStyleResolver(DEFAULT_TERMINAL_THEME);
+    const row = (text: string) => [...text].map((char) => cell(char));
+    const rows = buildRows({
+      grid: [row("ab-cd"), row("ef-gh")],
+      resolver,
+      find: {
+        firstRow: 10,
+        matches: [
+          { startRow: 10, startCol: 0, endRow: 10, endCol: 2 },
+          { startRow: 10, startCol: 3, endRow: 11, endCol: 2 },
+        ],
+        current: { startRow: 10, startCol: 3, endRow: 11, endCol: 2 },
+        match: { backgroundColor: "#111111", foregroundColor: "#eeeeee" },
+        currentMatch: { backgroundColor: "#222222", foregroundColor: "#dddddd" },
+      },
+    });
+    const paint = (index: number) =>
+      rows[index]!.runs.map((run) => [run.text, run.style.backgroundColor ?? null]);
+    expect(paint(0)).toEqual([
+      ["ab", "#111111"],
+      ["-", null],
+      ["cd", "#222222"],
+    ]);
+    expect(paint(1)).toEqual([
+      ["ef", "#222222"],
+      ["-gh", null],
+    ]);
+  });
+
+  test("reuses unchanged rows and rebuilds changed or highlighted ones", () => {
+    const resolver = createTerminalCellStyleResolver(DEFAULT_TERMINAL_THEME);
+    const build = createTerminalRowBuilder();
+    const grid = (second: string) => [
+      [cell("$"), cell(" ")],
+      [cell(second), cell(" ")],
+    ];
+
+    const first = build({ grid: grid("a"), resolver });
+    const next = build({ grid: grid("b"), resolver });
+    expect(next[0]).toBe(first[0]);
+    expect(next[1]).not.toBe(first[1]);
+    expect(next[1].runs[0].text).toBe("b ");
+
+    const selected = build({
+      grid: grid("b"),
+      resolver,
+      selection: {
+        range: { start: { row: 0, col: 0 }, end: { row: 0, col: 0 }, coordinateEpoch: 0 },
+        firstRow: 0,
+        backgroundColor: "#fff",
+        foregroundColor: "#000",
+      },
+    });
+    expect(selected[0]).not.toBe(next[0]);
+    expect(selected[0].hash).not.toBe(next[0].hash);
   });
 });

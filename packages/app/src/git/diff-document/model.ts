@@ -8,6 +8,7 @@ import {
 } from "@/utils/diff-layout";
 import { compactHighlightTokens } from "@/utils/diff-rendering";
 import { getInlineReviewThreadState, getSplitInlineReviewThreadState } from "@/review/geometry";
+import { isReviewOverlayStacked } from "./review-overlay-geometry";
 import { advancesFor, requiresShaping } from "./text-measurement";
 import type {
   BuildDiffDocumentModelInput,
@@ -727,7 +728,7 @@ const TAB_SIZE = 4;
 function segmentGraphemes(text: string): Array<Omit<DiffGrapheme, "width">> {
   const segments: Array<Omit<DiffGrapheme, "width">> = [];
   let column = 0;
-  for (let index = 0; index < text.length; ) {
+  for (let index = 0; index < text.length;) {
     const end = findClusterBreak(text, index);
     const segment = text.slice(index, end);
     const isTab = segment === "\t";
@@ -780,7 +781,7 @@ export function fragmentWidthForRange(fragment: DiffFragment, start: number, end
 
 export function graphemeBoundaries(text: string): number[] {
   const boundaries = [0];
-  for (let index = 0; index < text.length; ) {
+  for (let index = 0; index < text.length;) {
     index = findClusterBreak(text, index);
     boundaries.push(index);
   }
@@ -801,6 +802,10 @@ function reviewHeightForCells(
         left: cells[0]?.reviewTarget,
         right: cells[1]?.reviewTarget,
         reviewActions: input.reviewActions,
+        stacked: isReviewOverlayStacked({
+          viewportWidth: input.viewportWidth,
+          columnCount: cells.length,
+        }),
       })?.height ?? 0
     );
   }

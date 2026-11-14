@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import {
   readDaemonInstance,
   isSameDaemonInstance,
@@ -9,7 +9,7 @@ import {
 import { setTimeout as delay } from "node:timers/promises";
 import type { DaemonGetStatusResponse } from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
-import { withOutput, type CommandOptions } from "../../output/index.js";
+import { withOutput, type CommandOptions, type SingleResult } from "../../output/index.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { describeDaemonTarget } from "../../utils/daemon-target.js";
 import { parseTimeoutMs, rejectRemovedLaunchFlags } from "./local-daemon.js";
@@ -24,12 +24,25 @@ export function daemonRestartCommand(): Command {
   )
     .option("--timeout <seconds>", "Replacement readiness deadline (default: 600)")
     .option("--kill-terminals", "Close every terminal instead of keeping them across the restart")
+    .option("--replace-supervisor", "Replace the local supervisor with this installation's daemon")
+    .addOption(new Option("--expected-worker-pid <pid>").hideHelp())
     .action(withOutput(runRestartCommand));
 }
 
 type DaemonStatus = DaemonGetStatusResponse["payload"];
 
-export async function runRestartCommand(options: CommandOptions, _command: Command) {
+export async function runRestartCommand(
+  options: CommandOptions,
+  _command: Command,
+): Promise<SingleResult<Record<string, unknown>>> {
+  if (options.replaceSupervisor === true) {
+    const { replaceSupervisor } = await import("./replace-supervisor.js");
+    return replaceSupervisor(options, _command);
+  }
+  return restartWorker(options);
+}
+
+async function restartWorker(options: CommandOptions) {
   const target = options.daemonTarget;
   const deadline = Date.now() + parseTimeoutMs(options.timeout);
   const remaining = () => Math.max(1, deadline - Date.now());
@@ -97,7 +110,9 @@ export async function runRestartCommand(options: CommandOptions, _command: Comma
         if (replacement.getLastServerInfoMessage()?.serverId !== serverId)
           throw new Error("Connected peer identity changed");
         // Status probes every provider, so it can take seconds on a healthy worker.
-        const status = await replacement.getDaemonStatus({ timeout: remaining() });
+        const status = await replacement.getDaemonStatus({
+          timeout: remaining(),
+        });
         if (status.pid !== workerPid) {
           await checkSupervisor();
           await confirmTerminalsClosed(status);
@@ -115,7 +130,9 @@ export async function runRestartCommand(options: CommandOptions, _command: Comma
               idField: "action" as const,
               columns: [],
               renderHuman: () =>
-                `Restarted worker ${workerPid} → ${status.pid} at ${describeDaemonTarget(target)}. Supervisor launch retained.`,
+                `Restarted worker ${workerPid} → ${status.pid} at ${describeDaemonTarget(
+                  target,
+                )}. Supervisor launch retained.`,
             },
           };
         }
@@ -132,7 +149,9 @@ export async function runRestartCommand(options: CommandOptions, _command: Comma
   }
   throw {
     code: "RESTART_NOT_CONFIRMED",
-    message: `Replacement was not confirmed for ${describeDaemonTarget(target)}. Restart acknowledged: ${acknowledged}. Last observation: ${String(lastError)}`,
+    message: `Replacement was not confirmed for ${describeDaemonTarget(
+      target,
+    )}. Restart acknowledged: ${acknowledged}. Last observation: ${String(lastError)}`,
   };
 }
 

@@ -7,7 +7,7 @@ import {
 } from "@/runtime/replica-cache/row-store-sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentStreamEventPayload } from "@getpaseo/protocol/messages";
-import type { CachedTimeline } from "@/runtime/replica-cache";
+import type { CachedTimeline, CommittedTimeline } from "@/runtime/replica-cache";
 import { selectAgentTimelineState, useSessionStore } from "@/stores/session-store";
 import { useCreateFlowStore, type PendingCreateAttempt } from "@/stores/create-flow-store";
 import type { StreamItem } from "@/types/stream";
@@ -17,6 +17,11 @@ import {
   type TimelineReplicaStorage,
   type ViewedTimelineOwner,
 } from "./viewed-timeline-sync";
+
+// What a storage read returns for a commit: the replica joins the live head after the tail.
+function joinCommitted({ head, ...timeline }: CommittedTimeline): CachedTimeline {
+  return { ...timeline, items: [...timeline.items, ...(head ?? [])] };
+}
 
 const SERVER_ID = "timeline-replica-host";
 const AGENT_ID = "agent-1";
@@ -270,7 +275,7 @@ describe("viewed timeline persistence", () => {
     const storage: TimelineReplicaStorage = {
       readTimeline: async () => durable,
       commitTimeline: (_serverId, _agentId, timeline) => {
-        pending = timeline;
+        pending = joinCommitted(timeline);
       },
     };
     const first = createOwner(storage);
@@ -458,7 +463,7 @@ describe("viewed timeline persistence", () => {
     const commits: CachedTimeline[] = [];
     const owner = createOwner({
       readTimeline: async () => undefined,
-      commitTimeline: (_serverId, _agentId, timeline) => commits.push(timeline),
+      commitTimeline: (_serverId, _agentId, timeline) => commits.push(joinCommitted(timeline)),
     });
     owner.enqueueStreamEvent(AGENT_ID, {
       event: {
@@ -760,6 +765,80 @@ describe("SQLite baseline restoration", () => {
       release();
       await preparation;
       database.close();
+    }
+  });
+});
+
+describe("timeline gap pages", () => {
+  it("merges the rows after a jump window into one range without detaching the tail", () => {
+    useSessionStore.getState().initializeSession(SERVER_ID, null);
+    const loaded = (startSeq: number, endSeq: number) =>
+      Array.from({ length: endSeq - startSeq + 1 }, (_, index) =>
+        item(`loaded-${startSeq + index}`, "loaded", startSeq + index),
+      );
+    useSessionStore.getState().applyAgentTimelineResponseState(SERVER_ID, AGENT_ID, {
+      items: [...loaded(4, 43), ...loaded(101, 140)],
+      head: [],
+      range: {
+        epoch: "epoch-1",
+        startSeq: 101,
+        endSeq: 140,
+        retainedRanges: [{ startSeq: 4, endSeq: 43, hasOlder: true }],
+      },
+      older: "available",
+      newer: false,
+      synchronized: true,
+      acknowledgedClientMessageIds: [],
+    });
+    const owner = createOwner({
+      readTimeline: async () => undefined,
+      commitTimeline: () => undefined,
+    });
+    try {
+      owner.applyTimelineResponse({
+        requestId: "gap",
+        agentId: AGENT_ID,
+        agent: null,
+        direction: "after",
+        projection: "projected",
+        mergeWindow: true,
+        reset: false,
+        epoch: "epoch-1",
+        window: { minSeq: 1, maxSeq: 140, nextSeq: 141 },
+        startCursor: { epoch: "epoch-1", seq: 44 },
+        endCursor: { epoch: "epoch-1", seq: 100 },
+        entries: Array.from({ length: 57 }, (_, index) => ({
+          provider: "codex",
+          item: { type: "user_message" as const, text: `gap ${44 + index}` },
+          timestamp: "2026-08-26T10:00:00.000Z",
+          seqStart: 44 + index,
+          seqEnd: 44 + index,
+          sourceSeqRanges: [{ startSeq: 44 + index, endSeq: 44 + index }],
+          collapsed: [],
+        })),
+        error: null,
+        hasNewer: true,
+        hasOlder: true,
+        staleCursor: false,
+        gap: false,
+      });
+
+      const timeline = selectAgentTimelineState(
+        useSessionStore.getState().sessions[SERVER_ID],
+        AGENT_ID,
+      );
+      expect(timeline.status === "synced" && timeline.range).toEqual({
+        epoch: "epoch-1",
+        startSeq: 4,
+        endSeq: 140,
+      });
+      expect(timeline.status === "synced" && timeline.newer).toBe("none");
+      expect(timeline.status === "synced" && timeline.older).toBe("available");
+      const seqs =
+        timeline.status === "synced" ? timeline.items.map((row) => row.timelineCursor?.seq) : [];
+      expect(seqs).toEqual(Array.from({ length: 137 }, (_, index) => 4 + index));
+    } finally {
+      owner.dispose();
     }
   });
 });

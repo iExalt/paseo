@@ -385,7 +385,7 @@ describe("translation resources", () => {
     expect(en.settings.host.notFound).toBe("Host not found");
     expect(en.settings.host.connections.title).toBe("Connections");
     expect(en.settings.host.daemon.restart.title).toBe("Restart daemon");
-    expect(en.settings.host.orchestration.enableTools.title).toBe("Enable Paseo tools");
+    expect(en.settings.host.orchestration.enableTools.title).toBe("Enable native Paseo tools");
     expect(en.settings.providers.title).toBe("Providers");
     expect(en.settings.providers.models.addModel).toBe("Add model");
     expect(en.settings.providers.diagnostic.title).toBe("Diagnostic");
@@ -674,11 +674,6 @@ describe("translation resources", () => {
       "All recent sessions are already imported.",
     );
     expect(en.importSession.empty.noProviderSessions).toBe("No {{provider}} sessions found.");
-    expect(en.sidebar.worktreeSetup.title).toBe("Set up worktree scripts");
-    expect(en.sidebar.worktreeSetup.description).toBe(
-      "Add setup commands so new worktrees can install dependencies and prepare themselves automatically.",
-    );
-    expect(en.sidebar.worktreeSetup.openProjectSettings).toBe("Open project settings");
   });
 
   it("includes remaining small utility chrome keys for the Batch 4O migration", () => {
@@ -753,7 +748,7 @@ describe("translation resources", () => {
     expect(en.desktop.updates.callout.versionReady).toBe("{{version}} is ready to install.");
     expect(en.desktop.updates.callout.newVersionReady).toBe("A new version is ready to install.");
     expect(en.desktop.updates.callout.restartWarning).toBe(
-      "Upgrading the app will stop running agents and close terminal sessions.",
+      "The update waits for active agents and terminals to finish before restarting.",
     );
     expect(en.desktop.rosetta.title).toBe("Download the Apple Silicon build");
     expect(en.desktop.rosetta.runningIntel).toBe(

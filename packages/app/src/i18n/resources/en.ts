@@ -1,4 +1,53 @@
 export const en = {
+  nativePermissions: {
+    notifications: {
+      granted: "Notifications are allowed.",
+      prompt: "Paseo has not asked for notification access yet.",
+      notGranted: "Notifications are not allowed yet.",
+      blocked: "Notifications are blocked. Allow them in system settings.",
+      unavailable: "This build has no push notifications.",
+    },
+    microphone: {
+      granted: "Microphone access is allowed.",
+      prompt: "Paseo has not asked for microphone access yet.",
+      notGranted: "Microphone access is not allowed yet.",
+      blocked: "Microphone access is blocked. Allow it in system settings.",
+      unavailable: "Microphone status is unavailable.",
+    },
+    openSettings: "Open settings",
+  },
+  nativeBrowser: {
+    dataDescription:
+      "Clears cookies and site data for every web view in Paseo, including browser tabs.",
+  },
+  nativeNotifications: {
+    preview: {
+      label: "From notification",
+      truncated: "Preview only. The full conversation will appear when the host connects.",
+    },
+    sound: "Sound and alerts",
+    soundHint: "Choose how Paseo notifications sound and appear",
+    open: "Open",
+    hostsTitle: "Push registration",
+    hostsHint: "Each host sends notifications to the push token this device gives it.",
+    reregister: "Re-register",
+    status: {
+      pending: "Registering…",
+      sent: "Sent to host",
+      notConnected: "Not connected",
+      noPermission: "No permission",
+      noToken: "No push token",
+      failed: "Failed",
+    },
+    test: {
+      send: "Send test",
+      sending: "Sending a test notification…",
+      accepted: "Test notification sent. It should arrive shortly.",
+      noToken: "This host has no push token from this device. Re-register first.",
+      failed: "Test notification failed: {{error}}",
+      updateHost: "Update this host to send a test notification",
+    },
+  },
   paneFind: {
     connectionFailure: "Could not search this chat. Check the host connection and retry.",
     historyChangedFailure: "The chat changed while searching. Search again.",
@@ -329,6 +378,8 @@ export const en = {
     actions: {
       copyCode: "Copy code",
       copyTurn: "Copy turn",
+      selectText: "Select text",
+      selectTextTruncated: "Showing the first 50,000 characters. Copy turn copies all of it.",
       copyMessage: "Copy message",
       forkMenu: "Fork chat from here",
       forkInNewTab: "Fork in a new tab",
@@ -699,6 +750,8 @@ export const en = {
         failedToCloseAgent: "Failed to close agent",
       },
       confirmations: {
+        closeTabsAboveTitle: "Close tabs above?",
+        closeTabsBelowTitle: "Close tabs below?",
         close: "Close",
         cancel: "Cancel",
         archive: "Archive",
@@ -740,6 +793,7 @@ export const en = {
         importSession: "Import session",
         copyPath: "Copy workspace path",
         copyBranchName: "Copy branch name",
+        copyProviderSessionId: "Copy session ID",
         showSetup: "Show setup",
       },
       toasts: {
@@ -748,6 +802,7 @@ export const en = {
         terminalQueued: "Preparing workspace, opening terminal when ready...",
         workspacePathCopiedLabel: "Workspace path",
         branchNameCopiedLabel: "Branch name",
+        providerSessionIdCopiedLabel: "Session ID",
       },
     },
     scripts: {
@@ -1260,12 +1315,6 @@ export const en = {
       search: "Search",
       schedules: "Schedules",
     },
-    worktreeSetup: {
-      title: "Set up worktree scripts",
-      description:
-        "Add setup commands so new worktrees can install dependencies and prepare themselves automatically.",
-      openProjectSettings: "Open project settings",
-    },
     project: {
       actions: {
         menu: "Project actions",
@@ -1324,6 +1373,10 @@ export const en = {
         hideFromSidebar: "Hide from sidebar",
         archiving: "Archiving...",
         hiding: "Hiding...",
+        muteNotifications: "Mute notifications",
+        unmuteNotifications: "Unmute notifications",
+        updatingNotifications: "Updating notifications...",
+        updateHostForNotifications: "Update this host to manage notifications.",
       },
       confirmations: {
         hideTitle: "Hide workspace?",
@@ -1467,11 +1520,57 @@ export const en = {
       },
       advancedSettings: "Advanced settings",
       openAdvancedSettings: "Open advanced daemon settings",
+      upgrade: {
+        current: "Daemon version",
+        currentHint: "Running on this host",
+        checking: "Checking daemon update",
+        checkingHint: "Verifying which desktop release should manage this daemon.",
+        waiting: "Waiting for agents to finish",
+        waitingHint: "Updates automatically when idle. Keep Paseo open.",
+        upgrading: "Updating daemon",
+        upgradingHint: "Reconnecting automatically when the update finishes.",
+        failed: "Daemon update failed",
+        failedHint: "Retry checks whether the daemon can update safely; busy agents keep running.",
+        unsupported: "Daemon restart required",
+        unsupportedHint:
+          "This daemon cannot update without a restart. Use Danger zone when your agents have finished.",
+        retry: "Retry when idle",
+        retrying: "Retrying…",
+      },
       versionMismatch:
         "App and daemon versions don't match. Update both to the same version for the best experience.",
       loadFailed: "Unable to load desktop daemon status.",
     },
     updates: {
+      nix: {
+        checking: "Checking for updates…",
+        downloading: "Downloading {{version}}…",
+        applying: "Installing {{version}}…",
+        restarting: "Restarting…",
+        failed: "Update failed: {{error}}",
+        ready: "{{version}} is downloaded and ready to install",
+        available: "{{version}} is available",
+        restartRequired: "{{version}} is installed; restart to use it",
+        upToDate: "Up to date (checked {{time}})",
+        notChecked: "Not checked yet",
+        checkAction: "Check",
+        updateAction: "Update",
+        restartAction: "Restart",
+        updateTitle: "Update to {{version}}?",
+        updateMessage: "Paseo will install the update and restart.",
+        updateConfirm: "Update",
+        restartTitle: "Restart to finish updating to {{version}}?",
+        restartMessage: "Paseo will restart and use the new version.",
+        restartConfirm: "Restart",
+        agentsKeepRunning:
+          "Running agents ({{count}}) keep working; the background service updates after they finish.",
+        lastAttemptFailed: "The last attempt failed: {{error}}",
+        updateTooltip: "Update to {{version}}",
+        restartTooltip: "Restart to finish updating to {{version}}",
+        failedTooltip: "Update failed",
+        failedTitle: "Update failed",
+        tryAgain: "Try again",
+      },
       status: {
         checking: "Checking for app updates...",
         installing: "Installing app update...",
@@ -1503,7 +1602,8 @@ export const en = {
         installingDescription: "Installing and restarting...",
         versionReady: "{{version}} is ready to install.",
         newVersionReady: "A new version is ready to install.",
-        restartWarning: "Upgrading the app will stop running agents and close terminal sessions.",
+        restartWarning:
+          "The update waits for active agents and terminals to finish before restarting.",
       },
     },
     settings: {
@@ -1956,6 +2056,8 @@ export const en = {
     archiveTooltip: "Archive subagent",
     archiveFinishedAction: "Archive finished subagents",
     archiveFinishedRetry: "Retry ({{failed}}/{{total}})",
+    showFinished: "Show {{count}} finished",
+    hideFinished: "Hide finished",
   },
   panels: {
     draft: {
@@ -2042,8 +2144,10 @@ export const en = {
     output: "Output",
   },
   turnSummary: {
+    messages: { one: "wrote {{count}} message", other: "wrote {{count}} messages" },
     details: "View turn details",
     sentBy: "Sent by {{name}}",
+    agentMessage: "Agent message",
     showMore: "Show more",
     showLess: "Show less",
   },
@@ -2065,6 +2169,7 @@ export const en = {
       one: "searched {{count}} time",
       other: "searched {{count}} times",
     },
+    sentMessages: { one: "sent {{count}} message", other: "sent {{count}} messages" },
     otherTools: {
       one: "used {{count}} other tool",
       other: "used {{count}} other tools",
@@ -2265,7 +2370,7 @@ export const en = {
     editor: {
       title: "Editor",
       vimKeybindings: "Vim keybindings",
-      vimHint: "Applies to source files on web and desktop.",
+      vimHint: "Applies to source files in the editor.",
     },
     files: {
       title: "Files",
@@ -2463,7 +2568,8 @@ export const en = {
           interrupt: "When the agent is running, Enter interrupts. Command/Ctrl+Enter queues.",
           steer:
             "When the agent is running, Enter steers the active turn. Command/Ctrl+Enter queues.",
-          queue: "When the agent is running, Enter queues. Command/Ctrl+Enter submits.",
+          queue:
+            "When the agent is running, Enter queues. Command/Ctrl+Enter steers the active turn.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2551,11 +2657,44 @@ export const en = {
       },
     },
     about: {
+      preferenceTransfer: {
+        title: "Transfer preferences",
+        description:
+          "Export or import selected settings as a plain JSON file. The file may include your personal workspace paths.",
+        exportDisclosure:
+          "The export is plain JSON and can include personal workspace paths. Review it before sharing.",
+        export: "Export",
+        import: "Import",
+        exportTitle: "Share Paseo preferences",
+        sourceLabel: "Paseo on Android",
+        tooLarge: "This preferences file exceeds the 256 KiB limit.",
+        shareUnavailable: "Sharing is not available on this device.",
+        preview: "Preferences from {{source}}",
+        daemonMatch:
+          "{{matched}} matching daemons; {{skipped}} unmatched daemon entries will be skipped.",
+        personalPaths: "The file contains {{count}} personal workspace paths.",
+        exclusions:
+          "Passwords, daemon connections, client identity, push tokens, drafts, attachments, and agent sessions are never transferred.",
+        sourceWins:
+          "After you confirm, selected sections replace those preferences on this device. Other sections stay unchanged.",
+        confirm: "Replace selected preferences",
+        sections: {
+          appearance: "Appearance and app behavior",
+          defaults: "Provider and model defaults",
+          changes: "Changes view",
+          editor: "Preferred editor",
+          shortcuts: "Keyboard shortcuts",
+          sidebar: "Sidebar and service routes",
+          panel: "Panel and file display",
+          workspace: "Workspace layout and selected files",
+        },
+      },
       title: "About",
       appVersion: "App version",
       whatsNewHint: "Release notes for every version",
       thisDevice: "This device",
       connectedHosts: "Connected hosts",
+      hostOverview: "View host overview",
       offline: "Offline",
       versionDiffers: "Version differs from this device",
       releaseChannel: {
@@ -2577,6 +2716,35 @@ export const en = {
         checking: "Checking...",
         alertTitle: "Error",
         alertMessage: "Unable to open the update confirmation dialog.",
+      },
+      nixUpdates: {
+        label: "Nix-managed updates",
+        invalidMarker: "This Nix installation could not be verified.",
+      },
+      forkUpdates: {
+        label: "Fork updates",
+        idle: "Check for a signed stable fork update.",
+        current: "This fork build is up to date.",
+        available: "Version {{version}} is ready to download.",
+        checking: "Checking published fork releases…",
+        downloading: "Downloading and verifying APK…",
+        downloadingProgress: "Downloading and verifying APK… {{percent}}%",
+        downloaded: "Verified update {{version}} is ready to install.",
+        installer:
+          "Installing the update. Paseo closes when it finishes; open it again to use the new version.",
+        canceled: "The installer closed without updating Paseo. You can try again.",
+        installed: "Paseo was updated to {{version}}.",
+        permission: "Allow Paseo to install updates in Android settings, then return here.",
+        failed: "Could not verify the published fork update.",
+        offline: "Could not reach GitHub. Check your connection and retry.",
+        installFailed:
+          "Android did not install the update. Retry, or install it from the GitHub release.",
+        check: "Check",
+        checkingAction: "Checking…",
+        download: "Download",
+        downloadingAction: "Downloading…",
+        install: "Install",
+        continue: "Continue",
       },
     },
     appearance: {
@@ -2654,7 +2822,6 @@ export const en = {
     shortcuts: {
       dialogTitle: "Shortcuts",
       searchPlaceholder: "Search shortcuts",
-      unavailableOnMobile: "Keyboard shortcuts are only available on desktop",
       capturePrompt: "Press shortcut...",
       captureIndexPrompt: "End with a number from 1 to 9.",
       unassigned: "Not set",
@@ -2809,6 +2976,13 @@ export const en = {
         title: "Pair devices",
         rowTitle: "Pair a device",
         rowHint: "Scan a QR code or copy a link to connect your phone to this host",
+        keepAwake: {
+          title: "Keep this Mac awake for the relay",
+          hint: "Prevents sleep on AC power while the relay is on, so remote devices can reach this Mac. Uses more power and runs warmer while plugged in.",
+          activeHint: "Keeps this Mac awake on AC power while the relay is on",
+          waitingHint: "Takes effect when relay is on",
+          updateFailed: "Unable to update keep awake",
+        },
       },
       skills: {
         sectionTitle: "Orchestration skills",
@@ -2859,9 +3033,9 @@ export const en = {
         title: "Orchestration",
         unavailable: "Connect to this host to manage orchestration",
         enableTools: {
-          title: "Enable Paseo tools",
+          title: "Enable native Paseo tools",
           hint: "Agents will be able to manage worktrees, agents and schedules",
-          accessibilityLabel: "Inject Paseo tools",
+          accessibilityLabel: "Enable native Paseo tools",
         },
         systemPrompt: {
           title: "System prompt",
@@ -2873,6 +3047,32 @@ export const en = {
           reset: "Reset",
           save: "Save",
           saving: "Saving...",
+        },
+        replyRules: {
+          title: "Reply notification rules",
+          scope: "Applies to every workspace on {{host}}.",
+          help: "RE2 search matching; text is not normalized. Use anchors for whole replies. Up to 8 rules, 256 UTF-16 code units per pattern, and 16,384 per subject. Flags are unique i, m, or u; Unicode is enabled when omitted.",
+          source: "Pattern",
+          flags: "Flags",
+          add: "Add rule",
+          remove: "Remove rule",
+          save: "Save rules",
+          saving: "Saving...",
+          clear: "Clear all rules",
+          loading: "Loading saved rules...",
+          empty: "No reply rules are saved.",
+          unsupported: "Update this host to manage reply notification rules.",
+          disconnected: "Connect to this host to manage reply notification rules.",
+          readError:
+            "Could not read saved rules: {{error}}. If this is an access error, verify daemon.read permission.",
+          writeError:
+            "Could not save rules: {{error}}. If this is an access error, verify daemon.manage permission.",
+          conflict:
+            "These rules changed on this host while you were editing. Reload saved rules to discard your draft, or keep your draft to intentionally overwrite the latest rules on your next save.",
+          awaitingAuthority: "Saved. Waiting for this host to confirm the updated rules...",
+          reload: "Reload saved rules",
+          keep: "Keep draft",
+          retry: "Retry",
         },
       },
       agents: {

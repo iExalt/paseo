@@ -1,8 +1,9 @@
-import { existsSync, rmSync, statSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, statSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import MarkdownIt from "markdown-it";
 import { projectTimelineRows } from "../timeline-projection.js";
-import { describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test } from "vitest";
 
 import {
   MAX_PROVIDER_IMAGE_BYTES,
@@ -246,4 +247,50 @@ test("simultaneous requests for the same content share the published file", asyn
   ]);
   expect(results[0]).toEqual(results[1]);
   expect(readFileSync(results[0].path).toString()).toBe("concurrent dedupe fixture");
+});
+
+describe("materializing from the original file", () => {
+  const providerCopy = {
+    data: Buffer.from("provider copy").toString("base64"),
+    mimeType: "image/png",
+  };
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+
+  function writeOriginal(name: string, contents: string): string {
+    const dir = mkdtempSync(path.join(os.tmpdir(), "paseo-original-image-"));
+    dirs.push(dir);
+    const originalPath = path.join(dir, name);
+    writeFileSync(originalPath, contents);
+    return originalPath;
+  }
+
+  test("snapshots an unchanged original instead of decoding the provider copy", async () => {
+    const originalPath = writeOriginal("shot.png", "full resolution original");
+    const result = await materializeProviderImage({
+      ...providerCopy,
+      originalPath,
+      observedAt: new Date(Date.now() + 60_000),
+    });
+    writeFileSync(originalPath, "overwritten later");
+    expect(path.basename(path.dirname(result.path))).toMatch(/^paseo-attachments-/);
+    expect(readFileSync(result.path).toString()).toBe("full resolution original");
+  });
+
+  test.each([
+    ["modified after it was observed", () => writeOriginal("shot.png", "original"), new Date(0)],
+    ["not an image", () => writeOriginal("notes.txt", "original"), null],
+    ["missing", () => path.join(path.dirname(writeOriginal("x.png", "")), "missing.png"), null],
+    ["a relative path", () => "shot.png", null],
+  ])(
+    "falls back to the provider copy when the original is %s",
+    async (_label, original, observedAt) => {
+      const result = await materializeProviderImage({
+        ...providerCopy,
+        originalPath: original(),
+        observedAt,
+      });
+      expect(readFileSync(result.path).toString()).toBe("provider copy");
+    },
+  );
 });

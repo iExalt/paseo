@@ -207,6 +207,8 @@ const ClaudeToolDetailPass2Schema = z.union([
         type: "plain_text" as const,
         label: skillName,
         icon: "sparkles" as const,
+        // The output becomes the skill's SKILL.md once the Claude provider attaches it.
+        markdown: true,
         ...(output ? { text: output } : {}),
       } satisfies ToolCallDetail;
     },

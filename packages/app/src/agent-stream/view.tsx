@@ -52,6 +52,7 @@ import type {
 } from "@getpaseo/protocol/agent-types";
 import type { AgentScreenAgent } from "@/hooks/use-agent-screen-state-machine";
 import { useSessionStore } from "@/stores/session-store";
+import { useRetainedSessionSelector } from "@/stores/session-store-hooks/use-retained-session-selector";
 import { useRevealedText } from "@/hooks/use-revealed-text";
 import { useFileExplorerActions } from "@/hooks/use-file-explorer-actions";
 import { useLoadOlderAgentHistory } from "@/hooks/use-load-older-agent-history";
@@ -73,11 +74,14 @@ import { IndentRail } from "@/components/indent-rail";
 import { TurnSummaryLine } from "./turn-collapse/summary-line";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
+import { createReadingSeqDedupe } from "./reading-anchor";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
+import { chatOutlineAvailable } from "@/agent-stream/chat-outline/model";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
+import { useTimelineGapFill } from "./use-timeline-gap-fill";
 import {
   CompletedTurnFooterRow,
   TurnFooter,
@@ -109,6 +113,9 @@ import { isWeb } from "@/constants/platform";
 import type { Theme } from "@/styles/theme";
 import { recordRenderProfileReasons } from "@/utils/render-profiler";
 import { useRetainedPanelActive } from "@/components/retained-panel";
+import { useNotificationPresentation } from "@/notification-open/preview-react";
+import { preserveNotificationPreviewTransform } from "@/notification-open/preview";
+import { NotificationMessagePreview } from "@/notification-open/preview-view";
 import { useStreamHistoryWindow } from "./use-stream-history-window";
 import { PluginTimelineItemView, useInstalledTimelineTransform } from "@/plugins/timeline";
 
@@ -143,16 +150,34 @@ function BottomOverlayInset({ height }: { height: number }) {
 function renderPendingPermissionsNode(input: {
   pendingPermissions: PendingPermission[];
   client: DaemonClient | null;
+  serverId: string;
+  workspaceRoot: string;
+  onOpenWorkspaceFile: (target: InlinePathTarget, disposition: OpenFileDisposition) => void;
+  toast?: ToastApi | null;
 }): ReactNode {
   if (input.pendingPermissions.length === 0) {
     return null;
   }
+  // Question Markdown resolves relative image and file paths against the agent's cwd, as its
+  // replies do; the workspace screen's own resolver uses the workspace directory instead.
   return (
-    <View style={stylesheet.permissionsContainer}>
-      {input.pendingPermissions.map((permission) => (
-        <PermissionRequestCard key={permission.key} permission={permission} client={input.client} />
-      ))}
-    </View>
+    <AssistantFileLinkResolverProvider
+      client={input.client}
+      serverId={input.serverId}
+      workspaceRoot={input.workspaceRoot}
+      onOpenWorkspaceFile={input.onOpenWorkspaceFile}
+      toast={input.toast}
+    >
+      <View style={stylesheet.permissionsContainer}>
+        {input.pendingPermissions.map((permission) => (
+          <PermissionRequestCard
+            key={permission.key}
+            permission={permission}
+            client={input.client}
+          />
+        ))}
+      </View>
+    </AssistantFileLinkResolverProvider>
   );
 }
 
@@ -308,8 +333,6 @@ const AGENT_CAPABILITY_FLAG_KEYS: (keyof AgentCapabilityFlags)[] = [
   "supportsRewindBoth",
 ];
 
-const EMPTY_STREAM_HEAD: StreamItem[] = [];
-
 function useRetainedValue<T>(value: T, active: boolean): T {
   const retainedRef = useRef(value);
   if (active) {
@@ -341,7 +364,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       bottomOverlayControlClearance,
       toast,
       onOpenWorkspaceFile,
-      readOnly = false,
+      readOnly: providedReadOnly = false,
       historyPagination,
     },
     ref,
@@ -378,11 +401,27 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const transformTimelineItem = useInstalledTimelineTransform(resolvedServerId);
 
     const client = useSessionStore((state) => state.sessions[resolvedServerId]?.client ?? null);
-    const sessionStreamHead = useSessionStore((state) =>
-      state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
+    const sessionStreamHead = useRetainedSessionSelector(
+      `${resolvedServerId}\u0000${agentId}`,
+      (state) => state.sessions[resolvedServerId]?.agentStreamHead?.get(agentId),
     );
     const streamHead = providedStreamHead ?? sessionStreamHead;
-    const forkAgent = useForkAgent({ serverId: resolvedServerId, toast, readOnly });
+    const previewPresentation = useNotificationPresentation({
+      serverId: resolvedServerId,
+      agentId,
+      tail: streamItems,
+      head: streamHead,
+      authoritative: isAuthoritativeHistoryReady,
+      pendingPermissions,
+      readOnly: providedReadOnly,
+      routeRequest: routeBottomAnchorRequest,
+    });
+    const { receipt, readOnly } = previewPresentation;
+    const forkAgent = useForkAgent({
+      serverId: resolvedServerId,
+      toast,
+      readOnly,
+    });
     const supportsAgentForkContextCursor = useSessionStore(
       (state) =>
         state.sessions[resolvedServerId]?.serverInfo?.features?.agentForkContextCursor === true,
@@ -397,6 +436,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const isTimelineDetached = useSessionStore(
       (state) => state.sessions[resolvedServerId]?.agentTimelineHasNewer.get(agentId) === true,
     );
+    // Prompt jumps exist only where the daemon indexes prompts.
+    const timelineGapFill = useTimelineGapFill({
+      serverId: resolvedServerId,
+      agentId,
+      enabled: supportsChatOutline && streamRenderStrategy.shouldFillTimelineGaps(),
+    });
 
     const workspaceRoot = context.cwd?.trim() || "";
     const { revealDirectory } = useFileExplorerActions({
@@ -520,15 +565,24 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     // the component reads the current (fresh) streamItems/streamHead from props.
     const effectiveStreamItems = useRetainedValue(streamItems, isActive);
     const effectiveStreamHead = useRetainedValue(streamHead, isActive);
+    const effectivePreviewPresentation = useRetainedValue(previewPresentation, isActive);
+    const presentationTransform = useMemo(
+      () =>
+        preserveNotificationPreviewTransform(
+          transformTimelineItem,
+          effectivePreviewPresentation.previewId,
+        ),
+      [transformTimelineItem, effectivePreviewPresentation.previewId],
+    );
     const effectiveTurnPresentation = useRetainedValue(turnPresentation, isActive);
     const isTurnActive = effectiveTurnPresentation.isActive;
     const presentStream = useMemo(() => createStreamPresentation(), []);
     const presentation = useMemo(
       () =>
         presentStream({
-          tail: effectiveStreamItems,
-          head: effectiveStreamHead ?? EMPTY_STREAM_HEAD,
-          transform: transformTimelineItem,
+          tail: effectivePreviewPresentation.tail,
+          head: effectivePreviewPresentation.head,
+          transform: presentationTransform,
           display: chatDisplay,
           autoExpandReasoning,
           expandedTurnHostIds,
@@ -537,9 +591,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         }),
       [
         presentStream,
-        effectiveStreamItems,
-        effectiveStreamHead,
-        transformTimelineItem,
+        effectivePreviewPresentation.tail,
+        effectivePreviewPresentation.head,
+        presentationTransform,
         chatDisplay,
         autoExpandReasoning,
         expandedTurnHostIds,
@@ -621,7 +675,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       timelineEpoch,
       tail: effectiveStreamItems,
       head: effectiveStreamHead,
-      enabled: supportsChatOutline && chatOutlineEnabled,
+      enabled: chatOutlineAvailable({
+        supported: supportsChatOutline,
+        enabled: chatOutlineEnabled,
+        isCompact: isMobile,
+      }),
       viewportRef,
       onJumpError: handleTimelineHistoryLoadError,
       mountedHistoryMessageIds,
@@ -712,6 +770,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     });
 
     const setToolCallGroupExpanded = toolCallExpansion.setGroupExpanded;
+    // Every disclosure keeps its header under the pointer and opens downward. Compact layouts
+    // open tool calls in a sheet, where toggles leave the timeline's height alone.
+    useEffect(() => {
+      if (isMobile) return;
+      return toolCallExpansion.subscribeBeforeToggle(() =>
+        viewportRef.current?.holdReadingPosition(),
+      );
+    }, [isMobile, toolCallExpansion]);
+
+    const holdReadingPosition = useCallback(
+      (rowId?: string) => viewportRef.current?.holdReadingPosition(rowId),
+      [],
+    );
 
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
@@ -721,8 +792,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             serverId={resolvedServerId}
             agentId={agentId}
             messageId={item.messageId}
+            findItemId={item.id}
             message={item.text}
             sender={item.sender}
+            onAgentMessageToggle={holdReadingPosition}
             images={item.images}
             attachments={item.attachments}
             timestamp={item.timestamp.getTime()}
@@ -751,6 +824,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         agentId,
         client,
         getCollapsedTurn,
+        holdReadingPosition,
         pendingClientMessageIds,
         resolvedServerId,
         setTurnExpanded,
@@ -771,7 +845,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
               {(renderFullContent) => (
                 <AssistantMessage
                   renderFullContent={renderFullContent}
-                  occurrenceKey={createAssistantImageOccurrenceKey({ agentId, itemId: item.id })}
+                  occurrenceKey={createAssistantImageOccurrenceKey({
+                    agentId,
+                    itemId: item.id,
+                  })}
                   message={item.text}
                   timestamp={item.timestamp.getTime()}
                   workspaceRoot={workspaceRoot}
@@ -779,6 +856,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   client={client}
                   spacing={layoutItem.assistantSpacing}
                   phase={layoutItem.phase}
+                  findItemId={item.id}
                 />
               )}
             </ChatFindExpansion>
@@ -929,6 +1007,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const renderStreamItemContent = useCallback(
       (layoutItem: StreamLayoutItem) => {
         const item = layoutItem.item;
+        if (receipt && item.id === previewPresentation.previewId) {
+          return <NotificationMessagePreview receipt={receipt} />;
+        }
         switch (item.kind) {
           case "user_message":
             return renderUserMessageItem(layoutItem, item);
@@ -984,6 +1065,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         getCollapsedTurn,
         setTurnExpanded,
         resolvedServerId,
+        receipt,
+        previewPresentation.previewId,
       ],
     );
 
@@ -1021,8 +1104,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         renderPendingPermissionsNode({
           pendingPermissions: pendingPermissionItems,
           client,
+          serverId: resolvedServerId,
+          workspaceRoot,
+          onOpenWorkspaceFile: handleInlinePathPress,
+          toast,
         }),
-      [client, pendingPermissionItems],
+      [
+        client,
+        handleInlinePathPress,
+        pendingPermissionItems,
+        resolvedServerId,
+        toast,
+        workspaceRoot,
+      ],
     );
     const turnFooterNode = useMemo(
       () =>
@@ -1063,7 +1157,9 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const scrollToBottomContainerStyle = useMemo(
       () => [
         stylesheet.scrollToBottomContainer,
-        { bottom: resolveBottomOverlayControlOffset(bottomOverlayControlClearance) },
+        {
+          bottom: resolveBottomOverlayControlOffset(bottomOverlayControlClearance),
+        },
       ],
       [bottomOverlayControlClearance],
     );
@@ -1095,12 +1191,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       return itemById;
     }, [streamLayout.liveHead]);
 
+    const [readingSeqDedupe] = useState(createReadingSeqDedupe);
+    // The outline and gap fill forget their position on these changes, so start over with them.
+    useEffect(() => readingSeqDedupe.reset(), [agentId, readingSeqDedupe, timelineEpoch]);
+
     const handleReadingPositionChange = useStableEvent((rowId: string | null) => {
       const row =
         rowId === null
           ? undefined
           : (layoutHistoryItemById.get(rowId) ?? layoutLiveHeadItemById.get(rowId));
-      chatOutline.reportReadingPosition(row?.item.timelineCursor?.seq ?? null);
+      const seq = row?.item.timelineCursor?.seq ?? null;
+      if (!readingSeqDedupe.shouldForward(seq)) return;
+      chatOutline.reportReadingPosition(seq);
+      timelineGapFill.reportReadingPosition(seq);
     });
 
     const renderHistoryRow = useCallback(
@@ -1188,6 +1291,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
 
+    const findRows = useMemo(
+      () => [...baseRenderModel.history, ...baseRenderModel.segments.liveHead],
+      [baseRenderModel.history, baseRenderModel.segments.liveHead],
+    );
     const findItems = useMemo(
       () => [...effectiveStreamItems, ...(effectiveStreamHead ?? [])],
       [effectiveStreamItems, effectiveStreamHead],
@@ -1198,6 +1305,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         serverId={resolvedServerId}
         epoch={timelineEpoch}
         items={findItems}
+        rows={findRows}
         viewportRef={viewportRef}
         revealLoadedMessage={revealLoadedMessage}
         visibleMessageIds={mountedMessageIds}
@@ -1216,8 +1324,8 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   renderers,
                   listEmptyComponent,
                   viewportRef,
-                  routeBottomAnchorRequest,
-                  isAuthoritativeHistoryReady,
+                  routeBottomAnchorRequest: previewPresentation.anchorRequest,
+                  isAuthoritativeHistoryReady: previewPresentation.isContentReady,
                   onNearBottomChange: setIsNearBottom,
                   onReadingPositionChange: handleReadingPositionChange,
                   onNearHistoryStart: loadOlder,
@@ -1711,9 +1819,15 @@ function PermissionRequestCard({
 
   return (
     <View style={permissionStyles.container}>
-      <Text style={permissionStyles.title}>{title}</Text>
+      <Text selectable style={permissionStyles.title}>
+        {title}
+      </Text>
 
-      {description ? <Text style={permissionStyles.description}>{description}</Text> : null}
+      {description ? (
+        <Text selectable style={permissionStyles.description}>
+          {description}
+        </Text>
+      ) : null}
 
       {planMarkdown ? (
         <PlanCard
@@ -1899,7 +2013,9 @@ function StreamItemWrapper({ gapBelow, turnIndent, children }: StreamItemWrapper
   const wrapperStyle = useMemo(
     () => [
       stylesheet.streamItemWrapper,
-      { marginBottom: turnIndent === "nested" || turnIndent === "openedHost" ? 0 : gapBelow },
+      {
+        marginBottom: turnIndent === "nested" || turnIndent === "openedHost" ? 0 : gapBelow,
+      },
     ],
     [gapBelow, turnIndent],
   );

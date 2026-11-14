@@ -1,6 +1,8 @@
 import React, {
   useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,6 +28,7 @@ import {
 } from "@/components/ui/text-input";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { createReviewEditorScope } from "./editor";
+import { ReviewEditorRevealContext } from "./reveal";
 import { isWeb } from "@/constants/platform";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import type { Theme } from "@/styles/theme";
@@ -37,6 +40,7 @@ import {
 } from "./store";
 import { buildReviewableDiffTargetKey, type ReviewableDiffTarget } from "@/utils/diff-layout";
 import {
+  INLINE_REVIEW_COMMENT_HEIGHT,
   INLINE_REVIEW_EDITOR_HEIGHT,
   INLINE_REVIEW_GAP,
   INLINE_REVIEW_VERTICAL_PADDING,
@@ -146,6 +150,7 @@ export function useInlineReviewController(input: {
       onCancelEditor: model.cancel,
       onSaveEditor: model.save,
       onDeleteComment: model.delete,
+      getEditor: model.getState,
     }),
     [commentsByTarget, editor, isCompact, model],
   );
@@ -281,6 +286,11 @@ export function InlineReviewThread({
   const editingCommentId = editor?.commentId ?? null;
   const editingExisting =
     editingCommentId !== null && comments.some((comment) => comment.id === editingCommentId);
+  const getEditor = reviewActions.getEditor;
+  const handsOffFocus = useCallback(() => {
+    const next = getEditor?.();
+    return Boolean(next && next.target.key !== reviewTarget.key);
+  }, [getEditor, reviewTarget.key]);
 
   const editorElement = editor ? (
     <InlineReviewEditor
@@ -289,6 +299,7 @@ export function InlineReviewThread({
       onChangeBody={reviewActions.onChangeEditorBody}
       onCancel={reviewActions.onCancelEditor}
       onSave={reviewActions.onSaveEditor}
+      handsOffFocus={handsOffFocus}
       testID="inline-review-editor"
     />
   ) : null;
@@ -397,19 +408,39 @@ export function InlineReviewEditor({
   onChangeBody,
   onCancel,
   onSave,
+  handsOffFocus,
   testID,
 }: {
   body: string;
   onChangeBody: (body: string) => void;
   onCancel: () => void;
   onSave: (body: string) => void;
+  /** True when the editor is moving to another line, whose input takes focus straight over. */
+  handsOffFocus?: () => boolean;
   testID?: string;
 }) {
   const { t } = useTranslation();
   const inputRef = useRef<EditingTextInputHandle | null>(null);
+  const editorBlockRef = useRef<View>(null);
+  const revealHost = useContext(ReviewEditorRevealContext);
   const [isFocused, setIsFocused] = useState(false);
   const trimmedBody = body.trim();
   const canSave = trimmedBody.length > 0;
+
+  // Unmounting a focused input, as when its file collapses, hands focus and the soft keyboard to
+  // the next focusable view, so blur it on the way out. Blur is a no-op unless it has focus. When
+  // the editor moves to another line the new input takes focus itself; blurring first would drop
+  // and reopen the keyboard.
+  const handsOffFocusRef = useRef(handsOffFocus);
+  useLayoutEffect(() => {
+    handsOffFocusRef.current = handsOffFocus;
+  });
+  useLayoutEffect(() => {
+    const input = inputRef.current;
+    return () => {
+      if (!handsOffFocusRef.current?.()) input?.blur();
+    };
+  }, []);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -417,11 +448,28 @@ export function InlineReviewEditor({
 
   const handleFocus = useCallback(() => {
     setIsFocused(true);
-  }, []);
+    if (editorBlockRef.current) revealHost?.focusEditor(editorBlockRef.current);
+  }, [revealHost]);
   const handleBlur = useCallback(() => {
     setIsFocused(false);
-  }, []);
-  const handleSave = useCallback(() => onSave(trimmedBody), [onSave, trimmedBody]);
+    if (editorBlockRef.current) revealHost?.releaseEditor(editorBlockRef.current);
+  }, [revealHost]);
+  useEffect(() => {
+    const element = editorBlockRef.current;
+    return () => {
+      if (element) revealHost?.releaseEditor(element);
+    };
+  }, [revealHost]);
+  // Blur before closing. Taps reach Cancel and Comment with the soft keyboard up, and unmounting
+  // a focused input hands focus, and the keyboard, to the next focusable view.
+  const handleCancel = useCallback(() => {
+    inputRef.current?.blur();
+    onCancel();
+  }, [onCancel]);
+  const handleSave = useCallback(() => {
+    inputRef.current?.blur();
+    onSave(trimmedBody);
+  }, [onSave, trimmedBody]);
 
   useEffect(() => {
     const element = getWebTextInputElement(inputRef.current);
@@ -433,7 +481,7 @@ export function InlineReviewEditor({
       if (event.key === "Escape") {
         event.preventDefault();
         event.stopPropagation();
-        onCancel();
+        handleCancel();
         return;
       }
 
@@ -455,7 +503,7 @@ export function InlineReviewEditor({
     return () => {
       element.removeEventListener("keydown", handleKeyDown);
     };
-  }, [canSave, handleSave, onCancel]);
+  }, [canSave, handleCancel, handleSave]);
 
   const inputStyle = useMemo<StyleProp<TextStyle>>(
     () => [styles.editorInput, isFocused && styles.editorInputFocused],
@@ -463,7 +511,7 @@ export function InlineReviewEditor({
   );
 
   return (
-    <View style={styles.editorBlock} testID={testID}>
+    <View ref={editorBlockRef} style={styles.editorBlock} testID={testID}>
       <TextInput
         ref={inputRef}
         accessibilityLabel={t("review.comment.label")}
@@ -482,7 +530,7 @@ export function InlineReviewEditor({
           accessibilityLabel={t("review.comment.cancelAccessibility")}
           testID={testID ? `${testID}-cancel` : undefined}
           hitSlop={SMALL_ACTION_HIT_SLOP}
-          onPress={onCancel}
+          onPress={handleCancel}
           variant="ghost"
           size="xs"
         >
@@ -558,6 +606,8 @@ const styles = StyleSheet.create((theme) => ({
     flexDirection: "row",
     alignItems: "center",
     gap: theme.spacing[2],
+    // Fill the slot the row geometry reserves; a one-line card is ~44dp and left a blank band.
+    minHeight: INLINE_REVIEW_COMMENT_HEIGHT,
   },
   commentBody: {
     flex: 1,

@@ -1,5 +1,7 @@
 // POSIX-only: symlink fixtures
 /* eslint-disable max-nested-callbacks */
+import { execFileSync } from "node:child_process";
+import { closeSync, constants, openSync } from "node:fs";
 import { mkdtemp, mkdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -31,6 +33,26 @@ describe.skipIf(isPlatform("win32"))("service POSIX-only", () => {
       expect(names).toContain("README.md");
       expect(names).not.toContain("AGENTS.md");
     } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a FIFO without blocking on its open", async () => {
+    const root = await createTempDir("paseo-file-explorer-");
+    const fifo = path.join(root, "pipe");
+    execFileSync("mkfifo", [fifo]);
+
+    try {
+      await expect(readExplorerFile({ root, relativePath: "pipe" })).rejects.toThrow(
+        "Requested path is not a file",
+      );
+    } finally {
+      // Releases an open still blocked waiting for a writer, so a failure can't wedge the pool.
+      try {
+        closeSync(openSync(fifo, constants.O_WRONLY | constants.O_NONBLOCK));
+      } catch {
+        // No reader was waiting.
+      }
       await rm(root, { recursive: true, force: true });
     }
   });

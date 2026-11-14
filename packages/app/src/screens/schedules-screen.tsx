@@ -7,7 +7,7 @@ import {
   type ReactElement,
 } from "react";
 import { ScrollView, Text, View } from "react-native";
-import { useIsFocused } from "expo-router/react-navigation";
+import { useIsFocused } from "expo-router";
 import { CalendarClock, Plus } from "lucide-react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { MenuHeader } from "@/components/headers/menu-header";
@@ -186,7 +186,14 @@ function SchedulesScreenContent(): ReactElement {
         visible={form.mode === "create" || form.mode === "edit"}
         onClose={closeForm}
         mode={form.mode === "edit" ? "edit" : "create"}
-        schedule={form.mode === "edit" ? form.schedule : undefined}
+        schedule={
+          form.mode === "edit"
+            ? (schedules.find(
+                (schedule) =>
+                  schedule.serverId === form.serverId && schedule.id === form.schedule.id,
+              ) ?? form.schedule)
+            : undefined
+        }
       />
     </View>
   );

@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const ar: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "تعذر البحث في هذه المحادثة. تحقق من الاتصال بالمضيف وأعد المحاولة.",
     historyChangedFailure: "تغيّرت المحادثة أثناء البحث. أعد البحث.",
@@ -332,6 +335,8 @@ export const ar: TranslationResources = {
     actions: {
       copyCode: "نسخ الرمز",
       copyTurn: "نسخ بدوره",
+      selectText: "تحديد النص",
+      selectTextTruncated: "يتم عرض أول 50,000 حرف. نسخ بدوره ينسخ كل شيء.",
       copyMessage: "انسخ الرسالة",
       forkMenu: "تفريع الرسالة",
       forkInNewTab: "تفريع في تبويب جديد",
@@ -702,6 +707,8 @@ export const ar: TranslationResources = {
         failedToCloseAgent: "فشل في إغلاق الوكيل",
       },
       confirmations: {
+        closeTabsAboveTitle: "هل تريد إغلاق علامات التبويب أعلاه؟",
+        closeTabsBelowTitle: "هل تريد إغلاق علامات التبويب أدناه؟",
         unsavedTitle: "تغييرات غير محفوظة",
         unsavedMessage:
           "تحتوي علامة التبويب هذه على تغييرات غير محفوظة. سيؤدي إغلاقها إلى تجاهل المسودة.",
@@ -745,6 +752,7 @@ export const ar: TranslationResources = {
         importSession: "جلسة الاستيراد",
         copyPath: "نسخ مسار مساحة العمل",
         copyBranchName: "انسخ اسم الفرع",
+        copyProviderSessionId: "نسخ معرف الجلسة",
         showSetup: "إظهار الإعداد",
       },
       toasts: {
@@ -753,6 +761,7 @@ export const ar: TranslationResources = {
         terminalQueued: "تحضير مساحة العمل، وفتح الوحدة الطرفية عندما تكون جاهزة...",
         workspacePathCopiedLabel: "مسار Workspace",
         branchNameCopiedLabel: "اسم الفرع",
+        providerSessionIdCopiedLabel: "معرف الجلسة",
       },
     },
     scripts: {
@@ -1252,12 +1261,6 @@ export const ar: TranslationResources = {
       search: "بحث",
       schedules: "الجداول",
     },
-    worktreeSetup: {
-      title: "إعداد البرامج النصية لشجرة العمل",
-      description:
-        "أضف أوامر الإعداد حتى تتمكن أشجار العمل الجديدة من تثبيت التبعيات وإعداد نفسها تلقائيًا.",
-      openProjectSettings: "افتح إعدادات المشروع",
-    },
     project: {
       actions: {
         menu: "إجراءات المشروع",
@@ -1316,6 +1319,10 @@ export const ar: TranslationResources = {
         hideFromSidebar: "إخفاء من الشريط الجانبي",
         archiving: "أرشفة...",
         hiding: "إخفاء...",
+        muteNotifications: "كتم الإشعارات",
+        unmuteNotifications: "إلغاء كتم الإشعارات",
+        updatingNotifications: "جارٍ تحديث الإشعارات...",
+        updateHostForNotifications: "حدّث هذا المضيف لإدارة الإشعارات.",
       },
       confirmations: {
         hideTitle: "إخفاء مساحة العمل؟",
@@ -1443,11 +1450,41 @@ export const ar: TranslationResources = {
       },
       advancedSettings: "الإعدادات المتقدمة",
       openAdvancedSettings: "افتح إعدادات البرنامج الخفي المتقدمة",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "إصدارا التطبيق والبرنامج الخفي غير متطابقين. قم بتحديث كلاهما إلى نفس الإصدار للحصول على أفضل تجربة.",
       loadFailed: "غير قادر على تحميل حالة البرنامج الخفي لسطح المكتب.",
     },
     updates: {
+      nix: {
+        checking: "جارٍ البحث عن تحديثات…",
+        downloading: "جارٍ تنزيل {{version}}…",
+        applying: "جارٍ تثبيت {{version}}…",
+        restarting: "جارٍ إعادة التشغيل…",
+        failed: "فشل التحديث: {{error}}",
+        ready: "تم تنزيل {{version}} وهو جاهز للتثبيت",
+        available: "الإصدار {{version}} متاح",
+        restartRequired: "تم تثبيت {{version}}؛ أعد التشغيل لاستخدامه",
+        upToDate: "محدَّث (تم التحقق في {{time}})",
+        notChecked: "لم يتم التحقق بعد",
+        checkAction: "تحقق",
+        updateAction: "تحديث",
+        restartAction: "إعادة التشغيل",
+        updateTitle: "التحديث إلى {{version}}؟",
+        updateMessage: "سيثبّت Paseo التحديث ثم يعيد التشغيل.",
+        updateConfirm: "تحديث",
+        restartTitle: "إعادة التشغيل لإكمال التحديث إلى {{version}}؟",
+        restartMessage: "سيعيد Paseo التشغيل ويستخدم الإصدار الجديد.",
+        restartConfirm: "إعادة التشغيل",
+        agentsKeepRunning:
+          "يواصل الوكلاء قيد التشغيل ({{count}}) العمل، وتُحدَّث خدمة الخلفية بعد انتهائهم.",
+        lastAttemptFailed: "فشلت المحاولة الأخيرة: {{error}}",
+        updateTooltip: "التحديث إلى {{version}}",
+        restartTooltip: "إعادة التشغيل لإكمال التحديث إلى {{version}}",
+        failedTooltip: "فشل التحديث",
+        failedTitle: "فشل التحديث",
+        tryAgain: "إعادة المحاولة",
+      },
       status: {
         checking: "جارٍ التحقق من وجود تحديثات للتطبيق...",
         installing: "جارٍ تثبيت تحديث التطبيق...",
@@ -1478,7 +1515,7 @@ export const ar: TranslationResources = {
         installingDescription: "التثبيت وإعادة التشغيل...",
         versionReady: "{{version}}جاهز للتثبيت.",
         newVersionReady: "إصدار جديد جاهز للتثبيت.",
-        restartWarning: "ستؤدي ترقية التطبيق إلى إيقاف تشغيل الوكلاء وإغلاق الجلسات الطرفية.",
+        restartWarning: "ينتظر التحديث انتهاء الوكلاء والجلسات الطرفية النشطة قبل إعادة التشغيل.",
       },
     },
     settings: {
@@ -1931,6 +1968,8 @@ export const ar: TranslationResources = {
     archiveTooltip: "أرشفة الوكيل الفرعي",
     archiveFinishedAction: "أرشفة الوكلاء الفرعيين المكتملين",
     archiveFinishedRetry: "إعادة المحاولة ({{failed}}/{{total}})",
+    showFinished: "عرض المكتملين ({{count}})",
+    hideFinished: "إخفاء المكتملين",
   },
   panels: {
     draft: {
@@ -2017,6 +2056,8 @@ export const ar: TranslationResources = {
     output: "الإخراج",
   },
   turnSummary: {
+    messages: { one: "كتب {{count}} رسالة", other: "كتب {{count}} رسائل" },
+    agentMessage: "رسالة وكيل",
     details: "عرض تفاصيل الجولة",
     sentBy: "أرسلها {{name}}",
     showMore: "عرض المزيد",
@@ -2040,6 +2081,7 @@ export const ar: TranslationResources = {
       one: "بحث {{count}} مرة",
       other: "بحث {{count}} مرات",
     },
+    sentMessages: { one: "تم إرسال {{count}} رسالة", other: "تم إرسال {{count}} رسائل" },
     otherTools: {
       one: "استخدم {{count}} أداة أخرى",
       other: "استخدم {{count}} أدوات أخرى",
@@ -2238,7 +2280,7 @@ export const ar: TranslationResources = {
     editor: {
       title: "المحرر",
       vimKeybindings: "اختصارات Vim",
-      vimHint: "تنطبق على ملفات المصدر في الويب وسطح المكتب.",
+      vimHint: "تنطبق على ملفات المصدر في المحرر.",
     },
     files: {
       title: "الملفات",
@@ -2375,7 +2417,8 @@ export const ar: TranslationResources = {
             "عند تشغيل الوكيل، يوقف Enter التشغيل. Command/Ctrl+Enter يضيف إلى قائمة الانتظار.",
           steer:
             "عند تشغيل الوكيل، يوجّه Enter الجولة النشطة. يضيف Command/Ctrl+Enter إلى قائمة الانتظار.",
-          queue: "عند تشغيل الوكيل، يضيف Enter إلى قائمة الانتظار. Command/Ctrl+Enter يرسل.",
+          queue:
+            "عند تشغيل الوكيل، يضيف Enter إلى قائمة الانتظار. Command/Ctrl+Enter يوجّه الجولة النشطة.",
         },
         commandEnterDescriptions: {
           interrupt: "عند تشغيل الوكيل، يوقف {{modifier}}+Enter التشغيل. يُدرج Enter سطرًا جديدًا.",
@@ -2462,6 +2505,7 @@ export const ar: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "عن",
       appVersion: "نسخة التطبيق",
       whatsNewHint: "ملاحظات الإصدار لكل نسخة",
@@ -2488,6 +2532,10 @@ export const ar: TranslationResources = {
         checking: "جارٍ التحقق...",
         alertTitle: "خطأ",
         alertMessage: "غير قادر على فتح مربع حوار تأكيد التحديث.",
+      },
+      nixUpdates: {
+        label: "تحديثات Nix المُدارة",
+        invalidMarker: "تعذر التحقق من تثبيت Nix هذا.",
       },
     },
     appearance: {
@@ -2566,7 +2614,6 @@ export const ar: TranslationResources = {
     shortcuts: {
       dialogTitle: "الاختصارات",
       searchPlaceholder: "البحث في الاختصارات",
-      unavailableOnMobile: "اختصارات لوحة المفاتيح متاحة فقط على سطح المكتب",
       capturePrompt: "اضغط على الاختصار...",
       captureIndexPrompt: "اختم برقم من 1 إلى 9.",
       unassigned: "غير معين",
@@ -2721,6 +2768,13 @@ export const ar: TranslationResources = {
         title: "إقران الأجهزة",
         rowTitle: "إقران جهاز",
         rowHint: "امسح رمز QR ضوئيًا أو انسخ رابطًا لتوصيل هاتفك بهذا المضيف",
+        keepAwake: {
+          title: "إبقاء جهاز Mac مستيقظًا من أجل المرحّل",
+          hint: "يمنع السكون أثناء التوصيل بالكهرباء ما دام المرحّل مفعّلًا، لتتمكن الأجهزة البعيدة من الوصول إلى جهاز Mac هذا. يستهلك طاقة أكبر ويسخن أكثر أثناء التوصيل.",
+          activeHint: "يُبقي جهاز Mac هذا مستيقظًا أثناء التوصيل بالكهرباء ما دام المرحّل مفعّلًا",
+          waitingHint: "يسري عند تفعيل المرحّل",
+          updateFailed: "تعذّر تحديث إعداد إبقاء الجهاز مستيقظًا",
+        },
       },
       skills: {
         ...en.settings.host.skills,
@@ -2781,6 +2835,32 @@ export const ar: TranslationResources = {
           reset: "إعادة ضبط",
           save: "حفظ",
           saving: "جارٍ الحفظ...",
+        },
+        replyRules: {
+          title: "قواعد إشعارات الردود",
+          scope: "تُطبّق على كل مساحة عمل على {{host}}.",
+          help: "مطابقة بحث باستخدام RE2 من دون تطبيع النص. استخدم المراسي لمطابقة الرد كاملًا. حتى 8 قواعد و256 وحدة UTF-16 لكل نمط و16,384 للموضوع. الأعلام i وm وu فريدة؛ يُفعّل Unicode عند حذفها.",
+          source: "النمط",
+          flags: "الأعلام",
+          add: "إضافة قاعدة",
+          remove: "إزالة القاعدة",
+          save: "حفظ القواعد",
+          saving: "جارٍ الحفظ...",
+          clear: "مسح كل القواعد",
+          loading: "جارٍ تحميل القواعد المحفوظة...",
+          empty: "لا توجد قواعد ردود محفوظة.",
+          unsupported: "حدّث هذا المضيف لإدارة قواعد إشعارات الردود.",
+          disconnected: "اتصل بهذا المضيف لإدارة قواعد إشعارات الردود.",
+          readError:
+            "تعذرت قراءة القواعد المحفوظة: {{error}}. إذا كان هذا خطأ صلاحيات، فتحقق من صلاحية daemon.read.",
+          writeError:
+            "تعذر حفظ القواعد: {{error}}. إذا كان هذا خطأ صلاحيات، فتحقق من صلاحية daemon.manage.",
+          conflict:
+            "تغيّرت القواعد على المضيف أثناء التحرير. أعد تحميل القواعد المحفوظة للتخلّص من المسودة، أو احتفظ بها لاستبدال أحدث القواعد عمدًا عند الحفظ التالي.",
+          awaitingAuthority: "تم الحفظ. بانتظار تأكيد المضيف للقواعد المحدّثة...",
+          reload: "إعادة تحميل القواعد المحفوظة",
+          keep: "الاحتفاظ بالمسودة",
+          retry: "إعادة المحاولة",
         },
       },
       agents: {

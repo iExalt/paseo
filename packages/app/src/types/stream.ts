@@ -1036,12 +1036,21 @@ function finalizeActiveThoughts(state: StreamItem[]): StreamItem[] {
   return mutated ? nextState : state;
 }
 
+// Stream items are immutable, and every tool event scans the whole tail for its identity, so an
+// item's identity is built (two encodeURIComponent calls) once rather than once per scan.
+const agentToolCallIdentityByItem = new WeakMap<StreamItem, string>();
+
 export function streamTimelineItemIdentity(item: StreamItem): string | null {
   if (isAgentToolCallItem(item)) {
-    return agentToolCallIdentity({
-      callId: item.payload.data.callId,
-      turnId: item.turnId,
-    });
+    let identity = agentToolCallIdentityByItem.get(item);
+    if (identity === undefined) {
+      identity = agentToolCallIdentity({
+        callId: item.payload.data.callId,
+        turnId: item.turnId,
+      });
+      agentToolCallIdentityByItem.set(item, identity);
+    }
+    return identity;
   }
   if (item.kind === "plugin") return `${item.pluginId}/${item.pluginItemId}`;
   return null;

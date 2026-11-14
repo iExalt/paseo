@@ -54,7 +54,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
-import { useIosHardwareKeyboardSubmit } from "@/hooks/use-ios-hardware-keyboard-submit";
+import { useHardwareKeyboardSubmit } from "@/hooks/use-hardware-keyboard-submit";
+import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
 import { formatShortcut, type ShortcutKey } from "@/utils/format-shortcut";
 import { getShortcutOs } from "@/utils/shortcut-platform";
 import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
@@ -65,6 +66,7 @@ import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { RenderProfile } from "@/utils/render-profiler";
 import { useComposerHeight } from "./height";
 import { ComposerInputPresentation } from "./presentation";
+import { ToolbarSpareWidthProvider, useToolbarSpareWidthMeasure } from "./toolbar-space";
 import { resolveComposerInputMode, type ComposerInputMode } from "@/composer/input-mode";
 import type { NativePastedFile } from "@/composer/native-pasted-image";
 import {
@@ -1822,7 +1824,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         defaultSendBehavior,
         isAgentRunning,
       });
-    useIosHardwareKeyboardSubmit({
+    useHardwareKeyboardSubmit({
       isEnabled: isInputFocused && !isSendButtonDisabled,
       onSubmit: handleDefaultSendAction,
     });
@@ -1869,10 +1871,13 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       [onChangeText, updateComposerHeightForText, updateLiveTextPresence],
     );
 
+    const releaseNativeTypingScopeRef = useRef<(() => void) | null>(null);
     const handleInputFocus = useCallback(() => {
       focusIntentRef.current = true;
       isInputFocusedRef.current = true;
       setIsInputFocused(true);
+      releaseNativeTypingScopeRef.current?.();
+      releaseNativeTypingScopeRef.current = claimNativeTypingScope("message-input");
       onFocusChange?.(true);
     }, [onFocusChange]);
 
@@ -1881,8 +1886,12 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       if (paneFocusedRef.current) focusIntentRef.current = false;
       isInputFocusedRef.current = false;
       setIsInputFocused(false);
+      releaseNativeTypingScopeRef.current?.();
+      releaseNativeTypingScopeRef.current = null;
       onFocusChange?.(false);
     }, [onFocusChange]);
+
+    useEffect(() => () => releaseNativeTypingScopeRef.current?.(), []);
 
     const handlePasteError = useCallback(
       (message: string) => {
@@ -2103,44 +2112,52 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         focusInputKeys,
       ],
     );
+    const { spareWidth, onGroupLayout, onContentLayout } = useToolbarSpareWidthMeasure();
     const toolbar = useMemo(
       () => (
-        <View style={styles.buttonRow}>
-          {/* Toolbar left: attachment button + agent controls */}
-          <View style={styles.leftButtonGroup}>
-            <AttachmentDropdown
-              visible={mode.showAttachments}
-              isConnected={isConnected}
-              disabled={disabled}
-              attachButtonStyle={attachButtonStyle}
-              renderAttachButtonIcon={renderAttachButtonIcon}
-              attachmentMenuItems={attachmentMenuItems}
-              addAttachmentLabel={t("composer.input.addAttachment")}
-            />
-            {leftContent}
-          </View>
+        <ToolbarSpareWidthProvider value={spareWidth}>
+          <View style={styles.buttonRow}>
+            {/* Toolbar left: attachment button + agent controls */}
+            <View style={styles.leftButtonGroup} onLayout={onGroupLayout}>
+              <View style={styles.leftButtonContent} onLayout={onContentLayout}>
+                <AttachmentDropdown
+                  visible={mode.showAttachments}
+                  isConnected={isConnected}
+                  disabled={disabled}
+                  attachButtonStyle={attachButtonStyle}
+                  renderAttachButtonIcon={renderAttachButtonIcon}
+                  attachmentMenuItems={attachmentMenuItems}
+                  addAttachmentLabel={t("composer.input.addAttachment")}
+                />
+                {leftContent}
+              </View>
+            </View>
 
-          {/* Right: voice button, contextual button (realtime/send/cancel) */}
-          <View style={styles.rightButtonGroup}>
-            {beforeVoiceContent}
-            <VoiceButtonTooltip
-              visible={mode.showVoice}
-              onVoicePress={handleVoicePress}
-              isDictationStartEnabled={isDictationStartEnabled}
-              voiceButtonAccessibilityLabel={voiceButtonAccessibilityLabel}
-              voiceButtonStyle={voiceButtonStyle}
-              renderVoiceButtonIcon={renderVoiceButtonIcon}
-              voiceTooltipText={voiceTooltipText}
-              isRealtimeVoiceForCurrentAgent={isRealtimeVoiceForCurrentAgent}
-              voiceMuteToggleKeys={voiceMuteToggleKeys}
-              dictationToggleKeys={dictationToggleKeys}
-            />
-            {rightContent}
-            {sendButton}
+            {/* Right: voice button, contextual button (realtime/send/cancel) */}
+            <View style={styles.rightButtonGroup}>
+              {beforeVoiceContent}
+              <VoiceButtonTooltip
+                visible={mode.showVoice}
+                onVoicePress={handleVoicePress}
+                isDictationStartEnabled={isDictationStartEnabled}
+                voiceButtonAccessibilityLabel={voiceButtonAccessibilityLabel}
+                voiceButtonStyle={voiceButtonStyle}
+                renderVoiceButtonIcon={renderVoiceButtonIcon}
+                voiceTooltipText={voiceTooltipText}
+                isRealtimeVoiceForCurrentAgent={isRealtimeVoiceForCurrentAgent}
+                voiceMuteToggleKeys={voiceMuteToggleKeys}
+                dictationToggleKeys={dictationToggleKeys}
+              />
+              {rightContent}
+              {sendButton}
+            </View>
           </View>
-        </View>
+        </ToolbarSpareWidthProvider>
       ),
       [
+        spareWidth,
+        onGroupLayout,
+        onContentLayout,
         mode.showAttachments,
         isConnected,
         disabled,
@@ -2361,6 +2378,13 @@ const styles = StyleSheet.create((theme: Theme) => ({
     minWidth: 0,
     flexShrink: 1,
     flexGrow: 1,
+    flexDirection: "row",
+    alignItems: "flex-end",
+  },
+  // Keeps its natural width until the row runs out of room, so the group can measure the slack.
+  leftButtonContent: {
+    minWidth: 0,
+    flexShrink: 1,
     flexDirection: "row",
     alignItems: "flex-end",
     gap: theme.spacing[0],

@@ -5,7 +5,6 @@ import { withOutput, type OutputSchema, type SingleResult } from "../../output/i
 import { addJsonOption } from "../../utils/command-options.js";
 import { resolveHubCredential, resolveHubOrigin } from "./authority.js";
 import type { HubCredentialStore } from "./credentials.js";
-import { HubCommandError } from "./error.js";
 import { addHubResolutionHelp } from "./help.js";
 import type { HubHttpClient } from "./hub-client/index.js";
 import { reportHubProgress, type HubReporter } from "./reporter.js";
@@ -30,7 +29,6 @@ const schema: OutputSchema<HubExportResult> = {
 export interface HubExportOptions {
   hub?: string;
   apiKey?: string;
-  force?: boolean;
   json?: boolean;
 }
 
@@ -65,17 +63,6 @@ export async function runHubExport(
       return { destination, trigger, existing: await readOptionalFile(destination) };
     }),
   );
-  const conflict = files.find(
-    ({ existing, trigger }) =>
-      existing !== undefined && existing !== trigger.yaml && options.force !== true,
-  );
-  if (conflict !== undefined) {
-    throw new HubCommandError(
-      "HUB_EXPORT_CONFLICT",
-      `${conflict.destination} already exists with different contents. Pass --force to replace it.`,
-    );
-  }
-
   for (const file of files) {
     if (file.existing === file.trigger.yaml) continue;
     await writeFile(
@@ -105,8 +92,7 @@ export function addHubExportCommand(parent: Command, dependencies: HubExportDepe
         .description("Export active Hub triggers as one YAML file per trigger")
         .argument("[directory]", "Destination directory", ".paseo/triggers")
         .option("--hub <origin>", "Paseo Hub origin")
-        .option("--api-key <secret>", "Organization API key")
-        .option("--force", "Replace trigger files with different contents"),
+        .option("--api-key <secret>", "Organization API key"),
     ),
   ).action(
     withOutput(async (...args) => {

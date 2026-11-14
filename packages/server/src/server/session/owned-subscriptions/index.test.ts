@@ -2,24 +2,53 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { SessionDelivery } from "./index.js";
+import { isReply } from "./replies.js";
 
-function retainedPromiseBytes(cycles: number): number {
+function retainedPromiseBytes(cycles: number, asyncHooks = false, leak = false): number {
   const fixture = fileURLToPath(new URL("./test-utils/memory-repro.ts", import.meta.url));
   const output = execFileSync(
     process.execPath,
-    ["--expose-gc", "--import", "tsx", fixture, String(cycles)],
+    [
+      ...(asyncHooks ? ["--no-async-context-frame"] : []),
+      "--expose-gc",
+      "--import",
+      "tsx",
+      fixture,
+      String(cycles),
+      ...(leak ? ["leak"] : []),
+    ],
     {
       encoding: "utf8",
+      timeout: 10_000,
     },
   );
-  return Number(output);
+  const samples = JSON.parse(output) as number[];
+  expect(samples).toHaveLength(3);
+  for (const bytes of samples) expect(Number.isFinite(bytes)).toBe(true);
+  return samples.toSorted((a, b) => a - b)[1];
 }
+
+test("messages without payloads cannot correlate as replies", () => {
+  const request = { type: "ping", requestId: "request-1" } as const;
+  const malformed = { type: "pong", payload: undefined } as never;
+
+  expect(isReply(request, malformed)).toBe(false);
+});
 
 test("closed deliveries do not increase memory used by unrelated promises", () => {
   const control = retainedPromiseBytes(0);
   const afterChurn = retainedPromiseBytes(40);
   expect(control).toBeGreaterThan(0);
   expect(afterChurn).toBeLessThan(control * 4);
+});
+
+test("the async-hooks memory control detects the historical per-delivery registrations", () => {
+  const control = retainedPromiseBytes(0, true);
+  const afterChurn = retainedPromiseBytes(40, true);
+  const leaked = retainedPromiseBytes(40, true, true);
+  expect(control).toBeGreaterThan(0);
+  expect(afterChurn).toBeLessThan(control * 4);
+  expect(leaked).toBeGreaterThan(control * 4);
 });
 
 test("concurrent requests keep their source through asynchronous work", async () => {

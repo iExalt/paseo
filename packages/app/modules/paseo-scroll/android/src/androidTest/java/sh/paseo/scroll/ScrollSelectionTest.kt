@@ -1,14 +1,16 @@
 package sh.paseo.scroll
 
 import android.graphics.Rect
+import android.os.SystemClock
 import android.text.Selection
 import android.text.Spannable
+import android.view.InputDevice
+import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.bridge.JavaOnlyArray
 import com.facebook.react.bridge.JavaOnlyMap
 import com.facebook.react.soloader.OpenSourceMergedSoMapping
@@ -64,13 +66,39 @@ class ScrollSelectionTest {
     assertNotEquals(before, scroll.scrollY)
   }
 
+  @Test fun wheelUpRevealsOlderContentInInvertedTimeline() = withScroll(inverted = true) { scroll, _ ->
+    val before = scroll.scrollY
+    assertTrue(scroll.dispatchGenericMotionEvent(wheelUp()))
+    assertTrue("Wheeling up must move toward the inverted list's far end", scroll.scrollY > before)
+  }
+
+  @Test fun wheelUpStillScrollsOrdinaryScrollViewsUp() = withScroll(inverted = false) { scroll, _ ->
+    val before = scroll.scrollY
+    assertTrue(scroll.dispatchGenericMotionEvent(wheelUp()))
+    assertTrue(scroll.scrollY < before)
+  }
+
+  private fun wheelUp(): MotionEvent {
+    val properties = MotionEvent.PointerProperties().apply { toolType = MotionEvent.TOOL_TYPE_MOUSE }
+    val coords = MotionEvent.PointerCoords().apply {
+      x = 150f
+      y = 150f
+      setAxisValue(MotionEvent.AXIS_VSCROLL, 1f)
+    }
+    val now = SystemClock.uptimeMillis()
+    return MotionEvent.obtain(
+      now, now, MotionEvent.ACTION_SCROLL, 1, arrayOf(properties), arrayOf(coords),
+      0, 0, 1f, 1f, 0, 0, InputDevice.SOURCE_MOUSE, 0,
+    )
+  }
+
   private fun withScroll(inverted: Boolean, transform: String = "scale", check: (ReactScrollView, TextView) -> Unit) {
     val instrumentation = InstrumentationRegistry.getInstrumentation()
     instrumentation.runOnMainSync {
       val appContext = instrumentation.targetContext
       DisplayMetricsHolder.initDisplayMetricsIfNotInitialized(appContext)
       SoLoader.init(appContext, OpenSourceMergedSoMapping)
-      val reactContext = BridgeReactContext(appContext)
+      val reactContext = TestReactContext(appContext)
       val context = ThemedReactContext(reactContext, appContext)
       val manager = PaseoScrollPackage().createViewManager(reactContext, ReactScrollViewManager.REACT_CLASS) as ReactScrollViewManager
       val scroll = manager.createViewInstance(context)

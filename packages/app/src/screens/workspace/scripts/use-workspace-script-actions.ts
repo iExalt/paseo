@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 import { useSessionStore } from "@/stores/session-store";
 import { useHostRuntimeSnapshot } from "@/runtime/host-runtime";
+import { isNative } from "@/constants/platform";
 import { useToast } from "@/contexts/toast-context";
 import {
   resolveWorkspaceScriptLink,
@@ -158,7 +159,11 @@ export function useWorkspaceScriptActions({
 
   const resolveLinks = useCallback(
     (script: WorkspaceScript): WorkspaceScriptLinks => {
-      const link = resolveWorkspaceScriptLink({ script, activeConnection });
+      const link = resolveWorkspaceScriptLink({
+        script,
+        activeConnection,
+        reachesHostLoopback: !isNative,
+      });
       const selected =
         link.targets.find((target) => target.kind === preferredRouteKind) ?? link.primary;
       return { selected, targets: link.targets };

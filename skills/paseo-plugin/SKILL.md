@@ -20,7 +20,7 @@ Fetch [https://paseo.sh/llms.txt](https://paseo.sh/llms.txt) first. Select and f
 Use the deployed docs when they disagree with this skill. Do not send the user away to read them instead of completing the work.
 
 In the Paseo repository, use `public-docs/plugins/reference.md` for the checkout's API, including
-unreleased changes. Use `docs/plugins.md` for maintainer guidance. Complete contracts belong in the
+unreleased changes. Use `docs/upstream/plugins.md` for maintainer guidance. Complete contracts belong in the
 public docs; this skill indexes the references and examples.
 
 ## What a plugin can contribute
@@ -83,7 +83,7 @@ The manifest supplies the default install ID and supported Paseo versions:
 ```
 
 Keep `requirements.paseo` correct whenever creating or editing a plugin. `init` uses `>=` followed
-by the CLI version. Raise the minimum when adopting newer APIs; add an upper bound when a later
+by the plugin API version. The range is matched against the plugin API version, not the app release version. Raise the minimum when adopting newer APIs; add an upper bound when a later
 Paseo release is incompatible. Use npm semver ranges and explicitly include beta versions when
 targeting betas. Missing requirements mean `<0.8.0`; complete the 0.8 entry migration before adding
 `>=0.8.0`. Verify compatibility with both the daemon and the app running client contributions.

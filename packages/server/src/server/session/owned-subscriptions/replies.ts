@@ -45,12 +45,14 @@ const statuses = {
   agent_refreshed: ["refresh_agent_request"],
   restart_requested: ["restart_server_request"],
   shutdown_requested: ["shutdown_server_request"],
+  shutdown_declined: ["shutdown_server_request"],
 } satisfies Record<StatusReply, readonly Request["type"][]>;
 
 export function isReply(request: SessionInboundMessage, message: SessionOutboundMessage): boolean {
   if (
     !("requestId" in request) ||
     !("payload" in message) ||
+    !message.payload ||
     !("requestId" in message.payload) ||
     message.payload.requestId !== request.requestId
   )

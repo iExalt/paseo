@@ -4,14 +4,23 @@ const pkg = require("./package.json");
 const withAndroidAsyncStorageSize = require("./plugins/with-android-async-storage-size");
 const withAndroidOptionalCamera = require("./plugins/with-android-optional-camera");
 const withAndroidProfileable = require("./plugins/with-android-profileable");
+const withAndroidGradle = require("./plugins/with-android-gradle");
 const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
+const withAndroidHardwareKeyboard = require("./modules/paseo-hardware-keyboard/app.plugin");
 const { getNativeReleaseVersion } = require("./native-release-version");
+const { resolveAppVariant, resolvePreferencesMigrationBridge } = require("./app-variant");
+const { withForkBuild, assertForkBuildPlatform } = require("./plugins/with-fork-build");
 const appVariant = process.env.APP_VARIANT ?? "production";
+assertForkBuildPlatform(appVariant, process.env.EAS_BUILD_PLATFORM);
 const isFdroidBuild = process.env.PASEO_FDROID_BUILD === "1";
 const isWatchdogBuild = process.env.PASEO_WATCHDOG_BUILD === "1";
 const isProfileBuild = process.env.PASEO_PROFILE_BUILD === "1";
+const isPreferencesMigrationBridge = resolvePreferencesMigrationBridge(
+  appVariant,
+  process.env.PASEO_PREFS_MIGRATION_BRIDGE === "1",
+);
 
 const buildProfile = isFdroidBuild
   ? {
@@ -67,10 +76,8 @@ function resolveSecretFile(params) {
   return undefined;
 }
 
-const variants = {
+const firebaseVariants = {
   production: {
-    name: "Paseo",
-    packageId: "sh.paseo",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_PROD",
       fallbackRelativePath: "./.secrets/google-services.prod.json",
@@ -81,8 +88,6 @@ const variants = {
     }),
   },
   development: {
-    name: "Paseo Debug",
-    packageId: "sh.paseo.debug",
     googleServicesFile: resolveSecretFile({
       envKey: "GOOGLE_SERVICES_FILE_DEBUG",
       fallbackRelativePath: "./.secrets/google-services.debug.json",
@@ -94,26 +99,36 @@ const variants = {
   },
 };
 
-const variant = variants[appVariant] ?? variants.production;
 const nativeReleaseVersion = getNativeReleaseVersion(pkg.version);
+const variantIdentity = resolveAppVariant(
+  appVariant,
+  nativeReleaseVersion.androidVersionCode,
+  pkg.version,
+  process.env.PASEO_ANDROID_VERSION_CODE,
+);
+const variant =
+  appVariant === "fork"
+    ? { googleServicesFile: process.env.GOOGLE_SERVICES_FILE_FORK?.trim() }
+    : (firebaseVariants[appVariant] ?? firebaseVariants.production);
 
 export default {
   expo: {
-    name: variant.name,
-    slug: "voice-mobile",
+    name: variantIdentity.name,
+    slug: "paseo",
     version: nativeReleaseVersion.appVersion,
     orientation: "default",
     icon: "./assets/images/icon.png",
     scheme: "paseo",
     userInterfaceStyle: "automatic",
     newArchEnabled: true,
+    ...(appVariant === "fork" ? { platforms: ["android"] } : {}),
     ios: {
       supportsTablet: true,
       infoPlist: {
         NSMicrophoneUsageDescription: "This app needs access to the microphone for voice commands.",
         ITSAppUsesNonExemptEncryption: false,
       },
-      bundleIdentifier: variant.packageId,
+      bundleIdentifier: variantIdentity.iosBundleIdentifier,
       ...(variant.googleServiceInfoPlist
         ? { googleServicesFile: variant.googleServiceInfoPlist }
         : {}),
@@ -129,9 +144,15 @@ export default {
       softwareKeyboardLayoutMode: "resize",
       // Allow HTTP connections for local network hosts (required for release builds)
       usesCleartextTraffic: true,
-      permissions: buildProfile.androidPermissions,
-      package: variant.packageId,
-      versionCode: nativeReleaseVersion.androidVersionCode,
+      permissions: [
+        ...buildProfile.androidPermissions,
+        // The second lets the fork updater replace itself without Android's confirmation.
+        ...(appVariant === "fork"
+          ? ["REQUEST_INSTALL_PACKAGES", "UPDATE_PACKAGES_WITHOUT_USER_ACTION"]
+          : []),
+      ],
+      package: variantIdentity.androidPackage,
+      versionCode: isPreferencesMigrationBridge ? 11001 : variantIdentity.androidVersionCode,
       ...(variant.googleServicesFile ? { googleServicesFile: variant.googleServicesFile } : {}),
     },
     web: {
@@ -142,9 +163,12 @@ export default {
       searchPaths: ["../../node_modules", "./node_modules"],
     },
     plugins: [
+      ...(appVariant === "fork" ? [withForkBuild] : []),
+      withAndroidGradle,
       "expo-router",
       withPasteInput,
       withAndroidScroll,
+      withAndroidHardwareKeyboard,
       [withAndroidAsyncStorageSize, 64],
       ...buildProfile.cameraPlugins,
       withAndroidOptionalCamera,
@@ -162,6 +186,30 @@ export default {
       ],
       ...buildProfile.notificationPlugins,
       "expo-audio",
+      // The terminal's bundled Nerd Font; see assets/fonts/meslolgs-nf/README.md.
+      // Android groups both weights under one family so fontWeight picks Bold.
+      [
+        "expo-font",
+        {
+          android: {
+            fonts: [
+              {
+                fontFamily: "MesloLGS Nerd Font",
+                fontDefinitions: [
+                  { path: "./assets/fonts/meslolgs-nf/meslolgs_nf_regular.ttf", weight: 400 },
+                  { path: "./assets/fonts/meslolgs-nf/meslolgs_nf_bold.ttf", weight: 700 },
+                ],
+              },
+            ],
+          },
+          ios: {
+            fonts: [
+              "./assets/fonts/meslolgs-nf/meslolgs_nf_regular.ttf",
+              "./assets/fonts/meslolgs-nf/meslolgs_nf_bold.ttf",
+            ],
+          },
+        },
+      ],
       [
         "expo-gradle-jvmargs",
         {
@@ -172,12 +220,25 @@ export default {
       [
         "expo-build-properties",
         {
-          ios: { enableSceneSupport: true },
+          ios: {
+            enableSceneSupport: true,
+            deploymentTarget: "16.4",
+          },
           android: {
             minSdkVersion: 29,
-            kotlinVersion: "2.1.20",
+            kotlinVersion: "2.3.20",
             // Allow HTTP connections for local network hosts in release builds
             usesCleartextTraffic: true,
+            enableMinifyInReleaseBuilds: true,
+            enableShrinkResourcesInReleaseBuilds: true,
+            // R8 keeps names so each release changes few dex bytes and APK deltas stay
+            // small. zstd-jni ships no consumer rules and its JNI reads Java fields.
+            extraProguardRules: [
+              "-dontobfuscate",
+              // Preserve the old default file's optimization policy under AGP 9.
+              "-dontoptimize",
+              "-keep class com.github.luben.zstd.** { *; }",
+            ].join("\n"),
           },
         },
       ],
@@ -195,11 +256,14 @@ export default {
       watchdogBuild: isWatchdogBuild,
       diagnosticRevision: process.env.PASEO_DIAGNOSTIC_REVISION,
       diagnosticBuildTime: process.env.PASEO_DIAGNOSTIC_BUILD_TIME,
+      forkUpdatesEnabled: appVariant === "fork",
+      preferencesMigrationBridge: isPreferencesMigrationBridge,
+      preferencesMigrationReceiver: appVariant === "fork",
       router: {},
       eas: {
-        projectId: "0e7f65ce-0367-46c8-a238-2b65963d235a",
+        projectId: "3a777534-569c-47e5-81ad-1a4e47d5127c",
       },
     },
-    owner: "getpaseo",
+    owner: "iexalt",
   },
 };

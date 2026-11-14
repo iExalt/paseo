@@ -1,3 +1,6 @@
+import { useDesktopSettings } from "@/desktop/settings/desktop-settings";
+import { useDaemonStatus } from "@/desktop/hooks/use-daemon-status";
+import { daemonUpgradeForHost } from "@/desktop/daemon/daemon-upgrade-status";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import {
@@ -8,8 +11,7 @@ import {
   View,
   type PressableStateCallbackType,
 } from "react-native";
-import { useRouter } from "expo-router";
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useFocusEffect, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -54,14 +56,10 @@ import { AppearanceSection } from "@/screens/settings/appearance/appearance-sect
 import { OpenLocationSection } from "@/screens/settings/open-location/open-location-section";
 import { TerminalSection } from "@/screens/settings/terminal/terminal-section";
 import { ChatSection } from "@/screens/settings/chat/chat-section";
+import { getSettingsSidebarInnerStyle } from "@/screens/settings/sidebar/inner-style";
 import { SidebarNavSection } from "@/screens/settings/sidebar/sidebar-nav-section";
 import { SendingSection } from "@/screens/settings/general/sending-section";
-import {
-  useAppSettings,
-  useSettings,
-  type AppSettings,
-  type Settings as EffectiveSettings,
-} from "@/hooks/use-settings";
+import { useAppSettings, type AppSettings } from "@/hooks/use-settings";
 import { useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
 import { useSessionStore } from "@/stores/session-store";
 import {
@@ -83,14 +81,18 @@ import { EditorSection } from "@/screens/settings/editor-section";
 import { FilesSection } from "@/screens/settings/files-section";
 import { Button } from "@/components/ui/button";
 import { CommunityLinks } from "@/components/community-links";
-import { SegmentedControl } from "@/components/ui/segmented-control";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DesktopPermissionsSection } from "@/desktop/components/desktop-permissions-section";
-import { DesktopNotificationsSection } from "@/desktop/components/desktop-notifications-section";
+import { NotificationsSection } from "@/screens/settings/notifications/notifications-section";
 import { BrowserDataSection } from "@/desktop/browser/settings/browser-data-section";
 import { IntegrationsSection } from "@/desktop/components/integrations-section";
 import { isElectronRuntime } from "@/desktop/host";
+import { NixDesktopAppUpdateRow } from "@/desktop/updates/nix-desktop-app-update-row";
+import { isNixManagedDesktopInstallation } from "@/desktop/updates/desktop-updates";
 import { useDesktopAppUpdater } from "@/desktop/updates/use-desktop-app-updater";
+import { ForkAndroidUpdateRow } from "@/android/fork-updates/about-row";
+import { preferencesMigrationMode } from "@/android/preferences-migration/mode";
+import { PreferencesTransferRow } from "@/android/preferences-migration/preferences-transfer-row";
 import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { resolveAppVersion } from "@/utils/app-version";
 import { openChangelog } from "@/changelog";
@@ -146,6 +148,8 @@ import {
 } from "@/navigation/settings-presentation";
 import { returnFromSettings, type SettingsView } from "@/navigation/settings-navigation";
 import { isWeb } from "@/constants/platform";
+import { isSettingsSectionAvailable } from "@/screens/settings/section-availability";
+import { useKeyboardShortcutsAvailable } from "@/keyboard/availability";
 
 // ---------------------------------------------------------------------------
 // View model
@@ -155,8 +159,6 @@ interface SidebarSectionItem {
   id: SettingsSectionSlug;
   labelKey: string;
   icon: ComponentType<{ size: number; color: string; strokeWidth?: number }>;
-  desktopOnly?: boolean;
-  webOnly?: boolean;
   /** The page body, for pages that need nothing from the settings screen. */
   Content?: ComponentType;
 }
@@ -186,14 +188,12 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
     id: "browser",
     labelKey: "settings.sections.browser",
     icon: Globe,
-    desktopOnly: true,
     Content: BrowserDataSection,
   },
   {
     id: "editor",
     labelKey: "settings.sections.editor",
     icon: Code2,
-    webOnly: true,
     Content: EditorSection,
   },
   { id: "files", labelKey: "settings.sections.files", icon: Files, Content: FilesSection },
@@ -201,36 +201,36 @@ const SIDEBAR_SECTION_ITEMS: SidebarSectionItem[] = [
     id: "shortcuts",
     labelKey: "settings.sections.shortcuts",
     icon: Keyboard,
-    desktopOnly: true,
     Content: KeyboardShortcutsSection,
   },
   {
     id: "integrations",
     labelKey: "settings.sections.integrations",
     icon: Puzzle,
-    desktopOnly: true,
     Content: IntegrationsSection,
   },
   {
     id: "notifications",
     labelKey: "settings.sections.notifications",
     icon: Bell,
-    desktopOnly: true,
-    Content: DesktopNotificationsSection,
+    Content: NotificationsSection,
   },
   {
     id: "permissions",
     labelKey: "settings.sections.permissions",
     icon: Shield,
-    desktopOnly: true,
     Content: DesktopPermissionsSection,
   },
   { id: "diagnostics", labelKey: "settings.sections.diagnostics", icon: Stethoscope },
   { id: "about", labelKey: "settings.sections.about", icon: Info },
 ];
 
-function isSectionAvailable(item: SidebarSectionItem, isDesktopApp: boolean): boolean {
-  return (!item.desktopOnly || isDesktopApp) && (!item.webOnly || isWeb);
+function isSectionAvailable(
+  item: SidebarSectionItem,
+  isDesktopApp: boolean,
+  keyboardShortcutsAvailable: boolean,
+): boolean {
+  return isSettingsSectionAvailable(item.id, { isDesktopApp, isWeb, keyboardShortcutsAvailable });
 }
 
 interface HostSectionItem {
@@ -451,9 +451,29 @@ interface AboutSectionProps {
   appVersion: string | null;
   appVersionText: string;
   isDesktopApp: boolean;
+  isNixManagedApp: boolean;
+  preferencesTransferMode: "bridge" | "receiver" | null;
+  daemonIds: readonly string[];
 }
 
-function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSectionProps) {
+function renderAboutDesktopUpdateRow(
+  isNixManagedApp: boolean,
+  isDesktopApp: boolean,
+  appVersion: string | null,
+): ReactNode {
+  if (isNixManagedApp) return <NixDesktopAppUpdateRow appVersion={appVersion} />;
+  if (isDesktopApp) return <DesktopAppUpdateRow />;
+  return null;
+}
+
+function AboutSection({
+  appVersion,
+  appVersionText,
+  isDesktopApp,
+  isNixManagedApp,
+  preferencesTransferMode,
+  daemonIds,
+}: AboutSectionProps) {
   const { t } = useTranslation();
   return (
     <>
@@ -467,10 +487,14 @@ function AboutSection({ appVersion, appVersionText, isDesktopApp }: AboutSection
             <Text style={styles.aboutValue}>{appVersionText}</Text>
           </View>
           <WhatsNewRow />
-          {isDesktopApp ? <DesktopAppUpdateRow /> : null}
+          {renderAboutDesktopUpdateRow(isNixManagedApp, isDesktopApp, appVersion)}
+          <ForkAndroidUpdateRow />
+          {preferencesTransferMode ? (
+            <PreferencesTransferRow mode={preferencesTransferMode} daemonIds={daemonIds} />
+          ) : null}
         </View>
       </SettingsSection>
-      <ConnectedHostsSection clientVersion={appVersion} />
+      <ConnectedHostsSection />
       <View style={styles.aboutCommunity}>
         <CommunityLinks />
       </View>
@@ -511,7 +535,7 @@ function normalizeVersion(version: string | null | undefined): string | null {
   return trimmed.replace(/^v/i, "");
 }
 
-function ConnectedHostsSection({ clientVersion }: { clientVersion: string | null }) {
+function ConnectedHostsSection() {
   const { t } = useTranslation();
   const hosts = useHosts();
   if (hosts.length === 0) {
@@ -521,28 +545,30 @@ function ConnectedHostsSection({ clientVersion }: { clientVersion: string | null
     <SettingsSection title={t("settings.about.connectedHosts")}>
       <View style={settingsStyles.card}>
         {hosts.map((host, index) => (
-          <HostVersionRow
-            key={host.serverId}
-            host={host}
-            showBorder={index > 0}
-            clientVersion={clientVersion}
-          />
+          <HostVersionRow key={host.serverId} host={host} showBorder={index > 0} />
         ))}
       </View>
     </SettingsSection>
   );
 }
 
-function HostVersionRow({
-  host,
-  showBorder,
-  clientVersion,
-}: {
-  host: HostProfile;
-  showBorder: boolean;
-  clientVersion: string | null;
-}) {
+function HostVersionRow({ host, showBorder }: { host: HostProfile; showBorder: boolean }) {
   const { t } = useTranslation();
+  const router = useRouter();
+  const isCompactLayout = useIsCompactFormFactor();
+  const { theme } = useUnistyles();
+  const openOverview = useCallback(() => {
+    const target = buildSettingsHostSectionRoute(host.serverId, "host");
+    if (isCompactLayout) router.push(target);
+    else router.replace(target);
+  }, [router, host.serverId, isCompactLayout]);
+  const { data: localDaemon } = useDaemonStatus();
+  const { settings: desktopSettings } = useDesktopSettings();
+  const upgrade = daemonUpgradeForHost(
+    localDaemon?.status ?? null,
+    host.serverId,
+    desktopSettings.daemon.manageBuiltInDaemon,
+  );
   const isConnected = useHostRuntimeIsConnected(host.serverId);
   const daemonVersion = useSessionStore(
     (state) => state.sessions[host.serverId]?.serverInfo?.version ?? null,
@@ -554,10 +580,6 @@ function HostVersionRow({
   );
 
   const normalizedHost = normalizeVersion(daemonVersion);
-  const normalizedClient = normalizeVersion(clientVersion);
-  const isMismatch =
-    normalizedHost !== null && normalizedClient !== null && normalizedHost !== normalizedClient;
-
   let valueText: string;
   if (!isConnected) {
     valueText = t("settings.about.offline");
@@ -567,23 +589,27 @@ function HostVersionRow({
     valueText = "—";
   }
 
-  const valueStyle = useMemo(
-    () => [styles.aboutValue, isMismatch && styles.aboutVersionMismatch],
-    [isMismatch],
-  );
-
   return (
-    <View style={rowStyle}>
+    <Pressable
+      style={rowStyle}
+      accessibilityRole="button"
+      accessibilityLabel={host.label}
+      onPress={openOverview}
+      testID={`about-host-${host.serverId}`}
+    >
       <View style={settingsStyles.rowContent}>
         <Text style={settingsStyles.rowTitle} numberOfLines={1}>
           {host.label}
         </Text>
-        {isMismatch ? (
-          <Text style={settingsStyles.rowHint}>{t("settings.about.versionDiffers")}</Text>
-        ) : null}
+        <Text style={settingsStyles.rowHint}>
+          {upgrade
+            ? t(`desktop.daemon.upgrade.${upgrade.phase}`)
+            : t("settings.about.hostOverview")}
+        </Text>
       </View>
-      <Text style={valueStyle}>{valueText}</Text>
-    </View>
+      <Text style={styles.aboutValue}>{valueText}</Text>
+      <ChevronRight size={16} color={theme.colors.foregroundMuted} />
+    </Pressable>
   );
 }
 
@@ -603,7 +629,6 @@ function getUpdateButtonLabel(
 
 function DesktopAppUpdateRow() {
   const { t } = useTranslation();
-  const { settings, updateSettings } = useSettings();
   const {
     isDesktopApp,
     statusText,
@@ -631,20 +656,6 @@ function DesktopAppUpdateRow() {
     }
     void checkForUpdates();
   }, [checkForUpdates, isDesktopApp]);
-
-  const handleReleaseChannelChange = useCallback(
-    (releaseChannel: EffectiveSettings["releaseChannel"]) => {
-      void updateSettings({ releaseChannel });
-    },
-    [updateSettings],
-  );
-  const releaseChannelOptions = useMemo(
-    () => [
-      { value: "stable" as const, label: t("settings.about.releaseChannel.stable") },
-      { value: "beta" as const, label: t("settings.about.releaseChannel.beta") },
-    ],
-    [t],
-  );
 
   const handleInstallUpdate = useCallback(() => {
     if (!isDesktopApp) {
@@ -681,54 +692,31 @@ function DesktopAppUpdateRow() {
   }
 
   return (
-    <>
-      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>{t("settings.about.releaseChannel.label")}</Text>
-          <Text style={settingsStyles.rowHint}>
-            {t("settings.about.releaseChannel.description")}
-          </Text>
-        </View>
-        <SegmentedControl
+    <View style={[settingsStyles.row, settingsStyles.rowBorder]} testID="desktop-fork-update-row">
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle}>{t("settings.about.forkUpdates.label")}</Text>
+        <Text style={settingsStyles.rowHint}>{statusText}</Text>
+        {errorMessage ? <Text style={styles.aboutErrorText}>{errorMessage}</Text> : null}
+      </View>
+      <View style={styles.aboutUpdateActions}>
+        <Button
+          variant="outline"
           size="sm"
-          value={settings.releaseChannel}
-          onValueChange={handleReleaseChannelChange}
-          options={releaseChannelOptions}
-        />
+          onPress={handleCheckForUpdates}
+          disabled={isChecking || isInstalling}
+        >
+          {isChecking ? t("settings.about.updates.checking") : t("settings.about.updates.check")}
+        </Button>
+        <Button
+          variant="default"
+          size="sm"
+          onPress={handleInstallUpdate}
+          disabled={isChecking || isInstalling || !isUpdateReady}
+        >
+          {getUpdateButtonLabel(t, isInstalling, readyUpdateVersion)}
+        </Button>
       </View>
-      <View style={[settingsStyles.row, settingsStyles.rowBorder]}>
-        <View style={settingsStyles.rowContent}>
-          <Text style={settingsStyles.rowTitle}>{t("settings.about.updates.label")}</Text>
-          <Text style={settingsStyles.rowHint}>{statusText}</Text>
-          {readyUpdateVersion ? (
-            <Text style={settingsStyles.rowHint}>
-              {t("settings.about.updates.readyToInstall", {
-                version: formatVersionWithPrefix(readyUpdateVersion),
-              })}
-            </Text>
-          ) : null}
-          {errorMessage ? <Text style={styles.aboutErrorText}>{errorMessage}</Text> : null}
-        </View>
-        <View style={styles.aboutUpdateActions}>
-          <Button
-            variant="outline"
-            size="sm"
-            onPress={handleCheckForUpdates}
-            disabled={isChecking || isInstalling}
-          >
-            {isChecking ? t("settings.about.updates.checking") : t("settings.about.updates.check")}
-          </Button>
-          <Button
-            variant="default"
-            size="sm"
-            onPress={handleInstallUpdate}
-            disabled={isChecking || isInstalling || !isUpdateReady}
-          >
-            {getUpdateButtonLabel(t, isInstalling, readyUpdateVersion)}
-          </Button>
-        </View>
-      </View>
-    </>
+    </View>
   );
 }
 
@@ -776,6 +764,7 @@ function SidebarSectionButton({
       accessibilityState={accessibilityState}
       onPress={handlePress}
       style={isSelected ? selectedSidebarItemStyle : sidebarItemStyle}
+      testID={`settings-section-${itemId}`}
     >
       <IconComponent
         size={densityIconSize(rt, "md")}
@@ -955,7 +944,10 @@ function SettingsSidebar({
   const hasHosts = sortedHosts.length > 0;
   const enableBuiltInDaemonOption = useEnableBuiltInDaemonOption();
   const isDesktopApp = isElectronRuntime();
-  const items = SIDEBAR_SECTION_ITEMS.filter((item) => isSectionAvailable(item, isDesktopApp));
+  const shortcutsAvailable = useKeyboardShortcutsAvailable();
+  const items = SIDEBAR_SECTION_ITEMS.filter((item) =>
+    isSectionAvailable(item, isDesktopApp, shortcutsAvailable),
+  );
   const insets = useSafeAreaInsets();
   const isDesktop = layout === "desktop";
   const sidebarScroll = useSettingsSidebarScroll(isDesktop);
@@ -964,8 +956,8 @@ function SettingsSidebar({
     [isDesktop],
   );
   const innerContainerStyle = useMemo(
-    () => [{ flex: 1 }, isDesktop ? { paddingTop: insets.top } : null],
-    [insets.top, isDesktop],
+    () => getSettingsSidebarInnerStyle(isDesktop, insets),
+    [insets, isDesktop],
   );
   const selectedSectionId = view.kind === "section" ? view.section : null;
   let selectedHostSection: HostSectionSlug | null = null;
@@ -1105,6 +1097,9 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
   const [playbackTestResult, setPlaybackTestResult] = useState<string | null>(null);
   const lastOpenedAddHostIntentRef = useRef<string | null>(null);
   const isDesktopApp = isElectronRuntime();
+  const shortcutsAvailable = useKeyboardShortcutsAvailable();
+  const isNixManagedApp = isNixManagedDesktopInstallation();
+  const preferencesTransferMode = preferencesMigrationMode();
   const appVersion = resolveAppVersion();
   const appVersionText = formatVersionWithPrefix(appVersion);
   const isCompactLayout = useIsCompactFormFactor();
@@ -1346,7 +1341,7 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
     }
     if (view.kind === "section") {
       const item = SIDEBAR_SECTION_ITEMS.find((candidate) => candidate.id === view.section);
-      if (!item || !isSectionAvailable(item, isDesktopApp)) return null;
+      if (!item || !isSectionAvailable(item, isDesktopApp, shortcutsAvailable)) return null;
       switch (view.section) {
         case "general":
           return (
@@ -1371,6 +1366,9 @@ export default function SettingsScreen({ view, openAddHostIntent = null }: Setti
               appVersion={appVersion}
               appVersionText={appVersionText}
               isDesktopApp={isDesktopApp}
+              isNixManagedApp={isNixManagedApp}
+              preferencesTransferMode={preferencesTransferMode}
+              daemonIds={hosts.map((host) => host.serverId)}
             />
           );
         default:

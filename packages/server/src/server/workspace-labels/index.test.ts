@@ -45,6 +45,156 @@ describe("workspace labels", () => {
     await rm(paseoHome, { recursive: true, force: true });
   });
 
+  test("updates settings in one durable write and preserves omitted metadata", async () => {
+    await labels.setAssignment({
+      workspaceId: "wks_one",
+      label: { name: "Review", color: "sky" },
+      assigned: true,
+    });
+    await registry.update("wks_one", (record) => ({
+      ...record,
+      background: true,
+      labels: undefined,
+    }));
+    const before = await registry.get("wks_one");
+    const mutations: unknown[] = [];
+    const unsubscribe = registry.subscribeToMutations((mutation) => {
+      mutations.push(mutation);
+    });
+    const updated = await labels.updateWorkspaceSettings("wks_one", {
+      background: false,
+      title: "  Visible  ",
+      notifications: "off",
+      pinned: true,
+      addLabels: [" review "],
+    });
+    expect(updated).toMatchObject({
+      background: false,
+      title: "Visible",
+      notifications: "off",
+      labels: ["Review"],
+      cwd: before?.cwd,
+      projectId: before?.projectId,
+    });
+    expect(updated.pinnedAt).toEqual(expect.any(String));
+    expect(mutations).toHaveLength(1);
+    const reloaded = new FileBackedWorkspaceRegistry(
+      join(paseoHome, "projects", "workspaces.json"),
+      createTestLogger(),
+    );
+    expect(await reloaded.get("wks_one")).toEqual(updated);
+    expect(
+      await labels.updateWorkspaceSettings("wks_one", {
+        title: null,
+        removeLabels: ["REVIEW", "absent"],
+      }),
+    ).toMatchObject({
+      title: null,
+      labels: undefined,
+      pinnedAt: updated.pinnedAt,
+      notifications: "off",
+    });
+    unsubscribe();
+  });
+
+  test("invalid assignments, conflicts and missing or archived workspaces apply nothing", async () => {
+    const before = await registry.get("wks_one");
+    for (const patch of [
+      { title: "Changed", background: true, addLabels: ["Unknown"] },
+      { notifications: "off" as const, addLabels: [" Review "], removeLabels: ["review"] },
+      { pinned: true, addLabels: ["  "] },
+      {},
+    ]) {
+      await expect(labels.updateWorkspaceSettings("wks_one", patch)).rejects.toThrow();
+      expect(await registry.get("wks_one")).toEqual(before);
+    }
+    await expect(labels.updateWorkspaceSettings("missing", { background: true })).rejects.toThrow(
+      "Workspace not found",
+    );
+    await registry.archive("wks_one", new Date().toISOString());
+    await expect(labels.updateWorkspaceSettings("wks_one", { background: true })).rejects.toThrow(
+      "archived",
+    );
+  });
+
+  test("serializes assignment changes with catalog renames and keeps concurrent metadata", async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const resume = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let block = false;
+    const queuedRegistry = new FileBackedWorkspaceRegistry(
+      join(paseoHome, "queued.json"),
+      createTestLogger(),
+      {
+        writeRecords: async (filePath, records) => {
+          if (block) {
+            block = false;
+            entered();
+            await resume;
+          }
+          await writeJsonFileAtomic(filePath, records);
+        },
+      },
+    );
+    await queuedRegistry.upsert((await registry.get("wks_one"))!);
+    const service = createWorkspaceLabelService({ paseoHome, workspaceRegistry: queuedRegistry });
+    await service.setAssignment({
+      workspaceId: "wks_one",
+      label: { name: "Review", color: "sky" },
+      assigned: true,
+    });
+    block = true;
+    const settings = service.updateWorkspaceSettings("wks_one", {
+      background: true,
+      addLabels: ["review"],
+    });
+    await writing;
+    const rename = service.update({ name: "Review", newName: "Ready" });
+    const metadata = queuedRegistry.update("wks_one", (record) => ({
+      ...record,
+      title: "Concurrent",
+    }));
+    release();
+    await Promise.all([settings, rename, metadata]);
+    expect(await queuedRegistry.get("wks_one")).toMatchObject({
+      background: true,
+      title: "Concurrent",
+      labels: ["Ready"],
+    });
+  });
+
+  test("a failed settings write leaves every field unchanged in memory and on disk", async () => {
+    let failWrites = false;
+    const file = join(paseoHome, "settings-workspaces.json");
+    const failingRegistry = new FileBackedWorkspaceRegistry(file, createTestLogger(), {
+      writeRecords: async (filePath, records) => {
+        if (failWrites) throw new Error("disk full");
+        await writeJsonFileAtomic(filePath, records);
+      },
+    });
+    const before = (await registry.get("wks_one"))!;
+    await failingRegistry.upsert(before);
+    const service = createWorkspaceLabelService({ paseoHome, workspaceRegistry: failingRegistry });
+    failWrites = true;
+    await expect(
+      service.updateWorkspaceSettings("wks_one", {
+        title: "Changed",
+        background: true,
+        pinned: true,
+        notifications: "off",
+      }),
+    ).rejects.toThrow("disk full");
+    expect(await failingRegistry.get("wks_one")).toEqual(before);
+    expect(await new FileBackedWorkspaceRegistry(file, createTestLogger()).get("wks_one")).toEqual(
+      before,
+    );
+  });
+
   test("normalizes identity, preserves the target definition, persists assignments, and stays silent on no-op", async () => {
     const updates: unknown[] = [];
     const initial = await labels.subscribe({ onChange: (change) => updates.push(change) });

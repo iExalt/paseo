@@ -45,6 +45,14 @@ export function asAgentStorage(stub: {
   [K in keyof SessionOptions["agentStorage"]]?: unknown;
 }): SessionOptions["agentStorage"] {
   return createStub<SessionOptions["agentStorage"]>({
+    notificationLifecycle: {
+      subscribe: () => () => {},
+      active: async () => [],
+      pending: async () => [],
+      delivered: async () => {},
+    },
+    flush: async () => {},
+    applySnapshot: async () => [],
     listByProviderSession: async () => [],
     listByWorkspace: async () => [],
     ...stub,

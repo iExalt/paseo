@@ -1,7 +1,10 @@
+import { remoteConfigEdit } from "../daemon/config.js";
+import { runSpendCommand } from "./spend.js";
 import { Command } from "commander";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
 import { connectToDaemon, type ConnectOptions } from "../../utils/client.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 import { addJsonAndDaemonHostOptions } from "../../utils/command-options.js";
 import { withOutput, type CommandOptions, type CommandResult } from "../../output/index.js";
 import { usageSchema } from "./presentation.js";
@@ -15,6 +18,7 @@ type UsageSelection = { kind: "list" } | { kind: "inspect"; id: string };
 interface UsageClient {
   getLastServerInfoMessage(): { features?: { usageSources?: boolean } } | null;
   listUsageReports: DaemonClient["listUsageReports"];
+  fetchAgent: DaemonClient["fetchAgent"];
   close: DaemonClient["close"];
 }
 type ConnectUsage = (options: ConnectOptions) => Promise<UsageClient>;
@@ -39,7 +43,8 @@ export async function runUsageCommand(
     }
     if (selection.kind === "list") {
       const { reports } = await client.listUsageReports({
-        agentId: options.agent,
+        agentId:
+          options.agent === undefined ? undefined : await resolveAgentTarget(client, options.agent),
         forceRefresh: options.refresh,
       });
       return { type: "list", data: reports, schema: usageSchema };
@@ -67,13 +72,24 @@ function addListOptions(command: Command): Command {
   return addJsonAndDaemonHostOptions(command)
     .option(
       "--agent <id>",
-      "Show account quota associated with this agent (not agent token consumption)",
+      "Show account quota associated with this agent, by ID, prefix, or full session ID (not agent token consumption)",
     )
     .option("--refresh", "Refresh usage instead of using the host cache");
 }
 
 export function createUsageCommand(): Command {
   const usage = addListOptions(new Command("usage").description("Show account usage reports"));
+  for (const [verb, enabled] of [
+    ["on", true],
+    ["off", false],
+  ] as const)
+    addJsonAndDaemonHostOptions(
+      usage.command(verb).description(`Turn usage reporting ${verb}`),
+    ).action(
+      withOutput((options: CommandOptions, _command: Command) =>
+        remoteConfigEdit("usage.enabled", { value: enabled }, options),
+      ),
+    );
   const list = (options: CommandOptions, _command: Command) =>
     runUsageCommand(options, { kind: "list" });
   usage.action(withOutput(list));
@@ -90,6 +106,14 @@ export function createUsageCommand(): Command {
     withOutput((id: string, options: CommandOptions, _command: Command) =>
       runUsageCommand(options, { kind: "inspect", id }),
     ),
+  );
+  addJsonAndDaemonHostOptions(
+    usage
+      .command("spend")
+      .description("Show this host's recorded API spend")
+      .option("--time-zone <iana>", "Time zone for daily and monthly spend (default: local)"),
+  ).action(
+    withOutput((options: CommandOptions, command: Command) => runSpendCommand(options, command)),
   );
   return usage;
 }

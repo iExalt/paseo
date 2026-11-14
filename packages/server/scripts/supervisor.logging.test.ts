@@ -23,6 +23,7 @@ async function runSupervisorFixture(options: {
   workerSource: string;
   restartOnCrash?: boolean;
   timeoutMs?: number;
+  workerTerminationGraceMs?: number;
   /** POSIX RLIMIT_FSIZE for the supervisor, in 512-byte blocks: writes past it fail like a full disk. */
   fileSizeLimitBlocks?: number;
   /** Occupy the log path with a directory so the supervisor cannot open daemon.log. */
@@ -63,6 +64,7 @@ async function runSupervisorFixture(options: {
         workerEnv: process.env,
         workerExecArgv: [],
         restartOnCrash: ${JSON.stringify(options.restartOnCrash ?? false)},
+        workerTerminationGraceMs: ${JSON.stringify(options.workerTerminationGraceMs)},
         logFile: {
           path: ${JSON.stringify(logPath)},
           rotate: { maxSize: "1m", maxFiles: 2 },
@@ -313,39 +315,10 @@ describe("supervisor durable logging", () => {
     expect(descendantSurvived).toBe(false);
   });
 
-  test("does not restart a worker based on heartbeat absence", async () => {
-    const result = await runSupervisorFixture({
-      timeoutMs: 20_000,
-      workerSource: `
-        import { existsSync, writeFileSync } from "node:fs";
-
-        process.on("message", (message) => {
-          if (message?.type === "paseo:graceful-shutdown") process.exit(0);
-        });
-        const marker = process.argv[1] + ".started";
-        if (!existsSync(marker)) {
-          writeFileSync(marker, "started");
-          setTimeout(() => {
-            process.send?.({ type: "paseo:shutdown", reason: "silent_worker_test_complete" });
-          }, 16_000);
-          setInterval(() => {}, 1_000);
-        } else {
-          process.send?.({ type: "paseo:shutdown", reason: "unexpected_silent_worker_restart" });
-          setInterval(() => {}, 1_000);
-        }
-      `,
-    });
-
-    expect(result.code).toBe(0);
-    expect(result.signal).toBeNull();
-    expect(result.log).toContain('"reason":"silent_worker_test_complete"');
-    expect(result.log).not.toContain('"reason":"unexpected_silent_worker_restart"');
-    expect(result.log).not.toContain('"msg":"Worker heartbeat timed out; restarting worker"');
-  }, 25_000);
-
   test("forces shutdown when a worker ignores the graceful shutdown request", async () => {
     const result = await runSupervisorFixture({
-      timeoutMs: 15_000,
+      timeoutMs: 8_000,
+      workerTerminationGraceMs: 500,
       workerSource: `
           process.send?.({ type: "paseo:shutdown", reason: "stalled_worker_shutdown" });
           setInterval(() => {}, 1_000);
@@ -358,7 +331,7 @@ describe("supervisor durable logging", () => {
     expect(result.log).toContain(
       '"msg":"Worker did not exit after graceful shutdown request; forcing process tree kill"',
     );
-  }, 20_000);
+  }, 12_000);
 
   test.skipIf(isPlatform("win32"))(
     "restarts after worker exit while a descendant retains the worker stdio",

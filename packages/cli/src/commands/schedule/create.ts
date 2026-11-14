@@ -1,5 +1,6 @@
 import type { Command } from "commander";
 import type { SingleResult } from "../../output/index.js";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 import { scheduleSchema } from "./schema.js";
 import {
   connectScheduleClient,
@@ -19,10 +20,13 @@ export interface ScheduleCreateOptions extends ScheduleCommandOptions {
   provider?: string;
   mode?: string;
   thinking?: string;
+  isolation?: "local" | "worktree";
+  archiveOnFinish?: boolean;
   cwd?: string;
   maxRuns?: string;
   expiresIn?: string;
   runNow?: boolean;
+  replace?: boolean;
 }
 
 export async function runCreateCommand(
@@ -32,25 +36,44 @@ export async function runCreateCommand(
 ): Promise<SingleResult<ScheduleRow>> {
   const runNowSource = command.getOptionValueSource("runNow");
   const runNow = runNowSource === "cli" ? Boolean(options.runNow) : undefined;
-  const input = parseScheduleCreateInput({
-    prompt,
-    every: options.every,
-    cron: options.cron,
-    timezone: options.timezone,
-    name: options.name,
-    target: options.target,
-    provider: options.provider,
-    mode: options.mode,
-    thinking: options.thinking,
-    cwd: options.cwd,
-    daemonTarget: options.daemonTarget,
-    maxRuns: options.maxRuns,
-    expiresIn: options.expiresIn,
-    runNow,
-  });
   const { client } = await connectScheduleClient(options.daemonTarget);
   try {
-    const payload = await client.scheduleCreate(input);
+    const ambientCallerId = process.env.PASEO_AGENT_ID?.trim();
+    const caller = ambientCallerId ? await client.fetchAgent({ agentId: ambientCallerId }) : null;
+    const callerAgent = caller && caller.agent.id === ambientCallerId ? caller.agent : undefined;
+    const input = parseScheduleCreateInput({
+      prompt,
+      every: options.every,
+      cron: options.cron,
+      timezone: options.timezone,
+      name: options.name,
+      target: options.target,
+      provider: options.provider,
+      mode: options.mode,
+      thinking: options.thinking,
+      archiveOnFinish:
+        command.getOptionValueSource("archiveOnFinish") === "cli"
+          ? options.archiveOnFinish
+          : undefined,
+      isolation: options.isolation,
+      cwd: options.cwd,
+      callerAgent,
+      daemonTarget: options.daemonTarget,
+      maxRuns: options.maxRuns,
+      expiresIn: options.expiresIn,
+      runNow,
+    });
+    // Store the Paseo ID, never a provider session ID, so the schedule survives a session rotation.
+    if (input.target.type === "agent") {
+      input.target = {
+        ...input.target,
+        agentId: await resolveAgentTarget(client, input.target.agentId),
+      };
+    }
+    const payload = await client.scheduleCreate({
+      ...input,
+      ...(options.replace ? { replaceExisting: true } : {}),
+    });
     if (payload.error || !payload.schedule) {
       throw new Error(payload.error ?? "Schedule creation failed");
     }

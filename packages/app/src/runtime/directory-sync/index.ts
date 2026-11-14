@@ -4,6 +4,10 @@ import type {
   FetchAgentsEntry,
   FetchAgentsOptions,
 } from "@getpaseo/client/internal/daemon-client";
+import {
+  TimelineRequestSupersededError,
+  type TimelineResponseGuard,
+} from "@/timeline/timeline-request";
 import { fetchAgentTimelineOnce } from "@/timeline/fetch-agent-timeline-once";
 import {
   normalizeProjectDescriptor,
@@ -102,6 +106,12 @@ function applyWorkspaceSnapshotPage(
   }
 }
 
+/** A whole-directory agent refresh that completed on the connection named by its source. */
+export interface AgentDirectoryRefresh extends DirectorySourceToken {
+  /** Client clock time the refresh was requested; state it returns is at least this new. */
+  requestedAt: number;
+}
+
 export interface DirectoryConnection {
   client: DaemonClient | null;
   status: "online" | "offline";
@@ -111,7 +121,7 @@ export interface DirectoryConnection {
 export interface DirectoryCheckpointStorage {
   readAgent(serverId: string, agentId: string): Promise<Agent | undefined>;
   readWorkspace(serverId: string, workspaceId: string): Promise<CachedWorkspace | undefined>;
-  readDirectory(serverId: string): Promise<CachedDirectory>;
+  readDirectory(serverId: string): Promise<CachedDirectory | undefined>;
   commitDirectoryMutations(
     serverId: string,
     mutations: readonly DirectoryReplicaMutation[],
@@ -168,7 +178,7 @@ export class DirectorySync {
     private readonly callbacks: {
       onAgentStoppedRunning: (agentId: string) => void;
       markAgentLoading: () => void;
-      markAgentReady: () => void;
+      markAgentReady: (refresh?: AgentDirectoryRefresh) => void;
       markAgentError: (error: string) => void;
     },
     private readonly checkpoints?: DirectoryCheckpointStorage,
@@ -438,7 +448,9 @@ export class DirectorySync {
     this.cacheLoad ??= (async () => {
       const revision = this.revision;
       const cached = await checkpoints.readDirectory(this.serverId);
-      if (this.cacheAccepted) return;
+      // A miss is not an empty directory: accepting it would paint an empty sidebar and drop
+      // the cursors, turning the next refresh into a full one.
+      if (!cached || this.cacheAccepted) return;
       if (!useSessionStore.getState().sessions[this.serverId]) return;
       this.agents.commitCached(cached.agents);
       this.workspaces.commitCached(cached);
@@ -466,10 +478,23 @@ export class DirectorySync {
   async fetchTimeline(
     agentId: string,
     request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+    acceptResponse: TimelineResponseGuard = () => true,
   ): Promise<Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>> {
-    const { client } = this.requireOnline();
+    const { client, source } = this.requireOnline();
     const token = this.agents.captureTimeline(agentId);
-    const page = await fetchAgentTimelineOnce(client, agentId, request);
+    const isCurrent: TimelineResponseGuard = (page) =>
+      this.isCurrent(client, source) &&
+      this.agents.isTimelineCurrent(token) &&
+      acceptResponse(page);
+    if (!isCurrent()) throw new TimelineRequestSupersededError();
+    let page: Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>;
+    try {
+      page = await fetchAgentTimelineOnce(client, agentId, request);
+    } catch (error) {
+      if (!isCurrent()) throw new TimelineRequestSupersededError();
+      throw error;
+    }
+    if (!isCurrent(page)) throw new TimelineRequestSupersededError();
     if (page.agent && this.agents.submitTimelineAgent(token, page.agent)) {
       this.revision += 1;
       this.persistCheckpoint();
@@ -500,6 +525,7 @@ export class DirectorySync {
       };
     }
     const { client, source } = onlineConnection;
+    const requestedAt = Date.now();
     const transaction = this.agentTransactions.begin(source, () => ({
       entries: [],
       subscriptionId: null,
@@ -520,7 +546,9 @@ export class DirectorySync {
       const agents = this.commitAgentSnapshot(completion.snapshot, completion.deltas);
       this.persistAgentCursors(completion.snapshot, completion.deltas);
       this.persistCheckpoint();
-      this.callbacks.markAgentReady();
+      // A filtered fetch, or one resumed from a page cursor, leaves the rest as old as it was.
+      const wholeDirectory = !input.filter && !input.page?.cursor;
+      this.callbacks.markAgentReady(wholeDirectory ? { ...source, requestedAt } : undefined);
       return { agents, subscriptionId: completion.snapshot.subscriptionId };
     } catch (error) {
       const deltas = this.agentTransactions.fail(transaction);

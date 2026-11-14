@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  getDesktopPermissionSnapshot,
-  requestDesktopPermission,
-  shouldShowDesktopPermissionSection,
-  type DesktopPermissionKind,
-  type DesktopPermissionSnapshot,
+import { AppState } from "react-native";
+import type {
+  DesktopPermissionKind,
+  DesktopPermissionSnapshot,
 } from "@/desktop/permissions/desktop-permissions";
+import {
+  getPermissionSnapshot,
+  requestPermission as requestPlatformPermission,
+  shouldShowPermissionSettings,
+} from "@/permissions/platform-permissions";
 import { sendOsNotification } from "@/utils/os-notifications";
 
 export interface UseDesktopPermissionsReturn {
@@ -28,7 +31,7 @@ export type TestNotificationState =
 
 export function useDesktopPermissions(): UseDesktopPermissionsReturn {
   const { t } = useTranslation();
-  const isDesktopApp = shouldShowDesktopPermissionSection();
+  const isDesktopApp = shouldShowPermissionSettings();
   const isMountedRef = useRef(true);
   const [snapshot, setSnapshot] = useState<DesktopPermissionSnapshot | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -52,7 +55,7 @@ export function useDesktopPermissions(): UseDesktopPermissionsReturn {
 
     setIsRefreshing(true);
     try {
-      const nextSnapshot = await getDesktopPermissionSnapshot();
+      const nextSnapshot = await getPermissionSnapshot();
       if (!isMountedRef.current) {
         return;
       }
@@ -74,7 +77,7 @@ export function useDesktopPermissions(): UseDesktopPermissionsReturn {
 
       setRequestingPermission(kind);
       try {
-        const status = await requestDesktopPermission({ kind });
+        const status = await requestPlatformPermission({ kind });
         if (!isMountedRef.current) {
           return;
         }
@@ -156,6 +159,11 @@ export function useDesktopPermissions(): UseDesktopPermissionsReturn {
     }
 
     void refreshPermissions();
+    // Permissions change in system settings while the app is in the background.
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshPermissions();
+    });
+    return () => subscription.remove();
   }, [isDesktopApp, refreshPermissions]);
 
   return {

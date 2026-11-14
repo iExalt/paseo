@@ -35,7 +35,7 @@ test("sequential replay after reconstruction keeps one durable owned agent", asy
   expect(reconstructed.durableAgentCount).toBe(1);
 });
 
-test("Hub MCP configuration reaches the provider alongside Paseo MCP without entering snapshots", async () => {
+test("Hub MCP configuration reaches the provider without automatic Paseo MCP or snapshot credentials", async () => {
   const hub = await HubRelationshipHarness.startWithAgentMcp();
   await hub.beginConnect().result;
   hub.connectLatestSocket();
@@ -64,8 +64,7 @@ test("Hub MCP configuration reaches the provider alongside Paseo MCP without ent
     type: "hub.execution.agent.create.response",
     payload: { success: true, agent: { provider: "codex" }, error: null },
   });
-  expect(hub.latestProviderCreateConfig()?.mcpServers).toMatchObject({
-    paseo: { type: "http" },
+  expect(hub.latestProviderCreateConfig()?.mcpServers).toEqual({
     hub: {
       type: "http",
       url: "https://hub.test/mcp/executions/mcp-execution",

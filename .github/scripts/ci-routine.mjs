@@ -1,0 +1,355 @@
+import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { matchesGlob, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+export const root = fileURLToPath(new URL("../../", import.meta.url));
+export const coreTests = [
+  "scripts/release-manifest.test.mjs",
+  "scripts/fork-release-config.test.mjs",
+  "scripts/ci-deep.test.mjs",
+  "scripts/ci-workflow.test.mjs",
+  "scripts/ci-routine.test.mjs",
+  "scripts/sync-upstream-workflow.test.mjs",
+  "scripts/release-version-utils.test.mjs",
+  ".github/scripts/rebase-dev.test.mjs",
+  ".github/scripts/release-mac-smoke-deps.test.mjs",
+  ".github/scripts/release-mac-smoke.test.mjs",
+  ".github/scripts/android-cache-pin.test.mjs",
+  ".github/scripts/dependency-fingerprint.test.mjs",
+  ".github/scripts/release-android-delta.test.mjs",
+  ".github/scripts/release-assets.test.mjs",
+  ".github/scripts/android-size-report.test.mjs",
+];
+export const helperTests = [
+  "packages/desktop/scripts/after-pack.test.mjs",
+  "scripts/agent-adb.test.mjs",
+  "scripts/daemon-launch-contract.test.mjs",
+  "scripts/is-main-module.test.mjs",
+  "scripts/oxlint/paseo-plugin.test.mjs",
+  "scripts/paseo-nix-update.test.mjs",
+  "scripts/paseo-nix-update-delta.test.mjs",
+  "scripts/paseo-nix-update-semver.test.mjs",
+  "scripts/postinstall-patches-target.test.mjs",
+  "scripts/postinstall-patches.test.mjs",
+  "scripts/qa-web.test.mjs",
+  "scripts/expo-export-error.test.mjs",
+  "scripts/sync-fdroid-changelogs.test.mjs",
+  "scripts/sync-release-notes-from-changelog.test.mjs",
+  "scripts/upload-release-assets.test.mjs",
+];
+export const vitestHelpers = [
+  "scripts/merge-mac-manifest.test.mjs",
+  "scripts/stamp-rollout.test.mjs",
+  "scripts/validate-desktop-manifests.test.mjs",
+];
+export const packageTests = [
+  "scripts/nix-source-filter.test.mjs",
+  "scripts/builtin-plugins-dist.test.mjs",
+  "scripts/trace-daemon-dist.test.mjs",
+]; // Need built packages or Nix; run by hand, not by routine CI.
+const domains = ["sdk", "relay", "server", "cli", "app", "desktop"];
+const ownership = [...domains, "hub", "browser"];
+const docs = ["docs/**", "public-docs/**", "README.md", "CONTRIBUTING.md", "CLAUDE.md"];
+
+export function changedFiles(base, cwd = root) {
+  assert.match(base, /^[a-f0-9]{40}$/, "Changed base must be a full captured commit SHA");
+  return execFileSync("git", ["diff", "--no-renames", "--name-only", "-z", `${base}...HEAD`], {
+    cwd,
+    maxBuffer: 16 * 1024 * 1024,
+  })
+    .toString("utf8")
+    .split("\0")
+    .filter(Boolean);
+}
+
+export function selectChecks(files, filters) {
+  if (files === null) return { code: true, domains: [...domains], files: null };
+  assert.ok(Array.isArray(files));
+  const selected = new Set();
+  let code = false;
+  for (const file of files) {
+    assert.ok(
+      typeof file === "string" &&
+        file.length &&
+        !file.startsWith("/") &&
+        !file.split("/").includes("..") &&
+        !file.includes("\0"),
+      "Invalid changed path",
+    );
+    const hit = (group) => filters[group].some((pattern) => matchesGlob(file, pattern));
+    if (["workspace", "ci", "routing"].some(hit)) {
+      return { code: true, domains: [...domains], files };
+    }
+    const owners = ownership.filter(hit);
+    if (owners.length) {
+      code = true;
+      for (const owner of owners) {
+        if (owner === "hub") selected.add("server").add("cli");
+        else if (owner === "browser") selected.add("app");
+        else selected.add(owner);
+      }
+    } else if (!docs.some((pattern) => matchesGlob(file, pattern))) {
+      // Unknown paths, including new configuration and source, fail toward more checks.
+      return { code: true, domains: [...domains], files };
+    }
+  }
+  if (selected.has("relay")) selected.add("sdk");
+  if (selected.has("sdk"))
+    for (const name of ["server", "cli", "app", "desktop"]) selected.add(name);
+  if (selected.has("server")) selected.add("cli").add("desktop");
+  if (selected.has("cli") || selected.has("app")) selected.add("desktop");
+  return { code, domains: domains.filter((name) => selected.has(name)), files };
+}
+
+export function planCommands(selection, cwd = root) {
+  const commands = [];
+  // Every step names its lane group here, so renaming a step cannot reroute it.
+  const add = (name, command, args, lane = "quality") =>
+    commands.push({ name, command, args, lane });
+  const npm = (name, script, args = [], lane = "quality") =>
+    add(name, "npm", ["run", script, ...args], lane);
+  const unit = (workspace, script = "test", args = [], workers = 4, lane = "workspaces") =>
+    npm(
+      `${workspace} units`,
+      script,
+      [`--workspace=@getpaseo/${workspace}`, "--", ...args, `--maxWorkers=${workers}`],
+      lane,
+    );
+  if (selection.files === null) npm("format", "format:check");
+  else {
+    const files = selection.files.filter(
+      (file) =>
+        /\.(?:cjs|css|html|js|json|jsonc|jsx|md|mjs|ts|tsx|yaml|yml)$/.test(file) &&
+        existsSync(resolve(cwd, file)),
+    );
+    if (files.length)
+      npm("format", "format:check:files", ["--", ...files.map((file) => `./${file}`)]);
+  }
+  add("workflow expressions", "mise", [
+    "exec",
+    "actionlint@1.7.12",
+    "--",
+    "actionlint",
+    "-shellcheck=",
+    "-pyflakes=",
+  ]);
+  add("workflow and helper contracts", process.execPath, [
+    "--test",
+    "--test-concurrency=2",
+    ...coreTests,
+    ...(selection.code ? helperTests : []),
+  ]);
+  if (!selection.code) return commands;
+  add("Vitest helper contracts", "npm", [
+    "exec",
+    "--",
+    "vitest",
+    "run",
+    "--maxWorkers=2",
+    ...vitestHelpers,
+  ]);
+  npm("lint", "lint");
+  commands.push({ ...workspaceDeclarations, lane: "quality" });
+  npm("types", "typecheck");
+  if (selection.domains.includes("sdk"))
+    for (const name of ["protocol", "client", "plugin", "highlight"]) unit(name);
+  if (selection.domains.includes("relay")) unit("relay");
+  if (selection.domains.includes("server")) {
+    unit("builtin-plugins");
+    unit("server", "test:unit", [], 4, "server");
+  }
+  if (selection.domains.includes("cli"))
+    unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
+  // Four app workers starved live tests' 10 s hooks on 4-vCPU runners; three is the agreed response; watch for recurrence.
+  if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"], 3, "app");
+  if (selection.domains.includes("desktop")) {
+    // Install scripts are skipped, so fetch Electron once before parallel workers
+    // would each try to extract it on first import.
+    add(
+      "desktop Electron binary",
+      "npm",
+      ["exec", "--workspace=@getpaseo/desktop", "--", "install-electron"],
+      "workspaces",
+    );
+    add(
+      "desktop units",
+      "npm",
+      [
+        "exec",
+        "--workspace=@getpaseo/desktop",
+        "--",
+        "vitest",
+        "run",
+        "--exclude",
+        "e2e/**",
+        "--exclude",
+        "scripts/after-pack.test.mjs",
+        "--maxWorkers=4",
+      ],
+      "workspaces",
+    );
+  }
+  if (selection.domains.includes("server")) {
+    const integration = (name, files, args = []) =>
+      add(
+        name,
+        "npm",
+        [
+          "exec",
+          "--workspace=@getpaseo/server",
+          "--",
+          "vitest",
+          "run",
+          "--maxWorkers=1",
+          ...files,
+          ...args,
+        ],
+        "integration",
+      );
+    integration(
+      "focused server integration",
+      [
+        "src/server/creation/creation.e2e.test.ts",
+        "src/server/daemon-e2e/terminal-workspace-sdk.e2e.test.ts",
+        "src/server/daemon-e2e/models.e2e.test.ts",
+        "src/server/daemon-e2e/live-preferences.e2e.test.ts",
+        "src/server/agent/model-catalog.e2e.test.ts",
+        "src/server/plugins/plugin-paseo-api.e2e.test.ts",
+        "src/server/push/lifecycle.e2e.test.ts",
+      ],
+      ["-t", "^(?!.*Antigravity creates an agent and answers a prompt with real agy).*$"],
+    );
+    integration(
+      "worktree autoarchive",
+      ["src/server/session.create-agent-worktree-autoarchive.e2e.test.ts"],
+      ["-t", "creates a worktree and auto-archives both"],
+    );
+    integration(
+      "versioned OpenCode runtime",
+      ["src/server/agent/providers/opencode-bridge.local.e2e.test.ts"],
+      ["-t", "versioned runtime"],
+    );
+  }
+  return commands;
+}
+
+// Each lane group runs its steps after one prerequisite. Every hosted job is a
+// fresh checkout, so generated workspace declarations are prerequisites, not
+// artifacts trusted from another job or commit. Unit shards build only the
+// packages they import from dist: server units run the server and its terminal
+// worker from source, so they skip the server and CLI builds (13 s).
+// Hosted runners have 4 vCPUs; measured on them, 4 workers cut app units from
+// 139 s to 95 s; three runs per shard kept every lane's tests under 90 s.
+const workspaceDeclarations = {
+  name: "workspace declarations",
+  command: "npm",
+  args: ["run", "build:server"],
+};
+export const laneGroups = {
+  quality: {},
+  workspaces: { prerequisite: workspaceDeclarations },
+  app: {
+    shards: 2,
+    prerequisite: { name: "app dependencies", command: "npm", args: ["run", "build:app-deps"] },
+  },
+  server: {
+    shards: 3,
+    prerequisite: {
+      name: "server dependencies",
+      command: "npm",
+      args: ["run", "build:server-deps"],
+    },
+  },
+  integration: { prerequisite: workspaceDeclarations },
+};
+export const lanes = Object.entries(laneGroups).flatMap(([group, { shards }]) =>
+  shards ? Array.from({ length: shards }, (_, index) => `${group}-${index + 1}`) : [group],
+);
+/** The ci.yml matrix job name for a lane; refresh-test-durations reads logs by it. */
+export const routineJobName = (lane) => `routine (${lane})`;
+
+export function planLane(selection, lane, cwd = root) {
+  assert.ok(lanes.includes(lane), `Unknown routine lane: ${lane}`);
+  const group = lane.replace(/-\d+$/, "");
+  const { shards, prerequisite } = laneGroups[group];
+  const complete = planCommands(selection, cwd);
+  const selected = complete.filter((step) => step.lane === group);
+  if (!selected.length) return [];
+  const commands = shards
+    ? selected.map((step) =>
+        Object.assign({}, step, {
+          args: [...step.args, `--shard=${lane.slice(group.length + 1)}/${shards}`],
+        }),
+      )
+    : selected;
+  if (prerequisite) commands.unshift({ ...prerequisite, lane: group });
+  return commands;
+}
+
+export function planMatrix(selection) {
+  return { lane: lanes.filter((lane) => planLane(selection, lane).length > 0) };
+}
+
+export function executeCommands(
+  commands,
+  run = (command, args) =>
+    spawnSync(command, args, {
+      cwd: root,
+      stdio: "inherit",
+      timeout: 20 * 60 * 1000,
+    }),
+  report = console.log,
+) {
+  for (const step of commands) {
+    const start = performance.now();
+    report(`Starting ${step.name}`);
+    const result = run(step.command, step.args);
+    report(
+      `${step.name}: ${((performance.now() - start) / 1000).toFixed(2)}s, exit ${result.status ?? "error"}`,
+    );
+    if (result.error || result.status !== 0) return result.status || 1;
+  }
+  return 0;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const args = process.argv.slice(2);
+  const planOnly = args.includes("--plan");
+  const matrixOnly = args.includes("--matrix");
+  const laneIndex = args.indexOf("--lane");
+  const lane = laneIndex === -1 ? null : args[laneIndex + 1];
+  if (laneIndex !== -1) assert.ok(lanes.includes(lane), "Invalid routine lane");
+  const filtered = args.filter(
+    (arg, index) =>
+      arg !== "--plan" &&
+      arg !== "--matrix" &&
+      index !== laneIndex &&
+      (laneIndex === -1 || index !== laneIndex + 1),
+  );
+  assert.ok(
+    filtered.length === 0 || (filtered.length === 2 && filtered[0] === "--changed-from"),
+    "Usage: ci:routine [--plan | --matrix] [--lane <lane>] [--changed-from <full-sha>]",
+  );
+  assert.ok(
+    !matrixOnly || (!planOnly && lane === null),
+    "Matrix cannot be combined with plan or lane",
+  );
+  const filters = JSON.parse(readFileSync(new URL("../ci-paths.json", import.meta.url), "utf8"));
+  const selection = selectChecks(filtered.length ? changedFiles(filtered[1]) : null, filters);
+  const commands = lane === null ? planCommands(selection) : planLane(selection, lane);
+  if (matrixOnly) console.log(JSON.stringify(planMatrix(selection)));
+  else if (planOnly) console.log(JSON.stringify({ selection, commands }, null, 2));
+  else {
+    console.log(
+      `Routine source: ${execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim()}`,
+    );
+    const report = (line) => {
+      console.log(line);
+      if (process.env.GITHUB_STEP_SUMMARY)
+        appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${line}\n\n`);
+    };
+    process.exitCode = executeCommands(commands, undefined, report);
+  }
+}

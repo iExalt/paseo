@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const es: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "No se pudo buscar en este chat. Comprueba la conexión con el host y vuelve a intentarlo.",
@@ -337,6 +340,9 @@ export const es: TranslationResources = {
     actions: {
       copyCode: "Copiar código",
       copyTurn: "Copiar turno",
+      selectText: "Seleccionar texto",
+      selectTextTruncated:
+        "Se muestran los primeros 50.000 caracteres. Copiar turno lo copia todo.",
       copyMessage: "Copiar mensaje",
       forkMenu: "Bifurcar mensaje",
       forkInNewTab: "Bifurcar en una pestaña nueva",
@@ -709,6 +715,8 @@ export const es: TranslationResources = {
         failedToCloseAgent: "No se pudo cerrar el agente",
       },
       confirmations: {
+        closeTabsAboveTitle: "¿Cerrar pestañas de arriba?",
+        closeTabsBelowTitle: "¿Cerrar pestañas de abajo?",
         unsavedTitle: "Cambios sin guardar",
         unsavedMessage:
           "Esta pestaña tiene cambios sin guardar. Al cerrarla se descartará el borrador.",
@@ -752,6 +760,7 @@ export const es: TranslationResources = {
         importSession: "Importar sesión",
         copyPath: "Copiar ruta del espacio de trabajo",
         copyBranchName: "Copiar nombre de sucursal",
+        copyProviderSessionId: "Copiar ID de sesión",
         showSetup: "Mostrar configuración",
       },
       toasts: {
@@ -761,6 +770,7 @@ export const es: TranslationResources = {
           "Preparando el espacio de trabajo, abriendo la terminal cuando esté listo...",
         workspacePathCopiedLabel: "RutaWorkspace",
         branchNameCopiedLabel: "Nombre de la sucursal",
+        providerSessionIdCopiedLabel: "ID de sesión",
       },
     },
     scripts: {
@@ -1288,12 +1298,6 @@ export const es: TranslationResources = {
       search: "Buscar",
       schedules: "Horarios",
     },
-    worktreeSetup: {
-      title: "Configurar secuencias de comandos del árbol de trabajo",
-      description:
-        "Agregue comandos de configuración para que los nuevos árboles de trabajo puedan instalar dependencias y prepararse automáticamente.",
-      openProjectSettings: "Abrir la configuración del proyecto",
-    },
     project: {
       actions: {
         menu: "Acciones del proyecto",
@@ -1352,6 +1356,10 @@ export const es: TranslationResources = {
         hideFromSidebar: "Ocultar de la barra lateral",
         archiving: "Archivando...",
         hiding: "Ocultación...",
+        muteNotifications: "Silenciar notificaciones",
+        unmuteNotifications: "Activar notificaciones",
+        updatingNotifications: "Actualizando notificaciones...",
+        updateHostForNotifications: "Actualiza este host para administrar las notificaciones.",
       },
       confirmations: {
         hideTitle: "¿Ocultar espacio de trabajo?",
@@ -1479,11 +1487,41 @@ export const es: TranslationResources = {
       },
       advancedSettings: "Configuraciones avanzadas",
       openAdvancedSettings: "Abrir configuración avanzada del demonio",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Las versiones de la aplicación y del demonio no coinciden. Actualice ambos a la misma versión para obtener la mejor experiencia.",
       loadFailed: "No se puede cargar el estado del demonio del escritorio.",
     },
     updates: {
+      nix: {
+        checking: "Buscando actualizaciones…",
+        downloading: "Descargando {{version}}…",
+        applying: "Instalando {{version}}…",
+        restarting: "Reiniciando…",
+        failed: "La actualización falló: {{error}}",
+        ready: "{{version}} está descargada y lista para instalar",
+        available: "{{version}} está disponible",
+        restartRequired: "{{version}} está instalada; reinicia para usarla",
+        upToDate: "Actualizado (comprobado a las {{time}})",
+        notChecked: "Aún no se ha comprobado",
+        checkAction: "Comprobar",
+        updateAction: "Actualizar",
+        restartAction: "Reiniciar",
+        updateTitle: "¿Actualizar a {{version}}?",
+        updateMessage: "Paseo instalará la actualización y se reiniciará.",
+        updateConfirm: "Actualizar",
+        restartTitle: "¿Reiniciar para terminar de actualizar a {{version}}?",
+        restartMessage: "Paseo se reiniciará y usará la nueva versión.",
+        restartConfirm: "Reiniciar",
+        agentsKeepRunning:
+          "Los agentes en ejecución ({{count}}) siguen trabajando; el servicio en segundo plano se actualiza cuando terminen.",
+        lastAttemptFailed: "El último intento falló: {{error}}",
+        updateTooltip: "Actualizar a {{version}}",
+        restartTooltip: "Reiniciar para terminar de actualizar a {{version}}",
+        failedTooltip: "La actualización falló",
+        failedTitle: "La actualización falló",
+        tryAgain: "Reintentar",
+      },
       status: {
         checking: "Buscando actualizaciones de la aplicación...",
         installing: "Instalando actualización de la aplicación...",
@@ -1518,7 +1556,7 @@ export const es: TranslationResources = {
         versionReady: "{{version}}está listo para instalar.",
         newVersionReady: "Una nueva versión está lista para instalar.",
         restartWarning:
-          "La actualización de la aplicación dejará de ejecutar agentes y cerrará sesiones de terminal.",
+          "La actualización espera a que terminen los agentes y terminales activos antes de reiniciar.",
       },
     },
     settings: {
@@ -1979,6 +2017,8 @@ export const es: TranslationResources = {
     archiveTooltip: "Subagente de archivo",
     archiveFinishedAction: "Archivar subagentes finalizados",
     archiveFinishedRetry: "Reintentar ({{failed}}/{{total}})",
+    showFinished: "Mostrar {{count}} finalizados",
+    hideFinished: "Ocultar finalizados",
   },
   panels: {
     draft: {
@@ -2065,6 +2105,8 @@ export const es: TranslationResources = {
     output: "Producción",
   },
   turnSummary: {
+    messages: { one: "escribió {{count}} mensaje", other: "escribió {{count}} mensajes" },
+    agentMessage: "Mensaje de agente",
     details: "Ver detalles del turno",
     sentBy: "Enviado por {{name}}",
     showMore: "Mostrar más",
@@ -2088,6 +2130,7 @@ export const es: TranslationResources = {
       one: "buscó {{count}} vez",
       other: "buscó {{count}} veces",
     },
+    sentMessages: { one: "envió {{count}} mensaje", other: "envió {{count}} mensajes" },
     otherTools: {
       one: "usó {{count}} herramienta adicional",
       other: "usó {{count}} herramientas adicionales",
@@ -2250,7 +2293,7 @@ export const es: TranslationResources = {
     editor: {
       title: "Editor",
       vimKeybindings: "Atajos de Vim",
-      vimHint: "Se aplica a archivos fuente en web y escritorio.",
+      vimHint: "Se aplica a archivos fuente en el editor.",
     },
     files: {
       title: "Archivos",
@@ -2390,7 +2433,7 @@ export const es: TranslationResources = {
           steer:
             "Cuando el agente se está ejecutando, Enter dirige el turno activo. Command/Ctrl+Enter pone en cola.",
           queue:
-            "Cuando el agente se está ejecutando, Enter pone en cola. Command/Ctrl+Enter envía.",
+            "Cuando el agente se está ejecutando, Enter pone en cola. Command/Ctrl+Enter dirige el turno activo.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2480,6 +2523,7 @@ export const es: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "Acerca de",
       appVersion: "Versión de la aplicación",
       whatsNewHint: "Notas de versión de cada release",
@@ -2506,6 +2550,10 @@ export const es: TranslationResources = {
         checking: "De cheques...",
         alertTitle: "Error",
         alertMessage: "No se puede abrir el cuadro de diálogo de confirmación de actualización.",
+      },
+      nixUpdates: {
+        label: "Actualizaciones administradas por Nix",
+        invalidMarker: "No se pudo verificar esta instalación de Nix.",
       },
     },
     appearance: {
@@ -2586,7 +2634,6 @@ export const es: TranslationResources = {
     shortcuts: {
       dialogTitle: "Atajos",
       searchPlaceholder: "Buscar atajos",
-      unavailableOnMobile: "Los atajos de teclado solo están disponibles en el escritorio",
       capturePrompt: "Presione el acceso directo...",
       captureIndexPrompt: "Termina con un número del 1 al 9.",
       unassigned: "Sin asignar",
@@ -2741,6 +2788,13 @@ export const es: TranslationResources = {
         title: "Emparejar dispositivos",
         rowTitle: "Emparejar un dispositivo",
         rowHint: "Escanee un códigoQRo copie un enlace para conectar su teléfono a este host",
+        keepAwake: {
+          title: "Mantener este Mac activo para el relay",
+          hint: "Evita la suspensión con corriente mientras el relay está activado, para que los dispositivos remotos puedan llegar a este Mac. Consume más energía y se calienta más mientras está enchufado.",
+          activeHint: "Mantiene este Mac activo con corriente mientras el relay está activado",
+          waitingHint: "Se aplica cuando el relay está activado",
+          updateFailed: "No se pudo actualizar la opción de mantener activo",
+        },
       },
       skills: {
         ...en.settings.host.skills,
@@ -2803,6 +2857,35 @@ export const es: TranslationResources = {
           reset: "Restablecer",
           save: "Guardar",
           saving: "Guardando...",
+        },
+        replyRules: {
+          title: "Reglas de notificación de respuestas",
+          scope: "Se aplica a todos los espacios de trabajo de {{host}}.",
+          help: "Coincidencia de búsqueda RE2 sin normalizar el texto. Usa anclas para exigir la respuesta completa. Hasta 8 reglas, 256 unidades UTF-16 por patrón y 16.384 por asunto. Las marcas i, m y u son únicas; Unicode se activa si se omiten.",
+          source: "Patrón",
+          flags: "Marcas",
+          add: "Agregar regla",
+          remove: "Eliminar regla",
+          save: "Guardar reglas",
+          saving: "Guardando...",
+          clear: "Borrar todas las reglas",
+          loading: "Cargando reglas guardadas...",
+          empty: "No hay reglas de respuesta guardadas.",
+          unsupported:
+            "Actualiza este host para administrar las reglas de notificación de respuestas.",
+          disconnected:
+            "Conéctate a este host para administrar las reglas de notificación de respuestas.",
+          readError:
+            "No se pudieron leer las reglas guardadas: {{error}}. Si es un error de acceso, verifica el permiso daemon.read.",
+          writeError:
+            "No se pudieron guardar las reglas: {{error}}. Si es un error de acceso, verifica el permiso daemon.manage.",
+          conflict:
+            "Las reglas de este host cambiaron mientras editabas. Recargar las reglas guardadas descartará tu borrador; conservarlo te permitirá sobrescribir intencionalmente las reglas más recientes al guardar.",
+          awaitingAuthority:
+            "Guardado. Esperando que este host confirme las reglas actualizadas...",
+          reload: "Recargar reglas guardadas",
+          keep: "Conservar borrador",
+          retry: "Reintentar",
         },
       },
       agents: {

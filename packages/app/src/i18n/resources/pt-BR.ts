@@ -2,6 +2,9 @@ import { en, type TranslationResources } from "./en";
 import { pluginSettings } from "./plugin-settings";
 
 export const ptBR: TranslationResources = {
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure:
       "Não foi possível pesquisar nesta conversa. Verifique a conexão com o host e tente novamente.",
@@ -336,6 +339,8 @@ export const ptBR: TranslationResources = {
     actions: {
       copyCode: "Copiar código",
       copyTurn: "Copiar turno",
+      selectText: "Selecionar texto",
+      selectTextTruncated: "Mostrando os primeiros 50.000 caracteres. Copiar turno copia tudo.",
       copyMessage: "Copiar mensagem",
       forkMenu: "Bifurcar mensagem",
       forkInNewTab: "Bifurcar em uma nova aba",
@@ -707,6 +712,8 @@ export const ptBR: TranslationResources = {
         failedToCloseAgent: "Falha ao fechar agente",
       },
       confirmations: {
+        closeTabsAboveTitle: "Fechar abas acima?",
+        closeTabsBelowTitle: "Fechar abas abaixo?",
         unsavedTitle: "Alterações não salvas",
         unsavedMessage: "Esta aba tem alterações não salvas. Fechá-la descartará o rascunho.",
         closeWithoutSaving: "Fechar sem salvar",
@@ -749,6 +756,7 @@ export const ptBR: TranslationResources = {
         importSession: "Importar sessão",
         copyPath: "Copiar caminho do workspace",
         copyBranchName: "Copiar nome da branch",
+        copyProviderSessionId: "Copiar ID da sessão",
         showSetup: "Mostrar configuração",
       },
       toasts: {
@@ -757,6 +765,7 @@ export const ptBR: TranslationResources = {
         terminalQueued: "Preparando workspace, abrindo terminal quando estiver pronto...",
         workspacePathCopiedLabel: "Caminho do workspace",
         branchNameCopiedLabel: "Nome da branch",
+        providerSessionIdCopiedLabel: "ID da sessão",
       },
     },
     scripts: {
@@ -1278,12 +1287,6 @@ export const ptBR: TranslationResources = {
       search: "Buscar",
       schedules: "Agendamentos",
     },
-    worktreeSetup: {
-      title: "Configurar scripts de worktree",
-      description:
-        "Adicione comandos de configuração para que novos worktrees instalem dependências e se preparem automaticamente.",
-      openProjectSettings: "Abrir configurações do projeto",
-    },
     project: {
       actions: {
         menu: "Ações do projeto",
@@ -1342,6 +1345,10 @@ export const ptBR: TranslationResources = {
         hideFromSidebar: "Ocultar da barra lateral",
         archiving: "Arquivando...",
         hiding: "Ocultando...",
+        muteNotifications: "Silenciar notificações",
+        unmuteNotifications: "Ativar notificações",
+        updatingNotifications: "Atualizando notificações...",
+        updateHostForNotifications: "Atualize este host para gerenciar as notificações.",
       },
       confirmations: {
         hideTitle: "Ocultar workspace?",
@@ -1469,11 +1476,41 @@ export const ptBR: TranslationResources = {
       },
       advancedSettings: "Configurações avançadas",
       openAdvancedSettings: "Abrir configurações avançadas do daemon",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "As versões do app e do daemon não coincidem. Atualize ambos para a mesma versão para a melhor experiência.",
       loadFailed: "Não foi possível carregar o status do daemon desktop.",
     },
     updates: {
+      nix: {
+        checking: "Procurando atualizações…",
+        downloading: "Baixando {{version}}…",
+        applying: "Instalando {{version}}…",
+        restarting: "Reiniciando…",
+        failed: "Falha na atualização: {{error}}",
+        ready: "{{version}} foi baixada e está pronta para instalar",
+        available: "{{version}} está disponível",
+        restartRequired: "{{version}} está instalada; reinicie para usá-la",
+        upToDate: "Atualizado (verificado às {{time}})",
+        notChecked: "Ainda não verificado",
+        checkAction: "Verificar",
+        updateAction: "Atualizar",
+        restartAction: "Reiniciar",
+        updateTitle: "Atualizar para {{version}}?",
+        updateMessage: "O Paseo vai instalar a atualização e reiniciar.",
+        updateConfirm: "Atualizar",
+        restartTitle: "Reiniciar para concluir a atualização para {{version}}?",
+        restartMessage: "O Paseo vai reiniciar e usar a nova versão.",
+        restartConfirm: "Reiniciar",
+        agentsKeepRunning:
+          "Os agentes em execução ({{count}}) continuam trabalhando; o serviço em segundo plano é atualizado quando terminarem.",
+        lastAttemptFailed: "A última tentativa falhou: {{error}}",
+        updateTooltip: "Atualizar para {{version}}",
+        restartTooltip: "Reiniciar para concluir a atualização para {{version}}",
+        failedTooltip: "Falha na atualização",
+        failedTitle: "Falha na atualização",
+        tryAgain: "Tentar novamente",
+      },
       status: {
         checking: "Verificando atualizações do app...",
         installing: "Instalando atualização do app...",
@@ -1508,7 +1545,7 @@ export const ptBR: TranslationResources = {
         versionReady: "{{version}} está pronta para instalar.",
         newVersionReady: "Uma nova versão está pronta para instalar.",
         restartWarning:
-          "Atualizar o app vai interromper agentes em execução e fechar sessões de terminal.",
+          "A atualização aguarda o término dos agentes e terminais ativos antes de reiniciar.",
       },
     },
     settings: {
@@ -1964,6 +2001,8 @@ export const ptBR: TranslationResources = {
     archiveTooltip: "Arquivar subagente",
     archiveFinishedAction: "Arquivar subagentes concluídos",
     archiveFinishedRetry: "Tentar novamente ({{failed}}/{{total}})",
+    showFinished: "Mostrar {{count}} concluídos",
+    hideFinished: "Ocultar concluídos",
   },
   panels: {
     draft: {
@@ -2050,6 +2089,8 @@ export const ptBR: TranslationResources = {
     output: "Saída",
   },
   turnSummary: {
+    messages: { one: "escreveu {{count}} mensagem", other: "escreveu {{count}} mensagens" },
+    agentMessage: "Mensagem de agente",
     details: "Ver detalhes do turno",
     sentBy: "Enviado por {{name}}",
     showMore: "Mostrar mais",
@@ -2073,6 +2114,7 @@ export const ptBR: TranslationResources = {
       one: "pesquisou {{count}} vez",
       other: "pesquisou {{count}} vezes",
     },
+    sentMessages: { one: "enviou {{count}} mensagem", other: "enviou {{count}} mensagens" },
     otherTools: {
       one: "usou {{count}} outra ferramenta",
       other: "usou {{count}} outras ferramentas",
@@ -2235,7 +2277,7 @@ export const ptBR: TranslationResources = {
     editor: {
       title: "Editor",
       vimKeybindings: "Atalhos do Vim",
-      vimHint: "Aplica-se a arquivos-fonte na web e no desktop.",
+      vimHint: "Aplica-se a arquivos-fonte no editor.",
     },
     files: {
       title: "Arquivos",
@@ -2373,7 +2415,8 @@ export const ptBR: TranslationResources = {
             "Quando o agente está em execução, Enter interrompe. Command/Ctrl+Enter enfileira.",
           steer:
             "Quando o agente está em execução, Enter orienta o turno ativo. Command/Ctrl+Enter enfileira.",
-          queue: "Quando o agente está em execução, Enter enfileira. Command/Ctrl+Enter envia.",
+          queue:
+            "Quando o agente está em execução, Enter enfileira. Command/Ctrl+Enter orienta o turno ativo.",
         },
         commandEnterDescriptions: {
           interrupt:
@@ -2463,6 +2506,7 @@ export const ptBR: TranslationResources = {
       },
     },
     about: {
+      ...en.settings.about,
       title: "Sobre",
       appVersion: "Versão do app",
       whatsNewHint: "Notas de versão de cada release",
@@ -2489,6 +2533,10 @@ export const ptBR: TranslationResources = {
         checking: "Verificando...",
         alertTitle: "Erro",
         alertMessage: "Não foi possível abrir o diálogo de confirmação da atualização.",
+      },
+      nixUpdates: {
+        label: "Atualizações gerenciadas pelo Nix",
+        invalidMarker: "Não foi possível verificar esta instalação do Nix.",
       },
     },
     appearance: {
@@ -2567,7 +2615,6 @@ export const ptBR: TranslationResources = {
     shortcuts: {
       dialogTitle: "Atalhos",
       searchPlaceholder: "Pesquisar atalhos",
-      unavailableOnMobile: "Atalhos de teclado estão disponíveis apenas no desktop",
       capturePrompt: "Pressione o atalho...",
       captureIndexPrompt: "Termine com um número de 1 a 9.",
       unassigned: "Não definido",
@@ -2723,6 +2770,13 @@ export const ptBR: TranslationResources = {
         title: "Parear dispositivos",
         rowTitle: "Parear um dispositivo",
         rowHint: "Escaneie um QR code ou copie um link para conectar seu celular a este host",
+        keepAwake: {
+          title: "Manter este Mac acordado para o relay",
+          hint: "Impede a suspensão na tomada enquanto o relay está ativado, para que dispositivos remotos alcancem este Mac. Consome mais energia e esquenta mais enquanto está na tomada.",
+          activeHint: "Mantém este Mac acordado na tomada enquanto o relay está ativado",
+          waitingHint: "Entra em vigor quando o relay está ativado",
+          updateFailed: "Não foi possível atualizar a opção de manter acordado",
+        },
       },
       skills: {
         ...en.settings.host.skills,
@@ -2785,6 +2839,32 @@ export const ptBR: TranslationResources = {
           reset: "Redefinir",
           save: "Salvar",
           saving: "Salvando...",
+        },
+        replyRules: {
+          title: "Regras de notificação de respostas",
+          scope: "Aplica-se a todos os espaços de trabalho em {{host}}.",
+          help: "Correspondência de busca RE2 sem normalizar o texto. Use âncoras para exigir a resposta inteira. Até 8 regras, 256 unidades UTF-16 por padrão e 16.384 por assunto. As flags i, m e u não podem se repetir; Unicode é ativado quando omitido.",
+          source: "Padrão",
+          flags: "Flags",
+          add: "Adicionar regra",
+          remove: "Remover regra",
+          save: "Salvar regras",
+          saving: "Salvando...",
+          clear: "Limpar todas as regras",
+          loading: "Carregando regras salvas...",
+          empty: "Nenhuma regra de resposta salva.",
+          unsupported: "Atualize este host para gerenciar regras de notificação de respostas.",
+          disconnected: "Conecte-se a este host para gerenciar regras de notificação de respostas.",
+          readError:
+            "Não foi possível ler as regras salvas: {{error}}. Se for um erro de acesso, verifique a permissão daemon.read.",
+          writeError:
+            "Não foi possível salvar as regras: {{error}}. Se for um erro de acesso, verifique a permissão daemon.manage.",
+          conflict:
+            "As regras deste host mudaram durante a edição. Recarregar as regras salvas descarta seu rascunho; mantê-lo permite substituir intencionalmente as regras mais recentes no próximo salvamento.",
+          awaitingAuthority: "Salvo. Aguardando este host confirmar as regras atualizadas...",
+          reload: "Recarregar regras salvas",
+          keep: "Manter rascunho",
+          retry: "Tentar novamente",
         },
       },
       agents: {

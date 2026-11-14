@@ -121,3 +121,25 @@ describe("resolveUpdateCalloutDescriptor", () => {
     }
   });
 });
+
+it("keeps a safety refusal visible with an enabled install retry", () => {
+  const descriptor = resolveUpdateCalloutDescriptor(
+    input({
+      status: "waiting",
+      installMessage: "Fork update is waiting for active agents to finish.",
+    }),
+  );
+  expect(descriptor?.body).toEqual({
+    kind: "waiting",
+    message: "Fork update is waiting for active agents to finish.",
+  });
+  expect(descriptor?.variant).toBe("default");
+  expect(descriptor?.showGiftIcon).toBe(false);
+  expect(descriptor?.actions.at(-1)).toEqual({
+    role: "install",
+    label: "Retry",
+    variant: "primary",
+    disabled: false,
+  });
+  expect(descriptor?.dismissalKey).toBe("desktop-update:waiting:1.2.3");
+});

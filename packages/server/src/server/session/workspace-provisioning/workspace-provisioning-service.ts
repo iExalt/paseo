@@ -1,6 +1,9 @@
 import type { PluginLifecycle } from "../../plugins/lifecycle/index.js";
 import { describeHookWorkspace } from "../../plugins/lifecycle/index.js";
+import { stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { withWorkspaceLifecycleLock } from "../../workspace-lifecycle-lock.js";
+import { withWorktreePathLock } from "../../../utils/worktree-path-lock.js";
 import type { ProjectCheckoutLitePayload } from "@getpaseo/protocol/messages";
 import type { Logger } from "pino";
 import {
@@ -50,6 +53,7 @@ export interface CreateWorktreeWorkspaceInput {
   branch: string | null;
   baseBranch: string | null;
   title: string | null;
+  notifications?: "on" | "off";
   expectsInitialAgent?: boolean;
   untrustedSource?: UntrustedWorkspaceSource;
   background?: boolean;
@@ -72,6 +76,7 @@ export interface WorkspaceProvisioningService {
       workspaceId?: string;
       background?: boolean;
       callerWorkspaceId?: string;
+      notifications?: "on" | "off";
     },
   ): Promise<PersistedWorkspaceRecord>;
   createWorkspaceForWorktree(
@@ -244,29 +249,43 @@ export function createWorkspaceProvisioningService(deps: {
       workspaceId?: string;
       background?: boolean;
       callerWorkspaceId?: string;
+      notifications?: "on" | "off";
     },
   ): Promise<PersistedWorkspaceRecord> {
     const normalizedCwd = resolve(cwd);
-    const checkout = await workspaceGitService.getCheckout(normalizedCwd);
-    const project = projectId
-      ? await refreshProjectKind(await requireActiveProject(projectId), normalizedCwd, checkout)
-      : // COMPAT(workspaceCreateMissingProjectId): added in v0.1.107, remove after 2027-01-15.
-        await findOrCreateProjectForDirectory(normalizedCwd);
-    const timestamp = new Date().toISOString();
-    const workspace = createPersistedWorkspaceRecord({
-      workspaceId: context?.workspaceId ?? generateWorkspaceId(),
-      projectId: project.projectId,
-      ...initialWorkspacePlacement({ source: "checkout", cwd: normalizedCwd, checkout }),
-      title: title?.trim() || null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-      background: await resolveBackground(context),
+    const isDirectory = () =>
+      stat(normalizedCwd).then(
+        (info) => info.isDirectory(),
+        () => false,
+      );
+    const existedBeforeLock = await isDirectory();
+    // Serialized with archive's delete of the worktree this directory may live in.
+    return withWorktreePathLock(normalizedCwd, async () => {
+      if (existedBeforeLock && !(await isDirectory())) {
+        throw new Error(`Workspace directory was removed: ${normalizedCwd}`);
+      }
+      const checkout = await workspaceGitService.getCheckout(normalizedCwd);
+      const project = projectId
+        ? await refreshProjectKind(await requireActiveProject(projectId), normalizedCwd, checkout)
+        : // COMPAT(workspaceCreateMissingProjectId): added in v0.1.107, remove after 2027-01-15.
+          await findOrCreateProjectForDirectory(normalizedCwd);
+      const timestamp = new Date().toISOString();
+      const workspace = createPersistedWorkspaceRecord({
+        workspaceId: context?.workspaceId ?? generateWorkspaceId(),
+        projectId: project.projectId,
+        ...initialWorkspacePlacement({ source: "checkout", cwd: normalizedCwd, checkout }),
+        title: title?.trim() || null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        background: await resolveBackground(context),
+        notifications: context?.notifications,
+      });
+      await workspaceRegistry.upsert(workspace, {
+        expectsInitialAgent: context?.expectsInitialAgent,
+      });
+      emitWorkspaceCreated(workspace);
+      return workspace;
     });
-    await workspaceRegistry.upsert(workspace, {
-      expectsInitialAgent: context?.expectsInitialAgent,
-    });
-    emitWorkspaceCreated(workspace);
-    return workspace;
   }
 
   async function createWorkspaceForWorktree(
@@ -296,6 +315,7 @@ export function createWorkspaceProvisioningService(deps: {
       title: input.title,
       createdAt: timestamp,
       updatedAt: timestamp,
+      notifications: input.notifications,
       ...(input.untrustedSource ? { untrustedSource: input.untrustedSource } : {}),
       background: await resolveBackground(input),
     });
@@ -365,12 +385,17 @@ export function createWorkspaceProvisioningService(deps: {
           Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
           left.workspaceId.localeCompare(right.workspaceId),
       );
-    const active = workspaces.find((workspace) => !workspace.archivedAt);
-    if (active) return refreshWorkspaceRecord(active);
-    const archived = workspaces.find((workspace) => workspace.archivedAt);
-    if (archived) {
-      const project = await projectRegistry.get(archived.projectId);
-      if (project && !project.archivedAt) return ensureWorkspaceRecordUnarchived(archived);
+    const selected = workspaces.find((workspace) => !workspace.archivedAt) ?? workspaces[0];
+    if (selected) {
+      return withWorkspaceLifecycleLock([selected.workspaceId], async () => {
+        const current = await workspaceRegistry.get(selected.workspaceId);
+        if (current && !current.archivedAt) return refreshWorkspaceRecord(current);
+        if (current) {
+          const project = await projectRegistry.get(current.projectId);
+          if (project && !project.archivedAt) return ensureWorkspaceRecordUnarchived(current);
+        }
+        return createWorkspaceForDirectory(normalizedCwd);
+      });
     }
     return createWorkspaceForDirectory(normalizedCwd);
   }
@@ -408,6 +433,10 @@ export function createWorkspaceProvisioningService(deps: {
   async function ensureWorkspaceRecordUnarchived(
     workspace: PersistedWorkspaceRecord,
   ): Promise<PersistedWorkspaceRecord> {
+    // Recovery and path discovery hold this workspace's lifecycle lock.
+    const current = await workspaceRegistry.get(workspace.workspaceId);
+    if (!current) throw new Error(`Unknown workspace: ${workspace.workspaceId}`);
+    workspace = current;
     const project = await projectRegistry.get(workspace.projectId);
     if (!project) throw new Error(`Unknown project: ${workspace.projectId}`);
     const timestamp = new Date().toISOString();

@@ -19,7 +19,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { AppState, useWindowDimensions, View } from "react-native";
+import { AppState, Platform, useWindowDimensions, View } from "react-native";
 import { GestureDetector, GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -30,7 +30,6 @@ import { CommandCenterProvider } from "@/command-center/provider";
 import { CommandCenterWorkspaceActions } from "@/command-center/workspace-registration";
 import { PluginCommandCenterActions } from "@/plugins/command-center/registration";
 import { AddProjectFlowHost } from "@/components/add-project-flow-host";
-import { WorktreeSetupCalloutSource } from "@/components/worktree-setup-callout-source";
 import { DownloadToast } from "@/components/download-toast";
 import { QuittingOverlay } from "@/components/quitting-overlay";
 import { KeyboardShortcutsDialog } from "@/components/keyboard-shortcuts-dialog";
@@ -38,7 +37,10 @@ import { ChangelogHost } from "@/changelog";
 import { AppDiagnosticHost } from "@/components/app-diagnostic-host";
 import { AppearanceStyleBoundary } from "@/components/appearance-style-boundary";
 import { LeftSidebar } from "@/components/left-sidebar";
-import { WindowSidebarMenuToggle } from "@/components/headers/sidebar-menu-toggle";
+import {
+  useSidebarMenuPress,
+  WindowSidebarMenuToggle,
+} from "@/components/headers/sidebar-menu-toggle";
 import { DesktopWindowControls } from "@/components/desktop/window-controls";
 import { SidebarModelProvider } from "@/components/sidebar/sidebar-model";
 import { WorkspacePinShortcutHandler } from "@/components/workspace-pin-shortcut-handler";
@@ -84,6 +86,8 @@ import { getDesktopHost } from "@/desktop/host";
 import { loadDesktopSettings } from "@/desktop/settings/desktop-settings";
 import { RosettaCalloutSource } from "@/desktop/updates/rosetta-callout-source";
 import { UpdateCalloutSource } from "@/desktop/updates/update-callout-source";
+import { NixUpdateScheduler } from "@/desktop/updates/nix-update-scheduler";
+import { ForkUpdateScheduler } from "@/android/fork-updates/scheduler";
 import { useActiveWorktreeNewAction } from "@/hooks/use-active-worktree-new-action";
 import { useGlobalNewWorkspaceAction } from "@/hooks/use-global-new-workspace-action";
 import { useLatchedBoolean } from "@/hooks/use-latched-boolean";
@@ -129,9 +133,17 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
-import { ensureOsNotificationPermission } from "@/utils/os-notifications";
+import { startPresentedNotificationDismissal } from "@/notification-dismissal/start-presented";
+import {
+  adoptDeliveredOsNotifications,
+  ensureOsNotificationPermission,
+} from "@/utils/os-notifications";
+import { agentLog, describeError } from "@/utils/agent-log";
+import { loadAgentSwitches } from "@/diagnostics/agent-switches";
 
 polyfillCrypto();
+// Before anything reads a switch, and so the log shows them at every launch.
+loadAgentSwitches();
 
 export interface HostRuntimeBootstrapState {
   splashError: string | null;
@@ -346,8 +358,6 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   const keyboardActionDispatcher = useKeyboardActionDispatcher();
   const daemons = useHosts();
   const { settings, updateSettings } = useAppSettings();
-  const toggleMobileAgentList = usePanelStore((state) => state.toggleMobileAgentList);
-  const toggleDesktopAgentList = usePanelStore((state) => state.toggleDesktopAgentList);
   const exitFocusMode = usePanelStore((state) => state.exitFocusMode);
   const isFocusModeEnabled = usePanelStore((state) => state.desktop.focusModeEnabled);
   const isDesktopAgentListOpen = usePanelStore((state) => state.desktop.agentListOpen);
@@ -367,7 +377,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
   const isWorkspaceFocusModeEnabled = isWorkspaceRoute && isFocusModeEnabled;
   const chromeEnabled = chromeEnabledOverride ?? daemons.length > 0;
   const hasMountedDesktopSidebar = useLatchedBoolean(chromeEnabled);
-  const toggleAgentList = isCompactLayout ? toggleMobileAgentList : toggleDesktopAgentList;
+  const toggleAgentList = useSidebarMenuPress(isCompactLayout);
   const toggleDesktopSidebars = useCallback(() => {
     // The focused workspace owns its layout key, its checkout, and therefore the
     // only correct answer to "is the explorer open". Let it decide when there is
@@ -486,8 +496,9 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
         <DownloadToast />
         <RosettaCalloutSource />
         <UpdateCalloutSource />
+        <NixUpdateScheduler />
+        <ForkUpdateScheduler />
         <LegacyAgentSkillsMigration />
-        <WorktreeSetupCalloutSource />
         <CommandCenterRootActions />
         <CommandCenterWorkspaceActions />
         <PluginCommandCenterActions />
@@ -583,7 +594,8 @@ function ProvidersWrapper({ children }: { children: ReactNode }) {
         <DesktopWindowControlsSync />
         <OfferLinkListener />
         <HostSessionManager />
-        <FaviconStatusSync />
+        {/* The favicon and dock badge exist only on web and desktop. */}
+        {isNative ? null : <FaviconStatusSync />}
         {children}
       </VoiceProvider>
     </AppearanceProvider>
@@ -619,9 +631,13 @@ function OfferLinkListener() {
         return;
       try {
         const result = await getHostRuntimeStore().importConnectionLink(url, "openProject");
+        agentLog("link", "import", {
+          status: result.status,
+          serverId: "serverId" in result ? result.serverId : undefined,
+        });
         if (!cancelled && result.status === "connected") router.replace(buildOpenProjectRoute());
       } catch (error) {
-        console.warn("[OfferLinkListener] Pairing link failed", error);
+        agentLog("link", "import", { status: "failed", reason: describeError(error) });
       }
     };
 
@@ -788,6 +804,15 @@ const ROOT_STACK_SCREEN_OPTIONS = {
   animation: "none" as const,
 };
 const ROOT_STACK_NESTED_NAVIGATOR_SCREENS = ["h/[serverId]"] as const;
+/**
+ * Settings pages pushed from the settings list slide in on Android.
+ *
+ * With no animation, Android draws the outgoing list's lucide icons for one frame stretched
+ * across the lower screen, which reads as grey scribbles flashing on every tap. A real push
+ * keeps the list on screen until the new page covers it, and that frame never appears.
+ */
+const SETTINGS_PAGE_SCREEN_OPTIONS =
+  Platform.OS === "android" ? { animation: "slide_from_right" as const } : undefined;
 
 function RootStack() {
   const storeReady = useStoreReady();
@@ -797,10 +822,11 @@ function RootStack() {
       nestedNavigatorScreens={ROOT_STACK_NESTED_NAVIGATOR_SCREENS}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="pair" />
       <Stack.Protected guard={storeReady}>
         <Stack.Screen name="welcome" />
         <Stack.Screen name="settings/index" />
-        <Stack.Screen name="settings/[section]" />
+        <Stack.Screen name="settings/[section]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
         <Stack.Screen name="new" />
         <Stack.Screen name="open-project" />
         <Stack.Screen name="sessions" />
@@ -808,11 +834,23 @@ function RootStack() {
         <Stack.Screen name="pair-scan" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />
-      <Stack.Screen name="settings/hosts/[serverId]/index" />
-      <Stack.Screen name="settings/hosts/[serverId]/[hostSection]" />
-      <Stack.Screen name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]" />
-      <Stack.Screen name="settings/hosts/[serverId]/projects/index" />
-      <Stack.Screen name="settings/hosts/[serverId]/projects/[projectId]" />
+      <Stack.Screen name="settings/hosts/[serverId]/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/[hostSection]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/projects/index"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/projects/[projectId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
     </ThemedStack>
   );
 }
@@ -828,8 +866,11 @@ function WorkspaceRouteNavigationBridge() {
 }
 
 function AppShell() {
+  useEffect(() => startPresentedNotificationDismissal(), []);
   useEffect(() => {
-    if (getDesktopHost()) void ensureOsNotificationPermission();
+    if (!getDesktopHost()) return;
+    void ensureOsNotificationPermission();
+    void adoptDeliveredOsNotifications();
   }, []);
   return (
     <MobilePanelsProvider>

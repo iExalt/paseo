@@ -23,8 +23,8 @@ interface TestPaseoDaemonOptions {
   listen?: string;
   listenPort?: number;
   logger?: Parameters<typeof createPaseoDaemon>[1];
-  mcpEnabled?: boolean;
-  mcpDebug?: boolean;
+  agentToolsEnabled?: boolean;
+  browserToolsEnabled?: boolean;
   isDev?: boolean;
   relayEnabled?: boolean;
   relayEndpoint?: string;
@@ -109,6 +109,7 @@ export async function createTestPaseoDaemon(
     const logger = options.logger ?? pino({ level: "silent" });
     const daemon = await createPaseoDaemon(config, logger, {
       builtinPlugins: options.builtinPlugins ?? new BuiltinPluginLoader(undefined, []),
+      deferTerminalWorkerLaunch: true,
       serverFeatureOverrides: {
         daemonStatusRpc: options.daemonStatusRpcCapability,
         relayConfig: options.relayConfigCapability,
@@ -193,9 +194,9 @@ async function prepareTestDaemonConfig(
     desktopManaged: options.desktopManaged,
     corsAllowedOrigins: options.corsAllowedOrigins ?? [],
     hostnames: true,
-    mcpEnabled: options.mcpEnabled ?? true,
+    agentToolsEnabled: options.agentToolsEnabled ?? true,
+    browserToolsEnabled: options.browserToolsEnabled,
     staticDir,
-    mcpDebug: options.mcpDebug ?? false,
     isDev: options.isDev,
     agentClients: options.agentClients ?? createTestAgentClients(),
     providerOverrides: options.providerOverrides,
@@ -205,6 +206,7 @@ async function prepareTestDaemonConfig(
     relayUseTls: options.relayUseTls,
     relayPublicUseTls: options.relayPublicUseTls,
     relayRequireProtectedSecurity: options.relayRequireProtectedSecurity,
+    keepAwakeSpawn: null,
     appBaseUrl: "https://app.paseo.sh",
     auth: options.auth,
     pushNotificationSender: options.pushNotificationSender,

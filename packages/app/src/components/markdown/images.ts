@@ -1,4 +1,5 @@
 import { Image } from "react-native";
+import { useTranslation } from "react-i18next";
 import { isWeb } from "@/constants/platform";
 import { useMemo, useEffect, useId } from "react";
 import { useFetchQueries } from "@/data/query";
@@ -37,9 +38,17 @@ export interface MarkdownImageContext {
 
 export function useMarkdownSource(text: string, context: MarkdownImageContext) {
   const occurrenceKey = useId();
+  const { t } = useTranslation();
+  const imageLabel = t("panels.file.filePanels.builtin.image");
+  const imageUnavailableLabel = t("message.attachments.imageUnavailable");
   const prepared = useMemo(
-    () => prepareMarkdownSource(text, context.workspaceRoot, { supportsSvg: isWeb }),
-    [text, context.workspaceRoot],
+    () =>
+      prepareMarkdownSource(text, context.workspaceRoot, {
+        supportsSvg: isWeb,
+        imageLabel,
+        imageUnavailableLabel,
+      }),
+    [text, context.workspaceRoot, imageLabel, imageUnavailableLabel],
   );
   const sources = [...new Set(prepared.images.map((image) => image.source))];
   const acquisitions = sources.map((source) => {
@@ -51,7 +60,8 @@ export function useMarkdownSource(text: string, context: MarkdownImageContext) {
     return createAssistantImageFileAcquisition({
       port: context.client
         ? {
-            readFile: (cwd, path) => context.client!.readFile(cwd, path),
+            readFile: (cwd, path, maxBytes) =>
+              context.client!.readFile(cwd, path, undefined, maxBytes),
             persist: persistAttachmentFromBytes,
           }
         : null,
@@ -129,5 +139,8 @@ export function useMarkdownSource(text: string, context: MarkdownImageContext) {
     linkRecognition: prepared.linkRecognition,
     linkSource: prepared.linkSource,
     imageSources: Object.fromEntries([...resolved].map(([source, url]) => [url, source])),
+    imageAttachments: Object.fromEntries(
+      results.flatMap((result) => (result.data ? [[result.data.uri, result.data.attachment]] : [])),
+    ),
   };
 }

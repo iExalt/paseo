@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { resolveAgentTarget } from "../../utils/agent-target.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { waitForStop } from "../../utils/wait-for-stop.js";
 import type { CommandError, CommandOptions } from "../../output/index.js";
@@ -13,11 +14,17 @@ import { curateAgentActivity } from "@getpaseo/server/agent-activity";
 export function addLogsOptions(cmd: Command): Command {
   return cmd
     .description("View agent activity/timeline")
-    .argument("<id>", "Agent ID (or prefix)")
+    .argument("<id>", "Agent ID, prefix, or full session ID")
     .option("-f, --follow", "Follow log output (streaming)")
     .option("--tail <n>", "Show last n entries")
     .option("--filter <type>", "Filter by event type (tools, text, errors, permissions)")
-    .option("--since <time>", "Show logs since timestamp");
+    .option("--since <time>", "Show logs since timestamp")
+    .option("--json", "Output lossless timeline entries and page cursors as JSON")
+    .option("--full", "Print complete timeline entries as JSON, including tool details")
+    .option("--limit <n>", "Fetch at most n timeline rows (0 means all)")
+    .option("--before <epoch:seq>", "Fetch rows before a page cursor (default limit 200)")
+    .option("--search <query>", "Find conversation text; returns matching locations")
+    .option("--cursor <seq>", "Continue search at its nextCursor");
 }
 
 export interface AgentLogsOptions extends CommandOptions {
@@ -25,6 +32,11 @@ export interface AgentLogsOptions extends CommandOptions {
   tail?: string;
   filter?: string;
   since?: string;
+  full?: boolean;
+  limit?: string;
+  before?: string;
+  search?: string;
+  cursor?: string;
 }
 
 // Logs command returns void - it outputs directly to console
@@ -245,6 +257,83 @@ function matchesFilter(item: AgentTimelineItem, filter?: string): boolean {
   }
 }
 
+export function parseTimelineOptions(options: AgentLogsOptions) {
+  const integer = (value: string | undefined, flag: string): number | undefined => {
+    if (value === undefined) return undefined;
+    const parsed = Number(value);
+    if (!/^\d+$/.test(value) || !Number.isSafeInteger(parsed)) {
+      throw { code: "INVALID_ARGUMENT", message: `${flag} must be a nonnegative safe integer.` };
+    }
+    return parsed;
+  };
+  const limit = integer(options.limit, "--limit");
+  const searchCursor = integer(options.cursor, "--cursor");
+  const tail = integer(options.tail, "--tail");
+  let cursor: { epoch: string; seq: number } | undefined;
+  if (options.before !== undefined) {
+    const split = options.before.lastIndexOf(":");
+    const epoch = options.before.slice(0, split);
+    const seq = integer(options.before.slice(split + 1), "--before sequence");
+    if (split < 1 || seq === undefined) {
+      throw { code: "INVALID_ARGUMENT", message: "--before requires epoch:seq." };
+    }
+    cursor = { epoch, seq };
+  }
+  const json = options.json === true || options.format === "json";
+  const detailed = json || options.full;
+  if (options.follow && (detailed || options.limit !== undefined || cursor)) {
+    throw {
+      code: "INVALID_ARGUMENT",
+      message: "--follow cannot combine with --json, --full, --limit or --before.",
+    };
+  }
+  const searchModifiers = [
+    options.before,
+    options.limit,
+    options.tail,
+    options.since,
+    options.filter,
+  ];
+  if (
+    options.search !== undefined &&
+    (options.follow || options.full || searchModifiers.some((value) => value !== undefined))
+  ) {
+    throw { code: "INVALID_ARGUMENT", message: "--search only combines with --json and --cursor." };
+  }
+  if (options.search !== undefined && !options.search.trim()) {
+    throw { code: "INVALID_ARGUMENT", message: "--search must not be blank." };
+  }
+  if (searchCursor !== undefined && options.search === undefined) {
+    throw { code: "INVALID_ARGUMENT", message: "--cursor requires --search." };
+  }
+  return { limit: limit ?? (cursor ? 200 : 0), cursor, searchCursor, tail, json };
+}
+
+async function printTimelinePage(
+  client: DaemonClient,
+  resolvedId: string,
+  options: AgentLogsOptions,
+  pageOptions: ReturnType<typeof parseTimelineOptions>,
+  sinceTimestampMs: number | undefined,
+): Promise<void> {
+  const page = await client.fetchAgentTimeline(resolvedId, {
+    direction: pageOptions.cursor ? "before" : "tail",
+    cursor: pageOptions.cursor,
+    limit: pageOptions.limit,
+    wholeTurns: false,
+    projection: "projected",
+  });
+  let entries = page.entries.filter((entry) => matchesFilter(entry.item, options.filter));
+  if (sinceTimestampMs !== undefined)
+    entries = entries.filter((entry) => Date.parse(entry.timestamp) >= sinceTimestampMs);
+  if (pageOptions.tail !== undefined)
+    entries = pageOptions.tail === 0 ? [] : entries.slice(-pageOptions.tail);
+  await client.close();
+  if (pageOptions.json) console.log(JSON.stringify({ ...page, entries }));
+  else if (options.full) console.log(JSON.stringify({ ...page, entries }, null, 2));
+  else console.log(formatAgentActivityTranscript(entries.map((entry) => entry.item)));
+}
+
 export async function runLogsCommand(
   id: string,
   options: AgentLogsOptions,
@@ -257,17 +346,31 @@ export async function runLogsCommand(
   }
 
   const sinceTimestampMs = parseSinceTimestamp(options.since);
+  const pageOptions = parseTimelineOptions(options);
   const client = await connectToDaemon({ target: options.daemonTarget });
 
   try {
-    const fetchResult = await client.fetchAgent({ agentId: id });
-    if (!fetchResult) {
-      console.error(`Error: No agent found matching: ${id}`);
-      console.error("Use `paseo ls` to list available agents");
+    const resolvedId = await resolveAgentTarget(client, id);
+
+    if (options.search !== undefined) {
+      const result = await client.searchAgentTimeline({
+        agentId: resolvedId,
+        query: options.search,
+        cursor: pageOptions.searchCursor,
+      });
       await client.close();
-      process.exit(1);
+      console.log(pageOptions.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
+      return;
     }
-    const resolvedId = fetchResult.agent.id;
+    if (
+      pageOptions.json ||
+      options.full ||
+      options.limit !== undefined ||
+      options.before !== undefined
+    ) {
+      await printTimelinePage(client, resolvedId, options, pageOptions, sinceTimestampMs);
+      return;
+    }
 
     // For follow mode, we stream events continuously
     if (options.follow) {
@@ -314,6 +417,7 @@ export async function runLogsCommand(
     const transcript = formatAgentActivityTranscript(timelineItems, tailCount);
     console.log(transcript);
   } catch (err) {
+    await client.close().catch(() => {});
     if (err && typeof err === "object" && "code" in err) throw err;
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Error: Failed to get logs: ${message}`);
@@ -405,4 +509,16 @@ async function runFollowMode({
   writer.end();
   unsubscribe();
   await client.close();
+}
+
+export async function runPromptsCommand(id: string, options: CommandOptions): Promise<void> {
+  const client = await connectToDaemon({ target: options.daemonTarget });
+  try {
+    const agentId = await resolveAgentTarget(client, id);
+    const result = await client.listAgentTimelinePrompts(agentId);
+    const json = options.json === true || options.format === "json";
+    console.log(JSON.stringify(result, null, json ? undefined : 2));
+  } finally {
+    await client.close();
+  }
 }

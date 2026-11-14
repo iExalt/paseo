@@ -7,6 +7,7 @@ import {
   AgentSnapshotPayloadSchema,
   AgentTimelineItemPayloadSchema,
   ServerInfoStatusPayloadSchema,
+  SessionInboundMessageSchema,
   SessionOutboundMessageSchema,
   WSHelloMessageSchema,
   WorkspaceSetupSnapshotSchema,
@@ -553,7 +554,11 @@ test("local STT language survives wire reads and patches", () => {
 });
 
 test("speech config reads remain compatible with clients before features and future providers", () => {
-  const oldSchema = MutableDaemonConfigSchema.omit({ features: true, envOverrides: true });
+  const oldSchema = MutableDaemonConfigSchema.in.omit({
+    features: true,
+    envOverrides: true,
+    agentTools: true,
+  });
   const oldRead = oldSchema.parse({
     providers: {},
     relay: { enabled: false },
@@ -572,7 +577,10 @@ test("speech config reads remain compatible with clients before features and fut
     envOverrides: { "features.voiceMode.stt.provider": "PASEO_VOICE_STT_PROVIDER" },
   };
   expect(oldSchema.parse(read)).toEqual(read);
-  expect(MutableDaemonConfigSchema.parse(oldRead)).toEqual(oldRead);
+  expect(MutableDaemonConfigSchema.parse(oldRead)).toEqual({
+    ...oldRead,
+    agentTools: { enabled: true },
+  });
   expect(MutableDaemonConfigSchema.parse(read).features?.dictation.stt).toEqual(
     read.features.dictation.stt,
   );
@@ -587,4 +595,14 @@ test("speech config reads remain compatible with clients before features and fut
       features: { voiceMode: { stt: { provider: "future", region: "eu" } } },
     }).features?.voiceMode?.stt,
   ).toEqual({ provider: "future", region: "eu" });
+});
+
+test("test notification responses carry outcomes a newer daemon may add, and the request round-trips", () => {
+  const request = { type: "push.send_test.request", requestId: "push-test" };
+  expect(SessionInboundMessageSchema.parse(request)).toEqual(request);
+  const response = {
+    type: "push.send_test.response",
+    payload: { requestId: "push-test", outcome: "some_future_outcome", error: "why" },
+  };
+  expect(SessionOutboundMessageSchema.parse(response)).toEqual(response);
 });

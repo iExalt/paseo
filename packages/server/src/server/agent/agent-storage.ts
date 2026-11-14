@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { Logger } from "pino";
 
+import { NotificationLifecycleStore, type NotificationEpisode } from "../push/lifecycle-store.js";
 import { writeJsonFileAtomic } from "../atomic-file.js";
 import { AgentFeatureSchema, AgentStatusSchema } from "../messages.js";
 import { toStoredAgentRecord } from "./agent-projections.js";
@@ -71,6 +72,9 @@ const STORED_AGENT_SCHEMA = z.object({
   features: z.array(AgentFeatureSchema).optional(),
   persistence: PERSISTENCE_HANDLE_SCHEMA,
   lastError: z.string().nullable().optional(),
+  // The provider's lifetime cost estimate for the session, kept so it outlives the process.
+  totalCostUsd: z.number().nonnegative().optional(),
+  notificationPendingPermissions: z.array(z.string()).optional(),
   requiresAttention: z.boolean().optional(),
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),
   attentionTimestamp: z.string().nullable().optional(),
@@ -97,6 +101,9 @@ export function parseStoredAgentRecord(value: unknown): StoredAgentRecord {
 }
 
 export class AgentStorage {
+  private dirtyLifecycle = new Set<string>();
+  private deletedLifecycle = new Set<string>();
+  readonly notificationLifecycle: NotificationLifecycleStore;
   private cache: Map<string, StoredAgentRecord> = new Map();
   private pathById: Map<string, string> = new Map();
   private pathsById: Map<string, Set<string>> = new Map();
@@ -110,12 +117,16 @@ export class AgentStorage {
   private logger: Logger;
 
   constructor(baseDir: string, logger: Logger) {
+    this.notificationLifecycle = new NotificationLifecycleStore(
+      path.join(baseDir, "..", "notification-lifecycles.json"),
+    );
     this.baseDir = baseDir;
     this.logger = logger.child({ module: "agent", component: "agent-storage" });
   }
 
   async initialize(): Promise<void> {
     await this.load();
+    await this.notificationLifecycle.reconcile(await this.list());
   }
 
   async list(): Promise<StoredAgentRecord[]> {
@@ -157,36 +168,37 @@ export class AgentStorage {
     await this.queueRecordWrite(record);
   }
 
-  private queueRecordWrite(record: StoredAgentRecord): Promise<void> {
-    return this.queueRecordMutation(record.id, () => record);
+  private async queueRecordWrite(record: StoredAgentRecord): Promise<void> {
+    await this.queueRecordMutation(record.id, () => record);
   }
 
   private queueRecordMutation(
     agentId: string,
     mutate: (existing: StoredAgentRecord | null) => StoredAgentRecord,
-  ): Promise<void> {
+  ): Promise<NotificationEpisode[]> {
     const prev = this.pendingWrites.get(agentId) ?? Promise.resolve();
-    const next = prev.then(async () => {
-      if (this.deleting.has(agentId)) {
-        return undefined;
-      }
-
+    const result = prev.then(async () => {
+      if (this.deleting.has(agentId)) return [];
+      const committed = this.cache.get(agentId);
+      // Retry a partial source/lifecycle commit before admitting another source transition.
+      if (committed) await this.observeNotificationLifecycle(committed);
       const record = mutate(this.cache.get(agentId) ?? null);
-      await this.writeRecord(record);
-      return undefined;
+      return this.writeRecord(record);
     });
-
-    const tracked = next.finally(() => {
-      if (this.pendingWrites.get(agentId) === tracked) {
-        this.pendingWrites.delete(agentId);
-      }
-    });
-
+    // A later queued mutation must repair the committed source, not inherit its predecessor's rejection.
+    const tracked = result
+      .then(
+        () => undefined,
+        () => undefined,
+      )
+      .finally(() => {
+        if (this.pendingWrites.get(agentId) === tracked) this.pendingWrites.delete(agentId);
+      });
     this.pendingWrites.set(agentId, tracked);
-    return tracked;
+    return result;
   }
 
-  private async writeRecord(record: StoredAgentRecord): Promise<void> {
+  private async writeRecord(record: StoredAgentRecord): Promise<NotificationEpisode[]> {
     const agentId = record.id;
     const nextPath = this.buildRecordPath(record);
     const previousPath = this.pathById.get(agentId);
@@ -206,6 +218,23 @@ export class AgentStorage {
     this.cache.set(agentId, record);
     this.indexOwner(record);
     this.pathById.set(agentId, nextPath);
+    return this.observeNotificationLifecycle(record);
+  }
+
+  private async observeNotificationLifecycle(
+    record: StoredAgentRecord,
+  ): Promise<NotificationEpisode[]> {
+    this.dirtyLifecycle.add(record.id);
+    const episodes = await this.notificationLifecycle.observe(record.id, {
+      attention: record.requiresAttention === true,
+      questions:
+        record.notificationPendingPermissions === undefined
+          ? undefined
+          : record.notificationPendingPermissions.length > 0,
+      removed: !!record.archivedAt,
+    });
+    if (this.cache.get(record.id) === record) this.dirtyLifecycle.delete(record.id);
+    return episodes;
   }
 
   beginDelete(agentId: string): void {
@@ -228,6 +257,7 @@ export class AgentStorage {
               { err: error, agentId, filePath },
               "Failed to remove agent record file",
             );
+            throw error;
           }
         }
       }),
@@ -237,18 +267,27 @@ export class AgentStorage {
     this.removeOwnerIndex(agentId);
     this.pathById.delete(agentId);
     this.pathsById.delete(agentId);
+    // Missing source records are also reconciled on startup if the process dies here.
+    this.deletedLifecycle.add(agentId);
+    await this.notificationLifecycle.observe(agentId, { attention: false, removed: true });
+    this.deletedLifecycle.delete(agentId);
+    this.dirtyLifecycle.delete(agentId);
   }
 
   async applySnapshot(
     agent: ManagedAgent,
     options?: { title?: string | null; internal?: boolean },
-  ): Promise<void> {
+  ): Promise<NotificationEpisode[]> {
+    // Snapshot these before awaiting: a later read/new finish must not erase an intermediate closure.
+    const attention = { ...agent.attention };
+    const pendingPermissions =
+      agent.permissionStateKnown === false ? undefined : [...agent.pendingPermissions.keys()];
     await this.load();
     const hasTitleOverride =
       options !== undefined && Object.prototype.hasOwnProperty.call(options, "title");
     const hasInternalOverride =
       options !== undefined && Object.prototype.hasOwnProperty.call(options, "internal");
-    await this.queueRecordMutation(agent.id, (existing) => {
+    return this.queueRecordMutation(agent.id, (existing) => {
       const record = toStoredAgentRecord(agent, {
         title: hasTitleOverride ? (options?.title ?? null) : (existing?.title ?? null),
         createdAt: existing?.createdAt,
@@ -261,6 +300,13 @@ export class AgentStorage {
       if (existing && existing.archivedAt !== undefined) {
         record.archivedAt = existing.archivedAt;
       }
+      record.requiresAttention = attention.requiresAttention;
+      record.attentionReason = attention.requiresAttention ? attention.attentionReason : null;
+      record.attentionTimestamp = attention.requiresAttention
+        ? attention.attentionTimestamp.toISOString()
+        : null;
+      record.notificationPendingPermissions =
+        pendingPermissions ?? existing?.notificationPendingPermissions;
       record.resumeOnStartup =
         existing?.resumeOnStartup && agent.lifecycle !== "idle" && agent.lifecycle !== "error";
       return record;
@@ -281,6 +327,15 @@ export class AgentStorage {
     await this.load().catch(() => undefined);
     const writes = Array.from(this.pendingWrites.values());
     await Promise.allSettled(writes);
+    for (const agentId of Array.from(this.dirtyLifecycle)) {
+      const record = this.cache.get(agentId);
+      if (record) await this.observeNotificationLifecycle(record);
+    }
+    for (const agentId of Array.from(this.deletedLifecycle)) {
+      await this.notificationLifecycle.observe(agentId, { attention: false, removed: true });
+      this.deletedLifecycle.delete(agentId);
+      this.dirtyLifecycle.delete(agentId);
+    }
   }
 
   private async load(): Promise<StoredAgentRecord[]> {

@@ -16,6 +16,7 @@ import { describe, expect, it } from "vitest";
 import { buildAgentStreamRenderModel } from "./model";
 import { createStreamPresentation } from "./presentation";
 import { createReadingAnchor } from "./reading-anchor";
+import { preserveNotificationPreviewTransform } from "@/notification-open/preview";
 
 const runtime = {
   paseo: {},
@@ -104,6 +105,33 @@ const presentationOptions = {
   expandedTurnHostIds: new Set<string>(),
   isTurnActive: true,
 };
+
+it("keeps notification receipts read-only and visible when a plugin hides canonical assistant rows", () => {
+  const canonical: StreamItem = {
+    kind: "assistant_message",
+    id: "canonical",
+    text: "Previous reply",
+    timestamp: new Date(0),
+  };
+  const receipt: StreamItem = {
+    kind: "assistant_message",
+    id: "receipt",
+    text: "Latest notification",
+    timestamp: new Date(1),
+  };
+  const hideAssistants: TimelineItemTransform = ({ item }) =>
+    item.type === "assistant_message" ? [] : undefined;
+  const present = createStreamPresentation();
+  const result = present({
+    ...presentationOptions,
+    tail: [canonical],
+    head: [receipt],
+    transform: preserveNotificationPreviewTransform(hideAssistants, receipt.id),
+  });
+  expect(result.tail).toEqual([]);
+  expect(result.head).toEqual([receipt]);
+  expect(result.head[0]?.timelineCursor).toBeUndefined();
+});
 
 function streamHarness(transform?: TimelineItemTransform) {
   let state: { tail: StreamItem[]; head: StreamItem[] } = { tail: [], head: [] };
@@ -672,6 +700,7 @@ it("presents received agent messages as attributed bubbles with the original tur
     transform: undefined,
     tail: [call],
     head: [],
+    display: "full",
   });
   expect(result.tail[0]).toMatchObject({
     kind: "user_message",
@@ -783,3 +812,109 @@ it.each([false, true])(
     expect(opened.groupsByHostId.size).toBe(0);
   },
 );
+
+it.each(["message", "finished", "errored", "permission-required", "closed"] as const)(
+  "keeps %s deliveries visible as turn inputs in every display",
+  (event) => {
+    const timestamp = new Date();
+    const received = toolCall("received", "agent_message");
+    if (received.payload.source !== "agent") throw new Error("Expected agent tool");
+    received.payload.data.agentMessage = {
+      event,
+      sender: { id: "worker" },
+      text: "Ready",
+    };
+    const sent = toolCall("sent", "Bash");
+    if (sent.payload.source !== "agent") throw new Error("Expected agent tool");
+    sent.payload.data.detail = {
+      type: "shell",
+      command: '"$PASEO_CLI" agent send --no-wait worker "Continue"',
+    };
+    const tail: StreamItem[] = [
+      { kind: "user_message", id: "prompt", text: "Work", timestamp, turnId: "prompted" },
+      { ...toolCall("shell", "Bash"), turnId: "prompted" },
+      { kind: "assistant_message", id: "reply", text: "Started", timestamp, turnId: "prompted" },
+      { ...received, turnId: "delivered" },
+      { ...sent, turnId: "delivered" },
+      { kind: "assistant_message", id: "answer", text: "Done", timestamp, turnId: "delivered" },
+    ];
+    const present = createStreamPresentation();
+    const input = {
+      ...presentationOptions,
+      transform: undefined,
+      tail,
+      head: [],
+      isTurnActive: false,
+    };
+    const kind = event === "message" ? "user_message" : "tool_call";
+    for (const display of ["full", "collapseToolCalls"] as const) {
+      const presented = present({ ...input, display }).tail;
+      expect(presented.map((item) => item.id)).toEqual([
+        "prompt",
+        "tool-shell",
+        "reply",
+        received.id,
+        "tool-sent",
+        "answer",
+      ]);
+      expect(presented[3]?.kind).toBe(kind);
+    }
+    // The delivery hosts its own turn, so its summary counts only the agent's work.
+    const collapsed = present({ ...input, display: "collapseTurns" });
+    expect(collapsed.tail.map((item) => item.id)).toEqual([
+      "prompt",
+      "reply",
+      received.id,
+      "answer",
+    ]);
+    expect(collapsed.tail[2]?.kind).toBe(kind);
+    expect(collapsed.turns.turnsByHostId.get(received.id)?.summary.tools).toMatchObject({
+      commandCount: 0,
+      sentMessageCount: 1,
+    });
+  },
+);
+
+it("keeps the Codex message rule only between messages that sit next to each other", () => {
+  const timestamp = new Date();
+  const reply = (id: string, text: string): StreamItem => ({
+    kind: "assistant_message",
+    id,
+    text,
+    timestamp,
+    turnId: "run",
+  });
+  const tail: StreamItem[] = [
+    { kind: "user_message", id: "prompt", text: "Work", timestamp, turnId: "run" },
+    reply("first", "Starting."),
+    reply("second", "\n\n---\n\nStill going."),
+    { ...toolCall("shell", "Bash"), turnId: "run" },
+    reply("third", "\n\n---\n\nDone."),
+  ];
+  const present = createStreamPresentation();
+  const input = {
+    ...presentationOptions,
+    transform: undefined,
+    tail,
+    head: [reply("live", "\n\n---\n\nMore.")],
+    isTurnActive: true,
+  };
+  const text = (presented: StreamItem[], id: string) => {
+    const row = presented.find((candidate) => candidate.id === id);
+    return row?.kind === "assistant_message" ? row.text : undefined;
+  };
+  const full = present({ ...input, display: "full" });
+  expect(text(full.tail, "second")).toBe("\n\n---\n\nStill going.");
+  expect(text(full.tail, "third")).toBe("Done.");
+  expect(text(full.head, "live")).toBe("\n\n---\n\nMore.");
+  // A later live update reuses the retained rows.
+  expect(present({ ...input, display: "full" }).tail).toBe(full.tail);
+  const withoutHead = present({
+    ...input,
+    head: [],
+    isTurnActive: false,
+    display: "collapseTurns",
+  });
+  expect(withoutHead.tail.map((row) => row.id)).toEqual(["prompt", "third"]);
+  expect(text(withoutHead.tail, "third")).toBe("Done.");
+});

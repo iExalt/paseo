@@ -5,13 +5,39 @@ import { isWeb } from "@/constants/platform";
 // iOS Safari needs the prefix to override the gesture host's selection suppression.
 const WEB_CONTAINER = { userSelect: "text", WebkitUserSelect: "text" } as const;
 
+/**
+ * The native code block's box. Chat find draws its own copy of the block in JS
+ * (markdown/find.tsx), which must lay out to the same height.
+ */
+export function createCodeBlockStyle(
+  theme: Theme,
+  compact = false,
+  blockGap: number = theme.spacing[3],
+) {
+  const paragraphFontSize = compact ? theme.fontSize.base : theme.fontSize.content;
+  return {
+    fontSize: theme.fontSize.code,
+    // The native block takes the paragraph's line height, not one scaled from its own font.
+    lineHeight: Math.round(paragraphFontSize * 1.4),
+    color: theme.colors.foreground,
+    marginTop: 0,
+    marginBottom: blockGap,
+    backgroundColor: theme.colors.surface2,
+    borderColor: theme.colors.border,
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 12,
+  };
+}
+
 export function createMarkdownStyles(
   theme: Theme,
   {
     compact = false,
     muted = false,
     blockGap,
-  }: { compact?: boolean; muted?: boolean; blockGap: number },
+    imageMaxHeight = 560,
+  }: { compact?: boolean; muted?: boolean; blockGap: number; imageMaxHeight?: number },
 ): { markdownStyle: MarkdownStyle; selectionColor: string; containerStyle?: typeof WEB_CONTAINER } {
   const fontSize = compact ? theme.fontSize.base : theme.fontSize.content;
   // Every block is followed by the same gap; the library drops it after the last block.
@@ -78,13 +104,8 @@ export function createMarkdownStyles(
         borderColor: "transparent",
       },
       codeBlock: {
-        ...paragraph,
+        ...createCodeBlockStyle(theme, compact, blockGap),
         fontFamily: theme.fontFamily.mono === "ui-monospace" && !isWeb ? "" : theme.fontFamily.mono,
-        fontSize: theme.fontSize.code,
-        backgroundColor: theme.colors.surface2,
-        borderColor: theme.colors.border,
-        borderRadius: 8,
-        padding: 12,
       },
       table: {
         ...paragraph,
@@ -101,7 +122,10 @@ export function createMarkdownStyles(
         borderColor: theme.colors.foregroundMuted,
       },
       inlineImage: { size: paragraph.lineHeight },
-      image: { ...block, height: 320, resizeMode: "contain", borderRadius: 8 },
+      // Fit the column width and cap the height; a fixed height shrank wide screenshots to a
+      // third of the column on tablets. A constant cap keeps window resizes from restyling messages.
+      // "center" never scales up; the local library patch shrinks its box to a small image.
+      image: { ...block, maxHeight: imageMaxHeight, resizeMode: "center", borderRadius: 8 },
       thematicBreak: { ...block, color: theme.colors.border, height: 1 },
     },
   };

@@ -55,9 +55,20 @@ export interface DesktopDialogBridge {
 
 export interface DesktopNotificationBridge {
   isSupported?: () => Promise<boolean>;
-  sendNotification?: (
-    payload: string | { title: string; body?: string; data?: Record<string, unknown> },
-  ) => Promise<boolean>;
+  sendNotification?: (payload: DesktopNotificationPayload) => Promise<boolean>;
+  dismissNotifications?: (ids: string[]) => Promise<void>;
+  /** Notifications a fresh renderer should track: still held by main, or (macOS) from earlier launches. */
+  getDeliveredNotifications?: () => Promise<Array<{ id: string; groupId: string }>>;
+}
+
+export interface DesktopNotificationPayload {
+  title: string;
+  body?: string;
+  data?: Record<string, unknown>;
+  /** Thread key; a newer notification with the same id replaces the older one. */
+  id?: string;
+  /** Thread key plus reason; the main process decides per platform whether to use it. */
+  groupId?: string;
 }
 
 export interface DesktopOpenerBridge {
@@ -168,6 +179,35 @@ export interface DesktopBrowserBridge {
   copyElement?: (payload: { text?: string; imageDataUrl?: string }) => Promise<boolean>;
 }
 
+export interface DesktopNixUpdateBridge {
+  check?: () => Promise<DesktopNixUpdateResult>;
+  status?: () => Promise<DesktopNixUpdateResult>;
+  stage?: () => Promise<DesktopNixUpdateResult>;
+  activate?: () => Promise<DesktopNixUpdateResult>;
+  rollback?: () => Promise<DesktopNixUpdateResult>;
+  /** Quits and relaunches the active release; the daemon and its agents keep running. */
+  restart?: () => Promise<void>;
+}
+
+export interface DesktopNixReleaseSummary {
+  releaseTag: string;
+  version: string;
+  outputPath: string;
+}
+
+export interface DesktopNixUpdateResult {
+  ok: true;
+  action: "check" | "status" | "stage" | "activate" | "rollback";
+  latest?: DesktopNixReleaseSummary;
+  active: DesktopNixReleaseSummary | null;
+  staged?: DesktopNixReleaseSummary | null;
+  highWaterVersion: string | null;
+  canStage?: boolean;
+  message?: string;
+  latestError?: string;
+  running: { version: string; outputPath: string };
+}
+
 export interface DesktopInvokeBridge {
   invoke?: (command: string, args?: Record<string, unknown>) => Promise<unknown>;
 }
@@ -175,7 +215,9 @@ export interface DesktopInvokeBridge {
 export interface DesktopHostBridge {
   platform?: string;
   windowChromeMode?: string;
+  installationMode?: "electron" | "nix" | "nix-invalid";
   invoke?: DesktopInvokeBridge["invoke"];
+  nixUpdates?: DesktopNixUpdateBridge;
   getPendingOpenProject?: () => Promise<string | null>;
   agentNavigation?: DesktopAgentNavigationBridge;
   events?: DesktopEventsBridge;

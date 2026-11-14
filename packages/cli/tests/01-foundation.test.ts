@@ -9,6 +9,14 @@
  */
 
 import { $ } from "zx";
+import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { promisify } from "node:util";
 
 $.verbose = false;
 
@@ -49,5 +57,73 @@ if (missingTerms.length > 0) {
   process.exit(1);
 }
 console.log("  ✅ paseo --help shows commands");
+
+// Exercise the tarball's own relative imports; workspace dependencies stay local.
+const exec = promisify(execFile);
+const repoRoot = path.resolve(import.meta.dirname, "../../..");
+const packedRoot = await mkdtemp(path.join(tmpdir(), "paseo-cli-package-"));
+try {
+  const packed = await exec(
+    "npm",
+    [
+      "pack",
+      "--workspace=@getpaseo/cli",
+      "--ignore-scripts",
+      "--json",
+      "--pack-destination",
+      packedRoot,
+    ],
+    { cwd: repoRoot, timeout: 30_000 },
+  );
+  const [manifest] = JSON.parse(packed.stdout) as [{ filename: string; files: { path: string }[] }];
+  const files = new Set(manifest.files.map((file) => file.path));
+  for (const required of ["bin/paseo", "dist/index.js", "dist/run.js", "dist/cli.js"]) {
+    assert(files.has(required), `CLI package is missing ${required}`);
+  }
+  const compiledFiles = await readdir(path.join(repoRoot, "packages/cli/dist"), {
+    recursive: true,
+  });
+  for (const file of compiledFiles.filter((entry) => entry.endsWith(".js"))) {
+    assert(
+      files.has("dist/" + file.split(path.sep).join("/")),
+      "CLI package is missing runtime module " + file,
+    );
+  }
+  await exec("tar", ["-xf", path.join(packedRoot, manifest.filename), "-C", packedRoot]);
+  const installed = path.join(packedRoot, "package");
+  const cliPackage = path.join(repoRoot, "packages/cli/package.json");
+  const dependencies = JSON.parse(await readFile(cliPackage, "utf8")).dependencies;
+  const resolver = createRequire(cliPackage);
+  for (const name of Object.keys(dependencies)) {
+    const dependency = resolver.resolve
+      .paths(name)
+      ?.map((directory) => path.join(directory, name))
+      .find(existsSync);
+    assert(dependency, "Missing installed CLI dependency " + name);
+    const target = path.join(installed, "node_modules", name);
+    await mkdir(path.dirname(target), { recursive: true });
+    await symlink(dependency, target, "dir");
+  }
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("PASEO_")),
+  );
+  for (const args of [
+    ["--version"],
+    ["--help"],
+    ["prime"],
+    ["daemon", "status", "--json", "--home", path.join(packedRoot, "home")],
+  ]) {
+    const result = await exec(process.execPath, [path.join(installed, "bin/paseo"), ...args], {
+      cwd: packedRoot,
+      env,
+      timeout: 20_000,
+    });
+    assert.equal(result.stderr, "");
+    assert(result.stdout.trim().length > 0, `Packed CLI produced no output: ${args.join(" ")}`);
+  }
+  console.log("  ✅ packed CLI starts from its extracted bin and loads offline commands");
+} finally {
+  await rm(packedRoot, { recursive: true, force: true });
+}
 
 console.log("\n✅ Phase 1: Foundation Tests PASSED");

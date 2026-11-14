@@ -48,6 +48,15 @@ describe("schedule cron cadence", () => {
     expect(second.toISOString()).toBe("2026-11-01T06:30:00.000Z");
   });
 
+  test("finds a Feb 29 run four years out instead of giving up after one year", () => {
+    const next = computeNextRunAt(
+      { type: "cron", expression: "0 0 29 2 *" },
+      new Date("2028-02-29T00:00:00.000Z"),
+    );
+
+    expect(next.toISOString()).toBe("2032-02-29T00:00:00.000Z");
+  });
+
   test("rejects invalid cron expressions", () => {
     expect(() => validateScheduleCadence({ type: "cron", expression: "not-a-valid-cron" })).toThrow(
       "Cron expressions must have 5 fields",
