@@ -186,7 +186,14 @@ function SchedulesScreenContent(): ReactElement {
         visible={form.mode === "create" || form.mode === "edit"}
         onClose={closeForm}
         mode={form.mode === "edit" ? "edit" : "create"}
-        schedule={form.mode === "edit" ? form.schedule : undefined}
+        schedule={
+          form.mode === "edit"
+            ? (schedules.find(
+                (schedule) =>
+                  schedule.serverId === form.serverId && schedule.id === form.schedule.id,
+              ) ?? form.schedule)
+            : undefined
+        }
       />
     </View>
   );
