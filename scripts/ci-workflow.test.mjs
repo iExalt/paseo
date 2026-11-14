@@ -646,3 +646,103 @@ test("Nix desktop packaging resolves the workspace-local builder", () => {
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("Nix refresh commits only its two files through the signed commit API", () => {
+  const workflow = load(
+    readFileSync(new URL(".github/workflows/release-please.yml", repoRoot), "utf8"),
+  );
+  const refreshStep = workflow.jobs["nix-hash"].steps.find(
+    (step) => step.name === "Push the refreshed hash",
+  );
+  const directory = mkdtempSync(join(tmpdir(), "paseo-nix-refresh-"));
+  const bin = join(directory, "bin");
+  const capture = join(directory, "request.json");
+  mkdirSync(bin);
+  mkdirSync(join(directory, "nix"));
+  writeFileSync(
+    join(bin, "gh"),
+    `#!/bin/sh
+set -eu
+test "$*" = 'api graphql --input -'
+cat > "$GH_CAPTURE"
+if [ "$GH_FAIL" = 1 ]; then exit 7; fi
+printf '{"data":{"createCommitOnBranch":{"commit":{"oid":"api-commit","signature":{"isValid":%s}}}}}\\n' "$GH_VALID"
+if [ "$GH_PARTIAL_FAILURE" = 1 ]; then exit 7; fi
+`,
+    { mode: 0o700 },
+  );
+  const git = (...args) => {
+    const result = spawnSync("git", args, { cwd: directory, encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  try {
+    git("init", "--quiet");
+    git("config", "user.name", "Fixture");
+    git("config", "user.email", "fixture@example.test");
+    git("config", "commit.gpgsign", "false");
+    writeFileSync(join(directory, "package-lock.json"), '{"name":"before"}\n');
+    writeFileSync(join(directory, "nix/npm-deps.hash"), "old hash\n");
+    git("add", "package-lock.json", "nix/npm-deps.hash");
+    git("commit", "--quiet", "-m", "fixture");
+    const head = git("rev-parse", "HEAD");
+    const environment = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      GITHUB_REPOSITORY: "iExalt/paseo",
+      BRANCH: "release-please--branches--dev",
+      GH_CAPTURE: capture,
+      GH_FAIL: "0",
+      GH_VALID: "true",
+      GH_PARTIAL_FAILURE: "0",
+    };
+    const run = (overrides = {}) =>
+      spawnSync(
+        "bash",
+        [...(refreshStep.shell === "bash" ? ["-eo", "pipefail"] : ["-e"]), "-c", refreshStep.run],
+        {
+          cwd: directory,
+          env: { ...environment, ...overrides },
+          encoding: "utf8",
+          timeout: 5000,
+        },
+      );
+    assert.equal(run().status, 0);
+    assert.equal(existsSync(capture), false, "unchanged hashes must not call GitHub");
+
+    const lock = '{"name":"quote \\\" and unicode é"}\n';
+    const hash = "sha256-new+hash/=\n";
+    writeFileSync(join(directory, "package-lock.json"), lock);
+    writeFileSync(join(directory, "nix/npm-deps.hash"), hash);
+    writeFileSync(join(directory, "unrelated.txt"), "keep out of the commit");
+    const success = run();
+    assert.equal(success.status, 0, success.stderr);
+    const request = JSON.parse(readFileSync(capture, "utf8"));
+    assert.deepEqual(request.variables.input, {
+      branch: {
+        repositoryNameWithOwner: "iExalt/paseo",
+        branchName: environment.BRANCH,
+      },
+      expectedHeadOid: head,
+      message: { headline: "chore(nix): refresh the npm dependency hash" },
+      fileChanges: {
+        additions: [
+          { path: "package-lock.json", contents: Buffer.from(lock).toString("base64") },
+          { path: "nix/npm-deps.hash", contents: Buffer.from(hash).toString("base64") },
+        ],
+      },
+    });
+    assert.match(request.query, /createCommitOnBranch\(input: \$input\)/);
+    assert.match(request.query, /signature\s*\{\s*isValid\s*\}/);
+    assert.notEqual(run({ GH_FAIL: "1" }).status, 0, "API failures must fail the step");
+    assert.notEqual(
+      run({ GH_PARTIAL_FAILURE: "1" }).status,
+      0,
+      "partial API response must not hide failure",
+    );
+    assert.notEqual(run({ GH_VALID: "false" }).status, 0, "unverified commits must fail the step");
+    assert.equal(git("rev-parse", "HEAD"), head, "never fall back to a local unsigned commit");
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
