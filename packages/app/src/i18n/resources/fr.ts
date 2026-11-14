@@ -3135,6 +3135,13 @@ export const fr: TranslationResources = {
       },
       pairDevices: {
         rowTitle: "Associer un appareil",
+        keepAwake: {
+          title: "Garder ce Mac éveillé pour le relais",
+          hint: "Empêche la mise en veille sur secteur tant que le relais est activé, pour que les appareils distants puissent joindre ce Mac. Consomme plus d'énergie et chauffe davantage sur secteur.",
+          activeHint: "Garde ce Mac éveillé sur secteur tant que le relais est activé",
+          waitingHint: "S'applique quand le relais est activé",
+          updateFailed: "Impossible de mettre à jour le maintien en éveil",
+        },
       },
       skills: {
         ...en.settings.host.skills,

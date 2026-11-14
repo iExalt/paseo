@@ -69,6 +69,16 @@ describe("daemon relay config", () => {
     expect(reloaded.relayEnabled).toBe(true);
   });
 
+  test("keeps the Mac awake for the relay only when the config opts in", async () => {
+    const optedOut = await createPaseoHome({ version: 1, daemon: { relay: { enabled: true } } });
+    const optedIn = await createPaseoHome({
+      version: 1,
+      daemon: { relay: { enabled: true, keepAwake: true } },
+    });
+    expect(loadConfig(optedOut, { env: {} }).relayKeepAwake).toBe(false);
+    expect(loadConfig(optedIn, { env: {} }).relayKeepAwake).toBe(true);
+  });
+
   test("marks environment relay overrides immutable", async () => {
     const home = await createPaseoHome({
       version: 1,
