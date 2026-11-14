@@ -38,6 +38,17 @@ describe("history start pagination", () => {
       loadedProgressKey: "epoch-1:20:local-60",
     });
   });
+  it("loads from as far away as the caller's threshold allows", () => {
+    const armed = createArmedHistoryStartPaginationState();
+    const twoScreensAway = { ...visibleHistoryStart, distanceFromHistoryStart: 1500 };
+
+    expect(evaluateHistoryStartPagination(armed, twoScreensAway).shouldLoad).toBe(false);
+    expect(
+      evaluateHistoryStartPagination(armed, { ...twoScreensAway, historyStartThresholdPx: 1600 })
+        .shouldLoad,
+    ).toBe(true);
+  });
+
   it("waits for user scroll intent before loading", () => {
     const dormant = createHistoryStartPaginationState();
     const evaluated = evaluateHistoryStartPagination(dormant, visibleHistoryStart);

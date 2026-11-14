@@ -74,11 +74,13 @@ import { IndentRail } from "@/components/indent-rail";
 import { TurnSummaryLine } from "./turn-collapse/summary-line";
 import { type AgentStreamRenderModel, buildAgentStreamRenderModel } from "./model";
 import { resolveStreamRenderStrategy } from "./strategy-resolver";
+import { createReadingSeqDedupe } from "./reading-anchor";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
+import { useTimelineGapFill } from "./use-timeline-gap-fill";
 import {
   CompletedTurnFooterRow,
   TurnFooter,
@@ -399,6 +401,12 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     const isTimelineDetached = useSessionStore(
       (state) => state.sessions[resolvedServerId]?.agentTimelineHasNewer.get(agentId) === true,
     );
+    // Prompt jumps exist only where the daemon indexes prompts.
+    const timelineGapFill = useTimelineGapFill({
+      serverId: resolvedServerId,
+      agentId,
+      enabled: supportsChatOutline && streamRenderStrategy.shouldFillTimelineGaps(),
+    });
 
     const workspaceRoot = context.cwd?.trim() || "";
     const { revealDirectory } = useFileExplorerActions({
@@ -1097,12 +1105,19 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       return itemById;
     }, [streamLayout.liveHead]);
 
+    const [readingSeqDedupe] = useState(createReadingSeqDedupe);
+    // The outline and gap fill forget their position on these changes, so start over with them.
+    useEffect(() => readingSeqDedupe.reset(), [agentId, readingSeqDedupe, timelineEpoch]);
+
     const handleReadingPositionChange = useStableEvent((rowId: string | null) => {
       const row =
         rowId === null
           ? undefined
           : (layoutHistoryItemById.get(rowId) ?? layoutLiveHeadItemById.get(rowId));
-      chatOutline.reportReadingPosition(row?.item.timelineCursor?.seq ?? null);
+      const seq = row?.item.timelineCursor?.seq ?? null;
+      if (!readingSeqDedupe.shouldForward(seq)) return;
+      chatOutline.reportReadingPosition(seq);
+      timelineGapFill.reportReadingPosition(seq);
     });
 
     const renderHistoryRow = useCallback(

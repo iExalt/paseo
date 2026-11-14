@@ -7,7 +7,7 @@ import {
   useSessionStore,
   type AgentTimelineCursorState,
 } from "@/stores/session-store";
-import { planTimelineOlderFetch } from "@/timeline/timeline-sync-plan";
+import { getEarliestLoadedSeq, planTimelineOlderFetch } from "@/timeline/timeline-sync-plan";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
 export interface LoadOlderAgentHistoryClient {
@@ -18,6 +18,7 @@ export interface LoadOlderAgentHistoryClient {
       cursor: { epoch: string; seq: number };
       limit: number;
       projection: "projected";
+      mergeWindow?: true;
     },
   ) => Promise<unknown>;
 }
@@ -52,9 +53,11 @@ export async function loadOlderAgentHistory(
 
   setInFlight(true);
   try {
+    const plan = planTimelineOlderFetch({ epoch: cursor.epoch, seq: getEarliestLoadedSeq(cursor) });
+    // A jump window sits apart from the tail, so its page merges as a window too.
     await client.fetchAgentTimeline(
       agentId,
-      planTimelineOlderFetch({ epoch: cursor.epoch, seq: cursor.startSeq }),
+      cursor.retainedRanges?.length ? { ...plan, mergeWindow: true } : plan,
     );
   } catch (error) {
     (logger ?? console).warn("[Timeline] failed to load older agent history", agentId, error);
@@ -89,7 +92,7 @@ export function useLoadOlderAgentHistory({
   const progressKey = useSessionStore((state) => {
     const timeline = selectAgentTimelineState(state.sessions[serverId], agentId);
     const cursor = timeline.status === "synced" ? timeline.range : null;
-    return cursor ? `${cursor.epoch}:${cursor.startSeq}` : null;
+    return cursor ? `${cursor.epoch}:${getEarliestLoadedSeq(cursor)}` : null;
   });
   const setOlderFetchInFlight = useSessionStore(
     (state) => state.setAgentTimelineOlderFetchInFlight,
