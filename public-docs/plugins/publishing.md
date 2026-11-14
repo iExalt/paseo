@@ -99,6 +99,8 @@ Declare local images in `paseo-plugin.json` before publishing:
 }
 ```
 
+`requirements.paseo` is matched against the plugin API version, not the app release version. `paseo plugin init` writes `>=` followed by the current plugin API version.
+
 Create the referenced files and include `assets/` in `package.json`'s `files` list for npm.
 Paths are relative to the manifest, use forward slashes and stay inside the plugin directory.
 These metadata fields require Paseo 0.11.0 or later.
