@@ -15,7 +15,7 @@ if (typeof repoPath !== "string" || repoPath.length === 0) {
 const report = await agent(
   `Inspect the Paseo repository at ${JSON.stringify(repoPath)}.
 
-Read README.md, docs/product.md, docs/architecture.md, and package.json. Do not edit anything. Return a concise plain-text report with exactly these headings:
+Read README.md, docs/upstream/product.md, docs/upstream/architecture.md, and package.json. Do not edit anything. Return a concise plain-text report with exactly these headings:
 
 What Paseo is
 Who it is for

@@ -19,7 +19,7 @@ Paseo 对语音提供一流的支持，可用于口述输入，以及与编程�
 - 语音输入输出：每个功能各自的 STT 和 TTS Provider（`local` 或 `openai`）
 - 本地语音运行时：默认在 CPU 上执行的 ONNX 模型
 - 语音 LLM 编排：使用你配置的 Provider（`claude`、`codex` 或 `opencode`）的隐藏 Agent 会话
-- 工具路径：用于语音工具和 Agent 控制的 MCP stdio 桥
+- 工具路径：用于语音输出和 Agent 控制的 Provider 原生工具与 Paseo CLI。使用 [`paseo speech speak`](/docs/cli#speech) 进行限定调用方的输出
 
 ## 本地语音 {#local-speech}
 

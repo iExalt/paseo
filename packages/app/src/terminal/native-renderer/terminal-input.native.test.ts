@@ -185,6 +185,7 @@ describe("native terminal typed input", () => {
     ).toEqual("focus");
   });
 
+// Keyboard's, both traced on devices.
   it("accepts the same keyboard clipboard item after terminal focus synchronization", () => {
     const input = createTerminalTextInputState();
 
