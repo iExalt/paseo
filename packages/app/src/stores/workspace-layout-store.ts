@@ -973,6 +973,7 @@ function createExplorerSidebarPane(
 const PERSISTED_SLICES = [
   "layoutByWorkspace",
   "pinnedAgentIdsByWorkspace",
+  "hiddenAgentIdsByWorkspace",
   "splitSizesByWorkspace",
   "explorerSidebarWidthByWorkspace",
   "explorerSidebarPaneIdByWorkspace",
@@ -1003,6 +1004,12 @@ function createPersistedStateProjection() {
       layoutByWorkspace,
       pinnedAgentIdsByWorkspace: Object.fromEntries(
         Object.entries(source.pinnedAgentIdsByWorkspace).map(([key, agentIds]) => [
+          key,
+          Array.from(agentIds),
+        ]),
+      ),
+      hiddenAgentIdsByWorkspace: Object.fromEntries(
+        Object.entries(source.hiddenAgentIdsByWorkspace).map(([key, agentIds]) => [
           key,
           Array.from(agentIds),
         ]),
@@ -2333,6 +2340,12 @@ export function createWorkspaceLayoutStore(
             layoutByWorkspace,
             pinnedAgentIdsByWorkspace: Object.fromEntries(
               Object.entries(result.data.pinnedAgentIdsByWorkspace ?? {}).map(([key, agentIds]) => [
+                key,
+                new Set(agentIds),
+              ]),
+            ),
+            hiddenAgentIdsByWorkspace: Object.fromEntries(
+              Object.entries(result.data.hiddenAgentIdsByWorkspace ?? {}).map(([key, agentIds]) => [
                 key,
                 new Set(agentIds),
               ]),

@@ -663,6 +663,8 @@ export interface AgentResumeSessionOptions {
  */
 export interface AgentPermissionResult {
   followUpPrompt?: AgentPromptInput;
+  /** Commit a durable answer only after its follow-up turn was accepted. */
+  complete?: () => void;
 }
 
 export interface AgentUsageSession {

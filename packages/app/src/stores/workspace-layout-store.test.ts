@@ -587,6 +587,7 @@ describe("workspace-layout-store version 2 migration", () => {
       expect(Object.keys(persisted.state).sort()).toEqual([
         "explorerPaneIdByWorkspace",
         "explorerSidebarWidthByWorkspace",
+        "hiddenAgentIdsByWorkspace",
         "layoutByWorkspace",
         "pinnedAgentIdsByWorkspace",
         "pullRequestTabAutoOpenedByWorkspace",
@@ -3180,6 +3181,7 @@ describe("workspace-layout-store actions", () => {
     expect(persisted).toEqual({
       layoutByWorkspace: { [workspaceKey]: layout },
       pinnedAgentIdsByWorkspace: {},
+      hiddenAgentIdsByWorkspace: {},
       splitSizesByWorkspace: currentState.splitSizesByWorkspace,
       explorerSidebarWidthByWorkspace: currentState.explorerSidebarWidthByWorkspace,
       explorerPaneIdByWorkspace: {},
@@ -3381,7 +3383,7 @@ describe("workspace-layout-store actions", () => {
     });
   });
 
-  it("keeps hidden agent intents in memory per workspace without persisting them", () => {
+  it("persists hidden agent intents per workspace", () => {
     const workspaceKey = createWorkspaceKey();
     const otherWorkspaceKey = buildWorkspaceTabPersistenceKey({
       serverId: SERVER_ID,
@@ -3415,6 +3417,7 @@ describe("workspace-layout-store actions", () => {
       pullRequestTabAutoOpenedByWorkspace: {},
       layoutByWorkspace: {},
       pinnedAgentIdsByWorkspace: {},
+      hiddenAgentIdsByWorkspace: { [otherWorkspaceKey as string]: ["agent-2"] },
       splitSizesByWorkspace: {},
       explorerSidebarWidthByWorkspace: {},
       explorerPaneIdByWorkspace: {},
