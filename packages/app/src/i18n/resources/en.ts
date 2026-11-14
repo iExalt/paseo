@@ -781,6 +781,8 @@ export const en = {
         failedToCloseAgent: "Failed to close agent",
       },
       confirmations: {
+        closeTabsAboveTitle: "Close tabs above?",
+        closeTabsBelowTitle: "Close tabs below?",
         close: "Close",
         cancel: "Cancel",
         archive: "Archive",
