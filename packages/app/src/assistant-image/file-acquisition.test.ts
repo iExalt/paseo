@@ -6,10 +6,10 @@ import {
 } from "./file-acquisition";
 
 class MemoryFileAcquisitionPort implements AssistantImageFileAcquisitionPort {
-  readonly reads: Array<{ cwd: string; path: string }> = [];
+  readonly reads: Array<{ cwd: string; path: string; maxBytes: number }> = [];
 
-  async readFile(cwd: string, path: string) {
-    this.reads.push({ cwd, path });
+  async readFile(cwd: string, path: string, maxBytes: number) {
+    this.reads.push({ cwd, path, maxBytes });
     return {
       kind: "image" as const,
       path,
@@ -48,6 +48,9 @@ describe("assistant image file acquisition", () => {
     expect(disconnected?.key).toBe(connected?.key);
     await expect(disconnected?.locate()).rejects.toThrow("Image unavailable");
     await expect(connected?.locate()).resolves.toMatchObject({ mimeType: "image/png" });
-    expect(connectedPort.reads).toEqual([{ cwd: "/workspace", path: "reconnect.png" }]);
+    // Capped so a huge file behind a small preview slot is refused, not streamed whole.
+    expect(connectedPort.reads).toEqual([
+      { cwd: "/workspace", path: "reconnect.png", maxBytes: 20 * 1024 * 1024 },
+    ]);
   });
 });
