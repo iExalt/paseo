@@ -21,8 +21,7 @@ window in agent-manager.ts and its tests. It is recorded separately in the
 manifest and is outside the frozen target. This preserves the captured target;
 retargeting later requires refreshing the inventory and target-bound evidence.
 
-The incoming range contains 307 non-merge commits, up from the prior 263; the fork range contains 734, up from
-696. Both ranges contain zero merges. The unions of paths touched anywhere in
+The incoming range contains 307 non-merge commits, up from the prior 263; the fork range contains 734, up from 696. Both ranges contain zero merges. The unions of paths touched anywhere in
 each history overlap on 408 paths, including paths later deleted. This count is
 neither a net-tree overlap nor a predicted conflict count.
 
