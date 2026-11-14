@@ -1146,13 +1146,13 @@ describe("last-agent workspace archive", () => {
     { name: "no-upstream", git: { isDirty: false, upstreamRef: null, aheadOfOrigin: null } },
     { name: "unknown", git: { isDirty: null, upstreamRef: "origin/main", aheadOfOrigin: 0 } },
     { name: "failed", git: null },
-  ])("leaves $name work in place without running teardown", async ({ name, git }) => {
+  ])("removes $name work and runs teardown", async ({ name, git }) => {
     const { tempDir, repoDir } = createGitRepo();
     const marker = path.join(tempDir, "teardown-ran");
     writeFileSync(
       path.join(repoDir, "paseo.json"),
       JSON.stringify({
-        scripts: { teardown: [`node -e "require('fs').writeFileSync('${marker}', 'ran')"`] },
+        worktree: { teardown: [`node -e "require('fs').writeFileSync('${marker}', 'ran')"`] },
       }),
     );
     execFileSync("git", ["add", "paseo.json"], { cwd: repoDir });
@@ -1161,6 +1161,10 @@ describe("last-agent workspace archive", () => {
       stdio: "pipe",
     });
     const worktree = await createPaseoOwnedWorktree(repoDir, tempDir, `retained-${name}`);
+    writeFileSync(path.join(worktree.worktreePath, "untracked.txt"), "unpublished");
+    writeFileSync(path.join(worktree.worktreePath, ".gitignore"), "ignored.txt\n");
+    writeFileSync(path.join(worktree.worktreePath, "ignored.txt"), "ignored");
+    writeFileSync(path.join(worktree.worktreePath, ".gitignore"), "ignored.txt\n# dirty\n");
     const workspaceId = `ws-${name}`;
     const deps = createArchiveDeps({
       paseoHome: tempDir,
@@ -1176,12 +1180,10 @@ describe("last-agent workspace archive", () => {
       onlyIfEmpty: true,
     });
     expect(result.archivedWorkspaceIds).toEqual([workspaceId]);
-    expect(result.directoryLeftBehind).toEqual({
-      path: worktree.worktreePath,
-      reason: expect.any(String),
-    });
-    expect(existsSync(worktree.worktreePath)).toBe(true);
-    expect(existsSync(marker)).toBe(false);
+    expect(result.directoryLeftBehind).toBeUndefined();
+    expect(result.removedDirectory).toBe(true);
+    expect(existsSync(worktree.worktreePath)).toBe(false);
+    expect(existsSync(marker)).toBe(true);
   });
 
   test.each([false, true])(

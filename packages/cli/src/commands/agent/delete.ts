@@ -10,7 +10,11 @@ export function addDeleteOptions(cmd: Command): Command {
     .description("Delete an agent; archive its workspace when no unarchived agents remain")
     .argument("[id]", "Agent ID, prefix, or full session ID - optional if --all or --cwd specified")
     .option("--all", "Delete all agents")
-    .option("--cwd <path>", "Delete all agents in directory");
+    .option("--cwd <path>", "Delete all agents in directory")
+    .addHelpText(
+      "after",
+      "\nDeleting the last unarchived agent also archives its workspace. Paseo-owned worktrees are removed, including uncommitted, untracked, ignored, and unpushed work, when no active workspace still references them. Local checkouts are kept.",
+    );
 }
 import type {
   CommandOptions,
