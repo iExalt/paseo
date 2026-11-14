@@ -125,6 +125,34 @@ function summarizeSubagentStatus(rows: readonly SubagentRow[]): SubagentStatusCo
   });
 }
 
+function isDoneSubagent(row: SubagentRow): boolean {
+  return buildSubagentRowPresentationData(row).statusBucket === "done";
+}
+
+/** The rows the track folds away when its panel opens. */
+export function doneSubagentIds(rows: readonly SubagentRow[]): ReadonlySet<string> {
+  return new Set(rows.filter(isDoneSubagent).map((row) => row.id));
+}
+
+/**
+ * Which rows the track lists up front. A long session spawns a lead, pilot or reviewer per chunk,
+ * and listing every one it ever started buries the one or two still alive. Rows that were done
+ * when the panel opened fold away, like finished background agents in Claude Code; failed rows
+ * stay, since the pill counts them. A row that finishes while the panel is open stays put rather
+ * than vanishing from under the pointer, and a folded row that starts working again comes back.
+ */
+export function foldSubagentRows(
+  rows: readonly SubagentRow[],
+  foldedIds: ReadonlySet<string>,
+): { live: SubagentRow[]; done: SubagentRow[] } {
+  const live: SubagentRow[] = [];
+  const done: SubagentRow[] = [];
+  for (const row of rows) {
+    (foldedIds.has(row.id) && isDoneSubagent(row) ? done : live).push(row);
+  }
+  return { live, done };
+}
+
 export function countFinishedSubagents(rows: readonly SubagentRow[]): number {
   return rows.filter(isFinishedSubagent).length;
 }
