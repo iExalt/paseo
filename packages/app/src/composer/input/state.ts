@@ -6,11 +6,19 @@ import type { MessageInputKeyboardActionKind } from "@/keyboard/actions";
 
 export type SendBehavior = ActiveTurnBehavior | "queue";
 
+/**
+ * What a send does to a running turn. Only the Interrupt setting interrupts; Queue steers
+ * whatever skips the queue, and Stop is how its users interrupt.
+ */
+export function resolveImmediateTurnBehavior(sendBehavior: SendBehavior): ActiveTurnBehavior {
+  return sendBehavior === "interrupt" ? "interrupt" : "steer";
+}
+
 export function resolveActiveSendBehavior(
   sendBehavior: SendBehavior,
   hasPendingPermission: boolean,
 ): SendBehavior {
-  return sendBehavior === "queue" && hasPendingPermission ? "interrupt" : sendBehavior;
+  return sendBehavior === "queue" && hasPendingPermission ? "steer" : sendBehavior;
 }
 
 interface ComposerSurfaceState {
