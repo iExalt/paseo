@@ -509,6 +509,11 @@ export function wrapSessionProvider(provider: AgentProvider, inner: AgentSession
     canStopRuntime: inner.canStopRuntime?.bind(inner),
     hasPendingWakeup: inner.hasPendingWakeup?.bind(inner),
     listCommands: inner.listCommands?.bind(inner),
+    refreshSkills: inner.refreshSkills?.bind(inner),
+    get skillRefreshGroup() {
+      return inner.skillRefreshGroup;
+    },
+    canResumeRuntime: inner.canResumeRuntime?.bind(inner),
     setModel: inner.setModel?.bind(inner),
     setThinkingOption: inner.setThinkingOption?.bind(inner),
     applyOptions: inner.applyOptions?.bind(inner),

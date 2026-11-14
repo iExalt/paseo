@@ -419,6 +419,7 @@ const OUTBOUND_PERMISSION = {
   list_available_editors_response: "workspace.read",
   list_available_providers_response: "daemon.read",
   list_commands_response: "daemon.read",
+  "agent.commands.changed": "daemon.read",
   list_provider_features_response: "daemon.read",
   "provider.controls.list.response": ["daemon.read", "hub.execute"],
   list_provider_models_response: "daemon.read",

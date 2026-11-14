@@ -7628,6 +7628,15 @@ const AgentSlashCommandSchema = z.object({
   kind: z.enum(["command", "skill"]).optional().catch("command"),
 });
 
+export const AgentCommandsChangedSchema = z.object({
+  type: z.literal("agent.commands.changed"),
+  payload: z.object({
+    agentId: z.string().optional(),
+    cwd: z.string(),
+    provider: AgentProviderSchema,
+  }),
+});
+
 export const ListCommandsResponseSchema = z.object({
   type: z.literal("list_commands_response"),
   payload: z.object({
@@ -8456,6 +8465,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   UsageListReportsResponseMessageSchema,
   UsageSpendSummaryResponseMessageSchema,
   ListCommandsResponseSchema,
+  AgentCommandsChangedSchema,
   ListTerminalsResponseSchema,
   TerminalsChangedSchema,
   CreateTerminalResponseSchema,

@@ -5101,6 +5101,10 @@ class OpenCodeAgentSession implements AgentSession {
     };
   }
 
+  get skillRefreshGroup() {
+    return this.server.url;
+  }
+
   async canStopRuntime(): Promise<boolean> {
     if (
       this.closed ||
