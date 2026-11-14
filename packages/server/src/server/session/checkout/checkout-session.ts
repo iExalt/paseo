@@ -12,6 +12,7 @@ import type {
   CheckoutRenameBranchRequest,
   CheckoutStatusRequest,
   CheckoutWorktreesListRequest,
+  PullRequestTimelineResponse,
   SessionInboundMessage,
   SessionOutboundMessage,
   SubscribeCheckoutDiffRequest,
@@ -1492,10 +1493,7 @@ export class CheckoutSession {
   }
 }
 
-type PullRequestTimelinePayload = Extract<
-  SessionOutboundMessage,
-  { type: "pull_request_timeline_response" }
->["payload"];
+type PullRequestTimelinePayload = NonNullable<PullRequestTimelineResponse["payload"]>;
 type PullRequestTimelinePayloadItem = PullRequestTimelinePayload["items"][number];
 
 function isValidPullRequestTimelineIdentity(options: {

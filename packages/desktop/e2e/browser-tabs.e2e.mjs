@@ -9,7 +9,7 @@ import path from "node:path";
 import process from "node:process";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { experimental_createMCPClient } from "ai";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { chromium } from "playwright";
 import { expect } from "@playwright/test";
@@ -338,13 +338,22 @@ async function callBrowserTool(client, name, args = {}) {
   return mcpPayload(await client.callTool({ name, args }), name);
 }
 
+async function connectMcpClient(transport) {
+  const client = new Client({ name: "paseo-browser-e2e", version: "0.1.0" });
+  await client.connect(transport);
+  return {
+    callTool: ({ name, args }) => client.callTool({ name, arguments: args }),
+    close: () => client.close(),
+  };
+}
+
 async function connectBrowserToolClient(daemonPort, callerAgentId) {
   const transport = new StreamableHTTPClientTransport(
     new URL(
       `http://127.0.0.1:${daemonPort}/mcp/agents?callerAgentId=${encodeURIComponent(callerAgentId)}`,
     ),
   );
-  return experimental_createMCPClient({ transport });
+  return connectMcpClient(transport);
 }
 
 async function openBrowserWorkspace(page, workspaceKey) {
@@ -511,7 +520,7 @@ async function createCallerAgent(daemonPort, workspaceId = workspaceIds[0]) {
   const transport = new StreamableHTTPClientTransport(
     new URL(`http://127.0.0.1:${daemonPort}/mcp/agents`),
   );
-  const client = await experimental_createMCPClient({ transport });
+  const client = await connectMcpClient(transport);
   try {
     const response = await client.callTool({
       name: "create_agent",

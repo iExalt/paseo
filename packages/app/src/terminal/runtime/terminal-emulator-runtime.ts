@@ -125,6 +125,7 @@ interface TerminalEmulatorRuntimeDisposables {
   removeFontListeners: () => void;
   removeFilePasteListener: () => void;
   removeUserInputListeners: () => void;
+  removeScrollbarStyle: () => void;
   restoreDocumentStyles: () => void;
   restoreViewportStyles: () => void;
   disposeFitAddon: () => void;
@@ -572,12 +573,14 @@ export class TerminalEmulatorRuntime {
       macOptionIsMeta: true,
       minimumContrastRatio: 1,
       rescaleOverlappingGlyphs: true,
-      scrollbar: {
-        width: 8,
-      },
       scrollback: input.scrollback,
       theme: withOverviewRulerBorderHidden(input.theme),
     });
+    input.root.dataset.paseoTerminalScrollbar = "";
+    const scrollbarStyle = document.createElement("style");
+    scrollbarStyle.textContent =
+      "[data-paseo-terminal-scrollbar] .xterm .xterm-scrollable-element > .scrollbar { width: 8px !important; }";
+    input.root.append(scrollbarStyle);
     const fitAddon = new FitAddon();
     let webglAddon: WebglAddon | null = null;
     let imageAddon: ImageAddon | null = null;
@@ -866,6 +869,10 @@ export class TerminalEmulatorRuntime {
         }
         this.userInputEvent = null;
       },
+      removeScrollbarStyle: () => {
+        scrollbarStyle.remove();
+        delete input.root.dataset.paseoTerminalScrollbar;
+      },
       restoreDocumentStyles,
       restoreViewportStyles,
       disposeFitAddon: () => {
@@ -896,6 +903,7 @@ export class TerminalEmulatorRuntime {
       disposables.removeFontListeners();
       disposables.removeFilePasteListener();
       disposables.removeUserInputListeners();
+      disposables.removeScrollbarStyle();
       disposables.disposeFitAddon();
       disposables.disposeWebglAddon();
       disposables.disposeTerminal();

@@ -1006,7 +1006,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     },
     disconnect() {
       closedByShutdown = true;
-      process.disconnect();
+      process.disconnect?.();
     },
   };
   // The daemon worker owns this process through the IPC channel. When the channel closes without
