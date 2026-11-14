@@ -144,5 +144,8 @@ export function useMarkdownSource(
     linkRecognition: prepared.linkRecognition,
     linkSource: prepared.linkSource,
     imageSources: Object.fromEntries([...resolved].map(([source, url]) => [url, source])),
+    imageAttachments: Object.fromEntries(
+      results.flatMap((result) => (result.data ? [[result.data.uri, result.data.attachment]] : [])),
+    ),
   };
 }

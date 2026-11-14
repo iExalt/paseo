@@ -20,6 +20,7 @@ export interface ViewportScaleLimits {
 }
 
 export interface ViewportFitOptions {
+  allowUpscale?: boolean;
   padding?: number;
   maxWidth?: number;
   maxHeight?: number;
@@ -65,7 +66,11 @@ export function fitContentSize(
     0,
     Math.min(viewport.height - padding * 2, options.maxHeight ?? Number.POSITIVE_INFINITY),
   );
-  const fitScale = Math.min(availableWidth / content.width, availableHeight / content.height);
+  const fitScale = Math.min(
+    options.allowUpscale === false ? 1 : Number.POSITIVE_INFINITY,
+    availableWidth / content.width,
+    availableHeight / content.height,
+  );
   return {
     width: content.width * fitScale,
     height: content.height * fitScale,
@@ -73,10 +78,12 @@ export function fitContentSize(
 }
 
 function clampScale(scale: number, limits: ViewportScaleLimits): number {
+  "worklet";
   return Math.min(limits.maxScale, Math.max(limits.minScale, scale));
 }
 
 function clampOffset(offset: number, maximum: number): number {
+  "worklet";
   if (maximum === 0) {
     return 0;
   }
@@ -89,6 +96,7 @@ export function clampTransform(
   viewport: ViewportSize,
   limits: ViewportScaleLimits,
 ): ViewportTransform {
+  "worklet";
   const scale = clampScale(transform.scale, limits);
   const maxX = Math.max(0, (fittedContent.width * scale - viewport.width) / 2);
   const maxY = Math.max(0, (fittedContent.height * scale - viewport.height) / 2);
@@ -135,6 +143,7 @@ export function panContent(input: {
   viewport: ViewportSize;
   limits: ViewportScaleLimits;
 }): ViewportTransform {
+  "worklet";
   return clampTransform(
     {
       ...input.transform,
@@ -145,4 +154,18 @@ export function panContent(input: {
     input.viewport,
     input.limits,
   );
+}
+
+export function wheelPanDelta(
+  event: { deltaX: number; deltaY: number; deltaMode: number },
+  viewport: ViewportSize,
+): ViewportPoint {
+  if (event.deltaMode === 1) return { x: -event.deltaX * 16, y: -event.deltaY * 16 };
+  if (event.deltaMode === 2) {
+    return { x: -event.deltaX * viewport.width, y: -event.deltaY * viewport.height };
+  }
+  return {
+    x: -event.deltaX,
+    y: -event.deltaY,
+  };
 }

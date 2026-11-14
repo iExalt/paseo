@@ -6,6 +6,7 @@ import {
   fitContentSize,
   isPointInsideTransformedContent,
   panContent,
+  wheelPanDelta,
   zoomContentAtPoint,
   type ViewportPoint,
   type ViewportSize,
@@ -21,7 +22,7 @@ interface DragGesture {
   type: "drag";
   pointerId: number;
   startPoint: ViewportPoint;
-  startTransform: ViewportTransform;
+  lastPoint: ViewportPoint;
 }
 
 interface PinchGesture {
@@ -52,6 +53,7 @@ export function ZoomableViewport({
   maxScale = DEFAULT_MAX_SCALE,
   minScale = DEFAULT_MIN_SCALE,
   onPressOutsideContent,
+  panWithWheel = false,
   style,
   testID,
   wheelActivation = "modifier",
@@ -127,6 +129,20 @@ export function ZoomableViewport({
     const activeCanvas = canvas;
     function zoomWithWheel(event: WheelEvent) {
       const hasModifier = event.ctrlKey || event.metaKey;
+      if (panWithWheel && !hasModifier) {
+        if (!fittedContent || !viewport) return;
+        event.preventDefault();
+        commitTransform(
+          panContent({
+            transform: transformRef.current,
+            delta: wheelPanDelta(event, viewport),
+            fittedContent,
+            viewport,
+            limits,
+          }),
+        );
+        return;
+      }
       if (wheelActivation === "modifier" && !hasModifier) return;
       event.preventDefault();
       const bounds = activeCanvas.getBoundingClientRect();
@@ -138,7 +154,7 @@ export function ZoomableViewport({
     }
     activeCanvas.addEventListener("wheel", zoomWithWheel, { passive: false });
     return () => activeCanvas.removeEventListener("wheel", zoomWithWheel);
-  }, [wheelActivation, zoomAt]);
+  }, [commitTransform, fittedContent, limits, panWithWheel, viewport, wheelActivation, zoomAt]);
 
   const beginPointer = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (event.pointerType === "mouse" && event.button !== 0) return;
@@ -160,7 +176,7 @@ export function ZoomableViewport({
       type: "drag",
       pointerId: event.pointerId,
       startPoint: points[0],
-      startTransform: transformRef.current,
+      lastPoint: points[0],
     };
     setIsDragging(transformRef.current.scale > 1);
   }, []);
@@ -205,16 +221,17 @@ export function ZoomableViewport({
       }
       commitTransform(
         panContent({
-          transform: gesture.startTransform,
+          transform: transformRef.current,
           delta: {
-            x: event.clientX - gesture.startPoint.x,
-            y: event.clientY - gesture.startPoint.y,
+            x: event.clientX - gesture.lastPoint.x,
+            y: event.clientY - gesture.lastPoint.y,
           },
           fittedContent,
           viewport,
           limits,
         }),
       );
+      gesture.lastPoint = { x: event.clientX, y: event.clientY };
     },
     [commitTransform, fittedContent, limits, viewport],
   );
@@ -231,7 +248,7 @@ export function ZoomableViewport({
         type: "drag",
         pointerId,
         startPoint: point,
-        startTransform: transformRef.current,
+        lastPoint: point,
       };
       setIsDragging(transformRef.current.scale > 1);
       return;
@@ -291,6 +308,7 @@ export function ZoomableViewport({
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         onPointerCancel={endPointer}
+        onLostPointerCapture={endPointer}
         onPointerDown={beginPointer}
         onPointerMove={movePointer}
         onPointerUp={endPointer}

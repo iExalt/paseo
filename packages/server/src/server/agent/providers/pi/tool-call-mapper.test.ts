@@ -6,6 +6,7 @@ import {
   parseToolArgs,
   parseToolResult,
   splitPiToolResultImages,
+  withPiReadImageOriginal,
 } from "./tool-call-mapper.js";
 
 describe("Pi tool call mapper", () => {
@@ -134,5 +135,23 @@ test("tool-result images remove nested structured image data while preserving me
       read: { type: "image", data: "[image]", mimeType: "image/png", note: "Read image file" },
       extra: { data: "keep ordinary data" },
     },
+  });
+});
+
+describe("withPiReadImageOriginal", () => {
+  const image = { data: "aGVsbG8=", mimeType: "image/png" };
+
+  test("points a single read image at the file, resolved against the session cwd", () => {
+    const toolCall = parseToolArgs("read", { path: "shots/a.png" });
+    expect(withPiReadImageOriginal([image], { toolCall, cwd: "/repo" })).toEqual([
+      { ...image, originalPath: "/repo/shots/a.png", observedAt: undefined },
+    ]);
+  });
+
+  test("leaves other tools and multi-image results on Pi's copy", () => {
+    const bash = parseToolArgs("bash", { command: "screenshot" });
+    const read = parseToolArgs("read", { path: "/repo/a.png" });
+    expect(withPiReadImageOriginal([image], { toolCall: bash, cwd: "/repo" })).toEqual([image]);
+    expect(withPiReadImageOriginal([image, image], { toolCall: read })).toEqual([image, image]);
   });
 });
