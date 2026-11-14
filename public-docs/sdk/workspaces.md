@@ -60,14 +60,37 @@ Pass `background: true` to hide a workspace from default discovery. Its agents a
 remain durable, with ordinary history, lifecycle hooks, archive, and exact-ID access. The app's
 sidebar offers **Show background** without dropping replicated state.
 
-`background` is creation-only. Omission defaults to false; when `callerAgentId` identifies an agent
-creating a new workspace, omission inherits the caller's visibility: true when the caller agent or
-its workspace is background. Explicit false or true overrides inheritance. Agent creation that
-creates its workspace applies `background` to both the workspace and the agent. To hide one agent
-in an existing workspace, see [background agents](./agents.md#run-a-helper-as-a-background-agent).
+The agent’s `background` flag is creation-only. Change workspace visibility explicitly with workspace
+settings updates; selecting an existing workspace does not change it. At creation, omission defaults
+to false. When `callerAgentId` identifies an agent creating a workspace, omission inherits the
+caller’s effective visibility: true when its agent or workspace is background. Explicit false or true
+overrides inheritance. Agent creation that creates its workspace applies `background` to both the
+workspace and the agent. To hide one agent in an existing workspace, see
+[background agents](./agents.md#run-a-helper-as-a-background-agent).
 
 Creation and inclusive discovery require `features.backgroundWorkspaces`; the client rejects an
 unsupported host with an update-host message.
+
+## Update workspace settings
+
+```ts
+const applied = await workspace.update({
+  background: false,
+  title: "Review",
+  notifications: "off",
+  pinned: true,
+  addLabels: ["Review"],
+  removeLabels: ["Done"],
+});
+```
+
+The host applies the patch atomically and returns the persisted settings. Omitted fields
+stay unchanged; `title: null` restores the derived name and `pinned: false` unpins.
+Label additions require existing catalog names. Adding and removing the same normalized
+label is rejected. An absent assignment can be removed repeatedly.
+
+Requires `features.workspaceSettingsUpdate`; unsupported hosts get an update-host error.
+The workspace keeps its identity and running agents. Call `refresh()` for its current descriptor.
 
 ## Start an agent in a workspace
 
