@@ -1731,3 +1731,28 @@ test("closing OMP during image conversion rejects its pending start", async () =
   await session.close();
   await rejected;
 });
+
+test("native command updates replace an open catalog, including removal of the last skill", async () => {
+  const runtime = new FakeOmp();
+  const client = new OmpAgentClient({ logger: createTestLogger(), runtime });
+  const session = await client.createSession({ provider: "omp", cwd: process.cwd() });
+  onTestFinished(() => session.close());
+  const events: AgentStreamEvent[] = [];
+  session.subscribe((event) => events.push(event));
+  const native = runtime.latestSession();
+  native.emit({
+    type: "available_commands_update",
+    commands: [{ name: "fresh_skill", description: "updated", source: "skill" }],
+  });
+  await expect(session.listCommands?.()).resolves.toContainEqual(
+    expect.objectContaining({ name: "fresh_skill", kind: "skill" }),
+  );
+  native.emit({ type: "available_commands_update", commands: [] });
+  expect((await session.listCommands?.())?.some((command) => command.name === "fresh_skill")).toBe(
+    false,
+  );
+  expect(events).toEqual([
+    { type: "commands_changed", provider: "omp" },
+    { type: "commands_changed", provider: "omp" },
+  ]);
+});

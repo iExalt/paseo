@@ -522,6 +522,10 @@ export class OpenCodeV2Session implements AgentSession {
       await delay(100, undefined, { signal }).catch(() => undefined);
     }
   }
+  get skillRefreshGroup() {
+    return this.client;
+  }
+
   async canStopRuntime(): Promise<boolean> {
     if (this.closed || this.exited || this.reconnecting || this.turns.id || this.dirty)
       return false;

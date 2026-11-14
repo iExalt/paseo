@@ -12949,3 +12949,140 @@ describe("stopAdmittingIfIdle", () => {
     await run;
   });
 });
+
+test("skill refresh uses the hot-reload hook during a turn without adding timeline rows", async () => {
+  const client = new SessionRecordingAgentClient();
+  const manager = new AgentManager({ clients: { codex: client }, logger });
+  vi.spyOn(manager, "watchSkills").mockReturnValue({ ready: Promise.resolve(), close() {} });
+  const created = await manager.createAgent({ provider: "codex", cwd: process.cwd() }, undefined, {
+    workspaceId: undefined,
+  });
+  const session = client.sessions[0]!;
+  const reload = vi.fn(async () => undefined);
+  (session as AgentSession).refreshSkills = reload;
+  const interrupt = vi.spyOn(session, "interrupt");
+  const events: AgentManagerEvent[] = [];
+  const unsubscribe = manager.subscribe((event) => events.push(event));
+  try {
+    session.pushEvent({ type: "turn_started", provider: "codex", turnId: "working" });
+    await expect.poll(() => manager.getAgent(created.id)?.lifecycle).toBe("running");
+    await expect(manager.refreshAgentSkills(created.id)).resolves.toBe(true);
+    expect(reload).toHaveBeenCalledOnce();
+    expect(interrupt).not.toHaveBeenCalled();
+    expect(events).toContainEqual({
+      type: "commands_changed",
+      agentId: created.id,
+      cwd: process.cwd(),
+      provider: "codex",
+    });
+    expect(manager.getTimeline(created.id)).toEqual([]);
+  } finally {
+    unsubscribe();
+    await manager.closeAgent(created.id);
+  }
+});
+
+test("skill refresh resumes an idle shared helper only after every writer closes", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-skills-resume-"));
+  const storage = new AgentStorage(join(workdir, "agents"), logger);
+  const operations: string[] = [];
+  const sessions: TestAgentSession[] = [];
+  let stoppable = false;
+  let failResume: string | undefined;
+  let closeGate: Deferred<void> | undefined;
+  class SkillsClient extends TestAgentClient {
+    make(config: AgentSessionConfig, id?: string): AgentSession {
+      const session = new TestAgentSession(config);
+      Object.defineProperty(session, "capabilities", {
+        value: { ...TEST_CAPABILITIES, supportsSessionPersistence: true },
+      });
+      Object.defineProperty(session, "skillRefreshGroup", { value: "shared-helper" });
+      (session as AgentSession).canStopRuntime = async () => stoppable;
+      const handle = id ?? session.id;
+      session.describePersistence = () => ({ provider: "codex", sessionId: handle });
+      session.close = async () => {
+        operations.push(`close:${handle}`);
+        await closeGate?.promise;
+      };
+      sessions.push(session);
+      return session;
+    }
+    override async createSession(config: AgentSessionConfig) {
+      return this.make(config);
+    }
+    override async resumeSession(
+      handle: AgentPersistenceHandle,
+      config?: Partial<AgentSessionConfig>,
+    ) {
+      operations.push(`resume:${handle.sessionId}`);
+      if (handle.sessionId === failResume) throw new Error("one resume failed");
+      return this.make({ provider: "codex", cwd: config?.cwd ?? workdir }, handle.sessionId);
+    }
+  }
+  const manager = new AgentManager({
+    clients: { codex: new SkillsClient() },
+    registry: storage,
+    logger,
+  });
+  vi.spyOn(manager, "watchSkills").mockReturnValue({ ready: Promise.resolve(), close() {} });
+  const first = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  const second = await manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+    workspaceId: undefined,
+  });
+  try {
+    await expect(manager.refreshAgentSkills(first.id)).resolves.toBe(false);
+    expect(operations).toEqual([]);
+    stoppable = true;
+    const live = manager.getAgent(first.id)!;
+    live.pendingPermissions.set("question", {
+      id: "question",
+      provider: "codex",
+      name: "Question",
+      kind: "tool",
+    });
+    await expect(manager.refreshAgentSkills(first.id)).resolves.toBe(false);
+    expect(operations).toEqual([]);
+    live.pendingPermissions.clear();
+    sessions[1]!.pushEvent({ type: "turn_started", provider: "codex", turnId: "busy" });
+    await expect.poll(() => manager.getAgent(second.id)?.lifecycle).toBe("running");
+    await expect(manager.refreshAgentSkills(first.id)).resolves.toBe(false);
+    expect(operations).toEqual([]);
+    sessions[1]!.pushEvent({ type: "turn_completed", provider: "codex", turnId: "busy" });
+    await expect.poll(() => manager.getAgent(second.id)?.lifecycle).toBe("idle");
+    closeGate = deferred<void>();
+    const refreshing = manager.refreshAgentSkills(first.id);
+    await expect.poll(() => operations.length).toBe(1);
+    const creating = manager.createAgent({ provider: "codex", cwd: workdir }, undefined, {
+      workspaceId: undefined,
+    });
+    await Promise.resolve();
+    expect(sessions).toHaveLength(2);
+    closeGate.resolve();
+    await expect(refreshing).resolves.toBe(true);
+    const third = await creating;
+    await manager.closeAgent(third.id);
+    expect(operations.slice(0, 4)).toEqual([
+      `close:${first.persistence!.sessionId}`,
+      `close:${second.persistence!.sessionId}`,
+      `resume:${first.persistence!.sessionId}`,
+      `resume:${second.persistence!.sessionId}`,
+    ]);
+    expect(manager.getAgent(first.id)?.persistence?.sessionId).toBe(first.persistence!.sessionId);
+    expect(manager.getAgent(second.id)?.persistence?.sessionId).toBe(second.persistence!.sessionId);
+    failResume = first.persistence!.sessionId;
+    await expect(manager.refreshAgentSkills(first.id)).rejects.toThrow(
+      "could not resume every runtime",
+    );
+    expect(manager.getAgent(second.id)?.persistence?.sessionId).toBe(second.persistence!.sessionId);
+    expect(manager.getAgent(second.id)?.lifecycle).toBe("idle");
+    expect((await storage.get(first.id))?.persistence?.sessionId).toBe(
+      first.persistence!.sessionId,
+    );
+  } finally {
+    await manager.closeAgent(first.id);
+    await manager.closeAgent(second.id);
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});

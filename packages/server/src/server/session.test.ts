@@ -4804,7 +4804,7 @@ describe("session branch validation", () => {
       writeFileSync(join(repoDir, "README.md"), "hello\n");
       execSync("git add README.md", { cwd: repoDir });
       execSync("git -c commit.gpgsign=false commit -m init", { cwd: repoDir });
-      execSync("git tag v1", { cwd: repoDir });
+      execSync("git -c tag.gpgsign=false tag v1", { cwd: repoDir });
 
       const messages: unknown[] = [];
       const workspaceRuntimeStore = { ...createWorkspaceRuntimeStore(), get: vi.fn() };
@@ -6629,4 +6629,58 @@ test("a test notification goes to the connection's own device and reports Expo's
       payload: { requestId: "refused", outcome: "failed", error: "DeviceNotRegistered" },
     },
   ]);
+});
+
+test("draft skill changes notify capable sources and release the watcher on disconnect", async () => {
+  const messages: SessionOutboundMessage[] = [];
+  const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+  const closed = vi.fn();
+  let changed: (() => void) | undefined;
+  const session = createSessionForTest({
+    messages,
+    targetedMessages,
+    agentManager: {
+      getAgent: () => null,
+      watchSkills: (_config: unknown, callback: () => void) => {
+        changed = callback;
+        return { ready: Promise.resolve(), close: closed };
+      },
+      listDraftCommands: async () => [],
+    },
+    agentStorage: { get: async () => null },
+  });
+  const capable = {};
+  const legacy = {};
+  session.updateClientCapabilities({ [CLIENT_CAPS.agentCommandUpdates]: true }, capable);
+  session.updateClientCapabilities({}, legacy);
+  try {
+    await session.handleMessage(
+      {
+        type: "list_commands_request",
+        agentId: "",
+        requestId: "draft-commands",
+        draftConfig: { provider: "codex", cwd: "/repo" },
+      },
+      capable,
+    );
+    expect(changed).toBeDefined();
+    targetedMessages.length = 0;
+    changed!();
+    expect(targetedMessages).toEqual([
+      {
+        source: capable,
+        message: {
+          type: "agent.commands.changed",
+          payload: { agentId: undefined, cwd: "/repo", provider: "codex" },
+        },
+      },
+    ]);
+    session.setPermissions([]);
+    targetedMessages.length = 0;
+    changed!();
+    expect(targetedMessages).toEqual([]);
+  } finally {
+    await session.cleanup();
+  }
+  expect(closed).toHaveBeenCalledOnce();
 });

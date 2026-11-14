@@ -1422,6 +1422,10 @@ class PluginAgentSession implements AgentSession {
   }
 
   private accept(event: ProviderEvent, live: boolean): void {
+    if (event.type === "session.commands") {
+      if (live) this.emit({ type: "commands_changed", provider: this.provider });
+      return;
+    }
     const translated = this.translate(event);
     for (const next of translated) {
       this.history.push(next);

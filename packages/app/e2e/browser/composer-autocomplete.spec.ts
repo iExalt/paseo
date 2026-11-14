@@ -101,7 +101,13 @@ interface PopoverFrameRecorderWindow extends Window {
   __stopComposerAutocompleteFrameRecorder?: () => void;
 }
 
-async function installListCommandsStub(page: Page): Promise<void> {
+async function installListCommandsStub(
+  page: Page,
+  options?: {
+    commands?: () => readonly { name: string; description: string; argumentHint: string }[];
+    onSocket?: (send: (message: string) => void) => void;
+  },
+): Promise<void> {
   await page.routeWebSocket(daemonWsRoutePattern(), (ws) => {
     const server = ws.connectToServer();
 
@@ -131,7 +137,7 @@ async function installListCommandsStub(page: Page): Promise<void> {
           parsed.message?.type === "list_commands_response" &&
           parsed.message.payload
         ) {
-          parsed.message.payload.commands = TEST_COMMANDS;
+          parsed.message.payload.commands = options?.commands?.() ?? TEST_COMMANDS;
           parsed.message.payload.error = null;
           ws.send(JSON.stringify(parsed));
           return;
@@ -142,6 +148,7 @@ async function installListCommandsStub(page: Page): Promise<void> {
 
       ws.send(message);
     });
+    options?.onSocket?.((message) => ws.send(message));
   });
 }
 
@@ -365,6 +372,74 @@ function expectPopoverDoesNotDisappearAfterFirstVisible(frames: PopoverFrame[]):
 }
 
 test.describe("Composer autocomplete", () => {
+  test("refreshes an open slash menu on skill changes without losing input or focus", async ({
+    page,
+  }, testInfo) => {
+    let catalog = [{ name: "live_before", description: "Original skill", argumentHint: "" }];
+    let send: ((message: string) => void) | undefined;
+    const agent = await seedMockAgentWorkspace({
+      repoPrefix: "live-skills-",
+      title: "Live skills",
+    });
+    await installListCommandsStub(page, {
+      commands: () => catalog,
+      onSocket: (callback) => {
+        send = callback;
+      },
+    });
+    try {
+      await openAgentRoute(page, agent);
+      await testInfo.attach("browser-environment", {
+        contentType: "application/json",
+        body: JSON.stringify(
+          await page.evaluate(() => ({
+            hover: matchMedia("(hover: hover)").matches,
+            fine: matchMedia("(pointer: fine)").matches,
+            coarse: matchMedia("(pointer: coarse)").matches,
+            touch: navigator.maxTouchPoints,
+            dpr: devicePixelRatio,
+          })),
+        ),
+      });
+      const input = composerLocator(page);
+      await expect(input).toBeEditable();
+      await input.fill("/live_");
+      const menu = page.getByTestId("composer-autocomplete-popover");
+      await expect(menu.getByRole("button", { name: "/live_before", exact: true })).toBeVisible();
+      const changed = () => {
+        expect(send).toBeDefined();
+        send!(
+          JSON.stringify({
+            type: "session",
+            message: {
+              type: "agent.commands.changed",
+              payload: { agentId: agent.agentId, cwd: "/repo", provider: "mock" },
+            },
+          }),
+        );
+      };
+      catalog = [{ name: "live_after", description: "Updated skill", argumentHint: "" }];
+      changed();
+      await expect(menu.getByRole("button", { name: "/live_after", exact: true })).toBeVisible();
+      await expect(menu.getByRole("button", { name: "/live_before", exact: true })).toHaveCount(0);
+      await expect(input).toHaveValue("/live_");
+      await expect(input).toBeFocused();
+      catalog = [{ name: "live_after", description: "Edited description", argumentHint: "" }];
+      changed();
+      await expect(menu.getByRole("button", { name: "/live_after", exact: true })).toContainText(
+        "Edited description",
+      );
+      await page.screenshot({ path: testInfo.outputPath("live-skills-menu.png") });
+      catalog = [];
+      changed();
+      await expect(menu.getByRole("button", { name: "/live_after", exact: true })).toHaveCount(0);
+      await expect(input).toHaveValue("/live_");
+      await expect(input).toBeFocused();
+    } finally {
+      await agent.cleanup();
+    }
+  });
+
   test("keeps New workspace off the running-agent command list before a project is chosen", async ({
     page,
   }) => {

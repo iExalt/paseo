@@ -3125,6 +3125,11 @@ class ClaudeAgentSession implements AgentSession {
     );
   }
 
+  async refreshSkills(): Promise<void> {
+    // An unstarted query reads the current files when it starts.
+    if (this.query) await this.query.reloadSkills();
+  }
+
   async listCommands(): Promise<AgentSlashCommand[]> {
     const q = await this.ensureQuery();
     const commands = await q.supportedCommands();
@@ -3771,7 +3776,7 @@ class ClaudeAgentSession implements AgentSession {
       overlays: [
         this.launchEnv,
         // Makes the CLI announce session_state_changed, whose "idle" is the safety net that closes
-        // an autonomous turn (see consumeSessionStateChange).
+        // an autonomous turn (see consumeSessionMetadata).
         { CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS: "1" },
       ],
     });
@@ -4398,10 +4403,14 @@ class ClaudeAgentSession implements AgentSession {
    * It never closes a foreground turn: an idle can trail the previous turn and land just after a
    * new send, and it must not end that send.
    *
-   * Returns true when the frame was a state change, which is bookkeeping and never reaches the
+   * Returns true for session metadata, which is bookkeeping and never reaches the
    * timeline.
    */
-  private consumeSessionStateChange(message: SDKMessage): boolean {
+  private consumeSessionMetadata(message: SDKMessage): boolean {
+    if (message.type === "system" && message.subtype === "commands_changed") {
+      this.notifySubscribers({ type: "commands_changed", provider: "claude" });
+      return true;
+    }
     if (message.type !== "system" || message.subtype !== "session_state_changed") {
       return false;
     }
@@ -4444,7 +4453,7 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private async routeSdkMessageFromPump(message: SDKMessage): Promise<void> {
-    if (this.consumeSessionStateChange(message)) {
+    if (this.consumeSessionMetadata(message)) {
       return;
     }
     this.observeMainTurnBracket(message);
@@ -5463,7 +5472,11 @@ class ClaudeAgentSession implements AgentSession {
 
   private notifySubscribers(event: AgentStreamEvent): void {
     const turnId =
-      getAgentStreamEventTurnId(event) ?? this.activeForegroundTurnId ?? this.autonomousTurn?.id;
+      event.type === "commands_changed"
+        ? null
+        : (getAgentStreamEventTurnId(event) ??
+          this.activeForegroundTurnId ??
+          this.autonomousTurn?.id);
     const tagged = turnId ? { ...event, turnId } : event;
     this.logger.trace(
       {

@@ -1,3 +1,4 @@
+import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { acceptOnDispatch, type FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
@@ -825,6 +826,7 @@ export class Session {
   private readonly pushNotifications: PushNotifications;
   private readonly pluginRuntime: SessionOptions["pluginRuntime"];
   private readonly orchestrationSkills: SessionOptions["orchestrationSkills"];
+  private readonly draftSkillWatches = new Map<string, { close(): void; ready: Promise<void> }>();
   private unsubscribeAgentEvents: (() => void) | null = null;
   private unsubscribeProjectMutations: (() => void) | null = null;
   private unsubscribePluginChanges: (() => void) | null = null;
@@ -2066,6 +2068,22 @@ export class Session {
     }
   }
 
+  private forwardProviderMetadata(
+    event: Extract<AgentManagerEvent, { type: "commands_changed" | "provider_subagent" }>,
+  ): void {
+    if (event.type === "commands_changed") {
+      this.emitCommandsChanged(event);
+      return;
+    }
+    const parentAgentId =
+      event.event.type === "upsert"
+        ? event.event.subagent.parentAgentId
+        : event.event.parentAgentId;
+    if (this.agentManager.getAgent(parentAgentId)?.internal) return;
+    this.emitProviderSubagentWorkspaceUpdate(event.event);
+    this.forwardProviderSubagentUpdate(event.event);
+  }
+
   private subscribeToAgentEvents(): void {
     if (this.unsubscribeAgentEvents) {
       this.unsubscribeAgentEvents();
@@ -2073,6 +2091,11 @@ export class Session {
 
     this.unsubscribeAgentEvents = this.agentManager.subscribe(
       (event) => {
+        if (event.type === "commands_changed" || event.type === "provider_subagent") {
+          this.forwardProviderMetadata(event);
+          return;
+        }
+
         if (event.type === "timeline_replacement") {
           this.deliverTimelineReplacement(event.agentId, this.rewindInitiators.get(event.agentId));
           return;
@@ -2108,18 +2131,6 @@ export class Session {
             "agent.session.forward_update",
           );
           void this.agentUpdates.forwardLiveAgent(event.agent);
-          return;
-        }
-
-        if (event.type === "provider_subagent") {
-          // The subagents track of an internal parent stays hidden.
-          const parentAgentId =
-            event.event.type === "upsert"
-              ? event.event.subagent.parentAgentId
-              : event.event.parentAgentId;
-          if (this.agentManager.getAgent(parentAgentId)?.internal) return;
-          this.emitProviderSubagentWorkspaceUpdate(event.event);
-          this.forwardProviderSubagentUpdate(event.event);
           return;
         }
 
@@ -5860,6 +5871,26 @@ export class Session {
   /**
    * Handle list commands request for an agent
    */
+  private emitCommandsChanged(payload: {
+    agentId?: string;
+    cwd: string;
+    provider: AgentProvider;
+  }): void {
+    if (this.isCleanedUp) return;
+    const message = {
+      type: "agent.commands.changed" as const,
+      payload: { agentId: payload.agentId, cwd: payload.cwd, provider: payload.provider },
+    };
+    if (!this.authorization.allowsOutbound(message)) return;
+    // COMPAT(agentCommandUpdates): added in v0.23.2, remove gate after 2027-05-06.
+    if (this.clientSources.size > 0 && this.onMessageToSource) {
+      for (const [source] of this.clientSources) {
+        if (this.supportsForSource(CLIENT_CAPS.agentCommandUpdates, source))
+          this.emitForSource(message, source);
+      }
+    } else if (this.supports(CLIENT_CAPS.agentCommandUpdates)) this.emit(message);
+  }
+
   private async handleListCommandsRequest(
     msg: Extract<SessionInboundMessage, { type: "list_commands_request" }>,
   ): Promise<void> {
@@ -5906,6 +5937,14 @@ export class Session {
             : {}),
         };
 
+        const key = JSON.stringify([sessionConfig.provider, sessionConfig.cwd]);
+        if (!this.draftSkillWatches.has(key)) {
+          const watch = this.agentManager.watchSkills(sessionConfig, () => {
+            this.emitCommandsChanged({ cwd: sessionConfig.cwd, provider: sessionConfig.provider });
+          });
+          this.draftSkillWatches.set(key, watch);
+        }
+        await this.draftSkillWatches.get(key)!.ready;
         const commands = await this.agentManager.listDraftCommands(sessionConfig);
         this.emit({
           type: "list_commands_response",
@@ -9583,6 +9622,8 @@ export class Session {
   public async cleanup(): Promise<void> {
     this.sessionLogger.trace({}, "agent.session.lifecycle.cleanup");
     this.isCleanedUp = true;
+    for (const watch of this.draftSkillWatches.values()) watch.close();
+    this.draftSkillWatches.clear();
     this.unsubscribeSetupObservation();
     for (const active of this.activeBrowserCommandRequests.values()) active.controller.abort();
     this.activeBrowserCommandRequests.clear();

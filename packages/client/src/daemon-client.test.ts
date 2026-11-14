@@ -1238,6 +1238,7 @@ test("advertises client capabilities in hello", async () => {
       provider_snapshot_references: true,
       explicit_event_subscriptions: true,
       owned_subscriptions: true,
+      agent_command_updates: true,
       compact_provider_snapshots: true,
       custom_mode_icons: true,
       project_updates: true,

@@ -2584,6 +2584,13 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
+  canResumeRuntime(): boolean {
+    return (
+      this.agentCapabilities?.loadSession === true ||
+      Boolean(this.agentCapabilities?.sessionCapabilities?.resume)
+    );
+  }
+
   async canStopRuntime(): Promise<boolean> {
     return (
       this.activeForegroundTurnId === null &&
@@ -2782,10 +2789,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return;
     }
 
-    if (commands.length > 0) {
-      this.cachedCommands = commands;
-    }
+    this.cachedCommands = commands;
     this.settleCommandsReady();
+    this.pushEvent({ type: "commands_changed", provider: this.provider });
   }
 
   async readTextFile(params: ReadTextFileRequest): Promise<{ content: string }> {
@@ -3174,6 +3180,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
           kind: "command",
         }));
         this.settleCommandsReady();
+        pendingUserEvents.push({ type: "commands_changed", provider: this.provider });
         return pendingUserEvents;
       default:
         return pendingUserEvents;

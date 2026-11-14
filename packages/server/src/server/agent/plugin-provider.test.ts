@@ -1587,3 +1587,36 @@ test("plugin provider import launches with runtime MCP servers and returns only 
     await registry.shutdown();
   }
 });
+
+test("plugin command changes replace menus without entering conversation history", async () => {
+  const harness = createProviderHarness();
+  const registry = new PluginAgentClientRegistry(createTestLogger());
+  registry.replace([harness.registration]);
+  const client = registry.clients()[harness.registration.id]!;
+  const session = await client.createSession({ provider: client.provider, cwd: "/tmp" });
+  const opened = harness.inputs.find((input) => input.type === "session.open");
+  if (opened?.type !== "session.open") throw new Error("missing session open");
+  const events: AgentStreamEvent[] = [];
+  session.subscribe((event) => events.push(event));
+  try {
+    harness.emit({
+      type: "session.commands",
+      sessionId: opened.sessionId,
+      commands: [{ name: "fresh", description: "Fresh skill" }],
+    });
+    await expect(session.listCommands?.()).resolves.toContainEqual(
+      expect.objectContaining({ name: "fresh" }),
+    );
+    harness.emit({ type: "session.commands", sessionId: opened.sessionId, commands: [] });
+    await expect(session.listCommands?.()).resolves.toEqual([]);
+    await expect
+      .poll(() => events.filter((event) => event.type === "commands_changed").length)
+      .toBe(2);
+    for await (const event of session.streamHistory())
+      expect(event.type).not.toBe("commands_changed");
+    expect(events.some((event) => event.type === "turn_started")).toBe(false);
+  } finally {
+    await session.close();
+    await registry.shutdown();
+  }
+});
