@@ -161,6 +161,50 @@ describe("native terminal output drain", () => {
     expect(frameRecorder.frames).toHaveLength(1);
   });
 
+  test("paints output after an idle period at once and output soon after on the next frame", async () => {
+    const terminal = createNativeHeadlessTerminal({ rows: 2, cols: 10 });
+    const painted: string[] = [];
+    const frames = new Map<number, () => void>();
+    let nextFrame = 0;
+    let clock = 1_000;
+    const drain = createNativeTerminalOutputDrain({
+      write: (chunk) => terminal.write(chunk),
+      reset: () => terminal.reset(),
+      getViewportState: () => terminal.getViewportState(),
+      onPaint: (state) => painted.push(rowText(state.grid[0] ?? [])),
+      scheduleFrame: (callback) => {
+        nextFrame += 1;
+        frames.set(nextFrame, callback);
+        return nextFrame;
+      },
+      cancelFrame: (frame) => frames.delete(frame),
+      idlePaintMs: 16,
+      now: () => clock,
+    });
+
+    drain.enqueueText("a");
+    await drain.flush();
+    expect({ painted, frames: frames.size }).toEqual({ painted: ["a"], frames: 0 });
+
+    clock += 5;
+    drain.enqueueText("b");
+    await drain.flush();
+    expect({ painted, frames: frames.size }).toEqual({ painted: ["a"], frames: 1 });
+    for (const [frame, callback] of frames) {
+      frames.delete(frame);
+      callback();
+    }
+    expect(painted).toEqual(["a", "ab"]);
+
+    clock += 16;
+    drain.enqueueText("c");
+    await drain.flush();
+    expect({ painted, frames: frames.size }).toEqual({
+      painted: ["a", "ab", "abc"],
+      frames: 0,
+    });
+  });
+
   test("paints the final bottom viewport after a high-output byte burst", async () => {
     const terminal = createNativeHeadlessTerminal({
       rows: ROWS,

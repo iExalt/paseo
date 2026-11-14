@@ -73,6 +73,7 @@ import {
   type TerminalStreamControllerStatus,
 } from "@/terminal/runtime/terminal-stream-controller";
 import { resolveTerminalRestoreOptions } from "@/terminal/runtime/terminal-restore-options";
+import { useTerminalConnectionTrace } from "@/terminal/runtime/use-terminal-connection-trace";
 import { usePanelStore } from "@/stores/panel-store";
 import { useBlockMobilePanelOpenGestures } from "@/mobile-panels/provider";
 import { useSessionStore } from "@/stores/session-store";
@@ -297,6 +298,7 @@ export function TerminalPane({
   const client = useHostRuntimeClient(serverId);
   const isConnected = useHostRuntimeIsConnected(serverId);
   const isTerminalPresented = retainedPanelActive && isWorkspaceFocused;
+  useTerminalConnectionTrace({ serverId, client, active: isTerminalPresented });
   const supportsTerminalRestoreModes = useSessionStore(
     (state) => state.sessions[serverId]?.serverInfo?.features?.["terminal-restore-modes"] === true,
   );

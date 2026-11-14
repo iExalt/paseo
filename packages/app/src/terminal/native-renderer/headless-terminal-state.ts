@@ -339,6 +339,18 @@ function extractViewportState(
   };
 }
 
+interface XtermWriteBufferAccess {
+  _core?: { _writeBuffer?: { handleUserInput?: () => void } };
+}
+
+// xterm starts the first write after an idle period from setTimeout, which on
+// React Native costs one or more frames of echo latency. The user-input path
+// parses at once; xterm still time-slices a long write. If the private API
+// goes away, writes fall back to the timer.
+function startNextWriteNow(terminal: HeadlessTerminalInstance): void {
+  (terminal as unknown as XtermWriteBufferAccess)._core?._writeBuffer?.handleUserInput?.();
+}
+
 export function createNativeHeadlessTerminal(
   options: NativeHeadlessTerminalOptions,
 ): NativeHeadlessTerminal {
@@ -382,6 +394,7 @@ export function createNativeHeadlessTerminal(
       if (text.length === 0) {
         return;
       }
+      startNextWriteNow(terminal);
       await new Promise<void>((resolve) => {
         terminal.write(text, () => {
           resolve();
