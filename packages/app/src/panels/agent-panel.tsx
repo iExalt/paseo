@@ -21,6 +21,7 @@ import invariant from "tiny-invariant";
 import { shallow, useShallow } from "zustand/shallow";
 import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useAgentStreamTail } from "@/agent-stream/use-agent-stream-tail";
+import { useRetainedSessionSelector } from "@/stores/session-store-hooks/use-retained-session-selector";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { ComposerDock } from "@/composer/dock";
@@ -1366,20 +1367,24 @@ const AgentStreamSection = memo(function AgentStreamSection({
   const bottomOverlayControlClearance = hasVisibleComposerTracks
     ? resolveComposerTrackControlClearance(isCompactFormFactor)
     : 0;
+  // A hidden chat keeps these frozen until it is shown again; see useRetainedSessionSelector.
+  const retainedKey = `${serverId}\u0000${agentId ?? ""}`;
   const streamItemsRaw = useAgentStreamTail(serverId, agentId);
-  const pendingMessageSubmissions = useSessionStore(
-    useShallow((state) =>
+  const pendingMessageSubmissions = useRetainedSessionSelector(
+    retainedKey,
+    (state) =>
       agentId
         ? getActiveMessageSubmissions(state.sessions[serverId]?.messageSubmissions.get(agentId))
         : EMPTY_MESSAGE_SUBMISSIONS,
-    ),
+    shallow,
   );
-  const turnPresentation = useSessionStore(
-    useShallow((state) =>
+  const turnPresentation = useRetainedSessionSelector(
+    retainedKey,
+    (state) =>
       agentId
         ? selectAgentTurnPresentation(state.sessions[serverId], agentId)
         : { isActive: false, isCancelling: false, startedAt: null, turnId: null },
-    ),
+    shallow,
   );
   const streamItems = streamItemsRaw ?? EMPTY_STREAM_ITEMS;
   const pendingPermissionList = useStoreWithEqualityFn(

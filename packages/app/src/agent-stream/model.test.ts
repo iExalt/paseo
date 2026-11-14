@@ -143,32 +143,41 @@ describe("buildAgentStreamRenderModel", () => {
     expect(model.segments.liveHead).toBe(head);
   });
 
-  it("reuses ordered committed history when only the live head changes", () => {
-    const tail = [userMessage("u1", 1), assistantMessage("a1", 2)];
-    const firstHead = [assistantMessage("live-a", 3)];
-    const secondHead = [assistantMessage("live-b", 4)];
+  // A windowed history must keep its identity too: every downstream cache and row memo keys on it.
+  it.each([
+    { label: "whole", historyStart: undefined },
+    { label: "windowed", historyStart: 1 },
+  ])(
+    "reuses ordered $label committed history when only the live head changes",
+    ({ historyStart }) => {
+      const tail = [userMessage("u0", 0), userMessage("u1", 1), assistantMessage("a1", 2)];
+      const firstHead = [assistantMessage("live-a", 3)];
+      const secondHead = [assistantMessage("live-b", 4)];
 
-    const first = buildAgentStreamRenderModel({
-      isTurnActive: true,
-      activeTurnStartedAt: tail[0]?.timestamp ?? null,
-      tail,
-      head: firstHead,
-      platform: "native",
-      isMobileBreakpoint: false,
-    });
-    const second = buildAgentStreamRenderModel({
-      isTurnActive: true,
-      activeTurnStartedAt: tail[0]?.timestamp ?? null,
-      tail,
-      head: secondHead,
-      platform: "native",
-      isMobileBreakpoint: false,
-    });
+      const first = buildAgentStreamRenderModel({
+        isTurnActive: true,
+        activeTurnStartedAt: tail[0]?.timestamp ?? null,
+        tail,
+        head: firstHead,
+        platform: "native",
+        isMobileBreakpoint: false,
+        historyStart,
+      });
+      const second = buildAgentStreamRenderModel({
+        isTurnActive: true,
+        activeTurnStartedAt: tail[0]?.timestamp ?? null,
+        tail,
+        head: secondHead,
+        platform: "native",
+        isMobileBreakpoint: false,
+        historyStart,
+      });
 
-    expect(first.history).toBe(second.history);
-    expect(first.segments.historyMounted).toBe(second.segments.historyMounted);
-    expect(second.segments.liveHead.map((item) => item.id)).toEqual(["live-b"]);
-  });
+      expect(first.history).toBe(second.history);
+      expect(first.segments.historyMounted).toBe(second.segments.historyMounted);
+      expect(second.segments.liveHead.map((item) => item.id)).toEqual(["live-b"]);
+    },
+  );
 
   it("derives running turn timing across committed history and live head", () => {
     const tail = [userMessage("u1", 1)];
