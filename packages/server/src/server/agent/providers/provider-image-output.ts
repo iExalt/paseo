@@ -12,6 +12,20 @@ export interface ProviderImageOutput {
   data?: string | null;
   mimeType?: string | null;
   altText?: string | null;
+  /**
+   * The file the provider read `data` from. Provider copies can be downscaled or re-encoded, so
+   * materialization snapshots this file instead while it still holds the image the provider read.
+   */
+  originalPath?: string | null;
+  /** When the provider read `originalPath`. A file modified after it is skipped. Omit when live. */
+  observedAt?: Date | null;
+}
+
+interface MaterializeProviderImageInput {
+  data: string;
+  mimeType: string | null;
+  originalPath?: string | null;
+  observedAt?: Date | null;
 }
 
 export interface MaterializedProviderImage {
@@ -44,6 +58,17 @@ function isMissingPath(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException).code;
   return code === "ENOENT" || code === "ENOTDIR";
 }
+
+const ORIGINAL_IMAGE_MIME_TYPES: Record<string, string> = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".tif": "image/tiff",
+  ".tiff": "image/tiff",
+};
 
 function getImageExtension(mimeType: string): string {
   switch (mimeType) {
@@ -78,10 +103,16 @@ async function refillDecodeBudget(): Promise<void> {
   pendingDecodeYield = undefined;
 }
 
-export async function materializeProviderImage(image: {
-  data: string;
-  mimeType: string | null;
-}): Promise<MaterializedProviderImage> {
+export async function materializeProviderImage(
+  image: MaterializeProviderImageInput,
+): Promise<MaterializedProviderImage> {
+  if (image.originalPath) {
+    const snapshot = await snapshotOriginalImage({
+      originalPath: image.originalPath,
+      observedAt: image.observedAt ?? null,
+    });
+    if (snapshot) return snapshot;
+  }
   const maxEncodedCharacters = Math.ceil(MAX_PROVIDER_IMAGE_BYTES / 3) * 4;
   // Check length before inspecting/copying the payload, including a bounded data URI header.
   if (image.data.length > maxEncodedCharacters + 256) {
@@ -101,40 +132,120 @@ export async function materializeProviderImage(image: {
   }
   const hash = createHash("sha256");
   for await (const bytes of decodeImage(data)) hash.update(bytes);
-  const filename = `${hash.digest("hex")}.${getImageExtension(mimeType)}`;
+  const fileName = `${hash.digest("hex")}.${getImageExtension(mimeType)}`;
+  // Decode again only for a new hash. This bounds retained memory to one chunk
+  // and performs no writes at all for repeated content, including history replay.
+  return await writeAttachment({
+    fileName,
+    write: async (file) => {
+      for await (const bytes of decodeImage(data)) await file.writeFile(bytes);
+    },
+  });
+}
+
+// Copies the original into the attachments dir under its content hash, so a later overwrite of
+// the original cannot change an image already in a thread. Returns null whenever the original is
+// unusable; the caller then falls back to the provider's copy.
+async function snapshotOriginalImage({
+  originalPath,
+  observedAt,
+}: {
+  originalPath: string;
+  observedAt: Date | null;
+}): Promise<MaterializedProviderImage | null> {
+  const mimeType = ORIGINAL_IMAGE_MIME_TYPES[path.extname(originalPath).toLowerCase()];
+  if (!mimeType || !path.isAbsolute(originalPath)) return null;
+  try {
+    // Stat before opening: opening a FIFO for reading blocks until a writer appears.
+    const stats = await fs.stat(originalPath);
+    if (!stats.isFile() || stats.size > MAX_PROVIDER_IMAGE_BYTES) return null;
+    if (observedAt && stats.mtimeMs > observedAt.getTime()) return null;
+    const source = await fs.open(originalPath, "r");
+    try {
+      const digest = await hashFile(source);
+      const hashed = await source.stat();
+      if (hashed.mtimeMs !== stats.mtimeMs || hashed.size !== stats.size) return null;
+      return await writeAttachment({
+        fileName: `${digest}.${getImageExtension(mimeType)}`,
+        // Copy for a new hash only, and keep the copy only if the bytes did not change underneath.
+        write: async (file) => {
+          const copyHash = createHash("sha256");
+          for await (const bytes of readFileChunks(source)) {
+            copyHash.update(bytes);
+            await file.writeFile(bytes);
+          }
+          if (copyHash.digest("hex") !== digest) throw new Error("Original image changed");
+        },
+      });
+    } finally {
+      await source.close();
+    }
+  } catch {
+    return null;
+  }
+}
+
+async function hashFile(file: fs.FileHandle): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const bytes of readFileChunks(file)) hash.update(bytes);
+  return hash.digest("hex");
+}
+
+async function* readFileChunks(file: fs.FileHandle): AsyncGenerator<Buffer> {
+  const buffer = Buffer.alloc(BASE64_CHUNK_CHARACTERS);
+  let position = 0;
+  for (;;) {
+    const { bytesRead } = await file.read(buffer, 0, buffer.length, position);
+    if (bytesRead === 0) return;
+    position += bytesRead;
+    if (position > MAX_PROVIDER_IMAGE_BYTES) throw new Error("Image attachment exceeds size limit");
+    yield Buffer.from(buffer.subarray(0, bytesRead));
+    await setImmediate();
+  }
+}
+
+// Writes an attachment named by its content hash unless it already exists. A `write` that throws
+// discards the staged bytes.
+async function writeAttachment({
+  fileName,
+  write,
+}: {
+  fileName: string;
+  write: (file: fs.FileHandle) => Promise<void>;
+}): Promise<MaterializedProviderImage> {
   const directory = getMaterializedImageAttachmentDir();
   const dir = await directory;
   try {
-    return await materializeInDirectory(dir, filename, data);
+    return await materializeInDirectory(dir, fileName, write);
   } catch (error) {
     if (!isMissingPath(error)) throw error;
     // Other requests may have already replaced the directory after the same deletion.
     if (attachmentDirectory === directory) attachmentDirectory = undefined;
     const replacement = await getMaterializedImageAttachmentDir();
-    return materializeInDirectory(replacement, filename, data);
+    return materializeInDirectory(replacement, fileName, write);
   }
 }
 
 function materializeInDirectory(
   dir: string,
   filename: string,
-  data: string,
+  write: (file: fs.FileHandle) => Promise<void>,
 ): Promise<MaterializedProviderImage> {
   const filePath = path.join(dir, filename);
   const pending = pendingWrites.get(filePath);
   if (pending) return pending;
 
-  const write = publishImage(dir, filePath, data).finally(() => {
+  const publishing = publishImage(dir, filePath, write).finally(() => {
     pendingWrites.delete(filePath);
   });
-  pendingWrites.set(filePath, write);
-  return write;
+  pendingWrites.set(filePath, publishing);
+  return publishing;
 }
 
 async function publishImage(
   dir: string,
   filePath: string,
-  data: string,
+  write: (file: fs.FileHandle) => Promise<void>,
 ): Promise<MaterializedProviderImage> {
   const [directory, existing] = await Promise.allSettled([fs.lstat(dir), fs.stat(filePath)]);
   if (directory.status === "rejected") throw directory.reason;
@@ -157,8 +268,7 @@ async function publishImage(
     try {
       // Restore owner permissions if the umask masked them at open.
       await file.chmod(MATERIALIZED_IMAGE_FILE_MODE);
-      // Decode again only for new content, retaining one chunk at a time.
-      for await (const bytes of decodeImage(data)) await file.writeFile(bytes);
+      await write(file);
     } finally {
       await file.close();
     }
@@ -215,10 +325,7 @@ export function isProviderImageMarkdown(text: string): boolean {
 }
 
 interface RenderProviderImageOutputOptions {
-  materialize?: (image: {
-    data: string;
-    mimeType: string | null;
-  }) => Promise<MaterializedProviderImage>;
+  materialize?: (image: MaterializeProviderImageInput) => Promise<MaterializedProviderImage>;
 }
 
 function nonEmptyString(value: string | null | undefined): string | null {
@@ -300,6 +407,8 @@ export async function renderProviderImageOutputAsAssistantMarkdown(
       ? await options.materialize({
           data,
           mimeType: nonEmptyString(image.mimeType),
+          originalPath: nonEmptyString(image.originalPath),
+          observedAt: image.observedAt ?? null,
         })
       : null;
   } catch {

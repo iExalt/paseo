@@ -112,6 +112,7 @@ import {
   parseToolArgs,
   parseToolResult,
   splitPiToolResultImages,
+  withPiReadImageOriginal,
   type PiToolResult,
   type PiTrackedToolCall,
 } from "./tool-call-mapper.js";
@@ -2415,7 +2416,8 @@ export class PiRpcAgentSession implements AgentSession {
     this.emitToolCallEvent(event.toolCallId, toolCall, status, result, error);
     if (images.length === 0) return;
     const turnId = this.currentTurnIdForEvent();
-    this.emitAsync(() => this.renderToolResultImages(images, turnId));
+    const withOriginal = withPiReadImageOriginal(images, { toolCall, cwd: this.config.cwd });
+    this.emitAsync(() => this.renderToolResultImages(withOriginal, turnId));
   }
 
   private async renderToolResultImages(

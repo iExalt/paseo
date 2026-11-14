@@ -172,7 +172,7 @@ import {
   AttachmentPill,
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
-import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
+import { useAttachmentLightbox } from "@/components/attachment-lightbox-context";
 import { openExternalUrl } from "@/utils/open-external-url";
 import { useIsDictationReady } from "@/hooks/use-is-dictation-ready";
 import { useForgeSearchQuery } from "@/git/use-forge-search-query";
@@ -1436,7 +1436,11 @@ function ComposerContentImpl({
   const [isMessageInputFocused, setIsMessageInputFocused] = useState(false);
   const [isGithubPickerOpen, setIsGithubPickerOpen] = useState(false);
   const [githubSearchQuery, setGithubSearchQuery] = useState("");
-  const [lightboxMetadata, setLightboxMetadata] = useState<AttachmentMetadata | null>(null);
+  const { open: openLightbox, localLightbox } = useAttachmentLightbox();
+  const setLightboxMetadata = useCallback(
+    (metadata: AttachmentMetadata) => openLightbox({ type: "attachment", metadata }),
+    [openLightbox],
+  );
   const attachButtonRef = useRef<View | null>(null);
   const messageInputRef = useRef<MessageInputRef>(null);
   const pluginAttachments = usePluginAttachmentPicker({
@@ -2041,7 +2045,7 @@ function ComposerContentImpl({
         },
       });
     },
-    [openAttachment],
+    [openAttachment, setLightboxMetadata],
   );
 
   const handleCancelAgent = useCallback(() => {
@@ -2422,14 +2426,6 @@ function ComposerContentImpl({
     [onAttentionInputFocus],
   );
 
-  const handleLightboxClose = useCallback(() => {
-    setLightboxMetadata(null);
-  }, []);
-  const lightboxSource = useMemo<ImageLightboxSource | null>(
-    () => (lightboxMetadata ? { type: "attachment", metadata: lightboxMetadata } : null),
-    [lightboxMetadata],
-  );
-
   const handleGithubPickerOpenChange = useCallback(
     (open: boolean) => {
       setIsGithubPickerOpen(open);
@@ -2594,7 +2590,7 @@ function ComposerContentImpl({
           isFullscreen ? animatedStaticStyles.fullscreenContainer : animatedStaticStyles.container
         }
       >
-        <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
+        {localLightbox}
         {/* Input area */}
         <View
           style={inputAreaContainerStyle}
