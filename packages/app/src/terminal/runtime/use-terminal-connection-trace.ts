@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useHostRuntimeSnapshot } from "@/runtime/host-runtime";
 import {
+  isTerminalTraceEnabled,
   traceTerminalEvent,
 } from "@/terminal/native-renderer/terminal-input-trace";
 
@@ -19,13 +20,19 @@ export function useTerminalConnectionTrace(input: {
 }): void {
   const { serverId, client, active } = input;
   const activeConnection = useHostRuntimeSnapshot(serverId)?.activeConnection ?? null;
+  const traceEnabled = isTerminalTraceEnabled();
+  const connectionType = traceEnabled ? (activeConnection?.type ?? null) : null;
+  const connectionDisplay = traceEnabled ? (activeConnection?.display ?? null) : null;
 
   useEffect(() => {
+    if (!traceEnabled) {
       return;
     }
     traceTerminalEvent({ connection: connectionType, display: connectionDisplay });
+  }, [traceEnabled, connectionType, connectionDisplay]);
 
   useEffect(() => {
+    if (!traceEnabled || !client || !active) {
       return;
     }
     let cancelled = false;
@@ -44,4 +51,5 @@ export function useTerminalConnectionTrace(input: {
       cancelled = true;
       clearInterval(handle);
     };
+  }, [traceEnabled, client, active]);
 }
