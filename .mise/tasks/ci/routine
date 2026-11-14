@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+#MISE description="Run shared routine CI against this checkout"
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
+exec node .github/scripts/ci-routine.mjs "$@"

@@ -997,6 +997,11 @@ export interface StartWorkerTerminalManagerOptions {
   logger: Logger;
   getTerminalActivityUrl?: () => string | null;
   requestTimeoutMs?: number;
+  /**
+   * Launch the first worker on the first terminal request instead of at startup. Tests that
+   * never open a terminal skip a worker process, about 500 ms per daemon start.
+   */
+  deferWorkerLaunch?: boolean;
 }
 
 // The current worker plus one draining a previous protocol. Every live worker counts,
@@ -1269,7 +1274,7 @@ export async function startWorkerTerminalManager(
   };
 
   await prune();
-  if (!current) {
+  if (!current && !options.deferWorkerLaunch) {
     try {
       current = await startCurrent();
     } catch (error) {
