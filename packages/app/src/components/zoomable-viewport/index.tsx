@@ -8,6 +8,7 @@ import {
   fitContentSize,
   isActivePinchUpdate,
   isPointInsideTransformedContent,
+  panContent,
   zoomContentAtPoint,
   type ViewportSize,
 } from "./geometry";
@@ -58,19 +59,20 @@ export function ZoomableViewport({
   const panGesture = useMemo(
     () =>
       Gesture.Pan()
-        .maxPointers(1)
-        .onBegin(() => {
-          startX.value = translateX.value;
-          startY.value = translateY.value;
-        })
-        .onUpdate((event) => {
-          if (!fittedContent || !viewport || scale.value <= minScale) return;
-          const maxX = Math.max(0, (fittedContent.width * scale.value - viewport.width) / 2);
-          const maxY = Math.max(0, (fittedContent.height * scale.value - viewport.height) / 2);
-          translateX.value = Math.min(maxX, Math.max(-maxX, startX.value + event.translationX));
-          translateY.value = Math.min(maxY, Math.max(-maxY, startY.value + event.translationY));
+        .averageTouches(true)
+        .onChange((event) => {
+          if (!fittedContent || !viewport || event.numberOfPointers !== 1) return;
+          const next = panContent({
+            transform: { scale: scale.value, x: translateX.value, y: translateY.value },
+            delta: { x: event.changeX, y: event.changeY },
+            fittedContent,
+            viewport,
+            limits: { minScale, maxScale },
+          });
+          translateX.value = next.x;
+          translateY.value = next.y;
         }),
-    [fittedContent, minScale, scale, startX, startY, translateX, translateY, viewport],
+    [fittedContent, maxScale, minScale, scale, translateX, translateY, viewport],
   );
 
   const pinchGesture = useMemo(

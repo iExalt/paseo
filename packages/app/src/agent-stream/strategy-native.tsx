@@ -26,7 +26,7 @@ import { useKeyboardStreamInset } from "@/keyboard/shift";
 import { READING_VIEWABILITY_CONFIG } from "./reading-anchor";
 import { useNativeReadingPosition } from "./use-native-reading-position";
 import { NativeRowGeometryContext, NativeStreamCell } from "./native-stream-cell";
-import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
+import { planNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
 import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
@@ -266,21 +266,18 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
 
   const scrollToBottom = useCallback(
     (animated: boolean) => {
-      programmaticScrollEventBudgetRef.current = 3;
-      flatListRef.current?.scrollToOffset({
-        offset: 0,
-        animated:
-          animated &&
-          shouldAnimateNativeScrollToBottom({
-            offsetY: scrollOffsetYRef.current,
-            viewportHeight: streamViewportMetricsRef.current.viewportHeight,
-            windowSize: NATIVE_STREAM_WINDOW_SIZE,
-          }),
+      const plan = planNativeScrollToBottom({
+        animated,
+        offsetY: scrollOffsetYRef.current,
+        viewportHeight: streamViewportMetricsRef.current.viewportHeight,
+        windowSize: NATIVE_STREAM_WINDOW_SIZE,
       });
-      scrollOffsetYRef.current = 0;
+      programmaticScrollEventBudgetRef.current = 3;
+      flatListRef.current?.scrollToOffset({ offset: 0, animated: plan.animated });
+      scrollOffsetYRef.current = plan.recordedOffsetY;
       streamViewportMetricsRef.current = {
         ...streamViewportMetricsRef.current,
-        offsetY: 0,
+        offsetY: plan.recordedOffsetY,
       };
       onNearBottomChange(true);
     },
@@ -401,7 +398,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       scrollToMessage: (messageId) => readingPosition.jumpToMessage(messageId),
       scrollToItem: (itemId) => readingPosition.jumpToItem(itemId),
       scrollByWindowDelta: (delta) => readingPosition.scrollByWindowDelta(delta),
-      holdReadingPosition: () => bottomAnchorController.detachByUser(),
     };
     viewportRef.current = handle;
     return () => {
@@ -463,6 +459,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       bottomAnchorController.handleScrollNearBottomChange({
         nextIsNearBottom: nearBottom,
         scrollDelta: contentOffset.y - previousOffsetY,
+        // The list is inverted: offset zero is the bottom.
         scrolledTowardBottomByUser: !reading.programmatic && contentOffset.y < previousOffsetY,
       });
     }

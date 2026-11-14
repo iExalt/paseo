@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { z } from "zod";
 
 import type { ToolCallDetail } from "../../agent-sdk-types.js";
@@ -279,6 +281,18 @@ export function splitPiToolResultImages(result: PiToolResult): {
         : { structuredContent: withoutImageData(result.structuredContent) }),
     },
   };
+}
+
+// Pi's read tool can return a downscaled copy of an image file, so point materialization at the
+// file it read. A relative path is resolved against cwd; without cwd it stays relative, which
+// materialization rejects in favour of Pi's copy.
+export function withPiReadImageOriginal(
+  images: ProviderImageOutput[],
+  { toolCall, cwd, observedAt }: { toolCall: PiTrackedToolCall; cwd?: string; observedAt?: Date },
+): ProviderImageOutput[] {
+  if (toolCall.kind !== "read" || images.length !== 1) return images;
+  const originalPath = cwd ? path.resolve(cwd, toolCall.args.path) : toolCall.args.path;
+  return images.map((image) => ({ ...image, originalPath, observedAt }));
 }
 
 function withoutImageData(value: unknown): unknown {

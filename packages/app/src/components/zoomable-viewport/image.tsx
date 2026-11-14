@@ -37,6 +37,7 @@ export function ZoomableImage({
   const [loadedSize, setLoadedSize] = useState<ViewportSize | null>(null);
   const resolvedSize = contentSize ?? loadedSize;
   const source = useMemo(() => ({ uri }), [uri]);
+  const imageFit = useMemo(() => ({ allowUpscale: false, ...fit }), [fit]);
 
   useEffect(() => {
     if (contentSize) return;
@@ -77,10 +78,11 @@ export function ZoomableImage({
       accessibilityLabel={accessibilityLabel}
       actions={actions}
       contentSize={resolvedSize}
-      fit={fit}
+      fit={imageFit}
       maxScale={maxScale}
       minScale={minScale}
       onPressOutsideContent={onPressOutsideContent}
+      panWithWheel
       style={style}
       testID={testID}
       wheelActivation={wheelActivation}
