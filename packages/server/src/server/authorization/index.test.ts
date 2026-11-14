@@ -43,6 +43,8 @@ describe("SessionAuthorization", () => {
     expect(
       workspaceManager.allowsInbound(inboundMessage("daemon.notifications.rules.set.request")),
     ).toBe(false);
+    expect(workspaceManager.allowsInbound(inboundMessage("profile.list.request"))).toBe(false);
+    expect(workspaceManager.allowsInbound(inboundMessage("provider.inspect.request"))).toBe(false);
 
     const daemonReader = new SessionAuthorization(["daemon.read"]);
     expect(
@@ -51,6 +53,8 @@ describe("SessionAuthorization", () => {
     expect(
       daemonReader.allowsInbound(inboundMessage("daemon.notifications.rules.set.request")),
     ).toBe(false);
+    expect(daemonReader.allowsInbound(inboundMessage("profile.list.request"))).toBe(true);
+    expect(daemonReader.allowsInbound(inboundMessage("provider.inspect.request"))).toBe(true);
 
     const daemonManager = new SessionAuthorization(["daemon.manage"]);
     expect(
@@ -95,6 +99,35 @@ describe("SessionAuthorization", () => {
     expect(
       authorization.allowsInbound(inboundMessage("hub.management.daemon.get_status.request")),
     ).toBe(false);
+  });
+
+  test("terminal input keeps the workspace write permission for both input routes", () => {
+    const authorization = new SessionAuthorization(["workspace.write"]);
+
+    expect(authorization.allowsInbound(inboundMessage("terminal_input"))).toBe(true);
+    expect(authorization.allowsInbound(inboundMessage("terminal.input.request"))).toBe(true);
+    expect(authorization.allowsOutbound(outboundMessage("terminal.input.response"))).toBe(true);
+  });
+
+  test("agent query RPCs retain the existing read-operation authority", () => {
+    const readOperations = [
+      ["agent.directory.query.request", "agent.directory.query.response"],
+      ["agent.status.get.request", "agent.status.get.response"],
+      ["agent.activity.get.request", "agent.activity.get.response"],
+      ["permission.list.request", "permission.list.response"],
+    ] as const;
+    const workspaceReader = new SessionAuthorization(["workspace.read"]);
+    const hubExecutor = new SessionAuthorization(["hub.execute"]);
+    const daemonReader = new SessionAuthorization(["daemon.read"]);
+
+    for (const [request, response] of readOperations) {
+      expect(workspaceReader.allowsInbound(inboundMessage(request))).toBe(true);
+      expect(workspaceReader.allowsOutbound(outboundMessage(response))).toBe(true);
+      expect(hubExecutor.allowsInbound(inboundMessage(request))).toBe(true);
+      expect(hubExecutor.allowsOutbound(outboundMessage(response))).toBe(true);
+      expect(daemonReader.allowsInbound(inboundMessage(request))).toBe(false);
+      expect(daemonReader.allowsOutbound(outboundMessage(response))).toBe(false);
+    }
   });
 
   test("Hub can operate ordinary agents and recover workspaces without daemon administration", () => {

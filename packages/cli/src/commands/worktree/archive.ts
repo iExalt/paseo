@@ -89,11 +89,19 @@ export async function runArchiveCommandWithDeps(
       throw error;
     }
 
-    // Find the worktree by name or branch
-    const worktree = listResponse.worktrees.find((wt) => {
-      const name = path.basename(wt.worktreePath);
-      return name === nameArg || wt.branchName === nameArg;
-    });
+    // Find the worktree by directory name or branch; archiving deletes it, so never guess.
+    const matches = listResponse.worktrees.filter(
+      (wt) => path.basename(wt.worktreePath) === nameArg || wt.branchName === nameArg,
+    );
+    if (matches.length > 1) {
+      const error: CommandError = {
+        code: "AMBIGUOUS_WORKTREE",
+        message: `Worktree name is ambiguous: ${nameArg}`,
+        details: `Matches: ${matches.map((wt) => wt.worktreePath).join(", ")}`,
+      };
+      throw error;
+    }
+    const worktree = matches[0];
 
     if (!worktree) {
       const error: CommandError = {

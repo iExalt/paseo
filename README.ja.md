@@ -136,7 +136,7 @@ npx skills add getpaseo/paseo
 
 モノレポのパッケージ構成：
 
-- `packages/server`: Paseo デーモン（エージェントプロセスのオーケストレーション、WebSocket API、MCP サーバー）
+- `packages/server`: Paseo デーモン（エージェントプロセスのオーケストレーション、WebSocket API、プロバイダーネイティブツール）
 - `packages/app`: Expo クライアント（iOS、Android、Web）
 - `packages/cli`: デーモンおよびエージェントワークフロー向け `paseo` CLI
 - `packages/desktop`: Electron デスクトップアプリ

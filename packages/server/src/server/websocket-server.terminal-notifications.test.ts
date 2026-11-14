@@ -149,7 +149,6 @@ function createServer(terminalManager: TerminalManager, workspaceRegistry?: Work
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
-    null,
     { allowedOrigins: new Set() },
     createWorkspaceAutoNameStub(),
     createWorkspaceRuntimeStore(),

@@ -1,12 +1,14 @@
 #!/usr/bin/env npx tsx
 
 import assert from "node:assert";
+import { createPaseoClient } from "@getpaseo/client";
 import { rm } from "node:fs/promises";
 import { createE2ETestContext } from "./helpers/test-daemon.ts";
 
 console.log("=== Schedule Command Tests ===\n");
 
 const ctx = await createE2ETestContext({ timeout: 30000 });
+const legacySdk = createPaseoClient({ url: `${ctx.wsUrl}/ws`, reconnect: { enabled: false } });
 
 try {
   {
@@ -226,6 +228,11 @@ try {
 
   {
     console.log("Test 1e: compatibility agent-target schedules remain deletable");
+    await legacySdk.connect();
+    const legacyWorkspace = await legacySdk.workspaces.open(ctx.workDir);
+    const legacyAgent = await legacyWorkspace.agents.create({
+      config: { provider: "claude/haiku" },
+    });
     const created = await ctx.paseo(
       [
         "schedule",
@@ -234,7 +241,7 @@ try {
         "--cron",
         "0 0 1 1 *",
         "--target",
-        "00000000-0000-4000-8000-000000000001",
+        legacyAgent.id,
         "--cwd",
         ctx.workDir,
         "--json",
@@ -243,14 +250,96 @@ try {
     );
     assert.strictEqual(created.exitCode, 0, created.stderr);
     const createdJson = JSON.parse(created.stdout);
-    assert.strictEqual(createdJson.target, "agent:0000000");
+    assert.ok(createdJson.target.startsWith("agent:"));
 
-    const deleted = await ctx.paseo(["schedule", "delete", createdJson.id, "--json"]);
+    const deleted = await ctx.paseo(["heartbeat", "delete", createdJson.id, "--json"], {
+      env: { PASEO_AGENT_ID: legacyAgent.id },
+    });
     assert.strictEqual(deleted.exitCode, 0, deleted.stderr);
     assert.strictEqual(JSON.parse(deleted.stdout).id, createdJson.id);
     console.log("compatibility agent-target schedules remain deletable\n");
   }
+  {
+    const sdk = createPaseoClient({ url: `${ctx.wsUrl}/ws`, reconnect: { enabled: false } });
+    try {
+      await sdk.connect();
+      const workspace = await sdk.workspaces.open(ctx.workDir);
+      const caller = await workspace.agents.create({ config: { provider: "claude/haiku" } });
+      const other = await workspace.agents.create({ config: { provider: "claude/haiku" } });
+      async function cli(args: string[], agentId = caller.id) {
+        const result = await ctx.paseo([...args, "--json"], { env: { PASEO_AGENT_ID: agentId } });
+        assert.equal(result.exitCode, 0, result.stderr);
+        return JSON.parse(result.stdout);
+      }
+      const created = await cli([
+        "schedule",
+        "create",
+        "Field parity",
+        "--cron",
+        "0 0 1 1 *",
+        "--no-archive-on-finish",
+      ]);
+      assert.equal(created.schedule.target.config.archiveOnFinish, false);
+      const id = created.id;
+      await cli([
+        "schedule",
+        "update",
+        id,
+        "--thinking",
+        "high",
+        "--isolation",
+        "worktree",
+        "--archive-on-finish",
+      ]);
+      let inspected = await cli(["schedule", "inspect", id]);
+      assert.equal(inspected.target.config.thinkingOptionId, "high");
+      assert.equal(inspected.target.config.isolation, "worktree");
+      assert.equal(inspected.target.config.archiveOnFinish, true);
+      await cli(["schedule", "update", id, "--clear-thinking", "--no-archive-on-finish"]);
+      await cli(["schedule", "update", id, "--name", "Preserve false"]);
+      inspected = await cli(["schedule", "inspect", id]);
+      assert.equal(inspected.target.config.thinkingOptionId, undefined);
+      assert.equal(inspected.target.config.archiveOnFinish, false);
+      await cli(["schedule", "pause", id]);
+      assert.ok(
+        (await cli(["schedule", "ls", "--status", "active"])).some(
+          (entry: { id: string }) => entry.id === id,
+        ),
+      );
+      assert.ok(
+        !(await cli(["schedule", "ls", "--status", "ended"])).some(
+          (entry: { id: string }) => entry.id === id,
+        ),
+      );
+      const own = await cli(["heartbeat", "create", "Own", "--cron", "0 0 1 1 *"]);
+      const foreign = await cli(
+        ["heartbeat", "create", "Foreign", "--cron", "0 0 1 1 *"],
+        other.id,
+      );
+      const listed = await cli(["heartbeat", "ls"]);
+      assert.deepEqual(
+        listed.map((entry: { id: string }) => entry.id),
+        [own.id],
+      );
+      assert.equal((await cli(["heartbeat", "pause", own.id])).status, "paused");
+      assert.equal((await cli(["heartbeat", "resume", own.id])).status, "active");
+      for (const rejected of [foreign.id, id]) {
+        for (const operation of ["pause", "resume"]) {
+          const result = await ctx.paseo(["heartbeat", operation, rejected, "--json"], {
+            env: { PASEO_AGENT_ID: caller.id },
+          });
+          assert.notEqual(result.exitCode, 0);
+        }
+      }
+      await cli(["heartbeat", "delete", own.id]);
+      await cli(["heartbeat", "delete", foreign.id], other.id);
+      await cli(["schedule", "delete", id]);
+    } finally {
+      await sdk.close();
+    }
+  }
 } finally {
+  await legacySdk.close();
   await ctx.stop();
   await rm(ctx.paseoHome, { recursive: true, force: true });
   await rm(ctx.workDir, { recursive: true, force: true });
