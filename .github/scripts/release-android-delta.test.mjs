@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { makeApkDelta } from "./release-android-delta.mjs";
 
 test("APK deltas rebuild the signed APK and are kept only when they halve the .gz", async () => {
   const work = await mkdtemp(join(tmpdir(), "paseo-apk-delta-"));
@@ -19,6 +20,7 @@ test("APK deltas rebuild the signed APK and are kept only when they halve the .g
     await writeFile(base.file, baseBytes);
     await writeFile(nextFile, nextBytes);
     const next = {
+      version: "1.2.3",
       file: nextFile,
       bytes: nextBytes.length,
       sha256: createHash("sha256").update(nextBytes).digest("hex"),
@@ -31,6 +33,7 @@ test("APK deltas rebuild the signed APK and are kept only when they halve the .g
     const size = await make({});
     assert.ok(size > 0 && size < 1_000, `delta of ${size} bytes`);
     assert.deepEqual(await readdir(directory), [
+      "paseo-1.2.3-android-arm64.apk.delta-from-1.2.2.zst",
     ]);
 
     await rm(directory, { recursive: true });
