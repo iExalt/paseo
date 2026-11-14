@@ -1,4 +1,13 @@
-import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  utimesSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,7 +18,7 @@ import {
   FileTransferOpcode,
   type FileTransferFrame,
 } from "@getpaseo/protocol/binary-frames/index";
-import { FileUploadStore } from "./index.js";
+import { FileUploadStore, removeExpiredUploads } from "./index.js";
 
 const tempDirs: string[] = [];
 
@@ -19,6 +28,21 @@ describe("file uploads", () => {
     for (const dir of tempDirs.splice(0)) {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("removes uploads older than a month at startup and keeps recent ones", async () => {
+    const paseoHome = makePaseoHome();
+    const now = Date.parse("2026-11-03T00:00:00.000Z");
+    const old = join(paseoHome, "uploads", "upload_old");
+    const recent = join(paseoHome, "uploads", "upload_recent");
+    mkdirSync(old, { recursive: true });
+    mkdirSync(recent, { recursive: true });
+    const fortyDaysAgo = new Date(now - 40 * 24 * 60 * 60 * 1000);
+    utimesSync(old, fortyDaysAgo, fortyDaysAgo);
+
+    await removeExpiredUploads({ paseoHome, now });
+
+    expect(readdirSync(join(paseoHome, "uploads"))).toEqual(["upload_recent"]);
   });
 
   it("stores chunked upload bytes and returns an uploaded-file attachment", async () => {
