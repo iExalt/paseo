@@ -70,6 +70,19 @@ describe("tool call expansion", () => {
     expect(groups.has("first")).toBe(true);
   });
 
+  it("runs before-toggle listeners ahead of the state change", () => {
+    const expansion = createToolCallExpansion();
+    const seen: boolean[] = [];
+    const unsubscribe = expansion.subscribeBeforeToggle(() =>
+      seen.push(expansion.isCallExpanded("first", false), expansion.getExpandedGroups().has("g")),
+    );
+    expansion.setCallExpanded({ callId: "first", expanded: true, standalone: false });
+    expansion.setGroupExpanded("g", true);
+    unsubscribe();
+    expansion.setGroupExpanded("g", false);
+    expect(seen).toEqual([false, false, true, false]);
+  });
+
   it("uses the call's default until the user toggles it", () => {
     const expansion = createToolCallExpansion();
     expect(expansion.isCallExpanded("first", true)).toBe(true);

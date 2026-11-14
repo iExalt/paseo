@@ -18,6 +18,7 @@ export function createToolCallExpansion() {
   const callListeners = new Map<string, Set<Listener>>();
   const groups = new Set<string>();
   const groupListeners = new Set<Listener>();
+  const beforeToggleListeners = new Set<Listener>();
   let expandedGroups = createExpandedGroups();
 
   function createExpandedGroups(): ExpandedToolCallGroups {
@@ -44,7 +45,15 @@ export function createToolCallExpansion() {
         if (listeners.size === 0) callListeners.delete(callId);
       };
     },
+    /** Runs before a call or group toggles, so the timeline can hold the header the user clicked. */
+    subscribeBeforeToggle(listener: Listener) {
+      beforeToggleListeners.add(listener);
+      return () => {
+        beforeToggleListeners.delete(listener);
+      };
+    },
     setCallExpanded(input: { callId: string; expanded: boolean; standalone: boolean }) {
+      for (const listener of beforeToggleListeners) listener();
       calls.set(input.callId, input.expanded);
       if (input.standalone) writeGroup(input.callId, input.expanded);
       for (const listener of callListeners.get(input.callId) ?? []) listener();
@@ -57,6 +66,7 @@ export function createToolCallExpansion() {
       };
     },
     setGroupExpanded(groupId: string, expanded: boolean) {
+      for (const listener of beforeToggleListeners) listener();
       writeGroup(groupId, expanded);
       expandedGroups = createExpandedGroups();
       for (const listener of groupListeners) listener();
