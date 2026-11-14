@@ -235,7 +235,7 @@ describe("canonical CLI surface", () => {
     expect(open?.helpInformation()).toContain("--server <server-id>");
   });
 
-  it("offers the complete local plugin lifecycle", () => {
+  it("offers the complete plugin lifecycle and catalog discovery", () => {
     const plugin = createCli().commands.find((command) => command.name() === "plugin");
 
     expect(plugin?.commands.map((command) => command.name())).toEqual([
@@ -249,6 +249,7 @@ describe("canonical CLI surface", () => {
       "enable",
       "disable",
       "remove",
+      "catalog",
     ]);
     expect(
       plugin?.commands.find((command) => command.name() === "init")?.helpInformation(),
