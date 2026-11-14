@@ -186,7 +186,7 @@ paseo workspace create \
   --pr-number 2186
 ```
 
-添加 `--background` 可以把工作区从默认的发现结果中隐藏。它的 Agent 和终端保留普通的历史记录、持久化、钩子和重启恢复。`--no-background` 显式覆盖从调用方工作区继承的设置；省略时，由 Paseo Agent 运行则继承，在人工操作的 shell 中默认为 false。可见性只能在创建时设置。
+添加 `--background` 可以把工作区从默认的发现结果中隐藏。它的 Agent 和终端保留普通的历史记录、持久化、钩子和重启恢复。`--no-background` 显式覆盖从调用方工作区继承的设置；省略时，由 Paseo Agent 运行则继承，在人工操作的 shell 中默认为 false。使用 `workspace update --background` 或 `workspace update --no-background` 可以更改现有工作区的可见性。
 
 ```bash
 paseo workspace create --isolation local --background --path /path/to/repo
@@ -207,6 +207,18 @@ paseo workspace archive <workspace-id>
 ```
 
 当 Paseo 无法从源检出推断代码托管平台时，为 PR 检出添加 `--forge <name>`。setup 钩子和服务见 [Git worktree](/docs/worktrees)。
+
+### 更新工作区设置 {#update-workspace-settings}
+
+```bash
+paseo workspace update <workspace-id> --no-background --title "Review" --pin
+paseo workspace update <workspace-id> --reset-title --unpin
+paseo workspace update <workspace-id> --add-label "Review" --remove-label "Done"
+```
+
+可以组合多个选项，以原子方式更新。省略的设置保持不变。标签选项可以重复使用，名称取自现有标签目录，忽略大小写和多余空白；添加未知标签会失败，移除未分配的标签则成功。互相冲突的选项会在更新前被拒绝。标签名称和颜色的编辑是单独的目录操作。
+
+这些更新需要支持工作区设置的主机。下面仅更新通知策略的现有命令仍适用于支持通知的旧主机。`workspace rename` 仍可用于更改或重置标题。
 
 ### 工作区通知策略 {#workspace-notification-policy}
 

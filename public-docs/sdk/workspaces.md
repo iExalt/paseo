@@ -60,14 +60,35 @@ Pass `background: true` to hide a workspace from default discovery. Its agents a
 remain durable, with ordinary history, lifecycle hooks, archive, and exact-ID access. The app's
 sidebar offers **Show background** without dropping replicated state.
 
-`background` is creation-only. Omission defaults to false; when `callerAgentId` identifies an agent
+At creation, omitting `background` defaults to false; when `callerAgentId` identifies an agent
 creating a new workspace, omission inherits its workspace's value. Explicit false or true overrides
 inheritance. Agent creation with `workspaceId` rejects explicit background creation intent; configure
-visibility when creating the workspace. SDK/RPC implicit agent creation also accepts `background`
+visibility on the workspace instead. SDK/RPC implicit agent creation also accepts `background`
 as workspace creation intent, never as an agent property.
 
 Creation and inclusive discovery require `features.backgroundWorkspaces`; the client rejects an
 unsupported host with an update-host message.
+
+## Update workspace settings
+
+```ts
+const applied = await workspace.update({
+  background: false,
+  title: "Review",
+  notifications: "off",
+  pinned: true,
+  addLabels: ["Review"],
+  removeLabels: ["Done"],
+});
+```
+
+The host applies the patch atomically and returns the persisted settings. Omitted fields
+stay unchanged; `title: null` restores the derived name and `pinned: false` unpins.
+Label additions require existing catalog names. Adding and removing the same normalized
+label is rejected. An absent assignment can be removed repeatedly.
+
+Requires `features.workspaceSettingsUpdate`; unsupported hosts get an update-host error.
+The workspace keeps its identity and running agents. Call `refresh()` for its current descriptor.
 
 ## Start an agent in a workspace
 

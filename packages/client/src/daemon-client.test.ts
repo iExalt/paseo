@@ -188,6 +188,23 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
+test("atomic workspace settings require host capability before sending any request", async () => {
+  let created = 0;
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "settings-capability",
+    transportFactory: () => {
+      created++;
+      return createMockTransport().transport;
+    },
+  });
+  clients.push(client);
+  await expect(client.updateWorkspaceSettings("ws-1", { background: false })).rejects.toThrow(
+    "Update the host to update workspace settings.",
+  );
+  expect(created).toBe(0);
+});
+
 test("workspace notification mutation requires the advertised host capability", async () => {
   let transportsCreated = 0;
   const client = new DaemonClient({
