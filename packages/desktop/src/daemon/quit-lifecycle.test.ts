@@ -117,6 +117,7 @@ describe("quit-lifecycle", () => {
     const events: string[] = [];
 
     const quitLifecycle = createQuitLifecycle({
+      quit: () => {},
       app: {
         exit: (code) => {
           events.push(`exit:${code}`);
@@ -172,9 +173,41 @@ describe("quit-lifecycle", () => {
     expect(events).not.toContain("second-prevent-default");
   });
 
+  it("quits for a relaunch without stopping the daemon, whatever the quit setting says", async () => {
+    const events: string[] = [];
+    const quitLifecycle = createQuitLifecycle({
+      app: { exit: (code) => events.push(`exit:${code}`) },
+      quit: () => {
+        events.push("quit");
+        quitLifecycle.handleBeforeQuit({ preventDefault: () => events.push("prevent-default") });
+      },
+      closeTransportSessions: () => {},
+      // Default settings stop the daemon on quit; a relaunch must never reach this.
+      stopDesktopManagedDaemonIfNeeded: () =>
+        stopDesktopManagedDaemonOnQuitIfNeeded({
+          settingsStore: { get: async () => SETTINGS_STOP_ON_QUIT },
+          isDesktopManagedDaemonRunning: () => true,
+          stopDaemon: async () => {
+            events.push("stop");
+          },
+          showShutdownFeedback: () => {},
+        }),
+      installAppUpdateOnQuit: async () => false,
+      createUpdateDeadlineSignal: () => new AbortController().signal,
+      onStopError: () => {},
+      onUpdateError: () => {},
+    });
+
+    quitLifecycle.quitForRelaunch();
+    await waitForQuitLifecycle();
+
+    expect(events).toEqual(["quit"]);
+  });
+
   it("lets the updater own process exit when a validated update is installing", async () => {
     const exits: number[] = [];
     const quitLifecycle = createQuitLifecycle({
+      quit: () => {},
       app: { exit: (code) => exits.push(code) },
       closeTransportSessions: () => {},
       stopDesktopManagedDaemonIfNeeded: async () => false,
@@ -196,6 +229,7 @@ describe("quit-lifecycle", () => {
     const exits: number[] = [];
     let preventedQuitCount = 0;
     const quitLifecycle = createQuitLifecycle({
+      quit: () => {},
       app: { exit: (code) => exits.push(code) },
       closeTransportSessions: () => {},
       stopDesktopManagedDaemonIfNeeded: async () => false,
@@ -220,6 +254,7 @@ describe("quit-lifecycle", () => {
     let deadlineCount = 0;
     const exits: number[] = [];
     const quitLifecycle = createQuitLifecycle({
+      quit: () => {},
       app: { exit: (code) => exits.push(code) },
       closeTransportSessions: () => {},
       stopDesktopManagedDaemonIfNeeded: async () => false,
@@ -241,6 +276,7 @@ describe("quit-lifecycle", () => {
   it("does not intercept a quit started by a manual update", () => {
     const events: string[] = [];
     const quitLifecycle = createQuitLifecycle({
+      quit: () => {},
       app: { exit: (code) => events.push(`exit:${code}`) },
       closeTransportSessions: () => events.push("close-transports"),
       stopDesktopManagedDaemonIfNeeded: async () => {
@@ -269,6 +305,7 @@ describe("quit-lifecycle", () => {
     const updateDecision = deferred<boolean>();
     const exits: number[] = [];
     const quitLifecycle = createQuitLifecycle({
+      quit: () => {},
       app: { exit: (code) => exits.push(code) },
       closeTransportSessions: () => {},
       stopDesktopManagedDaemonIfNeeded: async () => false,

@@ -71,19 +71,26 @@ const daemon = {
 
 describe("Nix update phase", () => {
   it.each<[string, NixUpdateFacts, string]>([
+    ["no facts yet", { result: null, latest: null }, "unknown"],
+    ["latest is the active release", { result: result("check"), latest: v022 }, "current"],
+    ["latest is newer", { result: result("check"), latest: v023 }, "available"],
     [
       "a newer release is staged",
+      { result: result("stage", { staged: v023 }), latest: v023 },
       "ready",
     ],
     [
       "a release newer than the staged one was published",
+      { result: result("check", { staged: v023 }), latest: release("0.2.4", "c") },
       "available",
     ],
     [
       "the app runs an older release than the active one",
+      { result: result("activate", { active: v023 }), latest: v023 },
       "restart",
     ],
     [
+      "the running app matches the active release",
       {
         result: result("status", {
           active: v023,
@@ -91,6 +98,7 @@ describe("Nix update phase", () => {
         }),
         latest: v023,
       },
+      "current",
     ],
   ])("is right when %s", (_case, facts, kind) => {
     expect(resolveNixUpdatePhase(facts).kind).toBe(kind);
@@ -125,6 +133,7 @@ describe("Nix update operations", () => {
     expect(resolveNixUpdatePhase(useNixUpdateStore.getState()).kind).toBe("ready");
   });
 
+  it("says running agents keep working, applies the update, then restarts", async () => {
     await checkForNixUpdate({ userInitiated: false });
     harness.agents.set("a1", { id: "a1", title: "Fix login", status: "running" });
     harness.agents.set("a2", { id: "a2", title: "Idle one", status: "idle" });
@@ -134,7 +143,11 @@ describe("Nix update operations", () => {
 
     expect(harness.confirmDialog).toHaveBeenCalledOnce();
     const dialog = harness.confirmDialog.mock.calls[0][0];
+    expect(dialog.destructive).toBeUndefined();
+    expect(dialog.confirmLabel).toBe("desktop.updates.nix.updateConfirm");
+    expect(dialog.message).toContain('desktop.updates.nix.agentsKeepRunning {"count":1}');
     expect(harness.bridge.activate).toHaveBeenCalledOnce();
+    expect(harness.bridge.restart).toHaveBeenCalledWith();
   });
 
   it("runs one flow when the sidebar and Settings both start it", async () => {
@@ -147,9 +160,12 @@ describe("Nix update operations", () => {
     expect(harness.bridge.restart).toHaveBeenCalledOnce();
   });
 
+  it("asks again when a newer release lands while the update is applied", async () => {
     harness.bridge.check.mockResolvedValue(result("check", { latest: v023, canStage: false }));
     await checkForNixUpdate({ userInitiated: false });
     harness.confirmDialog.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    const v024 = { ...v023, version: "0.2.4" };
+    harness.bridge.activate.mockResolvedValue(result("activate", { active: v024 }));
 
     await confirmAndRunNixUpdate();
 
