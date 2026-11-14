@@ -290,7 +290,12 @@ for their first agent stay active. Creation and restore serialize with the final
 a creation admitted first keeps the workspace active; one arriving after archive must restore the
 workspace first.
 
-The cascade uses the same ownership and reference checks as explicit workspace archive.
+The automatic cascade uses workspace archive ownership and reference checks. Local checkouts stay
+on disk. A Paseo-owned managed worktree is removed, including uncommitted, untracked, ignored,
+and unpushed work, when no active workspace still references it. Teardown scripts run as for
+explicit workspace archive. If an agent runtime fails to close, the daemon keeps the directory
+and logs its path and reason.
+
 Workspace cleanup runs after the agent lifecycle settles, outside the agent archive lock.
 Send a handoff before self-archive and let an external session verify it.
 
