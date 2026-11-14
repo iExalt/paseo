@@ -37,6 +37,12 @@ Checked on the Android 17 tablet with `sh.paseo` 0.16.0 on 2026-10-30, and again
 fix, on `dev` since 2026-10-30) ignore `?open=` on cold start. Cold means `am force-stop` first;
 warm means the app is already open.
 
+A raw cold `paseo://` URI can land in the Expo development launcher before JavaScript
+starts. For native routing checks in a development shell, launch an accepted Metro URL and
+confirm the app screen is open before testing a warm custom URI. Check cold saved-selection
+recovery separately with a cold app launch; proving cold custom-URI entry requires a
+production-style APK.
+
 | Link                                                                                                       | Cold        | Warm | Notes                                                                                                                                                                                                                                                                                                            |
 | ---------------------------------------------------------------------------------------------------------- | ----------- | ---- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `paseo://settings/<section>` (`about`, `appearance`, …)                                                    | yes         | yes  |                                                                                                                                                                                                                                                                                                                  |
