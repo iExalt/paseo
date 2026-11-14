@@ -64,6 +64,18 @@ export function parseQuestionFormQuestions(input: unknown): QuestionFormQuestion
   return questions.length > 0 ? questions : null;
 }
 
+// One Markdown image and nothing else. The destination is a URL or path without spaces, or any
+// path in angle brackets; an optional quoted title may follow.
+const IMAGE_ONLY_PREVIEW = /^\s*(!\[[^\]\n]*\]\((?:<[^>\n]+>|[^\s()<>]+)(?:\s+"[^"\n]*")?\))\s*$/;
+
+/**
+ * A preview that is only an image draws as that image. Any other preview, ASCII mockups
+ * included, stays monospace text so its spacing survives.
+ */
+export function parseImageOnlyPreview(preview: string): string | null {
+  return IMAGE_ONLY_PREVIEW.exec(preview)?.[1] ?? null;
+}
+
 export function questionShowsTextInput(question: QuestionFormQuestion): boolean {
   return question.options.length === 0 || question.allowOther;
 }
