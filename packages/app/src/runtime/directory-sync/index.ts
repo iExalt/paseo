@@ -4,6 +4,10 @@ import type {
   FetchAgentsEntry,
   FetchAgentsOptions,
 } from "@getpaseo/client/internal/daemon-client";
+import {
+  TimelineRequestSupersededError,
+  type TimelineResponseGuard,
+} from "@/timeline/timeline-request";
 import { fetchAgentTimelineOnce } from "@/timeline/fetch-agent-timeline-once";
 import {
   normalizeProjectDescriptor,
@@ -474,10 +478,23 @@ export class DirectorySync {
   async fetchTimeline(
     agentId: string,
     request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+    acceptResponse: TimelineResponseGuard = () => true,
   ): Promise<Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>> {
-    const { client } = this.requireOnline();
+    const { client, source } = this.requireOnline();
     const token = this.agents.captureTimeline(agentId);
-    const page = await fetchAgentTimelineOnce(client, agentId, request);
+    const isCurrent: TimelineResponseGuard = (page) =>
+      this.isCurrent(client, source) &&
+      this.agents.isTimelineCurrent(token) &&
+      acceptResponse(page);
+    if (!isCurrent()) throw new TimelineRequestSupersededError();
+    let page: Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>;
+    try {
+      page = await fetchAgentTimelineOnce(client, agentId, request);
+    } catch (error) {
+      if (!isCurrent()) throw new TimelineRequestSupersededError();
+      throw error;
+    }
+    if (!isCurrent(page)) throw new TimelineRequestSupersededError();
     if (page.agent && this.agents.submitTimelineAgent(token, page.agent)) {
       this.revision += 1;
       this.persistCheckpoint();

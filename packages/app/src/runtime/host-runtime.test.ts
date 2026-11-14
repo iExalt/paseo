@@ -36,6 +36,15 @@ import { utf8ByteLength } from "./replica-cache/utf8-byte-length";
 
 import { subscriptionFixture } from "./subscription-fixture";
 import { readDesktopManagedLocalCredential } from "@/desktop/daemon/local-credential";
+import { TimelineRequestSupersededError } from "@/timeline/timeline-request";
+import type { TimelineResponsePayload } from "@/timeline/viewed-timeline-sync";
+import { useNotificationReceipt } from "@/notification-open/preview";
+import {
+  createInitDeferred,
+  getInitDeferred,
+  getInitKey,
+  resolveInitDeferred,
+} from "@/utils/agent-initialization";
 import type { HostConfirmationRequest } from "./host-confirmation";
 
 it("requests the managed connection credential through desktop main without a web hint", async () => {
@@ -57,6 +66,7 @@ it("requests the managed connection credential through desktop main without a we
 });
 
 class FakeDaemonClient {
+  fetchAgentTimeline = vi.fn<DaemonClient["fetchAgentTimeline"]>();
   supportsBackgroundWorkspaces(): boolean {
     return false;
   }
@@ -4971,4 +4981,285 @@ describe("HostRuntimeStore initial connection hint bootstrap", () => {
     expect(seenProbes).not.toContainEqual(expect.objectContaining({ endpoint: "metro-host:8081" }));
     expect(store.getHosts()).toHaveLength(0);
   });
+});
+
+function timelinePage(overrides: Partial<TimelineResponsePayload> = {}): TimelineResponsePayload {
+  return {
+    requestId: "timeline",
+    agentId: "target",
+    agent: null,
+    direction: "tail",
+    projection: "projected",
+    reset: false,
+    epoch: "epoch-1",
+    window: { minSeq: 1, maxSeq: 10, nextSeq: 11 },
+    startCursor: { epoch: "epoch-1", seq: 1 },
+    endCursor: { epoch: "epoch-1", seq: 10 },
+    entries: [
+      {
+        provider: "codex",
+        item: { type: "assistant_message", text: "current", messageId: "current" },
+        timestamp: "2026-11-14T00:00:00Z",
+        seqStart: 1,
+        seqEnd: 10,
+        sourceSeqRanges: [{ startSeq: 1, endSeq: 10 }],
+        collapsed: [],
+      },
+    ],
+    error: null,
+    hasNewer: false,
+    hasOlder: true,
+    staleCursor: false,
+    gap: false,
+    ...overrides,
+  };
+}
+
+describe("timeline response publication ownership", () => {
+  async function setup() {
+    vi.useFakeTimers({
+      toFake: ["Date", "setTimeout", "clearTimeout", "setInterval", "clearInterval", "performance"],
+    });
+    const host = makeHost({ serverId: "timeline-publication" });
+    const client = new FakeDaemonClient();
+    client.setConnectionState({ status: "connected" });
+    const store = new HostRuntimeStore({
+      storage: createMemoryHostRuntimeStorage(),
+      deps: makeDeps({}, []),
+    });
+    store.syncHosts([host], {
+      initialConnectionByServerId: new Map([
+        [
+          host.serverId,
+          {
+            connectionId: host.connections[0]!.id,
+            existingClient: client as unknown as DaemonClient,
+          },
+        ],
+      ]),
+    });
+    await waitForHostOnline(store, host.serverId);
+    const makeOwner = () =>
+      store.createViewedTimelineOwner(host.serverId, {
+        observe: () => ({ ready: Promise.resolve(), release: async () => {} }),
+        readCursor: () => undefined,
+        fetchPage: async () => ({ hasNewer: false, endCursor: null }),
+        fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+        reportError: () => {},
+      });
+    const owner = makeOwner();
+    useSessionStore.getState().setViewedTimelineSync(host.serverId, owner);
+    owner.applyTimelineResponse(timelinePage());
+    return { host, client, store, owner, makeOwner };
+  }
+
+  it.each([
+    "owner",
+    "connection",
+    "epoch",
+    "replacement",
+    "tail-gap",
+    "tail-rewind",
+    "generation",
+    "initialization",
+  ] as const)(
+    "rejects %s-superseded response before metadata, timeline, init or notification publication",
+    async (cause) => {
+      const { host, client, store, owner, makeOwner } = await setup();
+      const deferred = createDeferred<TimelineResponsePayload>();
+      client.fetchAgentTimeline.mockReturnValue(deferred.promise);
+      let current = true;
+      const key = getInitKey(host.serverId, "target");
+      if (cause === "initialization") {
+        const initial = createInitDeferred(key, "after");
+        void initial.promise.catch(() => {});
+      }
+      if (cause === "connection")
+        useSessionStore.getState().setViewedTimelineSync(host.serverId, null);
+      const pending = store.fetchAgentTimeline(
+        host.serverId,
+        "target",
+        {
+          direction: cause === "replacement" ? "tail" : "after",
+          cursor: { epoch: "epoch-1", seq: 10 },
+          projection: "projected",
+        },
+        () => current,
+      );
+      const observed = expect(pending).rejects.toBeInstanceOf(TimelineRequestSupersededError);
+      let nextOwner;
+      if (cause === "owner") {
+        nextOwner = makeOwner();
+        useSessionStore.getState().setViewedTimelineSync(host.serverId, nextOwner);
+      } else if (cause === "connection")
+        client.setConnectionState({ status: "disconnected", reason: "lost" });
+      else if (cause === "epoch") {
+        useSessionStore
+          .getState()
+          .setAgentTimelineCursor(
+            host.serverId,
+            new Map([["target", { epoch: "epoch-new", startSeq: 1, endSeq: 10 }]]),
+          );
+      } else if (cause === "replacement")
+        owner.applyTimelineResponse(timelinePage({ reset: true }));
+      else if (cause === "tail-gap" || cause === "tail-rewind") {
+        const seq = cause === "tail-gap" ? 30 : 5;
+        const start = cause === "tail-gap" ? 20 : 1;
+        owner.applyTimelineResponse(
+          timelinePage({
+            window: { minSeq: start, maxSeq: seq, nextSeq: seq + 1 },
+            startCursor: { epoch: "epoch-1", seq: start },
+            endCursor: { epoch: "epoch-1", seq },
+            entries: [
+              {
+                provider: "codex",
+                item: { type: "assistant_message", text: "replacement", messageId: "replacement" },
+                timestamp: "2026-11-14T00:00:00Z",
+                seqStart: start,
+                seqEnd: seq,
+                sourceSeqRanges: [{ startSeq: start, endSeq: seq }],
+                collapsed: [],
+              },
+            ],
+          }),
+        );
+      } else if (cause === "generation") current = false;
+      else {
+        resolveInitDeferred(key);
+        createInitDeferred(key, "tail");
+      }
+      const receipt = {
+        serverId: host.serverId,
+        agentId: "target",
+        tapId: "new-tap",
+        preview: {
+          v: 1 as const,
+          kind: "permission" as const,
+          requestId: "permission",
+          text: "new receipt",
+          truncated: false,
+        },
+      };
+      useNotificationReceipt.setState({ receipt });
+      const before = useSessionStore.getState().sessions[host.serverId];
+      const init = getInitDeferred(key);
+      const staleAgent = makeFetchAgentsEntry({
+        id: "target",
+        title: "stale metadata",
+        updatedAt: "2026-11-14T00:00:00Z",
+        cwd: "/repo",
+      });
+      deferred.resolve(
+        timelinePage({
+          direction: cause === "replacement" ? "tail" : "after",
+          reset: cause === "replacement",
+          agent: staleAgent.agent,
+          hasNewer: true,
+          error: cause === "initialization" ? "stale error" : null,
+        }),
+      );
+      await observed;
+      expect(useSessionStore.getState().sessions[host.serverId]).toBe(before);
+      expect(getInitDeferred(key)).toBe(init);
+      expect(useNotificationReceipt.getState().receipt).toBe(receipt);
+      resolveInitDeferred(key);
+      useNotificationReceipt.setState({ receipt: null });
+      nextOwner?.dispose();
+      owner.dispose();
+      store.syncHosts([]);
+      useSessionStore.getState().clearSession(host.serverId);
+    },
+  );
+
+  it("rejects a tail overtaken by live progress and permits a fetch from the current cursor", async () => {
+    const { host, client, store, owner } = await setup();
+    const held = createDeferred<TimelineResponsePayload>();
+    client.fetchAgentTimeline.mockReturnValueOnce(held.promise);
+    const pending = store.fetchAgentTimeline(host.serverId, "target", {
+      direction: "tail",
+      projection: "projected",
+    });
+    const rejected = expect(pending).rejects.toBeInstanceOf(TimelineRequestSupersededError);
+    useSessionStore
+      .getState()
+      .setAgentTimelineCursor(
+        host.serverId,
+        new Map([["target", { epoch: "epoch-1", startSeq: 1, endSeq: 11 }]]),
+      );
+    const before = useSessionStore.getState().sessions[host.serverId];
+    held.resolve(timelinePage());
+    await rejected;
+    expect(useSessionStore.getState().sessions[host.serverId]).toBe(before);
+    const current = timelinePage({
+      direction: "after",
+      window: { minSeq: 1, maxSeq: 12, nextSeq: 13 },
+      startCursor: { epoch: "epoch-1", seq: 12 },
+      endCursor: { epoch: "epoch-1", seq: 12 },
+      entries: [
+        {
+          provider: "codex",
+          item: { type: "assistant_message", text: "latest", messageId: "latest" },
+          timestamp: "2026-11-14T00:00:00Z",
+          seqStart: 12,
+          seqEnd: 12,
+          sourceSeqRanges: [{ startSeq: 12, endSeq: 12 }],
+          collapsed: [],
+        },
+      ],
+    });
+    client.fetchAgentTimeline.mockResolvedValueOnce(current);
+    await store.fetchAgentTimeline(host.serverId, "target", {
+      direction: "after",
+      cursor: { epoch: "epoch-1", seq: 11 },
+      projection: "projected",
+    });
+    expect(
+      useSessionStore.getState().sessions[host.serverId]?.agentTimelineCursor.get("target")?.endSeq,
+    ).toBe(12);
+    owner.dispose();
+    store.syncHosts([]);
+    useSessionStore.getState().clearSession(host.serverId);
+  });
+
+  it.each(["after", "before", "merge-window", "tail"] as const)(
+    "accepts current %s responses after same-epoch live cursor progress",
+    async (kind) => {
+      const { host, client, store, owner } = await setup();
+      const held = createDeferred<TimelineResponsePayload>();
+      client.fetchAgentTimeline.mockReturnValue(held.promise);
+      const direction = kind === "merge-window" ? "before" : kind;
+      const pending = store.fetchAgentTimeline(host.serverId, "target", {
+        direction,
+        projection: "projected",
+        ...(kind === "merge-window" ? { mergeWindow: true } : {}),
+        cursor: { epoch: "epoch-1", seq: direction === "before" ? 1 : 10 },
+      });
+      useSessionStore
+        .getState()
+        .setAgentTimelineCursor(
+          host.serverId,
+          new Map([["target", { epoch: "epoch-1", startSeq: 1, endSeq: 11 }]]),
+        );
+      const metadata = makeFetchAgentsEntry({
+        id: "target",
+        title: "fresh metadata",
+        updatedAt: "2026-11-14T00:00:00Z",
+        cwd: "/repo",
+      });
+      const response = timelinePage({
+        direction,
+        mergeWindow: kind === "merge-window",
+        agent: metadata.agent,
+        window: { minSeq: 1, maxSeq: 11, nextSeq: 12 },
+      });
+      held.resolve(response);
+      expect(await pending).toBe(response);
+      expect(useSessionStore.getState().sessions[host.serverId]?.agents.get("target")?.title).toBe(
+        "fresh metadata",
+      );
+      owner.dispose();
+      store.syncHosts([]);
+      useSessionStore.getState().clearSession(host.serverId);
+    },
+  );
 });

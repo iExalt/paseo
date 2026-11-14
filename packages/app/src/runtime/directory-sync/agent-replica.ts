@@ -46,6 +46,10 @@ export class AgentDirectoryReplica {
     return { agentId, version: this.lifecycleVersions.get(agentId) ?? 0 };
   }
 
+  isTimelineCurrent(token: AgentLifecycleToken): boolean {
+    return token.version === (this.lifecycleVersions.get(token.agentId) ?? 0);
+  }
+
   snapshot(): Map<string, Agent> {
     return this.storeProjection.snapshot();
   }

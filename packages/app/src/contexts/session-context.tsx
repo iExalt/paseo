@@ -423,7 +423,7 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           ? { epoch: timeline.range.epoch, endSeq: timeline.range.endSeq }
           : undefined;
       },
-      fetchPage: async (agentId, request) => {
+      fetchPage: async (agentId, request, isCurrent) => {
         const session = useSessionStore.getState().sessions[serverId];
         const initKey = getInitKey(serverId, agentId);
         const shouldInitialize = selectAgentTimelineState(session, agentId).status !== "synced";
@@ -439,22 +439,33 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
           });
           setAgentInitializing(agentId, true);
         }
+        const deferred = getInitDeferred(initKey);
         try {
-          const page = await getHostRuntimeStore().fetchAgentTimeline(serverId, agentId, request);
-          if (shouldInitialize && getInitDeferred(initKey)) {
+          const page = await getHostRuntimeStore().fetchAgentTimeline(
+            serverId,
+            agentId,
+            request,
+            isCurrent,
+          );
+          if (shouldInitialize && deferred && getInitDeferred(initKey) === deferred) {
             refreshAgentInitializationTimeout({ key: initKey, agentId, setAgentInitializing });
           }
           return page;
         } catch (error) {
-          if (shouldInitialize) {
+          if (shouldInitialize && deferred && getInitDeferred(initKey) === deferred) {
             setAgentInitializing(agentId, false);
             rejectInitDeferred(initKey, error instanceof Error ? error : new Error(String(error)));
           }
           throw error;
         }
       },
-      fetchLatestTail: (agentId) =>
-        getHostRuntimeStore().fetchAgentTimeline(serverId, agentId, planTimelineTailFetch()),
+      fetchLatestTail: (agentId, isCurrent) =>
+        getHostRuntimeStore().fetchAgentTimeline(
+          serverId,
+          agentId,
+          planTimelineTailFetch(),
+          isCurrent,
+        ),
       reportError: (error) => {
         console.warn("[Session] viewed timeline synchronization failed", { serverId, error });
       },

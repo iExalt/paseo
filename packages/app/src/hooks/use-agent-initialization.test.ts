@@ -1,8 +1,14 @@
+import { TimelineRequestSupersededError } from "@/timeline/timeline-request";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useSessionStore } from "@/stores/session-store";
 import { TIMELINE_FETCH_PAGE_SIZE } from "@/timeline/timeline-fetch-policy";
 import type { HostRuntimeStore } from "@/runtime/host-runtime";
-import { getInitDeferred, getInitKey, resolveInitDeferred } from "@/utils/agent-initialization";
+import {
+  createInitDeferred,
+  getInitDeferred,
+  getInitKey,
+  resolveInitDeferred,
+} from "@/utils/agent-initialization";
 import {
   createSetAgentInitializing,
   ensureAgentIsInitialized,
@@ -292,4 +298,54 @@ describe("refreshAgent", () => {
       },
     ]);
   });
+});
+
+it("does not reject a newer initialization when an old fetch fails", async () => {
+  useSessionStore.getState().initializeSession(serverId, null);
+  let fail!: (error: Error) => void;
+  const pending = new Promise<never>((_resolve, reject) => {
+    fail = reject;
+  });
+  const runtime = { fetchAgentTimeline: () => pending };
+  const first = ensureAgentIsInitialized({
+    serverId,
+    agentId,
+    client: {} as never,
+    runtime,
+    setAgentInitializing: bindSetAgentInitializing(),
+  });
+  resolveInitDeferred(getInitKey(serverId, agentId));
+  await first;
+  const current = createInitDeferred(getInitKey(serverId, agentId), "tail");
+  void current.promise.catch(() => {});
+  useSessionStore.getState().setInitializingAgents(serverId, new Map([[agentId, true]]));
+  fail(new Error("old connection"));
+  await pending.catch(() => {});
+  expect(getInitDeferred(getInitKey(serverId, agentId))).toBe(current);
+  expect(useSessionStore.getState().sessions[serverId]?.initializingAgents.get(agentId)).toBe(true);
+});
+
+it("settles its own superseded initialization without claiming synchronization", async () => {
+  useSessionStore.getState().initializeSession(serverId, null);
+  let fail!: (error: Error) => void;
+  const pending = new Promise<never>((_resolve, reject) => {
+    fail = reject;
+  });
+  const initialized = ensureAgentIsInitialized({
+    serverId,
+    agentId,
+    client: {} as never,
+    runtime: { fetchAgentTimeline: () => pending },
+    setAgentInitializing: bindSetAgentInitializing(),
+  });
+  const rejected = expect(initialized).rejects.toBeInstanceOf(TimelineRequestSupersededError);
+  fail(new TimelineRequestSupersededError());
+  await rejected;
+  expect(getInitDeferred(getInitKey(serverId, agentId))).toBeUndefined();
+  expect(useSessionStore.getState().sessions[serverId]?.initializingAgents.get(agentId)).toBe(
+    false,
+  );
+  expect(
+    useSessionStore.getState().sessions[serverId]?.agentAuthoritativeHistoryApplied.get(agentId),
+  ).not.toBe(true);
 });
