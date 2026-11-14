@@ -54,8 +54,24 @@ vi.mock("react-native", async () => {
       ReactModule.createElement("div", { "data-testid": testID }, children),
   };
 });
+vi.mock("@/components/ui/button", async () => {
+  const ReactModule = await vi.importActual<typeof import("react")>("react");
+  return {
+    Button: ({
+      children,
+      onPress,
+      disabled,
       loading,
+      testID,
+    }: {
+      children: React.ReactNode;
+      onPress?: () => void;
+      disabled?: boolean;
       loading?: boolean;
+      testID?: string;
+    }) =>
+      ReactModule.createElement(
+        "button",
         {
           type: "button",
           onClick: onPress,
@@ -63,6 +79,13 @@ vi.mock("react-native", async () => {
           "aria-busy": loading,
           "data-testid": testID,
         },
+        children,
+      ),
+  };
+});
+vi.mock("@/styles/settings", () => ({
+  settingsStyles: { row: {}, rowBorder: {}, rowContent: {}, rowTitle: {}, rowHint: {} },
+}));
 vi.mock("expo-document-picker", () => ({ getDocumentAsync: harness.picker }));
 vi.mock("expo-file-system", () => ({
   Paths: { cache: { uri: "file:///cache" } },
