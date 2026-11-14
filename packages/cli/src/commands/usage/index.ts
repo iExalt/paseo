@@ -1,3 +1,4 @@
+import { runSpendCommand } from "./spend.js";
 import { Command } from "commander";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { UsageReportEntry } from "@getpaseo/protocol/messages";
@@ -93,6 +94,14 @@ export function createUsageCommand(): Command {
     withOutput((id: string, options: CommandOptions, _command: Command) =>
       runUsageCommand(options, { kind: "inspect", id }),
     ),
+  );
+  addJsonAndDaemonHostOptions(
+    usage
+      .command("spend")
+      .description("Show this host's recorded API spend")
+      .option("--time-zone <iana>", "Time zone for daily and monthly spend (default: local)"),
+  ).action(
+    withOutput((options: CommandOptions, command: Command) => runSpendCommand(options, command)),
   );
   return usage;
 }

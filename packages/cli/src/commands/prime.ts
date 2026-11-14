@@ -31,6 +31,10 @@ add --latency for a bounded round-trip measurement. daemon diagnostics collects 
 host report. daemon logs --tail 100 [-f] reads a local home's log; remote endpoints
 are not supported. provider refresh [provider] [--cwd <daemon-path>] refreshes discovery.
 
+Spend: usage spend --json returns this host's recorded API spend by provider,
+including trackingSince and carry already included in all-time. --time-zone <iana>
+selects daily/monthly boundaries; it defaults to the caller's time zone.
+
 JSON: parse stdout only; keep stderr separate, never merge 2>&1 into a parser.
 run --no-wait --json returns agentId/title. agent ls --json returns display
 summaries with id/name, possibly shortened cwd and relative created text.
