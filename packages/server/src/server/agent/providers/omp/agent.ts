@@ -134,6 +134,8 @@ export interface OmpAgentClientOptions {
   noTurnScheduler?: OmpNoTurnScheduler;
   usagePollScheduler?: OmpUsagePollScheduler;
   providerIdleDeadlineMs?: number;
+  // How long each MCP server gets to answer initialize and tools/list before it is skipped.
+  mcpServerTimeoutMs?: number;
 }
 
 export interface OmpProviderIdleScheduler {
@@ -2245,6 +2247,7 @@ export class OmpAgentClient implements AgentClient {
   private readonly noTurnScheduler?: OmpNoTurnScheduler;
   private readonly usagePollScheduler?: OmpUsagePollScheduler;
   private readonly providerIdleDeadlineMs?: number;
+  private readonly mcpServerTimeoutMs?: number;
   private readonly runtime?: OmpRuntime;
 
   constructor(options: OmpAgentClientOptions) {
@@ -2263,6 +2266,7 @@ export class OmpAgentClient implements AgentClient {
     this.noTurnScheduler = options.noTurnScheduler;
     this.usagePollScheduler = options.usagePollScheduler;
     this.providerIdleDeadlineMs = options.providerIdleDeadlineMs;
+    this.mcpServerTimeoutMs = options.mcpServerTimeoutMs;
     this.runtime = options.runtime;
   }
 
@@ -2275,11 +2279,17 @@ export class OmpAgentClient implements AgentClient {
     if (!catalog && !config.mcpServers) {
       return;
     }
-    const bridge = await OmpMcpBridge.connect(config.mcpServers, config.cwd, this.logger, {
-      ...process.env,
-      ...this.runtimeSettings?.env,
-      ...launchEnv,
-    });
+    const bridge = await OmpMcpBridge.connect(
+      config.mcpServers,
+      config.cwd,
+      this.logger,
+      {
+        ...process.env,
+        ...this.runtimeSettings?.env,
+        ...launchEnv,
+      },
+      this.mcpServerTimeoutMs,
+    );
     const router = new OmpHostToolRouter({ runtimeSession, catalog, bridge, logger: this.logger });
     try {
       await router.register();

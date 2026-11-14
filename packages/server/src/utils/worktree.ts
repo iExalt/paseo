@@ -221,6 +221,8 @@ export interface CreateWorktreeOptions {
   paseoHome?: string;
   worktreesRoot?: string;
   worktreePath?: string;
+  /** Overrides how long a branch-off waits on the remote before using the cached base ref. */
+  remoteBaseRefreshTimeoutMs?: number;
 }
 
 export class BranchAlreadyCheckedOutError extends Error {
@@ -1368,6 +1370,7 @@ export const createWorktree = async ({
   paseoHome,
   worktreesRoot,
   worktreePath: explicitWorktreePath,
+  remoteBaseRefreshTimeoutMs,
 }: CreateWorktreeOptions): Promise<CreatedWorktree> => {
   const branchesBefore =
     source.kind === "checkout-branch" ||
@@ -1375,7 +1378,12 @@ export const createWorktree = async ({
     source.kind === "checkout-github-pr"
       ? await listLocalBranchNames(cwd)
       : new Set<string>();
-  const sourcePlan = await resolveWorktreeSourcePlan({ cwd, source, desiredSlug: worktreeSlug });
+  const sourcePlan = await resolveWorktreeSourcePlan({
+    cwd,
+    source,
+    desiredSlug: worktreeSlug,
+    remoteBaseRefreshTimeoutMs,
+  });
   const fetchedBranch = planCreatedLocalBranch(source, sourcePlan);
   const fetchedTip =
     fetchedBranch && !branchesBefore.has(fetchedBranch)
@@ -1440,6 +1448,7 @@ interface ResolveWorktreeSourcePlanOptions {
   cwd: string;
   source: WorktreeSource;
   desiredSlug: string;
+  remoteBaseRefreshTimeoutMs?: number;
 }
 
 interface WorktreeSourcePlan {
@@ -1511,6 +1520,7 @@ async function resolveBranchOffWorktreeSourcePlan(
   cwd: string,
   source: Extract<WorktreeSource, { kind: "branch-off" }>,
   desiredSlug: string,
+  remoteBaseRefreshTimeoutMs: number | undefined,
 ): Promise<WorktreeSourcePlan> {
   const branchName = source.branchName;
   await validateGitBranchName(cwd, branchName);
@@ -1518,7 +1528,7 @@ async function resolveBranchOffWorktreeSourcePlan(
   const resolvedBaseBranch = await resolveBaseBranchForWorktree(cwd, source.baseBranch);
   const branchExists = await localBranchExists(cwd, branchName);
   const base = branchExists ? branchName : resolvedBaseBranch;
-  await refreshRemoteTrackingBaseRef(cwd, base);
+  await refreshRemoteTrackingBaseRef(cwd, base, remoteBaseRefreshTimeoutMs);
   const candidateBranch = branchExists ? desiredSlug : branchName;
   const newBranchName = await resolveUniqueLocalBranchName(cwd, candidateBranch);
 
@@ -1538,10 +1548,16 @@ async function resolveWorktreeSourcePlan({
   cwd,
   source,
   desiredSlug,
+  remoteBaseRefreshTimeoutMs,
 }: ResolveWorktreeSourcePlanOptions): Promise<WorktreeSourcePlan> {
   switch (source.kind) {
     case "branch-off":
-      return resolveBranchOffWorktreeSourcePlan(cwd, source, desiredSlug);
+      return resolveBranchOffWorktreeSourcePlan(
+        cwd,
+        source,
+        desiredSlug,
+        remoteBaseRefreshTimeoutMs,
+      );
     case "restore":
       return resolveRestoredWorktreeSourcePlan(cwd, source);
     case "restore-from-base":
@@ -1876,7 +1892,11 @@ const REMOTE_BASE_REFRESH_TIMEOUT_MS = 15_000;
 // A remote-tracking base is only as fresh as the last fetch, and the background fetch only runs
 // while a workspace of the repository is observed. Refresh the one base branch so the new branch
 // starts at the remote tip; when the fetch fails (offline, auth) the cached ref is still usable.
-async function refreshRemoteTrackingBaseRef(cwd: string, baseRef: string): Promise<void> {
+async function refreshRemoteTrackingBaseRef(
+  cwd: string,
+  baseRef: string,
+  timeoutMs = REMOTE_BASE_REFRESH_TIMEOUT_MS,
+): Promise<void> {
   if (!baseRef.startsWith("refs/remotes/")) {
     return;
   }
@@ -1896,7 +1916,7 @@ async function refreshRemoteTrackingBaseRef(cwd: string, baseRef: string): Promi
     await runGitCommand(["fetch", remoteName, `+refs/heads/${remoteBranch}:${baseRef}`], {
       cwd,
       envOverlay: { GIT_TERMINAL_PROMPT: "0" },
-      timeout: REMOTE_BASE_REFRESH_TIMEOUT_MS,
+      timeout: timeoutMs,
       acceptExitCodes: [0, 1, 128],
     });
   } catch {
