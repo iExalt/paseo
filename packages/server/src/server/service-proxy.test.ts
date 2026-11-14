@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import http from "node:http";
@@ -5,6 +6,7 @@ import net from "node:net";
 import express from "express";
 import { describe, expect, it } from "vitest";
 import pino from "pino";
+import { WebSocketServer } from "ws";
 import {
   buildLocalServiceHostname,
   buildPublicServiceHostname,
@@ -456,6 +458,58 @@ function upgradeThroughProxy(
     });
   });
 }
+
+describe("service proxy upgrade passthrough", () => {
+  it("answers 404 to an upgrade for a service host with no route instead of reaching /ws", async () => {
+    const serviceProxy = createServiceProxySubsystem({ logger });
+    const daemon = http.createServer((_req, res) => res.writeHead(404).end());
+    daemon.on("upgrade", serviceProxy.upgradeHandler({ passthroughUnknown: true }));
+    const wss = new WebSocketServer({ server: daemon, path: "/ws" });
+    let daemonConnections = 0;
+    wss.on("connection", (ws) => {
+      daemonConnections += 1;
+      ws.close();
+    });
+    await new Promise<void>((resolve) => daemon.listen(0, "127.0.0.1", resolve));
+    const port = (daemon.address() as net.AddressInfo).port;
+    const host = `stale--repo.localhost:${port}`;
+    try {
+      const response = await new Promise<string>((resolve, reject) => {
+        const socket = net.connect({ host: "127.0.0.1", port }, () => {
+          socket.write(
+            [
+              "GET /ws HTTP/1.1",
+              `Host: ${host}`,
+              `Origin: http://${host}`,
+              "Upgrade: websocket",
+              "Connection: Upgrade",
+              "Sec-WebSocket-Version: 13",
+              `Sec-WebSocket-Key: ${randomBytes(16).toString("base64")}`,
+              "",
+              "",
+            ].join("\r\n"),
+          );
+        });
+        let raw = "";
+        socket.on("data", (chunk: Buffer) => {
+          raw += chunk.toString();
+          if (raw.includes("\r\n\r\n")) {
+            socket.destroy();
+            resolve(raw);
+          }
+        });
+        socket.on("error", reject);
+        socket.on("close", () => resolve(raw));
+      });
+      expect(response.split("\r\n")[0]).toBe("HTTP/1.1 404 Not Found");
+      expect(daemonConnections).toBe(0);
+    } finally {
+      wss.close();
+      daemon.closeAllConnections();
+      await new Promise<void>((resolve) => daemon.close(() => resolve()));
+    }
+  });
+});
 
 describe("service proxy loopback services", () => {
   it.each(["127.0.0.1", "::1"])("forwards HTTP to a service bound only to %s", async (host) => {
